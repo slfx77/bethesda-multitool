@@ -185,9 +185,15 @@ public class EsmSubrecordConverterTests
         // [10..11] DebrisCount = 4 (already LE).
         data[10] = 0x04;
         // [12..15] Debris FormID 0x0001B2BF stored LE.
-        data[12] = 0xBF; data[13] = 0xB2; data[14] = 0x01; data[15] = 0x00;
+        data[12] = 0xBF;
+        data[13] = 0xB2;
+        data[14] = 0x01;
+        data[15] = 0x00;
         // [16..19] Explosion FormID 0x0001540D stored LE.
-        data[16] = 0x0D; data[17] = 0x54; data[18] = 0x01; data[19] = 0x00;
+        data[16] = 0x0D;
+        data[17] = 0x54;
+        data[18] = 0x01;
+        data[19] = 0x00;
         // [20..23] TrackingMaxAngle BE float 1.0 → LE 1.0.
         data[20] = 0x3F;
         data[21] = 0x80;
@@ -202,9 +208,15 @@ public class EsmSubrecordConverterTests
         data[41] = 0x80;
         // [44..67] GoreTransform PosRot (6 floats) — zeros.
         // [68..71] SeverableImpact LE 0x0002ED47.
-        data[68] = 0x47; data[69] = 0xED; data[70] = 0x02; data[71] = 0x00;
+        data[68] = 0x47;
+        data[69] = 0xED;
+        data[70] = 0x02;
+        data[71] = 0x00;
         // [72..75] ExplodableImpact LE 0x0002ED47.
-        data[72] = 0x47; data[73] = 0xED; data[74] = 0x02; data[75] = 0x00;
+        data[72] = 0x47;
+        data[73] = 0xED;
+        data[74] = 0x02;
+        data[75] = 0x00;
         // [76] SeverableDecalCount, [77] ExplodableDecalCount, [78..79] padding.
         // [80..83] LimbReplacementScale BE float 1.0.
         data[80] = 0x3F;
@@ -215,7 +227,7 @@ public class EsmSubrecordConverterTests
         Assert.Equal(84, result.Length);
 
         // DamageMult: BE → LE.
-        Assert.Equal(new byte[] { 0x00, 0x00, 0x80, 0x3F }, result[0..4]);
+        Assert.Equal(new byte[] { 0x00, 0x00, 0x80, 0x3F }, result[..4]);
         // PartType preserved.
         Assert.Equal(0x01, result[5]);
         // DebrisCount preserved (was already LE).

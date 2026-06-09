@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.SyntheticStructFactory;
@@ -28,7 +27,7 @@ public sealed class WeapOffsetReaderTests
     {
         const uint weapFormId = 0x000F6634;
         const uint ammoFormId = 0x0008B6D0;
-        var buffer = BuildWeap(weapFormId, ammoPtr: AmmoVa);
+        var buffer = BuildWeap(weapFormId, AmmoVa);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, WeapVa)
@@ -66,7 +65,7 @@ public sealed class WeapOffsetReaderTests
     public void ReadRuntimeWeapon_NullAmmoPointer_YieldsNullAmmoFormId()
     {
         const uint weapFormId = 0x000F6636;
-        var buffer = BuildWeap(weapFormId, ammoPtr: 0);
+        var buffer = BuildWeap(weapFormId, 0);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, WeapVa);
         var reader = new RuntimeItemReader(fixture.BuildContext());
@@ -102,7 +101,7 @@ public sealed class WeapOffsetReaderTests
         var reader = new RuntimeItemReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimeWeapon(
-            fixture.MakeEntry(formId, formType: 0x19 /* BOOK, not WEAP */, WeapVa)));
+            fixture.MakeEntry(formId, 0x19 /* BOOK, not WEAP */, WeapVa)));
     }
 
     /// <summary>

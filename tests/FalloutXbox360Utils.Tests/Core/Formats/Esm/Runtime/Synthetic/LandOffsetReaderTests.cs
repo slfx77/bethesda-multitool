@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
@@ -11,13 +10,17 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime.Synthetic;
 ///     <see cref="RuntimeWorldReader" /> (FormType 0x44 in the PDB layout,
 ///     drift-aware at runtime). Pins the two anchor offsets validated in
 ///     Phase 6.2:
-///       pParentCell @ PDB +48 → CELL FormID
-///       pLoadedData @ PDB +56 → heap pointer to LoadedLandData
+///     pParentCell @ PDB +48 → CELL FormID
+///     pLoadedData @ PDB +56 → heap pointer to LoadedLandData
 ///     <para>
 ///         Runtime offsets match PDB offsets when build shift == 16 (the only
 ///         observed value; <see cref="FalloutXbox360Utils.Core.Formats.Esm.Runtime.RuntimeBuildOffsets.GetPdbShift" />
-///         hardcodes 16). The reader's <c>WithShift(0, int.MaxValue,
-///         _shift)</c> where <c>_shift = GetPdbShift - 16 = 0</c> means the
+///         hardcodes 16). The reader's
+///         <c>
+///             WithShift(0, int.MaxValue,
+///             _shift)
+///         </c>
+///         where <c>_shift = GetPdbShift - 16 = 0</c> means the
 ///         PDB-resolved offsets are used directly.
 ///     </para>
 /// </summary>
@@ -50,8 +53,8 @@ public sealed class LandOffsetReaderTests
         const int cellY = -3;
         const float baseHeight = 1024.0f;
 
-        var landBuffer = BuildLand(landFormId, parentCellPtr: CellVa, loadedDataPtr: LoadedDataVa);
-        var cellBuffer = BuildTesCell(cellFormId, isInterior: false);
+        var landBuffer = BuildLand(landFormId, CellVa, LoadedDataVa);
+        var cellBuffer = BuildTesCell(cellFormId, false);
         var loadedData = BuildLoadedLandData(cellX, cellY, baseHeight);
 
         var fixture = RuntimeReaderTestFixture.Default()
@@ -76,7 +79,7 @@ public sealed class LandOffsetReaderTests
     {
         // Reader requires non-null pLoadedData; returns null without it.
         const uint landFormId = 0x000A0002;
-        var landBuffer = BuildLand(landFormId, parentCellPtr: 0, loadedDataPtr: 0);
+        var landBuffer = BuildLand(landFormId, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(landBuffer, LandVa);
         var reader = new RuntimeWorldReader(fixture.BuildContext());
@@ -90,8 +93,8 @@ public sealed class LandOffsetReaderTests
     {
         // Reader gates cellX/cellY to [-1000, 1000]; out-of-range → null.
         const uint landFormId = 0x000A0003;
-        var landBuffer = BuildLand(landFormId, parentCellPtr: 0, loadedDataPtr: LoadedDataVa);
-        var loadedData = BuildLoadedLandData(cellX: 5000 /* out of range */, cellY: 0, baseHeight: 0);
+        var landBuffer = BuildLand(landFormId, 0, LoadedDataVa);
+        var loadedData = BuildLoadedLandData(5000 /* out of range */, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(landBuffer, LandVa)
@@ -107,8 +110,8 @@ public sealed class LandOffsetReaderTests
     {
         // pParentCell = 0 is valid; just yields null ParentCellFormId.
         const uint landFormId = 0x000A0004;
-        var landBuffer = BuildLand(landFormId, parentCellPtr: 0, loadedDataPtr: LoadedDataVa);
-        var loadedData = BuildLoadedLandData(cellX: 0, cellY: 0, baseHeight: 0);
+        var landBuffer = BuildLand(landFormId, 0, LoadedDataVa);
+        var loadedData = BuildLoadedLandData(0, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(landBuffer, LandVa)

@@ -41,11 +41,11 @@ public class ComparisonHtmlRegressionTests
             formIdMap,
             dumps,
             "Dialogue",
-            groups: null,
-            alternateGroups: null,
-            defaultGroupMode: null,
-            metadata: null,
-            cellGridCoords: null);
+            null,
+            null,
+            null,
+            null,
+            null);
 
         using var doc = JsonDocument.Parse(json);
         var searchText = doc.RootElement
@@ -92,11 +92,11 @@ public class ComparisonHtmlRegressionTests
             formIdMap,
             dumps,
             "DialogTopic",
-            groups: null,
-            alternateGroups: null,
-            defaultGroupMode: null,
-            metadata: metadata,
-            cellGridCoords: null);
+            null,
+            null,
+            null,
+            metadata,
+            null);
 
         using var doc = JsonDocument.Parse(json);
         var searchText = doc.RootElement

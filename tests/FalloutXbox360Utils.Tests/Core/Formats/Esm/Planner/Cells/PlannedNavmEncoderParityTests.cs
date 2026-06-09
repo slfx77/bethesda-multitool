@@ -1,3 +1,4 @@
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Nav;
@@ -22,17 +23,17 @@ public sealed class PlannedNavmEncoderParityTests
             CellFormId = 0x000ABCDE,
             RawSubrecords =
             [
-                new NavMeshSubrecord("EDID", System.Text.Encoding.ASCII.GetBytes("Test\0")),
-                new NavMeshSubrecord("DATA", new byte[20]),
-            ],
+                new NavMeshSubrecord("EDID", Encoding.ASCII.GetBytes("Test\0")),
+                new NavMeshSubrecord("DATA", new byte[20])
+            ]
         };
         var options = new PluginBuildOptions { CompressRecords = false };
 
         var plannerBytes = PlannedNavmEncoder.EncodeRecord(
             navm,
-            newCellFormId: 0x01000800,
-            newNavmFormId: 0x01000801,
-            nvexRewrites: new Dictionary<uint, uint>(),
+            0x01000800,
+            0x01000801,
+            new Dictionary<uint, uint>(),
             options);
 
         var legacySubs = NavMeshByteRewriter.Rewrite(

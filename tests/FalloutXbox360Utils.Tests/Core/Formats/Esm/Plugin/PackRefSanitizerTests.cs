@@ -24,7 +24,7 @@ public class PackRefSanitizerTests
     [Fact]
     public void EncodeNew_keeps_PLDT_when_no_validFormIds_supplied()
     {
-        var pack = MakePack(loc: new PackageLocation
+        var pack = MakePack(new PackageLocation
         {
             Type = PlocNearReference, Union = 0x000CDA76u, Radius = 100
         });
@@ -39,13 +39,13 @@ public class PackRefSanitizerTests
     [Fact]
     public void EncodeNew_keeps_PLDT_when_Union_FormID_is_valid()
     {
-        var pack = MakePack(loc: new PackageLocation
+        var pack = MakePack(new PackageLocation
         {
             Type = PlocNearReference, Union = 0x000ED239u, Radius = 100
         });
         var valid = new HashSet<uint> { 0x000ED239u };
 
-        var encoded = PackEncoder.EncodeNew(pack, validFormIds: valid);
+        var encoded = PackEncoder.EncodeNew(pack, valid);
 
         var pldt = Assert.Single(encoded.Subrecords, s => s.Signature == "PLDT");
         Assert.Equal(PlocNearReference, pldt.Bytes[0]);
@@ -56,13 +56,13 @@ public class PackRefSanitizerTests
     public void EncodeNew_falls_back_to_NearCurrent_when_PLDT_Union_dangles_no_remap()
     {
         // 0x00122985 is one of the actual dangling refs from the live error log.
-        var pack = MakePack(loc: new PackageLocation
+        var pack = MakePack(new PackageLocation
         {
             Type = PlocNearReference, Union = 0x00122985u, Radius = 100
         });
         var valid = new HashSet<uint> { 0x00000001u };
 
-        var encoded = PackEncoder.EncodeNew(pack, validFormIds: valid);
+        var encoded = PackEncoder.EncodeNew(pack, valid);
 
         var pldt = Assert.Single(encoded.Subrecords, s => s.Signature == "PLDT");
         Assert.Equal(PlocNearCurrent, pldt.Bytes[0]);
@@ -73,17 +73,17 @@ public class PackRefSanitizerTests
     [Fact]
     public void EncodeNew_remaps_PLDT_Union_when_dangling_ref_is_in_remap_table()
     {
-        var pack = MakePack(loc: new PackageLocation
+        var pack = MakePack(new PackageLocation
         {
             Type = PlocNearReference, Union = 0x01999AAAu, Radius = 100
         });
         var valid = new HashSet<uint> { 0x01000123u };
         var remap = new Dictionary<uint, uint> { [0x01999AAAu] = 0x01000123u };
 
-        var encoded = PackEncoder.EncodeNew(pack, validFormIds: valid, remapTable: remap);
+        var encoded = PackEncoder.EncodeNew(pack, valid, remap);
 
         var pldt = Assert.Single(encoded.Subrecords, s => s.Signature == "PLDT");
-        Assert.Equal(PlocNearReference, pldt.Bytes[0]);   // Type preserved
+        Assert.Equal(PlocNearReference, pldt.Bytes[0]); // Type preserved
         Assert.Equal(0x01000123u, BinaryPrimitives.ReadUInt32LittleEndian(pldt.Bytes.AsSpan(4, 4)));
         Assert.Contains(encoded.Warnings, w => w.Contains("PLDT") && w.Contains("remapped"));
     }
@@ -92,10 +92,10 @@ public class PackRefSanitizerTests
     public void EncodeNew_does_not_touch_PLDT_when_Type_is_ObjectType_enum()
     {
         // Type 5 (ObjectType) has Union = form-type enum, NOT a FormID. Don't validate.
-        var pack = MakePack(loc: new PackageLocation { Type = 5, Union = 42u, Radius = 0 });
-        var valid = new HashSet<uint>();    // empty — Union is not a FormID anyway
+        var pack = MakePack(new PackageLocation { Type = 5, Union = 42u, Radius = 0 });
+        var valid = new HashSet<uint>(); // empty — Union is not a FormID anyway
 
-        var encoded = PackEncoder.EncodeNew(pack, validFormIds: valid);
+        var encoded = PackEncoder.EncodeNew(pack, valid);
 
         var pldt = Assert.Single(encoded.Subrecords, s => s.Signature == "PLDT");
         Assert.Equal(5, pldt.Bytes[0]);
@@ -111,7 +111,7 @@ public class PackRefSanitizerTests
         });
         var valid = new HashSet<uint> { 0x00000001u };
 
-        var encoded = PackEncoder.EncodeNew(pack, validFormIds: valid);
+        var encoded = PackEncoder.EncodeNew(pack, valid);
 
         var ptdt = Assert.Single(encoded.Subrecords, s => s.Signature == "PTDT");
         Assert.Equal(PtdtObjectType, ptdt.Bytes[0]);
@@ -126,7 +126,7 @@ public class PackRefSanitizerTests
         var pack = MakePack(target: new PackageTarget { Type = PtdtObjectType, FormIdOrType = 41u });
         var valid = new HashSet<uint>();
 
-        var encoded = PackEncoder.EncodeNew(pack, validFormIds: valid);
+        var encoded = PackEncoder.EncodeNew(pack, valid);
 
         var ptdt = Assert.Single(encoded.Subrecords, s => s.Signature == "PTDT");
         Assert.Equal(PtdtObjectType, ptdt.Bytes[0]);
@@ -146,7 +146,7 @@ public class PackRefSanitizerTests
         };
         var valid = new HashSet<uint>();
 
-        var encoded = PackEncoder.EncodeNew(pack, validFormIds: valid);
+        var encoded = PackEncoder.EncodeNew(pack, valid);
 
         var pld2 = Assert.Single(encoded.Subrecords, s => s.Signature == "PLD2");
         Assert.Equal(PlocNearCurrent, pld2.Bytes[0]);
@@ -212,13 +212,13 @@ public class PackRefSanitizerTests
         var valid = new HashSet<uint> { 0x01000123u };
         var remap = new Dictionary<uint, uint> { [0x01999AAAu] = 0x01000123u };
 
-        var encoded = PackEncoder.EncodeNew(pack, validFormIds: valid, remapTable: remap);
+        var encoded = PackEncoder.EncodeNew(pack, valid, remap);
 
         var ctda = Assert.Single(encoded.Subrecords, s => s.Signature == "CTDA");
         Assert.Equal(0x01000123u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(12, 4)));
         Assert.Contains(encoded.Warnings, w => w.Contains("CTDA sanitizer") &&
-                                              w.Contains("dropped 1") &&
-                                              w.Contains("remapped 1"));
+                                               w.Contains("dropped 1") &&
+                                               w.Contains("remapped 1"));
     }
 
     [Fact]
@@ -264,7 +264,10 @@ public class PackRefSanitizerTests
         var encoded = PackEncoder.EncodeNew(pack);
 
         Assert.Equal(
-            ["EDID", "PKDT", "IDLF", "IDLC", "IDLT", "IDLA", "PKDD", "POBA", "INAM", "SCHR", "SCDA", "SCTX", "SCRO", "TNAM"],
+            [
+                "EDID", "PKDT", "IDLF", "IDLC", "IDLT", "IDLA", "PKDD", "POBA", "INAM", "SCHR", "SCDA", "SCTX", "SCRO",
+                "TNAM"
+            ],
             encoded.Subrecords.Select(s => s.Signature).ToList());
 
         var pkdd = Assert.Single(encoded.Subrecords, s => s.Signature == "PKDD").Bytes;
@@ -299,7 +302,7 @@ public class PackRefSanitizerTests
         {
             FormId = 0x01000A00,
             EditorId = "TestPack",
-            Data = new PackageData(),    // empty PKDT
+            Data = new PackageData(), // empty PKDT
             Location = loc,
             Target = target
         };

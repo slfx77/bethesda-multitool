@@ -5,7 +5,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Planner.Cells;
@@ -24,13 +23,13 @@ public sealed class CellSectionPlannerTests
         var masterContext = MakeInteriorContext(0x000ABCDE);
 
         var result = CellSectionPlanner.Plan(
-            masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
-            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
-            dmpCells: [],
-            dmpNavmeshes: [],
-            dmpWorldspaces: [],
-            masterFormIds: new HashSet<uint> { 0x000ABCDE },
-            allocator: new FormIdAllocator(0x800));
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            [],
+            [],
+            [],
+            new HashSet<uint> { 0x000ABCDE },
+            new FormIdAllocator());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         Assert.Equal(0x000ABCDEu, cellPlan.CellFormId);
@@ -47,13 +46,13 @@ public sealed class CellSectionPlannerTests
         var dmpCell = new CellRecord { FormId = 0x000ABCDE, EditorId = "TestCell" };
 
         var result = CellSectionPlanner.Plan(
-            masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
-            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
-            dmpCells: [dmpCell],
-            dmpNavmeshes: [],
-            dmpWorldspaces: [],
-            masterFormIds: new HashSet<uint> { 0x000ABCDE },
-            allocator: new FormIdAllocator(0x800));
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            [dmpCell],
+            [],
+            [],
+            new HashSet<uint> { 0x000ABCDE },
+            new FormIdAllocator());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         Assert.Equal(RecordDisposition.Override, cellPlan.CellRecordPlan.Disposition);
@@ -69,17 +68,17 @@ public sealed class CellSectionPlannerTests
             EditorId = "NewCell",
             WorldspaceFormId = 0x0000003C,
             GridX = 5,
-            GridY = -3,
+            GridY = -3
         };
 
         var result = CellSectionPlanner.Plan(
-            masterContexts: new Dictionary<uint, PcEsmCellContext>(),
-            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord>(),
-            dmpCells: [dmpCell],
-            dmpNavmeshes: [],
-            dmpWorldspaces: [],
-            masterFormIds: new HashSet<uint>(),
-            allocator: new FormIdAllocator(0x800));
+            new Dictionary<uint, PcEsmCellContext>(),
+            new Dictionary<uint, ParsedMainRecord>(),
+            [dmpCell],
+            [],
+            [],
+            new HashSet<uint>(),
+            new FormIdAllocator());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         Assert.Equal(RecordDisposition.New, cellPlan.CellRecordPlan.Disposition);
@@ -91,17 +90,17 @@ public sealed class CellSectionPlannerTests
     [Fact]
     public void Plan_Builds_Worldspace_Plan_From_Cell_Catalog()
     {
-        var exteriorContext = MakeExteriorContext(0x000ABCDE, worldspaceFormId: 0x0000003C);
+        var exteriorContext = MakeExteriorContext(0x000ABCDE, 0x0000003C);
         var master = MakeCellMaster(0x000ABCDE);
 
         var result = CellSectionPlanner.Plan(
-            masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = exteriorContext },
-            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = master },
-            dmpCells: [],
-            dmpNavmeshes: [],
-            dmpWorldspaces: [],
-            masterFormIds: new HashSet<uint> { 0x000ABCDE, 0x0000003C },
-            allocator: new FormIdAllocator(0x800));
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = exteriorContext },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = master },
+            [],
+            [],
+            [],
+            new HashSet<uint> { 0x000ABCDE, 0x0000003C },
+            new FormIdAllocator());
 
         var wrldPlan = Assert.Single(result.WorldspacesByFormId.Values);
         Assert.Equal(0x0000003Cu, wrldPlan.WorldspaceFormId);
@@ -117,19 +116,19 @@ public sealed class CellSectionPlannerTests
             FormId = 0xAA000001,
             BaseFormId = 0x000ABCDF,
             RecordType = "REFR",
-            IsPersistent = true,
+            IsPersistent = true
         };
         var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [persistentRef] };
         var masterContext = MakeInteriorContext(0x000ABCDE);
 
         var result = CellSectionPlanner.Plan(
-            masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
-            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
-            dmpCells: [dmpCell],
-            dmpNavmeshes: [],
-            dmpWorldspaces: [],
-            masterFormIds: new HashSet<uint> { 0x000ABCDE },
-            allocator: new FormIdAllocator(0x800));
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            [dmpCell],
+            [],
+            [],
+            new HashSet<uint> { 0x000ABCDE },
+            new FormIdAllocator());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForRef = Assert.Single(cellPlan.PersistentChildren);
@@ -147,19 +146,19 @@ public sealed class CellSectionPlannerTests
             FormId = 0xAA000002,
             BaseFormId = 0x000ABCDF,
             RecordType = "REFR",
-            IsPersistent = false,
+            IsPersistent = false
         };
         var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [transientRef] };
         var masterContext = MakeInteriorContext(0x000ABCDE);
 
         var result = CellSectionPlanner.Plan(
-            masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
-            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
-            dmpCells: [dmpCell],
-            dmpNavmeshes: [],
-            dmpWorldspaces: [],
-            masterFormIds: new HashSet<uint> { 0x000ABCDE },
-            allocator: new FormIdAllocator(0x800));
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = masterContext },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            [dmpCell],
+            [],
+            [],
+            new HashSet<uint> { 0x000ABCDE },
+            new FormIdAllocator());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         Assert.Single(cellPlan.TemporaryChildren);
@@ -173,18 +172,18 @@ public sealed class CellSectionPlannerTests
         {
             FormId = 0x000A0001, // Master-resident.
             BaseFormId = 0x000ABCDF,
-            RecordType = "REFR",
+            RecordType = "REFR"
         };
         var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [masterRef] };
 
         var result = CellSectionPlanner.Plan(
-            masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
-            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
-            dmpCells: [dmpCell],
-            dmpNavmeshes: [],
-            dmpWorldspaces: [],
-            masterFormIds: new HashSet<uint> { 0x000ABCDE, 0x000A0001 },
-            allocator: new FormIdAllocator(0x800));
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            [dmpCell],
+            [],
+            [],
+            new HashSet<uint> { 0x000ABCDE, 0x000A0001 },
+            new FormIdAllocator());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForRef = Assert.Single(cellPlan.TemporaryChildren);
@@ -199,17 +198,17 @@ public sealed class CellSectionPlannerTests
         {
             FormId = 0xAA000001,
             CellFormId = 0x000ABCDE,
-            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])],
+            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])]
         };
 
         var result = CellSectionPlanner.Plan(
-            masterContexts: new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
-            masterRecordsByFormId: new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
-            dmpCells: [new CellRecord { FormId = 0x000ABCDE }],
-            dmpNavmeshes: [navm],
-            dmpWorldspaces: [],
-            masterFormIds: new HashSet<uint> { 0x000ABCDE },
-            allocator: new FormIdAllocator(0x800));
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            [new CellRecord { FormId = 0x000ABCDE }],
+            [navm],
+            [],
+            new HashSet<uint> { 0x000ABCDE },
+            new FormIdAllocator());
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForNavm = Assert.Single(cellPlan.TemporaryChildren);
@@ -218,39 +217,48 @@ public sealed class CellSectionPlannerTests
         Assert.Equal(0x01000800u, planForNavm.FormId);
     }
 
-    private static PcEsmCellContext MakeInteriorContext(uint cellFormId) => new()
+    private static PcEsmCellContext MakeInteriorContext(uint cellFormId)
     {
-        CellFormId = cellFormId,
-        IsInterior = true,
-        BlockGroupType = 2,
-        SubblockGroupType = 3,
-        BlockLabel = [1, 0, 0, 0],
-        SubblockLabel = [2, 0, 0, 0],
-    };
-
-    private static PcEsmCellContext MakeExteriorContext(uint cellFormId, uint worldspaceFormId) => new()
-    {
-        CellFormId = cellFormId,
-        IsInterior = false,
-        WorldspaceFormId = worldspaceFormId,
-        BlockGroupType = 4,
-        SubblockGroupType = 5,
-        BlockLabel = [0, 0, 0, 0],
-        SubblockLabel = [0, 0, 0, 0],
-    };
-
-    private static ParsedMainRecord MakeCellMaster(uint cellFormId) => new()
-    {
-        Header = new MainRecordHeader
+        return new PcEsmCellContext
         {
-            Signature = "CELL",
-            DataSize = 0,
-            Flags = 0,
-            FormId = cellFormId,
-            Timestamp = 0,
-            VcsInfo = 0,
-            Version = 15,
-        },
-        Offset = 0,
-    };
+            CellFormId = cellFormId,
+            IsInterior = true,
+            BlockGroupType = 2,
+            SubblockGroupType = 3,
+            BlockLabel = [1, 0, 0, 0],
+            SubblockLabel = [2, 0, 0, 0]
+        };
+    }
+
+    private static PcEsmCellContext MakeExteriorContext(uint cellFormId, uint worldspaceFormId)
+    {
+        return new PcEsmCellContext
+        {
+            CellFormId = cellFormId,
+            IsInterior = false,
+            WorldspaceFormId = worldspaceFormId,
+            BlockGroupType = 4,
+            SubblockGroupType = 5,
+            BlockLabel = [0, 0, 0, 0],
+            SubblockLabel = [0, 0, 0, 0]
+        };
+    }
+
+    private static ParsedMainRecord MakeCellMaster(uint cellFormId)
+    {
+        return new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "CELL",
+                DataSize = 0,
+                Flags = 0,
+                FormId = cellFormId,
+                Timestamp = 0,
+                VcsInfo = 0,
+                Version = 15
+            },
+            Offset = 0
+        };
+    }
 }

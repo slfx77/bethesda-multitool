@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
-using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
@@ -15,7 +15,8 @@ namespace FalloutXbox360Utils.Tests.Core.Semantic;
 
 public sealed class EsmLoadOrderAndRebaseTests : IDisposable
 {
-    private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "esm-load-order-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _tempDir =
+        Path.Combine(Path.GetTempPath(), "esm-load-order-tests", Guid.NewGuid().ToString("N"));
 
     public EsmLoadOrderAndRebaseTests()
     {
@@ -53,7 +54,7 @@ public sealed class EsmLoadOrderAndRebaseTests : IDisposable
             "Anchorage.esm",
             "Anchorage.esm",
             new EsmFileHeader { Masters = ["Fallout3.esm"] },
-            LoadIndex: 1);
+            1);
         var mapper = new EsmFormIdLoadOrderMapper(
             descriptor,
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
@@ -61,7 +62,7 @@ public sealed class EsmLoadOrderAndRebaseTests : IDisposable
                 ["Fallout3.esm"] = 0,
                 ["Anchorage.esm"] = 1
             },
-            flattenToBase: true);
+            true);
 
         Assert.Equal(0x00092BDCu, mapper.Map(0x01092BDCu));
         Assert.Equal(0x00012345u, mapper.Map(0x00012345u));
@@ -218,10 +219,10 @@ public sealed class EsmLoadOrderAndRebaseTests : IDisposable
         };
 
         var index = CrossDumpAggregator.Aggregate(
-            [
-                ("real.dmp", realRecords, resolver, null),
-                ("virtual.dmp", virtualRecords, resolver, null)
-            ]);
+        [
+            ("real.dmp", realRecords, resolver, null),
+            ("virtual.dmp", virtualRecords, resolver, null)
+        ]);
 
         var cells = index.StructuredRecords["Cell"];
         Assert.Contains(0x00005000u, cells.Keys);
@@ -311,10 +312,10 @@ public sealed class EsmLoadOrderAndRebaseTests : IDisposable
         };
 
         var index = CrossDumpAggregator.Aggregate(
-            [
-                ("real.dmp", realRecords, resolver, null),
-                ("virtual.dmp", virtualRecords, resolver, null)
-            ]);
+        [
+            ("real.dmp", realRecords, resolver, null),
+            ("virtual.dmp", virtualRecords, resolver, null)
+        ]);
 
         var cells = index.StructuredRecords["Cell"];
         Assert.Contains(0x00005000u, cells.Keys);
@@ -364,10 +365,10 @@ public sealed class EsmLoadOrderAndRebaseTests : IDisposable
         };
 
         var index = CrossDumpAggregator.Aggregate(
-            [
-                ("first.dmp", firstDump, resolver, null),
-                ("second.dmp", secondDump, resolver, null)
-            ]);
+        [
+            ("first.dmp", firstDump, resolver, null),
+            ("second.dmp", secondDump, resolver, null)
+        ]);
 
         var cells = index.StructuredRecords["Cell"];
         Assert.DoesNotContain(0xFF000001u, cells.Keys);
@@ -438,11 +439,11 @@ public sealed class EsmLoadOrderAndRebaseTests : IDisposable
         };
 
         var index = CrossDumpAggregator.Aggregate(
-            [
-                ("real.dmp", realRecords, resolver, null),
-                ("missing-worldspace.dmp", missingWorldspaceRecords, resolver, null),
-                ("missing-coordinate.dmp", missingCoordinateRecords, resolver, null)
-            ]);
+        [
+            ("real.dmp", realRecords, resolver, null),
+            ("missing-worldspace.dmp", missingWorldspaceRecords, resolver, null),
+            ("missing-coordinate.dmp", missingCoordinateRecords, resolver, null)
+        ]);
 
         var cells = index.StructuredRecords["Cell"];
         Assert.Contains(0x00005000u, cells.Keys);

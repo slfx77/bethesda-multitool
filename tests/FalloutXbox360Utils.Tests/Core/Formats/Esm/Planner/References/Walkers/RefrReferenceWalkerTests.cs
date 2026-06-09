@@ -44,7 +44,7 @@ public sealed class RefrReferenceWalkerTests
             DestinationDoorFormId = 0x000ABCD3,
             LockKeyFormId = 0x000ABCD4,
             LinkedRefFormId = 0x000ABCD5,
-            LinkedRefKeywordFormId = 0x000ABCD6,
+            LinkedRefKeywordFormId = 0x000ABCD6
         };
         var walker = new RefrReferenceWalker();
 

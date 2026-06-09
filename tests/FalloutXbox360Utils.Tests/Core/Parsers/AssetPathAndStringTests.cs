@@ -70,12 +70,12 @@ public class AssetPathAndStringTests
     #region IsAssetPath - Invalid Cases
 
     [Theory]
-    [InlineData("file.nif")]                       // no separator
-    [InlineData("meshes\\weapons\\pistol")]        // no extension
-    [InlineData("meshes\\weapons\\pistol.xyz")]    // unknown extension
-    [InlineData("meshes\\weapons\\pistol.")]       // dot at end
-    [InlineData("")]                                // empty
-    [InlineData(".nif")]                            // just extension
+    [InlineData("file.nif")] // no separator
+    [InlineData("meshes\\weapons\\pistol")] // no extension
+    [InlineData("meshes\\weapons\\pistol.xyz")] // unknown extension
+    [InlineData("meshes\\weapons\\pistol.")] // dot at end
+    [InlineData("")] // empty
+    [InlineData(".nif")] // just extension
     public void IsAssetPath_Invalid_ReturnsFalse(string path)
     {
         Assert.False(EsmStringDetector.IsAssetPath(path));
@@ -87,11 +87,11 @@ public class AssetPathAndStringTests
 
     [Theory]
     [InlineData("meshes\\weapons\\pistol.nif", "meshes/weapons/pistol.nif")] // backslashes normalized
-    [InlineData("///meshes/pistol.nif", "meshes/pistol.nif")]                // leading slashes removed
+    [InlineData("///meshes/pistol.nif", "meshes/pistol.nif")] // leading slashes removed
     [InlineData("Meshes\\Weapons\\Pistol.NIF", "meshes/weapons/pistol.nif")] // lowercased
-    [InlineData("", "")]                                                      // empty in, empty out
-    [InlineData("meshes/pistol.nif", "meshes/pistol.nif")]                   // already clean
-    [InlineData("meshes/weapons\\pistol.nif", "meshes/weapons/pistol.nif")]  // mixed slashes
+    [InlineData("", "")] // empty in, empty out
+    [InlineData("meshes/pistol.nif", "meshes/pistol.nif")] // already clean
+    [InlineData("meshes/weapons\\pistol.nif", "meshes/weapons/pistol.nif")] // mixed slashes
     public void CleanAssetPath_Normalizes(string input, string expected)
     {
         Assert.Equal(expected, EsmStringDetector.CleanAssetPath(input));

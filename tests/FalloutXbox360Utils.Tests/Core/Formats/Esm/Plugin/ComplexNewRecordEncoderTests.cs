@@ -8,7 +8,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
@@ -166,18 +165,18 @@ public class ComplexNewRecordEncoderTests
     public void NpcEncoder_EncodeNew_AcbsTwentyFourBytes()
     {
         var stats = new ActorBaseSubrecord(
-            Flags: 0x12345678,
-            FatigueBase: 100,
-            BarterGold: 250,
-            Level: 5,
-            CalcMin: 1,
-            CalcMax: 50,
-            SpeedMultiplier: 100,
-            KarmaAlignment: 0f,
-            DispositionBase: 0,
-            TemplateFlags: 0,
-            Offset: 0,
-            IsBigEndian: false);
+            0x12345678,
+            100,
+            250,
+            5,
+            1,
+            50,
+            100,
+            0f,
+            0,
+            0,
+            0,
+            false);
         var npc = new NpcRecord
         {
             FormId = 0x800,
@@ -227,21 +226,21 @@ public class ComplexNewRecordEncoderTests
             EditorId = "Npc",
             Stats = MakeMinimalAcbs(),
             AiData = new NpcAiData(
-                Aggression: 1,
-                Confidence: 2,
-                EnergyLevel: 50,
-                Responsibility: 75,
-                Mood: 0,
-                Flags: 0xDEADBEEF,
-                Assistance: 1)
+                1,
+                2,
+                50,
+                75,
+                0,
+                0xDEADBEEF,
+                1)
         };
 
         var encoded = NpcEncoder.EncodeNew(npc);
 
         var aidt = Assert.Single(encoded.Subrecords, s => s.Signature == "AIDT");
         Assert.Equal(20, aidt.Bytes.Length);
-        Assert.Equal(1, aidt.Bytes[0]);  // Aggression
-        Assert.Equal(2, aidt.Bytes[1]);  // Confidence
+        Assert.Equal(1, aidt.Bytes[0]); // Aggression
+        Assert.Equal(2, aidt.Bytes[1]); // Confidence
         Assert.Equal(0xDEADBEEFu, BinaryPrimitives.ReadUInt32LittleEndian(aidt.Bytes.AsSpan(8, 4))); // ServiceFlags
         Assert.Equal(1, aidt.Bytes[14]); // Assistance
     }
@@ -603,8 +602,10 @@ public class ComplexNewRecordEncoderTests
         var sigs = encoded.Subrecords.Select(s => s.Signature).ToList();
 
         Assert.Equal(
-            ["EDID", "OBND", "FULL", "MODL", "MODT", "COCT",
-                "CNTO", "CNTO", "CTDA", "CIS1", "CNAM", "BNAM"],
+            [
+                "EDID", "OBND", "FULL", "MODL", "MODT", "COCT",
+                "CNTO", "CNTO", "CTDA", "CIS1", "CNAM", "BNAM"
+            ],
             sigs);
     }
 
@@ -1253,7 +1254,7 @@ public class ComplexNewRecordEncoderTests
         Assert.Equal(0x01u, BinaryPrimitives.ReadUInt32LittleEndian(sndd.AsSpan(4, 4)));
         Assert.Equal((short)-100, BinaryPrimitives.ReadInt16LittleEndian(sndd.AsSpan(8, 2)));
         Assert.Equal(20, sndd[10]); // EndTime
-        Assert.Equal(5, sndd[11]);  // StartTime
+        Assert.Equal(5, sndd[11]); // StartTime
     }
 
     // ====================================================================================
@@ -1598,7 +1599,7 @@ public class ComplexNewRecordEncoderTests
                 new PerkCondition
                 {
                     FunctionIndex = 0x0E, // GetActorValue
-                    Parameter1 = 41,      // Guns
+                    Parameter1 = 41, // Guns
                     ComparisonOperator = 3, // >=
                     ComparisonValue = 50.0f
                 }
@@ -1780,7 +1781,7 @@ public class ComplexNewRecordEncoderTests
             FormId = 0x7502,
             EditorId = "DeckWithZero",
             JokerCount = 1,
-            Cards = [0x00012345, 0x00000000, 0x00012346]  // middle entry is invalid sentinel
+            Cards = [0x00012345, 0x00000000, 0x00012346] // middle entry is invalid sentinel
         };
 
         var encoded = CdckEncoder.EncodeNew(cdck);
@@ -1806,18 +1807,18 @@ public class ComplexNewRecordEncoderTests
             FullName = "Radroach",
             ModelPath = "creatures/radroach.nif",
             Stats = new ActorBaseSubrecord(
-                Flags: 0x00000020,
-                FatigueBase: 100,
-                BarterGold: 0,
-                Level: 1,
-                CalcMin: 1,
-                CalcMax: 1,
-                SpeedMultiplier: 100,
-                KarmaAlignment: 0,
-                DispositionBase: 50,
-                TemplateFlags: 0,
-                Offset: 0,
-                IsBigEndian: false),
+                0x00000020,
+                100,
+                0,
+                1,
+                1,
+                1,
+                100,
+                0,
+                50,
+                0,
+                0,
+                false),
             CreatureType = 1, // Mutated Animal
             CombatSkill = 30,
             MagicSkill = 0,
@@ -1895,7 +1896,7 @@ public class ComplexNewRecordEncoderTests
         var remap = new Dictionary<uint, uint>
         {
             [0x000ABCDE] = 0x01001234, // CombatStyle
-            [0x000FEDCB] = 0x01005678  // Voice type
+            [0x000FEDCB] = 0x01005678 // Voice type
         };
         var valid = new HashSet<uint> { 0x01001234, 0x01005678, 0x000F1111, 0x000F2222 };
 
@@ -1905,8 +1906,8 @@ public class ComplexNewRecordEncoderTests
             EditorId = "Robot",
             CombatStyleFormId = 0x000ABCDE,
             VoiceType = 0x000FEDCB,
-            Template = 0x000F1111,    // already in valid set, stays
-            BodyData = 0x000F2222,    // already in valid set, stays
+            Template = 0x000F1111, // already in valid set, stays
+            BodyData = 0x000F2222, // already in valid set, stays
             DeathItemLootList = 0x00DEAD00 // dangling, no remap — subrecord omitted
         };
 
@@ -1942,7 +1943,7 @@ public class ComplexNewRecordEncoderTests
             [
                 new InventoryItem(0x000AAAA0, 5), // proto FormID → gets remapped
                 new InventoryItem(0x000B0000, 3), // already valid master → stays
-                new InventoryItem(0xDEADBEEF, 1)  // dangling → dropped
+                new InventoryItem(0xDEADBEEF, 1) // dangling → dropped
             ]
         };
 
@@ -2103,8 +2104,10 @@ public class ComplexNewRecordEncoderTests
         // DNAM clusters with the water subrecords (right after NAM2); ONAM/INAM go between
         // MNAM and DATA; PNAM is paired with WNAM (this fixture supplies both).
         Assert.Equal(
-            ["EDID", "FULL", "XEZN", "WNAM", "PNAM", "CNAM", "NAM2", "DNAM", "MNAM",
-                "ONAM", "INAM", "DATA", "NAM0", "NAM9", "ZNAM"],
+            [
+                "EDID", "FULL", "XEZN", "WNAM", "PNAM", "CNAM", "NAM2", "DNAM", "MNAM",
+                "ONAM", "INAM", "DATA", "NAM0", "NAM9", "ZNAM"
+            ],
             sigs);
     }
 
@@ -2204,8 +2207,8 @@ public class ComplexNewRecordEncoderTests
         var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA").Bytes;
 
         Assert.Equal(36, data.Length);
-        Assert.Equal(3, (sbyte)data[0]);   // First skill boost index
-        Assert.Equal(5, (sbyte)data[1]);   // First skill boost value
+        Assert.Equal(3, (sbyte)data[0]); // First skill boost index
+        Assert.Equal(5, (sbyte)data[1]); // First skill boost value
         Assert.Equal(7, (sbyte)data[2]);
         Assert.Equal(2, (sbyte)data[3]);
         Assert.Equal(-1, (sbyte)data[4]);

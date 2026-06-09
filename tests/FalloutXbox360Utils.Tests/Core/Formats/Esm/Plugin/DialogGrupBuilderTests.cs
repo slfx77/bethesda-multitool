@@ -46,8 +46,8 @@ public sealed class DialogGrupBuilderTests
         var stats = new ConversionPipelineStats();
 
         var result = DialogGrupBuilder.BuildDialogSection(
-            topics: [],
-            infos: [info],
+            [],
+            [info],
             new NewVsOverrideClassifier(masters.Keys),
             new FormIdAllocator(),
             new HashSet<uint> { masterGoodbyeDial, masterQuest },
@@ -93,8 +93,8 @@ public sealed class DialogGrupBuilderTests
         var stats = new ConversionPipelineStats();
 
         var result = DialogGrupBuilder.BuildDialogSection(
-            topics: [],
-            infos: [infoNoQsti],
+            [],
+            [infoNoQsti],
             new NewVsOverrideClassifier(masters.Keys),
             new FormIdAllocator(),
             masters.Keys,
@@ -132,15 +132,15 @@ public sealed class DialogGrupBuilderTests
         var stats = new ConversionPipelineStats();
 
         var result = DialogGrupBuilder.BuildDialogSection(
-            topics: [],
-            infos: [infoWithDanglingQuest],
+            [],
+            [infoWithDanglingQuest],
             new NewVsOverrideClassifier(masters.Keys),
             new FormIdAllocator(),
             new HashSet<uint> { masterDial, emittedQuestId },
             masters,
             stats,
             NullConversionProgressSink.Instance,
-            remapTable: remap);
+            remap);
 
         // INFO is kept because QSTI remapped to a valid emitted quest.
         Assert.Equal(1, stats.EmittedByType["INFO"]);

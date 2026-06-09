@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
@@ -42,9 +41,9 @@ public sealed class BookOffsetReaderTests
         // Arrange — fabricate a BOOK struct that points at an ENCH target.
         const uint bookFormId = 0x0001A001;
         const uint enchFormId = 0x000B22F0;
-        var bookBuffer = BuildBook(bookFormId, enchantmentPtr: EnchantmentVa,
-            value: 250, weight: 1.5f, flags: 0x01, skillTaught: 7);
-        var enchTarget = BuildTesForm(formType: EnchantmentFormType, formId: enchFormId);
+        var bookBuffer = BuildBook(bookFormId, EnchantmentVa,
+            250, 1.5f, 0x01, 7);
+        var enchTarget = BuildTesForm(EnchantmentFormType, enchFormId);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(bookBuffer, BookVa)
@@ -53,7 +52,7 @@ public sealed class BookOffsetReaderTests
 
         // Act
         var book = reader.ReadRuntimeBook(
-            fixture.MakeEntry(bookFormId, BookFormType, BookVa, editorId: "TestBook"));
+            fixture.MakeEntry(bookFormId, BookFormType, BookVa, "TestBook"));
 
         // Assert
         Assert.NotNull(book);
@@ -69,7 +68,7 @@ public sealed class BookOffsetReaderTests
     public void ReadRuntimeBook_NullEnchantmentPointer_YieldsNullFormId()
     {
         const uint bookFormId = 0x0001A002;
-        var bookBuffer = BuildBook(bookFormId, enchantmentPtr: 0, value: 100, weight: 0.5f);
+        var bookBuffer = BuildBook(bookFormId, 0, 100, 0.5f);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(bookBuffer, BookVa);
@@ -88,7 +87,7 @@ public sealed class BookOffsetReaderTests
         const uint bookFormId = 0x0001A003;
         // 0x82xxxxxx is in the module range, not the heap range — IsValidPointer
         // rejects it because no captured memory region covers that VA.
-        var bookBuffer = BuildBook(bookFormId, enchantmentPtr: 0x82345678, value: 0, weight: 0);
+        var bookBuffer = BuildBook(bookFormId, 0x82345678, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(bookBuffer, BookVa);
@@ -107,7 +106,7 @@ public sealed class BookOffsetReaderTests
         // Buffer carries FormID=0x0001A099, entry says 0x0001A001 — guard fires.
         const uint bufferFormId = 0x0001A099;
         const uint entryFormId = 0x0001A001;
-        var bookBuffer = BuildBook(bufferFormId, enchantmentPtr: 0, value: 0, weight: 0);
+        var bookBuffer = BuildBook(bufferFormId, 0, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(bookBuffer, BookVa);
@@ -124,14 +123,14 @@ public sealed class BookOffsetReaderTests
     {
         // Reader's FormType guard fires before any struct read.
         const uint formId = 0x0001A001;
-        var bookBuffer = BuildBook(formId, enchantmentPtr: 0, value: 0, weight: 0);
+        var bookBuffer = BuildBook(formId, 0, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(bookBuffer, BookVa);
         var reader = new RuntimeBookReader(fixture.BuildContext());
 
         var book = reader.ReadRuntimeBook(
-            fixture.MakeEntry(formId, formType: 0x28 /* WEAP, not BOOK */, BookVa));
+            fixture.MakeEntry(formId, 0x28 /* WEAP, not BOOK */, BookVa));
 
         Assert.Null(book);
     }
@@ -141,7 +140,7 @@ public sealed class BookOffsetReaderTests
     {
         // Reader gates value to [0, 1_000_000].
         const uint formId = 0x0001A001;
-        var bookBuffer = BuildBook(formId, enchantmentPtr: 0, value: 2_500_000, weight: 0.5f);
+        var bookBuffer = BuildBook(formId, 0, 2_500_000, 0.5f);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(bookBuffer, BookVa);

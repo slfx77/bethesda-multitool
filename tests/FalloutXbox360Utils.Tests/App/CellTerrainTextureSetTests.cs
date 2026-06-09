@@ -33,7 +33,7 @@ public sealed class CellTerrainTextureSetTests
         Assert.Equal(4, set!.ActiveSlotCount);
         // Only the active slots hold the four BTXTs; unused slots stay 0 (don't include them).
         Assert.Equal(new[] { BtxtSw, BtxtSe, BtxtNw, BtxtNe }.ToHashSet(),
-                     set.SlotFormIds.Take(set.ActiveSlotCount).ToHashSet());
+            set.SlotFormIds.Take(set.ActiveSlotCount).ToHashSet());
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public sealed class CellTerrainTextureSetTests
         var nwSlot = Array.IndexOf(set!.SlotFormIds, BtxtNw);
         Assert.InRange(nwSlot, 0, CellTerrainTextureSet.MaxSlots - 1);
 
-        var w = ReadVertexWeights(set, vx: 4, vy: 4);
+        var w = ReadVertexWeights(set, 4, 4);
         for (var s = 0; s < CellTerrainTextureSet.MaxSlots; s++)
         {
             if (s == nwSlot) Assert.Equal(1f, w[s], 4);
@@ -70,7 +70,7 @@ public sealed class CellTerrainTextureSetTests
         var set = CellTerrainTextureSet.Project(table);
 
         Assert.NotNull(set);
-        var w = ReadVertexWeights(set!, vx: 16, vy: 16); // cell center — all 4 quadrants meet
+        var w = ReadVertexWeights(set!, 16, 16); // cell center — all 4 quadrants meet
         var total = 0f;
         foreach (var btxt in new[] { BtxtSw, BtxtSe, BtxtNw, BtxtNe })
         {
@@ -78,6 +78,7 @@ public sealed class CellTerrainTextureSetTests
             Assert.InRange(slot, 0, CellTerrainTextureSet.MaxSlots - 1);
             Assert.Equal(0.25f, w[slot], 4);
         }
+
         for (var s = 0; s < CellTerrainTextureSet.MaxSlots; s++) total += w[s];
         Assert.Equal(1f, total, 4);
     }
@@ -90,7 +91,7 @@ public sealed class CellTerrainTextureSetTests
         var layers = new List<LandTextureLayer>
         {
             BtxtLayer(BtxtSw, 0), BtxtLayer(BtxtSe, 1), BtxtLayer(BtxtNw, 2), BtxtLayer(BtxtNe, 3),
-            new LandTextureLayer
+            new()
             {
                 Kind = LandTextureLayerKind.Alpha,
                 TextureFormId = 0xDEAD,
@@ -98,7 +99,7 @@ public sealed class CellTerrainTextureSetTests
                 Layer = 0,
                 BlendEntries = new List<LandTextureBlendEntry>
                 {
-                    new(Position: 5 * 17 + 5, Unused0: 0, Unused1: 0, Opacity: 1.0f),
+                    new(5 * 17 + 5, 0, 0, 1.0f)
                 }
             }
         };
@@ -110,7 +111,7 @@ public sealed class CellTerrainTextureSetTests
         Assert.Equal(5, set!.ActiveSlotCount);
         Assert.Contains(0xDEADu, set.SlotFormIds);
         Assert.Equal(new[] { BtxtSw, BtxtSe, BtxtNw, BtxtNe, 0xDEADu }.ToHashSet(),
-                     set.SlotFormIds.Take(set.ActiveSlotCount).ToHashSet());
+            set.SlotFormIds.Take(set.ActiveSlotCount).ToHashSet());
     }
 
     [Fact]
@@ -131,14 +132,18 @@ public sealed class CellTerrainTextureSetTests
             w[k * 4 + 2] = v.Z;
             w[k * 4 + 3] = v.W;
         }
+
         return w;
     }
 
-    private static LandTextureLayer BtxtLayer(uint formId, byte quadrant) => new()
+    private static LandTextureLayer BtxtLayer(uint formId, byte quadrant)
     {
-        Kind = LandTextureLayerKind.Base,
-        TextureFormId = formId,
-        Quadrant = quadrant,
-        Layer = 0,
-    };
+        return new LandTextureLayer
+        {
+            Kind = LandTextureLayerKind.Base,
+            TextureFormId = formId,
+            Quadrant = quadrant,
+            Layer = 0
+        };
+    }
 }

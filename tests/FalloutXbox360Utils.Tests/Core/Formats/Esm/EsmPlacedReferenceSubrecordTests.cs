@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
@@ -180,7 +181,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
 
     private static ParsedSubrecord MakeStringSubrecord(string signature, string value)
     {
-        var data = System.Text.Encoding.UTF8.GetBytes(value + '\0');
+        var data = Encoding.UTF8.GetBytes(value + '\0');
         return new ParsedSubrecord
         {
             Signature = signature,
@@ -260,9 +261,9 @@ public sealed class EsmPlacedReferenceSubrecordTests
                 MakeFormIdSubrecord("NAME", baseFormId),
                 MakeFullXtelSubrecord(
                     destinationDoorFormId,
-                    posX: 100.5f, posY: 200.25f, posZ: 50.125f,
-                    rotX: 0.1f, rotY: 0.2f, rotZ: 0.3f,
-                    flags: 0x01)
+                    100.5f, 200.25f, 50.125f,
+                    0.1f, 0.2f, 0.3f,
+                    0x01)
             ]
         };
 
@@ -303,7 +304,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
             Subrecords =
             [
                 MakeFormIdSubrecord("NAME", baseFormId),
-                MakeFormIdSubrecord("XTEL", destinationDoorFormId)  // 4 bytes only
+                MakeFormIdSubrecord("XTEL", destinationDoorFormId) // 4 bytes only
             ]
         };
 

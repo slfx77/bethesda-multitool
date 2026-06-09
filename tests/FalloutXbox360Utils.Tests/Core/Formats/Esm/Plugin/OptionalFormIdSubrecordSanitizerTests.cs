@@ -141,7 +141,7 @@ public class OptionalFormIdSubrecordSanitizerTests
     [Fact]
     public void WeapEncodeNew_skips_NAM0_when_ammo_dangles()
     {
-        var weap = MakeWeap(ammo: 0x000DEAD1u);
+        var weap = MakeWeap(0x000DEAD1u);
         var valid = new HashSet<uint>();
 
         var encoded = WeapEncoder.EncodeNew(weap, valid);
@@ -180,7 +180,7 @@ public class OptionalFormIdSubrecordSanitizerTests
     [Fact]
     public void WeapEncodeNew_emits_NAM0_when_ammo_valid()
     {
-        var weap = MakeWeap(ammo: 0x000ED239u);
+        var weap = MakeWeap(0x000ED239u);
         var valid = new HashSet<uint> { 0x000ED239u };
 
         var encoded = WeapEncoder.EncodeNew(weap, valid);
@@ -194,8 +194,7 @@ public class OptionalFormIdSubrecordSanitizerTests
     [Fact]
     public void NpcEncodeNew_drops_dangling_CNTO_inventory()
     {
-        var npc = MakeNpc(inventory:
-        [
+        var npc = MakeNpc([
             new InventoryItem(0x00000001u, 1),
             new InventoryItem(0x000DEAD1u, 1)
         ]);

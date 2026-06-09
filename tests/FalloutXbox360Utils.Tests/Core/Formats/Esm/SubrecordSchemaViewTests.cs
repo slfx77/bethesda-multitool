@@ -23,8 +23,7 @@ public class SubrecordSchemaViewTests
 
         var data = new byte[99];
 
-        var ex = Assert.Throws<InvalidOperationException>(
-            () => SubrecordSchemaView.Read("ZZZZ", "NONE", data, bigEndian: false));
+        var ex = Assert.Throws<InvalidOperationException>(() => SubrecordSchemaView.Read("ZZZZ", "NONE", data, false));
         Assert.Contains("ZZZZ", ex.Message);
     }
 
@@ -41,7 +40,7 @@ public class SubrecordSchemaViewTests
         BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(12, 4), 0.25f);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(16, 4), 0x000FAB99u);
 
-        var view = SubrecordSchemaView.Read("ENIT", "ALCH", data, bigEndian: false);
+        var view = SubrecordSchemaView.Read("ENIT", "ALCH", data, false);
 
         Assert.Equal(250u, view.UInt32("Value"));
         Assert.Equal(0x000FAB42u, view.UInt32("Addiction"));
@@ -57,7 +56,7 @@ public class SubrecordSchemaViewTests
         var lookup = SubrecordSchemaRegistry.GetSchema("ZZZZ", "NONE", 99);
         Assert.Null(lookup);
 
-        var view = SubrecordSchemaView.TryRead("ZZZZ", "NONE", new byte[99], bigEndian: false);
+        var view = SubrecordSchemaView.TryRead("ZZZZ", "NONE", new byte[99], false);
 
         Assert.Null(view);
     }
@@ -72,11 +71,11 @@ public class SubrecordSchemaViewTests
         var data = new byte[4];
         BinaryPrimitives.WriteSingleLittleEndian(data, 1.5f);
 
-        var view = SubrecordSchemaView.Read("DATA", "ALCH", data, bigEndian: false);
+        var view = SubrecordSchemaView.Read("DATA", "ALCH", data, false);
 
         Assert.Equal(1.5f, view.Float("Weight"));
         // Missing field falls back to the supplied default.
-        Assert.Equal(-1f, view.Float("NotAField", def: -1f));
+        Assert.Equal(-1f, view.Float("NotAField", -1f));
     }
 
     [Fact]
@@ -88,7 +87,7 @@ public class SubrecordSchemaViewTests
         // Leave bytes 8-11 as zero (Addiction FormID).
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(0, 4), 99u);
 
-        var view = SubrecordSchemaView.Read("ENIT", "ALCH", data, bigEndian: false);
+        var view = SubrecordSchemaView.Read("ENIT", "ALCH", data, false);
 
         Assert.Null(view.FormId("Addiction"));
         Assert.Equal(99u, view.UInt32("Value"));

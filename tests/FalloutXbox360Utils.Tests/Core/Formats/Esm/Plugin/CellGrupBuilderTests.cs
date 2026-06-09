@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -26,7 +25,7 @@ public class CellGrupBuilderTests
     [Fact]
     public void BuildInteriorCellGrup_TopLevelGrupHasCellLabel()
     {
-        var bundle = MakeMinimalBundle(0x123, persistentCount: 1, temporaryCount: 0);
+        var bundle = MakeMinimalBundle(0x123, 1, 0);
 
         var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle])!;
 
@@ -41,7 +40,7 @@ public class CellGrupBuilderTests
         Assert.Equal((uint)bytes.Length, grupSize);
 
         var label = bytes.AsSpan(8, 4).ToArray();
-        Assert.Equal(new byte[] { (byte)'C', (byte)'E', (byte)'L', (byte)'L' }, label);
+        Assert.Equal(new[] { (byte)'C', (byte)'E', (byte)'L', (byte)'L' }, label);
 
         var groupType = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12, 4));
         Assert.Equal(0u, groupType);
@@ -50,7 +49,7 @@ public class CellGrupBuilderTests
     [Fact]
     public void BuildInteriorCellGrup_NestedGrupHierarchy_IsCellThenBlockThenSubblockThenCell()
     {
-        var bundle = MakeMinimalBundle(0xABC, persistentCount: 1, temporaryCount: 0);
+        var bundle = MakeMinimalBundle(0xABC, 1, 0);
 
         var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle])!;
 
@@ -79,7 +78,7 @@ public class CellGrupBuilderTests
     [Fact]
     public void BuildInteriorCellGrup_PersistentChildrenWrappedInGroupType8()
     {
-        var bundle = MakeMinimalBundle(0x42, persistentCount: 2, temporaryCount: 0);
+        var bundle = MakeMinimalBundle(0x42, 2, 0);
 
         var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle])!;
 
@@ -120,7 +119,7 @@ public class CellGrupBuilderTests
     [Fact]
     public void BuildInteriorCellGrup_NoChildren_OmitsChildGrup()
     {
-        var bundle = MakeMinimalBundle(0x42, persistentCount: 0, temporaryCount: 0);
+        var bundle = MakeMinimalBundle(0x42, 0, 0);
 
         var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle])!;
 
@@ -150,7 +149,8 @@ public class CellGrupBuilderTests
                 VcsInfo = 0,
                 Version = 0x000F
             },
-            Subrecords = [
+            Subrecords =
+            [
                 new ParsedSubrecord { Signature = "EDID", Data = "TestCell\0"u8.ToArray() },
                 new ParsedSubrecord { Signature = "DATA", Data = [0x01] }
             ]
@@ -222,7 +222,7 @@ public class CellGrupBuilderTests
         return new CellOverrideBundle
         {
             CellFormId = cellFormId,
-            Context = MakeInteriorContext(cellFormId, blockNum: 0, subblockNum: 0),
+            Context = MakeInteriorContext(cellFormId, 0, 0),
             CellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(cell),
             PersistentChildRecords = persistent,
             TemporaryChildRecords = temporary
@@ -259,7 +259,7 @@ public class CellGrupBuilderTests
             },
             Subrecords =
             [
-                new() { Signature = "DATA", Data = new byte[24] }
+                new ParsedSubrecord { Signature = "DATA", Data = new byte[24] }
             ]
         };
         return CellGrupBuilder.ReconstructRecordBytes(refr);
@@ -274,14 +274,14 @@ public class CellGrupBuilderTests
         var wrldRecord = new ParsedMainRecord
         {
             Header = new MainRecordHeader { Signature = "WRLD", FormId = wrldFormId, Version = 0x000F },
-            Subrecords = [new() { Signature = "EDID", Data = "TestWrld\0"u8.ToArray() }]
+            Subrecords = [new ParsedSubrecord { Signature = "EDID", Data = "TestWrld\0"u8.ToArray() }]
         };
         var pcRecords = new Dictionary<uint, ParsedMainRecord> { [wrldFormId] = wrldRecord };
 
         var bundle = new CellOverrideBundle
         {
             CellFormId = cellFormId,
-            Context = MakeExteriorContext(cellFormId, wrldFormId, blockKey: 0x1234, subKey: 0x5678),
+            Context = MakeExteriorContext(cellFormId, wrldFormId, 0x1234, 0x5678),
             CellRecordBytes = MakeMinimalCellBytes(cellFormId),
             PersistentChildRecords = [],
             TemporaryChildRecords = [MakeMinimalRefrRecord(0xC1)]
@@ -295,7 +295,7 @@ public class CellGrupBuilderTests
         Assert.Equal((byte)'R', bytes[1]);
         Assert.Equal((byte)'U', bytes[2]);
         Assert.Equal((byte)'P', bytes[3]);
-        Assert.Equal(new byte[] { (byte)'W', (byte)'R', (byte)'L', (byte)'D' },
+        Assert.Equal(new[] { (byte)'W', (byte)'R', (byte)'L', (byte)'D' },
             bytes.AsSpan(8, 4).ToArray());
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12, 4)));
 
@@ -319,7 +319,7 @@ public class CellGrupBuilderTests
         var wrldRecord = new ParsedMainRecord
         {
             Header = new MainRecordHeader { Signature = "WRLD", FormId = wrldFormId, Version = 0x000F },
-            Subrecords = [new() { Signature = "EDID", Data = "Wld\0"u8.ToArray() }]
+            Subrecords = [new ParsedSubrecord { Signature = "EDID", Data = "Wld\0"u8.ToArray() }]
         };
         var pcRecords = new Dictionary<uint, ParsedMainRecord> { [wrldFormId] = wrldRecord };
 
@@ -363,7 +363,7 @@ public class CellGrupBuilderTests
         var bundle = new CellOverrideBundle
         {
             CellFormId = 0xC0,
-            Context = MakeExteriorContext(0xC0, wrldFormId: 0x999, blockKey: 1, subKey: 2),
+            Context = MakeExteriorContext(0xC0, 0x999, 1, 2),
             CellRecordBytes = MakeMinimalCellBytes(0xC0),
             PersistentChildRecords = [],
             TemporaryChildRecords = [MakeMinimalRefrRecord(0xC1)]
@@ -379,7 +379,7 @@ public class CellGrupBuilderTests
         var cell = new ParsedMainRecord
         {
             Header = new MainRecordHeader { Signature = "CELL", FormId = cellFormId, Version = 0x000F },
-            Subrecords = [new() { Signature = "EDID", Data = "MyCell\0"u8.ToArray() }]
+            Subrecords = [new ParsedSubrecord { Signature = "EDID", Data = "MyCell\0"u8.ToArray() }]
         };
         return CellGrupBuilder.ReconstructRecordBytes(cell);
     }
@@ -457,7 +457,7 @@ public class CellGrupBuilderTests
     public void BuildInteriorCellGrup_NoVwdRecords_OmitsType10Group()
     {
         // Default minimal bundle has no VWD children.
-        var bundle = MakeMinimalBundle(0x66, persistentCount: 1, temporaryCount: 1);
+        var bundle = MakeMinimalBundle(0x66, 1, 1);
 
         var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle]);
 
@@ -474,7 +474,7 @@ public class CellGrupBuilderTests
         return new CellOverrideBundle
         {
             CellFormId = cellFormId,
-            Context = MakeInteriorContext(cellFormId, blockNum: 0, subblockNum: 0),
+            Context = MakeInteriorContext(cellFormId, 0, 0),
             CellRecordBytes = MakeMinimalCellBytes(cellFormId),
             PersistentChildRecords = [refRecord],
             VwdChildRecords = [refRecord],

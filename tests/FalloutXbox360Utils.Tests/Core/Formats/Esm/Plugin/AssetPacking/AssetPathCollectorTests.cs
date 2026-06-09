@@ -1,3 +1,4 @@
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
@@ -36,12 +37,12 @@ public class AssetPathCollectorTests
                     EditorId = "TestTxst",
                     // TextureSet DiffuseTexture already carries the textures\ prefix in fopdoc.
                     DiffuseTexture = "Textures\\Armor\\testset_d.dds",
-                    NormalTexture = "armor\\testset_n.dds"  // no prefix — should infer textures\
+                    NormalTexture = "armor\\testset_n.dds" // no prefix — should infer textures\
                 }
             ]
         };
 
-        var paths = AssetPathCollector.Collect(records, dmpFilePath: null, NullConversionProgressSink.Instance);
+        var paths = AssetPathCollector.Collect(records, null, NullConversionProgressSink.Instance);
 
         // Meshes path inferred for .nif from a record field that has no meshes\ prefix.
         Assert.Contains("meshes\\weapons\\testgun\\testgun.nif", paths);
@@ -69,7 +70,7 @@ public class AssetPathCollectorTests
             ]
         };
 
-        var paths = AssetPathCollector.Collect(records, dmpFilePath: null, NullConversionProgressSink.Instance);
+        var paths = AssetPathCollector.Collect(records, null, NullConversionProgressSink.Instance);
 
         // Slashes flipped, data\ stripped, meshes\ inferred from .nif.
         Assert.Contains("meshes\\weapons\\forward\\slashes.nif", paths);
@@ -89,9 +90,10 @@ public class AssetPathCollectorTests
         // path from byte noise in the DMP.
         using var tempFile = new TempFile();
         var payload = new List<byte>();
+
         void AppendNullTerm(string s)
         {
-            payload.AddRange(System.Text.Encoding.ASCII.GetBytes(s));
+            payload.AddRange(Encoding.ASCII.GetBytes(s));
             payload.Add(0);
         }
 
@@ -130,7 +132,7 @@ public class AssetPathCollectorTests
 
         void AppendNullTerm(string s)
         {
-            payload.AddRange(System.Text.Encoding.ASCII.GetBytes(s));
+            payload.AddRange(Encoding.ASCII.GetBytes(s));
             payload.Add(0);
         }
 
@@ -188,7 +190,7 @@ public class AssetPathCollectorTests
             ]
         };
 
-        var paths = AssetPathCollector.Collect(records, dmpFilePath: null, NullConversionProgressSink.Instance);
+        var paths = AssetPathCollector.Collect(records, null, NullConversionProgressSink.Instance);
 
         Assert.DoesNotContain("meshes\\skeleton.nif", paths);
         Assert.DoesNotContain("skeleton.nif", paths);
@@ -211,7 +213,7 @@ public class AssetPathCollectorTests
             ]
         };
 
-        var paths = AssetPathCollector.Collect(records, dmpFilePath: null, NullConversionProgressSink.Instance);
+        var paths = AssetPathCollector.Collect(records, null, NullConversionProgressSink.Instance);
 
         Assert.Contains("meshes\\weapons\\rifle\\rifle.nif", paths);
         Assert.DoesNotContain("\\weapons\\rifle\\rifle.nif", paths);
@@ -241,7 +243,7 @@ public class AssetPathCollectorTests
             ]
         };
 
-        var paths = AssetPathCollector.Collect(records, dmpFilePath: null, NullConversionProgressSink.Instance);
+        var paths = AssetPathCollector.Collect(records, null, NullConversionProgressSink.Instance);
 
         Assert.Contains("sound\\fx\\testfx.wav", paths);
         Assert.DoesNotContain("sound\\fx\\testfx.psc", paths);
@@ -266,7 +268,7 @@ public class AssetPathCollectorTests
             }
         };
 
-        var paths = AssetPathCollector.Collect(records, dmpFilePath: null, NullConversionProgressSink.Instance);
+        var paths = AssetPathCollector.Collect(records, null, NullConversionProgressSink.Instance);
 
         // Head + headgear → siblings derived.
         Assert.Contains("meshes\\characters\\head\\headhuman.nif", paths);
@@ -293,15 +295,15 @@ public class AssetPathCollectorTests
 
         void AppendNullTerm(string s)
         {
-            payload.AddRange(System.Text.Encoding.ASCII.GetBytes(s));
+            payload.AddRange(Encoding.ASCII.GetBytes(s));
             payload.Add(0);
         }
 
-        AppendNullTerm("meshes\\embedded\\hidden.nif");      // should be picked up
+        AppendNullTerm("meshes\\embedded\\hidden.nif"); // should be picked up
         AppendNullTerm("not an asset path, just a sentence."); // ignored — no asset ext
-        payload.AddRange([0x01, 0x02, 0x03, 0xFF, 0x00]);    // binary noise
-        AppendNullTerm("textures\\embed_test.dds");          // should be picked up
-        AppendNullTerm("some_unrelated_string.txt");         // ignored — not an asset ext
+        payload.AddRange([0x01, 0x02, 0x03, 0xFF, 0x00]); // binary noise
+        AppendNullTerm("textures\\embed_test.dds"); // should be picked up
+        AppendNullTerm("some_unrelated_string.txt"); // ignored — not an asset ext
 
         File.WriteAllBytes(tempFile.Path, payload.ToArray());
 

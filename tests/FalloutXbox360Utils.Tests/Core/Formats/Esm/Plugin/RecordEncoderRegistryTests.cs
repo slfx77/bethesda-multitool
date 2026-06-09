@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 using Xunit;
 
@@ -17,12 +16,12 @@ public class RecordEncoderRegistryTests
         // Spot-check across record-type families.
         var expected = new[]
         {
-            "GMST", "GLOB", "FLST",                 // Misc
-            "WEAP", "ARMO", "AMMO", "ALCH", "BOOK", "MISC", "KEYM", "CONT",   // Item
-            "SPEL", "ENCH", "MGEF", "PERK",         // Magic
-            "NPC_", "CREA", "RACE", "FACT",         // Character
+            "GMST", "GLOB", "FLST", // Misc
+            "WEAP", "ARMO", "AMMO", "ALCH", "BOOK", "MISC", "KEYM", "CONT", // Item
+            "SPEL", "ENCH", "MGEF", "PERK", // Magic
+            "NPC_", "CREA", "RACE", "FACT", // Character
             "QUST", "DIAL", "INFO", "SCPT", "MESG", // Quest / Dialogue
-            "WRLD", "STAT", "DOOR", "LIGH",         // World
+            "WRLD", "STAT", "DOOR", "LIGH" // World
         };
         foreach (var type in expected)
         {

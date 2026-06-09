@@ -108,7 +108,7 @@ public class CrossDumpSourceProjectorTests
         var projection = Project(BuildSource(scripts: [script]));
 
         var skeleton = Assert.Single(projection.ScriptSkeletons);
-        Assert.Equal(new uint[] { 0x1u, 0x2u, 0x3u }, skeleton.ReferencedObjects);
+        Assert.Equal(new[] { 0x1u, 0x2u, 0x3u }, skeleton.ReferencedObjects);
     }
 
     [Fact]
@@ -233,7 +233,7 @@ public class CrossDumpSourceProjectorTests
     [Fact]
     public void Project_resolves_build_date_from_esm_or_file_timestamp()
     {
-        var source = BuildSource(filePath: "test.esm");
+        var source = BuildSource("test.esm");
         var projection = Project(source);
 
         // Non-DMP path falls through to EsmBuildDateExtractor or file timestamp depending

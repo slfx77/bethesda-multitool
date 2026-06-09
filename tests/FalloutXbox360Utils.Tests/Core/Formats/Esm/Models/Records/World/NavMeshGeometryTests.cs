@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Numerics;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using Xunit;
 
@@ -18,8 +19,8 @@ public sealed class NavMeshGeometryTests
 
         Assert.NotNull(geom);
         Assert.Equal(4, geom!.Vertices.Length);
-        Assert.Equal(new System.Numerics.Vector3(1f, 2f, 3f), geom.Vertices[0]);
-        Assert.Equal(new System.Numerics.Vector3(10f, 11f, 12f), geom.Vertices[3]);
+        Assert.Equal(new Vector3(1f, 2f, 3f), geom.Vertices[0]);
+        Assert.Equal(new Vector3(10f, 11f, 12f), geom.Vertices[3]);
         Assert.Equal(2, geom.Triangles.Length);
         Assert.Equal(((ushort)0, (ushort)1, (ushort)2), geom.Triangles[0]);
         Assert.Equal(((ushort)2, (ushort)1, (ushort)3), geom.Triangles[1]);
@@ -61,6 +62,7 @@ public sealed class NavMeshGeometryTests
             BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(off + 4, 4), verts[i].Y);
             BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(off + 8, 4), verts[i].Z);
         }
+
         return bytes;
     }
 
@@ -75,6 +77,7 @@ public sealed class NavMeshGeometryTests
             BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(off + 4, 2), tris[i].C);
             // Remaining 10 bytes (edge/cover flags) left zero — ignored by the parser.
         }
+
         return bytes;
     }
 }

@@ -21,7 +21,7 @@ public sealed class LineCountInvariantTests
             Path.Combine(repoRoot, "src", "FalloutXbox360Utils",
                 "Core", "Formats", "Esm", "Planner"),
             Path.Combine(repoRoot, "src", "FalloutXbox360Utils",
-                "Core", "Formats", "Esm", "PlannedWriter"),
+                "Core", "Formats", "Esm", "PlannedWriter")
         };
 
         var offenders = new List<string>();

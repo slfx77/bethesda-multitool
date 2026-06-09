@@ -30,10 +30,10 @@ public sealed class Tier2EncoderParityTests
             Health = 200,
             Weight = 3.0f,
             Damage = 25,
-            ClipSize = 12,
+            ClipSize = 12
         };
 
-        var legacy = WeapEncoder.EncodeNew(weap, validFormIds: null, remapTable: null);
+        var legacy = WeapEncoder.EncodeNew(weap, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("WEAP", weap.FormId, weap, legacy);
     }
 
@@ -46,7 +46,7 @@ public sealed class Tier2EncoderParityTests
             EditorId = "TestDoor",
             FullName = "Test Door",
             ModelPath = "doors/test/test.nif",
-            Flags = 0x02,
+            Flags = 0x02
         };
 
         var legacy = DoorEncoder.EncodeNew(door);
@@ -63,7 +63,7 @@ public sealed class Tier2EncoderParityTests
             FullName = "Test Misc",
             ModelPath = "misc/test/test.nif",
             Value = 5,
-            Weight = 0.1f,
+            Weight = 0.1f
         };
 
         var legacy = MiscEncoder.EncodeNew(misc);
@@ -80,7 +80,7 @@ public sealed class Tier2EncoderParityTests
             FullName = "Test Key",
             ModelPath = "keys/test/test.nif",
             Value = 0,
-            Weight = 0.0f,
+            Weight = 0.0f
         };
 
         var legacy = KeymEncoder.EncodeNew(key);
@@ -97,7 +97,7 @@ public sealed class Tier2EncoderParityTests
             FullName = "Test Note",
             ModelPath = "notes/test/test.nif",
             NoteType = 0,
-            Text = "Test contents.",
+            Text = "Test contents."
         };
 
         var legacy = NoteEncoder.EncodeNew(note);
@@ -110,7 +110,7 @@ public sealed class Tier2EncoderParityTests
         var recipe = new RecipeRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestRecipe",
+            EditorId = "TestRecipe"
         };
 
         var legacy = RcpeEncoder.EncodeNew(recipe);
@@ -123,7 +123,7 @@ public sealed class Tier2EncoderParityTests
         var cobj = new ConstructibleObjectRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestCobj",
+            EditorId = "TestCobj"
         };
 
         var legacy = CobjEncoder.EncodeNew(cobj);
@@ -136,7 +136,7 @@ public sealed class Tier2EncoderParityTests
         var arma = new ArmaRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestArma",
+            EditorId = "TestArma"
         };
 
         var legacy = ArmaEncoder.EncodeNew(arma);
@@ -153,7 +153,7 @@ public sealed class Tier2EncoderParityTests
             FullName = "Test Mod",
             ModelPath = "mods/test/test.nif",
             Value = 50,
-            Weight = 1.0f,
+            Weight = 1.0f
         };
 
         var legacy = ImodEncoder.EncodeNew(imod);
@@ -166,7 +166,7 @@ public sealed class Tier2EncoderParityTests
         var ench = new EnchantmentRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestEnch",
+            EditorId = "TestEnch"
         };
 
         var legacy = EnchEncoder.EncodeNew(ench);
@@ -179,7 +179,7 @@ public sealed class Tier2EncoderParityTests
         var spel = new SpellRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestSpel",
+            EditorId = "TestSpel"
         };
 
         var legacy = SpelEncoder.EncodeNew(spel);
@@ -192,7 +192,7 @@ public sealed class Tier2EncoderParityTests
         var expl = new ExplosionRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestExpl",
+            EditorId = "TestExpl"
         };
 
         var legacy = ExplEncoder.EncodeNew(expl);
@@ -205,7 +205,7 @@ public sealed class Tier2EncoderParityTests
         var mgef = new BaseEffectRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestMgef",
+            EditorId = "TestMgef"
         };
 
         var legacy = MgefEncoder.EncodeNew(mgef);
@@ -218,7 +218,7 @@ public sealed class Tier2EncoderParityTests
         var proj = new ProjectileRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestProj",
+            EditorId = "TestProj"
         };
 
         var legacy = ProjEncoder.EncodeNew(proj);

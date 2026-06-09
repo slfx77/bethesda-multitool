@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
@@ -21,11 +20,11 @@ public sealed class ContOffsetReaderTests
 
     // Runtime offsets = PDB-baseline + _s(16).
     private const int ContStructSize = 156 + 16;
-    private const int ContentsDataOffset = 52 + 16;     // 68
-    private const int ContentsNextOffset = 56 + 16;     // 72
-    private const int ScriptPtrOffset = 108 + 16;       // 124
-    private const int WeightOffset = 120 + 16;          // 136
-    private const int FlagsOffset = 152 + 16;           // 168
+    private const int ContentsDataOffset = 52 + 16; // 68
+    private const int ContentsNextOffset = 56 + 16; // 72
+    private const int ScriptPtrOffset = 108 + 16; // 124
+    private const int WeightOffset = 120 + 16; // 136
+    private const int FlagsOffset = 152 + 16; // 168
 
     private const uint ContVa = 0x40100000;
     private const uint ScriptVa = 0x40200000;
@@ -37,7 +36,7 @@ public sealed class ContOffsetReaderTests
     {
         const uint contFormId = 0x000B0001;
         const uint scriptFormId = 0x000B0099;
-        var buffer = BuildCont(contFormId, scriptPtr: ScriptVa, flags: 0, weight: 0);
+        var buffer = BuildCont(contFormId, ScriptVa, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, ContVa)
@@ -56,7 +55,7 @@ public sealed class ContOffsetReaderTests
     public void ReadRuntimeContainer_ReadsFlagsAndWeight()
     {
         const uint contFormId = 0x000B0002;
-        var buffer = BuildCont(contFormId, scriptPtr: 0, flags: 0x03, weight: 25.5f);
+        var buffer = BuildCont(contFormId, 0, 0x03, 25.5f);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, ContVa);
         var reader = new RuntimeContainerReader(fixture.BuildContext());
@@ -79,12 +78,12 @@ public sealed class ContOffsetReaderTests
         const uint itemFormId = 0x00012345;
         const int itemCount = 7;
 
-        var buffer = BuildCont(contFormId, scriptPtr: 0, flags: 0, weight: 0,
-            contentsDataPtr: ContObjVa);
+        var buffer = BuildCont(contFormId, 0, 0, 0,
+            ContObjVa);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, ContVa)
-            .WithPointerTarget(ContObjVa, BuildContainerObject(count: itemCount, itemPtr: ItemVa))
+            .WithPointerTarget(ContObjVa, BuildContainerObject(itemCount, ItemVa))
             .WithPointerTarget(ItemVa, BuildTesForm(AmmoFormType, itemFormId));
         var reader = new RuntimeContainerReader(fixture.BuildContext());
 
@@ -100,7 +99,7 @@ public sealed class ContOffsetReaderTests
     [Fact]
     public void ReadRuntimeContainer_FormIdMismatch_ReturnsNull()
     {
-        var buffer = BuildCont(formId: 0x000B00AA, scriptPtr: 0, flags: 0, weight: 0);
+        var buffer = BuildCont(0x000B00AA, 0, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, ContVa);
         var reader = new RuntimeContainerReader(fixture.BuildContext());
@@ -112,13 +111,13 @@ public sealed class ContOffsetReaderTests
     [Fact]
     public void ReadRuntimeContainer_WrongFormType_ReturnsNull()
     {
-        var buffer = BuildCont(0x000B0004, scriptPtr: 0, flags: 0, weight: 0);
+        var buffer = BuildCont(0x000B0004, 0, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, ContVa);
         var reader = new RuntimeContainerReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimeContainer(
-            fixture.MakeEntry(0x000B0004, formType: 0x28 /* WEAP, not CONT */, ContVa)));
+            fixture.MakeEntry(0x000B0004, 0x28 /* WEAP, not CONT */, ContVa)));
     }
 
     private static byte[] BuildCont(uint formId, uint scriptPtr, byte flags, float weight,

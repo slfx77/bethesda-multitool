@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
@@ -10,12 +9,12 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime.Synthetic;
 ///     Synthetic offset reader tests for <see cref="RuntimePackageReader" />
 ///     (TESPackage). Focuses on the contracts that aren't covered by the
 ///     generic FormID/FormType guards:
-///       - PackageData inline reading (pack type, flags) at +44
-///       - pPackLoc heap-shape gate (Phase 1B.15A fix — non-zero,
-///         non-heap pPackLoc → reject the record)
-///       - pPackTarg pointer chase to PackageTarget struct
-///       - pCombatStyle FormType-gated pointer chase (Phase 1B.7 fix —
-///         offset +88 not +104; FormType 0x4A required)
+///     - PackageData inline reading (pack type, flags) at +44
+///     - pPackLoc heap-shape gate (Phase 1B.15A fix — non-zero,
+///     non-heap pPackLoc → reject the record)
+///     - pPackTarg pointer chase to PackageTarget struct
+///     - pCombatStyle FormType-gated pointer chase (Phase 1B.7 fix —
+///     offset +88 not +104; FormType 0x4A required)
 /// </summary>
 public sealed class PackOffsetReaderTests
 {
@@ -24,10 +23,10 @@ public sealed class PackOffsetReaderTests
 
     // Runtime offsets = PDB-baseline + _s(16). Mirror RuntimePackageReader.
     private const int PackStructSize = 128 + 16;
-    private const int PackDataOffset = 28 + 16;       // 44
-    private const int PackLocPtrOffset = 44 + 16;     // 60
-    private const int PackTargPtrOffset = 48 + 16;    // 64
-    private const int PackSchedOffset = 56 + 16;      // 72
+    private const int PackDataOffset = 28 + 16; // 44
+    private const int PackLocPtrOffset = 44 + 16; // 60
+    private const int PackTargPtrOffset = 48 + 16; // 64
+    private const int PackSchedOffset = 56 + 16; // 72
     private const int CombatStylePtrOffset = 72 + 16; // 88
 
     // PACKAGE_DATA inner offsets (relative to PackDataOffset).
@@ -45,8 +44,8 @@ public sealed class PackOffsetReaderTests
         // FollowPointerToFormId expects FormType 0x4A (CSTY); a CSTY target resolves.
         const uint packFormId = 0x000D0001;
         const uint cstyFormId = 0x000D0099;
-        var buffer = BuildPack(packFormId, packType: 0, packLocPtr: 0, packTargPtr: 0,
-            combatStylePtr: CstyVa);
+        var buffer = BuildPack(packFormId, 0, 0, 0,
+            CstyVa);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, PackVa)
@@ -54,7 +53,7 @@ public sealed class PackOffsetReaderTests
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         var pack = reader.ReadRuntimePackage(
-            fixture.MakeEntry(packFormId, formType: 0x4A /* PACK = 0x4A */, PackVa));
+            fixture.MakeEntry(packFormId, 0x4A /* PACK = 0x4A */, PackVa));
 
         Assert.NotNull(pack);
         Assert.Equal(packFormId, pack.FormId);
@@ -67,8 +66,8 @@ public sealed class PackOffsetReaderTests
         // The CombatStyle pointer is FormType-gated: a non-CSTY target → null.
         // This catches stale pointers that resolve to unrelated forms.
         const uint packFormId = 0x000D0002;
-        var buffer = BuildPack(packFormId, packType: 0, packLocPtr: 0, packTargPtr: 0,
-            combatStylePtr: CstyVa);
+        var buffer = BuildPack(packFormId, 0, 0, 0,
+            CstyVa);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, PackVa)
@@ -76,7 +75,7 @@ public sealed class PackOffsetReaderTests
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         var pack = reader.ReadRuntimePackage(
-            fixture.MakeEntry(packFormId, formType: 0x4A, PackVa));
+            fixture.MakeEntry(packFormId, 0x4A, PackVa));
 
         Assert.NotNull(pack);
         Assert.Null(pack.CombatStyleFormId);
@@ -90,14 +89,14 @@ public sealed class PackOffsetReaderTests
         // misread as a PACK. Reader returns null instead of emitting a stub.
         // 0x00CBCB17 = the uninit fill pattern observed in real DMPs.
         const uint packFormId = 0x000D0003;
-        var buffer = BuildPack(packFormId, packType: 0,
-            packLocPtr: 0x00CBCB17, packTargPtr: 0, combatStylePtr: 0);
+        var buffer = BuildPack(packFormId, 0,
+            0x00CBCB17, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, PackVa);
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimePackage(
-            fixture.MakeEntry(packFormId, formType: 0x4A, PackVa)));
+            fixture.MakeEntry(packFormId, 0x4A, PackVa)));
     }
 
     [Fact]
@@ -105,14 +104,14 @@ public sealed class PackOffsetReaderTests
     {
         // Null pPackLoc is fine — real PACKs without a target location have it.
         const uint packFormId = 0x000D0004;
-        var buffer = BuildPack(packFormId, packType: 0,
-            packLocPtr: 0, packTargPtr: 0, combatStylePtr: 0);
+        var buffer = BuildPack(packFormId, 0,
+            0, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, PackVa);
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         var pack = reader.ReadRuntimePackage(
-            fixture.MakeEntry(packFormId, formType: 0x4A, PackVa));
+            fixture.MakeEntry(packFormId, 0x4A, PackVa));
         Assert.NotNull(pack);
         Assert.Null(pack.Location);
     }
@@ -123,14 +122,14 @@ public sealed class PackOffsetReaderTests
         // PACKAGE_DATA.packType > 20 is a strong "this isn't a real PACK" signal —
         // the reader's ReadPackageData returns null, which propagates.
         const uint packFormId = 0x000D0005;
-        var buffer = BuildPack(packFormId, packType: 99 /* out of range */,
-            packLocPtr: 0, packTargPtr: 0, combatStylePtr: 0);
+        var buffer = BuildPack(packFormId, 99 /* out of range */,
+            0, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, PackVa);
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         var pack = reader.ReadRuntimePackage(
-            fixture.MakeEntry(packFormId, formType: 0x4A, PackVa));
+            fixture.MakeEntry(packFormId, 0x4A, PackVa));
 
         // packType > 20 → PackageData = null, but reader still returns a record
         // (the data is just absent). Confirm both records.
@@ -141,21 +140,21 @@ public sealed class PackOffsetReaderTests
     [Fact]
     public void ReadRuntimePackage_FormIdMismatch_ReturnsNull()
     {
-        var buffer = BuildPack(formId: 0x000D00AA, packType: 0,
-            packLocPtr: 0, packTargPtr: 0, combatStylePtr: 0);
+        var buffer = BuildPack(0x000D00AA, 0,
+            0, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, PackVa);
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimePackage(
-            fixture.MakeEntry(0x000D0001, formType: 0x4A, PackVa)));
+            fixture.MakeEntry(0x000D0001, 0x4A, PackVa)));
     }
 
     private static byte[] BuildPack(uint formId, byte packType,
         uint packLocPtr, uint packTargPtr, uint combatStylePtr)
     {
         var buf = new byte[PackStructSize];
-        WriteFormHeader(buf, 0, formType: 0x4A, formId);
+        WriteFormHeader(buf, 0, 0x4A, formId);
 
         // PACKAGE_DATA (12 bytes inline at PackDataOffset)
         // packFlags(+0) = 0, packType(+4), pad(+5), foBehavior(+6), typeSpecific(+8)

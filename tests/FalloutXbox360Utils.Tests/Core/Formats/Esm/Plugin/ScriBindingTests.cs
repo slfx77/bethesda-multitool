@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using Xunit;
 
@@ -17,7 +16,7 @@ public class ScriBindingTests
     [Fact]
     public void IsValidScriTarget_ZeroSentinel_AlwaysAllowed()
     {
-        Assert.True(PluginBuilder.IsValidScriTarget(0u, masterFormIds: null, emittedNewFormIds: null));
+        Assert.True(PluginBuilder.IsValidScriTarget(0u, null, null));
         Assert.True(PluginBuilder.IsValidScriTarget(0u, new HashSet<uint>(), new HashSet<uint>()));
     }
 
@@ -31,7 +30,7 @@ public class ScriBindingTests
     public void IsValidScriTarget_MasterFormId_Allowed()
     {
         var masterFormIds = new HashSet<uint> { 0x00012345 };
-        Assert.True(PluginBuilder.IsValidScriTarget(0x00012345, masterFormIds, emittedNewFormIds: null));
+        Assert.True(PluginBuilder.IsValidScriTarget(0x00012345, masterFormIds, null));
     }
 
     [Fact]
@@ -40,7 +39,7 @@ public class ScriBindingTests
         // This is the v22 fix: a prototype-only SCPT being freshly emitted in the same
         // Build run is a valid SCRI target even though it's not in the master ESM.
         var emittedNew = new HashSet<uint> { 0x0F123456 };
-        Assert.True(PluginBuilder.IsValidScriTarget(0x0F123456, masterFormIds: null, emittedNewFormIds: emittedNew));
+        Assert.True(PluginBuilder.IsValidScriTarget(0x0F123456, null, emittedNew));
     }
 
     [Fact]

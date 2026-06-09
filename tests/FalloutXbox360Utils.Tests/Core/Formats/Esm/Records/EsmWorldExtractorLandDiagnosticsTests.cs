@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
@@ -15,8 +16,8 @@ public class EsmWorldExtractorLandDiagnosticsTests
         var data = BuildLandRecordData(
             ("VCLR", new byte[9]),
             ("VTEX", BuildVtex(0x10, 0x20, 0x30)),
-            ("BTXT", BuildTextureLayer(0x00123456, quadrant: 2, platformFlag: 7, layer: 0)),
-            ("ATXT", BuildTextureLayer(0x00654321, quadrant: 3, platformFlag: 9, layer: 4)),
+            ("BTXT", BuildTextureLayer(0x00123456, 2, 7, 0)),
+            ("ATXT", BuildTextureLayer(0x00654321, 3, 9, 4)),
             ("VTXT", BuildVtxt((12, 0.25f), (288, 1.0f))));
         var header = new DetectedMainRecord("LAND", (uint)data.Length, 0, 0x000ABCDE, 0x1000, false);
 
@@ -35,7 +36,7 @@ public class EsmWorldExtractorLandDiagnosticsTests
         Assert.NotNull(land.VisualData);
         Assert.Equal(9, land.VisualData.VertexColors!.Length);
         Assert.NotNull(land.VisualData.TextureIndices);
-        Assert.Equal(new uint[] { 0x10u, 0x20u, 0x30u }, land.VisualData.TextureIndices);
+        Assert.Equal(new[] { 0x10u, 0x20u, 0x30u }, land.VisualData.TextureIndices);
         Assert.Equal(2, land.VisualData.TextureLayers.Count);
         Assert.Equal(LandTextureLayerKind.Base, land.VisualData.TextureLayers[0].Kind);
         Assert.Equal(7, land.VisualData.TextureLayers[0].PlatformFlag);
@@ -54,7 +55,7 @@ public class EsmWorldExtractorLandDiagnosticsTests
     {
         var data = BuildLandRecordData(
             ("VTXT", BuildVtxt((5, 0.75f))),
-            ("BTXT", BuildTextureLayer(0x00123456, quadrant: 0, platformFlag: 0, layer: 0)),
+            ("BTXT", BuildTextureLayer(0x00123456, 0, 0, 0)),
             ("VTXT", BuildVtxt((6, 0.5f))));
         var header = new DetectedMainRecord("LAND", (uint)data.Length, 0, 0x000ABCDE, 0x1000, false);
 
@@ -231,7 +232,7 @@ public class EsmWorldExtractorLandDiagnosticsTests
         using var stream = new MemoryStream();
         foreach (var (signature, data) in subrecords)
         {
-            var sigBytes = System.Text.Encoding.ASCII.GetBytes(signature);
+            var sigBytes = Encoding.ASCII.GetBytes(signature);
             stream.Write(sigBytes);
             var length = new byte[2];
             BinaryPrimitives.WriteUInt16LittleEndian(length, checked((ushort)data.Length));

@@ -15,7 +15,7 @@ public sealed class CellDispositionEngineTests
         var entry = new CellCatalogEntry
         {
             CellFormId = 0x000ABCDE,
-            Source = SourceKind.MasterOnly,
+            Source = SourceKind.MasterOnly
         };
 
         var (_, decision) = engine.Decide([entry]).Single();
@@ -30,7 +30,7 @@ public sealed class CellDispositionEngineTests
         var entry = new CellCatalogEntry
         {
             CellFormId = 0x000ABCDE,
-            Source = SourceKind.DmpOverride,
+            Source = SourceKind.DmpOverride
         };
 
         var (_, decision) = engine.Decide([entry]).Single();
@@ -45,7 +45,7 @@ public sealed class CellDispositionEngineTests
         var entry = new CellCatalogEntry
         {
             CellFormId = 0x01000800,
-            Source = SourceKind.DmpNew,
+            Source = SourceKind.DmpNew
         };
 
         var (_, decision) = engine.Decide([entry]).Single();

@@ -16,12 +16,12 @@ public sealed class PlannedLandEncoderParityTests
         var heightmap = new LandHeightmap
         {
             HeightOffset = 0f,
-            HeightDeltas = new sbyte[33 * 33], // All zeros.
+            HeightDeltas = new sbyte[33 * 33] // All zeros.
         };
         var options = new PluginBuildOptions { CompressRecords = false };
 
-        var legacy = LandEncoder.Encode(heightmap, visualData: null);
-        var planner = PlannedLandEncoder.EncodeRecord(heightmap, visualData: null, landFormId: 0x01000800, options);
+        var legacy = LandEncoder.Encode(heightmap, null);
+        var planner = PlannedLandEncoder.EncodeRecord(heightmap, null, 0x01000800, options);
 
         if (legacy is null || legacy.Count == 0)
         {

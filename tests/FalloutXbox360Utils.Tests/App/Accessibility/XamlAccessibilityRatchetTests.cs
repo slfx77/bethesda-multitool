@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Tests.App.Accessibility;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.App.Accessibility;
@@ -7,19 +6,26 @@ namespace FalloutXbox360Utils.Tests.App.Accessibility;
 ///     Ratchet test: tracks the set of interactive XAML controls currently missing an
 ///     accessible name. Assert that <em>no regressions</em> are introduced — the scan's
 ///     current output must be a subset of the recorded baseline.
-///
 ///     Workflow when adding controls:
 ///     <list type="number">
 ///         <item>Give the new control <c>AutomationProperties.Name</c> / <c>LabeledBy</c> / <c>x:Uid</c>.</item>
-///         <item>Run this test — if it fails, either add the missing accessibility metadata or
-///             (as a last resort) add the control's entry to <c>a11y-baseline.txt</c>.</item>
+///         <item>
+///             Run this test — if it fails, either add the missing accessibility metadata or
+///             (as a last resort) add the control's entry to <c>a11y-baseline.txt</c>.
+///         </item>
 ///     </list>
-///
 ///     Workflow when fixing existing gaps: remove the control's entry from the baseline when
 ///     its accessibility metadata lands.
 /// </summary>
 public sealed class XamlAccessibilityRatchetTests
 {
+    private static string AppDirectory =>
+        Path.Combine(FindRepoRoot(), "src", "FalloutXbox360Utils", "App");
+
+    private static string BaselinePath =>
+        Path.Combine(FindRepoRoot(), "tests", "FalloutXbox360Utils.Tests",
+            "App", "Accessibility", "a11y-baseline.txt");
+
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -31,13 +37,6 @@ public sealed class XamlAccessibilityRatchetTests
         Assert.NotNull(dir);
         return dir.FullName;
     }
-
-    private static string AppDirectory =>
-        Path.Combine(FindRepoRoot(), "src", "FalloutXbox360Utils", "App");
-
-    private static string BaselinePath =>
-        Path.Combine(FindRepoRoot(), "tests", "FalloutXbox360Utils.Tests",
-            "App", "Accessibility", "a11y-baseline.txt");
 
     [Fact]
     public void InteractiveControls_Have_AccessibleNames_OrAreListedInBaseline()

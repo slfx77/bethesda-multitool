@@ -37,7 +37,7 @@ public sealed class DegradationPolicyTests
         {
             ContainerSignature = "PLDT",
             FromShape = "Type 0",
-            ToShape = "Type 2",
+            ToShape = "Type 2"
         };
         policy.SetRule("PACK", "PLDT.Union", DanglingAction.DowngradeContainer(downgrade));
 

@@ -12,9 +12,11 @@ namespace FalloutXbox360Utils.Tests.Helpers;
 ///     <list type="bullet">
 ///         <item>Most CI environments don't have the assets available.</item>
 ///         <item>Real-asset loads are slow (10s-minutes per test).</item>
-///         <item>The test discipline standard prefers synthetic data when
-///         feasible — these tests stay opt-in to make the asset
-///         dependency explicit.</item>
+///         <item>
+///             The test discipline standard prefers synthetic data when
+///             feasible — these tests stay opt-in to make the asset
+///             dependency explicit.
+///         </item>
 ///     </list>
 ///     <para>
 ///         Enable with <c>RUN_BUCKET_B=1</c> environment variable when

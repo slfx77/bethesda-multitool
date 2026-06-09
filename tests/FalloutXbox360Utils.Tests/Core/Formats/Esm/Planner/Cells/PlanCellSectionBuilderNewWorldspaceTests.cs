@@ -1,15 +1,14 @@
 using System.Collections.Immutable;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
+using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
-using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 using CellRecord = FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.CellRecord;
 
@@ -34,7 +33,7 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
         var wrldModel = new WorldspaceRecord
         {
             FormId = sourceWrldId,
-            EditorId = "PlanNewWrld",
+            EditorId = "PlanNewWrld"
         };
         var cellModel = new CellRecord
         {
@@ -43,7 +42,7 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
             WorldspaceFormId = sourceWrldId,
             Flags = 0, // Exterior.
             GridX = 0,
-            GridY = 0,
+            GridY = 0
         };
         var cellContext = new PcEsmCellContext
         {
@@ -53,7 +52,7 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
             BlockGroupType = 4,
             SubblockGroupType = 5,
             BlockLabel = [0, 0, 0, 0],
-            SubblockLabel = [0, 0, 0, 0],
+            SubblockLabel = [0, 0, 0, 0]
         };
         var cellPlan = new CellPlan
         {
@@ -66,13 +65,13 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
                 Model = cellModel,
                 References = ImmutableArray<ResolvedRef>.Empty,
                 ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
             },
             Context = cellContext,
             PersistentChildren = ImmutableArray<RecordPlan>.Empty,
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
             TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
-            ParentWorldspaceFormId = sourceWrldId,
+            ParentWorldspaceFormId = sourceWrldId
         };
         var wrldPlan = new WorldspacePlan
         {
@@ -86,9 +85,9 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
                 Model = wrldModel,
                 References = ImmutableArray<ResolvedRef>.Empty,
                 ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
             },
-            CellFormIds = ImmutableArray.Create(newCellId),
+            CellFormIds = ImmutableArray.Create(newCellId)
         };
 
         var plan = MakeEmptyPlan() with
@@ -97,11 +96,12 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
             WorldspacesByFormId = ImmutableDictionary<uint, WorldspacePlan>.Empty
                 .Add(sourceWrldId, wrldPlan),
             SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty
-                .Add(sourceWrldId, allocatedWrldId),
+                .Add(sourceWrldId, allocatedWrldId)
         };
 
         var options = new PluginBuildOptions { CompressRecords = false };
-        var plannerBytes = PlanCellSectionBuilder.BuildCellSection(plan, new Dictionary<uint, ParsedMainRecord>(), options);
+        var plannerBytes =
+            PlanCellSectionBuilder.BuildCellSection(plan, new Dictionary<uint, ParsedMainRecord>(), options);
 
         // Reconstruct the legacy path: encode the same CELL and WRLD via the primitive
         // encoders and feed them into CellGrupBuilder.BuildCellSection.
@@ -115,7 +115,7 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
             CellRecordBytes = legacyCellBytes,
             PersistentChildRecords = [],
             VwdChildRecords = [],
-            TemporaryChildRecords = [],
+            TemporaryChildRecords = []
         };
 
         var encodedWrld = WrldEncoder.EncodeNew(wrldModel);
@@ -123,7 +123,7 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
             "WRLD", allocatedWrldId, 0u, encodedWrld.Subrecords);
         var legacyNewWorldspaces = new Dictionary<uint, NewWorldspaceEntry>
         {
-            [sourceWrldId] = new(allocatedWrldId, legacyWrldBytes),
+            [sourceWrldId] = new(allocatedWrldId, legacyWrldBytes)
         };
 
         var legacyBytes = CellGrupBuilder.BuildCellSection(
@@ -132,17 +132,20 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
         Assert.Equal(legacyBytes, plannerBytes);
     }
 
-    private static EmitPlan MakeEmptyPlan() => new()
+    private static EmitPlan MakeEmptyPlan()
     {
-        Records = ImmutableArray<RecordPlan>.Empty,
-        SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-        EmittedFormIds = ImmutableHashSet<uint>.Empty,
-        RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-        Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-        Meta = new PlanMetadata
+        return new EmitPlan
         {
-            NextObjectId = 0x800,
-            PlannerCoverage = ImmutableHashSet<string>.Empty,
-        },
-    };
+            Records = ImmutableArray<RecordPlan>.Empty,
+            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
+            EmittedFormIds = ImmutableHashSet<uint>.Empty,
+            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            Meta = new PlanMetadata
+            {
+                NextObjectId = 0x800,
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
+        };
+    }
 }

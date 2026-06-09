@@ -13,7 +13,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 /// </summary>
 public class ConditionSanitizerTests
 {
-
     [Fact]
     public void Filter_keeps_condition_when_Param1_is_ActorValue_enum_with_non_formid_value()
     {
@@ -27,7 +26,7 @@ public class ConditionSanitizerTests
         var validFormIds = new HashSet<uint> { 0x0001D9D5 };
         var remapped = 0;
         var dropped = 0;
-        var result = ConditionSanitizer.Filter(conds, validFormIds, remapTable: null,
+        var result = ConditionSanitizer.Filter(conds, validFormIds, null,
             ref remapped, ref dropped);
 
         Assert.Single(result);
@@ -49,7 +48,7 @@ public class ConditionSanitizerTests
         var validFormIds = new HashSet<uint> { 0x00000001 };
         var remapped = 0;
         var dropped = 0;
-        var result = ConditionSanitizer.Filter(conds, validFormIds, remapTable: null,
+        var result = ConditionSanitizer.Filter(conds, validFormIds, null,
             ref remapped, ref dropped);
 
         Assert.Empty(result);
@@ -84,13 +83,13 @@ public class ConditionSanitizerTests
     {
         var conds = new List<DialogueCondition>
         {
-            new() { FunctionIndex = GetIsRace, Parameter1 = 0x00019C5Fu }   // Caucasian
+            new() { FunctionIndex = GetIsRace, Parameter1 = 0x00019C5Fu } // Caucasian
         };
 
         var validFormIds = new HashSet<uint> { 0x00019C5Fu };
         var remapped = 0;
         var dropped = 0;
-        var result = ConditionSanitizer.Filter(conds, validFormIds, remapTable: null,
+        var result = ConditionSanitizer.Filter(conds, validFormIds, null,
             ref remapped, ref dropped);
 
         Assert.Single(result);
@@ -110,7 +109,7 @@ public class ConditionSanitizerTests
         var validFormIds = new HashSet<uint>();
         var remapped = 0;
         var dropped = 0;
-        var result = ConditionSanitizer.Filter(conds, validFormIds, remapTable: null,
+        var result = ConditionSanitizer.Filter(conds, validFormIds, null,
             ref remapped, ref dropped);
 
         Assert.Single(result);
@@ -130,7 +129,7 @@ public class ConditionSanitizerTests
         var validFormIds = new HashSet<uint> { 0x000ED239u };
         var remapped = 0;
         var dropped = 0;
-        var result = ConditionSanitizer.Filter(conds, validFormIds, remapTable: null,
+        var result = ConditionSanitizer.Filter(conds, validFormIds, null,
             ref remapped, ref dropped);
 
         Assert.Single(result);
@@ -151,7 +150,7 @@ public class ConditionSanitizerTests
         var validFormIds = new HashSet<uint>();
         var remapped = 0;
         var dropped = 0;
-        var result = ConditionSanitizer.Filter(conds, validFormIds, remapTable: null,
+        var result = ConditionSanitizer.Filter(conds, validFormIds, null,
             ref remapped, ref dropped);
 
         Assert.Equal(2, result.Count);
@@ -180,7 +179,7 @@ public class ConditionSanitizerTests
         var validFormIds = new HashSet<uint>();
         var remapped = 0;
         var dropped = 0;
-        var result = ConditionSanitizer.Filter(conds, validFormIds, remapTable: null,
+        var result = ConditionSanitizer.Filter(conds, validFormIds, null,
             ref remapped, ref dropped);
 
         Assert.Empty(result);
@@ -205,7 +204,7 @@ public class ConditionSanitizerTests
         var validFormIds = new HashSet<uint>();
         var remapped = 0;
         var dropped = 0;
-        var result = ConditionSanitizer.Filter(conds, validFormIds, remapTable: null,
+        var result = ConditionSanitizer.Filter(conds, validFormIds, null,
             ref remapped, ref dropped);
 
         Assert.Single(result);
@@ -226,7 +225,7 @@ public class ConditionSanitizerTests
         var validFormIds = new HashSet<uint>();
         var remapped = 0;
         var dropped = 0;
-        var result = ConditionSanitizer.Filter(conds, validFormIds, remapTable: null,
+        var result = ConditionSanitizer.Filter(conds, validFormIds, null,
             ref remapped, ref dropped);
 
         Assert.Single(result);
@@ -245,7 +244,7 @@ public class ConditionSanitizerTests
         var validFormIds = new HashSet<uint>();
         var remapped = 0;
         var dropped = 0;
-        var result = ConditionSanitizer.FilterPerk(conds, validFormIds, remapTable: null,
+        var result = ConditionSanitizer.FilterPerk(conds, validFormIds, null,
             ref remapped, ref dropped);
 
         Assert.Single(result);
@@ -265,9 +264,9 @@ public class ConditionSanitizerTests
     [Fact]
     public void IsFormParameter_returns_false_for_enum_and_unknown_param_types()
     {
-        Assert.False(PerkConditionParameterResolver.IsFormParameter(GetActorValue, 0));   // ActorValue enum
-        Assert.False(PerkConditionParameterResolver.IsFormParameter(HasPerk, 1));         // Int
-        Assert.False(PerkConditionParameterResolver.IsFormParameter(0xFFFE, 0));          // Unknown function
-        Assert.False(PerkConditionParameterResolver.IsFormParameter(GetIsID, 1));         // Out-of-range param
+        Assert.False(PerkConditionParameterResolver.IsFormParameter(GetActorValue, 0)); // ActorValue enum
+        Assert.False(PerkConditionParameterResolver.IsFormParameter(HasPerk, 1)); // Int
+        Assert.False(PerkConditionParameterResolver.IsFormParameter(0xFFFE, 0)); // Unknown function
+        Assert.False(PerkConditionParameterResolver.IsFormParameter(GetIsID, 1)); // Out-of-range param
     }
 }

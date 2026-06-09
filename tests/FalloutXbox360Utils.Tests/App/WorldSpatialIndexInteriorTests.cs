@@ -1,4 +1,3 @@
-using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using Xunit;
@@ -16,8 +15,8 @@ public sealed class WorldSpatialIndexInteriorTests
             PlacedObjects =
             [
                 new PlacedReference { FormId = 0x201, X = 5000f, Y = 9000f },
-                new PlacedReference { FormId = 0x202, X = 7000f, Y = 11000f },
-            ],
+                new PlacedReference { FormId = 0x202, X = 7000f, Y = 11000f }
+            ]
         };
 
         var key = WorldSpatialIndex.SyntheticInteriorKey(cell);
@@ -45,8 +44,8 @@ public sealed class WorldSpatialIndexInteriorTests
             PlacedObjects =
             [
                 new PlacedReference { FormId = 0x201, X = float.NaN, Y = 0f },
-                new PlacedReference { FormId = 0x202, X = 8192f, Y = 8192f },
-            ],
+                new PlacedReference { FormId = 0x202, X = 8192f, Y = 8192f }
+            ]
         };
 
         var key = WorldSpatialIndex.SyntheticInteriorKey(cell);

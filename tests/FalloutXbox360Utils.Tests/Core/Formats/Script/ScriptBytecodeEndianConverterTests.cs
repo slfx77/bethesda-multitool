@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Script;
 using Xunit;
@@ -185,10 +184,10 @@ public class ScriptBytecodeEndianConverterTests
     /// </summary>
     private static byte[] MakeBeCopy(byte[] leBytecode)
     {
-        var reader = new BytecodeReader(leBytecode, isBigEndian: false);
+        var reader = new BytecodeReader(leBytecode, false);
         reader.StartTrackingMultiByteReads();
-        var decompiler = new ScriptDecompiler([], [], _ => null, isBigEndian: false);
-        decompiler.Decompile(leBytecode, externalReader: reader);
+        var decompiler = new ScriptDecompiler([], [], _ => null, false);
+        decompiler.Decompile(leBytecode, reader);
         var regions = reader.StopTrackingMultiByteReads();
 
         var output = (byte[])leBytecode.Clone();

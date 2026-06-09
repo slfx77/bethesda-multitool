@@ -6,7 +6,8 @@ namespace FalloutXbox360Utils.Tests.CLI.Commands.Dmp;
 
 public sealed class DmpCompareSourceDiscoveryTests : IDisposable
 {
-    private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "dmp-compare-discovery-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _tempDir =
+        Path.Combine(Path.GetTempPath(), "dmp-compare-discovery-tests", Guid.NewGuid().ToString("N"));
 
     public DmpCompareSourceDiscoveryTests()
     {
@@ -31,7 +32,7 @@ public sealed class DmpCompareSourceDiscoveryTests : IDisposable
 
         var explicitEsm = WriteFile("explicit.esm", new DateTime(2010, 1, 1, 0, 0, 0, DateTimeKind.Utc));
 
-        var sources = DmpCompareSourceDiscovery.Discover([_tempDir, explicitEsm], recursive: false);
+        var sources = DmpCompareSourceDiscovery.Discover([_tempDir, explicitEsm], false);
 
         Assert.Equal([explicitEsm, rootDmp, rootEsm], sources.Select(source => source.FilePath).ToList());
         Assert.Equal(AnalysisFileType.EsmFile, sources[0].FileType);
@@ -47,8 +48,8 @@ public sealed class DmpCompareSourceDiscoveryTests : IDisposable
         var nestedDmp = Path.Combine(nestedDir, "nested.dmp");
         File.WriteAllBytes(nestedDmp, [1]);
 
-        var topLevel = DmpCompareSourceDiscovery.Discover([_tempDir], recursive: false);
-        var recursive = DmpCompareSourceDiscovery.Discover([_tempDir], recursive: true);
+        var topLevel = DmpCompareSourceDiscovery.Discover([_tempDir], false);
+        var recursive = DmpCompareSourceDiscovery.Discover([_tempDir], true);
 
         Assert.DoesNotContain(topLevel, source => source.FilePath == nestedDmp);
         Assert.Contains(recursive, source => source.FilePath == nestedDmp);

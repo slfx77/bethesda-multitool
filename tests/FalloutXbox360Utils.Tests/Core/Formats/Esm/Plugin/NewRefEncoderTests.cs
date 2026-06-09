@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -94,9 +93,9 @@ public class NewRefEncoderTests
             FormId = 1,
             DestinationDoorFormId = 0xDEAD,
             TeleportPosRot = new PositionSubrecord(
-                X: 100.5f, Y: 200.25f, Z: 50.125f,
-                RotX: 0.1f, RotY: 0.2f, RotZ: 0.3f,
-                Offset: 0, IsBigEndian: false),
+                100.5f, 200.25f, 50.125f,
+                0.1f, 0.2f, 0.3f,
+                0, false),
             TeleportFlags = 0x01
         };
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed);

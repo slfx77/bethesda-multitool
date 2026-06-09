@@ -4,10 +4,10 @@ using DDXConv;
 using FalloutXbox360Utils.Core.Carving;
 using FalloutXbox360Utils.Core.Extraction;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Tests.Helpers;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
-using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using Xunit.Sdk;
 

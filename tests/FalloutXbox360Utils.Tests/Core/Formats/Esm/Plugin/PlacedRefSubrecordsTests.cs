@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
 
@@ -17,7 +16,7 @@ public class PlacedRefSubrecordsTests
     public void EncodeNewPlacedReference_XCNT_IsFourBytes()
     {
         // v3 wrote 2 bytes; parser's Simple4Byte schema requires 4. Regression test.
-        var placed = new PlacedReference { FormId = 1, BaseFormId = 0xCAFE, Count = (short)42 };
+        var placed = new PlacedReference { FormId = 1, BaseFormId = 0xCAFE, Count = 42 };
 
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed);
 

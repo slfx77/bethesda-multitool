@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
@@ -31,9 +30,9 @@ public sealed class BsNavMeshStructuralValidatorTests
     public void Rejects_NonModulePointer_Vfptr()
     {
         var heap = new HeapBuilder(0x4000);
-        var navmVa = heap.PlaceBsNavMesh(vfptr: HeapVtable);
+        var navmVa = heap.PlaceBsNavMesh(HeapVtable);
 
-        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, knownCellVas: []);
+        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, []);
         Assert.False(validator.LooksLikeBsNavMesh(navmVa));
     }
 
@@ -43,7 +42,7 @@ public sealed class BsNavMeshStructuralValidatorTests
         var heap = new HeapBuilder(0x4000);
         var navmVa = heap.PlaceBsNavMesh(verticesSize: 2_000_000, verticesReserved: 2_000_000);
 
-        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, knownCellVas: []);
+        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, []);
         Assert.False(validator.LooksLikeBsNavMesh(navmVa));
     }
 
@@ -53,7 +52,7 @@ public sealed class BsNavMeshStructuralValidatorTests
         var heap = new HeapBuilder(0x4000);
         var navmVa = heap.PlaceBsNavMesh(verticesSize: 100, verticesReserved: 50);
 
-        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, knownCellVas: []);
+        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, []);
         Assert.False(validator.LooksLikeBsNavMesh(navmVa));
     }
 
@@ -63,7 +62,7 @@ public sealed class BsNavMeshStructuralValidatorTests
         var heap = new HeapBuilder(0x4000);
         var navmVa = heap.PlaceBsNavMesh(trianglesSize: 2_000_000, trianglesReserved: 2_000_000);
 
-        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, knownCellVas: []);
+        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, []);
         Assert.False(validator.LooksLikeBsNavMesh(navmVa));
     }
 
@@ -73,7 +72,7 @@ public sealed class BsNavMeshStructuralValidatorTests
         var heap = new HeapBuilder(0x4000);
         var navmVa = heap.PlaceBsNavMesh(doorPortalsSize: 2_000_000, doorPortalsReserved: 2_000_000);
 
-        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, knownCellVas: []);
+        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, []);
         Assert.False(validator.LooksLikeBsNavMesh(navmVa));
     }
 
@@ -84,7 +83,7 @@ public sealed class BsNavMeshStructuralValidatorTests
         var navmVa = heap.PlaceBsNavMesh(
             verticesSize: 0, trianglesSize: 0, doorPortalsSize: 0);
 
-        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, knownCellVas: []);
+        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, []);
         Assert.False(validator.LooksLikeBsNavMesh(navmVa));
     }
 
@@ -97,7 +96,7 @@ public sealed class BsNavMeshStructuralValidatorTests
             trianglesSize: 8, trianglesReserved: 16,
             parentCellVa: 0);
 
-        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, knownCellVas: []);
+        var validator = heap.BuildValidator(BsNavMeshValidationMode.Permissive, []);
         Assert.True(validator.LooksLikeBsNavMesh(navmVa));
     }
 
@@ -105,7 +104,7 @@ public sealed class BsNavMeshStructuralValidatorTests
     public void Accepts_ValidBsNavMesh_WithKnownParent_InBothModes()
     {
         var heap = new HeapBuilder(0x4000);
-        var fakeCellVa = HeapBaseVa + 0x800;   // placeholder VA the validator only set-compares
+        var fakeCellVa = HeapBaseVa + 0x800; // placeholder VA the validator only set-compares
         var navmVa = heap.PlaceBsNavMesh(
             verticesSize: 12, verticesReserved: 16,
             trianglesSize: 8, trianglesReserved: 16,
@@ -127,7 +126,7 @@ public sealed class BsNavMeshStructuralValidatorTests
             verticesSize: 12, verticesReserved: 16,
             parentCellVa: 0);
 
-        var validator = heap.BuildValidator(BsNavMeshValidationMode.Strict, knownCellVas: []);
+        var validator = heap.BuildValidator(BsNavMeshValidationMode.Strict, []);
         Assert.False(validator.LooksLikeBsNavMesh(navmVa));
     }
 
@@ -136,7 +135,7 @@ public sealed class BsNavMeshStructuralValidatorTests
     {
         var heap = new HeapBuilder(0x4000);
         var trustedCellVa = HeapBaseVa + 0x800;
-        var unknownCellVa = HeapBaseVa + 0x1200;   // a VA NOT in KnownCellVas
+        var unknownCellVa = HeapBaseVa + 0x1200; // a VA NOT in KnownCellVas
         var navmVa = heap.PlaceBsNavMesh(
             verticesSize: 12, verticesReserved: 16,
             parentCellVa: unknownCellVa);
@@ -232,6 +231,9 @@ public sealed class BsNavMeshStructuralValidatorTests
             return va;
         }
 
-        private static int OffsetForVa(uint va) => unchecked((int)(va - HeapBaseVa));
+        private static int OffsetForVa(uint va)
+        {
+            return unchecked((int)(va - HeapBaseVa));
+        }
     }
 }

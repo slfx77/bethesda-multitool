@@ -105,9 +105,9 @@ public class DialogueAudioCsvAssetCollectorTests
         // 0x00133FCD, so the rewriter should leave the filename alone (no rewrite).
         var result = DialogueAudioCsvAssetCollector.RewritePathForNewEsp(
             "sound\\voice\\falloutnv.esm\\voicetype\\stem_00133fcd_1.xma",
-            sourceFormId: 0xCAFE0BADu,
-            allocatedFormId: 0x01005678u,
-            outputEspFileName: "out.esp");
+            0xCAFE0BADu,
+            0x01005678u,
+            "out.esp");
 
         // The dir gets rewritten (esm → esp), but the filename stays the same since the
         // source token doesn't match.
@@ -182,10 +182,10 @@ public class DialogueAudioCsvAssetCollectorTests
 
         var result = DialogueAudioCsvAssetCollector.CollectFromCsv(
             csv.Path, dialogueFormIds, paths,
-            newRecordSourceToAllocated: null,
-            outputEspFileName: "v39-xex21.esp",
-            packPathRenames: renames,
-            bindingsByTriple: tripleIndex);
+            null,
+            "v39-xex21.esp",
+            renames,
+            tripleIndex);
 
         Assert.Equal(1, result.RowsRead);
         Assert.Equal(1, result.RowsMatched);
@@ -311,9 +311,9 @@ public class DialogueAudioCsvAssetCollectorTests
 
         var result = DialogueAudioCsvAssetCollector.CollectFromCsv(
             csv.Path, dialogueFormIds, paths,
-            newRecordSourceToAllocated: null,
-            outputEspFileName: "v58-xex22.esp",
-            packPathRenames: renames,
+            null,
+            "v58-xex22.esp",
+            renames,
             bindingsByAllocated: allocIndex);
 
         Assert.Equal(1, result.RowsRead);
@@ -381,9 +381,9 @@ public class DialogueAudioCsvAssetCollectorTests
 
         var result = DialogueAudioCsvAssetCollector.CollectFromCsv(
             csv.Path, dialogueFormIds, paths,
-            newRecordSourceToAllocated: remap,
-            outputEspFileName: "v58-xex22.esp",
-            packPathRenames: renames,
+            remap,
+            "v58-xex22.esp",
+            renames,
             bindingsByAllocated: allocIndex);
 
         Assert.Equal(1, result.RowsRead);

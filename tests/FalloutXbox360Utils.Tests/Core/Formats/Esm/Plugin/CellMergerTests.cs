@@ -15,7 +15,8 @@ public class CellMergerTests
         var dmpCell = new CellRecord
         {
             FormId = 0xCC,
-            PlacedObjects = [
+            PlacedObjects =
+            [
                 new PlacedReference { FormId = 0x100, IsPersistent = true },
                 new PlacedReference { FormId = 0x101, IsPersistent = true }
             ]
@@ -30,7 +31,8 @@ public class CellMergerTests
         var dmpCell = new CellRecord
         {
             FormId = 0xCC,
-            PlacedObjects = [
+            PlacedObjects =
+            [
                 new PlacedReference { FormId = 0x100, IsPersistent = true },
                 new PlacedReference { FormId = 0x200, IsPersistent = false }
             ]
@@ -47,7 +49,8 @@ public class CellMergerTests
         var dmpCell = new CellRecord
         {
             FormId = 0xCC,
-            PlacedObjects = [
+            PlacedObjects =
+            [
                 new PlacedReference { FormId = 0x200, IsPersistent = false }
             ]
         };
@@ -63,7 +66,8 @@ public class CellMergerTests
         var dmpCell = new CellRecord
         {
             FormId = 0xCC,
-            PlacedObjects = [
+            PlacedObjects =
+            [
                 new PlacedReference { FormId = 0x100, IsPersistent = true },
                 new PlacedReference { FormId = 0xDEAD, IsPersistent = false }
             ]
@@ -78,7 +82,8 @@ public class CellMergerTests
         var dmpCell = new CellRecord
         {
             FormId = 0xCC,
-            PlacedObjects = [
+            PlacedObjects =
+            [
                 new PlacedReference { FormId = 0xDEAD, IsPersistent = true },
                 new PlacedReference { FormId = 0xBEEF, IsPersistent = false }
             ]
@@ -93,7 +98,8 @@ public class CellMergerTests
         var dmpCell = new CellRecord
         {
             FormId = 0xCC,
-            PlacedObjects = [
+            PlacedObjects =
+            [
                 new PlacedReference { FormId = 0x100, IsPersistent = true },
                 new PlacedReference { FormId = 0x200, IsPersistent = false }
             ]
@@ -111,7 +117,8 @@ public class CellMergerTests
         var dmpCell = new CellRecord
         {
             FormId = 0xCC,
-            PlacedObjects = [
+            PlacedObjects =
+            [
                 new PlacedReference { FormId = 0x100, IsPersistent = true },
                 new PlacedReference { FormId = 0x200, IsPersistent = false, IsMapMarker = true }
             ]
@@ -130,7 +137,8 @@ public class CellMergerTests
         var dmpCell = new CellRecord
         {
             FormId = 0xCC,
-            PlacedObjects = [
+            PlacedObjects =
+            [
                 new PlacedReference { FormId = 0x100, IsPersistent = true },
                 new PlacedReference { FormId = 0x200, IsPersistent = false },
                 new PlacedReference { FormId = 0xDEAD, IsPersistent = false } // not in PC ESM

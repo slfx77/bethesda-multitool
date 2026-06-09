@@ -1,7 +1,5 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Layouts;
 using FalloutXbox360Utils.Core.Utils;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
@@ -11,7 +9,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 /// <summary>
 ///     Tests for RuntimeStructReader using synthetic memory-mapped data that simulates
 ///     an Xbox 360 memory dump with heap memory at VA 0x40000000. MMF/accessor/temp-file
-///     lifecycle lives in <see cref="RuntimeStructReaderTestBase"/>.
+///     lifecycle lives in <see cref="RuntimeStructReaderTestBase" />.
 /// </summary>
 public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
 {
@@ -33,6 +31,8 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
 
     private const int ModelPathBSStringTOffset = 80;
     private const byte WeaponFormType = 0x28;
+    private const int BipedWeaponOffset = 0x7C;
+    private const int ProcessWeaponDrawnOffset = 0x135;
 
     [Fact]
     public void RuntimeItemLayouts_weapon_asset_and_critical_offsets_match_runtime()
@@ -49,12 +49,10 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         // than the PDB reports (PDB says 464/468/476). The -8 used to come from the
         // RuntimeWeaponCritProbe, which always produced -8 across 32 sampled dumps;
         // Phase 1B.6 baked it into the constants and deleted the probe.
-        Assert.Equal(456, layouts.WeapCritDamageOffset);     // PDB 464, runtime -8
-        Assert.Equal(460, layouts.WeapCritChanceOffset);     // PDB 468, runtime -8
-        Assert.Equal(468, layouts.WeapCritEffectPtrOffset);  // PDB 476, runtime -8
+        Assert.Equal(456, layouts.WeapCritDamageOffset); // PDB 464, runtime -8
+        Assert.Equal(460, layouts.WeapCritChanceOffset); // PDB 468, runtime -8
+        Assert.Equal(468, layouts.WeapCritEffectPtrOffset); // PDB 476, runtime -8
     }
-    private const int BipedWeaponOffset = 0x7C;
-    private const int ProcessWeaponDrawnOffset = 0x135;
 
     #region Multiple Structs at Different Offsets
 
@@ -93,7 +91,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         Assert.Equal((uint)value2, result2.Value);
         Assert.Equal(formId1, result1.FormId);
         Assert.Equal(formId2, result2.FormId);
-
     }
 
     #endregion
@@ -258,7 +255,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         Assert.Equal((uint)expectedValue, result.Value);
         Assert.True(result.IsBigEndian);
         Assert.Equal(structOffset, result.Offset);
-
     }
 
     [Fact]
@@ -281,7 +277,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         // Assert
         Assert.NotNull(result);
         Assert.Equal(0u, result.Value);
-
     }
 
     [Fact]
@@ -301,7 +296,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
 
         // Assert
         Assert.Null(result);
-
     }
 
     [Fact]
@@ -322,7 +316,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
 
         // Assert
         Assert.Null(result);
-
     }
 
     [Fact]
@@ -353,7 +346,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         // Assert
         Assert.NotNull(result);
         Assert.Equal(modelPath, result.ModelPath);
-
     }
 
     #endregion
@@ -388,7 +380,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         Assert.Equal(expectedValue, result.Value);
         Assert.Equal(expectedWeight, result.Weight, 3);
         Assert.True(result.IsBigEndian);
-
     }
 
     [Fact]
@@ -412,7 +403,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         // Assert
         Assert.NotNull(result);
         Assert.Equal(0f, result.Weight);
-
     }
 
     [Fact]
@@ -438,7 +428,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         // Assert
         Assert.NotNull(result);
         Assert.Equal(0f, result.Weight);
-
     }
 
     #endregion
@@ -469,7 +458,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         // Assert
         Assert.NotNull(result);
         Assert.Null(result.ModelPath);
-
     }
 
     [Fact]
@@ -496,7 +484,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         // Assert
         Assert.NotNull(result);
         Assert.Null(result.ModelPath);
-
     }
 
     #endregion
@@ -513,7 +500,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         var result = reader.ReadRuntimeAmmo(entry);
 
         Assert.Null(result);
-
     }
 
     [Fact]
@@ -526,7 +512,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         var result = reader.ReadRuntimeMiscItem(entry);
 
         Assert.Null(result);
-
     }
 
     [Fact]
@@ -543,7 +528,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         var result = reader.ReadRuntimeAmmo(entry);
 
         Assert.Null(result);
-
     }
 
     [Fact]
@@ -558,7 +542,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         var result = reader.ReadRuntimeMiscItem(entry);
 
         Assert.Null(result);
-
     }
 
     [Fact]
@@ -573,7 +556,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         var result = reader.ReadRuntimeAmmo(entry);
 
         Assert.Null(result);
-
     }
 
     #endregion
@@ -605,7 +587,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         var result = reader.ReadBsStringT(structOffset, ModelPathBSStringTOffset);
 
         Assert.Equal(expectedPath, result);
-
     }
 
     [Fact]
@@ -622,7 +603,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         var result = reader.ReadBsStringT(structOffset, ModelPathBSStringTOffset);
 
         Assert.Null(result);
-
     }
 
     [Fact]
@@ -635,7 +615,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         var result = reader.ReadBsStringT(DataSize - 2, ModelPathBSStringTOffset);
 
         Assert.Null(result);
-
     }
 
     #endregion
@@ -662,7 +641,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         // Assert
         Assert.NotNull(result);
         Assert.Equal(0u, result.Value);
-
     }
 
     [Fact]
@@ -684,7 +662,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         Assert.NotNull(result);
         Assert.Equal(0, result.Value);
         Assert.Equal(1.0f, result.Weight, 3);
-
     }
 
     #endregion
@@ -701,7 +678,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
 
         var resultEnd = Xbox360MemoryUtils.VaToLong(0x4FFFFFFF);
         Assert.Equal(0x4FFFFFFFL, resultEnd);
-
     }
 
     [Fact]
@@ -712,7 +688,6 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         var result = Xbox360MemoryUtils.VaToLong(0x82000000);
         Assert.True(result < 0, "Module address should sign-extend to negative");
         Assert.Equal(unchecked((int)0x82000000), result);
-
     }
 
     #endregion

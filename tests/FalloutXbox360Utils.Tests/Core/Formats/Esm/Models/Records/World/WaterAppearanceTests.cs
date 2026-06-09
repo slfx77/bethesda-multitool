@@ -13,7 +13,7 @@ public sealed class WaterAppearanceTests
         {
             ["ShallowColor"] = 0xAA_33_55_77u,
             ["DeepColor"] = 0xFF_11_22_44u,
-            ["ReflectionColor"] = 0x00_99_88_66u,
+            ["ReflectionColor"] = 0x00_99_88_66u
         };
 
         var appearance = WaterAppearance.FromVisualProperties(props, "water\\noise.dds");
@@ -29,7 +29,7 @@ public sealed class WaterAppearanceTests
     public void FromVisualProperties_ReflectionFallsBackToShallowWhenMissing()
     {
         var appearance = WaterAppearance.FromVisualProperties(
-            new Dictionary<string, object?> { ["ShallowColor"] = 0x00_80_60_40u }, noiseTexture: null);
+            new Dictionary<string, object?> { ["ShallowColor"] = 0x00_80_60_40u }, null);
 
         Assert.NotNull(appearance);
         // Deep mirrors Shallow (missing endpoint), Reflection falls back to Shallow.
@@ -67,10 +67,10 @@ public sealed class WaterAppearanceTests
             ["NoiseLayer1WindSpeed"] = 2f,
             ["NoiseLayer1AmpScale"] = 0.9f,
             ["NoiseLayer2UVScale"] = 1.9f,
-            ["NoiseLayer3WindDir"] = 270f,
+            ["NoiseLayer3WindDir"] = 270f
         };
 
-        var appearance = WaterAppearance.FromVisualProperties(props, noiseTexture: null);
+        var appearance = WaterAppearance.FromVisualProperties(props, null);
 
         Assert.NotNull(appearance);
         var s = appearance!.Surface;
@@ -118,8 +118,8 @@ public sealed class WaterAppearanceTests
             VisualProperties = new Dictionary<string, object?>
             {
                 ["ShallowColor"] = 0x00_30_20_10u,
-                ["DeepColor"] = 0x00_60_50_40u,
-            },
+                ["DeepColor"] = 0x00_60_50_40u
+            }
         };
 
         var appearance = WaterAppearance.FromWaterRecord(water);

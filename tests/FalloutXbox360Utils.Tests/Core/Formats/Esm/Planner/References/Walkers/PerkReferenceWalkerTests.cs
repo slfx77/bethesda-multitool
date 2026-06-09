@@ -18,20 +18,20 @@ public sealed class PerkReferenceWalkerTests
                 new PerkCondition
                 {
                     FunctionIndex = 0x1C1, // HasPerk
-                    Parameter1FormId = 0x000A0001,
+                    Parameter1FormId = 0x000A0001
                 },
                 new PerkCondition
                 {
                     FunctionIndex = 0x0E,
-                    Parameter1 = 5, // ActorValue index — untyped, must NOT yield.
+                    Parameter1 = 5 // ActorValue index — untyped, must NOT yield.
                 },
                 new PerkCondition
                 {
                     FunctionIndex = 0x47,
                     Parameter1FormId = 0x000A0002,
-                    Parameter2FormId = 0x000A0003,
-                },
-            ],
+                    Parameter2FormId = 0x000A0003
+                }
+            ]
         };
         var walker = new PerkReferenceWalker();
 

@@ -1,8 +1,6 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
@@ -19,9 +17,9 @@ public class PcEsmCellContextIndexTests
         //         CELL record FormId=0xABC at offset 72
         var grupHeaders = new List<GrupHeaderInfo>
         {
-            MakeGrup(offset: 0, size: 1000, label: "CELL"u8.ToArray(), groupType: 0),
-            MakeGrup(offset: 24, size: 800, label: LeBytes(5u), groupType: 2),
-            MakeGrup(offset: 48, size: 600, label: LeBytes(7u), groupType: 3)
+            MakeGrup(0, 1000, "CELL"u8.ToArray(), 0),
+            MakeGrup(24, 800, LeBytes(5u), 2),
+            MakeGrup(48, 600, LeBytes(7u), 3)
         };
         var records = new List<ParsedMainRecord>
         {
@@ -56,10 +54,10 @@ public class PcEsmCellContextIndexTests
         //           CELL record FormId=0xDEAD at offset 120
         var grupHeaders = new List<GrupHeaderInfo>
         {
-            MakeGrup(offset: 0, size: 2000, label: "WRLD"u8.ToArray(), groupType: 0),
-            MakeGrup(offset: 48, size: 1900, label: LeBytes(0x60u), groupType: 1),
-            MakeGrup(offset: 72, size: 1500, label: LeBytes(0x12345u), groupType: 4),
-            MakeGrup(offset: 96, size: 1200, label: LeBytes(0x98765u), groupType: 5)
+            MakeGrup(0, 2000, "WRLD"u8.ToArray(), 0),
+            MakeGrup(48, 1900, LeBytes(0x60u), 1),
+            MakeGrup(72, 1500, LeBytes(0x12345u), 4),
+            MakeGrup(96, 1200, LeBytes(0x98765u), 5)
         };
         var records = new List<ParsedMainRecord>
         {
@@ -98,8 +96,8 @@ public class PcEsmCellContextIndexTests
         //       CELL record (persistent container) at 72
         var grupHeaders = new List<GrupHeaderInfo>
         {
-            MakeGrup(offset: 0, size: 2000, label: "WRLD"u8.ToArray(), groupType: 0),
-            MakeGrup(offset: 48, size: 1900, label: LeBytes(0x42u), groupType: 1)
+            MakeGrup(0, 2000, "WRLD"u8.ToArray(), 0),
+            MakeGrup(48, 1900, LeBytes(0x42u), 1)
         };
         var records = new List<ParsedMainRecord>
         {
@@ -138,16 +136,22 @@ public class PcEsmCellContextIndexTests
         //         CELL FormId=0x200 at 548
         var grupHeaders = new List<GrupHeaderInfo>
         {
-            MakeGrup(offset: 0, size: 2000, label: "CELL"u8.ToArray(), groupType: 0),
-            MakeGrup(offset: 24, size: 476, label: LeBytes(1u), groupType: 2),
-            MakeGrup(offset: 48, size: 352, label: LeBytes(0u), groupType: 3),
-            MakeGrup(offset: 500, size: 500, label: LeBytes(2u), groupType: 2),
-            MakeGrup(offset: 524, size: 376, label: LeBytes(1u), groupType: 3)
+            MakeGrup(0, 2000, "CELL"u8.ToArray(), 0),
+            MakeGrup(24, 476, LeBytes(1u), 2),
+            MakeGrup(48, 352, LeBytes(0u), 3),
+            MakeGrup(500, 500, LeBytes(2u), 2),
+            MakeGrup(524, 376, LeBytes(1u), 3)
         };
         var records = new List<ParsedMainRecord>
         {
-            new() { Header = new MainRecordHeader { Signature = "CELL", FormId = 0x100, Version = 0x000F }, Offset = 72 },
-            new() { Header = new MainRecordHeader { Signature = "CELL", FormId = 0x200, Version = 0x000F }, Offset = 548 }
+            new()
+            {
+                Header = new MainRecordHeader { Signature = "CELL", FormId = 0x100, Version = 0x000F }, Offset = 72
+            },
+            new()
+            {
+                Header = new MainRecordHeader { Signature = "CELL", FormId = 0x200, Version = 0x000F }, Offset = 548
+            }
         };
 
         var index = PcEsmCellContextIndex.Build(records, grupHeaders);

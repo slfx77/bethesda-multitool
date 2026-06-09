@@ -6,8 +6,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Core.Semantic;
 using Xunit;
 
@@ -33,8 +31,8 @@ public class LegacyVsProjectionParityTests
         var legacyInputs = BuildTwoSourceFixture();
         var legacyIndex = CrossDumpAggregator.Aggregate(
             legacyInputs.Select(s => (s.FilePath, s.Records, s.Resolver, s.MinidumpInfo)).ToList(),
-            allowedTypes: null,
-            releaseInputRecords: false);
+            null,
+            false);
 
         var projectionInputs = BuildTwoSourceFixture();
         var projections = projectionInputs.Select(CrossDumpSourceProjector.Project).ToList();
@@ -48,7 +46,7 @@ public class LegacyVsProjectionParityTests
         CrossDumpProjectionAggregator.BuildLatePassReports(
             projections, npcPlacements, npcScriptRefs, keyDoors, containerPlacements);
         var newIndex = CrossDumpProjectionAggregator.AggregateFromProjections(
-            projections, virtualCanon, allowedTypes: null);
+            projections, virtualCanon, null);
 
         AssertIndexesMatch(legacyIndex, newIndex);
     }
@@ -196,13 +194,13 @@ public class LegacyVsProjectionParityTests
         };
 
         var s1 = BuildSource(
-            filePath: "early.dmp",
-            isDmp: true,
-            worldspaces: [s1Worldspace],
-            cells: [s1Cell],
-            weapons: [s1Weapon],
-            npcs: [s1Npc],
-            quests: [s1Quest]);
+            "early.dmp",
+            true,
+            [s1Worldspace],
+            [s1Cell],
+            [s1Weapon],
+            [s1Npc],
+            [s1Quest]);
 
         // Source 2: later ESM — worldspace renamed to "Camp McCarran". Same cell + weapon
         // FormIDs. The weapon's EditorID is renamed too (TestWeapon → TestWeaponV2) to
@@ -236,11 +234,11 @@ public class LegacyVsProjectionParityTests
         };
 
         var s2 = BuildSource(
-            filePath: "later.esm",
-            isDmp: false,
-            worldspaces: [s2Worldspace],
-            cells: [s2Cell],
-            weapons: [s2Weapon],
+            "later.esm",
+            false,
+            [s2Worldspace],
+            [s2Cell],
+            [s2Weapon],
             quests: [s2Quest]);
 
         return [s1, s2];

@@ -12,7 +12,7 @@ public class RuntimeTerrainMeshTests
     [Fact]
     public void ToLandHeightmap_Full33Grid_ReconstructsUnchanged()
     {
-        var mesh = CreateTerrainMesh(33, strided: false);
+        var mesh = CreateTerrainMesh(33, false);
 
         var heightmap = mesh.ToLandHeightmap();
         var heights = heightmap.CalculateHeights();
@@ -33,7 +33,7 @@ public class RuntimeTerrainMeshTests
     [InlineData(4)]
     public void ToLandHeightmap_LowerLodDenseGrid_InterpolatesToCanonical33(int sourceGridSize)
     {
-        var mesh = CreateTerrainMesh(sourceGridSize, strided: false);
+        var mesh = CreateTerrainMesh(sourceGridSize, false);
 
         var heightmap = mesh.ToLandHeightmap();
         var heights = heightmap.CalculateHeights();
@@ -52,7 +52,7 @@ public class RuntimeTerrainMeshTests
     [InlineData(4)]
     public void ToLandHeightmap_LowerLodStridedGrid_InterpolatesToCanonical33(int sourceGridSize)
     {
-        var mesh = CreateTerrainMesh(sourceGridSize, strided: true);
+        var mesh = CreateTerrainMesh(sourceGridSize, true);
 
         var heightmap = mesh.ToLandHeightmap();
         var heights = heightmap.CalculateHeights();
@@ -64,7 +64,7 @@ public class RuntimeTerrainMeshTests
     [Fact]
     public void ToLandHeightmap_TrailingFiniteGarbage_IsIgnored()
     {
-        var mesh = CreateTerrainMesh(9, strided: false, finiteTrailingGarbage: true);
+        var mesh = CreateTerrainMesh(9, false, true);
 
         var heightmap = mesh.ToLandHeightmap();
         var heights = heightmap.CalculateHeights();
@@ -76,7 +76,7 @@ public class RuntimeTerrainMeshTests
     [Fact]
     public void ToLandHeightmap_MidRangeZOutlier_IsIgnored()
     {
-        var mesh = CreateTerrainMesh(17, strided: false);
+        var mesh = CreateTerrainMesh(17, false);
         mesh.Vertices[(8 * 17 + 8) * 3 + 2] = 7_500f;
 
         var heightmap = mesh.ToLandHeightmap();
@@ -121,7 +121,7 @@ public class RuntimeTerrainMeshTests
     [Fact]
     public void ToLandHeightmap_BaseHeight_OffsetsReconstructedHeights()
     {
-        var mesh = CreateTerrainMesh(17, strided: false);
+        var mesh = CreateTerrainMesh(17, false);
 
         var heightmap = mesh.ToLandHeightmap(512f);
         var heights = heightmap.CalculateHeights();
@@ -158,7 +158,7 @@ public class RuntimeTerrainMeshTests
     [Fact]
     public void DiagnoseQuality_ReportsRuntimeVertexColors()
     {
-        var mesh = CreateTerrainMesh(17, strided: false) with
+        var mesh = CreateTerrainMesh(17, false) with
         {
             Colors = new float[RuntimeTerrainMesh.VertexCount * 4]
         };
@@ -173,9 +173,9 @@ public class RuntimeTerrainMeshTests
     [Fact]
     public void ToLandVertexColorBytes_LowerLodGrid_InterpolatesToCanonicalVclr()
     {
-        var mesh = CreateTerrainMesh(17, strided: false) with
+        var mesh = CreateTerrainMesh(17, false) with
         {
-            Colors = CreateTerrainColors(17, strided: false)
+            Colors = CreateTerrainColors(17, false)
         };
 
         var vclr = mesh.ToLandVertexColorBytes();
@@ -373,6 +373,8 @@ public class RuntimeTerrainMeshTests
         }
     }
 
-    private static float HeightAtWorld(float worldX, float worldY) =>
-        1000f + (worldX - OriginX) * 0.01f + (worldY - OriginY) * 0.02f;
+    private static float HeightAtWorld(float worldX, float worldY)
+    {
+        return 1000f + (worldX - OriginX) * 0.01f + (worldY - OriginY) * 0.02f;
+    }
 }

@@ -26,13 +26,12 @@ public class CpthConditionsTests
     [Fact]
     public void EncodeNew_emits_real_CTDAs_when_Conditions_populated()
     {
-        var cpth = MakeCpth(conditions:
-        [
+        var cpth = MakeCpth([
             new DialogueCondition
             {
                 Type = 0x00,
                 ComparisonValue = 1.0f,
-                FunctionIndex = 0x48,    // GetIsID
+                FunctionIndex = 0x48, // GetIsID
                 Parameter1 = 0x000ED239u,
                 RunOn = 0
             }
@@ -48,8 +47,7 @@ public class CpthConditionsTests
     [Fact]
     public void EncodeNew_emits_multiple_CTDAs_preserving_order()
     {
-        var cpth = MakeCpth(conditions:
-        [
+        var cpth = MakeCpth([
             new DialogueCondition { FunctionIndex = 0x48, Parameter1 = 0x000ED239u },
             new DialogueCondition { FunctionIndex = 0x14, Parameter1 = 0x0001D9D5u },
             new DialogueCondition { FunctionIndex = 0x0E, Parameter1 = 5u }
@@ -67,8 +65,7 @@ public class CpthConditionsTests
     [Fact]
     public void EncodeNew_CTDA_appears_before_ANAM_in_fopdoc_canonical_order()
     {
-        var cpth = MakeCpth(conditions:
-        [
+        var cpth = MakeCpth([
             new DialogueCondition { FunctionIndex = 0x48, Parameter1 = 0x000ED239u }
         ]);
 
@@ -86,13 +83,12 @@ public class CpthConditionsTests
     {
         // GetIsID 0x000DEAD1 — dangling FormID parameter. ConditionSanitizer drops the
         // whole condition. CPTH has no never-fire fallback so the CTDA simply disappears.
-        var cpth = MakeCpth(conditions:
-        [
+        var cpth = MakeCpth([
             new DialogueCondition { FunctionIndex = 0x48, Parameter1 = 0x000DEAD1u }
         ]);
         var valid = new HashSet<uint> { 0x00000001u };
 
-        var encoded = CpthEncoder.EncodeNew(cpth, validFormIds: valid);
+        var encoded = CpthEncoder.EncodeNew(cpth, valid);
 
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "CTDA");
         Assert.Contains(encoded.Warnings, w => w.Contains("CTDA sanitizer"));
@@ -101,14 +97,13 @@ public class CpthConditionsTests
     [Fact]
     public void EncodeNew_remaps_CTDA_FormID_param_when_remap_available()
     {
-        var cpth = MakeCpth(conditions:
-        [
+        var cpth = MakeCpth([
             new DialogueCondition { FunctionIndex = 0x48, Parameter1 = 0x01999AAAu }
         ]);
         var valid = new HashSet<uint> { 0x01000123u };
         var remap = new Dictionary<uint, uint> { [0x01999AAAu] = 0x01000123u };
 
-        var encoded = CpthEncoder.EncodeNew(cpth, validFormIds: valid, remapTable: remap);
+        var encoded = CpthEncoder.EncodeNew(cpth, valid, remap);
 
         var ctda = Assert.Single(encoded.Subrecords, s => s.Signature == "CTDA");
         Assert.Equal(0x01000123u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(12, 4)));

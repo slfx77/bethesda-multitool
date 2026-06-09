@@ -10,7 +10,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 ///     Shared fixture for RuntimeStructReader tests that work against a synthetic memory-mapped
 ///     heap. Owns the MMF/accessor/temp-file lifecycle and provides the small set of helpers
 ///     (CreateReader, FileOffsetToVa, WriteTesFormHeader) that every derived test needs.
-///
 ///     Per-test specifics — MakeEntry variants, extra-data writers, struct-offset constants,
 ///     and DataSize — stay in the derived classes because they're shaped to each suite's needs.
 /// </summary>
@@ -46,13 +45,13 @@ public abstract class RuntimeStructReaderTestBase : IDisposable
     }
 
     /// <summary>
-    ///     Low-level lifecycle primitive: writes <paramref name="data"/> to a temp file,
+    ///     Low-level lifecycle primitive: writes <paramref name="data" /> to a temp file,
     ///     memory-maps it, and returns the read-only accessor. The MMF / accessor / temp file
-    ///     are owned by this base class and torn down in <see cref="Dispose"/>.
-    ///     Use this overload when the test needs to build a custom <see cref="MinidumpInfo"/>
+    ///     are owned by this base class and torn down in <see cref="Dispose" />.
+    ///     Use this overload when the test needs to build a custom <see cref="MinidumpInfo" />
     ///     (e.g. multi-region layouts for tests that exercise both heap and module regions, or
     ///     callers that invoke <c>RuntimeStructReader.CreateWithAutoDetect</c> directly).
-    ///     For the common single-heap-region case use <see cref="CreateReader"/> instead.
+    ///     For the common single-heap-region case use <see cref="CreateReader" /> instead.
     /// </summary>
     protected MemoryMappedViewAccessor MapSyntheticBytes(byte[] data)
     {
@@ -72,9 +71,9 @@ public abstract class RuntimeStructReaderTestBase : IDisposable
     }
 
     /// <summary>
-    ///     Writes <paramref name="data"/> to a temp file, memory-maps it, and returns a reader
-    ///     pointed at a single memory region spanning the file at VA <see cref="HeapBaseVa"/>.
-    ///     Subsequent <see cref="Dispose"/> tears the MMF / accessor / temp file down.
+    ///     Writes <paramref name="data" /> to a temp file, memory-maps it, and returns a reader
+    ///     pointed at a single memory region spanning the file at VA <see cref="HeapBaseVa" />.
+    ///     Subsequent <see cref="Dispose" /> tears the MMF / accessor / temp file down.
     /// </summary>
     protected RuntimeStructReader CreateReader(byte[] data)
     {
@@ -106,7 +105,7 @@ public abstract class RuntimeStructReaderTestBase : IDisposable
     }
 
     /// <summary>
-    ///     Write a TESForm header at <paramref name="fileOffset"/>. Layout:
+    ///     Write a TESForm header at <paramref name="fileOffset" />. Layout:
     ///     <c>byte[0-3]</c> = vtable pointer (big-endian), <c>byte[4]</c> = formType,
     ///     <c>byte[12-15]</c> = formId (big-endian).
     /// </summary>

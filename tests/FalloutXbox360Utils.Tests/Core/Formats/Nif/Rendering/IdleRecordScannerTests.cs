@@ -21,7 +21,7 @@ public sealed class IdleRecordScannerTests(SampleFileFixture samples)
             "DATA",
             "IDLE",
             [0x07, 0x01, 0x02, 0x00, 0x12, 0x34, 0x56, 0x00],
-            bigEndian: true);
+            true);
 
         Assert.Equal((byte)0x07, xbox.Byte("AnimData"));
         Assert.Equal((byte)0x01, xbox.Byte("LoopMin"));
@@ -33,7 +33,7 @@ public sealed class IdleRecordScannerTests(SampleFileFixture samples)
             "DATA",
             "IDLE",
             [0x07, 0x01, 0x02, 0x00, 0x34, 0x12],
-            bigEndian: false);
+            false);
 
         Assert.Equal((byte)0x07, pc.Byte("AnimData"));
         Assert.Equal((byte)0x01, pc.Byte("LoopMin"));

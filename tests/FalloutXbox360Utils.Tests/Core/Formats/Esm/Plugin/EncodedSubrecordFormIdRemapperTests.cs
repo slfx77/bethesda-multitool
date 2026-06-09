@@ -1,8 +1,6 @@
 using System.Buffers.Binary;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
@@ -89,5 +87,7 @@ public class EncodedSubrecordFormIdRemapperTests
     }
 
     private static uint ReadFormId(byte[] bytes, int offset)
-        => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));
+    {
+        return BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));
+    }
 }

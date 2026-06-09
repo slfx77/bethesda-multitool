@@ -35,7 +35,7 @@ public sealed class RendererCameraMotionTests
             0.35f,
             4096f);
 
-        var pose = RendererCameraMotion.Evaluate(RendererCameraMotionKind.Forward, initial, speed: 100f, elapsedSeconds: 2.0);
+        var pose = RendererCameraMotion.Evaluate(RendererCameraMotionKind.Forward, initial, 100f, 2.0);
 
         AssertClose(210f, pose.Position.X);
         AssertClose(20f, pose.Position.Y);
@@ -54,7 +54,7 @@ public sealed class RendererCameraMotionTests
             -0.2f,
             8192f);
 
-        var pose = RendererCameraMotion.Evaluate(RendererCameraMotionKind.Orbit, initial, speed: 2048f, elapsedSeconds: 0.0);
+        var pose = RendererCameraMotion.Evaluate(RendererCameraMotionKind.Orbit, initial, 2048f, 0.0);
 
         AssertClose(initial.Position.X, pose.Position.X);
         AssertClose(initial.Position.Y, pose.Position.Y);
@@ -73,7 +73,7 @@ public sealed class RendererCameraMotionTests
             -0.15f,
             4096f);
 
-        var pose = RendererCameraMotion.Evaluate(RendererCameraMotionKind.Sweep, initial, speed: 512f, elapsedSeconds: 1.0);
+        var pose = RendererCameraMotion.Evaluate(RendererCameraMotionKind.Sweep, initial, 512f, 1.0);
 
         AssertClose(512f, pose.Position.X);
         AssertClose(0f, pose.Position.Y);
@@ -100,6 +100,8 @@ public sealed class RendererCameraMotionTests
         AssertClose(expectedZ, forward.Z);
     }
 
-    private static void AssertClose(float expected, float actual) =>
+    private static void AssertClose(float expected, float actual)
+    {
         Assert.True(MathF.Abs(expected - actual) < 0.0005f, $"Expected {expected}, got {actual}.");
+    }
 }

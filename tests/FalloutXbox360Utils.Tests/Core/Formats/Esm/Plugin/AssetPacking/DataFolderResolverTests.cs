@@ -21,7 +21,7 @@ public class DataFolderResolverTests : IDisposable
         {
             if (Directory.Exists(_scratchRoot))
             {
-                Directory.Delete(_scratchRoot, recursive: true);
+                Directory.Delete(_scratchRoot, true);
             }
         }
         catch
@@ -30,7 +30,10 @@ public class DataFolderResolverTests : IDisposable
         }
     }
 
-    private string MakeDataFolder(string label) => Path.Combine(_scratchRoot, label);
+    private string MakeDataFolder(string label)
+    {
+        return Path.Combine(_scratchRoot, label);
+    }
 
     private void WriteLooseFile(string dataFolder, string relativePath, ReadOnlySpan<byte> bytes)
     {
@@ -44,7 +47,7 @@ public class DataFolderResolverTests : IDisposable
     {
         var baselineDir = MakeDataFolder("baseline");
         WriteLooseFile(baselineDir, "meshes\\already.nif", [1, 2, 3]);
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
 
         var resolver = new DataFolderResolver(baseline, []);
@@ -62,9 +65,9 @@ public class DataFolderResolverTests : IDisposable
         var secondaryDir = MakeDataFolder("fo3");
         WriteLooseFile(secondaryDir, "meshes\\fo3only.nif", [9, 9, 9]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
         var resolver = new DataFolderResolver(baseline, [secondary]);
@@ -85,9 +88,9 @@ public class DataFolderResolverTests : IDisposable
         // Candidate lives under a different subdirectory than the request.
         WriteLooseFile(secondaryDir, "armor\\moved\\helm.nif", [1]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
         var resolver = new DataFolderResolver(baseline, [secondary]);
@@ -110,11 +113,11 @@ public class DataFolderResolverTests : IDisposable
         var secondaryB = MakeDataFolder("foB");
         WriteLooseFile(secondaryB, "right\\branch\\test.nif", [2]); // suffix: 3 tokens (right, branch, test.nif)
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var idxA = new DataFolderIndex(secondaryA, xbox360FormatHint: false);
+        using var idxA = new DataFolderIndex(secondaryA, false);
         idxA.Build();
-        using var idxB = new DataFolderIndex(secondaryB, xbox360FormatHint: false);
+        using var idxB = new DataFolderIndex(secondaryB, false);
         idxB.Build();
 
         var resolver = new DataFolderResolver(baseline, [idxA, idxB]);
@@ -138,11 +141,11 @@ public class DataFolderResolverTests : IDisposable
         var secondaryB = MakeDataFolder("foB");
         WriteLooseFile(secondaryB, "branch\\test.nif", [2]); // suffix: 2 tokens (tie!)
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var idxA = new DataFolderIndex(secondaryA, xbox360FormatHint: false);
+        using var idxA = new DataFolderIndex(secondaryA, false);
         idxA.Build();
-        using var idxB = new DataFolderIndex(secondaryB, xbox360FormatHint: false);
+        using var idxB = new DataFolderIndex(secondaryB, false);
         idxB.Build();
 
         var resolver = new DataFolderResolver(baseline, [idxA, idxB]);
@@ -160,9 +163,9 @@ public class DataFolderResolverTests : IDisposable
         var secondaryDir = MakeDataFolder("fo3");
         Directory.CreateDirectory(secondaryDir);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
         var resolver = new DataFolderResolver(baseline, [secondary]);
@@ -181,7 +184,7 @@ public class DataFolderResolverTests : IDisposable
         var dir = MakeDataFolder("priority");
         WriteLooseFile(dir, "meshes\\test.nif", [0xAA]);
 
-        using var idx = new DataFolderIndex(dir, xbox360FormatHint: false);
+        using var idx = new DataFolderIndex(dir, false);
         idx.Build();
 
         Assert.True(idx.TryResolveExact("meshes\\test.nif", out var source));
@@ -196,12 +199,12 @@ public class DataFolderResolverTests : IDisposable
         var secondaryDir = MakeDataFolder("override");
         WriteLooseFile(secondaryDir, "meshes\\shared.nif", [0x5E]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
-        var resolver = new DataFolderResolver(baseline, [secondary], overrideBaseline: true);
+        var resolver = new DataFolderResolver(baseline, [secondary], true);
         var result = resolver.Resolve("meshes\\shared.nif");
 
         Assert.Equal(AssetResolutionKind.ResolvedExact, result.Kind);
@@ -221,12 +224,12 @@ public class DataFolderResolverTests : IDisposable
         var secondaryDir = MakeDataFolder("proto");
         WriteLooseFile(secondaryDir, "textures\\sand.ddx", [0x5E]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
-        var resolver = new DataFolderResolver(baseline, [secondary], overrideBaseline: true);
+        var resolver = new DataFolderResolver(baseline, [secondary], true);
         var result = resolver.Resolve("textures\\sand.dds");
 
         Assert.Equal(AssetResolutionKind.ResolvedFuzzy, result.Kind);
@@ -242,12 +245,12 @@ public class DataFolderResolverTests : IDisposable
         var secondaryDir = MakeDataFolder("secondary");
         WriteLooseFile(secondaryDir, "meshes\\somethingelse.nif", [0x5E]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
-        var resolver = new DataFolderResolver(baseline, [secondary], overrideBaseline: true);
+        var resolver = new DataFolderResolver(baseline, [secondary], true);
         var result = resolver.Resolve("meshes\\baselineonly.nif");
 
         Assert.Equal(AssetResolutionKind.AlreadyInBaseline, result.Kind);
@@ -264,7 +267,7 @@ public class DataFolderResolverTests : IDisposable
         var baselineDir = MakeDataFolder("baseline");
         WriteLooseFile(baselineDir, "meshes\\clutter\\dinotoy.nif", [0xAA]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
 
         var resolver = new DataFolderResolver(baseline, []);
@@ -293,9 +296,9 @@ public class DataFolderResolverTests : IDisposable
         WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\glover.nif", [0x04]);
         WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\enclavearmor.nif", [0x05]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
         var resolver = new DataFolderResolver(baseline, [secondary]);
@@ -319,9 +322,9 @@ public class DataFolderResolverTests : IDisposable
         WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\helmet.nif", [0x01]);
         WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\helmetgo.nif", [0x02]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
         var resolver = new DataFolderResolver(baseline, [secondary]);
@@ -342,9 +345,9 @@ public class DataFolderResolverTests : IDisposable
         var secondaryDir = MakeDataFolder("fo3");
         WriteLooseFile(secondaryDir, "meshes\\armor\\someotherfolder\\helmet.nif", [0x01]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
         var resolver = new DataFolderResolver(baseline, [secondary]);
@@ -363,9 +366,9 @@ public class DataFolderResolverTests : IDisposable
         var secondaryDir = MakeDataFolder("fo3");
         WriteLooseFile(secondaryDir, "meshes\\armor\\enclavepowerarmor\\helmet.dds", [0x01]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
         var resolver = new DataFolderResolver(baseline, [secondary]);
@@ -382,12 +385,12 @@ public class DataFolderResolverTests : IDisposable
         var secondaryDir = MakeDataFolder("secondary");
         Directory.CreateDirectory(secondaryDir);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
-        var resolver = new DataFolderResolver(baseline, [secondary], overrideBaseline: true);
+        var resolver = new DataFolderResolver(baseline, [secondary], true);
         var result = resolver.Resolve("meshes\\nowhere.nif");
 
         Assert.Equal(AssetResolutionKind.Missing, result.Kind);
@@ -406,9 +409,9 @@ public class DataFolderResolverTests : IDisposable
         WriteLooseFile(secondaryDir, "textures\\architecture\\barrier\\barrierbulletholes.ddx", [0x01]);
         WriteLooseFile(secondaryDir, "textures\\architecture\\barrier\\barrierbulletholes_n.ddx", [0x02]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: true);
+        using var secondary = new DataFolderIndex(secondaryDir, true);
         secondary.Build();
 
         var resolver = new DataFolderResolver(baseline, [secondary]);
@@ -433,9 +436,9 @@ public class DataFolderResolverTests : IDisposable
         var secondaryDir = MakeDataFolder("proto");
         WriteLooseFile(secondaryDir, "textures\\weapons\\gun_s.ddx", [0x42]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: true);
+        using var secondary = new DataFolderIndex(secondaryDir, true);
         secondary.Build();
 
         var resolver = new DataFolderResolver(baseline, [secondary]);

@@ -113,9 +113,9 @@ public sealed class EsmCoverageAnalyzerTests
             "synthetic.esm",
             [
                 Record("SCPT", 0x01000100,
-                    ScriptHeader(variableCount: 1, refCount: 1, compiledSize: 4),
+                    ScriptHeader(1, 1, 4),
                     Sub("SCDA", 0xFF, 0xFF, 0x00, 0x00),
-                    ScriptLocal(2, isInteger: true),
+                    ScriptLocal(2, true),
                     Sub("SCVR", (byte)'i', (byte)'C', (byte)'o', (byte)'u', (byte)'n', (byte)'t', 0),
                     FormIdSubrecord("SCRO", 0x00000014))
             ]);
@@ -340,14 +340,14 @@ public sealed class EsmCoverageAnalyzerTests
     {
         var baseline = new[]
         {
-            ScriptRow("INFO", 0x00001000, blockIndex: 1)
+            ScriptRow("INFO", 0x00001000, 1)
         };
         var candidate = new[]
         {
-            ScriptRow("INFO", 0x00001000, blockIndex: 1),
-            ScriptRow("INFO", 0xFE000100, blockIndex: 1, walkedToEnd: false),
-            ScriptRow("PACK", 0xFE000200, blockIndex: 1, compiledSizeMatches: false),
-            ScriptRow("SCPT", 0xFE000300, blockIndex: 1, refCountMatches: false)
+            ScriptRow("INFO", 0x00001000, 1),
+            ScriptRow("INFO", 0xFE000100, 1, walkedToEnd: false),
+            ScriptRow("PACK", 0xFE000200, 1, false),
+            ScriptRow("SCPT", 0xFE000300, 1, refCountMatches: false)
         };
 
         var result = EsmCoverageComparison.CompareScriptRows(
@@ -371,12 +371,12 @@ public sealed class EsmCoverageAnalyzerTests
     {
         var baseline = new[]
         {
-            ScriptRow("INFO", 0x00001000, blockIndex: 1)
+            ScriptRow("INFO", 0x00001000, 1)
         };
         var candidate = new[]
         {
-            ScriptRow("INFO", 0x00001000, blockIndex: 1),
-            ScriptRow("INFO", 0xFE000100, blockIndex: 1)
+            ScriptRow("INFO", 0x00001000, 1),
+            ScriptRow("INFO", 0xFE000100, 1)
         };
 
         var result = EsmCoverageComparison.CompareScriptRows(
@@ -495,18 +495,18 @@ public sealed class EsmCoverageAnalyzerTests
             recordType,
             formId,
             blockIndex,
-            ScdaLength: 4,
-            SchrCompiledSize: 4,
-            SchrRefObjectCount: 0,
-            ActualReferenceSlots: 0,
-            SchrVariableCount: 0,
-            ActualVariables: 0,
+            4,
+            4,
+            0,
+            0,
+            0,
+            0,
             compiledSizeMatches,
             refCountMatches,
-            VariableCountMatches: true,
+            true,
             walkedToEnd,
-            MultiByteReadCount: 0,
-            MultiByteByteCount: 0,
+            0,
+            0,
             hasDiagnostics,
             hasDiagnostics ? "; Unknown opcode" : string.Empty);
     }

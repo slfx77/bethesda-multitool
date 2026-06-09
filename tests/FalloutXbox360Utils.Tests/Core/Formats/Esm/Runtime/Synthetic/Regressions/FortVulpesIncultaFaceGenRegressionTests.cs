@@ -1,5 +1,4 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
@@ -41,21 +40,21 @@ public sealed class FortVulpesIncultaFaceGenRegressionTests
     [Fact]
     public void ReadFaceGenMorphArray_ResolvesFggsAt50Floats()
     {
-        var expectedFloats = MakeMorphFloats(FggsLength, seed: 0.01f);
+        var expectedFloats = MakeMorphFloats(FggsLength, 0.01f);
         AssertMorphArrayRoundTrips(expectedFloats);
     }
 
     [Fact]
     public void ReadFaceGenMorphArray_ResolvesFggaAt30Floats()
     {
-        var expectedFloats = MakeMorphFloats(FggaLength, seed: 0.02f);
+        var expectedFloats = MakeMorphFloats(FggaLength, 0.02f);
         AssertMorphArrayRoundTrips(expectedFloats);
     }
 
     [Fact]
     public void ReadFaceGenMorphArray_ResolvesFgtsAt50Floats()
     {
-        var expectedFloats = MakeMorphFloats(FgtsLength, seed: 0.03f);
+        var expectedFloats = MakeMorphFloats(FgtsLength, 0.03f);
         AssertMorphArrayRoundTrips(expectedFloats);
     }
 
@@ -64,7 +63,7 @@ public sealed class FortVulpesIncultaFaceGenRegressionTests
     {
         var npcBuffer = new byte[1024];
         // PointerOffset=100, CountOffset=104. Pointer left null (zero).
-        var layout = new RuntimeNpcFaceGenFieldLayout(PointerOffset: 100, CountOffset: 104);
+        var layout = new RuntimeNpcFaceGenFieldLayout(100, 104);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(npcBuffer, NpcBufferVa);
         var npcLayout = RuntimeNpcLayout.CreateDirect(0, 0, 1024);
@@ -81,7 +80,7 @@ public sealed class FortVulpesIncultaFaceGenRegressionTests
         WriteUInt32BE(npcBuffer, 100, FaceGenArrayVa);
         WriteUInt32BE(npcBuffer, 104, 5000); // out of band
 
-        var layout = new RuntimeNpcFaceGenFieldLayout(PointerOffset: 100, CountOffset: 104);
+        var layout = new RuntimeNpcFaceGenFieldLayout(100, 104);
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(npcBuffer, NpcBufferVa)
             .WithPointerTarget(FaceGenArrayVa, new byte[200 * 4]);
@@ -107,7 +106,7 @@ public sealed class FortVulpesIncultaFaceGenRegressionTests
             WriteFloatBE(arrayBytes, i * 4, 1_000_000f); // out of [-100, 100]
         }
 
-        var layout = new RuntimeNpcFaceGenFieldLayout(PointerOffset: 100, CountOffset: 104);
+        var layout = new RuntimeNpcFaceGenFieldLayout(100, 104);
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(npcBuffer, NpcBufferVa)
             .WithPointerTarget(FaceGenArrayVa, arrayBytes);
@@ -130,6 +129,7 @@ public sealed class FortVulpesIncultaFaceGenRegressionTests
             // but staying well under the reader's |value| < 100 gate.
             floats[i] = (i % 2 == 0 ? 1 : -1) * (seed + i * 0.001f);
         }
+
         return floats;
     }
 

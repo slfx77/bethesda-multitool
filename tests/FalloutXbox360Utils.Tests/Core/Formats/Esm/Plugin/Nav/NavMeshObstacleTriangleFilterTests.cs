@@ -26,13 +26,15 @@ public class NavMeshObstacleTriangleFilterTests
     private static byte[] Data(uint tris, uint doorLinks)
     {
         var b = new byte[20];
-        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(8, 4), tris);  // TriangleCount
+        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(8, 4), tris); // TriangleCount
         BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(16, 4), doorLinks);
         return b;
     }
 
     private static NavMeshSubrecord Find(IReadOnlyList<NavMeshSubrecord> subs, string sig)
-        => subs.First(s => s.Signature == sig);
+    {
+        return subs.First(s => s.Signature == sig);
+    }
 
     [Fact]
     public void Drops_non_0x800_triangles_and_compacts_indices()
@@ -47,7 +49,7 @@ public class NavMeshObstacleTriangleFilterTests
         {
             new("DATA", Data(3, 0)),
             new("NVTR", nvtr),
-            new("NVCA", new byte[] { 2, 0, 1, 0, 0, 0 }), // cover tris [2,1,0]: 1 is removed → drop; 2→1, 0→0
+            new("NVCA", new byte[] { 2, 0, 1, 0, 0, 0 }) // cover tris [2,1,0]: 1 is removed → drop; 2→1, 0→0
         };
 
         var result = NavMeshObstacleTriangleFilter.Filter(subs);
@@ -65,8 +67,8 @@ public class NavMeshObstacleTriangleFilterTests
     public void Nvdp_owning_triangle_is_remapped_and_door_link_count_updated()
     {
         var nvtr = new byte[2 * 16];
-        Tri(0, 1, 2, 0x2000).CopyTo(nvtr, 0);  // removed → index 0 gone
-        Tri(3, 4, 5, 0x800).CopyTo(nvtr, 16);  // kept → becomes index 0
+        Tri(0, 1, 2, 0x2000).CopyTo(nvtr, 0); // removed → index 0 gone
+        Tri(3, 4, 5, 0x800).CopyTo(nvtr, 16); // kept → becomes index 0
 
         // Two door portals: one owned by removed tri 0 (drop), one by kept tri 1 (remap 1->0).
         var nvdp = new byte[2 * 8];
@@ -77,7 +79,7 @@ public class NavMeshObstacleTriangleFilterTests
         {
             new("DATA", Data(2, 2)),
             new("NVTR", nvtr),
-            new("NVDP", nvdp),
+            new("NVDP", nvdp)
         };
 
         var result = NavMeshObstacleTriangleFilter.Filter(subs);

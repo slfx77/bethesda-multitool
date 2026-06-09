@@ -17,9 +17,9 @@ public sealed class ScriptDispositionPolicyTests
         var script = new ScriptRecord
         {
             FormId = 0x0014DA58,
-            CompiledData = new byte[100], // Proto SCDA shorter than master's.
+            CompiledData = new byte[100] // Proto SCDA shorter than master's.
         };
-        var master = MakeMasterScript(0x0014DA58, scdaSize: 2151);
+        var master = MakeMasterScript(0x0014DA58, 2151);
 
         var decision = policy.Decide(MakeOverride(script, master));
 
@@ -33,7 +33,7 @@ public sealed class ScriptDispositionPolicyTests
     {
         var policy = new ScriptDispositionPolicy();
         var script = new ScriptRecord { FormId = 0x0014DA58, CompiledData = new byte[2151] };
-        var master = MakeMasterScript(0x0014DA58, scdaSize: 2151);
+        var master = MakeMasterScript(0x0014DA58, 2151);
 
         Assert.Null(policy.Decide(MakeOverride(script, master)));
     }
@@ -43,7 +43,7 @@ public sealed class ScriptDispositionPolicyTests
     {
         var policy = new ScriptDispositionPolicy();
         var script = new ScriptRecord { FormId = 0x0014DA58, CompiledData = new byte[3000] };
-        var master = MakeMasterScript(0x0014DA58, scdaSize: 2151);
+        var master = MakeMasterScript(0x0014DA58, 2151);
 
         Assert.Null(policy.Decide(MakeOverride(script, master)));
     }
@@ -57,7 +57,7 @@ public sealed class ScriptDispositionPolicyTests
             Type = "SCPT",
             Source = SourceKind.MasterOnly,
             MasterFormId = 0x0014DA58,
-            Master = MakeMasterScript(0x0014DA58, scdaSize: 2151),
+            Master = MakeMasterScript(0x0014DA58, 2151)
         };
 
         Assert.Null(policy.Decide(entry));
@@ -72,42 +72,48 @@ public sealed class ScriptDispositionPolicyTests
             Type = "SCPT",
             Source = SourceKind.DmpNew,
             DmpFormId = 0xAA000001,
-            Model = new ScriptRecord { FormId = 0xAA000001 },
+            Model = new ScriptRecord { FormId = 0xAA000001 }
         };
 
         Assert.Null(policy.Decide(entry));
     }
 
-    private static CatalogEntry MakeOverride(ScriptRecord script, ParsedMainRecord master) => new()
+    private static CatalogEntry MakeOverride(ScriptRecord script, ParsedMainRecord master)
     {
-        Type = "SCPT",
-        Source = SourceKind.DmpOverride,
-        MasterFormId = script.FormId,
-        DmpFormId = script.FormId,
-        Model = script,
-        Master = master,
-    };
-
-    private static ParsedMainRecord MakeMasterScript(uint formId, int scdaSize) => new()
-    {
-        Header = new MainRecordHeader
+        return new CatalogEntry
         {
-            Signature = "SCPT",
-            DataSize = 0,
-            Flags = 0,
-            FormId = formId,
-            Timestamp = 0,
-            VcsInfo = 0,
-            Version = 15,
-        },
-        Offset = 0,
-        Subrecords =
-        [
-            new ParsedSubrecord
+            Type = "SCPT",
+            Source = SourceKind.DmpOverride,
+            MasterFormId = script.FormId,
+            DmpFormId = script.FormId,
+            Model = script,
+            Master = master
+        };
+    }
+
+    private static ParsedMainRecord MakeMasterScript(uint formId, int scdaSize)
+    {
+        return new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
             {
-                Signature = "SCDA",
-                Data = new byte[scdaSize],
+                Signature = "SCPT",
+                DataSize = 0,
+                Flags = 0,
+                FormId = formId,
+                Timestamp = 0,
+                VcsInfo = 0,
+                Version = 15
             },
-        ],
-    };
+            Offset = 0,
+            Subrecords =
+            [
+                new ParsedSubrecord
+                {
+                    Signature = "SCDA",
+                    Data = new byte[scdaSize]
+                }
+            ]
+        };
+    }
 }

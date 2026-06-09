@@ -31,7 +31,7 @@ internal static class PlannerTier1ParityHelper
             Model = model,
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test new record" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test new record" }
         };
 
         var plan = new EmitPlan
@@ -44,8 +44,8 @@ internal static class PlannerTier1ParityHelper
             Meta = new PlanMetadata
             {
                 NextObjectId = formId + 1,
-                PlannerCoverage = ImmutableHashSet.Create(recordType),
-            },
+                PlannerCoverage = ImmutableHashSet.Create(recordType)
+            }
         };
 
         var options = new PluginBuildOptions { CompressRecords = false };

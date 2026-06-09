@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
 
@@ -152,8 +151,8 @@ public class ScolEncoderTests
 
         var encoded = ScolEncoder.EncodeNew(
             scol,
-            masterFormIds: new HashSet<uint>(),
-            emittedNewStats: new HashSet<uint> { 0x01000800 });
+            new HashSet<uint>(),
+            new HashSet<uint> { 0x01000800 });
 
         Assert.Equal(["EDID", "ONAM", "DATA"], encoded.Subrecords.Select(s => s.Signature));
     }

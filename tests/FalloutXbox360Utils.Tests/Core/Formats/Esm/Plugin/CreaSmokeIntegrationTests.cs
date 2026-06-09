@@ -1,6 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -16,11 +15,11 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 ///     encoder side only; the smoke test below additionally pins the byte-level contract
 ///     both sides must agree on.
 ///     <para>
-///     We deliberately skip the full <c>PluginConversionPipeline</c> path: it requires a
-///     real DMP file + a real PC FalloutNV.esm master and a writable output directory, all
-///     of which would add minutes to a single test run. The encoder→parser pair captures the
-///     load-bearing failure mode (flag-policy fixup must survive serialization and re-parse
-///     in a way that a downstream consumer would see).
+///         We deliberately skip the full <c>PluginConversionPipeline</c> path: it requires a
+///         real DMP file + a real PC FalloutNV.esm master and a writable output directory, all
+///         of which would add minutes to a single test run. The encoder→parser pair captures the
+///         load-bearing failure mode (flag-policy fixup must survive serialization and re-parse
+///         in a way that a downstream consumer would see).
 ///     </para>
 /// </summary>
 public sealed class CreaSmokeIntegrationTests
@@ -37,18 +36,18 @@ public sealed class CreaSmokeIntegrationTests
         //   2. UseTemplate (0x40) set (TemplateFlags is nonzero).
         //   3. SpeedMultiplier clamped to 100 (input is 0).
         var input = new ActorBaseSubrecord(
-            Flags: 0x00000002u, // Essential bit only; no AutoCalc, no UseTemplate.
-            FatigueBase: 75,
-            BarterGold: 0,
-            Level: 5,
-            CalcMin: 1,
-            CalcMax: 50,
-            SpeedMultiplier: 0,         // Clamp trigger.
-            KarmaAlignment: 0.5f,
-            DispositionBase: 25,
-            TemplateFlags: 0x0001,      // UseTemplate trigger (Speedy/Sleepy-style templated creature).
-            Offset: 0,
-            IsBigEndian: false);
+            0x00000002u, // Essential bit only; no AutoCalc, no UseTemplate.
+            75,
+            0,
+            5,
+            1,
+            50,
+            0, // Clamp trigger.
+            0.5f,
+            25,
+            0x0001, // UseTemplate trigger (Speedy/Sleepy-style templated creature).
+            0,
+            false);
 
         var crea = new CreatureRecord
         {
@@ -57,13 +56,13 @@ public sealed class CreaSmokeIntegrationTests
             Stats = input
         };
 
-        var encoded = CreaEncoder.EncodeNew(crea, new HashSet<uint>(), null);
+        var encoded = CreaEncoder.EncodeNew(crea, new HashSet<uint>());
         var acbs = encoded.Subrecords.Single(s => s.Signature == "ACBS");
 
         // Round-trip: the encoder's output bytes are fed back through the parser's
         // standard ACBS decoder. The parser doesn't know or care that the encoder
         // emitted this — it just reads the 24-byte subrecord payload.
-        var parsed = ActorRecordHandler.ParseActorBase(acbs.Bytes, offset: 0, bigEndian: false);
+        var parsed = ActorRecordHandler.ParseActorBase(acbs.Bytes, 0, false);
         Assert.NotNull(parsed);
 
         // Flag-policy fixup 1: AutoCalcStats (0x10) must be present in the parser's view.
@@ -99,18 +98,18 @@ public sealed class CreaSmokeIntegrationTests
         // UseTemplate (0x40) added during encoding. AutoCalcStats (0x10) still gets
         // forced — that's an always-on fixup independent of templating.
         var input = new ActorBaseSubrecord(
-            Flags: 0x00000002u,
-            FatigueBase: 100,
-            BarterGold: 0,
-            Level: 10,
-            CalcMin: 5,
-            CalcMax: 50,
-            SpeedMultiplier: 100,
-            KarmaAlignment: 0f,
-            DispositionBase: 50,
-            TemplateFlags: 0,            // No templating — no UseTemplate fixup.
-            Offset: 0,
-            IsBigEndian: false);
+            0x00000002u,
+            100,
+            0,
+            10,
+            5,
+            50,
+            100,
+            0f,
+            50,
+            0, // No templating — no UseTemplate fixup.
+            0,
+            false);
 
         var crea = new CreatureRecord
         {
@@ -119,10 +118,10 @@ public sealed class CreaSmokeIntegrationTests
             Stats = input
         };
 
-        var encoded = CreaEncoder.EncodeNew(crea, new HashSet<uint>(), null);
+        var encoded = CreaEncoder.EncodeNew(crea, new HashSet<uint>());
         var acbs = encoded.Subrecords.Single(s => s.Signature == "ACBS");
 
-        var parsed = ActorRecordHandler.ParseActorBase(acbs.Bytes, offset: 0, bigEndian: false);
+        var parsed = ActorRecordHandler.ParseActorBase(acbs.Bytes, 0, false);
         Assert.NotNull(parsed);
 
         // AutoCalcStats forced (always-on fixup).
@@ -152,10 +151,10 @@ public sealed class CreaSmokeIntegrationTests
             Stats = null
         };
 
-        var encoded = CreaEncoder.EncodeNew(crea, new HashSet<uint>(), null);
+        var encoded = CreaEncoder.EncodeNew(crea, new HashSet<uint>());
         var acbs = encoded.Subrecords.Single(s => s.Signature == "ACBS");
 
-        var parsed = ActorRecordHandler.ParseActorBase(acbs.Bytes, offset: 0, bigEndian: false);
+        var parsed = ActorRecordHandler.ParseActorBase(acbs.Bytes, 0, false);
         Assert.NotNull(parsed);
 
         Assert.Equal(0u, parsed.Flags);

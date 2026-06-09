@@ -54,5 +54,4 @@ public sealed class FaceGenHeadShaderFamilyResolverTests
         Assert.Equal<byte>(29, composed.Pixels[2]);
         Assert.Equal<byte>(255, composed.Pixels[3]);
     }
-
 }

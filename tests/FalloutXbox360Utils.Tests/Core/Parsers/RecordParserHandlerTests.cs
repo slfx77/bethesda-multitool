@@ -980,11 +980,11 @@ public class RecordParserHandlerTests
         var edid = NullTermString("AcbsLongNpc");
         var acbs = new byte[28]; // 24 standard + 4 trailing proto-only bytes
         BinaryPrimitives.WriteUInt32LittleEndian(acbs.AsSpan(0), 0x00000003u); // flags = 3
-        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(4), 5);            // fatigue
-        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(6), 0);            // barter gold
-        BinaryPrimitives.WriteInt16LittleEndian(acbs.AsSpan(8), 1);             // level
-        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(10), 1);           // calcMin
-        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(12), 10);          // calcMax
+        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(4), 5); // fatigue
+        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(6), 0); // barter gold
+        BinaryPrimitives.WriteInt16LittleEndian(acbs.AsSpan(8), 1); // level
+        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(10), 1); // calcMin
+        BinaryPrimitives.WriteUInt16LittleEndian(acbs.AsSpan(12), 10); // calcMax
         // remaining bytes (14..23) zero; trailing 24..27 garbage (zero-init is fine)
 
         var recordBytes = BuildRecordBytes(0x000A0004, "NPC_", false,

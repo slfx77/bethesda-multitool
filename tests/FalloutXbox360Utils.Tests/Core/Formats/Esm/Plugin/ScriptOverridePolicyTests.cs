@@ -1,7 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
-using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
@@ -14,11 +13,11 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 ///     authoritative bytecode, and any swap reaches load-bearing dialogue scripts
 ///     (Doc Mitchell tutorial dispatch, VMS01, ShowChargenMenu cluster).
 ///     <para>
-///     A proven "DMP capture is authoritative" override path may be valid later, but it
-///     must go through a dedicated channel with its own diff-quality gating — not through
-///     the standard <see cref="IRecordEncoder.Encode" /> override loop. If you're tempted
-///     to delete these tests because your shiny new override path is "obviously safe":
-///     please read <c>memory/feedback_root_cause_over_suppression.md</c> first.
+///         A proven "DMP capture is authoritative" override path may be valid later, but it
+///         must go through a dedicated channel with its own diff-quality gating — not through
+///         the standard <see cref="IRecordEncoder.Encode" /> override loop. If you're tempted
+///         to delete these tests because your shiny new override path is "obviously safe":
+///         please read <c>memory/feedback_root_cause_over_suppression.md</c> first.
 ///     </para>
 /// </summary>
 public class ScriptOverridePolicyTests

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -22,9 +23,12 @@ public sealed class TerrainPerfProfileTests
     /// <summary>Approximate exterior-cell count of WastelandNV — drives a realistic mesh-build batch size.</summary>
     private const int WorldspaceCellCountTarget = 4000;
 
-    private readonly Xunit.ITestOutputHelper _output;
+    private readonly ITestOutputHelper _output;
 
-    public TerrainPerfProfileTests(Xunit.ITestOutputHelper output) => _output = output;
+    public TerrainPerfProfileTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
 
     [Fact]
     public void Profile_TerrainMeshBuilder_BulkBuildTime()
@@ -50,6 +54,7 @@ public sealed class TerrainPerfProfileTests
             built++;
             totalVertices += m.Vertices.Length;
         }
+
         sw.Stop();
 
         var totalMs = sw.Elapsed.TotalMilliseconds;
@@ -60,7 +65,8 @@ public sealed class TerrainPerfProfileTests
         _output.WriteLine($"  total: {totalMs:F1} ms");
         _output.WriteLine($"  avg:   {avgUs:F1} µs/cell");
         _output.WriteLine($"  total verts: {totalVertices:N0}");
-        _output.WriteLine($"  at 60 Hz frame budget (16.67 ms), can fit ~{perFrameAt60Hz:F0} CPU mesh-builds per frame");
+        _output.WriteLine(
+            $"  at 60 Hz frame budget (16.67 ms), can fit ~{perFrameAt60Hz:F0} CPU mesh-builds per frame");
     }
 
     [Fact]
@@ -76,31 +82,33 @@ public sealed class TerrainPerfProfileTests
 
         // Warmup
         for (var i = 0; i < 32; i++) TerrainMeshBuilder.Build(cells[i]);
-        var vertScratch = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
+        var vertScratch = new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
         var idxScratch = new ushort[TerrainMeshBuilder.IndexCount];
         for (var i = 0; i < 32; i++) TerrainMeshBuilder.TryBuild(cells[i], vertScratch, idxScratch);
 
         // Measure Build (allocates per cell)
         GC.Collect(2, GCCollectionMode.Forced, true, true);
         GC.WaitForPendingFinalizers();
-        var beforeBuild = GC.GetTotalAllocatedBytes(precise: true);
+        var beforeBuild = GC.GetTotalAllocatedBytes(true);
         foreach (var cell in cells) _ = TerrainMeshBuilder.Build(cell);
-        var afterBuild = GC.GetTotalAllocatedBytes(precise: true);
+        var afterBuild = GC.GetTotalAllocatedBytes(true);
         var buildBytes = afterBuild - beforeBuild;
 
         // Measure TryBuild (reuses scratch)
         GC.Collect(2, GCCollectionMode.Forced, true, true);
         GC.WaitForPendingFinalizers();
-        var beforeTry = GC.GetTotalAllocatedBytes(precise: true);
+        var beforeTry = GC.GetTotalAllocatedBytes(true);
         foreach (var cell in cells) _ = TerrainMeshBuilder.TryBuild(cell, vertScratch, idxScratch);
-        var afterTry = GC.GetTotalAllocatedBytes(precise: true);
+        var afterTry = GC.GetTotalAllocatedBytes(true);
         var tryBytes = afterTry - beforeTry;
 
         _output.WriteLine($"Allocations for {cells.Count} cell builds:");
-        _output.WriteLine($"  Build(cell):                       {buildBytes / 1024.0:F1} KB total ({buildBytes / (double)cells.Count:F0} B/cell)");
-        _output.WriteLine($"  TryBuild(cell, span, span):        {tryBytes / 1024.0:F1} KB total ({tryBytes / (double)cells.Count:F0} B/cell)");
+        _output.WriteLine(
+            $"  Build(cell):                       {buildBytes / 1024.0:F1} KB total ({buildBytes / (double)cells.Count:F0} B/cell)");
+        _output.WriteLine(
+            $"  TryBuild(cell, span, span):        {tryBytes / 1024.0:F1} KB total ({tryBytes / (double)cells.Count:F0} B/cell)");
         _output.WriteLine($"  reduction: {(1.0 - tryBytes / (double)buildBytes) * 100:F1}%");
-        _output.WriteLine($"  At 16 builds/frame × 60 Hz:");
+        _output.WriteLine("  At 16 builds/frame × 60 Hz:");
         _output.WriteLine($"    Build:    {buildBytes / (double)cells.Count * 16 * 60 / (1024 * 1024):F1} MB/sec");
         _output.WriteLine($"    TryBuild: {tryBytes / (double)cells.Count * 16 * 60 / (1024 * 1024):F1} MB/sec");
     }
@@ -118,7 +126,7 @@ public sealed class TerrainPerfProfileTests
         var entries = new TestEntry[N];
         for (var i = 0; i < N; i++) entries[i] = new TestEntry();
 
-        var cache = new CellMeshLruCache<TestEntry>(capacity: N + 256);
+        var cache = new CellMeshLruCache<TestEntry>(N + 256);
 
         // Warmup
         for (var i = 0; i < 64; i++) cache.Insert((-1, -i), entries[0]);
@@ -130,6 +138,7 @@ public sealed class TerrainPerfProfileTests
             var key = (i % 100, i / 100);
             cache.Insert(key, entries[i]);
         }
+
         swInsert.Stop();
 
         var swGet = Stopwatch.StartNew();
@@ -139,18 +148,23 @@ public sealed class TerrainPerfProfileTests
             var key = (i % 100, i / 100);
             if (cache.TryGet(key, out _)) hits++;
         }
+
         swGet.Stop();
 
         _output.WriteLine($"CellMeshLruCache over {N} entries:");
-        _output.WriteLine($"  insert: {swInsert.Elapsed.TotalMilliseconds:F1} ms ({swInsert.Elapsed.TotalMilliseconds * 1000 / N:F2} µs/op)");
-        _output.WriteLine($"  get:    {swGet.Elapsed.TotalMilliseconds:F1} ms ({swGet.Elapsed.TotalMilliseconds * 1000 / N:F2} µs/op)");
+        _output.WriteLine(
+            $"  insert: {swInsert.Elapsed.TotalMilliseconds:F1} ms ({swInsert.Elapsed.TotalMilliseconds * 1000 / N:F2} µs/op)");
+        _output.WriteLine(
+            $"  get:    {swGet.Elapsed.TotalMilliseconds:F1} ms ({swGet.Elapsed.TotalMilliseconds * 1000 / N:F2} µs/op)");
         _output.WriteLine($"  hits:   {hits}/{N}");
 
         cache.Dispose();
     }
 
-    private static bool IsProfileEnabled() =>
-        Environment.GetEnvironmentVariable("PROFILE_TERRAIN") == "1";
+    private static bool IsProfileEnabled()
+    {
+        return Environment.GetEnvironmentVariable("PROFILE_TERRAIN") == "1";
+    }
 
     private static List<CellRecord> BuildSyntheticWorldspace(int count)
     {
@@ -162,7 +176,7 @@ public sealed class TerrainPerfProfileTests
         {
             var deltas = new sbyte[33 * 33];
             for (var k = 0; k < deltas.Length; k++)
-                deltas[k] = (sbyte)(rng.Next(-32, 32));
+                deltas[k] = (sbyte)rng.Next(-32, 32);
 
             cells.Add(new CellRecord
             {
@@ -176,11 +190,14 @@ public sealed class TerrainPerfProfileTests
                 }
             });
         }
+
         return cells;
     }
 
     private sealed class TestEntry : IDisposable
     {
-        public void Dispose() { }
+        public void Dispose()
+        {
+        }
     }
 }

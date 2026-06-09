@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Catalog;
@@ -28,14 +27,14 @@ public sealed class PackagePldtDowngradeTests
             {
                 ContainerSignature = "PLDT",
                 FromShape = "Type 0",
-                ToShape = "Type 2",
+                ToShape = "Type 2"
             }));
         var resolver = new ReferenceResolver([new PackageReferenceWalker()], policy);
 
         var pack = new PackageRecord
         {
             FormId = 0x000ABCDE,
-            Location = new PackageLocation { Type = 0, Union = 0x01FFFFFF }, // Dangle.
+            Location = new PackageLocation { Type = 0, Union = 0x01FFFFFF } // Dangle.
         };
         var entry = new CatalogEntry
         {
@@ -43,12 +42,12 @@ public sealed class PackagePldtDowngradeTests
             Source = SourceKind.DmpOverride,
             MasterFormId = 0x000ABCDE,
             DmpFormId = 0x000ABCDE,
-            Model = pack,
+            Model = pack
         };
         var decision = new DispositionDecision
         {
             Disposition = RecordDisposition.Override,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
         var emitted = new HashSet<uint> { 0x000ABCDE };
 
@@ -72,14 +71,14 @@ public sealed class PackagePldtDowngradeTests
             {
                 ContainerSignature = "PLDT",
                 FromShape = "Type 0",
-                ToShape = "Type 2",
+                ToShape = "Type 2"
             }));
         var resolver = new ReferenceResolver([new PackageReferenceWalker()], policy);
 
         var pack = new PackageRecord
         {
             FormId = 0x000ABCDE,
-            Location = new PackageLocation { Type = 0, Union = 0x000ABCDF }, // In emit set.
+            Location = new PackageLocation { Type = 0, Union = 0x000ABCDF } // In emit set.
         };
         var entry = new CatalogEntry
         {
@@ -87,12 +86,12 @@ public sealed class PackagePldtDowngradeTests
             Source = SourceKind.DmpOverride,
             MasterFormId = 0x000ABCDE,
             DmpFormId = 0x000ABCDE,
-            Model = pack,
+            Model = pack
         };
         var decision = new DispositionDecision
         {
             Disposition = RecordDisposition.Override,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
         var emitted = new HashSet<uint> { 0x000ABCDE, 0x000ABCDF };
 

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Xunit;
 
@@ -11,7 +8,7 @@ public sealed class BoundedAsyncResolveQueueTests
     [Fact]
     public void Enqueue_DedupsByKey()
     {
-        var queue = new BoundedAsyncResolveQueue<string>(maxConcurrent: 4, resolve: k => k);
+        var queue = new BoundedAsyncResolveQueue<string>(4, k => k);
 
         Assert.True(queue.Enqueue("a"));
         Assert.False(queue.Enqueue("a"));
@@ -23,14 +20,15 @@ public sealed class BoundedAsyncResolveQueueTests
     {
         var scheduler = new ManualScheduler();
         var queue = new BoundedAsyncResolveQueue<string>(
-            maxConcurrent: 2,
-            resolve: k => k + "!",
-            scheduler: scheduler.Schedule);
+            2,
+            k => k + "!",
+            scheduler.Schedule);
 
         for (var i = 0; i < 5; i++)
         {
             queue.Enqueue($"k{i}");
         }
+
         queue.Pump();
 
         Assert.Equal(2, queue.ActiveCount);
@@ -43,17 +41,18 @@ public sealed class BoundedAsyncResolveQueueTests
     {
         var scheduler = new ManualScheduler();
         var queue = new BoundedAsyncResolveQueue<string>(
-            maxConcurrent: 2,
-            resolve: k => k,
-            scheduler: scheduler.Schedule);
+            2,
+            k => k,
+            scheduler.Schedule);
 
         for (var i = 0; i < 5; i++)
         {
             queue.Enqueue($"k{i}");
         }
-        queue.Pump();        // 2 active, 3 queued
+
+        queue.Pump(); // 2 active, 3 queued
         scheduler.RunNext(); // one completes → active drops to 1
-        queue.Pump();        // a slot frees, start one more
+        queue.Pump(); // a slot frees, start one more
 
         Assert.Equal(2, queue.ActiveCount);
         Assert.Equal(2, queue.QueuedCount);
@@ -64,9 +63,9 @@ public sealed class BoundedAsyncResolveQueueTests
     {
         var scheduler = new ManualScheduler();
         var queue = new BoundedAsyncResolveQueue<string>(
-            maxConcurrent: 4,
-            resolve: k => k + "!",
-            scheduler: scheduler.Schedule);
+            4,
+            k => k + "!",
+            scheduler.Schedule);
 
         queue.Enqueue("a");
         queue.Pump();
@@ -83,9 +82,9 @@ public sealed class BoundedAsyncResolveQueueTests
     {
         var scheduler = new ManualScheduler();
         var queue = new BoundedAsyncResolveQueue<string>(
-            maxConcurrent: 4,
-            resolve: k => k,
-            scheduler: scheduler.Schedule);
+            4,
+            k => k,
+            scheduler.Schedule);
 
         queue.Enqueue("a");
         Assert.False(queue.Enqueue("a")); // de-duped while queued
@@ -101,9 +100,9 @@ public sealed class BoundedAsyncResolveQueueTests
     {
         var scheduler = new ManualScheduler();
         var queue = new BoundedAsyncResolveQueue<string>(
-            maxConcurrent: 1,
-            resolve: _ => throw new InvalidOperationException("boom"),
-            scheduler: scheduler.Schedule);
+            1,
+            _ => throw new InvalidOperationException("boom"),
+            scheduler.Schedule);
 
         queue.Enqueue("a");
         queue.Pump();
@@ -120,8 +119,8 @@ public sealed class BoundedAsyncResolveQueueTests
     {
         // Exercises the production Task.Run path (no injected scheduler).
         var queue = new BoundedAsyncResolveQueue<string>(
-            maxConcurrent: 2,
-            resolve: k => k + "!");
+            2,
+            k => k + "!");
 
         queue.Enqueue("a");
         queue.Pump();

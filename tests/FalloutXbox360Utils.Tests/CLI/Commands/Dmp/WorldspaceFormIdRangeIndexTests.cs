@@ -11,7 +11,8 @@ public class WorldspaceFormIdRangeIndexTests
     {
         var index = new WorldspaceFormIdRangeIndex();
 
-        index.ObserveCell(new CellRecord { FormId = 0xFE000001, WorldspaceFormId = 0x100 }, new Dictionary<uint, uint>());
+        index.ObserveCell(new CellRecord { FormId = 0xFE000001, WorldspaceFormId = 0x100 },
+            new Dictionary<uint, uint>());
 
         Assert.Empty(index.Ranges);
     }

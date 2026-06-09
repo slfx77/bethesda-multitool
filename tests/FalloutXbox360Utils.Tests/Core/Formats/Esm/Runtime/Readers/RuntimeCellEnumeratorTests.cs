@@ -1,6 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
@@ -42,17 +41,17 @@ public sealed class RuntimeCellEnumeratorTests
     public void EditorIdHash_ReturnsOnlyCellFormType()
     {
         var heap = new HeapBuilder(0x4000);
-        var cellVa = heap.PlaceCell(formId: 0x0000A001);
+        var cellVa = heap.PlaceCell(0x0000A001);
         var notCellVa = heap.PlaceTesForm(WeapFormType, 0x0000B001);
 
-        var enumerator = heap.BuildEnumerator(pAllFormsVa: 0);
+        var enumerator = heap.BuildEnumerator(0);
         var entries = new[]
         {
-            MakeEntry(formId: 0x0000A001, formType: CellFormType, tesFormPtr: cellVa),
-            MakeEntry(formId: 0x0000B001, formType: WeapFormType, tesFormPtr: notCellVa)
+            MakeEntry(0x0000A001, CellFormType, cellVa),
+            MakeEntry(0x0000B001, WeapFormType, notCellVa)
         };
 
-        var result = enumerator.Enumerate(entries, knownWrldFormIds: []);
+        var result = enumerator.Enumerate(entries, []);
 
         Assert.Equal(1, result.Stats.FromEditorIdHash);
         Assert.Equal(1, result.Stats.UniqueTotal);
@@ -70,19 +69,19 @@ public sealed class RuntimeCellEnumeratorTests
     public void AllFormsHash_FiltersByFormType_AndWalksLinkedList()
     {
         var heap = new HeapBuilder(0x4000);
-        var cellAVa = heap.PlaceCell(formId: 0x10000001);
-        var cellBVa = heap.PlaceCell(formId: 0x10000002);
+        var cellAVa = heap.PlaceCell(0x10000001);
+        var cellBVa = heap.PlaceCell(0x10000002);
         var weaponVa = heap.PlaceTesForm(WeapFormType, 0x10000003);
 
         // Two-bucket hash table; bucket 0 chains cellA -> weapon -> cellB so the walker
         // must traverse the m_pkNext links to pick up both CELL entries.
-        var node3 = heap.PlaceMapItem(formId: 0x10000002, formVa: cellBVa, nextVa: 0);
-        var node2 = heap.PlaceMapItem(formId: 0x10000003, formVa: weaponVa, nextVa: node3);
-        var node1 = heap.PlaceMapItem(formId: 0x10000001, formVa: cellAVa, nextVa: node2);
-        var hashTableVa = heap.PlaceHashTable(buckets: [node1, 0]);
+        var node3 = heap.PlaceMapItem(0x10000002, cellBVa, 0);
+        var node2 = heap.PlaceMapItem(0x10000003, weaponVa, node3);
+        var node1 = heap.PlaceMapItem(0x10000001, cellAVa, node2);
+        var hashTableVa = heap.PlaceHashTable([node1, 0]);
 
         var enumerator = heap.BuildEnumerator(hashTableVa);
-        var result = enumerator.Enumerate(editorIdEntries: [], knownWrldFormIds: []);
+        var result = enumerator.Enumerate([], []);
 
         Assert.Equal(2, result.Stats.FromAllFormsHash);
         Assert.Equal(0, result.Stats.FromEditorIdHash);
@@ -96,17 +95,17 @@ public sealed class RuntimeCellEnumeratorTests
     public void AllFormsHash_RejectsNullAndZeroFormIds()
     {
         var heap = new HeapBuilder(0x4000);
-        var cellVa = heap.PlaceCell(formId: 0x20000001);
+        var cellVa = heap.PlaceCell(0x20000001);
 
         // bucket 0 has a node with key=0 (rejected) -> node with valid CELL.
         // bucket 1 has a node with nullptr value (rejected) -> nullptr next.
-        var validNode = heap.PlaceMapItem(formId: 0x20000001, formVa: cellVa, nextVa: 0);
-        var nullKeyNode = heap.PlaceMapItem(formId: 0, formVa: cellVa, nextVa: validNode);
-        var nullValueNode = heap.PlaceMapItem(formId: 0x20000099, formVa: 0, nextVa: 0);
-        var hashTableVa = heap.PlaceHashTable(buckets: [nullKeyNode, nullValueNode]);
+        var validNode = heap.PlaceMapItem(0x20000001, cellVa, 0);
+        var nullKeyNode = heap.PlaceMapItem(0, cellVa, validNode);
+        var nullValueNode = heap.PlaceMapItem(0x20000099, 0, 0);
+        var hashTableVa = heap.PlaceHashTable([nullKeyNode, nullValueNode]);
 
         var enumerator = heap.BuildEnumerator(hashTableVa);
-        var result = enumerator.Enumerate(editorIdEntries: [], knownWrldFormIds: []);
+        var result = enumerator.Enumerate([], []);
 
         Assert.Equal(1, result.Stats.FromAllFormsHash);
         Assert.Equal(0x20000001u, result.Cells[0].FormId);
@@ -126,7 +125,7 @@ public sealed class RuntimeCellEnumeratorTests
         var cellVas = new uint[occupiedSlots.Length];
         for (var i = 0; i < occupiedSlots.Length; i++)
         {
-            cellVas[i] = heap.PlaceCell(formId: 0x30000001 + (uint)i);
+            cellVas[i] = heap.PlaceCell(0x30000001 + (uint)i);
         }
 
         var gridSlots = new uint[25];
@@ -136,16 +135,16 @@ public sealed class RuntimeCellEnumeratorTests
         }
 
         var gridArrayVa = heap.PlaceGridCellArray(gridSlots);
-        var wrldVa = heap.PlaceWorldspace(formId: 0x000000DA, gridCellArrayVa: gridArrayVa);
+        var wrldVa = heap.PlaceWorldspace(0x000000DA, gridArrayVa);
 
         // Single hash-table entry pointing at the worldspace.
-        var wrldNode = heap.PlaceMapItem(formId: 0x000000DA, formVa: wrldVa, nextVa: 0);
-        var hashTableVa = heap.PlaceHashTable(buckets: [wrldNode]);
+        var wrldNode = heap.PlaceMapItem(0x000000DA, wrldVa, 0);
+        var hashTableVa = heap.PlaceHashTable([wrldNode]);
 
         var enumerator = heap.BuildEnumerator(hashTableVa);
         var result = enumerator.Enumerate(
-            editorIdEntries: [],
-            knownWrldFormIds: new HashSet<uint> { 0x000000DA });
+            [],
+            new HashSet<uint> { 0x000000DA });
 
         Assert.Equal(8, result.Stats.FromWorldspaceGrid);
         Assert.Equal(8, result.Stats.UniqueTotal);
@@ -162,16 +161,16 @@ public sealed class RuntimeCellEnumeratorTests
         var heap = new HeapBuilder(0x4000);
 
         var gridArrayVa = heap.PlaceGridCellArray(new uint[25]); // all null
-        var wrldVa = heap.PlaceWorldspace(formId: 0x000000E0, gridCellArrayVa: gridArrayVa);
+        var wrldVa = heap.PlaceWorldspace(0x000000E0, gridArrayVa);
 
         // WRLD form lands in the pAllForms walk because its FormID is in knownWrldFormIds.
-        var wrldNode = heap.PlaceMapItem(formId: 0x000000E0, formVa: wrldVa, nextVa: 0);
-        var hashTableVa = heap.PlaceHashTable(buckets: [wrldNode]);
+        var wrldNode = heap.PlaceMapItem(0x000000E0, wrldVa, 0);
+        var hashTableVa = heap.PlaceHashTable([wrldNode]);
 
         var enumerator = heap.BuildEnumerator(hashTableVa);
         var result = enumerator.Enumerate(
-            editorIdEntries: [],
-            knownWrldFormIds: new HashSet<uint> { 0x000000E0 });
+            [],
+            new HashSet<uint> { 0x000000E0 });
 
         // No cells in the grid -> 0 hits. But the WRLD was discovered (path didn't crash).
         Assert.Equal(0, result.Stats.UniqueTotal);
@@ -187,18 +186,18 @@ public sealed class RuntimeCellEnumeratorTests
         var heap = new HeapBuilder(0x8000);
 
         // Seed cell (also surfaced via Path 0 so heap-scan has a vtable to harvest).
-        var seedCellVa = heap.PlaceCell(formId: 0x40000001);
+        var seedCellVa = heap.PlaceCell(0x40000001);
         // Two additional cells with the SAME vtable as the seed.
-        var extraCellVa1 = heap.PlaceCell(formId: 0x40000002);
-        var extraCellVa2 = heap.PlaceCell(formId: 0x40000003);
+        var extraCellVa1 = heap.PlaceCell(0x40000002);
+        var extraCellVa2 = heap.PlaceCell(0x40000003);
 
         // Decoy 1: a struct that starts with a DIFFERENT module-range vtable.
-        heap.PlaceDecoy(DecoyVtable, formTypeByte: CellFormType, formId: 0xDEADBEEF);
+        heap.PlaceDecoy(DecoyVtable, CellFormType, 0xDEADBEEF);
 
-        var enumerator = heap.BuildEnumerator(pAllFormsVa: 0);
+        var enumerator = heap.BuildEnumerator(0);
         var result = enumerator.Enumerate(
-            editorIdEntries: [MakeEntry(0x40000001, CellFormType, seedCellVa)],
-            knownWrldFormIds: []);
+            [MakeEntry(0x40000001, CellFormType, seedCellVa)],
+            []);
 
         Assert.Equal(1, result.Stats.FromEditorIdHash);
         Assert.Equal(2, result.Stats.FromHeapScan);
@@ -216,13 +215,13 @@ public sealed class RuntimeCellEnumeratorTests
         var heap = new HeapBuilder(0x4000);
 
         // Seed cell with vfptr in HEAP range, not module range. Heap-scan must skip.
-        var seedCellVa = heap.PlaceCell(formId: 0x50000001, vtable: HeapNonModuleVtable);
-        heap.PlaceCell(formId: 0x50000002, vtable: HeapNonModuleVtable);
+        var seedCellVa = heap.PlaceCell(0x50000001, HeapNonModuleVtable);
+        heap.PlaceCell(0x50000002, HeapNonModuleVtable);
 
-        var enumerator = heap.BuildEnumerator(pAllFormsVa: 0);
+        var enumerator = heap.BuildEnumerator(0);
         var result = enumerator.Enumerate(
-            editorIdEntries: [MakeEntry(0x50000001, CellFormType, seedCellVa)],
-            knownWrldFormIds: []);
+            [MakeEntry(0x50000001, CellFormType, seedCellVa)],
+            []);
 
         Assert.Equal(1, result.Stats.FromEditorIdHash);
         Assert.Equal(0, result.Stats.FromHeapScan);
@@ -234,18 +233,18 @@ public sealed class RuntimeCellEnumeratorTests
     {
         var heap = new HeapBuilder(0x4000);
 
-        var seedCellVa = heap.PlaceCell(formId: 0x60000001);
+        var seedCellVa = heap.PlaceCell(0x60000001);
 
         // Decoy that DOES start with the cell vtable but has a non-CELL form type byte.
-        heap.PlaceDecoyAtVtable(CellVtable, formTypeByte: WeapFormType, formId: 0xCAFEBABE);
+        heap.PlaceDecoyAtVtable(CellVtable, WeapFormType, 0xCAFEBABE);
 
         // Decoy with vtable matching but formId == 0.
-        heap.PlaceDecoyAtVtable(CellVtable, formTypeByte: CellFormType, formId: 0);
+        heap.PlaceDecoyAtVtable(CellVtable, CellFormType, 0);
 
-        var enumerator = heap.BuildEnumerator(pAllFormsVa: 0);
+        var enumerator = heap.BuildEnumerator(0);
         var result = enumerator.Enumerate(
-            editorIdEntries: [MakeEntry(0x60000001, CellFormType, seedCellVa)],
-            knownWrldFormIds: []);
+            [MakeEntry(0x60000001, CellFormType, seedCellVa)],
+            []);
 
         Assert.Equal(1, result.Stats.FromEditorIdHash);
         Assert.Equal(0, result.Stats.FromHeapScan);
@@ -259,10 +258,10 @@ public sealed class RuntimeCellEnumeratorTests
 
         // A real cell in heap, but no seed entry is provided to the enumerator so
         // Path 3 has no vtable to harvest. Must return zero rather than scanning.
-        heap.PlaceCell(formId: 0x70000001);
+        heap.PlaceCell(0x70000001);
 
-        var enumerator = heap.BuildEnumerator(pAllFormsVa: 0);
-        var result = enumerator.Enumerate(editorIdEntries: [], knownWrldFormIds: []);
+        var enumerator = heap.BuildEnumerator(0);
+        var result = enumerator.Enumerate([], []);
 
         Assert.Equal(0, result.Stats.FromHeapScan);
         Assert.Equal(0, result.Stats.UniqueTotal);
@@ -279,12 +278,12 @@ public sealed class RuntimeCellEnumeratorTests
 
         // One cell, but it's reachable via TWO paths: editor-id hash (Path 0) AND
         // heap-scan (Path 3, harvesting vtable from the same cell). Path 0 wins.
-        var cellVa = heap.PlaceCell(formId: 0x80000001);
+        var cellVa = heap.PlaceCell(0x80000001);
 
-        var enumerator = heap.BuildEnumerator(pAllFormsVa: 0);
+        var enumerator = heap.BuildEnumerator(0);
         var result = enumerator.Enumerate(
-            editorIdEntries: [MakeEntry(0x80000001, CellFormType, cellVa)],
-            knownWrldFormIds: []);
+            [MakeEntry(0x80000001, CellFormType, cellVa)],
+            []);
 
         Assert.Equal(1, result.Stats.UniqueTotal);
         Assert.Equal(1, result.Stats.FromEditorIdHash);
@@ -299,32 +298,32 @@ public sealed class RuntimeCellEnumeratorTests
         var heap = new HeapBuilder(0xC000);
 
         // Path 0 cell (in editor-id entries).
-        var path0CellVa = heap.PlaceCell(formId: 0x91000001);
+        var path0CellVa = heap.PlaceCell(0x91000001);
 
         // Path 1 cell (in pAllForms, but NOT in editor-id entries).
-        var path1CellVa = heap.PlaceCell(formId: 0x91000002);
+        var path1CellVa = heap.PlaceCell(0x91000002);
 
         // Path 2 cell (only reachable via worldspace grid).
-        var path2CellVa = heap.PlaceCell(formId: 0x91000003);
+        var path2CellVa = heap.PlaceCell(0x91000003);
 
         // Path 3 cell (only reachable via heap-scan: not in pAllForms, not in grid).
-        heap.PlaceCell(formId: 0x91000004);
+        heap.PlaceCell(0x91000004);
 
         // Worldspace whose grid contains path2 cell only.
         var gridSlots = new uint[25];
         gridSlots[0] = path2CellVa;
         var gridArrayVa = heap.PlaceGridCellArray(gridSlots);
-        var wrldVa = heap.PlaceWorldspace(formId: 0x00FF00FF, gridCellArrayVa: gridArrayVa);
+        var wrldVa = heap.PlaceWorldspace(0x00FF00FF, gridArrayVa);
 
         // pAllForms: chain { path1Cell -> wrld -> end }.
-        var wrldNode = heap.PlaceMapItem(formId: 0x00FF00FF, formVa: wrldVa, nextVa: 0);
-        var path1Node = heap.PlaceMapItem(formId: 0x91000002, formVa: path1CellVa, nextVa: wrldNode);
-        var hashTableVa = heap.PlaceHashTable(buckets: [path1Node]);
+        var wrldNode = heap.PlaceMapItem(0x00FF00FF, wrldVa, 0);
+        var path1Node = heap.PlaceMapItem(0x91000002, path1CellVa, wrldNode);
+        var hashTableVa = heap.PlaceHashTable([path1Node]);
 
         var enumerator = heap.BuildEnumerator(hashTableVa);
         var result = enumerator.Enumerate(
-            editorIdEntries: [MakeEntry(0x91000001, CellFormType, path0CellVa)],
-            knownWrldFormIds: new HashSet<uint> { 0x00FF00FF });
+            [MakeEntry(0x91000001, CellFormType, path0CellVa)],
+            new HashSet<uint> { 0x00FF00FF });
 
         Assert.Equal(1, result.Stats.FromEditorIdHash);
         Assert.Equal(1, result.Stats.FromAllFormsHash);
@@ -347,13 +346,13 @@ public sealed class RuntimeCellEnumeratorTests
         var navm1Va = heap.PlaceTesForm(NavmFormType, 0xA0000001);
         var navm2Va = heap.PlaceTesForm(NavmFormType, 0xA0000002);
         var navm3Va = heap.PlaceTesForm(NavmFormType, 0xA0000003);
-        var cellVa = heap.PlaceCell(formId: 0xB0000001);
+        var cellVa = heap.PlaceCell(0xB0000001);
 
-        var navm3Node = heap.PlaceMapItem(formId: 0xA0000003, formVa: navm3Va, nextVa: 0);
-        var navm2Node = heap.PlaceMapItem(formId: 0xA0000002, formVa: navm2Va, nextVa: navm3Node);
-        var navm1Node = heap.PlaceMapItem(formId: 0xA0000001, formVa: navm1Va, nextVa: navm2Node);
-        var cellNode = heap.PlaceMapItem(formId: 0xB0000001, formVa: cellVa, nextVa: navm1Node);
-        var hashTableVa = heap.PlaceHashTable(buckets: [cellNode]);
+        var navm3Node = heap.PlaceMapItem(0xA0000003, navm3Va, 0);
+        var navm2Node = heap.PlaceMapItem(0xA0000002, navm2Va, navm3Node);
+        var navm1Node = heap.PlaceMapItem(0xA0000001, navm1Va, navm2Node);
+        var cellNode = heap.PlaceMapItem(0xB0000001, cellVa, navm1Node);
+        var hashTableVa = heap.PlaceHashTable([cellNode]);
 
         var enumerator = heap.BuildEnumerator(hashTableVa);
         // Provide a byte-stream anchor (one of the NAVM FormIDs) so calibration succeeds
@@ -361,13 +360,13 @@ public sealed class RuntimeCellEnumeratorTests
         // Phase 2d behaviour would send them to NavMeshVaCandidates instead — that path
         // is exercised by Uncalibrated_EmitsNavMeshVaCandidatesAcrossByteWindow.
         var result = enumerator.Enumerate(
-            editorIdEntries: [],
-            knownWrldFormIds: [],
-            knownNavmFormIds: new HashSet<uint> { 0xA0000001 });
+            [],
+            [],
+            new HashSet<uint> { 0xA0000001 });
 
         Assert.Equal(3, result.NavMeshVas.Count);
         Assert.Equal(
-            new uint[] { navm1Va, navm2Va, navm3Va }.OrderBy(v => v).ToArray(),
+            new[] { navm1Va, navm2Va, navm3Va }.OrderBy(v => v).ToArray(),
             result.NavMeshVas.OrderBy(v => v).ToArray());
 
         // NAVM VAs are NOT added to the cell hits collection — they're a separate channel.
@@ -387,15 +386,15 @@ public sealed class RuntimeCellEnumeratorTests
         const byte rawWrld = 0x40;
 
         var heap = new HeapBuilder(0x4000);
-        var navmVa = heap.PlaceTesForm(rawNavm, formId: 0xD0000001);
-        var cellVa = heap.PlaceCustomCell(formTypeByte: rawCell, formId: 0xD0000002);
-        var wrldVa = heap.PlaceCustomWorldspace(formTypeByte: rawWrld, formId: 0x000000DA,
-            gridCellArrayVa: heap.PlaceGridCellArray(new uint[25]));
+        var navmVa = heap.PlaceTesForm(rawNavm, 0xD0000001);
+        var cellVa = heap.PlaceCustomCell(rawCell, 0xD0000002);
+        var wrldVa = heap.PlaceCustomWorldspace(rawWrld, 0x000000DA,
+            heap.PlaceGridCellArray(new uint[25]));
 
-        var wrldNode = heap.PlaceMapItem(formId: 0x000000DA, formVa: wrldVa, nextVa: 0);
-        var cellNode = heap.PlaceMapItem(formId: 0xD0000002, formVa: cellVa, nextVa: wrldNode);
-        var navmNode = heap.PlaceMapItem(formId: 0xD0000001, formVa: navmVa, nextVa: cellNode);
-        var hashTableVa = heap.PlaceHashTable(buckets: [navmNode]);
+        var wrldNode = heap.PlaceMapItem(0x000000DA, wrldVa, 0);
+        var cellNode = heap.PlaceMapItem(0xD0000002, cellVa, wrldNode);
+        var navmNode = heap.PlaceMapItem(0xD0000001, navmVa, cellNode);
+        var hashTableVa = heap.PlaceHashTable([navmNode]);
 
         var driftRemap = new Dictionary<byte, byte>
         {
@@ -405,7 +404,7 @@ public sealed class RuntimeCellEnumeratorTests
         };
 
         var enumerator = heap.BuildEnumerator(hashTableVa, driftRemap);
-        var result = enumerator.Enumerate(editorIdEntries: [], knownWrldFormIds: []);
+        var result = enumerator.Enumerate([], []);
 
         Assert.Single(result.NavMeshVas);
         Assert.Equal(navmVa, result.NavMeshVas[0]);
@@ -429,20 +428,20 @@ public sealed class RuntimeCellEnumeratorTests
 
         var heap = new HeapBuilder(0x4000);
         var anchorNavmVa = heap.PlaceTesForm(driftedRawNavm, anchorNavmFormId);
-        var runtimeNavmVa = heap.PlaceTesForm(driftedRawNavm, formId: 0xF0000002);
-        var runtimeNavm2Va = heap.PlaceTesForm(driftedRawNavm, formId: 0xF0000003);
+        var runtimeNavmVa = heap.PlaceTesForm(driftedRawNavm, 0xF0000002);
+        var runtimeNavm2Va = heap.PlaceTesForm(driftedRawNavm, 0xF0000003);
 
-        var node3 = heap.PlaceMapItem(formId: 0xF0000003, formVa: runtimeNavm2Va, nextVa: 0);
-        var node2 = heap.PlaceMapItem(formId: 0xF0000002, formVa: runtimeNavmVa, nextVa: node3);
-        var anchorNode = heap.PlaceMapItem(formId: anchorNavmFormId, formVa: anchorNavmVa, nextVa: node2);
-        var hashTableVa = heap.PlaceHashTable(buckets: [anchorNode]);
+        var node3 = heap.PlaceMapItem(0xF0000003, runtimeNavm2Va, 0);
+        var node2 = heap.PlaceMapItem(0xF0000002, runtimeNavmVa, node3);
+        var anchorNode = heap.PlaceMapItem(anchorNavmFormId, anchorNavmVa, node2);
+        var hashTableVa = heap.PlaceHashTable([anchorNode]);
 
         // No drift remap (simulates detector failure), but knownNavmFormIds includes the anchor.
         var enumerator = heap.BuildEnumerator(hashTableVa);
         var result = enumerator.Enumerate(
-            editorIdEntries: [],
-            knownWrldFormIds: [],
-            knownNavmFormIds: new HashSet<uint> { anchorNavmFormId });
+            [],
+            [],
+            new HashSet<uint> { anchorNavmFormId });
 
         // All three NAVMs (the anchor + the 2 runtime-only) surfaced via raw byte 0x44 even
         // though the enumerator never received drift-remap or canonical-byte information.
@@ -460,12 +459,12 @@ public sealed class RuntimeCellEnumeratorTests
         // test exercises that fallback path; the calibrated-canonical path is covered by
         // AllFormsHash_CollectsNavMeshVas_ByFormTypeByte (which provides an anchor).
         var heap = new HeapBuilder(0x2000);
-        var navmVa = heap.PlaceTesForm(NavmFormType, formId: 0xE0000001);
-        var navmNode = heap.PlaceMapItem(formId: 0xE0000001, formVa: navmVa, nextVa: 0);
-        var hashTableVa = heap.PlaceHashTable(buckets: [navmNode]);
+        var navmVa = heap.PlaceTesForm(NavmFormType, 0xE0000001);
+        var navmNode = heap.PlaceMapItem(0xE0000001, navmVa, 0);
+        var hashTableVa = heap.PlaceHashTable([navmNode]);
 
         var enumerator = heap.BuildEnumerator(hashTableVa); // no drift remap
-        var result = enumerator.Enumerate(editorIdEntries: [], knownWrldFormIds: []);
+        var result = enumerator.Enumerate([], []);
 
         Assert.Empty(result.NavMeshVas);
         Assert.Single(result.NavMeshVaCandidates);
@@ -485,28 +484,27 @@ public sealed class RuntimeCellEnumeratorTests
         // emit a speculative candidate list across the [canonical-2..canonical+2]
         // window, excluding bytes already classified as CELL (0x39) or WRLD (0x41).
         var heap = new HeapBuilder(0x4000);
-        var entry0x40 = heap.PlaceTesForm(0x40, formId: 0x10000040); // outside window
-        var entry0x41 = heap.PlaceTesForm(0x41, formId: 0x10000041); // WRLD → wrldVas
-        var entry0x42 = heap.PlaceTesForm(0x42, formId: 0x10000042); // window
-        var entry0x43 = heap.PlaceTesForm(0x43, formId: 0x10000043); // window
-        var entry0x44 = heap.PlaceTesForm(0x44, formId: 0x10000044); // window
-        var entry0x45 = heap.PlaceTesForm(0x45, formId: 0x10000045); // window
-        var entry0x46 = heap.PlaceTesForm(0x46, formId: 0x10000046); // outside window
+        var entry0x40 = heap.PlaceTesForm(0x40, 0x10000040); // outside window
+        var entry0x41 = heap.PlaceTesForm(0x41, 0x10000041); // WRLD → wrldVas
+        var entry0x42 = heap.PlaceTesForm(0x42, 0x10000042); // window
+        var entry0x43 = heap.PlaceTesForm(0x43, 0x10000043); // window
+        var entry0x44 = heap.PlaceTesForm(0x44, 0x10000044); // window
+        var entry0x45 = heap.PlaceTesForm(0x45, 0x10000045); // window
+        var entry0x46 = heap.PlaceTesForm(0x46, 0x10000046); // outside window
 
-        var node6 = heap.PlaceMapItem(0x10000046, entry0x46, nextVa: 0);
-        var node5 = heap.PlaceMapItem(0x10000045, entry0x45, nextVa: node6);
-        var node4 = heap.PlaceMapItem(0x10000044, entry0x44, nextVa: node5);
-        var node3 = heap.PlaceMapItem(0x10000043, entry0x43, nextVa: node4);
-        var node2 = heap.PlaceMapItem(0x10000042, entry0x42, nextVa: node3);
-        var node1 = heap.PlaceMapItem(0x10000041, entry0x41, nextVa: node2);
-        var node0 = heap.PlaceMapItem(0x10000040, entry0x40, nextVa: node1);
-        var hashTableVa = heap.PlaceHashTable(buckets: [node0]);
+        var node6 = heap.PlaceMapItem(0x10000046, entry0x46, 0);
+        var node5 = heap.PlaceMapItem(0x10000045, entry0x45, node6);
+        var node4 = heap.PlaceMapItem(0x10000044, entry0x44, node5);
+        var node3 = heap.PlaceMapItem(0x10000043, entry0x43, node4);
+        var node2 = heap.PlaceMapItem(0x10000042, entry0x42, node3);
+        var node1 = heap.PlaceMapItem(0x10000041, entry0x41, node2);
+        var node0 = heap.PlaceMapItem(0x10000040, entry0x40, node1);
+        var hashTableVa = heap.PlaceHashTable([node0]);
 
         var enumerator = heap.BuildEnumerator(hashTableVa);
         var result = enumerator.Enumerate(
-            editorIdEntries: [],
-            knownWrldFormIds: [],
-            knownNavmFormIds: null);
+            [],
+            []);
 
         // No anchor → NavMeshVas stays empty even though byte 0x43 (canonical NAVM) is present.
         Assert.Empty(result.NavMeshVas);
@@ -532,17 +530,17 @@ public sealed class RuntimeCellEnumeratorTests
         var heap = new HeapBuilder(0x4000);
         const uint anchorFormId = 0x20000001;
         var anchorVa = heap.PlaceTesForm(NavmFormType, anchorFormId);
-        var siblingVa = heap.PlaceTesForm(NavmFormType, formId: 0x20000002);
+        var siblingVa = heap.PlaceTesForm(NavmFormType, 0x20000002);
 
-        var sibling = heap.PlaceMapItem(0x20000002, siblingVa, nextVa: 0);
-        var anchor = heap.PlaceMapItem(anchorFormId, anchorVa, nextVa: sibling);
-        var hashTableVa = heap.PlaceHashTable(buckets: [anchor]);
+        var sibling = heap.PlaceMapItem(0x20000002, siblingVa, 0);
+        var anchor = heap.PlaceMapItem(anchorFormId, anchorVa, sibling);
+        var hashTableVa = heap.PlaceHashTable([anchor]);
 
         var enumerator = heap.BuildEnumerator(hashTableVa);
         var result = enumerator.Enumerate(
-            editorIdEntries: [],
-            knownWrldFormIds: [],
-            knownNavmFormIds: new HashSet<uint> { anchorFormId });
+            [],
+            [],
+            new HashSet<uint> { anchorFormId });
 
         // Both NAVM entries surface via the calibrated byte set; candidates list is empty
         // because the canonical-byte fallback is now trusted (anchor confirmed it).
@@ -554,12 +552,12 @@ public sealed class RuntimeCellEnumeratorTests
     public void NavMeshVas_IsEmpty_WhenNoNavMsInAllForms()
     {
         var heap = new HeapBuilder(0x2000);
-        var cellVa = heap.PlaceCell(formId: 0xC0000001);
-        var cellNode = heap.PlaceMapItem(formId: 0xC0000001, formVa: cellVa, nextVa: 0);
-        var hashTableVa = heap.PlaceHashTable(buckets: [cellNode]);
+        var cellVa = heap.PlaceCell(0xC0000001);
+        var cellNode = heap.PlaceMapItem(0xC0000001, cellVa, 0);
+        var hashTableVa = heap.PlaceHashTable([cellNode]);
 
         var enumerator = heap.BuildEnumerator(hashTableVa);
-        var result = enumerator.Enumerate(editorIdEntries: [], knownWrldFormIds: []);
+        var result = enumerator.Enumerate([], []);
 
         Assert.Empty(result.NavMeshVas);
         Assert.Equal(1, result.Stats.FromAllFormsHash);
@@ -570,7 +568,8 @@ public sealed class RuntimeCellEnumeratorTests
     // ============================================================================
 
     private static RuntimeEditorIdEntry MakeEntry(uint formId, byte formType, uint tesFormPtr)
-        => new()
+    {
+        return new RuntimeEditorIdEntry
         {
             EditorId = $"Entry_{formId:X8}",
             FormId = formId,
@@ -578,6 +577,7 @@ public sealed class RuntimeCellEnumeratorTests
             TesFormOffset = tesFormPtr - HeapBaseVa,
             TesFormPointer = tesFormPtr
         };
+    }
 
     /// <summary>
     ///     Single contiguous "heap" buffer with bump-allocator placement. Every struct
@@ -599,7 +599,9 @@ public sealed class RuntimeCellEnumeratorTests
         }
 
         public uint PlaceCell(uint formId, uint vtable = CellVtable)
-            => PlaceCustomCell(formTypeByte: CellFormType, formId, vtable);
+        {
+            return PlaceCustomCell(CellFormType, formId, vtable);
+        }
 
         public uint PlaceCustomCell(byte formTypeByte, uint formId, uint vtable = CellVtable)
         {
@@ -676,7 +678,9 @@ public sealed class RuntimeCellEnumeratorTests
         }
 
         public uint PlaceWorldspace(uint formId, uint gridCellArrayVa)
-            => PlaceCustomWorldspace(formTypeByte: WrldFormType, formId, gridCellArrayVa);
+        {
+            return PlaceCustomWorldspace(WrldFormType, formId, gridCellArrayVa);
+        }
 
         public uint PlaceCustomWorldspace(byte formTypeByte, uint formId, uint gridCellArrayVa)
         {
@@ -709,10 +713,14 @@ public sealed class RuntimeCellEnumeratorTests
         ///     gates (form-type byte or zero FormID).
         /// </summary>
         public uint PlaceDecoyAtVtable(uint vtable, byte formTypeByte, uint formId)
-            => PlaceDecoy(vtable, formTypeByte, formId);
+        {
+            return PlaceDecoy(vtable, formTypeByte, formId);
+        }
 
         public RuntimeCellEnumerator BuildEnumerator(uint pAllFormsVa)
-            => BuildEnumerator(pAllFormsVa, driftRemap: null);
+        {
+            return BuildEnumerator(pAllFormsVa, null);
+        }
 
         public RuntimeCellEnumerator BuildEnumerator(
             uint pAllFormsVa,
@@ -753,6 +761,9 @@ public sealed class RuntimeCellEnumeratorTests
             return va;
         }
 
-        private static int OffsetForVa(uint va) => unchecked((int)(va - HeapBaseVa));
+        private static int OffsetForVa(uint va)
+        {
+            return unchecked((int)(va - HeapBaseVa));
+        }
     }
 }

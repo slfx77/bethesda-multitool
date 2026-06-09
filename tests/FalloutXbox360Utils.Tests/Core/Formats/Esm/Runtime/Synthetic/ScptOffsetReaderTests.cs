@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
@@ -21,11 +20,11 @@ public sealed class ScptOffsetReaderTests
 
     // PDB-resolved offsets for class "Script" (per pdb_layouts.json key 0x11).
     private const int ScriptStructSize = 100;
-    private const int HeaderOffset = 40;            // SCRIPT_HEADER inner (20 bytes)
-    private const int TextPtrOffset = 60;           // char* m_text
-    private const int DataPtrOffset = 64;           // char* m_data
-    private const int OwnerQuestPtrOffset = 80;     // TESQuest*
-    private const int RefObjectsListOffset = 84;    // BSSimpleList head: 4B item + 4B next
+    private const int HeaderOffset = 40; // SCRIPT_HEADER inner (20 bytes)
+    private const int TextPtrOffset = 60; // char* m_text
+    private const int DataPtrOffset = 64; // char* m_data
+    private const int OwnerQuestPtrOffset = 80; // TESQuest*
+    private const int RefObjectsListOffset = 84; // BSSimpleList head: 4B item + 4B next
 
     // SCRIPT_HEADER inner field offsets (relative to HeaderOffset).
     private const int HdrVarCountOff = 0;
@@ -44,9 +43,9 @@ public sealed class ScptOffsetReaderTests
     {
         const uint scptFormId = 0x000F0001;
         const uint questFormId = 0x000F0099;
-        var buffer = BuildScript(scptFormId, ownerQuestPtr: QuestVa,
-            variableCount: 3, refObjectCount: 2, dataSize: 128,
-            isQuest: true, isMagicEffect: false, isCompiled: true);
+        var buffer = BuildScript(scptFormId, QuestVa,
+            3, 2, 128,
+            true, false, true);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, ScptVa)
@@ -65,9 +64,9 @@ public sealed class ScptOffsetReaderTests
     public void ReadRuntimeScript_NullOwnerQuestPointer_YieldsNullFormId()
     {
         const uint scptFormId = 0x000F0002;
-        var buffer = BuildScript(scptFormId, ownerQuestPtr: 0,
-            variableCount: 0, refObjectCount: 0, dataSize: 0,
-            isQuest: false, isMagicEffect: false, isCompiled: false);
+        var buffer = BuildScript(scptFormId, 0,
+            0, 0, 0,
+            false, false, false);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, ScptVa);
         var reader = new RuntimeScriptReader(fixture.BuildContext());
@@ -83,9 +82,9 @@ public sealed class ScptOffsetReaderTests
     public void ReadRuntimeScript_HeaderFieldsAreExposed()
     {
         const uint scptFormId = 0x000F0003;
-        var buffer = BuildScript(scptFormId, ownerQuestPtr: 0,
-            variableCount: 5, refObjectCount: 3, dataSize: 256,
-            isQuest: false, isMagicEffect: true, isCompiled: true);
+        var buffer = BuildScript(scptFormId, 0,
+            5, 3, 256,
+            false, true, true);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, ScptVa);
         var reader = new RuntimeScriptReader(fixture.BuildContext());
@@ -107,9 +106,9 @@ public sealed class ScptOffsetReaderTests
     {
         // Reader gates header values: variableCount > 1000 → null.
         const uint scptFormId = 0x000F0004;
-        var buffer = BuildScript(scptFormId, ownerQuestPtr: 0,
-            variableCount: 5000 /* out of band */, refObjectCount: 0, dataSize: 0,
-            isQuest: false, isMagicEffect: false, isCompiled: false);
+        var buffer = BuildScript(scptFormId, 0,
+            5000 /* out of band */, 0, 0,
+            false, false, false);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, ScptVa);
         var reader = new RuntimeScriptReader(fixture.BuildContext());
@@ -122,15 +121,15 @@ public sealed class ScptOffsetReaderTests
     public void ReadRuntimeScript_WrongFormType_ReturnsNull()
     {
         const uint scptFormId = 0x000F0005;
-        var buffer = BuildScript(scptFormId, ownerQuestPtr: 0,
-            variableCount: 0, refObjectCount: 0, dataSize: 0,
-            isQuest: false, isMagicEffect: false, isCompiled: false);
+        var buffer = BuildScript(scptFormId, 0,
+            0, 0, 0,
+            false, false, false);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, ScptVa);
         var reader = new RuntimeScriptReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimeScript(
-            fixture.MakeEntry(scptFormId, formType: 0x19 /* BOOK, not SCPT */, ScptVa)));
+            fixture.MakeEntry(scptFormId, 0x19 /* BOOK, not SCPT */, ScptVa)));
     }
 
     /// <summary>

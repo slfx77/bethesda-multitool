@@ -70,8 +70,8 @@ public sealed class TerrainOpacityTextureCacheTests
     public void BuildOpacityGrid_OutOfRangeOpacity_ClampsToByteBounds()
     {
         var layer = MakeLayer(
-            new LandTextureBlendEntry(0, 0, 0, 1.5f),     // clamps to 1.0 → 255
-            new LandTextureBlendEntry(1, 0, 0, -0.5f));   // clamps to 0.0 → 0
+            new LandTextureBlendEntry(0, 0, 0, 1.5f), // clamps to 1.0 → 255
+            new LandTextureBlendEntry(1, 0, 0, -0.5f)); // clamps to 0.0 → 0
         Span<byte> grid = stackalloc byte[TerrainOpacityTextureCache.GridSize];
 
         TerrainOpacityTextureCache.BuildOpacityGrid(layer, grid);
@@ -89,8 +89,8 @@ public sealed class TerrainOpacityTextureCacheTests
 
         TerrainOpacityTextureCache.BuildOpacityGrid(layer, grid);
 
-        Assert.Equal(0xFF, grid[17]);  // row 1, column 0
-        Assert.Equal(0, grid[16]);     // row 0, column 16 (unaffected)
+        Assert.Equal(0xFF, grid[17]); // row 1, column 0
+        Assert.Equal(0, grid[16]); // row 0, column 16 (unaffected)
     }
 
     [Fact]

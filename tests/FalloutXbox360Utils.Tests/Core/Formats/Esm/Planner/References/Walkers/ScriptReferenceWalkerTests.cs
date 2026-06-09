@@ -23,7 +23,7 @@ public sealed class ScriptReferenceWalkerTests
         var script = new ScriptRecord
         {
             FormId = 0x0014DA58,
-            ReferencedObjects = [0x000ABCDEu, 0x000ABCDFu, 0x000ABCE0u],
+            ReferencedObjects = [0x000ABCDEu, 0x000ABCDFu, 0x000ABCE0u]
         };
         var walker = new ScriptReferenceWalker();
 

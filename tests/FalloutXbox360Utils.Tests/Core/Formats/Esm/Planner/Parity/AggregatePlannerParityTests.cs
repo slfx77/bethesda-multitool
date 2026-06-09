@@ -1,6 +1,7 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Planner.Parity;
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter;
+using FalloutXbox360Utils.Core.Formats.Esm.Planner.Parity;
 using Xunit;
+using Xunit.Sdk;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Planner.Parity;
 
@@ -38,7 +39,7 @@ public sealed class AggregatePlannerParityTests
                 PlannerTier1ParityHelper.AssertNewRecordParity(
                     recordType, SyntheticModelFactory.TestFormId, model, legacy);
             }
-            catch (Xunit.Sdk.XunitException) when (deltaRegistry.IsTolerated(recordType, SyntheticModelFactory.TestFormId))
+            catch (XunitException) when (deltaRegistry.IsTolerated(recordType, SyntheticModelFactory.TestFormId))
             {
                 // Registered intentional diff for this record type — pass.
             }
@@ -51,7 +52,7 @@ public sealed class AggregatePlannerParityTests
         Assert.True(
             failures.Count == 0,
             "Aggregate planner parity sweep produced unregistered diffs:\n  - "
-                + string.Join("\n  - ", failures));
+            + string.Join("\n  - ", failures));
     }
 
     [Fact]

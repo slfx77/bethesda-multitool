@@ -13,7 +13,7 @@ public sealed class PackageReferenceWalkerTests
         var pack = new PackageRecord
         {
             FormId = 0x000ABCDE,
-            Location = new PackageLocation { Type = 0, Union = 0x000ABCDF },
+            Location = new PackageLocation { Type = 0, Union = 0x000ABCDF }
         };
         var walker = new PackageReferenceWalker();
 
@@ -30,7 +30,7 @@ public sealed class PackageReferenceWalkerTests
         var pack = new PackageRecord
         {
             FormId = 0x000ABCDE,
-            Location = new PackageLocation { Type = 2, Union = 0x000ABCDF }, // NearCurrentLocation.
+            Location = new PackageLocation { Type = 2, Union = 0x000ABCDF } // NearCurrentLocation.
         };
         var walker = new PackageReferenceWalker();
 
@@ -45,7 +45,7 @@ public sealed class PackageReferenceWalkerTests
         var pack = new PackageRecord
         {
             FormId = 0x000ABCDE,
-            Target = new PackageTarget { Type = 0, FormIdOrType = 0x000ABCDF },
+            Target = new PackageTarget { Type = 0, FormIdOrType = 0x000ABCDF }
         };
         var walker = new PackageReferenceWalker();
 
@@ -62,7 +62,7 @@ public sealed class PackageReferenceWalkerTests
         var pack = new PackageRecord
         {
             FormId = 0x000ABCDE,
-            Target = new PackageTarget { Type = 2, FormIdOrType = 17 }, // Object type enum.
+            Target = new PackageTarget { Type = 2, FormIdOrType = 17 } // Object type enum.
         };
         var walker = new PackageReferenceWalker();
 
@@ -77,7 +77,7 @@ public sealed class PackageReferenceWalkerTests
         var pack = new PackageRecord
         {
             FormId = 0x000ABCDE,
-            CombatStyleFormId = 0x000ABCD0,
+            CombatStyleFormId = 0x000ABCD0
         };
         var walker = new PackageReferenceWalker();
 
@@ -97,8 +97,8 @@ public sealed class PackageReferenceWalkerTests
             [
                 new DialogueCondition { Reference = 0x000ABCD0 },
                 new DialogueCondition { Reference = 0 }, // No ref → not yielded.
-                new DialogueCondition { Reference = 0x000ABCD1 },
-            ],
+                new DialogueCondition { Reference = 0x000ABCD1 }
+            ]
         };
         var walker = new PackageReferenceWalker();
 

@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 using Xunit;
 
@@ -9,7 +8,7 @@ public class FormIdAllocatorTests
     [Fact]
     public void Allocate_FirstCall_ReturnsBaseLocalIdWithPluginIndex()
     {
-        var allocator = new FormIdAllocator(baseLocalId: 0x800);
+        var allocator = new FormIdAllocator(0x800);
 
         var formId = allocator.Allocate();
 
@@ -19,7 +18,7 @@ public class FormIdAllocatorTests
     [Fact]
     public void Allocate_IncrementsLocalId()
     {
-        var allocator = new FormIdAllocator(baseLocalId: 0x800);
+        var allocator = new FormIdAllocator(0x800);
 
         var first = allocator.Allocate();
         var second = allocator.Allocate();
@@ -43,7 +42,7 @@ public class FormIdAllocatorTests
     [Fact]
     public void NextObjectId_TracksHighWaterMark()
     {
-        var allocator = new FormIdAllocator(baseLocalId: 0x800);
+        var allocator = new FormIdAllocator(0x800);
         Assert.Equal(0x800u, allocator.NextObjectId);
 
         allocator.Allocate(); // 0x800
@@ -57,7 +56,7 @@ public class FormIdAllocatorTests
     [Fact]
     public void Constructor_RejectsBaseAbove24BitLimit()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new FormIdAllocator(baseLocalId: 0x01000000));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new FormIdAllocator(0x01000000));
     }
 
     [Fact]

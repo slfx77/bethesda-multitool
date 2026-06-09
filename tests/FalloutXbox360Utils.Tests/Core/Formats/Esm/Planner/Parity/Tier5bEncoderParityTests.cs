@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner;
@@ -15,7 +14,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Planner.Parity;
 ///     wouldn't normally invoke these (cell-children pipeline integration is the
 ///     remaining Tier 5b work), but the encoders are byte-equivalent to legacy by
 ///     construction. These tests pin that for when the dispatch lands.
-///
 ///     CELL parity isn't tested here because the legacy CellEncoder.Encode emits an
 ///     override-only payload that needs to be merged against a master CellRecord; a
 ///     synthetic test would need a full master record fixture which is out of scope
@@ -30,7 +28,7 @@ public sealed class Tier5bEncoderParityTests
         {
             FormId = 0x01000800,
             RecordType = "REFR",
-            BaseFormId = 0u,
+            BaseFormId = 0u
         };
 
         AssertPlacedRefParity("REFR", refr);
@@ -43,7 +41,7 @@ public sealed class Tier5bEncoderParityTests
         {
             FormId = 0x01000800,
             RecordType = "ACHR",
-            BaseFormId = 0u,
+            BaseFormId = 0u
         };
 
         AssertPlacedRefParity("ACHR", achr);
@@ -56,7 +54,7 @@ public sealed class Tier5bEncoderParityTests
         {
             FormId = 0x01000800,
             RecordType = "ACRE",
-            BaseFormId = 0u,
+            BaseFormId = 0u
         };
 
         AssertPlacedRefParity("ACRE", acre);
@@ -73,7 +71,7 @@ public sealed class Tier5bEncoderParityTests
             Model = placed,
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "placed-ref parity" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "placed-ref parity" }
         };
 
         var plan = new EmitPlan
@@ -86,8 +84,8 @@ public sealed class Tier5bEncoderParityTests
             Meta = new PlanMetadata
             {
                 NextObjectId = placed.FormId + 1,
-                PlannerCoverage = ImmutableHashSet.Create(recordType),
-            },
+                PlannerCoverage = ImmutableHashSet.Create(recordType)
+            }
         };
 
         var options = new PluginBuildOptions { CompressRecords = false };
@@ -96,7 +94,7 @@ public sealed class Tier5bEncoderParityTests
         var plannerBytes = writer.BuildGrupForType(recordType, plan, options);
 
         var legacyEncoded = RefrEncoder.EncodeNewPlacedReference(
-            placed, validFormIds: null, remapTable: null);
+            placed, null, null);
         if (legacyEncoded.Subrecords.Count == 0)
         {
             Assert.Empty(plannerBytes);

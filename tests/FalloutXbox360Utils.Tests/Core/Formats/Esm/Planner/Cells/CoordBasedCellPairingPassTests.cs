@@ -29,13 +29,17 @@ public sealed class CoordBasedCellPairingPassTests
             FormId = protoCellFid,
             WorldspaceFormId = worldspaceFid,
             GridX = 7,
-            GridY = 7,
+            GridY = 7
         };
 
         var input = new List<CellCatalogEntry>
         {
-            new() { CellFormId = masterCellFid, Source = SourceKind.MasterOnly, MasterContext = masterCtx, MasterRecord = masterRec },
-            new() { CellFormId = protoCellFid, Source = SourceKind.DmpNew, DmpModel = protoCell },
+            new()
+            {
+                CellFormId = masterCellFid, Source = SourceKind.MasterOnly, MasterContext = masterCtx,
+                MasterRecord = masterRec
+            },
+            new() { CellFormId = protoCellFid, Source = SourceKind.DmpNew, DmpModel = protoCell }
         };
 
         var result = CoordBasedCellPairingPass.Reconcile(
@@ -62,12 +66,12 @@ public sealed class CoordBasedCellPairingPassTests
             FormId = protoCellFid,
             WorldspaceFormId = newWorldspaceFid,
             GridX = 10,
-            GridY = 10,
+            GridY = 10
         };
 
         var input = new List<CellCatalogEntry>
         {
-            new() { CellFormId = protoCellFid, Source = SourceKind.DmpNew, DmpModel = protoCell },
+            new() { CellFormId = protoCellFid, Source = SourceKind.DmpNew, DmpModel = protoCell }
         };
 
         var result = CoordBasedCellPairingPass.Reconcile(
@@ -92,7 +96,7 @@ public sealed class CoordBasedCellPairingPassTests
             FormId = cellFid,
             WorldspaceFormId = worldspaceFid,
             GridX = 0,
-            GridY = 0,
+            GridY = 0
         };
 
         var input = new List<CellCatalogEntry>
@@ -103,8 +107,8 @@ public sealed class CoordBasedCellPairingPassTests
                 Source = SourceKind.DmpOverride,
                 MasterContext = masterCtx,
                 MasterRecord = masterRec,
-                DmpModel = dmpCell,
-            },
+                DmpModel = dmpCell
+            }
         };
 
         var result = CoordBasedCellPairingPass.Reconcile(
@@ -126,7 +130,7 @@ public sealed class CoordBasedCellPairingPassTests
             CellFormId = masterCellFid,
             IsInterior = true,
             BlockGroupType = 2,
-            SubblockGroupType = 3,
+            SubblockGroupType = 3
             // WorldspaceFormId is null for interiors
         };
         var masterRec = MakeMasterCellRecordWithXclc(masterCellFid, 0, 0);
@@ -135,13 +139,17 @@ public sealed class CoordBasedCellPairingPassTests
             FormId = protoCellFid,
             WorldspaceFormId = 0x000DA726u,
             GridX = 0,
-            GridY = 0,
+            GridY = 0
         };
 
         var input = new List<CellCatalogEntry>
         {
-            new() { CellFormId = masterCellFid, Source = SourceKind.MasterOnly, MasterContext = interiorCtx, MasterRecord = masterRec },
-            new() { CellFormId = protoCellFid, Source = SourceKind.DmpNew, DmpModel = protoCell },
+            new()
+            {
+                CellFormId = masterCellFid, Source = SourceKind.MasterOnly, MasterContext = interiorCtx,
+                MasterRecord = masterRec
+            },
+            new() { CellFormId = protoCellFid, Source = SourceKind.DmpNew, DmpModel = protoCell }
         };
 
         var result = CoordBasedCellPairingPass.Reconcile(
@@ -164,14 +172,18 @@ public sealed class CoordBasedCellPairingPassTests
         var masterRec = MakeMasterCellRecordWithXclc(masterCellFid, 0, 0);
         var protoCell = new CellRecord
         {
-            FormId = protoCellFid,
+            FormId = protoCellFid
             // WorldspaceFormId null → no coord key → no pairing
         };
 
         var input = new List<CellCatalogEntry>
         {
-            new() { CellFormId = masterCellFid, Source = SourceKind.MasterOnly, MasterContext = masterCtx, MasterRecord = masterRec },
-            new() { CellFormId = protoCellFid, Source = SourceKind.DmpNew, DmpModel = protoCell },
+            new()
+            {
+                CellFormId = masterCellFid, Source = SourceKind.MasterOnly, MasterContext = masterCtx,
+                MasterRecord = masterRec
+            },
+            new() { CellFormId = protoCellFid, Source = SourceKind.DmpNew, DmpModel = protoCell }
         };
 
         var result = CoordBasedCellPairingPass.Reconcile(
@@ -180,16 +192,19 @@ public sealed class CoordBasedCellPairingPassTests
         Assert.Equal(2, result.Count);
     }
 
-    private static PcEsmCellContext MakeExteriorContext(uint cellFormId, uint worldspaceFormId) => new()
+    private static PcEsmCellContext MakeExteriorContext(uint cellFormId, uint worldspaceFormId)
     {
-        CellFormId = cellFormId,
-        IsInterior = false,
-        WorldspaceFormId = worldspaceFormId,
-        BlockGroupType = 4,
-        SubblockGroupType = 5,
-        BlockLabel = [0, 0, 0, 0],
-        SubblockLabel = [0, 0, 0, 0],
-    };
+        return new PcEsmCellContext
+        {
+            CellFormId = cellFormId,
+            IsInterior = false,
+            WorldspaceFormId = worldspaceFormId,
+            BlockGroupType = 4,
+            SubblockGroupType = 5,
+            BlockLabel = [0, 0, 0, 0],
+            SubblockLabel = [0, 0, 0, 0]
+        };
+    }
 
     private static ParsedMainRecord MakeMasterCellRecordWithXclc(uint cellFormId, int gridX, int gridY)
     {
@@ -209,13 +224,13 @@ public sealed class CoordBasedCellPairingPassTests
                 FormId = cellFormId,
                 Timestamp = 0,
                 VcsInfo = 0,
-                Version = 15,
+                Version = 15
             },
             Offset = 0,
             Subrecords =
             [
                 new ParsedSubrecord { Signature = "XCLC", Data = xclcData }
-            ],
+            ]
         };
     }
 }

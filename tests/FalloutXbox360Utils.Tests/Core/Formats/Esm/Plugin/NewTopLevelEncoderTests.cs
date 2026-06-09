@@ -8,7 +8,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Magic;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Magic;
@@ -943,8 +942,8 @@ public class NewTopLevelEncoderTests
             GlobalFormId = 0xAA,
             Entries =
             [
-                new LeveledEntry(Level: 10, FormId: 0x111, Count: 1),
-                new LeveledEntry(Level: 20, FormId: 0x222, Count: 3)
+                new LeveledEntry(10, 0x111, 1),
+                new LeveledEntry(20, 0x222, 3)
             ]
         };
 
@@ -988,7 +987,7 @@ public class NewTopLevelEncoderTests
                 FormId = 0x1900,
                 EditorId = "T",
                 ListType = listType,
-                Entries = [new LeveledEntry(Level: 1, FormId: 0x1, Count: 1)]
+                Entries = [new LeveledEntry(1, 0x1, 1)]
             };
 
             var encoded = LvliEncoder.EncodeNew(lvl);

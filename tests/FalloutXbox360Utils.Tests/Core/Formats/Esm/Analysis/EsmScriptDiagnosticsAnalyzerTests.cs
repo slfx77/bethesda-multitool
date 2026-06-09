@@ -39,7 +39,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
                     FormIdSubrecord("TCLT", topicId),
                     FormIdSubrecord("TCFU", 0xFE000101),
                     CtdaGetIsId(ulysses),
-                    ScriptHeader(refCount: 1, compiledSize: 4),
+                    ScriptHeader(1, 4),
                     Sub("SCDA", 0xFF, 0xFF, 0x00, 0x00),
                     StringSub("SCTX", "set UlyssesFollowerState to 1"),
                     FormIdSubrecord("SCRO", validRef),
@@ -89,7 +89,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
                     StringSub("FULL", "Ulysses")),
                 Record("INFO", infoId,
                     CtdaGetIsId(actorId),
-                    ScriptHeader(refCount: 2, compiledSize: 4),
+                    ScriptHeader(2, 4),
                     Sub("SCDA", 0xFF, 0xFF, 0x00, 0x00),
                     FormIdSubrecord("SCRO", 0),
                     FormIdSubrecord("SCRO", 0xFE00DEAD))
@@ -120,7 +120,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
                     StringSub("EDID", "ChompsLewisFollowPackage"),
                     CtdaGetIsId(chomps),
                     FormIdSubrecord("PLDT", targetRef),
-                    ScriptHeader(refCount: 1, compiledSize: 4),
+                    ScriptHeader(1, 4),
                     Sub("SCDA", 0xFF, 0xFF, 0x00, 0x00),
                     FormIdSubrecord("SCRO", targetRef))
             ],
@@ -290,9 +290,9 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
                     StringSub("FULL", "Ulysses")),
                 Record("INFO", infoId,
                     CtdaGetIsId(actorId),
-                    ScriptHeader(refCount: 0, compiledSize: 0),
+                    ScriptHeader(0, 0),
                     Sub("NEXT"),
-                    ScriptHeader(refCount: 0, compiledSize: 0),
+                    ScriptHeader(0, 0),
                     Sub("TRDT", new byte[24]),
                     StringSub("NAM1", "Travel with me."))
             };
@@ -348,7 +348,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
                     FormIdSubrecord("TPIC", topicId),
                     FormIdSubrecord("QSTI", questId),
                     CtdaGetIsId(actorId),
-                    ScriptHeader(refCount: 0, compiledSize: 0),
+                    ScriptHeader(0, 0),
                     Sub("NEXT"),
                     Sub("TRDT", new byte[24]),
                     StringSub("NAM1", "Travel with me."))
@@ -420,11 +420,11 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
                     StringSub("FULL", "Ulysses")),
                 Record("INFO", infoId,
                     CtdaGetIsId(actorId),
-                    ScriptHeader(refCount: 1, compiledSize: (uint)bytecode.Length),
+                    ScriptHeader(1, (uint)bytecode.Length),
                     Sub("SCDA", bytecode),
                     FormIdSubrecord("SCRO", scriptRef),
                     Sub("NEXT"),
-                    ScriptHeader(refCount: 0, compiledSize: 0),
+                    ScriptHeader(0, 0),
                     Sub("TRDT", new byte[24]),
                     StringSub("NAM1", "Travel with me."))
             };
@@ -475,7 +475,7 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
                     StringSub("FULL", "Ulysses")),
                 Record("INFO", infoId,
                     CtdaGetIsId(actorId),
-                    ScriptHeader(refCount: 0, compiledSize: 15),
+                    ScriptHeader(0, 15),
                     Sub("SCDA",
                         0x00, 0x15, 0x00, 0x0B,
                         0x66,

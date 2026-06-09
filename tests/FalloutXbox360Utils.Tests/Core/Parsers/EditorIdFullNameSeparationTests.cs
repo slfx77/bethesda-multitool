@@ -262,7 +262,7 @@ public class EditorIdFullNameSeparationTests(ITestOutputHelper output)
             var recordsData = new List<byte[]>();
             foreach (var rec in group)
             {
-            var subData = CreateRecordData(rec.Signature, rec.EditorId, rec.FullName, bigEndian);
+                var subData = CreateRecordData(rec.Signature, rec.EditorId, rec.FullName, bigEndian);
                 recordsData.Add(subData);
             }
 

@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
@@ -59,7 +58,7 @@ public sealed class TerrainConcurrentBuildTests
         for (var n = 0; n < cellCount; n++)
         {
             var arr = new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
-            Assert.True(TerrainMeshBuilder.TryBuildVertices(cells[n], arr, cache: null));
+            Assert.True(TerrainMeshBuilder.TryBuildVertices(cells[n], arr, null));
             reference[n] = arr;
         }
 
@@ -71,7 +70,7 @@ public sealed class TerrainConcurrentBuildTests
             Parallel.For(0, cellCount, n =>
             {
                 var arr = new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
-                Assert.True(TerrainMeshBuilder.TryBuildVertices(cells[n], arr, cache: null));
+                Assert.True(TerrainMeshBuilder.TryBuildVertices(cells[n], arr, null));
                 concurrent[n] = arr;
             });
 

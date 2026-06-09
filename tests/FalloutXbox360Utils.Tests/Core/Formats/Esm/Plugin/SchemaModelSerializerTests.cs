@@ -26,7 +26,7 @@ public class SchemaModelSerializerTests
             Flags = 0x00000002u,
             AddictionFormId = 0x000FAB42u,
             AddictionChance = 0.25f,
-            WithdrawalEffectFormId = 0x000FAB99u,
+            WithdrawalEffectFormId = 0x000FAB99u
         };
 
         var extractors = new Dictionary<string, Func<ConsumableRecord, object?>>(StringComparer.Ordinal)
@@ -35,7 +35,7 @@ public class SchemaModelSerializerTests
             ["Flags"] = m => BitConverter.GetBytes(m.Flags),
             ["Addiction"] = m => m.AddictionFormId ?? 0u,
             ["AddictionChance"] = m => m.AddictionChance,
-            ["UseSoundOrWithdrawalEffect"] = m => m.WithdrawalEffectFormId ?? 0u,
+            ["UseSoundOrWithdrawalEffect"] = m => m.WithdrawalEffectFormId ?? 0u
         };
 
         var bytes = SchemaModelSerializer.Serialize("ENIT", "ALCH", 20, alch, extractors);
@@ -58,7 +58,7 @@ public class SchemaModelSerializerTests
         var partial = new Dictionary<string, Func<ConsumableRecord, object?>>(StringComparer.Ordinal)
         {
             ["Value"] = m => m.Value,
-            ["AddictionChance"] = m => m.AddictionChance,
+            ["AddictionChance"] = m => m.AddictionChance
         };
 
         var bytes = SchemaModelSerializer.Serialize("ENIT", "ALCH", 20, alch, partial);
@@ -85,8 +85,8 @@ public class SchemaModelSerializerTests
         var model = new ConsumableRecord { FormId = 1 };
         var extractors = new Dictionary<string, Func<ConsumableRecord, object?>>(StringComparer.Ordinal);
 
-        var ex = Assert.Throws<InvalidOperationException>(
-            () => SchemaModelSerializer.Serialize("ZZZZ", "NONE", 99, model, extractors));
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            SchemaModelSerializer.Serialize("ZZZZ", "NONE", 99, model, extractors));
         Assert.Contains("ZZZZ", ex.Message);
     }
 
@@ -97,7 +97,7 @@ public class SchemaModelSerializerTests
         var alch = new ConsumableRecord { FormId = 1, Weight = 0.5f };
         var extractors = new Dictionary<string, Func<ConsumableRecord, object?>>(StringComparer.Ordinal)
         {
-            ["Weight"] = m => m.Weight,
+            ["Weight"] = m => m.Weight
         };
 
         var sub = SchemaModelSerializer.SerializeSubrecord("DATA", "ALCH", 4, alch, extractors);

@@ -12,7 +12,7 @@ public class DialogueAudioPrefixMatchTests
         {
             Make(0x0100352C, "VDialogueUlyssesUlyssesTopic000", "MaleUniqueUlysses", 1, "VDialogueUlysses", "Text A"),
             Make(0x0100352D, "VDialogueUlyssesUlyssesTopic001", "MaleUniqueUlysses", 1, "VDialogueUlysses", "Text B"),
-            Make(0x0100352E, "VDialogueUlyssesOtherTopic",      "MaleUniqueUlysses", 1, "VDialogueUlysses", "Text C")
+            Make(0x0100352E, "VDialogueUlyssesOtherTopic", "MaleUniqueUlysses", 1, "VDialogueUlysses", "Text C")
         };
 
         var index = DialogueAudioCsvAssetCollector.BuildAudioBindingPrefixIndex(bindings);
@@ -85,7 +85,8 @@ public class DialogueAudioPrefixMatchTests
 
     private static EmittedDialogueAudioBinding Make(
         uint fid, string topic, string voice, byte resp, string quest, string text)
-        => new()
+    {
+        return new EmittedDialogueAudioBinding
         {
             AllocatedInfoFormId = fid,
             ParentDialEditorId = topic,
@@ -94,4 +95,5 @@ public class DialogueAudioPrefixMatchTests
             QuestEditorId = quest,
             ResponseText = text
         };
+    }
 }

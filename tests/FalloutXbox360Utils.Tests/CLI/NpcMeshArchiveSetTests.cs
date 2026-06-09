@@ -28,7 +28,8 @@ public sealed class NpcMeshArchiveSetTests
         Assert.Equal(new byte[] { 1, 2, 3 }, shared);
         Assert.Equal(primaryPath, sharedArchive);
 
-        Assert.True(archives.TryExtractFile("meshes\\clutter\\fallback.nif", out var fallback, out var fallbackArchive));
+        Assert.True(archives.TryExtractFile("meshes\\clutter\\fallback.nif", out var fallback,
+            out var fallbackArchive));
         Assert.Equal(new byte[] { 10, 11, 12 }, fallback);
         Assert.Equal(fallbackPath, fallbackArchive);
 
@@ -85,35 +86,38 @@ public sealed class NpcMeshArchiveSetTests
         writer.Write(path);
     }
 
-    private static BsaHeader CreateHeader(uint fileCount) => new()
+    private static BsaHeader CreateHeader(uint fileCount)
     {
-        FileId = "BSA\0",
-        Version = 104,
-        FolderRecordOffset = 36,
-        ArchiveFlags = BsaArchiveFlags.IncludeDirectoryNames | BsaArchiveFlags.IncludeFileNames,
-        FolderCount = 1,
-        FileCount = fileCount,
-        TotalFolderNameLength = 0,
-        TotalFileNameLength = 0,
-        FileFlags = BsaFileFlags.Meshes
-    };
+        return new BsaHeader
+        {
+            FileId = "BSA\0",
+            Version = 104,
+            FolderRecordOffset = 36,
+            ArchiveFlags = BsaArchiveFlags.IncludeDirectoryNames | BsaArchiveFlags.IncludeFileNames,
+            FolderCount = 1,
+            FileCount = fileCount,
+            TotalFolderNameLength = 0,
+            TotalFileNameLength = 0,
+            FileFlags = BsaFileFlags.Meshes
+        };
+    }
 
     private sealed class TempDirectory : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(),
-            "NpcMeshArchiveSetTests_" + Guid.NewGuid().ToString("N"));
-
         public TempDirectory()
         {
             Directory.CreateDirectory(Path);
         }
 
+        public string Path { get; } = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            "NpcMeshArchiveSetTests_" + Guid.NewGuid().ToString("N"));
+
         public void Dispose()
         {
             if (Directory.Exists(Path))
             {
-                Directory.Delete(Path, recursive: true);
+                Directory.Delete(Path, true);
             }
         }
     }

@@ -15,8 +15,10 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 /// </summary>
 public sealed class TopDownViewProjBuilderTests
 {
-    private static Vector4 Clip(Matrix4x4 vp, float worldX, float worldNorthY) =>
-        Vector4.Transform(new Vector4(worldX, worldNorthY, 0f, 1f), vp);
+    private static Vector4 Clip(Matrix4x4 vp, float worldX, float worldNorthY)
+    {
+        return Vector4.Transform(new Vector4(worldX, worldNorthY, 0f, 1f), vp);
+    }
 
     [Fact]
     public void BuildViewProj_EastMapsToScreenRight()
@@ -60,14 +62,16 @@ public sealed class TopDownViewProjBuilderTests
         Assert.True(high.Z / high.W < low.Z / low.W,
             "higher world Z must produce a smaller clip Z (nearer the top-down camera)");
 
-        static Vector4 Clip3(Matrix4x4 vp, float x, float y, float z) =>
-            Vector4.Transform(new Vector4(x, y, z, 1f), vp);
+        static Vector4 Clip3(Matrix4x4 vp, float x, float y, float z)
+        {
+            return Vector4.Transform(new Vector4(x, y, z, 1f), vp);
+        }
     }
 
     [Fact]
     public void BuildCoverCylinder_CentersAndCoversRect()
     {
-        var cyl = TopDownViewProjBuilder.BuildCoverCylinder(0f, 1000f, 0f, 2000f, slack: 100f);
+        var cyl = TopDownViewProjBuilder.BuildCoverCylinder(0f, 1000f, 0f, 2000f, 100f);
         Assert.Equal(500f, cyl.Position.X, 3);
         Assert.Equal(1000f, cyl.Position.Y, 3);
         var halfDiag = MathF.Sqrt(500f * 500f + 1000f * 1000f);

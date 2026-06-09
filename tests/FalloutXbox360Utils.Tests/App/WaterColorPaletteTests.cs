@@ -1,4 +1,3 @@
-using FalloutXbox360Utils;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.App;

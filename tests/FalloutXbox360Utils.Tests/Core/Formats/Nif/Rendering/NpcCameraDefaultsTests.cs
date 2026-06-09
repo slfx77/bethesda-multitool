@@ -51,8 +51,8 @@ public sealed class NpcCameraDefaultsTests
     }
 
     [Theory]
-    [InlineData(false, true)]   // no --elevation → Implicit
-    [InlineData(true, false)]   // explicit --elevation 12 → not Implicit
+    [InlineData(false, true)] // no --elevation → Implicit
+    [InlineData(true, false)] // explicit --elevation 12 → not Implicit
     public void RenderNpcCommand_ElevationImplicitMatchesArgs(bool passElevation, bool expectedImplicit)
     {
         var command = RenderNpcCommand.Create();

@@ -14,7 +14,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     {
         using var tempDir = new TempDirectory();
         var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
-        var metadata = CreateMetadata(fileRawSize: 64, archiveTicks: 1000);
+        var metadata = CreateMetadata(64, 1000);
         var payload = CreatePayload();
 
         cache.Store(metadata, payload);
@@ -43,9 +43,9 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     {
         using var tempDir = new TempDirectory();
         var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
-        var metadata = CreateMetadata(fileRawSize: null, archiveTicks: 1000, found: false);
+        var metadata = CreateMetadata(null, 1000, false);
 
-        cache.Store(metadata, payload: null);
+        cache.Store(metadata, null);
 
         Assert.True(cache.TryLoad(metadata, out var entry));
         Assert.True(entry.IsNegative);
@@ -57,8 +57,8 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     {
         using var tempDir = new TempDirectory();
         var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
-        var original = CreateMetadata(fileRawSize: 64, archiveTicks: 1000);
-        var changed = CreateMetadata(fileRawSize: 65, archiveTicks: 1000);
+        var original = CreateMetadata(64, 1000);
+        var changed = CreateMetadata(65, 1000);
 
         cache.Store(original, CreatePayload());
 
@@ -71,7 +71,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     {
         using var tempDir = new TempDirectory();
         var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
-        var metadata = CreateMetadata(fileRawSize: 64, archiveTicks: 1000);
+        var metadata = CreateMetadata(64, 1000);
         cache.Store(metadata, CreatePayload());
         var path = cache.GetCachePath(metadata);
         File.WriteAllBytes(path, [0x42, 0x61, 0x64]);
@@ -83,8 +83,9 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     private static NpcMeshArchiveLookupMetadata CreateMetadata(
         uint? fileRawSize,
         long archiveTicks,
-        bool found = true) =>
-        new(
+        bool found = true)
+    {
+        return new NpcMeshArchiveLookupMetadata(
             "meshes\\clutter\\crate.nif",
             found,
             $"archive-set:{archiveTicks}",
@@ -95,6 +96,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
             fileRawSize,
             fileRawSize,
             found ? 2048U : null);
+    }
 
     private static ReferenceDecodedMeshPayload12 CreatePayload()
     {
@@ -114,37 +116,37 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                 [0, 1, 2],
                 "textures\\foo.dds",
                 "textures\\foo_n.dds",
-                HasBump: true,
+                true,
                 NifAlphaRenderMode.Blend,
-                AlphaBlend: true,
-                AlphaTest: true,
-                AlphaTestThreshold: 0.5f,
-                AlphaTestFunction: 6,
-                SrcBlendMode: 7,
-                DstBlendMode: 8,
-                MaterialAlpha: 0.9f,
-                DoubleSided: true,
-                IsEmissive: false,
-                LocalBoundsCenter: new Vector3(1, 2, 3))
+                true,
+                true,
+                0.5f,
+                6,
+                7,
+                8,
+                0.9f,
+                true,
+                false,
+                new Vector3(1, 2, 3))
         ]);
     }
 
     private sealed class TempDirectory : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(),
-            "ReferenceDecodedMeshDiskCache12Tests_" + Guid.NewGuid().ToString("N"));
-
         public TempDirectory()
         {
             Directory.CreateDirectory(Path);
         }
 
+        public string Path { get; } = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            "ReferenceDecodedMeshDiskCache12Tests_" + Guid.NewGuid().ToString("N"));
+
         public void Dispose()
         {
             if (Directory.Exists(Path))
             {
-                Directory.Delete(Path, recursive: true);
+                Directory.Delete(Path, true);
             }
         }
     }

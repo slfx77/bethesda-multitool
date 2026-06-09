@@ -1,6 +1,6 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
@@ -213,7 +213,10 @@ public class CellLinkageWorldspaceInferenceTests
             [0x10] = new()
             {
                 FormId = 0x10,
-                Cells = [new RuntimeCellMapEntry { CellFormId = 0x000E456B, GridX = 5, GridY = -3, WorldspaceFormId = 0x10 }]
+                Cells =
+                [
+                    new RuntimeCellMapEntry { CellFormId = 0x000E456B, GridX = 5, GridY = -3, WorldspaceFormId = 0x10 }
+                ]
             }
         };
 
@@ -232,10 +235,10 @@ public class CellLinkageWorldspaceInferenceTests
     {
         var cells = new List<CellRecord>
         {
-            new() { FormId = 0x1000, WorldspaceFormId = 0x99 },          // already owned
-            new() { FormId = 0x1001, Flags = 0x01 },                     // interior
-            new() { FormId = 0x1002, IsPersistentCell = true },          // persistent
-            new() { FormId = 0x1003, GridX = 2, GridY = 2 }              // null ws, resolvable
+            new() { FormId = 0x1000, WorldspaceFormId = 0x99 }, // already owned
+            new() { FormId = 0x1001, Flags = 0x01 }, // interior
+            new() { FormId = 0x1002, IsPersistentCell = true }, // persistent
+            new() { FormId = 0x1003, GridX = 2, GridY = 2 } // null ws, resolvable
         };
         var runtimeMaps = new Dictionary<uint, RuntimeWorldspaceData>
         {
@@ -255,10 +258,10 @@ public class CellLinkageWorldspaceInferenceTests
         var assigned = CellLinkageHandler.AssignRuntimeCellMapOwners(cells, runtimeMaps);
 
         Assert.Equal(1, assigned);
-        Assert.Equal(0x99u, cells[0].WorldspaceFormId);   // unchanged
-        Assert.Null(cells[1].WorldspaceFormId);           // interior skipped
-        Assert.Null(cells[2].WorldspaceFormId);           // persistent skipped
-        Assert.Equal(0x10u, cells[3].WorldspaceFormId);   // resolved, grid preserved
+        Assert.Equal(0x99u, cells[0].WorldspaceFormId); // unchanged
+        Assert.Null(cells[1].WorldspaceFormId); // interior skipped
+        Assert.Null(cells[2].WorldspaceFormId); // persistent skipped
+        Assert.Equal(0x10u, cells[3].WorldspaceFormId); // resolved, grid preserved
         Assert.Equal(2, cells[3].GridX);
     }
 
@@ -267,11 +270,14 @@ public class CellLinkageWorldspaceInferenceTests
     {
         var cells = new List<CellRecord>
         {
-            new() { FormId = 0x000E456B, Flags = 0x52 },                                 // exterior, no ws, no grid → interior
-            new() { FormId = 0x1001, Flags = 0x52, WorldspaceFormId = 0x10, GridX = 1, GridY = 1 }, // valid exterior → untouched
-            new() { FormId = 0x1002, Flags = 0x53 },                                     // already interior → untouched
-            new() { FormId = 0x1003, Flags = 0x52, GridX = 0, GridY = 0 },               // has grid → untouched
-            new() { FormId = 0x1004, Flags = 0x52, IsVirtual = true }                    // virtual → untouched
+            new() { FormId = 0x000E456B, Flags = 0x52 }, // exterior, no ws, no grid → interior
+            new()
+            {
+                FormId = 0x1001, Flags = 0x52, WorldspaceFormId = 0x10, GridX = 1, GridY = 1
+            }, // valid exterior → untouched
+            new() { FormId = 0x1002, Flags = 0x53 }, // already interior → untouched
+            new() { FormId = 0x1003, Flags = 0x52, GridX = 0, GridY = 0 }, // has grid → untouched
+            new() { FormId = 0x1004, Flags = 0x52, IsVirtual = true } // virtual → untouched
         };
 
         var reclassified = CellLinkageHandler.NormalizeStructurallyInteriorCells(cells);
@@ -332,7 +338,7 @@ public class CellLinkageWorldspaceInferenceTests
         Assert.Contains(keeper.PlacedObjects, p => p.FormId == 0x6001);
         Assert.Contains(keeper.PlacedObjects, p => p.FormId == 0x6002);
         Assert.DoesNotContain(cells, c => c.FormId == 0xFE800062); // consumed virtual cell removed
-        Assert.Contains(cells, c => c.FormId == 0xFE800099);       // non-co-located virtual cell retained
+        Assert.Contains(cells, c => c.FormId == 0xFE800099); // non-co-located virtual cell retained
     }
 
     [Fact]
@@ -367,8 +373,8 @@ public class CellLinkageWorldspaceInferenceTests
 
         Assert.Equal(0, merged);
         var master = Assert.Single(cells, c => c.FormId == 0x0013B310);
-        Assert.Empty(master.PlacedObjects);                       // master cell untouched
-        Assert.Contains(cells, c => c.FormId == 0xFE800050);      // virtual cell left for emission dedup to drop
+        Assert.Empty(master.PlacedObjects); // master cell untouched
+        Assert.Contains(cells, c => c.FormId == 0xFE800050); // virtual cell left for emission dedup to drop
     }
 
     private static WorldspaceRecord CreateWorldspace(

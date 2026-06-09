@@ -11,8 +11,8 @@ public class ParityAuditCoreTests
     public void Compare_BothFilledAgree_CountsAgreeOnly()
     {
         var (esm, dmp) = MakeWeaponPair(
-            esm: w => w with { Damage = 50, Value = 100 },
-            dmp: w => w with { Damage = 50, Value = 100 });
+            w => w with { Damage = 50, Value = 100 },
+            w => w with { Damage = 50, Value = 100 });
 
         var result = ParityAuditCore.Compare("esm", esm, FormIdResolver.Empty, "dmp", dmp, FormIdResolver.Empty);
 
@@ -29,8 +29,8 @@ public class ParityAuditCoreTests
     public void Compare_BothFilledDifferent_CountsDisagree()
     {
         var (esm, dmp) = MakeWeaponPair(
-            esm: w => w with { Damage = 50 },
-            dmp: w => w with { Damage = 75 });
+            w => w with { Damage = 50 },
+            w => w with { Damage = 75 });
 
         var result = ParityAuditCore.Compare("esm", esm, FormIdResolver.Empty, "dmp", dmp, FormIdResolver.Empty);
 
@@ -48,8 +48,8 @@ public class ParityAuditCoreTests
     public void Compare_OnlyEsmFilled_CountsEsmOnly()
     {
         var (esm, dmp) = MakeWeaponPair(
-            esm: w => w with { ModelPath = "weapons/rifle.nif" },
-            dmp: w => w with { ModelPath = null });
+            w => w with { ModelPath = "weapons/rifle.nif" },
+            w => w with { ModelPath = null });
 
         var result = ParityAuditCore.Compare("esm", esm, FormIdResolver.Empty, "dmp", dmp, FormIdResolver.Empty);
 
@@ -67,8 +67,8 @@ public class ParityAuditCoreTests
     public void Compare_OnlyDmpFilled_CountsDmpOnly()
     {
         var (esm, dmp) = MakeWeaponPair(
-            esm: w => w with { ModelPath = null },
-            dmp: w => w with { ModelPath = "weapons/rifle.nif" });
+            w => w with { ModelPath = null },
+            w => w with { ModelPath = "weapons/rifle.nif" });
 
         var result = ParityAuditCore.Compare("esm", esm, FormIdResolver.Empty, "dmp", dmp, FormIdResolver.Empty);
 
@@ -83,8 +83,8 @@ public class ParityAuditCoreTests
         // Both sides leave ModelPath null and Damage zero — these fields
         // should not appear in the field list (no signal worth reporting).
         var (esm, dmp) = MakeWeaponPair(
-            esm: w => w with { ModelPath = null, Damage = 0 },
-            dmp: w => w with { ModelPath = null, Damage = 0 });
+            w => w with { ModelPath = null, Damage = 0 },
+            w => w with { ModelPath = null, Damage = 0 });
 
         var result = ParityAuditCore.Compare("esm", esm, FormIdResolver.Empty, "dmp", dmp, FormIdResolver.Empty);
 
@@ -174,7 +174,7 @@ public class ParityAuditCoreTests
         var result = ParityAuditCore.Compare(
             "esm", esm, FormIdResolver.Empty,
             "dmp", dmp, FormIdResolver.Empty,
-            examplesPerField: 3);
+            3);
 
         var modelPath = GetType("Weapon", result).Fields.Single(f => f.FieldName == "ModelPath");
         Assert.Equal(7, modelPath.EsmOnly);

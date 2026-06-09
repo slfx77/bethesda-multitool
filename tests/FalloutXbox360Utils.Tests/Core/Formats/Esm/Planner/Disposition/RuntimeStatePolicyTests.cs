@@ -16,7 +16,7 @@ public sealed class RuntimeStatePolicyTests
             Type = "NPC_",
             Source = SourceKind.DmpOverride,
             MasterFormId = 0x00000007u, // Player
-            DmpFormId = 0x00000007u,
+            DmpFormId = 0x00000007u
         };
 
         var decision = policy.Decide(entry);
@@ -33,7 +33,7 @@ public sealed class RuntimeStatePolicyTests
         {
             Type = "WEAP",
             Source = SourceKind.DmpOverride,
-            MasterFormId = 0x000ABCDEu,
+            MasterFormId = 0x000ABCDEu
         };
 
         Assert.Null(policy.Decide(entry));
@@ -47,7 +47,7 @@ public sealed class RuntimeStatePolicyTests
         {
             Type = "GLOB",
             Source = SourceKind.DmpNew,
-            DmpFormId = 0x00000038u, // GameHour
+            DmpFormId = 0x00000038u // GameHour
         };
 
         var decision = policy.Decide(entry);

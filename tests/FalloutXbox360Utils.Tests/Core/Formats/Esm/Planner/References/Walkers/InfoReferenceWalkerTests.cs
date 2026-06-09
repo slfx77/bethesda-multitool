@@ -13,7 +13,7 @@ public sealed class InfoReferenceWalkerTests
         {
             FormId = 0x000ABCDE,
             QuestFormId = 0x000ABCD0,
-            SpeakerFormId = 0x000ABCD1,
+            SpeakerFormId = 0x000ABCD1
         };
         var walker = new InfoReferenceWalker();
 
@@ -30,7 +30,7 @@ public sealed class InfoReferenceWalkerTests
         {
             FormId = 0x000ABCDE,
             LinkToTopics = [0x000A0001, 0x000A0002],
-            LinkFromTopics = [0x000A0003],
+            LinkFromTopics = [0x000A0003]
         };
         var walker = new InfoReferenceWalker();
 
@@ -50,8 +50,8 @@ public sealed class InfoReferenceWalkerTests
             ResultScripts =
             [
                 new DialogueResultScript { ReferencedObjects = [0x000A0001, 0x000A0002] },
-                new DialogueResultScript { ReferencedObjects = [0x000A0003] },
-            ],
+                new DialogueResultScript { ReferencedObjects = [0x000A0003] }
+            ]
         };
         var walker = new InfoReferenceWalker();
 
@@ -81,7 +81,7 @@ public sealed class InfoReferenceWalkerTests
             FormId = 0x000ABCDE,
             QuestFormId = 0,
             SpeakerFormId = 0,
-            PreviousInfo = 0,
+            PreviousInfo = 0
         };
         var walker = new InfoReferenceWalker();
 

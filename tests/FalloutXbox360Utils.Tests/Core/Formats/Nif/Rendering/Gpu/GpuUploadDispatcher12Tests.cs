@@ -1,5 +1,3 @@
-using System;
-using System.Threading;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Xunit;
 
@@ -79,7 +77,7 @@ public sealed class GpuUploadDispatcher12Tests
     [Fact]
     public void TryEnqueue_ReturnsFalse_WhenQueueFull_WithoutBlocking()
     {
-        using var dispatcher = new GpuUploadDispatcher12(capacity: 2);
+        using var dispatcher = new GpuUploadDispatcher12(2);
         using var started = new ManualResetEventSlim(false);
         using var release = new ManualResetEventSlim(false);
 

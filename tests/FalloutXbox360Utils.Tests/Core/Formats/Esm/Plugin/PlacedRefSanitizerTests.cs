@@ -17,7 +17,7 @@ public class PlacedRefSanitizerTests
     [Fact]
     public void EncodeNew_skips_XLKR_when_linked_ref_dangles_and_no_remap()
     {
-        var placed = MakePlaced(linkedRef: 0x000DEAD1u);
+        var placed = MakePlaced(0x000DEAD1u);
         var valid = new HashSet<uint> { 0x00000001u };
 
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed, valid);
@@ -29,7 +29,7 @@ public class PlacedRefSanitizerTests
     [Fact]
     public void EncodeNew_emits_XLKR_when_linked_ref_is_valid()
     {
-        var placed = MakePlaced(linkedRef: 0x000ED239u);
+        var placed = MakePlaced(0x000ED239u);
         var valid = new HashSet<uint> { 0x000ED239u };
 
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed, valid);
@@ -42,7 +42,7 @@ public class PlacedRefSanitizerTests
     [Fact]
     public void EncodeNew_remaps_XLKR_dangling_ref_via_alias_table()
     {
-        var placed = MakePlaced(linkedRef: 0x01999AAAu);
+        var placed = MakePlaced(0x01999AAAu);
         var valid = new HashSet<uint> { 0x01000123u };
         var remap = new Dictionary<uint, uint> { [0x01999AAAu] = 0x01000123u };
 
@@ -57,7 +57,7 @@ public class PlacedRefSanitizerTests
     {
         // XLKR is normally 8 bytes when a keyword is supplied; when only the keyword dangles
         // we drop it and emit the 4-byte form so the linked-ref relationship survives.
-        var placed = MakePlaced(linkedRef: 0x000ED239u, linkedKeyword: 0x000DEAD1u);
+        var placed = MakePlaced(0x000ED239u, 0x000DEAD1u);
         var valid = new HashSet<uint> { 0x000ED239u };
 
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed, valid);
@@ -121,7 +121,7 @@ public class PlacedRefSanitizerTests
     {
         // Backward-compat: tests and legacy callers without a validity set should keep the
         // old emit-everything-verbatim behavior.
-        var placed = MakePlaced(linkedRef: 0xDEADBEEFu, owner: 0xDEADBEEFu, enableParent: 0xDEADBEEFu);
+        var placed = MakePlaced(0xDEADBEEFu, owner: 0xDEADBEEFu, enableParent: 0xDEADBEEFu);
 
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed);
 
@@ -134,7 +134,7 @@ public class PlacedRefSanitizerTests
     public void EncodeNew_NAME_DATA_XSCL_emit_unconditionally_regardless_of_sanitizer()
     {
         // The required-always subrecords stay in place even when every optional one is dropped.
-        var placed = MakePlaced(linkedRef: 0x000DEAD1u);
+        var placed = MakePlaced(0x000DEAD1u);
         var valid = new HashSet<uint>();
 
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed, valid);
@@ -155,7 +155,7 @@ public class PlacedRefSanitizerTests
         {
             FormId = 0x01000100,
             RecordType = "REFR",
-            BaseFormId = 0x00019C5Fu,    // arbitrary valid base
+            BaseFormId = 0x00019C5Fu, // arbitrary valid base
             X = 0, Y = 0, Z = 0, Scale = 1f,
             LinkedRefFormId = linkedRef,
             LinkedRefKeywordFormId = linkedKeyword,

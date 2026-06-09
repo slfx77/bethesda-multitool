@@ -14,13 +14,13 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 ///     Pins the Phase 0 placed-ref FormID pre-allocation contract. Phase 0 must:
 ///     1. Assign a plugin-local FormID to every DMP placed REFR/ACHR/ACRE that's NOT in master.
 ///     2. Populate <c>_emittedNewFormIds</c> / <c>_emittedNewFormIdsByType</c> so Phase 3
-///        encoders (notably <c>PackEncoder.EncodeNew</c>'s PLDT Union resolution) see those
-///        FormIDs in the validator set.
+///     encoders (notably <c>PackEncoder.EncodeNew</c>'s PLDT Union resolution) see those
+///     FormIDs in the validator set.
 ///     3. Populate <c>_newRecordSourceToAllocated</c> so the source→allocated remap finds the
-///        FormID for any subrecord that references the placed ref by its DMP-source FormID.
+///     FormID for any subrecord that references the placed ref by its DMP-source FormID.
 ///     4. Skip master overrides (master REFRs reuse the master FormID — no allocation needed).
 ///     5. Dedup placed refs that appear in multiple cell captures (the cell-capture union runs
-///        in Phase 4; Phase 0 sees the raw per-cell lists and must not double-allocate).
+///     in Phase 4; Phase 0 sees the raw per-cell lists and must not double-allocate).
 /// </summary>
 public class PreAllocatePlacedRefFormIdsTests
 {
@@ -38,7 +38,8 @@ public class PreAllocatePlacedRefFormIdsTests
                 {
                     FormId = 0x000ABC00,
                     EditorId = "ProtoCell",
-                    PlacedObjects = { new PlacedReference { FormId = 0x00BEEFFF, BaseFormId = 0x12, RecordType = "REFR" } }
+                    PlacedObjects =
+                        { new PlacedReference { FormId = 0x00BEEFFF, BaseFormId = 0x12, RecordType = "REFR" } }
                 }
             }
         };
@@ -67,13 +68,14 @@ public class PreAllocatePlacedRefFormIdsTests
                 new CellRecord
                 {
                     FormId = 0x000ABC00,
-                    PlacedObjects = { new PlacedReference { FormId = masterRefFormId, BaseFormId = 0x42, RecordType = "REFR" } }
+                    PlacedObjects =
+                        { new PlacedReference { FormId = masterRefFormId, BaseFormId = 0x42, RecordType = "REFR" } }
                 }
             }
         };
         var pcRecords = new Dictionary<uint, ParsedMainRecord>
         {
-            [masterRefFormId] = new ParsedMainRecord
+            [masterRefFormId] = new()
             {
                 Header = new MainRecordHeader { Signature = "REFR", FormId = masterRefFormId }
             }
@@ -99,12 +101,14 @@ public class PreAllocatePlacedRefFormIdsTests
                 new CellRecord
                 {
                     FormId = 0x000ABC00,
-                    PlacedObjects = { new PlacedReference { FormId = sourceRefId, BaseFormId = 0x12, RecordType = "REFR" } }
+                    PlacedObjects =
+                        { new PlacedReference { FormId = sourceRefId, BaseFormId = 0x12, RecordType = "REFR" } }
                 },
                 new CellRecord
                 {
                     FormId = 0x000ABC01,
-                    PlacedObjects = { new PlacedReference { FormId = sourceRefId, BaseFormId = 0x12, RecordType = "REFR" } }
+                    PlacedObjects =
+                        { new PlacedReference { FormId = sourceRefId, BaseFormId = 0x12, RecordType = "REFR" } }
                 }
             }
         };
@@ -112,7 +116,7 @@ public class PreAllocatePlacedRefFormIdsTests
         builder.PreAllocateNewPlacedRefFormIds(dmp, new Dictionary<uint, ParsedMainRecord>(), allocator, stats);
 
         Assert.Single(builder.PreAllocatedRefFormIdsForTest);
-        Assert.Equal(0x01000801u, allocator.NextLocalId | (uint)(FormIdAllocator.PluginIndex << 24));
+        Assert.Equal(0x01000801u, allocator.NextLocalId | FormIdAllocator.PluginIndex << 24);
     }
 
     [Fact]

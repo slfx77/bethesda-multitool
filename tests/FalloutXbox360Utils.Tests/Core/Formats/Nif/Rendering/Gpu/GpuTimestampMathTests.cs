@@ -9,11 +9,11 @@ public sealed class GpuTimestampMathTests
     public void TicksToMilliseconds_ConvertsWithQueueFrequency()
     {
         var milliseconds = GpuTimestampMath.TicksToMilliseconds(
-            start: 100,
-            end: 600,
-            frequency: 1000);
+            100,
+            600,
+            1000);
 
-        Assert.Equal(500.0, milliseconds, precision: 6);
+        Assert.Equal(500.0, milliseconds, 6);
     }
 
     [Theory]

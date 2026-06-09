@@ -29,7 +29,7 @@ public sealed class DataFolderIndexAutoDetectTests : IDisposable
         {
             if (Directory.Exists(_scratchRoot))
             {
-                Directory.Delete(_scratchRoot, recursive: true);
+                Directory.Delete(_scratchRoot, true);
             }
         }
         catch
@@ -45,9 +45,9 @@ public sealed class DataFolderIndexAutoDetectTests : IDisposable
         // files indexed under their runtime-shaped paths.
         var dataDir = Path.Combine(_scratchRoot, "Data");
         WriteLooseAsset(dataDir, @"meshes\test\thing.nif");
-        WriteSentinelBsa(dataDir);   // marks this as the Data folder
+        WriteSentinelBsa(dataDir); // marks this as the Data folder
 
-        using var index = new DataFolderIndex(dataDir, xbox360FormatHint: false);
+        using var index = new DataFolderIndex(dataDir, false);
         index.Build();
 
         Assert.True(index.TryResolveExact(@"meshes\test\thing.nif", out _));
@@ -64,7 +64,7 @@ public sealed class DataFolderIndexAutoDetectTests : IDisposable
         WriteLooseAsset(dataDir, @"meshes\paradisefalls\thing.nif");
         WriteSentinelBsa(dataDir);
 
-        using var index = new DataFolderIndex(installRoot, xbox360FormatHint: false);
+        using var index = new DataFolderIndex(installRoot, false);
         index.Build();
 
         Assert.True(index.TryResolveExact(@"meshes\paradisefalls\thing.nif", out _));
@@ -81,7 +81,7 @@ public sealed class DataFolderIndexAutoDetectTests : IDisposable
         WriteLooseAsset(dataDir, @"textures\common\thing.dds");
         WriteSentinelBsa(dataDir);
 
-        using var index = new DataFolderIndex(discRoot, xbox360FormatHint: true);
+        using var index = new DataFolderIndex(discRoot, true);
         index.Build();
 
         Assert.True(index.TryResolveExact(@"textures\common\thing.dds", out _));
@@ -97,7 +97,7 @@ public sealed class DataFolderIndexAutoDetectTests : IDisposable
         var flatDir = Path.Combine(_scratchRoot, "loose-textures");
         WriteLooseAsset(flatDir, @"textures\flat\thing.dds");
 
-        using var index = new DataFolderIndex(flatDir, xbox360FormatHint: false);
+        using var index = new DataFolderIndex(flatDir, false);
         index.Build();
 
         Assert.True(index.TryResolveExact(@"textures\flat\thing.dds", out _));

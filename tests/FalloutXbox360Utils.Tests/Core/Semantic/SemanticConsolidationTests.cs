@@ -3,7 +3,6 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -830,8 +829,8 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
             index,
             "Cell",
             outputDir,
-            maxInlineCompressedPayloadLength: 1,
-            maxCellJsonPayloadLength: 1,
+            1,
+            1,
             cancellationToken);
 
         Assert.Equal(Path.Combine(outputDir, "compare_cell.html"), outputFile);
@@ -910,8 +909,8 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
                 formIdMap,
                 "NPC",
                 groups,
-                metadata: null,
-                maxChunkBytes: 700)
+                null,
+                700)
             .ToList();
 
         Assert.True(chunks.Count > 1);
@@ -1113,7 +1112,7 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         Assert.Equal(0f, WorldHeightNormalizer.NormalizeReportableHeight(150_000f));
         Assert.Equal(42.5f, WorldHeightNormalizer.NormalizeReportableHeight(42.5f));
         Assert.Equal(-42.5f, WorldHeightNormalizer.NormalizeReportableHeight(-42.5f));
-        Assert.Null(WorldHeightNormalizer.NormalizeReportableHeight((float?)null));
+        Assert.Null(WorldHeightNormalizer.NormalizeReportableHeight(null));
     }
 
     [Fact]
@@ -1124,7 +1123,7 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         Assert.False(WorldHeightNormalizer.IsNoWaterSentinel(0f));
         Assert.False(WorldHeightNormalizer.IsNoWaterSentinel(-4096f));
         Assert.False(WorldHeightNormalizer.IsNoWaterSentinel(150_000f));
-        Assert.False(WorldHeightNormalizer.IsNoWaterSentinel((float?)null));
+        Assert.False(WorldHeightNormalizer.IsNoWaterSentinel(null));
     }
 
     [Fact]
@@ -1139,7 +1138,7 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         Assert.Equal(-4096f, WorldHeightNormalizer.PreserveSentinelOrNormalize(-4096f));
         Assert.Equal(42.5f, WorldHeightNormalizer.PreserveSentinelOrNormalize(42.5f));
         // Nullable overload.
-        Assert.Null(WorldHeightNormalizer.PreserveSentinelOrNormalize((float?)null));
+        Assert.Null(WorldHeightNormalizer.PreserveSentinelOrNormalize(null));
         Assert.Equal(float.MaxValue, WorldHeightNormalizer.PreserveSentinelOrNormalize((float?)float.MaxValue));
     }
 

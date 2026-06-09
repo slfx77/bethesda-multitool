@@ -19,14 +19,14 @@ public sealed class NavMeshReciprocityRepairTests
     {
         // Two-triangle fan, both edges agree: A's Edge01 → B, B's Edge20 → A.
         var nvtr = new byte[2 * EntrySize];
-        WriteTriangle(nvtr, 0, v0: 0, v1: 1, v2: 2, e01: 1, e12: -1, e20: -1, flags: 0u);
-        WriteTriangle(nvtr, 1, v0: 1, v1: 2, v2: 3, e01: -1, e12: -1, e20: 0, flags: 0u);
+        WriteTriangle(nvtr, 0, 0, 1, 2, 1, -1, -1, 0u);
+        WriteTriangle(nvtr, 1, 1, 2, 3, -1, -1, 0, 0u);
 
         var repaired = NavMeshReciprocityRepair.Repair(nvtr);
 
         Assert.Equal(0, repaired);
-        AssertEdges(nvtr, 0, e01: 1, e12: -1, e20: -1);
-        AssertEdges(nvtr, 1, e01: -1, e12: -1, e20: 0);
+        AssertEdges(nvtr, 0, 1, -1, -1);
+        AssertEdges(nvtr, 1, -1, -1, 0);
     }
 
     [Fact]
@@ -34,14 +34,14 @@ public sealed class NavMeshReciprocityRepairTests
     {
         // A claims edge to B, but B's edges don't point back at A. A's bad edge must clear.
         var nvtr = new byte[2 * EntrySize];
-        WriteTriangle(nvtr, 0, v0: 0, v1: 1, v2: 2, e01: 1, e12: -1, e20: -1, flags: 0u);
-        WriteTriangle(nvtr, 1, v0: 1, v1: 2, v2: 3, e01: -1, e12: -1, e20: -1, flags: 0u);
+        WriteTriangle(nvtr, 0, 0, 1, 2, 1, -1, -1, 0u);
+        WriteTriangle(nvtr, 1, 1, 2, 3, -1, -1, -1, 0u);
 
         var repaired = NavMeshReciprocityRepair.Repair(nvtr);
 
         Assert.Equal(1, repaired);
-        AssertEdges(nvtr, 0, e01: -1, e12: -1, e20: -1);
-        AssertEdges(nvtr, 1, e01: -1, e12: -1, e20: -1);
+        AssertEdges(nvtr, 0, -1, -1, -1);
+        AssertEdges(nvtr, 1, -1, -1, -1);
     }
 
     [Fact]
@@ -49,12 +49,12 @@ public sealed class NavMeshReciprocityRepairTests
     {
         // Single triangle whose Edge01 points at index 99 (beyond the triangle count). Clear.
         var nvtr = new byte[1 * EntrySize];
-        WriteTriangle(nvtr, 0, v0: 0, v1: 1, v2: 2, e01: 99, e12: -1, e20: -1, flags: 0u);
+        WriteTriangle(nvtr, 0, 0, 1, 2, 99, -1, -1, 0u);
 
         var repaired = NavMeshReciprocityRepair.Repair(nvtr);
 
         Assert.Equal(1, repaired);
-        AssertEdges(nvtr, 0, e01: -1, e12: -1, e20: -1);
+        AssertEdges(nvtr, 0, -1, -1, -1);
     }
 
     [Fact]
@@ -62,12 +62,12 @@ public sealed class NavMeshReciprocityRepairTests
     {
         // Triangle 0 claims its own edge points at itself. Clear.
         var nvtr = new byte[1 * EntrySize];
-        WriteTriangle(nvtr, 0, v0: 0, v1: 1, v2: 2, e01: 0, e12: -1, e20: -1, flags: 0u);
+        WriteTriangle(nvtr, 0, 0, 1, 2, 0, -1, -1, 0u);
 
         var repaired = NavMeshReciprocityRepair.Repair(nvtr);
 
         Assert.Equal(1, repaired);
-        AssertEdges(nvtr, 0, e01: -1, e12: -1, e20: -1);
+        AssertEdges(nvtr, 0, -1, -1, -1);
     }
 
     [Fact]
@@ -76,14 +76,14 @@ public sealed class NavMeshReciprocityRepairTests
         // A → B and B → A. Reciprocal under the "any of Z's edges points back at i" policy
         // regardless of shared vertices; both must survive.
         var nvtr = new byte[2 * EntrySize];
-        WriteTriangle(nvtr, 0, v0: 0, v1: 1, v2: 2, e01: 1, e12: -1, e20: -1, flags: 0u);
-        WriteTriangle(nvtr, 1, v0: 5, v1: 6, v2: 7, e01: 0, e12: -1, e20: -1, flags: 0u);
+        WriteTriangle(nvtr, 0, 0, 1, 2, 1, -1, -1, 0u);
+        WriteTriangle(nvtr, 1, 5, 6, 7, 0, -1, -1, 0u);
 
         var repaired = NavMeshReciprocityRepair.Repair(nvtr);
 
         Assert.Equal(0, repaired);
-        AssertEdges(nvtr, 0, e01: 1, e12: -1, e20: -1);
-        AssertEdges(nvtr, 1, e01: 0, e12: -1, e20: -1);
+        AssertEdges(nvtr, 0, 1, -1, -1);
+        AssertEdges(nvtr, 1, 0, -1, -1);
     }
 
     [Fact]
@@ -92,22 +92,22 @@ public sealed class NavMeshReciprocityRepairTests
         // A claims B; B is silent. Only A's edge clears — B has nothing to clear.
         // Verifies snapshot-based pass doesn't cascade-clear B.
         var nvtr = new byte[2 * EntrySize];
-        WriteTriangle(nvtr, 0, v0: 0, v1: 1, v2: 2, e01: 1, e12: -1, e20: -1, flags: 0u);
-        WriteTriangle(nvtr, 1, v0: 3, v1: 4, v2: 5, e01: -1, e12: -1, e20: -1, flags: 0u);
+        WriteTriangle(nvtr, 0, 0, 1, 2, 1, -1, -1, 0u);
+        WriteTriangle(nvtr, 1, 3, 4, 5, -1, -1, -1, 0u);
 
         var repaired = NavMeshReciprocityRepair.Repair(nvtr);
 
         Assert.Equal(1, repaired);
-        AssertEdges(nvtr, 0, e01: -1, e12: -1, e20: -1);
-        AssertEdges(nvtr, 1, e01: -1, e12: -1, e20: -1);
+        AssertEdges(nvtr, 0, -1, -1, -1);
+        AssertEdges(nvtr, 1, -1, -1, -1);
     }
 
     [Fact]
     public void Repair_PreservesVerticesAndFlags()
     {
         var nvtr = new byte[1 * EntrySize];
-        WriteTriangle(nvtr, 0, v0: 0xABCD, v1: 0x1234, v2: 0x5678,
-            e01: 99, e12: -1, e20: -1, flags: 0xDEADBEEFu);
+        WriteTriangle(nvtr, 0, 0xABCD, 0x1234, 0x5678,
+            99, -1, -1, 0xDEADBEEFu);
 
         NavMeshReciprocityRepair.Repair(nvtr);
 

@@ -1,9 +1,8 @@
 using System.Collections.Immutable;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter;
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Encoders.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
+using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using FalloutXbox360Utils.Tests.Core.Formats.Esm.Planner.Parity;
 using Xunit;
@@ -31,7 +30,7 @@ public sealed class PlannedPgreEncoderParityTests
             BaseFormId = TestBaseFormId,
             PositionX = 100.5f,
             PositionY = -200.25f,
-            PositionZ = 50.75f,
+            PositionZ = 50.75f
         };
 
         var legacy = PgreEncoder.EncodeNew(model);
@@ -49,7 +48,7 @@ public sealed class PlannedPgreEncoderParityTests
             BaseFormId = TestBaseFormId,
             PositionX = 10f,
             PositionY = 20f,
-            PositionZ = 30f,
+            PositionZ = 30f
         };
 
         var record = new RecordPlan
@@ -61,7 +60,7 @@ public sealed class PlannedPgreEncoderParityTests
             Model = model,
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test override" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test override" }
         };
         var emitPlan = new EmitPlan
         {
@@ -73,8 +72,8 @@ public sealed class PlannedPgreEncoderParityTests
             Meta = new PlanMetadata
             {
                 NextObjectId = TestFormId + 1,
-                PlannerCoverage = ImmutableHashSet.Create("PGRE"),
-            },
+                PlannerCoverage = ImmutableHashSet.Create("PGRE")
+            }
         };
         var refs = new PlanReferenceLookup(record, emitPlan);
 
@@ -98,7 +97,7 @@ public sealed class PlannedPgreEncoderParityTests
             BaseFormId = 0u,
             PositionX = 0f,
             PositionY = 0f,
-            PositionZ = 0f,
+            PositionZ = 0f
         };
 
         var encoded = PgreEncoder.EncodeOverride(model);

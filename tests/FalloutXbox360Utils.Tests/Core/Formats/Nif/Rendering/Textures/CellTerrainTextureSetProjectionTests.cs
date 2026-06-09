@@ -6,7 +6,11 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering.Textures;
 public sealed class CellTerrainTextureSetProjectionTests
 {
     private const int VxA = 5, VyA = 5; // an arbitrary interior vertex
-    private static int TableIndex(int vx, int vy) => vy * CellLayerWeightTable.CellVertexCount + vx;
+
+    private static int TableIndex(int vx, int vy)
+    {
+        return vy * CellLayerWeightTable.CellVertexCount + vx;
+    }
 
     [Fact]
     public void Project_KeepsAllLayersUpToSixteen_NonLossy()
@@ -33,6 +37,7 @@ public sealed class CellTerrainTextureSetProjectionTests
             Assert.InRange(slot, 0, CellTerrainTextureSet.MaxSlots - 1);
             Assert.Equal(weights[i], w[slot], 3);
         }
+
         for (var s = 0; s < CellTerrainTextureSet.MaxSlots; s++) total += w[s];
         Assert.Equal(1f, total, 3);
     }
@@ -74,6 +79,7 @@ public sealed class CellTerrainTextureSetProjectionTests
             w[k * 4 + 2] = v.Z;
             w[k * 4 + 3] = v.W;
         }
+
         return w;
     }
 }

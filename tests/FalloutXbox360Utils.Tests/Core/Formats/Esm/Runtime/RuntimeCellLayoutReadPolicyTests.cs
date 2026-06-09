@@ -8,42 +8,42 @@ public class RuntimeCellLayoutReadPolicyTests
     [Fact]
     public void ShouldAllowStructuralReads_ProtoOffsets_AreAllowed()
     {
-        var probe = MakeProbe(highConfidence: false, winnerScore: 0, runnerUpScore: 0);
+        var probe = MakeProbe(false, 0, 0);
 
-        Assert.True(RuntimeCellLayoutReadPolicy.ShouldAllowStructuralReads(useProtoOffsets: true, probe));
+        Assert.True(RuntimeCellLayoutReadPolicy.ShouldAllowStructuralReads(true, probe));
     }
 
     [Fact]
     public void ShouldAllowStructuralReads_HighConfidenceProbe_IsAllowed()
     {
-        var probe = MakeProbe(highConfidence: true, winnerScore: 10, runnerUpScore: 0);
+        var probe = MakeProbe(true, 10, 0);
 
-        Assert.True(RuntimeCellLayoutReadPolicy.ShouldAllowStructuralReads(useProtoOffsets: false, probe));
+        Assert.True(RuntimeCellLayoutReadPolicy.ShouldAllowStructuralReads(false, probe));
     }
 
     [Fact]
     public void ShouldAllowStructuralReads_LowConfidenceHighAbsoluteScore_IsAllowed()
     {
         var probe = MakeProbe(
-            highConfidence: false,
-            winnerScore: RuntimeCellLayoutReadPolicy.HighAbsoluteScoreThreshold,
-            runnerUpScore: RuntimeCellLayoutReadPolicy.HighAbsoluteScoreThreshold - 1);
+            false,
+            RuntimeCellLayoutReadPolicy.HighAbsoluteScoreThreshold,
+            RuntimeCellLayoutReadPolicy.HighAbsoluteScoreThreshold - 1);
 
-        Assert.True(RuntimeCellLayoutReadPolicy.ShouldAllowStructuralReads(useProtoOffsets: false, probe));
+        Assert.True(RuntimeCellLayoutReadPolicy.ShouldAllowStructuralReads(false, probe));
     }
 
     [Fact]
     public void ShouldAllowStructuralReads_LowConfidenceLowScore_IsBlocked()
     {
-        var probe = MakeProbe(highConfidence: false, winnerScore: 4, runnerUpScore: 4);
+        var probe = MakeProbe(false, 4, 4);
 
-        Assert.False(RuntimeCellLayoutReadPolicy.ShouldAllowStructuralReads(useProtoOffsets: false, probe));
+        Assert.False(RuntimeCellLayoutReadPolicy.ShouldAllowStructuralReads(false, probe));
     }
 
     [Fact]
     public void ShouldAllowStructuralReads_NoProbe_IsAllowed()
     {
-        Assert.True(RuntimeCellLayoutReadPolicy.ShouldAllowStructuralReads(useProtoOffsets: false, probe: null));
+        Assert.True(RuntimeCellLayoutReadPolicy.ShouldAllowStructuralReads(false, null));
     }
 
     private static RuntimeWorldCellLayoutProbeResult MakeProbe(
@@ -56,6 +56,6 @@ public class RuntimeCellLayoutReadPolicyTests
             highConfidence,
             winnerScore,
             runnerUpScore,
-            SampleCount: 1);
+            1);
     }
 }

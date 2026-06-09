@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
@@ -30,8 +29,8 @@ public sealed class IntenseTrainingPerkRankRegressionTests
     private const int PerkStructSize = 96;
 
     // PDB offsets for BGSPerk class (per pdb_layouts.json key 0x56).
-    private const int PerkDataOffset = 72;          // 5-byte PerkData
-    private const int PerkEntriesListOffset = 88;   // BSSimpleList head (8 bytes)
+    private const int PerkDataOffset = 72; // 5-byte PerkData
+    private const int PerkEntriesListOffset = 88; // BSSimpleList head (8 bytes)
 
     // BGSPerkEntry inner offsets — read in RuntimeMagicReader.ReadPerkEntry.
     private const int PerkEntryStructSize = 12;
@@ -54,8 +53,8 @@ public sealed class IntenseTrainingPerkRankRegressionTests
         // assert no entry has rank=130 (the historical garbage value), which
         // catches any drift to a reasonable-looking-but-wrong offset.
         const uint perkFormId = 0x000A1234; // synthetic FormID
-        var perkBuffer = BuildPerk(perkFormId, entriesHeadItemVa: EntryVa);
-        var entryBuffer = BuildPerkEntry(rank: 0, priority: 0, dataPtr: 0);
+        var perkBuffer = BuildPerk(perkFormId, EntryVa);
+        var entryBuffer = BuildPerkEntry(0, 0, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(perkBuffer, PerkVa)
@@ -82,8 +81,8 @@ public sealed class IntenseTrainingPerkRankRegressionTests
         const byte expectedRank = 7;
         const byte expectedPriority = 42;
 
-        var perkBuffer = BuildPerk(perkFormId, entriesHeadItemVa: EntryVa);
-        var entryBuffer = BuildPerkEntry(rank: expectedRank, priority: expectedPriority, dataPtr: 0);
+        var perkBuffer = BuildPerk(perkFormId, EntryVa);
+        var entryBuffer = BuildPerkEntry(expectedRank, expectedPriority, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(perkBuffer, PerkVa)
@@ -106,7 +105,7 @@ public sealed class IntenseTrainingPerkRankRegressionTests
         // empty Entries (not null), and doesn't fabricate garbage from buffer
         // tail bytes.
         const uint perkFormId = 0x000A1236;
-        var perkBuffer = BuildPerk(perkFormId, entriesHeadItemVa: 0);
+        var perkBuffer = BuildPerk(perkFormId, 0);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(perkBuffer, PerkVa);
         var reader = new RuntimeMagicReader(fixture.BuildContext());

@@ -1,9 +1,9 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 using Xunit;
@@ -163,7 +163,7 @@ public class ScriptDialogueEncoderTests
         Assert.Equal("EDID", encoded.Subrecords[0].Signature);
         var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA");
         Assert.Equal(2, data.Bytes.Length);
-        Assert.Equal(1, data.Bytes[0]);    // TopicType
+        Assert.Equal(1, data.Bytes[0]); // TopicType
         Assert.Equal(0x02, data.Bytes[1]); // Flags
     }
 
@@ -223,8 +223,8 @@ public class ScriptDialogueEncoderTests
 
         var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA");
         Assert.Equal(4, data.Bytes.Length);
-        Assert.Equal(0, data.Bytes[0]);    // DialType — default
-        Assert.Equal(0, data.Bytes[1]);    // NextSpeaker — default
+        Assert.Equal(0, data.Bytes[0]); // DialType — default
+        Assert.Equal(0, data.Bytes[1]); // NextSpeaker — default
         Assert.Equal(0x01, data.Bytes[2]); // Flags
         Assert.Equal(0x02, data.Bytes[3]); // Flags2
     }
@@ -264,12 +264,12 @@ public class ScriptDialogueEncoderTests
 
         var trdt0 = trdtRecords[0].Bytes;
         Assert.Equal(24, trdt0.Length);
-        Assert.Equal(5u, BinaryPrimitives.ReadUInt32LittleEndian(trdt0.AsSpan(0, 4)));    // EmotionType
-        Assert.Equal(50, BinaryPrimitives.ReadInt32LittleEndian(trdt0.AsSpan(4, 4)));     // EmotionValue
-        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(trdt0.AsSpan(8, 4)));    // ConvTopic (zero)
-        Assert.Equal(1, trdt0[12]);                                                        // ResponseNumber
+        Assert.Equal(5u, BinaryPrimitives.ReadUInt32LittleEndian(trdt0.AsSpan(0, 4))); // EmotionType
+        Assert.Equal(50, BinaryPrimitives.ReadInt32LittleEndian(trdt0.AsSpan(4, 4))); // EmotionValue
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(trdt0.AsSpan(8, 4))); // ConvTopic (zero)
+        Assert.Equal(1, trdt0[12]); // ResponseNumber
         Assert.Equal(0x0000BEEFu, BinaryPrimitives.ReadUInt32LittleEndian(trdt0.AsSpan(16, 4))); // Sound
-        Assert.Equal(0, trdt0[20]);                                                        // UseEmotionAnim
+        Assert.Equal(0, trdt0[20]); // UseEmotionAnim
     }
 
     [Fact]
@@ -366,9 +366,9 @@ public class ScriptDialogueEncoderTests
         // SCHR canonical ESM layout per fopdoc — INFO result scripts declare VariableCount=0
         // because they don't carry their own SLSD/SCVR list; Type=0 (Object) and Flags=0x0001
         // (Enabled, because CompiledData is non-empty so the engine treats this as compiled).
-        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(0, 4)));  // Unused
-        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(4, 4)));  // RefCount
-        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(8, 4)));  // CompiledSize
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(0, 4))); // Unused
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(4, 4))); // RefCount
+        Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(8, 4))); // CompiledSize
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(12, 4))); // VariableCount
         Assert.Equal(0x0000, BinaryPrimitives.ReadUInt16LittleEndian(schr.Bytes.AsSpan(16, 2))); // Type = Object
         Assert.Equal(0x0001, BinaryPrimitives.ReadUInt16LittleEndian(schr.Bytes.AsSpan(18, 2))); // Flags = Enabled
@@ -396,17 +396,17 @@ public class ScriptDialogueEncoderTests
         ];
 
         var data = BuildSubrecordStream(
-            bigEndianSizes: true,
+            true,
             ("SCHR", new byte[20]),
             ("SCDA", littleEndianScda));
 
         var scripts = DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
             data,
             data.Length,
-            isBigEndian: true,
-            editorId: null,
-            formId: 0x01003FED,
-            resolveFormName: _ => null);
+            true,
+            null,
+            0x01003FED,
+            _ => null);
 
         var script = Assert.Single(scripts);
         Assert.False(script.IsBigEndianBytecode);
@@ -449,9 +449,9 @@ public class ScriptDialogueEncoderTests
         var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA");
         Assert.Equal(8, data.Bytes.Length);
         Assert.Equal(0x05, data.Bytes[0]); // Flags
-        Assert.Equal(75, data.Bytes[1]);   // Priority
-        Assert.Equal(0, data.Bytes[2]);    // pad
-        Assert.Equal(0, data.Bytes[3]);    // pad
+        Assert.Equal(75, data.Bytes[1]); // Priority
+        Assert.Equal(0, data.Bytes[2]); // pad
+        Assert.Equal(0, data.Bytes[3]); // pad
         Assert.Equal(2.5f, BinaryPrimitives.ReadSingleLittleEndian(data.Bytes.AsSpan(4, 4)));
     }
 
@@ -703,7 +703,7 @@ public class ScriptDialogueEncoderTests
         var bytes = new List<byte>();
         foreach (var (signature, data) in subrecords)
         {
-            var signatureBytes = System.Text.Encoding.ASCII.GetBytes(signature);
+            var signatureBytes = Encoding.ASCII.GetBytes(signature);
             if (bigEndianSizes)
             {
                 Array.Reverse(signatureBytes);

@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
@@ -112,18 +111,18 @@ public class AdditionalEncoderTests
     public void NpcEncoder_AcbsLayout_IsByteForByteCorrect()
     {
         var stats = new ActorBaseSubrecord(
-            Flags: 0x12345678,
-            FatigueBase: 100,
-            BarterGold: 250,
-            Level: -5,
-            CalcMin: 1,
-            CalcMax: 50,
-            SpeedMultiplier: 100,
-            KarmaAlignment: 1.5f,
-            DispositionBase: -25,
-            TemplateFlags: 0xABCD,
-            Offset: 0,
-            IsBigEndian: false);
+            0x12345678,
+            100,
+            250,
+            -5,
+            1,
+            50,
+            100,
+            1.5f,
+            -25,
+            0xABCD,
+            0,
+            false);
         var npc = new NpcRecord { FormId = 1, Stats = stats };
 
         var encoded = new NpcEncoder().Encode(npc);
@@ -168,18 +167,18 @@ public class AdditionalEncoderTests
             EditorId = "RoseOfSharonCassidy",
             FullName = "Cass",
             Stats = new ActorBaseSubrecord(
-                Flags: 0,
-                FatigueBase: 100,
-                BarterGold: 25,
-                Level: 5,
-                CalcMin: 1,
-                CalcMax: 10,
-                SpeedMultiplier: 100,
-                KarmaAlignment: 0,
-                DispositionBase: 35,
-                TemplateFlags: 0,
-                Offset: 0,
-                IsBigEndian: false),
+                0,
+                100,
+                25,
+                5,
+                1,
+                10,
+                100,
+                0,
+                35,
+                0,
+                0,
+                false),
             Race = 0x00000019,
             Class = 0x00012345,
             Script = 0x00023456,

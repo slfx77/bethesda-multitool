@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Xunit;
 
@@ -10,18 +8,18 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void Allocate_AdvancesOffset_AndRoundsSizeUpToAlignment()
     {
-        var arena = new GeometryArenaAllocator(blockSize: 256, alignment: 16);
+        var arena = new GeometryArenaAllocator(256, 16);
 
         var a = arena.Allocate(10);
         var b = arena.Allocate(20);
 
         Assert.Equal(0, a.BlockIndex);
         Assert.Equal(0L, a.Offset);
-        Assert.Equal(16L, a.AlignedSize);   // 10 → 16
+        Assert.Equal(16L, a.AlignedSize); // 10 → 16
 
         Assert.Equal(0, b.BlockIndex);
         Assert.Equal(16L, b.Offset);
-        Assert.Equal(32L, b.AlignedSize);   // 20 → 32
+        Assert.Equal(32L, b.AlignedSize); // 20 → 32
 
         Assert.Equal(1, arena.BlockCount);
         Assert.Equal(48L, arena.AllocatedBytes);
@@ -30,7 +28,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void AllocatedOffsets_AreAlignmentAligned()
     {
-        var arena = new GeometryArenaAllocator(blockSize: 1024, alignment: 16);
+        var arena = new GeometryArenaAllocator(1024, 16);
 
         for (var i = 0; i < 20; i++)
         {
@@ -42,7 +40,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void Free_ThenAllocate_ReusesTheFreedRange()
     {
-        var arena = new GeometryArenaAllocator(blockSize: 256, alignment: 16);
+        var arena = new GeometryArenaAllocator(256, 16);
         var a = arena.Allocate(16); // [0,16)
         var b = arena.Allocate(16); // [16,32)
 
@@ -56,10 +54,10 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void AdjacentFrees_Coalesce_IntoOneReusableSpan()
     {
-        var arena = new GeometryArenaAllocator(blockSize: 256, alignment: 16);
+        var arena = new GeometryArenaAllocator(256, 16);
         var a = arena.Allocate(16); // [0,16)
         var b = arena.Allocate(16); // [16,32)
-        arena.Allocate(16);         // [32,48) — kept allocated
+        arena.Allocate(16); // [32,48) — kept allocated
 
         arena.Free(a);
         arena.Free(b); // coalesces with [0,16) → [0,32)
@@ -73,7 +71,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void Allocate_AddsNewBlock_WhenCurrentBlocksAreFull()
     {
-        var arena = new GeometryArenaAllocator(blockSize: 64, alignment: 16);
+        var arena = new GeometryArenaAllocator(64, 16);
 
         var a = arena.Allocate(64); // fills block 0
         Assert.Equal(0, a.BlockIndex);
@@ -88,7 +86,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void FreeBytesInBlock_TracksUsageAndAllocatedBytes()
     {
-        var arena = new GeometryArenaAllocator(blockSize: 256, alignment: 16);
+        var arena = new GeometryArenaAllocator(256, 16);
         var a = arena.Allocate(10); // aligned 16
 
         Assert.Equal(240L, arena.FreeBytesInBlock(0));
@@ -102,7 +100,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void AllocationLargerThanBlock_Throws()
     {
-        var arena = new GeometryArenaAllocator(blockSize: 64, alignment: 16);
+        var arena = new GeometryArenaAllocator(64, 16);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => arena.Allocate(65)); // 65 → 80 > 64
     }
@@ -110,14 +108,14 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void Allocate_NonPositiveSize_Throws()
     {
-        var arena = new GeometryArenaAllocator(blockSize: 64, alignment: 16);
+        var arena = new GeometryArenaAllocator(64, 16);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => arena.Allocate(0));
     }
 
     [Theory]
-    [InlineData(0, 16)]    // non-positive block size
-    [InlineData(64, 24)]   // alignment not a power of two
+    [InlineData(0, 16)] // non-positive block size
+    [InlineData(64, 24)] // alignment not a power of two
     public void Constructor_RejectsInvalidArguments(long blockSize, int alignment)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new GeometryArenaAllocator(blockSize, alignment));
@@ -126,12 +124,12 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void InterleavedAllocateAndFree_KeepsLiveRangesNonOverlapping()
     {
-        var arena = new GeometryArenaAllocator(blockSize: 1024, alignment: 16);
+        var arena = new GeometryArenaAllocator(1024, 16);
         var live = new List<ArenaAllocation>();
 
         for (var i = 0; i < 12; i++)
         {
-            live.Add(arena.Allocate(48 + (i % 3) * 16));
+            live.Add(arena.Allocate(48 + i % 3 * 16));
         }
 
         // Free (and forget) every other allocation — iterate from the end so RemoveAt is simple.

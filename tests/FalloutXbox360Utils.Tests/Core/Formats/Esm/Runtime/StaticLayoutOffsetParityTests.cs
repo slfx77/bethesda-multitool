@@ -1,6 +1,5 @@
+using System.Reflection;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Layouts;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
@@ -9,13 +8,11 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime;
 ///     Parity tests for the two static (non-probe-driven) runtime layout classes —
 ///     <see cref="RuntimeItemLayouts" /> and <see cref="RuntimeDialogueLayouts" /> — against
 ///     <c>pdb_layouts.json</c> (the MemDebug PDB ground truth).
-///
 ///     The constants in these classes are hand-derived from the PDB and decorated with
 ///     inline comments like <c>// PDB 112 TESTexture.TextureName</c>. This test mechanizes
 ///     that documentation: for each property/constant we know the expected PDB field name,
 ///     and we assert the layout's resolved offset matches the PDB-reported offset for that
 ///     field. Catches drift in either direction.
-///
 ///     The PDB shift used for <c>RuntimeItemLayouts</c> is +16, which is what
 ///     <see cref="RuntimeBuildOffsets.GetPdbShift" /> returns for all known builds — and it
 ///     turns the Proto-Debug-anchored constants in the layout class into MemDebug-anchored
@@ -130,7 +127,7 @@ public sealed class StaticLayoutOffsetParityTests
     [InlineData(0x18, 416)] // ARMO
     [InlineData(0x19, 212)] // BOOK (no StructSize property in code; PDB-only check)
     [InlineData(0x1B, 172)] // CONT (covered only at PDB level — RuntimeItemLayouts no longer
-                            //       declares CONT offsets; RuntimeContainerReader owns its own.)
+    //       declares CONT offsets; RuntimeContainerReader owns its own.)
     [InlineData(0x1F, 188)] // MISC / KEY share size
     [InlineData(0x28, 920)] // WEAP (MemDebug Aug 22; Release_Beta was 924)
     [InlineData(0x29, 236)] // AMMO
@@ -221,9 +218,9 @@ public sealed class StaticLayoutOffsetParityTests
         //
         // Pin the absence so a future contributor doesn't reintroduce the dead surface.
         var props = typeof(RuntimeItemLayouts).GetProperties(
-            System.Reflection.BindingFlags.Instance |
-            System.Reflection.BindingFlags.NonPublic |
-            System.Reflection.BindingFlags.Public);
+            BindingFlags.Instance |
+            BindingFlags.NonPublic |
+            BindingFlags.Public);
         foreach (var p in props)
         {
             Assert.False(
@@ -270,9 +267,9 @@ public sealed class StaticLayoutOffsetParityTests
     private static int LookupItemProperty(RuntimeItemLayouts items, string name)
     {
         var prop = typeof(RuntimeItemLayouts).GetProperty(name,
-            System.Reflection.BindingFlags.Instance |
-            System.Reflection.BindingFlags.NonPublic |
-            System.Reflection.BindingFlags.Public);
+            BindingFlags.Instance |
+            BindingFlags.NonPublic |
+            BindingFlags.Public);
         Assert.NotNull(prop);
         var value = prop!.GetValue(items);
         return Assert.IsType<int>(value);

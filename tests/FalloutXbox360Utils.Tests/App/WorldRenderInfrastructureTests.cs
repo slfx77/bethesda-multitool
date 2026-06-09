@@ -52,7 +52,7 @@ public sealed class WorldRenderInfrastructureTests
             0x202,
             1400f,
             0f,
-            bounds: new ObjectBounds { X1 = -1000, X2 = 1000 });
+            new ObjectBounds { X1 = -1000, X2 = 1000 });
         var far = RenderablePlacement(0x203, 3000f, 0f);
         var actor = RenderablePlacement(0x204, 0f, 0f) with { RecordType = "ACHR" };
         var cell = new CellRecord
@@ -67,12 +67,12 @@ public sealed class WorldRenderInfrastructureTests
 
         var totalRenderable = cache.QueryPlacementCandidates(
             cell,
-            centerX: 0f,
-            centerY: 0f,
-            radius: 512f,
-            frustum: null,
-            frustumMargin: 0f,
-            destination: candidates);
+            0f,
+            0f,
+            512f,
+            null,
+            0f,
+            candidates);
 
         Assert.Equal(3, totalRenderable);
         Assert.Contains(candidates, r => r.FormId == near.FormId);
@@ -99,12 +99,12 @@ public sealed class WorldRenderInfrastructureTests
 
         var totalRenderable = cache.QueryPlacementCandidates(
             cell,
-            centerX: 0f,
-            centerY: 0f,
-            radius: 10_000f,
-            frustum: frustum,
-            frustumMargin: 0f,
-            destination: candidates);
+            0f,
+            0f,
+            10_000f,
+            frustum,
+            0f,
+            candidates);
 
         Assert.Equal(2, totalRenderable);
         Assert.Contains(candidates, r => r.FormId == inside.FormId);
@@ -246,9 +246,9 @@ public sealed class WorldRenderInfrastructureTests
     [Fact]
     public void WastelandNvHeavyBookmarkScoringChoosesDensestNearbyReferenceCluster()
     {
-        var clusterA = CreateCell(0x501, 0, 0, referenceCount: 4);
-        var clusterB = CreateCell(0x502, 1, 0, referenceCount: 4);
-        var distant = CreateCell(0x503, 10, 10, referenceCount: 5);
+        var clusterA = CreateCell(0x501, 0, 0, 4);
+        var clusterB = CreateCell(0x502, 1, 0, 4);
+        var distant = CreateCell(0x503, 10, 10, 5);
         var worldspace = new WorldspaceRecord
         {
             FormId = 0x600,
@@ -328,8 +328,9 @@ public sealed class WorldRenderInfrastructureTests
         uint formId,
         float x,
         float y,
-        ObjectBounds? bounds = null) =>
-        new()
+        ObjectBounds? bounds = null)
+    {
+        return new PlacedReference
         {
             FormId = formId,
             BaseFormId = 0x700 + formId,
@@ -339,4 +340,5 @@ public sealed class WorldRenderInfrastructureTests
             Z = 0f,
             Bounds = bounds
         };
+    }
 }

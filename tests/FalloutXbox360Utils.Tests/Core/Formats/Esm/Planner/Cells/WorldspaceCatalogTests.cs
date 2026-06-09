@@ -17,8 +17,8 @@ public sealed class WorldspaceCatalogTests
             {
                 CellFormId = 0x000ABCDE,
                 Source = SourceKind.MasterOnly,
-                MasterContext = MakeExteriorContext(0x000ABCDE, worldspaceFormId: 0x0000003C),
-            },
+                MasterContext = MakeExteriorContext(0x000ABCDE, 0x0000003C)
+            }
         };
 
         var entries = WorldspaceCatalog.Build(
@@ -39,8 +39,8 @@ public sealed class WorldspaceCatalogTests
             {
                 CellFormId = 0x01000801,
                 Source = SourceKind.DmpNew,
-                DmpModel = dmpCell,
-            },
+                DmpModel = dmpCell
+            }
         };
 
         var wrld = new WorldspaceRecord { FormId = 0x01000800, EditorId = "NewWorldspace" };
@@ -62,8 +62,8 @@ public sealed class WorldspaceCatalogTests
             {
                 CellFormId = 0x000ABCDE,
                 Source = SourceKind.MasterOnly,
-                MasterContext = MakeInteriorContext(0x000ABCDE), // interior, no worldspace
-            },
+                MasterContext = MakeInteriorContext(0x000ABCDE) // interior, no worldspace
+            }
         };
 
         var entries = WorldspaceCatalog.Build(
@@ -72,24 +72,30 @@ public sealed class WorldspaceCatalogTests
         Assert.Empty(entries);
     }
 
-    private static PcEsmCellContext MakeExteriorContext(uint cellFormId, uint worldspaceFormId) => new()
+    private static PcEsmCellContext MakeExteriorContext(uint cellFormId, uint worldspaceFormId)
     {
-        CellFormId = cellFormId,
-        IsInterior = false,
-        WorldspaceFormId = worldspaceFormId,
-        BlockGroupType = 4,
-        SubblockGroupType = 5,
-        BlockLabel = [0, 0, 0, 0],
-        SubblockLabel = [0, 0, 0, 0],
-    };
+        return new PcEsmCellContext
+        {
+            CellFormId = cellFormId,
+            IsInterior = false,
+            WorldspaceFormId = worldspaceFormId,
+            BlockGroupType = 4,
+            SubblockGroupType = 5,
+            BlockLabel = [0, 0, 0, 0],
+            SubblockLabel = [0, 0, 0, 0]
+        };
+    }
 
-    private static PcEsmCellContext MakeInteriorContext(uint cellFormId) => new()
+    private static PcEsmCellContext MakeInteriorContext(uint cellFormId)
     {
-        CellFormId = cellFormId,
-        IsInterior = true,
-        BlockGroupType = 2,
-        SubblockGroupType = 3,
-        BlockLabel = [1, 0, 0, 0],
-        SubblockLabel = [2, 0, 0, 0],
-    };
+        return new PcEsmCellContext
+        {
+            CellFormId = cellFormId,
+            IsInterior = true,
+            BlockGroupType = 2,
+            SubblockGroupType = 3,
+            BlockLabel = [1, 0, 0, 0],
+            SubblockLabel = [2, 0, 0, 0]
+        };
+    }
 }

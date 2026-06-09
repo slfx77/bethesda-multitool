@@ -19,8 +19,8 @@ public sealed class FrameUploadByteBudgetTests
         var budget = new FrameUploadByteBudget(100);
         budget.Record(60);
 
-        Assert.True(budget.CanUpload(40));   // 60 + 40 == 100
-        Assert.False(budget.CanUpload(41));  // 60 + 41 > 100
+        Assert.True(budget.CanUpload(40)); // 60 + 40 == 100
+        Assert.False(budget.CanUpload(41)); // 60 + 41 > 100
     }
 
     [Fact]
@@ -31,7 +31,7 @@ public sealed class FrameUploadByteBudgetTests
         Assert.True(budget.CanUpload(500)); // first allowed despite exceeding the budget
         budget.Record(500);
 
-        Assert.False(budget.CanUpload(1));  // budget already overshot by the one big upload
+        Assert.False(budget.CanUpload(1)); // budget already overshot by the one big upload
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class FrameUploadByteBudgetTests
         budget.Record(0); // clamped to 1
 
         Assert.Equal(1L, budget.Consumed);
-        Assert.True(budget.CanUpload(1));   // 1 + 1 == 2
-        Assert.False(budget.CanUpload(2));  // 1 + 2 > 2
+        Assert.True(budget.CanUpload(1)); // 1 + 1 == 2
+        Assert.False(budget.CanUpload(2)); // 1 + 2 > 2
     }
 }

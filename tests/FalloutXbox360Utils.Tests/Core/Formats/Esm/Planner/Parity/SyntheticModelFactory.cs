@@ -58,12 +58,12 @@ internal static class SyntheticModelFactory
         }
 
         var modelType = GetPlannerModelType(recordType)
-            ?? throw new InvalidOperationException(
-                $"No planner encoder registered for record type '{recordType}'.");
+                        ?? throw new InvalidOperationException(
+                            $"No planner encoder registered for record type '{recordType}'.");
 
         var model = Activator.CreateInstance(modelType)
-            ?? throw new InvalidOperationException(
-                $"Failed to instantiate model type {modelType.FullName}.");
+                    ?? throw new InvalidOperationException(
+                        $"Failed to instantiate model type {modelType.FullName}.");
 
         SetPropertyIfPresent(model, "FormId", TestFormId);
         SetPropertyIfPresent(model, "EditorId", $"Test{recordType}");
@@ -79,15 +79,15 @@ internal static class SyntheticModelFactory
     public static EncodedRecord InvokeLegacyEncodeNew(string recordType, object model)
     {
         var encoder = RecordEncoderRegistry.CreateDefault().Get(recordType)
-            ?? throw new InvalidOperationException(
-                $"Legacy registry has no encoder for record type '{recordType}'.");
+                      ?? throw new InvalidOperationException(
+                          $"Legacy registry has no encoder for record type '{recordType}'.");
 
         var encoderType = encoder.GetType();
         var modelType = model.GetType();
 
         var method = FindEncodeNew(encoderType, modelType)
-            ?? throw new InvalidOperationException(
-                $"Encoder {encoderType.FullName} has no EncodeNew method accepting {modelType.FullName}.");
+                     ?? throw new InvalidOperationException(
+                         $"Encoder {encoderType.FullName} has no EncodeNew method accepting {modelType.FullName}.");
 
         var parameters = method.GetParameters();
         var args = new object?[parameters.Length];
@@ -98,8 +98,8 @@ internal static class SyntheticModelFactory
         }
 
         var result = method.Invoke(null, args)
-            ?? throw new InvalidOperationException(
-                $"{encoderType.FullName}.{method.Name} returned null.");
+                     ?? throw new InvalidOperationException(
+                         $"{encoderType.FullName}.{method.Name} returned null.");
         return (EncodedRecord)result;
     }
 

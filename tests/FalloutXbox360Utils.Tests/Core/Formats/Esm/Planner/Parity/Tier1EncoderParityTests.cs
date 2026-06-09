@@ -22,7 +22,7 @@ public sealed class Tier1EncoderParityTests
             FormId = 0x01000800,
             EditorId = "TestGlob",
             ValueType = 'f',
-            Value = 42.5f,
+            Value = 42.5f
         };
 
         var legacy = GlobEncoder.EncodeNew(glob);
@@ -38,7 +38,7 @@ public sealed class Tier1EncoderParityTests
             FormId = 0x01000800,
             EditorId = "fTestSetting",
             ValueType = GameSettingType.Float,
-            FloatValue = 3.14159f,
+            FloatValue = 3.14159f
         };
 
         var legacy = GmstEncoder.EncodeNew(gmst);
@@ -54,7 +54,7 @@ public sealed class Tier1EncoderParityTests
             FormId = 0x01000801,
             EditorId = "iTestInt",
             ValueType = GameSettingType.Integer,
-            IntValue = 42,
+            IntValue = 42
         };
 
         var legacy = GmstEncoder.EncodeNew(gmst);
@@ -77,7 +77,7 @@ public sealed class Tier1EncoderParityTests
             DamageResistance = 10,
             DamageThreshold = 5.0f,
             BipedFlags = 0x4,
-            EquipmentType = EquipmentType.BodyWear,
+            EquipmentType = EquipmentType.BodyWear
         };
 
         var legacy = ArmoEncoder.EncodeNew(armo);
@@ -97,7 +97,7 @@ public sealed class Tier1EncoderParityTests
             Speed = 1000.0f,
             Flags = 0,
             Value = 5,
-            ClipRounds = 30,
+            ClipRounds = 30
         };
 
         var legacy = AmmoEncoder.EncodeNew(ammo);
@@ -118,7 +118,7 @@ public sealed class Tier1EncoderParityTests
             Flags = 0,
             SkillTaught = 3,
             Value = 25,
-            Weight = 1.0f,
+            Weight = 1.0f
         };
 
         var legacy = BookEncoder.EncodeNew(book);
@@ -135,7 +135,7 @@ public sealed class Tier1EncoderParityTests
             EditorId = "TestAlch",
             FullName = "Test Consumable",
             ModelPath = "alch/test/test.nif",
-            Weight = 0.5f,
+            Weight = 0.5f
         };
 
         var legacy = AlchEncoder.EncodeNew(alch);

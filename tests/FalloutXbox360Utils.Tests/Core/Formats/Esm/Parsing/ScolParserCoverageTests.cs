@@ -91,10 +91,10 @@ public class ScolParserCoverageTests
         var modl = NullTermString("m.nif");
         var onam = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(onam, 0xAAAAu);
-        var data = BuildPlacementBytes(new[] { (0f, 0f, 0f, 0f, 0f, 0f, 1f) }, bigEndian: false);
+        var data = BuildPlacementBytes(new[] { (0f, 0f, 0f, 0f, 0f, 0f, 1f) }, false);
         var unknown = new byte[] { 0x01, 0x02, 0x03, 0x04 };
 
-        var scolBytes = BuildRecordBytes(0x00050200, "SCOL", bigEndian: false,
+        var scolBytes = BuildRecordBytes(0x00050200, "SCOL", false,
             ("EDID", edid),
             ("MODL", modl),
             ("XXXX", unknown),
@@ -139,16 +139,16 @@ public class ScolParserCoverageTests
         {
             (100f, 0f, 0f, 0f, 0f, 0f, 1.5f),
             (200f, 0f, 0f, 0f, 0f, 0f, 1.0f)
-        }, bigEndian: false);
+        }, false);
 
         var onam2 = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(onam2, 0x0017B668u);
         var data2 = BuildPlacementBytes(new[]
         {
             (0f, -500f, 0f, 0f, 0f, 0f, 1.0f)
-        }, bigEndian: false);
+        }, false);
 
-        return BuildRecordBytes(0x00050100, "SCOL", bigEndian: false,
+        return BuildRecordBytes(0x00050100, "SCOL", false,
             ("EDID", edid),
             ("OBND", obnd),
             ("MODL", modl),
@@ -168,9 +168,9 @@ public class ScolParserCoverageTests
         var data = BuildPlacementBytes(new[]
         {
             (42.5f, 0f, 0f, 0f, 0f, 0f, 2.0f)
-        }, bigEndian: true);
+        }, true);
 
-        return BuildRecordBytes(0x0003D377, "SCOL", bigEndian: true,
+        return BuildRecordBytes(0x0003D377, "SCOL", true,
             ("EDID", edid),
             ("ONAM", onam),
             ("DATA", data));

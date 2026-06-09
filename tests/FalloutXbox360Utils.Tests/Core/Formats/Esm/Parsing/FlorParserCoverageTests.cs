@@ -19,13 +19,13 @@ public class FlorParserCoverageTests
     [Fact]
     public void ParseGenericRecords_Flor_LittleEndian_CapturesIdentityAndFormIds()
     {
-        AssertFlorParses(bigEndian: false);
+        AssertFlorParses(false);
     }
 
     [Fact]
     public void ParseGenericRecords_Flor_BigEndian_CapturesIdentityAndFormIds()
     {
-        AssertFlorParses(bigEndian: true);
+        AssertFlorParses(true);
     }
 
     private static void AssertFlorParses(bool bigEndian)

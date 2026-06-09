@@ -29,7 +29,7 @@ public class AssetPathRewriterTests : IDisposable
         {
             if (Directory.Exists(_scratchRoot))
             {
-                Directory.Delete(_scratchRoot, recursive: true);
+                Directory.Delete(_scratchRoot, true);
             }
         }
         catch
@@ -38,7 +38,10 @@ public class AssetPathRewriterTests : IDisposable
         }
     }
 
-    private string MakeDataFolder(string label) => Path.Combine(_scratchRoot, label);
+    private string MakeDataFolder(string label)
+    {
+        return Path.Combine(_scratchRoot, label);
+    }
 
     private static void WriteLooseFile(string dataFolder, string relativePath, ReadOnlySpan<byte> bytes)
     {
@@ -54,8 +57,8 @@ public class AssetPathRewriterTests : IDisposable
     {
         // Original ESP field stored a fully-qualified path. New path keeps the prefix.
         var result = AssetPathRewriter.DenormalizeForField(
-            normalizedNewPath: "meshes\\armor\\legion\\renamed.nif",
-            originalRawPath: "meshes\\armor\\legion\\original.nif");
+            "meshes\\armor\\legion\\renamed.nif",
+            "meshes\\armor\\legion\\original.nif");
 
         Assert.Equal("meshes\\armor\\legion\\renamed.nif", result);
     }
@@ -66,8 +69,8 @@ public class AssetPathRewriterTests : IDisposable
         // Original ESP field stored a relative path (no meshes\ prefix). New path strips
         // the prefix so the runtime concatenates correctly.
         var result = AssetPathRewriter.DenormalizeForField(
-            normalizedNewPath: "meshes\\armor\\legion\\renamed.nif",
-            originalRawPath: "armor\\legion\\original.nif");
+            "meshes\\armor\\legion\\renamed.nif",
+            "armor\\legion\\original.nif");
 
         Assert.Equal("armor\\legion\\renamed.nif", result);
     }
@@ -78,14 +81,14 @@ public class AssetPathRewriterTests : IDisposable
         // 360 conversion swaps .ddx → .dds. Rename should carry the new extension.
         // Original was relative; new should also be relative.
         var resultRelative = AssetPathRewriter.DenormalizeForField(
-            normalizedNewPath: "textures\\armor\\foo.dds",
-            originalRawPath: "armor\\foo.ddx");
+            "textures\\armor\\foo.dds",
+            "armor\\foo.ddx");
         Assert.Equal("armor\\foo.dds", resultRelative);
 
         // Original was fully-qualified; new should preserve the type prefix.
         var resultFull = AssetPathRewriter.DenormalizeForField(
-            normalizedNewPath: "textures\\armor\\foo.dds",
-            originalRawPath: "textures\\armor\\foo.ddx");
+            "textures\\armor\\foo.dds",
+            "textures\\armor\\foo.ddx");
         Assert.Equal("textures\\armor\\foo.dds", resultFull);
     }
 
@@ -107,9 +110,9 @@ public class AssetPathRewriterTests : IDisposable
         var secondaryDir = MakeDataFolder("fo3");
         WriteLooseFile(secondaryDir, "meshes\\armor\\centurion\\wolffhead.nif", [1, 2, 3]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
-        using var secondary = new DataFolderIndex(secondaryDir, xbox360FormatHint: false);
+        using var secondary = new DataFolderIndex(secondaryDir, false);
         secondary.Build();
 
         var resolver = new DataFolderResolver(baseline, [secondary]);
@@ -138,7 +141,7 @@ public class AssetPathRewriterTests : IDisposable
         var baselineDir = MakeDataFolder("baseline");
         WriteLooseFile(baselineDir, "meshes\\armor\\legion\\original.nif", [9, 9, 9]);
 
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
         var resolver = new DataFolderResolver(baseline, []);
 
@@ -162,7 +165,7 @@ public class AssetPathRewriterTests : IDisposable
         // No folder has the asset. Resolver returns Missing; rewriter takes no action.
         var baselineDir = MakeDataFolder("baseline");
         Directory.CreateDirectory(baselineDir);
-        using var baseline = new DataFolderIndex(baselineDir, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineDir, false);
         baseline.Build();
         var resolver = new DataFolderResolver(baseline, []);
 

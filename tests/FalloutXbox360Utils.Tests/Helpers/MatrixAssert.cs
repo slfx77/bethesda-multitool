@@ -10,8 +10,8 @@ namespace FalloutXbox360Utils.Tests.Helpers;
 internal static class MatrixAssert
 {
     /// <summary>
-    ///     Assert two Matrix4x4 values are equal element-wise within <paramref name="epsilon"/>.
-    ///     Each element is checked with <see cref="Assert.InRange{T}"/> so a failure points at
+    ///     Assert two Matrix4x4 values are equal element-wise within <paramref name="epsilon" />.
+    ///     Each element is checked with <see cref="Assert.InRange{T}" /> so a failure points at
     ///     the specific offending element.
     /// </summary>
     public static void Equal(Matrix4x4 expected, Matrix4x4 actual, float epsilon = 0.001f)
@@ -35,8 +35,8 @@ internal static class MatrixAssert
     }
 
     /// <summary>
-    ///     Predicate variant — returns true when every element of <paramref name="left"/> and
-    ///     <paramref name="right"/> agrees within <paramref name="epsilon"/>. Use this when
+    ///     Predicate variant — returns true when every element of <paramref name="left" /> and
+    ///     <paramref name="right" /> agrees within <paramref name="epsilon" />. Use this when
     ///     the test needs to branch on equality (e.g. Assert.False after computing a delta).
     /// </summary>
     public static bool NearlyEqual(Matrix4x4 left, Matrix4x4 right, float epsilon)

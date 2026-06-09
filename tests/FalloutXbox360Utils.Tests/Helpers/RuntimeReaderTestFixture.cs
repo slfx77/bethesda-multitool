@@ -38,14 +38,19 @@ internal sealed class RuntimeReaderTestFixture
 
     private readonly SparseMemoryAccessor _accessor = new();
 
-    private RuntimeReaderTestFixture() { }
+    private RuntimeReaderTestFixture()
+    {
+    }
 
     /// <summary>
     ///     Creates a fixture with an empty heap. Subsequent <c>.With*</c> calls
     ///     populate the sparse accessor; <see cref="BuildContext" /> finalises
     ///     it into a usable <see cref="RuntimeMemoryContext" />.
     /// </summary>
-    public static RuntimeReaderTestFixture Default() => new();
+    public static RuntimeReaderTestFixture Default()
+    {
+        return new RuntimeReaderTestFixture();
+    }
 
     /// <summary>
     ///     Places a struct buffer at the given virtual address. The buffer's
@@ -71,7 +76,9 @@ internal sealed class RuntimeReaderTestFixture
     ///     references, or a null-terminated string for a BSStringT).
     /// </summary>
     public RuntimeReaderTestFixture WithPointerTarget(uint va, byte[] bytes)
-        => WithStruct(bytes, va);
+    {
+        return WithStruct(bytes, va);
+    }
 
     /// <summary>
     ///     Builds a <see cref="RuntimeMemoryContext" /> over the current sparse

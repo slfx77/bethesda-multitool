@@ -1,7 +1,5 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
-using static FalloutXbox360Utils.Tests.Helpers.BinaryTestWriter;
 using static FalloutXbox360Utils.Tests.Helpers.SyntheticStructFactory;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Runtime.Synthetic.Regressions;
@@ -58,7 +56,7 @@ public sealed class HouseToolsTerminalDataOffsetTests
         var reader = new RuntimeQuestTerminalReader(context);
 
         var entry = fixture.MakeEntry(termFormId, TermFormType, 0x40100000,
-            editorId: "HouseToolsTerminal");
+            "HouseToolsTerminal");
         var term = reader.ReadRuntimeTerminal(entry);
 
         Assert.NotNull(term);

@@ -13,14 +13,11 @@ namespace FalloutXbox360Utils.Tests.Helpers;
 ///     ESM file, scans for main records, and exposes <see cref="GetSubrecordBytes" />
 ///     to pull the literal payload bytes of a named subrecord on a given FormID.
 ///     Cached across the whole test run (one parse per ESM path).
-///
 ///     Compressed records (flag 0x00040000) are decompressed on demand via
 ///     <see cref="EsmHelpers.DecompressZlib" /> — necessary because NPC records
 ///     in Fallout NV are almost universally compressed.
-///
 ///     Decompressed payloads are cached per-FormID after first access to avoid
 ///     re-decompressing on repeated lookups during a test run.
-///
 ///     Intended for the Phase 1B.10 empirical offset validator. NOT a general
 ///     ESM API — does not handle XXXX large-size prefixes or any kind of schema.
 ///     Just raw bytes.
@@ -128,7 +125,6 @@ internal sealed class EsmSubrecordExtractor
     ///     Returns the raw bytes of the first occurrence of subrecord
     ///     <paramref name="sig" /> inside the record with <paramref name="formId" />,
     ///     or null if the FormID is missing or doesn't contain the subrecord.
-    ///
     ///     Compressed records are transparently decompressed. Returned bytes are
     ///     the subrecord payload only — no 4-byte sig, no 2-byte size header.
     /// </summary>

@@ -29,38 +29,38 @@ public class CrossDumpProjectionAggregatorTests
         const string editorId = "CampMcCarranWorld";
 
         var earlyProjection = BuildSingleCellProjection(
-            filePath: "early.dmp",
-            buildDate: new DateTime(2009, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-            isDmp: true,
-            cellFormId: 0x00010001,
-            worldspaceFormId: worldspaceFormId,
-            worldspaceEditorId: editorId,
-            worldspaceFullName: "Camp McCarran Tarmac");
+            "early.dmp",
+            new DateTime(2009, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            true,
+            0x00010001,
+            worldspaceFormId,
+            editorId,
+            "Camp McCarran Tarmac");
 
         var midProjection = BuildSingleCellProjection(
-            filePath: "mid.dmp",
-            buildDate: new DateTime(2009, 6, 1, 0, 0, 0, DateTimeKind.Utc),
-            isDmp: true,
-            cellFormId: 0x00010001,
-            worldspaceFormId: worldspaceFormId,
-            worldspaceEditorId: editorId,
-            worldspaceFullName: "Camp McCarran");
+            "mid.dmp",
+            new DateTime(2009, 6, 1, 0, 0, 0, DateTimeKind.Utc),
+            true,
+            0x00010001,
+            worldspaceFormId,
+            editorId,
+            "Camp McCarran");
 
         var lateProjection = BuildSingleCellProjection(
-            filePath: "late.esm",
-            buildDate: new DateTime(2010, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-            isDmp: false,
-            cellFormId: 0x00010001,
-            worldspaceFormId: worldspaceFormId,
-            worldspaceEditorId: editorId,
-            worldspaceFullName: "Camp McCarran");
+            "late.esm",
+            new DateTime(2010, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            false,
+            0x00010001,
+            worldspaceFormId,
+            editorId,
+            "Camp McCarran");
 
         var virtualCanon = new Dictionary<CellCoordinateKey, RealCellCandidate>();
         // Pass in NON-chronological order to verify the aggregator sorts before replay.
         var projections = new List<CrossDumpSourceProjection> { lateProjection, midProjection, earlyProjection };
 
         var index = CrossDumpProjectionAggregator.AggregateFromProjections(
-            projections, virtualCanon, allowedTypes: new HashSet<string> { "Cell" });
+            projections, virtualCanon, new HashSet<string> { "Cell" });
 
         // Build labels are emitted in chronological order.
         Assert.Equal(3, index.Dumps.Count);
@@ -97,28 +97,28 @@ public class CrossDumpProjectionAggregatorTests
         const uint cellFormId = 0x00020001;
 
         var dmpProjection = BuildSingleCellProjection(
-            filePath: "dmp.dmp",
-            buildDate: new DateTime(2009, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-            isDmp: true,
-            cellFormId: cellFormId,
-            worldspaceFormId: 0x000ECAC5,
-            worldspaceEditorId: "CampMcCarranWorld",
-            worldspaceFullName: "Camp McCarran");
+            "dmp.dmp",
+            new DateTime(2009, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            true,
+            cellFormId,
+            0x000ECAC5,
+            "CampMcCarranWorld",
+            "Camp McCarran");
 
         var esmProjection = BuildSingleCellProjection(
-            filePath: "later.esm",
-            buildDate: new DateTime(2010, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-            isDmp: false,
-            cellFormId: cellFormId,
-            worldspaceFormId: 0x000DA726, // ESM says it actually lives in WastelandNV
-            worldspaceEditorId: "WastelandNV",
-            worldspaceFullName: "Mojave Wasteland");
+            "later.esm",
+            new DateTime(2010, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            false,
+            cellFormId,
+            0x000DA726, // ESM says it actually lives in WastelandNV
+            "WastelandNV",
+            "Mojave Wasteland");
 
         var virtualCanon = new Dictionary<CellCoordinateKey, RealCellCandidate>();
         var projections = new List<CrossDumpSourceProjection> { dmpProjection, esmProjection };
 
         var index = CrossDumpProjectionAggregator.AggregateFromProjections(
-            projections, virtualCanon, allowedTypes: new HashSet<string> { "Cell" });
+            projections, virtualCanon, new HashSet<string> { "Cell" });
 
         var cellGroups = index.RecordGroups["Cell"];
         var label = cellGroups[cellFormId];
@@ -135,21 +135,21 @@ public class CrossDumpProjectionAggregatorTests
         // LateEnrichmentRecords. ReleaseLateEnrichment should null both out by replacing
         // the list entries with `projection with { LateEnrichment = null }`.
         var first = BuildSingleCellProjection(
-            filePath: "first.dmp",
-            buildDate: new DateTime(2009, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-            isDmp: true,
-            cellFormId: 0x1u,
-            worldspaceFormId: 0x2u,
-            worldspaceEditorId: "World1",
-            worldspaceFullName: "World 1");
+            "first.dmp",
+            new DateTime(2009, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            true,
+            0x1u,
+            0x2u,
+            "World1",
+            "World 1");
         var second = BuildSingleCellProjection(
-            filePath: "second.dmp",
-            buildDate: new DateTime(2009, 6, 1, 0, 0, 0, DateTimeKind.Utc),
-            isDmp: true,
-            cellFormId: 0x3u,
-            worldspaceFormId: 0x4u,
-            worldspaceEditorId: "World2",
-            worldspaceFullName: "World 2");
+            "second.dmp",
+            new DateTime(2009, 6, 1, 0, 0, 0, DateTimeKind.Utc),
+            true,
+            0x3u,
+            0x4u,
+            "World2",
+            "World 2");
 
         var projections = new List<CrossDumpSourceProjection> { first, second };
         Assert.NotNull(projections[0].LateEnrichment);

@@ -36,7 +36,7 @@ public sealed class MigrationDeltaRegistryTests
             Tier = "6.6",
             RecordTypes = ImmutableHashSet.Create("SCPT", "INFO"),
             Reason = "Test entry",
-            ApprovalDate = new DateOnly(2026, 5, 29),
+            ApprovalDate = new DateOnly(2026, 5, 29)
         });
 
         Assert.True(registry.IsTolerated("SCPT"));
@@ -54,7 +54,7 @@ public sealed class MigrationDeltaRegistryTests
             RecordTypes = ImmutableHashSet.Create("SCPT"),
             Reason = "Only the proto VCG tutorial script",
             ApprovalDate = new DateOnly(2026, 5, 29),
-            FormIdScope = id => id == 0x0014DA58u,
+            FormIdScope = id => id == 0x0014DA58u
         });
 
         Assert.True(registry.IsTolerated("SCPT", 0x0014DA58u));
@@ -63,6 +63,8 @@ public sealed class MigrationDeltaRegistryTests
         Assert.False(registry.IsTolerated("SCPT"));
     }
 
-    private static MigrationDeltaRegistry MakeRegistry(params MigrationDelta[] deltas) =>
-        new(ImmutableArray.Create(deltas));
+    private static MigrationDeltaRegistry MakeRegistry(params MigrationDelta[] deltas)
+    {
+        return new MigrationDeltaRegistry(ImmutableArray.Create(deltas));
+    }
 }

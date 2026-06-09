@@ -18,7 +18,7 @@ public class IdleAnamSanitizerTests
     [Fact]
     public void EncodeNew_emits_ANAM_verbatim_when_no_validFormIds_supplied()
     {
-        var idle = MakeIdle(parent: 0x0012A25Bu, previous: 0x0012A257u);
+        var idle = MakeIdle(0x0012A25Bu, 0x0012A257u);
 
         var encoded = IdleEncoder.EncodeNew(idle);
 
@@ -30,10 +30,10 @@ public class IdleAnamSanitizerTests
     [Fact]
     public void EncodeNew_keeps_ANAM_when_FormIDs_are_valid()
     {
-        var idle = MakeIdle(parent: 0x0012A25Bu, previous: 0u);
+        var idle = MakeIdle(0x0012A25Bu, 0u);
         var valid = new HashSet<uint> { 0x0012A25Bu };
 
-        var encoded = IdleEncoder.EncodeNew(idle, validFormIds: valid);
+        var encoded = IdleEncoder.EncodeNew(idle, valid);
 
         var anam = Assert.Single(encoded.Subrecords, s => s.Signature == "ANAM");
         Assert.Equal(0x0012A25Bu, BinaryPrimitives.ReadUInt32LittleEndian(anam.Bytes.AsSpan(0, 4)));
@@ -44,10 +44,10 @@ public class IdleAnamSanitizerTests
     public void EncodeNew_zeros_dangling_parent_idle_when_no_remap_available()
     {
         // 0x0012A25B is the actual dangling parent-idle FormID from the live error log.
-        var idle = MakeIdle(parent: 0x0012A25Bu, previous: 0u);
+        var idle = MakeIdle(0x0012A25Bu, 0u);
         var valid = new HashSet<uint> { 0x00000001u };
 
-        var encoded = IdleEncoder.EncodeNew(idle, validFormIds: valid);
+        var encoded = IdleEncoder.EncodeNew(idle, valid);
 
         var anam = Assert.Single(encoded.Subrecords, s => s.Signature == "ANAM");
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(anam.Bytes.AsSpan(0, 4)));
@@ -58,10 +58,10 @@ public class IdleAnamSanitizerTests
     [Fact]
     public void EncodeNew_zeros_dangling_previous_idle_when_no_remap_available()
     {
-        var idle = MakeIdle(parent: 0u, previous: 0x0012A257u);
+        var idle = MakeIdle(0u, 0x0012A257u);
         var valid = new HashSet<uint> { 0x00000001u };
 
-        var encoded = IdleEncoder.EncodeNew(idle, validFormIds: valid);
+        var encoded = IdleEncoder.EncodeNew(idle, valid);
 
         var anam = Assert.Single(encoded.Subrecords, s => s.Signature == "ANAM");
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(anam.Bytes.AsSpan(0, 4)));
@@ -72,11 +72,11 @@ public class IdleAnamSanitizerTests
     [Fact]
     public void EncodeNew_remaps_dangling_parent_idle_via_remapTable()
     {
-        var idle = MakeIdle(parent: 0x01999AAAu, previous: 0u);
+        var idle = MakeIdle(0x01999AAAu, 0u);
         var valid = new HashSet<uint> { 0x01000123u };
         var remap = new Dictionary<uint, uint> { [0x01999AAAu] = 0x01000123u };
 
-        var encoded = IdleEncoder.EncodeNew(idle, validFormIds: valid, remapTable: remap);
+        var encoded = IdleEncoder.EncodeNew(idle, valid, remap);
 
         var anam = Assert.Single(encoded.Subrecords, s => s.Signature == "ANAM");
         Assert.Equal(0x01000123u, BinaryPrimitives.ReadUInt32LittleEndian(anam.Bytes.AsSpan(0, 4)));
@@ -87,10 +87,10 @@ public class IdleAnamSanitizerTests
     public void EncodeNew_does_not_warn_when_ANAM_fields_are_zero()
     {
         // 0 is the canonical "no link" value — must never trigger a sanitizer warning.
-        var idle = MakeIdle(parent: 0u, previous: 0u);
+        var idle = MakeIdle(0u, 0u);
         var valid = new HashSet<uint>();
 
-        var encoded = IdleEncoder.EncodeNew(idle, validFormIds: valid);
+        var encoded = IdleEncoder.EncodeNew(idle, valid);
 
         Assert.DoesNotContain(encoded.Warnings, w => w.Contains("parent idle"));
         Assert.DoesNotContain(encoded.Warnings, w => w.Contains("previous idle"));
@@ -100,10 +100,10 @@ public class IdleAnamSanitizerTests
     public void EncodeNew_zeroes_one_anam_field_and_keeps_the_other()
     {
         // ParentIdleFormId valid, PreviousIdleFormId dangling → only previous gets zeroed.
-        var idle = MakeIdle(parent: 0x0012A25Bu, previous: 0x000DEAD1u);
+        var idle = MakeIdle(0x0012A25Bu, 0x000DEAD1u);
         var valid = new HashSet<uint> { 0x0012A25Bu };
 
-        var encoded = IdleEncoder.EncodeNew(idle, validFormIds: valid);
+        var encoded = IdleEncoder.EncodeNew(idle, valid);
 
         var anam = Assert.Single(encoded.Subrecords, s => s.Signature == "ANAM");
         Assert.Equal(0x0012A25Bu, BinaryPrimitives.ReadUInt32LittleEndian(anam.Bytes.AsSpan(0, 4)));
@@ -117,7 +117,7 @@ public class IdleAnamSanitizerTests
         // FNV that restricted them to specific actors. Our runtime reader only captures the
         // CTDA count, not the conditions — so we emit a synthetic CTDA that always evaluates
         // false ("GetIsID 0 == 1") to make the idle inert until we can model the real CTDAs.
-        var idle = MakeIdle(parent: 0u, previous: 0u);
+        var idle = MakeIdle(0u, 0u);
 
         var encoded = IdleEncoder.EncodeNew(idle);
 
@@ -139,13 +139,13 @@ public class IdleAnamSanitizerTests
         // GetIsID 0x000ED239 == 1 — a typical IDLE CTDA restricting to a specific NPC base.
         // When the runtime reader has captured the proto's actual conditions, we emit them
         // instead of the synthetic never-fire CTDA.
-        var idle = MakeIdle(parent: 0u, previous: 0u, conditions: new()
+        var idle = MakeIdle(0u, 0u, new List<DialogueCondition>
         {
-            new DialogueCondition
+            new()
             {
                 Type = 0x00,
                 ComparisonValue = 1.0f,
-                FunctionIndex = 0x48,    // GetIsID
+                FunctionIndex = 0x48, // GetIsID
                 Parameter1 = 0x000ED239u,
                 RunOn = 0
             }
@@ -164,11 +164,11 @@ public class IdleAnamSanitizerTests
     [Fact]
     public void EncodeNew_emits_multiple_real_CTDAs_preserving_order()
     {
-        var idle = MakeIdle(parent: 0u, previous: 0u, conditions: new()
+        var idle = MakeIdle(0u, 0u, new List<DialogueCondition>
         {
-            new DialogueCondition { FunctionIndex = 0x48, Parameter1 = 0x000ED239u },
-            new DialogueCondition { FunctionIndex = 0x14, Parameter1 = 0x0001D9D5u },   // GetInFaction
-            new DialogueCondition { FunctionIndex = 0x0E, Parameter1 = 5u }              // GetActorValue (Endurance)
+            new() { FunctionIndex = 0x48, Parameter1 = 0x000ED239u },
+            new() { FunctionIndex = 0x14, Parameter1 = 0x0001D9D5u }, // GetInFaction
+            new() { FunctionIndex = 0x0E, Parameter1 = 5u } // GetActorValue (Endurance)
         });
 
         var encoded = IdleEncoder.EncodeNew(idle);
@@ -183,9 +183,9 @@ public class IdleAnamSanitizerTests
     [Fact]
     public void EncodeNew_does_NOT_emit_never_fire_CTDA_when_real_conditions_present()
     {
-        var idle = MakeIdle(parent: 0u, previous: 0u, conditions: new()
+        var idle = MakeIdle(0u, 0u, new List<DialogueCondition>
         {
-            new DialogueCondition { FunctionIndex = 0x48, Parameter1 = 0x000ED239u }
+            new() { FunctionIndex = 0x48, Parameter1 = 0x000ED239u }
         });
 
         var encoded = IdleEncoder.EncodeNew(idle);
@@ -201,13 +201,13 @@ public class IdleAnamSanitizerTests
     {
         // GetIsID 0xDEADBEEF — dangling FormID parameter. ConditionSanitizer should drop
         // the whole condition. With no remaining conditions, fallback to never-fire.
-        var idle = MakeIdle(parent: 0u, previous: 0u, conditions: new()
+        var idle = MakeIdle(0u, 0u, new List<DialogueCondition>
         {
-            new DialogueCondition { FunctionIndex = 0x48, Parameter1 = 0x000DEAD1u }
+            new() { FunctionIndex = 0x48, Parameter1 = 0x000DEAD1u }
         });
         var valid = new HashSet<uint> { 0x00000001u };
 
-        var encoded = IdleEncoder.EncodeNew(idle, validFormIds: valid);
+        var encoded = IdleEncoder.EncodeNew(idle, valid);
 
         var ctdas = encoded.Subrecords.Where(s => s.Signature == "CTDA").ToList();
         Assert.Single(ctdas);
@@ -219,14 +219,14 @@ public class IdleAnamSanitizerTests
     [Fact]
     public void EncodeNew_remaps_CTDA_FormID_param_when_remap_available()
     {
-        var idle = MakeIdle(parent: 0u, previous: 0u, conditions: new()
+        var idle = MakeIdle(0u, 0u, new List<DialogueCondition>
         {
-            new DialogueCondition { FunctionIndex = 0x48, Parameter1 = 0x01999AAAu }
+            new() { FunctionIndex = 0x48, Parameter1 = 0x01999AAAu }
         });
         var valid = new HashSet<uint> { 0x01000123u };
         var remap = new Dictionary<uint, uint> { [0x01999AAAu] = 0x01000123u };
 
-        var encoded = IdleEncoder.EncodeNew(idle, validFormIds: valid, remapTable: remap);
+        var encoded = IdleEncoder.EncodeNew(idle, valid, remap);
 
         var ctda = Assert.Single(encoded.Subrecords, s => s.Signature == "CTDA");
         Assert.Equal(0x01000123u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(12, 4)));
@@ -235,7 +235,7 @@ public class IdleAnamSanitizerTests
     [Fact]
     public void EncodeNew_CTDA_appears_before_ANAM_in_fopdoc_canonical_order()
     {
-        var idle = MakeIdle(parent: 0u, previous: 0u);
+        var idle = MakeIdle(0u, 0u);
 
         var encoded = IdleEncoder.EncodeNew(idle);
 

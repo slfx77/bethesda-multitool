@@ -136,7 +136,9 @@ public class FlorEncoderTests
     }
 
     private static uint ReadFormId(EncodedRecord encoded, string signature)
-        => ReadFormId(encoded.Subrecords, signature);
+    {
+        return ReadFormId(encoded.Subrecords, signature);
+    }
 
     private static uint ReadFormId(IReadOnlyList<EncodedSubrecord> subrecords, string signature)
     {

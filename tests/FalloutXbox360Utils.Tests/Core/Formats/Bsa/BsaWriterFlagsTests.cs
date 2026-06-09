@@ -1,5 +1,4 @@
-using System.IO;
-using System.Linq;
+using System.Buffers.Binary;
 using System.Reflection;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Bsa;
@@ -18,7 +17,7 @@ public class BsaWriterFlagsTests
     public void CreateWithAutoFlags_TexturesOnly_SetsEmbedFileNames()
     {
         using var writer = BsaWriter.CreateWithAutoFlags(["textures\\armor\\foo.dds"]);
-        WriteAndAssertFlags(writer, expectedArchiveFlags: 0x107, expectedFileFlags: 0x02);
+        WriteAndAssertFlags(writer, 0x107, 0x02);
     }
 
     [Fact]
@@ -30,7 +29,7 @@ public class BsaWriterFlagsTests
         ]);
         // Vanilla DLC Main BSAs with mixed DDS/NIF content use 0x083, not the
         // texture-only compressed+embedded 0x107 shape.
-        WriteAndAssertFlags(writer, expectedArchiveFlags: 0x83, expectedFileFlags: 0x03);
+        WriteAndAssertFlags(writer, 0x83, 0x03);
     }
 
     [Fact]
@@ -39,7 +38,7 @@ public class BsaWriterFlagsTests
         using var writer = BsaWriter.CreateWithAutoFlags(["meshes\\armor\\foo.nif"]);
         // Matches vanilla `Fallout - Meshes.bsa`: compressed, no embedded names,
         // RetainStringsDuringStartup set.
-        WriteAndAssertFlags(writer, expectedArchiveFlags: 0x87, expectedFileFlags: 0x01);
+        WriteAndAssertFlags(writer, 0x87, 0x01);
     }
 
     [Fact]
@@ -47,7 +46,7 @@ public class BsaWriterFlagsTests
     {
         using var writer = BsaWriter.CreateWithAutoFlags(["sound\\voice\\foo\\bar.ogg"]);
         // Matches vanilla `Fallout - Voices1.bsa`: uncompressed and voices-only.
-        WriteAndAssertFlags(writer, expectedArchiveFlags: 0x03, expectedFileFlags: 0x10);
+        WriteAndAssertFlags(writer, 0x03, 0x10);
     }
 
     [Fact]
@@ -58,7 +57,7 @@ public class BsaWriterFlagsTests
             "sound\\voice\\foo\\bar.ogg"
         ]);
         // Matches vanilla `Fallout - Sound.bsa`: uncompressed, RetainFileNames set.
-        WriteAndAssertFlags(writer, expectedArchiveFlags: 0x13, expectedFileFlags: 0x18);
+        WriteAndAssertFlags(writer, 0x13, 0x18);
     }
 
     [Fact]
@@ -73,7 +72,7 @@ public class BsaWriterFlagsTests
         ]);
         // File flags: Meshes (0x01) | Textures (0x02) | Sounds (0x08) | Voices (0x10) = 0x1b.
         // Mixed texture archives follow DLC Main/Update layout: 0x083.
-        WriteAndAssertFlags(writer, expectedArchiveFlags: 0x83, expectedFileFlags: 0x1b);
+        WriteAndAssertFlags(writer, 0x83, 0x1b);
     }
 
     [Fact]
@@ -137,13 +136,13 @@ public class BsaWriterFlagsTests
         writer.Write(ms);
         var bytes = ms.ToArray();
 
-        var folderRecordsOffset = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
-        var folderCount = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(16, 4));
-        var totalFileNameLength = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(28, 4));
+        var folderRecordsOffset = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
+        var folderCount = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(16, 4));
+        var totalFileNameLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(28, 4));
 
         // First folder record's offset field (at +12 within its 16-byte record).
         var firstFolderOffset =
-            System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan((int)folderRecordsOffset + 12, 4));
+            BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan((int)folderRecordsOffset + 12, 4));
         var fileRecordBlockStart = folderRecordsOffset + folderCount * 16;
         var delta = firstFolderOffset - fileRecordBlockStart;
 
@@ -169,8 +168,8 @@ public class BsaWriterFlagsTests
 
         // Header layout: magic(4) version(4) folderOff(4) archiveFlags(4) folderCount(4)
         //                fileCount(4) folderNameTotal(4) fileNameTotal(4) fileFlags(4)
-        var actualArchiveFlags = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12, 4));
-        var actualFileFlags = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(32, 4));
+        var actualArchiveFlags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12, 4));
+        var actualFileFlags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(32, 4));
 
         Assert.Equal(expectedArchiveFlags, actualArchiveFlags);
         Assert.Equal(expectedFileFlags, (ushort)actualFileFlags);

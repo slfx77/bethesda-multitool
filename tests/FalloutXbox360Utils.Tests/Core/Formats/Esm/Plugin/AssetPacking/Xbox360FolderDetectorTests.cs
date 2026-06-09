@@ -20,7 +20,7 @@ public class Xbox360FolderDetectorTests : IDisposable
         {
             if (Directory.Exists(_scratchRoot))
             {
-                Directory.Delete(_scratchRoot, recursive: true);
+                Directory.Delete(_scratchRoot, true);
             }
         }
         catch

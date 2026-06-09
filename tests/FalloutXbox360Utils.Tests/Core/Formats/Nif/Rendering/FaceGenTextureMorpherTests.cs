@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;

@@ -4,9 +4,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
@@ -22,9 +20,9 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 ///     - ALCH ENIT (addiction/withdrawal data) and EFID/EFIT effect pairs.
 ///     - WEAP/ARMO ETYP (equipment-type as int32 enum).
 ///     - NPC_ DATA / DNAM / FaceGen morphs / ACBS speed-multiplier sanitization /
-///       template-renderable safety.
+///     template-renderable safety.
 ///     - ArmoEncoder/ArmaEncoder BMDT-before-MODL ordering (post-model BMDT_ID size table
-///       caps at 4 bytes and was truncating GeneralFlags).
+///     caps at 4 bytes and was truncating GeneralFlags).
 ///     - ScptEncoder stub-script filtering (empty EditorID + no bytecode → skip record).
 ///     - InfoEncoder defensive PNAM filtering (sentinel 0 / 0xFFFFFFFF / self-reference).
 /// </summary>
@@ -477,18 +475,18 @@ public class BugfixEncoderTests
             FormId = 0x800,
             EditorId = "NpcZeroSpeed",
             Stats = new ActorBaseSubrecord(
-                Flags: 0,
-                FatigueBase: 50,
-                BarterGold: 200,
-                Level: 5,
-                CalcMin: 1,
-                CalcMax: 10,
-                SpeedMultiplier: 0,
-                KarmaAlignment: 0f,
-                DispositionBase: 50,
-                TemplateFlags: 0,
-                Offset: 0,
-                IsBigEndian: false)
+                0,
+                50,
+                200,
+                5,
+                1,
+                10,
+                0,
+                0f,
+                50,
+                0,
+                0,
+                false)
         };
 
         var encoded = NpcEncoder.EncodeNew(npc);
@@ -509,18 +507,18 @@ public class BugfixEncoderTests
             FormId = 0x800,
             EditorId = "NpcFastSpeed",
             Stats = new ActorBaseSubrecord(
-                Flags: 0,
-                FatigueBase: 0,
-                BarterGold: 0,
-                Level: 1,
-                CalcMin: 1,
-                CalcMax: 1,
-                SpeedMultiplier: 150,
-                KarmaAlignment: 0f,
-                DispositionBase: 0,
-                TemplateFlags: 0,
-                Offset: 0,
-                IsBigEndian: false)
+                0,
+                0,
+                0,
+                1,
+                1,
+                1,
+                150,
+                0f,
+                0,
+                0,
+                0,
+                false)
         };
 
         var encoded = NpcEncoder.EncodeNew(npc);
@@ -665,10 +663,10 @@ public class BugfixEncoderTests
     // engine cannot resolve: 0 (no link), 0xFFFFFFFF (the "unset" marker), and a
     // self-reference (would loop forever). Any other value rides through verbatim.
     [Theory]
-    [InlineData(0u, null)]                  // no link
-    [InlineData(0xFFFFFFFFu, null)]         // sentinel "unset"
-    [InlineData(0x800u, null)]              // self-reference (FormId == PreviousInfo)
-    [InlineData(0x12345u, 0x12345u)]        // valid link → PNAM emits with that FormID
+    [InlineData(0u, null)] // no link
+    [InlineData(0xFFFFFFFFu, null)] // sentinel "unset"
+    [InlineData(0x800u, null)] // self-reference (FormId == PreviousInfo)
+    [InlineData(0x12345u, 0x12345u)] // valid link → PNAM emits with that FormID
     public void InfoEncoder_EncodeNew_PreviousInfoPnamEmissionPolicy(uint previousInfo, uint? expectedPnamFormId)
     {
         var info = new DialogueRecord { FormId = 0x800, PreviousInfo = previousInfo };
@@ -684,5 +682,4 @@ public class BugfixEncoderTests
             Assert.Equal(expectedPnamFormId.Value, BinaryPrimitives.ReadUInt32LittleEndian(pnam.Bytes));
         }
     }
-
 }

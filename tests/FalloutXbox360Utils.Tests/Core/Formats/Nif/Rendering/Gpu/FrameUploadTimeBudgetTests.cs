@@ -17,7 +17,7 @@ public sealed class FrameUploadTimeBudgetTests
     [Fact]
     public void NotExpired_BeforeDeadline()
     {
-        var budget = new FrameUploadTimeBudget(startTimestamp: 0, budgetMilliseconds: 2.0, frequency: TicksPerSecond);
+        var budget = new FrameUploadTimeBudget(0, 2.0, TicksPerSecond);
 
         // 2 ms at 1000 ticks/s == 2 ticks; anything strictly before that is still in budget.
         Assert.False(budget.IsExpiredAt(0));
@@ -27,16 +27,16 @@ public sealed class FrameUploadTimeBudgetTests
     [Fact]
     public void Expired_AtAndAfterDeadline()
     {
-        var budget = new FrameUploadTimeBudget(startTimestamp: 0, budgetMilliseconds: 2.0, frequency: TicksPerSecond);
+        var budget = new FrameUploadTimeBudget(0, 2.0, TicksPerSecond);
 
-        Assert.True(budget.IsExpiredAt(2));   // exactly at the deadline
+        Assert.True(budget.IsExpiredAt(2)); // exactly at the deadline
         Assert.True(budget.IsExpiredAt(500)); // well past
     }
 
     [Fact]
     public void Deadline_IsRelativeToStartTimestamp()
     {
-        var budget = new FrameUploadTimeBudget(startTimestamp: 100, budgetMilliseconds: 2.0, frequency: TicksPerSecond);
+        var budget = new FrameUploadTimeBudget(100, 2.0, TicksPerSecond);
 
         Assert.False(budget.IsExpiredAt(101));
         Assert.True(budget.IsExpiredAt(102));

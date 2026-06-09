@@ -26,8 +26,8 @@ public class LandSubrecordParserTests
             vclr[i] = (byte)(i % 256);
         }
 
-        var data = BuildRecord(isBigEndian: true, ("VCLR", vclr));
-        var result = LandSubrecordParser.Parse(data, data.Length, isBigEndian: true);
+        var data = BuildRecord(true, ("VCLR", vclr));
+        var result = LandSubrecordParser.Parse(data, data.Length, true);
 
         Assert.NotNull(result.VisualData);
         Assert.NotNull(result.VisualData!.VertexColors);
@@ -44,11 +44,11 @@ public class LandSubrecordParserTests
         var vnml = new byte[VnmlSize];
         for (var i = 0; i < vnml.Length; i++)
         {
-            vnml[i] = (byte)(sbyte)((i % 255) - 127);
+            vnml[i] = (byte)(sbyte)(i % 255 - 127);
         }
 
-        var data = BuildRecord(isBigEndian: true, ("VNML", vnml));
-        var result = LandSubrecordParser.Parse(data, data.Length, isBigEndian: true);
+        var data = BuildRecord(true, ("VNML", vnml));
+        var result = LandSubrecordParser.Parse(data, data.Length, true);
 
         Assert.NotNull(result.VisualData);
         Assert.NotNull(result.VisualData!.VertexNormals);
@@ -69,8 +69,8 @@ public class LandSubrecordParserTests
             vnml[i] = (byte)i;
         }
 
-        var data = BuildRecord(isBigEndian: false, ("VNML", vnml), ("VCLR", vclr));
-        var result = LandSubrecordParser.Parse(data, data.Length, isBigEndian: false);
+        var data = BuildRecord(false, ("VNML", vnml), ("VCLR", vclr));
+        var result = LandSubrecordParser.Parse(data, data.Length, false);
 
         Assert.NotNull(result.VisualData);
         Assert.Equal(VisualDataSource.MasterEsm, result.VisualData!.VertexColorsSource);
@@ -82,8 +82,8 @@ public class LandSubrecordParserTests
     public void Parses_VclrPayload_MasterEsm_LittleEndian()
     {
         var vclr = new byte[VnmlSize];
-        var data = BuildRecord(isBigEndian: false, ("VCLR", vclr));
-        var result = LandSubrecordParser.Parse(data, data.Length, isBigEndian: false);
+        var data = BuildRecord(false, ("VCLR", vclr));
+        var result = LandSubrecordParser.Parse(data, data.Length, false);
 
         Assert.NotNull(result.VisualData);
         Assert.Equal(VisualDataSource.MasterEsm, result.VisualData!.VertexColorsSource);
@@ -104,8 +104,8 @@ public class LandSubrecordParserTests
             subrecords[q] = ("BTXT", payload);
         }
 
-        var data = BuildRecord(isBigEndian: true, subrecords);
-        var result = LandSubrecordParser.Parse(data, data.Length, isBigEndian: true);
+        var data = BuildRecord(true, subrecords);
+        var result = LandSubrecordParser.Parse(data, data.Length, true);
 
         Assert.NotNull(result.VisualData);
         Assert.Equal(4, result.VisualData!.TextureLayers.Count);
@@ -117,6 +117,7 @@ public class LandSubrecordParserTests
             Assert.Equal(0x01000001u + (uint)q, layer.TextureFormId);
             Assert.Equal((byte)q, layer.Quadrant);
         }
+
         Assert.Equal(VisualDataSource.Dmp, result.VisualData.TextureLayersSource);
     }
 
@@ -130,12 +131,12 @@ public class LandSubrecordParserTests
         BinaryPrimitives.WriteUInt16BigEndian(atxt.AsSpan(6), 3); // layer
 
         var vtxt = new byte[8 * 3];
-        WriteBlendEntryBigEndian(vtxt.AsSpan(0), position: 10, opacity: 0.5f);
-        WriteBlendEntryBigEndian(vtxt.AsSpan(8), position: 20, opacity: 1.0f);
-        WriteBlendEntryBigEndian(vtxt.AsSpan(16), position: 30, opacity: 0.25f);
+        WriteBlendEntryBigEndian(vtxt.AsSpan(0), 10, 0.5f);
+        WriteBlendEntryBigEndian(vtxt.AsSpan(8), 20, 1.0f);
+        WriteBlendEntryBigEndian(vtxt.AsSpan(16), 30, 0.25f);
 
-        var data = BuildRecord(isBigEndian: true, ("ATXT", atxt), ("VTXT", vtxt));
-        var result = LandSubrecordParser.Parse(data, data.Length, isBigEndian: true);
+        var data = BuildRecord(true, ("ATXT", atxt), ("VTXT", vtxt));
+        var result = LandSubrecordParser.Parse(data, data.Length, true);
 
         Assert.NotNull(result.VisualData);
         Assert.Single(result.VisualData!.TextureLayers);
@@ -153,10 +154,10 @@ public class LandSubrecordParserTests
     public void Parses_VtxtWithoutPrecedingAtxt_CountsAsUnattached()
     {
         var vtxt = new byte[8];
-        WriteBlendEntryBigEndian(vtxt, position: 5, opacity: 0.75f);
+        WriteBlendEntryBigEndian(vtxt, 5, 0.75f);
 
-        var data = BuildRecord(isBigEndian: true, ("VTXT", vtxt));
-        var result = LandSubrecordParser.Parse(data, data.Length, isBigEndian: true);
+        var data = BuildRecord(true, ("VTXT", vtxt));
+        var result = LandSubrecordParser.Parse(data, data.Length, true);
 
         Assert.Equal(1, result.UnattachedVtxtCount);
         Assert.Equal(8, result.UnattachedVtxtByteCount);
@@ -172,8 +173,8 @@ public class LandSubrecordParserTests
         BinaryPrimitives.WriteUInt32BigEndian(vtex.AsSpan(8), 0u);
         BinaryPrimitives.WriteUInt32BigEndian(vtex.AsSpan(12), 0xFFFFFFFF);
 
-        var data = BuildRecord(isBigEndian: true, ("VTEX", vtex));
-        var result = LandSubrecordParser.Parse(data, data.Length, isBigEndian: true);
+        var data = BuildRecord(true, ("VTEX", vtex));
+        var result = LandSubrecordParser.Parse(data, data.Length, true);
 
         Assert.NotNull(result.VisualData);
         Assert.NotNull(result.VisualData!.TextureIndices);
@@ -185,8 +186,8 @@ public class LandSubrecordParserTests
     public void ParseVisualOnly_SkipsHeightmap_ButPreservesVisualData()
     {
         var vclr = new byte[VnmlSize];
-        var data = BuildRecord(isBigEndian: false, ("VCLR", vclr));
-        var visual = LandSubrecordParser.ParseVisualOnly(data, data.Length, isBigEndian: false);
+        var data = BuildRecord(false, ("VCLR", vclr));
+        var visual = LandSubrecordParser.ParseVisualOnly(data, data.Length, false);
 
         Assert.NotNull(visual);
         Assert.True(visual!.HasVertexColors);
@@ -205,7 +206,7 @@ public class LandSubrecordParserTests
         var runtimeVnml = new byte[VnmlSize];
         for (var i = 0; i < runtimeVnml.Length; i++)
         {
-            runtimeVnml[i] = (byte)(sbyte)((i % 200) - 100);
+            runtimeVnml[i] = (byte)(sbyte)(i % 200 - 100);
         }
 
         var visual = new LandVisualData
@@ -310,7 +311,7 @@ public class LandSubrecordParserTests
         var vclr = new byte[VnmlSize];
         for (var i = 0; i < vclr.Length; i++)
         {
-            vclr[i] = (byte)((i * 7) % 256);
+            vclr[i] = (byte)(i * 7 % 256);
         }
 
         var btxt = new byte[8];
@@ -319,8 +320,8 @@ public class LandSubrecordParserTests
         btxt[5] = 0;
         BinaryPrimitives.WriteUInt16LittleEndian(btxt.AsSpan(6), 0);
 
-        var data = BuildRecord(isBigEndian: false, ("VCLR", vclr), ("BTXT", btxt));
-        var visual = LandSubrecordParser.ParseVisualOnly(data, data.Length, isBigEndian: false);
+        var data = BuildRecord(false, ("VCLR", vclr), ("BTXT", btxt));
+        var visual = LandSubrecordParser.ParseVisualOnly(data, data.Length, false);
 
         Assert.NotNull(visual);
         var heightmap = new LandHeightmap

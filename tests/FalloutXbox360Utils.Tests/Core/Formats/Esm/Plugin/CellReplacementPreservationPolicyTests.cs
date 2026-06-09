@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Merge;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
@@ -21,7 +20,7 @@ public class CellReplacementPreservationPolicyTests
         var placementsByBase = CellReplacementPreservationPolicy.BuildPlacementsByBase(
             [MakePlacement(0x100, 10f, 20f, 30f)],
             new Dictionary<uint, uint>());
-        var masterRef = MakeMasterRef(0x200, 0x101, persistent: false, 10f, 20f, 30f);
+        var masterRef = MakeMasterRef(0x200, 0x101, false, 10f, 20f, 30f);
 
         Assert.True(CellReplacementPreservationPolicy.ShouldPreserveMasterRef(masterRef, placementsByBase));
 
@@ -39,7 +38,7 @@ public class CellReplacementPreservationPolicyTests
         var placementsByBase = CellReplacementPreservationPolicy.BuildPlacementsByBase(
             [MakePlacement(0x100, 10f, 20f, 30f)],
             new Dictionary<uint, uint>());
-        var masterRef = MakeMasterRef(0x200, 0x100, persistent: false, 10f, 20f, 30f);
+        var masterRef = MakeMasterRef(0x200, 0x100, false, 10f, 20f, 30f);
 
         Assert.False(CellReplacementPreservationPolicy.ShouldPreserveMasterRef(masterRef, placementsByBase));
 
@@ -57,7 +56,7 @@ public class CellReplacementPreservationPolicyTests
         var placementsByBase = CellReplacementPreservationPolicy.BuildPlacementsByBase(
             [MakePlacement(0x100, 10f, 20f, 30f)],
             new Dictionary<uint, uint>());
-        var masterRef = MakeMasterRef(0x200, 0x100, persistent: false, 500f, 20f, 30f);
+        var masterRef = MakeMasterRef(0x200, 0x100, false, 500f, 20f, 30f);
 
         Assert.True(CellReplacementPreservationPolicy.ShouldPreserveMasterRef(masterRef, placementsByBase));
     }
@@ -71,8 +70,8 @@ public class CellReplacementPreservationPolicyTests
             [MakePlacement(sourceBase, 1f, 2f, 3f)],
             new Dictionary<uint, uint> { [sourceBase] = allocatedBase });
 
-        var sourceMasterRef = MakeMasterRef(0x300, sourceBase, persistent: false, 1f, 2f, 3f);
-        var allocatedMasterRef = MakeMasterRef(0x301, allocatedBase, persistent: false, 1f, 2f, 3f);
+        var sourceMasterRef = MakeMasterRef(0x300, sourceBase, false, 1f, 2f, 3f);
+        var allocatedMasterRef = MakeMasterRef(0x301, allocatedBase, false, 1f, 2f, 3f);
 
         Assert.False(CellReplacementPreservationPolicy.ShouldPreserveMasterRef(sourceMasterRef, placementsByBase));
         Assert.False(CellReplacementPreservationPolicy.ShouldPreserveMasterRef(allocatedMasterRef, placementsByBase));
@@ -84,7 +83,7 @@ public class CellReplacementPreservationPolicyTests
         var placementsByBase = CellReplacementPreservationPolicy.BuildPlacementsByBase(
             [MakePlacement(0x100, 10f, 20f, 30f)],
             new Dictionary<uint, uint>());
-        var masterRef = MakeMasterRef(0x200, 0x100, persistent: true, 10f, 20f, 30f);
+        var masterRef = MakeMasterRef(0x200, 0x100, true, 10f, 20f, 30f);
 
         Assert.True(CellReplacementPreservationPolicy.ShouldPreserveMasterRef(masterRef, placementsByBase));
     }
@@ -93,10 +92,10 @@ public class CellReplacementPreservationPolicyTests
     public void PreserveAllMissing_CopiesVanillaRefsToTheirOriginalChildBuckets()
     {
         const uint cellFormId = 0x00103DF9;
-        var persistent = MakeMasterRef(0x200, 0x100, persistent: true, 10f, 20f, 30f);
-        var temporary = MakeMasterRef(0x201, 0x101, persistent: false, 10f, 20f, 30f);
-        var vwd = MakeMasterRef(0x202, 0x102, persistent: false, 10f, 20f, 30f);
-        var seenInDmp = MakeMasterRef(0x203, 0x103, persistent: false, 10f, 20f, 30f);
+        var persistent = MakeMasterRef(0x200, 0x100, true, 10f, 20f, 30f);
+        var temporary = MakeMasterRef(0x201, 0x101, false, 10f, 20f, 30f);
+        var vwd = MakeMasterRef(0x202, 0x102, false, 10f, 20f, 30f);
+        var seenInDmp = MakeMasterRef(0x203, 0x103, false, 10f, 20f, 30f);
         var locations = new Dictionary<uint, MasterChildLocation>
         {
             [0x200] = new(cellFormId, 8, "REFR"),
@@ -129,16 +128,16 @@ public class CellReplacementPreservationPolicyTests
     public void PreserveLoadedReplacementMissing_RetainsOnlyScriptCriticalRefs()
     {
         const uint cellFormId = 0x00103DF9;
-        var ordinary = MakeMasterRef(0x200, 0x100, persistent: false, 10f, 20f, 30f);
-        var covered = MakeMasterRef(0x201, 0x101, persistent: true, 10f, 20f, 30f);
-        var actor = MakeMasterRef(0x202, 0x102, persistent: false, 10f, 20f, 30f, "ACHR");
-        var persistent = MakeMasterRef(0x203, 0x103, persistent: true, 10f, 20f, 30f);
+        var ordinary = MakeMasterRef(0x200, 0x100, false, 10f, 20f, 30f);
+        var covered = MakeMasterRef(0x201, 0x101, true, 10f, 20f, 30f);
+        var actor = MakeMasterRef(0x202, 0x102, false, 10f, 20f, 30f, "ACHR");
+        var persistent = MakeMasterRef(0x203, 0x103, true, 10f, 20f, 30f);
         var scriptedRef = MakeMasterRef(
-            0x204, 0x104, persistent: false, 10f, 20f, 30f,
+            0x204, 0x104, false, 10f, 20f, 30f,
             extraSubrecords: [MakeFormIdSubrecord("SCRI", 0x500)]);
-        var scriptedBase = MakeMasterRef(0x205, 0x105, persistent: false, 10f, 20f, 30f);
+        var scriptedBase = MakeMasterRef(0x205, 0x105, false, 10f, 20f, 30f);
         var structural = MakeMasterRef(
-            0x206, 0x106, persistent: false, 10f, 20f, 30f,
+            0x206, 0x106, false, 10f, 20f, 30f,
             extraSubrecords: [new ParsedSubrecord { Signature = "XPRM", Data = [0x01] }]);
         var locations = new Dictionary<uint, MasterChildLocation>
         {
@@ -182,7 +181,7 @@ public class CellReplacementPreservationPolicyTests
     {
         const uint cellFormId = 0x00103DF9;
         var scriptedStructural = MakeMasterRef(
-            0x207, 0x107, persistent: false, 10f, 20f, 30f,
+            0x207, 0x107, false, 10f, 20f, 30f,
             extraSubrecords:
             [
                 MakeFormIdSubrecord("SCRI", 0x500),
@@ -319,7 +318,7 @@ public class CellReplacementPreservationPolicyTests
     {
         const uint masterStatRefFormId = 0x300;
         const uint masterStatBaseFormId = 0x150;
-        var statRef = MakeMasterRef(masterStatRefFormId, masterStatBaseFormId, persistent: false, 0f, 0f, 0f);
+        var statRef = MakeMasterRef(masterStatRefFormId, masterStatBaseFormId, false, 0f, 0f, 0f);
         var statBase = MakeBaseRecord("STAT", masterStatBaseFormId);
         var pcRecords = new Dictionary<uint, ParsedMainRecord>
         {
@@ -343,7 +342,7 @@ public class CellReplacementPreservationPolicyTests
         // refs (the binary policy's intent stands when DMP did capture the type).
         const uint masterStatRefFormId = 0x300;
         const uint masterStatBaseFormId = 0x150;
-        var statRef = MakeMasterRef(masterStatRefFormId, masterStatBaseFormId, persistent: false, 0f, 0f, 0f);
+        var statRef = MakeMasterRef(masterStatRefFormId, masterStatBaseFormId, false, 0f, 0f, 0f);
         var statBase = MakeBaseRecord("STAT", masterStatBaseFormId);
         var pcRecords = new Dictionary<uint, ParsedMainRecord>
         {
@@ -366,7 +365,7 @@ public class CellReplacementPreservationPolicyTests
         const uint masterStatRefFormId = 0x300;
         const uint masterStatBaseFormId = 0x150;
         var scriptedStatRef = MakeMasterRef(
-            masterStatRefFormId, masterStatBaseFormId, persistent: false, 0f, 0f, 0f,
+            masterStatRefFormId, masterStatBaseFormId, false, 0f, 0f, 0f,
             extraSubrecords: [MakeFormIdSubrecord("SCRI", 0x500)]);
         var statBase = MakeBaseRecord("STAT", masterStatBaseFormId);
         var pcRecords = new Dictionary<uint, ParsedMainRecord>
@@ -390,7 +389,7 @@ public class CellReplacementPreservationPolicyTests
         // preserved.
         const uint masterStatRefFormId = 0x300;
         const uint masterStatBaseFormId = 0x150;
-        var statRef = MakeMasterRef(masterStatRefFormId, masterStatBaseFormId, persistent: false, 0f, 0f, 0f);
+        var statRef = MakeMasterRef(masterStatRefFormId, masterStatBaseFormId, false, 0f, 0f, 0f);
         var statBase = MakeBaseRecord("STAT", masterStatBaseFormId);
         var pcRecords = new Dictionary<uint, ParsedMainRecord>
         {

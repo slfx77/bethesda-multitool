@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
@@ -29,7 +28,7 @@ public sealed class PdbStructViewTests
         var buffer = new byte[0x1000];
         WriteFormHeader(buffer, OffsetFromVa(StructVa), TestFormType, 0x00000222);
 
-        var view = OpenView(buffer, entryFormId: 0x00000111);
+        var view = OpenView(buffer, 0x00000111);
 
         Assert.Null(view);
     }
@@ -41,7 +40,7 @@ public sealed class PdbStructViewTests
         var buffer = new byte[0x1000];
         WriteFormHeader(buffer, OffsetFromVa(StructVa), TestFormType, 0x00012345);
 
-        var view = OpenView(buffer, entryFormId: 0x00012345, entryFormType: 0x28);
+        var view = OpenView(buffer, 0x00012345, 0x28);
 
         Assert.Null(view);
     }
@@ -52,7 +51,7 @@ public sealed class PdbStructViewTests
         var buffer = new byte[0x1000];
         WriteFormHeader(buffer, OffsetFromVa(StructVa), TestFormType, 0x00012345);
 
-        var view = OpenView(buffer, entryFormId: 0x00012345);
+        var view = OpenView(buffer, 0x00012345);
 
         Assert.NotNull(view);
         Assert.Equal(OffsetFromVa(StructVa), view!.FileOffset);
@@ -71,7 +70,7 @@ public sealed class PdbStructViewTests
         WriteInt32BE(buffer, fileOffset + 144, 425);
         WriteFloatBE(buffer, fileOffset + 152, 2.5f);
 
-        var view = OpenView(buffer, entryFormId: 0x00012345);
+        var view = OpenView(buffer, 0x00012345);
 
         Assert.NotNull(view);
         Assert.Equal(425, view!.Int32("iValue", "TESValueForm"));
@@ -86,10 +85,10 @@ public sealed class PdbStructViewTests
         WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
         WriteInt32BE(buffer, fileOffset + 144, 2_500_000); // out of band
 
-        var view = OpenView(buffer, entryFormId: 0x00012345);
+        var view = OpenView(buffer, 0x00012345);
 
         Assert.NotNull(view);
-        Assert.Equal(0, view!.Int32Range("iValue", "TESValueForm", min: 0, max: 1_000_000));
+        Assert.Equal(0, view!.Int32Range("iValue", "TESValueForm", 0, 1_000_000));
     }
 
     [Fact]
@@ -98,7 +97,7 @@ public sealed class PdbStructViewTests
         var buffer = new byte[0x1000];
         WriteFormHeader(buffer, OffsetFromVa(StructVa), TestFormType, 0x00012345);
 
-        var view = OpenView(buffer, entryFormId: 0x00012345);
+        var view = OpenView(buffer, 0x00012345);
 
         Assert.NotNull(view);
         Assert.Equal(-1, view!.Int32("NotARealField", def: -1));
@@ -114,15 +113,15 @@ public sealed class PdbStructViewTests
         var buffer = new byte[0x1000];
         var fileOffset = OffsetFromVa(StructVa);
         WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
-        WriteInt32BE(buffer, fileOffset + 148, 999);    // shifted iValue
-        WriteFloatBE(buffer, fileOffset + 156, 7.5f);   // shifted fWeight
+        WriteInt32BE(buffer, fileOffset + 148, 999); // shifted iValue
+        WriteFloatBE(buffer, fileOffset + 156, 7.5f); // shifted fWeight
 
-        var view = OpenView(buffer, entryFormId: 0x00012345)!
+        var view = OpenView(buffer, 0x00012345)!
             .WithShift(140, 200, +4);
 
         Assert.Equal(999, view.Int32("iValue", "TESValueForm"));
         Assert.Equal(7.5f, view.Float("fWeight", "TESWeightForm"));
-        Assert.Equal(148, view.Offset("iValue", "TESValueForm"));   // shifted offset surfaced
+        Assert.Equal(148, view.Offset("iValue", "TESValueForm")); // shifted offset surfaced
     }
 
     [Fact]
@@ -134,10 +133,10 @@ public sealed class PdbStructViewTests
         var buffer = new byte[0x1000];
         var fileOffset = OffsetFromVa(StructVa);
         WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
-        WriteInt32BE(buffer, fileOffset + 144, 42);    // unshifted PDB location
-        WriteInt32BE(buffer, fileOffset + 148, 999);   // would-be-shifted location
+        WriteInt32BE(buffer, fileOffset + 144, 42); // unshifted PDB location
+        WriteInt32BE(buffer, fileOffset + 148, 999); // would-be-shifted location
 
-        var view = OpenView(buffer, entryFormId: 0x00012345)!
+        var view = OpenView(buffer, 0x00012345)!
             .WithShift(200, 300, +4);
 
         // iValue (PDB +144) is outside the shift band — reads the original 42, not 999.
@@ -153,7 +152,7 @@ public sealed class PdbStructViewTests
         WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
         WriteInt32BE(buffer, fileOffset + 144, 11);
 
-        var view = OpenView(buffer, entryFormId: 0x00012345)!
+        var view = OpenView(buffer, 0x00012345)!
             .WithShift(0, int.MaxValue, 0);
 
         Assert.Equal(11, view.Int32("iValue", "TESValueForm"));
@@ -168,10 +167,10 @@ public sealed class PdbStructViewTests
         var buffer = new byte[0x1000];
         var fileOffset = OffsetFromVa(StructVa);
         WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
-        WriteInt32BE(buffer, fileOffset + 152, 77);   // PDB +144 +8 (G2)
-        WriteInt32BE(buffer, fileOffset + 148, 88);   // PDB +144 +4 (G1)
+        WriteInt32BE(buffer, fileOffset + 152, 77); // PDB +144 +8 (G2)
+        WriteInt32BE(buffer, fileOffset + 148, 88); // PDB +144 +4 (G1)
 
-        var view = OpenView(buffer, entryFormId: 0x00012345)!
+        var view = OpenView(buffer, 0x00012345)!
             .WithShift(140, 200, +8)
             .WithShift(140, 200, +4);
 
@@ -195,16 +194,16 @@ public sealed class PdbStructViewTests
         var buffer = new byte[0x1000];
         var fileOffset = OffsetFromVa(StructVa);
         WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
-        WriteInt32BE(buffer, fileOffset + 144, 42);    // PDB iValue
-        WriteInt32BE(buffer, fileOffset + 120, 999);   // shifted "cFlags" (TESModel @ +96 + 24)
+        WriteInt32BE(buffer, fileOffset + 144, 42); // PDB iValue
+        WriteInt32BE(buffer, fileOffset + 120, 999); // shifted "cFlags" (TESModel @ +96 + 24)
 
-        var view = OpenView(buffer, entryFormId: 0x00012345)!
+        var view = OpenView(buffer, 0x00012345)!
             .WithShift("TESModel", +24);
 
         // TESValueForm not registered → reads from raw PDB offset.
         Assert.Equal(42, view.Int32("iValue", "TESValueForm"));
         // TESModel registered → reads shifted offset (96 + 24 = 120).
-        Assert.Equal((byte)0, view.Byte("cFlags", "TESModel"));  // byte at +120 is upper byte of 999
+        Assert.Equal((byte)0, view.Byte("cFlags", "TESModel")); // byte at +120 is upper byte of 999
         Assert.Equal(120, view.Offset("cFlags", "TESModel"));
     }
 
@@ -217,7 +216,7 @@ public sealed class PdbStructViewTests
         WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
         WriteInt32BE(buffer, fileOffset + 144, 42);
 
-        var view = OpenView(buffer, entryFormId: 0x00012345)!;
+        var view = OpenView(buffer, 0x00012345)!;
 
         Assert.Equal(42, view.Int32("iValue", "TESValueForm"));
         Assert.Equal(144, view.Offset("iValue", "TESValueForm"));
@@ -234,7 +233,7 @@ public sealed class PdbStructViewTests
         WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
         WriteInt32BE(buffer, fileOffset + 164, 555);
 
-        var view = OpenView(buffer, entryFormId: 0x00012345)!
+        var view = OpenView(buffer, 0x00012345)!
             .WithShift(140, 200, +4)
             .WithShift("TESValueForm", +16);
 
@@ -252,7 +251,7 @@ public sealed class PdbStructViewTests
         WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
         WriteInt32BE(buffer, fileOffset + 144, 11);
 
-        var view = OpenView(buffer, entryFormId: 0x00012345)!
+        var view = OpenView(buffer, 0x00012345)!
             .WithShift("TESValueForm", 0);
 
         Assert.Equal(11, view.Int32("iValue", "TESValueForm"));
@@ -268,12 +267,12 @@ public sealed class PdbStructViewTests
         var fileOffset = OffsetFromVa(StructVa);
         WriteFormHeader(buffer, fileOffset, TestFormType, 0x00012345);
 
-        var view = OpenView(buffer, entryFormId: 0x00012345)!;
+        var view = OpenView(buffer, 0x00012345)!;
 
         Assert.Same(view, view.WithShift(0, int.MaxValue, +4));
-        Assert.Same(view, view.WithShift(0, int.MaxValue, 0));       // band identity
+        Assert.Same(view, view.WithShift(0, int.MaxValue, 0)); // band identity
         Assert.Same(view, view.WithShift("TESNPC", +16));
-        Assert.Same(view, view.WithShift("TESNPC", 0));              // owner identity
+        Assert.Same(view, view.WithShift("TESNPC", 0)); // owner identity
     }
 
     private static PdbStructView? OpenView(byte[] buffer, uint entryFormId, byte entryFormType = TestFormType)
@@ -308,7 +307,10 @@ public sealed class PdbStructViewTests
         return accessor.OpenStructView(entry);
     }
 
-    private static long OffsetFromVa(uint va) => va - BaseVa;
+    private static long OffsetFromVa(uint va)
+    {
+        return va - BaseVa;
+    }
 
     private static void WriteFormHeader(byte[] buffer, long fileOffset, byte formType, uint formId)
     {

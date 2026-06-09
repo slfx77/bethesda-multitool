@@ -54,12 +54,12 @@ public class NavMeshAdjacencyRebuildTests
 
         var t0 = Edges(nvtr, 0);
         var t1 = Edges(nvtr, 1);
-        Assert.Equal((short)-1, t0.e01);  // edge {0,1} boundary
-        Assert.Equal((short)1, t0.e12);   // edge {1,2} -> Tri1
-        Assert.Equal((short)-1, t0.e20);  // edge {2,0} boundary
-        Assert.Equal((short)0, t1.e01);   // edge {2,1} -> Tri0
-        Assert.Equal((short)-1, t1.e12);  // edge {1,3} boundary
-        Assert.Equal((short)-1, t1.e20);  // edge {3,2} boundary
+        Assert.Equal((short)-1, t0.e01); // edge {0,1} boundary
+        Assert.Equal((short)1, t0.e12); // edge {1,2} -> Tri1
+        Assert.Equal((short)-1, t0.e20); // edge {2,0} boundary
+        Assert.Equal((short)0, t1.e01); // edge {2,1} -> Tri0
+        Assert.Equal((short)-1, t1.e12); // edge {1,3} boundary
+        Assert.Equal((short)-1, t1.e20); // edge {3,2} boundary
     }
 
     [Fact]
@@ -68,8 +68,8 @@ public class NavMeshAdjacencyRebuildTests
         // Two triangles that share NO vertices but the capture wrongly links them
         // (the "opposite normals but are linked" shape). Rebuild must drop the link.
         var nvtr = BuildNvtr(
-            (0, 1, 2, 1, 1, 1),   // every slot points at Tri1
-            (3, 4, 5, 0, 0, 0));  // every slot points at Tri0
+            (0, 1, 2, 1, 1, 1), // every slot points at Tri1
+            (3, 4, 5, 0, 0, 0)); // every slot points at Tri0
 
         NavMeshAdjacencyRebuild.Repair(nvtr);
 

@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using Xunit;
@@ -35,7 +34,7 @@ public class Tes4HeaderBuilderTests
             Description = "Synthetic TES4 for unit test."
         };
 
-        var bytes = Tes4HeaderBuilder.Build(options, numRecords: 42, nextObjectId: 0x800);
+        var bytes = Tes4HeaderBuilder.Build(options, 42, 0x800);
         var fileHeader = EsmParser.ParseFileHeader(bytes);
 
         Assert.NotNull(fileHeader);
@@ -52,9 +51,10 @@ public class Tes4HeaderBuilderTests
     public void Build_OmitsAuthorAndDescription_WhenNullOrEmpty()
     {
         var bytes = Tes4HeaderBuilder.Build(
-            new PluginBuildOptions { MasterFileName = "FalloutNV.esm", MasterFileSize = 100, Author = null, Description = "" },
-            numRecords: 0,
-            nextObjectId: 0x800);
+            new PluginBuildOptions
+                { MasterFileName = "FalloutNV.esm", MasterFileSize = 100, Author = null, Description = "" },
+            0,
+            0x800);
 
         var header = EsmParser.ParseFileHeader(bytes);
         Assert.NotNull(header);
@@ -76,8 +76,8 @@ public class Tes4HeaderBuilderTests
                 MasterFileSize = 100,
                 EmitMasterCellNavmAugmentation = false
             },
-            numRecords: 0,
-            nextObjectId: 0x800);
+            0,
+            0x800);
 
         // Header flags live at bytes 8–11 (little-endian uint32).
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
@@ -96,8 +96,8 @@ public class Tes4HeaderBuilderTests
                 MasterFileSize = 100,
                 EmitMasterCellNavmAugmentation = true
             },
-            numRecords: 0,
-            nextObjectId: 0x800);
+            0,
+            0x800);
 
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
         Assert.Equal(0x00000001u, flags & 0x00000001u); // master flag set
@@ -119,8 +119,8 @@ public class Tes4HeaderBuilderTests
         // Earlier code wrote master file size (non-canonical, FNVEdit warns).
         var bytes = Tes4HeaderBuilder.Build(
             new PluginBuildOptions { MasterFileName = "FalloutNV.esm", MasterFileSize = 12_345_678 },
-            numRecords: 0,
-            nextObjectId: 0x800);
+            0,
+            0x800);
 
         // Find the MAST subrecord and verify the DATA payload immediately after it.
         var mastIndex = FindSubrecordIndex(bytes, "MAST");
@@ -165,7 +165,7 @@ public class Tes4HeaderBuilderTests
     {
         return Tes4HeaderBuilder.Build(
             new PluginBuildOptions { MasterFileName = "FalloutNV.esm", MasterFileSize = 100 },
-            numRecords: 0,
-            nextObjectId: 0x800);
+            0,
+            0x800);
     }
 }

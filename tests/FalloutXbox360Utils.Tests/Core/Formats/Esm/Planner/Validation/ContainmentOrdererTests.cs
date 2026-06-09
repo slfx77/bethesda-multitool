@@ -12,7 +12,9 @@ public sealed class ContainmentOrdererTests
     {
         var dial = Plan("DIAL", 0x1000, []);
         var info = Plan("INFO", 0x1001,
-            [new RecordContainmentEdge { ParentFormId = 0x1000, Relationship = ContainmentRelationship.DialogueTopic }]);
+        [
+            new RecordContainmentEdge { ParentFormId = 0x1000, Relationship = ContainmentRelationship.DialogueTopic }
+        ]);
 
         var ordered = ContainmentOrderer.Order([info, dial]);
 
@@ -47,14 +49,16 @@ public sealed class ContainmentOrdererTests
         Assert.Throws<InvalidOperationException>(() => ContainmentOrderer.Order([a, b]));
     }
 
-    private static RecordPlan Plan(string type, uint formId, ImmutableArray<RecordContainmentEdge> edges) =>
-        new()
+    private static RecordPlan Plan(string type, uint formId, ImmutableArray<RecordContainmentEdge> edges)
+    {
+        return new RecordPlan
         {
             Type = type,
             Disposition = RecordDisposition.KeepMaster,
             FormId = formId,
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = edges,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
+    }
 }

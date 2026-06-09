@@ -14,7 +14,7 @@ public sealed class NavmReferenceWalkerTests
         {
             FormId = 0xAA000001,
             CellFormId = 0x000ABCDE,
-            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])],
+            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])]
         };
         var walker = new NavmReferenceWalker();
 
@@ -33,7 +33,7 @@ public sealed class NavmReferenceWalkerTests
         {
             FormId = 0xAA000001,
             CellFormId = 0x000ABCDE,
-            RawSubrecords = [new NavMeshSubrecord("NVEX", nvexBytes)],
+            RawSubrecords = [new NavMeshSubrecord("NVEX", nvexBytes)]
         };
         var walker = new NavmReferenceWalker();
 
@@ -57,7 +57,7 @@ public sealed class NavmReferenceWalkerTests
         {
             FormId = 0xAA000001,
             CellFormId = 0x000ABCDE,
-            RawSubrecords = [new NavMeshSubrecord("NVEX", nvexBytes)],
+            RawSubrecords = [new NavMeshSubrecord("NVEX", nvexBytes)]
         };
         var walker = new NavmReferenceWalker();
 

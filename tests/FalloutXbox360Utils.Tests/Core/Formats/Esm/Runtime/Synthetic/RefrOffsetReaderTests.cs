@@ -52,17 +52,17 @@ public sealed class RefrOffsetReaderTests
         const uint baseFormId = 0x0001A001;
         const uint cellFormId = 0x0000000F;
 
-        var buffer = BuildRefrFinal(refrFormId, baseObjectPtr: BaseObjVa, parentCellPtr: CellVa,
-            locX: 100.5f, locY: 200.25f, locZ: -50.0f,
-            rotX: 0.5f, rotY: 1.0f, rotZ: -0.25f,
-            scale: 1.5f, flags: 0);
+        var buffer = BuildRefrFinal(refrFormId, BaseObjVa, CellVa,
+            100.5f, 200.25f, -50.0f,
+            0.5f, 1.0f, -0.25f,
+            1.5f, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, RefrVa)
             .WithPointerTarget(BaseObjVa, BuildTesForm(ActiFormType, baseFormId))
-            .WithPointerTarget(CellVa, BuildTesCell(cellFormId, isInterior: false));
+            .WithPointerTarget(CellVa, BuildTesCell(cellFormId, false));
 
-        var reader = new RuntimeRefrReader(fixture.BuildContext(), useProtoOffsets: false);
+        var reader = new RuntimeRefrReader(fixture.BuildContext(), false);
         var refr = reader.ReadRuntimeRefr(fixture.MakeEntry(refrFormId, formType, RefrVa));
 
         Assert.NotNull(refr);
@@ -87,15 +87,15 @@ public sealed class RefrOffsetReaderTests
         const uint refrFormId = 0x01000002;
         const uint baseFormId = 0x0001A002;
 
-        var buffer = BuildRefrEarly(refrFormId, baseObjectPtr: BaseObjVa, parentCellPtr: 0,
-            locX: 10.0f, locY: 20.0f, locZ: 30.0f, rotX: 0, rotY: 0, rotZ: 0, scale: 1.0f, flags: 0);
+        var buffer = BuildRefrEarly(refrFormId, BaseObjVa, 0,
+            10.0f, 20.0f, 30.0f, 0, 0, 0, 1.0f, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, RefrVa)
             .WithPointerTarget(BaseObjVa, BuildTesForm(ActiFormType, baseFormId));
 
-        var reader = new RuntimeRefrReader(fixture.BuildContext(), useProtoOffsets: true);
-        var refr = reader.ReadRuntimeRefr(fixture.MakeEntry(refrFormId, formType: 0x3A, RefrVa));
+        var reader = new RuntimeRefrReader(fixture.BuildContext(), true);
+        var refr = reader.ReadRuntimeRefr(fixture.MakeEntry(refrFormId, 0x3A, RefrVa));
 
         Assert.NotNull(refr);
         Assert.Equal(baseFormId, refr.BaseFormId);
@@ -109,8 +109,8 @@ public sealed class RefrOffsetReaderTests
     {
         // Reader requires a non-null base object — returns null otherwise.
         const uint refrFormId = 0x01000003;
-        var buffer = BuildRefrFinal(refrFormId, baseObjectPtr: 0, parentCellPtr: 0,
-            locX: 0, locY: 0, locZ: 0, rotX: 0, rotY: 0, rotZ: 0, scale: 1.0f, flags: 0);
+        var buffer = BuildRefrFinal(refrFormId, 0, 0,
+            0, 0, 0, 0, 0, 0, 1.0f, 0);
 
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, RefrVa);
         var reader = new RuntimeRefrReader(fixture.BuildContext());
@@ -124,9 +124,9 @@ public sealed class RefrOffsetReaderTests
         // 0x20 deleted flag in TESForm.flags causes the reader to skip the record.
         const uint refrFormId = 0x01000004;
         const uint baseFormId = 0x0001A004;
-        var buffer = BuildRefrFinal(refrFormId, baseObjectPtr: BaseObjVa, parentCellPtr: 0,
-            locX: 0, locY: 0, locZ: 0, rotX: 0, rotY: 0, rotZ: 0, scale: 1.0f,
-            flags: 0x20 /* DELETED */);
+        var buffer = BuildRefrFinal(refrFormId, BaseObjVa, 0,
+            0, 0, 0, 0, 0, 0, 1.0f,
+            0x20 /* DELETED */);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, RefrVa)
@@ -143,9 +143,9 @@ public sealed class RefrOffsetReaderTests
         // a non-position field is being misinterpreted as a position float.
         const uint refrFormId = 0x01000005;
         const uint baseFormId = 0x0001A005;
-        var buffer = BuildRefrFinal(refrFormId, baseObjectPtr: BaseObjVa, parentCellPtr: 0,
-            locX: 1_000_000.0f /* out of range */, locY: 0, locZ: 0,
-            rotX: 0, rotY: 0, rotZ: 0, scale: 1.0f, flags: 0);
+        var buffer = BuildRefrFinal(refrFormId, BaseObjVa, 0,
+            1_000_000.0f /* out of range */, 0, 0,
+            0, 0, 0, 1.0f, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, RefrVa)
@@ -161,9 +161,9 @@ public sealed class RefrOffsetReaderTests
         // Reader gates scale to (0, 100]; out-of-range values clamp to 1.0.
         const uint refrFormId = 0x01000006;
         const uint baseFormId = 0x0001A006;
-        var buffer = BuildRefrFinal(refrFormId, baseObjectPtr: BaseObjVa, parentCellPtr: 0,
-            locX: 0, locY: 0, locZ: 0, rotX: 0, rotY: 0, rotZ: 0,
-            scale: 500.0f /* out of range — clamps to 1.0 */, flags: 0);
+        var buffer = BuildRefrFinal(refrFormId, BaseObjVa, 0,
+            0, 0, 0, 0, 0, 0,
+            500.0f /* out of range — clamps to 1.0 */, 0);
 
         var fixture = RuntimeReaderTestFixture.Default()
             .WithStruct(buffer, RefrVa)
@@ -182,8 +182,8 @@ public sealed class RefrOffsetReaderTests
         // formType from the buffer (not the entry), so a mismatched buffer bytes
         // produce null.
         const uint refrFormId = 0x01000007;
-        var buffer = BuildRefrFinal(refrFormId, baseObjectPtr: BaseObjVa, parentCellPtr: 0,
-            locX: 0, locY: 0, locZ: 0, rotX: 0, rotY: 0, rotZ: 0, scale: 1.0f, flags: 0);
+        var buffer = BuildRefrFinal(refrFormId, BaseObjVa, 0,
+            0, 0, 0, 0, 0, 0, 1.0f, 0);
         // Patch FormType to 0x28 (WEAP) in the header — readers expects 0x3A-0x3C.
         buffer[4] = 0x28;
 
@@ -206,7 +206,7 @@ public sealed class RefrOffsetReaderTests
         float scale, uint flags)
     {
         var buf = new byte[FinalRefrStructSize];
-        WriteFormHeader(buf, 0, formType: 0x3A, formId);
+        WriteFormHeader(buf, 0, 0x3A, formId);
         WriteUInt32BE(buf, 8, flags); // FormFlags
         WriteUInt32BE(buf, FinalBaseObjectPtrOffset, baseObjectPtr);
         WriteFloatBE(buf, FinalAngleXOffset, rotX);
@@ -227,7 +227,7 @@ public sealed class RefrOffsetReaderTests
         float scale, uint flags)
     {
         var buf = new byte[EarlyRefrStructSize];
-        WriteFormHeader(buf, 0, formType: 0x3A, formId);
+        WriteFormHeader(buf, 0, 0x3A, formId);
         WriteUInt32BE(buf, 8, flags);
         WriteUInt32BE(buf, FinalBaseObjectPtrOffset + EarlyShift, baseObjectPtr);
         WriteFloatBE(buf, FinalAngleXOffset + EarlyShift, rotX);

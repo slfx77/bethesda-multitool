@@ -27,10 +27,10 @@ public sealed class Tier3EncoderParityTests
         var scpt = new ScriptRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestScript",
+            EditorId = "TestScript"
         };
 
-        var legacy = ScptEncoder.EncodeNew(scpt, validFormIds: null, remapTable: null);
+        var legacy = ScptEncoder.EncodeNew(scpt, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("SCPT", scpt.FormId, scpt, legacy);
     }
 
@@ -40,10 +40,10 @@ public sealed class Tier3EncoderParityTests
         var perk = new PerkRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestPerk",
+            EditorId = "TestPerk"
         };
 
-        var legacy = PerkEncoder.EncodeNew(perk, validFormIds: null, remapTable: null);
+        var legacy = PerkEncoder.EncodeNew(perk, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("PERK", perk.FormId, perk, legacy);
     }
 
@@ -53,10 +53,10 @@ public sealed class Tier3EncoderParityTests
         var cont = new ContainerRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestCont",
+            EditorId = "TestCont"
         };
 
-        var legacy = ContEncoder.EncodeNew(cont, validFormIds: null, remapTable: null);
+        var legacy = ContEncoder.EncodeNew(cont, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("CONT", cont.FormId, cont, legacy);
     }
 
@@ -66,10 +66,10 @@ public sealed class Tier3EncoderParityTests
         var idle = new IdleAnimationRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestIdle",
+            EditorId = "TestIdle"
         };
 
-        var legacy = IdleEncoder.EncodeNew(idle, validFormIds: null, remapTable: null);
+        var legacy = IdleEncoder.EncodeNew(idle, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("IDLE", idle.FormId, idle, legacy);
     }
 
@@ -79,10 +79,10 @@ public sealed class Tier3EncoderParityTests
         var term = new TerminalRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestTerm",
+            EditorId = "TestTerm"
         };
 
-        var legacy = TermEncoder.EncodeNew(term, validFormIds: null, remapTable: null);
+        var legacy = TermEncoder.EncodeNew(term, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("TERM", term.FormId, term, legacy);
     }
 
@@ -93,10 +93,10 @@ public sealed class Tier3EncoderParityTests
         {
             FormId = 0x01000800,
             EditorId = "TestLvli",
-            ListType = "LVLI",
+            ListType = "LVLI"
         };
 
-        var legacy = LvliEncoder.EncodeNew(lvli, validFormIds: null, remapTable: null);
+        var legacy = LvliEncoder.EncodeNew(lvli, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("LVLI", lvli.FormId, lvli, legacy);
     }
 
@@ -106,16 +106,16 @@ public sealed class Tier3EncoderParityTests
         var npc = new NpcRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestNpc",
+            EditorId = "TestNpc"
         };
 
         var legacy = NpcEncoder.EncodeNew(
             npc,
-            masterFormIds: null,
-            masterNpcByRace: null,
-            validPackageFormIds: null,
-            remapTable: null,
-            validFormIds: null);
+            null,
+            null,
+            null,
+            null,
+            null);
         PlannerTier1ParityHelper.AssertNewRecordParity("NPC_", npc.FormId, npc, legacy);
     }
 
@@ -125,10 +125,10 @@ public sealed class Tier3EncoderParityTests
         var crea = new CreatureRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestCrea",
+            EditorId = "TestCrea"
         };
 
-        var legacy = CreaEncoder.EncodeNew(crea, validFormIds: null, remapTable: null);
+        var legacy = CreaEncoder.EncodeNew(crea, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("CREA", crea.FormId, crea, legacy);
     }
 
@@ -138,10 +138,10 @@ public sealed class Tier3EncoderParityTests
         var quest = new QuestRecord
         {
             FormId = 0x01000800,
-            EditorId = "TestQuest",
+            EditorId = "TestQuest"
         };
 
-        var legacy = QustEncoder.EncodeNew(quest, validFormIds: null, remapTable: null);
+        var legacy = QustEncoder.EncodeNew(quest, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("QUST", quest.FormId, quest, legacy);
     }
 
@@ -150,10 +150,10 @@ public sealed class Tier3EncoderParityTests
     {
         var info = new DialogueRecord
         {
-            FormId = 0x01000800,
+            FormId = 0x01000800
         };
 
-        var legacy = InfoEncoder.EncodeNew(info, validFormIds: null, remapTable: null);
+        var legacy = InfoEncoder.EncodeNew(info, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("INFO", info.FormId, info, legacy);
     }
 }

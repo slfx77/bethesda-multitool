@@ -13,9 +13,9 @@ public class XmaFormatTests
     #region Magic Bytes Tests
 
     [Theory]
-    [InlineData(true, (ushort)0x0165)]   // XMA2 chunk variant
-    [InlineData(false, (ushort)0x0165)]  // fmt chunk + XMA format tag
-    [InlineData(false, (ushort)0x0166)]  // fmt chunk + XMA2 format tag
+    [InlineData(true, (ushort)0x0165)] // XMA2 chunk variant
+    [InlineData(false, (ushort)0x0165)] // fmt chunk + XMA format tag
+    [InlineData(false, (ushort)0x0166)] // fmt chunk + XMA2 format tag
     public void ParseHeader_ValidRiffWaveXma_ReturnsXmaResult(bool useXma2Chunk, ushort formatTag)
     {
         var data = CreateXmaHeader(useXma2Chunk, formatTag);
@@ -88,8 +88,8 @@ public class XmaFormatTests
     }
 
     [Theory]
-    [InlineData(20u)]                  // size < 44 is invalid
-    [InlineData(150u * 1024 * 1024)]   // size > 100MB is invalid
+    [InlineData(20u)] // size < 44 is invalid
+    [InlineData(150u * 1024 * 1024)] // size > 100MB is invalid
     public void ParseHeader_InvalidSize_ReturnsNull(uint riffSize)
     {
         var data = CreateXmaHeader(riffSize: riffSize);

@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using Xunit;
 
@@ -6,7 +5,8 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 
 /// <summary>
 ///     Tests for the EditorID-stem rename-rescue predicate. Exercises the static
-///     <see cref="PluginBuilder.TryFindMasterBaseByEditorIdStem(System.Collections.Generic.Dictionary{string, System.Collections.Generic.Dictionary{string, System.Collections.Generic.List{uint}}}, string, string, out bool, out System.Collections.Generic.List{uint})"/>
+///     <see
+///         cref="PluginBuilder.TryFindMasterBaseByEditorIdStem(System.Collections.Generic.Dictionary{string, System.Collections.Generic.Dictionary{string, System.Collections.Generic.List{uint}}}, string, string, out bool, out System.Collections.Generic.List{uint})" />
 ///     overload directly so we don't need to spin up a full PluginBuilder run.
 /// </summary>
 public class RefrEditorIdRemapTests

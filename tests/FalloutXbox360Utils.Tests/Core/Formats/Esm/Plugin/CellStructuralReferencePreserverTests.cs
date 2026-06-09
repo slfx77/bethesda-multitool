@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
@@ -100,7 +101,7 @@ public class CellStructuralReferencePreserverTests
                 new ParsedSubrecord
                 {
                     Signature = "EDID",
-                    Data = System.Text.Encoding.Latin1.GetBytes(editorId + "\0")
+                    Data = Encoding.Latin1.GetBytes(editorId + "\0")
                 }
             ]
         };

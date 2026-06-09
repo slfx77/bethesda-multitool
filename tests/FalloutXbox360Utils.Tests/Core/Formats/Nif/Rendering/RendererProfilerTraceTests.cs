@@ -32,7 +32,7 @@ public sealed class RendererProfilerTraceTests
             Assert.Equal("frame-stall", root.GetProperty("event").GetString());
             Assert.True(root.TryGetProperty("timestamp", out _));
             Assert.Equal(42, root.GetProperty("frame").GetInt32());
-            Assert.Equal(51.25, root.GetProperty("cpuMs").GetDouble(), precision: 3);
+            Assert.Equal(51.25, root.GetProperty("cpuMs").GetDouble(), 3);
             Assert.Equal("sweep", root.GetProperty("cameraMotion").GetString());
         }
         finally

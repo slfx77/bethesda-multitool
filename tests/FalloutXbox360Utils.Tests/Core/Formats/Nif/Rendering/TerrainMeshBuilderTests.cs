@@ -23,7 +23,7 @@ public sealed class TerrainMeshBuilderTests
             GridY = 7,
             Heightmap = new LandHeightmap
             {
-                HeightOffset = 100f,             // rowStart = 800 (HeightOffset * 8)
+                HeightOffset = 100f, // rowStart = 800 (HeightOffset * 8)
                 HeightDeltas = new sbyte[33 * 33] // all zeros → every vertex Z = 800
             }
         };
@@ -32,7 +32,7 @@ public sealed class TerrainMeshBuilderTests
 
         Assert.NotNull(mesh);
         Assert.Equal(1089, mesh.Value.Vertices.Length); // 33×33
-        Assert.Equal(6144, mesh.Value.Indices.Length);  // 32×32 quads × 6 indices
+        Assert.Equal(6144, mesh.Value.Indices.Length); // 32×32 quads × 6 indices
 
         var verts = mesh.Value.Vertices;
 
@@ -124,7 +124,7 @@ public sealed class TerrainMeshBuilderTests
         var colors = new byte[33 * 33 * 3];
         colors[0] = 255; // R
         colors[1] = 128; // G
-        colors[2] = 64;  // B
+        colors[2] = 64; // B
 
         var cell = new CellRecord
         {

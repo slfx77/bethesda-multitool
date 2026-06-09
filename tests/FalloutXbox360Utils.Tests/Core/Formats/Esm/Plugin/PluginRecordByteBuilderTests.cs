@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
@@ -27,7 +26,7 @@ public class PluginRecordByteBuilderTests
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
         var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4));
         var body = bytes.AsSpan(EsmParser.MainRecordHeaderSize, (int)dataSize);
-        var decompressed = EsmParser.DecompressRecordData(body, bigEndian: false);
+        var decompressed = EsmParser.DecompressRecordData(body, false);
 
         Assert.NotNull(decompressed);
         Assert.Equal(CompressedFlag, flags & CompressedFlag);
@@ -57,7 +56,7 @@ public class PluginRecordByteBuilderTests
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
         var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4));
         var body = bytes.AsSpan(EsmParser.MainRecordHeaderSize, (int)dataSize);
-        var decompressed = EsmParser.DecompressRecordData(body, bigEndian: false);
+        var decompressed = EsmParser.DecompressRecordData(body, false);
 
         Assert.NotNull(decompressed);
         Assert.Equal(CompressedFlag, flags & CompressedFlag);
@@ -108,8 +107,10 @@ public class PluginRecordByteBuilderTests
         return stream.ToArray();
     }
 
-    private static List<EncodedSubrecord> BuildSubrecords(params (string Signature, byte[] Bytes)[] subrecords) =>
-        subrecords.Select(subrecord => new EncodedSubrecord(subrecord.Signature, subrecord.Bytes)).ToList();
+    private static List<EncodedSubrecord> BuildSubrecords(params (string Signature, byte[] Bytes)[] subrecords)
+    {
+        return subrecords.Select(subrecord => new EncodedSubrecord(subrecord.Signature, subrecord.Bytes)).ToList();
+    }
 
     private static void WriteSubrecords(
         BinaryWriter writer,

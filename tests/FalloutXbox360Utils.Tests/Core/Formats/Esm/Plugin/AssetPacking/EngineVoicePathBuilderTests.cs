@@ -38,13 +38,13 @@ public class EngineVoicePathBuilderTests
     public void Build_AppliesLowercaseAndTruncation()
     {
         var path = EngineVoicePathBuilder.Build(
-            outputEspFileName: "v48-xex43.esp",
-            voiceTypeEditorId: "MaleUniqueUlysses",
-            questEditorId: "VDialogueUlysses",
-            topicEditorId: "VDialogueUlyssesUlyssesTopic000",
-            allocatedInfoFormId: 0x0100352C,
-            responseNumber: 1,
-            extensionWithDot: ".ogg");
+            "v48-xex43.esp",
+            "MaleUniqueUlysses",
+            "VDialogueUlysses",
+            "VDialogueUlyssesUlyssesTopic000",
+            0x0100352C,
+            1,
+            ".ogg");
 
         Assert.Equal(
             "sound\\voice\\v48-xex43.esp\\maleuniqueulysses\\vdialogueu_vdialogueulysse_0000352c_1.ogg",
@@ -56,13 +56,13 @@ public class EngineVoicePathBuilderTests
     {
         // Engine path embeds the bottom 24 bits of the FormID; load-order byte is stripped.
         var path = EngineVoicePathBuilder.Build(
-            outputEspFileName: "x.esp",
-            voiceTypeEditorId: "v",
-            questEditorId: "Q",
-            topicEditorId: "T",
-            allocatedInfoFormId: 0xFF123456u,
-            responseNumber: 2,
-            extensionWithDot: ".wav");
+            "x.esp",
+            "v",
+            "Q",
+            "T",
+            0xFF123456u,
+            2,
+            ".wav");
 
         Assert.Contains("00123456_2.wav", path);
     }

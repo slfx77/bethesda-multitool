@@ -1,11 +1,10 @@
 using System.Collections.Immutable;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
-using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Planner.Cells;
@@ -27,7 +26,7 @@ public sealed class EspAssemblerDispatchTests
         // This test pins the dispatch logic: the condition is a contains-check.
         var options = new PluginBuildOptions
         {
-            PlannerEnabledRecordTypes = new HashSet<string> { "WEAP" },
+            PlannerEnabledRecordTypes = new HashSet<string> { "WEAP" }
         };
 
         Assert.DoesNotContain("CELL", options.PlannerEnabledRecordTypes);
@@ -39,7 +38,7 @@ public sealed class EspAssemblerDispatchTests
     {
         var options = new PluginBuildOptions
         {
-            PlannerEnabledRecordTypes = new HashSet<string> { "CELL" },
+            PlannerEnabledRecordTypes = new HashSet<string> { "CELL" }
         };
 
         Assert.Contains("CELL", options.PlannerEnabledRecordTypes);
@@ -60,10 +59,10 @@ public sealed class EspAssemblerDispatchTests
             CellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(master),
             PersistentChildRecords = [],
             VwdChildRecords = [],
-            TemporaryChildRecords = [],
+            TemporaryChildRecords = []
         };
         var legacyBytes = CellGrupBuilder.BuildCellSection(
-            [legacyBundle], new Dictionary<uint, ParsedMainRecord>(), null);
+            [legacyBundle], new Dictionary<uint, ParsedMainRecord>());
 
         var cellPlan = new CellPlan
         {
@@ -76,17 +75,17 @@ public sealed class EspAssemblerDispatchTests
                 Master = master,
                 References = ImmutableArray<ResolvedRef>.Empty,
                 ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
             },
             Context = context,
             PersistentChildren = ImmutableArray<RecordPlan>.Empty,
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
-            TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty
         };
 
         var plan = MakeEmptyPlan() with
         {
-            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cellFormId, cellPlan),
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cellFormId, cellPlan)
         };
 
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
@@ -95,19 +94,22 @@ public sealed class EspAssemblerDispatchTests
         Assert.Equal(legacyBytes, plannerBytes);
     }
 
-    private static EmitPlan MakeEmptyPlan() => new()
+    private static EmitPlan MakeEmptyPlan()
     {
-        Records = ImmutableArray<RecordPlan>.Empty,
-        SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-        EmittedFormIds = ImmutableHashSet<uint>.Empty,
-        RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-        Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-        Meta = new PlanMetadata
+        return new EmitPlan
         {
-            NextObjectId = 0x800,
-            PlannerCoverage = ImmutableHashSet<string>.Empty,
-        },
-    };
+            Records = ImmutableArray<RecordPlan>.Empty,
+            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
+            EmittedFormIds = ImmutableHashSet<uint>.Empty,
+            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            Meta = new PlanMetadata
+            {
+                NextObjectId = 0x800,
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
+        };
+    }
 
     private static (ParsedMainRecord Master, PcEsmCellContext Context) MakeInteriorCellMaster(uint cellFormId)
     {
@@ -121,9 +123,9 @@ public sealed class EspAssemblerDispatchTests
                 FormId = cellFormId,
                 Timestamp = 0,
                 VcsInfo = 0,
-                Version = 15,
+                Version = 15
             },
-            Offset = 0,
+            Offset = 0
         };
         var context = new PcEsmCellContext
         {
@@ -132,7 +134,7 @@ public sealed class EspAssemblerDispatchTests
             BlockGroupType = 2,
             SubblockGroupType = 3,
             BlockLabel = [1, 0, 0, 0],
-            SubblockLabel = [2, 0, 0, 0],
+            SubblockLabel = [2, 0, 0, 0]
         };
         return (master, context);
     }

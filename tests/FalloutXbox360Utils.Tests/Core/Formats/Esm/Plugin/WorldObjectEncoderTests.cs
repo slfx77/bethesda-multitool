@@ -1,9 +1,9 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
@@ -793,7 +793,7 @@ public class WorldObjectEncoderTests
                     [
                         new DialogueCondition { Type = 0x20, FunctionIndex = 1 },
                         new DialogueCondition { Type = 0x21, FunctionIndex = 2 }, // OR-bit set
-                        new DialogueCondition { Type = 0x40, FunctionIndex = 3 }  // !=
+                        new DialogueCondition { Type = 0x40, FunctionIndex = 3 } // !=
                     ]
                 }
             ]
@@ -1017,7 +1017,7 @@ public class WorldObjectEncoderTests
 
         var modl = Assert.Single(encoded.Subrecords, s => s.Signature == "MODL").Bytes;
         // Null-terminated string.
-        Assert.Equal("Terminals\\testTerm.nif\0", System.Text.Encoding.ASCII.GetString(modl));
+        Assert.Equal("Terminals\\testTerm.nif\0", Encoding.ASCII.GetString(modl));
     }
 
     [Fact]

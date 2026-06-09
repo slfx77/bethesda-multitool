@@ -16,7 +16,7 @@ public sealed class CreatureReferenceWalkerTests
             InheritsSoundsFrom = 0x000A0001,
             DeathItemLootList = 0x000A0002,
             ImpactDataSet = 0x000A0003,
-            BodyData = 0x000A0004,
+            BodyData = 0x000A0004
         };
         var walker = new CreatureReferenceWalker();
 
@@ -46,7 +46,7 @@ public sealed class CreatureReferenceWalkerTests
         var crea = new CreatureRecord
         {
             FormId = 0x000ABCDE,
-            Inventory = [new InventoryItem(0x000A0001, 2) { OwnerFormId = 0x000A0099 }],
+            Inventory = [new InventoryItem(0x000A0001, 2) { OwnerFormId = 0x000A0099 }]
         };
         var walker = new CreatureReferenceWalker();
 

@@ -1,7 +1,6 @@
-using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 using Xunit;
 
@@ -12,7 +11,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 ///     when the DMP captured any meaningful content (responses / stages / conditions /
 ///     etc.). When the DMP carried nothing the override returns empty subrecords and the
 ///     merge engine retains the master's record verbatim.
-///
 ///     Partial emission would be unsafe: positional per-signature merge would desynchronize
 ///     paired subrecords (TRDT+NAM1 per response, INDX+QSDT+CNAM per stage). These tests
 ///     pin the all-or-nothing contract.
@@ -55,12 +53,12 @@ public class InfoQustOverrideTests
 
         var nam1 = Assert.Single(encoded.Subrecords, s => s.Signature == "NAM1");
         // Latin1 null-terminated string: trim the trailing \0 before comparing.
-        var text = System.Text.Encoding.Latin1.GetString(nam1.Bytes).TrimEnd('\0');
+        var text = Encoding.Latin1.GetString(nam1.Bytes).TrimEnd('\0');
         Assert.Equal("Prototype line.", text);
 
         Assert.DoesNotContain(encoded.Subrecords,
             s => s.Signature == "NAM1"
-                 && System.Text.Encoding.Latin1.GetString(s.Bytes).Contains("NOT FOUND IN CRASH DUMP"));
+                 && Encoding.Latin1.GetString(s.Bytes).Contains("NOT FOUND IN CRASH DUMP"));
     }
 
     [Fact]
@@ -109,7 +107,7 @@ public class InfoQustOverrideTests
         Assert.Contains(encoded.Subrecords, s => s.Signature == "TRDT");
         Assert.Contains(encoded.Subrecords,
             s => s.Signature == "NAM1"
-                 && System.Text.Encoding.Latin1.GetString(s.Bytes).Contains("NOT FOUND IN CRASH DUMP"));
+                 && Encoding.Latin1.GetString(s.Bytes).Contains("NOT FOUND IN CRASH DUMP"));
     }
 
     // ---- QUST ------------------------------------------------------------------
@@ -157,7 +155,7 @@ public class InfoQustOverrideTests
         var encoded = new QustEncoder().Encode(quest);
 
         var full = Assert.Single(encoded.Subrecords, s => s.Signature == "FULL");
-        var name = System.Text.Encoding.Latin1.GetString(full.Bytes).TrimEnd('\0');
+        var name = Encoding.Latin1.GetString(full.Bytes).TrimEnd('\0');
         Assert.Equal("Prototype Quest Title", name);
     }
 

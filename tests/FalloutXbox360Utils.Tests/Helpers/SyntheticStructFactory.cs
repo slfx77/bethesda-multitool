@@ -54,7 +54,10 @@ internal static class SyntheticStructFactory
     ///     Returns a null-terminated ASCII byte array suitable for placement at
     ///     a target VA via <c>WithPointerTarget</c>.
     /// </summary>
-    public static byte[] AsciiBytes(string text) => Encoding.ASCII.GetBytes(text + '\0');
+    public static byte[] AsciiBytes(string text)
+    {
+        return Encoding.ASCII.GetBytes(text + '\0');
+    }
 
     // =========================================================================
     // Per-record builders — write a TESForm-derived struct into a fresh buffer.
@@ -79,7 +82,7 @@ internal static class SyntheticStructFactory
         int bufferSize = 0x400)
     {
         var buf = new byte[bufferSize];
-        WriteFormHeader(buf, 0, formType: 0x2A, formId);
+        WriteFormHeader(buf, 0, 0x2A, formId);
 
         // TESActorBaseData pointers (core region). Runtime offsets confirmed
         // at 100% pointer-shape across all 8 snippets in Phase 1B.10.
@@ -132,7 +135,7 @@ internal static class SyntheticStructFactory
         // TESObjectWEAP struct is 908 + _s(16) = 924 bytes — buffer must be at
         // least that for the reader's ReadArray call to succeed.
         var buf = new byte[bufferSize];
-        WriteFormHeader(buf, 0, formType: 0x28, formId);
+        WriteFormHeader(buf, 0, 0x28, formId);
         if (ammoPtr.HasValue) WriteUInt32BE(buf, 168 + 16, ammoPtr.Value);
         if (pickupSoundPtr.HasValue) WriteUInt32BE(buf, 236 + 16, pickupSoundPtr.Value);
         return buf;

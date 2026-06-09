@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Merge;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
@@ -37,7 +38,7 @@ public class RecordMergeEngineTests
     {
         var esm = MakeEsmRecord("WEAP",
             ("EDID", new byte[] { (byte)'a', 0 }),
-            ("DATA", new byte[15]),  // ESM DATA is all zeros
+            ("DATA", new byte[15]), // ESM DATA is all zeros
             ("DNAM", new byte[204]));
 
         var dmpData = new byte[15];
@@ -61,7 +62,7 @@ public class RecordMergeEngineTests
         var dataIndex = FindSubrecordIndex(stream, "DATA");
         Assert.True(dataIndex >= 0, "DATA subrecord not found in merged output.");
         var payload = stream.AsSpan(dataIndex + 6, 15);
-        Assert.Equal(1234, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(payload));
+        Assert.Equal(1234, BinaryPrimitives.ReadInt32LittleEndian(payload));
     }
 
     [Fact]
@@ -175,7 +176,7 @@ public class RecordMergeEngineTests
                 return i;
             }
 
-            var len = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(stream.AsSpan(i + 4, 2));
+            var len = BinaryPrimitives.ReadUInt16LittleEndian(stream.AsSpan(i + 4, 2));
             i += 6 + len;
         }
 
@@ -190,7 +191,7 @@ public class RecordMergeEngineTests
             return [];
         }
 
-        var len = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(stream.AsSpan(idx + 4, 2));
+        var len = BinaryPrimitives.ReadUInt16LittleEndian(stream.AsSpan(idx + 4, 2));
         return stream.AsSpan(idx + 6, len).ToArray();
     }
 }

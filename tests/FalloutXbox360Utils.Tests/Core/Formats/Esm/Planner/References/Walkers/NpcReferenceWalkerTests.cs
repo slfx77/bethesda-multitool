@@ -17,7 +17,7 @@ public sealed class NpcReferenceWalkerTests
             Script = 0x000ABCD1,
             VoiceType = 0x000ABCD2,
             Template = 0x000ABCD3,
-            CombatStyleFormId = 0x000ABCD4,
+            CombatStyleFormId = 0x000ABCD4
         };
         var walker = new NpcReferenceWalker();
 
@@ -39,7 +39,7 @@ public sealed class NpcReferenceWalkerTests
             FormId = 0x000ABCDE,
             Race = 0,
             Script = null,
-            Template = 0x000ABCD3,
+            Template = 0x000ABCD3
         };
         var walker = new NpcReferenceWalker();
 
@@ -59,8 +59,8 @@ public sealed class NpcReferenceWalkerTests
             Factions =
             [
                 new FactionMembership(0x000A0001, 5),
-                new FactionMembership(0x000A0002, 0),
-            ],
+                new FactionMembership(0x000A0002, 0)
+            ]
         };
         var walker = new NpcReferenceWalker();
 
@@ -79,8 +79,8 @@ public sealed class NpcReferenceWalkerTests
             Inventory =
             [
                 new InventoryItem(0x000A0001, 1),
-                new InventoryItem(0x000A0002, 3) { OwnerFormId = 0x000A0010 },
-            ],
+                new InventoryItem(0x000A0002, 3) { OwnerFormId = 0x000A0010 }
+            ]
         };
         var walker = new NpcReferenceWalker();
 
@@ -98,7 +98,7 @@ public sealed class NpcReferenceWalkerTests
         var npc = new NpcRecord
         {
             FormId = 0x000ABCDE,
-            Spells = [0x000A0001, 0x000A0002],
+            Spells = [0x000A0001, 0x000A0002]
         };
         var walker = new NpcReferenceWalker();
 
@@ -114,7 +114,7 @@ public sealed class NpcReferenceWalkerTests
         var npc = new NpcRecord
         {
             FormId = 0x000ABCDE,
-            HeadPartFormIds = [0x000A0001, 0x000A0002],
+            HeadPartFormIds = [0x000A0001, 0x000A0002]
         };
         var walker = new NpcReferenceWalker();
 

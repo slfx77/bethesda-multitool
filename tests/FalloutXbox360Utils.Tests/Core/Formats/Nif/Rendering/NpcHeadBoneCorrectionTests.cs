@@ -280,5 +280,4 @@ public sealed class NpcHeadBoneCorrectionTests
         rotation.M44 = 1f;
         return rotation;
     }
-
 }

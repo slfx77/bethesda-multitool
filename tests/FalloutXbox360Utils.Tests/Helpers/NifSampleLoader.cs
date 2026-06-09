@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Tests.Helpers;
 internal static class NifSampleLoader
 {
     /// <summary>
-    ///     Walks up from <see cref="AppContext.BaseDirectory"/> looking for the sample
+    ///     Walks up from <see cref="AppContext.BaseDirectory" /> looking for the sample
     ///     characters mesh directory. Returns the relative fallback path if no candidate
     ///     is found within 10 parent levels — callers can then treat missing NIFs as
     ///     "test data absent" rather than failing setup.
@@ -45,7 +45,7 @@ internal static class NifSampleLoader
     }
 
     /// <summary>
-    ///     Loads a NIF from disk and returns the raw bytes plus parsed <see cref="NifInfo"/>.
+    ///     Loads a NIF from disk and returns the raw bytes plus parsed <see cref="NifInfo" />.
     ///     Returns null if the file is missing or unparseable — callers typically skip the
     ///     assertion in that case so the test passes when sample data isn't available.
     /// </summary>

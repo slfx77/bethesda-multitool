@@ -5,7 +5,7 @@ using Xunit;
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 
 /// <summary>
-///     Unit-level smoke tests for <see cref="AssetPackingService"/>. End-to-end packing
+///     Unit-level smoke tests for <see cref="AssetPackingService" />. End-to-end packing
 ///     against a real ESP fixture lives in the CLI integration test in
 ///     <c>tests/FalloutXbox360Utils.Tests.E2E</c> (TODO).
 /// </summary>
@@ -100,7 +100,7 @@ public class AssetPackingServiceTests
         [
             ("textures\\armor\\a.dds", new byte[140]),
             ("textures\\armor\\b.dds", new byte[140])
-        ], maxArchiveBytes: 220);
+        ], 220);
 
         Assert.Equal([
             Path.Combine(Path.GetTempPath(), "big - Textures.bsa"),

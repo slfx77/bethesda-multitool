@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Nav;
 using Xunit;
 
@@ -24,9 +25,9 @@ public sealed class NavMeshByteRewriterTests
         // NVEX with 3 entries pointing at 0xAAA, 0xBBB, 0xCCC. validTargets contains only
         // 0xAAA and 0xCCC; 0xBBB should be dropped.
         var record = BuildNavmRecord(
-            cellFormId: 0x0100AAAA,
-            edgeLinkCountInData: 3,
-            nvexTargets: new uint[] { 0x00000AAA, 0x00000BBB, 0x00000CCC });
+            0x0100AAAA,
+            3,
+            new uint[] { 0x00000AAA, 0x00000BBB, 0x00000CCC });
 
         var validTargets = new HashSet<uint> { 0x00000AAA, 0x00000CCC };
 
@@ -57,9 +58,9 @@ public sealed class NavMeshByteRewriterTests
         // The sanitizer's "changed" flag should stay false and the input array should be
         // returned reference-equal.
         var record = BuildNavmRecord(
-            cellFormId: 0x0100AAAA,
-            edgeLinkCountInData: 2,
-            nvexTargets: new uint[] { 0x00000111, 0x00000222 });
+            0x0100AAAA,
+            2,
+            new uint[] { 0x00000111, 0x00000222 });
 
         var validTargets = new HashSet<uint> { 0x00000111, 0x00000222 };
 
@@ -75,9 +76,9 @@ public sealed class NavMeshByteRewriterTests
         // NAVM with no NVEX subrecord. DATA.EdgeLinkCount = 0 (matches the absent NVEX),
         // so the sanitizer should short-circuit and return the input reference-equal.
         var record = BuildNavmRecord(
-            cellFormId: 0x0100AAAA,
-            edgeLinkCountInData: 0,
-            nvexTargets: null);
+            0x0100AAAA,
+            0,
+            null);
 
         var validTargets = new HashSet<uint>();
 
@@ -94,8 +95,15 @@ public sealed class NavMeshByteRewriterTests
     /// <summary>
     ///     Build a minimal NAVM record with the 24-byte main-record header followed by:
     ///     <list type="bullet">
-    ///         <item><description><b>DATA</b> (20 bytes): CellFormId at +0; EdgeLinkCount at +12.</description></item>
-    ///         <item><description><b>NVEX</b> (10 bytes per entry): Type=0 at +0; NavmeshFormID at +4; Triangle=0 at +8. Omitted when <paramref name="nvexTargets" /> is null.</description></item>
+    ///         <item>
+    ///             <description><b>DATA</b> (20 bytes): CellFormId at +0; EdgeLinkCount at +12.</description>
+    ///         </item>
+    ///         <item>
+    ///             <description>
+    ///                 <b>NVEX</b> (10 bytes per entry): Type=0 at +0; NavmeshFormID at +4; Triangle=0 at +8. Omitted
+    ///                 when <paramref name="nvexTargets" /> is null.
+    ///             </description>
+    ///         </item>
     ///     </list>
     /// </summary>
     private static byte[] BuildNavmRecord(uint cellFormId, uint edgeLinkCountInData, uint[]? nvexTargets)
@@ -166,7 +174,7 @@ public sealed class NavMeshByteRewriterTests
         var j = 0;
         while (j + SubrecordHeaderSize <= body.Length)
         {
-            var sig = System.Text.Encoding.ASCII.GetString(body.Slice(j, 4));
+            var sig = Encoding.ASCII.GetString(body.Slice(j, 4));
             var size = BinaryPrimitives.ReadUInt16LittleEndian(body.Slice(j + 4, 2));
             if (j + SubrecordHeaderSize + size > body.Length)
             {

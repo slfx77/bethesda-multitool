@@ -2,7 +2,9 @@ using System.Collections.Immutable;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
+using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Planner.Parity;
@@ -25,14 +27,14 @@ public sealed class StatParityTests
             EditorId = "TestStaticEdid",
             ModelPath = "test/models/teststatic.nif",
             Bounds = null,
-            TextureHashData = null,
+            TextureHashData = null
         };
 
         var plan = BuildPlanForOneNewStat(stat);
         var options = new PluginBuildOptions
         {
             MasterFileName = "FalloutNV.esm",
-            CompressRecords = false,
+            CompressRecords = false
         };
 
         var writer = new PlanWriter(PlannedEncoders.BuildRegistry());
@@ -42,12 +44,12 @@ public sealed class StatParityTests
         // Reference: encode the same record via the legacy primitives directly. This is
         // exactly what the legacy `BuildGrupForType` would produce for one new STAT.
         var legacyEncoded =
-            FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World.StatEncoder.EncodeNew(stat);
+            StatEncoder.EncodeNew(stat);
         var legacyRecordBytes =
-            FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output.PluginRecordByteBuilder.BuildNewRecordBytes(
+            PluginRecordByteBuilder.BuildNewRecordBytes(
                 "STAT", stat.FormId, 0u, legacyEncoded.Subrecords);
         var legacyGrupBytes =
-            FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output.TopLevelRecordEmitter.WrapInTopLevelGrup(
+            TopLevelRecordEmitter.WrapInTopLevelGrup(
                 "STAT", legacyRecordBytes);
 
         Assert.Equal(legacyGrupBytes, plannerBytes);
@@ -66,8 +68,8 @@ public sealed class StatParityTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet<string>.Empty,
-            },
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
         };
 
         var writer = new PlanWriter(PlannedEncoders.BuildRegistry());
@@ -91,8 +93,8 @@ public sealed class StatParityTests
                     FormId = 0x000ABCDE,
                     References = ImmutableArray<ResolvedRef>.Empty,
                     ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-                    Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
-                },
+                    Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+                }
             ],
             SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
             EmittedFormIds = [0x000ABCDEu],
@@ -101,8 +103,8 @@ public sealed class StatParityTests
             Meta = new PlanMetadata
             {
                 NextObjectId = 0x800,
-                PlannerCoverage = ImmutableHashSet.Create("STAT"),
-            },
+                PlannerCoverage = ImmutableHashSet.Create("STAT")
+            }
         };
 
         var writer = new PlanWriter(PlannedEncoders.BuildRegistry());
@@ -123,7 +125,7 @@ public sealed class StatParityTests
             Master = null,
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test new STAT" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test new STAT" }
         };
 
         return new EmitPlan
@@ -136,8 +138,8 @@ public sealed class StatParityTests
             Meta = new PlanMetadata
             {
                 NextObjectId = stat.FormId + 1,
-                PlannerCoverage = ImmutableHashSet.Create("STAT"),
-            },
+                PlannerCoverage = ImmutableHashSet.Create("STAT")
+            }
         };
     }
 }

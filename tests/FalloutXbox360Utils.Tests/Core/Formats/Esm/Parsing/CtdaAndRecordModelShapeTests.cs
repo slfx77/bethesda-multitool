@@ -36,7 +36,7 @@ public class CtdaAndRecordModelShapeTests
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(20, 4), 4u); // RunOn = Linked Reference
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(24, 4), 0xDEADBEEFu); // Reference
 
-        var condition = CtdaParser.Decode(bytes, bigEndian: false);
+        var condition = CtdaParser.Decode(bytes, false);
 
         Assert.Equal(0x35, condition.Type);
         Assert.Equal(3.5f, condition.ComparisonValue);
@@ -59,7 +59,7 @@ public class CtdaAndRecordModelShapeTests
         BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(20, 4), 0u);
         BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(24, 4), 0u);
 
-        var condition = CtdaParser.Decode(bytes, bigEndian: true);
+        var condition = CtdaParser.Decode(bytes, true);
 
         Assert.Equal(0x20, condition.Type);
         Assert.Equal(1.0f, condition.ComparisonValue);
@@ -71,7 +71,7 @@ public class CtdaAndRecordModelShapeTests
     public void CtdaParser_Decode_NoStringParametersByDefault()
     {
         var bytes = new byte[28];
-        var condition = CtdaParser.Decode(bytes, bigEndian: false);
+        var condition = CtdaParser.Decode(bytes, false);
         Assert.Null(condition.Parameter1String);
         Assert.Null(condition.Parameter2String);
     }

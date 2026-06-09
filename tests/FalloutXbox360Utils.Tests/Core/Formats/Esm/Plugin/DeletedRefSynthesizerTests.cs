@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Merge;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
@@ -17,8 +18,8 @@ public class DeletedRefSynthesizerTests
     {
         var masterRefs = new[]
         {
-            MakeRef(0x100, persistent: false, "RefA"),
-            MakeRef(0x101, persistent: false, "RefB")
+            MakeRef(0x100, false, "RefA"),
+            MakeRef(0x101, false, "RefB")
         };
         var dmpFormIds = new HashSet<uint> { 0x100, 0x101 };
 
@@ -31,7 +32,7 @@ public class DeletedRefSynthesizerTests
     [Fact]
     public void Synthesize_RefMissingFromDmp_GeneratesDeletedOverride()
     {
-        var masterRefs = new[] { MakeRef(0x200, persistent: false, "Doomed") };
+        var masterRefs = new[] { MakeRef(0x200, false, "Doomed") };
         var dmpFormIds = new HashSet<uint>(); // empty — ref is missing
 
         var bundle = DeletedRefSynthesizer.Synthesize(masterRefs, dmpFormIds);
@@ -48,7 +49,7 @@ public class DeletedRefSynthesizerTests
     [Fact]
     public void Synthesize_PersistentMasterRef_GoesIntoPersistentBucket()
     {
-        var masterRefs = new[] { MakeRef(0x300, persistent: true, "PersistentDoomed") };
+        var masterRefs = new[] { MakeRef(0x300, true, "PersistentDoomed") };
         var dmpFormIds = new HashSet<uint>();
 
         var bundle = DeletedRefSynthesizer.Synthesize(masterRefs, dmpFormIds);
@@ -60,7 +61,7 @@ public class DeletedRefSynthesizerTests
     [Fact]
     public void Synthesize_DeletedOverridePreservesEdid()
     {
-        var masterRefs = new[] { MakeRef(0x400, persistent: false, "EdidPreserved") };
+        var masterRefs = new[] { MakeRef(0x400, false, "EdidPreserved") };
         var dmpFormIds = new HashSet<uint>();
 
         var bundle = DeletedRefSynthesizer.Synthesize(masterRefs, dmpFormIds);
@@ -98,7 +99,7 @@ public class DeletedRefSynthesizerTests
     [Fact]
     public void Synthesize_PreservePredicate_SkipsDeletedOverride()
     {
-        var masterRefs = new[] { MakeRef(0x600, persistent: false, "PortalMarker") };
+        var masterRefs = new[] { MakeRef(0x600, false, "PortalMarker") };
         var dmpFormIds = new HashSet<uint>();
 
         var bundle = DeletedRefSynthesizer.Synthesize(
@@ -117,10 +118,10 @@ public class DeletedRefSynthesizerTests
         // so they're preserved, false for temporary refs so they get deletion markers.
         var masterRefs = new[]
         {
-            MakeRef(0x700, persistent: true,  "QuestItem_Persistent"),
-            MakeRef(0x701, persistent: false, "Clutter_Temporary"),
-            MakeRef(0x702, persistent: true,  "DoorMarker_Persistent"),
-            MakeRef(0x703, persistent: false, "Streetlight_Temporary")
+            MakeRef(0x700, true, "QuestItem_Persistent"),
+            MakeRef(0x701, false, "Clutter_Temporary"),
+            MakeRef(0x702, true, "DoorMarker_Persistent"),
+            MakeRef(0x703, false, "Streetlight_Temporary")
         };
         var dmpFormIds = new HashSet<uint>(); // none in DMP → all "missing"
 
@@ -142,8 +143,8 @@ public class DeletedRefSynthesizerTests
         // Filter should never even be consulted for those — they're already handled.
         var masterRefs = new[]
         {
-            MakeRef(0x800, persistent: false, "TempRef_InDmp"),
-            MakeRef(0x801, persistent: false, "TempRef_NotInDmp")
+            MakeRef(0x800, false, "TempRef_InDmp"),
+            MakeRef(0x801, false, "TempRef_NotInDmp")
         };
         var dmpFormIds = new HashSet<uint> { 0x800 };
 
@@ -162,9 +163,9 @@ public class DeletedRefSynthesizerTests
     {
         var masterRefs = new[]
         {
-            MakeRef(0x900, persistent: false, "OrdinaryStatic"),
-            MakeRecord("ACHR", 0x901, persistent: false, "ScriptActor"),
-            MakeRef(0x902, persistent: true, "PersistentQuestRef")
+            MakeRef(0x900, false, "OrdinaryStatic"),
+            MakeRecord("ACHR", 0x901, false, "ScriptActor"),
+            MakeRef(0x902, true, "PersistentQuestRef")
         };
         var dmpFormIds = new HashSet<uint>();
 
@@ -201,7 +202,7 @@ public class DeletedRefSynthesizerTests
                 new ParsedSubrecord
                 {
                     Signature = "EDID",
-                    Data = System.Text.Encoding.Latin1.GetBytes(editorId + "\0")
+                    Data = Encoding.Latin1.GetBytes(editorId + "\0")
                 }
             ]
         };

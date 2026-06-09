@@ -1,4 +1,3 @@
-using System.Linq;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using Xunit;
@@ -30,7 +29,7 @@ public class BsaTruncationTests : IDisposable
         {
             if (Directory.Exists(_scratchRoot))
             {
-                Directory.Delete(_scratchRoot, recursive: true);
+                Directory.Delete(_scratchRoot, true);
             }
         }
         catch
@@ -86,7 +85,7 @@ public class BsaTruncationTests : IDisposable
         var (intact, zeroed) = SplitByOffset(bsaPath);
         ZeroRegionToEof(bsaPath, zeroed.Offset);
 
-        using var index = new DataFolderIndex(folder, xbox360FormatHint: true);
+        using var index = new DataFolderIndex(folder, true);
         index.Build();
 
         Assert.Equal(1, index.TruncatedEntrySkipCount);
@@ -114,11 +113,11 @@ public class BsaTruncationTests : IDisposable
         var baselineFolder = Path.Combine(_scratchRoot, "baseline");
         Directory.CreateDirectory(baselineFolder);
 
-        using var baseline = new DataFolderIndex(baselineFolder, xbox360FormatHint: false);
+        using var baseline = new DataFolderIndex(baselineFolder, false);
         baseline.Build();
-        using var partial = new DataFolderIndex(partialFolder, xbox360FormatHint: true);
+        using var partial = new DataFolderIndex(partialFolder, true);
         partial.Build();
-        using var complete = new DataFolderIndex(completeFolder, xbox360FormatHint: true);
+        using var complete = new DataFolderIndex(completeFolder, true);
         complete.Build();
 
         Assert.Equal(1, partial.TruncatedEntrySkipCount);
@@ -145,7 +144,7 @@ public class BsaTruncationTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(bsaPath)!);
         // Uncompressed, no embedded names → raw, contiguous data section, so a zeroed
         // trailing region maps cleanly onto one file record.
-        using var writer = new BsaWriter(compressFiles: false, embedFileNames: false);
+        using var writer = new BsaWriter(false, embedFileNames: false);
         foreach (var (path, data) in files)
         {
             writer.AddFile(path, data);

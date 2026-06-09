@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Catalog;
@@ -29,8 +28,8 @@ public sealed class ScriptScroDropTests
             ReferencedObjects =
             [
                 0x000ABCDEu, // Master — resolves.
-                0x01FFFFFFu, // Plugin-range dangle — must drop.
-            ],
+                0x01FFFFFFu // Plugin-range dangle — must drop.
+            ]
         };
         var entry = new CatalogEntry
         {
@@ -38,12 +37,12 @@ public sealed class ScriptScroDropTests
             Source = SourceKind.DmpOverride,
             MasterFormId = 0x0014DA58,
             DmpFormId = 0x0014DA58,
-            Model = script,
+            Model = script
         };
         var decision = new DispositionDecision
         {
             Disposition = RecordDisposition.Override,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
 
         var emitted = new HashSet<uint> { 0x0014DA58u, 0x000ABCDEu };
@@ -75,7 +74,7 @@ public sealed class ScriptScroDropTests
         var script = new ScriptRecord
         {
             FormId = 0x0014DA58,
-            ReferencedObjects = [0x00ABCDEFu],
+            ReferencedObjects = [0x00ABCDEFu]
         };
         var entry = new CatalogEntry
         {
@@ -83,12 +82,12 @@ public sealed class ScriptScroDropTests
             Source = SourceKind.DmpOverride,
             MasterFormId = 0x0014DA58,
             DmpFormId = 0x0014DA58,
-            Model = script,
+            Model = script
         };
         var decision = new DispositionDecision
         {
             Disposition = RecordDisposition.Override,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
 
         var emitted = new HashSet<uint> { 0x0014DA58u, 0x01000800u };

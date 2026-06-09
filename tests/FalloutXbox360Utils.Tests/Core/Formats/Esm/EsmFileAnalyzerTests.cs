@@ -1,3 +1,4 @@
+using System.Text;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
@@ -6,7 +7,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Handlers;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Tests.Helpers;
-using System.Text;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm;

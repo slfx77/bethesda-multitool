@@ -1,3 +1,4 @@
+using System.Text;
 using FalloutXbox360Utils.Core.Utils;
 using Xunit;
 
@@ -24,36 +25,6 @@ public class BinaryUtilsTests
 
         // Assert
         Assert.Equal(expected, result);
-    }
-
-    #endregion
-
-    #region IsAllZero Tests
-
-    [Fact]
-    public void IsAllZero_EmptySpan_ReturnsTrue()
-    {
-        Assert.True(BinaryUtils.IsAllZero(ReadOnlySpan<byte>.Empty));
-    }
-
-    [Fact]
-    public void IsAllZero_AllZeroBytes_ReturnsTrue()
-    {
-        Assert.True(BinaryUtils.IsAllZero(new byte[16]));
-    }
-
-    [Fact]
-    public void IsAllZero_LeadingZerosThenNonZero_ReturnsFalse()
-    {
-        byte[] data = [0, 0, 0, 0, 0, 0, 0, 1];
-        Assert.False(BinaryUtils.IsAllZero(data));
-    }
-
-    [Fact]
-    public void IsAllZero_NonZeroFirstByte_ReturnsFalse()
-    {
-        byte[] data = [0x33, 0x58, 0x44, 0x4F]; // "3XDO" — a real DDX magic
-        Assert.False(BinaryUtils.IsAllZero(data));
     }
 
     #endregion
@@ -111,6 +82,74 @@ public class BinaryUtilsTests
 
     #endregion
 
+    #region ReadUInt32BE Tests
+
+    [Theory]
+    [InlineData(new byte[] { 0x12, 0x34, 0x56, 0x78 }, 0, 0x12345678u)]
+    [InlineData(new byte[] { 0x00, 0x00, 0x12, 0x34, 0x56, 0x78 }, 2, 0x12345678u)]
+    public void ReadUInt32BE_ReadsBigEndian(byte[] data, int offset, uint expected)
+    {
+        Assert.Equal(expected, BinaryUtils.ReadUInt32BE(data, offset));
+    }
+
+    #endregion
+
+    #region ReadUInt16LE/BE Tests
+
+    [Theory]
+    [InlineData(new byte[] { 0x34, 0x12 }, false, (ushort)0x1234)] // LE
+    [InlineData(new byte[] { 0x12, 0x34 }, true, (ushort)0x1234)] // BE
+    public void ReadUInt16_ReadsCorrectly(byte[] data, bool bigEndian, ushort expected)
+    {
+        var actual = bigEndian ? BinaryUtils.ReadUInt16BE(data) : BinaryUtils.ReadUInt16LE(data);
+        Assert.Equal(expected, actual);
+    }
+
+    #endregion
+
+    #region ReadUInt64LE/BE Tests
+
+    [Theory]
+    [InlineData(new byte[] { 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12 }, false, 0x123456789ABCDEF0ul)] // LE
+    [InlineData(new byte[] { 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0 }, true, 0x123456789ABCDEF0ul)] // BE
+    public void ReadUInt64_ReadsCorrectly(byte[] data, bool bigEndian, ulong expected)
+    {
+        var actual = bigEndian ? BinaryUtils.ReadUInt64BE(data) : BinaryUtils.ReadUInt64LE(data);
+        Assert.Equal(expected, actual);
+    }
+
+    #endregion
+
+    #region IsAllZero Tests
+
+    [Fact]
+    public void IsAllZero_EmptySpan_ReturnsTrue()
+    {
+        Assert.True(BinaryUtils.IsAllZero(ReadOnlySpan<byte>.Empty));
+    }
+
+    [Fact]
+    public void IsAllZero_AllZeroBytes_ReturnsTrue()
+    {
+        Assert.True(BinaryUtils.IsAllZero(new byte[16]));
+    }
+
+    [Fact]
+    public void IsAllZero_LeadingZerosThenNonZero_ReturnsFalse()
+    {
+        byte[] data = [0, 0, 0, 0, 0, 0, 0, 1];
+        Assert.False(BinaryUtils.IsAllZero(data));
+    }
+
+    [Fact]
+    public void IsAllZero_NonZeroFirstByte_ReturnsFalse()
+    {
+        byte[] data = [0x33, 0x58, 0x44, 0x4F]; // "3XDO" — a real DDX magic
+        Assert.False(BinaryUtils.IsAllZero(data));
+    }
+
+    #endregion
+
     #region ReadUInt32LE Tests
 
     [Theory]
@@ -131,58 +170,20 @@ public class BinaryUtilsTests
 
     #endregion
 
-    #region ReadUInt32BE Tests
-
-    [Theory]
-    [InlineData(new byte[] { 0x12, 0x34, 0x56, 0x78 }, 0, 0x12345678u)]
-    [InlineData(new byte[] { 0x00, 0x00, 0x12, 0x34, 0x56, 0x78 }, 2, 0x12345678u)]
-    public void ReadUInt32BE_ReadsBigEndian(byte[] data, int offset, uint expected)
-    {
-        Assert.Equal(expected, BinaryUtils.ReadUInt32BE(data, offset));
-    }
-
-    #endregion
-
-    #region ReadUInt16LE/BE Tests
-
-    [Theory]
-    [InlineData(new byte[] { 0x34, 0x12 }, false, (ushort)0x1234)] // LE
-    [InlineData(new byte[] { 0x12, 0x34 }, true, (ushort)0x1234)]  // BE
-    public void ReadUInt16_ReadsCorrectly(byte[] data, bool bigEndian, ushort expected)
-    {
-        var actual = bigEndian ? BinaryUtils.ReadUInt16BE(data) : BinaryUtils.ReadUInt16LE(data);
-        Assert.Equal(expected, actual);
-    }
-
-    #endregion
-
-    #region ReadUInt64LE/BE Tests
-
-    [Theory]
-    [InlineData(new byte[] { 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12 }, false, 0x123456789ABCDEF0ul)] // LE
-    [InlineData(new byte[] { 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0 }, true, 0x123456789ABCDEF0ul)]  // BE
-    public void ReadUInt64_ReadsCorrectly(byte[] data, bool bigEndian, ulong expected)
-    {
-        var actual = bigEndian ? BinaryUtils.ReadUInt64BE(data) : BinaryUtils.ReadUInt64LE(data);
-        Assert.Equal(expected, actual);
-    }
-
-    #endregion
-
     #region IsPrintableText Tests
 
     [Theory]
-    [InlineData("Hello, World!", true)]   // all printable
-    [InlineData("Hello\tWorld", true)]    // tabs allowed
-    [InlineData("Hello\r\nWorld", true)]  // newlines allowed
+    [InlineData("Hello, World!", true)] // all printable
+    [InlineData("Hello\tWorld", true)] // tabs allowed
+    [InlineData("Hello\r\nWorld", true)] // newlines allowed
     public void IsPrintableText_TextInputs(string text, bool expected)
     {
-        Assert.Equal(expected, BinaryUtils.IsPrintableText(System.Text.Encoding.UTF8.GetBytes(text)));
+        Assert.Equal(expected, BinaryUtils.IsPrintableText(Encoding.UTF8.GetBytes(text)));
     }
 
     [Theory]
     [InlineData(new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05 })] // binary
-    [InlineData(new byte[] { })]                                     // empty
+    [InlineData(new byte[] { })] // empty
     public void IsPrintableText_NonTextInputs_ReturnFalse(byte[] data)
     {
         Assert.False(BinaryUtils.IsPrintableText(data));

@@ -6,7 +6,6 @@ namespace FalloutXbox360Utils.Tests.App.Accessibility;
 /// <summary>
 ///     Static-analysis pass over the WinUI 3 XAML files under <c>src/FalloutXbox360Utils/App/</c>.
 ///     Finds interactive controls whose accessible name is likely empty to a screen reader.
-///
 ///     A control is considered "has a name" if any of these holds:
 ///     <list type="bullet">
 ///         <item><c>AutomationProperties.Name</c> is set (literal or bound).</item>
@@ -56,8 +55,6 @@ internal static class XamlAccessibilityScanner
         "FlipView"
     };
 
-    internal sealed record Gap(string File, int LineNumber, string ControlType, string? LocalIdentifier);
-
     /// <summary>Scan every <c>*.xaml</c> file under <paramref name="appDirectory" /> and return gaps.</summary>
     internal static IReadOnlyList<Gap> Scan(string appDirectory)
     {
@@ -100,7 +97,8 @@ internal static class XamlAccessibilityScanner
         // does not know the namespace mapping — inspect both attribute and child forms.
         if (HasAttribute(element, "AutomationProperties.Name")) return true;
         if (HasAttribute(element, "AutomationProperties.LabeledBy")) return true;
-        if (element.Elements().Any(e => e.Name.LocalName is "AutomationProperties.Name" or "AutomationProperties.LabeledBy"))
+        if (element.Elements().Any(e =>
+                e.Name.LocalName is "AutomationProperties.Name" or "AutomationProperties.LabeledBy"))
             return true;
 
         if (HasAttribute(element, "x:Uid")) return true;
@@ -176,4 +174,6 @@ internal static class XamlAccessibilityScanner
 
         return false;
     }
+
+    internal sealed record Gap(string File, int LineNumber, string ControlType, string? LocalIdentifier);
 }

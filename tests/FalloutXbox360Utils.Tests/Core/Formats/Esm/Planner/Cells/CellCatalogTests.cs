@@ -3,7 +3,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Catalog;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Planner.Cells;
@@ -62,28 +61,34 @@ public sealed class CellCatalogTests
         Assert.Same(dmp, entry.DmpModel);
     }
 
-    private static PcEsmCellContext MakeInteriorContext(uint cellFormId) => new()
+    private static PcEsmCellContext MakeInteriorContext(uint cellFormId)
     {
-        CellFormId = cellFormId,
-        IsInterior = true,
-        BlockGroupType = 2,
-        SubblockGroupType = 3,
-        BlockLabel = [1, 0, 0, 0],
-        SubblockLabel = [2, 0, 0, 0],
-    };
-
-    private static ParsedMainRecord MakeMasterCellRecord(uint cellFormId) => new()
-    {
-        Header = new MainRecordHeader
+        return new PcEsmCellContext
         {
-            Signature = "CELL",
-            DataSize = 0,
-            Flags = 0,
-            FormId = cellFormId,
-            Timestamp = 0,
-            VcsInfo = 0,
-            Version = 15,
-        },
-        Offset = 0,
-    };
+            CellFormId = cellFormId,
+            IsInterior = true,
+            BlockGroupType = 2,
+            SubblockGroupType = 3,
+            BlockLabel = [1, 0, 0, 0],
+            SubblockLabel = [2, 0, 0, 0]
+        };
+    }
+
+    private static ParsedMainRecord MakeMasterCellRecord(uint cellFormId)
+    {
+        return new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "CELL",
+                DataSize = 0,
+                Flags = 0,
+                FormId = cellFormId,
+                Timestamp = 0,
+                VcsInfo = 0,
+                Version = 15
+            },
+            Offset = 0
+        };
+    }
 }

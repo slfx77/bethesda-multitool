@@ -478,7 +478,8 @@ public class CellWorldspaceAuthorityTests
         Assert.Equal(0x10u, virtualCell.WorldspaceFormId);
         Assert.Equal(-2, virtualCell.GridX);
         Assert.Equal(-1, virtualCell.GridY);
-        Assert.All(virtualCell.PlacedObjects, placed => Assert.Equal("AuthorityOffsetCluster", placed.AssignmentSource));
+        Assert.All(virtualCell.PlacedObjects,
+            placed => Assert.Equal("AuthorityOffsetCluster", placed.AssignmentSource));
     }
 
     [Fact]

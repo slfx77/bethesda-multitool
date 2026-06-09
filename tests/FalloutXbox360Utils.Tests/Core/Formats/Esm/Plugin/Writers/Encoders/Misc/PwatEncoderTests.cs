@@ -11,8 +11,6 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin.Writers.Encoders.Mis
 /// </summary>
 public sealed class PwatEncoderTests : SubrecordEncoderTestBase<PwatEncoderTests.PwatModel>
 {
-    public sealed record PwatModel(uint WaterFormId, uint Flags);
-
     protected override string RecordSignature => "PWAT";
 
     protected override IReadOnlyCollection<string> EmittedSubrecordSignatures => ["DNAM"];
@@ -21,7 +19,7 @@ public sealed class PwatEncoderTests : SubrecordEncoderTestBase<PwatEncoderTests
     {
         // Water FormID 0x000A1B2C with flags 0x80000001 — high bit + low bit set so a
         // byte-order regression on either word would surface in the expected-bytes check.
-        return new PwatModel(WaterFormId: 0x000A1B2Cu, Flags: 0x80000001u);
+        return new PwatModel(0x000A1B2Cu, 0x80000001u);
     }
 
     protected override byte[] GetExpectedBytes()
@@ -51,4 +49,6 @@ public sealed class PwatEncoderTests : SubrecordEncoderTestBase<PwatEncoderTests
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4, 4));
         return (true, new PwatModel(formId, flags));
     }
+
+    public sealed record PwatModel(uint WaterFormId, uint Flags);
 }

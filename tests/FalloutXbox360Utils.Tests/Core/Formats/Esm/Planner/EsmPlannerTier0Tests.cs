@@ -21,11 +21,11 @@ public sealed class EsmPlannerTier0Tests
         var planner = BuildPlanner();
 
         var plan = planner.Build(
-            masterRecords: [],
-            dmpRecords: new RecordCollection(),
-            enabledTypes: new HashSet<string>(),
-            masterFormIds: new HashSet<uint>(),
-            masterPath: null);
+            [],
+            new RecordCollection(),
+            new HashSet<string>(),
+            new HashSet<uint>(),
+            null);
 
         Assert.Empty(plan.Records);
         Assert.Empty(plan.EmittedFormIds);
@@ -40,11 +40,11 @@ public sealed class EsmPlannerTier0Tests
         var planner = BuildPlanner();
 
         var plan = planner.Build(
-            masterRecords: [],
-            dmpRecords: new RecordCollection(),
-            enabledTypes: new HashSet<string> { "WEAP" },
-            masterFormIds: new HashSet<uint>(),
-            masterPath: "test.esm");
+            [],
+            new RecordCollection(),
+            new HashSet<string> { "WEAP" },
+            new HashSet<uint>(),
+            "test.esm");
 
         Assert.Empty(plan.Records);
         Assert.Empty(plan.EmittedFormIds);
@@ -55,15 +55,15 @@ public sealed class EsmPlannerTier0Tests
     [Fact]
     public void Build_Preserves_NextObjectId_When_No_Allocations_Happen()
     {
-        var allocator = new FormIdAllocator(0x800);
+        var allocator = new FormIdAllocator();
         var planner = BuildPlanner(allocator);
 
         var plan = planner.Build(
-            masterRecords: [],
-            dmpRecords: new RecordCollection(),
-            enabledTypes: new HashSet<string>(),
-            masterFormIds: new HashSet<uint>(),
-            masterPath: null);
+            [],
+            new RecordCollection(),
+            new HashSet<string>(),
+            new HashSet<uint>(),
+            null);
 
         Assert.Equal(0x800u, plan.Meta.NextObjectId);
     }
@@ -74,6 +74,6 @@ public sealed class EsmPlannerTier0Tests
         var degradation = new DegradationPolicy();
         var references = new ReferenceResolver([], degradation);
 
-        return new EsmPlanner(disposition, allocator ?? new FormIdAllocator(0x800), references);
+        return new EsmPlanner(disposition, allocator ?? new FormIdAllocator(), references);
     }
 }

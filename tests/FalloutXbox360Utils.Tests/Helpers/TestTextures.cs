@@ -4,7 +4,7 @@ using Xunit;
 namespace FalloutXbox360Utils.Tests.Helpers;
 
 /// <summary>
-///     Builders for synthetic <see cref="DecodedTexture"/> instances used by NIF rendering
+///     Builders for synthetic <see cref="DecodedTexture" /> instances used by NIF rendering
 ///     and texture-resolver tests. Centralizes the small "make a 1x1" / "make a uniform fill" /
 ///     "make from explicit texels" idioms so they don't get re-implemented in every file.
 /// </summary>
@@ -17,7 +17,7 @@ internal static class TestTextures
     }
 
     /// <summary>
-    ///     <paramref name="width"/>x<paramref name="height"/> RGBA texture filled with the
+    ///     <paramref name="width" />x<paramref name="height" /> RGBA texture filled with the
     ///     supplied color (defaults to fully opaque).
     /// </summary>
     public static DecodedTexture Uniform(int width, int height, byte r, byte g, byte b, byte a = 255)
@@ -35,8 +35,8 @@ internal static class TestTextures
     }
 
     /// <summary>
-    ///     RGBA texture built from explicit per-pixel <paramref name="texels"/> in row-major
-    ///     order. Asserts the texel count matches <paramref name="width"/> * <paramref name="height"/>.
+    ///     RGBA texture built from explicit per-pixel <paramref name="texels" /> in row-major
+    ///     order. Asserts the texel count matches <paramref name="width" /> * <paramref name="height" />.
     /// </summary>
     public static DecodedTexture FromTexels(int width, int height, params (byte R, byte G, byte B, byte A)[] texels)
     {

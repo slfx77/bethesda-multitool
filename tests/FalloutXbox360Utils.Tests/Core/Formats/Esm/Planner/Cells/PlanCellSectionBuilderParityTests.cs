@@ -1,14 +1,13 @@
 using System.Collections.Immutable;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner;
 using FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
-using FalloutXbox360Utils.Core.Formats.Esm.PlannedWriter.Cells;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Cell;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using Xunit;
 using CellRecord = FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.CellRecord;
 
@@ -46,17 +45,17 @@ public sealed class PlanCellSectionBuilderParityTests
                 Master = master,
                 References = ImmutableArray<ResolvedRef>.Empty,
                 ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
             },
             Context = context,
             PersistentChildren = ImmutableArray<RecordPlan>.Empty,
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
-            TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty
         };
 
         var plan = MakeEmptyPlan() with
         {
-            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan),
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan)
         };
 
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
@@ -69,10 +68,10 @@ public sealed class PlanCellSectionBuilderParityTests
             CellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(master),
             PersistentChildRecords = [],
             VwdChildRecords = [],
-            TemporaryChildRecords = [],
+            TemporaryChildRecords = []
         };
         var legacyBytes = CellGrupBuilder.BuildCellSection(
-            [legacyBundle], new Dictionary<uint, ParsedMainRecord>(), null);
+            [legacyBundle], new Dictionary<uint, ParsedMainRecord>());
 
         Assert.Equal(legacyBytes, plannerBytes);
     }
@@ -86,7 +85,7 @@ public sealed class PlanCellSectionBuilderParityTests
             FormId = 0x01000801,
             BaseFormId = 0x000ABCDF,
             RecordType = "REFR",
-            IsPersistent = true,
+            IsPersistent = true
         };
         var childPlan = new RecordPlan
         {
@@ -96,7 +95,7 @@ public sealed class PlanCellSectionBuilderParityTests
             Model = placed,
             References = ImmutableArray<ResolvedRef>.Empty,
             ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
         var cellPlan = new CellPlan
         {
@@ -109,24 +108,24 @@ public sealed class PlanCellSectionBuilderParityTests
                 Master = master,
                 References = ImmutableArray<ResolvedRef>.Empty,
                 ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
             },
             Context = context,
             PersistentChildren = ImmutableArray.Create(childPlan),
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
-            TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty
         };
 
         var plan = MakeEmptyPlan() with
         {
-            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan),
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan)
         };
 
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
             plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
 
         // Build the equivalent legacy child bytes via the same primitive path the planner uses.
-        var subs = RefrEncoder.EncodeNewPlacedReference(placed, validFormIds: null, remapTable: null);
+        var subs = RefrEncoder.EncodeNewPlacedReference(placed);
         Assert.NotEmpty(subs.Subrecords);
         var legacyChildBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
             "REFR", 0x01000801u, 0u, subs.Subrecords);
@@ -138,10 +137,10 @@ public sealed class PlanCellSectionBuilderParityTests
             CellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(master),
             PersistentChildRecords = [legacyChildBytes],
             VwdChildRecords = [],
-            TemporaryChildRecords = [],
+            TemporaryChildRecords = []
         };
         var legacyBytes = CellGrupBuilder.BuildCellSection(
-            [legacyBundle], new Dictionary<uint, ParsedMainRecord>(), null);
+            [legacyBundle], new Dictionary<uint, ParsedMainRecord>());
 
         Assert.Equal(legacyBytes, plannerBytes);
     }
@@ -153,7 +152,7 @@ public sealed class PlanCellSectionBuilderParityTests
         {
             FormId = 0x01000801,
             EditorId = "TestNewCell",
-            Flags = 0x01, // Interior.
+            Flags = 0x01 // Interior.
         };
         var context = new PcEsmCellContext
         {
@@ -162,7 +161,7 @@ public sealed class PlanCellSectionBuilderParityTests
             BlockGroupType = 2,
             SubblockGroupType = 3,
             BlockLabel = [1, 0, 0, 0],
-            SubblockLabel = [2, 0, 0, 0],
+            SubblockLabel = [2, 0, 0, 0]
         };
         var cellPlan = new CellPlan
         {
@@ -175,17 +174,17 @@ public sealed class PlanCellSectionBuilderParityTests
                 Model = cellModel,
                 References = ImmutableArray<ResolvedRef>.Empty,
                 ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
             },
             Context = context,
             PersistentChildren = ImmutableArray<RecordPlan>.Empty,
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
-            TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty
         };
 
         var plan = MakeEmptyPlan() with
         {
-            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x01000801, cellPlan),
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x01000801, cellPlan)
         };
 
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
@@ -202,27 +201,30 @@ public sealed class PlanCellSectionBuilderParityTests
             CellRecordBytes = legacyCellBytes,
             PersistentChildRecords = [],
             VwdChildRecords = [],
-            TemporaryChildRecords = [],
+            TemporaryChildRecords = []
         };
         var legacyBytes = CellGrupBuilder.BuildCellSection(
-            [legacyBundle], new Dictionary<uint, ParsedMainRecord>(), null);
+            [legacyBundle], new Dictionary<uint, ParsedMainRecord>());
 
         Assert.Equal(legacyBytes, plannerBytes);
     }
 
-    private static EmitPlan MakeEmptyPlan() => new()
+    private static EmitPlan MakeEmptyPlan()
     {
-        Records = ImmutableArray<RecordPlan>.Empty,
-        SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
-        EmittedFormIds = ImmutableHashSet<uint>.Empty,
-        RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
-        Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
-        Meta = new PlanMetadata
+        return new EmitPlan
         {
-            NextObjectId = 0x800,
-            PlannerCoverage = ImmutableHashSet<string>.Empty,
-        },
-    };
+            Records = ImmutableArray<RecordPlan>.Empty,
+            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty,
+            EmittedFormIds = ImmutableHashSet<uint>.Empty,
+            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty,
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            Meta = new PlanMetadata
+            {
+                NextObjectId = 0x800,
+                PlannerCoverage = ImmutableHashSet<string>.Empty
+            }
+        };
+    }
 
     private static (ParsedMainRecord Master, PcEsmCellContext Context) MakeInteriorCellMaster(uint cellFormId)
     {
@@ -236,9 +238,9 @@ public sealed class PlanCellSectionBuilderParityTests
                 FormId = cellFormId,
                 Timestamp = 0,
                 VcsInfo = 0,
-                Version = 15,
+                Version = 15
             },
-            Offset = 0,
+            Offset = 0
         };
 
         var context = new PcEsmCellContext
@@ -248,7 +250,7 @@ public sealed class PlanCellSectionBuilderParityTests
             BlockGroupType = 2,
             SubblockGroupType = 3,
             BlockLabel = [1, 0, 0, 0],
-            SubblockLabel = [2, 0, 0, 0],
+            SubblockLabel = [2, 0, 0, 0]
         };
 
         return (master, context);

@@ -41,7 +41,7 @@ public class HeightmapPngExporterVisualTests
         {
             if (Directory.Exists(outputDir))
             {
-                Directory.Delete(outputDir, recursive: true);
+                Directory.Delete(outputDir, true);
             }
         }
     }
@@ -72,7 +72,7 @@ public class HeightmapPngExporterVisualTests
         {
             if (Directory.Exists(outputDir))
             {
-                Directory.Delete(outputDir, recursive: true);
+                Directory.Delete(outputDir, true);
             }
         }
     }
@@ -103,7 +103,7 @@ public class HeightmapPngExporterVisualTests
         {
             if (Directory.Exists(outputDir))
             {
-                Directory.Delete(outputDir, recursive: true);
+                Directory.Delete(outputDir, true);
             }
         }
     }
@@ -136,7 +136,7 @@ public class HeightmapPngExporterVisualTests
         {
             if (Directory.Exists(outputDir))
             {
-                Directory.Delete(outputDir, recursive: true);
+                Directory.Delete(outputDir, true);
             }
         }
     }
@@ -154,13 +154,13 @@ public class HeightmapPngExporterVisualTests
         }
 
         var scale = new HeightmapGrayscaleScale(
-            BaseHeight: 0f,
-            UnitsPerGray: 8f,
-            MinHeight: 1000f,
-            MaxHeight: 1032f,
-            ClippedLowCount: 0,
-            ClippedHighCount: 0,
-            SampleCount: 33 * 33);
+            0f,
+            8f,
+            1000f,
+            1032f,
+            0,
+            0,
+            33 * 33);
 
         var pixels = HeightmapColorRenderer.GenerateFixedScaleGrayscalePixels(heights, scale);
 
@@ -200,7 +200,7 @@ public class HeightmapPngExporterVisualTests
         {
             if (Directory.Exists(outputDir))
             {
-                Directory.Delete(outputDir, recursive: true);
+                Directory.Delete(outputDir, true);
             }
         }
     }
@@ -226,7 +226,7 @@ public class HeightmapPngExporterVisualTests
         {
             if (Directory.Exists(outputDir))
             {
-                Directory.Delete(outputDir, recursive: true);
+                Directory.Delete(outputDir, true);
             }
         }
     }
@@ -262,7 +262,7 @@ public class HeightmapPngExporterVisualTests
         {
             if (Directory.Exists(outputDir))
             {
-                Directory.Delete(outputDir, recursive: true);
+                Directory.Delete(outputDir, true);
             }
         }
     }
@@ -305,7 +305,7 @@ public class HeightmapPngExporterVisualTests
         {
             if (Directory.Exists(outputDir))
             {
-                Directory.Delete(outputDir, recursive: true);
+                Directory.Delete(outputDir, true);
             }
         }
     }
@@ -372,7 +372,8 @@ public class HeightmapPngExporterVisualTests
         };
 
         var matches = StandaloneHeightmapResolver.Resolve([standalone], [duplicateLand, containingLand]);
-        var unresolved = StandaloneHeightmapResolver.GetUnresolvedHeightmaps([standalone], [duplicateLand, containingLand]);
+        var unresolved =
+            StandaloneHeightmapResolver.GetUnresolvedHeightmaps([standalone], [duplicateLand, containingLand]);
 
         var match = Assert.Single(matches);
         Assert.Equal(StandaloneHeightmapStatus.OffsetLandMatch, match.Status);

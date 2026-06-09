@@ -1,5 +1,4 @@
 using System.Numerics;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 using Xunit;
@@ -12,9 +11,9 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 ///     tools/GhidraProject/DecompileRefrRotation.java + refr_rotation_decompiled.txt) to read the
 ///     engine's per-axis rotation builders:
 ///     <list type="bullet">
-///       <item><c>NiMatrix3::MakeXRotation</c> VA 0x8235B988</item>
-///       <item><c>NiMatrix3::MakeYRotation</c> VA 0x82284BF0</item>
-///       <item><c>NiMatrix3::MakeZRotation</c> VA 0x822EED88</item>
+///         <item><c>NiMatrix3::MakeXRotation</c> VA 0x8235B988</item>
+///         <item><c>NiMatrix3::MakeYRotation</c> VA 0x82284BF0</item>
+///         <item><c>NiMatrix3::MakeZRotation</c> VA 0x822EED88</item>
 ///     </list>
 ///     Each builds the STANDARD right-handed column-vector rotation matrix (v' = R·v):
 ///     <code>

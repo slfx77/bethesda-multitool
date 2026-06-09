@@ -49,7 +49,9 @@ public sealed class ExteriorCellCrossBuildParityTests(SampleFileFixture samples)
 
         Assert.True(mismatches.Count == 0,
             $"{summary} Grid-coord mismatches:\n  " + string.Join("\n  ", mismatches.Take(20))
-            + (mismatches.Count > 20 ? $"\n  ... and {mismatches.Count - 20} more" : ""));
+                                                    + (mismatches.Count > 20
+                                                        ? $"\n  ... and {mismatches.Count - 20} more"
+                                                        : ""));
 
         // Hard guarantee that at least SOME cross-build match occurred. If FormIDs don't
         // overlap at all the test would silently pass with zero comparisons.
@@ -62,12 +64,13 @@ public sealed class ExteriorCellCrossBuildParityTests(SampleFileFixture samples)
         var source = await SemanticSourceSetBuilder.LoadSourceAsync(
             new SemanticSourceRequest { FilePath = path, FileType = AnalysisFileType.EsmFile });
 
-        var exterior = new Dictionary<uint, (int, int)>(capacity: source.Records.Cells.Count);
+        var exterior = new Dictionary<uint, (int, int)>(source.Records.Cells.Count);
         foreach (var cell in source.Records.Cells)
         {
             if (cell.GridX is int gx && cell.GridY is int gy)
                 exterior[cell.FormId] = (gx, gy);
         }
+
         return exterior;
     }
 
@@ -90,6 +93,7 @@ public sealed class ExteriorCellCrossBuildParityTests(SampleFileFixture samples)
                     $"vs other=({otherCoords.GridX},{otherCoords.GridY})");
             }
         }
+
         return matched;
     }
 }

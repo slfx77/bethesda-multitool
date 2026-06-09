@@ -125,7 +125,7 @@ public class NifEmbeddedAssetCollectorTests
         // is printable but the next three zeros aren't — so the previous run ends with
         // a trailing `d`, corrupting its extension to `.ddsd`.
         var path1 = "textures\\armor\\foo.dds";
-        var lengthPrefixByteThatIsPrintable = new byte[] { (byte)'d' };
+        var lengthPrefixByteThatIsPrintable = new[] { (byte)'d' };
         var path2 = "textures\\armor\\bar.dds";
         using var ms = new MemoryStream();
         ms.Write(Encoding.ASCII.GetBytes(path1));

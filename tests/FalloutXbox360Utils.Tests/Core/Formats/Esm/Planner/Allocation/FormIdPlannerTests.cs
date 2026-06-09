@@ -12,7 +12,7 @@ public sealed class FormIdPlannerTests
     [Fact]
     public void AllocateAll_Assigns_PluginRange_FormId_Per_New_Entry()
     {
-        var allocator = new FormIdAllocator(0x800);
+        var allocator = new FormIdAllocator();
         var planner = new FormIdPlanner(allocator);
 
         // DeterministicAllocationOrder sorts by record-type (ordinal) then FormID, so ARMO
@@ -21,7 +21,7 @@ public sealed class FormIdPlannerTests
         {
             MakeNewEntry("WEAP", 0xAA000001),
             MakeNewEntry("WEAP", 0xAA000002),
-            MakeNewEntry("ARMO", 0xBB000003),
+            MakeNewEntry("ARMO", 0xBB000003)
         };
 
         var map = planner.AllocateAll(decisions);
@@ -35,14 +35,14 @@ public sealed class FormIdPlannerTests
     [Fact]
     public void AllocateAll_Ignores_KeepMaster_And_Override_Entries()
     {
-        var allocator = new FormIdAllocator(0x800);
+        var allocator = new FormIdAllocator();
         var planner = new FormIdPlanner(allocator);
 
         var decisions = new List<(CatalogEntry, DispositionDecision)>
         {
             MakeKeepMaster("WEAP", 0x000A0001),
             MakeOverride("WEAP", 0x000A0002),
-            MakeNewEntry("ARMO", 0xBB000003),
+            MakeNewEntry("ARMO", 0xBB000003)
         };
 
         var map = planner.AllocateAll(decisions);
@@ -61,7 +61,7 @@ public sealed class FormIdPlannerTests
         {
             MakeNewCatalogEntry("WEAP", 0xAA000005),
             MakeNewCatalogEntry("ARMO", 0xBB000003),
-            MakeNewCatalogEntry("WEAP", 0xAA000002),
+            MakeNewCatalogEntry("WEAP", 0xAA000002)
         };
 
         var first = AllocateForInputs(inputs);
@@ -74,7 +74,7 @@ public sealed class FormIdPlannerTests
 
     private static IReadOnlyDictionary<uint, uint> AllocateForInputs(IReadOnlyList<CatalogEntry> inputs)
     {
-        var allocator = new FormIdAllocator(0x800);
+        var allocator = new FormIdAllocator();
         var planner = new FormIdPlanner(allocator);
         var decisions = inputs.Select(e => (e, NewDecision())).ToList();
         return planner.AllocateAll(decisions);
@@ -85,44 +85,53 @@ public sealed class FormIdPlannerTests
         return (MakeNewCatalogEntry(type, sourceFormId), NewDecision());
     }
 
-    private static CatalogEntry MakeNewCatalogEntry(string type, uint sourceFormId) =>
-        new()
+    private static CatalogEntry MakeNewCatalogEntry(string type, uint sourceFormId)
+    {
+        return new CatalogEntry
         {
             Type = type,
             Source = SourceKind.DmpNew,
-            DmpFormId = sourceFormId,
+            DmpFormId = sourceFormId
         };
+    }
 
-    private static (CatalogEntry, DispositionDecision) MakeKeepMaster(string type, uint formId) =>
-        (new CatalogEntry
-        {
-            Type = type,
-            Source = SourceKind.MasterOnly,
-            MasterFormId = formId,
-        },
-        new DispositionDecision
-        {
-            Disposition = RecordDisposition.KeepMaster,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
-        });
-
-    private static (CatalogEntry, DispositionDecision) MakeOverride(string type, uint formId) =>
-        (new CatalogEntry
-        {
-            Type = type,
-            Source = SourceKind.DmpOverride,
-            MasterFormId = formId,
-            DmpFormId = formId,
-        },
-        new DispositionDecision
-        {
-            Disposition = RecordDisposition.Override,
-            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
-        });
-
-    private static DispositionDecision NewDecision() => new()
+    private static (CatalogEntry, DispositionDecision) MakeKeepMaster(string type, uint formId)
     {
-        Disposition = RecordDisposition.New,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
-    };
+        return (new CatalogEntry
+            {
+                Type = type,
+                Source = SourceKind.MasterOnly,
+                MasterFormId = formId
+            },
+            new DispositionDecision
+            {
+                Disposition = RecordDisposition.KeepMaster,
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+            });
+    }
+
+    private static (CatalogEntry, DispositionDecision) MakeOverride(string type, uint formId)
+    {
+        return (new CatalogEntry
+            {
+                Type = type,
+                Source = SourceKind.DmpOverride,
+                MasterFormId = formId,
+                DmpFormId = formId
+            },
+            new DispositionDecision
+            {
+                Disposition = RecordDisposition.Override,
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+            });
+    }
+
+    private static DispositionDecision NewDecision()
+    {
+        return new DispositionDecision
+        {
+            Disposition = RecordDisposition.New,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
+    }
 }

@@ -6,7 +6,6 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 using FalloutXbox360Utils.Core.Minidump;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
@@ -41,8 +40,8 @@ public class RuntimeWorldReaderLandVisualTests
     {
         var buffer = new byte[0x20000];
         WriteLand(buffer, 0x000AAAAA);
-        WriteLoadedLand(buffer, baseTextureVa: BaseTextureVa, textureArrayVa: TextureArrayVa,
-            percentArrayVa: PercentArrayVa);
+        WriteLoadedLand(buffer, BaseTextureVa, TextureArrayVa,
+            PercentArrayVa);
         WriteUInt32BE(buffer, Offset(TextureArrayVa), AlphaTextureVa);
         WriteUInt32BE(buffer, Offset(TextureArrayVa) + 4, InvalidTextureVa);
         WriteUInt32BE(buffer, Offset(PercentArrayVa), PercentMaskVa);
@@ -140,7 +139,7 @@ public class RuntimeWorldReaderLandVisualTests
     {
         var buffer = new byte[0x20000];
         WriteLand(buffer, 0x000CCCCC);
-        WriteLoadedLand(buffer, baseTextureVa: BaseTextureVa, textureArrayVa: 0, percentArrayVa: 0);
+        WriteLoadedLand(buffer, BaseTextureVa, 0, 0);
         WriteLandTexture(buffer, BaseTextureVa, 0x00111111, "RuntimeBaseTexture");
         WriteTextureSetWithNiSourcePointerArray(buffer);
 
@@ -156,7 +155,7 @@ public class RuntimeWorldReaderLandVisualTests
     {
         var buffer = new byte[0x20000];
         WriteLand(buffer, 0x000DDDDD);
-        WriteLoadedLand(buffer, baseTextureVa: BaseTextureVa, textureArrayVa: 0, percentArrayVa: 0);
+        WriteLoadedLand(buffer, BaseTextureVa, 0, 0);
         WriteLandTexture(buffer, BaseTextureVa, 0x00111111, "RuntimeBaseTexture");
         WriteTextureSetWithFileEntriesAndInlineNoise(buffer);
 
@@ -172,8 +171,8 @@ public class RuntimeWorldReaderLandVisualTests
     {
         var buffer = new byte[0x20000];
         WriteLand(buffer, 0x000BBBBB);
-        WriteLoadedLand(buffer, baseTextureVa: BaseTextureVa, textureArrayVa: TextureArrayVa,
-            percentArrayVa: PercentArrayVa);
+        WriteLoadedLand(buffer, BaseTextureVa, TextureArrayVa,
+            PercentArrayVa);
         WriteUInt32BE(buffer, Offset(TextureArrayVa), AlphaTextureVa);
         WriteUInt32BE(buffer, Offset(PercentArrayVa), BadPercentMaskVa);
         WriteBadPercentMask(buffer, BadPercentMaskVa);
@@ -377,5 +376,8 @@ public class RuntimeWorldReaderLandVisualTests
         BinaryPrimitives.WriteSingleBigEndian(buffer.AsSpan(offset, 4), value);
     }
 
-    private static int Offset(uint va) => checked((int)(va - BaseVa));
+    private static int Offset(uint va)
+    {
+        return checked((int)(va - BaseVa));
+    }
 }

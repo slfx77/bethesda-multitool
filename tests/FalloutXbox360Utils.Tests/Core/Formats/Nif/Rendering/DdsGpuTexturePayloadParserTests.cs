@@ -20,10 +20,10 @@ public sealed class DdsGpuTexturePayloadParserTests
     {
         var expectedFormat = Enum.Parse<GpuTexturePayloadFormat>(expectedFormatName);
         var ddsData = CreateCompressedDds(
-            width: 8,
-            height: 8,
+            8,
+            8,
             fourCc,
-            mipCount: 4,
+            4,
             bytesPerBlock);
 
         var payload = DdsGpuTexturePayloadParser.Parse(ddsData);
@@ -47,11 +47,11 @@ public sealed class DdsGpuTexturePayloadParserTests
     public void Parse_UnsupportedFourCc_ReturnsNullForFallbackDecoder()
     {
         var ddsData = CreateCompressedDds(
-            width: 8,
-            height: 8,
-            fourCc: "ABCD",
-            mipCount: 1,
-            bytesPerBlock: 16);
+            8,
+            8,
+            "ABCD",
+            1,
+            16);
 
         Assert.Null(DdsGpuTexturePayloadParser.Parse(ddsData));
     }

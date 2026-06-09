@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Reference;
@@ -219,7 +219,7 @@ public class NewRefTeleportSanitizerTests
             subrecords.Add(new ParsedSubrecord
             {
                 Signature = "EDID",
-                Data = System.Text.Encoding.ASCII.GetBytes(editorId + '\0')
+                Data = Encoding.ASCII.GetBytes(editorId + '\0')
             });
         }
 
@@ -239,7 +239,7 @@ public class NewRefTeleportSanitizerTests
             subrecords.Add(new ParsedSubrecord
             {
                 Signature = "MODL",
-                Data = System.Text.Encoding.ASCII.GetBytes(modelPath + '\0')
+                Data = Encoding.ASCII.GetBytes(modelPath + '\0')
             });
         }
 
@@ -285,10 +285,9 @@ public class NewRefTeleportSanitizerTests
 
     private static ParsedMainRecord SingleRecordFromBytes(byte[] recordBytes)
     {
-        var header = EsmParser.ParseRecordHeader(recordBytes, false)!;
+        var header = EsmParser.ParseRecordHeader(recordBytes)!;
         var subrecords = EsmParser.ParseSubrecords(
-            recordBytes.AsSpan(EsmParser.MainRecordHeaderSize, (int)header.DataSize),
-            false);
+            recordBytes.AsSpan(EsmParser.MainRecordHeaderSize, (int)header.DataSize));
         return new ParsedMainRecord
         {
             Header = header,

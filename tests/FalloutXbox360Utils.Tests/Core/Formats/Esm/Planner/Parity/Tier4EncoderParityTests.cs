@@ -14,7 +14,7 @@ public sealed class Tier4EncoderParityTests
     public void New_Pack_With_No_Refs_Parity()
     {
         var pack = new PackageRecord { FormId = 0x01000800, EditorId = "TestPack" };
-        var legacy = PackEncoder.EncodeNew(pack, validFormIds: null, remapTable: null);
+        var legacy = PackEncoder.EncodeNew(pack, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("PACK", pack.FormId, pack, legacy);
     }
 
@@ -22,7 +22,7 @@ public sealed class Tier4EncoderParityTests
     public void New_Cpth_With_No_Refs_Parity()
     {
         var cpth = new CameraPathRecord { FormId = 0x01000800, EditorId = "TestCpth" };
-        var legacy = CpthEncoder.EncodeNew(cpth, validFormIds: null, remapTable: null);
+        var legacy = CpthEncoder.EncodeNew(cpth, null, null);
         PlannerTier1ParityHelper.AssertNewRecordParity("CPTH", cpth.FormId, cpth, legacy);
     }
 

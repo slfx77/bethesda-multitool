@@ -1,5 +1,5 @@
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
-using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Misc;
 using Xunit;
 
@@ -25,7 +25,7 @@ public class GlobEncoderTests
         var bytes = encoded.Subrecords[0].Bytes;
         Assert.Equal(4, bytes.Length);
 
-        var decoded = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(bytes);
+        var decoded = BinaryPrimitives.ReadSingleLittleEndian(bytes);
         Assert.Equal(42.25f, decoded);
     }
 

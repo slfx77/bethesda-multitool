@@ -18,19 +18,18 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Plugin;
 /// </summary>
 public class QustPerkCtdaSanitizerTests
 {
-
     // ---------- QUST top-level conditions ----------
 
     [Fact]
     public void QustEncodeNew_drops_top_level_CTDA_with_dangling_FormID_param()
     {
-        var quest = MakeQuest(conditions: new()
+        var quest = MakeQuest(new List<DialogueCondition>
         {
-            new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = 0x000DEAD1u }
+            new() { FunctionIndex = GetIsID, Parameter1 = 0x000DEAD1u }
         });
         var valid = new HashSet<uint> { 0x00000001u };
 
-        var encoded = QustEncoder.EncodeNew(quest, validFormIds: valid);
+        var encoded = QustEncoder.EncodeNew(quest, valid);
 
         Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "CTDA"));
         Assert.Contains(encoded.Warnings, w => w.Contains("CTDA sanitizer"));
@@ -39,13 +38,13 @@ public class QustPerkCtdaSanitizerTests
     [Fact]
     public void QustEncodeNew_keeps_top_level_CTDA_with_non_FormID_param()
     {
-        var quest = MakeQuest(conditions: new()
+        var quest = MakeQuest(new List<DialogueCondition>
         {
-            new DialogueCondition { FunctionIndex = GetActorValue, Parameter1 = 4u }
+            new() { FunctionIndex = GetActorValue, Parameter1 = 4u }
         });
         var valid = new HashSet<uint>();
 
-        var encoded = QustEncoder.EncodeNew(quest, validFormIds: valid);
+        var encoded = QustEncoder.EncodeNew(quest, valid);
 
         var ctda = Assert.Single(encoded.Subrecords, s => s.Signature == "CTDA");
         Assert.Equal(4u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(12, 4)));
@@ -54,14 +53,14 @@ public class QustPerkCtdaSanitizerTests
     [Fact]
     public void QustEncodeNew_remaps_top_level_CTDA_FormID_param_via_alias_table()
     {
-        var quest = MakeQuest(conditions: new()
+        var quest = MakeQuest(new List<DialogueCondition>
         {
-            new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = 0x01999AAAu }
+            new() { FunctionIndex = GetIsID, Parameter1 = 0x01999AAAu }
         });
         var valid = new HashSet<uint> { 0x01000123u };
         var remap = new Dictionary<uint, uint> { [0x01999AAAu] = 0x01000123u };
 
-        var encoded = QustEncoder.EncodeNew(quest, validFormIds: valid, remapTable: remap);
+        var encoded = QustEncoder.EncodeNew(quest, valid, remap);
 
         var ctda = Assert.Single(encoded.Subrecords, s => s.Signature == "CTDA");
         Assert.Equal(0x01000123u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(12, 4)));
@@ -72,9 +71,9 @@ public class QustPerkCtdaSanitizerTests
     {
         // Backward compat path: tests and legacy callers that don't pass validFormIds get
         // unchanged CTDA emission.
-        var quest = MakeQuest(conditions: new()
+        var quest = MakeQuest(new List<DialogueCondition>
         {
-            new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = 0xDEADBEEFu }
+            new() { FunctionIndex = GetIsID, Parameter1 = 0xDEADBEEFu }
         });
 
         var encoded = QustEncoder.EncodeNew(quest);
@@ -88,20 +87,20 @@ public class QustPerkCtdaSanitizerTests
     [Fact]
     public void QustEncodeNew_sanitizes_per_stage_CTDAs()
     {
-        var quest = MakeQuest(stages: new()
+        var quest = MakeQuest(stages: new List<QuestStage>
         {
-            new QuestStage
+            new()
             {
                 Index = 10, Flags = 1,
-                Conditions = new()
+                Conditions = new List<DialogueCondition>
                 {
-                    new DialogueCondition { FunctionIndex = GetIsID, Parameter1 = 0x000DEAD1u }
+                    new() { FunctionIndex = GetIsID, Parameter1 = 0x000DEAD1u }
                 }
             }
         });
         var valid = new HashSet<uint>();
 
-        var encoded = QustEncoder.EncodeNew(quest, validFormIds: valid);
+        var encoded = QustEncoder.EncodeNew(quest, valid);
 
         // INDX should still emit for the stage; CTDA for that stage was dropped.
         Assert.Single(encoded.Subrecords.Where(s => s.Signature == "INDX"));
@@ -113,13 +112,13 @@ public class QustPerkCtdaSanitizerTests
     [Fact]
     public void PerkEncodeNew_drops_top_level_CTDA_with_dangling_HasPerk_FormID()
     {
-        var perk = MakePerk(conditions: new()
+        var perk = MakePerk(new List<PerkCondition>
         {
-            new PerkCondition { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u }
+            new() { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u }
         });
         var valid = new HashSet<uint> { 0x00000001u };
 
-        var encoded = PerkEncoder.EncodeNew(perk, validFormIds: valid);
+        var encoded = PerkEncoder.EncodeNew(perk, valid);
 
         Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "CTDA"));
         Assert.Contains(encoded.Warnings, w => w.Contains("CTDA sanitizer"));
@@ -129,13 +128,13 @@ public class QustPerkCtdaSanitizerTests
     public void PerkEncodeNew_keeps_GetActorValue_perk_condition_with_non_FormID_param()
     {
         // Skill/SPECIAL requirements: GetActorValue(ActorValue) — Param1 is an enum, not a FormID.
-        var perk = MakePerk(conditions: new()
+        var perk = MakePerk(new List<PerkCondition>
         {
-            new PerkCondition { FunctionIndex = GetActorValue, Parameter1 = 5u, ComparisonValue = 50f }
+            new() { FunctionIndex = GetActorValue, Parameter1 = 5u, ComparisonValue = 50f }
         });
         var valid = new HashSet<uint>();
 
-        var encoded = PerkEncoder.EncodeNew(perk, validFormIds: valid);
+        var encoded = PerkEncoder.EncodeNew(perk, valid);
 
         var ctda = Assert.Single(encoded.Subrecords, s => s.Signature == "CTDA");
         Assert.Equal(5u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(12, 4)));
@@ -144,14 +143,14 @@ public class QustPerkCtdaSanitizerTests
     [Fact]
     public void PerkEncodeNew_remaps_HasPerk_FormID_via_alias_table()
     {
-        var perk = MakePerk(conditions: new()
+        var perk = MakePerk(new List<PerkCondition>
         {
-            new PerkCondition { FunctionIndex = HasPerk, Parameter1 = 0x01999AAAu }
+            new() { FunctionIndex = HasPerk, Parameter1 = 0x01999AAAu }
         });
         var valid = new HashSet<uint> { 0x01000123u };
         var remap = new Dictionary<uint, uint> { [0x01999AAAu] = 0x01000123u };
 
-        var encoded = PerkEncoder.EncodeNew(perk, validFormIds: valid, remapTable: remap);
+        var encoded = PerkEncoder.EncodeNew(perk, valid, remap);
 
         var ctda = Assert.Single(encoded.Subrecords, s => s.Signature == "CTDA");
         Assert.Equal(0x01000123u, BinaryPrimitives.ReadUInt32LittleEndian(ctda.Bytes.AsSpan(12, 4)));
@@ -160,9 +159,9 @@ public class QustPerkCtdaSanitizerTests
     [Fact]
     public void PerkEncodeNew_emits_conditions_verbatim_when_no_validFormIds_supplied()
     {
-        var perk = MakePerk(conditions: new()
+        var perk = MakePerk(new List<PerkCondition>
         {
-            new PerkCondition { FunctionIndex = HasPerk, Parameter1 = 0xDEADBEEFu }
+            new() { FunctionIndex = HasPerk, Parameter1 = 0xDEADBEEFu }
         });
 
         var encoded = PerkEncoder.EncodeNew(perk);
@@ -178,20 +177,20 @@ public class QustPerkCtdaSanitizerTests
     {
         // When every CTDA in an entry chain is dropped, PRKC must NOT be emitted (an empty
         // tab-count would mislead the engine about the chain shape).
-        var perk = MakePerk(entries: new()
+        var perk = MakePerk(entries: new List<PerkEntry>
         {
-            new PerkEntry
+            new()
             {
                 Type = 2, EntryPoint = 0, FunctionType = 0, EffectValue = 1f,
-                Conditions = new()
+                Conditions = new List<PerkCondition>
                 {
-                    new PerkCondition { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u }
+                    new() { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u }
                 }
             }
         });
         var valid = new HashSet<uint>();
 
-        var encoded = PerkEncoder.EncodeNew(perk, validFormIds: valid);
+        var encoded = PerkEncoder.EncodeNew(perk, valid);
 
         Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "PRKC"));
         // Make sure PRKE / DATA / EPFT / EPFD / PRKF still emit (the entry itself isn't lost).
@@ -202,21 +201,21 @@ public class QustPerkCtdaSanitizerTests
     [Fact]
     public void PerkEncodeNew_PRKC_emits_when_at_least_one_entry_condition_survives()
     {
-        var perk = MakePerk(entries: new()
+        var perk = MakePerk(entries: new List<PerkEntry>
         {
-            new PerkEntry
+            new()
             {
                 Type = 2, EntryPoint = 0, FunctionType = 0, EffectValue = 1f,
-                Conditions = new()
+                Conditions = new List<PerkCondition>
                 {
-                    new PerkCondition { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u },
-                    new PerkCondition { FunctionIndex = GetActorValue, Parameter1 = 5u, ComparisonValue = 50f }
+                    new() { FunctionIndex = HasPerk, Parameter1 = 0x000DEAD1u },
+                    new() { FunctionIndex = GetActorValue, Parameter1 = 5u, ComparisonValue = 50f }
                 }
             }
         });
         var valid = new HashSet<uint>();
 
-        var encoded = PerkEncoder.EncodeNew(perk, validFormIds: valid);
+        var encoded = PerkEncoder.EncodeNew(perk, valid);
 
         Assert.Single(encoded.Subrecords.Where(s => s.Signature == "PRKC"));
         // Only the GetActorValue CTDA survives (HasPerk was dropped).

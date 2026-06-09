@@ -8,7 +8,7 @@ using static FalloutXbox360Utils.Tests.Helpers.EsmTestRecordBuilder;
 namespace FalloutXbox360Utils.Tests.Core.Parsers;
 
 /// <summary>
-///     Tests for <see cref="RecordParser"/> — semantic parsing of NPC and creature records
+///     Tests for <see cref="RecordParser" /> — semantic parsing of NPC and creature records
 ///     (including compressed-record decompression) into strongly-typed models. Uses synthetic
 ///     big-endian records, no sample files required. Distinct from the byte-level
 ///     <c>EsmParserTests</c> (binary headers) and pattern-scanning <c>EsmRecordScannerTests</c>.
