@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
 ///     v3 Pass 4 — D3D12 swap chain bound to a WinUI 3 <see cref="SwapChainPanel" /> via
-///     <see cref="ISwapChainPanelNative" />. Mirrors <see cref="GpuSwapChainSurface" />'s
+///     <c>ISwapChainPanelNative</c>. Mirrors the old <c>GpuSwapChainSurface</c>'s
 ///     interface (Width / Height / Resize / Present) but on D3D12.
 ///     <para>
 ///         Key D3D12 differences from the D3D11 surface:
@@ -110,7 +110,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     /// <summary>
     ///     Creates a composition swap chain on <paramref name="gpu" />'s direct queue and
     ///     binds it to <paramref name="panel" />. Must be called on the UI thread (the
-    ///     <see cref="ISwapChainPanelNative.SetSwapChain" /> call requires it).
+    ///     <c>ISwapChainPanelNative.SetSwapChain</c> call requires it).
     /// </summary>
     public static GpuSwapChainSurface12? Create(GpuDevice12 gpu, SwapChainPanel panel, uint width, uint height)
     {

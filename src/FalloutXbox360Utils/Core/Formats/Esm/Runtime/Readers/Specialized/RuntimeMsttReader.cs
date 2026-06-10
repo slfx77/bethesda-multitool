@@ -13,7 +13,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     MSTT uses an unusual multi-inheritance order in BGSMovableStatic where
 ///     TESFullName + BGSDestructibleObjectForm are laid out BEFORE TESForm in the
 ///     C++ class. That puts <c>cFormType</c> at offset +24 and <c>iFormID</c> at
-///     offset +32 within the object. <see cref="RuntimePdbFieldAccessor.ReadStruct" />
+///     offset +32 within the object. <c>RuntimePdbFieldAccessor.ReadStruct</c>
 ///     resolves these offsets from the PDB layout itself, so the regular
 ///     OpenStructView flow handles MSTT without reader-side gymnastics — but the
 ///     reader still depends on

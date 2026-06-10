@@ -1,7 +1,7 @@
 namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 
 /// <summary>
-///     Placeable Water (PWAT) record. References a <see cref="WaterRecord" /> via the DNAM
+///     Placeable Water (PWAT) record. References a <c>WaterRecord</c> via the DNAM
 ///     subrecord's water FormID; the engine treats PWAT placements as instances of the
 ///     referenced water type with the embedded flags as per-placement overrides.
 /// </summary>

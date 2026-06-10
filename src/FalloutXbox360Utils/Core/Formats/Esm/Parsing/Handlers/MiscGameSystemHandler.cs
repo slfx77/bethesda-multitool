@@ -538,7 +538,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
 
     /// <summary>
     ///     Validate each candidate VA with <paramref name="validator" />, then project surviving
-    ///     candidates into <see cref="NavMeshRecord" /> via <see cref="RuntimeStructReader.DiscoverNavMeshAtVa" />.
+    ///     candidates into <see cref="NavMeshRecord" /> via <c>RuntimeStructReader.DiscoverNavMeshAtVa</c>.
     ///     Dedup by FormID against <paramref name="knownNavmFormIds" /> (mutated). Returns
     ///     (added count, rejected count). "Rejected" only counts validator-side rejections;
     ///     a null return from <c>DiscoverNavMeshAtVa</c> after validation passed (rare: the

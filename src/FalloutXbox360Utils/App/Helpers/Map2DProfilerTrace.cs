@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils;
 ///     <c>FALLOUT_MAP2D_TRACE=1</c> is set in the process environment, every cache
 ///     mutation, viewport rebuild, version/cache-gen bump, and per-stream lifecycle
 ///     event in <see cref="WorldMapControl" /> writes a structured single-line event
-///     to <see cref="Logger.Instance" />. The <see cref="FalloutMap2DProfiler" />
+///     to <see cref="Logger.Instance" />. The <c>FalloutMap2DProfiler</c>
 ///     companion app sets this flag before launching the WinUI host so its log
 ///     captures a deterministic trace of the disappearing-cells repro.
 /// </summary>

@@ -17,7 +17,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Planner.Cells;
 ///     Tier 6.1 ships the orchestration with empty child arrays in each
 ///     <see cref="CellPlan" /> — the catalog runs, dispositions are decided, FormIDs
 ///     are allocated, and worldspace plans are built, but per-cell placed-ref / LAND /
-///     NAVM record plans are populated in Tier 6.1b. <see cref="PlanCellSectionBuilder" />
+///     NAVM record plans are populated in Tier 6.1b. <c>PlanCellSectionBuilder</c>
 ///     still emits cell GRUPs through legacy <see cref="CellGrupBuilder" /> framing,
 ///     just with the planner-side data shape replacing legacy bundles.
 /// </remarks>

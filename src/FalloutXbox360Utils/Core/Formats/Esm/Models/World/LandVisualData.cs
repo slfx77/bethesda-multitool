@@ -12,7 +12,7 @@ public record LandVisualData
     ///     VNML payload, signed-byte normal components (X, Y, Z) in LAND vertex order. Expected length
     ///     is 3267 bytes (1089 vertices × 3 components). When sourced from the runtime terrain mesh
     ///     (<c>RuntimeTerrainMesh.Normals</c>), preserves the engine's captured normals instead of
-    ///     reconstructing them from the heightmap. <see cref="LandEncoder" /> prefers this field
+    ///     reconstructing them from the heightmap. <c>LandEncoder</c> prefers this field
     ///     over height-derived normals when present.
     /// </summary>
     public byte[]? VertexNormals { get; init; }

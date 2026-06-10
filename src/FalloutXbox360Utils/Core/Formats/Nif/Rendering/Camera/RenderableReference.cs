@@ -169,7 +169,7 @@ internal readonly record struct RenderableReference(
     ///     World-space bounding sphere from the base record's OBND, conservatively wrapped
     ///     around the rotated AABB. Falls back to a fixed-radius sphere when OBND is absent
     ///     (some MSTT / runtime-only refs). Computed once at LoadData so the per-frame cull
-    ///     just does a `(centerWorld - cameraXY).LengthSq < (radius + cylinderRadius)^2`.
+    ///     just does a <c>(centerWorld - cameraXY).LengthSq &lt; (radius + cylinderRadius)^2</c>.
     /// </summary>
     private static (Vector3 Center, float Radius) ComposeWorldBounds(PlacedReference p, Matrix4x4 world)
     {

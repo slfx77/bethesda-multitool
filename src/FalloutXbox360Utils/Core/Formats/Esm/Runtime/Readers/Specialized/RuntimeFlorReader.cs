@@ -11,7 +11,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     FLOR is a multi-inheritance class — TESProduceForm + TESScriptableForm sit before
 ///     TESForm in the C++ layout, so cFormType lives at +16 and iFormID at +24 (not the
 ///     standard +4 / +12). The PDB layout records these offsets accurately, and
-///     <see cref="RuntimePdbFieldAccessor.ReadStruct" /> resolves the cFormType / iFormID
+///     <c>RuntimePdbFieldAccessor.ReadStruct</c> resolves the cFormType / iFormID
 ///     positions from the layout itself — so the regular OpenStructView flow now works
 ///     for FLOR without any reader-side offset gymnastics.
 ///

@@ -261,7 +261,7 @@ internal static class EsmLandEnricher
     /// </param>
     /// <param name="masterExteriorCellByGrid">
     ///     <c>(worldspaceFormId, gridX, gridY) → master-CELL FormId</c> index. Comes from
-    ///     <see cref="PluginBuilder" />'s <c>_masterExteriorCellByGrid</c> in the converter
+    ///     <c>PluginBuilder</c>'s <c>_masterExteriorCellByGrid</c> in the converter
     ///     pipeline; can be built directly in the GUI when master ESM is loaded.
     /// </param>
     /// <param name="landsByCell">
@@ -269,7 +269,7 @@ internal static class EsmLandEnricher
     /// </param>
     /// <param name="pcRecordsByFormId">
     ///     Master-ESM <see cref="ParsedMainRecord" /> store keyed by FormId. Used to pull
-    ///     the raw LAND record bytes via <see cref="CellGrupBuilder.ReconstructRecordBytes" />.
+    ///     the raw LAND record bytes via <see cref="CellGrupBuilder.ReconstructRecordBytes(ParsedMainRecord)" />.
     /// </param>
     internal static IReadOnlyList<CellRecord> EnrichCellsWithMasterEsmLandFallback(
         IReadOnlyList<CellRecord> cells,

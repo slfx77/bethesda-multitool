@@ -33,6 +33,7 @@ internal sealed class BoundedAsyncResolveQueue<TResult>
     private readonly object _inFlightLock = new();
     private int _active;
 
+    /// <summary>Creates a queue that runs at most <paramref name="maxConcurrent" /> resolutions concurrently.</summary>
     /// <param name="maxConcurrent">Hard ceiling on background tasks running at once.</param>
     /// <param name="resolve">The (potentially expensive) resolution run on a background thread.</param>
     /// <param name="scheduler">

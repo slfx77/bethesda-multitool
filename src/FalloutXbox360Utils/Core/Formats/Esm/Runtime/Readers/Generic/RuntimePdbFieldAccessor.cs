@@ -15,7 +15,7 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
 
     /// <summary>
     ///     Opens a typed view over the entry's runtime struct. Returns null on the same
-    ///     guards that <see cref="ReadStruct" /> applies (no PDB layout, buffer read failure,
+    ///     guards that <see cref="ReadStruct(RuntimeEditorIdEntry)" /> applies (no PDB layout, buffer read failure,
     ///     FormType byte mismatch, FormID mismatch).
     /// </summary>
     internal PdbStructView? OpenStructView(RuntimeEditorIdEntry entry)

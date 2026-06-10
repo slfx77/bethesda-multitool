@@ -21,7 +21,7 @@ internal enum CameraMode
 /// <summary>
 ///     WASD + mouse-look + scroll-zoom flythrough camera controller for the v3 worldspace
 ///     view. Stateless w.r.t. GPU/UI — input methods just push into accumulators, and
-///     <see cref="Update" /> integrates the state every frame via <paramref name="deltaSeconds" />.
+///     <see cref="Update" /> integrates the state every frame via its <c>deltaSeconds</c> argument.
 ///     Bind input from <c>WorldView3DControl</c>'s KeyDown / KeyUp / PointerMoved / PointerWheelChanged
 ///     handlers.
 ///     <para>

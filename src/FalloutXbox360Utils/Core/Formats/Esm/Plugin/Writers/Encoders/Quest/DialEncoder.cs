@@ -11,7 +11,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
 ///     <para>
 ///     <b>FormID-remap contract:</b> the encoder emits <c>dial.QuestFormId</c> (QSTI) and
 ///     <c>dial.SpeakerFormId</c> (TNAM) verbatim — no defensive
-///     <see cref="FormIdReferenceResolver" /> call. It relies on
+///     <c>FormIdReferenceResolver</c> call. It relies on
 ///     <c>DialogGrupBuilder.SanitizeDialReferences</c> patching the model upstream so
 ///     proto FormIDs are remapped to allocated ones before this method runs. Any new
 ///     caller that bypasses the sanitizer would emit phantom-master FormIDs; the systemic

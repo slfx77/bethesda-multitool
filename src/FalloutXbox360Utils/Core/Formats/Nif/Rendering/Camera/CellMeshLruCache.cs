@@ -3,7 +3,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 /// <summary>
 ///     LRU-evicting cache keyed by exterior cell grid coordinate. Pure CPU / managed —
 ///     no D3D dependency — so it can be unit-tested without a GPU device. The generic
-///     entry type lets the v3 Phase 2a <see cref="TerrainRenderer" /> cache its terrain
+///     entry type lets the v3 Phase 2a <c>TerrainRenderer12</c> cache its terrain
 ///     meshes here and the eventual Phase 3 REFR mesh cache reuse the same plumbing.
 ///     <para>
 ///         Capacity caps memory growth as the user pans across huge worldspaces

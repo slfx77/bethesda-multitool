@@ -8,7 +8,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
 ///     v3 Pass 4 — D3D12 device + direct (graphics) command queue. The D3D12 analog of
-///     <see cref="GpuDevice" />, but with no immediate context (D3D12 records into command
+///     the old <c>GpuDevice</c>, but with no immediate context (D3D12 records into command
 ///     lists that are submitted to a queue).
 ///     <para>
 ///         Per-frame state (command allocator, fence values, ring buffer offsets) lives in
@@ -65,7 +65,7 @@ internal sealed class GpuDevice12 : IDisposable
     /// layer). Off by default — breadcrumbs add per-command GPU overhead.</summary>
     public bool DredEnabled { get; }
 
-    /// <summary>Backend identifier for HUD + log lines. Mirrors <see cref="GpuDevice.Backend" />.</summary>
+    /// <summary>Backend identifier for HUD + log lines. Mirrors the old <c>GpuDevice.Backend</c>.</summary>
     public static string Backend => "Direct3D12";
 
     /// <summary>

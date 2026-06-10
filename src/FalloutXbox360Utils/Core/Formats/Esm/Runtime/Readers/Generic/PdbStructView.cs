@@ -9,7 +9,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Generic;
 ///     <c>(name, owner)</c> rather than by hardcoded offsets, eliminating the drift risk
 ///     of <c>private const int FormIdOffset = 12;</c> style readers.
 ///     <para>
-///         Open via <see cref="RuntimePdbFieldAccessor.OpenStructView" /> — that factory
+///         Open via <see cref="RuntimePdbFieldAccessor.OpenStructView(RuntimeEditorIdEntry)" /> — that factory
 ///         performs the canonical FormID/FormType validation against the
 ///         <see cref="RuntimeEditorIdEntry" /> and returns null on mismatch, matching the
 ///         existing guard in <c>ReadStruct</c>.

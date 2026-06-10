@@ -118,7 +118,7 @@ internal static class CoordBasedCellPairingPass
     /// <summary>
     ///     Resolve a master cell's (worldspace, gridX, gridY) from its
     ///     <see cref="ParsedMainRecord" />. Worldspace comes from
-    ///     <see cref="PcEsmCellContext.WorldspaceFormId" /> (GRUP nesting context); coords
+    ///     <c>PcEsmCellContext.WorldspaceFormId</c> (GRUP nesting context); coords
     ///     come from the XCLC subrecord (parsed little-endian on the PC ESM).
     /// </summary>
     private static bool TryGetMasterCellCoord(

@@ -5,9 +5,9 @@ using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12;
 
 /// <summary>
-///     v3 Pass 4 Step 2c — D3D12 analog of <see cref="TerrainTextureResolver" />. Resolves
+///     v3 Pass 4 Step 2c — D3D12 analog of <c>TerrainTextureResolver</c>. Resolves
 ///     LTEX FormIDs to texture entries via the same LTEX → TXST → DiffuseTexture chain;
-///     uploads through <see cref="GpuTextureCache12" /> instead of <see cref="GpuTextureCache" />.
+///     uploads through <see cref="GpuTextureCache12" /> instead of the old <c>GpuTextureCache</c>.
 ///     <para>
 ///         Owns both the <see cref="NifTextureResolver" /> (backend-agnostic decode) and
 ///         the <see cref="GpuTextureCache12" /> (D3D12 upload). The renderer borrows the

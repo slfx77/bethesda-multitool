@@ -12,7 +12,7 @@ namespace FalloutXbox360Utils;
 ///     doesn't double-list shared archives.
 ///
 ///     Ordering: primary first, then load-order entries in order, matching the engine's
-///     "later file overrides earlier" semantics — <see cref="NifTextureLoader" /> walks the
+///     "later file overrides earlier" semantics — <c>NifTextureLoader</c> walks the
 ///     sources list and returns the first hit, which gives precedence to later DLC.
 ///
 ///     A DMP file has no adjacent BSAs of its own, so without <c>AdditionalDataPaths</c> the

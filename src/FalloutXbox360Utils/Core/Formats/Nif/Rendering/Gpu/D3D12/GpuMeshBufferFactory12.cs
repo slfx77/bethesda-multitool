@@ -6,9 +6,9 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
 ///     v3 Pass 4 Step 2a — one-shot helpers to upload static vertex / index data into a
-///     D3D12 committed resource. The D3D12 analog of
-///     <see cref="GpuMeshUploader.CreateVertexBuffer{T}" /> and
-///     <see cref="GpuMeshUploader.CreateIndexBuffer" />.
+///     D3D12 committed resource. The D3D12 analog of the old
+///     <c>GpuMeshUploader.CreateVertexBuffer&lt;T&gt;</c> and
+///     <c>GpuMeshUploader.CreateIndexBuffer</c>.
 ///     <para>
 ///         All buffers live in the UPLOAD heap with <c>ResourceStates.GenericRead</c> —
 ///         the simplest pattern for write-once meshes. <c>GenericRead</c> includes the
@@ -24,7 +24,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 internal static unsafe class GpuMeshBufferFactory12
 {
     /// <summary>
-    ///     D3D12 mirror of <see cref="GpuMeshUploader.InputElements" /> — same six TEXCOORD
+    ///     D3D12 mirror of the old <c>GpuMeshUploader.InputElements</c> — same six TEXCOORD
     ///     bindings, same offsets, just in the Vortice.Direct3D12 namespace so it can be
     ///     plugged into a <see cref="InputLayoutDescription" /> on a PSO.
     /// </summary>

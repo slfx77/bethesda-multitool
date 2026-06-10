@@ -112,9 +112,9 @@ internal sealed class WorldViewData
     /// <summary>
     ///     Additional data-file paths (ESM/ESP/DMP) from the active Load Order. When a DMP file
     ///     is loaded as <see cref="SourceFilePath" />, it has no adjacent BSAs of its own;
-    ///     <see cref="WorldView3DControl" /> falls back to these paths to discover texture BSAs
+    ///     <c>WorldView3DControl</c> falls back to these paths to discover texture BSAs
     ///     in their parent Data folders. Settable post-construction so
-    ///     <see cref="WorldMapOverlayBuilder" /> can stay agnostic of session/load-order state.
+    ///     <c>WorldMapOverlayBuilder</c> can stay agnostic of session/load-order state.
     /// </summary>
     public IReadOnlyList<string> AdditionalDataPaths { get; set; } = [];
 }

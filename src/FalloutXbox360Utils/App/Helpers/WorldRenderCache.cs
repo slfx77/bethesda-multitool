@@ -89,7 +89,7 @@ internal sealed class WorldRenderCache
     ///     v3 Phase 3 — returns this cell's static-mesh placements with world transforms and
     ///     bounding spheres pre-computed. Filters out ACHR/ACRE (skinned actors, deferred to v4)
     ///     and refs without a resolved ModelPath. Result is cached per cell across frames;
-    ///     <see cref="ReferenceRenderer" /> iterates this directly in its per-frame loop.
+    ///     <c>ReferenceRenderer12</c> iterates this directly in its per-frame loop.
     /// </summary>
     internal IReadOnlyList<RenderableReference> GetPlacementList(CellRecord cell)
     {

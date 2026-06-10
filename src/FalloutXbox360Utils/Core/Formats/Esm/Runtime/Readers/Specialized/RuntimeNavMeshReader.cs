@@ -47,7 +47,7 @@ internal sealed class RuntimeNavMeshReader(RuntimeMemoryContext context)
     }
 
     /// <summary>
-    ///     BSSimpleArray<T> layout: data ptr (+0), capacity (+4), count (+8), reserved (+12).
+    ///     BSSimpleArray&lt;T&gt; layout: data ptr (+0), capacity (+4), count (+8), reserved (+12).
     ///     Returns 0 if the array offset can't be resolved or the count looks like uninitialized memory.
     /// </summary>
     private static uint ReadArrayCount(PdbStructView view, string fieldName)

@@ -19,6 +19,7 @@ internal sealed class GeometryArenaAllocator
     private readonly List<List<FreeSpan>> _blocks = new();
     private long _allocatedBytes;
 
+    /// <summary>Creates an arena that sub-allocates spans from fixed-size blocks.</summary>
     /// <param name="blockSize">Bytes per block (rounded down to a multiple of <paramref name="alignment" />).</param>
     /// <param name="alignment">Power-of-two alignment applied to every allocation. 16 satisfies both
     ///     vertex-stride and R16 index-buffer location requirements.</param>

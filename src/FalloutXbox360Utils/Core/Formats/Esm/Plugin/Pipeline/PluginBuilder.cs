@@ -120,7 +120,7 @@ public sealed class PluginBuilder
     ///     in <see cref="PreAllocateNewPlacedRefFormIds" /> immediately before Phase 3 begins,
     ///     so Phase 3 encoders that consume <see cref="BuildAllValidFormIdSet" /> (notably
     ///     <c>PackEncoder.EncodeNew</c>) see the full set of placed-ref FormIDs that Phase 4
-    ///     will emit. Phase 4 looks these up via <see cref="TryGetPreAllocatedPlacedRefFormId" />
+    ///     will emit. Phase 4 looks these up via <c>TryGetPreAllocatedPlacedRefFormId</c>
     ///     instead of calling <see cref="FormIdAllocator.Allocate" /> directly.
     ///     Reset to empty at each Build entry. Orphans (refs Phase 0 pre-allocates but Phase 4
     ///     later drops) are tolerated — FormIDs are cheap, the allocator already permits gaps,
@@ -1718,7 +1718,7 @@ public sealed class PluginBuilder
     ///     <c>memory/quest_script_brute_force_scan.md</c>. Before these constraints landed,
     ///     this override silently bound master quests (e.g. VMS01) to arbitrary
     ///     tutorial-cluster scripts, breaking the Doc Mitchell "Finished" prompt.
-    ///     <see cref="Tests.Core.Formats.Esm.Plugin.ScriptOverridePolicyTests" /> in the test
+    ///     <c>ScriptOverridePolicyTests</c> in the test
     ///     project pins the contract that <see cref="QustEncoder.Encode" /> +
     ///     <see cref="ScptEncoder" /> never emit SCRI / full script overrides via the standard
     ///     encoder loop; this method is the dedicated channel for that work, gated on a
@@ -5393,9 +5393,9 @@ public sealed class PluginBuilder
     ///     Mitchell's house where the DMP captures only DOOR/ACHR/FURN and master statics
     ///     would otherwise be wiped.
     /// </summary>
-    private static IReadOnlySet<string> ComputeDmpCapturedBaseTypes(
+    private static HashSet<string> ComputeDmpCapturedBaseTypes(
         IReadOnlyList<PlacedReference> placedObjects,
-        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+        Dictionary<uint, ParsedMainRecord> pcRecordsByFormId)
     {
         var result = new HashSet<string>(StringComparer.Ordinal);
         foreach (var placed in placedObjects)

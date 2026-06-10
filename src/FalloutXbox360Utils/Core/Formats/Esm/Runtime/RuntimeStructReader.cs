@@ -706,7 +706,7 @@ public sealed class RuntimeStructReader
     /// <summary>
     ///     VA-driven companion to <see cref="DiscoverNavMeshesForCell" />: walks the cell's
     ///     <c>NavMeshArray</c> without requiring a <see cref="RuntimeEditorIdEntry" />. Used by
-    ///     <see cref="MiscGameSystemHandler" /> when handing off cells discovered via paths
+    ///     <c>MiscGameSystemHandler</c> when handing off cells discovered via paths
     ///     other than the editor-id hash (pAllForms walk, worldspace grid, heap-scan).
     /// </summary>
     public List<NavMeshRecord> DiscoverNavMeshesForCellVa(uint cellVa, uint cellFormId)
@@ -717,7 +717,7 @@ public sealed class RuntimeStructReader
     /// <summary>
     ///     Direct BSNavMesh projection: reads a single BSNavMesh struct at the given VA and
     ///     returns its synthetic <see cref="NavMeshRecord" /> without going through a cell
-    ///     parent. Used by Path 4 in <see cref="MiscGameSystemHandler" /> to surface
+    ///     parent. Used by Path 4 in <c>MiscGameSystemHandler</c> to surface
     ///     runtime-only NAVMs from pAllForms (FormType 0x43) when the cell graph has detached
     ///     NavMeshArrays.
     /// </summary>
