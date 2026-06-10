@@ -18,6 +18,7 @@ internal sealed class MainWindow : Window, IDisposable
     private readonly ProgressBar _progressBar;
     private readonly TextBlock _statusText;
     private readonly WorldMapControl _worldMap;
+    private readonly WorldView3DControl? _worldView3D;
     private bool _disposed;
     private bool _started;
 
@@ -28,6 +29,15 @@ internal sealed class MainWindow : Window, IDisposable
 
         _worldMap = new WorldMapControl();
         _worldMap.Loaded += OnWorldMapLoaded;
+
+        // FALLOUT_PROFILER_WITH_3D=1 replicates SingleFileTab's 2D+3D coupling: both controls share
+        // one WorldViewData and their terrain paths run concurrently. That coupling is the regime
+        // that triggers the WastelandNV-scale heap corruption the 3D-only profiler can't reproduce.
+        // Gated so the existing 2D-only scenarios are unaffected by default.
+        if (string.Equals(Environment.GetEnvironmentVariable("FALLOUT_PROFILER_WITH_3D"), "1", StringComparison.Ordinal))
+        {
+            _worldView3D = new WorldView3DControl();
+        }
 
         _statusText = new TextBlock
         {
@@ -58,6 +68,7 @@ internal sealed class MainWindow : Window, IDisposable
         }
 
         _disposed = true;
+        _worldView3D?.Dispose();
         _worldMap.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -75,6 +86,15 @@ internal sealed class MainWindow : Window, IDisposable
 
         Grid.SetRow(_worldMap, 0);
         root.Children.Add(_worldMap);
+
+        if (_worldView3D is not null)
+        {
+            // Collapsed but in the visual tree, so it creates its D3D12 device + streaming pipelines
+            // exactly like the GUI does while the user looks at the 2D map.
+            Grid.SetRow(_worldView3D, 0);
+            _worldView3D.Visibility = Visibility.Collapsed;
+            root.Children.Add(_worldView3D);
+        }
 
         var statusPanel = new Grid
         {
@@ -143,6 +163,21 @@ internal sealed class MainWindow : Window, IDisposable
 
             SetStatus("Loading data into WorldMapControl...");
             _worldMap.LoadData(data);
+            if (_worldView3D is not null)
+            {
+                try
+                {
+                    // Mirror SingleFileTab.WorldMap.cs: load the SAME data into the 3D control and wire
+                    // it as the 2D map's top-down provider. This brings up the 3D streaming concurrently.
+                    _worldView3D.LoadData(data);
+                    _worldMap.TopDownProvider = _worldView3D;
+                    Log.Info("Profiler: 3D control loaded + wired — 2D+3D coupling active.");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("Profiler: 3D control init failed: {0}", ex);
+                }
+            }
             _progressBar.IsIndeterminate = false;
             _progressBar.Visibility = Visibility.Collapsed;
 

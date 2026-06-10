@@ -16,6 +16,7 @@ internal abstract class Map2DScenario
             "terrain-aggregate" => new TerrainAggregateScenario(),
             "zoom-into-cells" => new ZoomIntoCellsScenario(true),
             "zoom-into-cells-heightmap" => new ZoomIntoCellsScenario(false),
+            "pan-stress" => new PanStressScenario(),
             _ => null
         };
     }
