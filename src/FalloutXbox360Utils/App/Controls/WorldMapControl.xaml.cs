@@ -22,6 +22,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 {
     private const int ExportLongEdge = 4096;
 
+    // Cached (CA1869): the tile-manifest export reuses one options instance instead of allocating per write.
+    private static readonly System.Text.Json.JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
+
     // --- Legend / Browser ---
     private readonly HashSet<PlacedObjectCategory> _hiddenCategories = [];
     private readonly WorldMapStateController _state = new();
@@ -479,7 +482,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         if (_topDownCts is not null)
         {
             try { _topDownCts.Cancel(); }
-            catch (ObjectDisposedException) { }
+            catch (ObjectDisposedException) { /* already disposed by a concurrent reset — nothing to cancel */ }
             _topDownCts.Dispose();
             _topDownCts = null;
         }
@@ -617,7 +620,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _inFlightCellKeys.Clear();
         if (_terrainStreamCts is null) return;
         try { _terrainStreamCts.Cancel(); }
-        catch (ObjectDisposedException) { }
+        catch (ObjectDisposedException) { /* already disposed by a concurrent reset — nothing to cancel */ }
         _terrainStreamCts.Dispose();
         _terrainStreamCts = null;
     }
@@ -1051,8 +1054,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     gridX0 = minGx, gridX1 = maxGx, gridY0 = minGy, gridY1 = maxGy,
                     tiles = manifestTiles
                 };
-                var json = System.Text.Json.JsonSerializer.Serialize(
-                    manifest, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                var json = System.Text.Json.JsonSerializer.Serialize(manifest, IndentedJsonOptions);
                 await File.WriteAllTextAsync(Path.Combine(dir, $"{name}_manifest.json"), json, ct);
             }
         }
@@ -1158,6 +1160,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void DrawMapContent(CanvasDrawingSession ds, float canvasW, float canvasH)
     {
+        // MapCanvas_Draw already early-outs when _data is null, but that guard doesn't flow into this
+        // extracted method — re-assert it so the nullable analysis treats _data as non-null below.
+        if (_data is null) return;
+
         EnsureHeightmapBitmap(canvasW, canvasH);
         MaybeScheduleTopDownRequest(canvasW, canvasH);
 
@@ -1937,7 +1943,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
             MapCanvas.Invalidate();
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { /* request superseded by a newer top-down render — expected */ }
         catch (Exception ex)
         {
             Map2DProfilerTrace.Event("topdown-error", ex.Message);

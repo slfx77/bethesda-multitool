@@ -20,7 +20,7 @@ using D12 = Vortice.Direct3D12;
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12;
 
 /// <summary>
-///     v3 Pass 4 Step 2c — D3D12 port of <see cref="TerrainRenderer" />. Renders textured
+///     v3 Pass 4 Step 2c — D3D12 port of <c>TerrainRenderer</c>. Renders textured
 ///     heightmap terrain via per-cell vertex buffers + per-quadrant draws against a shared
 ///     index buffer.
 ///     <para>
@@ -96,7 +96,6 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private readonly GpuDevice12 _gpu;
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
-    private readonly GpuRootSignature12 _rootSignature;
     private readonly GpuDescriptorHeapAllocator12 _cbvSrvUavHeap;
     private readonly GpuDeletionQueue12 _deletionQueue;
     private readonly TerrainTextureResolver12 _textureResolver;
@@ -153,7 +152,6 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         _gpu = gpu;
         _recorder = recorder;
         _ringBuffer = ringBuffer;
-        _rootSignature = rootSignature;
         _cbvSrvUavHeap = cbvSrvUavHeap;
         _deletionQueue = deletionQueue;
         _textureResolver = textureResolver;
@@ -190,7 +188,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
         var psoDesc = new GraphicsPipelineStateDescription
         {
-            RootSignature = _rootSignature.RootSignature,
+            RootSignature = rootSignature.RootSignature,
             VertexShader = vsBytecode,
             PixelShader = psBytecode,
             BlendState = blend,
@@ -209,7 +207,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         // targets, so it writes only the depth buffer. Used by the top-down overlay pre-pass.
         var depthOnlyPsoDesc = new GraphicsPipelineStateDescription
         {
-            RootSignature = _rootSignature.RootSignature,
+            RootSignature = rootSignature.RootSignature,
             VertexShader = vsBytecode,
             BlendState = blend,
             RasterizerState = rasterizer,

@@ -17,9 +17,15 @@ public readonly record struct LayerWeight(uint FormId, float Weight);
 /// </summary>
 public struct VertexWeights
 {
+    // Public fields, not properties: VertexWeights is a mutable value type whose Add() mutates these
+    // in place through array slots (table.Vertices[i].Add(...)). Encapsulating as properties risks
+    // silent struct copies on a hot path. CA1051 has the canonical exclude_structs option for this;
+    // S1104 has no struct exemption, so it's suppressed here.
+#pragma warning disable S1104
     public LayerWeight E0, E1, E2, E3;
     public byte Count;
     public LayerWeight[]? Overflow;
+#pragma warning restore S1104
 
     public void Add(uint formId, float weight)
     {
@@ -135,7 +141,7 @@ public sealed class CellLayerWeightTable
     /// </summary>
     public const uint EngineDefaultSentinelFormId = 0u;
 
-    public readonly VertexWeights[] Vertices = new VertexWeights[CellVertexCount * CellVertexCount];
+    public VertexWeights[] Vertices { get; } = new VertexWeights[CellVertexCount * CellVertexCount];
 
     /// <summary>
     ///     Pooled dense 17×17 opacity grids, one per ATXT. Grown lazily; rebuilt from

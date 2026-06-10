@@ -116,7 +116,11 @@ public static class GuiEntryPoint
     private const int ExceptionContinueSearch = 0;            // log only; let normal teardown continue
 
     // Keep the delegate alive for the process lifetime — GC must not collect the thunk the OS holds.
+    // S1450 (could be a local) is a false positive here: demoting it to a local would let the GC
+    // reclaim the delegate the OS still references via AddVectoredExceptionHandler → crash.
+#pragma warning disable S1450
     private static VectoredHandler? s_vectoredHandler;
+#pragma warning restore S1450
 
     private static void InstallNativeExceptionLogger()
     {

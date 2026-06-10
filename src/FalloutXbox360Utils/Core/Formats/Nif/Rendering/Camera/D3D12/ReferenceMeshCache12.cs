@@ -46,7 +46,6 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         min: 1L * 1024L * 1024L,
         max: 64L * 1024L * 1024L);
 
-    private readonly GpuDevice12 _gpu;
     private readonly CLI.NpcMeshArchiveSet _meshArchives;
     private readonly NifTextureResolver _textureResolver;
     private readonly GpuTextureCache12 _textureCache;
@@ -86,12 +85,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         if (capacity <= 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be > 0.");
 
-        _gpu = gpu;
         _meshArchives = meshArchives;
         _textureResolver = textureResolver;
         _textureCache = textureCache;
         _deletionQueue = deletionQueue;
-        _geometryArena = new GpuGeometryArena12(_gpu);
+        _geometryArena = new GpuGeometryArena12(gpu);
         _persistentDecodedCache = persistentDecodedCache ?? ReferenceDecodedMeshDiskCache12.CreateFromEnvironment();
         Capacity = capacity;
     }

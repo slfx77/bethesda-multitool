@@ -14,7 +14,7 @@ using D12 = Vortice.Direct3D12;
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12;
 
 /// <summary>
-///     v3 Pass 4 Step 2e — D3D12 port of <see cref="WaterRenderer" />. Renders one
+///     v3 Pass 4 Step 2e — D3D12 port of <c>WaterRenderer</c>. Renders one
 ///     alpha-blended flat quad per visible cell whose water height resolves. No vertex
 ///     buffer: <c>water.vert.hlsl</c> expands the 6 quad corners from <c>SV_VertexID</c>
 ///     and a per-instance structured-buffer entry.
@@ -46,7 +46,6 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private readonly GpuDevice12 _gpu;
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
-    private readonly GpuRootSignature12 _rootSignature;
     private readonly GpuDescriptorHeapAllocator12 _cbvSrvUavHeap;
     private readonly GpuPersistentDescriptorAllocator12 _persistentSrvs;
     private readonly GpuDeletionQueue12 _deletionQueue;
@@ -88,7 +87,6 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _gpu = gpu;
         _recorder = recorder;
         _ringBuffer = ringBuffer;
-        _rootSignature = rootSignature;
         _cbvSrvUavHeap = cbvSrvUavHeap;
         _persistentSrvs = new GpuPersistentDescriptorAllocator12(
             gpu,
@@ -136,7 +134,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 
         var psoDesc = new GraphicsPipelineStateDescription
         {
-            RootSignature = _rootSignature.RootSignature,
+            RootSignature = rootSignature.RootSignature,
             VertexShader = vsBytecode,
             PixelShader = psBytecode,
             BlendState = blend,

@@ -225,7 +225,7 @@ internal static class DmpCandidateOverlayCommand
         var tracePath = Path.ChangeExtension(outputPath, ".trace.csv");
         File.WriteAllText(tracePath, traceRows);
 
-        PrintSummary(groups, outputPath);
+        PrintSummary(groups);
         AnsiConsole.MarkupLine($"\n[green]Wrote overlay ESP[/] {outputPath} ({espBytes.Length:N0} bytes)");
         AnsiConsole.MarkupLine($"[green]Wrote trace CSV[/]  {tracePath}");
         AnsiConsole.MarkupLine(
@@ -678,7 +678,7 @@ internal static class DmpCandidateOverlayCommand
     // ---- summary / helpers -------------------------------------------------------------------
 
     private static void PrintSummary(
-        IReadOnlyDictionary<(uint Cell, string Status), CellGroup> groups, string outputPath)
+        IReadOnlyDictionary<(uint Cell, string Status), CellGroup> groups)
     {
         AnsiConsole.WriteLine();
         var table = new Table().Border(TableBorder.Rounded);

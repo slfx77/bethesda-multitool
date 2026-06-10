@@ -35,10 +35,10 @@ public sealed class CellTerrainTextureSet
     ///     the renderer maps it to DirtWasteland01. Slot count = <see cref="ActiveSlotCount" />;
     ///     remaining slots are 0.
     /// </summary>
-    public readonly uint[] SlotFormIds = new uint[MaxSlots];
+    public uint[] SlotFormIds { get; } = new uint[MaxSlots];
 
     /// <summary>Number of populated slots in <see cref="SlotFormIds" /> (1..<see cref="MaxSlots" />).</summary>
-    public int ActiveSlotCount;
+    public int ActiveSlotCount { get; set; }
 
     /// <summary>
     ///     Per-vertex blend weights into the <see cref="MaxSlots" /> slots, packed as
@@ -46,7 +46,7 @@ public sealed class CellTerrainTextureSet
     ///     SlotVectors + k, where k selects the 4-slot group (slots 4k..4k+3). Weights sum to ~1
     ///     at vertices with any contribution; 0 at empty vertices.
     /// </summary>
-    public readonly Vector4[] VertexWeights = new Vector4[VertexCount * SlotVectors];
+    public Vector4[] VertexWeights { get; } = new Vector4[VertexCount * SlotVectors];
 
     /// <summary>
     ///     Project a <see cref="CellLayerWeightTable" /> onto the fixed-slot representation.

@@ -179,10 +179,9 @@ internal static class CellStructuralReferencePreserver
         }
 
         var baseFormId = ReadNameFormId(masterRef);
-        var baseLookupOk = baseFormId.HasValue
-                          && pcRecordsByFormId.TryGetValue(baseFormId.Value, out var baseRecord);
-        var baseRecordResolved = baseLookupOk
-            ? pcRecordsByFormId[baseFormId!.Value]
+        var baseRecordResolved = baseFormId.HasValue
+                                 && pcRecordsByFormId.TryGetValue(baseFormId.Value, out var baseRecord)
+            ? baseRecord
             : null;
 
         if (baseRecordResolved is not null && HasScriptSubrecord(baseRecordResolved))

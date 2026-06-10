@@ -30,7 +30,6 @@ internal sealed class GpuDescriptorHeapAllocator12 : IDisposable
 {
     private readonly ID3D12DescriptorHeap _heap;
     private readonly uint _descriptorSize;
-    private readonly uint _capacity;
     private readonly uint _persistentCapacity;
     private readonly uint _perFrameRegionStart;
     private readonly uint _perFrameCapacity;
@@ -62,7 +61,8 @@ internal sealed class GpuDescriptorHeapAllocator12 : IDisposable
                 nameof(type));
         }
         if (capacity == 0 || framesInFlight <= 0)
-            throw new ArgumentOutOfRangeException();
+            throw new ArgumentOutOfRangeException(nameof(capacity),
+                "Heap capacity must be > 0 and framesInFlight must be > 0.");
         if (persistentCapacity >= capacity)
             throw new ArgumentOutOfRangeException(nameof(persistentCapacity),
                 "Persistent region must leave at least 1 descriptor for the per-frame ring.");
@@ -79,7 +79,6 @@ internal sealed class GpuDescriptorHeapAllocator12 : IDisposable
             Flags = DescriptorHeapFlags.ShaderVisible
         });
         _descriptorSize = gpu.Device.GetDescriptorHandleIncrementSize(type);
-        _capacity = capacity;
         _persistentCapacity = persistentCapacity;
         _perFrameRegionStart = persistentCapacity;
         _framesInFlight = framesInFlight;

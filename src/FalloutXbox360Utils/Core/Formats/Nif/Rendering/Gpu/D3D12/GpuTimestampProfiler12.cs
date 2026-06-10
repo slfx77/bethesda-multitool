@@ -203,10 +203,7 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
 
     private void ThrowIfDisposed()
     {
-        if (_disposed)
-        {
-            throw new ObjectDisposedException(nameof(GpuTimestampProfiler12));
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
     private readonly record struct PendingFrame(long FrameNumber, ulong FenceValue)

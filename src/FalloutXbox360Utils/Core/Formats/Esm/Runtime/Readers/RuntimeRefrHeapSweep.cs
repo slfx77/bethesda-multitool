@@ -10,7 +10,7 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers;
 ///     Direct vtable heap sweep for TESObjectREFR/ACHR/ACRE structs that the engine's
 ///     <c>pAllForms</c> hash-table walk misses. On a partial memory dump the form hash table
 ///     has broken bucket chains (chain errors), so the editor-ID-table-driven scan that seeds
-///     <see cref="EsmRecordScanResult.RuntimeRefrFormEntries" /> never sees a large pool of
+///     <c>EsmRecordScanResult.RuntimeRefrFormEntries</c> never sees a large pool of
 ///     resident refs. This complements it by scanning raw heap bytes for the REFR struct shape
 ///     (validated by vtable / FormID / position / scale / parent-cell pointer), and appends an
 ///     entry for each <b>master ref</b> the table missed so the existing
@@ -83,7 +83,7 @@ internal static class RuntimeRefrHeapSweep
                 continue;
             }
 
-            ScanRegion(buffer, region, shift, masterFormIds, existing, addedFids,
+            ScanRegion(buffer, shift, masterFormIds, existing, addedFids,
                 emit: hit =>
                 {
                     scanResult.RuntimeRefrFormEntries.Add(new RuntimeEditorIdEntry
@@ -135,7 +135,7 @@ internal static class RuntimeRefrHeapSweep
                 }
 
                 scanned += buffer.Length;
-                ScanRegion(buffer, region, shift, masterFormIds, existing, seen,
+                ScanRegion(buffer, shift, masterFormIds, existing, seen,
                     emit: _ => hits++);
             }
 
@@ -170,7 +170,6 @@ internal static class RuntimeRefrHeapSweep
 
     private static void ScanRegion(
         byte[] buffer,
-        MinidumpMemoryRegion region,
         int shift,
         IReadOnlySet<uint> masterFormIds,
         HashSet<uint> existing,

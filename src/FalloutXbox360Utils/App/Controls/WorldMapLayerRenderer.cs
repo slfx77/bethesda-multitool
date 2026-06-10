@@ -94,6 +94,10 @@ internal static class WorldMapLayerRenderer
         return new LayerBitmap(rgba, width, height, minX, maxY);
     }
 
+    /// <summary>Minimum px/cell for the aggregate — even a huge worldspace keeps at least this much
+    /// detail (a 248-cell worldspace at the 2048 target lands here).</summary>
+    internal const int MinAggregatePixelsPerCell = 8;
+
     /// <summary>
     ///     Whole-worldspace TerrainTextures aggregate: renders every cell's ACTUAL blended terrain
     ///     textures at the coarse heightmap resolution (<see cref="HmGridSize" /> px/cell) and
@@ -103,10 +107,6 @@ internal static class WorldMapLayerRenderer
     ///     per-cell high-res path. Returns null if the worldspace is too large to fit one bitmap under
     ///     <paramref name="maxDimension" /> (caller then keeps per-cell streaming).
     /// </summary>
-    /// <summary>Minimum px/cell for the aggregate — even a huge worldspace keeps at least this much
-    /// detail (a 248-cell worldspace at the 2048 target lands here).</summary>
-    internal const int MinAggregatePixelsPerCell = 8;
-
     internal static LayerBitmap? RenderTerrainTexturesAggregate(
         List<CellRecord> cellSource, LandscapeTexturePalette palette,
         float? defaultWaterHeight, bool showWater,
@@ -481,7 +481,7 @@ internal static class WorldMapLayerRenderer
     ///     for the cross-cell blend. Cells without grid coords are skipped.
     /// </summary>
     private static Dictionary<(int gx, int gy), CellRecord> BuildCellGridIndex(
-        IReadOnlyList<CellRecord> cellSource)
+        List<CellRecord> cellSource)
     {
         var index = new Dictionary<(int gx, int gy), CellRecord>(cellSource.Count);
         for (var i = 0; i < cellSource.Count; i++)
@@ -1023,7 +1023,7 @@ internal static class WorldMapLayerRenderer
         return rgba;
     }
 
-    private static IEnumerable<CellRecord> EnumerateCellsWithGrid(IReadOnlyList<CellRecord> cellSource)
+    private static IEnumerable<CellRecord> EnumerateCellsWithGrid(List<CellRecord> cellSource)
     {
         for (var i = 0; i < cellSource.Count; i++)
         {

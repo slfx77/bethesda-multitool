@@ -53,24 +53,22 @@ public static class RecordCatalog
             // the DMP's wrong-typed Model, which the planner encoder dispatch rejects as
             // "Model is not of type X: actual Y". Type-mismatched DMP records fall through
             // to DmpNew so they emit through their own signature's encoder.
+            // First DMP record with this FormID wins the override slot (dmpOverrideIndices.Add).
+            // Later duplicates fall through to DmpNew so the downstream emission warning surfaces
+            // the conflict (rather than silently dropping) and the planner doesn't crash on the
+            // second IndexOf.
             if (masterByFormId.TryGetValue(formId, out var masterEntry)
                 && string.Equals(masterEntry.Type, type, StringComparison.Ordinal)
-                && masterEntryIndexByFormId.TryGetValue(formId, out var idx))
+                && masterEntryIndexByFormId.TryGetValue(formId, out var idx)
+                && dmpOverrideIndices.Add(idx))
             {
-                // First DMP record with this FormID wins the override slot. Later
-                // duplicates fall through to DmpNew so the downstream emission warning
-                // surfaces the conflict (rather than silently dropping) and the planner
-                // doesn't crash on the second IndexOf.
-                if (dmpOverrideIndices.Add(idx))
+                entries[idx] = masterEntry with
                 {
-                    entries[idx] = masterEntry with
-                    {
-                        Source = SourceKind.DmpOverride,
-                        DmpFormId = formId,
-                        Model = model,
-                    };
-                    continue;
-                }
+                    Source = SourceKind.DmpOverride,
+                    DmpFormId = formId,
+                    Model = model,
+                };
+                continue;
             }
 
             entries.Add(new CatalogEntry

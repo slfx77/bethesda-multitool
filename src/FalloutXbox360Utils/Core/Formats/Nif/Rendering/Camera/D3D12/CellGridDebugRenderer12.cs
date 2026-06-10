@@ -15,7 +15,7 @@ using D12 = Vortice.Direct3D12;
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12;
 
 /// <summary>
-///     v3 Pass 4 Step 2b — D3D12 port of <see cref="CellGridDebugRenderer" />. Renders
+///     v3 Pass 4 Step 2b — D3D12 port of <c>CellGridDebugRenderer</c>. Renders
 ///     the yellow cell-grid wireframe overlay (D1 toggle).
 ///     <para>
 ///         Simplest of the four renderer ports: line list topology, single PSO, single
@@ -37,10 +37,8 @@ internal sealed class CellGridDebugRenderer12
     private const uint UniformsByteSize = 80; // float4x4 (64) + float4 color (16) — matches D3D11 layout
     private const uint VertexStride = 12;     // sizeof(Vector3)
 
-    private readonly GpuDevice12 _gpu;
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
-    private readonly GpuRootSignature12 _rootSignature;
     private readonly ID3D12PipelineState _pso;
 
     // Spike A — Pass 4 Step 4 probe. CommandSignature for one DrawInstanced indirect entry
@@ -64,10 +62,8 @@ internal sealed class CellGridDebugRenderer12
         GpuRingBuffer12 ringBuffer,
         GpuRootSignature12 rootSignature)
     {
-        _gpu = gpu;
         _recorder = recorder;
         _ringBuffer = ringBuffer;
-        _rootSignature = rootSignature;
 
         var vsBytecode = CompileEmbeddedShader("cellgrid.vert.hlsl", "main", "vs_5_1");
         var psBytecode = CompileEmbeddedShader("cellgrid.frag.hlsl", "main", "ps_5_1");
@@ -116,7 +112,7 @@ internal sealed class CellGridDebugRenderer12
 
         var psoDesc = new GraphicsPipelineStateDescription
         {
-            RootSignature = _rootSignature.RootSignature,
+            RootSignature = rootSignature.RootSignature,
             VertexShader = vsBytecode,
             PixelShader = psBytecode,
             BlendState = blend,
