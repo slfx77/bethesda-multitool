@@ -12,7 +12,7 @@ using D12 = Vortice.Direct3D12;
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
-///     v3 Pass 4 Step 3 — D3D12 port of <see cref="GpuSpriteRenderer" />. Headless renderer
+///     v3 Pass 4 Step 3 — D3D12 port of the old <c>GpuSpriteRenderer</c>. Headless renderer
 ///     producing the same <see cref="SpriteResult" /> as the D3D11 + CPU paths. Used by the
 ///     CLI <c>render npc</c> / <c>export npc</c> commands and the GPU smoke tests.
 ///     <para>
@@ -78,11 +78,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         // Drain any in-flight GPU work referencing our resources before tear-down.
         var drain = _nextFenceValue++;
         _gpu.DirectQueue.Signal(_renderFence, drain).CheckError();
-        if (_renderFence.CompletedValue < drain)
-        {
-            _renderFence.SetEventOnCompletion(drain, _fenceEvent.SafeWaitHandle.DangerousGetHandle()).CheckError();
-            _fenceEvent.WaitOne();
-        }
+        D3D12FenceWaiter.WaitForFence(_renderFence, drain, _fenceEvent);
 
         _renderFence.Dispose();
         _fenceEvent.Dispose();
@@ -471,12 +467,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     public SpriteResult CompleteRender(PendingRender pending)
     {
         // Wait for GPU completion of this render's submission.
-        if (_renderFence.CompletedValue < pending.FenceValue)
-        {
-            _renderFence.SetEventOnCompletion(pending.FenceValue,
-                _fenceEvent.SafeWaitHandle.DangerousGetHandle()).CheckError();
-            _fenceEvent.WaitOne();
-        }
+        D3D12FenceWaiter.WaitForFence(_renderFence, pending.FenceValue, _fenceEvent);
 
         var ssPixels = ReadBackPixels(pending.ReadbackBuffer,
             (uint)pending.SsWidth, (uint)pending.SsHeight, pending.ReadbackRowPitch);
@@ -499,10 +490,14 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     /// <summary>
     ///     No-op in the D3D12 port — sprite renders don't share a persistent texture cache
     ///     across SubmitRender calls (all per-render textures dispose in CompleteRender).
-    ///     Kept for API parity with <see cref="GpuSpriteRenderer.EvictTexture" /> so the
+    ///     Kept for API parity with the old <c>GpuSpriteRenderer.EvictTexture</c> so the
     ///     CLI NPC pipeline can call it unconditionally.
     /// </summary>
+    // Intentionally an instance method (not static) for API parity with the old GpuSpriteRenderer —
+    // the NPC pipeline evicts unconditionally on the renderer instance regardless of backend.
+#pragma warning disable CA1822, S2325
     public void EvictTexture(string key) { _ = key; }
+#pragma warning restore CA1822, S2325
 
     /// <summary>
     ///     Decodes <paramref name="path" /> via <paramref name="resolver" /> and uploads it
@@ -619,11 +614,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         _gpu.DirectQueue.ExecuteCommandList(cmd);
         var fenceValue = _nextFenceValue++;
         _gpu.DirectQueue.Signal(_renderFence, fenceValue).CheckError();
-        if (_renderFence.CompletedValue < fenceValue)
-        {
-            _renderFence.SetEventOnCompletion(fenceValue, _fenceEvent.SafeWaitHandle.DangerousGetHandle()).CheckError();
-            _fenceEvent.WaitOne();
-        }
+        D3D12FenceWaiter.WaitForFence(_renderFence, fenceValue, _fenceEvent);
         cmd.Dispose();
         allocator.Dispose();
         staging.Dispose();
@@ -641,7 +632,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         };
     }
 
-    private byte[] ReadBackPixels(ID3D12Resource buffer, uint width, uint height, uint rowPitch)
+    private static byte[] ReadBackPixels(ID3D12Resource buffer, uint width, uint height, uint rowPitch)
     {
         void* cpuPtr = null;
         buffer.Map(0, &cpuPtr).CheckError();

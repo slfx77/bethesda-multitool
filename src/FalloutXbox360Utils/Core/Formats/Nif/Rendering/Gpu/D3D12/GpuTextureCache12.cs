@@ -758,11 +758,7 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
         using var fence = _gpu.Device.CreateFence(0, FenceFlags.None);
         using var fenceEvent = new AutoResetEvent(false);
         _gpu.DirectQueue.Signal(fence, 1).CheckError();
-        if (fence.CompletedValue < 1)
-        {
-            fence.SetEventOnCompletion(1, fenceEvent.SafeWaitHandle.DangerousGetHandle()).CheckError();
-            fenceEvent.WaitOne();
-        }
+        D3D12FenceWaiter.WaitForFence(fence, 1, fenceEvent);
     }
 
     private Entry CreatePlaceholderEntry(Entry fallback, string cacheKey) =>

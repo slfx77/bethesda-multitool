@@ -116,12 +116,8 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         LastFrameFenceWaitMilliseconds = 0;
         if (waitFor > 0 && _gpu.FrameFence.CompletedValue < waitFor)
         {
-            // SetEventOnCompletion takes the native handle. AutoResetEvent's SafeWaitHandle
-            // exposes it via DangerousGetHandle — safe here since we hold the AutoResetEvent
-            // for the lifetime of this recorder.
             var waitStarted = Stopwatch.GetTimestamp();
-            _gpu.FrameFence.SetEventOnCompletion(waitFor, _fenceEvent.SafeWaitHandle.DangerousGetHandle()).CheckError();
-            _fenceEvent.WaitOne();
+            D3D12FenceWaiter.WaitForFence(_gpu.FrameFence, waitFor, _fenceEvent);
             LastFrameWaitedOnFence = true;
             LastFrameFenceWaitMilliseconds = Stopwatch.GetElapsedTime(waitStarted).TotalMilliseconds;
         }
@@ -166,11 +162,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     {
         var signalValue = _nextFenceValue++;
         _gpu.DirectQueue.Signal(_gpu.FrameFence, signalValue).CheckError();
-        if (_gpu.FrameFence.CompletedValue < signalValue)
-        {
-            _gpu.FrameFence.SetEventOnCompletion(signalValue, _fenceEvent.SafeWaitHandle.DangerousGetHandle()).CheckError();
-            _fenceEvent.WaitOne();
-        }
+        D3D12FenceWaiter.WaitForFence(_gpu.FrameFence, signalValue, _fenceEvent);
         Array.Clear(_frameFenceValues);
         RetireAllFenceResources();
     }

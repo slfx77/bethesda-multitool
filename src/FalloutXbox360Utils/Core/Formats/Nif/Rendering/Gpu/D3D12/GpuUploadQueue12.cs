@@ -157,15 +157,7 @@ internal sealed class GpuUploadQueue12 : IDisposable
     }
 
     private void WaitForFence(ulong value)
-    {
-        if (value == 0 || _fence.CompletedValue >= value)
-        {
-            return;
-        }
-
-        _fence.SetEventOnCompletion(value, _fenceEvent.SafeWaitHandle.DangerousGetHandle()).CheckError();
-        _fenceEvent.WaitOne();
-    }
+        => D3D12FenceWaiter.WaitForFence(_fence, value, _fenceEvent);
 
     private readonly record struct StagingRetirement(IDisposable Resource, ulong FenceValue);
 }

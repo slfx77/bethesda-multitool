@@ -59,13 +59,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private readonly FrameProfileAccumulator _profileAccumulator = new();
     // v3 Pass 4 Step 3 cleanup — D3D11 stack deleted. The post-cutover backend is D3D12-only;
     // the `_useD3D12` flag, `FALLOUT_VIEWER_D3D11` rollback, and dual-stack field set are all
-    // gone. Renderer fields stay interface-typed (`I*Renderer`) so the single concrete D3D12
-    // impl plugs in without WorldView caring about types beyond the public surface.
-    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.Abstractions.ICellGridRenderer? _cellGrid;
-    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.Abstractions.ITerrainRenderer? _terrain;
+    // gone. With a single backend the renderer fields are the concrete D3D12 types directly; the
+    // I*Renderer interfaces remain (the renderers implement them) but add no indirection here.
+    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.CellGridDebugRenderer12? _cellGrid;
+    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainRenderer12? _terrain;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainTextureResolver12? _textureResolver12;
-    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.Abstractions.IWaterRenderer? _water;
-    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.Abstractions.INavMeshRenderer? _navMesh;
+    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12? _water;
+    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.NavMeshRenderer12? _navMesh;
     // v3 Phase 3 placed-object pipeline. Parallel to the terrain pipeline; owns separate
     // CPU NIF texture metadata and D3D12 GPU texture payload resolvers.
     private NpcMeshArchiveSet? _meshArchives;
@@ -73,7 +73,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver? _referenceGpuTextureResolver12;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTextureCache12? _referenceTextureCache12;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceMeshCache12? _referenceMeshCache12;
-    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.Abstractions.IReferenceRenderer? _references;
+    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12? _references;
     private WorldViewData? _data;
     private DateTime _lastFrameTime;
     private bool _mouseDragActive;
@@ -599,11 +599,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     /// frame is a single submission), so callers can dispose GPU resources afterwards safely.</summary>
     private void WaitForFrameFence(ulong value)
     {
-        var fence = _gpu12!.FrameFence;
-        if (fence.CompletedValue >= value) return;
+        if (_gpu12!.FrameFence.CompletedValue >= value) return;
         using var ev = new AutoResetEvent(false);
-        fence.SetEventOnCompletion(value, ev.SafeWaitHandle.DangerousGetHandle()).CheckError();
-        ev.WaitOne();
+        FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.D3D12FenceWaiter.WaitForFence(
+            _gpu12.FrameFence, value, ev);
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -1185,7 +1184,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     }
 
     private static void AddStats(
-        IDictionary<string, object?> fields,
+        Dictionary<string, object?> fields,
         string prefix,
         WorldRenderStats? stats)
     {
