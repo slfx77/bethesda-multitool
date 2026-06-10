@@ -353,6 +353,16 @@ internal static class EsmWorldExtractor
         const int InitialBufferSize = 64 * 1024;
         var buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
 
+        // Build into a LOCAL list and publish it to the shared scanResult in a SINGLE atomic reference
+        // assignment at the very end. The GUI runs this extraction as an unawaited background task
+        // concurrently with other readers of scanResult (the world-map build, the FormID index, the
+        // renderer). Incrementally Add()-ing — and then Clear()+AddRange()-ing — the shared List let a
+        // concurrent reader observe its internal array mid-resize, yielding an invalid object reference
+        // → a fatal GC-time ExecutionEngineException (heap "corruption" with no catchable exception,
+        // reproducing only at WastelandNV scale where the extraction window is long). With the atomic
+        // swap, a reader sees either the prior list or the new complete one, never a torn array.
+        var lands = new List<ExtractedLandRecord>();
+
         try
         {
             var landRecords = scanResult.MainRecords.Where(r => r.RecordType == "LAND").ToList();
@@ -399,7 +409,7 @@ internal static class EsmWorldExtractor
                 var land = ExtractLandFromBuffer(workBuffer, workSize, header);
                 if (land != null)
                 {
-                    scanResult.LandRecords.Add(land);
+                    lands.Add(land);
                 }
             }
         }
@@ -414,7 +424,7 @@ internal static class EsmWorldExtractor
         // the map is empty): a bounded offset-proximity search. The old code used proximity for ALL
         // inputs; in dense ESM cells the LAND can sit >10 KB after its CELL (lots of placed-object
         // REFRs in between), so the proximity window missed and the cell rendered as a hole.
-        if (scanResult.LandRecords.Count > 0 &&
+        if (lands.Count > 0 &&
             (scanResult.LandToCellMap.Count > 0 || scanResult.CellGrids.Count > 0 ||
              scanResult.MainRecords.Any(r => r.RecordType == "CELL") ||
              scanResult.LandToWorldspaceMap.Count > 0))
@@ -437,9 +447,9 @@ internal static class EsmWorldExtractor
                 }
             }
 
-            var enriched = new List<ExtractedLandRecord>();
+            var enriched = new List<ExtractedLandRecord>(lands.Count);
 
-            foreach (var land in scanResult.LandRecords)
+            foreach (var land in lands)
             {
                 CellGridSubrecord? match;
                 uint? parentCellFormId;
@@ -507,8 +517,14 @@ internal static class EsmWorldExtractor
                 }
             }
 
-            scanResult.LandRecords.Clear();
-            scanResult.LandRecords.AddRange(enriched);
+            // Atomic publish: one reference write, so a concurrent reader never sees a torn list.
+            scanResult.LandRecords = enriched;
+        }
+        else
+        {
+            // No enrichment performed — still publish the raw extracted list atomically (never
+            // mutate the shared list in place while a background reader may be iterating it).
+            scanResult.LandRecords = lands;
         }
     }
 

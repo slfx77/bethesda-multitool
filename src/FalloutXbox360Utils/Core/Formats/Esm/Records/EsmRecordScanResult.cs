@@ -57,7 +57,10 @@ public record EsmRecordScanResult
     public List<DetectedSubrecord> GenericSubrecords { get; init; } = [];
 
     // Full record extractions (for visualization/export)
-    public List<ExtractedLandRecord> LandRecords { get; init; } = [];
+    // `set` (not `init`): EsmWorldExtractor.ExtractLandRecords publishes the fully-built list via a
+    // single atomic reference assignment instead of mutating it in place, so a concurrent reader (the
+    // GUI runs extraction as an unawaited background task) can't observe a torn List during a resize.
+    public List<ExtractedLandRecord> LandRecords { get; set; } = [];
     public List<ExtractedRefrRecord> RefrRecords { get; init; } = [];
 
     // Runtime asset string pool detections
