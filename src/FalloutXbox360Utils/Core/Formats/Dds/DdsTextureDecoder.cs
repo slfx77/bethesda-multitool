@@ -38,12 +38,9 @@ internal static class DdsTextureDecoder
         // pixel. Some Bethesda assets (notably water noise tiles like FNV's
         // genaratednoise01.dds) ship as uncompressed BGRA8 with FourCC==0 — they take the
         // FOURCC switch's default arm without RGB support and silently fail to load.
-        if ((pfFlags & 0x4) == 0 || string.IsNullOrEmpty(fourcc))
+        if (((pfFlags & 0x4) == 0 || string.IsNullOrEmpty(fourcc)) && (pfFlags & 0x40) != 0)
         {
-            if ((pfFlags & 0x40) != 0)
-            {
-                return DecodeUncompressedRgb(ddsData, width, height, mipCount);
-            }
+            return DecodeUncompressedRgb(ddsData, width, height, mipCount);
         }
 
         return fourcc switch
