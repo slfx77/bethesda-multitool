@@ -114,6 +114,14 @@
       </NavigationView.MenuItems>
 
       <NavigationView.FooterMenuItems>
+        <!--  Diagnostics: live cache/queue/memory stats (meta-functionality → footer)  -->
+        <NavigationViewItem
+          x:Uid="Nav_Diagnostics"
+          Tag="Diagnostics">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE9D9;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
         <NavigationViewItem
           x:Name="SettingsNavItem"
           Content="Settings"
@@ -168,6 +176,10 @@
               Visibility="Collapsed" />
             <tabs:DmpToEspConverterTab
               x:Name="DmpToEspConverterTabContent"
+              VerticalAlignment="Stretch"
+              Visibility="Collapsed" />
+            <tabs:DiagnosticsTab
+              x:Name="DiagnosticsTabContent"
               VerticalAlignment="Stretch"
               Visibility="Collapsed" />
           </Grid>

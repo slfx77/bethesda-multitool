@@ -785,5 +785,53 @@
   <data name="Button_StartConversion.Content" xml:space="preserve">
     <value>Start Conversion</value>
   </data>
+  <data name="Nav_Diagnostics.Content" xml:space="preserve">
+    <value>Diagnostics</value>
+  </data>
+  <data name="Header_Diagnostics.Text" xml:space="preserve">
+    <value>Diagnostics</value>
+  </data>
+  <data name="Subtitle_Diagnostics.Text" xml:space="preserve">
+    <value>Live view of every tracked cache, queue, and session — bytes, entries, hit rates, and process memory</value>
+  </data>
+  <data name="Button_DiagPause.Content" xml:space="preserve">
+    <value>Pause</value>
+  </data>
+  <data name="Button_DiagCopy.Content" xml:space="preserve">
+    <value>Copy snapshot</value>
+  </data>
+  <data name="Label_DiagWorkingSet.Text" xml:space="preserve">
+    <value>Working set</value>
+  </data>
+  <data name="Label_DiagGcHeap.Text" xml:space="preserve">
+    <value>GC heap</value>
+  </data>
+  <data name="Label_DiagGcCollections.Text" xml:space="preserve">
+    <value>Gen 0 / 1 / 2 collections</value>
+  </data>
+  <data name="Label_DiagTrackedTotal.Text" xml:space="preserve">
+    <value>Tracked CPU-cache bytes</value>
+  </data>
+  <data name="Col_DiagResource.Text" xml:space="preserve">
+    <value>Resource</value>
+  </data>
+  <data name="Col_DiagBytes.Text" xml:space="preserve">
+    <value>Bytes</value>
+  </data>
+  <data name="Col_DiagEntries.Text" xml:space="preserve">
+    <value>Entries</value>
+  </data>
+  <data name="Col_DiagHitRate.Text" xml:space="preserve">
+    <value>Hit %</value>
+  </data>
+  <data name="Col_DiagEvictions.Text" xml:space="preserve">
+    <value>Evictions</value>
+  </data>
+  <data name="Col_DiagQueue.Text" xml:space="preserve">
+    <value>Depth / active</value>
+  </data>
+  <data name="Col_DiagProcessed.Text" xml:space="preserve">
+    <value>Processed</value>
+  </data>
 
 </root>

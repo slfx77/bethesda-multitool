@@ -104,12 +104,20 @@ public sealed partial class SingleFileTab
         TreeViewNode parentNode,
         ObservableCollection<EsmBrowserNode> children)
     {
-        var total = children.Count;
+        // Snapshot under the collection's lock: a background pre-load task may still be populating
+        // this same ObservableCollection. Indexing it mid-mutation is a torn read (GC hole).
+        List<EsmBrowserNode> snapshot;
+        lock (children)
+        {
+            snapshot = children.ToList();
+        }
+
+        var total = snapshot.Count;
         var batchEnd = Math.Min(TreeNodeBatchSize, total);
 
         for (var i = 0; i < batchEnd; i++)
         {
-            var child = children[i];
+            var child = snapshot[i];
             var childNode = new TreeViewNode
             {
                 Content = child,
@@ -333,7 +341,11 @@ public sealed partial class SingleFileTab
                 EsmBrowserTreeBuilder.LoadCategoryChildren(categoryNode);
             }
 
-            var typeNodes = categoryNode.Children.ToList();
+            List<EsmBrowserNode> typeNodes;
+            lock (categoryNode.Children)
+            {
+                typeNodes = categoryNode.Children.ToList();
+            }
             foreach (var typeNode in typeNodes)
             {
                 if (typeNode?.Children == null) continue;
@@ -376,13 +388,27 @@ public sealed partial class SingleFileTab
         var matchingTypeNodes = new List<TreeViewNode>();
         var categoryMatchCount = 0;
 
-        foreach (var typeNode in category.Children)
+        // Snapshot each level under its collection lock — the background pre-load task may still be
+        // populating these ObservableCollections while this UI-thread filter enumerates them.
+        List<EsmBrowserNode> typeNodes;
+        lock (category.Children)
+        {
+            typeNodes = category.Children.ToList();
+        }
+
+        foreach (var typeNode in typeNodes)
         {
             if (totalMatches >= maxResults) break; // Stop if limit reached
 
+            List<EsmBrowserNode> typeChildren;
+            lock (typeNode.Children)
+            {
+                typeChildren = typeNode.Children.ToList();
+            }
+
             // Filter records within this type (preserves existing sort order)
             // Only take up to remaining limit to avoid processing extra records
-            var matchingRecords = typeNode.Children
+            var matchingRecords = typeChildren
                 .Where(r => MatchesSearchQuery(r, query))
                 .Take(maxResults - totalMatches)
                 .ToList();

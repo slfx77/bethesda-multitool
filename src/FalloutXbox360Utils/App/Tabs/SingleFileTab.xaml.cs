@@ -89,7 +89,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             !_session.WorldMapPopulated &&
             (_session.HasEsmRecords || _session.IsSaveFile))
         {
-            _ = PopulateWorldMapAsync();
+            await PopulateWorldMapAsync();
         }
 
         // Auto-populate NPC Browser when first selected
@@ -146,11 +146,12 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     #region Fields
 
     private readonly List<CarvedFileEntry> _allCarvedFiles = [];
-    private readonly ObservableCollection<CarvedFileEntry> _carvedFiles = [];
+    private readonly BulkObservableCollection<CarvedFileEntry> _carvedFiles = [];
     private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = [];
     private readonly ObservableCollection<ReportEntry> _reportEntries = [];
     private readonly AnalysisSessionState _session = new();
     private readonly CarvedFilesSorter _sorter = new();
+    private readonly SemaphoreSlim _worldMapLoadGate = new(1, 1);
 
     private AnalysisResult? _analysisResult;
     private CarvedFileEntry? _contextMenuTarget;
@@ -177,6 +178,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private Task<UnifiedAnalysisResult>? _semanticLoadTask;
     private string _currentSearchQuery = "";
     private AnalysisPipelinePhase _pipelinePhase;
+    private int _worldMapLoadGeneration;
 
     #endregion
 
@@ -240,7 +242,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             // Save selected tab before disabling — SelectedItem may not be readable while disabled
             var selectedTabForAutoPopulate = SubTabView.SelectedItem;
             SetPipelinePhase(AnalysisPipelinePhase.Scanning);
-            _carvedFiles.Clear();
+            _carvedFiles.ReplaceAll([]);
             _allCarvedFiles.Clear();
             _sorter.Reset();
             UpdateSortIcons();
@@ -276,10 +278,16 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 StatusTextBlock.Text = SingleFileAnalysisHelper.ResolvePhaseText(p, fileType);
             }));
 
-            _analysisResult = await RunFileAnalysisAsync(filePath, fileType, progress);
+            var profile = fileType == AnalysisFileType.EsmFile ? new EsmLoadProfile() : null;
+            var artifacts = profile == null
+                ? await RunFileAnalysisWithArtifactsAsync(filePath, fileType, progress)
+                : await profile.TimeAsync("Analyze", () =>
+                    RunFileAnalysisWithArtifactsAsync(filePath, fileType, progress));
+
+            _analysisResult = artifacts.Result;
 
             // Build _allCarvedFiles but do NOT populate the observable _carvedFiles yet.
-            if (fileType != AnalysisFileType.SaveFile)
+            if (fileType != AnalysisFileType.SaveFile && fileType != AnalysisFileType.EsmFile)
             {
                 _allCarvedFiles.AddRange(SingleFileAnalysisHelper.BuildCarvedFileList(
                     _analysisResult, isEsmFile: fileType == AnalysisFileType.EsmFile));
@@ -303,25 +311,47 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             // Run semantic parse BEFORE loading HexViewer
             if (_session.HasEsmRecords)
             {
-                await RunSemanticParsePipelineAsync();
+                await RunSemanticParsePipelineAsync(artifacts.EsmFileBuffer, profile, refreshCarvedFiles: false);
             }
 
-            // Flush the observable file table if not already populated
-            if (_carvedFiles.Count == 0 && _allCarvedFiles.Count > 0)
+            if (fileType != AnalysisFileType.SaveFile)
             {
-                foreach (var item in _allCarvedFiles)
+                profile?.Time("Carved file list", RefreshCarvedFilesList);
+                profile?.Time("Filter UI", BuildResultsFilterCheckboxes);
+                if (profile == null)
                 {
-                    _carvedFiles.Add(item);
+                    RefreshCarvedFilesList();
+                    BuildResultsFilterCheckboxes();
                 }
             }
-
-            BuildResultsFilterCheckboxes();
+            else
+            {
+                BuildResultsFilterCheckboxes();
+            }
 
             // Load HexViewer AFTER all analysis and parsing is complete
             SetPipelinePhase(AnalysisPipelinePhase.LoadingMap);
-            await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
+            StatusTextBlock.Text = "Preparing raw view...";
+            if (profile == null)
+            {
+                await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
+            }
+            else
+            {
+                await profile.TimeAsync("Hex/raw metadata",
+                    () => HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!));
+            }
 
-            await AutoPopulateCurrentTabAsync(selectedTabForAutoPopulate);
+            StatusTextBlock.Text = "Preparing selected tab...";
+            if (profile == null)
+            {
+                await AutoPopulateCurrentTabAsync(selectedTabForAutoPopulate);
+            }
+            else
+            {
+                await profile.TimeAsync("Current tab population",
+                    () => AutoPopulateCurrentTabAsync(selectedTabForAutoPopulate));
+            }
 
             // Run coverage analysis for memory dumps only
             if (!_session.IsEsmFile && !_session.IsSaveFile)
@@ -331,6 +361,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
             LoadOrderButton.Visibility = Visibility.Visible;
             StatusTextBlock.Text = SingleFileAnalysisHelper.BuildCompletionStatus(_session, _allCarvedFiles);
+            profile?.Log(filePath);
         }
         catch (Exception ex)
         {
@@ -359,7 +390,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
         MinidumpPathTextBox.Text = file.Path;
         _analysisResult = null;
-        _carvedFiles.Clear();
+        _carvedFiles.ReplaceAll([]);
         _allCarvedFiles.Clear();
         HexViewer.Clear();
         ResetSubTabs();
@@ -473,7 +504,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             if (_analysisResult != null)
             {
                 _analysisResult = null;
-                _carvedFiles.Clear();
+                _carvedFiles.ReplaceAll([]);
                 _allCarvedFiles.Clear();
                 HexViewer.Clear();
                 ResetSubTabs();

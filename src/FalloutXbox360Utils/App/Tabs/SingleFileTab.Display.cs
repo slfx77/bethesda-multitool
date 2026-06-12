@@ -301,8 +301,7 @@ public sealed partial class SingleFileTab
         var selectedItem = ResultsListView.SelectedItem as CarvedFileEntry;
         var filtered = ApplyResultsFilter(_allCarvedFiles);
         var sorted = _sorter.Sort(filtered);
-        _carvedFiles.Clear();
-        foreach (var f in sorted) _carvedFiles.Add(f);
+        _carvedFiles.ReplaceAll(sorted);
         if (selectedItem != null && _carvedFiles.Contains(selectedItem))
         {
             ResultsListView.SelectedItem = selectedItem;

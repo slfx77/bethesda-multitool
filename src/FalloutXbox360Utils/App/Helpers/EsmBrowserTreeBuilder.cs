@@ -187,6 +187,20 @@ internal static class EsmBrowserTreeBuilder
             return;
         }
 
+        // The UI thread (tree expansion) and the background pre-load task can both reach here for
+        // the same node. Skip if already populated, build the type nodes lock-free into a local
+        // list, then publish them under the collection's lock with a first-writer-wins re-check — so
+        // a concurrent reader of categoryNode.Children never observes a partially-filled collection
+        // (a torn read of an ObservableCollection's backing array is a GC hole / ExecutionEngineException).
+        lock (categoryNode.Children)
+        {
+            if (categoryNode.Children.Count > 0)
+            {
+                return;
+            }
+        }
+
+        var typeNodes = new List<EsmBrowserNode>(recordTypes.Length);
         foreach (var (name, records) in recordTypes)
         {
             if (records.Count == 0)
@@ -195,7 +209,7 @@ internal static class EsmBrowserTreeBuilder
             }
 
             var typeIcon = EsmPropertyFormatter.SubCategoryIcons.GetValueOrDefault(name, categoryNode.IconGlyph);
-            var typeNode = new EsmBrowserNode
+            typeNodes.Add(new EsmBrowserNode
             {
                 DisplayName = $"{name} ({records.Count:N0})",
                 NodeType = "RecordType",
@@ -204,12 +218,23 @@ internal static class EsmBrowserTreeBuilder
                 ParentTypeName = name,
                 HasUnrealizedChildren = true,
                 DataObject = records
-            };
-
-            categoryNode.Children.Add(typeNode);
+            });
         }
 
-        categoryNode.HasUnrealizedChildren = false;
+        lock (categoryNode.Children)
+        {
+            if (categoryNode.Children.Count > 0)
+            {
+                return;
+            }
+
+            foreach (var typeNode in typeNodes)
+            {
+                categoryNode.Children.Add(typeNode);
+            }
+
+            categoryNode.HasUnrealizedChildren = false;
+        }
     }
 
     /// <summary>
@@ -227,6 +252,16 @@ internal static class EsmBrowserTreeBuilder
         if (typeNode.DataObject is not IList records)
         {
             return;
+        }
+
+        // Already populated (the UI thread or the background pre-load task may have won the race) —
+        // skip the expensive node build entirely.
+        lock (typeNode.Children)
+        {
+            if (typeNode.Children.Count > 0)
+            {
+                return;
+            }
         }
 
         // Build all nodes first (outside of lock for better performance)
@@ -326,17 +361,22 @@ internal static class EsmBrowserTreeBuilder
         // Sort all nodes
         var sorted = recordNodes.OrderBy(n => n.DisplayName ?? "", StringComparer.OrdinalIgnoreCase).ToList();
 
-        // Add all sorted nodes under a single lock to prevent concurrent modification
+        // Publish under the collection's lock, first-writer-wins (no Clear): a concurrent reader of
+        // typeNode.Children must never see it emptied or mid-resize — that torn read is a GC hole.
         lock (typeNode.Children)
         {
-            typeNode.Children.Clear();
+            if (typeNode.Children.Count > 0)
+            {
+                return;
+            }
+
             foreach (var node in sorted)
             {
                 typeNode.Children.Add(node);
             }
-        }
 
-        typeNode.HasUnrealizedChildren = false;
+            typeNode.HasUnrealizedChildren = false;
+        }
     }
 
     /// <summary>
@@ -344,9 +384,19 @@ internal static class EsmBrowserTreeBuilder
     /// </summary>
     public static void SortRecordChildren(ObservableCollection<EsmBrowserNode> root, RecordSortMode mode)
     {
-#pragma warning disable S3267 // Loop body has lock/continue that makes LINQ impractical
-        foreach (var typeNode in root.SelectMany(c => c.Children))
-#pragma warning restore S3267
+        // Snapshot each category's Children under its lock before enumerating — the background
+        // pre-load (_formIdBuildTask / search index build) Adds type nodes to these same
+        // collections concurrently; a lock-free SelectMany over them is a torn-read GC hole.
+        var typeNodes = new List<EsmBrowserNode>();
+        foreach (var category in root)
+        {
+            lock (category.Children)
+            {
+                typeNodes.AddRange(category.Children);
+            }
+        }
+
+        foreach (var typeNode in typeNodes)
         {
             // Take a snapshot to avoid concurrent modification issues
             EsmBrowserNode[] snapshot;

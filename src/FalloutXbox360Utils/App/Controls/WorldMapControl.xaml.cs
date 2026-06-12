@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Numerics;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
@@ -272,7 +273,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private const float TopDownMarginFraction = 0.25f;
 
     private readonly bool _dumpTopDown =
-        Environment.GetEnvironmentVariable("FALLOUT_MAP2D_TOPDOWN_DUMP") == "1";
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Map2D.TopDownDump);
     private bool _topDownDumpWritten;
 
     /// <summary>
@@ -310,6 +311,16 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     internal void LoadData(WorldViewData data)
     {
+        // A second LoadData means a new scene. Drop streams, device bitmaps, and any top-down
+        // provider from the previous scene before publishing the new data to draw handlers.
+        TopDownProvider = null;
+        CancelTopDownOverlay();
+        DisposeWorldBitmaps();
+        _cellHeightmapBitmap?.Dispose();
+        _cellHeightmapBitmap = null;
+        _spatialIndex = null;
+        _cellGridLookup = null;
+
         _data = data;
         _state.LoadData(data);
         _worldHeightmapDirty = true;
@@ -570,6 +581,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _showNavMesh = false;
         NavMeshCheckBox.IsChecked = false;
         _showRenderedObjects = false;
+        TopDownProvider = null;
         if (RenderedObjectsCheckBox is not null) RenderedObjectsCheckBox.IsChecked = false;
         CancelTopDownOverlay();
         DisposeWorldBitmaps();
@@ -619,9 +631,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _pendingCellApplies.Clear();
         _inFlightCellKeys.Clear();
         if (_terrainStreamCts is null) return;
-        try { _terrainStreamCts.Cancel(); }
-        catch (ObjectDisposedException) { /* already disposed by a concurrent reset — nothing to cancel */ }
-        _terrainStreamCts.Dispose();
+        // Cancel only — the stream owns its CTS and disposes it (via a UI-thread hop) once all
+        // its awaited work completes. Disposing here raced the stream's live token registrations
+        // on worker threads. The field can't reference a disposed CTS: the disposal hop nulls or
+        // replaces it first, on this same UI thread.
+        _terrainStreamCts.Cancel();
         _terrainStreamCts = null;
     }
 
@@ -1776,9 +1790,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             return (ax * ax + ay * ay).CompareTo(bx * bx + by * by);
         });
 
+        // Cancel-only; the old stream disposes its own CTS once it unwinds (see the disposal
+        // hop in StreamAndApplyTerrainTexturesAsync) — disposing here raced its registrations.
         _terrainStreamCts?.Cancel();
-        _terrainStreamCts?.Dispose();
-        _terrainStreamCts = new CancellationTokenSource();
+        var streamCts = new CancellationTokenSource();
+        _terrainStreamCts = streamCts;
         // Capture cache-gen on the UI thread BEFORE the stream starts. Worker threads read
         // this value when enqueuing apply tasks; if cache-gen bumps after the stream begins
         // (worldspace switch, layer change), the captured generation goes stale and the
@@ -1790,7 +1806,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             $"v={version} cacheGen={cacheGen} ppc={texturePixelsPerCell} requested={requestCells.Count}");
         Interlocked.Increment(ref _activeTerrainStreams);
         _ = StreamAndApplyTerrainTexturesAsync(
-            version, cacheGen, requestCells, palette, texturePixelsPerCell, _terrainStreamCts.Token);
+            version, cacheGen, requestCells, palette, texturePixelsPerCell, streamCts);
     }
 
     /// <summary>Lazily creates and starts the viewport-rebuild throttle timer (UI thread only).</summary>
@@ -2077,8 +2093,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         List<CellRecord> requestCells,
         LandscapeTexturePalette palette,
         int pixelsPerCell,
-        CancellationToken ct)
+        CancellationTokenSource streamCts)
     {
+        var ct = streamCts.Token;
         var requestedCount = requestCells.Count;
         var producedCount = 0;
         try
@@ -2137,6 +2154,28 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         finally
         {
             Interlocked.Decrement(ref _activeTerrainStreams);
+
+            // The stream owns its CTS: dispose it on the UI thread AFTER all awaited work has
+            // completed (no token registrations remain). The UI side only ever calls Cancel() —
+            // disposing inline there raced the live registrations on these worker threads
+            // (CancellationTokenSource.Dispose is not safe concurrent with Register/Cancel).
+            // The UI hop serializes the dispose against the UI's Cancel, and clearing the field
+            // first means CancelTerrainStream can never see a disposed CTS.
+            var doneDispatcher = DispatcherQueue;
+            if (doneDispatcher is null || !doneDispatcher.TryEnqueue(() =>
+                {
+                    if (ReferenceEquals(_terrainStreamCts, streamCts))
+                    {
+                        _terrainStreamCts = null;
+                    }
+
+                    streamCts.Dispose();
+                }))
+            {
+                // Dispatcher gone (control torn down): no UI thread can Cancel anymore either,
+                // so disposing here is race-free.
+                streamCts.Dispose();
+            }
         }
     }
 
@@ -2567,7 +2606,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             if (png == null) continue;
 
             using var ms = new MemoryStream(png);
-            var bitmap = CanvasBitmap.LoadAsync(resourceCreator, ms.AsRandomAccessStream()).GetAwaiter().GetResult();
+            // Non-pumping block: GetAwaiter().GetResult() on the STA UI thread (this runs inside
+            // the Win2D Draw handler) is a COM pumping wait that can re-enter XAML and fail-fast
+            // (see NonPumpingWait docs). The decode runs on the thread pool, so polling completes.
+            var loadTask = CanvasBitmap.LoadAsync(resourceCreator, ms.AsRandomAccessStream()).AsTask();
+            Core.Orchestration.NonPumpingWait.Wait(loadTask);
+            var bitmap = loadTask.GetAwaiter().GetResult();
             _markerIconBitmaps[type] = bitmap;
         }
     }

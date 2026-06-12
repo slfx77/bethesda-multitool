@@ -45,17 +45,17 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private readonly Vector2[] _pointerStartPosition = new Vector2[1];
     private readonly HashSet<VirtualKey> _toggleKeysDown = [];
     private readonly bool _showFrameStats =
-        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_FRAME_STATS") == "1";
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.FrameStats);
     private readonly bool _profileLogging =
-        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_PROFILE_LOG") == "1";
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ProfileLog);
     private readonly int _profileLogIntervalMilliseconds =
-        ParsePositiveInt(Environment.GetEnvironmentVariable("FALLOUT_VIEWER_PROFILE_INTERVAL_MS"), 2000);
+        ParsePositiveInt(EnvironmentVariables.Get(EnvironmentVariables.Viewer.ProfileIntervalMilliseconds), 2000);
     private readonly double _stallThresholdMilliseconds =
-        ParseNonNegativeDouble(Environment.GetEnvironmentVariable("FALLOUT_VIEWER_STALL_THRESHOLD_MS"), 0);
+        ParseNonNegativeDouble(EnvironmentVariables.Get(EnvironmentVariables.Viewer.StallThresholdMilliseconds), 0);
     private readonly bool _forceGpuTimestamps =
-        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_GPU_TIMESTAMPS") == "1";
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.GpuTimestamps);
     private readonly string? _stressScene =
-        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_STRESS_SCENE");
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.StressScene);
     private readonly FrameProfileAccumulator _profileAccumulator = new();
     // v3 Pass 4 Step 3 cleanup — D3D11 stack deleted. The post-cutover backend is D3D12-only;
     // the `_useD3D12` flag, `FALLOUT_VIEWER_D3D11` rollback, and dual-stack field set are all
@@ -384,7 +384,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             }
 
             _referenceTextureCache12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTextureCache12(
-                _gpu12, _commandRecorder12, _cbvSrvUavHeap12!, _referenceGpuTextureResolver12, _deletionQueue12);
+                    _gpu12, _commandRecorder12, _cbvSrvUavHeap12!, _referenceGpuTextureResolver12, _deletionQueue12)
+                .RegisterWith(FalloutXbox360Utils.Core.Diagnostics.ResourceRegistry.Instance, "reference");
             _referenceMeshCache12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceMeshCache12(
                 _gpu12, _meshArchives, _referenceTextureResolver, _referenceTextureCache12,
                 _deletionQueue12, capacity: 2048);
@@ -428,6 +429,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // large canvas doesn't blow up the per-request readback.
     private const int TopDownSupersample = 2;
     private const int MaxTopDownFinalDimension = 2048;
+
+    /// <summary>
+    ///     In-flight top-down readback Task.Run body. Tracked so DisposeRenderResources can drain
+    ///     it before tearing down the D3D12 device — the body waits on the frame fence and maps a
+    ///     readback buffer, both of which would race a concurrent device dispose.
+    /// </summary>
+    private Task? _topDownReadbackTask;
 
     // Explicit interface implementation: the interface + TopDownRender are internal, so these can't
     // be public members on this public control (CS0050). The 2D map only ever calls them via the
@@ -541,31 +549,43 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
         // Off the UI thread: wait for the submission fence, then map + downsample. ct is NOT passed
         // to Task.Run so the body always runs and the finally always disposes the target after the
-        // GPU is done (disposing a resource the GPU still references would crash).
+        // GPU is done (disposing a resource the GPU still references would crash). The fence is
+        // captured HERE: the body must not dereference _gpu12, which the UI thread nulls during
+        // teardown while this task is still in flight.
+        var frameFence = _gpu12!.FrameFence;
+        var readbackTask = Task.Run(() =>
+        {
+            try
+            {
+                WaitForFrameFence(frameFence, fenceValue);
+                ct.ThrowIfCancellationRequested();
+                var ssBytes = target.ReadbackToBytes();
+                var pixels = TopDownSupersample > 1
+                    ? NifSpriteRenderer.Downsample(ssBytes, ssWidth, ssHeight, TopDownSupersample)
+                    : ssBytes;
+                return new TopDownRender(pixels, finalW, finalH,
+                    worldMinX, worldMaxX, worldMinY, worldMaxY, isComplete);
+            }
+            finally
+            {
+                target.Dispose();
+            }
+        });
+        _topDownReadbackTask = readbackTask;
         try
         {
-            return await Task.Run(() =>
-            {
-                try
-                {
-                    WaitForFrameFence(fenceValue);
-                    ct.ThrowIfCancellationRequested();
-                    var ssBytes = target.ReadbackToBytes();
-                    var pixels = TopDownSupersample > 1
-                        ? NifSpriteRenderer.Downsample(ssBytes, ssWidth, ssHeight, TopDownSupersample)
-                        : ssBytes;
-                    return new TopDownRender(pixels, finalW, finalH,
-                        worldMinX, worldMaxX, worldMinY, worldMaxY, isComplete);
-                }
-                finally
-                {
-                    target.Dispose();
-                }
-            });
+            return await readbackTask;
         }
         catch (OperationCanceledException)
         {
             return null;
+        }
+        finally
+        {
+            if (ReferenceEquals(_topDownReadbackTask, readbackTask))
+            {
+                _topDownReadbackTask = null;
+            }
         }
     }
 
@@ -594,15 +614,17 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             && r.ReferenceTexturePendingUploads == 0;
     }
 
-    /// <summary>Blocks until the device frame fence reaches <paramref name="value" />. Safe to call
-    /// off the UI thread (fence read + event are thread-safe). Always completes (the offscreen
-    /// frame is a single submission), so callers can dispose GPU resources afterwards safely.</summary>
-    private void WaitForFrameFence(ulong value)
+    /// <summary>Blocks until <paramref name="fence" /> reaches <paramref name="value" />. Safe to
+    /// call off the UI thread (fence read + event are thread-safe). The fence is a parameter, not
+    /// read from <c>_gpu12</c>, because callers run on worker threads after teardown may have
+    /// nulled the field. Always completes (the offscreen frame is a single submission), so callers
+    /// can dispose GPU resources afterwards safely.</summary>
+    private static void WaitForFrameFence(Vortice.Direct3D12.ID3D12Fence fence, ulong value)
     {
-        if (_gpu12!.FrameFence.CompletedValue >= value) return;
+        if (fence.CompletedValue >= value) return;
         using var ev = new AutoResetEvent(false);
         FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.D3D12FenceWaiter.WaitForFence(
-            _gpu12.FrameFence, value, ev);
+            fence, value, ev);
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -718,6 +740,19 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
     private void DisposeRenderResources()
     {
+        // Drain any in-flight top-down readback first — its Task.Run body waits on the frame
+        // fence and maps a readback buffer, which must not race the device teardown below.
+        // Non-pumping: Task.Wait() on the STA UI thread pumps messages and can re-enter XAML
+        // mid-teardown → CheckReentrancy fail-fast (see NonPumpingWait docs).
+        var readback = _topDownReadbackTask;
+        if (readback is { IsCompleted: false })
+        {
+            Core.Orchestration.NonPumpingWait.Wait(readback);
+            // The render path already logged the failure; observe it so it never resurfaces as
+            // an UnobservedTaskException, then proceed with teardown regardless.
+            _ = readback.Exception;
+        }
+
         _commandRecorder12?.WaitForGpuIdle();
 
         // Reference pipeline disposes first — it borrows the texture caches / mesh archives
@@ -1207,7 +1242,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             // resource-state mismatches, descriptor mismatches, lifetime-after-free, etc. that
             // the runtime would otherwise silently corrupt or hard-crash on. ~30% CPU overhead
             // per draw on validation alone — leave off in normal use.
-            var debugLayer = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_D3D12_DEBUG") == "1";
+            var debugLayer = EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.D3D12Debug);
             _gpu12 = FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDevice12.Create(debugLayer);
             if (_gpu12 is null) return false;
 
@@ -1229,14 +1264,16 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             // 4a's bindless lookups land for reference + terrain, per-frame usage shrinks
             // by an order of magnitude.
             _cbvSrvUavHeap12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12(
-                _gpu12,
-                Vortice.Direct3D12.DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
-                capacity: 131072,
-                framesInFlight: FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12.FramesInFlight,
-                persistentCapacity: 16384);
+                    _gpu12,
+                    Vortice.Direct3D12.DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
+                    capacity: 131072,
+                    framesInFlight: FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12.FramesInFlight,
+                    persistentCapacity: 16384)
+                .RegisterWith(FalloutXbox360Utils.Core.Diagnostics.ResourceRegistry.Instance, "viewer");
             _rootSignature12 = FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuRootSignature12.Create(_gpu12);
             _deletionQueue12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDeletionQueue12(
-                framesToHold: FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12.FramesInFlight);
+                    framesToHold: FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12.FramesInFlight)
+                .RegisterWith(FalloutXbox360Utils.Core.Diagnostics.ResourceRegistry.Instance, "viewer");
             if (_forceGpuTimestamps)
             {
                 EnableGpuTimestamps("forced");
@@ -1373,7 +1410,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // Debug/repro hook: FALLOUT_VIEWER_WORLDSPACE=<substring> forces the initial worldspace
         // by EditorID/FullName match (e.g. "Strip"), so the profiler can target a specific
         // worldspace headlessly. Falls through to the normal selection when unset or unmatched.
-        var forced = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_WORLDSPACE");
+        var forced = EnvironmentVariables.Get(EnvironmentVariables.Viewer.Worldspace);
         if (!string.IsNullOrWhiteSpace(forced))
         {
             // Exact EditorID/FullName match first so e.g. "TheStripWorld" does not match

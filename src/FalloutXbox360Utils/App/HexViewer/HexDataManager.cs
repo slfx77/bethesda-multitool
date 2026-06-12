@@ -12,7 +12,15 @@ namespace FalloutXbox360Utils;
 /// </summary>
 internal sealed class HexDataManager : IDisposable
 {
-    private readonly List<FileRegion> _fileRegions = [];
+    /// <summary>
+    ///     Replaced wholesale, never mutated after publication: BuildFileRegions and
+    ///     AddCoverageGapRegionsCore run on background threads (LoadAsync/AddCoverageGapRegionsAsync)
+    ///     while the UI thread's row/minimap renderers binary-search the same list via
+    ///     FindRegionForOffset — builders work on a local list and publish it with a single
+    ///     atomic reference assignment; readers snapshot the field once per call.
+    /// </summary>
+    private List<FileRegion> _fileRegions = [];
+
     private bool _disposed;
     private Color _esmColor;
     private List<DetectedMainRecord>? _mainRecords;
@@ -52,7 +60,7 @@ internal sealed class HexDataManager : IDisposable
         Cleanup();
         FilePath = null;
         FileSize = 0;
-        _fileRegions.Clear();
+        _fileRegions = [];
         _mainRecords = null;
     }
 
@@ -126,6 +134,9 @@ internal sealed class HexDataManager : IDisposable
 
     private void AddCoverageGapRegionsCore(CoverageResult coverage)
     {
+        // Merge into a local copy and publish atomically — this runs on a thread-pool thread
+        // while the UI thread's renderers binary-search the live list.
+        var merged = new List<FileRegion>(_fileRegions);
         foreach (var gap in coverage.Gaps)
         {
             var color = FileTypeColors.GetMemoryMapGapColor(gap.Classification);
@@ -138,7 +149,7 @@ internal sealed class HexDataManager : IDisposable
                 _ => $"Gap ({FormatGapSize(gap.Size)})"
             };
 
-            _fileRegions.Add(new FileRegion
+            merged.Add(new FileRegion
             {
                 Start = gap.FileOffset,
                 End = gap.FileOffset + gap.Size,
@@ -149,11 +160,13 @@ internal sealed class HexDataManager : IDisposable
         }
 
         // Sort by Start, then by IsGap (file data before gaps at same offset)
-        _fileRegions.Sort((a, b) =>
+        merged.Sort((a, b) =>
         {
             var startCmp = a.Start.CompareTo(b.Start);
             return startCmp != 0 ? startCmp : a.IsGap.CompareTo(b.IsGap);
         });
+
+        _fileRegions = merged;
     }
 
     private static string FormatGapSize(long bytes)
@@ -182,13 +195,15 @@ internal sealed class HexDataManager : IDisposable
 
     public FileRegion? FindRegionForOffset(long offset)
     {
-        if (_fileRegions.Count == 0) return FallbackEsmLookup(offset);
+        // Snapshot the field once — a background build may publish a new list mid-call.
+        var regions = _fileRegions;
+        if (regions.Count == 0) return FallbackEsmLookup(offset);
 
-        int left = 0, right = _fileRegions.Count - 1;
+        int left = 0, right = regions.Count - 1;
         while (left <= right)
         {
             var mid = left + (right - left) / 2;
-            var region = _fileRegions[mid];
+            var region = regions[mid];
             if (offset >= region.Start && offset < region.End) return region;
             if (region.Start > offset) right = mid - 1;
             else left = mid + 1;
@@ -205,9 +220,11 @@ internal sealed class HexDataManager : IDisposable
     /// </summary>
     private FileRegion? FallbackEsmLookup(long offset)
     {
-        if (_mainRecords == null || _mainRecords.Count == 0) return null;
+        // Snapshot — BuildFileRegions republishes this field from a background thread.
+        var records = _mainRecords;
+        if (records == null || records.Count == 0) return null;
 
-        foreach (var record in _mainRecords)
+        foreach (var record in records)
         {
             var start = record.Offset;
             var end = record.Offset + record.DataSize + 24;
@@ -228,7 +245,9 @@ internal sealed class HexDataManager : IDisposable
 
     private void BuildFileRegions(AnalysisResult analysisResult)
     {
-        _fileRegions.Clear();
+        // Build into a local list and publish atomically at the end — LoadAsync runs this on a
+        // thread-pool thread while the viewer may already be paint-eligible.
+        var regions = new List<FileRegion>();
         _mainRecords = null;
 
         var occupiedRanges = new List<(long Start, long End)>();
@@ -246,7 +265,7 @@ internal sealed class HexDataManager : IDisposable
 
             foreach (var region in esmRegions)
             {
-                _fileRegions.Add(new FileRegion
+                regions.Add(new FileRegion
                 {
                     Start = region.Start,
                     End = region.End,
@@ -273,7 +292,7 @@ internal sealed class HexDataManager : IDisposable
             // (including ESM regions added above)
             if (IsRangeFullyCovered(start, end, occupiedRanges)) continue;
 
-            _fileRegions.Add(new FileRegion
+            regions.Add(new FileRegion
             {
                 Start = start,
                 End = end,
@@ -284,11 +303,13 @@ internal sealed class HexDataManager : IDisposable
         }
 
         // Sort by Start, then by IsGap (file data before gaps at same offset)
-        _fileRegions.Sort((a, b) =>
+        regions.Sort((a, b) =>
         {
             var startCmp = a.Start.CompareTo(b.Start);
             return startCmp != 0 ? startCmp : a.IsGap.CompareTo(b.IsGap);
         });
+
+        _fileRegions = regions;
     }
 
     /// <summary>

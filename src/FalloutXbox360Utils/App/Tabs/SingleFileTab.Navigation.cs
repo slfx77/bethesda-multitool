@@ -1,4 +1,8 @@
+using System.Collections.ObjectModel;
+using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Semantic;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -31,34 +35,65 @@ public sealed partial class SingleFileTab
     private bool _isNavigating;
 
     /// <summary>
-    ///     Builds a lookup from FormID to EsmBrowserNode by walking the data model tree.
-    ///     Called lazily on first link click.
+    ///     Invalidation token for in-flight index builds. ResetNavigation bumps it; a build
+    ///     orphaned by a reload/load-order change sees the mismatch and skips publication,
+    ///     so it can never install a stale index (or _flatListBuilt) over the next load's state.
     /// </summary>
-    private void BuildFormIdNodeIndex()
-    {
-        if (_esmBrowserTree == null) return;
+    private int _navIndexGeneration;
 
+    /// <summary>
+    ///     Builds a lookup from FormID to EsmBrowserNode by walking the data model tree.
+    ///     Runs on a background thread (pre-build) or the UI thread (fallback). All inputs are
+    ///     parameters captured at launch: re-reading instance fields mid-task would race a reload
+    ///     that swaps them, and _session.EffectiveResolver enumerates LoadOrder.Entries — an
+    ///     ObservableCollection the UI thread Clear()s/Add()s, so it must never be evaluated here.
+    /// </summary>
+    private void BuildFormIdNodeIndex(
+        ObservableCollection<EsmBrowserNode> tree,
+        RecordCollection? allRecords,
+        FormIdResolver? resolver,
+        Dictionary<uint, List<WorldPlacement>>? placementIndex,
+        FormUsageIndex? usageIndex,
+        IReadOnlyDictionary<uint, RaceRecord>? raceLookup,
+        Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembersIndex,
+        int generation)
+    {
         // Ensure all children are loaded (same as search index building)
         if (!_flatListBuilt)
         {
             EnsureAllChildrenLoaded(
-                _esmBrowserTree,
-                _session.SemanticResult,
-                _session.EffectiveResolver,
-                _placementIndex,
-                _usageIndex,
-                _raceLookup,
-                _factionMembersIndex);
+                tree,
+                allRecords,
+                resolver,
+                placementIndex,
+                usageIndex,
+                raceLookup,
+                factionMembersIndex);
+            if (generation != Volatile.Read(ref _navIndexGeneration)) return;
             _flatListBuilt = true;
         }
 
         var index = new Dictionary<uint, EsmBrowserNode>();
 
-        foreach (var category in _esmBrowserTree)
+        foreach (var category in tree)
         {
-            foreach (var typeNode in category.Children)
+            // Snapshot each level under its collection lock — a UI re-sort (SortRecordChildren)
+            // can Clear+Add these same ObservableCollections while this background walk reads them.
+            List<EsmBrowserNode> typeNodes;
+            lock (category.Children)
             {
-                foreach (var record in typeNode.Children)
+                typeNodes = category.Children.ToList();
+            }
+
+            foreach (var typeNode in typeNodes)
+            {
+                List<EsmBrowserNode> records;
+                lock (typeNode.Children)
+                {
+                    records = typeNode.Children.ToList();
+                }
+
+                foreach (var record in records)
                 {
                     if (record.FormIdHex != null &&
                         uint.TryParse(record.FormIdHex.AsSpan(2), System.Globalization.NumberStyles.HexNumber, null,
@@ -70,6 +105,7 @@ public sealed partial class SingleFileTab
             }
         }
 
+        if (generation != Volatile.Read(ref _navIndexGeneration)) return;
         _formIdNodeIndex = index;
     }
 
@@ -259,10 +295,19 @@ public sealed partial class SingleFileTab
                 await _formIdBuildTask;
             }
 
-            // Fallback: build synchronously if background didn't run
-            if (_formIdNodeIndex == null)
+            // Fallback: build synchronously if background didn't run. Safe to evaluate
+            // _session.EffectiveResolver here — this path runs on the UI thread.
+            if (_formIdNodeIndex == null && _esmBrowserTree is { } currentTree)
             {
-                BuildFormIdNodeIndex();
+                BuildFormIdNodeIndex(
+                    currentTree,
+                    _session.SemanticResult,
+                    _session.EffectiveResolver,
+                    _placementIndex,
+                    _usageIndex,
+                    _raceLookup,
+                    _factionMembersIndex,
+                    Volatile.Read(ref _navIndexGeneration));
             }
         }
 
@@ -304,6 +349,10 @@ public sealed partial class SingleFileTab
     /// </summary>
     private void ResetNavigation()
     {
+        // Invalidate any in-flight background index build BEFORE clearing state — the orphaned
+        // task keeps running (we can't await it here), but the generation mismatch stops it from
+        // publishing a stale _formIdNodeIndex/_flatListBuilt over the next load's tree.
+        Interlocked.Increment(ref _navIndexGeneration);
         _unifiedBackStack.Clear();
         _unifiedForwardStack.Clear();
         _formIdNodeIndex = null;
@@ -334,13 +383,28 @@ public sealed partial class SingleFileTab
         EsmBrowserNode? parentCategory = null;
         EsmBrowserNode? parentType = null;
 
+        // Snapshot each level under its collection lock — the background _formIdBuildTask
+        // (and the search pre-load) populate these same ObservableCollections concurrently;
+        // a lock-free enumeration/Contains during their Adds is a torn-read GC hole.
 #pragma warning disable S3267 // Nested loop with break - LINQ impractical here
         foreach (var category in _esmBrowserTree)
         {
-            foreach (var typeNode in category.Children)
+            List<EsmBrowserNode> typeNodes;
+            lock (category.Children)
+            {
+                typeNodes = [.. category.Children];
+            }
+
+            foreach (var typeNode in typeNodes)
 #pragma warning restore S3267
             {
-                if (typeNode.Children.Contains(target))
+                bool containsTarget;
+                lock (typeNode.Children)
+                {
+                    containsTarget = typeNode.Children.Contains(target);
+                }
+
+                if (containsTarget)
                 {
                     parentCategory = category;
                     parentType = typeNode;

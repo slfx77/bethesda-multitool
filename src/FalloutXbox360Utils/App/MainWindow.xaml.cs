@@ -36,6 +36,11 @@ public sealed partial class MainWindow : Window
             InitializeComponent();
             Console.WriteLine("[MainWindow] InitializeComponent complete");
 
+            // Memory budget hygiene: periodic CPU-cache budget checks (FALLOUT_MEMORY_BUDGET_MB,
+            // default 3 GB) + aggressive trims under real GC pressure. No-op when
+            // FALLOUT_MEMORY_DISABLE=1.
+            FalloutXbox360Utils.Core.Diagnostics.MemoryBudgetCoordinator.Instance.Start();
+
             // Set minimum window size
             var appWindow = AppWindow;
             appWindow.Resize(new SizeInt32(1450, 900));
@@ -253,6 +258,7 @@ public sealed partial class MainWindow : Window
             BsaExtractorTabContent.Visibility = Visibility.Collapsed;
             RepackerTabContent.Visibility = Visibility.Collapsed;
             DmpToEspConverterTabContent.Visibility = Visibility.Collapsed;
+            DiagnosticsTabContent.Visibility = Visibility.Collapsed;
 
             // Clear status bar when switching tabs
             SetStatus("");
@@ -283,6 +289,9 @@ public sealed partial class MainWindow : Window
                     break;
                 case "DmpToEspConverter":
                     DmpToEspConverterTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "Diagnostics":
+                    DiagnosticsTabContent.Visibility = Visibility.Visible;
                     break;
             }
 

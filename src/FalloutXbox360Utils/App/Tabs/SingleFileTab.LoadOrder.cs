@@ -95,9 +95,15 @@ public sealed partial class SingleFileTab
         DataBrowserPlaceholder.Visibility = Visibility.Visible;
         _esmBrowserTree = null;
 
+        // Invalidate the FormID nav index alongside the tree it indexes — a stale index full of
+        // old-tree nodes would let NavigateToFormId skip awaiting the new build and walk the new
+        // tree while the background task is still populating it.
+        ResetNavigation();
+
         // Reset world map
         _session.WorldMapPopulated = false;
         _session.WorldViewData = null;
+        ResetWorldMap();
 
         // Reset dialogue viewer so it rebuilds with new resolver/subtitles
         _session.DialogueViewerPopulated = false;

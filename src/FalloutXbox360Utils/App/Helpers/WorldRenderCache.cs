@@ -1,9 +1,10 @@
+using System.Collections.Concurrent;
+using System.Numerics;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
-using System.Numerics;
 
 namespace FalloutXbox360Utils;
 
@@ -12,52 +13,53 @@ namespace FalloutXbox360Utils;
 ///     grids, and the v3 Phase 3 per-cell baked placement lists scoped to one
 ///     <see cref="WorldViewData" /> instance.
 /// </summary>
-internal sealed class WorldRenderCache
+internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
 {
-    private readonly object _lock = new();
-    private readonly Dictionary<CellRecord, DecodedTerrainCell> _terrain = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<CellRecord, TextureWinnerGrid?> _textureWinners = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<CellRecord, IReadOnlyList<RenderableReference>> _placements = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<CellRecord, ReferencePlacementSpatialIndex> _placementSpatialIndexes = new(ReferenceEqualityComparer.Instance);
+    private readonly ConcurrentDictionary<CellRecord, DecodedTerrainCell> _terrain =
+        new(ReferenceEqualityComparer.Instance);
+    private readonly ConcurrentDictionary<CellRecord, Cached<TextureWinnerGrid>> _textureWinners =
+        new(ReferenceEqualityComparer.Instance);
+    private readonly ConcurrentDictionary<CellRecord, IReadOnlyList<RenderableReference>> _placements =
+        new(ReferenceEqualityComparer.Instance);
+    private readonly ConcurrentDictionary<CellRecord, ReferencePlacementSpatialIndex> _placementSpatialIndexes =
+        new(ReferenceEqualityComparer.Instance);
 
     // 4-pre Item C — bake terrain neighbor lookups + per-quadrant CellLayerWeightTable
     // at LoadData (or lazily on first build). Inputs are worldspace-static (cell LAND +
     // cardinal neighbors' LAND); see TerrainRenderer12.BuildCellTextureSet. Moves
     // ~0.05 ms per cell out of TryBuildAndCache, smoothing the 16-cell-per-frame mesh
     // build burst when entering a new area.
-    private readonly Dictionary<CellRecord, CellTerrainTextureSet?> _terrainTextureSets = new(ReferenceEqualityComparer.Instance);
+    private readonly ConcurrentDictionary<CellRecord, Cached<CellTerrainTextureSet>> _terrainTextureSets =
+        new(ReferenceEqualityComparer.Instance);
 
-    internal DecodedTerrainCell GetTerrain(CellRecord cell)
+    public string ResourceName => nameof(WorldRenderCache);
+
+    public Core.Diagnostics.ResourceCategory Category => Core.Diagnostics.ResourceCategory.CpuCache;
+
+    /// <summary>
+    ///     Tracking-only conformance (session-scoped; dropped wholesale with its
+    ///     <see cref="WorldViewData" />, never trimmed — shedding derived grids mid-render would
+    ///     just thrash rebuilds). Entries = decoded products across the five per-cell maps.
+    /// </summary>
+    public Core.Diagnostics.ResourceStats GetStats() => new()
     {
-        lock (_lock)
-        {
-            if (_terrain.TryGetValue(cell, out var cached))
-            {
-                return cached;
-            }
+        EntryCount = _terrain.Count + _textureWinners.Count + _placements.Count +
+                     _placementSpatialIndexes.Count + _terrainTextureSets.Count,
+    };
 
-            var decoded = DecodedTerrainCell.Decode(cell);
-            _terrain[cell] = decoded;
-            return decoded;
-        }
-    }
+    internal DecodedTerrainCell GetTerrain(CellRecord cell) =>
+        _terrain.GetOrAdd(cell, static c => DecodedTerrainCell.Decode(c));
 
     internal TextureWinnerGrid? GetTextureWinners(CellRecord cell)
     {
-        lock (_lock)
+        return _textureWinners.GetOrAdd(cell, static c =>
         {
-            if (_textureWinners.TryGetValue(cell, out var cached))
-            {
-                return cached;
-            }
-
-            var layers = cell.LandVisualData?.TextureLayers;
+            var layers = c.LandVisualData?.TextureLayers;
             var winners = layers is { Count: > 0 }
                 ? TextureWinnerGrid.Build(layers)
                 : null;
-            _textureWinners[cell] = winners;
-            return winners;
-        }
+            return new Cached<TextureWinnerGrid>(winners);
+        }).Value;
     }
 
     /// <summary>
@@ -72,17 +74,10 @@ internal sealed class WorldRenderCache
         CellRecord cell,
         Func<CellTerrainTextureSet?> builder)
     {
-        lock (_lock)
-        {
-            if (_terrainTextureSets.TryGetValue(cell, out var cached))
-            {
-                return cached;
-            }
-
-            var built = builder();
-            _terrainTextureSets[cell] = built;
-            return built;
-        }
+        return _terrainTextureSets.GetOrAdd(
+            cell,
+            static (_, build) => new Cached<CellTerrainTextureSet>(build()),
+            builder).Value;
     }
 
     /// <summary>
@@ -91,13 +86,8 @@ internal sealed class WorldRenderCache
     ///     and refs without a resolved ModelPath. Result is cached per cell across frames;
     ///     <c>ReferenceRenderer12</c> iterates this directly in its per-frame loop.
     /// </summary>
-    internal IReadOnlyList<RenderableReference> GetPlacementList(CellRecord cell)
-    {
-        lock (_lock)
-        {
-            return GetPlacementListLocked(cell);
-        }
-    }
+    internal IReadOnlyList<RenderableReference> GetPlacementList(CellRecord cell) =>
+        _placements.GetOrAdd(cell, static c => BuildPlacementList(c));
 
     /// <summary>
     ///     Returns this cell's static-mesh references whose cached aggregate bucket bounds may
@@ -114,32 +104,21 @@ internal sealed class WorldRenderCache
         float frustumMargin,
         List<RenderableReference> destination)
     {
-        ReferencePlacementSpatialIndex index;
-        lock (_lock)
-        {
-            if (!_placementSpatialIndexes.TryGetValue(cell, out index!))
-            {
-                index = ReferencePlacementSpatialIndex.Build(GetPlacementListLocked(cell));
-                _placementSpatialIndexes[cell] = index;
-            }
-        }
+        var index = _placementSpatialIndexes.GetOrAdd(
+            cell,
+            static (c, cache) => ReferencePlacementSpatialIndex.Build(cache.GetPlacementList(c)),
+            this);
 
         index.Query(centerX, centerY, radius, frustum, frustumMargin, destination);
         return index.Count;
     }
 
-    private IReadOnlyList<RenderableReference> GetPlacementListLocked(CellRecord cell)
+    private static IReadOnlyList<RenderableReference> BuildPlacementList(CellRecord cell)
     {
-        if (_placements.TryGetValue(cell, out var cached))
-        {
-            return cached;
-        }
-
         var placements = cell.PlacedObjects;
         if (placements.Count == 0)
         {
-            _placements[cell] = Array.Empty<RenderableReference>();
-            return _placements[cell];
+            return Array.Empty<RenderableReference>();
         }
 
         var built = new List<RenderableReference>(placements.Count);
@@ -153,12 +132,12 @@ internal sealed class WorldRenderCache
         // a single texture bind in ReferenceRenderer.BindSrvIfChanged. Ordinal compare is
         // cheap and stable enough; we don't need a particular order, only batching.
         built.Sort(static (a, b) => string.CompareOrdinal(a.ModelPath, b.ModelPath));
-        IReadOnlyList<RenderableReference> list = built.Count == 0
+        return built.Count == 0
             ? Array.Empty<RenderableReference>()
             : built;
-        _placements[cell] = list;
-        return list;
     }
+
+    private readonly record struct Cached<T>(T? Value) where T : class;
 
     internal static float? ResolveEffectiveWaterHeight(CellRecord cell, float? defaultWaterHeight)
     {

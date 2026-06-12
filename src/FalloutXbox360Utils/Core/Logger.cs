@@ -25,6 +25,9 @@ public sealed class Logger
     /// </summary>
     private StreamWriter? _logFileWriter;
 
+    /// <summary>Serializes writes to <see cref="_logFileWriter" /> (StreamWriter is not thread-safe).</summary>
+    private readonly Lock _logFileLock = new();
+
     private Logger()
     {
     }
@@ -207,13 +210,20 @@ public sealed class Logger
         // Capture the writer into a local to tolerate concurrent Dispose/Close from
         // other threads, then swallow ObjectDisposedException (the stream can be
         // closed between the null-check and the write when tests run in parallel).
+        // The write itself is serialized: StreamWriter is not thread-safe, and the GUI
+        // logs from the UI thread and load-window workers concurrently — unsynchronized
+        // WriteLine can poison the writer's internal buffer position and throw, or
+        // interleave/garble lines.
         var fileWriter = _logFileWriter;
         if (fileWriter != null)
         {
             try
             {
                 var prefix = BuildPlainPrefix(level);
-                fileWriter.WriteLine(prefix + message);
+                lock (_logFileLock)
+                {
+                    fileWriter.WriteLine(prefix + message);
+                }
             }
             catch (ObjectDisposedException)
             {

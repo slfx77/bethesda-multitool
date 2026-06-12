@@ -140,6 +140,8 @@ internal static class SingleFileAnalysisHelper
             "Texture Scan" => Strings.Status_ScanningTextures,
             "Scene Graph" => Strings.Status_WalkingSceneGraph,
             "Runtime Assets" => $"Runtime assets detected ({p.FilesFound} total files)",
+            "Complete" or "Analysis Complete" when _fileType == AnalysisFileType.EsmFile =>
+                "Finalizing ESM load...",
             "Complete" or "Analysis Complete" => Strings.Status_AnalysisComplete(p.FilesFound),
             _ => $"{p.Phase}..."
         };

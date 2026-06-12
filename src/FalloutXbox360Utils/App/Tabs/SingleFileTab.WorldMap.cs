@@ -20,23 +20,37 @@ public sealed partial class SingleFileTab
 
     private async Task PopulateWorldMapAsync()
     {
+        var loadGeneration = Volatile.Read(ref _worldMapLoadGeneration);
         if (_session.WorldMapPopulated)
         {
             return;
         }
 
-        // Show progress
-        WorldMapProgressBar.Visibility = Visibility.Visible;
-        WorldMapStatusText.Text = _session.IsEsmFile
-            ? Strings.Status_LoadingWorldData
-            : Strings.Status_ParsingWorldData;
+        await _worldMapLoadGate.WaitAsync();
 
         try
         {
+            if (!IsCurrentWorldMapLoad(loadGeneration) || _session.WorldMapPopulated)
+            {
+                return;
+            }
+
+            // Show progress
+            WorldMapProgressBar.Visibility = Visibility.Visible;
+            WorldMapProgressBar.IsIndeterminate = true;
+            WorldMapStatusText.Text = _session.IsEsmFile
+                ? Strings.Status_LoadingWorldData
+                : Strings.Status_ParsingWorldData;
+
             // Save file path: build world data from supplementary ESM or save positions
             if (_session.IsSaveFile)
             {
                 var worldData = await BuildSaveWorldDataAsync();
+                if (!IsCurrentWorldMapLoad(loadGeneration))
+                {
+                    return;
+                }
+
                 if (worldData == null)
                 {
                     WorldMapStatusText.Text = "No world data available. Use Load Order to load an ESM for terrain.";
@@ -44,16 +58,7 @@ public sealed partial class SingleFileTab
                 }
 
                 worldData.AdditionalDataPaths = CollectLoadOrderPaths();
-                _session.WorldViewData = worldData;
-                _session.WorldMapPopulated = true;
-                WorldMapControl.LoadData(worldData);
-                WorldView3DControl.LoadData(worldData);
-                // Let the 2D map borrow the 3D control's D3D12 stack for the top-down "Rendered
-                // models" overlay (re-set after LoadData so the toggle reflects the new data's
-                // capability). Set after the 3D LoadData so its reference pipeline is up.
-                WorldMapControl.TopDownProvider = WorldView3DControl;
-                WorldMapPlaceholder.Visibility = Visibility.Collapsed;
-                WorldMapContent.Visibility = Visibility.Visible;
+                ApplyWorldMapData(worldData);
                 return;
             }
 
@@ -62,6 +67,10 @@ public sealed partial class SingleFileTab
             {
                 WorldMapProgressBar.IsIndeterminate = false;
                 await EnsureSemanticParseAsync();
+                if (!IsCurrentWorldMapLoad(loadGeneration))
+                {
+                    return;
+                }
             }
 
             var semantic = _session.SemanticResult;
@@ -82,23 +91,54 @@ public sealed partial class SingleFileTab
             var filePath = _session.FilePath;
             var esmWorldData = await Task.Run(() =>
                 WorldMapOverlayBuilder.BuildFromRecords(semantic, filePath));
+            if (!IsCurrentWorldMapLoad(loadGeneration))
+            {
+                return;
+            }
 
             esmWorldData.AdditionalDataPaths = CollectLoadOrderPaths();
-            _session.WorldViewData = esmWorldData;
-            _session.WorldMapPopulated = true;
-
-            WorldMapControl.LoadData(esmWorldData);
-            WorldView3DControl.LoadData(esmWorldData);
-            // Wire the 2D map to the 3D control's top-down render provider (see above).
-            WorldMapControl.TopDownProvider = WorldView3DControl;
-
-            WorldMapPlaceholder.Visibility = Visibility.Collapsed;
-            WorldMapContent.Visibility = Visibility.Visible;
+            ApplyWorldMapData(esmWorldData);
+        }
+        catch (Exception ex)
+        {
+            if (IsCurrentWorldMapLoad(loadGeneration))
+            {
+                FalloutXbox360Utils.Core.Logger.Instance.Warn(
+                    "World map population failed: {0}", ex);
+                WorldMapStatusText.Text = $"World map failed: {ex.GetType().Name}: {ex.Message}";
+            }
         }
         finally
         {
-            WorldMapProgressBar.Visibility = Visibility.Collapsed;
+            if (IsCurrentWorldMapLoad(loadGeneration))
+            {
+                WorldMapProgressBar.Visibility = Visibility.Collapsed;
+            }
+            _worldMapLoadGate.Release();
         }
+    }
+
+    private bool IsCurrentWorldMapLoad(int loadGeneration) =>
+        Volatile.Read(ref _worldMapLoadGeneration) == loadGeneration &&
+        (_session.HasEsmRecords || _session.IsSaveFile);
+
+    private void ApplyWorldMapData(WorldViewData worldData)
+    {
+        // A reload can race a pending top-down request from the old scene. Unwire first, then
+        // rewire after the 3D scene has accepted the same WorldViewData instance.
+        WorldMapControl.TopDownProvider = null;
+        _session.WorldViewData = worldData;
+
+        WorldMapControl.LoadData(worldData);
+        WorldView3DControl.LoadData(worldData);
+
+        // Let the 2D map borrow the 3D control's D3D12 stack for the top-down "Rendered
+        // models" overlay. Set after 3D LoadData so its reference pipeline is up.
+        WorldMapControl.TopDownProvider = WorldView3DControl;
+        _session.WorldMapPopulated = true;
+
+        WorldMapPlaceholder.Visibility = Visibility.Collapsed;
+        WorldMapContent.Visibility = Visibility.Visible;
     }
 
     /// <summary>
@@ -605,6 +645,7 @@ public sealed partial class SingleFileTab
 
     private void ResetWorldMap()
     {
+        Interlocked.Increment(ref _worldMapLoadGeneration);
         _selectedWorldCell = null;
         _selectedWorldObject = null;
         ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
@@ -613,6 +654,7 @@ public sealed partial class SingleFileTab
         WorldMapProgressBar.Visibility = Visibility.Collapsed;
         WorldMapStatusText.Text = Strings.Empty_RunAnalysisForWorldMap;
         WorldMapContent.Visibility = Visibility.Collapsed;
+        WorldMapControl.TopDownProvider = null;
         WorldMapControl?.Reset();
     }
 

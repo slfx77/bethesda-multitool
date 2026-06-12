@@ -51,9 +51,14 @@ public static class Program
             Logger.Instance.UseSpectre = false;
         }
 
+        // End-of-run resource statistics: --resource-stats flag or FALLOUT_RESOURCE_STATS=1.
+        var resourceStats = args.Contains("--resource-stats", StringComparer.OrdinalIgnoreCase)
+                            || EnvironmentVariables.IsEnabled(EnvironmentVariables.Diagnostics.ResourceStats);
+
         // Strip flags before System.CommandLine sees them
         args = args.Where(a => !a.Equals("--plain", StringComparison.OrdinalIgnoreCase)
-                               && !a.Equals("--no-ansi", StringComparison.OrdinalIgnoreCase))
+                               && !a.Equals("--no-ansi", StringComparison.OrdinalIgnoreCase)
+                               && !a.Equals("--resource-stats", StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         Console.OutputEncoding = Encoding.UTF8;
@@ -92,7 +97,17 @@ public static class Program
         rootCommand.Subcommands.Add(AnalyzeCommand.Create());
         rootCommand.Subcommands.Add(ReportCommand.Create());
 
-        return rootCommand.Parse(args).Invoke();
+        var exitCode = rootCommand.Parse(args).Invoke();
+
+        // Single hook covering every command: print the resource table after the command finishes,
+        // when opted in and anything actually registered during the run.
+        if (resourceStats)
+        {
+            CLI.Shared.CliResourceStatsReporter.WriteIfAnyRegistered(
+                Core.Diagnostics.ResourceRegistry.Instance);
+        }
+
+        return exitCode;
     }
 
     private static RootCommand BuildRootCommand()

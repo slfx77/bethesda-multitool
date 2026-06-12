@@ -183,10 +183,15 @@ public sealed partial class SingleFileTab
             DataBrowserPlaceholder.Visibility = Visibility.Collapsed;
             DataBrowserContent.Visibility = Visibility.Visible;
 
-            // Build FormID navigation index for save data
+            // Build FormID navigation index for save data. Inputs captured on the UI thread
+            // (resolver above; the save tree has no placement/usage/race/faction indexes).
+            var navRecords = _session.SemanticResult;
+            var navGeneration = Volatile.Read(ref _navIndexGeneration);
             _formIdBuildTask = Task.Run(() =>
             {
-                BuildFormIdNodeIndex();
+                BuildFormIdNodeIndex(tree, navRecords, resolver,
+                    placementIndex: null, usageIndex: null, raceLookup: null,
+                    factionMembersIndex: null, navGeneration);
                 DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = "");
             });
         }
@@ -203,21 +208,70 @@ public sealed partial class SingleFileTab
 
     #region Analysis Pipeline
 
-    private async Task<AnalysisResult> RunFileAnalysisAsync(
+    private sealed record FileAnalysisArtifacts(AnalysisResult Result, byte[]? EsmFileBuffer);
+
+    private async Task<FileAnalysisArtifacts> RunFileAnalysisWithArtifactsAsync(
         string filePath, AnalysisFileType fileType, IProgress<AnalysisProgress> progress)
     {
-        return fileType switch
+        switch (fileType)
         {
-            AnalysisFileType.EsmFile or AnalysisFileType.Minidump => await SemanticFileLoader.AnalyzeOnlyAsync(
-                filePath,
-                new SemanticFileLoadOptions
-                {
-                    FileType = fileType,
-                    AnalysisProgress = progress
-                }),
-            AnalysisFileType.SaveFile => await AnalyzeSaveFileAsync(filePath, progress),
-            _ => throw new NotSupportedException($"Unknown file type: {filePath}")
-        };
+            case AnalysisFileType.EsmFile:
+            {
+                var artifacts = await EsmFileAnalyzer.AnalyzeWithArtifactsAsync(
+                    filePath,
+                    progress,
+                    VerboseCheckBox.IsChecked == true);
+                return new FileAnalysisArtifacts(artifacts.Result, artifacts.FileBuffer);
+            }
+            case AnalysisFileType.Minidump:
+            {
+                var result = await SemanticFileLoader.AnalyzeOnlyAsync(
+                    filePath,
+                    new SemanticFileLoadOptions
+                    {
+                        FileType = fileType,
+                        AnalysisProgress = progress
+                    });
+                return new FileAnalysisArtifacts(result, null);
+            }
+            case AnalysisFileType.SaveFile:
+            {
+                var result = await AnalyzeSaveFileAsync(filePath, progress);
+                return new FileAnalysisArtifacts(result, null);
+            }
+            default:
+                throw new NotSupportedException($"Unknown file type: {filePath}");
+        }
+    }
+
+    private async Task<UnifiedAnalysisResult> LoadSemanticResultAsync(
+        IProgress<(int percent, string phase)> reconProgress,
+        byte[]? esmFileBuffer)
+    {
+        if (_session.IsEsmFile && esmFileBuffer != null)
+        {
+            return await Task.Run(() =>
+            {
+                var accessor = new ByteArrayMemoryAccessor(esmFileBuffer);
+                return SemanticFileLoader.LoadFromAnalysisResult(
+                    _session.FilePath!,
+                    _analysisResult!,
+                    _session.FileType,
+                    new SemanticFileLoadOptions
+                    {
+                        FileType = _session.FileType,
+                        ParseProgress = reconProgress
+                    },
+                    accessor,
+                    esmFileBuffer.LongLength);
+            });
+        }
+
+        return await Task.Run(() => SemanticFileLoader.LoadFromAnalysisResult(
+            _session.FilePath!,
+            _analysisResult!,
+            _session.FileType,
+            reconProgress));
     }
 
     private async Task<AnalysisResult> AnalyzeSaveFileAsync(string filePath, IProgress<AnalysisProgress> progress)
@@ -228,7 +282,10 @@ public sealed partial class SingleFileTab
         return result;
     }
 
-    private async Task RunSemanticParsePipelineAsync()
+    private async Task RunSemanticParsePipelineAsync(
+        byte[]? esmFileBuffer = null,
+        EsmLoadProfile? profile = null,
+        bool refreshCarvedFiles = true)
     {
         SetPipelinePhase(AnalysisPipelinePhase.Parsing);
         StatusTextBlock.Text = _session.IsEsmFile
@@ -239,36 +296,56 @@ public sealed partial class SingleFileTab
             DispatcherQueue.TryEnqueue(() =>
             {
                 AnalysisProgressBar.Value = 80 + p.percent * 0.15;
-                StatusTextBlock.Text = p.phase;
+                StatusTextBlock.Text = p.phase is "Complete" or "Analysis Complete"
+                    ? "Finalizing semantic data..."
+                    : p.phase;
             }));
 
-        _semanticLoadTask = Task.Run(() => SemanticFileLoader.LoadFromAnalysisResult(
-            _session.FilePath!,
-            _analysisResult!,
-            _session.FileType,
-            reconProgress));
+        _semanticLoadTask = profile == null
+            ? LoadSemanticResultAsync(reconProgress, esmFileBuffer)
+            : profile.TimeAsync("Semantic parse", () => LoadSemanticResultAsync(reconProgress, esmFileBuffer));
 
-        try
+        var loaded = await _semanticLoadTask;
+        if (profile == null)
         {
-            var loaded = await _semanticLoadTask;
             _session.AdoptSemanticSession(loaded);
-            if (_session.SemanticResult != null)
-            {
-                // TESForm struct regions are added by the core pipeline (PostProcessMetadataAsync).
-                // Terrain mesh regions depend on semantic parse enrichment, so add them here.
-                SingleFileAnalysisHelper.AddRuntimeTerrainMeshRegions(_analysisResult!);
-                RefreshCarvedFilesList();
-                BuildResultsFilterCheckboxes();
-
-                // Emit BSStringT read diagnostics (visible in VS Output window)
-                var bsReport = BSStringDiagnostics.GetReport();
-                System.Diagnostics.Debug.WriteLine("[BSStringT Diagnostics]\n" + bsReport);
-            }
         }
-        catch (Exception ex)
+        else
         {
-            await ShowDialogAsync(Strings.Dialog_ParseFailed_Title,
-                $"{ex.GetType().Name}: {ex.Message}", true);
+            profile.Time("Session adoption", () => _session.AdoptSemanticSession(loaded));
+        }
+
+        if (_session.SemanticResult != null)
+        {
+            // TESForm struct regions are added by the core pipeline (PostProcessMetadataAsync).
+            // Terrain mesh regions depend on semantic parse enrichment, so add them here.
+            if (profile == null)
+            {
+                SingleFileAnalysisHelper.AddRuntimeTerrainMeshRegions(_analysisResult!);
+            }
+            else
+            {
+                profile.Time("Runtime metadata", () =>
+                    SingleFileAnalysisHelper.AddRuntimeTerrainMeshRegions(_analysisResult!));
+            }
+
+            if (refreshCarvedFiles)
+            {
+                if (profile == null)
+                {
+                    RefreshCarvedFilesList();
+                    BuildResultsFilterCheckboxes();
+                }
+                else
+                {
+                    profile.Time("Carved file list", RefreshCarvedFilesList);
+                    profile.Time("Filter UI", BuildResultsFilterCheckboxes);
+                }
+            }
+
+            // Emit BSStringT read diagnostics (visible in VS Output window)
+            var bsReport = BSStringDiagnostics.GetReport();
+            System.Diagnostics.Debug.WriteLine("[BSStringT Diagnostics]\n" + bsReport);
         }
     }
 
@@ -407,10 +484,18 @@ public sealed partial class SingleFileTab
             StatusTextBlock.Text = Strings.Status_BuildingNavIndex;
 
             // Pre-build FormID navigation index in the background (avoids delay on first link click)
-            // Tracked via _formIdBuildTask so NavigateToFormId can await it if needed
+            // Tracked via _formIdBuildTask so NavigateToFormId can await it if needed.
+            // All inputs are captured HERE on the UI thread: the resolver getter enumerates
+            // LoadOrder.Entries (UI-thread-mutated), and re-reading instance fields mid-task
+            // would race a reload swapping them. The generation token lets ResetNavigation
+            // invalidate this build if a reload/load-order change orphans it.
+            var navGeneration = Volatile.Read(ref _navIndexGeneration);
             _formIdBuildTask = Task.Run(() =>
             {
-                BuildFormIdNodeIndex();
+                BuildFormIdNodeIndex(
+                    tree, semanticResult, resolver,
+                    placements, usageIndex, raceLookup, factionMembers,
+                    navGeneration);
                 DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = "");
             });
         }
@@ -434,11 +519,7 @@ public sealed partial class SingleFileTab
         _allCarvedFiles.Clear();
         _allCarvedFiles.AddRange(SingleFileAnalysisHelper.BuildCarvedFileList(
             _analysisResult, isEsmFile: _session.IsEsmFile));
-        _carvedFiles.Clear();
-        foreach (var item in _allCarvedFiles)
-        {
-            _carvedFiles.Add(item);
-        }
+        _carvedFiles.ReplaceAll(_allCarvedFiles);
     }
 
     private async Task AutoPopulateCurrentTabAsync(object? selectedTab)

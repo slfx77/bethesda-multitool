@@ -1,6 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Coverage;
+using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
@@ -16,9 +17,20 @@ namespace FalloutXbox360Utils;
 ///     and caches derived analysis products (coverage, semantic parse results).
 ///     Disposed when the user loads a new file or closes the tab.
 /// </summary>
-internal sealed class AnalysisSessionState : IDisposable
+internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
 {
     private MemoryMappedFile? _mmf;
+    private ResourceRegistration? _registration;
+
+    public string ResourceName => "AnalysisSession";
+
+    public ResourceCategory Category => ResourceCategory.SessionScope;
+
+    /// <summary>
+    ///     Session-scope row: bytes are the mapped file's length (file-backed, not committed RAM).
+    ///     The session is the document — it is never trimmed, only dropped wholesale on a new load.
+    /// </summary>
+    public ResourceStats GetStats() => new() { EstimatedBytes = FileSize };
 
     public string? FilePath { get; private set; }
     public long FileSize { get; private set; }
@@ -44,7 +56,34 @@ internal sealed class AnalysisSessionState : IDisposable
     public bool DialogueViewerPopulated { get; set; }
 
     // ── World Map derived data ──
-    public WorldViewData? WorldViewData { get; set; }
+    private WorldViewData? _worldViewData;
+    private ResourceRegistration? _worldRenderCacheRegistration;
+
+    /// <summary>
+    ///     The loaded world view. Setting it re-points the render cache's diagnostics
+    ///     registration, so the panel row appears with the world and disappears when it is dropped.
+    /// </summary>
+    public WorldViewData? WorldViewData
+    {
+        get => _worldViewData;
+        set
+        {
+            if (ReferenceEquals(_worldViewData, value))
+            {
+                return;
+            }
+
+            _worldRenderCacheRegistration?.Dispose();
+            _worldRenderCacheRegistration = null;
+            _worldViewData = value;
+            if (value is not null)
+            {
+                _worldRenderCacheRegistration =
+                    ResourceRegistry.Instance.Register(value.RenderCache, "world");
+            }
+        }
+    }
+
     public bool WorldMapPopulated { get; set; }
 
     // ── NPC Browser derived data ──
@@ -122,6 +161,9 @@ internal sealed class AnalysisSessionState : IDisposable
             _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             Accessor = _mmf.CreateViewAccessor(0, FileSize, MemoryMappedFileAccess.Read);
         }
+
+        _registration = ResourceRegistry.Instance.Register(this, Path.GetFileName(filePath));
+        MemoryBudgetCoordinator.Instance.CheckNow("session-open");
     }
 
     public void AdoptSemanticSession(UnifiedAnalysisResult session)
@@ -137,14 +179,32 @@ internal sealed class AnalysisSessionState : IDisposable
         _mmf = null;
 
         var (mappedFile, accessor) = session.DetachDisposables();
-        _mmf = mappedFile;
-        Accessor = accessor;
+        if (mappedFile != null && accessor != null)
+        {
+            _mmf = mappedFile;
+            Accessor = accessor;
+        }
+        else
+        {
+            _mmf = MemoryMappedFile.CreateFromFile(session.FilePath, FileMode.Open, null, 0,
+                MemoryMappedFileAccess.Read);
+            Accessor = _mmf.CreateViewAccessor(0, FileSize, MemoryMappedFileAccess.Read);
+        }
+
         SemanticResult = session.Records;
         Resolver = session.Resolver;
+
+        _registration?.Dispose();
+        _registration = ResourceRegistry.Instance.Register(this, Path.GetFileName(session.FilePath));
+        MemoryBudgetCoordinator.Instance.CheckNow("session-adopt");
     }
 
     public void Dispose()
     {
+        // Unregister first so the retired-stats record reflects the session as it was.
+        _registration?.Dispose();
+        _registration = null;
+
         // Core analysis data
         CoverageResult = null;
         SemanticResult = null;

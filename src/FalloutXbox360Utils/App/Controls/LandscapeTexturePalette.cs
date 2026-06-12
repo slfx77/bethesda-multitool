@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
@@ -15,7 +16,7 @@ namespace FalloutXbox360Utils;
 ///     Cached per source ESM path; first access of a worldspace pays the BSA + DDS cost
 ///     once, subsequent renders sample from memory.
 /// </summary>
-internal sealed class LandscapeTexturePalette
+internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
 {
     /// <summary>
     ///     Output tile resolution. 128 gives enough texel headroom for the base overview
@@ -78,6 +79,48 @@ internal sealed class LandscapeTexturePalette
         _sources = sources;
     }
 
+    public string ResourceName => nameof(LandscapeTexturePalette);
+
+    public ResourceCategory Category => ResourceCategory.CpuCache;
+
+    public int TrimPriority => 30;
+
+    public TrimAffinity TrimAffinity => TrimAffinity.AnyThread;
+
+    /// <summary>
+    ///     No hit/miss counters here on purpose: <see cref="Sample" /> runs per pixel (millions of
+    ///     calls per render) and must stay free of interlocked traffic. Bytes/entries are the
+    ///     useful signals for this cache.
+    /// </summary>
+    public ResourceStats GetStats() => new()
+    {
+        EstimatedBytes = (long)_tiles.Count * TileBytes,
+        EntryCount = _tiles.Count,
+    };
+
+    /// <summary>
+    ///     Sheds every cached tile; the miss path rebuilds them from the BSAs on next sample
+    ///     (serialized by the tile-load lock, so a concurrent render stays correct — just slower
+    ///     until re-warmed). Gentle passes skip this cache: there is no recency order to shed by.
+    /// </summary>
+    public long Trim(TrimLevel level)
+    {
+        if (level != TrimLevel.Aggressive)
+        {
+            return 0;
+        }
+
+        var released = (long)_tiles.Count * TileBytes;
+        _tiles.Clear();
+        lock (_tileLoadLock)
+        {
+            _engineDefaultTile = null;
+            Volatile.Write(ref _engineDefaultLoaded, 0);
+        }
+
+        return released;
+    }
+
     /// <summary>
     ///     Returns the palette for this WorldViewData, or null when no texture BSAs can be
     ///     discovered (e.g. a DMP loaded standalone with no Load Order pointing at a Data
@@ -125,6 +168,9 @@ internal sealed class LandscapeTexturePalette
             var sources = NifTextureArchiveSourceFactory.Create(bsaPaths);
             var palette = new LandscapeTexturePalette(data, sources);
             s_cache[cacheKey] = palette;
+            // Palettes are process-lifetime by design (cached per ESM + load-order key), so the
+            // registration is intentionally never disposed.
+            _ = ResourceRegistry.Instance.Register(palette, Path.GetFileName(esmPath));
             return palette;
         }
     }

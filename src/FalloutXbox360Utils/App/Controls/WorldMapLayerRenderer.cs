@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
@@ -17,6 +19,8 @@ internal static class WorldMapLayerRenderer
 {
     private const int HmGridSize = 33;
     internal const int HeightmapPixelsPerCell = HmGridSize;
+    private const int DefaultTerrainTextureAggregateConcurrency = 1;
+    private const int MaxLoggedTerrainAggregateCellFailures = 8;
 
     /// <summary>Water tint for the underwater overlay, matches HeightmapRenderer.</summary>
     private const byte WaterR = 30, WaterG = 55, WaterB = 120;
@@ -141,21 +145,46 @@ internal static class WorldMapLayerRenderer
         var cellByGrid = BuildCellGridIndex(cellSource);
         var rgba = InitMissingBackground(width, height);
 
-        // Render + blit cells in parallel: each writes a disjoint ppc×ppc block, so the shared buffer
-        // needs no locking. RenderTerrainTextureCellOverview's weight-table scratch is [ThreadStatic]
-        // and the palette is concurrent-read-safe (same as the streaming path). 16k cells at 33 px is
-        // far cheaper than the per-cell high-res stream, and one upload instead of thousands.
+        // Render + blit cells in bounded parallelism: each writes a disjoint ppc×ppc block, so the
+        // shared buffer needs no locking. The 2D texture-mode switch used to run this through
+        // Parallel.ForEach's default scheduler, which could launch a large set of workers into the
+        // weight-table and palette sampler hot path at once. Keep the aggregate path conservative by
+        // default; callers can raise the centralized aggregate-concurrency env var when
+        // stress-testing after crash fixes.
         var cells = EnumerateCellsWithGrid(cellSource).ToList();
-        Parallel.ForEach(cells, cell =>
+        var aggregateConcurrency = GetTerrainTextureAggregateConcurrency();
+        Map2DProfilerTrace.Event("terrain-aggregate-start",
+            $"cells={cells.Count} ppc={ppc} size={width}x{height} concurrency={aggregateConcurrency}");
+        var loggedFailures = 0;
+        Parallel.ForEach(
+            cells,
+            new ParallelOptions { MaxDegreeOfParallelism = aggregateConcurrency },
+            cell =>
         {
-            var imgCellX = cell.GridX!.Value - minX;
-            var imgCellY = maxY - cell.GridY!.Value;
-            if (imgCellX < 0 || imgCellY < 0 || imgCellX >= gridW || imgCellY >= gridH) return;
-            var bytes = RenderTerrainTextureCellOverview(
-                cell, palette, defaultWaterHeight, showWater, cache, ppc, cellByGrid, waterPalette);
-            if (bytes is null) return;
-            BlitCellRgbaBlock(rgba, width, bytes, ppc, imgCellX * ppc, imgCellY * ppc);
+            try
+            {
+                var imgCellX = cell.GridX!.Value - minX;
+                var imgCellY = maxY - cell.GridY!.Value;
+                if (imgCellX < 0 || imgCellY < 0 || imgCellX >= gridW || imgCellY >= gridH) return;
+                var bytes = RenderTerrainTextureCellOverview(
+                    cell, palette, defaultWaterHeight, showWater, cache, ppc, cellByGrid, waterPalette);
+                if (bytes is null) return;
+                BlitCellRgbaBlock(rgba, width, bytes, ppc, imgCellX * ppc, imgCellY * ppc);
+            }
+            catch (Exception ex)
+            {
+                if (Interlocked.Increment(ref loggedFailures) <= MaxLoggedTerrainAggregateCellFailures)
+                {
+                    Logger.Instance.Warn(
+                        "TerrainTextures aggregate: cell ({0},{1}) render failed and will be skipped: {2}",
+                        cell.GridX,
+                        cell.GridY,
+                        ex);
+                }
+            }
         });
+        Map2DProfilerTrace.Event("terrain-aggregate-complete",
+            $"cells={cells.Count} failures={loggedFailures}");
 
         return new LayerBitmap(rgba, width, height, minX, maxY);
     }
@@ -762,7 +791,12 @@ internal static class WorldMapLayerRenderer
         // Cap of 16 covers the worst case at the cell-center vertex (up to 4 BTXTs + up to
         // 12 ATXTs); any single 2×2 enclosing vertex neighborhood after dedup stays under
         // this bound. Stack-allocated, zero GC.
-        Span<LayerWeight> combined = stackalloc LayerWeight[16];
+        // Keep this as a normal per-cell managed array instead of stackalloc Span. Crash dumps from
+        // the full GUI texture-mode switch landed multiple workers inside AccumulateOne/
+        // AccumulateVertexWeights with an ExecutionEngineException and no managed heap corruption.
+        // The tiny per-cell allocation is a worthwhile trade for avoiding a heavily contended
+        // stackalloc/ref-struct hot path while pageheap is chasing native/resource corruption.
+        var combined = new LayerWeight[16];
 
         for (var py = 0; py < pixelsPerCell; py++)
         {
@@ -893,24 +927,25 @@ internal static class WorldMapLayerRenderer
     ///     in practice).
     /// </summary>
     private static void AccumulateVertexWeights(
-        ref VertexWeights v, float bw, Span<LayerWeight> combined, ref int count)
+        ref VertexWeights v, float bw, LayerWeight[] combined, ref int count)
     {
         if (bw <= 0f || v.Count == 0) return;
+        var vertexCount = v.Count;
         AccumulateOne(v.E0.FormId, v.E0.Weight * bw, combined, ref count);
-        if (v.Count > 1) AccumulateOne(v.E1.FormId, v.E1.Weight * bw, combined, ref count);
-        if (v.Count > 2) AccumulateOne(v.E2.FormId, v.E2.Weight * bw, combined, ref count);
-        if (v.Count > 3) AccumulateOne(v.E3.FormId, v.E3.Weight * bw, combined, ref count);
-        if (v.Overflow is not null)
+        if (vertexCount > 1) AccumulateOne(v.E1.FormId, v.E1.Weight * bw, combined, ref count);
+        if (vertexCount > 2) AccumulateOne(v.E2.FormId, v.E2.Weight * bw, combined, ref count);
+        if (vertexCount > 3) AccumulateOne(v.E3.FormId, v.E3.Weight * bw, combined, ref count);
+        if (vertexCount > 4 && v.Overflow is { } overflow)
         {
-            var n = v.Count - 4;
+            var n = Math.Min(vertexCount - 4, overflow.Length);
             for (var i = 0; i < n; i++)
             {
-                AccumulateOne(v.Overflow[i].FormId, v.Overflow[i].Weight * bw, combined, ref count);
+                AccumulateOne(overflow[i].FormId, overflow[i].Weight * bw, combined, ref count);
             }
         }
     }
 
-    private static void AccumulateOne(uint formId, float weight, Span<LayerWeight> combined, ref int count)
+    private static void AccumulateOne(uint formId, float weight, LayerWeight[] combined, ref int count)
     {
         if (weight <= 0f) return;
         for (var i = 0; i < count; i++)
@@ -925,6 +960,17 @@ internal static class WorldMapLayerRenderer
         {
             combined[count++] = new LayerWeight(formId, weight);
         }
+    }
+
+    private static int GetTerrainTextureAggregateConcurrency()
+    {
+        var raw = EnvironmentVariables.Get(EnvironmentVariables.Map2D.TerrainTextureAggregateConcurrency);
+        if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return Math.Max(1, parsed);
+        }
+
+        return DefaultTerrainTextureAggregateConcurrency;
     }
 
     private static void AddWeighted(
