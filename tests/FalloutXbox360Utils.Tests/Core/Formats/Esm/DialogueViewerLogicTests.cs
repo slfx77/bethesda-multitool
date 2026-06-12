@@ -122,6 +122,36 @@ public class DialogueViewerLogicTests
         Assert.Equal(100u, result[2].SourceInfo.Info.FormId);
     }
 
+    [Fact]
+    public void CollectLinkedTopics_IncludesFollowUpInfoChoices()
+    {
+        var choiceTopic = MakeTopic(2, "ChoiceTopic");
+        var followUp = MakeInfo(101, linkedTopics: [choiceTopic]);
+        var source = MakeInfo(100);
+        source.FollowUpInfos.Add(followUp);
+
+        var result = DialogueViewerHelper.CollectLinkedTopics([source], 1);
+
+        Assert.Single(result);
+        Assert.True(result.ContainsKey(2));
+        Assert.Equal(101u, result[2].SourceInfo.Info.FormId);
+    }
+
+    [Fact]
+    public void CollectLinkedTopics_FollowUpCycle_DoesNotLoop()
+    {
+        var choiceTopic = MakeTopic(2, "ChoiceTopic");
+        var source = MakeInfo(100);
+        var followUp = MakeInfo(101, linkedTopics: [choiceTopic]);
+        source.FollowUpInfos.Add(followUp);
+        followUp.FollowUpInfos.Add(source);
+
+        var result = DialogueViewerHelper.CollectLinkedTopics([source], 1);
+
+        Assert.Single(result);
+        Assert.True(result.ContainsKey(2));
+    }
+
     #endregion
 
     #region FilterInfoChain Tests
@@ -295,6 +325,21 @@ public class DialogueViewerLogicTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public void FindParentTopicIn_FindsParentThroughFollowUpInfo()
+    {
+        var childTopic = MakeTopic(2, "Child");
+        var followUp = MakeInfo(101, linkedTopics: [childTopic]);
+        var parentInfo = MakeInfo(100);
+        parentInfo.FollowUpInfos.Add(followUp);
+        var parentTopic = MakeTopic(1, "Parent", parentInfo);
+
+        var result = DialogueViewerHelper.FindParentTopicIn(childTopic, [parentTopic]);
+
+        Assert.NotNull(result);
+        Assert.Equal(1u, result.TopicFormId);
+    }
+
     #endregion
 
     #region CollectLinkedTopics TCLT/NAME Separation Tests
@@ -337,6 +382,76 @@ public class DialogueViewerLogicTests
         var record = new DialogueRecord { FormId = 1 };
 
         Assert.False(record.HasResultScript);
+    }
+
+    [Fact]
+    public void CollectUnlockedTopics_IncludesFollowUpAddedTopics()
+    {
+        var addedTopic = MakeTopic(3, "Added");
+        var source = MakeInfo(100);
+        var followUp = new InfoDialogueNode
+        {
+            Info = new DialogueRecord { FormId = 101 },
+            AddedTopics = [addedTopic]
+        };
+        source.FollowUpInfos.Add(followUp);
+
+        var result = DialogueViewerHelper.CollectUnlockedTopics([source]);
+
+        Assert.Single(result);
+        Assert.True(result.ContainsKey(3));
+    }
+
+    #endregion
+
+    #region CollectLoopbackTopicList Tests
+
+    [Fact]
+    public void CollectLoopbackTopicList_WithSpeakerFilter_UsesSpeakerTopicList()
+    {
+        var current = MakeTopic(1, "Current", MakeInfo(100, speakerId: 500));
+        var sameSpeaker = MakeTopic(2, "SameSpeaker", MakeInfo(101, speakerId: 500));
+        var otherSpeaker = MakeTopic(3, "OtherSpeaker", MakeInfo(102, speakerId: 999));
+        var tree = new DialogueTreeResult
+        {
+            QuestTrees = new Dictionary<uint, QuestDialogueNode>
+            {
+                [10] = new() { QuestFormId = 10, Topics = [current, sameSpeaker, otherSpeaker] }
+            }
+        };
+        var topicsBySpeaker = new Dictionary<uint, List<TopicDialogueNode>>
+        {
+            [500] = [current, sameSpeaker],
+            [999] = [otherSpeaker]
+        };
+
+        var result = DialogueViewerHelper.CollectLoopbackTopicList(
+            tree, topicsBySpeaker, current, null, 500);
+
+        Assert.Single(result);
+        Assert.Equal(2u, result[0].TopicFormId);
+    }
+
+    [Fact]
+    public void CollectLoopbackTopicList_WithQuestFilter_UsesQuestTopicList()
+    {
+        var current = MakeTopic(1, "Current", MakeInfo(100, questId: 10));
+        var sameQuest = MakeTopic(2, "SameQuest", MakeInfo(101, questId: 10));
+        var otherQuest = MakeTopic(3, "OtherQuest", MakeInfo(102, questId: 20));
+        var tree = new DialogueTreeResult
+        {
+            QuestTrees = new Dictionary<uint, QuestDialogueNode>
+            {
+                [10] = new() { QuestFormId = 10, Topics = [current, sameQuest] },
+                [20] = new() { QuestFormId = 20, Topics = [otherQuest] }
+            }
+        };
+
+        var result = DialogueViewerHelper.CollectLoopbackTopicList(
+            tree, null, current, 10, null);
+
+        Assert.Single(result);
+        Assert.Equal(2u, result[0].TopicFormId);
     }
 
     #endregion

@@ -459,10 +459,6 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        // Check Goodbye FIRST — if all filtered INFOs end the conversation,
-        // don't show TCLT-linked choices (which would pull in unrelated topics).
-        var allGoodbye = filteredInfoChain.Count > 0 && filteredInfoChain.All(i => i.Info.IsGoodbye);
-
         // When a specific response is selected and there are multiple responses,
         // only show that response's follow-up choices
         var choiceChain = filteredInfoChain;
@@ -471,6 +467,9 @@ public sealed partial class SingleFileTab
         {
             choiceChain = [_selectedResponseNode];
         }
+
+        // Check Goodbye FIRST for the active branch, so linked choices do not pull in unrelated topics.
+        var allGoodbye = choiceChain.Count > 0 && choiceChain.All(i => i.Info.IsGoodbye);
 
         var choiceTopics = allGoodbye
             ? new Dictionary<uint, (TopicDialogueNode Topic, InfoDialogueNode SourceInfo)>()
@@ -505,7 +504,7 @@ public sealed partial class SingleFileTab
         }
         else
         {
-            var hasResultScript = filteredInfoChain.Any(i => i.Info.HasResultScript);
+            var hasResultScript = choiceChain.Any(i => i.Info.HasResultScript);
 
             if (allGoodbye)
             {
@@ -544,19 +543,17 @@ public sealed partial class SingleFileTab
                     }
                     else
                     {
-                        AddEndOfDialogueLabel("Conversation returns to topic list");
-                        AddReturnToPickerLink();
+                        ShowLoopbackTopicList(topic);
                     }
                 }
                 else
                 {
-                    AddEndOfDialogueLabel("Conversation returns to topic list");
-                    AddReturnToPickerLink();
+                    ShowLoopbackTopicList(topic);
                 }
             }
         }
 
-        ShowAddedTopicsInfo(filteredInfoChain);
+        ShowAddedTopicsInfo(choiceChain);
     }
 
     private void AddEndOfDialogueLabel(string text)
@@ -598,6 +595,59 @@ public sealed partial class SingleFileTab
                 DialogueChoicesPanel.Children.Add(container);
             }
         }
+    }
+
+    private void ShowLoopbackTopicList(TopicDialogueNode currentTopic)
+    {
+        if (_session.DialogueTree == null)
+        {
+            AddEndOfDialogueLabel("Conversation returns to topic list");
+            AddReturnToPickerLink();
+            return;
+        }
+
+        var loopbackTopics = DialogueViewerHelper.CollectLoopbackTopicList(
+            _session.DialogueTree,
+            _session.TopicsBySpeaker,
+            currentTopic,
+            _dialogueQuestFilter,
+            _dialogueSpeakerFilter);
+
+        if (loopbackTopics.Count == 0)
+        {
+            AddEndOfDialogueLabel("Conversation returns to topic list");
+            AddReturnToPickerLink();
+            return;
+        }
+
+        DialogueChoicesHeader.Visibility = Visibility.Visible;
+        DialogueChoicesPanel.Children.Add(DialogueTreeRenderer.CreateSecondaryLabel(
+            "Conversation returns to topic list:", new Thickness(0, 4, 0, 4)));
+
+        foreach (var loopbackTopic in loopbackTopics)
+        {
+            DialogueChoicesPanel.Children.Add(CreateTopicListChoice(loopbackTopic));
+        }
+    }
+
+    private StackPanel CreateTopicListChoice(TopicDialogueNode topic)
+    {
+        var filteredChain = DialogueViewerHelper.FilterInfoChain(
+            topic.InfoChain, _dialogueQuestFilter, _dialogueSpeakerFilter,
+            strictQuestFilter: _dialogueQuestFilter != null);
+        var targetFirstInfo = filteredChain.FirstOrDefault()?.Info ?? topic.InfoChain.FirstOrDefault()?.Info;
+        var displayText = _dialogueShowEditorIds
+            ? DialogueViewerHelper.ResolveEditorIdDisplay(topic)
+            : DialogueViewerHelper.ResolveTopicDisplayText(topic);
+
+        var button = DialogueConversationBuilder.CreateStyledChoiceButton(
+            displayText, topic, _visitedTopicFormIds,
+            (t, prompt) => NavigateToDialogueTopic(t, pushToStack: true, promptText: prompt,
+                promptSourceInfo: targetFirstInfo));
+
+        var container = new StackPanel();
+        container.Children.Add(button);
+        return container;
     }
 
     private StackPanel CreatePlayerChoiceWithDetails(TopicDialogueNode linkedTopic, InfoDialogueNode sourceInfo)

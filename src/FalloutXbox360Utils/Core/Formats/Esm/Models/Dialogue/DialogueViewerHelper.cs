@@ -6,15 +6,17 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Models.Dialogue;
 /// </summary>
 internal static class DialogueViewerHelper
 {
+    private const int MaxFollowUpDepth = 16;
+
     /// <summary>
-    ///     Collects linked topics from an InfoChain, excluding a specific topic FormId
-    ///     to prevent self-references and infinite cycles.
+    ///     Collects linked topics from an InfoChain and its runtime follow-up INFOs,
+    ///     excluding a specific topic FormId to prevent self-references and infinite cycles.
     /// </summary>
     public static Dictionary<uint, (TopicDialogueNode Topic, InfoDialogueNode SourceInfo)>
         CollectLinkedTopics(List<InfoDialogueNode> chain, uint excludeTopicFormId)
     {
         var result = new Dictionary<uint, (TopicDialogueNode Topic, InfoDialogueNode SourceInfo)>();
-        foreach (var infoNode in chain)
+        foreach (var infoNode in EnumerateInfoAndFollowUps(chain))
         {
             foreach (var linked in infoNode.ChoiceTopics)
             {
@@ -26,6 +28,125 @@ internal static class DialogueViewerHelper
         }
 
         return result;
+    }
+
+    /// <summary>
+    ///     Enumerates each INFO in order, followed by its runtime follow-up INFOs.
+    /// </summary>
+    public static IEnumerable<InfoDialogueNode> EnumerateInfoAndFollowUps(IEnumerable<InfoDialogueNode> roots)
+    {
+        var seen = new HashSet<uint>();
+        foreach (var root in roots)
+        {
+            foreach (var node in EnumerateInfoAndFollowUps(root, seen, 0))
+            {
+                yield return node;
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Collects topics unlocked by an InfoChain and its runtime follow-up INFOs.
+    /// </summary>
+    public static Dictionary<uint, TopicDialogueNode> CollectUnlockedTopics(IEnumerable<InfoDialogueNode> chain)
+    {
+        var addedTopics = new Dictionary<uint, TopicDialogueNode>();
+        foreach (var infoNode in EnumerateInfoAndFollowUps(chain))
+        {
+            foreach (var added in infoNode.AddedTopics)
+            {
+                addedTopics.TryAdd(added.TopicFormId, added);
+            }
+        }
+
+        return addedTopics;
+    }
+
+    /// <summary>
+    ///     Collects the current NPC/quest topic menu used when a dialogue branch returns to the topic list.
+    /// </summary>
+    public static List<TopicDialogueNode> CollectLoopbackTopicList(
+        DialogueTreeResult tree,
+        Dictionary<uint, List<TopicDialogueNode>>? topicsBySpeaker,
+        TopicDialogueNode currentTopic,
+        uint? questFilter,
+        uint? speakerFilter)
+    {
+        var candidateTopics = ResolveLoopbackScope(tree, topicsBySpeaker, currentTopic, questFilter, speakerFilter);
+        return candidateTopics
+            .Where(t => t.TopicFormId != currentTopic.TopicFormId)
+            .Select(t => new
+            {
+                Topic = t,
+                FilteredChain = FilterInfoChain(
+                    t.InfoChain, questFilter, speakerFilter, strictQuestFilter: questFilter != null)
+            })
+            .Where(t => t.FilteredChain.Count > 0)
+            .GroupBy(t => t.Topic.TopicFormId)
+            .Select(g => g.First().Topic)
+            .OrderByDescending(t => t.Topic?.Priority ?? 0f)
+            .ThenBy(ResolveTopicDisplayText, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IEnumerable<TopicDialogueNode> ResolveLoopbackScope(
+        DialogueTreeResult tree,
+        Dictionary<uint, List<TopicDialogueNode>>? topicsBySpeaker,
+        TopicDialogueNode currentTopic,
+        uint? questFilter,
+        uint? speakerFilter)
+    {
+        if (speakerFilter is > 0 &&
+            topicsBySpeaker?.TryGetValue(speakerFilter.Value, out var speakerTopics) == true)
+        {
+            return speakerTopics;
+        }
+
+        if (questFilter is > 0 &&
+            tree.QuestTrees.TryGetValue(questFilter.Value, out var filteredQuest))
+        {
+            return filteredQuest.Topics;
+        }
+
+        var currentQuest = tree.QuestTrees.Values
+            .FirstOrDefault(q => q.Topics.Any(t => t.TopicFormId == currentTopic.TopicFormId));
+        if (currentQuest != null)
+        {
+            return currentQuest.Topics;
+        }
+
+        if (tree.OrphanTopics.Any(t => t.TopicFormId == currentTopic.TopicFormId))
+        {
+            return tree.OrphanTopics;
+        }
+
+        return tree.QuestTrees.Values
+            .SelectMany(q => q.Topics)
+            .Concat(tree.OrphanTopics);
+    }
+
+    private static IEnumerable<InfoDialogueNode> EnumerateInfoAndFollowUps(
+        InfoDialogueNode node, HashSet<uint> seen, int depth)
+    {
+        if (!seen.Add(node.Info.FormId))
+        {
+            yield break;
+        }
+
+        yield return node;
+
+        if (depth >= MaxFollowUpDepth)
+        {
+            yield break;
+        }
+
+        foreach (var followUp in node.FollowUpInfos)
+        {
+            foreach (var child in EnumerateInfoAndFollowUps(followUp, seen, depth + 1))
+            {
+                yield return child;
+            }
+        }
     }
 
     /// <summary>
@@ -79,7 +200,7 @@ internal static class DialogueViewerHelper
                 continue;
             }
 
-            if (candidate.InfoChain.Any(info =>
+            if (EnumerateInfoAndFollowUps(candidate.InfoChain).Any(info =>
                     info.ChoiceTopics.Any(linked => linked.TopicFormId == currentTopic.TopicFormId)))
             {
                 return candidate;

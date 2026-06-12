@@ -36,7 +36,7 @@ internal sealed class DialogueTreeBuilder(RecordParserContext context) : RecordH
         // Build TopicDialogueNode for each known topic
         var topicNodes = CreateTopicDialogueNodes(infosByTopic, topics, topicById);
 
-        // Cross-link: fill in ChoiceTopics (TCLT) and AddedTopics (NAME) for each InfoDialogueNode
+        // Cross-link: fill in ChoiceTopics (TCLT) and AddedTopics (NAME) for each InfoDialogueNode.
         CrossLinkInfoNodes(topicNodes);
 
         // Reverse-link: use TCLF (link-FROM) subrecords to infer missing TCLT connections
@@ -47,6 +47,9 @@ internal sealed class DialogueTreeBuilder(RecordParserContext context) : RecordH
 
         // Create orphan topic nodes for unlinked INFOs (no TopicFormId)
         CreateOrphanTopicNodes(unlinkedInfos, questTrees, orphanTopics, questById);
+
+        // Link runtime follow-up INFOs after synthetic orphan nodes exist.
+        LinkFollowUpInfoNodes(EnumerateAllTopicNodes(questTrees, orphanTopics));
 
         // Sort topics within each quest by priority then name
         SortTopicsWithinQuests(questTrees);
@@ -117,7 +120,8 @@ internal sealed class DialogueTreeBuilder(RecordParserContext context) : RecordH
             {
                 Info = info,
                 ChoiceTopics = [],
-                AddedTopics = []
+                AddedTopics = [],
+                FollowUpInfos = []
             }).ToList();
 
             topicNodes[topicId] = new TopicDialogueNode
@@ -130,6 +134,46 @@ internal sealed class DialogueTreeBuilder(RecordParserContext context) : RecordH
         }
 
         return topicNodes;
+    }
+
+    /// <summary>
+    ///     Link runtime follow-up INFO FormIDs from TESConversationData.m_listFollowUpInfos.
+    /// </summary>
+    private static void LinkFollowUpInfoNodes(IEnumerable<TopicDialogueNode> topicNodes)
+    {
+        var infoById = topicNodes
+            .SelectMany(t => t.InfoChain)
+            .GroupBy(i => i.Info.FormId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        foreach (var infoNode in infoById.Values)
+        {
+            foreach (var followUpId in infoNode.Info.FollowUpInfos)
+            {
+                if (infoById.TryGetValue(followUpId, out var followUpNode))
+                {
+                    infoNode.FollowUpInfos.Add(followUpNode);
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<TopicDialogueNode> EnumerateAllTopicNodes(
+        Dictionary<uint, QuestDialogueNode> questTrees,
+        List<TopicDialogueNode> orphanTopics)
+    {
+        foreach (var quest in questTrees.Values)
+        {
+            foreach (var topic in quest.Topics)
+            {
+                yield return topic;
+            }
+        }
+
+        foreach (var topic in orphanTopics)
+        {
+            yield return topic;
+        }
     }
 
     /// <summary>
@@ -345,7 +389,8 @@ internal sealed class DialogueTreeBuilder(RecordParserContext context) : RecordH
             {
                 Info = info,
                 ChoiceTopics = [],
-                AddedTopics = []
+                AddedTopics = [],
+                FollowUpInfos = []
             }).ToList();
 
         return new TopicDialogueNode

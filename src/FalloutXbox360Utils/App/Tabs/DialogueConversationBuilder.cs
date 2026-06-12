@@ -14,6 +14,9 @@ namespace FalloutXbox360Utils;
 /// </summary>
 internal static class DialogueConversationBuilder
 {
+    private const int MaxDisplayedFollowUps = 12;
+    private const int MaxFollowUpDisplayDepth = 8;
+
     /// <summary>
     ///     Builds the full conversation display elements from a filtered info chain.
     /// </summary>
@@ -86,6 +89,13 @@ internal static class DialogueConversationBuilder
                 displayChain[i], resolveSpeakerName, subtitleLookup, buildRecordDetailPanel,
                 onResponseSelected, isSelected);
             elements.Add(responseElement);
+
+            if (displayChain.Count == 1 || isSelected)
+            {
+                AddFollowUpResponseElements(
+                    elements, displayChain[i], resolveSpeakerName, subtitleLookup,
+                    buildRecordDetailPanel);
+            }
         }
 
         if (wasTruncated)
@@ -96,6 +106,71 @@ internal static class DialogueConversationBuilder
         }
 
         return elements;
+    }
+
+    private static void AddFollowUpResponseElements(
+        List<UIElement> elements,
+        InfoDialogueNode sourceNode,
+        Func<uint?, string> resolveSpeakerName,
+        Func<uint, SubtitleEntry?> subtitleLookup,
+        Func<DialogueRecord, Border> buildRecordDetailPanel)
+    {
+        AddFollowUpResponseElements(
+            elements, sourceNode, resolveSpeakerName, subtitleLookup, buildRecordDetailPanel,
+            [sourceNode.Info.FormId], 0);
+    }
+
+    private static void AddFollowUpResponseElements(
+        List<UIElement> elements,
+        InfoDialogueNode sourceNode,
+        Func<uint?, string> resolveSpeakerName,
+        Func<uint, SubtitleEntry?> subtitleLookup,
+        Func<DialogueRecord, Border> buildRecordDetailPanel,
+        HashSet<uint> visitedInfoFormIds,
+        int depth)
+    {
+        if (depth >= MaxFollowUpDisplayDepth || sourceNode.FollowUpInfos.Count == 0)
+        {
+            return;
+        }
+
+        var followUps = sourceNode.FollowUpInfos
+            .Where(f => !visitedInfoFormIds.Contains(f.Info.FormId))
+            .Take(MaxDisplayedFollowUps + 1)
+            .ToList();
+
+        if (followUps.Count == 0)
+        {
+            return;
+        }
+
+        var wasTruncated = followUps.Count > MaxDisplayedFollowUps;
+        var displayFollowUps = wasTruncated
+            ? followUps.Take(MaxDisplayedFollowUps).ToList()
+            : followUps;
+
+        elements.Add(DialogueTreeRenderer.CreateSecondaryLabel(
+            displayFollowUps.Count == 1
+                ? "Possible follow-up response:"
+                : "Possible follow-up responses:",
+            new Thickness(22, 6, 0, 2)));
+
+        foreach (var followUp in displayFollowUps)
+        {
+            visitedInfoFormIds.Add(followUp.Info.FormId);
+            elements.Add(BuildNpcResponseBlock(
+                followUp, resolveSpeakerName, subtitleLookup, buildRecordDetailPanel));
+            AddFollowUpResponseElements(
+                elements, followUp, resolveSpeakerName, subtitleLookup,
+                buildRecordDetailPanel, visitedInfoFormIds, depth + 1);
+        }
+
+        if (wasTruncated)
+        {
+            elements.Add(DialogueTreeRenderer.CreateSecondaryLabel(
+                $"Showing {MaxDisplayedFollowUps} of {sourceNode.FollowUpInfos.Count} follow-up responses",
+                new Thickness(22, 2, 0, 0)));
+        }
     }
 
     /// <summary>
@@ -115,23 +190,30 @@ internal static class DialogueConversationBuilder
         content.Children.Add(
             DialogueTreeRenderer.BuildSpeakerHeader(resolveSpeakerName(info.SpeakerFormId), info.SpeakerFormId));
 
-        var hasResponseText = false;
-        foreach (var response in info.Responses.Where(r => !string.IsNullOrEmpty(r.Text)))
+        var responseTexts = info.Responses
+            .Select(r => r.Text)
+            .Where(text => !string.IsNullOrEmpty(text))
+            .Select(text => text!)
+            .ToList();
+
+        if (responseTexts.Count > 0)
         {
-            hasResponseText = true;
             if (onResponseSelected != null)
             {
-                var button = DialogueTreeRenderer.CreateClickableResponseText(response.Text!);
+                var button = DialogueTreeRenderer.CreateClickableResponseBlock(responseTexts);
                 button.Click += (_, _) => onResponseSelected(infoNode);
                 content.Children.Add(button);
             }
             else
             {
-                content.Children.Add(DialogueTreeRenderer.CreateResponseText(response.Text!));
+                foreach (var text in responseTexts)
+                {
+                    content.Children.Add(DialogueTreeRenderer.CreateResponseText(text));
+                }
             }
         }
 
-        if (!hasResponseText)
+        if (responseTexts.Count == 0)
         {
             var subtitle = subtitleLookup(info.FormId);
             if (subtitle?.Text != null)
@@ -227,15 +309,6 @@ internal static class DialogueConversationBuilder
     /// </summary>
     public static Dictionary<uint, TopicDialogueNode> CollectUnlockedTopics(List<InfoDialogueNode> filteredInfoChain)
     {
-        var addedTopics = new Dictionary<uint, TopicDialogueNode>();
-        foreach (var infoNode in filteredInfoChain)
-        {
-            foreach (var added in infoNode.AddedTopics)
-            {
-                addedTopics.TryAdd(added.TopicFormId, added);
-            }
-        }
-
-        return addedTopics;
+        return DialogueViewerHelper.CollectUnlockedTopics(filteredInfoChain);
     }
 }

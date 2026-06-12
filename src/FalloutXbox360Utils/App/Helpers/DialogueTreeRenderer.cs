@@ -284,21 +284,35 @@ internal static class DialogueTreeRenderer
     /// </summary>
     public static Button CreateClickableResponseText(string text, bool isSubtitleFallback = false)
     {
-        var textBlock = new TextBlock
+        return CreateClickableResponseBlock([text], isSubtitleFallback);
+    }
+
+    /// <summary>
+    ///     Creates one clickable block for all response text lines in an INFO.
+    /// </summary>
+    public static Button CreateClickableResponseBlock(IReadOnlyList<string> responseLines, bool isSubtitleFallback = false)
+    {
+        var content = new StackPanel();
+        foreach (var line in responseLines)
         {
-            Text = text,
-            FontSize = 13,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(22, 2, 0, 2)
-        };
-        if (isSubtitleFallback)
-        {
-            textBlock.FontStyle = Windows.UI.Text.FontStyle.Italic;
+            var textBlock = new TextBlock
+            {
+                Text = line,
+                FontSize = 13,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(22, 2, 0, 2)
+            };
+            if (isSubtitleFallback)
+            {
+                textBlock.FontStyle = Windows.UI.Text.FontStyle.Italic;
+            }
+
+            content.Children.Add(textBlock);
         }
 
         return new Button
         {
-            Content = textBlock,
+            Content = content,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Left,
             Padding = new Thickness(0),
