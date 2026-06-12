@@ -61,9 +61,14 @@ internal sealed class NpcAppearanceResolver
     public NpcAppearance ResolveFromDmpRecord(
         NpcRecord npcRecord,
         string pluginName,
-        NpcWeaponResolver.RuntimeWeaponSelection? runtimeWeaponSelection = null)
+        NpcWeaponResolver.RuntimeWeaponSelection? runtimeWeaponSelection = null,
+        NpcEquipmentResolver.RuntimeEquipmentSelection? runtimeEquipmentSelection = null)
     {
-        return _appearanceFactory.BuildFromDmpRecord(npcRecord, pluginName, runtimeWeaponSelection);
+        return _appearanceFactory.BuildFromDmpRecord(
+            npcRecord,
+            pluginName,
+            runtimeWeaponSelection,
+            runtimeEquipmentSelection);
     }
 
     public IReadOnlyDictionary<uint, NpcScanEntry> GetAllNpcs()

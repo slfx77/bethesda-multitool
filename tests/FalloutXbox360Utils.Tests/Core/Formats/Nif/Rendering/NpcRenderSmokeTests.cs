@@ -3,6 +3,7 @@ using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
@@ -33,8 +34,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
 
         Assert.NotNull(veronica);
 
-        var headMeshCache =
-            new Dictionary<string, NifRenderableModel?>(StringComparer.OrdinalIgnoreCase);
+        var headMeshCache = NpcRenderModelCache.CreateHeadMeshCache();
         var egmCache =
             new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
         var egtCache =
@@ -100,8 +100,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
 
         Assert.NotNull(lucy);
 
-        var headMeshCache =
-            new Dictionary<string, NifRenderableModel?>(StringComparer.OrdinalIgnoreCase);
+        var headMeshCache = NpcRenderModelCache.CreateHeadMeshCache();
         var egmCache =
             new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
         var egtCache =

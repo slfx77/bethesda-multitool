@@ -9,6 +9,7 @@ internal sealed class NpcExportSettings
     public required string OutputDir { get; init; }
     public string[]? NpcFilters { get; init; }
     public string? DmpPath { get; init; }
+    public bool DmpEquip { get; init; }
     public bool HeadOnly { get; init; }
     public bool NoEquip { get; init; }
     public bool IncludeWeapon { get; init; }

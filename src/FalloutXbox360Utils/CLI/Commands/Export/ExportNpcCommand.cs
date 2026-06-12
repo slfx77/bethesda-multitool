@@ -59,6 +59,11 @@ internal static class ExportNpcCommand
             Description =
                 "Path to Xbox 360 memory dump (.dmp) — uses DMP-sourced FaceGen coefficients"
         };
+        var dmpEquipOption = new Option<bool>("--dmp-equip")
+        {
+            Description =
+                "With --dmp: equip the actor's worn armor read from the dump's runtime biped slots instead of the base NPC record inventory"
+        };
         var noEgmOption = new Option<bool>("--no-egm")
         {
             Description = "Skip EGM mesh morphing"
@@ -109,6 +114,7 @@ internal static class ExportNpcCommand
         command.Options.Add(npcFileOption);
         command.Options.Add(verboseOption);
         command.Options.Add(dmpOption);
+        command.Options.Add(dmpEquipOption);
         command.Options.Add(noEgmOption);
         command.Options.Add(noEgtOption);
         command.Options.Add(headOnlyOption);
@@ -135,6 +141,7 @@ internal static class ExportNpcCommand
                     npcFileOption,
                     verboseOption,
                     dmpOption,
+                    dmpEquipOption,
                     headOnlyOption,
                     noEquipOption,
                     noEgmOption,

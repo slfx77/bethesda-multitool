@@ -92,7 +92,8 @@ internal static class NpcPipelineHelpers
         NpcAppearanceResolver resolver,
         string pluginName,
         string? dmpPath,
-        string[]? npcFilters)
+        string[]? npcFilters,
+        bool dmpEquip = false)
     {
         if (dmpPath != null)
         {
@@ -100,7 +101,8 @@ internal static class NpcPipelineHelpers
                 dmpPath,
                 resolver,
                 pluginName,
-                npcFilters);
+                npcFilters,
+                dmpEquip);
             return dmpAppearances.Count == 0 ? null : dmpAppearances;
         }
 

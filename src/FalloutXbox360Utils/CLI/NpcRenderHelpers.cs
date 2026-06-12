@@ -320,7 +320,8 @@ internal static class NpcRenderHelpers
         string dmpPath,
         NpcAppearanceResolver resolver,
         string pluginName,
-        string[]? filters)
+        string[]? filters,
+        bool useDmpEquipment = false)
     {
         if (!File.Exists(dmpPath))
         {
@@ -370,7 +371,8 @@ internal static class NpcRenderHelpers
             .Where(entry => !string.IsNullOrWhiteSpace(entry.EditorId))
             .GroupBy(entry => entry.EditorId!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-        var actorInfos = LoadRuntimeActorInfos(structReader, scanResult.RuntimeRefrFormEntries);
+        var actorInfos = LoadRuntimeActorInfos(
+            structReader, scanResult.RuntimeRefrFormEntries, useDmpEquipment);
         var actorInfosByFormId = actorInfos.ToDictionary(info => info.Entry.FormId);
         var actorInfosByBaseNpcFormId = actorInfos
             .GroupBy(info => info.Refr.BaseFormId)
@@ -404,10 +406,19 @@ internal static class NpcRenderHelpers
                 continue;
             }
 
+            if (target.RuntimeEquipmentSelection is { WornArmorFormIds: { } wornFormIds })
+            {
+                Log.Debug("NPC 0x{0:X8} ({1}): DMP worn armor [{2}]",
+                    target.NpcEntry.FormId,
+                    target.NpcEntry.EditorId,
+                    string.Join(", ", wornFormIds.Select(id => $"0x{id:X8}")));
+            }
+
             var appearance = resolver.ResolveFromDmpRecord(
                 npcRecord,
                 pluginName,
-                target.RuntimeWeaponSelection);
+                target.RuntimeWeaponSelection,
+                target.RuntimeEquipmentSelection);
             if (appearance == null)
             {
                 Log.Debug("Failed to resolve appearance for 0x{0:X8} ({1})", target.NpcEntry.FormId,
@@ -425,7 +436,8 @@ internal static class NpcRenderHelpers
 
     private static List<DmpActorRuntimeInfo> LoadRuntimeActorInfos(
         RuntimeStructReader structReader,
-        IReadOnlyList<RuntimeEditorIdEntry> runtimeRefrEntries)
+        IReadOnlyList<RuntimeEditorIdEntry> runtimeRefrEntries,
+        bool readWornArmor)
     {
         var actorInfos = new List<DmpActorRuntimeInfo>();
         foreach (var entry in runtimeRefrEntries)
@@ -442,7 +454,10 @@ internal static class NpcRenderHelpers
             }
 
             var weaponState = structReader.ReadRuntimeActorWeaponState(entry);
-            actorInfos.Add(new DmpActorRuntimeInfo(entry, refr, weaponState));
+            var wornArmorState = readWornArmor
+                ? structReader.ReadRuntimeActorWornArmor(entry)
+                : null;
+            actorInfos.Add(new DmpActorRuntimeInfo(entry, refr, weaponState, wornArmorState));
         }
 
         return actorInfos;
@@ -462,9 +477,8 @@ internal static class NpcRenderHelpers
         {
             foreach (var npcEntry in npcEntries)
             {
-                targets.Add(new DmpNpcTarget(
-                    npcEntry,
-                    TryBuildRuntimeSelection(npcEntry.FormId, actorInfosByBaseNpcFormId)));
+                targets.Add(BuildDmpTarget(npcEntry,
+                    TryFindUniqueActorInfo(npcEntry.FormId, actorInfosByBaseNpcFormId)));
             }
 
             return targets;
@@ -478,20 +492,14 @@ internal static class NpcRenderHelpers
                 if (actorInfosByFormId.TryGetValue(formId.Value, out var actorInfo) &&
                     npcEntriesByFormId.TryGetValue(actorInfo.Refr.BaseFormId, out var actorBaseNpc))
                 {
-                    targets.Add(new DmpNpcTarget(
-                        actorBaseNpc,
-                        new NpcWeaponResolver.RuntimeWeaponSelection(
-                            true,
-                            actorInfo.Entry.FormId,
-                            actorInfo.WeaponState?.WeaponFormId)));
+                    targets.Add(BuildDmpTarget(actorBaseNpc, actorInfo));
                     continue;
                 }
 
                 if (npcEntriesByFormId.TryGetValue(formId.Value, out var npcEntry))
                 {
-                    targets.Add(new DmpNpcTarget(
-                        npcEntry,
-                        TryBuildRuntimeSelection(formId.Value, actorInfosByBaseNpcFormId)));
+                    targets.Add(BuildDmpTarget(npcEntry,
+                        TryFindUniqueActorInfo(formId.Value, actorInfosByBaseNpcFormId)));
                 }
 
                 continue;
@@ -499,16 +507,35 @@ internal static class NpcRenderHelpers
 
             if (npcEntriesByEditorId.TryGetValue(filter.Trim(), out var editorIdNpc))
             {
-                targets.Add(new DmpNpcTarget(
-                    editorIdNpc,
-                    TryBuildRuntimeSelection(editorIdNpc.FormId, actorInfosByBaseNpcFormId)));
+                targets.Add(BuildDmpTarget(editorIdNpc,
+                    TryFindUniqueActorInfo(editorIdNpc.FormId, actorInfosByBaseNpcFormId)));
             }
         }
 
         return targets;
     }
 
-    private static NpcWeaponResolver.RuntimeWeaponSelection? TryBuildRuntimeSelection(
+    private static DmpNpcTarget BuildDmpTarget(
+        RuntimeEditorIdEntry npcEntry,
+        DmpActorRuntimeInfo? actorInfo)
+    {
+        if (actorInfo == null)
+        {
+            return new DmpNpcTarget(npcEntry, null, null);
+        }
+
+        var weaponSelection = new NpcWeaponResolver.RuntimeWeaponSelection(
+            true,
+            actorInfo.Value.Entry.FormId,
+            actorInfo.Value.WeaponState?.WeaponFormId);
+        var equipmentSelection = new NpcEquipmentResolver.RuntimeEquipmentSelection(
+            true,
+            actorInfo.Value.Entry.FormId,
+            actorInfo.Value.WornArmorState?.WornArmorFormIds);
+        return new DmpNpcTarget(npcEntry, weaponSelection, equipmentSelection);
+    }
+
+    private static DmpActorRuntimeInfo? TryFindUniqueActorInfo(
         uint npcFormId,
         IReadOnlyDictionary<uint, List<DmpActorRuntimeInfo>> actorInfosByBaseNpcFormId)
     {
@@ -518,11 +545,7 @@ internal static class NpcRenderHelpers
             return null;
         }
 
-        var actorInfo = actorInfos[0];
-        return new NpcWeaponResolver.RuntimeWeaponSelection(
-            true,
-            actorInfo.Entry.FormId,
-            actorInfo.WeaponState?.WeaponFormId);
+        return actorInfos[0];
     }
 
     /// <summary>
@@ -586,10 +609,12 @@ internal static class NpcRenderHelpers
 
     private readonly record struct DmpNpcTarget(
         RuntimeEditorIdEntry NpcEntry,
-        NpcWeaponResolver.RuntimeWeaponSelection? RuntimeWeaponSelection);
+        NpcWeaponResolver.RuntimeWeaponSelection? RuntimeWeaponSelection,
+        NpcEquipmentResolver.RuntimeEquipmentSelection? RuntimeEquipmentSelection);
 
     private readonly record struct DmpActorRuntimeInfo(
         RuntimeEditorIdEntry Entry,
         ExtractedRefrRecord Refr,
-        RuntimeActorWeaponReader.RuntimeActorWeaponState? WeaponState);
+        RuntimeActorWeaponReader.RuntimeActorWeaponState? WeaponState,
+        RuntimeActorWeaponReader.RuntimeActorWornArmorState? WornArmorState);
 }

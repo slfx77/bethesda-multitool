@@ -215,7 +215,7 @@ internal static class NpcRenderPipeline
         string pluginName)
     {
         var result = NpcPipelineHelpers.ResolveAppearances(
-            resolver, pluginName, settings.DmpPath, settings.NpcFilters);
+            resolver, pluginName, settings.DmpPath, settings.NpcFilters, settings.DmpEquip);
 
         if (result == null)
         {

@@ -10,6 +10,7 @@ internal sealed class NpcRenderSettings
     public string[]? NpcFilters { get; init; }
     public int SpriteSize { get; init; } = 512;
     public string? DmpPath { get; init; }
+    public bool DmpEquip { get; init; }
     public bool ExportEgt { get; init; }
     public bool CompareRaceTextureFgts { get; init; }
     public bool NoBilinear { get; init; }

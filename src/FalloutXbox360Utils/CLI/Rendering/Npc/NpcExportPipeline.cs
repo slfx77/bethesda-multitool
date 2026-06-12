@@ -263,7 +263,8 @@ internal static class NpcExportPipeline
                 settings.DmpPath,
                 resolver,
                 pluginName,
-                settings.NpcFilters);
+                settings.NpcFilters,
+                settings.DmpEquip);
             return appearances.Count == 0 ? null : appearances;
         }
 

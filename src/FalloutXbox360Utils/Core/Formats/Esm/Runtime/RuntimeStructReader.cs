@@ -90,7 +90,8 @@ public sealed class RuntimeStructReader
         bool useProtoOffsets,
         RuntimeNpcLayoutProbeResult? npcLayoutProbe,
         RuntimeWorldCellLayoutProbeResult? worldCellLayoutProbe = null,
-        RuntimeProbeResults? probeResults = null)
+        RuntimeProbeResults? probeResults = null,
+        int bipedPtrShift = 0)
     {
         IsEarlyBuild = useProtoOffsets;
         WorldCellLayoutProbe = worldCellLayoutProbe;
@@ -108,7 +109,7 @@ public sealed class RuntimeStructReader
         _world = new RuntimeWorldReader(_context);
         _refrs = new RuntimeRefrReader(_context, useProtoOffsets);
         _packages = new RuntimePackageReader(_context);
-        _actorWeapons = new RuntimeActorWeaponReader(_context);
+        _actorWeapons = new RuntimeActorWeaponReader(_context, bipedPtrShift);
         _cells = new RuntimeCellReader(_context, useProtoOffsets, worldCellLayoutProbe);
         _collections = new RuntimeCollectionReader(_context);
         _worldObjects = new RuntimeWorldObjectReader(_context);
@@ -250,6 +251,9 @@ public sealed class RuntimeStructReader
             };
         }
 
+        var bipedPtrShift = RuntimeBipedOffsetProbe.Probe(
+            context, refrEntries, msg => Logger.Instance.Info(msg)) ?? 0;
+
         return new RuntimeStructReader(
             accessor,
             fileSize,
@@ -257,7 +261,8 @@ public sealed class RuntimeStructReader
             isEarlyBuild,
             npcLayoutProbe,
             worldCellLayoutProbe,
-            probeResults);
+            probeResults,
+            bipedPtrShift);
     }
 
     #region Scripts
@@ -433,6 +438,11 @@ public sealed class RuntimeStructReader
     internal RuntimeActorWeaponReader.RuntimeActorWeaponState? ReadRuntimeActorWeaponState(RuntimeEditorIdEntry entry)
     {
         return _actorWeapons.ReadRuntimeActorWeaponState(entry);
+    }
+
+    internal RuntimeActorWeaponReader.RuntimeActorWornArmorState? ReadRuntimeActorWornArmor(RuntimeEditorIdEntry entry)
+    {
+        return _actorWeapons.ReadRuntimeActorWornArmor(entry);
     }
 
     public CreatureRecord? ReadRuntimeCreature(RuntimeEditorIdEntry entry)

@@ -34,6 +34,10 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
     private const int BipedWeaponOffset = 0x7C;
     private const int ProcessWeaponDrawnOffset = 0x135;
 
+    private const byte ArmorFormType = 0x18;
+    private const int BipedSlotArrayOffset = 44;
+    private const int BipedSlotSize = 16;
+
     [Fact]
     public void RuntimeItemLayouts_weapon_asset_and_critical_offsets_match_runtime()
     {
@@ -188,6 +192,134 @@ public sealed class RuntimeStructReaderTests : RuntimeStructReaderTestBase
         var result = reader.ReadRuntimeActorWeaponState(entry);
 
         Assert.Null(result);
+    }
+
+    #endregion
+
+    #region ReadRuntimeActorWornArmor Tests
+
+    [Fact]
+    public void ReadRuntimeActorWornArmor_TwoArmorsAcrossThreeSlots_DedupesToTwoFormIds()
+    {
+        var data = new byte[DataSize];
+        const uint actorFormId = 0x000E32A9;
+        const uint armorAFormId = 0x00021884;
+        const uint armorBFormId = 0x000CB60F;
+        const int actorOffset = 256;
+        const int bipedOffset = 1024;
+        const int armorAOffset = 2048;
+        const int armorBOffset = 2304;
+
+        WriteTesFormHeader(data, actorOffset, 0x82010000, ActorFormType, actorFormId);
+        WriteUInt32BE(data, actorOffset + ActorBipedPtrOffset, FileOffsetToVa(bipedOffset));
+        WriteTesFormHeader(data, armorAOffset, 0x82010000, ArmorFormType, armorAFormId);
+        WriteTesFormHeader(data, armorBOffset, 0x82010000, ArmorFormType, armorBFormId);
+
+        // Armor A spans slots 2 and 6; armor B occupies slot 10
+        WriteUInt32BE(data, bipedOffset + BipedSlotArrayOffset + 2 * BipedSlotSize, FileOffsetToVa(armorAOffset));
+        WriteUInt32BE(data, bipedOffset + BipedSlotArrayOffset + 6 * BipedSlotSize, FileOffsetToVa(armorAOffset));
+        WriteUInt32BE(data, bipedOffset + BipedSlotArrayOffset + 10 * BipedSlotSize, FileOffsetToVa(armorBOffset));
+
+        var reader = CreateReader(data);
+        var entry = MakeEntry("ACHRCourier", actorFormId, ActorFormType, actorOffset);
+
+        var result = reader.ReadRuntimeActorWornArmor(entry);
+
+        Assert.NotNull(result);
+        Assert.Equal(actorFormId, result.Value.ActorFormId);
+        Assert.Equal([armorAFormId, armorBFormId], result.Value.WornArmorFormIds);
+    }
+
+    [Fact]
+    public void ReadRuntimeActorWornArmor_WeaponInSlot5_IsFilteredOut()
+    {
+        var data = new byte[DataSize];
+        const uint actorFormId = 0x000E6117;
+        const uint armorFormId = 0x00021884;
+        const uint weaponFormId = 0x0000433F;
+        const int actorOffset = 256;
+        const int bipedOffset = 1024;
+        const int armorOffset = 2048;
+        const int weaponOffset = 2304;
+
+        WriteTesFormHeader(data, actorOffset, 0x82010000, ActorFormType, actorFormId);
+        WriteUInt32BE(data, actorOffset + ActorBipedPtrOffset, FileOffsetToVa(bipedOffset));
+        WriteTesFormHeader(data, armorOffset, 0x82010000, ArmorFormType, armorFormId);
+        WriteTesFormHeader(data, weaponOffset, 0x82010000, WeaponFormType, weaponFormId);
+
+        WriteUInt32BE(data, bipedOffset + BipedSlotArrayOffset + 2 * BipedSlotSize, FileOffsetToVa(armorOffset));
+        // Slot 5's item pointer lands at the proven weapon offset (44 + 5*16 = 0x7C)
+        WriteUInt32BE(data, bipedOffset + BipedWeaponOffset, FileOffsetToVa(weaponOffset));
+
+        var reader = CreateReader(data);
+        var entry = MakeEntry("ACHRSunny", actorFormId, ActorFormType, actorOffset);
+
+        var result = reader.ReadRuntimeActorWornArmor(entry);
+
+        Assert.NotNull(result);
+        Assert.Equal([armorFormId], result.Value.WornArmorFormIds);
+    }
+
+    [Fact]
+    public void ReadRuntimeActorWornArmor_NullBipedPointer_ReturnsEmptyList()
+    {
+        var data = new byte[DataSize];
+        const uint actorFormId = 0x00092BD2;
+        const int actorOffset = 256;
+
+        WriteTesFormHeader(data, actorOffset, 0x82010000, ActorFormType, actorFormId);
+
+        var reader = CreateReader(data);
+        var entry = MakeEntry("ACHRBoone", actorFormId, ActorFormType, actorOffset);
+
+        var result = reader.ReadRuntimeActorWornArmor(entry);
+
+        Assert.NotNull(result);
+        Assert.Equal(actorFormId, result.Value.ActorFormId);
+        Assert.Empty(result.Value.WornArmorFormIds);
+    }
+
+    [Fact]
+    public void ReadRuntimeActorWornArmor_FormIdMismatch_ReturnsNull()
+    {
+        var data = new byte[DataSize];
+        const int actorOffset = 256;
+
+        WriteTesFormHeader(data, actorOffset, 0x82010000, ActorFormType, 0x0000BEEF);
+
+        var reader = CreateReader(data);
+        var entry = MakeEntry("ACHRMismatch", 0x0000CAFE, ActorFormType, actorOffset);
+
+        var result = reader.ReadRuntimeActorWornArmor(entry);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ReadRuntimeActorWornArmor_GarbageSlotPointer_Ignored()
+    {
+        var data = new byte[DataSize];
+        const uint actorFormId = 0x000A1B2C;
+        const int actorOffset = 256;
+        const int bipedOffset = 1024;
+        const int garbageOffset = 2048;
+
+        WriteTesFormHeader(data, actorOffset, 0x82010000, ActorFormType, actorFormId);
+        WriteUInt32BE(data, actorOffset + ActorBipedPtrOffset, FileOffsetToVa(bipedOffset));
+
+        // Slot 3 points at bytes whose form-type byte is not ARMO; slot 7 points
+        // outside the captured region entirely
+        data[garbageOffset + 4] = 0x77;
+        WriteUInt32BE(data, bipedOffset + BipedSlotArrayOffset + 3 * BipedSlotSize, FileOffsetToVa(garbageOffset));
+        WriteUInt32BE(data, bipedOffset + BipedSlotArrayOffset + 7 * BipedSlotSize, 0x50000000);
+
+        var reader = CreateReader(data);
+        var entry = MakeEntry("ACHRGarbage", actorFormId, ActorFormType, actorOffset);
+
+        var result = reader.ReadRuntimeActorWornArmor(entry);
+
+        Assert.NotNull(result);
+        Assert.Empty(result.Value.WornArmorFormIds);
     }
 
     #endregion

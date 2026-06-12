@@ -13,6 +13,7 @@ internal static class NpcExportCommandSupport
         Option<string[]?> npcOption,
         Option<bool> verboseOption,
         Option<string?> dmpOption,
+        Option<bool>? dmpEquipOption,
         Option<bool> headOnlyOption,
         Option<bool> noEquipOption,
         Option<bool> noEgmOption,
@@ -49,6 +50,7 @@ internal static class NpcExportCommandSupport
             null,
             verboseOption,
             dmpOption,
+            dmpEquipOption,
             headOnlyOption,
             noEquipOption,
             noEgmOption,
@@ -86,6 +88,7 @@ internal static class NpcExportCommandSupport
         Option<string?>? npcFileOption,
         Option<bool> verboseOption,
         Option<string?> dmpOption,
+        Option<bool>? dmpEquipOption,
         Option<bool> headOnlyOption,
         Option<bool> noEquipOption,
         Option<bool> noEgmOption,
@@ -147,6 +150,13 @@ internal static class NpcExportCommandSupport
             return false;
         }
 
+        var dmpEquip = dmpEquipOption != null && parseResult.GetValue(dmpEquipOption);
+        if (dmpEquip && string.IsNullOrWhiteSpace(parseResult.GetValue(dmpOption)))
+        {
+            error = "--dmp-equip requires --dmp";
+            return false;
+        }
+
         var animOverride = parseResult.GetValue(animOption);
         var useBindPose = parseResult.GetValue(bindPoseOption) || string.IsNullOrWhiteSpace(animOverride);
         settings = new NpcExportSettings
@@ -158,6 +168,7 @@ internal static class NpcExportCommandSupport
             OutputDir = parseResult.GetValue(outputOption)!,
             NpcFilters = npcFilters,
             DmpPath = parseResult.GetValue(dmpOption),
+            DmpEquip = dmpEquip,
             HeadOnly = parseResult.GetValue(headOnlyOption),
             NoEquip = parseResult.GetValue(noEquipOption),
             IncludeWeapon = parseResult.GetValue(weaponOption) &&

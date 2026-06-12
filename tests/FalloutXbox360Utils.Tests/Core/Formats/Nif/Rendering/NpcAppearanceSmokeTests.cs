@@ -2,6 +2,7 @@ using FalloutXbox360Utils.CLI;
 using FalloutXbox360Utils.CLI.Rendering.Npc;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
@@ -101,8 +102,7 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
             NoEgm = false
         };
 
-        var headMeshCache =
-            new Dictionary<string, NifRenderableModel?>(StringComparer.OrdinalIgnoreCase);
+        var headMeshCache = NpcRenderModelCache.CreateHeadMeshCache();
         var egmCache =
             new Dictionary<string, EgmParser?>(StringComparer.OrdinalIgnoreCase);
         var egtCache =

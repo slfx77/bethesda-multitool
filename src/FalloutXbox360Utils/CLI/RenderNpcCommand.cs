@@ -69,6 +69,11 @@ public static class RenderNpcCommand
             Description =
                 "Path to Xbox 360 memory dump (.dmp) — uses DMP-sourced FaceGen coefficients"
         };
+        var dmpEquipOption = new Option<bool>("--dmp-equip")
+        {
+            Description =
+                "With --dmp: equip the actor's worn armor read from the dump's runtime biped slots instead of the base NPC record inventory"
+        };
         var exportEgtOption = new Option<bool>("--export-egt")
         {
             Description = "Export EGT debug textures (native + upscaled deltas) to output dir"
@@ -178,6 +183,7 @@ public static class RenderNpcCommand
         command.Options.Add(sizeOption);
         command.Options.Add(verboseOption);
         command.Options.Add(dmpOption);
+        command.Options.Add(dmpEquipOption);
         command.Options.Add(exportEgtOption);
         command.Options.Add(compareRaceTextureFgtsOption);
         command.Options.Add(noBilinearOption);
@@ -239,6 +245,7 @@ public static class RenderNpcCommand
                         npcFileOption,
                         verboseOption,
                         dmpOption,
+                        dmpEquipOption,
                         headOnlyOption,
                         noEquipOption,
                         noEgmOption,
@@ -283,6 +290,13 @@ public static class RenderNpcCommand
                 return Task.CompletedTask;
             }
 
+            if (parseResult.GetValue(dmpEquipOption) &&
+                string.IsNullOrWhiteSpace(parseResult.GetValue(dmpOption)))
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] --dmp-equip requires --dmp");
+                return Task.CompletedTask;
+            }
+
             if (compareRaceTextureFgts)
             {
                 if (parseResult.GetValue(noEgtOption))
@@ -310,6 +324,7 @@ public static class RenderNpcCommand
                 NpcFilters = npcFilters,
                 SpriteSize = parseResult.GetValue(sizeOption),
                 DmpPath = parseResult.GetValue(dmpOption),
+                DmpEquip = parseResult.GetValue(dmpEquipOption),
                 ExportEgt = parseResult.GetValue(exportEgtOption),
                 CompareRaceTextureFgts = compareRaceTextureFgts,
                 NoBilinear = parseResult.GetValue(noBilinearOption),

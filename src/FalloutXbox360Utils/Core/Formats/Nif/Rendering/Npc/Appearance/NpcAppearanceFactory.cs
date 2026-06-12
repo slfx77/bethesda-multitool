@@ -162,7 +162,8 @@ internal sealed class NpcAppearanceFactory
     internal NpcAppearance BuildFromDmpRecord(
         NpcRecord npcRecord,
         string pluginName,
-        NpcWeaponResolver.RuntimeWeaponSelection? runtimeWeaponSelection = null)
+        NpcWeaponResolver.RuntimeWeaponSelection? runtimeWeaponSelection = null,
+        NpcEquipmentResolver.RuntimeEquipmentSelection? runtimeEquipmentSelection = null)
     {
         var isFemale = npcRecord.Stats != null && (npcRecord.Stats.Flags & 1) != 0;
         var race = ResolveRace(npcRecord.Race);
@@ -241,7 +242,15 @@ internal sealed class NpcAppearanceFactory
         var textureCoefficients = NpcFaceGenCoefficientMerger.Merge(
             npcRecord.FaceGenTextureSymmetric,
             raceTextureCoefficients);
-        var equippedItems = _equipmentResolver.Resolve(inventoryItems, isFemale);
+        // Runtime worn armor (from the dump's BipedAnim slots) replaces the base
+        // record's inventory for equipment when present; the weapon path below
+        // keeps using the base inventory regardless.
+        var equipmentSource = runtimeEquipmentSelection is { WornArmorFormIds.Count: > 0 }
+            ? runtimeEquipmentSelection.Value.WornArmorFormIds!
+                .Select(id => new InventoryItem(id, 1))
+                .ToList()
+            : inventoryItems;
+        var equippedItems = _equipmentResolver.Resolve(equipmentSource, isFemale);
         var weaponVisual = _weaponResolver.Resolve(
             weaponResolutionNpc,
             inventoryItems,

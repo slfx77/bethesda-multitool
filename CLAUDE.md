@@ -68,10 +68,14 @@ render <path> -o <dir>                     # Render single NIF to PNG
 render <dir> -o <dir>                      # Batch render all NIFs in directory
 render <prefix> --bsa <bsa> -o <dir>       # Batch render NIFs from BSA by prefix
 render npc <meshes-bsa> --esm <e> -o <dir>  # NPC head sprites (auto-detects texture BSAs)
+                                            #   --dmp <dump>: runtime FaceGen + weapon state
+                                            #   --dmp-equip: + worn armor from runtime biped slots
+                                            #   (player = --npc 0x14; any loaded actor works)
 
 # Export commands (output: GLB/glTF models)
 export nif <path> -o <dir>                  # Export NIF model to GLB
 export npc <meshes-bsa> --esm <e> -o <dir>  # Export NPC with FaceGen morphs + equipment
+                                            #   (--dmp / --dmp-equip work here too)
 
 # DMP commands
 dmp modules <file>              # List loaded modules
