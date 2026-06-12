@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Diagnostics;
+
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
@@ -15,10 +17,11 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         correct since the recorder already enforces N-frames-in-flight via its fence.
 ///     </para>
 /// </summary>
-internal sealed class GpuDeletionQueue12 : IDisposable
+internal sealed class GpuDeletionQueue12 : ITrackableResource, IDisposable
 {
     private readonly int _framesToHold;
     private readonly Queue<PendingDeletion> _pending = new();
+    private ResourceRegistration? _registration;
     private uint _currentFrame;
     private bool _disposed;
 
@@ -27,6 +30,24 @@ internal sealed class GpuDeletionQueue12 : IDisposable
         if (framesToHold <= 0)
             throw new ArgumentOutOfRangeException(nameof(framesToHold), "Must be > 0.");
         _framesToHold = framesToHold;
+    }
+
+    public string ResourceName => nameof(GpuDeletionQueue12);
+
+    public ResourceCategory Category => ResourceCategory.GpuMeta;
+
+    /// <summary>Pending depth is the useful signal: a depth that only grows is a disposal leak.</summary>
+    public ResourceStats GetStats() => new() { QueueDepth = _pending.Count };
+
+    /// <summary>
+    ///     Registers the queue with <paramref name="registry" /> (unregistered again on
+    ///     <see cref="Dispose" />). Returns the queue for fluent construction.
+    /// </summary>
+    public GpuDeletionQueue12 RegisterWith(ResourceRegistry registry, string? instanceTag = null)
+    {
+        _registration?.Dispose();
+        _registration = registry.Register(this, instanceTag);
+        return this;
     }
 
     /// <summary>
@@ -65,6 +86,8 @@ internal sealed class GpuDeletionQueue12 : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _registration?.Dispose();
+        _registration = null;
         while (_pending.TryDequeue(out var p))
         {
             p.Resource.Dispose();

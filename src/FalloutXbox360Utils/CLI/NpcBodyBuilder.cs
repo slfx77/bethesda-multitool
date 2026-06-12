@@ -23,7 +23,7 @@ internal static class NpcBodyBuilder
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
-        Dictionary<string, NifRenderableModel?> headMeshCache,
+        FalloutXbox360Utils.Core.Resources.LruCache<string, NifRenderableModel?> headMeshCache,
         Dictionary<string, EgmParser?> egmCache,
         Dictionary<string, EgtParser?> egtCache,
         ref Dictionary<string, Matrix4x4>? skeletonBoneCache,

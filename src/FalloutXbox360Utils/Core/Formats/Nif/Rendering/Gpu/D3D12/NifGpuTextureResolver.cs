@@ -1,9 +1,17 @@
-using System.Collections.Concurrent;
+using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
+using FalloutXbox360Utils.Core.Resources;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
+/// <summary>
+///     Resolves and caches GPU-ready texture payloads (BSA read + DDX→DDS transcode + BCn parse).
+///     The cache is a <see cref="ConcurrentLazyCache{TKey,TValue}" /> (single-flight per path,
+///     negative caching, faulted-entry retry) registered with the <see cref="ResourceRegistry" />;
+///     decoded payloads are explicitly <see cref="Release" />d after GPU upload, so steady-state
+///     CPU bytes stay near zero while negatives keep missing textures from being re-searched.
+/// </summary>
 internal sealed class NifGpuTextureResolver : IDisposable
 {
     private static readonly Logger Log = Logger.Instance;
@@ -17,28 +25,36 @@ internal sealed class NifGpuTextureResolver : IDisposable
     /// </summary>
     private const long LargeRgbaFallbackWarnBytes = 16L * 1024L * 1024L;
 
-    private readonly ConcurrentDictionary<string, GpuTexturePayload?> _cache =
-        new(StringComparer.OrdinalIgnoreCase);
-
+    private readonly ConcurrentLazyCache<string, GpuTexturePayload> _cache;
     private readonly List<INifTextureSource> _sources;
     private readonly ReferenceDecodedTextureDiskCache12? _persistentCache;
     private readonly string _sourceSetIdentity;
-    private int _cacheHits;
-    private int _cacheMisses;
+    private readonly Func<string, GpuTexturePayload?>? _loadTextureOverride;
 
     public NifGpuTextureResolver(params string[] textureSourcePaths)
     {
         _sources = NifTextureArchiveSourceFactory.Create(textureSourcePaths);
         _sourceSetIdentity = BuildSourceSetIdentity(textureSourcePaths);
         _persistentCache = ReferenceDecodedTextureDiskCache12.CreateFromEnvironment();
+        _cache = CreateCache().RegisterWith(ResourceRegistry.Instance);
     }
 
-    public int CacheHits => _cacheHits;
+    internal NifGpuTextureResolver(Func<string, GpuTexturePayload?> loadTexture)
+    {
+        _sources = [];
+        _sourceSetIdentity = "test";
+        _persistentCache = null;
+        _loadTextureOverride = loadTexture ?? throw new ArgumentNullException(nameof(loadTexture));
+        _cache = CreateCache(); // test instances stay out of the global registry
+    }
 
-    public int CacheMisses => _cacheMisses;
+    public int CacheHits => (int)_cache.Hits;
+
+    public int CacheMisses => (int)_cache.Misses;
 
     public void Dispose()
     {
+        _cache.Dispose();
         _persistentCache?.LogStatistics();
         foreach (var source in _sources)
         {
@@ -87,14 +103,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
 
     public GpuTexturePayload? GetTexture(string texturePath)
     {
-        var normalized = NifTexturePathUtility.Normalize(texturePath);
-        if (_cache.TryGetValue(normalized, out var cached))
-        {
-            Interlocked.Increment(ref _cacheHits);
-            return cached;
-        }
-
-        return _cache.GetOrAdd(normalized, LoadTexture);
+        return _cache.GetOrCreate(NifTexturePathUtility.Normalize(texturePath));
     }
 
     /// <summary>
@@ -108,17 +117,24 @@ internal sealed class NifGpuTextureResolver : IDisposable
     /// </summary>
     public void Release(string texturePath)
     {
-        var normalized = NifTexturePathUtility.Normalize(texturePath);
-        if (_cache.TryGetValue(normalized, out var existing) && existing is not null)
-        {
-            // Remove-if-still-this-entry so a concurrent re-decode can't be clobbered.
-            _cache.TryRemove(new KeyValuePair<string, GpuTexturePayload?>(normalized, existing));
-        }
+        _cache.Release(NifTexturePathUtility.Normalize(texturePath), keepNegative: true);
     }
+
+    private ConcurrentLazyCache<string, GpuTexturePayload> CreateCache() =>
+        new(
+            nameof(NifGpuTextureResolver),
+            ResourceCategory.CpuCache,
+            LoadTexture,
+            sizeOf: static payload => payload.ByteSize,
+            comparer: StringComparer.OrdinalIgnoreCase,
+            trimPriority: 10);
 
     private GpuTexturePayload? LoadTexture(string path)
     {
-        Interlocked.Increment(ref _cacheMisses);
+        if (_loadTextureOverride is not null)
+        {
+            return _loadTextureOverride(path);
+        }
 
         // Persistent disk cache (default on): on warm runs this returns the already-transcoded
         // payload (DDX→DDS LZX + untile + parse skipped entirely). Negatives are cached too, so a

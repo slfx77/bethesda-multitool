@@ -34,7 +34,8 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         _ltexByFormId = ltexByFormId;
         _txstByFormId = txstByFormId;
         _textureResolver = new NifGpuTextureResolver(texturesBsaPaths);
-        _textureCache = new GpuTextureCache12(gpu, recorder, heap, _textureResolver, deletionQueue);
+        _textureCache = new GpuTextureCache12(gpu, recorder, heap, _textureResolver, deletionQueue)
+            .RegisterWith(Diagnostics.ResourceRegistry.Instance, "terrain");
     }
 
     /// <summary>1×1 white texture returned only when even the engine-default fails.</summary>

@@ -206,7 +206,7 @@ internal static class RendererProfilerTrace
             }
 
             _initialized = true;
-            var path = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_PROFILE_JSONL");
+            var path = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ProfileJsonl);
             if (string.IsNullOrWhiteSpace(path))
             {
                 return;

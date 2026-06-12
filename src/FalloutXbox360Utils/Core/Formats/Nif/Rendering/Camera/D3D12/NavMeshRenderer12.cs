@@ -3,8 +3,10 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using FalloutXbox360Utils.Core.Resources;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
@@ -45,7 +47,7 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
     private readonly ID3D12PipelineState _fillPso;
     private readonly ID3D12PipelineState _edgePso;
 
-    private CellMeshLruCache<CachedNavMesh12> _meshCache = new(CacheCapacity);
+    private LruCache<(int gx, int gy), CachedNavMesh12> _meshCache = CreateMeshCache();
     private readonly HashSet<(int gx, int gy)> _knownUnusableCells = new();
     private readonly List<global::FalloutXbox360Utils.WorldSpatialCell> _candidateScratch = new();
     private readonly List<CachedNavMesh12> _visibleScratch = new();
@@ -143,6 +145,15 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         _edgePso.Dispose();
     }
 
+    /// <summary>Render-thread-only LRU of per-cell navmesh geometry; evicted entries are disposed.</summary>
+    private static LruCache<(int gx, int gy), CachedNavMesh12> CreateMeshCache() =>
+        new LruCache<(int gx, int gy), CachedNavMesh12>(
+                "CellMeshLru",
+                ResourceCategory.GpuResident,
+                maxEntries: CacheCapacity,
+                onEvicted: static (_, mesh) => mesh.Dispose())
+            .RegisterWith(ResourceRegistry.Instance, "navmesh-cells");
+
     public global::FalloutXbox360Utils.WorldRenderStats LastStats { get; } = new();
     public bool DetailedProfilingEnabled { get; set; }
 
@@ -152,7 +163,7 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         global::FalloutXbox360Utils.WorldSpatialIndex? spatialIndex)
     {
         _meshCache.Dispose();
-        _meshCache = new CellMeshLruCache<CachedNavMesh12>(CacheCapacity);
+        _meshCache = CreateMeshCache();
         _knownUnusableCells.Clear();
         _navMeshesByCell = navMeshesByCell;
         _cells = cells;
@@ -250,7 +261,7 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
             _knownUnusableCells.Add(key);
             return;
         }
-        _meshCache.Insert(key, built);
+        _meshCache.Set(key, built);
         _visibleScratch.Add(built);
     }
 

@@ -34,7 +34,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // per-frame cost constant regardless of FPS, which is the correct "spend a fixed slice of each
     // frame" pacing. The env var still imposes an explicit count for profiling.
     private static readonly int MaxNewUploadsPerFrame = ParsePositiveIntEnvironment(
-        "FALLOUT_VIEWER_REFERENCE_UPLOADS_PER_FRAME",
+        EnvironmentVariables.Viewer.ReferenceUploadsPerFrame,
         defaultValue: int.MaxValue,
         min: 1,
         max: int.MaxValue);
@@ -44,7 +44,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // area can't spike. A single very large mesh can still consume a frame, but this stops clusters
     // of completed decoded meshes from being realized together.
     private static readonly double MaxUploadMillisecondsPerFrame = ParsePositiveDoubleEnvironment(
-        "FALLOUT_VIEWER_REFERENCE_UPLOAD_MS_PER_FRAME",
+        EnvironmentVariables.Viewer.ReferenceUploadMillisecondsPerFrame,
         defaultValue: 2.0,
         min: 0.25,
         max: 10.0);
@@ -93,12 +93,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // first sighting of each MeshId.
     private readonly Dictionary<uint, CachedNifMesh12?> _resolvedMeshesThisFrame = new(256);
     private readonly bool _disableReferenceFrustum =
-        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_DISABLE_REFERENCE_FRUSTUM") == "1";
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.DisableReferenceFrustum);
 
     // A5 distance-LOD is now OFF by default — it was removing things the user wanted to see.
     // Opt back in with FALLOUT_VIEWER_REFERENCE_DISTANCE_LOD=1 once the bounds are trusted.
     private readonly bool _enableDistanceLod =
-        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_REFERENCE_DISTANCE_LOD") == "1";
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ReferenceDistanceLod);
 
     private Dictionary<(int gx, int gy), CellRecord>? _cells;
     private global::FalloutXbox360Utils.WorldSpatialIndex? _spatialIndex;
@@ -751,7 +751,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
     {
-        var raw = Environment.GetEnvironmentVariable(name);
+        var raw = EnvironmentVariables.Get(name);
         if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
         {
             return defaultValue;
@@ -762,7 +762,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     private static double ParsePositiveDoubleEnvironment(string name, double defaultValue, double min, double max)
     {
-        var raw = Environment.GetEnvironmentVariable(name);
+        var raw = EnvironmentVariables.Get(name);
         if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
         {
             return defaultValue;

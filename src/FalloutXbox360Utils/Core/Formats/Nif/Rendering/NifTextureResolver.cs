@@ -1,34 +1,43 @@
-using System.Collections.Concurrent;
+using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
+using FalloutXbox360Utils.Core.Resources;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
 /// <summary>
 ///     Resolves and caches textures for NIF rendering while delegating parsing and archive I/O
-///     to focused texture helpers.
+///     to focused texture helpers. The cache itself is a <see cref="ConcurrentLazyCache{TKey,TValue}" />
+///     (single-flight per path, negative caching, faulted-entry retry) registered with the
+///     <see cref="ResourceRegistry" /> so decoded-texture memory is visible in diagnostics and
+///     trimmable under memory pressure (entries rebuild transparently from the sources).
 /// </summary>
 internal sealed class NifTextureResolver : IDisposable
 {
-    private readonly ConcurrentDictionary<string, DecodedTexture?> _cache =
-        new(StringComparer.OrdinalIgnoreCase);
-
+    private readonly ConcurrentLazyCache<string, DecodedTexture> _cache;
     private readonly List<INifTextureSource> _sources;
-
-    private int _cacheHits;
-    private int _cacheMisses;
+    private readonly Func<string, DecodedTexture?>? _loadTextureOverride;
 
     public NifTextureResolver(params string[] texturesBsaPaths)
     {
         _sources = NifTextureArchiveSourceFactory.Create(texturesBsaPaths);
+        _cache = CreateCache().RegisterWith(ResourceRegistry.Instance);
     }
 
-    public int CacheHits => _cacheHits;
+    internal NifTextureResolver(Func<string, DecodedTexture?> loadTexture)
+    {
+        _sources = [];
+        _loadTextureOverride = loadTexture ?? throw new ArgumentNullException(nameof(loadTexture));
+        _cache = CreateCache(); // test instances stay out of the global registry
+    }
 
-    public int CacheMisses => _cacheMisses;
+    public int CacheHits => (int)_cache.Hits;
+
+    public int CacheMisses => (int)_cache.Misses;
 
     public void Dispose()
     {
+        _cache.Dispose();
         foreach (var source in _sources)
         {
             source.Dispose();
@@ -79,7 +88,7 @@ internal sealed class NifTextureResolver : IDisposable
     /// </summary>
     public void InjectTexture(string texturePath, DecodedTexture texture)
     {
-        _cache[NifTexturePathUtility.Normalize(texturePath)] = texture;
+        _cache.Inject(NifTexturePathUtility.Normalize(texturePath), texture);
     }
 
     /// <summary>
@@ -87,7 +96,7 @@ internal sealed class NifTextureResolver : IDisposable
     /// </summary>
     public void EvictTexture(string texturePath)
     {
-        _cache.TryRemove(NifTexturePathUtility.Normalize(texturePath), out _);
+        _cache.Evict(NifTexturePathUtility.Normalize(texturePath));
     }
 
     /// <summary>
@@ -95,21 +104,33 @@ internal sealed class NifTextureResolver : IDisposable
     /// </summary>
     public DecodedTexture? GetTexture(string texturePath)
     {
-        var normalized = NifTexturePathUtility.Normalize(texturePath);
-        return _cache.GetOrAdd(normalized, LoadTexture);
+        return _cache.GetOrCreate(NifTexturePathUtility.Normalize(texturePath));
     }
 
     /// <summary>
-    ///     Record a cache hit (called externally since GetOrAdd doesn't distinguish hits).
+    ///     Records a cache hit observed by a caller outside this resolver.
     /// </summary>
     public void RecordCacheHit()
     {
-        Interlocked.Increment(ref _cacheHits);
+        _cache.RecordExternalHit();
     }
+
+    private ConcurrentLazyCache<string, DecodedTexture> CreateCache() =>
+        new(
+            nameof(NifTextureResolver),
+            ResourceCategory.CpuCache,
+            LoadTexture,
+            sizeOf: static texture =>
+                texture.MipLevels.Sum(static mip => (long)mip.Pixels.Length) + ByteSize.ObjectOverhead,
+            comparer: StringComparer.OrdinalIgnoreCase,
+            trimPriority: 10);
 
     private DecodedTexture? LoadTexture(string path)
     {
-        Interlocked.Increment(ref _cacheMisses);
+        if (_loadTextureOverride is not null)
+        {
+            return _loadTextureOverride(path);
+        }
 
         var texture = NifTextureLoader.TryLoadFromSources(path, _sources);
         if (texture != null ||

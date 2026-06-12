@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
+using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -27,7 +28,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         the render thread entirely.
 ///     </para>
 /// </summary>
-internal sealed unsafe class GpuTextureCache12 : IDisposable
+internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 {
     // Per-frame caps now bound how fast resolved textures are HANDED to the uploader (copy-queue /
     // staging-VRAM pressure), not render-thread time — the upload itself is async. Kept generous so
@@ -39,7 +40,7 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
     // embarrassingly parallel + off the render thread, so more workers directly multiply throughput.
     // Half-cores (not full) leaves headroom for mesh decode + render + GC. Env override for profiling.
     private static readonly int DefaultMaxConcurrentTextureResolves = ParsePositiveIntEnvironment(
-        "FALLOUT_VIEWER_TEXTURE_RESOLVE_CONCURRENCY",
+        EnvironmentVariables.Viewer.TextureResolveConcurrency,
         defaultValue: Math.Clamp(Environment.ProcessorCount / 2, 2, 8),
         min: 1,
         max: 8);
@@ -49,7 +50,7 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
     // heap → GC stalls. FALLOUT_VIEWER_RETAIN_TEXTURE_PAYLOADS=1 keeps the old retain-forever
     // behavior (for A/B measurement / fallback).
     private static readonly bool ReleaseTexturePayloadsAfterUpload =
-        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_RETAIN_TEXTURE_PAYLOADS") != "1";
+        !EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.RetainTexturePayloads);
 
     private readonly GpuDevice12 _gpu;
     private readonly GpuCommandRecorder12 _recorder;
@@ -69,6 +70,15 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
     private Entry? _flatNormal;
     private int _pendingUploadCount;
     private bool _disposed;
+
+    // Diagnostics counters — plain fields written only by the render thread (tracking-only
+    // conformance; this cache is refcount-pinned and never trimmed). Snapshot readers tolerate
+    // slightly stale values per the ITrackableResource threading contract.
+    private ResourceRegistration? _registration;
+    private long _residentBytes;
+    private long _hits;
+    private long _misses;
+    private long _evictions;
 
     public GpuTextureCache12(
         GpuDevice12 gpu,
@@ -90,6 +100,32 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
             resolve: ResolvePayload);
         _copyUploadQueue = new GpuUploadQueue12(gpu);
         _uploadDispatcher = new GpuUploadDispatcher12();
+    }
+
+    public string ResourceName => nameof(GpuTextureCache12);
+
+    public ResourceCategory Category => ResourceCategory.GpuResident;
+
+    public ResourceStats GetStats() => new()
+    {
+        EstimatedBytes = Volatile.Read(ref _residentBytes),
+        EntryCount = _cache.Count,
+        Hits = Volatile.Read(ref _hits),
+        Misses = Volatile.Read(ref _misses),
+        Evictions = Volatile.Read(ref _evictions),
+        QueueDepth = _uploadDispatcher.PendingCount,
+        InFlight = _resolveQueue.ActiveCount,
+    };
+
+    /// <summary>
+    ///     Registers the cache with <paramref name="registry" /> (unregistered again on
+    ///     <see cref="Dispose" />). Returns the cache for fluent construction.
+    /// </summary>
+    public GpuTextureCache12 RegisterWith(ResourceRegistry registry, string? instanceTag = null)
+    {
+        _registration?.Dispose();
+        _registration = registry.Register(this, instanceTag);
+        return this;
     }
 
     /// <summary>1x1 opaque white texture used as the fallback diffuse.</summary>
@@ -152,6 +188,7 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
 
         if (_cache.TryGetValue(cacheKey, out var node))
         {
+            _hits++;
             // Resolved (payload present) but not yet resident → make sure it is queued for dispatch.
             // Still resolving (payload null) → just return the placeholder; the background resolution
             // queues the dispatch itself once it completes.
@@ -163,6 +200,7 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
             return node.Entry;
         }
 
+        _misses++;
         var fallback = isNormalMap ? FlatNormal : WhitePixel;
         if (_resolver is null)
         {
@@ -230,8 +268,11 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
         // still point at the shared fallback singleton, which must never be freed.
         if (entry.IsResident && _ownedTextures.Remove(entry.Texture))
         {
+            _residentBytes -= entry.ByteSize;
             DisposeResource(entry.Texture);
         }
+
+        _evictions++;
 
         // Return the bindless slot — deferred by frames-in-flight so a reused slot can't alias a
         // texture the GPU is still sampling via an in-flight frame's draw records.
@@ -256,15 +297,15 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        // Unregister first so the retired-stats record captures the cache as it was at teardown.
+        _registration?.Dispose();
+        _registration = null;
         // Stop the uploader thread first so no upload completion / copy submission races teardown.
         _uploadDispatcher.Dispose();
         // Let in-flight background resolutions finish before the host disposes the resolver they read
         // from (BSA archives). Mirrors ReferenceMeshCache12's decode-task drain on dispose; the host
         // disposes this cache before the resolver, so this keeps that ordering safe.
-        if (!_resolveQueue.WaitForDrain(TimeSpan.FromSeconds(5)))
-        {
-            Logger.Instance.Warn("GpuTextureCache12: texture resolution task(s) still running during dispose.");
-        }
+        _resolveQueue.WaitForDrain();
         // Flush + dispose the copy queue: drains outstanding copies and retires their staging. After
         // this every uploaded DEFAULT texture is GPU-idle and safe to release.
         _copyUploadQueue.Dispose();
@@ -437,7 +478,8 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
 
             cmd.ResourceBarrierTransition(c.Texture!, ResourceStates.Common, ResourceStates.PixelShaderResource);
             _gpu.Device.CreateShaderResourceView(c.Texture, c.SrvDesc, node.Entry.PersistentSrv);
-            node.Entry.ReplaceTexture(c.Texture!, c.SrvDesc, c.Format, c.NormalDecodeMode);
+            node.Entry.ReplaceTexture(c.Texture!, c.SrvDesc, c.Format, c.NormalDecodeMode, c.ByteSize);
+            _residentBytes += c.ByteSize;
             node.Dispatched = false;
             // Drop the decoded payload's mip bytes now that the texture is resident on the GPU.
             // The node is the second strong ref (alongside the resolver cache, released on the
@@ -844,7 +886,7 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
 
     private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
     {
-        var raw = Environment.GetEnvironmentVariable(name);
+        var raw = EnvironmentVariables.Get(name);
         if (!int.TryParse(raw, out var value))
         {
             return defaultValue;
@@ -957,6 +999,9 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
 
         public bool IsResident { get; private set; }
 
+        /// <summary>GPU bytes of the resident texture (0 while a placeholder). Feeds diagnostics.</summary>
+        internal long ByteSize { get; private set; }
+
         /// <summary>
         ///     True once this entry no longer represents an in-flight placeholder. Successful
         ///     uploads set both <see cref="IsResident" /> and <see cref="IsReady" />; failed or
@@ -969,12 +1014,14 @@ internal sealed unsafe class GpuTextureCache12 : IDisposable
             ID3D12Resource texture,
             ShaderResourceViewDescription srvDesc,
             GpuTexturePayloadFormat format,
-            GpuNormalDecodeMode normalDecodeMode)
+            GpuNormalDecodeMode normalDecodeMode,
+            long byteSize)
         {
             Texture = texture;
             SrvDesc = srvDesc;
             Format = format;
             NormalDecodeMode = normalDecodeMode;
+            ByteSize = byteSize;
             IsResident = true;
             IsReady = true;
         }

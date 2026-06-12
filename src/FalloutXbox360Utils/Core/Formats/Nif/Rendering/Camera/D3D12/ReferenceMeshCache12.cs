@@ -22,13 +22,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // leaves headroom for the render + UI + GC threads (full-core saturation caused the GC pauses the
     // old conservative default of 2 was guarding against). Env override for profiling specific machines.
     private static readonly int DefaultMaxConcurrentDecodeTasks = ParsePositiveIntEnvironment(
-        "FALLOUT_VIEWER_REFERENCE_DECODE_CONCURRENCY",
+        EnvironmentVariables.Viewer.ReferenceDecodeConcurrency,
         defaultValue: Math.Clamp(Environment.ProcessorCount / 2, 2, 8),
         min: 1,
         max: 16);
 
     private static readonly int DefaultMaxDecodeStartsPerFrame = ParsePositiveIntEnvironment(
-        "FALLOUT_VIEWER_REFERENCE_DECODE_STARTS_PER_FRAME",
+        EnvironmentVariables.Viewer.ReferenceDecodeStartsPerFrame,
         defaultValue: DefaultMaxConcurrentDecodeTasks,
         min: 1,
         max: DefaultMaxConcurrentDecodeTasks);
@@ -41,7 +41,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // frame instead of overshooting on it. Sized so a typical 48-mesh frame passes but a burst of
     // unusually large meshes is spread across frames.
     private static readonly long DefaultMaxUploadBytesPerFrame = ParsePositiveLongEnvironment(
-        "FALLOUT_VIEWER_REFERENCE_UPLOAD_BYTES_PER_FRAME",
+        EnvironmentVariables.Viewer.ReferenceUploadBytesPerFrame,
         defaultValue: 4L * 1024L * 1024L,
         min: 1L * 1024L * 1024L,
         max: 64L * 1024L * 1024L);
@@ -89,7 +89,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         _textureResolver = textureResolver;
         _textureCache = textureCache;
         _deletionQueue = deletionQueue;
-        _geometryArena = new GpuGeometryArena12(gpu);
+        _geometryArena = new GpuGeometryArena12(gpu)
+            .RegisterWith(Core.Diagnostics.ResourceRegistry.Instance, "reference");
         _persistentDecodedCache = persistentDecodedCache ?? ReferenceDecodedMeshDiskCache12.CreateFromEnvironment();
         Capacity = capacity;
     }
@@ -192,18 +193,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         _disposed = true;
         _persistentDecodedCache?.LogStatistics();
 
-        Task[] pending;
-        lock (_decodeTaskListLock)
-        {
-            pending = _decodeTasks
-                .Where(static t => !t.IsCompleted)
-                .Cast<Task>()
-                .ToArray();
-        }
-        if (pending.Length > 0 && !Task.WaitAll(pending, TimeSpan.FromSeconds(5)))
-        {
-            Log.Warn("ReferenceMeshCache12: {0} decode task(s) still running during dispose.", pending.Length);
-        }
+        DrainDecodeTasksForDispose();
 
         foreach (var node in _entries.Values)
         {
@@ -224,6 +214,38 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // so no draw still references them; any arena frees the meshes above enqueued on the deletion
         // queue become no-ops (GpuGeometryArena12.Free is disposed-guarded).
         _geometryArena.Dispose();
+    }
+
+    private void DrainDecodeTasksForDispose()
+    {
+        Task[] pending;
+        lock (_decodeTaskListLock)
+        {
+            pending = _decodeTasks
+                .Where(static t => !t.IsCompleted)
+                .Cast<Task>()
+                .ToArray();
+        }
+
+        if (pending.Length == 0)
+        {
+            return;
+        }
+
+        Log.Info("ReferenceMeshCache12: waiting for {0} decode task(s) during dispose.", pending.Length);
+        try
+        {
+            Task.WaitAll(pending);
+        }
+        catch (AggregateException ex)
+        {
+            foreach (var inner in ex.Flatten().InnerExceptions)
+            {
+                Log.Warn("ReferenceMeshCache12: decode task faulted during dispose: {0}", inner.Message);
+            }
+        }
+
+        PruneCompletedDecodeTasks();
     }
 
     private CachedNifMesh12? ResolveExisting(string modelPath, Node node, ref int uploadBudget)
@@ -943,7 +965,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
     {
-        var raw = Environment.GetEnvironmentVariable(name);
+        var raw = EnvironmentVariables.Get(name);
         if (!int.TryParse(raw, out var value))
         {
             return defaultValue;
@@ -954,7 +976,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     private static long ParsePositiveLongEnvironment(string name, long defaultValue, long min, long max)
     {
-        var raw = Environment.GetEnvironmentVariable(name);
+        var raw = EnvironmentVariables.Get(name);
         if (!long.TryParse(raw, out var value))
         {
             return defaultValue;

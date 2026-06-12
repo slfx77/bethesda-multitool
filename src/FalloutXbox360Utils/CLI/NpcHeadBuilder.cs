@@ -21,7 +21,7 @@ internal static class NpcHeadBuilder
         NpcAppearance npc,
         NpcMeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
-        Dictionary<string, NifRenderableModel?> headMeshCache,
+        FalloutXbox360Utils.Core.Resources.LruCache<string, NifRenderableModel?> headMeshCache,
         Dictionary<string, EgmParser?> egmCache,
         Dictionary<string, EgtParser?> egtCache,
         NpcRenderSettings s,
@@ -91,7 +91,7 @@ internal static class NpcHeadBuilder
             }
             else
             {
-                if (!renderModelCache.HeadMeshes.TryGetValue(headPlan.BaseHeadNifPath, out var cached))
+                if (!renderModelCache.HeadMeshes.TryGet(headPlan.BaseHeadNifPath, out var cached))
                 {
                     cached = NpcMeshHelpers.LoadNifFromBsa(
                         headPlan.BaseHeadNifPath,
@@ -99,7 +99,7 @@ internal static class NpcHeadBuilder
                         textureResolver,
                         headPlan.AttachmentBoneTransforms,
                         useDualQuaternionSkinning: true);
-                    renderModelCache.HeadMeshes[headPlan.BaseHeadNifPath] = cached;
+                    renderModelCache.HeadMeshes.Set(headPlan.BaseHeadNifPath, cached);
                 }
 
                 if (cached != null)

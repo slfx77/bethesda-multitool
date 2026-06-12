@@ -126,17 +126,20 @@ public sealed class TerrainPerfProfileTests
         var entries = new TestEntry[N];
         for (var i = 0; i < N; i++) entries[i] = new TestEntry();
 
-        var cache = new CellMeshLruCache<TestEntry>(N + 256);
+        var cache = new FalloutXbox360Utils.Core.Resources.LruCache<(int gx, int gy), TestEntry>(
+            "CellMeshLru", FalloutXbox360Utils.Core.Diagnostics.ResourceCategory.GpuResident,
+            maxEntries: N + 256,
+            onEvicted: static (_, entry) => entry.Dispose());
 
         // Warmup
-        for (var i = 0; i < 64; i++) cache.Insert((-1, -i), entries[0]);
+        for (var i = 0; i < 64; i++) cache.Set((-1, -i), entries[0]);
         cache.Clear();
 
         var swInsert = Stopwatch.StartNew();
         for (var i = 0; i < N; i++)
         {
             var key = (i % 100, i / 100);
-            cache.Insert(key, entries[i]);
+            cache.Set(key, entries[i]);
         }
 
         swInsert.Stop();

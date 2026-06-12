@@ -125,7 +125,9 @@ internal sealed class GpuDevice12 : IDisposable
 
         if (!DredEnabled)
         {
-            Log.Error("GpuDevice12: set FALLOUT_VIEWER_DRED=1 and reproduce to capture the GPU breadcrumb + page-fault VA.");
+            Log.Error(
+                "GpuDevice12: set {0}=1 and reproduce to capture the GPU breadcrumb + page-fault VA.",
+                EnvironmentVariables.Viewer.Dred);
             return;
         }
 
@@ -181,7 +183,7 @@ internal sealed class GpuDevice12 : IDisposable
                 Log.Error(
                     "GpuDevice12: DRED produced no page-fault VA and no auto-breadcrumb history — consistent with a " +
                     "TDR timeout (a GPU op ran too long) rather than a memory fault. Reproduce with " +
-                    "FALLOUT_VIEWER_D3D12_DEBUG=1 (add FALLOUT_VIEWER_D3D12_GBV=1 to instrument shaders) to capture " +
+                    $"{EnvironmentVariables.Viewer.D3D12Debug}=1 (add {EnvironmentVariables.Viewer.D3D12GpuBasedValidation}=1 to instrument shaders) to capture " +
                     "the offending operation in the [D3D12 ...] validation log.");
             }
         }
@@ -310,7 +312,7 @@ internal sealed class GpuDevice12 : IDisposable
                     // layer can't see, and similar GPU-side faults — the usual cause of DEVICE_HUNG
                     // (TDR) that DRED can't attribute (no page-fault VA, empty breadcrumbs). VERY slow
                     // (often 10x+), so it's a separate opt-in from the plain debug layer.
-                    if (Environment.GetEnvironmentVariable("FALLOUT_VIEWER_D3D12_GBV") == "1")
+                    if (EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.D3D12GpuBasedValidation))
                     {
                         using var debug1 = debug.QueryInterfaceOrNull<ID3D12Debug1>();
                         if (debug1 is not null)
@@ -330,10 +332,11 @@ internal sealed class GpuDevice12 : IDisposable
                 else
                 {
                     Log.Warn(
-                        "GpuDevice12: FALLOUT_VIEWER_D3D12_DEBUG=1 but D3D12GetDebugInterface failed ({0}). " +
+                        "GpuDevice12: {0}=1 but D3D12GetDebugInterface failed ({1}). " +
                         "On Windows install \"Graphics Tools\" optional feature: " +
                         "Settings → Apps → Optional features → Add a feature → Graphics Tools. " +
                         "Without it the debug layer can't load and validation messages won't surface.",
+                        EnvironmentVariables.Viewer.D3D12Debug,
                         result);
                 }
             }
@@ -348,7 +351,7 @@ internal sealed class GpuDevice12 : IDisposable
         // removal (TDR / GPU page fault — the usual cause of a "crash with no managed exception")
         // can be attributed via LogDeviceRemovedDiagnostics. Opt-in (FALLOUT_VIEWER_DRED=1) because
         // breadcrumbs add per-command overhead; also on whenever the debug layer is on.
-        var enableDred = enableDebugLayer || Environment.GetEnvironmentVariable("FALLOUT_VIEWER_DRED") == "1";
+        var enableDred = enableDebugLayer || EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.Dred);
         if (enableDred)
         {
             try

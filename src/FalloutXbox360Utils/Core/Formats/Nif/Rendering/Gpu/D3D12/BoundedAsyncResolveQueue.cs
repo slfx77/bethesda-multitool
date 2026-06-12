@@ -130,9 +130,36 @@ internal sealed class BoundedAsyncResolveQueue<TResult>
     }
 
     /// <summary>
+    ///     Blocks until every in-flight resolution task has finished. Call before disposing whatever
+    ///     the resolution delegate reads from, so a background task can never touch a freed resource.
+    /// </summary>
+    public void WaitForDrain()
+    {
+        while (true)
+        {
+            Task[] pending;
+            lock (_inFlightLock)
+            {
+                pending = _inFlight.Where(static t => !t.IsCompleted).ToArray();
+            }
+
+            if (pending.Length == 0)
+            {
+                return;
+            }
+
+            // Non-pumping: this drain runs on the UI thread during cache/pipeline teardown, where
+            // Task.WaitAll's STA pumping wait can re-enter XAML and fail-fast (see NonPumpingWait).
+            // The in-flight continuations observe their antecedents' exceptions, so the
+            // WaitAll-throws-AggregateException behavior is not needed here.
+            Orchestration.NonPumpingWait.WaitAll(pending);
+            PruneInFlight();
+        }
+    }
+
+    /// <summary>
     ///     Blocks until every in-flight resolution task has finished (or <paramref name="timeout" />
-    ///     elapses). Call before disposing whatever the resolution delegate reads from, so a
-    ///     background task can never touch a freed resource. Returns false on timeout.
+    ///     elapses). Returns false on timeout.
     /// </summary>
     public bool WaitForDrain(TimeSpan timeout)
     {
@@ -142,7 +169,7 @@ internal sealed class BoundedAsyncResolveQueue<TResult>
             pending = _inFlight.Where(static t => !t.IsCompleted).ToArray();
         }
 
-        return pending.Length == 0 || Task.WaitAll(pending, timeout);
+        return pending.Length == 0 || Orchestration.NonPumpingWait.WaitAll(pending, timeout);
     }
 
     private void PruneInFlight()

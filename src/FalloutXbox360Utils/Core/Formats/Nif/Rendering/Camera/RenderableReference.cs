@@ -103,7 +103,7 @@ internal readonly record struct RenderableReference(
     // so we can compare the GUI's actual computed orientation against the engine/data. Output:
     // %TEMP%\fallout_refr_dump.txt. Capped to avoid runaway writes.
     private static readonly string? DumpFilter =
-        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_DUMP_REFR");
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.DumpReference);
     private static readonly object DumpLock = new();
     private static int _dumpCount;
 

@@ -8,8 +8,13 @@ namespace FalloutXbox360Utils.Core.VersionTracking.Caching;
 /// <summary>
 ///     Caches VersionSnapshot objects to disk as JSON.
 ///     Invalidates when source files change or schema version is bumped.
+///     <para>
+///         Deliberately NOT a <see cref="Resources.DiskBlobCache" /> — different shape (JSON
+///         envelope, fingerprint invalidation, no byte cap, no negatives). Tracking-only registry
+///         conformance so its hit rate is visible in <c>--resource-stats</c>.
+///     </para>
 /// </summary>
-public class SnapshotCache
+public class SnapshotCache : Diagnostics.ITrackableResource
 {
     /// <summary>
     ///     Bump this when extraction or snapshot code changes.
@@ -18,18 +23,51 @@ public class SnapshotCache
     public const int SchemaVersion = 2;
 
     private readonly string _cacheDir;
+    private long _hits;
+    private long _misses;
+    private long _stores;
 
     public SnapshotCache(string cacheDir)
     {
         _cacheDir = cacheDir;
         Directory.CreateDirectory(_cacheDir);
+        // Process-lifetime registration (CLI version-tracking runs); intentionally never disposed.
+        _ = Diagnostics.ResourceRegistry.Instance.Register(this);
     }
+
+    // Explicit implementation: the registry contracts are internal while this class is public.
+    string Diagnostics.ITrackableResource.ResourceName => nameof(SnapshotCache);
+
+    Diagnostics.ResourceCategory Diagnostics.ITrackableResource.Category =>
+        Diagnostics.ResourceCategory.DiskCache;
+
+    Diagnostics.ResourceStats Diagnostics.ITrackableResource.GetStats() => new()
+    {
+        Hits = Interlocked.Read(ref _hits),
+        Misses = Interlocked.Read(ref _misses),
+        Processed = Interlocked.Read(ref _stores),
+    };
 
     /// <summary>
     ///     Tries to load a cached snapshot for the given source file.
     ///     Returns null if cache miss, file changed, or schema version mismatch.
     /// </summary>
     public VersionSnapshot? TryLoad(string sourceFilePath)
+    {
+        var snapshot = TryLoadCore(sourceFilePath);
+        if (snapshot is null)
+        {
+            Interlocked.Increment(ref _misses);
+        }
+        else
+        {
+            Interlocked.Increment(ref _hits);
+        }
+
+        return snapshot;
+    }
+
+    private VersionSnapshot? TryLoadCore(string sourceFilePath)
     {
         var cachePath = GetCachePath(sourceFilePath);
         if (!File.Exists(cachePath))
@@ -92,6 +130,7 @@ public class SnapshotCache
         {
             var json = JsonSerializer.Serialize(envelope, SnapshotCacheJsonContext.Default.CacheEnvelope);
             File.WriteAllText(cachePath, json);
+            Interlocked.Increment(ref _stores);
             Logger.Instance.Debug($"[SnapshotCache] Saved cache: {Path.GetFileName(cachePath)}");
         }
         catch (Exception ex)

@@ -1,16 +1,34 @@
+using FalloutXbox360Utils.Core.Diagnostics;
+using FalloutXbox360Utils.Core.Resources;
+
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Composition;
 
+/// <summary>
+///     Decoded head-mesh reuse cache for NPC render/export pipelines. Bounded (the head meshes of
+///     sustained NPC browsing previously accumulated without limit); least-recently-used heads are
+///     dropped and re-decoded on demand. Null values are cached negatives (heads that failed to
+///     build), so a broken NIF is not re-parsed per NPC.
+/// </summary>
 internal sealed class NpcRenderModelCache
 {
+    private const int MaxHeadMeshes = 64;
+
     public NpcRenderModelCache()
-        : this(new Dictionary<string, NifRenderableModel?>(StringComparer.OrdinalIgnoreCase))
+        : this(CreateHeadMeshCache())
     {
     }
 
-    public NpcRenderModelCache(Dictionary<string, NifRenderableModel?> headMeshes)
+    public NpcRenderModelCache(LruCache<string, NifRenderableModel?> headMeshes)
     {
         HeadMeshes = headMeshes;
     }
 
-    public Dictionary<string, NifRenderableModel?> HeadMeshes { get; }
+    public LruCache<string, NifRenderableModel?> HeadMeshes { get; }
+
+    /// <summary>The standard bounded head-mesh cache (callers that thread a cache through builders).</summary>
+    public static LruCache<string, NifRenderableModel?> CreateHeadMeshCache() => new(
+        "NpcHeadMeshCache",
+        ResourceCategory.CpuCache,
+        maxEntries: MaxHeadMeshes,
+        comparer: StringComparer.OrdinalIgnoreCase);
 }

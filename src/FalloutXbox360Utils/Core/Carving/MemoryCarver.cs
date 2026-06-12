@@ -72,7 +72,10 @@ public sealed class MemoryCarver : IDisposable
         _disposed = true;
     }
 
-    public async Task<List<CarveEntry>> CarveDumpAsync(string dumpPath, IProgress<double>? progress = null)
+    public async Task<List<CarveEntry>> CarveDumpAsync(
+        string dumpPath,
+        IProgress<double>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         var dumpName = Path.GetFileNameWithoutExtension(dumpPath);
         var outputPath = Path.Combine(_outputDir, BinaryUtils.SanitizeFilename(dumpName));
@@ -85,8 +88,9 @@ public sealed class MemoryCarver : IDisposable
         using var mmf = MemoryMappedFile.CreateFromFile(dumpPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
-        var matches = FindAllMatches(accessor, fileInfo.Length, progress);
-        await ExtractMatchesAsync(accessor, fileInfo.Length, matches, outputPath, minidumpInfo, progress);
+        var matches = FindAllMatches(accessor, fileInfo.Length, progress, cancellationToken);
+        await ExtractMatchesAsync(accessor, fileInfo.Length, matches, outputPath, minidumpInfo, progress,
+            cancellationToken);
         await CarveManifest.SaveAsync(outputPath, _manifest);
 
         progress?.Report(1.0);
@@ -173,7 +177,8 @@ public sealed class MemoryCarver : IDisposable
     private List<(string SignatureId, long Offset)> FindAllMatches(
         MemoryMappedViewAccessor accessor,
         long fileSize,
-        IProgress<double>? progress)
+        IProgress<double>? progress,
+        CancellationToken cancellationToken)
     {
         const int chunkSize = 64 * 1024 * 1024;
         if (_signatureIdsToSearch.Count == 0)
@@ -190,6 +195,7 @@ public sealed class MemoryCarver : IDisposable
             long offset = 0;
             while (offset < fileSize)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var toRead = (int)Math.Min(chunkSize + maxPatternLength, fileSize - offset);
                 accessor.ReadArray(offset, buffer, 0, toRead);
 
@@ -219,7 +225,8 @@ public sealed class MemoryCarver : IDisposable
         List<(string SignatureId, long Offset)> matches,
         string outputPath,
         MinidumpInfo minidumpInfo,
-        IProgress<double>? progress)
+        IProgress<double>? progress,
+        CancellationToken cancellationToken)
     {
         if (matches.Count == 0)
         {
@@ -230,8 +237,8 @@ public sealed class MemoryCarver : IDisposable
         var processedCount = 0;
         var totalMatches = matches.Count;
 
-        await Parallel.ForEachAsync(matches,
-            new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+        await Orchestration.ParallelWork.ForEachAsync(
+            "carve-extract", matches, Orchestration.ConcurrencyPolicy.FullCores,
             async (match, _) =>
             {
                 if (_stats.GetValueOrDefault(match.SignatureId, 0) >= _maxFilesPerType)
@@ -274,6 +281,7 @@ public sealed class MemoryCarver : IDisposable
                 {
                     progress.Report(0.5 + (double)currentCount / totalMatches * 0.5);
                 }
-            });
+            },
+            cancellationToken: cancellationToken);
     }
 }

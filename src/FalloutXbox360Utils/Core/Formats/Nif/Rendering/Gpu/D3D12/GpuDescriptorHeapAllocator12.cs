@@ -26,10 +26,11 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         renderer's CBVs / SRVs land here and the bound table covers both regions.
 ///     </para>
 /// </summary>
-internal sealed class GpuDescriptorHeapAllocator12 : IDisposable
+internal sealed class GpuDescriptorHeapAllocator12 : Diagnostics.ITrackableResource, IDisposable
 {
     private readonly ID3D12DescriptorHeap _heap;
     private readonly uint _descriptorSize;
+    private Diagnostics.ResourceRegistration? _registration;
     private readonly uint _persistentCapacity;
     private readonly uint _perFrameRegionStart;
     private readonly uint _perFrameCapacity;
@@ -89,6 +90,33 @@ internal sealed class GpuDescriptorHeapAllocator12 : IDisposable
         _currentFrameStart = _perFrameRegionStart;
         _currentFramePeak = 0;
         _currentFrame = 0;
+    }
+
+    public string ResourceName => nameof(GpuDescriptorHeapAllocator12);
+
+    public Diagnostics.ResourceCategory Category => Diagnostics.ResourceCategory.GpuMeta;
+
+    /// <summary>
+    ///     Tracking-only conformance: live persistent (bindless) slot count — the
+    ///     heap-exhaustion early-warning signal. Slots are owned by live texture entries and never
+    ///     trimmed; reclamation flows through the texture cache's refcount eviction.
+    /// </summary>
+    public Diagnostics.ResourceStats GetStats() => new()
+    {
+        EntryCount = PersistentCount,
+        Processed = PersistentPeak,
+    };
+
+    /// <summary>
+    ///     Registers the allocator with <paramref name="registry" /> (unregistered again on
+    ///     <see cref="Dispose" />). Returns the allocator for fluent construction.
+    /// </summary>
+    public GpuDescriptorHeapAllocator12 RegisterWith(
+        Diagnostics.ResourceRegistry registry, string? instanceTag = null)
+    {
+        _registration?.Dispose();
+        _registration = registry.Register(this, instanceTag);
+        return this;
     }
 
     /// <summary>The raw heap — pass to <c>ID3D12GraphicsCommandList.SetDescriptorHeaps</c>.</summary>
@@ -205,6 +233,8 @@ internal sealed class GpuDescriptorHeapAllocator12 : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _registration?.Dispose();
+        _registration = null;
         _heap.Dispose();
     }
 

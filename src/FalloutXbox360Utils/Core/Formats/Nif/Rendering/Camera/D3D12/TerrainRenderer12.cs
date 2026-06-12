@@ -6,11 +6,13 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
+using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
+using FalloutXbox360Utils.Core.Resources;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
@@ -50,13 +52,13 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     // mesh decode and trigger visible GC pauses. Keep the default conservative and tune via env
     // when profiling throughput on a specific machine.
     private static readonly int MaxConcurrentBuildTasks = ParsePositiveIntEnvironment(
-        "FALLOUT_VIEWER_TERRAIN_BUILD_CONCURRENCY",
+        EnvironmentVariables.Viewer.TerrainBuildConcurrency,
         defaultValue: 2,
         min: 1,
         max: 16);
 
     private static readonly int MaxBuildStartsPerFrame = ParsePositiveIntEnvironment(
-        "FALLOUT_VIEWER_TERRAIN_BUILD_STARTS_PER_FRAME",
+        EnvironmentVariables.Viewer.TerrainBuildStartsPerFrame,
         defaultValue: MaxConcurrentBuildTasks,
         min: 1,
         max: MaxConcurrentBuildTasks);
@@ -108,7 +110,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private ID3D12Resource? _sharedIndexBuffer;
     private IndexBufferView _sharedIbv;
 
-    private CellMeshLruCache<CachedCellMesh12> _meshCache = new(MinCacheCapacity);
+    private LruCache<(int gx, int gy), CachedCellMesh12> _meshCache = CreateMeshCache(MinCacheCapacity);
     private readonly HashSet<(int gx, int gy)> _knownUnusableCells = new();
     private readonly List<VisibleCell> _visibleScratch = new();
     private readonly List<VisibleCell> _missingVisibleScratch = new();
@@ -231,15 +233,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
         // Drain any in-flight background builds before tearing down GPU/cache state they could
         // still be feeding. Their results land in _buildResults (gen-checked) and are harmless.
-        Task[] pending;
-        lock (_buildTaskListLock)
-        {
-            pending = _buildTasks.Where(static t => !t.IsCompleted).ToArray();
-        }
-        if (pending.Length > 0 && !Task.WaitAll(pending, TimeSpan.FromSeconds(5)))
-        {
-            Log.Warn("TerrainRenderer12: {0} build task(s) still running during dispose.", pending.Length);
-        }
+        DrainBuildTasksForDispose();
 
         _meshCache.Dispose();
         if (_sharedIndexBuffer is not null)
@@ -248,6 +242,35 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         }
         _depthOnlyPso.Dispose();
         _pso.Dispose();
+    }
+
+    private void DrainBuildTasksForDispose()
+    {
+        Task[] pending;
+        lock (_buildTaskListLock)
+        {
+            pending = _buildTasks.Where(static t => !t.IsCompleted).ToArray();
+        }
+
+        if (pending.Length == 0)
+        {
+            return;
+        }
+
+        Log.Info("TerrainRenderer12: waiting for {0} build task(s) during dispose.", pending.Length);
+        try
+        {
+            Task.WaitAll(pending);
+        }
+        catch (AggregateException ex)
+        {
+            foreach (var inner in ex.Flatten().InnerExceptions)
+            {
+                Log.Warn("TerrainRenderer12: build task faulted during dispose: {0}", inner.Message);
+            }
+        }
+
+        PruneCompletedBuildTasks();
     }
 
     public int CellCount => _spatialIndex?.CellCount ?? _cells?.Count ?? 0;
@@ -274,6 +297,19 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
     public void SetVclrOnlyMode(bool on) => _vclrOnlyMode = on;
 
+    /// <summary>
+    ///     Render-thread-only LRU of per-cell terrain meshes (replaces the bespoke
+    ///     CellMeshLruCache): evicted/replaced entries are disposed, and the cache reports its
+    ///     entry counts to the resource registry under the "terrain-cells" tag.
+    /// </summary>
+    private static LruCache<(int gx, int gy), CachedCellMesh12> CreateMeshCache(int capacity) =>
+        new LruCache<(int gx, int gy), CachedCellMesh12>(
+                "CellMeshLru",
+                ResourceCategory.GpuResident,
+                maxEntries: capacity,
+                onEvicted: static (_, mesh) => mesh.Dispose())
+            .RegisterWith(ResourceRegistry.Instance, "terrain-cells");
+
     public void LoadData(Dictionary<(int gx, int gy), CellRecord> cells)
         => LoadData(cells, spatialIndex: null, renderCache: null);
 
@@ -284,7 +320,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     {
         _meshCache.Dispose();
         var capacity = Math.Max(MinCacheCapacity, cells.Count + CacheHeadroom);
-        _meshCache = new CellMeshLruCache<CachedCellMesh12>(capacity);
+        _meshCache = CreateMeshCache(capacity);
         _knownUnusableCells.Clear();
         _cells = cells;
         _spatialIndex = spatialIndex;
@@ -307,12 +343,25 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         // for a 5000-cell worldspace), folded into the existing ~1–2 s worldspace load.
         if (_renderCache is not null)
         {
-            foreach (var pair in cells)
+            if (cells.Count >= 512)
             {
-                var captured = pair;
-                _renderCache.GetOrBuildTerrainTextureSet(
-                    captured.Value,
-                    () => BuildCellTextureSet(captured.Key, captured.Value, cells));
+                Parallel.ForEach(cells, pair =>
+                {
+                    var captured = pair;
+                    _renderCache.GetOrBuildTerrainTextureSet(
+                        captured.Value,
+                        () => BuildCellTextureSet(captured.Key, captured.Value, cells));
+                });
+            }
+            else
+            {
+                foreach (var pair in cells)
+                {
+                    var captured = pair;
+                    _renderCache.GetOrBuildTerrainTextureSet(
+                        captured.Value,
+                        () => BuildCellTextureSet(captured.Key, captured.Value, cells));
+                }
             }
         }
     }
@@ -796,7 +845,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 TextureIndices = textureIndices,
                 DeletionQueue = _deletionQueue,
             };
-            _meshCache.Insert(key, entry);
+            _meshCache.Set(key, entry);
             success = true;
             return entry;
         }
@@ -863,7 +912,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 TextureIndices = textureIndices,
                 DeletionQueue = _deletionQueue,
             };
-            _meshCache.Insert(key, entry);
+            _meshCache.Set(key, entry);
             success = true;
             return entry;
         }
@@ -1004,7 +1053,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
     private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
     {
-        var raw = Environment.GetEnvironmentVariable(name);
+        var raw = EnvironmentVariables.Get(name);
         if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
         {
             return defaultValue;

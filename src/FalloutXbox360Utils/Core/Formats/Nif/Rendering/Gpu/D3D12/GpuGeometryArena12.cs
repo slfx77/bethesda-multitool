@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Diagnostics;
 using Vortice.Direct3D12;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -17,7 +18,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         (deferred through the deletion queue so in-flight draws drain first).
 ///     </para>
 /// </summary>
-internal sealed unsafe class GpuGeometryArena12 : IDisposable
+internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposable
 {
     /// <summary>16 MB per block — comfortably larger than any single reference mesh, few blocks.</summary>
     public const long DefaultBlockSize = 16L * 1024L * 1024L;
@@ -28,16 +29,45 @@ internal sealed unsafe class GpuGeometryArena12 : IDisposable
     private readonly GeometryArenaAllocator _allocator;
     private readonly List<ID3D12Resource> _blockResources = new();
     private readonly List<IntPtr> _blockPointers = new();
+    private readonly long _blockSize;
+    private ResourceRegistration? _registration;
     private bool _disposed;
 
     public GpuGeometryArena12(GpuDevice12 gpu, long blockSize = DefaultBlockSize)
     {
         _gpu = gpu;
+        _blockSize = blockSize;
         _allocator = new GeometryArenaAllocator(blockSize, RegionAlignment);
     }
 
     /// <summary>Arena blocks currently committed.</summary>
     public int BlockCount => _blockResources.Count;
+
+    public string ResourceName => nameof(GpuGeometryArena12);
+
+    public ResourceCategory Category => ResourceCategory.GpuResident;
+
+    /// <summary>
+    ///     Tracking-only conformance: bytes = committed UPLOAD-heap blocks; entries = block count.
+    ///     The arena is never trimmed — allocations are owned by live meshes and reclaimed through
+    ///     the mesh LRU's eviction cascade.
+    /// </summary>
+    public ResourceStats GetStats() => new()
+    {
+        EstimatedBytes = _blockResources.Count * _blockSize,
+        EntryCount = _blockResources.Count,
+    };
+
+    /// <summary>
+    ///     Registers the arena with <paramref name="registry" /> (unregistered again on
+    ///     <see cref="Dispose" />). Returns the arena for fluent construction.
+    /// </summary>
+    public GpuGeometryArena12 RegisterWith(ResourceRegistry registry, string? instanceTag = null)
+    {
+        _registration?.Dispose();
+        _registration = registry.Register(this, instanceTag);
+        return this;
+    }
 
     /// <summary>
     ///     Packs <paramref name="vertexBytes" /> then (alignment-padded) <paramref name="indexBytes" />
@@ -98,6 +128,8 @@ internal sealed unsafe class GpuGeometryArena12 : IDisposable
         }
 
         _disposed = true;
+        _registration?.Dispose();
+        _registration = null;
         for (var i = 0; i < _blockResources.Count; i++)
         {
             _blockResources[i].Unmap(0, null);
