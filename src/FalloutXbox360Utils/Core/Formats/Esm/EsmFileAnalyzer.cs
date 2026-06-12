@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm;
 
@@ -33,6 +35,16 @@ public static class EsmFileAnalyzer
         return await Task.Run(() => AnalyzeCore(filePath, progress, verbose, cancellationToken), cancellationToken);
     }
 
+    internal static async Task<EsmAnalysisArtifacts> AnalyzeWithArtifactsAsync(
+        string filePath,
+        IProgress<AnalysisProgress>? progress,
+        bool verbose,
+        CancellationToken cancellationToken = default)
+    {
+        return await Task.Run(() => AnalyzeArtifactsCore(filePath, progress, verbose, true, cancellationToken),
+            cancellationToken);
+    }
+
     /// <summary>
     ///     Synchronous core of ESM analysis. Runs entirely on the calling thread (expected to be a thread-pool thread).
     /// </summary>
@@ -40,6 +52,14 @@ public static class EsmFileAnalyzer
         string filePath,
         IProgress<AnalysisProgress>? progress,
         bool verbose,
+        CancellationToken cancellationToken)
+        => AnalyzeArtifactsCore(filePath, progress, verbose, false, cancellationToken).Result;
+
+    private static EsmAnalysisArtifacts AnalyzeArtifactsCore(
+        string filePath,
+        IProgress<AnalysisProgress>? progress,
+        bool verbose,
+        bool retainFileBuffer,
         CancellationToken cancellationToken)
     {
         var logger = Logger.Instance;
@@ -69,13 +89,7 @@ public static class EsmFileAnalyzer
                 TotalBytes = fileInfo.Length
             });
 
-            // Use memory-mapped file for efficient access to large ESM files
-            using var mmf =
-                MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-            using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
-
-            var fileData = new byte[fileInfo.Length];
-            accessor.ReadArray(0, fileData, 0, fileData.Length);
+            var fileData = File.ReadAllBytes(filePath);
 
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -101,14 +115,16 @@ public static class EsmFileAnalyzer
                 TotalBytes = fileInfo.Length
             });
 
-            var (parsedRecords, grupHeaders) = EsmParser.EnumerateRecordsWithGrups(fileData);
+            var descriptorScan = EsmDescriptorScanner.Scan(fileData);
+            var grupHeaders = descriptorScan.GrupHeaders;
+            var mainRecords = descriptorScan.ScanResult.MainRecords;
 
             // Report progress during record processing
             progress?.Report(new AnalysisProgress
             {
                 Phase = "Scanning Records",
                 PercentComplete = 55,
-                FilesFound = parsedRecords.Count,
+                FilesFound = mainRecords.Count,
                 TotalBytes = fileInfo.Length
             });
 
@@ -124,11 +140,11 @@ public static class EsmFileAnalyzer
             {
                 Phase = "Building Index",
                 PercentComplete = 58,
-                FilesFound = parsedRecords.Count
+                FilesFound = mainRecords.Count
             });
 
             var (cellToWorldspace, landToWorldspace, cellToRefrMap, topicToInfoMap, landToCellMap) =
-                BuildAllMaps(parsedRecords, grupHeaders);
+                BuildAllMaps(mainRecords, grupHeaders);
             if (verbose)
             {
                 logger.Info($"[ESM Analysis] Cell\u2192Worldspace map: {cellToWorldspace.Count} cells mapped " +
@@ -142,28 +158,26 @@ public static class EsmFileAnalyzer
                             "to parent cell (structural)");
             }
 
-            result.EsmRecords =
-                EsmDataExtractor.ConvertToScanResult(parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace,
-                    cellToRefrMap, topicToInfoMap, landToCellMap);
-            EsmDataExtractor.ExtractRefrRecordsFromParsed(result.EsmRecords, parsedRecords, isBigEndian);
+            result.EsmRecords = descriptorScan.ScanResult with
+            {
+                Game = header?.DetectedGame ?? FalloutGame.Unknown,
+                CellToWorldspaceMap = cellToWorldspace,
+                LandToWorldspaceMap = landToWorldspace,
+                CellToRefrMap = cellToRefrMap,
+                TopicToInfoMap = topicToInfoMap,
+                LandToCellMap = landToCellMap
+            };
 
             // Extract LAND records for heightmap rendering in World tab
-            EsmWorldExtractor.ExtractLandRecords(accessor, fileInfo.Length, result.EsmRecords);
+            EsmWorldExtractor.ExtractLandRecords(new ByteArrayMemoryAccessor(fileData), fileInfo.Length,
+                result.EsmRecords);
 
             // Log record counts for debugging
-            var npcRecords = parsedRecords.Where(r => r.Header.Signature == "NPC_").ToList();
-            var npcWithSubrecords = npcRecords.Count(r => r.Subrecords.Count > 0);
-            var firstNpc = npcRecords.FirstOrDefault();
-            var firstNpcSigs = firstNpc?.Subrecords.Take(5).Select(s => s.Signature).ToList() ?? [];
+            var npcRecords = mainRecords.Where(r => r.RecordType == "NPC_").ToList();
             if (verbose)
             {
                 logger.Info(
-                    $"[ESM Analysis] Total records: {parsedRecords.Count}, NPC_: {npcRecords.Count}, with subrecords: {npcWithSubrecords}");
-                if (firstNpc != null)
-                {
-                    logger.Info(
-                        $"[ESM Analysis] First NPC FormId=0x{firstNpc.Header.FormId:X8} has {firstNpc.Subrecords.Count} subrecords: [{string.Join(",", firstNpcSigs)}]");
-                }
+                    $"[ESM Analysis] Total records: {mainRecords.Count}, NPC_: {npcRecords.Count}");
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -173,20 +187,24 @@ public static class EsmFileAnalyzer
             {
                 Phase = "Mapping FormIDs",
                 PercentComplete = 68,
-                FilesFound = parsedRecords.Count
+                FilesFound = mainRecords.Count
             });
 
-            result.FormIdMap = BuildFormIdMap(parsedRecords, verbose);
+            result.FormIdMap = descriptorScan.FormIdMap;
+            if (verbose)
+            {
+                logger.Info($"[FormIdMap] Built map: {result.FormIdMap.Count} entries.");
+            }
 
             // Phase 6: Populate carved files for Memory Map (72-78%)
             progress?.Report(new AnalysisProgress
             {
                 Phase = "Building Memory Map",
                 PercentComplete = 72,
-                FilesFound = parsedRecords.Count
+                FilesFound = mainRecords.Count
             });
 
-            PopulateCarvedFiles(result, parsedRecords, grupHeaders, header, isBigEndian);
+            PopulateCarvedFiles(result, mainRecords, grupHeaders, header, isBigEndian);
 
             stopwatch.Stop();
             result.AnalysisTime = stopwatch.Elapsed;
@@ -195,15 +213,15 @@ public static class EsmFileAnalyzer
             {
                 Phase = "Analysis Complete",
                 PercentComplete = 80,
-                FilesFound = parsedRecords.Count
+                FilesFound = mainRecords.Count
             });
 
             if (verbose)
             {
-                logger.Info($"[ESM Analysis] Complete. Time: {stopwatch.Elapsed}, Records: {parsedRecords.Count}");
+                logger.Info($"[ESM Analysis] Complete. Time: {stopwatch.Elapsed}, Records: {mainRecords.Count}");
             }
 
-            return result;
+            return new EsmAnalysisArtifacts(result, retainFileBuffer ? fileData : null);
         }
         finally
         {
@@ -218,6 +236,99 @@ public static class EsmFileAnalyzer
     ///     Builds all four record-to-GRUP mapping dictionaries in a single pass over the records list.
     ///     Uses <see cref="SortedIntervalMap" /> for O(log n) GRUP lookups per record instead of O(n) linear scans.
     /// </summary>
+    internal static (
+        Dictionary<uint, uint> CellToWorldspace,
+        Dictionary<uint, uint> LandToWorldspace,
+        Dictionary<uint, List<uint>> CellToRefr,
+        Dictionary<uint, List<uint>> TopicToInfo,
+        Dictionary<uint, uint> LandToCell)
+        BuildAllMaps(List<DetectedMainRecord> records, List<GrupHeaderInfo> grupHeaders)
+    {
+        var cellToWorldspace = new Dictionary<uint, uint>();
+        var landToWorldspace = new Dictionary<uint, uint>();
+        var cellToRefr = new Dictionary<uint, List<uint>>();
+        var topicToInfo = new Dictionary<uint, List<uint>>();
+        var landToCell = new Dictionary<uint, uint>();
+
+        var worldChildren = new SortedIntervalMap(
+            grupHeaders.Where(g => g.GroupType == 1).ToList());
+        var cellChildren = new SortedIntervalMap(
+            grupHeaders.Where(g => g.GroupType is 8 or 9 or 10).ToList());
+        var topicChildren = new SortedIntervalMap(
+            grupHeaders.Where(g => g.GroupType == 7).ToList());
+
+        foreach (var record in records)
+        {
+            switch (record.RecordType)
+            {
+                case "CELL":
+                {
+                    var idx = worldChildren.FindContainingInterval(record.Offset);
+                    if (idx >= 0)
+                    {
+                        cellToWorldspace[record.FormId] = worldChildren.GetLabelAsFormId(idx);
+                    }
+
+                    break;
+                }
+                case "LAND":
+                {
+                    var worldIdx = worldChildren.FindContainingInterval(record.Offset);
+                    if (worldIdx >= 0)
+                    {
+                        landToWorldspace[record.FormId] = worldChildren.GetLabelAsFormId(worldIdx);
+                    }
+
+                    var cellIdx = cellChildren.FindContainingInterval(record.Offset);
+                    if (cellIdx >= 0)
+                    {
+                        landToCell[record.FormId] = cellChildren.GetLabelAsFormId(cellIdx);
+                    }
+
+                    break;
+                }
+                case "REFR":
+                case "ACHR":
+                case "ACRE":
+                {
+                    var idx = cellChildren.FindContainingInterval(record.Offset);
+                    if (idx >= 0)
+                    {
+                        var cellFormId = cellChildren.GetLabelAsFormId(idx);
+                        if (!cellToRefr.TryGetValue(cellFormId, out var list))
+                        {
+                            list = [];
+                            cellToRefr[cellFormId] = list;
+                        }
+
+                        list.Add(record.FormId);
+                    }
+
+                    break;
+                }
+                case "INFO":
+                {
+                    var idx = topicChildren.FindContainingInterval(record.Offset);
+                    if (idx >= 0)
+                    {
+                        var dialFormId = topicChildren.GetLabelAsFormId(idx);
+                        if (!topicToInfo.TryGetValue(dialFormId, out var list))
+                        {
+                            list = [];
+                            topicToInfo[dialFormId] = list;
+                        }
+
+                        list.Add(record.FormId);
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return (cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell);
+    }
+
     internal static (
         Dictionary<uint, uint> CellToWorldspace,
         Dictionary<uint, uint> LandToWorldspace,
@@ -329,7 +440,7 @@ public static class EsmFileAnalyzer
     /// <summary>
     ///     Builds a FormID to EditorID/FullName map from parsed records.
     /// </summary>
-    private static Dictionary<uint, string> BuildFormIdMap(List<ParsedMainRecord> records, bool verbose)
+    internal static Dictionary<uint, string> BuildFormIdMap(List<ParsedMainRecord> records, bool verbose)
     {
         var map = new Dictionary<uint, string>();
         var npcCount = 0;
@@ -382,6 +493,49 @@ public static class EsmFileAnalyzer
     /// </summary>
     private static void PopulateCarvedFiles(
         AnalysisResult result,
+        List<DetectedMainRecord> records,
+        List<GrupHeaderInfo> grupHeaders,
+        EsmFileHeader? header,
+        bool bigEndian)
+    {
+        if (header != null)
+        {
+            result.CarvedFiles.Add(new CarvedFileInfo
+            {
+                Offset = 0,
+                Length = EsmParser.MainRecordHeaderSize + (long)header.RecordFlags,
+                FileType = "ESM File Header",
+                FileName = $"TES4 ({(bigEndian ? "Xbox 360" : "PC")})",
+                Category = FileCategory.Header,
+                SignatureId = "esm_header"
+            });
+        }
+
+        var allRegions = new List<(long offset, long end, string signature, bool isGrup)>();
+
+        foreach (var record in records)
+        {
+            var end = record.Offset + EsmParser.MainRecordHeaderSize + record.DataSize;
+            allRegions.Add((record.Offset, end, record.RecordType, false));
+        }
+
+        allRegions.AddRange(grupHeaders.Select(grup =>
+            (grup.Offset, grup.Offset + GrupHeaderInfo.HeaderSize, "GRUP", true)));
+
+        AddGroupedRegions(result, allRegions);
+
+        var typeCounts = records
+            .GroupBy(r => r.RecordType)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        foreach (var (type, count) in typeCounts)
+        {
+            result.TypeCounts[$"ESM:{type}"] = count;
+        }
+    }
+
+    internal static void PopulateCarvedFiles(
+        AnalysisResult result,
         List<ParsedMainRecord> records,
         List<GrupHeaderInfo> grupHeaders,
         EsmFileHeader? header,
@@ -415,43 +569,7 @@ public static class EsmFileAnalyzer
         allRegions.AddRange(grupHeaders.Select(grup =>
             (grup.Offset, grup.Offset + GrupHeaderInfo.HeaderSize, "GRUP", true)));
 
-        // Group consecutive regions by type to reduce region count
-        // This dramatically improves hex viewer scrolling performance
-        if (allRegions.Count > 0)
-        {
-            var sortedRegions = allRegions.OrderBy(r => r.offset).ToList();
-            var currentSig = sortedRegions[0].signature;
-            var regionStart = sortedRegions[0].offset;
-            var regionEnd = sortedRegions[0].end;
-            var regionCount = 1;
-
-            for (var i = 1; i < sortedRegions.Count; i++)
-            {
-                var region = sortedRegions[i];
-
-                // Check if this region continues the current group (same type, gap < 4KB)
-                var gap = region.offset - regionEnd;
-                if (region.signature == currentSig && gap < 4096)
-                {
-                    // Extend current region
-                    regionEnd = Math.Max(regionEnd, region.end);
-                    regionCount++;
-                }
-                else
-                {
-                    // Flush current region and start new one
-                    AddGroupedRegion(result, currentSig, regionStart, regionEnd, regionCount);
-
-                    currentSig = region.signature;
-                    regionStart = region.offset;
-                    regionEnd = region.end;
-                    regionCount = 1;
-                }
-            }
-
-            // Flush final region
-            AddGroupedRegion(result, currentSig, regionStart, regionEnd, regionCount);
-        }
+        AddGroupedRegions(result, allRegions);
 
         // Update type counts
         var typeCounts = records
@@ -462,6 +580,48 @@ public static class EsmFileAnalyzer
         {
             result.TypeCounts[$"ESM:{type}"] = count;
         }
+    }
+
+    private static void AddGroupedRegions(
+        AnalysisResult result,
+        List<(long offset, long end, string signature, bool isGrup)> allRegions)
+    {
+        // Group consecutive regions by type to reduce region count.
+        // This dramatically improves hex viewer scrolling performance.
+        if (allRegions.Count == 0)
+        {
+            return;
+        }
+
+        var sortedRegions = allRegions.OrderBy(r => r.offset).ToList();
+        var currentSig = sortedRegions[0].signature;
+        var regionStart = sortedRegions[0].offset;
+        var regionEnd = sortedRegions[0].end;
+        var regionCount = 1;
+
+        for (var i = 1; i < sortedRegions.Count; i++)
+        {
+            var region = sortedRegions[i];
+
+            // Check if this region continues the current group (same type, gap < 4KB)
+            var gap = region.offset - regionEnd;
+            if (region.signature == currentSig && gap < 4096)
+            {
+                regionEnd = Math.Max(regionEnd, region.end);
+                regionCount++;
+            }
+            else
+            {
+                AddGroupedRegion(result, currentSig, regionStart, regionEnd, regionCount);
+
+                currentSig = region.signature;
+                regionStart = region.offset;
+                regionEnd = region.end;
+                regionCount = 1;
+            }
+        }
+
+        AddGroupedRegion(result, currentSig, regionStart, regionEnd, regionCount);
     }
 
     private static void AddGroupedRegion(

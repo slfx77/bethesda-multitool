@@ -188,7 +188,7 @@ public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposabl
     public void BuildAllMaps_EmptyInputs_ReturnsEmptyMaps()
     {
         var (cellToWorld, landToWorld, cellToRefr, topicToInfo, _) =
-            EsmFileAnalyzer.BuildAllMaps([], []);
+            EsmFileAnalyzer.BuildAllMaps(new List<ParsedMainRecord>(), []);
 
         Assert.Empty(cellToWorld);
         Assert.Empty(landToWorld);

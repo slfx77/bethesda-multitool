@@ -6,6 +6,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Subrecords;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -343,6 +344,14 @@ internal static class EsmWorldExtractor
     /// </summary>
     internal static void ExtractLandRecords(
         MemoryMappedViewAccessor accessor,
+        long fileSize,
+        EsmRecordScanResult scanResult)
+    {
+        ExtractLandRecords(new MmfMemoryAccessor(accessor), fileSize, scanResult);
+    }
+
+    internal static void ExtractLandRecords(
+        IMemoryAccessor accessor,
         long fileSize,
         EsmRecordScanResult scanResult)
     {

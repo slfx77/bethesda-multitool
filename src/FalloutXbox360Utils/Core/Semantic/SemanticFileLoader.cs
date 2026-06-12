@@ -1,6 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
+using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
 
 namespace FalloutXbox360Utils.Core.Semantic;
@@ -91,24 +92,13 @@ internal static class SemanticFileLoader
 
         try
         {
-            var parser = new RecordParser(
-                analysisResult.EsmRecords,
-                analysisResult.FormIdMap,
-                accessor,
-                fileInfo.Length,
-                analysisResult.MinidumpInfo);
-            var records = parser.ParseAll(options.ParseProgress, options.ResidentRecoveryMasterFormIds);
-            ApplyCellWorldspaceAuthorityIfNeeded(records, analysisResult.EsmRecords, fileType, options);
-            var resolver = records.CreateResolver(analysisResult.FormIdMap);
-
-            var result = new UnifiedAnalysisResult
-            {
-                FileType = fileType,
-                Records = records,
-                Resolver = resolver,
-                RawResult = analysisResult,
-                FilePath = filePath
-            };
+            var result = LoadFromAnalysisResult(
+                filePath,
+                analysisResult,
+                fileType,
+                options,
+                new MmfMemoryAccessor(accessor),
+                fileInfo.Length);
             result.SetDisposables(mmf, accessor);
             return result;
         }
@@ -118,6 +108,42 @@ internal static class SemanticFileLoader
             mmf.Dispose();
             throw;
         }
+    }
+
+    internal static UnifiedAnalysisResult LoadFromAnalysisResult(
+        string filePath,
+        AnalysisResult analysisResult,
+        AnalysisFileType fileType,
+        SemanticFileLoadOptions? options,
+        IMemoryAccessor accessor,
+        long fileSize)
+    {
+        options ??= new SemanticFileLoadOptions();
+        fileType = ResolveSemanticFileType(filePath, fileType);
+        if (analysisResult.EsmRecords == null)
+        {
+            throw new InvalidOperationException(
+                $"No records found in {Path.GetFileName(filePath)}. The file may be empty or corrupted.");
+        }
+
+        var parser = new RecordParser(
+            analysisResult.EsmRecords,
+            analysisResult.FormIdMap,
+            accessor,
+            fileSize,
+            analysisResult.MinidumpInfo);
+        var records = parser.ParseAll(options.ParseProgress, options.ResidentRecoveryMasterFormIds);
+        ApplyCellWorldspaceAuthorityIfNeeded(records, analysisResult.EsmRecords, fileType, options);
+        var resolver = records.CreateResolver(analysisResult.FormIdMap);
+
+        return new UnifiedAnalysisResult
+        {
+            FileType = fileType,
+            Records = records,
+            Resolver = resolver,
+            RawResult = analysisResult,
+            FilePath = filePath
+        };
     }
 
     private static async Task<AnalysisResult> AnalyzeAsync(
