@@ -1,4 +1,5 @@
 ﻿using System.CommandLine;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Schema;
@@ -45,7 +46,7 @@ public static class EsmConvertCommand
 
             if (string.IsNullOrEmpty(output))
             {
-                output = Environment.GetEnvironmentVariable("ESM_OUTPUT_PATH");
+                output = EnvironmentVariables.Get(EnvironmentVariables.Cli.EsmOutputPath);
             }
 
             if (string.IsNullOrEmpty(output))

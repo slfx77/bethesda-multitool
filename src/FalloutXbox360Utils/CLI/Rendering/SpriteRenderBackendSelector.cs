@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Spectre.Console;
 
@@ -35,7 +36,7 @@ internal static class SpriteRenderBackendSelector
             return new SpriteRenderBackendSelection(null, null, false);
         }
 
-        var enableDebugLayer = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_D3D12_DEBUG") == "1";
+        var enableDebugLayer = EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.D3D12Debug);
         var device = GpuDevice12.Create(enableDebugLayer);
         if (device == null)
         {

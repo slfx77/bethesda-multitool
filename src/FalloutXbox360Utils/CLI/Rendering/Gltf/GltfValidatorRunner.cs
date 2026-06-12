@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using FalloutXbox360Utils.Core;
 
 namespace FalloutXbox360Utils.CLI.Rendering.Gltf;
 
@@ -83,7 +84,7 @@ internal static class GltfValidatorRunner
 
     private static string? TryFindValidatorPath()
     {
-        var envPath = Environment.GetEnvironmentVariable("GLTF_VALIDATOR_EXE");
+        var envPath = EnvironmentVariables.Get(EnvironmentVariables.Cli.GltfValidatorExecutable);
         if (!string.IsNullOrWhiteSpace(envPath) && File.Exists(envPath))
         {
             return envPath;

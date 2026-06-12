@@ -16,10 +16,7 @@ namespace FalloutXbox360Utils;
 internal static class Map2DProfilerTrace
 {
     private static readonly bool s_enabled =
-        string.Equals(
-            Environment.GetEnvironmentVariable("FALLOUT_MAP2D_TRACE"),
-            "1",
-            StringComparison.Ordinal);
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Map2D.Trace);
 
     private static int s_frameCounter;
 

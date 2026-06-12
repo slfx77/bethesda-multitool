@@ -52,7 +52,7 @@ public static class Program
         // Switches Map2DProfilerTrace on inside FalloutXbox360Utils — every cache mutation,
         // viewport rebuild, stream lifecycle event, and per-frame draw in WorldMapControl
         // is logged to the configured profile output.
-        Environment.SetEnvironmentVariable("FALLOUT_MAP2D_TRACE", "1");
+        EnvironmentVariables.Set(EnvironmentVariables.Map2D.Trace, EnvironmentVariables.Enabled);
     }
 
     private static void ConfigureLogger(Map2DProfilerOptions options)

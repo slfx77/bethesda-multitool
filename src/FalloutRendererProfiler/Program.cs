@@ -51,33 +51,33 @@ public static class Program
 
     private static void ConfigureEnvironment(RendererProfilerOptions options)
     {
-        Environment.SetEnvironmentVariable("FALLOUT_VIEWER_PROFILE_LOG", "1");
-        Environment.SetEnvironmentVariable(
-            "FALLOUT_VIEWER_PROFILE_INTERVAL_MS",
+        EnvironmentVariables.Set(EnvironmentVariables.Viewer.ProfileLog, EnvironmentVariables.Enabled);
+        EnvironmentVariables.Set(
+            EnvironmentVariables.Viewer.ProfileIntervalMilliseconds,
             options.ProfileIntervalMilliseconds.ToString(CultureInfo.InvariantCulture));
-        Environment.SetEnvironmentVariable("FALLOUT_VIEWER_PROFILE_JSONL", options.ProfileJsonlOutputPath);
-        Environment.SetEnvironmentVariable(
-            "FALLOUT_VIEWER_STALL_THRESHOLD_MS",
+        EnvironmentVariables.Set(EnvironmentVariables.Viewer.ProfileJsonl, options.ProfileJsonlOutputPath);
+        EnvironmentVariables.Set(
+            EnvironmentVariables.Viewer.StallThresholdMilliseconds,
             options.StallThresholdMilliseconds.ToString(CultureInfo.InvariantCulture));
 
         if (options.ShowFrameStats)
         {
-            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_FRAME_STATS", "1");
+            EnvironmentVariables.Set(EnvironmentVariables.Viewer.FrameStats, EnvironmentVariables.Enabled);
         }
 
         if (!string.IsNullOrWhiteSpace(options.StressScene))
         {
-            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_STRESS_SCENE", options.StressScene);
+            EnvironmentVariables.Set(EnvironmentVariables.Viewer.StressScene, options.StressScene);
         }
 
         if (options.EnablePersistentMeshCache)
         {
-            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_PERSISTENT_MESH_CACHE", "1");
+            EnvironmentVariables.Set(EnvironmentVariables.Viewer.PersistentMeshCache, EnvironmentVariables.Enabled);
         }
 
         if (options.ForceGpuTimestamps)
         {
-            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_GPU_TIMESTAMPS", "1");
+            EnvironmentVariables.Set(EnvironmentVariables.Viewer.GpuTimestamps, EnvironmentVariables.Enabled);
         }
     }
 

@@ -34,7 +34,7 @@ internal sealed class MainWindow : Window, IDisposable
         // one WorldViewData and their terrain paths run concurrently. That coupling is the regime
         // that triggers the WastelandNV-scale heap corruption the 3D-only profiler can't reproduce.
         // Gated so the existing 2D-only scenarios are unaffected by default.
-        if (string.Equals(Environment.GetEnvironmentVariable("FALLOUT_PROFILER_WITH_3D"), "1", StringComparison.Ordinal))
+        if (EnvironmentVariables.IsEnabled(EnvironmentVariables.Profiler.With3D))
         {
             _worldView3D = new WorldView3DControl();
         }
