@@ -44,8 +44,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
     /// </summary>
     internal List<DialogTopicRecord> ParseDialogTopics()
     {
-        var topics = new List<DialogTopicRecord>();
-        var topicRecords = Context.GetRecordsByType("DIAL").ToList();
+        var topicRecords = Context.GetRecordListByType("DIAL");
+        var topics = new List<DialogTopicRecord>(topicRecords.Count);
 
         if (Context.Accessor != null)
         {
@@ -228,8 +228,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
     /// </summary>
     internal List<QuestRecord> ParseQuests()
     {
-        var quests = new List<QuestRecord>();
-        var questRecords = Context.GetRecordsByType("QUST").ToList();
+        var questRecords = Context.GetRecordListByType("QUST");
+        var quests = new List<QuestRecord>(questRecords.Count);
 
         if (Context.Accessor == null)
         {

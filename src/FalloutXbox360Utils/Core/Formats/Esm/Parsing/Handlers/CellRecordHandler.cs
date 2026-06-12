@@ -22,8 +22,8 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
     /// </summary>
     internal List<CellRecord> ParseCells()
     {
-        var cells = new List<CellRecord>();
-        var cellRecords = Context.GetRecordsByType("CELL").ToList();
+        var cellRecords = Context.GetRecordListByType("CELL");
+        var cells = new List<CellRecord>(cellRecords.Count);
 
         var refrRecords = Context.ScanResult.RefrRecords;
         var cellWorldMap = Context.ScanResult.CellToWorldspaceMap;

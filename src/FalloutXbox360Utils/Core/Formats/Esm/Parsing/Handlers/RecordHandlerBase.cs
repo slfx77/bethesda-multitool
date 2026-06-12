@@ -21,7 +21,7 @@ internal abstract class RecordHandlerBase(RecordParserContext context)
         Func<DetectedMainRecord, byte[], T?> parseFromAccessor,
         Func<DetectedMainRecord, T?> parseFromScanOnly) where T : class
     {
-        var records = Context.GetRecordsByType(recordType).ToList();
+        var records = Context.GetRecordListByType(recordType);
         var results = new List<T>(records.Count);
 
         if (Context.Accessor == null)
@@ -71,8 +71,8 @@ internal abstract class RecordHandlerBase(RecordParserContext context)
             return [];
         }
 
-        var records = Context.GetRecordsByType(recordType);
-        var results = new List<T>();
+        var records = Context.GetRecordListByType(recordType);
+        var results = new List<T>(records.Count);
         var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
         try
         {

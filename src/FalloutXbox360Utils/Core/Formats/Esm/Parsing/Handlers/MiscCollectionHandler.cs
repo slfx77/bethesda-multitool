@@ -93,16 +93,15 @@ internal sealed class MiscCollectionHandler(RecordParserContext context) : Recor
     /// </summary>
     internal List<LeveledListRecord> ParseLeveledLists()
     {
-        var lists = new List<LeveledListRecord>();
-        var lvliRecords = Context.GetRecordsByType("LVLI").ToList();
-        var lvlnRecords = Context.GetRecordsByType("LVLN").ToList();
-        var lvlcRecords = Context.GetRecordsByType("LVLC").ToList();
-
-        // Combine all leveled list records
-        var allRecords = lvliRecords
-            .Concat(lvlnRecords)
-            .Concat(lvlcRecords)
-            .ToList();
+        var lvliRecords = Context.GetRecordListByType("LVLI");
+        var lvlnRecords = Context.GetRecordListByType("LVLN");
+        var lvlcRecords = Context.GetRecordListByType("LVLC");
+        var allRecords = new List<DetectedMainRecord>(
+            lvliRecords.Count + lvlnRecords.Count + lvlcRecords.Count);
+        allRecords.AddRange(lvliRecords);
+        allRecords.AddRange(lvlnRecords);
+        allRecords.AddRange(lvlcRecords);
+        var lists = new List<LeveledListRecord>(allRecords.Count);
 
         if (Context.Accessor == null)
         {

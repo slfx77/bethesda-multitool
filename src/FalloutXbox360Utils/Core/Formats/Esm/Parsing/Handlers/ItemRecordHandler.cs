@@ -425,8 +425,8 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
     /// </summary>
     internal List<ContainerRecord> ParseContainers()
     {
-        var containers = new List<ContainerRecord>();
-        var containerRecords = Context.GetRecordsByType("CONT").ToList();
+        var containerRecords = Context.GetRecordListByType("CONT");
+        var containers = new List<ContainerRecord>(containerRecords.Count);
 
         // Track FormIDs from ESM records to avoid duplicates when merging runtime data
         var esmFormIds = new HashSet<uint>();

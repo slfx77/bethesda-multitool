@@ -115,8 +115,8 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
     /// </summary>
     internal List<FactionRecord> ParseFactions()
     {
-        var factions = new List<FactionRecord>();
-        var factionRecords = Context.GetRecordsByType("FACT").ToList();
+        var factionRecords = Context.GetRecordListByType("FACT");
+        var factions = new List<FactionRecord>(factionRecords.Count);
 
         if (Context.Accessor == null)
         {
@@ -306,8 +306,8 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
     /// </summary>
     internal List<RaceRecord> ParseRaces()
     {
-        var races = new List<RaceRecord>();
-        var raceRecords = Context.GetRecordsByType("RACE").ToList();
+        var raceRecords = Context.GetRecordListByType("RACE");
+        var races = new List<RaceRecord>(raceRecords.Count);
 
         if (Context.Accessor == null)
         {

@@ -355,6 +355,11 @@ public sealed class RecordParserContext
         return _recordsByType.TryGetValue(recordType, out var list) ? list : [];
     }
 
+    public IReadOnlyList<DetectedMainRecord> GetRecordListByType(string recordType)
+    {
+        return _recordsByType.TryGetValue(recordType, out var list) ? list : Array.Empty<DetectedMainRecord>();
+    }
+
     #endregion
 
     #region Name/Subrecord Lookups

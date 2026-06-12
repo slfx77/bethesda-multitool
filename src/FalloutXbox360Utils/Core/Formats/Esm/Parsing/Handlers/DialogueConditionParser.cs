@@ -19,8 +19,8 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
     /// </summary>
     internal List<DialogueRecord> ParseAllInfoRecords()
     {
-        var dialogues = new List<DialogueRecord>();
-        var infoRecords = Context.GetRecordsByType("INFO").ToList();
+        var infoRecords = Context.GetRecordListByType("INFO");
+        var dialogues = new List<DialogueRecord>(infoRecords.Count);
         var log = Logger.Instance;
 
         if (Context.Accessor == null)
