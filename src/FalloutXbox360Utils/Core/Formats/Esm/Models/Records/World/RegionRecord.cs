@@ -31,9 +31,32 @@ public record RegionRecord
     /// </summary>
     public List<RegionDataBlock> DataBlocks { get; init; } = [];
 
+    /// <summary>
+    ///     Per-region weather overrides decoded from RDWT payloads (12 bytes/entry:
+    ///     Weather FormID, Chance, Global FormID — layout confirmed by the Xbox→PC
+    ///     converter schema). A derived projection over <see cref="DataBlocks" />; the
+    ///     encoder still round-trips the raw bytes, so this is read-only viewer/UI data
+    ///     (feeds the weather selection in P4).
+    /// </summary>
+    public IReadOnlyList<RegionWeatherType> WeatherTypes { get; init; } = [];
+
+    /// <summary>
+    ///     Grass GRAS FormIDs decoded from RDGS payloads (8 bytes/entry: Grass FormID +
+    ///     4 unused bytes — fopdoc layout, PROVISIONAL pending P6 confirmation). A derived
+    ///     projection over <see cref="DataBlocks" />; the encoder still round-trips the raw
+    ///     bytes. Feeds grass scatter in P6 (secondary to LTEX GrassFormIds).
+    /// </summary>
+    public IReadOnlyList<uint> GrassFormIds { get; init; } = [];
+
     public long Offset { get; init; }
     public bool IsBigEndian { get; init; }
 }
+
+/// <summary>
+///     One RDWT weather-type entry: a candidate weather for this region with a
+///     selection chance and an optional GLOB FormID that gates it.
+/// </summary>
+public readonly record struct RegionWeatherType(uint WeatherFormId, uint Chance, uint GlobalFormId);
 
 /// <summary>
 ///     One RDAT region-data tuple. Header is 8 bytes: uint32 Type + uint32 Flags

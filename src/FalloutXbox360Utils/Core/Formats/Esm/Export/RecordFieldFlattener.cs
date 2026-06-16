@@ -437,7 +437,9 @@ internal static class RecordFieldFlattener
             ["EmittanceR"] = r.EmittanceColorR.ToString(),
             ["EmittanceG"] = r.EmittanceColorG.ToString(),
             ["EmittanceB"] = r.EmittanceColorB.ToString(),
-            ["DataBlockCount"] = r.DataBlockCount.ToString()
+            ["DataBlockCount"] = r.DataBlockCount.ToString(),
+            ["WeatherTypeCount"] = r.WeatherTypes.Count.ToString(),
+            ["GrassCount"] = r.GrassFormIds.Count.ToString()
         };
     }
 

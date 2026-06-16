@@ -786,6 +786,27 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
             dataBlocks.Add(new RegionDataBlock(currentType, currentFlags, currentPayload));
         }
 
+        // Derive typed weather/grass projections from the captured (opaque) RDAT payloads.
+        // The DataBlocks bytes are still round-tripped verbatim by RegnEncoder; these lists are
+        // read-only viewer/UI data (per-region weather → P4, grass → P6).
+        var weatherTypes = new List<RegionWeatherType>();
+        var grassFormIds = new List<uint>();
+        foreach (var block in dataBlocks)
+        {
+            foreach (var payload in block.Payload)
+            {
+                switch (payload.Signature)
+                {
+                    case "RDWT":
+                        DecodeRegionWeatherTypes(payload.Bytes, record.IsBigEndian, weatherTypes);
+                        break;
+                    case "RDGS":
+                        DecodeRegionGrasses(payload.Bytes, record.IsBigEndian, grassFormIds);
+                        break;
+                }
+            }
+        }
+
         return new RegionRecord
         {
             FormId = record.FormId,
@@ -796,9 +817,44 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
             EmittanceColorB = b,
             DataBlockCount = dataBlocks.Count,
             DataBlocks = dataBlocks,
+            WeatherTypes = weatherTypes,
+            GrassFormIds = grassFormIds,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    /// <summary>RDWT region weather-types: 12 bytes/entry (Weather FormID, Chance u32, Global FormID).
+    /// Stride confirmed by the Xbox→PC converter's RDWT byte-swap schema.</summary>
+    private const int RdwtEntrySize = 12;
+
+    /// <summary>RDGS region grasses: 8 bytes/entry (Grass FormID + 4 unused). fopdoc layout —
+    /// PROVISIONAL (no converter schema to confirm; verify in P6). Decoded only when the payload
+    /// length divides evenly, so a wrong-stride reality leaves the list empty rather than garbage.</summary>
+    private const int RdgsEntrySize = 8;
+
+    internal static void DecodeRegionWeatherTypes(byte[] bytes, bool isBigEndian, List<RegionWeatherType> into)
+    {
+        for (var off = 0; off + RdwtEntrySize <= bytes.Length; off += RdwtEntrySize)
+        {
+            var weather = BinaryUtils.ReadUInt32(bytes, off, isBigEndian);
+            var chance = BinaryUtils.ReadUInt32(bytes, off + 4, isBigEndian);
+            var global = BinaryUtils.ReadUInt32(bytes, off + 8, isBigEndian);
+            into.Add(new RegionWeatherType(weather, chance, global));
+        }
+    }
+
+    internal static void DecodeRegionGrasses(byte[] bytes, bool isBigEndian, List<uint> into)
+    {
+        if (bytes.Length == 0 || bytes.Length % RdgsEntrySize != 0)
+        {
+            return;
+        }
+
+        for (var off = 0; off + RdgsEntrySize <= bytes.Length; off += RdgsEntrySize)
+        {
+            into.Add(BinaryUtils.ReadUInt32(bytes, off, isBigEndian));
+        }
     }
 
     #endregion

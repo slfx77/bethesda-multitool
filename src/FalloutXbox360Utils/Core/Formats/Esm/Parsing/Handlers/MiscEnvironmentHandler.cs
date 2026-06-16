@@ -171,6 +171,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         string? editorId = null;
         uint? imageSpaceMod = null;
         var sounds = new List<WeatherSound>();
+        IReadOnlyList<WeatherColor>? colors = null;
+        IReadOnlyList<float>? fogDistances = null;
+        WeatherData? weatherData = null;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -202,6 +205,20 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
                     break;
                 }
+                // NAM0 "Weather Colors": 15 categories × 4 time-bands × RGBA (240 bytes). Drives the
+                // atmosphere renderer's sky/sun/ambient/fog palette (see WeatherColorType for the index
+                // meaning — provisional until the engine decompile confirms it).
+                case "NAM0" when sub.DataLength >= 16:
+                    colors = ReadWeatherColors(subData, record.IsBigEndian);
+                    break;
+                // FNAM "Fog Distances": 6 floats (24 bytes).
+                case "FNAM" when sub.DataLength >= 4:
+                    fogDistances = ReadFogDistances(subData, record.IsBigEndian);
+                    break;
+                // DATA: 15-byte struct (wind speed, sun glare, precip timing, flags, lightning color).
+                case "DATA" when sub.DataLength >= 15:
+                    weatherData = ReadWeatherData(subData);
+                    break;
             }
         }
 
@@ -211,9 +228,182 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             ImageSpaceModifier = imageSpaceMod != 0 ? imageSpaceMod : null,
             Sounds = sounds,
+            Colors = colors ?? [],
+            FogDistances = fogDistances ?? [],
+            Data = weatherData,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    // NAM0 weather colors. Each 4-byte band is read with the record's endianness as one uint and the
+    // RGBA bytes extracted from fixed bit positions, so Xbox (the converter byte-swaps each group) and
+    // PC produce the same RGBA — no per-platform branch beyond the integer read.
+    private static List<WeatherColor> ReadWeatherColors(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        const int bandBytes = 4;
+        const int entryBytes = bandBytes * 4; // sunrise/day/sunset/night
+        var count = data.Length / entryBytes;
+        var colors = new List<WeatherColor>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var b = i * entryBytes;
+            colors.Add(new WeatherColor(
+                ReadRgba(data.Slice(b, bandBytes), isBigEndian),
+                ReadRgba(data.Slice(b + bandBytes, bandBytes), isBigEndian),
+                ReadRgba(data.Slice(b + 2 * bandBytes, bandBytes), isBigEndian),
+                ReadRgba(data.Slice(b + 3 * bandBytes, bandBytes), isBigEndian)));
+        }
+
+        return colors;
+    }
+
+    private static WeatherRgba ReadRgba(ReadOnlySpan<byte> band, bool isBigEndian)
+    {
+        var v = isBigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(band)
+            : BinaryPrimitives.ReadUInt32LittleEndian(band);
+        return new WeatherRgba((byte)v, (byte)(v >> 8), (byte)(v >> 16), (byte)(v >> 24));
+    }
+
+    private static List<float> ReadFogDistances(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        var count = data.Length / 4;
+        var fog = new List<float>(count);
+        for (var i = 0; i < count; i++)
+        {
+            fog.Add(ReadFloat(data, i * 4, isBigEndian));
+        }
+
+        return fog;
+    }
+
+    private static WeatherData ReadWeatherData(ReadOnlySpan<byte> d) =>
+        // 15-byte layout per the DATA/WTHR converter schema: WindSpeed(0), pad(1,2), TransDelta(3),
+        // SunGlare(4), SunDamage(5), PrecipBeginFadeIn(6), PrecipEndFadeOut(7), ThunderBeginFadeIn(8),
+        // ThunderEndFadeOut(9), ThunderFreq(10), Flags(11), LightningR/G/B(12,13,14).
+        new()
+        {
+            WindSpeed = d[0],
+            TransDelta = d[3],
+            SunGlare = d[4],
+            SunDamage = d[5],
+            PrecipitationBeginFadeIn = d[6],
+            PrecipitationEndFadeOut = d[7],
+            ThunderLightningBeginFadeIn = d[8],
+            ThunderLightningEndFadeOut = d[9],
+            ThunderLightningFrequency = d[10],
+            Flags = d[11],
+            LightningColor = new WeatherRgba(d[12], d[13], d[14], 255),
+        };
+
+    #endregion
+
+    #region Climate
+
+    /// <summary>
+    ///     Parse all Climate (CLMT) records. A worldspace's CNAM points at one of these; it carries the
+    ///     weather list + chances, sun textures, and sunrise/sunset/moon timing the atmosphere model uses.
+    /// </summary>
+    internal List<ClimateRecord> ParseClimate()
+    {
+        return ParseRecordList("CLMT", 256,
+            ParseClimateFromAccessor,
+            record => new ClimateRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+    }
+
+    private ClimateRecord? ParseClimateFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new ClimateRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, sunTexture = null, sunGlare = null, modelPath = null;
+        IReadOnlyList<ClimateWeatherEntry>? weatherTypes = null;
+        ClimateTimingData? timing = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FNAM":
+                    sunTexture = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "GNAM":
+                    sunGlare = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                // WLST: weather list — 12-byte entries (Weather FormID, Chance int32, Global FormID).
+                case "WLST" when sub.DataLength >= 12:
+                    weatherTypes = ReadClimateWeatherList(subData, record.IsBigEndian);
+                    break;
+                // TNAM: 6-byte timing (sunrise/sunset begin+end, volatility, moon phase length).
+                case "TNAM" when sub.DataLength >= 6:
+                    timing = new ClimateTimingData(
+                        subData[0], subData[1], subData[2], subData[3], subData[4], subData[5]);
+                    break;
+            }
+        }
+
+        return new ClimateRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            SunTexture = sunTexture,
+            SunGlareTexture = sunGlare,
+            ModelPath = modelPath,
+            WeatherTypes = weatherTypes ?? [],
+            Timing = timing,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private static List<ClimateWeatherEntry> ReadClimateWeatherList(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        const int entryBytes = 12;
+        var count = data.Length / entryBytes;
+        var list = new List<ClimateWeatherEntry>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var b = i * entryBytes;
+            var weather = RecordParserContext.ReadFormId(data.Slice(b, 4), isBigEndian);
+            var chance = isBigEndian
+                ? BinaryPrimitives.ReadInt32BigEndian(data.Slice(b + 4, 4))
+                : BinaryPrimitives.ReadInt32LittleEndian(data.Slice(b + 4, 4));
+            var global = RecordParserContext.ReadFormId(data.Slice(b + 8, 4), isBigEndian);
+            list.Add(new ClimateWeatherEntry(weather, chance, global));
+        }
+
+        return list;
     }
 
     #endregion

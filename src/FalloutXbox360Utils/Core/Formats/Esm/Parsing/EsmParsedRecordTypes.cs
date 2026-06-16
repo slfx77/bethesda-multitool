@@ -137,6 +137,7 @@ public static class EsmParsedRecordTypes
         new("CSTY", nameof(RecordCollection.CombatStyles)),
         new("LGTM", nameof(RecordCollection.LightingTemplates)),
         new("WTHR", nameof(RecordCollection.Weather)),
+        new("CLMT", nameof(RecordCollection.Climate)),
         new("LSCT", nameof(RecordCollection.LoadScreenTypes)),
         new("IPCT", nameof(RecordCollection.ImpactData)),
         new("ALOC", nameof(RecordCollection.AudioLocationControllers)),
@@ -164,7 +165,6 @@ public static class EsmParsedRecordTypes
         new("IDLM", nameof(RecordCollection.GenericRecords)),
         new("PWAT", nameof(RecordCollection.GenericRecords)),
         new("IMGS", nameof(RecordCollection.GenericRecords)),
-        new("CLMT", nameof(RecordCollection.GenericRecords)),
         new("AMEF", nameof(RecordCollection.GenericRecords)),
     ];
 
