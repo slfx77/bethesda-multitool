@@ -28,12 +28,14 @@ internal static class TopDownViewProjBuilder
         // look-at: a look-at would recentre X/Y on the camera, which wouldn't match an ortho frustum
         // expressed in world coordinates. Keeping X/Y untouched lets the off-center ortho map the
         // world rect directly — worldMinX→clip −1 (west/left), worldMaxX→+1 (east/right),
-        // worldMinY→−1 (south/bottom), worldMaxY→+1 (north/top). Higher world Z (taller geometry)
-        // lands nearer the near plane (smaller clip Z) so it wins the LessEqual depth test.
+        // worldMinY→−1 (south/bottom), worldMaxY→+1 (north/top). Reversed-Z (CameraState.ReverseZ,
+        // shared with the live perspective view so the offscreen depth test matches the scene PSOs'
+        // GreaterEqual + depth-clear-0): higher world Z (taller geometry) lands at a LARGER clip Z,
+        // so it wins the depth test. Only the Z row is touched — X/Y readback orientation is intact.
         var view = Matrix4x4.CreateTranslation(0f, 0f, -EyeHeight);
         var proj = Matrix4x4.CreateOrthographicOffCenter(
             worldMinX, worldMaxX, worldMinY, worldMaxY, 1f, 2f * EyeHeight);
-        return view * proj;
+        return view * proj * CameraState.ReverseZ;
     }
 
     /// <summary>

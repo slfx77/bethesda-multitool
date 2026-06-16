@@ -30,12 +30,11 @@ internal sealed class CameraState
     public float NearPlane { get; set; } = 16f;
 
     /// <summary>
-    ///     Far clip plane (world units). 800 000 ≈ 195 cells — covers a camera positioned
-    ///     anywhere in a 128×128 worldspace (the largest the loader has produced so far,
-    ///     ~524k units across) when tilted toward the far corner. Smaller values truncate
-    ///     the horizon as the camera tilts up. Phase 4 LOD work will let us shrink the cap
-    ///     by switching distant cells to coarser meshes; until then, this trades VRAM for
-    ///     uninterrupted terrain.
+    ///     Far clip plane (world units). Decoupled from the streaming radius — the caller sets it
+    ///     large enough to cover all loaded geometry from any altitude/tilt so terrain is never
+    ///     truncated at the horizon (see WorldView3DControl). Reversed-Z depth (see
+    ///     <see cref="GetProjectionMatrix" />) keeps float-depth precision intact across this wide
+    ///     near/far range, so a large far plane no longer costs distant z-fighting.
     /// </summary>
     public float FarPlane { get; set; } = 800_000f;
 
@@ -77,5 +76,20 @@ internal sealed class CameraState
         Matrix4x4.CreateLookAt(Position, Position + Forward, Up);
 
     public Matrix4x4 GetProjectionMatrix(float aspectRatio) =>
-        Matrix4x4.CreatePerspectiveFieldOfView(FovYRadians, aspectRatio, NearPlane, FarPlane);
+        Matrix4x4.CreatePerspectiveFieldOfView(FovYRadians, aspectRatio, NearPlane, FarPlane) * ReverseZ;
+
+    /// <summary>
+    ///     Reversed-Z remap: post-multiplies a standard [0,1] projection so depth maps near→1,
+    ///     far→0. Pairs with a depth clear of 0 and a <c>GreaterEqual</c> depth test in every scene
+    ///     PSO. With a float (D32) depth buffer this is the standard fix for precision across a wide
+    ///     near/far range — it cancels the 1/z nonlinearity, so a large <see cref="FarPlane" /> no
+    ///     longer z-fights. Only the Z row is touched (z' = w − z, w' = w), so X/Y clip mapping and
+    ///     the extracted frustum volume are unchanged. Shared with the 2D top-down overlay
+    ///     (TopDownViewProjBuilder) so the offscreen depth test matches.
+    /// </summary>
+    public static readonly Matrix4x4 ReverseZ = new(
+        1f, 0f, 0f, 0f,
+        0f, 1f, 0f, 0f,
+        0f, 0f, -1f, 0f,
+        0f, 0f, 1f, 1f);
 }

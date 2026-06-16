@@ -55,12 +55,12 @@ public sealed class TopDownViewProjBuilderTests
     [Fact]
     public void BuildViewProj_HigherZIsNearerCamera()
     {
-        // Taller geometry must win the LessEqual depth test → smaller clip Z.
+        // Reversed-Z: taller geometry must win the GreaterEqual depth test → LARGER clip Z.
         var vp = TopDownViewProjBuilder.BuildViewProj(0f, 1000f, 0f, 1000f);
         var low = Clip3(vp, 500f, 500f, 0f);
         var high = Clip3(vp, 500f, 500f, 5000f);
-        Assert.True(high.Z / high.W < low.Z / low.W,
-            "higher world Z must produce a smaller clip Z (nearer the top-down camera)");
+        Assert.True(high.Z / high.W > low.Z / low.W,
+            "higher world Z must produce a larger clip Z (reversed-Z: nearer the top-down camera wins GreaterEqual)");
 
         static Vector4 Clip3(Matrix4x4 vp, float x, float y, float z)
         {
