@@ -79,12 +79,15 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         };
 
         // Depth-read / no-write so terrain + refs (which wrote depth) occlude submerged navmesh,
-        // but the overlay itself doesn't perturb the depth buffer for later layers.
+        // but the overlay itself doesn't perturb the depth buffer for later layers. Reversed-Z
+        // (near→1, far→0) so the test is GreaterEqual; a depth bias (in CreatePso's rasterizer)
+        // pulls the overlay toward the camera so it wins coplanar ties against terrain (no
+        // z-fighting) while real geometry in front still occludes it.
         var depth = new D12.DepthStencilDescription
         {
             DepthEnable = true,
             DepthWriteMask = D12.DepthWriteMask.Zero,
-            DepthFunc = ComparisonFunction.LessEqual,
+            DepthFunc = ComparisonFunction.GreaterEqual,
             StencilEnable = false,
         };
 
@@ -109,13 +112,27 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         byte[] vs, byte[] ps, InputElementDescription[] inputElements,
         D12.DepthStencilDescription depth, D12.BlendDescription blend, D12.FillMode fillMode)
     {
+        var msaa = _gpu.SceneSampleCount > 1;
         var rasterizer = new D12.RasterizerDescription
         {
             FillMode = fillMode,
             CullMode = D12.CullMode.None, // navmesh triangles aren't consistently wound
             FrontCounterClockwise = true,
             DepthClipEnable = true,
-            AntialiasedLineEnable = fillMode == D12.FillMode.Wireframe,
+            MultisampleEnable = msaa,
+            // Priority over coplanar terrain/water (no z-fighting) without poking through walls.
+            // Under reversed-Z a POSITIVE bias moves the fragment TOWARD the camera (larger depth),
+            // so the navmesh wins the GreaterEqual tie against the surface it sits on. The
+            // slope-scaled term carries sloped terrain; the constant handles flat coplanar ground.
+            // Read-only depth (DepthWriteMask.Zero) so this never corrupts later layers' occlusion.
+            DepthBias = 2000,
+            DepthBiasClamp = 0f,
+            SlopeScaledDepthBias = 2f,
+            // Fixed-function line AA is what aliased incorrectly on HDR monitors: its alpha-coverage
+            // gradient is distorted by DWM's SDR->HDR mapping of the SDR backbuffer. Under MSAA the
+            // edge is antialiased by multisample coverage (resolved before present), which is robust
+            // to the display curve; only fall back to fixed-function line AA when MSAA is unavailable.
+            AntialiasedLineEnable = !msaa && fillMode == D12.FillMode.Wireframe,
         };
 
         var psoDesc = new GraphicsPipelineStateDescription
@@ -130,7 +147,7 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
             PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
             RenderTargetFormats = new[] { Format.B8G8R8A8_UNorm },
             DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription(1, 0),
+            SampleDescription = new SampleDescription((uint)_gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
         return _gpu.Device.CreateGraphicsPipelineState(psoDesc);

@@ -2,9 +2,12 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
+using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using FalloutXbox360Utils.Core.Orchestration;
+using FalloutXbox360Utils.Core.Resources;
 using Vortice.Direct3D12;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12;
@@ -33,6 +36,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         min: 1,
         max: DefaultMaxConcurrentDecodeTasks);
     private const long DefaultDecodedMeshCacheByteBudget = 256L * 1024L * 1024L;
+    // Positions-only collision data is ~12 B/vertex (vs the 72 B GPU vertex), so a generous budget
+    // holds the walkable footprint of a worldspace many times over. Render-thread LRU.
+    private const long CollisionMeshCacheByteBudget = 128L * 1024L * 1024L;
     private const float ReferenceBumpStrength = 0.35f;
 
     // Size-aware ceiling on render-thread mesh-upload work per frame. The integer upload budget
@@ -51,26 +57,37 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private readonly GpuTextureCache12 _textureCache;
     private readonly GpuDeletionQueue12 _deletionQueue;
     private readonly GpuGeometryArena12 _geometryArena;
-    private readonly Dictionary<string, Node> _entries = new(StringComparer.OrdinalIgnoreCase);
-    private readonly LinkedList<string> _order = new();
+    // Resident-mesh LRU. Render-thread only — LruCache's lock-free single-threaded contract.
+    // Eviction runs the GPU residency cascade via onEvicted → CachedNifMesh12.Dispose (deferred
+    // arena free + per-submesh texture refcount release). Node values are mutated IN PLACE after
+    // insertion (decode completes → node.Mesh assigned); they are never re-Set, which would fire
+    // onEvicted on the live node.
+    private readonly LruCache<string, Node> _meshLru;
     // Nearest-first decode queue: priority = squared distance from the view point at request time
     // (smaller = nearer = dequeued first). The queue persists across frames, so when a dense area
     // enters view the foreground meshes decode before the far edge instead of in arrival (FIFO)
-    // order. _queuedDecodePaths dedups (PriorityQueue has no Contains); a path keeps its first
-    // enqueued priority — approximate but cheap, no priority updates.
-    private readonly PriorityQueue<string, float> _decodeQueue = new();
-    private readonly HashSet<string> _queuedDecodePaths = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<Task<DecodedNifMesh12?>> _decodeTasks = new();
-    private readonly Dictionary<string, DecodedCacheNode> _decodedCache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly LinkedList<string> _decodedCacheOrder = new();
+    // order. De-dups internally; a path keeps its first enqueued priority — approximate but cheap,
+    // no priority updates. Equal priorities now dequeue in strict FIFO order (stable tiebreak).
+    private readonly PrioritizedKeyQueue<string> _decodeQueue = new(StringComparer.OrdinalIgnoreCase);
+    private readonly InFlightTaskTracker _decodeTasks = new(nameof(ReferenceMeshCache12));
+    // Byte-budgeted decoded CPU mesh cache. LruCache is single-threaded by design; every access
+    // is serialized by _decodedCacheLock (decode pool threads store, render thread reads).
+    // Eviction is a plain drop (no onEvicted) — decoded payloads are GC-reclaimed.
+    private readonly LruCache<string, DecodedCacheValue> _decodedLru;
+    // Walk-mode collision geometry (positions + indices only), keyed by normalized model path. Built
+    // on the render thread inside UploadDecodedMesh and read on the render thread by the control's
+    // ground-snap, so it shares the LruCache single-threaded contract with _meshLru. Positions-only is
+    // a fraction of the GPU footprint, so a large byte budget keeps far more meshes warm than residency.
+    private readonly LruCache<string, CollisionMesh> _collisionLru;
     private readonly ReferenceDecodedMeshDiskCache12? _persistentDecodedCache;
     private readonly object _decodedCacheLock = new();
-    private readonly object _decodeTaskListLock = new();
-    private long _decodedCacheBytes;
     private int _activeDecodeTasks;
     private int _totalMissingModelPaths;
     private int _totalSkinnedModelPaths;
-    private FrameUploadByteBudget _frameUploadByteBudget;
+    private FrameByteBudget _frameUploadByteBudget;
+    // When true, LoadData resizes _meshLru to the worldspace's working set (default). False when the
+    // FALLOUT_VIEWER_REFERENCE_MESH_CAPACITY env knob pins a fixed cap for eviction-cascade stress gates.
+    private readonly bool _autoSizeMeshCapacity;
     private bool _disposed;
 
     public ReferenceMeshCache12(
@@ -80,7 +97,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         GpuTextureCache12 textureCache,
         GpuDeletionQueue12 deletionQueue,
         int capacity,
-        ReferenceDecodedMeshDiskCache12? persistentDecodedCache = null)
+        long decodedCacheByteBudget = DefaultDecodedMeshCacheByteBudget,
+        ReferenceDecodedMeshDiskCache12? persistentDecodedCache = null,
+        bool autoSizeMeshCapacity = true)
     {
         if (capacity <= 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be > 0.");
@@ -93,13 +112,75 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             .RegisterWith(Core.Diagnostics.ResourceRegistry.Instance, "reference");
         _persistentDecodedCache = persistentDecodedCache ?? ReferenceDecodedMeshDiskCache12.CreateFromEnvironment();
         Capacity = capacity;
+        DecodedMeshCacheByteBudget = decodedCacheByteBudget;
+        _autoSizeMeshCapacity = autoSizeMeshCapacity;
+        // No sizeOf: GPU bytes are already tracked by GpuGeometryArena12["reference"] — sizing
+        // this cache too would double-count them in the registry.
+        _meshLru = new LruCache<string, Node>(
+                "ReferenceMeshLru",
+                ResourceCategory.GpuResident,
+                maxEntries: capacity,
+                onEvicted: static (_, node) => node.Mesh?.Dispose(),
+                comparer: StringComparer.OrdinalIgnoreCase)
+            .RegisterWith(ResourceRegistry.Instance, "reference-meshes");
+        _decodedLru = new LruCache<string, DecodedCacheValue>(
+                "ReferenceDecodedMeshCache",
+                ResourceCategory.CpuCache,
+                maxBytes: decodedCacheByteBudget,
+                sizeOf: static (_, value) => value.ByteSize,
+                comparer: StringComparer.OrdinalIgnoreCase)
+            .RegisterWith(ResourceRegistry.Instance, "reference-decoded");
+        _collisionLru = new LruCache<string, CollisionMesh>(
+                "ReferenceCollisionMeshCache",
+                ResourceCategory.CpuCache,
+                maxBytes: CollisionMeshCacheByteBudget,
+                sizeOf: static (_, value) => value.ByteSize,
+                comparer: StringComparer.OrdinalIgnoreCase)
+            .RegisterWith(ResourceRegistry.Instance, "reference-collision");
+    }
+
+    /// <summary>
+    ///     Walk-mode ground-snap accessor: returns the cached mesh-local collision geometry for
+    ///     <paramref name="modelPath" /> when it has been decoded+uploaded at least once and not since
+    ///     evicted. Render-thread only (shares the <c>_collisionLru</c> single-threaded contract). A
+    ///     cold miss is expected for never-streamed or recently-evicted meshes; the caller falls back
+    ///     to the OBND box for that frame.
+    /// </summary>
+    public bool TryGetCollisionMesh(string modelPath, out CollisionMesh? collision)
+    {
+        collision = null;
+        if (_disposed) return false;
+        if (_collisionLru.TryGet(NormalizeModelPath(modelPath), out var mesh))
+        {
+            collision = mesh;
+            return true;
+        }
+
+        return false;
     }
 
     public int Capacity { get; }
-    public int Count => _entries.Count;
+    public int Count => _meshLru.Count;
+
+    /// <summary>
+    ///     Resizes the resident-mesh LRU to <paramref name="capacity" /> (raising holds more; lowering
+    ///     evicts the excess through the dispose cascade). No-op when auto-sizing is off (the capacity
+    ///     env knob pinned a fixed cap), disposed, or <paramref name="capacity" /> is non-positive.
+    ///     Render-thread only — same contract as every other <c>_meshLru</c> access.
+    /// </summary>
+    public void SetMeshCapacity(int capacity)
+    {
+        if (_disposed || !_autoSizeMeshCapacity || capacity <= 0)
+        {
+            return;
+        }
+
+        _meshLru.SetMaxEntries(capacity);
+    }
+
     public int MaxDecodeStartsPerFrame { get; init; } = DefaultMaxDecodeStartsPerFrame;
     public int MaxConcurrentDecodeTasks { get; init; } = DefaultMaxConcurrentDecodeTasks;
-    public long DecodedMeshCacheByteBudget { get; init; } = DefaultDecodedMeshCacheByteBudget;
+    public long DecodedMeshCacheByteBudget { get; }
     public long MaxUploadBytesPerFrame { get; init; } = DefaultMaxUploadBytesPerFrame;
 
     // Concurrency ceiling used when streaming is unthrottled (the on-demand top-down overlay path,
@@ -150,7 +231,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         FrameCpuDecodedNegativeHits = 0;
         FrameGpuUploads = 0;
         FrameByteBudgetDeferrals = 0;
-        _frameUploadByteBudget = new FrameUploadByteBudget(StreamingThrottled ? MaxUploadBytesPerFrame : long.MaxValue);
+        _frameUploadByteBudget = new FrameByteBudget(StreamingThrottled ? MaxUploadBytesPerFrame : long.MaxValue);
         _textureCache.ResetFrameStats();
         PruneCompletedDecodeTasks();
     }
@@ -163,9 +244,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         StartQueuedDecodes();
 
         var cacheKey = NormalizeModelPath(modelPath);
-        if (_entries.TryGetValue(cacheKey, out var existing))
+        // TryGet bumps the hit to MRU — the old explicit Touch.
+        if (_meshLru.TryGet(cacheKey, out var existing))
         {
-            Touch(existing);
             var resolved = ResolveExisting(cacheKey, existing, ref uploadBudget);
             StartQueuedDecodes();
             return resolved;
@@ -175,9 +256,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var node = new Node(
             Mesh: null,
             DecodeTask: null,
-            OrderNode: new LinkedListNode<string>(cacheKey),
             ResolvedNull: false);
-        Insert(cacheKey, node);
+        // Set evicts LRU entries over capacity, each through onEvicted (the dispose cascade);
+        // the just-inserted node always survives its own Set.
+        _meshLru.Set(cacheKey, node);
         var mesh = ResolveExisting(cacheKey, node, ref uploadBudget);
         if (mesh is null && !node.ResolvedNull && !node.DecodedCacheAvailable)
         {
@@ -195,20 +277,20 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         DrainDecodeTasksForDispose();
 
-        foreach (var node in _entries.Values)
-        {
-            node.Mesh?.Dispose();
-        }
-        _entries.Clear();
-        _order.Clear();
+        // Unregisters, then evicts every node LRU-tail-first through onEvicted (Mesh?.Dispose()).
+        // Cross-mesh disposal order carries no correctness weight: texture refcount releases are
+        // commutative and the deletion queue is order-insensitive; the host has already called
+        // WaitForGpuIdle.
+        _meshLru.Dispose();
         _decodeQueue.Clear();
-        _queuedDecodePaths.Clear();
         lock (_decodedCacheLock)
         {
-            _decodedCache.Clear();
-            _decodedCacheOrder.Clear();
-            _decodedCacheBytes = 0;
+            // Unregisters from the resource registry, then drops every entry (no onEvicted).
+            _decodedLru.Dispose();
         }
+
+        // Render-thread cache (no onEvicted); the host has already idled the GPU + stopped the loop.
+        _collisionLru.Dispose();
 
         // Frees the arena's UPLOAD blocks. The host calls WaitForGpuIdle before disposing this cache,
         // so no draw still references them; any arena frees the meshes above enqueued on the deletion
@@ -218,34 +300,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     private void DrainDecodeTasksForDispose()
     {
-        Task[] pending;
-        lock (_decodeTaskListLock)
+        var pending = _decodeTasks.PendingCount;
+        if (pending > 0)
         {
-            pending = _decodeTasks
-                .Where(static t => !t.IsCompleted)
-                .Cast<Task>()
-                .ToArray();
+            Log.Info("ReferenceMeshCache12: waiting for {0} decode task(s) during dispose.", pending);
         }
 
-        if (pending.Length == 0)
-        {
-            return;
-        }
-
-        Log.Info("ReferenceMeshCache12: waiting for {0} decode task(s) during dispose.", pending.Length);
-        try
-        {
-            Task.WaitAll(pending);
-        }
-        catch (AggregateException ex)
-        {
-            foreach (var inner in ex.Flatten().InnerExceptions)
-            {
-                Log.Warn("ReferenceMeshCache12: decode task faulted during dispose: {0}", inner.Message);
-            }
-        }
-
-        PruneCompletedDecodeTasks();
+        // Non-pumping drain (dispose runs on the UI thread); faulted tasks are observed + logged.
+        _decodeTasks.WaitForDrainLogged();
     }
 
     private CachedNifMesh12? ResolveExisting(string modelPath, Node node, ref int uploadBudget)
@@ -355,41 +417,16 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         return true;
     }
 
-    private void Insert(string modelPath, Node node)
-    {
-        _order.AddFirst(node.OrderNode);
-        _entries[modelPath] = node;
-
-        while (_entries.Count > Capacity)
-        {
-            var tail = _order.Last;
-            if (tail is null) break;
-            _order.RemoveLast();
-            if (_entries.Remove(tail.Value, out var evicted))
-            {
-                evicted.Mesh?.Dispose();
-            }
-        }
-    }
-
-    private void Touch(Node node)
-    {
-        _order.Remove(node.OrderNode);
-        _order.AddFirst(node.OrderNode);
-    }
-
     private void QueueDecode(string modelPath, Node node, float priority)
     {
         if (node.DecodeTask is not null ||
             node.DecodeQueued ||
             node.ResolvedNull ||
-            _queuedDecodePaths.Contains(modelPath))
+            !_decodeQueue.Enqueue(modelPath, priority))
         {
             return;
         }
 
-        _decodeQueue.Enqueue(modelPath, priority);
-        _queuedDecodePaths.Add(modelPath);
         node.DecodeQueued = true;
         FrameQueuedDecodes++;
     }
@@ -398,11 +435,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     {
         while (FrameDecodeStarts < EffectiveMaxDecodeStartsPerFrame &&
                Volatile.Read(ref _activeDecodeTasks) < EffectiveMaxConcurrentDecodeTasks &&
-               _decodeQueue.Count > 0)
+               _decodeQueue.TryDequeue(out var modelPath))
         {
-            var modelPath = _decodeQueue.Dequeue();
-            _queuedDecodePaths.Remove(modelPath);
-            if (!_entries.TryGetValue(modelPath, out var node) ||
+            // TryPeek, not TryGet: validating a de-queued decode key must not MRU-bump the node
+            // (nobody asked for it this frame) or perturb the registry hit/miss counters.
+            if (!_meshLru.TryPeek(modelPath, out var node) ||
                 node.ResolvedNull ||
                 node.Mesh is not null ||
                 node.DecodeTask is not null ||
@@ -439,42 +476,22 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             }
         });
 
-        lock (_decodeTaskListLock)
-        {
-            _decodeTasks.Add(task);
-        }
+        _decodeTasks.Add(task);
 
         return task;
     }
 
     private void PruneCompletedDecodeTasks()
     {
-        lock (_decodeTaskListLock)
-        {
-            for (var i = _decodeTasks.Count - 1; i >= 0; i--)
-            {
-                if (_decodeTasks[i].IsCompleted)
-                {
-                    _decodeTasks.RemoveAt(i);
-                }
-            }
-        }
+        _decodeTasks.PruneCompleted();
     }
 
     private bool TryGetDecodedCache(string modelPath, out DecodedCacheValue value)
     {
         lock (_decodedCacheLock)
         {
-            if (!_decodedCache.TryGetValue(modelPath, out var node))
-            {
-                value = default;
-                return false;
-            }
-
-            _decodedCacheOrder.Remove(node.OrderNode);
-            _decodedCacheOrder.AddFirst(node.OrderNode);
-            value = node.Value;
-            return true;
+            // TryGet bumps the hit to MRU — same recency semantics as the hand-rolled cache.
+            return _decodedLru.TryGet(modelPath, out value);
         }
     }
 
@@ -509,31 +526,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         lock (_decodedCacheLock)
         {
-            if (_decodedCache.Remove(modelPath, out var existing))
-            {
-                _decodedCacheBytes -= existing.Value.ByteSize;
-                _decodedCacheOrder.Remove(existing.OrderNode);
-            }
-
-            var orderNode = new LinkedListNode<string>(modelPath);
-            _decodedCacheOrder.AddFirst(orderNode);
-            _decodedCache[modelPath] = new DecodedCacheNode(value, orderNode);
-            _decodedCacheBytes += byteSize;
-
-            while (_decodedCacheBytes > DecodedMeshCacheByteBudget)
-            {
-                var tail = _decodedCacheOrder.Last;
-                if (tail is null)
-                {
-                    break;
-                }
-
-                _decodedCacheOrder.RemoveLast();
-                if (_decodedCache.Remove(tail.Value, out var evicted))
-                {
-                    _decodedCacheBytes -= evicted.Value.ByteSize;
-                }
-            }
+            // Set replaces an existing entry and evicts LRU entries over the byte budget. One
+            // deliberate delta vs the old hand-rolled loop: an entry larger than the whole
+            // budget now SURVIVES its own insert (alone, over budget) instead of self-evicting —
+            // the old behavior was a decode→store→self-evict→re-decode livelock for any mesh
+            // whose estimate exceeded a (diagnostically) tiny budget.
+            _decodedLru.Set(modelPath, value);
         }
 
         if (persist)
@@ -708,7 +706,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 nifData, nif,
                 textureResolver: _textureResolver,
                 bindPoseOnly: false,
-                skipSkinning: true);
+                skipSkinning: true,
+                // Placed references get their scene-root world transform from the REFR placement
+                // (RenderableReference.ComposeWorldMatrix). Discard the root node's OWN authored
+                // transform so a non-identity root rotation (e.g. McMarranWalls wallReg at 90°,
+                // monorail curves at 15°) is not injected twice — which rendered those meshes
+                // rotated by the root angle (perpendicular for the 90° walls).
+                treatRootsAsIdentity: true);
 
             if (model is null)
             {
@@ -803,6 +807,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
         if (totalVertexCount == 0 || totalIndexCount == 0) return null;
 
+        // Capture walk-mode collision geometry from the solid submeshes before they are packed for the
+        // GPU. Free here (positions+indices already in hand) and independent of GPU upload success.
+        StoreCollisionMesh(modelPath, decoded);
+
         var vertices = new GpuMeshUploader.GpuVertex[totalVertexCount];
         var indices = new ushort[totalIndexCount];
         var vertexStarts = new int[decoded.Submeshes.Count];
@@ -837,16 +845,41 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             return null;
         }
 
+        // Conservative whole-mesh bounding radius around the NIF origin (max vertex distance from
+        // local 0,0,0). One pass over the combined vertex array; used by the reference cull to size
+        // each placement's sphere from real geometry rather than the OBND estimate.
+        var meshLocalRadiusSq = 0f;
+        foreach (var v in vertices)
+        {
+            var lenSq = v.Position.LengthSquared();
+            if (lenSq > meshLocalRadiusSq) meshLocalRadiusSq = lenSq;
+        }
+
         var submeshes = new List<CachedSubmesh12>(decoded.Submeshes.Count);
+        // Local AABBs of any WaterShaderProperty submeshes (caves/pools/reflecting pools), captured
+        // so the dedicated water renderer can place them as real water planes — see the divert below.
+        List<(Vector3 Min, Vector3 Max)>? waterPlanesLocal = null;
         var vertexStride = (uint)System.Runtime.InteropServices.Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
         for (var i = 0; i < decoded.Submeshes.Count; i++)
         {
             var sub = decoded.Submeshes[i];
+            // Placed water-shader geometry (WaterShaderProperty NIFs — caves/pools/reflecting pools)
+            // is NOT drawn as a reference slab. Divert it: capture the plane's local AABB so the
+            // dedicated WaterRenderer12 can render it with the real Fresnel/ripple/depth-fade water
+            // shader, and skip building a drawable submesh — that omission is what gates off the old
+            // flat translucent-tile fallback (the submesh never becomes a reference draw → no double-draw).
+            if (string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal))
+            {
+                AppendWaterPlaneLocalBounds(sub.Vertices, ref waterPlanesLocal);
+                continue;
+            }
             try
             {
                 var diffuse = string.IsNullOrEmpty(sub.DiffuseTexturePath)
                     ? _textureCache.WhitePixel
-                    : _textureCache.GetOrUpload(sub.DiffuseTexturePath!);
+                    : string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal)
+                        ? _textureCache.WaterSurface
+                        : _textureCache.GetOrUpload(sub.DiffuseTexturePath!);
                 var normal = !string.IsNullOrEmpty(sub.NormalMapTexturePath)
                     ? _textureCache.GetOrUpload(sub.NormalMapTexturePath!, isNormalMap: true)
                     : _textureCache.FlatNormal;
@@ -894,15 +927,17 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             }
         }
 
-        if (submeshes.Count == 0)
+        if (submeshes.Count == 0 && (waterPlanesLocal is null || waterPlanesLocal.Count == 0))
         {
-            // No CachedNifMesh12 is created and no draw referenced the range, so reclaim it now.
+            // No drawable submeshes and no water planes — nothing references the arena range, so reclaim it.
             _geometryArena.Free(geometry);
             return null;
         }
 
         success = true;
-        var cached = new CachedNifMesh12(submeshes, geometry, _geometryArena, _deletionQueue, _textureCache);
+        var cached = new CachedNifMesh12(
+            submeshes, geometry, _geometryArena, _deletionQueue, _textureCache, MathF.Sqrt(meshLocalRadiusSq),
+            (IReadOnlyList<(Vector3 Min, Vector3 Max)>?)waterPlanesLocal ?? Array.Empty<(Vector3 Min, Vector3 Max)>());
         if (started != 0)
         {
             RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>
@@ -919,6 +954,45 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         return cached;
+    }
+
+    /// <summary>
+    ///     Builds walk-mode collision geometry from the solid submeshes and stores it under the
+    ///     normalized model path. Render-thread only (called from <see cref="UploadDecodedMesh" />).
+    /// </summary>
+    private void StoreCollisionMesh(string modelPath, DecodedNifMesh12 decoded)
+    {
+        var collision = BuildCollisionMesh(decoded);
+        if (collision is null) return;
+        // Set evicts over-budget tail entries (plain drop — collision payloads are GC-reclaimed).
+        _collisionLru.Set(NormalizeModelPath(modelPath), collision);
+    }
+
+    /// <summary>
+    ///     Merges the decoded mesh's <b>solid</b> submeshes into one mesh-local triangle soup. Skips
+    ///     alpha-blended (glass/effect/force-field), emissive (glow cards), and water-shader submeshes
+    ///     so the camera snaps onto real surfaces only — never a translucent FX plane. Mesh-local space
+    ///     matches <c>RenderableReference.WorldMatrix</c> (both come from the <c>treatRootsAsIdentity</c>
+    ///     decode). Returns <c>null</c> when nothing solid remains.
+    /// </summary>
+    private static CollisionMesh? BuildCollisionMesh(DecodedNifMesh12 decoded)
+    {
+        var positions = new List<Vector3>();
+        var triangles = new List<int>();
+        foreach (var sub in decoded.Submeshes)
+        {
+            if (sub.AlphaBlend || sub.IsEmissive) continue;
+            if (string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal))
+                continue;
+            if (sub.Vertices.Length == 0 || sub.Indices.Length == 0) continue;
+
+            var baseIndex = positions.Count;
+            foreach (var v in sub.Vertices) positions.Add(v.Position);
+            foreach (var idx in sub.Indices) triangles.Add(baseIndex + idx);
+        }
+
+        if (triangles.Count < 3) return null;
+        return new CollisionMesh(positions.ToArray(), triangles.ToArray());
     }
 
     private static Vector4 BuildAlphaState(DecodedSubmesh12 sub)
@@ -940,6 +1014,25 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     private static uint CheckedByteSize(int elementCount, uint elementSize) =>
         checked((uint)((long)elementCount * elementSize));
+
+    // Accumulates one water plane's mesh-local AABB (min/max XYZ over its vertices). The water
+    // renderer expands a flat quad over the world-space footprint, so only the extent matters; the
+    // per-reference world matrix is applied later (ReferenceRenderer12) once the placement is known.
+    private static void AppendWaterPlaneLocalBounds(
+        GpuMeshUploader.GpuVertex[] vertices,
+        ref List<(Vector3 Min, Vector3 Max)>? planes)
+    {
+        if (vertices.Length == 0) return;
+        var min = new Vector3(float.PositiveInfinity);
+        var max = new Vector3(float.NegativeInfinity);
+        foreach (var v in vertices)
+        {
+            min = Vector3.Min(min, v.Position);
+            max = Vector3.Max(max, v.Position);
+        }
+
+        (planes ??= new List<(Vector3 Min, Vector3 Max)>(1)).Add((min, max));
+    }
 
     private static Vector3 ComputeLocalBoundsCenter(float[] positions)
     {
@@ -988,21 +1081,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private sealed class Node(
         CachedNifMesh12? Mesh,
         Task<DecodedNifMesh12?>? DecodeTask,
-        LinkedListNode<string> OrderNode,
         bool ResolvedNull)
     {
         public CachedNifMesh12? Mesh { get; set; } = Mesh;
         public Task<DecodedNifMesh12?>? DecodeTask { get; set; } = DecodeTask;
-        public LinkedListNode<string> OrderNode { get; } = OrderNode;
         public bool ResolvedNull { get; set; } = ResolvedNull;
         public bool DecodeQueued { get; set; }
         public bool DecodedCacheAvailable { get; set; }
         public bool DecodedCacheMissRecorded { get; set; }
     }
-
-    private sealed record DecodedCacheNode(
-        DecodedCacheValue Value,
-        LinkedListNode<string> OrderNode);
 
     private readonly record struct DecodedCacheValue(
         DecodedNifMesh12? Mesh,
@@ -1044,16 +1131,36 @@ internal sealed class CachedNifMesh12 : IDisposable
         GeometryAllocation12 geometry,
         GpuGeometryArena12 arena,
         GpuDeletionQueue12 deletionQueue,
-        GpuTextureCache12 textureCache)
+        GpuTextureCache12 textureCache,
+        float localBoundsRadius,
+        IReadOnlyList<(Vector3 Min, Vector3 Max)> waterPlanesLocal)
     {
         Submeshes = submeshes;
         _geometry = geometry;
         _arena = arena;
         _deletionQueue = deletionQueue;
         _textureCache = textureCache;
+        LocalBoundsRadius = localBoundsRadius;
+        WaterPlanesLocal = waterPlanesLocal;
     }
 
     public IReadOnlyList<CachedSubmesh12> Submeshes { get; }
+
+    /// <summary>
+    ///     Mesh-local AABBs (min/max) of any WaterShaderProperty submeshes in this NIF — the
+    ///     placeable water planes (cave/pool/reflecting-pool water) that were diverted out of the
+    ///     drawable submesh set at upload. Empty for the common (non-water) mesh. The reference
+    ///     renderer transforms each by the placement world matrix and feeds the result to the water
+    ///     renderer so placed water gets the real Fresnel/ripple/depth-fade shader instead of a slab.
+    /// </summary>
+    public IReadOnlyList<(Vector3 Min, Vector3 Max)> WaterPlanesLocal { get; }
+
+    /// <summary>
+    ///     Conservative bounding-sphere radius of the whole mesh around the NIF origin (max vertex
+    ///     distance from local 0,0,0). The reference cull scales this into world space and uses it
+    ///     instead of the OBND estimate so large meshes aren't culled at screen edges.
+    /// </summary>
+    public float LocalBoundsRadius { get; }
 
     public bool TexturesReady
     {

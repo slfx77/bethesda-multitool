@@ -12,6 +12,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
+using FalloutXbox360Utils.Core.Orchestration;
 using FalloutXbox360Utils.Core.Resources;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
@@ -128,8 +129,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private readonly Queue<(int gx, int gy)> _buildQueue = new();
     private readonly HashSet<(int gx, int gy)> _queuedOrBuilding = new();
     private readonly List<(int gx, int gy)> _pruneScratch = new();
-    private readonly object _buildTaskListLock = new();
-    private readonly List<Task> _buildTasks = new();
+    private readonly InFlightTaskTracker _buildTasks = new(nameof(TerrainRenderer12));
     private readonly object _buildResultsLock = new();             // guards _buildResults + _loadGeneration
     private readonly Dictionary<(int gx, int gy), BuiltCellCpuData> _buildResults = new();
     private int _activeBuildTasks;
@@ -167,13 +167,16 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             CullMode = D12.CullMode.Back,
             FrontCounterClockwise = true,
             DepthClipEnable = true,
+            // Required for triangle edges to be antialiased on a multisampled RT: with this FALSE,
+            // primitives render aliased even into an MSAA target. No-op when the scene isn't MSAA.
+            MultisampleEnable = gpu.SceneSampleCount > 1,
         };
 
         var depth = new D12.DepthStencilDescription
         {
             DepthEnable = true,
             DepthWriteMask = D12.DepthWriteMask.All,
-            DepthFunc = ComparisonFunction.LessEqual,
+            DepthFunc = ComparisonFunction.GreaterEqual, // reversed-Z (near→1, far→0); depth clear = 0
             StencilEnable = false,
         };
 
@@ -200,7 +203,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
             RenderTargetFormats = new[] { Format.B8G8R8A8_UNorm },
             DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription(1, 0),
+            SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
         _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
@@ -218,7 +221,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
             RenderTargetFormats = Array.Empty<Format>(),
             DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription(1, 0),
+            SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
         _depthOnlyPso = gpu.Device.CreateGraphicsPipelineState(depthOnlyPsoDesc);
@@ -246,31 +249,14 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
     private void DrainBuildTasksForDispose()
     {
-        Task[] pending;
-        lock (_buildTaskListLock)
+        var pending = _buildTasks.PendingCount;
+        if (pending > 0)
         {
-            pending = _buildTasks.Where(static t => !t.IsCompleted).ToArray();
+            Log.Info("TerrainRenderer12: waiting for {0} build task(s) during dispose.", pending);
         }
 
-        if (pending.Length == 0)
-        {
-            return;
-        }
-
-        Log.Info("TerrainRenderer12: waiting for {0} build task(s) during dispose.", pending.Length);
-        try
-        {
-            Task.WaitAll(pending);
-        }
-        catch (AggregateException ex)
-        {
-            foreach (var inner in ex.Flatten().InnerExceptions)
-            {
-                Log.Warn("TerrainRenderer12: build task faulted during dispose: {0}", inner.Message);
-            }
-        }
-
-        PruneCompletedBuildTasks();
+        // Non-pumping drain (dispose runs on the UI thread); faulted tasks are observed + logged.
+        _buildTasks.WaitForDrainLogged();
     }
 
     public int CellCount => _spatialIndex?.CellCount ?? _cells?.Count ?? 0;
@@ -476,7 +462,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         PruneCompletedBuildTasks();
         var throttled = StreamingThrottled;
         var uploadBudget = throttled ? MaxNewUploadsPerFrame : int.MaxValue;
-        var uploadTimeBudget = new FrameUploadTimeBudget(MaxMeshBuildMillisecondsPerFrame);
+        var uploadTimeBudget = new FrameTimeBudget(MaxMeshBuildMillisecondsPerFrame);
         var vertexStride = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
         const uint blendWeightStride = 64; // SlotVectors (4) × sizeof(Vector4)
         var drawn = 0;
@@ -584,7 +570,13 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     /// </summary>
     private void DrawCell(ID3D12GraphicsCommandList cmd, CachedCellMesh12 entry)
     {
-        var perDrawAlloc = _ringBuffer.Allocate(_recorder.FrameIndex, PerDrawByteSize, GpuRingBuffer12.CbAlignment);
+        // Soft-fail rather than throw: if the shared ring slot is full, skip this cell's draw and
+        // present what fit instead of abandoning the frame. Terrain is drawn first and bounded by
+        // the cylinder radius, so this rarely bites, but it keeps the frame from blanking.
+        if (!_ringBuffer.TryAllocate(_recorder.FrameIndex, PerDrawByteSize, out var perDrawAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            return;
+        }
         unsafe { *(TerrainTextureIndices*)perDrawAlloc.CpuPtr = entry.TextureIndices; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, perDrawAlloc.GpuAddress);
 
@@ -712,10 +704,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             }
         });
 
-        lock (_buildTaskListLock)
-        {
-            _buildTasks.Add(task);
-        }
+        _buildTasks.Add(task);
     }
 
     /// <summary>
@@ -774,16 +763,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
     private void PruneCompletedBuildTasks()
     {
-        lock (_buildTaskListLock)
-        {
-            for (var i = _buildTasks.Count - 1; i >= 0; i--)
-            {
-                if (_buildTasks[i].IsCompleted)
-                {
-                    _buildTasks.RemoveAt(i);
-                }
-            }
-        }
+        _buildTasks.PruneCompleted();
     }
 
     /// <summary>

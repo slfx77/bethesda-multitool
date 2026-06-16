@@ -56,6 +56,21 @@ internal sealed class CellGridDebugRenderer12
     private global::FalloutXbox360Utils.WorldSpatialIndex? _spatialIndex;
     private bool _disposed;
 
+    // World vertical extent the grid spans. The grid is drawn as full-height vertical walls between
+    // these Z planes (subdivided by horizontal rings every CellSize, so each wall face is a column of
+    // cell-sized 4096×4096 squares) so the columns reach the loaded world's floor/ceiling and read as
+    // aligned with the terrain. _zMin/_zMax are snapped to CellSize multiples in SetWorldZExtent so the
+    // horizontal lines sit at consistent world heights across the whole grid. Defaults to one cell tall
+    // around z=0 (2 levels → 24 verts/cell) until SetWorldZExtent is called from the control on load.
+    private float _zMin;
+    private float _zMax = WorldGridConstants.CellSize;
+    private int _horizontalLevels = 2;     // number of horizontal square rings (z planes)
+    private int _verticesPerCell = 24;     // _horizontalLevels * 8 (rings) + 8 (4 vertical corner posts)
+    // Bound the per-cell vertex count for very tall worldspaces so the per-frame ring-buffer allocation
+    // stays sane. Walls taller than this keep cell-sized rings up to the cap; the corner posts still span
+    // the full extent.
+    private const int MaxHorizontalLevels = 16;
+
     public CellGridDebugRenderer12(
         GpuDevice12 gpu,
         GpuCommandRecorder12 recorder,
@@ -73,24 +88,31 @@ internal sealed class CellGridDebugRenderer12
             new InputElementDescription("TEXCOORD", 0, Format.R32G32B32_Float, 0, 0)
         };
 
-        // Phase 2a wireframe behavior: drawn AFTER terrain as a debug overlay; depth
-        // disabled so the grid stays on top even where terrain rises above Z=0.
+        // 3D-1/3D-2: the grid is now full-height vertical walls, so it must be OCCLUDED by terrain
+        // and objects to read as part of the 3D scene (depth-disabled, it just painted over the
+        // terrain — "rendered over it, not in the same space"). Depth-TEST against the scene depth
+        // (terrain + opaque refs already wrote it) but never WRITE (read-only, like the navmesh
+        // overlay) so it can't corrupt later layers' occlusion. Reversed-Z: clear = 0 (far),
+        // near = 1, so the visible-if-closer test is GreaterEqual.
         var depth = new D12.DepthStencilDescription
         {
-            DepthEnable = false,
+            DepthEnable = true,
             DepthWriteMask = D12.DepthWriteMask.Zero,
-            DepthFunc = ComparisonFunction.Always,
+            DepthFunc = ComparisonFunction.GreaterEqual,
             StencilEnable = false
         };
 
+        var msaa = gpu.SceneSampleCount > 1;
         var rasterizer = new D12.RasterizerDescription
         {
             FillMode = D12.FillMode.Solid,
             CullMode = D12.CullMode.None,    // lines have no winding
             FrontCounterClockwise = true,
             DepthClipEnable = true,
-            MultisampleEnable = false,
-            AntialiasedLineEnable = true,
+            // Under MSAA, multisample coverage antialiases the grid lines (robust to the SDR->HDR
+            // display curve); fall back to fixed-function line AA only when MSAA is unavailable.
+            MultisampleEnable = msaa,
+            AntialiasedLineEnable = !msaa,
         };
 
         var blend = new D12.BlendDescription
@@ -122,7 +144,7 @@ internal sealed class CellGridDebugRenderer12
             PrimitiveTopologyType = PrimitiveTopologyType.Line,
             RenderTargetFormats = new[] { Format.B8G8R8A8_UNorm },
             DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription(1, 0),
+            SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
         _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
@@ -208,8 +230,15 @@ internal sealed class CellGridDebugRenderer12
         var cmd = _recorder.CommandList;
 
         segmentStarted = StartTiming();
-        var vbByteCount = (uint)(visibleCells * 8 * VertexStride);
-        var vbAlloc = _ringBuffer.Allocate(frameIndex, vbByteCount, alignment: 4);
+        var vbByteCount = (uint)(visibleCells * _verticesPerCell * VertexStride);
+        if (!_ringBuffer.TryAllocate(frameIndex, vbByteCount, out var vbAlloc, alignment: 4))
+        {
+            // Grid too large for the per-frame ring partition this frame (very tall worldspace + huge
+            // render distance). It's a non-essential debug overlay — skip it this frame instead of
+            // throwing, and let later frames retry as the visible set changes.
+            LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
+            return 0;
+        }
         WriteVertexBytes(vbAlloc.CpuPtr, vbByteCount);
 
         var cbAlloc = _ringBuffer.Allocate(frameIndex, UniformsByteSize, GpuRingBuffer12.CbAlignment);
@@ -229,7 +258,7 @@ internal sealed class CellGridDebugRenderer12
         unsafe
         {
             *(DrawArguments*)argAlloc.CpuPtr = new DrawArguments(
-                vertexCountPerInstance: (uint)(visibleCells * 8),
+                vertexCountPerInstance: (uint)(visibleCells * _verticesPerCell),
                 instanceCount: 1,
                 startVertexLocation: 0,
                 startInstanceLocation: 0);
@@ -309,21 +338,56 @@ internal sealed class CellGridDebugRenderer12
         var y0 = gy * WorldGridConstants.CellSize;
         var x1 = x0 + WorldGridConstants.CellSize;
         var y1 = y0 + WorldGridConstants.CellSize;
-        const float z = 0f;
-        var baseIdx = cellIndex * 8;
-        _vertexScratch[baseIdx + 0] = new Vector3(x0, y0, z);
-        _vertexScratch[baseIdx + 1] = new Vector3(x1, y0, z);
-        _vertexScratch[baseIdx + 2] = new Vector3(x1, y0, z);
-        _vertexScratch[baseIdx + 3] = new Vector3(x1, y1, z);
-        _vertexScratch[baseIdx + 4] = new Vector3(x1, y1, z);
-        _vertexScratch[baseIdx + 5] = new Vector3(x0, y1, z);
-        _vertexScratch[baseIdx + 6] = new Vector3(x0, y1, z);
-        _vertexScratch[baseIdx + 7] = new Vector3(x0, y0, z);
+        var idx = cellIndex * _verticesPerCell;
+
+        // Horizontal square rings at each z level (z = _zMin + k*CellSize). These divide the four wall
+        // faces into cell-sized (4096×4096) squares — a full 3D grid rather than just top/bottom edges.
+        for (var k = 0; k < _horizontalLevels; k++)
+        {
+            var z = _zMin + k * WorldGridConstants.CellSize;
+            _vertexScratch[idx++] = new Vector3(x0, y0, z);
+            _vertexScratch[idx++] = new Vector3(x1, y0, z);
+            _vertexScratch[idx++] = new Vector3(x1, y0, z);
+            _vertexScratch[idx++] = new Vector3(x1, y1, z);
+            _vertexScratch[idx++] = new Vector3(x1, y1, z);
+            _vertexScratch[idx++] = new Vector3(x0, y1, z);
+            _vertexScratch[idx++] = new Vector3(x0, y1, z);
+            _vertexScratch[idx++] = new Vector3(x0, y0, z);
+        }
+
+        // Four vertical corner posts spanning the full extent (_zMin → _zMax).
+        _vertexScratch[idx++] = new Vector3(x0, y0, _zMin);
+        _vertexScratch[idx++] = new Vector3(x0, y0, _zMax);
+        _vertexScratch[idx++] = new Vector3(x1, y0, _zMin);
+        _vertexScratch[idx++] = new Vector3(x1, y0, _zMax);
+        _vertexScratch[idx++] = new Vector3(x1, y1, _zMin);
+        _vertexScratch[idx++] = new Vector3(x1, y1, _zMax);
+        _vertexScratch[idx++] = new Vector3(x0, y1, _zMin);
+        _vertexScratch[idx++] = new Vector3(x0, y1, _zMax);
+    }
+
+    /// <summary>
+    ///     Sets the world vertical extent (Z) the grid walls span, snapping to CellSize multiples and
+    ///     computing the number of horizontal ring levels (one every CellSize). Called from the control
+    ///     on load with the loaded worldspace's floor/ceiling so the columns reach the bottom and top of
+    ///     the world and form cell-sized squares up the walls instead of floating one cell tall at z=0.
+    /// </summary>
+    public void SetWorldZExtent(float zMin, float zMax)
+    {
+        if (!float.IsFinite(zMin) || !float.IsFinite(zMax) || zMax <= zMin) return;
+
+        var cell = WorldGridConstants.CellSize;
+        _zMin = MathF.Floor(zMin / cell) * cell;
+        _zMax = MathF.Ceiling(zMax / cell) * cell;
+
+        var levels = (int)MathF.Round((_zMax - _zMin) / cell) + 1; // inclusive of both ends
+        _horizontalLevels = Math.Clamp(levels, 2, MaxHorizontalLevels);
+        _verticesPerCell = _horizontalLevels * 8 + 8;
     }
 
     private void EnsureVertexCapacity(int requestedCells)
     {
-        var requiredVertices = requestedCells * 8;
+        var requiredVertices = requestedCells * _verticesPerCell;
         if (requiredVertices <= _vertexScratch.Length) return;
         // No GPU resource to recreate (vertices land in the ring buffer at render time).
         _vertexScratch = new Vector3[Math.Max(1, requiredVertices)];
