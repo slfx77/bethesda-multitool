@@ -1,14 +1,17 @@
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using FalloutXbox360Utils.Core.Orchestration;
 using Xunit;
 
-namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering.Gpu;
+namespace FalloutXbox360Utils.Tests.Core.Orchestration;
 
-public sealed class FrameUploadByteBudgetTests
+/// <summary>
+///     Moved with the type from the D3D12 layer — assertions unchanged as the parity proof.
+/// </summary>
+public sealed class FrameByteBudgetTests
 {
     [Fact]
     public void FirstUpload_IsAlwaysAllowed_EvenWhenLargerThanBudget()
     {
-        var budget = new FrameUploadByteBudget(100);
+        var budget = new FrameByteBudget(100);
 
         Assert.True(budget.CanUpload(1000));
     }
@@ -16,7 +19,7 @@ public sealed class FrameUploadByteBudgetTests
     [Fact]
     public void SubsequentUpload_IsAllowedOnlyWhileItFits()
     {
-        var budget = new FrameUploadByteBudget(100);
+        var budget = new FrameByteBudget(100);
         budget.Record(60);
 
         Assert.True(budget.CanUpload(40)); // 60 + 40 == 100
@@ -26,7 +29,7 @@ public sealed class FrameUploadByteBudgetTests
     [Fact]
     public void HugeFirstUpload_DefersEverythingElse_ButNeverDeadlocks()
     {
-        var budget = new FrameUploadByteBudget(100);
+        var budget = new FrameByteBudget(100);
 
         Assert.True(budget.CanUpload(500)); // first allowed despite exceeding the budget
         budget.Record(500);
@@ -37,7 +40,7 @@ public sealed class FrameUploadByteBudgetTests
     [Fact]
     public void Record_AccumulatesConsumedAndCount()
     {
-        var budget = new FrameUploadByteBudget(1000);
+        var budget = new FrameByteBudget(1000);
         budget.Record(100);
         budget.Record(250);
 
@@ -48,7 +51,7 @@ public sealed class FrameUploadByteBudgetTests
     [Fact]
     public void NonPositiveBytes_CountAsOne()
     {
-        var budget = new FrameUploadByteBudget(2);
+        var budget = new FrameByteBudget(2);
         budget.Record(0); // clamped to 1
 
         Assert.Equal(1L, budget.Consumed);

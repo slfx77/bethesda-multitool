@@ -179,7 +179,11 @@ internal sealed class BoundedResolveQueue<TKey, TResult> : ITrackableResource, I
                 return;
             }
 
-            Task.WaitAll(pending);
+            // Non-pumping: drains can run on the UI thread during cache/pipeline teardown, where
+            // Task.WaitAll's STA pumping wait can re-enter XAML and fail-fast (see NonPumpingWait).
+            // The in-flight continuations never fault (they observe their antecedents' exceptions),
+            // so WaitAll's throw-on-fault behavior is not needed here.
+            NonPumpingWait.WaitAll(pending);
             PruneInFlight();
         }
     }
@@ -196,7 +200,7 @@ internal sealed class BoundedResolveQueue<TKey, TResult> : ITrackableResource, I
             pending = _inFlight.Where(static t => !t.IsCompleted).ToArray();
         }
 
-        return pending.Length == 0 || Task.WaitAll(pending, timeout);
+        return pending.Length == 0 || NonPumpingWait.WaitAll(pending, timeout);
     }
 
     public void Dispose()

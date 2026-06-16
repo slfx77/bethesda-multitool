@@ -4,6 +4,7 @@ using Vortice.Direct3D12;
 using Vortice.DXGI;
 using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
+using FalloutXbox360Utils.Core.Orchestration;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
@@ -13,9 +14,9 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///     dedicated copy queue off the render thread.
 ///     <para>
 ///         Pipeline: a cold <see cref="GetOrUpload" /> returns a fallback placeholder and queues
-///         a background DDS/DDX resolve (<see cref="BoundedAsyncResolveQueue{TResult}" />). When
+///         a background DDS/DDX resolve (<see cref="BoundedResolveQueue{TKey,TResult}" />). When
 ///         the payload is ready it is handed to a dedicated uploader thread
-///         (<see cref="GpuUploadDispatcher12" />) that creates the GPU texture, fills staging, and
+///         (<see cref="DedicatedWorkerThread" />) that creates the GPU texture, fills staging, and
 ///         records the mip copies on a copy queue (<see cref="GpuUploadQueue12" />) — none of that
 ///         touches the per-frame direct command list. Once the copy fence completes, the render
 ///         thread transitions the texture to a shader-read state and points the placeholder's
@@ -59,15 +60,16 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     private readonly GpuDescriptorHeapAllocator12 _heap;
     private readonly Dictionary<string, TextureUploadNode> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<TextureUploadNode> _pendingDispatch = new();
-    private readonly BoundedAsyncResolveQueue<GpuTexturePayload> _resolveQueue;
+    private readonly BoundedResolveQueue<string, GpuTexturePayload> _resolveQueue;
     private readonly List<ID3D12Resource> _ownedTextures = new();
     // Async copy-queue upload machinery (owned per-cache, mirroring _resolveQueue ownership).
     private readonly GpuUploadQueue12 _copyUploadQueue;
-    private readonly GpuUploadDispatcher12 _uploadDispatcher;
+    private readonly DedicatedWorkerThread _uploadDispatcher;
     private readonly ConcurrentQueue<CompletedUpload> _completedUploads = new();
     private readonly List<CompletedUpload> _pendingPromote = new();
     private Entry? _whitePixel;
     private Entry? _flatNormal;
+    private Entry? _waterSurface;
     private int _pendingUploadCount;
     private bool _disposed;
 
@@ -95,11 +97,13 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         // Resolve DDS/DDX payloads off the render thread. Keep the default conservative because
         // DDX conversion and DDS parsing allocate enough to cause visible UI/render pauses when
         // too many complete in the same window.
-        _resolveQueue = new BoundedAsyncResolveQueue<GpuTexturePayload>(
+        _resolveQueue = new BoundedResolveQueue<string, GpuTexturePayload>(
+            "TextureResolveQueue",
             maxConcurrent: DefaultMaxConcurrentTextureResolves,
-            resolve: ResolvePayload);
+            resolve: ResolvePayload,
+            keyComparer: StringComparer.OrdinalIgnoreCase);
         _copyUploadQueue = new GpuUploadQueue12(gpu);
-        _uploadDispatcher = new GpuUploadDispatcher12();
+        _uploadDispatcher = new DedicatedWorkerThread("GpuTextureUploader");
     }
 
     public string ResourceName => nameof(GpuTextureCache12);
@@ -133,6 +137,15 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
     /// <summary>1x1 flat normal map used as the fallback normal.</summary>
     public Entry FlatNormal => _flatNormal ??= CreateSolid(128, 128, 255, 255);
+
+    /// <summary>
+    ///     1×1 translucent water-blue tile used as the diffuse for placed water-shader geometry
+    ///     (WaterShaderProperty NIFs carry no diffuse — the engine renders them via its water system,
+    ///     which we don't reproduce on placed geometry). Renders the surface as blue water instead of
+    ///     the opaque-white fallback. RGB ≈ (0.15, 0.32, 0.42); combined with forced alpha-blend it
+    ///     reads as a translucent water plane.
+    /// </summary>
+    public Entry WaterSurface => _waterSurface ??= CreateSolid(38, 82, 107, 255);
 
     public int MaxUploadsPerFrame { get; init; } = DefaultMaxUploadsPerFrame;
 
@@ -324,6 +337,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         foreach (var t in _ownedTextures) DisposeResource(t);
         if (_whitePixel is Entry wp) DisposeResource(wp.Texture);
         if (_flatNormal is Entry fn) DisposeResource(fn.Texture);
+        if (_waterSurface is Entry ws) DisposeResource(ws.Texture);
         _ownedTextures.Clear();
         _pendingDispatch.Clear();
         _cache.Clear();
@@ -359,9 +373,11 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     private void DispatchQueuedUploads()
     {
         var uploadLimit = Math.Max(1, MaxUploadsPerFrame);
-        var byteBudget = new FrameUploadByteBudget(MaxUploadBytesPerFrame);
+        // Count stays in the while condition (count exhaustion leaves the next node at the queue
+        // FRONT, exactly as before); CanStart gates bytes with the first-item-always rule.
+        var budget = new FrameBudget(uploadLimit, MaxUploadBytesPerFrame);
 
-        while (_pendingDispatch.Count > 0 && byteBudget.Count < uploadLimit)
+        while (_pendingDispatch.Count > 0 && budget.ItemsUsed < uploadLimit)
         {
             var node = _pendingDispatch.Dequeue();
             node.InDispatchQueue = false;
@@ -373,7 +389,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             }
 
             var byteSize = Math.Max(1L, payload.ByteSize);
-            if (!byteBudget.CanUpload(byteSize))
+            if (!budget.CanStart(byteSize))
             {
                 // Over the per-frame admission budget → requeue and stop; retry next frame.
                 node.InDispatchQueue = true;
@@ -385,7 +401,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             node.Dispatched = true;
             if (_uploadDispatcher.TryEnqueue(() => RunUploadOnUploaderThread(cacheKey, payload)))
             {
-                byteBudget.Record(byteSize);
+                budget.Record(byteSize);
                 FrameQueuedUploads++;
             }
             else

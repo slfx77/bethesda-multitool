@@ -10,6 +10,23 @@ public sealed class DedicatedWorkerThreadTests : IDisposable
     public void Dispose() => Logger.Instance.Reset();
 
     [Fact]
+    public void Work_runs_on_the_dedicated_thread_not_the_caller()
+    {
+        using var worker = new DedicatedWorkerThread("TestWorker");
+        using var done = new ManualResetEventSlim(false);
+        var workerThreadId = -1;
+
+        Assert.True(worker.TryEnqueue(() =>
+        {
+            workerThreadId = Environment.CurrentManagedThreadId;
+            done.Set();
+        }));
+
+        Assert.True(done.Wait(TimeSpan.FromSeconds(5)));
+        Assert.NotEqual(Environment.CurrentManagedThreadId, workerThreadId);
+    }
+
+    [Fact]
     public void Processes_enqueued_work_in_order()
     {
         using var worker = new DedicatedWorkerThread("TestWorker");

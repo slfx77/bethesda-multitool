@@ -34,6 +34,23 @@ public sealed class BoundedResolveQueueTests
     }
 
     [Fact]
+    public void Default_scheduler_resolves_on_the_real_task_pool()
+    {
+        var queue = new BoundedResolveQueue<string, string>(
+            "TestQueue", maxConcurrent: 2, resolve: static key => key + "!");
+
+        Assert.True(queue.Enqueue("K"));
+        queue.Pump();
+
+        string? key = null;
+        string? result = null;
+        Assert.True(SpinWait.SpinUntil(
+            () => queue.TryDequeueCompleted(out key, out result), TimeSpan.FromSeconds(5)));
+        Assert.Equal("K", key);
+        Assert.Equal("K!", result);
+    }
+
+    [Fact]
     public void Enqueue_dedupes_until_the_completion_is_dequeued()
     {
         var scheduler = new DeferredScheduler<string>();

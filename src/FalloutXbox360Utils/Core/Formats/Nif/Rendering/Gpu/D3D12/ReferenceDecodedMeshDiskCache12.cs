@@ -26,7 +26,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // approximation to the exact hardware (BitConverter.UInt16BitsToHalf) conversion — the low bits
     // differ, so any cache written by the old decoder must be invalidated. Bump this whenever the
     // decode output bytes can change.
-    internal const int DecoderVersion = 2;
+    // Bumped 2→3: placed-reference bake now discards the scene-root node's own authored transform
+    // (treatRootsAsIdentity) so non-identity root rotations (e.g. McMarranWalls wallReg 90°,
+    // monorail curves 15°) are no longer baked into the vertices — the decoded positions change.
+    internal const int DecoderVersion = 3;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

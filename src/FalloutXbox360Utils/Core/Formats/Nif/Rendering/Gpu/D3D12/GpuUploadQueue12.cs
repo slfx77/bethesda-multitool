@@ -11,8 +11,8 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         Owns its own copy queue, a small ring of copy allocator+list pairs, a copy fence,
 ///         and a fence-keyed staging-retirement queue. One instance is owned by a single
 ///         <see cref="GpuTextureCache12" /> and is driven exclusively by that cache's dedicated
-///         uploader thread (see <see cref="GpuUploadDispatcher12" />), mirroring the per-cache
-///         ownership of <see cref="BoundedAsyncResolveQueue{TResult}" />.
+///         uploader thread (see <see cref="Orchestration.DedicatedWorkerThread" />), mirroring the per-cache
+///         ownership of <see cref="Orchestration.BoundedResolveQueue{TKey,TResult}" />.
 ///     </para>
 ///     <para>
 ///         <b>Cross-queue handshake (no GPU stall).</b> The destination texture is created in

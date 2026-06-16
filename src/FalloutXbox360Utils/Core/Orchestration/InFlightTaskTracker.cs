@@ -46,7 +46,10 @@ internal sealed class InFlightTaskTracker
         }
     }
 
-    /// <summary>Blocks until every tracked task has finished, including ones added while waiting.</summary>
+    /// <summary>
+    ///     Blocks until every tracked task has finished, including ones added while waiting. Faulted
+    ///     tasks surface as an <see cref="AggregateException" />, as with <c>Task.WaitAll</c>.
+    /// </summary>
     public void WaitForDrain()
     {
         while (true)
@@ -57,16 +60,34 @@ internal sealed class InFlightTaskTracker
                 return;
             }
 
-            Task.WaitAll(pending);
+            // Non-pumping: drains run on the UI thread before teardown, where Task.WaitAll's STA
+            // pumping wait can re-enter XAML and fail-fast (see NonPumpingWait). It never throws,
+            // so faults are gathered and rethrown explicitly to keep the WaitAll contract.
+            NonPumpingWait.WaitAll(pending);
+            ThrowIfAnyFailed(pending);
             PruneCompleted();
         }
     }
 
-    /// <summary>Blocks until every tracked task has finished or the timeout elapses. Returns false on timeout.</summary>
+    /// <summary>
+    ///     Blocks until every tracked task has finished or the timeout elapses. Returns false on
+    ///     timeout; faulted tasks surface as an <see cref="AggregateException" />.
+    /// </summary>
     public bool WaitForDrain(TimeSpan timeout)
     {
         var pending = SnapshotPending();
-        return pending.Length == 0 || Task.WaitAll(pending, timeout);
+        if (pending.Length == 0)
+        {
+            return true;
+        }
+
+        if (!NonPumpingWait.WaitAll(pending, timeout))
+        {
+            return false;
+        }
+
+        ThrowIfAnyFailed(pending);
+        return true;
     }
 
     /// <summary>
@@ -91,15 +112,15 @@ internal sealed class InFlightTaskTracker
                 return;
             }
 
-            try
+            NonPumpingWait.WaitAll(tracked);
+            foreach (var task in tracked)
             {
-                Task.WaitAll(tracked);
-            }
-            catch (AggregateException aggregate)
-            {
-                foreach (var inner in aggregate.Flatten().InnerExceptions)
+                if (task.Exception is { } aggregate) // observes the fault — never an unobserved-task exception
                 {
-                    Logger.Instance.Warn("{0}: in-flight task failed during drain: {1}", _ownerName, inner.Message);
+                    foreach (var inner in aggregate.Flatten().InnerExceptions)
+                    {
+                        Logger.Instance.Warn("{0}: in-flight task failed during drain: {1}", _ownerName, inner.Message);
+                    }
                 }
             }
 
@@ -119,6 +140,30 @@ internal sealed class InFlightTaskTracker
         lock (_gate)
         {
             return _tasks.Where(static t => !t.IsCompleted).ToArray();
+        }
+    }
+
+    /// <summary>Rethrows faults/cancellations of completed tasks, mirroring <c>Task.WaitAll</c>.</summary>
+    private static void ThrowIfAnyFailed(Task[] tasks)
+    {
+        List<Exception>? failures = null;
+        foreach (var task in tasks)
+        {
+            if (task.Exception is { } aggregate)
+            {
+                failures ??= [];
+                failures.AddRange(aggregate.Flatten().InnerExceptions);
+            }
+            else if (task.IsCanceled)
+            {
+                failures ??= [];
+                failures.Add(new TaskCanceledException(task));
+            }
+        }
+
+        if (failures is not null)
+        {
+            throw new AggregateException(failures);
         }
     }
 }
