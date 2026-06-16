@@ -14,10 +14,8 @@ internal sealed class RuntimeActorWeaponReader(RuntimeMemoryContext context, int
 
     // MemDebug PDB: BipedAnim (UDT 0xfda9, size 692) has `BIPOBJECT object[20]` at +44;
     // BIPOBJECT (UDT 0x18b98, size 16) has `TESForm* pParent` at +0. Slot 5 is the weapon:
-    // 44 + 5*16 = 0x7C = BipedWeaponOffset above, anchoring this layout to the proven read.
-    private const int BipedSlotArrayOffset = 44;
-    private const int BipedSlotCount = 20;
-    private const int BipedSlotSize = 16;
+    // 44 + 5*16 = 0x7C = BipedWeaponOffset above. The worn-armor read deliberately scans
+    // the whole struct instead of indexing slots — see ReadRuntimeActorWornArmor.
     private const byte ArmoFormType = 0x18;
     private readonly RuntimeMemoryContext _context = context;
 
@@ -108,28 +106,30 @@ internal sealed class RuntimeActorWeaponReader(RuntimeMemoryContext context, int
         var bipedPtr = BinaryUtils.ReadUInt32BE(actorBuffer, _bipedPtrOffset);
         if (bipedPtr == 0)
         {
-            Logger.Instance.Debug("[WornArmor] 0x{0:X8}: pBiped is null", entry.FormId);
             return new RuntimeActorWornArmorState(entry.FormId, wornArmorFormIds);
         }
 
-        var slotBuffer = _context.ReadBytesAtVa(
-            Xbox360MemoryUtils.VaToLong(bipedPtr) + BipedSlotArrayOffset,
-            BipedSlotCount * BipedSlotSize);
-        if (slotBuffer == null)
+        // Scan the BipedAnim for ARMO pointers instead of indexing exact slots: proto
+        // builds reshuffle BipedAnim internals, but worn armor is referenced by
+        // 4-byte-aligned heap pointers in the struct on every observed layout. On the
+        // final layout this covers both `object[20]` (+44) and `bufferedObjects[20]`
+        // (+364), which dedupe to the same forms. ARMO-only filtering keeps the weapon
+        // (slot 5, FormType 0x28) and hair (0x0C) out.
+        var bipedBuffer = _context.ReadBytesAtVa(
+            Xbox360MemoryUtils.VaToLong(bipedPtr),
+            RuntimeBipedOffsetProbe.PointeeScanBytes);
+        if (bipedBuffer == null)
         {
-            Logger.Instance.Debug("[WornArmor] 0x{0:X8}: slot array unreadable at pBiped 0x{1:X8}",
-                entry.FormId, bipedPtr);
             return new RuntimeActorWornArmorState(entry.FormId, wornArmorFormIds);
         }
 
         var seen = new HashSet<uint>();
-        for (var slot = 0; slot < BipedSlotCount; slot++)
+        for (var pos = 0; pos + 4 <= bipedBuffer.Length; pos += 4)
         {
-            var itemPtr = BinaryUtils.ReadUInt32BE(slotBuffer, slot * BipedSlotSize);
-            if (itemPtr != 0)
+            var itemPtr = BinaryUtils.ReadUInt32BE(bipedBuffer, pos);
+            if (!RuntimeBipedOffsetProbe.IsDataPointer(_context, itemPtr))
             {
-                Logger.Instance.Debug("[WornArmor] 0x{0:X8}: slot {1} ptr 0x{2:X8} formType 0x{3:X2}",
-                    entry.FormId, slot, itemPtr, DescribePointeeFormType(itemPtr));
+                continue;
             }
 
             var armorFormId = ReadExpectedFormId(itemPtr, ArmoFormType);
@@ -139,13 +139,14 @@ internal sealed class RuntimeActorWeaponReader(RuntimeMemoryContext context, int
             }
         }
 
-        return new RuntimeActorWornArmorState(entry.FormId, wornArmorFormIds);
-    }
+        if (wornArmorFormIds.Count > 0)
+        {
+            Logger.Instance.Debug("[WornArmor] 0x{0:X8} ({1}): biped 0x{2:X8} -> [{3}]",
+                entry.FormId, entry.EditorId, bipedPtr,
+                string.Join(", ", wornArmorFormIds.Select(id => $"0x{id:X8}")));
+        }
 
-    private int DescribePointeeFormType(uint pointer)
-    {
-        var header = _context.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(pointer), 16);
-        return header?[4] ?? -1;
+        return new RuntimeActorWornArmorState(entry.FormId, wornArmorFormIds);
     }
 
     private uint? ReadExpectedFormId(uint pointer, byte expectedFormType)
