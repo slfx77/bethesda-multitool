@@ -31,6 +31,37 @@ cbuffer PerMode : register(b2)
     float4 uDebugMode_UvScale_Pad;
 };
 
+// Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants (7×float4),
+// uploaded once per frame and bound for the whole scene (terrain/reference/water all read it).
+cbuffer Atmosphere : register(b3)
+{
+    float4 uSunDirIntensity;    // xyz = sun world dir (toward sun), w = intensity
+    float4 uSunColorLighting;   // rgb = sun color, w = lightingEnabled (0/1)
+    float4 uAmbientColor;       // rgb = ambient, w = spare
+    float4 uSkyTopSkyEnabled;   // rgb = sky-top color, w = skyEnabled (0/1)
+    float4 uSkyHorizon;         // rgb = sky-horizon color, w = spare
+    float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
+    float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = time
+};
+
+// Per-pixel light factor (rgb) for a world-space normal. When lighting is disabled
+// (uSunColorLighting.w == 0) this returns the EXACT legacy flat shade — scalar 0.4 + 0.6*lambert
+// against the old fixed sun — so toggling lighting off is pixel-identical to the pre-atmosphere
+// viewer. Enabled: colored ambient + sun·(N·L), energy-bounded so a fully sunlit surface lands near
+// the legacy max (~1.0) instead of blowing out. (Placeholder sun curve; P2b grounds it in decompile.)
+float3 AtmosphereLight(float3 N)
+{
+    if (uSunColorLighting.w < 0.5)
+    {
+        float legacyLambert = saturate(dot(N, normalize(float3(0.5, 0.5, 1.0))));
+        return (0.4 + 0.6 * legacyLambert).xxx;
+    }
+
+    float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
+    float ambientLuma = saturate(dot(uAmbientColor.rgb, float3(0.3333, 0.3333, 0.3333)));
+    return uAmbientColor.rgb + uSunColorLighting.rgb * ndotl * (1.0 - ambientLuma);
+}
+
 struct PSInput
 {
     float4 Position      : SV_Position;
@@ -46,8 +77,9 @@ struct PSInput
 float4 main(PSInput input) : SV_Target
 {
     float3 normal = normalize(input.vWorldNormal);
-    float lambert = saturate(dot(normal, normalize(float3(0.5, 0.5, 1.0))));
-    float shade = 0.4 + 0.6 * lambert;
+    // Shared atmosphere lighting (rgb). Lighting-off path inside AtmosphereLight reproduces the
+    // legacy `0.4 + 0.6*lambert` scalar exactly, so the OFF state is pixel-identical to before.
+    float3 shade = AtmosphereLight(normal);
 
     if (uDebugMode_UvScale_Pad.x > 0.5)
     {

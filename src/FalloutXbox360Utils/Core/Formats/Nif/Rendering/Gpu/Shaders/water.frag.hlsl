@@ -33,6 +33,22 @@ cbuffer Uniforms : register(b0)
     uint4 uDepthParams;  // x = scene-depth SRV bindless index (0xFFFFFFFF = none), y/z = near/far bits
 };
 
+// Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants (7×float4),
+// bound once per frame for the whole scene. Water reads the sun dir/color from here so its specular
+// and body-lighting track the time-of-day/weather sun like the rest of the scene (P3). When lighting
+// is disabled (uSunColorLighting.w == 0) it falls back to the static kSunDir/kSunColor below, so the
+// water looks exactly as it did pre-atmosphere.
+cbuffer Atmosphere : register(b3)
+{
+    float4 uSunDirIntensity;    // xyz = sun world dir (toward sun), w = intensity
+    float4 uSunColorLighting;   // rgb = sun color, w = lightingEnabled (0/1)
+    float4 uAmbientColor;       // rgb = ambient, w = spare
+    float4 uSkyTopSkyEnabled;   // rgb = sky-top color, w = skyEnabled (0/1)
+    float4 uSkyHorizon;         // rgb = sky-horizon color, w = spare
+    float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
+    float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = time
+};
+
 // Bindless texture table (slot 4, space1) shared with terrain/references. The NNAM normal map
 // lives at uNoiseParams.x (FNV NoiseMap, sampler s2). s0 is the shared anisotropic-wrap sampler.
 Texture2D gWaterTextures[] : register(t0, space1);
@@ -40,8 +56,11 @@ SamplerState gWaterSampler : register(s0);
 
 // Wind-speed (DNAM units) -> UV/sec; lives in the engine vertex shader. Tuned for gentle swell.
 static const float kScrollScale = 0.01;
-// FNV passes the live scene SunDir (c12) / SunColor (c13); the viewer has no scene sun, so a fixed
-// warm key light stands in (same direction the terrain shader uses).
+// FNV passes the live scene SunDir (c12) / SunColor (c13). P3 feeds those from the shared b3
+// atmosphere CB (uSunDirIntensity / uSunColorLighting) when lighting is enabled, so water tracks the
+// time-of-day/weather sun; when lighting is OFF these static constants stand in (the pre-atmosphere
+// look — same direction the terrain shader used). P5 additionally tints the reflection with the
+// atmosphere sky (uSkyTop/uSkyHorizon) when the skybox is on (see main()).
 static const float3 kSunDir = float3(0.40824829, 0.40824829, 0.81649658); // normalize(0.5,0.5,1)
 static const float3 kSunColor = float3(1.0, 0.97, 0.9);
 
@@ -77,16 +96,22 @@ float2 SampleLayerPerturb(uint idx, float2 worldXy, float baseUv, float normalsS
     return n * layer.w;
 }
 
-// D3D [0,1] depth -> positive view-space distance (world units). Matches System.Numerics
-// CreatePerspectiveFieldOfView: z=0 -> near, z=1 -> far.
+// Reversed-Z [1,0] depth -> positive view-space distance (world units). The scene uses reversed-Z
+// (CameraState.ReverseZ): z=1 -> near, z=0 -> far. Both the sampled scene depth and this water
+// fragment's own SV_Position.z are reversed, so linearizing both with this gives correct distances.
 float LinearizeDepth(float ndcZ, float near, float far)
 {
-    return (near * far) / max(far - ndcZ * (far - near), 1e-4);
+    return (near * far) / max(near + ndcZ * (far - near), 1e-4);
 }
 
 float4 main(PSInput input) : SV_Target
 {
     float t = uCamPosTime.w;
+    // Scene sun: from the shared atmosphere CB when lighting is on (tracks time-of-day/weather),
+    // else the static fallback so water is unchanged in the lighting-off state.
+    bool lit = uSunColorLighting.w > 0.5;
+    float3 sunDir = lit ? normalize(uSunDirIntensity.xyz) : kSunDir;
+    float3 sunCol = lit ? uSunColorLighting.rgb : kSunColor;
     uint noiseIndex = uNoiseParams.x;
     float baseUv = 1.0 / max((float)uNoiseParams.y, 1.0);
     float normalsScale = max(uSurface0.x, 1e-4);
@@ -150,20 +175,28 @@ float4 main(PSInput input) : SV_Target
 
     // FNV body color: lerp(Shallow, Deep, depthT), softly lit by the key light.
     float3 body = lerp(uShallow.rgb, uDeep.rgb, depthT);
-    body *= lerp(0.6, 1.0, saturate(dot(N, kSunDir)));
+    body *= lerp(0.6, 1.0, saturate(dot(N, sunDir)));
 
-    // FNV reflection (RT-free path): ReflectionColor scaled by the reflectivity multiplier.
-    float3 refl = uReflection.rgb * reflectivity;
+    // Reflected view vector — used for both the sky-reflection tint and the sun specular below.
+    float3 R = reflect(-V, N);
+
+    // FNV reflection (RT-free path): with the skybox on (uSkyTopSkyEnabled.w), tint the reflection with
+    // the atmosphere sky — horizon→top by the reflected ray's up component — so water mirrors the
+    // time-of-day/weather sky (P5; one-way b3 read, no RTT loop). Otherwise the DNAM ReflectionColor.
+    // Scaled by the reflectivity multiplier either way.
+    float3 reflBase = uSkyTopSkyEnabled.w > 0.5
+        ? lerp(uSkyHorizon.rgb, uSkyTopSkyEnabled.rgb, saturate(R.z))
+        : uReflection.rgb;
+    float3 refl = reflBase * reflectivity;
 
     // FNV Schlick fresnel: F0 + (1-F0)*(1-NdotV)^5, F0 = FresnelAmount. Reflection over body.
     float F = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
     float3 color = lerp(body, refl, saturate(F));
 
     // FNV dual specular: sharp sun glint off the reflected view vector + a fixed sky-glint term.
-    float3 R = reflect(-V, N);
-    float sunSpec = pow(saturate(dot(R, kSunDir)), specExp);
+    float sunSpec = pow(saturate(dot(R, sunDir)), specExp);
     float skyGlint = pow(saturate(dot(float2(N.x, N.z), float2(-0.57, 0.82))), 100.0);
-    color += (sunSpec + skyGlint) * kSunColor;
+    color += (sunSpec + skyGlint) * sunCol;
 
     float alpha = lerp(0.6, 0.95, saturate(F));
     return float4(saturate(color), alpha);

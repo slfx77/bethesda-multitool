@@ -23,7 +23,8 @@ cbuffer Uniforms : register(b0)
 
 struct WaterInstance
 {
-    float4 CellOriginAndFootprint; // xy = origin, z = water height, w = square footprint size
+    float4 OriginHeightFootprintX; // xy = origin, z = water height, w = footprint X extent
+    float4 FootprintY;             // x = footprint Y extent; yzw spare
 };
 
 StructuredBuffer<WaterInstance> uInstances : register(t0);
@@ -45,9 +46,9 @@ VSOutput main(uint vid : SV_VertexID, uint instanceId : SV_InstanceID)
     WaterInstance instance = uInstances[instanceId];
     float2 corner = kQuadCorners[vid];
     float3 worldPos = float3(
-        instance.CellOriginAndFootprint.x + corner.x * instance.CellOriginAndFootprint.w,
-        instance.CellOriginAndFootprint.y + corner.y * instance.CellOriginAndFootprint.w,
-        instance.CellOriginAndFootprint.z);
+        instance.OriginHeightFootprintX.x + corner.x * instance.OriginHeightFootprintX.w,
+        instance.OriginHeightFootprintX.y + corner.y * instance.FootprintY.x,
+        instance.OriginHeightFootprintX.z);
 
     VSOutput o;
     o.Position = mul(uViewProj, float4(worldPos, 1.0));

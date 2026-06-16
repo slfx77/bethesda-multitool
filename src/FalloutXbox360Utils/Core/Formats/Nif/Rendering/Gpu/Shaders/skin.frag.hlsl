@@ -35,6 +35,7 @@ struct PSOutput
 {
     float4 fragColor : SV_Target0;
     float  depth     : SV_Depth;
+    uint   coverage  : SV_Coverage;
 };
 
 // Flag bits
@@ -49,6 +50,12 @@ static const uint HAS_ALPHA_TEST  = 128u;
 static const uint IS_EYE_ENVMAP   = 256u;
 static const uint HAS_TINT        = 512u;
 static const uint IS_FACEGEN      = 1024u;
+static const uint IS_A2C          = 2048u;
+
+// Per-sample coverage masks for the manual alpha-to-coverage path, indexed by
+// round(alpha * 4). Sample bits are spread so partial coverage stays spatially
+// distributed within the 4x MSAA pixel.
+static const uint A2CCoverageMasks[5] = { 0x0u, 0x1u, 0x5u, 0x7u, 0xFu };
 
 float computeShade(float3 n, bool twoSidedLighting)
 {
@@ -215,9 +222,25 @@ PSOutput main(PSInput input)
     // Match CPU export alpha semantics:
     // - opaque + cutout materials write solid alpha after any discard
     // - only true blended materials preserve texture/material alpha in the output
-    float outAlpha = ((flags & HAS_ALPHA_BLEND) != 0u)
-        ? texColor.a * uMaterial.x
-        : 1.0;
+    // - alpha-to-coverage (hair/brow/lash) converts alpha into a per-sample
+    //   coverage mask; surviving samples write OPAQUE color + depth so the MSAA
+    //   resolve yields coverage-proportional alpha. Writing texture alpha to the
+    //   covered samples would attenuate twice (coverage x alpha) and the whole
+    //   hair body resolves semi-transparent. Mirrors the CPU rasterizer's Bayer
+    //   supersample test (5 coverage levels per pixel).
+    float outAlpha;
+    o.coverage = 0xFu;
+    if ((flags & IS_A2C) != 0u)
+    {
+        o.coverage = A2CCoverageMasks[(uint)round(saturate(texColor.a) * 4.0)];
+        outAlpha = 1.0;
+    }
+    else
+    {
+        outAlpha = ((flags & HAS_ALPHA_BLEND) != 0u)
+            ? texColor.a * uMaterial.x
+            : 1.0;
+    }
 
     o.fragColor = float4(texColor.rgb * shade, outAlpha);
     return o;
