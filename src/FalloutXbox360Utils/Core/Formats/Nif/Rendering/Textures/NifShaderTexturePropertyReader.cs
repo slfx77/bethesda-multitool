@@ -15,8 +15,30 @@ internal static class NifShaderTexturePropertyReader
     {
         foreach (var propRef in propertyRefs)
         {
-            if (!TryGetPropertyBlock(nif, propRef, out var propBlock) ||
-                !IsShaderProperty(propBlock))
+            if (!TryGetPropertyBlock(nif, propRef, out var propBlock))
+            {
+                continue;
+            }
+
+            // Skyrim / Skyrim SE use BSLightingShaderProperty (a different layout from FO3/FNV's
+            // BSShaderPPLightingProperty). Its texture set is reached after the NiObjectNET base +
+            // Skyrim shader flags + UV transform; BSShaderTextureSet itself is identical across games.
+            if (propBlock.TypeName == "BSLightingShaderProperty")
+            {
+                var slots = ReadBsLightingShaderTextureSlots(data, nif, propBlock);
+                if (slots.Count == 0)
+                {
+                    continue;
+                }
+
+                return new NifShaderTextureMetadata
+                {
+                    PropertyType = propBlock.TypeName,
+                    TextureSlots = slots
+                };
+            }
+
+            if (!IsShaderProperty(propBlock))
             {
                 continue;
             }
@@ -205,6 +227,62 @@ internal static class NifShaderTexturePropertyReader
         pos += 16;
         pos += 4;
         return NifBinaryCursor.ReadSizedString(data, ref pos, end, nif.IsBigEndian);
+    }
+
+    /// <summary>
+    ///     Read the texture-set slots of a Skyrim/Skyrim SE/Fallout 4 BSLightingShaderProperty.
+    ///     Two layout subtleties vs the FO3/FNV BSShaderPPLightingProperty path:
+    ///     <list type="number">
+    ///         <item>
+    ///             NiObjectNET prepends a 4-byte "Shader Type" field that exists ONLY for
+    ///             BSLightingShaderProperty in Skyrim..FO4 (nif.xml <c>onlyT="BSLightingShaderProperty"</c>,
+    ///             <c>#BS_GTE_SKY# #AND# #NI_BS_LTE_FO4#</c>) — skip it before walking NiObjectNET.
+    ///         </item>
+    ///         <item>
+    ///             The NiShadeProperty "Flags" and FO3/FNV BSShaderProperty fields are absent here, so
+    ///             after the NiObjectNET base come Shader Flags 1(4) + Shader Flags 2(4) + UV Offset(8)
+    ///             + UV Scale(8) = +24, then the Texture Set ref.
+    ///         </item>
+    ///     </list>
+    ///     (FO4/Starfield store materials in external BGSM/.mat files when "Name" is a path — not
+    ///     handled here; the embedded texture set is still read when present.)
+    /// </summary>
+    private static List<string?> ReadBsLightingShaderTextureSlots(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo propBlock)
+    {
+        var pos = propBlock.DataOffset;
+        var end = propBlock.DataOffset + propBlock.Size;
+
+        // Leading "Shader Type" field, present for BSLightingShaderProperty in Skyrim (bsVer 83)
+        // through Fallout 4 (bsVer 130).
+        if (nif.BsVersion is >= 83 and <= 130)
+        {
+            pos += 4;
+        }
+
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian))
+        {
+            return [];
+        }
+
+        pos += 24; // Shader Flags 1 + Shader Flags 2 + UV Offset + UV Scale
+        if (pos + 4 > end)
+        {
+            return [];
+        }
+
+        var textureSetRef = BinaryUtils.ReadInt32(data, pos, nif.IsBigEndian);
+        if (textureSetRef < 0 || textureSetRef >= nif.Blocks.Count)
+        {
+            return [];
+        }
+
+        var textureSetBlock = nif.Blocks[textureSetRef];
+        return textureSetBlock.TypeName == "BSShaderTextureSet"
+            ? ReadTextureSetSlots(data, textureSetBlock, nif.IsBigEndian)
+            : [];
     }
 
     private static List<string?> ReadTextureSetSlots(

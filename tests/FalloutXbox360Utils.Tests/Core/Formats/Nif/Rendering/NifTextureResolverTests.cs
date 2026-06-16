@@ -122,6 +122,50 @@ public sealed class NifTextureResolverTests
     }
 
     [Fact]
+    public void NifTexturingProperty_ResolvesBaseTextureFromSourceTexture()
+    {
+        // Legacy NiTexturingProperty (block 0) → base map TexDesc.Source → NiSourceTexture (block 1)
+        // → File Name (string-table index 0). This is the path BSShader* readers ignore; the fallback
+        // lets meshes that texture only through NiTexturingProperty resolve a diffuse instead of white.
+        const string texturePath = @"textures\effects\vulture01.dds";
+
+        var data = new byte[64];
+        // Block 0: NiTexturingProperty @ 0
+        WriteNiObjectNetHeader(data, 0);  // 0..11
+        WriteUInt16(data, 12, 0);         // Flags (TexturingFlags)
+        WriteUInt32(data, 14, 1);         // Texture Count
+        data[18] = 1;                     // Has Base Texture
+        WriteInt32(data, 19, 1);          // Base Texture TexDesc.Source = block 1
+        // Block 1: NiSourceTexture @ 32
+        WriteNiObjectNetHeader(data, 32); // 32..43
+        data[44] = 1;                     // Use External
+        WriteInt32(data, 45, 0);          // File Name = string index 0
+
+        var nif = CreateNifInfo(
+            ("NiTexturingProperty", 0, 23),
+            ("NiSourceTexture", 32, 17));
+        nif.Strings.Add(texturePath);
+
+        var resolved = NifTexturingPropertyReader.ResolveBaseTexturePath(data, nif, [0]);
+
+        Assert.Equal(texturePath, resolved);
+    }
+
+    [Fact]
+    public void NifTexturingProperty_ReturnsNull_WhenNoBaseTexture()
+    {
+        var data = new byte[32];
+        WriteNiObjectNetHeader(data, 0);
+        WriteUInt16(data, 12, 0);
+        WriteUInt32(data, 14, 0);
+        data[18] = 0; // Has Base Texture = false
+
+        var nif = CreateNifInfo(("NiTexturingProperty", 0, 19));
+
+        Assert.Null(NifTexturingPropertyReader.ResolveBaseTexturePath(data, nif, [0]));
+    }
+
+    [Fact]
     public void ResolveLooseTexture_FromUnpackedDataRoot_LoadsDecodedTexture()
     {
         var nifPath = SampleFileFixture.FindSamplePath(
