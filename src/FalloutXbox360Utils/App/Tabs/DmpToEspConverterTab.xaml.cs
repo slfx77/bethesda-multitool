@@ -391,6 +391,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
             CompressRecords = CompressRecordsCheckBox.IsChecked == true,
             ValidateOutput = ValidateOutputCheckBox.IsChecked == true,
             VerboseDecisions = VerboseDecisionsCheckBox.IsChecked == true,
+            RecoverGaps = RecoverGapsCheckBox.IsChecked == true,
             AssetRenameBaselineFolder = renameFolders.Count > 0 ? PcDataDirTextBox.Text : null,
             AssetRenameSecondaryFolders = renameFolders,
             AssetRenameOverrideVanilla = OverrideVanillaCheckBox.IsChecked == true,

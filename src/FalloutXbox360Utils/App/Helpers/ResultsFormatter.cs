@@ -1,5 +1,6 @@
 using System.Text;
 using FalloutXbox360Utils.Core.Coverage;
+using FalloutXbox360Utils.Core.Recovery;
 
 namespace FalloutXbox360Utils;
 
@@ -74,12 +75,19 @@ internal static class ResultsFormatter
     ///     Builds the list of <see cref="CoverageGapEntry" /> view models from coverage gaps.
     /// </summary>
     internal static List<CoverageGapEntry> BuildCoverageGapEntries(
-        CoverageResult coverage, Func<long, string> formatSize)
+        CoverageResult coverage,
+        Func<long, string> formatSize,
+        IReadOnlyList<DmpGapRecoveryCandidate>? recoverableCandidates = null)
     {
+        var candidatesByGap = recoverableCandidates?
+            .GroupBy(c => (c.GapFileOffset, c.GapSize))
+            .ToDictionary(g => g.Key, g => g.ToList()) ??
+                              new Dictionary<(long GapFileOffset, long GapSize), List<DmpGapRecoveryCandidate>>();
         var entries = new List<CoverageGapEntry>(coverage.Gaps.Count);
         for (var i = 0; i < coverage.Gaps.Count; i++)
         {
             var gap = coverage.Gaps[i];
+            candidatesByGap.TryGetValue((gap.FileOffset, gap.Size), out var candidates);
             var gapDisplayName = FileTypeColors.GapDisplayNames.GetValueOrDefault(
                 gap.Classification, gap.Classification.ToString());
             entries.Add(new CoverageGapEntry
@@ -88,6 +96,8 @@ internal static class ResultsFormatter
                 FileOffset = $"0x{gap.FileOffset:X8}",
                 Size = formatSize(gap.Size),
                 Classification = gapDisplayName,
+                Recoverable = FormatRecoverableSummary(candidates),
+                Evidence = FormatRecoverableEvidence(candidates),
                 Context = gap.Context,
                 RawFileOffset = gap.FileOffset,
                 RawSize = gap.Size
@@ -95,6 +105,35 @@ internal static class ResultsFormatter
         }
 
         return entries;
+    }
+
+    private static string FormatRecoverableSummary(IReadOnlyList<DmpGapRecoveryCandidate>? candidates)
+    {
+        if (candidates is not { Count: > 0 })
+        {
+            return "";
+        }
+
+        var promoted = candidates.Count(c => c.Disposition != DmpGapRecoveryDisposition.AuditOnly);
+        return promoted > 0
+            ? $"{candidates.Count:N0} ({promoted:N0} eligible)"
+            : $"{candidates.Count:N0}";
+    }
+
+    private static string FormatRecoverableEvidence(IReadOnlyList<DmpGapRecoveryCandidate>? candidates)
+    {
+        if (candidates is not { Count: > 0 })
+        {
+            return "";
+        }
+
+        return string.Join(", ",
+            candidates
+                .GroupBy(c => c.DisplayFamily)
+                .OrderByDescending(g => g.Count())
+                .ThenBy(g => g.Key, StringComparer.Ordinal)
+                .Take(4)
+                .Select(g => $"{g.Key} x{g.Count():N0}"));
     }
 
     /// <summary>

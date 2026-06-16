@@ -10,6 +10,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Quest;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
+using FalloutXbox360Utils.Core.Recovery;
 
 namespace FalloutXbox360Utils;
 
@@ -132,6 +133,26 @@ internal static class EsmBrowserTreeBuilder
             ("Default Objects", "DOBJ")));
 
         return root;
+    }
+
+    public static void AppendRecoverableGapCategory(
+        ObservableCollection<EsmBrowserNode> root,
+        IReadOnlyList<DmpGapRecoveryCandidate>? candidates)
+    {
+        if (candidates is not { Count: > 0 })
+        {
+            return;
+        }
+
+        var recordTypes = candidates
+            .GroupBy(c => c.DisplayFamily)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => (Name: g.Key, Records: (IList)g
+                .OrderBy(c => c.FileOffset)
+                .ToList()))
+            .ToArray();
+
+        AddCategory(root, "Recoverable Gaps", "\uE9D9", recordTypes);
     }
 
     /// <summary>
@@ -269,6 +290,12 @@ internal static class EsmBrowserTreeBuilder
 
         foreach (var record in records)
         {
+            if (record is DmpGapRecoveryCandidate candidate)
+            {
+                recordNodes.Add(BuildRecoverableGapNode(candidate, typeNode));
+                continue;
+            }
+
             var (formId, editorId, fullName, offset) = EsmPropertyFormatter.ExtractRecordIdentity(record);
             var formIdHex = $"0x{formId:X8}";
 
@@ -377,6 +404,129 @@ internal static class EsmBrowserTreeBuilder
 
             typeNode.HasUnrealizedChildren = false;
         }
+    }
+
+    private static EsmBrowserNode BuildRecoverableGapNode(
+        DmpGapRecoveryCandidate candidate,
+        EsmBrowserNode typeNode)
+    {
+        var formIdHex = candidate.FormId.HasValue
+            ? $"0x{candidate.FormId.Value:X8}"
+            : null;
+        var address = candidate.VirtualAddress.HasValue
+            ? $"VA 0x{candidate.VirtualAddress.Value:X8}"
+            : $"file 0x{candidate.FileOffset:X8}";
+        var displayName = candidate.RecordType != null
+            ? $"{candidate.RecordType} {formIdHex ?? ""} @ 0x{candidate.FileOffset:X8}".Trim()
+            : $"{candidate.ClassName ?? candidate.Kind.ToString()} @ 0x{candidate.FileOffset:X8}";
+
+        return new EsmBrowserNode
+        {
+            DisplayName = displayName,
+            Detail = $"{candidate.Disposition}; confidence {candidate.Confidence}; {address}",
+            FormIdHex = formIdHex,
+            NodeType = "Record",
+            IconGlyph = typeNode.IconGlyph,
+            ParentTypeName = typeNode.ParentTypeName,
+            ParentIconGlyph = typeNode.IconGlyph,
+            FileOffset = candidate.FileOffset,
+            DataObject = candidate,
+            Properties = BuildRecoverableGapProperties(candidate)
+        };
+    }
+
+    private static List<EsmPropertyEntry> BuildRecoverableGapProperties(DmpGapRecoveryCandidate candidate)
+    {
+        var properties = new List<EsmPropertyEntry>
+        {
+            Property("Kind", candidate.Kind.ToString(), "Identity"),
+            Property("Family", candidate.DisplayFamily, "Identity"),
+            Property("Disposition", candidate.Disposition.ToString(), "Recovery"),
+            Property("Confidence", candidate.Confidence.ToString(), "Recovery"),
+            Property("Evidence", candidate.Evidence, "Recovery"),
+            Property("File Offset", $"0x{candidate.FileOffset:X8}", "Location"),
+            Property("Length", $"{candidate.Length:N0} bytes", "Location"),
+            Property("Gap Offset", $"0x{candidate.GapFileOffset:X8}", "Gap"),
+            Property("Gap Size", $"{candidate.GapSize:N0} bytes", "Gap"),
+            Property("Gap Classification", candidate.GapClassification, "Gap"),
+            Property("Gap Context", candidate.GapContext, "Gap")
+        };
+
+        AddOptional(properties, "Record Type", candidate.RecordType, "Identity");
+        AddOptional(properties, "Form Type", candidate.FormType.HasValue ? $"0x{candidate.FormType.Value:X2}" : null,
+            "Identity");
+        AddOptional(properties, "Class", candidate.ClassName, "Identity");
+        if (candidate.FormId is { } formId)
+        {
+            properties.Add(new EsmPropertyEntry
+            {
+                Name = "Form ID",
+                Value = $"0x{formId:X8}",
+                Category = "Identity",
+                LinkedFormId = formId
+            });
+        }
+
+        AddOptional(properties, "Virtual Address",
+            candidate.VirtualAddress.HasValue ? $"0x{candidate.VirtualAddress.Value:X8}" : null, "Location");
+        AddOptional(properties, "Raw Data Size",
+            candidate.RawDataSize.HasValue ? $"{candidate.RawDataSize.Value:N0} bytes" : null, "Raw Record");
+        AddOptional(properties, "Raw Flags",
+            candidate.RawFlags.HasValue ? $"0x{candidate.RawFlags.Value:X8}" : null, "Raw Record");
+        if (candidate.Kind == DmpGapRecoveryCandidateKind.RawEsmRecord)
+        {
+            properties.Add(Property("Xbox/Reversed Header", candidate.IsBigEndian ? "Yes" : "No", "Raw Record"));
+        }
+
+        AddOptional(properties, "Decoded Text", candidate.DecodedText, "Dialogue");
+        AddFormId(properties, "Topic", candidate.TopicFormId, "Dialogue");
+        AddFormId(properties, "Quest", candidate.QuestFormId, "Dialogue");
+
+        return properties
+            .Where(p => !string.IsNullOrWhiteSpace(p.Value) || p.LinkedFormId.HasValue)
+            .ToList();
+    }
+
+    private static EsmPropertyEntry Property(string name, string value, string category)
+    {
+        return new EsmPropertyEntry
+        {
+            Name = name,
+            Value = value,
+            Category = category
+        };
+    }
+
+    private static void AddOptional(
+        List<EsmPropertyEntry> properties,
+        string name,
+        string? value,
+        string category)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            properties.Add(Property(name, value, category));
+        }
+    }
+
+    private static void AddFormId(
+        List<EsmPropertyEntry> properties,
+        string name,
+        uint? formId,
+        string category)
+    {
+        if (formId is not > 0)
+        {
+            return;
+        }
+
+        properties.Add(new EsmPropertyEntry
+        {
+            Name = name,
+            Value = $"0x{formId.Value:X8}",
+            Category = category,
+            LinkedFormId = formId.Value
+        });
     }
 
     /// <summary>

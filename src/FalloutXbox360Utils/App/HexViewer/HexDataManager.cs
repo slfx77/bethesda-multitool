@@ -4,6 +4,7 @@ using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using FalloutXbox360Utils.Core.Recovery;
 
 namespace FalloutXbox360Utils;
 
@@ -119,35 +120,52 @@ internal sealed class HexDataManager : IDisposable
     ///     Most gap types are collapsed to a single "Gap" label; only RecordSignature and
     ///     AssetManagement retain distinct labels (they have semantic meaning).
     /// </summary>
-    public void AddCoverageGapRegions(CoverageResult coverage)
+    public void AddCoverageGapRegions(
+        CoverageResult coverage,
+        IReadOnlyList<DmpGapRecoveryCandidate>? recoverableCandidates = null)
     {
-        AddCoverageGapRegionsCore(coverage);
+        AddCoverageGapRegionsCore(coverage, recoverableCandidates);
     }
 
     /// <summary>
     ///     Async version that offloads gap region building to a background thread.
     /// </summary>
-    public async Task AddCoverageGapRegionsAsync(CoverageResult coverage)
+    public async Task AddCoverageGapRegionsAsync(
+        CoverageResult coverage,
+        IReadOnlyList<DmpGapRecoveryCandidate>? recoverableCandidates = null)
     {
-        await Task.Run(() => AddCoverageGapRegionsCore(coverage));
+        await Task.Run(() => AddCoverageGapRegionsCore(coverage, recoverableCandidates));
     }
 
-    private void AddCoverageGapRegionsCore(CoverageResult coverage)
+    private void AddCoverageGapRegionsCore(
+        CoverageResult coverage,
+        IReadOnlyList<DmpGapRecoveryCandidate>? recoverableCandidates)
     {
+        var candidatesByGap = recoverableCandidates?
+            .GroupBy(c => (c.GapFileOffset, c.GapSize))
+            .ToDictionary(g => g.Key, g => g.ToList()) ??
+                              new Dictionary<(long GapFileOffset, long GapSize), List<DmpGapRecoveryCandidate>>();
+
         // Merge into a local copy and publish atomically — this runs on a thread-pool thread
         // while the UI thread's renderers binary-search the live list.
         var merged = new List<FileRegion>(_fileRegions);
         foreach (var gap in coverage.Gaps)
         {
-            var color = FileTypeColors.GetMemoryMapGapColor(gap.Classification);
+            candidatesByGap.TryGetValue((gap.FileOffset, gap.Size), out var candidates);
+            var hasRecoveryCandidates = candidates is { Count: > 0 };
+            var color = hasRecoveryCandidates
+                ? FileTypeColors.GetMemoryMapGapColor(GapClassification.RecordSignature)
+                : FileTypeColors.GetMemoryMapGapColor(gap.Classification);
 
             // Simplified display name for memory map
-            var typeName = gap.Classification switch
-            {
-                GapClassification.RecordSignature => $"Record Signatures ({FormatGapSize(gap.Size)})",
-                GapClassification.AssetManagement => $"Asset Mgmt ({FormatGapSize(gap.Size)})",
-                _ => $"Gap ({FormatGapSize(gap.Size)})"
-            };
+            var typeName = hasRecoveryCandidates
+                ? FormatRecoverableGapLabel(candidates!, gap.Size)
+                : gap.Classification switch
+                {
+                    GapClassification.RecordSignature => $"Record Signatures ({FormatGapSize(gap.Size)})",
+                    GapClassification.AssetManagement => $"Asset Mgmt ({FormatGapSize(gap.Size)})",
+                    _ => $"Gap ({FormatGapSize(gap.Size)})"
+                };
 
             merged.Add(new FileRegion
             {
@@ -167,6 +185,23 @@ internal sealed class HexDataManager : IDisposable
         });
 
         _fileRegions = merged;
+    }
+
+    private static string FormatRecoverableGapLabel(
+        IReadOnlyList<DmpGapRecoveryCandidate> candidates,
+        long gapSize)
+    {
+        var prefix = candidates.All(c => c.Kind == DmpGapRecoveryCandidateKind.RawEsmRecord)
+            ? "Raw ESM"
+            : "Recoverable";
+        var summary = string.Join(", ",
+            candidates
+                .GroupBy(c => c.RecordType ?? c.ClassName ?? c.Kind.ToString())
+                .OrderByDescending(g => g.Count())
+                .ThenBy(g => g.Key, StringComparer.Ordinal)
+                .Take(3)
+                .Select(g => $"{g.Key} x{g.Count():N0}"));
+        return $"{prefix}: {summary} ({FormatGapSize(gapSize)})";
     }
 
     private static string FormatGapSize(long bytes)
