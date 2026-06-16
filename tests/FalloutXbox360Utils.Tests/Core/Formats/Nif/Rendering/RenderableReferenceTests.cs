@@ -86,13 +86,14 @@ public sealed class RenderableReferenceTests
     }
 
     [Fact]
-    public void TryBuild_MultiAxisRotation_NegatesYawOfGamebryoEulerMatrix()
+    public void TryBuild_MultiAxisRotation_NegatesAllAnglesOfGamebryoEulerMatrix()
     {
         // The engine builds M = Rx·Ry·Rz (decompiled NiMatrix3::FromEulerAnglesXYZ) from the raw
-        // DATA Euler angles. On-screen this renderer negates ONLY the yaw angle to match the game
-        // (heading is the opposite hand from the renderer's world Z); pitch/roll are unchanged. So
-        // the applied rotation is W = Rx(RotX)·Ry(RotY)·Rz(−RotZ). Validate against W·local with all
-        // three axes non-trivial so order + the yaw-only negation are both pinned.
+        // DATA Euler angles and renders M·v. On-screen this renderer applies M(−θ) — all three angles
+        // negated, same build order — because its world frame is a chirality flip of the engine's. So
+        // the applied rotation is W = Rx(−RotX)·Ry(−RotY)·Rz(−RotZ). (Proven against the quarry
+        // conveyor placement geometry.) Validate against W·local with all three axes non-trivial so
+        // order + the all-angle negation are both pinned.
         const float rx = 0.30f, ry = 0.60f, rz = 1.10f;
 
         var placement = new PlacedReference
@@ -108,11 +109,11 @@ public sealed class RenderableReferenceTests
 
         var world = RenderableReference.TryBuild(placement)!.Value.WorldMatrix;
 
-        // Compare every local basis axis against W·local = Rx(rx)·Ry(ry)·Rz(−rz)·local.
+        // Compare every local basis axis against W·local = Rx(−rx)·Ry(−ry)·Rz(−rz)·local.
         foreach (var axis in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ })
         {
             var actual = Vector3.Transform(axis, world);
-            var expected = MakeXRotation(rx, MakeYRotation(ry, MakeZRotation(-rz, axis)));
+            var expected = MakeXRotation(-rx, MakeYRotation(-ry, MakeZRotation(-rz, axis)));
             Assert.Equal(expected.X, actual.X, 4);
             Assert.Equal(expected.Y, actual.Y, 4);
             Assert.Equal(expected.Z, actual.Z, 4);
@@ -121,8 +122,8 @@ public sealed class RenderableReferenceTests
 
     // Engine column-vector per-axis builders, transcribed verbatim from the decompile
     // (tools/GhidraProject/refr_rotation_decompiled.txt): each Make*Rotation writes a row-major 3x3
-    // applied to a column vector (v' = R·v). Composing MakeXRotation∘MakeYRotation∘MakeZRotation(−c)
-    // yields the engine's M with the yaw angle negated — the renderer's on-screen orientation.
+    // applied to a column vector (v' = R·v). Composing them with all three angles negated yields
+    // the engine's M(−θ) — the renderer's on-screen orientation (chirality-flipped frame).
     private static Vector3 MakeXRotation(float a, Vector3 v)
     {
         float c = MathF.Cos(a), s = MathF.Sin(a);
@@ -258,5 +259,74 @@ public sealed class RenderableReferenceTests
 
         var expectedRadius = new Vector3(50f, 50f, 10f).Length() * 2f;
         Assert.Equal(expectedRadius, built.BoundsRadius, 2);
+    }
+
+    [Theory]
+    // Standalone marker statics — filename starts with "marker" (the gap the EditorMarker
+    // shape-name skip misses; their shapes are named e.g. "MarkerX:0", not "EditorMarker").
+    [InlineData("meshes\\MarkerX.nif")]
+    [InlineData("meshes\\MarkerXHeading.nif")]
+    [InlineData("meshes\\Marker_Map.NIF")] // case-insensitive extension
+    [InlineData("MarkerX.nif")] // bare filename, no directory
+    [InlineData("meshes/marker_travel.nif")] // forward slashes
+    // Data-defined encounter/idle markers — "markers" folder segment.
+    [InlineData("meshes\\markers\\marker_encant.nif")]
+    [InlineData("meshes\\MARKERS\\idle.nif")] // case-insensitive segment
+    public void IsMarkerModelPath_MarkerObjects_ReturnTrue(string path)
+        => Assert.True(RenderableReference.IsMarkerModelPath(path));
+
+    [Theory]
+    [InlineData("meshes\\architecture\\market.nif")] // "market" != "marker" prefix
+    [InlineData("meshes\\supermarket\\shelf.nif")] // folder contains "market", not a marker
+    [InlineData("meshes\\landscape\\rock01.nif")]
+    [InlineData("meshes\\markers2\\thing.nif")] // segment "markers2" != "markers"
+    [InlineData(null)]
+    [InlineData("")]
+    public void IsMarkerModelPath_NonMarkers_ReturnFalse(string? path)
+        => Assert.False(RenderableReference.IsMarkerModelPath(path));
+
+    [Fact]
+    public void TryBuild_MarkerModelPath_SetsIsMarker()
+    {
+        var marker = new PlacedReference
+        {
+            FormId = 0x1, BaseFormId = 0x2, RecordType = "REFR",
+            ModelPath = "meshes\\MarkerXHeading.nif", X = 0f, Y = 0f, Z = 0f, Scale = 1f
+        };
+        var normal = marker with { ModelPath = "meshes\\architecture\\market.nif" };
+
+        Assert.True(RenderableReference.TryBuild(marker)!.Value.IsMarker);
+        Assert.False(RenderableReference.TryBuild(normal)!.Value.IsMarker);
+    }
+
+    [Theory]
+    [InlineData("meshes\\architecture\\strip\\Imposter\\OverpassSectionLo01_Imposter.NIF")] // segment + suffix
+    [InlineData("meshes\\foo\\bar_imposter.nif")] // suffix only
+    [InlineData("meshes\\architecture\\IMPOSTER\\thing.nif")] // segment, case-insensitive
+    public void IsImposterModelPath_Imposters_ReturnTrue(string path)
+        => Assert.True(RenderableReference.IsImposterModelPath(path));
+
+    [Theory]
+    [InlineData("meshes\\clutter\\composter.nif")] // ends "composter.nif", not "_imposter.nif"
+    [InlineData("meshes\\imposters\\x.nif")] // plural segment "imposters" != "imposter"
+    [InlineData("meshes\\architecture\\overpasssectionlo01.nif")]
+    [InlineData(null)]
+    [InlineData("")]
+    public void IsImposterModelPath_NonImposters_ReturnFalse(string? path)
+        => Assert.False(RenderableReference.IsImposterModelPath(path));
+
+    [Fact]
+    public void TryBuild_ImposterModelPath_SetsIsImposter()
+    {
+        var imposter = new PlacedReference
+        {
+            FormId = 0x1, BaseFormId = 0x2, RecordType = "REFR",
+            ModelPath = "meshes\\architecture\\strip\\imposter\\x_imposter.nif",
+            X = 0f, Y = 0f, Z = 0f, Scale = 1f
+        };
+        var full = imposter with { ModelPath = "meshes\\architecture\\overpasssectionlo01.nif" };
+
+        Assert.True(RenderableReference.TryBuild(imposter)!.Value.IsImposter);
+        Assert.False(RenderableReference.TryBuild(full)!.Value.IsImposter);
     }
 }

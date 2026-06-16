@@ -31,8 +31,12 @@ internal readonly record struct RenderableReference(
     Vector3 BoundsCenter,
     float BoundsRadius,
     uint MeshId,
-    bool IsInitiallyDisabled)
+    bool IsInitiallyDisabled,
+    bool IsMarker,
+    bool IsImposter)
 {
+    private static readonly char[] PathSeparators = ['/', '\\'];
+
     /// <summary>
     ///     4-pre Item B — computes the stable per-process MeshId from a ModelPath. Used to
     ///     dedupe the per-REFR mesh-cache lookup in the cull loop: instead of doing a
@@ -43,6 +47,57 @@ internal readonly record struct RenderableReference(
     /// </summary>
     public static uint ComputeMeshId(string modelPath)
         => (uint)string.GetHashCode(modelPath, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    ///     True when <paramref name="modelPath" /> is an engine "marker" object the game hides in
+    ///     play — XMarker/XMarkerHeading, map/travel/teleport/door markers, and the data-defined
+    ///     encounter/idle markers under a <c>markers\</c> folder. Engine-derived: the game hardcodes
+    ///     a <c>marker*.nif</c> set and assembles markers under <c>EditorMarker</c> nodes that
+    ///     <c>RemoveEditorMarkers</c> strips in-game (the embedded-shape case is already filtered by
+    ///     <see cref="NifBlockParsers.IsEditorHelperShape" />; this covers the standalone statics
+    ///     whose shapes are named e.g. <c>MarkerX:0</c>). Matches the FILENAME prefix (so
+    ///     "market"/"supermarket" are NOT misclassified) or a whole <c>markers</c> path segment
+    ///     (so "markers2" is not). See memory: ghidra_marker_hide_mechanism.
+    /// </summary>
+    public static bool IsMarkerModelPath(string? modelPath)
+    {
+        if (string.IsNullOrEmpty(modelPath)) return false;
+        var segments = modelPath.Split(PathSeparators, StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0) return false;
+        if (segments[^1].StartsWith("marker", StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var segment in segments)
+        {
+            if (segment.Equals("markers", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     True when <paramref name="modelPath" /> is an FNV "imposter" — a low-detail distant
+    ///     stand-in for geometry that lives elsewhere in the SAME worldspace (the real building/SCOL
+    ///     is placed nearby, just at a different origin — e.g. SSHQ's imposter sits ~1195 units from
+    ///     its <c>SCOL\SSHQExterior03</c>). The engine hides the imposter once the player's region
+    ///     loads the real geometry (region-based; decompiled
+    ///     <c>TESRegionDataImposter::SetImpostersVisible</c> / <c>GetIsImposter</c>). In a static
+    ///     full-detail render the whole worldspace is loaded, so every imposter is redundant — they
+    ///     are all culled (the real STAT/SCOL geometry remains). Identified by the engine's path
+    ///     convention: an <c>imposter</c> folder segment OR a <c>_imposter.nif</c> filename suffix.
+    ///     See memory: viewer_imposter_doubling.
+    /// </summary>
+    public static bool IsImposterModelPath(string? modelPath)
+    {
+        if (string.IsNullOrEmpty(modelPath)) return false;
+        var segments = modelPath.Split(PathSeparators, StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0) return false;
+        if (segments[^1].EndsWith("_imposter.nif", StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var segment in segments)
+        {
+            if (segment.Equals("imposter", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        return false;
+    }
 
     /// <summary>
     ///     Builds a <see cref="RenderableReference" /> from a <see cref="PlacedReference" />.
@@ -74,7 +129,9 @@ internal readonly record struct RenderableReference(
             BoundsCenter: center,
             BoundsRadius: radius,
             MeshId: ComputeMeshId(placement.ModelPath!),
-            IsInitiallyDisabled: placement.IsInitiallyDisabled);
+            IsInitiallyDisabled: placement.IsInitiallyDisabled,
+            IsMarker: IsMarkerModelPath(placement.ModelPath),
+            IsImposter: IsImposterModelPath(placement.ModelPath));
     }
 
     /// <summary>
@@ -91,16 +148,18 @@ internal readonly record struct RenderableReference(
     ///         matrix, e.g. <c>MakeZRotation = [c,-s,0; s,c,0; 0,0,1]</c>).
     ///       </item>
     ///     </list>
-    ///     On-screen the rotation is <c>W = Rx(RotX)·Ry(RotY)·Rz(−RotZ)</c> — the engine matrix with
-    ///     the YAW angle negated (the heading is the opposite hand from this renderer's world Z;
-    ///     pitch/roll are unchanged). See <see cref="ComposeWorldMatrix" /> for the empirical
-    ///     derivation (plain <c>M</c> = yaw wrong; full transpose <c>Mᵀ</c> = pitch/roll wrong;
-    ///     negating RotZ alone satisfies both). Pinned by <c>EngineRotationConventionTests</c>.
+    ///     On-screen the rotation is <c>W = Rx(−RotX)·Ry(−RotY)·Rz(−RotZ)</c> — the engine matrix
+    ///     <c>M = Rx·Ry·Rz</c> with ALL THREE Euler angles negated (the renderer's world frame is a
+    ///     chirality flip of the engine's, so a rotation reads as its negation). See
+    ///     <see cref="ComposeWorldMatrix" /> for the derivation, proven against ground-truth quarry
+    ///     conveyor placement geometry. Pinned by <c>EngineRotationConventionTests</c>.
     /// </summary>
     // Live ground-truth diagnostic. Set FALLOUT_VIEWER_DUMP_REFR=<substring> (matched against the
     // ModelPath, e.g. "road" or "dome") to append, for every matching placed object the live viewer
-    // loads, the parsed rotation AND the world-space bearing its local +X/+Y axes end up pointing —
-    // so we can compare the GUI's actual computed orientation against the engine/data. Output:
+    // loads: the parsed rotation, the world-space bearing its local +X/+Y axes end up pointing, AND
+    // the full affine world matrix (the exact transform handed to the GPU). The matrix lets us apply a
+    // mesh's real connector-vertex local coords offline and measure whether consecutive pieces' joints
+    // actually coincide in the live transform (e.g. monorail curve "slight rotation offset"). Output:
     // %TEMP%\fallout_refr_dump.txt. Capped to avoid runaway writes.
     private static readonly string? DumpFilter =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.DumpReference);
@@ -122,7 +181,13 @@ internal readonly record struct RenderableReference(
                 $"0x{p.FormId:X8} '{p.ModelPath}' pos=({p.X:F0},{p.Y:F0},{p.Z:F0}) " +
                 $"rotZdeg={p.RotZ * 180f / MathF.PI:F1} rotX={p.RotX:F3} rotY={p.RotY:F3} scale={p.Scale:F2} " +
                 $"|+X->bearing {Bearing(lx):F1} (z {lx.Z:F2}) |+Y->bearing {Bearing(ly):F1} (z {ly.Z:F2}) " +
-                $"|+Z->({lz.X:F2},{lz.Y:F2},{lz.Z:F2})";
+                $"|+Z->({lz.X:F2},{lz.Y:F2},{lz.Z:F2}) " +
+                // Full affine world matrix (row-vector: worldPt = localPt * W). 3x3 = scale·rotation,
+                // T = translation. Apply mesh connector-local coords to test joint coincidence.
+                $"|W3x3=[{world.M11:F5},{world.M12:F5},{world.M13:F5};" +
+                $"{world.M21:F5},{world.M22:F5},{world.M23:F5};" +
+                $"{world.M31:F5},{world.M32:F5},{world.M33:F5}] " +
+                $"T=({world.M41:F2},{world.M42:F2},{world.M43:F2})";
             try
             {
                 File.AppendAllText(Path.Combine(Path.GetTempPath(), "fallout_refr_dump.txt"), line + Environment.NewLine);
@@ -134,36 +199,15 @@ internal readonly record struct RenderableReference(
         }
     }
 
+    // The REFR placement matrix. The convention (negate all three DATA Euler angles — the engine
+    // builds M=Rx·Ry·Rz and renders M·v; this renderer's world frame is a chirality flip, so it
+    // applies M(−θ)) lives in PlacedReferenceTransform so the 3D viewer and the 2D top-down map share
+    // ONE source of truth — see that type for the full engine derivation, the conveyor-geometry proof,
+    // and the dead-ends. The mesh scene-root node's OWN transform is NOT applied here: it is discarded
+    // at bake time (NifSceneGraphWalker.ComputeWorldTransforms treatRootsAsIdentity), because placing
+    // a REFR replaces the scene root's transform with this placement.
     private static Matrix4x4 ComposeWorldMatrix(PlacedReference p)
-    {
-        var scale = p.Scale > 0f ? p.Scale : 1f;
-        // The engine BUILDS its orientation as M = Rx·Ry·Rz (NiMatrix3::FromEulerAnglesXYZ,
-        // VA 0x82E20B38 — decompile-proven), with standard right-handed column-vector per-axis
-        // builders. The ONLY discrepancy vs the on-screen result is the sign of the YAW angle
-        // (RotZ): the engine's heading is the opposite hand from this renderer's world Z, so the
-        // correct on-screen rotation is W = Rx(RotX)·Ry(RotY)·Rz(−RotZ). Pitch (RotX) and roll
-        // (RotY) are kept as built.
-        //
-        // This was pinned by two empirical states, which together admit only this solution:
-        //   • plain M           → yaw WRONG, pitch/roll right   (Rz(+c) is the wrong-hand heading)
-        //   • full transpose Mᵀ → yaw right, pitch/roll WRONG   (inverting ALL axes, the pipes
-        //                                                          in Lucky38World)
-        // Mᵀ only appeared to fix yaw because for a pure-yaw object Mᵀ = Rz(−c) = W; for a
-        // pitched/rolled object Mᵀ also flips pitch/roll. Negating RotZ alone fixes the heading
-        // without disturbing pitch/roll.
-        //
-        // System.Numerics is row-vector (v·A), and Vector3.Transform(v, CreateRotationZ(θ)) ==
-        // MakeZRotation(θ)·v. So CreateRotationZ(−RotZ)·CreateRotationY(RotY)·CreateRotationX(RotX)
-        // evaluates under Vector3.Transform to Rx·Ry·Rz(−c)·v = W·v — exactly the engine matrix
-        // with the yaw angle negated. No transpose.
-        var rotation =
-            Matrix4x4.CreateRotationZ(-p.RotZ)
-            * Matrix4x4.CreateRotationY(p.RotY)
-            * Matrix4x4.CreateRotationX(p.RotX);
-        return Matrix4x4.CreateScale(scale)
-             * rotation
-             * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
-    }
+        => PlacedReferenceTransform.ComposeWorldMatrix(p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
 
     /// <summary>
     ///     World-space bounding sphere from the base record's OBND, conservatively wrapped

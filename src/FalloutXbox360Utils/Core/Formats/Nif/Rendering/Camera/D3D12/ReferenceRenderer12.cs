@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using FalloutXbox360Utils.Core.Orchestration;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
@@ -57,6 +58,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private const float SmallPropDistanceFraction = 0.6f;
     private const int OpaqueBatchStaleFrameWindow = 120;
     private const int OpaqueBatchPruneIntervalFrames = 30;
+    // "Dist" loads a SQUARE of half-extent cylinderRadius (Chebyshev). The per-cell sub-cell broadphase
+    // is a circular radius query, so widen its radius by √2 to reach the square's corners; the exact
+    // per-REFR Chebyshev test below then trims back to the square (the broadphase only over-includes).
+    private const float SquareBroadphaseFactor = 1.41422f;
     private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
 
     private readonly GpuDevice12 _gpu;
@@ -79,11 +84,23 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // Candidates returned by the per-cell spatial broadphase before exact sphere/frustum cull.
     private readonly List<RenderableReference> _cullCandidateScratch = new(256);
 
-    // 4-pre Item A — survivors of the per-cell cull pass, reused across cells. The render
-    // loop now runs cull and mesh-resolve as two passes per cell so we can wrap each phase
-    // in a single Stopwatch range instead of timing per REFR (which was costing ~0.2 ms
-    // per frame at 5K REFRs just for the GetTimestamp calls).
-    private readonly List<RenderableReference> _cullSurvivorScratch = new(256);
+    // Profiler fix #4 — cached cull survivors. The render loop runs the cull (broadphase + per-REFR
+    // sphere/frustum tests) and the mesh-resolve/batch build as two SEPARATE passes. When the camera
+    // pose, the mesh-bounds generation (grows as meshes resolve and tighten their cull spheres), and
+    // the visibility filters are all unchanged frame-to-frame, the cull is SKIPPED and this survivor
+    // list is reused — static / settled frames otherwise re-test ~15k candidates every frame (the
+    // dominant late-frame cost). The resolve+batch pass still runs each frame so streamed-in meshes
+    // appear. Persists across frames (it's the cache); cleared only on a fresh cull or LoadData.
+    private readonly List<RenderableReference> _cachedCullSurvivors = new(2048);
+    private bool _cullCacheValid;
+    private Matrix4x4 _cullCacheViewProj;
+    private int _cullCacheMeshRadiusCount;
+    private bool _cullCacheShowMarkers;
+    private bool _cullCacheShowImposters;
+    private bool _cullCacheShowDisabled;
+    private int _cullCacheCellsVisited;
+    private int _cullCacheCandidates;
+    private int _cullCacheCulled;
 
     // 4-pre Item B — per-frame memoization: MeshId → resolved CachedNifMesh12 (or null
     // when the cache hasn't uploaded it yet this frame). Cleared at the top of each
@@ -92,6 +109,19 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // (~80 ns × 5000 REFRs ≈ 0.4 ms) down to a uint-keyed lookup (~25 ns) after the
     // first sighting of each MeshId.
     private readonly Dictionary<uint, CachedNifMesh12?> _resolvedMeshesThisFrame = new(256);
+
+    // MeshId → the mesh's local bounding-sphere radius (around the NIF origin), recorded the first
+    // time a mesh resolves. Lets the per-REFR cull use the ACTUAL geometry extent (conservative)
+    // instead of the OBND/256 fallback, so large meshes stop popping at screen edges / near camera.
+    // Persists across frames + worldspaces (radius is static per NIF); bounded by unique-mesh count.
+    private readonly Dictionary<uint, float> _meshLocalRadius = new(512);
+
+    // Placed-NIF water planes (WaterShaderProperty geometry diverted out of the drawable submesh set
+    // at upload) accumulated as their meshes resolve, deduped per REFR FormId, and handed to
+    // WaterRenderer12 each frame. Each plane is static (mesh AABB × placement), so it is computed
+    // exactly once; both are reset on LoadData.
+    private readonly List<NifWaterPlane> _nifWaterPlanes = new();
+    private readonly HashSet<uint> _nifWaterPlaneSeen = new();
     private readonly bool _disableReferenceFrustum =
         EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.DisableReferenceFrustum);
 
@@ -105,6 +135,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private global::FalloutXbox360Utils.WorldRenderCache? _renderCache;
     private int _opaqueBatchFrameId;
     private bool _disposed;
+
+    // 3D-8: when Render(deferBlended: true) is used, the blended (transparent) reference submeshes are
+    // NOT drawn inside Render — the caller invokes RenderBlendedDeferred() after the water pass so water
+    // never paints over them. We stash the per-frame CBV address + frame index because the water pass
+    // rebinds PerFrameCbv (its own uniforms) and the DSV, which RenderBlendedDeferred must re-establish.
+    private ulong _deferredPerFrameCbvAddress;
+    private int _deferredFrameIndex;
 
     public ReferenceRenderer12(
         GpuDevice12 gpu,
@@ -135,6 +172,38 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public bool DetailedProfilingEnabled { get; set; }
     public bool ShowInitiallyDisabled { get; set; }
 
+    /// <summary>
+    ///     When <c>false</c> (default), engine "marker" objects (XMarker/heading, map/travel/door
+    ///     markers, encounter/idle markers) are culled — matching the game, which never renders them
+    ///     in play. Driven by <c>RenderableReference.IsMarker</c> (model-path classification).
+    /// </summary>
+    public bool ShowMarkers { get; set; }
+
+    /// <summary>
+    ///     When <c>false</c> (default), imposter references (low-detail distant LOD stand-ins) are
+    ///     culled. In a full-detail render the whole worldspace is loaded, so the real STAT/SCOL
+    ///     geometry each imposter stands in for is already present — matching the engine, which hides
+    ///     the imposter once that geometry's region loads. Driven by <c>RenderableReference.IsImposter</c>.
+    /// </summary>
+    public bool ShowImposters { get; set; }
+
+    /// <summary>
+    ///     Number of per-draw allocations that didn't fit the shared ring buffer this frame and were
+    ///     skipped (instead of throwing + abandoning the whole frame). Non-zero means the scene is
+    ///     denser than the ring can hold in one frame — raise <c>FALLOUT_VIEWER_RING_BUFFER_MB</c>.
+    ///     Surfaced in the HUD so the soft cap is visible rather than silent.
+    /// </summary>
+    public int LastFrameDrawsTruncated { get; private set; }
+
+    /// <summary>
+    ///     World-space water planes detected on placed-reference NIFs (cave/pool/reflecting-pool
+    ///     water). Accumulates as those references' meshes stream in; the host hands this to
+    ///     <see cref="WaterRenderer12.SetNifWaterPlanes" /> so placed water renders with the real
+    ///     water shader instead of a flat slab. The list reference is stable across a worldspace load
+    ///     (cleared, not reallocated, in <see cref="LoadData" />).
+    /// </summary>
+    public IReadOnlyList<NifWaterPlane> NifWaterPlanes => _nifWaterPlanes;
+
     private bool _streamingThrottled = true;
 
     /// <summary>
@@ -162,11 +231,53 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _renderCache = renderCache;
         _cells = cells;
         _spatialIndex = spatialIndex;
+        // The reference set + spatial index changed — the cached cull survivors are stale.
+        _cullCacheValid = false;
+        // Drop the accumulated NIF water planes so they don't leak across worldspace loads. Cleared
+        // (not reallocated) so the reference the host handed WaterRenderer12 stays valid.
+        _nifWaterPlanes.Clear();
+        _nifWaterPlaneSeen.Clear();
+
+        // Size the resident-mesh LRU to this worldspace's distinct-mesh working set so it holds the
+        // whole set rather than thrashing (evict → re-decode → re-upload) when the count exceeds the
+        // default cap. No-op when the capacity env knob pins a fixed cap (auto-size off).
+        _meshCache.SetMeshCapacity(
+            Core.Resources.ReferenceMeshCapacityPlanner.Plan(CountUniqueMeshPaths(cells)));
     }
 
+    // O(total placements), one-time per worldspace load — negligible next to the rest of load.
+    // OrdinalIgnoreCase matches the mesh LRU's key comparer so the count tracks real cache keys.
+    private static int CountUniqueMeshPaths(Dictionary<(int gx, int gy), CellRecord> cells)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cell in cells.Values)
+        {
+            foreach (var placed in cell.PlacedObjects)
+            {
+                if (!string.IsNullOrEmpty(placed.ModelPath))
+                {
+                    seen.Add(placed.ModelPath);
+                }
+            }
+        }
+
+        return seen.Count;
+    }
+
+    // IWorldRenderer entry point — draws opaque + blended inline (no deferral). Used by the 2D
+    // top-down overlay, which has no water pass.
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
+        => Render(viewProj, cylinder, deferBlended: false);
+
+    /// <param name="deferBlended">
+    ///     When true, the blended (transparent) reference submeshes are NOT drawn in this call — the
+    ///     caller must invoke <see cref="RenderBlendedDeferred" /> after the water pass so water does
+    ///     not paint over them (3D-8). False draws opaque + blended inline.
+    /// </param>
+    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder, bool deferBlended)
     {
         ReferencesDrawnLastFrame = 0;
+        LastFrameDrawsTruncated = 0;
         LastStats.Reset();
         _meshCache.ResetFrameStats();
         if (_cells is null || _cells.Count == 0 || _renderCache is null) return 0;
@@ -178,6 +289,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var segmentStarted = StartTiming();
         var perFrameAlloc = _ringBuffer.Allocate(frameIndex, PerFrameByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(Matrix4x4*)perFrameAlloc.CpuPtr = viewProj; }
+        _deferredPerFrameCbvAddress = perFrameAlloc.GpuAddress;
+        _deferredFrameIndex = frameIndex;
 
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
@@ -190,7 +303,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var drawn = 0;
         var throttled = _streamingThrottled;
         var uploadBudget = throttled ? MaxNewUploadsPerFrame : int.MaxValue;
-        var uploadTimeBudget = new FrameUploadTimeBudget(MaxUploadMillisecondsPerFrame);
+        var uploadTimeBudget = new FrameTimeBudget(MaxUploadMillisecondsPerFrame);
         var cylinderRadius = cylinder.Radius;
         var cylinderX = cylinder.Position.X;
         var cylinderY = cylinder.Position.Y;
@@ -216,153 +329,227 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _blendedDraws.Clear();
         _resolvedMeshesThisFrame.Clear();
 
-        foreach (var cell in EnumerateVisibleCells(cylinder))
+        // === Cull pass (or cache reuse) ===
+        // The cull (per-cell broadphase + per-REFR filter/sphere/frustum tests) is reused from the
+        // previous frame when the camera pose, the mesh-bounds generation (the count of resolved
+        // meshes — each new resolve can tighten a cull sphere), and the visibility filters are ALL
+        // unchanged. The viewProj is byte-identical frame-to-frame for a still camera, so equality is
+        // exact. This skips re-testing ~15k candidates on static / settled frames (profiler fix #4);
+        // active streaming keeps re-culling (cheap relative to decode) until the working set settles.
+        var cullCacheValid =
+            _cullCacheValid
+            && _cullCacheViewProj == viewProj
+            && _cullCacheMeshRadiusCount == _meshLocalRadius.Count
+            && _cullCacheShowMarkers == ShowMarkers
+            && _cullCacheShowImposters == ShowImposters
+            && _cullCacheShowDisabled == ShowInitiallyDisabled;
+
+        if (cullCacheValid)
+        {
+            // Restore the cull HUD counters so they don't read zero while the survivor set is reused.
+            cellsVisited = _cullCacheCellsVisited;
+            candidates = _cullCacheCandidates;
+            culled = _cullCacheCulled;
+        }
+        else
         {
             var cullStarted = StartTiming();
-            _cullCandidateScratch.Clear();
-            var totalPlacements = _renderCache.QueryPlacementCandidates(
-                cell,
-                cylinderX,
-                cylinderY,
-                cylinderRadius,
-                broadphaseFrustum,
-                FrustumCullMargin,
-                _cullCandidateScratch);
-            if (totalPlacements == 0)
-            {
-                cullMs += ElapsedMilliseconds(cullStarted);
-                continue;
-            }
-
-            cellsVisited++;
-            if (_cullCandidateScratch.Count == 0)
-            {
-                cullMs += ElapsedMilliseconds(cullStarted);
-                continue;
-            }
-            candidates += _cullCandidateScratch.Count;
-
-            // 4-pre Item A — two-pass per cell so each phase needs only ONE Stopwatch
-            // range instead of two per REFR. Survivors of the cull pass land in
-            // _cullSurvivorScratch; the mesh-resolve pass reads from there. Preserves
-            // both `cullMs` and `meshUploadMs` HUD fields with the same semantics
-            // (cull time = bounds + frustum tests; mesh time = cache hit lookup + batch
-            // additions). At 5K REFRs the Stopwatch.GetTimestamp() overhead drops from
-            // ~0.2 ms (10K samples) to ~0.01 ms (4 samples per visited cell × 300 cells).
-            _cullSurvivorScratch.Clear();
-
+            _cachedCullSurvivors.Clear();
             var smallPropCutoff = cylinderRadius * SmallPropDistanceFraction;
             var smallPropCutoffSq = smallPropCutoff * smallPropCutoff;
-            foreach (var r in _cullCandidateScratch)
+            foreach (var cell in EnumerateVisibleCells(cylinder))
             {
-                // Hide initially-disabled REFRs unless the toggle is on (default off = hidden),
-                // matching the 2D viewer. Counted as culled so the HUD reflects the filter.
-                if (!ShowInitiallyDisabled && r.IsInitiallyDisabled)
-                {
-                    culled++;
-                    continue;
-                }
-                var dx = r.BoundsCenter.X - cylinderX;
-                var dy = r.BoundsCenter.Y - cylinderY;
-                var distSq = dx * dx + dy * dy;
-                var maxDist = cylinderRadius + r.BoundsRadius;
-                var rejected = distSq > maxDist * maxDist;
-                // A5 — distance LOD: drop small props (clutter — barrels, debris, rocks) well
-                // beyond the near field. Shrinks the high-view-distance working set (fewer
-                // decodes/uploads/draws). Large props (BoundsRadius >= threshold: cars, shacks,
-                // buildings) are never distance-culled so landmark-scale geometry stays visible to
-                // the far plane. Trade-off, opted in: small objects fade out in the distance.
-                if (_enableDistanceLod && !rejected && r.BoundsRadius < SmallPropLodRadius && distSq > smallPropCutoffSq)
-                {
-                    rejected = true;
-                }
-                if (!rejected && hasFrustum)
-                {
-                    rejected = !frustum.IntersectsSphere(r.BoundsCenter, r.BoundsRadius + FrustumCullMargin);
-                }
-                if (rejected) culled++;
-                else _cullSurvivorScratch.Add(r);
-            }
-            cullMs += ElapsedMilliseconds(cullStarted);
+                _cullCandidateScratch.Clear();
+                var totalPlacements = _renderCache.QueryPlacementCandidates(
+                    cell,
+                    cylinderX,
+                    cylinderY,
+                    cylinderRadius * SquareBroadphaseFactor, // reach the square footprint's corners; exact test trims
+                    broadphaseFrustum,
+                    FrustumCullMargin,
+                    _cullCandidateScratch);
+                if (totalPlacements == 0 || _cullCandidateScratch.Count == 0) continue;
 
-            var meshStarted = StartTiming();
-            for (var si = 0; si < _cullSurvivorScratch.Count; si++)
-            {
-                var r = _cullSurvivorScratch[si];
-                // 4-pre Item B — per-frame memoized resolve. First sighting of a MeshId
-                // pays one string-keyed _meshCache.GetOrUpload (+ potential mid-frame Insert
-                // + LRU touch); every later REFR with the same MeshId hits this map
-                // directly (uint-keyed). At 5K REFRs / ~300 unique meshes that drops the
-                // cull-loop's mesh-lookup cost ~3× steady-state.
-                if (!_resolvedMeshesThisFrame.TryGetValue(r.MeshId, out var mesh))
+                cellsVisited++;
+                candidates += _cullCandidateScratch.Count;
+                foreach (var r in _cullCandidateScratch)
                 {
-                    // Stop *starting* new GPU uploads once the per-frame time budget is spent;
-                    // GetOrUpload still queues background decodes and returns already-resident
-                    // meshes, so the remainder simply appears over the next frame(s). Skipped when
-                    // unthrottled (overlay) so one pass uploads everything that has decoded.
-                    if (throttled && uploadBudget > 0 && uploadTimeBudget.IsExpired)
+                    // Hide initially-disabled REFRs unless the toggle is on (default off = hidden),
+                    // matching the 2D viewer. Counted as culled so the HUD reflects the filter.
+                    if (!ShowInitiallyDisabled && r.IsInitiallyDisabled)
                     {
-                        uploadBudget = 0;
-                    }
-                    // Nearest-first decode priority: squared XY distance from the view point, so a
-                    // dense area's foreground meshes decode before its far edge (the queue persists
-                    // across frames). Cheap — only computed on the first sighting of each MeshId.
-                    var pdx = r.BoundsCenter.X - cylinderX;
-                    var pdy = r.BoundsCenter.Y - cylinderY;
-                    mesh = _meshCache.GetOrUpload(r.ModelPath, ref uploadBudget, pdx * pdx + pdy * pdy);
-                    _resolvedMeshesThisFrame[r.MeshId] = mesh;
-                }
-                if (mesh is null)
-                {
-                    missingMeshes++;
-                    continue;
-                }
-                if (!mesh.TexturesReady)
-                {
-                    texturePending++;
-                    continue;
-                }
-
-                var anySubmeshDrawn = false;
-                foreach (var sub in mesh.Submeshes)
-                {
-                    if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend)
-                    {
-                        var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, r.WorldMatrix);
-                        _blendedDraws.Add(new BlendedReferenceDraw(
-                            r.WorldMatrix,
-                            sub,
-                            Vector3.DistanceSquared(worldCenter, cylinder.Position),
-                            sub.AlphaState,
-                            sub.RenderState,
-                            sub.TextureState));
-                        anySubmeshDrawn = true;
+                        culled++;
                         continue;
                     }
-
-                    var pso = sub.DoubleSided ? _opaqueDoublePso : _opaqueBackPso;
-                    var batch = GetOpaqueBatch(sub, pso);
-                    // Only the world matrix is per-instance. Material/texture state
-                    // (AlphaState/RenderState/TextureState + bindless TexIndices) is identical
-                    // across the whole batch — it comes from the submesh, which IS the batch key
-                    // — so it is uploaded once per batch via the InstanceDraw CBV at draw time
-                    // instead of being copied into every instance record.
-                    batch.Instances.Add(r.WorldMatrix);
-                    anySubmeshDrawn = true;
-                }
-
-                if (anySubmeshDrawn)
-                {
-                    referencesWithReadyMesh++;
-                    drawn++;
+                    // Hide engine marker objects (XMarker, map/travel markers, etc.) unless toggled on.
+                    // The game strips these in play; we match that for a clean render.
+                    if (!ShowMarkers && r.IsMarker)
+                    {
+                        culled++;
+                        continue;
+                    }
+                    // Hide imposter LOD stand-ins. Their real geometry (STAT/SCOL) lives elsewhere in
+                    // the same worldspace (placed at a different origin, not exactly co-located), so in
+                    // this full-detail render — where the whole worldspace is loaded — every imposter is
+                    // redundant and the engine would have hidden it. Toggle back via ShowImposters.
+                    if (!ShowImposters && r.IsImposter)
+                    {
+                        culled++;
+                        continue;
+                    }
+                    // Cull bounds: once a mesh is resident, use its ACTUAL local bounding sphere (radius
+                    // around the NIF origin, scaled into world) instead of the OBND-or-256-fallback baked
+                    // at LoadData. The mesh sphere is conservative (contains all geometry) and centered at
+                    // the placement point, so large meshes (highways/buildings) with a missing/tiny OBND no
+                    // longer get culled at the screen edge or when the camera is close. Falls back to the
+                    // OBND sphere until the mesh first resolves (it then self-corrects on later frames).
+                    Vector3 cullCenter;
+                    float cullRadius;
+                    if (_meshLocalRadius.TryGetValue(r.MeshId, out var localRadius))
+                    {
+                        cullCenter = r.WorldMatrix.Translation;
+                        var basisX = new Vector3(r.WorldMatrix.M11, r.WorldMatrix.M12, r.WorldMatrix.M13);
+                        cullRadius = localRadius * basisX.Length(); // uniform-scale assumption (FNV refs)
+                    }
+                    else
+                    {
+                        cullCenter = r.BoundsCenter;
+                        cullRadius = r.BoundsRadius;
+                    }
+                    var dx = cullCenter.X - cylinderX;
+                    var dy = cullCenter.Y - cylinderY;
+                    var distSq = dx * dx + dy * dy; // retained for the small-prop distance LOD below
+                    var maxDist = cylinderRadius + cullRadius;
+                    // Square ("Dist") footprint: reject iff the object falls outside the half-extent box
+                    // along either axis (Chebyshev), so references load as a square matching the terrain/
+                    // grid footprint instead of a circle.
+                    var rejected = MathF.Abs(dx) > maxDist || MathF.Abs(dy) > maxDist;
+                    // A5 — distance LOD: drop small props (clutter — barrels, debris, rocks) well
+                    // beyond the near field. Shrinks the high-view-distance working set (fewer
+                    // decodes/uploads/draws). Large props (cullRadius >= threshold: cars, shacks,
+                    // buildings) are never distance-culled so landmark-scale geometry stays visible to
+                    // the far plane. Trade-off, opted in: small objects fade out in the distance.
+                    if (_enableDistanceLod && !rejected && cullRadius < SmallPropLodRadius && distSq > smallPropCutoffSq)
+                    {
+                        rejected = true;
+                    }
+                    if (!rejected && hasFrustum)
+                    {
+                        rejected = !frustum.IntersectsSphere(cullCenter, cullRadius + FrustumCullMargin);
+                    }
+                    if (rejected) culled++;
+                    else _cachedCullSurvivors.Add(r);
                 }
             }
-            meshUploadMs += ElapsedMilliseconds(meshStarted);
+            cullMs = ElapsedMilliseconds(cullStarted);
+
+            // Snapshot the cache key. MeshRadiusCount is captured BEFORE the resolve pass (below) adds
+            // this frame's newly-resolved radii, so the next frame re-culls iff a new mesh resolved.
+            _cullCacheValid = true;
+            _cullCacheViewProj = viewProj;
+            _cullCacheMeshRadiusCount = _meshLocalRadius.Count;
+            _cullCacheShowMarkers = ShowMarkers;
+            _cullCacheShowImposters = ShowImposters;
+            _cullCacheShowDisabled = ShowInitiallyDisabled;
+            _cullCacheCellsVisited = cellsVisited;
+            _cullCacheCandidates = candidates;
+            _cullCacheCulled = culled;
         }
+
+        // === Resolve + batch pass (always runs — decoded meshes stream in across frames) ===
+        var meshStarted = StartTiming();
+        for (var si = 0; si < _cachedCullSurvivors.Count; si++)
+        {
+            var r = _cachedCullSurvivors[si];
+            // 4-pre Item B — per-frame memoized resolve. First sighting of a MeshId
+            // pays one string-keyed _meshCache.GetOrUpload (+ potential mid-frame Insert
+            // + LRU touch); every later REFR with the same MeshId hits this map
+            // directly (uint-keyed). At 5K REFRs / ~300 unique meshes that drops the
+            // cull-loop's mesh-lookup cost ~3× steady-state.
+            if (!_resolvedMeshesThisFrame.TryGetValue(r.MeshId, out var mesh))
+            {
+                // Stop *starting* new GPU uploads once the per-frame time budget is spent;
+                // GetOrUpload still queues background decodes and returns already-resident
+                // meshes, so the remainder simply appears over the next frame(s). Skipped when
+                // unthrottled (overlay) so one pass uploads everything that has decoded.
+                if (throttled && uploadBudget > 0 && uploadTimeBudget.IsExpired)
+                {
+                    uploadBudget = 0;
+                }
+                // Nearest-first decode priority: squared XY distance from the view point, so a
+                // dense area's foreground meshes decode before its far edge (the queue persists
+                // across frames). Cheap — only computed on the first sighting of each MeshId.
+                var pdx = r.BoundsCenter.X - cylinderX;
+                var pdy = r.BoundsCenter.Y - cylinderY;
+                mesh = _meshCache.GetOrUpload(r.ModelPath, ref uploadBudget, pdx * pdx + pdy * pdy);
+                _resolvedMeshesThisFrame[r.MeshId] = mesh;
+            }
+            if (mesh is null)
+            {
+                missingMeshes++;
+                continue;
+            }
+            // Record the resident mesh's true local radius so the NEXT frame's cull uses real
+            // geometry extent for this MeshId. A new key here grows _meshLocalRadius.Count, which
+            // invalidates the cull cache next frame so the tighter bounds are applied.
+            _meshLocalRadius[r.MeshId] = mesh.LocalBoundsRadius;
+            // Placed water planes need no textures — emit them as soon as the mesh resolves, once per
+            // REFR (the seen-set dedups the per-frame resolve). Transforms the mesh-local water AABB(s)
+            // by this placement's world matrix into world-space footprints for WaterRenderer12.
+            if (mesh.WaterPlanesLocal.Count > 0 && _nifWaterPlaneSeen.Add(r.FormId))
+            {
+                AccumulateNifWaterPlanes(r.WorldMatrix, mesh.WaterPlanesLocal);
+            }
+            if (!mesh.TexturesReady)
+            {
+                texturePending++;
+                continue;
+            }
+
+            var anySubmeshDrawn = false;
+            foreach (var sub in mesh.Submeshes)
+            {
+                if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend)
+                {
+                    var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, r.WorldMatrix);
+                    _blendedDraws.Add(new BlendedReferenceDraw(
+                        r.WorldMatrix,
+                        sub,
+                        Vector3.DistanceSquared(worldCenter, cylinder.Position),
+                        sub.AlphaState,
+                        sub.RenderState,
+                        sub.TextureState));
+                    anySubmeshDrawn = true;
+                    continue;
+                }
+
+                var pso = sub.DoubleSided ? _opaqueDoublePso : _opaqueBackPso;
+                var batch = GetOpaqueBatch(sub, pso);
+                // Only the world matrix is per-instance. Material/texture state
+                // (AlphaState/RenderState/TextureState + bindless TexIndices) is identical
+                // across the whole batch — it comes from the submesh, which IS the batch key
+                // — so it is uploaded once per batch via the InstanceDraw CBV at draw time
+                // instead of being copied into every instance record.
+                batch.Instances.Add(r.WorldMatrix);
+                anySubmeshDrawn = true;
+            }
+
+            if (anySubmeshDrawn)
+            {
+                referencesWithReadyMesh++;
+                drawn++;
+            }
+        }
+        meshUploadMs = ElapsedMilliseconds(meshStarted);
 
         ID3D12PipelineState? currentPso = null;
         DrawOpaqueBatches(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref srvBindMs, ref drawCallMs, ref srvBinds, ref submeshDraws);
-        DrawBlended(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
+        // 3D-8: blended submeshes draw now (inline, e.g. top-down overlay) or are deferred to after the
+        // water pass via RenderBlendedDeferred() so water never paints over transparent meshes.
+        if (!deferBlended)
+        {
+            DrawBlended(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
+        }
 
         ReferencesDrawnLastFrame = drawn;
         LastStats.ReferenceCellsVisited = cellsVisited;
@@ -396,6 +583,33 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceDrawCallMilliseconds = drawCallMs;
         LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
         return drawn;
+    }
+
+    /// <summary>
+    ///     3D-8: draws the blended (transparent) reference submeshes accumulated by the most recent
+    ///     <see cref="Render" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
+    ///     never paints over transparent meshes. The water pass rebinds <c>PerFrameCbv</c> to its own
+    ///     uniforms (and may change topology), so this re-establishes the reference per-frame state
+    ///     before issuing the blended draws. The DSV is bound by the frame loop, so blended draws stay
+    ///     depth-tested against the opaque scene depth.
+    /// </summary>
+    public void RenderBlendedDeferred()
+    {
+        if (_blendedDraws.Count == 0) return;
+        var cmd = _recorder.CommandList;
+
+        cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, _deferredPerFrameCbvAddress);
+        cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
+
+        ID3D12PipelineState? currentPso = null;
+        double cbUpdateMs = 0, drawCallMs = 0;
+        var submeshDraws = 0;
+        DrawBlended(cmd, _deferredFrameIndex, ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
+
+        LastStats.ReferenceSubmeshDraws += submeshDraws;
+        LastStats.ReferenceCbUpdateMilliseconds += cbUpdateMs;
+        LastStats.ReferenceDrawCallMilliseconds += drawCallMs;
     }
 
     public void Dispose()
@@ -436,6 +650,45 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
     }
 
+    // Transforms each mesh-local water-plane AABB by the placement world matrix into a world-space
+    // axis-aligned footprint and appends it as a NifWaterPlane. All 8 local corners are transformed
+    // and re-bounded so a rotated/scaled placement still yields a correct world AABB; the water
+    // renderer draws a flat quad at the mid-Z over the rectangular XY footprint (separate X/Y extents).
+    private void AccumulateNifWaterPlanes(Matrix4x4 world, IReadOnlyList<(Vector3 Min, Vector3 Max)> localPlanes)
+    {
+        for (var pi = 0; pi < localPlanes.Count; pi++)
+        {
+            var (min, max) = localPlanes[pi];
+            var wMin = new Vector3(float.PositiveInfinity);
+            var wMax = new Vector3(float.NegativeInfinity);
+            for (var c = 0; c < 8; c++)
+            {
+                var corner = new Vector3(
+                    (c & 1) == 0 ? min.X : max.X,
+                    (c & 2) == 0 ? min.Y : max.Y,
+                    (c & 4) == 0 ? min.Z : max.Z);
+                var w = Vector3.Transform(corner, world);
+                wMin = Vector3.Min(wMin, w);
+                wMax = Vector3.Max(wMax, w);
+            }
+
+            // Keep the X and Y extents separate so a non-square plane (e.g. NVCleanWater1x4)
+            // covers its true rectangle instead of a max-side square that overhangs the short axis.
+            var footprintX = wMax.X - wMin.X;
+            var footprintY = wMax.Y - wMin.Y;
+            if (!float.IsFinite(footprintX) || !float.IsFinite(footprintY) ||
+                footprintX <= 0f || footprintY <= 0f)
+            {
+                continue;
+            }
+
+            _nifWaterPlanes.Add(new NifWaterPlane(
+                new Vector2(wMin.X, wMin.Y),
+                (wMin.Z + wMax.Z) * 0.5f,
+                new Vector2(footprintX, footprintY)));
+        }
+    }
+
     private void DrawOpaqueBatches(
         ID3D12GraphicsCommandList cmd,
         int frameIndex,
@@ -459,7 +712,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         var instanceStride = (uint)Marshal.SizeOf<Matrix4x4>();
         var instanceBytes = instanceStride * (uint)totalInstances;
-        var instanceAlloc = _ringBuffer.Allocate(frameIndex, instanceBytes + instanceStride - 1, alignment: 16);
+        // Soft-fail instead of throwing: if the whole instance buffer can't fit this frame, skip the
+        // opaque instanced pass (blended draws + later layers still present) rather than abandoning
+        // the frame and blanking every model. The ring is sized so this only bites the densest
+        // unthrottled top-down windows.
+        if (!_ringBuffer.TryAllocate(frameIndex, instanceBytes + instanceStride - 1, out var instanceAlloc, alignment: 16))
+        {
+            LastFrameDrawsTruncated += totalInstances;
+            return;
+        }
         var instanceByteOffset = AlignUp(instanceAlloc.ByteOffset, instanceStride);
         var instanceCpuPtr = instanceAlloc.CpuPtr + (int)(instanceByteOffset - instanceAlloc.ByteOffset);
 
@@ -504,7 +765,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 sub.TextureState,
                 new TexIndexQuad(sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex, 0, 0),
                 startInstance);
-            var instanceDrawAlloc = _ringBuffer.Allocate(frameIndex, InstanceDrawByteSize, GpuRingBuffer12.CbAlignment);
+            if (!_ringBuffer.TryAllocate(frameIndex, InstanceDrawByteSize, out var instanceDrawAlloc, GpuRingBuffer12.CbAlignment))
+            {
+                LastFrameDrawsTruncated += batch.Count;
+                break;
+            }
             unsafe { *(InstanceDrawConstants*)instanceDrawAlloc.CpuPtr = instanceDraw; }
             cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, instanceDrawAlloc.GpuAddress);
             cbUpdateMs += ElapsedMilliseconds(cbStarted);
@@ -534,26 +799,34 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         if (_blendedDraws.Count == 0) return;
 
         _blendedDraws.Sort(static (a, b) => b.DistanceSquared.CompareTo(a.DistanceSquared));
-        foreach (var draw in _blendedDraws)
+        for (var i = 0; i < _blendedDraws.Count; i++)
         {
+            var draw = _blendedDraws[i];
             var pso = GetBlendPipeline(
                 draw.Submesh.SrcBlendMode,
                 draw.Submesh.DstBlendMode,
                 draw.Submesh.DoubleSided);
-            DrawBlendedSubmesh(
+            if (!DrawBlendedSubmesh(
                 cmd,
                 frameIndex,
                 draw,
                 pso,
                 ref currentPso,
                 ref cbUpdateMs,
-                ref drawCallMs);
+                ref drawCallMs))
+            {
+                // Ring slot full — stop adding blended draws and present what fit (sorted
+                // back-to-front, so the nearest survive). Count the rest as truncated.
+                LastFrameDrawsTruncated += _blendedDraws.Count - i;
+                break;
+            }
             submeshDraws++;
             LastStats.ReferenceBlendedDraws++;
         }
     }
 
-    private void DrawBlendedSubmesh(
+    /// <summary>Returns <c>false</c> when the ring slot is full so the caller stops the blended pass.</summary>
+    private bool DrawBlendedSubmesh(
         ID3D12GraphicsCommandList cmd,
         int frameIndex,
         BlendedReferenceDraw draw,
@@ -562,12 +835,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ref double cbUpdateMs,
         ref double drawCallMs)
     {
-        if (!ReferenceEquals(currentPso, pso))
-        {
-            cmd.SetPipelineState(pso);
-            currentPso = pso;
-        }
-
         var cbStarted = StartTiming();
         var perDraw = new PerDrawConstants
         {
@@ -583,7 +850,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 0,
                 0),
         };
-        var perDrawAlloc = _ringBuffer.Allocate(frameIndex, PerDrawByteSize, GpuRingBuffer12.CbAlignment);
+        // Allocate before mutating PSO state so a soft-fail leaves the command list consistent.
+        if (!_ringBuffer.TryAllocate(frameIndex, PerDrawByteSize, out var perDrawAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            return false;
+        }
+        if (!ReferenceEquals(currentPso, pso))
+        {
+            cmd.SetPipelineState(pso);
+            currentPso = pso;
+        }
         unsafe { *(PerDrawConstants*)perDrawAlloc.CpuPtr = perDraw; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, perDrawAlloc.GpuAddress);
         cbUpdateMs += ElapsedMilliseconds(cbStarted);
@@ -593,6 +869,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         cmd.IASetIndexBuffer(draw.Submesh.IndexBufferView);
         cmd.DrawIndexedInstanced((uint)draw.Submesh.IndexCount, 1, 0, 0, 0);
         drawCallMs += ElapsedMilliseconds(drawStarted);
+        return true;
     }
 
     private void BindReferenceInstanceBuffer(
@@ -645,13 +922,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             CullMode = doubleSided ? D12.CullMode.None : D12.CullMode.Back,
             FrontCounterClockwise = true,
             DepthClipEnable = true,
+            // Antialias triangle edges on the multisampled scene RT (no-op when scene isn't MSAA).
+            MultisampleEnable = _gpu.SceneSampleCount > 1,
         };
 
         var depth = new D12.DepthStencilDescription
         {
             DepthEnable = true,
             DepthWriteMask = depthWriteEnabled ? D12.DepthWriteMask.All : D12.DepthWriteMask.Zero,
-            DepthFunc = ComparisonFunction.LessEqual,
+            DepthFunc = ComparisonFunction.GreaterEqual, // reversed-Z (near→1, far→0); depth clear = 0
             StencilEnable = false,
         };
 
@@ -684,7 +963,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
             RenderTargetFormats = new[] { Format.B8G8R8A8_UNorm },
             DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription(1, 0),
+            SampleDescription = new SampleDescription((uint)_gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
         return _gpu.Device.CreateGraphicsPipelineState(psoDesc);

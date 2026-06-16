@@ -57,6 +57,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 
     private readonly List<global::FalloutXbox360Utils.WorldWaterCell> _waterCells = new();
     private readonly List<global::FalloutXbox360Utils.WorldWaterCell> _visibleWaterScratch = new();
+    // Placed-NIF water planes (cave/pool/reflecting-pool water embedded in REFR meshes). Owned by
+    // ReferenceRenderer12 (which accumulates them as those references' meshes stream in) and handed
+    // here once per frame via SetNifWaterPlanes; culled into _visibleNifScratch each Render and drawn
+    // with the same shader/appearance as cell water.
+    private IReadOnlyList<NifWaterPlane> _nifWaterPlanes = Array.Empty<NifWaterPlane>();
+    private readonly List<NifWaterPlane> _visibleNifScratch = new();
     private float? _worldspaceDefaultWaterHeight;
     private FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World.WaterAppearance? _appearance;
     private uint _noiseBindlessIndex = NoNormalMap;
@@ -103,6 +109,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             CullMode = D12.CullMode.None, // flat plane, both faces
             FrontCounterClockwise = true,
             DepthClipEnable = true,
+            // Antialias edges on the multisampled scene RT (no-op when scene isn't MSAA).
+            MultisampleEnable = gpu.SceneSampleCount > 1,
         };
 
         // Read depth so terrain occludes submerged water; don't write depth so layer
@@ -111,7 +119,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         {
             DepthEnable = true,
             DepthWriteMask = D12.DepthWriteMask.Zero,
-            DepthFunc = ComparisonFunction.Less,
+            DepthFunc = ComparisonFunction.Greater, // reversed-Z (near→1, far→0); depth clear = 0
             StencilEnable = false,
         };
 
@@ -144,7 +152,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
             RenderTargetFormats = new[] { Format.B8G8R8A8_UNorm },
             DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription(1, 0),
+            SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
         _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
@@ -227,17 +235,27 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _depthFar = far;
     }
 
+    /// <summary>
+    ///     Supplies the world-space water planes detected on placed-reference NIFs (cave/pool water).
+    ///     The list is owned by <see cref="ReferenceRenderer12" /> and grows as those references'
+    ///     meshes stream in; this renderer reads it each frame and draws the visible planes with the
+    ///     same shader as cell water. Cheap reference assignment — call once per frame before Render.
+    /// </summary>
+    public void SetNifWaterPlanes(IReadOnlyList<NifWaterPlane> planes) => _nifWaterPlanes = planes;
+
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
     {
         LastStats.Reset();
-        if (_waterCells.Count == 0) return 0;
+        if (_waterCells.Count == 0 && _nifWaterPlanes.Count == 0) return 0;
 
         var started = StartTiming();
         var cmd = _recorder.CommandList;
         var frameIndex = _recorder.FrameIndex;
 
         var segmentStarted = StartTiming();
-        var visible = GatherVisibleWater(cylinder);
+        var cellVisible = GatherVisibleWater(cylinder);
+        var nifVisible = GatherVisibleNifPlanes(cylinder);
+        var visible = cellVisible + nifVisible;
         LastStats.VisibleCandidates = visible;
         LastStats.VisibleGatherMilliseconds = ElapsedMilliseconds(segmentStarted);
         if (visible == 0)
@@ -251,18 +269,35 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         LastStats.ResourceResizeMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartTiming();
-        for (var i = 0; i < visible; i++)
+        for (var i = 0; i < cellVisible; i++)
         {
             var water = _visibleWaterScratch[i];
             _instanceScratch[i] = new WaterInstance
             {
                 // OriginXY/FootprintSize are grid-derived for exteriors and AABB-derived for
-                // interiors (see WorldSpatialIndex.BuildInterior), so this is grid-agnostic.
-                CellOriginAndFootprint = new Vector4(
+                // interiors (see WorldSpatialIndex.BuildInterior). Cell water is square, so the
+                // X and Y footprint extents are equal.
+                OriginHeightFootprintX = new Vector4(
                     water.OriginXY.X,
                     water.OriginXY.Y,
                     water.Height,
                     water.FootprintSize),
+                FootprintY = new Vector4(water.FootprintSize, 0f, 0f, 0f),
+            };
+        }
+        // Placed-NIF water planes follow the cell-water instances in the same buffer — same shader,
+        // same DNAM appearance, just a rectangular footprint derived from the mesh AABB at REFR placement.
+        for (var j = 0; j < nifVisible; j++)
+        {
+            var plane = _visibleNifScratch[j];
+            _instanceScratch[cellVisible + j] = new WaterInstance
+            {
+                OriginHeightFootprintX = new Vector4(
+                    plane.OriginXY.X,
+                    plane.OriginXY.Y,
+                    plane.Height,
+                    plane.Footprint.X),
+                FootprintY = new Vector4(plane.Footprint.Y, 0f, 0f, 0f),
             };
         }
         LastStats.InstanceBuildMilliseconds = ElapsedMilliseconds(segmentStarted);
@@ -371,6 +406,32 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             }
         }
         return _visibleWaterScratch.Count;
+    }
+
+    // NIF water planes carry absolute world-space XY (from the REFR placement), so they cull directly
+    // against the cylinder's game-space position — no canvas-Y flip (that flip is only for the
+    // spatial-index buckets). A point-in-cylinder test padded by the plane's footprint keeps a plane
+    // that straddles the streaming edge visible. Small list (only water-bearing refs), so linear.
+    private int GatherVisibleNifPlanes(VisibilityCylinder cylinder)
+    {
+        _visibleNifScratch.Clear();
+        if (_nifWaterPlanes.Count == 0) return 0;
+
+        var cx = cylinder.Position.X;
+        var cy = cylinder.Position.Y;
+        foreach (var plane in _nifWaterPlanes)
+        {
+            var halfX = plane.Footprint.X * 0.5f;
+            var halfY = plane.Footprint.Y * 0.5f;
+            var dx = (plane.OriginXY.X + halfX) - cx;
+            var dy = (plane.OriginXY.Y + halfY) - cy;
+            var reach = cylinder.Radius + MathF.Max(halfX, halfY);
+            if (dx * dx + dy * dy < reach * reach)
+            {
+                _visibleNifScratch.Add(plane);
+            }
+        }
+        return _visibleNifScratch.Count;
     }
 
     private float? ResolveWaterHeight(CellRecord cell)
@@ -521,7 +582,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     [StructLayout(LayoutKind.Sequential)]
     private struct WaterInstance
     {
-        public Vector4 CellOriginAndFootprint; // xy = origin, z = water height, w = footprint size
+        public Vector4 OriginHeightFootprintX; // xy = origin, z = water height, w = footprint X extent
+        public Vector4 FootprintY;             // x = footprint Y extent; yzw spare (16-byte aligned)
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -552,4 +614,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         public uint DepthPad;
     }
 }
+
+/// <summary>
+///     A world-space placeable water plane extracted from a placed-reference NIF's WaterShaderProperty
+///     geometry (cave/pool/reflecting-pool water). <see cref="OriginXY" /> is the min XY corner,
+///     <see cref="Height" /> the surface Z, and <see cref="Footprint" /> the rectangular XY extent
+///     (separate width/depth) of the world-space AABB — the exact shape <c>water.vert.hlsl</c> expands
+///     per instance. Produced by <see cref="ReferenceRenderer12" /> and consumed by <see cref="WaterRenderer12" />.
+/// </summary>
+internal readonly record struct NifWaterPlane(Vector2 OriginXY, float Height, Vector2 Footprint);
 #endif
