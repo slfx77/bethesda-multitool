@@ -93,23 +93,42 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     /// </summary>
     public RingAllocation Allocate(int frameIndex, uint size, uint alignment = CbAlignment)
     {
+        if (!TryAllocate(frameIndex, size, out var allocation, alignment))
+        {
+            var aligned = (_bumpOffset + alignment - 1) & ~(alignment - 1);
+            throw new InvalidOperationException(
+                $"GpuRingBuffer12: frame slot exhausted (requested {size}B at +{aligned}, slot size {_bytesPerFrame}B). " +
+                "Increase bytesPerFrame at construction or split this draw across frames.");
+        }
+        return allocation;
+    }
+
+    /// <summary>
+    ///     Non-throwing variant of <see cref="Allocate" />. Returns <c>false</c> when the current
+    ///     frame slot can't fit the request (leaving the bump pointer untouched), so a per-draw loop
+    ///     can stop adding draws and present what already fits instead of abandoning the whole frame.
+    ///     Use this for per-draw allocations in dense scenes; keep <see cref="Allocate" /> for the
+    ///     small per-frame / per-pass CBs that must succeed early in the frame.
+    /// </summary>
+    public bool TryAllocate(int frameIndex, uint size, out RingAllocation allocation, uint alignment = CbAlignment)
+    {
         if ((uint)frameIndex >= (uint)_framesInFlight)
             throw new ArgumentOutOfRangeException(nameof(frameIndex));
 
         var aligned = (_bumpOffset + alignment - 1) & ~(alignment - 1);
         if (aligned + size > _bytesPerFrame)
         {
-            throw new InvalidOperationException(
-                $"GpuRingBuffer12: frame slot exhausted (requested {size}B at +{aligned}, slot size {_bytesPerFrame}B). " +
-                "Increase bytesPerFrame at construction or split this draw across frames.");
+            allocation = default;
+            return false;
         }
         _bumpOffset = aligned + size;
 
-        return new RingAllocation(
+        allocation = new RingAllocation(
             CpuPtr: _cpuPointers[frameIndex] + (int)aligned,
             GpuAddress: _gpuAddresses[frameIndex] + aligned,
             Size: size,
             ByteOffset: aligned);
+        return true;
     }
 
     /// <summary>

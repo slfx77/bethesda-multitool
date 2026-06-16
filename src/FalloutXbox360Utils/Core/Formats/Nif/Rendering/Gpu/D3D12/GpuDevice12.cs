@@ -27,7 +27,8 @@ internal sealed class GpuDevice12 : IDisposable
         string deviceName,
         FeatureLevel featureLevel,
         ID3D12InfoQueue? infoQueue,
-        bool dredEnabled)
+        bool dredEnabled,
+        int sceneSampleCount)
     {
         Device = device;
         DirectQueue = directQueue;
@@ -36,6 +37,7 @@ internal sealed class GpuDevice12 : IDisposable
         FeatureLevel = featureLevel;
         _infoQueue = infoQueue;
         DredEnabled = dredEnabled;
+        SceneSampleCount = sceneSampleCount;
     }
 
     private readonly ID3D12InfoQueue? _infoQueue;
@@ -64,6 +66,19 @@ internal sealed class GpuDevice12 : IDisposable
     /// the page-fault VA after a device removal. Enabled by FALLOUT_VIEWER_DRED=1 (or the debug
     /// layer). Off by default — breadcrumbs add per-command GPU overhead.</summary>
     public bool DredEnabled { get; }
+
+    /// <summary>
+    ///     Sample count for the live 3D scene's MSAA render target (and every PSO that draws into
+    ///     it, plus the top-down overlay target). 4 when 4x MSAA is supported for the scene's color
+    ///     (<see cref="Format.B8G8R8A8_UNorm" />) + depth (<see cref="Format.D32_Float" />) formats —
+    ///     the norm at feature level 12_0+ — else 1 (no MSAA). Decided ONCE at device creation so the
+    ///     PSOs (built before any surface exists) and every scene render target agree on the count;
+    ///     a mismatch is a D3D12 validation failure on every draw.
+    /// </summary>
+    public int SceneSampleCount { get; }
+
+    /// <summary>True when <see cref="SceneSampleCount" /> &gt; 1 (scene MSAA active).</summary>
+    public bool SceneMsaaEnabled => SceneSampleCount > 1;
 
     /// <summary>Backend identifier for HUD + log lines. Mirrors the old <c>GpuDevice.Backend</c>.</summary>
     public static string Backend => "Direct3D12";
@@ -434,8 +449,10 @@ internal sealed class GpuDevice12 : IDisposable
                     }
 
                     var deviceName = QueryAdapterDescription(device);
-                    Log.Info("GpuDevice12: created Direct3D 12 device at {0} ({1})", minLevel, deviceName);
-                    return new GpuDevice12(device, queue, fence, deviceName, minLevel, infoQueue, enableDred);
+                    var sceneSampleCount = ProbeSceneSampleCount(device);
+                    Log.Info("GpuDevice12: created Direct3D 12 device at {0} ({1}); scene MSAA = {2}x",
+                        minLevel, deviceName, sceneSampleCount);
+                    return new GpuDevice12(device, queue, fence, deviceName, minLevel, infoQueue, enableDred, sceneSampleCount);
                 }
                 catch
                 {
@@ -453,6 +470,40 @@ internal sealed class GpuDevice12 : IDisposable
 
         Log.Warn("GpuDevice12: no D3D12 device available at feature level 12_0 or higher");
         return null;
+    }
+
+    /// <summary>
+    ///     Probes 4x MSAA support for the scene's color + depth formats by attempting to create
+    ///     tiny multisampled committed resources (the only API-certain check across Vortice
+    ///     versions). Returns 4 on success, 1 on failure. 4x MSAA on standard RT/depth formats is
+    ///     mandatory at D3D feature level 11_0+ (this device requires 12_0), so 4 is the norm; the
+    ///     fallback covers exotic adapters. One-time at device creation.
+    /// </summary>
+    private static int ProbeSceneSampleCount(ID3D12Device device)
+    {
+        const int desired = 4;
+        try
+        {
+            using var colorProbe = device.CreateCommittedResource<ID3D12Resource>(
+                HeapProperties.DefaultHeapProperties, HeapFlags.None,
+                ResourceDescription.Texture2D(Format.B8G8R8A8_UNorm, 1, 1,
+                    arraySize: 1, mipLevels: 1, sampleCount: desired, sampleQuality: 0,
+                    ResourceFlags.AllowRenderTarget),
+                ResourceStates.RenderTarget, optimizedClearValue: null);
+            using var depthProbe = device.CreateCommittedResource<ID3D12Resource>(
+                HeapProperties.DefaultHeapProperties, HeapFlags.None,
+                ResourceDescription.Texture2D(Format.D32_Float, 1, 1,
+                    arraySize: 1, mipLevels: 1, sampleCount: desired, sampleQuality: 0,
+                    ResourceFlags.AllowDepthStencil),
+                ResourceStates.DepthWrite, optimizedClearValue: null);
+            return desired;
+        }
+        catch (SharpGenException ex)
+        {
+            Log.Warn("GpuDevice12: {0}x MSAA unsupported for scene formats ({1}); scene MSAA disabled.",
+                desired, ex.Message);
+            return 1;
+        }
     }
 
     private static string QueryAdapterDescription(ID3D12Device device)

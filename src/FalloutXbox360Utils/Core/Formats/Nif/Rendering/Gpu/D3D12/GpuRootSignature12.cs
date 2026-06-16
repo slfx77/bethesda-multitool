@@ -45,6 +45,10 @@ internal sealed class GpuRootSignature12 : IDisposable
         public const int SrvTable = 3;
         public const int BindlessSrvTable = 4;
         public const int ReferenceInstanceSrv = 5;
+
+        /// <summary>Root CBV at <c>b3</c> — the shared scene atmosphere (sun direction + sky / ambient
+        /// / fog colors), uploaded once per frame and read by the lighting / sky / water shaders.</summary>
+        public const int AtmosphereCbv = 6;
     }
 
     /// <summary>SRV slots <c>t0..t(N-1)</c> reserved in the legacy table at slot
@@ -127,6 +131,15 @@ internal sealed class GpuRootSignature12 : IDisposable
             new RootDescriptor1(shaderRegister: 8, registerSpace: 0),
             ShaderVisibility.Vertex);
 
+        // Slot 6: root CBV b3 (scene atmosphere — sun dir + sky/ambient/fog colors). Uploaded once
+        // per frame by the host and bound for the whole scene; the lighting/sky/water shaders read it.
+        // Additive: shaders that don't declare the b3 cbuffer are unaffected, and binding a CBV no
+        // shader reads is legal — so this lands as an invisible no-op until P3 wires the shaders.
+        var atmosphere = new RootParameter1(
+            RootParameterType.ConstantBufferView,
+            new RootDescriptor1(shaderRegister: 3, registerSpace: 0),
+            ShaderVisibility.All);
+
         var staticSamplers = new[]
         {
             new StaticSamplerDescription(
@@ -169,7 +182,7 @@ internal sealed class GpuRootSignature12 : IDisposable
         var desc = new RootSignatureDescription1(
             RootSignatureFlags.AllowInputAssemblerInputLayout |
             RootSignatureFlags.ConstantBufferViewShaderResourceViewUnorderedAccessViewHeapDirectlyIndexed,
-            new[] { perFrame, perDraw, perMode, srvTable, bindlessTable, referenceInstanceSrv },
+            new[] { perFrame, perDraw, perMode, srvTable, bindlessTable, referenceInstanceSrv, atmosphere },
             staticSamplers);
         var rs = gpu.Device.CreateRootSignature(desc);
         return new GpuRootSignature12(rs);

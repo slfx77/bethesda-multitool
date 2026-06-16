@@ -38,6 +38,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 internal sealed class GpuSwapChainSurface12 : IDisposable
 {
     private const int BufferCount = 2;
+    internal const Format SceneColorFormat = Format.B8G8R8A8_UNorm;
     private static readonly Logger Log = Logger.Instance;
 
     private readonly ID3D12Device _device;
@@ -45,8 +46,13 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     private readonly ID3D12DescriptorHeap _rtvHeap;
     private readonly ID3D12DescriptorHeap _dsvHeap;
     private readonly uint _rtvDescriptorSize;
+    private readonly int _sampleCount;
     private readonly ID3D12Resource[] _backBuffers;
     private ID3D12Resource? _depthTexture;
+    // Scene-MSAA color target (null when _sampleCount == 1): the scene renders into this and is
+    // ResolveSubresource'd into the current back buffer before Present. Lives at RTV-heap slot
+    // BufferCount. Its matching MSAA depth IS _depthTexture when _sampleCount > 1.
+    private ID3D12Resource? _msaaColor;
     private uint _width;
     private uint _height;
 
@@ -57,6 +63,8 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         ID3D12DescriptorHeap dsvHeap,
         ID3D12Resource[] backBuffers,
         ID3D12Resource depthTexture,
+        ID3D12Resource? msaaColor,
+        int sampleCount,
         uint width,
         uint height)
     {
@@ -65,14 +73,25 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _rtvHeap = rtvHeap;
         _dsvHeap = dsvHeap;
         _rtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
+        _sampleCount = sampleCount;
         _backBuffers = backBuffers;
         _depthTexture = depthTexture;
+        _msaaColor = msaaColor;
         _width = width;
         _height = height;
     }
 
     public uint Width => _width;
     public uint Height => _height;
+
+    /// <summary>True when the scene renders into a multisampled color target that is resolved into
+    /// the back buffer before Present (scene-wide MSAA).</summary>
+    public bool IsMsaa => _sampleCount > 1;
+
+    /// <summary>RTV for the scene's MSAA color target (valid only when <see cref="IsMsaa" />). Lives
+    /// at RTV-heap slot <see cref="BufferCount" /> (after the per-frame back-buffer RTVs).</summary>
+    public CpuDescriptorHandle MsaaColorRtv =>
+        new(_rtvHeap.GetCPUDescriptorHandleForHeapStart(), BufferCount, _rtvDescriptorSize);
 
     /// <summary>The DSV for the current depth buffer. Bound alongside the back-buffer RTV
     /// every frame; depth resource is single-buffered so the handle is stable across frames.</summary>
@@ -102,6 +121,8 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         foreach (var b in _backBuffers) b.Dispose();
         _depthTexture?.Dispose();
         _depthTexture = null;
+        _msaaColor?.Dispose();
+        _msaaColor = null;
         _dsvHeap.Dispose();
         _rtvHeap.Dispose();
         _swapChain.Dispose();
@@ -120,21 +141,27 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             return null;
         }
 
+        var sampleCount = gpu.SceneSampleCount;
+
         ID3D12DescriptorHeap? rtvHeap = null;
         ID3D12DescriptorHeap? dsvHeap = null;
         IDXGISwapChain3? swapChain3 = null;
         ID3D12Resource[]? backBuffers = null;
         ID3D12Resource? depthTexture = null;
+        ID3D12Resource? msaaColor = null;
 
         try
         {
             using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory2>();
 
+            // The swap chain itself is ALWAYS single-sample (flip-model swap chains cannot be
+            // multisampled); scene MSAA renders into a separate _msaaColor target that is resolved
+            // into the back buffer before Present.
             var desc = new SwapChainDescription1
             {
                 Width = width,
                 Height = height,
-                Format = Format.B8G8R8A8_UNorm,
+                Format = SceneColorFormat,
                 Stereo = false,
                 SampleDescription = new SampleDescription(1, 0),
                 BufferUsage = Usage.RenderTargetOutput,
@@ -156,10 +183,11 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
                 native.SetSwapChain(swapChain3).CheckError();
             }
 
+            // +1 RTV slot after the per-frame back-buffer RTVs for the scene MSAA color target.
             rtvHeap = gpu.Device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
             {
                 Type = DescriptorHeapType.RenderTargetView,
-                DescriptorCount = BufferCount,
+                DescriptorCount = BufferCount + 1,
                 Flags = DescriptorHeapFlags.None
             });
 
@@ -170,15 +198,20 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
                 Flags = DescriptorHeapFlags.None
             });
 
+            var rtvDescriptorSize = gpu.Device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
             backBuffers = AcquireBackBuffers(gpu.Device, swapChain3, rtvHeap);
-            depthTexture = CreateDepthBuffer(gpu.Device, width, height, dsvHeap);
+            depthTexture = CreateDepthBuffer(gpu.Device, width, height, dsvHeap, sampleCount);
+            msaaColor = CreateMsaaColor(gpu.Device, width, height, sampleCount, rtvHeap, rtvDescriptorSize);
 
-            Log.Info("GpuSwapChainSurface12: bound {0}x{1} to SwapChainPanel ({2} buffers)", width, height, BufferCount);
-            return new GpuSwapChainSurface12(gpu.Device, swapChain3, rtvHeap, dsvHeap, backBuffers, depthTexture, width, height);
+            Log.Info("GpuSwapChainSurface12: bound {0}x{1} to SwapChainPanel ({2} buffers, MSAA {3}x)",
+                width, height, BufferCount, sampleCount);
+            return new GpuSwapChainSurface12(
+                gpu.Device, swapChain3, rtvHeap, dsvHeap, backBuffers, depthTexture, msaaColor, sampleCount, width, height);
         }
         catch (SharpGenException ex)
         {
             Log.Warn("GpuSwapChainSurface12.Create failed: {0}", ex.Message);
+            msaaColor?.Dispose();
             depthTexture?.Dispose();
             if (backBuffers is not null)
             {
@@ -210,15 +243,34 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         Array.Clear(_backBuffers);
         _depthTexture?.Dispose();
         _depthTexture = null;
+        _msaaColor?.Dispose();
+        _msaaColor = null;
 
         _swapChain.ResizeBuffers(BufferCount, width, height, Format.Unknown, SwapChainFlags.None).CheckError();
 
         var newBuffers = AcquireBackBuffers(_device, _swapChain, _rtvHeap);
         for (int i = 0; i < newBuffers.Length; i++) _backBuffers[i] = newBuffers[i];
-        _depthTexture = CreateDepthBuffer(_device, width, height, _dsvHeap);
+        _depthTexture = CreateDepthBuffer(_device, width, height, _dsvHeap, _sampleCount);
+        _msaaColor = CreateMsaaColor(_device, width, height, _sampleCount, _rtvHeap, _rtvDescriptorSize);
 
         _width = width;
         _height = height;
+    }
+
+    /// <summary>
+    ///     Resolves the multisampled scene color into the current back buffer (no-op when not
+    ///     <see cref="IsMsaa" />). Call after the scene draws and before <see cref="Present" />. The
+    ///     MSAA color is returned to RENDER_TARGET and the back buffer to PRESENT, so the caller does
+    ///     NOT additionally transition the back buffer to PRESENT on the MSAA path.
+    /// </summary>
+    public void ResolveTo(ID3D12GraphicsCommandList cmd, ID3D12Resource backBuffer)
+    {
+        if (_msaaColor is null) return;
+        cmd.ResourceBarrierTransition(_msaaColor, ResourceStates.RenderTarget, ResourceStates.ResolveSource);
+        cmd.ResourceBarrierTransition(backBuffer, ResourceStates.Present, ResourceStates.ResolveDest);
+        cmd.ResolveSubresource(backBuffer, 0, _msaaColor, 0, SceneColorFormat);
+        cmd.ResourceBarrierTransition(backBuffer, ResourceStates.ResolveDest, ResourceStates.Present);
+        cmd.ResourceBarrierTransition(_msaaColor, ResourceStates.ResolveSource, ResourceStates.RenderTarget);
     }
 
     /// <summary>Presents the current back buffer with vsync. The back-buffer index advances
@@ -249,27 +301,29 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         ID3D12Device device,
         uint width,
         uint height,
-        ID3D12DescriptorHeap dsvHeap)
+        ID3D12DescriptorHeap dsvHeap,
+        int sampleCount)
     {
-        // Spike C — Pass 4 Step 4: depth resource is created as R32_TYPELESS so 4d's Hi-Z
-        // pyramid build can CopyResource directly from this 32-bit single-channel surface
-        // into the R32_Float pyramid mip 0 without a format mismatch. The DSV (and any
-        // future SRV in a debug overlay) supply the typed interpretation. D3D12 validates
-        // depth-test PSOs against the DSV format, not the resource format, so every PSO
-        // that declares DepthStencilFormat = D32_Float still matches.
+        // Non-MSAA: R32_TYPELESS so the water pass can read scene depth as an R32_FLOAT SRV (and
+        // 4d's Hi-Z pyramid can CopyResource it). The DSV supplies the typed D32_Float view, which
+        // every depth-test PSO (DepthStencilFormat = D32_Float) validates against.
+        // MSAA: a multisampled depth can't be sampled as a plain Texture2D SRV, and the water
+        // depth-fade is gated off under MSAA, so create a typed D32_Float multisampled depth and let
+        // the DSV infer the Texture2DMS view (null desc).
+        var msaa = sampleCount > 1;
         var resourceDesc = ResourceDescription.Texture2D(
-            Format.R32_Typeless,
+            msaa ? Format.D32_Float : Format.R32_Typeless,
             width,
             height,
             arraySize: 1,
             mipLevels: 1,
-            sampleCount: 1,
+            sampleCount: (uint)sampleCount,
             sampleQuality: 0,
             ResourceFlags.AllowDepthStencil);
 
         // ClearValue MUST use the typed format the DSV will see (D32_Float) so the runtime
         // can validate ClearDepthStencilView calls. A typeless ClearValue is rejected.
-        var clearValue = new ClearValue(Format.D32_Float, new DepthStencilValue(1.0f, 0));
+        var clearValue = new ClearValue(Format.D32_Float, new DepthStencilValue(0.0f, 0)); // reversed-Z: far = 0
         var depth = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties,
             HeapFlags.None,
@@ -277,14 +331,54 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             ResourceStates.DepthWrite,
             clearValue);
 
-        var dsvDesc = new DepthStencilViewDescription
+        if (msaa)
         {
-            Format = Format.D32_Float,
-            ViewDimension = DepthStencilViewDimension.Texture2D,
-            Flags = DepthStencilViewFlags.None
-        };
-        device.CreateDepthStencilView(depth, dsvDesc, dsvHeap.GetCPUDescriptorHandleForHeapStart());
+            // Typed D32_Float multisampled resource → null desc infers the Texture2DMS DSV.
+            device.CreateDepthStencilView(depth, null, dsvHeap.GetCPUDescriptorHandleForHeapStart());
+        }
+        else
+        {
+            var dsvDesc = new DepthStencilViewDescription
+            {
+                Format = Format.D32_Float,
+                ViewDimension = DepthStencilViewDimension.Texture2D,
+                Flags = DepthStencilViewFlags.None
+            };
+            device.CreateDepthStencilView(depth, dsvDesc, dsvHeap.GetCPUDescriptorHandleForHeapStart());
+        }
         return depth;
+    }
+
+    /// <summary>
+    ///     Creates the multisampled scene color target (null when <paramref name="sampleCount" /> ==
+    ///     1) and its RTV at heap slot <see cref="BufferCount" />. Created in RENDER_TARGET state and
+    ///     kept there across frames (<see cref="ResolveTo" /> round-trips it through ResolveSource).
+    /// </summary>
+    private static ID3D12Resource? CreateMsaaColor(
+        ID3D12Device device,
+        uint width,
+        uint height,
+        int sampleCount,
+        ID3D12DescriptorHeap rtvHeap,
+        uint rtvDescriptorSize)
+    {
+        if (sampleCount <= 1) return null;
+
+        var color = device.CreateCommittedResource<ID3D12Resource>(
+            HeapProperties.DefaultHeapProperties,
+            HeapFlags.None,
+            ResourceDescription.Texture2D(SceneColorFormat, width, height,
+                arraySize: 1, mipLevels: 1, sampleCount: (uint)sampleCount, sampleQuality: 0,
+                ResourceFlags.AllowRenderTarget),
+            ResourceStates.RenderTarget,
+            // No optimized clear value: the scene re-clears the MSAA color every frame, and a fixed
+            // optimized value that doesn't match the clear color only triggers a debug-layer warning.
+            optimizedClearValue: null);
+
+        var handle = new CpuDescriptorHandle(
+            rtvHeap.GetCPUDescriptorHandleForHeapStart(), BufferCount, rtvDescriptorSize);
+        device.CreateRenderTargetView(color, null, handle);
+        return color;
     }
 }
 #endif

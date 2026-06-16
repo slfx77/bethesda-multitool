@@ -320,6 +320,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             if (sub.IsEyeEnvmap) flags |= 256;
             if (sub.TintColor.HasValue) flags |= 512;
             if (sub.IsFaceGen) flags |= 1024;
+            if (alphaState.RenderMode == NifAlphaRenderMode.AlphaToCoverage) flags |= 2048;
 
             var uniforms = new GpuUniforms
             {
@@ -716,7 +717,11 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 
         var blend = new D12.BlendDescription
         {
-            AlphaToCoverageEnable = key.Mode == NifAlphaRenderMode.AlphaToCoverage,
+            // A2C is done manually in the pixel shader via SV_Coverage (IS_A2C flag):
+            // the fixed-function path derives coverage from the WRITTEN alpha, which
+            // would force covered samples to carry texture alpha and double-attenuate
+            // after resolve. The shader instead writes opaque alpha + a coverage mask.
+            AlphaToCoverageEnable = false,
             IndependentBlendEnable = false,
         };
         if (key.Mode == NifAlphaRenderMode.Blend)
