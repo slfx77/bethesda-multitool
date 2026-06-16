@@ -281,9 +281,12 @@ internal static class NifSceneGraphBlockReader
         uint bsVersion,
         bool be)
     {
+        // Skyrim and later (BS stream > 34) replaced the NiAVObject "Properties" array with two
+        // dedicated NiGeometry refs: Shader Property + Alpha Property, located after the
+        // Data ref, Skin Instance ref, and the variable-length Material Data block.
         if (bsVersion > 34)
         {
-            return null;
+            return ParseNiGeometryBsPropertyRefs(data, block, bsVersion, be);
         }
 
         var pos = block.DataOffset;
@@ -321,6 +324,175 @@ internal static class NifSceneGraphBlockReader
         }
 
         return refs;
+    }
+
+    /// <summary>
+    ///     Read the Shader Property + Alpha Property refs from a Skyrim+ NiGeometry shape (e.g. the
+    ///     NiTriShape used by Skyrim LE), which carry the BSLightingShaderProperty / NiAlphaProperty
+    ///     in place of the old Properties array. Layout after the NiAVObject base: Data ref(4) +
+    ///     Skin Instance ref(4) + MaterialData(variable) + Shader Property(4) + Alpha Property(4).
+    /// </summary>
+    private static List<int>? ParseNiGeometryBsPropertyRefs(byte[] data, BlockInfo block, uint bsVersion, bool be)
+    {
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+
+        if (!SkipNiGeometryHeader(data, ref pos, end, bsVersion, be))
+        {
+            return null;
+        }
+
+        pos += 4; // Data ref
+        pos += 4; // Skin Instance ref
+
+        if (!SkipMaterialData(data, ref pos, end, be) || pos + 8 > end)
+        {
+            return null;
+        }
+
+        var shaderRef = BinaryUtils.ReadInt32(data, pos, be);
+        var alphaRef = BinaryUtils.ReadInt32(data, pos + 4, be);
+
+        var refs = new List<int>(2);
+        if (shaderRef >= 0 && shaderRef < int.MaxValue)
+        {
+            refs.Add(shaderRef);
+        }
+
+        if (alphaRef >= 0 && alphaRef < int.MaxValue)
+        {
+            refs.Add(alphaRef);
+        }
+
+        return refs.Count > 0 ? refs : null;
+    }
+
+    /// <summary>
+    ///     Skip a NiGeometry MaterialData block (NIF 20.2.0.7 form): Num Materials(4) +
+    ///     Material Names(NiFixedString index ×N) + Material Extra Data(int ×N) + Active Material(4)
+    ///     + Material Needs Update(bool). Returns false if the block is too small/inconsistent.
+    /// </summary>
+    private static bool SkipMaterialData(byte[] data, ref int pos, int end, bool be)
+    {
+        if (pos + 4 > end)
+        {
+            return false;
+        }
+
+        var numMaterials = BinaryUtils.ReadUInt32(data, pos, be);
+        pos += 4;
+        if (numMaterials > 1000)
+        {
+            return false;
+        }
+
+        pos += (int)numMaterials * 4; // Material Name (NiFixedString string indices)
+        pos += (int)numMaterials * 4; // Material Extra Data
+        pos += 4; // Active Material
+        pos += 1; // Material Needs Update
+        return pos <= end;
+    }
+
+    /// <summary>
+    ///     Header + buffer layout of a self-contained BSTriShape block (Skyrim SE / Fallout 4 /
+    ///     Fallout 76). Unlike NiTriShape, the vertex and index buffers live in the shape block
+    ///     itself rather than a separate NiTriShapeData block.
+    /// </summary>
+    internal readonly record struct BsTriShapeInfo(
+        int SkinRef,
+        int ShaderRef,
+        int AlphaRef,
+        ulong VertexDesc,
+        int NumVertices,
+        int NumTriangles,
+        int VertexBufferOffset,
+        int TriangleBufferOffset);
+
+    /// <summary>
+    ///     Parse a BSTriShape block's refs, vertex descriptor, counts, and buffer offsets. Returns
+    ///     null if the block is too small or self-inconsistent. Only valid for bsVersion ≥ 100
+    ///     (BSTriShape was introduced with Skyrim Special Edition).
+    /// </summary>
+    internal static BsTriShapeInfo? ParseBsTriShape(byte[] data, BlockInfo block, uint bsVersion, bool be)
+    {
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+
+        // SkipNiGeometryHeader lands at the first NiAVObject-derived field. For bsVersion > 34 it
+        // skips NiObjectNET + flags + transform + collision ref (no Properties array), which is
+        // exactly the BSTriShape NiAVObject base — pos now points at the Bounding Sphere.
+        if (!SkipNiGeometryHeader(data, ref pos, end, bsVersion, be))
+        {
+            return null;
+        }
+
+        pos += 16; // Bounding Sphere (NiBound: Center vec3 + Radius float). No Bounding Box pre-F76.
+
+        // Skin / Shader Property / Alpha Property refs (3 × int32).
+        if (pos + 12 + 8 > end)
+        {
+            return null;
+        }
+
+        var skinRef = BinaryUtils.ReadInt32(data, pos, be);
+        var shaderRef = BinaryUtils.ReadInt32(data, pos + 4, be);
+        var alphaRef = BinaryUtils.ReadInt32(data, pos + 8, be);
+        pos += 12;
+
+        var vertexDesc = BinaryUtils.ReadUInt64(data, pos, be);
+        pos += 8;
+
+        // Num Triangles widened to uint32 in Fallout 4 (bsVersion ≥ 130); ushort in Skyrim SE.
+        int numTriangles;
+        if (bsVersion >= 130)
+        {
+            if (pos + 4 > end)
+            {
+                return null;
+            }
+
+            numTriangles = (int)BinaryUtils.ReadUInt32(data, pos, be);
+            pos += 4;
+        }
+        else
+        {
+            if (pos + 2 > end)
+            {
+                return null;
+            }
+
+            numTriangles = BinaryUtils.ReadUInt16(data, pos, be);
+            pos += 2;
+        }
+
+        if (pos + 6 > end)
+        {
+            return null;
+        }
+
+        var numVertices = BinaryUtils.ReadUInt16(data, pos, be);
+        pos += 2;
+        pos += 4; // Data Size (recomputable from vertexDesc/counts; not needed)
+
+        var vertexSize = (int)(vertexDesc & 0xF) * 4;
+        var vertexBufferOffset = pos;
+        var triangleBufferOffset = vertexBufferOffset + numVertices * vertexSize;
+
+        if (vertexSize == 0 ||
+            triangleBufferOffset + numTriangles * 6 > end)
+        {
+            return null;
+        }
+
+        return new BsTriShapeInfo(
+            skinRef,
+            shaderRef,
+            alphaRef,
+            vertexDesc,
+            numVertices,
+            numTriangles,
+            vertexBufferOffset,
+            triangleBufferOffset);
     }
 
     private static bool SkipNiGeometryHeader(

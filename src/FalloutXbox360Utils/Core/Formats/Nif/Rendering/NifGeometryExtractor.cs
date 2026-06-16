@@ -121,7 +121,8 @@ internal static class NifGeometryExtractor
         bool useDualQuaternionSkinning = false,
         float[]? preSkinMorphDeltas = null,
         HashSet<int>? excludeBlockIndices = null,
-        Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null)
+        Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null,
+        bool treatRootsAsIdentity = false)
     {
         if (nif.Blocks.Count == 0)
         {
@@ -185,10 +186,32 @@ internal static class NifGeometryExtractor
             }
         }
 
+        // Drop embedded LOD geometry. Full NIFs (e.g. clutter\farm\windmill.nif) bundle a low-detail
+        // "*_lod" subtree alongside the full-detail geometry for the engine's distance-LOD fade; the
+        // viewer always wants full detail, so when BOTH a "_lod" shape and a non-"_lod" shape are
+        // present we drop the "_lod" ones (otherwise the low- and high-detail meshes render on top of
+        // each other). Standalone "*_lod.nif" files have only "_lod" shapes and are kept intact.
+        {
+            var lodShapeNames = shapeDataMap.Keys
+                .Select(idx => (idx, name: NifBlockParsers.ReadBlockName(data, nif.Blocks[idx], nif) ?? ""))
+                .ToList();
+            static bool IsLodShape(string name) => name.Contains("_lod", StringComparison.OrdinalIgnoreCase);
+            if (lodShapeNames.Any(s => IsLodShape(s.name)) && lodShapeNames.Any(s => !IsLodShape(s.name)))
+            {
+                foreach (var (idx, _) in lodShapeNames.Where(s => IsLodShape(s.name)))
+                {
+                    shapeDataMap.Remove(idx);
+                    shapePropertyMap.Remove(idx);
+                    shapeSkinInstanceMap.Remove(idx);
+                }
+            }
+        }
+
         // Compute world transforms by walking the scene graph from root.
         // Static NIF transforms represent the rest pose — animation overrides are not applied
         // since NiControllerSequence keyframes define runtime motion, not the initial pose.
-        NifSceneGraphWalker.ComputeWorldTransforms(data, nif, nodeChildren, nodeTransforms, animOverrides);
+        NifSceneGraphWalker.ComputeWorldTransforms(data, nif, nodeChildren, nodeTransforms, animOverrides,
+            treatRootsAsIdentity);
 
         Dictionary<int, ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)>
             shapeSkinning;
@@ -261,7 +284,11 @@ internal static class NifGeometryExtractor
 
                 if (textureResolver != null)
                 {
-                    diffusePath = shaderMetadata?.DiffusePath;
+                    // Fall back to a legacy NiTexturingProperty base map (e.g. effects\ambient\
+                    // fxvulturesNV.nif) when no BSShader* property supplied a diffuse path — without
+                    // this the mesh resolves no texture and renders as the 1x1 white pixel.
+                    diffusePath = shaderMetadata?.DiffusePath
+                                  ?? NifTexturingPropertyReader.ResolveBaseTexturePath(data, nif, propRefs);
                     normalMapPath = shaderMetadata?.NormalMapPath;
                 }
 
@@ -276,6 +303,27 @@ internal static class NifGeometryExtractor
                 materialAlpha = NifBlockParsers.ReadMaterialAlpha(data, nif, propRefs);
                 materialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, propRefs);
                 specularColor = NifBlockParsers.ReadMaterialSpecularColor(data, nif, propRefs);
+
+                // WaterShaderProperty: placeable water (waterp*, cave/pool/reflecting-pool water) ships
+                // NO diffuse texture — the engine renders it through its dedicated water system. Tag it
+                // with the water-surface sentinel + force alpha-blend so it reads as a see-through water
+                // surface. In the D3D12 worldspace viewer, ReferenceMeshCache12 recognises this sentinel
+                // and DIVERTS the submesh to the dedicated WaterRenderer12 (real Fresnel/ripple/depth-
+                // fade shader, same as cell water) — it never draws as a reference slab. Other paths
+                // (standalone NIF render/export) have no water renderer, so the sentinel maps to the
+                // built-in translucent water-blue tile; without it the submesh would fall back to the
+                // 1×1 white pixel and render as an opaque white slab.
+                foreach (var propRef in propRefs)
+                {
+                    if (propRef >= 0 && propRef < nif.Blocks.Count &&
+                        string.Equals(nif.Blocks[propRef].TypeName, "WaterShaderProperty", StringComparison.Ordinal))
+                    {
+                        diffusePath = RenderableSubmesh.WaterSurfaceTexturePath;
+                        hasAlphaBlend = true;
+                        if (materialAlpha >= 0.999f) materialAlpha = 0.5f;
+                        break;
+                    }
+                }
             }
 
             // Look up skinning data for this shape (null if not skinned or bind-pose mode)

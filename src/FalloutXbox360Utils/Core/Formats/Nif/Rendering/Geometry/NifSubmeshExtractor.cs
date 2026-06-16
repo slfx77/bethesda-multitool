@@ -1,5 +1,6 @@
 using System.Numerics;
 using FalloutXbox360Utils.Core.Formats.Nif.Geometry;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Parsing;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Geometry;
@@ -68,6 +69,10 @@ internal static class NifSubmeshExtractor
                 useDualQuaternionSkinning,
                 preSkinMorphDeltas,
                 shapeName),
+            // BSTriShape and its variants are self-contained (the shape block IS its own data block,
+            // so dataIndex == shapeIndex). Skyrim SE / Fallout 4 / Fallout 76 geometry.
+            "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape"
+                => ExtractBsTriShape(data, dataBlock, nif.IsBigEndian, nif.BsVersion, transform, shapeName),
             _ => null
         };
 
@@ -161,6 +166,13 @@ internal static class NifSubmeshExtractor
 
             bsVectorFlags = BinaryUtils.ReadUInt16(data, pos, be);
             pos += 2;
+
+            // Skyrim and later (BS stream > 34) insert a 4-byte Material CRC into NiGeometryData
+            // after the BS Data Flags, before the normals. FNV (BS 34) does not.
+            if (bsVersion > 34)
+            {
+                pos += 4;
+            }
         }
 
         if (pos + 1 > end)
@@ -366,6 +378,13 @@ internal static class NifSubmeshExtractor
 
             bsVectorFlags = BinaryUtils.ReadUInt16(data, pos, be);
             pos += 2;
+
+            // Skyrim and later (BS stream > 34) insert a 4-byte Material CRC into NiGeometryData
+            // after the BS Data Flags, before the normals. FNV (BS 34) does not.
+            if (bsVersion > 34)
+            {
+                pos += 4;
+            }
         }
 
         if (pos + 1 > end)
@@ -469,6 +488,115 @@ internal static class NifSubmeshExtractor
             Tangents = transformed.Tangents,
             Bitangents = transformed.Bitangents,
             BindPosePositions = bindPosePositions
+        };
+    }
+
+    /// <summary>
+    ///     Extract geometry from a self-contained BSTriShape block (Skyrim SE / Fallout 4 /
+    ///     Fallout 76). The interleaved vertex buffer is decoded per the BSVertexDesc bitfield, which
+    ///     gives both the per-attribute presence flags (high 12 bits) and each attribute's byte offset
+    ///     within the vertex. Positions are full float3 in Skyrim SE (and FO4 with the Full_Precision
+    ///     flag) and half3 otherwise. Static path only: applies the node world transform, no skinning.
+    /// </summary>
+    internal static RenderableSubmesh? ExtractBsTriShape(
+        byte[] data,
+        BlockInfo block,
+        bool be,
+        uint bsVersion,
+        Matrix4x4 transform,
+        string? shapeName = null)
+    {
+        var parsed = NifSceneGraphBlockReader.ParseBsTriShape(data, block, bsVersion, be);
+        if (parsed is not { } info || info.NumVertices == 0 || info.NumTriangles == 0)
+        {
+            return null;
+        }
+
+        var vertexSize = (int)(info.VertexDesc & 0xF) * 4;
+
+        // Vertex Attributes occupy the high 12 bits of the descriptor (see nif.xml BSVertexDesc).
+        var attributes = (info.VertexDesc >> 44) & 0xFFF;
+        var hasNormal = (attributes & 0x8) != 0;
+        var hasUv = (attributes & 0x2) != 0;
+        var hasColor = (attributes & 0x20) != 0;
+
+        // Skyrim SE stores full-precision float3 positions; Fallout 4 uses half3 unless the
+        // Full_Precision attribute (0x400) is set.
+        var fullPrecisionPos = bsVersion < 130 || (attributes & 0x400) != 0;
+
+        // Per-attribute byte offsets within the vertex (descriptor nibbles, in 4-byte units).
+        var uvOffset = (int)((info.VertexDesc >> 8) & 0xF) * 4;
+        var normalOffset = (int)((info.VertexDesc >> 16) & 0xF) * 4;
+        var colorOffset = (int)((info.VertexDesc >> 24) & 0xF) * 4;
+
+        var positions = new float[info.NumVertices * 3];
+        var normals = hasNormal ? new float[info.NumVertices * 3] : null;
+        var uvs = hasUv ? new float[info.NumVertices * 2] : null;
+        var colors = hasColor ? new byte[info.NumVertices * 4] : null;
+
+        for (var v = 0; v < info.NumVertices; v++)
+        {
+            var vbase = info.VertexBufferOffset + v * vertexSize;
+
+            if (fullPrecisionPos)
+            {
+                positions[v * 3] = BinaryUtils.ReadFloat(data, vbase, be);
+                positions[v * 3 + 1] = BinaryUtils.ReadFloat(data, vbase + 4, be);
+                positions[v * 3 + 2] = BinaryUtils.ReadFloat(data, vbase + 8, be);
+            }
+            else
+            {
+                positions[v * 3] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vbase, be));
+                positions[v * 3 + 1] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vbase + 2, be));
+                positions[v * 3 + 2] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vbase + 4, be));
+            }
+
+            if (normals != null)
+            {
+                // ByteVector3, [0,255] mapped to [-1,1].
+                var n = vbase + normalOffset;
+                normals[v * 3] = data[n] / 127.5f - 1f;
+                normals[v * 3 + 1] = data[n + 1] / 127.5f - 1f;
+                normals[v * 3 + 2] = data[n + 2] / 127.5f - 1f;
+            }
+
+            if (uvs != null)
+            {
+                var u = vbase + uvOffset;
+                uvs[v * 2] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, u, be));
+                uvs[v * 2 + 1] = BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, u + 2, be));
+            }
+
+            if (colors != null)
+            {
+                // ByteColor4 — already RGBA bytes, matching RenderableSubmesh.VertexColors.
+                var c = vbase + colorOffset;
+                colors[v * 4] = data[c];
+                colors[v * 4 + 1] = data[c + 1];
+                colors[v * 4 + 2] = data[c + 2];
+                colors[v * 4 + 3] = data[c + 3];
+            }
+        }
+
+        var triangles = new ushort[info.NumTriangles * 3];
+        for (var i = 0; i < triangles.Length; i++)
+        {
+            triangles[i] = BinaryUtils.ReadUInt16(data, info.TriangleBufferOffset + i * 2, be);
+        }
+
+        var transformed = ApplySkinningOrTransform(positions, normals, null, null, transform, null, false, shapeName);
+
+        return new RenderableSubmesh
+        {
+            Positions = transformed.Positions,
+            Triangles = triangles,
+            Normals = transformed.Normals
+                      ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
+            UVs = uvs,
+            VertexColors = colors,
+            Tangents = transformed.Tangents,
+            Bitangents = transformed.Bitangents,
+            BindPosePositions = null
         };
     }
 

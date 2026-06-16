@@ -13,7 +13,20 @@ internal static class NifSceneGraphWalker
     internal static readonly HashSet<string> NodeTypes =
         ["NiNode", "NiBillboardNode", "BSFadeNode", "BSMultiBoundNode", "BSOrderedNode", "BSLeafAnimNode"];
 
-    internal static readonly HashSet<string> ShapeTypes = ["NiTriShape", "NiTriStrips", "BSLODTriShape"];
+    internal static readonly HashSet<string> ShapeTypes =
+    [
+        "NiTriShape", "NiTriStrips", "BSLODTriShape",
+        // Skyrim SE / Fallout 4 / Fallout 76 self-contained geometry (BSVertexDesc-packed buffers).
+        "BSTriShape", "BSSubIndexTriShape", "BSMeshLODTriShape", "BSDynamicTriShape"
+    ];
+
+    /// <summary>
+    ///     The subset of <see cref="ShapeTypes" /> whose geometry is embedded in the shape block
+    ///     itself (no separate NiTriShapeData/NiTriStripsData block). These use the NiAVObject layout,
+    ///     not NiGeometry, so the NiTriShape skin/data/property ref parsers do not apply.
+    /// </summary>
+    internal static readonly HashSet<string> SelfContainedShapeTypes =
+        ["BSTriShape", "BSSubIndexTriShape", "BSMeshLODTriShape", "BSDynamicTriShape"];
 
     /// <summary>
     ///     Classify all blocks: identify nodes (with children), shapes (with data refs),
@@ -44,6 +57,44 @@ internal static class NifSceneGraphWalker
                 var shapeName = NifBlockParsers.ReadBlockName(data, block, nif);
                 if (NifBlockParsers.IsGoreShape(shapeName) || NifBlockParsers.IsEditorHelperShape(shapeName))
                 {
+                    continue;
+                }
+
+                // BSTriShape variants carry their own vertex/index buffers — the shape block is its
+                // own data block. The NiTriShape skin/data/property ref parsers below assume the
+                // NiGeometry layout and would misread these, so map self-to-self and move on.
+                // (Skinned BSTriShape — characters — and BSLightingShader textures are handled
+                // separately; static worldspace meshes render in bind pose, untextured.)
+                if (SelfContainedShapeTypes.Contains(block.TypeName))
+                {
+                    shapeDataMap[i] = i;
+
+                    // Wire the shape's BSLightingShaderProperty + NiAlphaProperty refs into the
+                    // property map so textures (NifTextureResolver) and alpha (NifRenderPropertyReader)
+                    // resolve via the standard path. BSTriShape carries both refs inline.
+                    if (shapePropertyMap != null)
+                    {
+                        var bsInfo = NifSceneGraphBlockReader.ParseBsTriShape(data, block, nif.BsVersion, be);
+                        if (bsInfo is { } info)
+                        {
+                            var props = new List<int>(2);
+                            if (info.ShaderRef >= 0 && info.ShaderRef < nif.Blocks.Count)
+                            {
+                                props.Add(info.ShaderRef);
+                            }
+
+                            if (info.AlphaRef >= 0 && info.AlphaRef < nif.Blocks.Count)
+                            {
+                                props.Add(info.AlphaRef);
+                            }
+
+                            if (props.Count > 0)
+                            {
+                                shapePropertyMap[i] = props;
+                            }
+                        }
+                    }
+
                     continue;
                 }
 
@@ -92,10 +143,22 @@ internal static class NifSceneGraphWalker
     /// <summary>
     ///     Walk the scene graph depth-first from root nodes, accumulating transforms.
     ///     Animation overrides (if any) replace the local transform of targeted nodes.
+    ///     <para>
+    ///         <paramref name="treatRootsAsIdentity" />: when a NIF is placed into the world via a
+    ///         REFR, the engine sets the scene-root node's world transform to the REFR placement —
+    ///         the root node's OWN authored transform is discarded. For a placed-reference bake the
+    ///         placement is applied separately (see <c>RenderableReference.ComposeWorldMatrix</c>),
+    ///         so the root's own transform must be treated as identity here; otherwise it is injected
+    ///         twice. This only matters for the rare meshes whose root carries a non-identity rotation
+    ///         (e.g. <c>McMarranWallsDES\wallReg</c> at 90°, monorail curves at 15°) — for the common
+    ///         identity-root mesh it is a no-op. Off by default to preserve the single-NIF / skinned
+    ///         paths that key bone transforms off the full hierarchy.
+    ///     </para>
     /// </summary>
     internal static void ComputeWorldTransforms(byte[] data, NifInfo nif,
         Dictionary<int, List<int>> nodeChildren, Dictionary<int, Matrix4x4> worldTransforms,
-        Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null)
+        Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null,
+        bool treatRootsAsIdentity = false)
     {
         // Find root nodes: nodes that are not children of any other node
         var allChildren = new HashSet<int>();
@@ -119,7 +182,8 @@ internal static class NifSceneGraphWalker
             if (!allChildren.Contains(i))
             {
                 // This is a root node
-                WalkNode(data, nif, i, Matrix4x4.Identity, nodeChildren, worldTransforms, animOverrides);
+                WalkNode(data, nif, i, Matrix4x4.Identity, nodeChildren, worldTransforms, animOverrides,
+                    ignoreOwnTransform: treatRootsAsIdentity);
             }
         }
 
@@ -129,20 +193,27 @@ internal static class NifSceneGraphWalker
             if (ShapeTypes.Contains(nif.Blocks[i].TypeName) && !worldTransforms.ContainsKey(i) &&
                 !allChildren.Contains(i))
             {
-                // Root-level shape — parse its own transform
-                var localTransform =
-                    NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[i], nif.BsVersion, nif.IsBigEndian);
-                worldTransforms[i] = localTransform;
+                // Root-level shape. When placed via a REFR the engine supplies its world transform,
+                // so the shape's own authored transform is discarded for a placed-ref bake.
+                worldTransforms[i] = treatRootsAsIdentity
+                    ? Matrix4x4.Identity
+                    : NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[i], nif.BsVersion, nif.IsBigEndian);
             }
         }
     }
 
     internal static void WalkNode(byte[] data, NifInfo nif, int blockIndex, Matrix4x4 parentTransform,
         Dictionary<int, List<int>> nodeChildren, Dictionary<int, Matrix4x4> worldTransforms,
-        Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null)
+        Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null,
+        bool ignoreOwnTransform = false)
     {
         var block = nif.Blocks[blockIndex];
-        var localTransform = NifBlockParsers.ParseNiAVObjectTransform(data, block, nif.BsVersion, nif.IsBigEndian);
+        // A placed-reference's scene root has its own authored transform replaced by the REFR
+        // placement (applied separately downstream), so discard it here. Children are still walked
+        // relative to identity. See ComputeWorldTransforms' treatRootsAsIdentity note.
+        var localTransform = ignoreOwnTransform
+            ? Matrix4x4.Identity
+            : NifBlockParsers.ParseNiAVObjectTransform(data, block, nif.BsVersion, nif.IsBigEndian);
 
         // If animation overrides are available, merge per-channel: animation rotation
         // replaces bind pose rotation, but bind pose translation/scale are preserved
