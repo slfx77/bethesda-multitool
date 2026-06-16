@@ -17,11 +17,28 @@ public sealed partial class SingleFileTab
 {
     private const int TreeNodeBatchSize = 200;
 
+    /// <summary>Max batches loaded per scroll settle (look-ahead), one batch per dispatcher tick.
+    /// A FIXED cap — never driven by the post-insert <c>ExtentHeight</c>, which is stale until the
+    /// next layout pass and would otherwise cascade through an entire huge section in back-to-back
+    /// ticks, freezing the UI thread (and starving container realization → stale rows).</summary>
+    private const int MaxBatchesPerScroll = 6;
+
     /// <summary>Tracks expanded nodes that have more children to load on scroll.</summary>
     private readonly Dictionary<TreeViewNode, (ObservableCollection<EsmBrowserNode> AllChildren, int LoadedCount)>
         _pendingTreeLoads = new();
 
     private ScrollViewer? _treeScrollViewer;
+
+    /// <summary>
+    ///     In-flight guard for the coalesced, dispatcher-deferred tree-node load. Multiple
+    ///     <see cref="TreeScrollViewer_ViewChanged" /> triggers collapse into a single enqueued
+    ///     load so node insertion never runs synchronously inside the scroll/layout pass.
+    /// </summary>
+    private bool _treeLoadScheduled;
+
+    /// <summary>Remaining look-ahead batches for the current scroll settle (see
+    /// <see cref="MaxBatchesPerScroll" />). Decremented per loaded batch; a fresh settle refills it.</summary>
+    private int _treeLoadBudget;
 
     #region TreeView Events
 
@@ -152,21 +169,72 @@ public sealed partial class SingleFileTab
     {
         if (_pendingTreeLoads.Count == 0 || _treeScrollViewer is null) return;
 
-        // Load more when within 2x viewport height of the bottom
-        var remaining = _treeScrollViewer.ExtentHeight
-                        - _treeScrollViewer.VerticalOffset
-                        - _treeScrollViewer.ViewportHeight;
-        var threshold = _treeScrollViewer.ViewportHeight * 2;
+        // Skip intermediate (inertial/momentum) scroll events: inserting nodes mid-scroll mutates
+        // the flattened tree + forces a layout pass against a shifting ExtentHeight, so the visible
+        // rows mismatch the thumb until the scroll settles, and any UI-thread work during momentum
+        // starves container realization. Act only on the settled frame.
+        if (e.IsIntermediate) return;
 
-        if (remaining <= threshold)
+        if (IsNearTreeBottom())
         {
-            LoadNextPendingBatches();
+            _treeLoadBudget = MaxBatchesPerScroll; // refresh look-ahead for this settle
+            ScheduleLoadNextPendingBatches();
         }
     }
 
-    private void LoadNextPendingBatches()
+    /// <summary>Within 2× viewport height of the bottom (and there is more to load).</summary>
+    private bool IsNearTreeBottom()
+    {
+        if (_treeScrollViewer is null || _pendingTreeLoads.Count == 0) return false;
+        var remaining = _treeScrollViewer.ExtentHeight
+                        - _treeScrollViewer.VerticalOffset
+                        - _treeScrollViewer.ViewportHeight;
+        return remaining <= _treeScrollViewer.ViewportHeight * 2;
+    }
+
+    /// <summary>
+    ///     Coalesces load requests and runs the actual node insertion OFF the synchronous
+    ///     scroll/layout pass via the dispatcher, ONE batch per tick, so a fast flick can't thrash
+    ///     layout and a huge section can't freeze the UI. The in-flight flag collapses multiple
+    ///     triggers into one enqueued load; the per-settle budget (<see cref="_treeLoadBudget" />)
+    ///     bounds the look-ahead. Continuation is gated on the budget counter — NOT on the
+    ///     post-insert <c>ExtentHeight</c>, which is stale until the next layout pass and would
+    ///     cascade through the whole section in back-to-back ticks (the freeze + stale-rows bug).
+    /// </summary>
+    private void ScheduleLoadNextPendingBatches()
+    {
+        if (_treeLoadScheduled) return;
+        _treeLoadScheduled = true;
+
+        // DispatcherQueue goes null once the tab content subtree unloads (TabView swaps content);
+        // fall back to a single direct load so pending batches are never stranded.
+        if (DispatcherQueue is null)
+        {
+            _treeLoadScheduled = false;
+            LoadNextPendingBatches();
+            return;
+        }
+
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _treeLoadScheduled = false;
+            var added = LoadNextPendingBatches();
+            // Continue ONLY while the fixed per-settle budget remains and there was something to
+            // load. One batch per tick keeps the UI responsive; the budget (not the stale extent)
+            // prevents the runaway cascade that loaded an entire section and froze the app.
+            if (added > 0 && --_treeLoadBudget > 0)
+            {
+                ScheduleLoadNextPendingBatches();
+            }
+        });
+    }
+
+    /// <summary>Loads one batch of child nodes into each expanded pending parent. Returns the number
+    /// of nodes added this call (0 = nothing left to load / all pending parents collapsed).</summary>
+    private int LoadNextPendingBatches()
     {
         var completed = new List<TreeViewNode>();
+        var added = 0;
 
         foreach (var (parentNode, (allChildren, loadedCount)) in _pendingTreeLoads)
         {
@@ -188,6 +256,7 @@ public sealed partial class SingleFileTab
                                             child.NodeType is "Category" or "RecordType"
                 };
                 parentNode.Children.Add(childNode);
+                added++;
             }
 
             if (batchEnd >= allChildren.Count)
@@ -204,6 +273,8 @@ public sealed partial class SingleFileTab
         {
             _pendingTreeLoads.Remove(key);
         }
+
+        return added;
     }
 
     private static T? FindDescendant<T>(DependencyObject parent) where T : DependencyObject
