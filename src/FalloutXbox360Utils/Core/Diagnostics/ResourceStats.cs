@@ -46,8 +46,14 @@ internal readonly record struct ResourceStats
     }
 }
 
-/// <summary>One row of a <see cref="ResourceRegistry.GetSnapshot" /> result.</summary>
+/// <summary>
+///     One row of a <see cref="ResourceRegistry.GetSnapshot" /> result. In the retired list,
+///     repeated runs under the same name (e.g. a <c>ParallelWork</c> loop invoked per item) collapse
+///     into one row whose throughput counters accumulate; <paramref name="RunCount" /> is how many
+///     lifetimes the row aggregates.
+/// </summary>
 internal sealed record ResourceSnapshotRecord(
     string DisplayName,
     ResourceCategory Category,
-    ResourceStats Stats);
+    ResourceStats Stats,
+    int RunCount = 1);

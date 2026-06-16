@@ -12,8 +12,12 @@ namespace FalloutXbox360Utils.Core.Resources;
 ///     <para>
 ///         There is no recency order, so <see cref="Trim" /> at <see cref="TrimLevel.Gentle" /> is a
 ///         no-op and <see cref="TrimLevel.Aggressive" /> clears realized positive entries — every
-///         consumer rebuilds transparently through the factory. Negative entries are kept (they are
-///         tiny and prevent re-searching archives for assets that do not exist).
+///         factory-backed consumer rebuilds transparently through the factory. Negative entries are
+///         kept (they are tiny and prevent re-searching archives for assets that do not exist), and
+///         so are <see cref="Inject" />ed entries: a value supplied from outside has no factory
+///         rebuild path, so trimming it would lose it permanently (the consumer would re-request the
+///         key and the factory would return null for a synthetic, disk-unbacked asset). Injected
+///         entries are released only by an explicit <see cref="Evict" /> / <see cref="Release" />.
 ///     </para>
 /// </summary>
 internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressureParticipant, IDisposable
@@ -21,6 +25,11 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
     where TValue : class
 {
     private readonly ConcurrentDictionary<TKey, Lazy<TValue?>> _cache;
+
+    // Keys whose current entry was supplied via Inject (no factory rebuild path). Trim skips these;
+    // they leave the cache only through an explicit Evict/Release. Shares the cache's key comparer.
+    private readonly ConcurrentDictionary<TKey, byte> _injectedKeys;
+
     private readonly Func<TKey, TValue?> _factory;
     private readonly Func<TValue, long>? _sizeOf;
     private ResourceRegistration? _registration;
@@ -44,6 +53,7 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
         _sizeOf = sizeOf;
         TrimPriority = trimPriority;
         _cache = comparer is null ? new() : new(comparer);
+        _injectedKeys = comparer is null ? new() : new(comparer);
     }
 
     /// <summary>
@@ -90,13 +100,19 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
         return GetValueOrRemoveFaulted(key, actual);
     }
 
-    /// <summary>Injects a pre-built value, replacing any existing entry for the key.</summary>
+    /// <summary>
+    ///     Injects a pre-built value, replacing any existing entry for the key. The key is pinned
+    ///     against <see cref="Trim" /> until an explicit <see cref="Evict" /> / <see cref="Release" />,
+    ///     because an injected value has no factory rebuild path.
+    /// </summary>
     public void Inject(TKey key, TValue value)
     {
         var entry = new Lazy<TValue?>(() => value, LazyThreadSafetyMode.ExecutionAndPublication);
         // Realize immediately so byte accounting and Release see a created value.
         _ = entry.Value;
         AddBytes(value);
+        // Pin before publishing the entry so a concurrent Trim can never observe it as trimmable.
+        _injectedKeys[key] = 0;
         if (_cache.TryGetValue(key, out var previous) &&
             _cache.TryUpdate(key, entry, previous))
         {
@@ -121,6 +137,7 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
             return false;
         }
 
+        _injectedKeys.TryRemove(key, out _);
         SubtractRealizedBytes(removed);
         Interlocked.Increment(ref _evictions);
         return true;
@@ -147,7 +164,11 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
         }
         catch
         {
-            _cache.TryRemove(new KeyValuePair<TKey, Lazy<TValue?>>(key, existing));
+            if (_cache.TryRemove(new KeyValuePair<TKey, Lazy<TValue?>>(key, existing)))
+            {
+                _injectedKeys.TryRemove(key, out _);
+            }
+
             throw;
         }
 
@@ -158,6 +179,7 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
 
         if (_cache.TryRemove(new KeyValuePair<TKey, Lazy<TValue?>>(key, existing)))
         {
+            _injectedKeys.TryRemove(key, out _);
             if (value is not null)
             {
                 SubtractBytes(value);
@@ -174,9 +196,11 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
     public void RecordExternalHit() => Interlocked.Increment(ref _hits);
 
     /// <summary>
-    ///     <see cref="TrimLevel.Aggressive" />: removes every realized positive entry (values rebuild
-    ///     through the factory on next request); negatives and in-flight entries stay.
-    ///     <see cref="TrimLevel.Gentle" />: no-op — there is no recency order to shed cold entries by.
+    ///     <see cref="TrimLevel.Aggressive" />: removes every realized positive entry that has a
+    ///     factory rebuild path (it rebuilds transparently on next request); negatives, in-flight
+    ///     entries, and <see cref="Inject" />ed entries stay (an injected value cannot be rebuilt, so
+    ///     trimming it would lose it permanently). <see cref="TrimLevel.Gentle" />: no-op — there is
+    ///     no recency order to shed cold entries by.
     /// </summary>
     public long Trim(TrimLevel level)
     {
@@ -188,6 +212,11 @@ internal sealed class ConcurrentLazyCache<TKey, TValue> : IMemoryPressurePartici
         long released = 0;
         foreach (var pair in _cache)
         {
+            if (_injectedKeys.ContainsKey(pair.Key))
+            {
+                continue;
+            }
+
             if (!pair.Value.IsValueCreated)
             {
                 continue;

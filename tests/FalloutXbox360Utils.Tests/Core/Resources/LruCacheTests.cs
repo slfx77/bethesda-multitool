@@ -43,6 +43,26 @@ public sealed class LruCacheTests
     }
 
     [Fact]
+    public void TryPeek_returns_value_without_bumping_recency_or_counting()
+    {
+        var cache = CreateCache(maxEntries: 2);
+        cache.Set("a", "1");
+        cache.Set("b", "2");
+
+        Assert.True(cache.TryPeek("a", out var peeked)); // no bump — "a" stays LRU
+        Assert.Equal("1", peeked);
+        Assert.False(cache.TryPeek("missing", out _));
+
+        var stats = cache.GetStats();
+        Assert.Equal(0, stats.Hits);
+        Assert.Equal(0, stats.Misses);
+
+        cache.Set("c", "3"); // evicts "a": the peek must not have protected it
+        Assert.False(cache.ContainsKey("a"));
+        Assert.True(cache.ContainsKey("b"));
+    }
+
+    [Fact]
     public void Replacing_a_key_evicts_the_old_value_through_the_hook()
     {
         var evicted = new List<string>();
@@ -196,6 +216,79 @@ public sealed class LruCacheTests
 
         Assert.Equal([(0, 0)], disposed);
         Assert.True(first.IsDisposed);
+    }
+
+    [Fact]
+    public void SetMaxEntries_raising_evicts_nothing()
+    {
+        var evicted = new List<string>();
+        var cache = CreateCache(maxEntries: 2, onEvicted: (key, _) => evicted.Add(key));
+        cache.Set("a", "1");
+        cache.Set("b", "2");
+
+        cache.SetMaxEntries(10);
+
+        Assert.Empty(evicted);
+        Assert.True(cache.ContainsKey("a"));
+        Assert.True(cache.ContainsKey("b"));
+    }
+
+    [Fact]
+    public void SetMaxEntries_lowering_evicts_lru_first_through_the_hook()
+    {
+        var evicted = new List<string>();
+        var cache = CreateCache(maxEntries: 4, onEvicted: (key, _) => evicted.Add(key));
+        cache.Set("a", "1");
+        cache.Set("b", "2");
+        cache.Set("c", "3");
+        cache.Set("d", "4");
+
+        cache.SetMaxEntries(2);
+
+        Assert.Equal(["a", "b"], evicted); // LRU-tail-first
+        Assert.True(cache.ContainsKey("c"));
+        Assert.True(cache.ContainsKey("d"));
+    }
+
+    [Fact]
+    public void SetMaxEntries_lowering_below_count_evicts_each_excess_keeping_mru()
+    {
+        var evicted = new List<string>();
+        var cache = CreateCache(maxEntries: 5, onEvicted: (key, _) => evicted.Add(key));
+        foreach (var k in new[] { "a", "b", "c", "d", "e" })
+        {
+            cache.Set(k, k);
+        }
+
+        cache.SetMaxEntries(1);
+
+        Assert.Equal(["a", "b", "c", "d"], evicted);
+        Assert.True(cache.ContainsKey("e")); // only the MRU survives
+        Assert.Equal(1, cache.Count);
+    }
+
+    [Fact]
+    public void SetMaxEntries_uses_lru_order_bumped_by_TryGet()
+    {
+        var evicted = new List<string>();
+        var cache = CreateCache(maxEntries: 3, onEvicted: (key, _) => evicted.Add(key));
+        cache.Set("a", "1");
+        cache.Set("b", "2");
+        cache.Set("c", "3");
+        Assert.True(cache.TryGet("a", out _)); // bump "a" to MRU
+
+        cache.SetMaxEntries(1);
+
+        Assert.Equal(["b", "c"], evicted);
+        Assert.True(cache.ContainsKey("a")); // survives — resize respects recency, not insertion order
+    }
+
+    [Fact]
+    public void SetMaxEntries_rejects_non_positive()
+    {
+        var cache = CreateCache(maxEntries: 2);
+        Assert.Throws<ArgumentOutOfRangeException>(() => cache.SetMaxEntries(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => cache.SetMaxEntries(-5));
     }
 
     private sealed class FakeMesh : IDisposable

@@ -3,17 +3,26 @@ using System.Globalization;
 namespace FalloutXbox360Utils.Core.Diagnostics;
 
 /// <summary>
-///     Watches the total bytes registered under <see cref="ResourceCategory.CpuCache" /> and asks
-///     <see cref="IMemoryPressureParticipant" />s to trim, priority-ordered, when the budget is
-///     exceeded. Deliberately simple — on a 32 GB machine with an observed ~5 GB peak this is
-///     hygiene, not survival.
+///     Optional safety valve over the <see cref="ResourceRegistry" />. <b>Trimming is OFF by
+///     default</b>: the app may use as much RAM as it needs. The registry, the diagnostics panel,
+///     and the CLI stats are the point of centralization — a shared usage pattern plus visibility
+///     for hunting leaks — not a RAM limiter. This coordinator only sheds caches when a caller
+///     opts in by setting a positive <c>FALLOUT_MEMORY_BUDGET_MB</c>.
 ///     <para>
-///         Triggers: a periodic timer (default 5 s, <c>FALLOUT_MEMORY_CHECK_INTERVAL_S</c>) plus
-///         explicit <see cref="CheckNow" /> calls on big load paths. The budget
-///         (<c>FALLOUT_MEMORY_BUDGET_MB</c>, default 3072) applies to CPU caches only — GPU residency
-///         is structurally bounded by refcounts/LRU caps, mapped files are file-backed, and disk
-///         caches enforce their own caps. A GC memory-load ratio above 0.9 forces an
-///         <see cref="TrimLevel.Aggressive" /> pass over every participant regardless of budget.
+///         When a budget IS set, it watches the total bytes registered under
+///         <see cref="ResourceCategory.CpuCache" /> and asks <see cref="IMemoryPressureParticipant" />s
+///         to trim, priority-ordered, when that budget is exceeded. The budget applies to CPU caches
+///         only — GPU residency is structurally bounded by refcounts/LRU caps, mapped files are
+///         file-backed, and disk caches enforce their own caps. The CpuCache budget is the sole
+///         trigger; the system GC memory-load ratio only escalates an over-budget pass from
+///         <see cref="TrimLevel.Gentle" /> to <see cref="TrimLevel.Aggressive" /> (it is machine-wide
+///         and chronically &gt;0.9 on a workstation, so triggering on it alone would perpetually wipe
+///         rebuildable rendering caches for ~0 MB released).
+///     </para>
+///     <para>
+///         The periodic timer (default 5 s, <c>FALLOUT_MEMORY_CHECK_INTERVAL_S</c>) and explicit
+///         <see cref="CheckNow" /> calls run a pass; with no budget set, a pass is a cheap no-op
+///         (plus an optional registry snapshot to the log under <c>FALLOUT_MEMORY_LOG</c>).
 ///     </para>
 /// </summary>
 internal sealed class MemoryBudgetCoordinator : IDisposable
@@ -113,15 +122,25 @@ internal sealed class MemoryBudgetCoordinator : IDisposable
         try
         {
             var cpuBytes = _registry.TotalTrackedBytes(ResourceCategory.CpuCache);
-            var gcRatio = _memoryLoadRatio();
-            var gcPressure = gcRatio > GcPressureRatio;
             var overBudget = cpuBytes > _budgetBytes;
-            if (!gcPressure && !overBudget)
+
+            // The CpuCache budget is the ONLY trigger. System-wide GC memory load is NOT a trigger:
+            // GC.GetGCMemoryInfo().MemoryLoadBytes is a machine-wide figure that sits chronically
+            // above 0.9 on a workstation (other processes + a multi-GB dataset held in mapped files
+            // and GPU memory, neither of which a CpuCache trim can release). Triggering on it ran an
+            // Aggressive pass every tick that perpetually wiped the rebuildable rendering caches
+            // (landscape palette + texture resolvers feeding the 2D/3D map) for ~0 MB released —
+            // terrain and statics could never stay resident in the GUI (the profiler, which never
+            // starts the coordinator, was unaffected). The GC ratio still escalates the LEVEL once
+            // we are genuinely over the CpuCache budget — that is its only sound role here.
+            if (!overBudget)
             {
                 return;
             }
 
-            var level = gcPressure ? TrimLevel.Aggressive : TrimLevel.Gentle;
+            var gcRatio = _memoryLoadRatio();
+            var level = gcRatio > GcPressureRatio ? TrimLevel.Aggressive : TrimLevel.Gentle;
+            var aggressive = level == TrimLevel.Aggressive;
             var target = (long)(_budgetBytes * BudgetTargetFraction);
 
             var participants = new List<(IMemoryPressureParticipant Participant, ResourceRegistration Registration)>();
@@ -139,9 +158,9 @@ internal sealed class MemoryBudgetCoordinator : IDisposable
             var posted = 0;
             foreach (var (participant, registration) in participants)
             {
-                // Under GC pressure every participant trims; under a plain budget breach stop once
-                // the projected total is comfortably below target.
-                if (!gcPressure && cpuBytes - released <= target)
+                // Over budget AND under real GC pressure: shed every participant hard. Over budget
+                // but the machine is fine: stop once the projected total is comfortably below target.
+                if (!aggressive && cpuBytes - released <= target)
                 {
                     break;
                 }
@@ -186,11 +205,14 @@ internal sealed class MemoryBudgetCoordinator : IDisposable
 
     private static long ResolveBudgetBytes()
     {
-        const long defaultMb = 3072;
+        // No cap by default. Centralizing caches is about a shared usage pattern + leak visibility
+        // (the registry, the diagnostics panel, the CLI stats), NOT about limiting RAM — the app is
+        // expected to use as much as it needs. Trimming activates ONLY when a positive
+        // FALLOUT_MEMORY_BUDGET_MB is set explicitly; otherwise the coordinator just tracks (and
+        // optionally logs snapshots under FALLOUT_MEMORY_LOG for leak hunting) and never evicts.
         var raw = EnvironmentVariables.Get(EnvironmentVariables.Memory.BudgetMegabytes);
-        var mb = long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
-            ? parsed
-            : defaultMb;
-        return mb * 1024L * 1024L;
+        return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
+            ? parsed * 1024L * 1024L
+            : long.MaxValue;
     }
 }

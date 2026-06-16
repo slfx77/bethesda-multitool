@@ -175,6 +175,37 @@ public sealed class ResourceRegistryTests
     }
 
     [Fact]
+    public void Repeated_lifetimes_aggregate_into_one_retired_row()
+    {
+        var registry = new ResourceRegistry();
+
+        for (var run = 0; run < 3; run++)
+        {
+            var resource = new FakeResource("HotLoop");
+            resource.Mutate(128); // 128 bytes, 1 hit per lifetime
+            registry.Register(resource).Dispose();
+        }
+
+        var retired = Assert.Single(registry.GetRetiredSnapshot());
+        Assert.Equal("HotLoop", retired.DisplayName);
+        Assert.Equal(3, retired.RunCount);
+        Assert.Equal(3, retired.Stats.Hits); // throughput counters accumulate
+        Assert.Equal(128, retired.Stats.EstimatedBytes); // gauges take the newest lifetime
+    }
+
+    [Fact]
+    public void Retired_rows_with_distinct_names_do_not_merge()
+    {
+        var registry = new ResourceRegistry();
+        registry.Register(new FakeResource("A")).Dispose();
+        registry.Register(new FakeResource("B")).Dispose();
+
+        var retired = registry.GetRetiredSnapshot();
+        Assert.Equal(2, retired.Count);
+        Assert.All(retired, static r => Assert.Equal(1, r.RunCount));
+    }
+
+    [Fact]
     public void HitRate_is_null_without_lookups_and_computed_with_them()
     {
         Assert.Null(new ResourceStats().HitRate);

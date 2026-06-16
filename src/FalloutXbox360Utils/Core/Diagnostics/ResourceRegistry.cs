@@ -27,7 +27,7 @@ internal sealed class ResourceRegistry
 
     private readonly Lock _gate = new();
     private readonly List<ResourceRegistration> _registrations = [];
-    private readonly Queue<ResourceSnapshotRecord> _retired = new();
+    private readonly List<ResourceSnapshotRecord> _retired = [];
 
     /// <summary>Process-wide registry. Tests construct their own instances instead.</summary>
     public static ResourceRegistry Instance
@@ -139,6 +139,8 @@ internal sealed class ResourceRegistry
     ///     Final stats of resources that have unregistered, newest last (capped). End-of-run
     ///     reporting uses this so a CLI command's session-scoped caches still show what they did —
     ///     a well-behaved cache disposes (and unregisters) before the process-exit report runs.
+    ///     Repeated lifetimes under one display name (hot-loop <c>ParallelWork</c> runs, per-session
+    ///     caches) aggregate into a single row instead of flooding the cap.
     /// </summary>
     public IReadOnlyList<ResourceSnapshotRecord> GetRetiredSnapshot()
     {
@@ -176,12 +178,41 @@ internal sealed class ResourceRegistry
                 return;
             }
 
-            _retired.Enqueue(new ResourceSnapshotRecord(
-                registration.DisplayName, registration.Resource.Category, finalStats));
+            var index = _retired.FindIndex(r =>
+                r.Category == registration.Resource.Category &&
+                string.Equals(r.DisplayName, registration.DisplayName, StringComparison.Ordinal));
+            var record = index >= 0
+                ? MergeRetired(_retired[index], finalStats)
+                : new ResourceSnapshotRecord(
+                    registration.DisplayName, registration.Resource.Category, finalStats);
+            if (index >= 0)
+            {
+                _retired.RemoveAt(index);
+            }
+
+            _retired.Add(record);
             while (_retired.Count > MaxRetiredRecords)
             {
-                _retired.Dequeue();
+                _retired.RemoveAt(0);
             }
         }
+    }
+
+    /// <summary>
+    ///     Folds another lifetime's final stats into an existing retired row: throughput counters
+    ///     accumulate, point-in-time gauges (bytes, entries, depth) take the newest lifetime's value.
+    /// </summary>
+    private static ResourceSnapshotRecord MergeRetired(ResourceSnapshotRecord existing, ResourceStats latest)
+    {
+        var merged = latest with
+        {
+            Hits = existing.Stats.Hits + latest.Hits,
+            Misses = existing.Stats.Misses + latest.Misses,
+            Evictions = existing.Stats.Evictions + latest.Evictions,
+            Processed = existing.Stats.Processed + latest.Processed,
+            Failures = existing.Stats.Failures + latest.Failures,
+            LastError = latest.LastError ?? existing.Stats.LastError,
+        };
+        return existing with { Stats = merged, RunCount = existing.RunCount + 1 };
     }
 }

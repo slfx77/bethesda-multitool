@@ -23,7 +23,12 @@ internal static class CliResourceStatsReporter
         var live = registry.GetSnapshot();
         var retired = registry.GetRetiredSnapshot();
         var snapshot = live
-            .Concat(retired.Select(static r => r with { DisplayName = r.DisplayName + " (disposed)" }))
+            .Concat(retired.Select(static r => r with
+            {
+                DisplayName = r.RunCount > 1
+                    ? $"{r.DisplayName} (disposed ×{r.RunCount.ToString("N0", CultureInfo.InvariantCulture)})"
+                    : r.DisplayName + " (disposed)",
+            }))
             .ToList();
         if (snapshot.Count == 0)
         {

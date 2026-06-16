@@ -127,6 +127,51 @@ public sealed class ConcurrentLazyCacheTests
     }
 
     [Fact]
+    public void Trim_aggressive_preserves_injected_entries()
+    {
+        var cache = CreateCache(
+            static key => key,
+            sizeOf: static value => value.Length);
+        cache.GetOrCreate("factory");                 // factory-backed, trimmable
+        cache.Inject("synthetic", "injected-value");  // no rebuild path, must be pinned
+
+        var released = cache.Trim(TrimLevel.Aggressive);
+
+        Assert.Equal("factory".Length, released);     // only the factory entry was shed
+        // The injected value survives unchanged — proving it was kept, not rebuilt from the factory
+        // (the factory would have returned the key "synthetic", not "injected-value").
+        Assert.Equal("injected-value", cache.GetOrCreate("synthetic"));
+        Assert.Equal(1, cache.Count);
+    }
+
+    [Fact]
+    public void Evict_clears_the_injected_pin_so_a_rebuilt_entry_is_trimmable()
+    {
+        var cache = CreateCache(static key => key + "-rebuilt");
+        cache.Inject("k", "injected");
+        Assert.True(cache.Evict("k"));
+
+        // A factory entry repopulated after the evict is no longer pinned.
+        Assert.Equal("k-rebuilt", cache.GetOrCreate("k"));
+        cache.Trim(TrimLevel.Aggressive);
+        Assert.Equal(0, cache.Count);
+    }
+
+    [Fact]
+    public void Release_clears_the_injected_pin()
+    {
+        var cache = CreateCache(static key => key + "-rebuilt", sizeOf: static value => value.Length);
+        cache.Inject("k", "injected");
+        Assert.True(cache.Release("k"));
+        Assert.Equal(0, cache.Count);
+
+        // Repopulated via factory and now trimmable again.
+        Assert.Equal("k-rebuilt", cache.GetOrCreate("k"));
+        cache.Trim(TrimLevel.Aggressive);
+        Assert.Equal(0, cache.Count);
+    }
+
+    [Fact]
     public void Byte_accounting_follows_creation_and_release()
     {
         var cache = CreateCache(static key => key, sizeOf: static value => value.Length);

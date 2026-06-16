@@ -25,7 +25,7 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
 {
     private readonly Dictionary<TKey, Node> _entries;
     private readonly LinkedList<TKey> _order = new();
-    private readonly int? _maxEntries;
+    private int? _maxEntries;
     private readonly long? _maxBytes;
     private readonly Func<TKey, TValue, long>? _sizeOf;
     private readonly Action<TKey, TValue>? _onEvicted;
@@ -115,6 +115,23 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
     }
 
     /// <summary>
+    ///     Fetches an entry WITHOUT touching recency or hit/miss counters — for guard probes that
+    ///     must not perturb eviction order or stats (e.g. the reference mesh cache validating a
+    ///     de-queued decode key: a stale queue entry shouldn't MRU-bump a node nobody asked for).
+    /// </summary>
+    public bool TryPeek(TKey key, out TValue value)
+    {
+        if (_entries.TryGetValue(key, out var node))
+        {
+            value = node.Value;
+            return true;
+        }
+
+        value = default!;
+        return false;
+    }
+
+    /// <summary>
     ///     Inserts or replaces an entry (the replaced value goes through <c>onEvicted</c>), then
     ///     evicts least-recently-used entries until the count and byte budgets are satisfied.
     /// </summary>
@@ -175,6 +192,27 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
         var before = _entries.Count;
         EvictWhile(() => _entries.Count > Math.Max(0, targetCount));
         return before - _entries.Count;
+    }
+
+    /// <summary>
+    ///     Adjusts the entry-count cap, then evicts least-recently-used entries (each through
+    ///     <c>onEvicted</c>) down to the new cap. Raising the cap is a no-op eviction-wise; lowering
+    ///     fires the same cascade as <see cref="Set" /> (reusing its exact predicate, including the
+    ///     byte-budget term and the just-one-survivor guard). Single-threaded contract: call on the
+    ///     owning thread (the same one that calls <see cref="Set" /> / <see cref="TryGet" />).
+    /// </summary>
+    public void SetMaxEntries(int newMax)
+    {
+        if (newMax <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(newMax), "Capacity must be greater than zero.");
+        }
+
+        _maxEntries = newMax;
+        EvictWhile(() =>
+            _entries.Count > 1 &&
+            ((_maxEntries.HasValue && _entries.Count > _maxEntries.Value) ||
+             (_maxBytes.HasValue && _estimatedBytes > _maxBytes.Value)));
     }
 
     /// <summary>Evicts every entry (each through <c>onEvicted</c>) and resets the cache to empty.</summary>
