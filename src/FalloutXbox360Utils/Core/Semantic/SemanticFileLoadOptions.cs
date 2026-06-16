@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Recovery;
 
 namespace FalloutXbox360Utils.Core.Semantic;
 
@@ -91,4 +92,10 @@ internal sealed record SemanticFileLoadOptions
     ///     when no explicit authority map is provided.
     /// </summary>
     public bool ApplyDefaultCellWorldspaceAuthority { get; init; } = true;
+
+    /// <summary>
+    ///     Optional DMP gap recovery discovery/promotion. Discovery is safe for browser/audit;
+    ///     promotion mutates parse inputs and should be enabled only by explicit conversion options.
+    /// </summary>
+    public DmpGapRecoveryOptions GapRecovery { get; init; } = DmpGapRecoveryOptions.Disabled;
 }

@@ -88,6 +88,12 @@ public static class DmpToEspCommand
                           "placements for it, delete every master temporary ref not in the DMP. Master " +
                           "persistent refs (and therefore quest-bound objects) are preserved. Off by default."
         };
+        var recoverGapsOpt = new Option<bool>("--recover-gaps")
+        {
+            Description = "Experimental opt-in: scan uncovered DMP gaps for validated raw ESM records and " +
+                          "runtime TESForm structs, then promote only candidates existing semantic readers " +
+                          "can consume safely. Off by default."
+        };
         var noMasterCellNavmAugmentationOpt = new Option<bool>("--no-master-cell-navm-augmentation")
         {
             Description = "Disable emitting DMP-captured proto NAVMs into overridden master cells. " +
@@ -115,6 +121,7 @@ public static class DmpToEspCommand
         command.Options.Add(overrideVanillaOpt);
         command.Options.Add(disableRefrEditorIdRemapOpt);
         command.Options.Add(replaceCellTemporariesOpt);
+        command.Options.Add(recoverGapsOpt);
         command.Options.Add(noMasterCellNavmAugmentationOpt);
 
         var cellAuthorityOpt = new Option<string?>("--cell-authority")
@@ -177,6 +184,7 @@ public static class DmpToEspCommand
             var overrideVanilla = parseResult.GetValue(overrideVanillaOpt);
             var disableRefrEditorIdRemap = parseResult.GetValue(disableRefrEditorIdRemapOpt);
             var replaceCellTemporaries = parseResult.GetValue(replaceCellTemporariesOpt);
+            var recoverGaps = parseResult.GetValue(recoverGapsOpt);
             var emitMasterCellNavmAugmentation = !parseResult.GetValue(noMasterCellNavmAugmentationOpt);
             var cellAuthorityPath = parseResult.GetValue(cellAuthorityOpt);
             var skipWorldspaceArgs = parseResult.GetValue(skipWorldspaceOpt) ?? [];
@@ -190,7 +198,7 @@ public static class DmpToEspCommand
 
             await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose,
                 secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, overrideVanilla,
-                disableRefrEditorIdRemap, replaceCellTemporaries, emitMasterCellNavmAugmentation,
+                disableRefrEditorIdRemap, replaceCellTemporaries, recoverGaps, emitMasterCellNavmAugmentation,
                 cellAuthorityPath, skipWorldspaceFormIds, skipRecordTypes, plannerTypes, ct);
         });
 
@@ -214,6 +222,7 @@ public static class DmpToEspCommand
         bool overrideVanilla,
         bool disableRefrEditorIdRemap,
         bool replaceCellTemporaries,
+        bool recoverGaps,
         bool emitMasterCellNavmAugmentation,
         string? cellAuthorityPath,
         HashSet<uint> skipWorldspaceFormIds,
@@ -274,6 +283,7 @@ public static class DmpToEspCommand
             AssetRenameOverrideVanilla = overrideVanilla,
             EnableRefrBaseEditorIdRemap = !disableRefrEditorIdRemap,
             ReplaceCellTemporariesOnOverride = replaceCellTemporaries,
+            RecoverGaps = recoverGaps,
             EmitMasterCellNavmAugmentation = emitMasterCellNavmAugmentation,
             CellWorldspaceAuthority = authorityLoad.CellToWorldspace,
             CellMetadataAuthority = authorityLoad.Cells,
@@ -302,6 +312,11 @@ public static class DmpToEspCommand
         {
             AnsiConsole.MarkupLine(
                 $"[cyan]Planner-enabled types:[/] {string.Join(", ", plannerEnabledRecordTypes.OrderBy(t => t, StringComparer.Ordinal))}");
+        }
+
+        if (recoverGaps)
+        {
+            AnsiConsole.MarkupLine("[yellow]Recover gaps:[/] enabled (experimental, opt-in)");
         }
 
         var inputs = new DmpToEspInputs
@@ -333,6 +348,15 @@ public static class DmpToEspCommand
                 $"skipped={s.RecordsSkipped:N0}, failed={s.RecordsFailed:N0}");
             AnsiConsole.MarkupLine($"  Overrides={s.OverridesEmitted:N0}, new={s.NewRecordsEmitted:N0}, " +
                                    $"cells={s.CellsMerged:N0}");
+            if (s.RecoverableGapCandidates > 0 || s.PromotedGapRawRecords > 0 ||
+                s.PromotedGapRuntimeDialogue > 0 || s.PromotedGapPlacedRefs > 0)
+            {
+                AnsiConsole.MarkupLine(
+                    $"  Gap recovery: candidates={s.RecoverableGapCandidates:N0}, " +
+                    $"promoted raw={s.PromotedGapRawRecords:N0}, " +
+                    $"dialogue={s.PromotedGapRuntimeDialogue:N0}, " +
+                    $"placed refs={s.PromotedGapPlacedRefs:N0}, audit/skipped={s.SkippedGapCandidates:N0}");
+            }
             AnsiConsole.MarkupLine($"  Output: {s.OutputBytes:N0} bytes in {s.Elapsed.TotalSeconds:F2}s");
 
             if (s.Scols.TotalParsed > 0)

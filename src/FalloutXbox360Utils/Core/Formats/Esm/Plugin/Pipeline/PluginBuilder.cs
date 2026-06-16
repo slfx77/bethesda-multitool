@@ -28,6 +28,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
 using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
 using FalloutXbox360Utils.Core.Semantic;
+using FalloutXbox360Utils.Core.Recovery;
 
 namespace FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 
@@ -395,10 +396,14 @@ public sealed class PluginBuilder
                     // actors are persistent and already captured, so excluding them costs nothing.
                     ResidentRecoveryMasterFormIds = new HashSet<uint>(
                         refToCell.Keys.Where(k =>
-                            pcRecordsByFormId.TryGetValue(k, out var r) && r.Header.Signature == "REFR"))
+                            pcRecordsByFormId.TryGetValue(k, out var r) && r.Header.Signature == "REFR")),
+                    GapRecovery = inputs.Options.RecoverGaps
+                        ? DmpGapRecoveryOptions.PromoteAllValidated
+                        : DmpGapRecoveryOptions.Disabled
                 },
                 ct);
             var dmpRecords = unified.Records;
+            ReportGapRecovery(unified.RawResult, stats);
             ApplyCellWorldspaceAuthority(
                 dmpRecords,
                 unified.RawResult.EsmRecords,
@@ -817,6 +822,38 @@ public sealed class PluginBuilder
                         recordType, sourceFormId, "editor-id.alias-master");
                 }
             }
+        }
+    }
+
+    private void ReportGapRecovery(AnalysisResult rawResult, ConversionPipelineStats stats)
+    {
+        var summary = rawResult.RecoverableGapSummary;
+        var promotion = rawResult.RecoverableGapPromotion;
+        if (summary == null && promotion == null)
+        {
+            return;
+        }
+
+        if (summary != null)
+        {
+            stats.RecoverableGapCandidates = summary.Candidates;
+            _sink.Info("Reading DMP",
+                $"Recoverable gaps: candidates={summary.Candidates:N0}, " +
+                $"raw={summary.RawRecordCandidates:N0}, runtimeTESForms={summary.RuntimeTesFormCandidates:N0}, " +
+                $"dialogue={summary.RuntimeDialogueCandidates:N0}, placedRefs={summary.RuntimePlacedReferenceCandidates:N0}.");
+        }
+
+        if (promotion != null)
+        {
+            stats.PromotedGapRawRecords = promotion.RawRecordsPromoted;
+            stats.PromotedGapRuntimeDialogue = promotion.RuntimeDialogueEntriesPromoted;
+            stats.PromotedGapPlacedRefs = promotion.RuntimePlacedReferenceEntriesPromoted;
+            stats.SkippedGapCandidates = promotion.SkippedCandidates;
+            _sink.Info("Reading DMP",
+                $"Gap promotion: raw={promotion.RawRecordsPromoted:N0}, " +
+                $"runtimeDialogue={promotion.RuntimeDialogueEntriesPromoted:N0}, " +
+                $"placedRefs={promotion.RuntimePlacedReferenceEntriesPromoted:N0}, " +
+                $"skipped/audit={promotion.SkippedCandidates:N0}.");
         }
     }
 

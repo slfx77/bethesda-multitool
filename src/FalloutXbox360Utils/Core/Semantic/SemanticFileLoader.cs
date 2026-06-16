@@ -1,8 +1,10 @@
 using System.IO.MemoryMappedFiles;
+using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Recovery;
 
 namespace FalloutXbox360Utils.Core.Semantic;
 
@@ -126,6 +128,8 @@ internal static class SemanticFileLoader
                 $"No records found in {Path.GetFileName(filePath)}. The file may be empty or corrupted.");
         }
 
+        ApplyDmpGapRecoveryPromotionsIfNeeded(analysisResult, options);
+
         var parser = new RecordParser(
             analysisResult.EsmRecords,
             analysisResult.FormIdMap,
@@ -152,7 +156,7 @@ internal static class SemanticFileLoader
         SemanticFileLoadOptions options,
         CancellationToken cancellationToken)
     {
-        return fileType switch
+        var result = fileType switch
         {
             AnalysisFileType.EsmFile => await EsmFileAnalyzer.AnalyzeAsync(
                 filePath,
@@ -167,6 +171,67 @@ internal static class SemanticFileLoader
                 cancellationToken),
             _ => throw new InvalidOperationException($"Unsupported semantic file type: {fileType}")
         };
+
+        if (fileType == AnalysisFileType.Minidump &&
+            (options.GapRecovery.DiscoverCandidates || options.GapRecovery.AnyPromotion))
+        {
+            DiscoverDmpGapRecoveryCandidates(filePath, result, options.GapRecovery, cancellationToken);
+        }
+
+        return result;
+    }
+
+    private static void DiscoverDmpGapRecoveryCandidates(
+        string filePath,
+        AnalysisResult result,
+        DmpGapRecoveryOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (result.EsmRecords == null || result.MinidumpInfo is not { IsValid: true })
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using var mmf = MemoryMappedFile.CreateFromFile(
+            filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        using var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read);
+        var coverage = CoverageAnalyzer.Analyze(result, accessor);
+        if (coverage.Error != null)
+        {
+            return;
+        }
+
+        using var stream = File.OpenRead(filePath);
+        var rttiReader = new RttiReader(result.MinidumpInfo, stream);
+        var recovery = DmpGapRecoveryScanner.Scan(
+            result,
+            coverage,
+            new MmfMemoryAccessor(accessor),
+            rttiReader,
+            options);
+
+        result.RecoverableGapCandidates.Clear();
+        result.RecoverableGapCandidates.AddRange(recovery.Candidates);
+        result.RecoverableGapSummary = recovery.Summary;
+    }
+
+    private static void ApplyDmpGapRecoveryPromotionsIfNeeded(
+        AnalysisResult analysisResult,
+        SemanticFileLoadOptions options)
+    {
+        if (analysisResult.EsmRecords == null ||
+            !options.GapRecovery.AnyPromotion ||
+            analysisResult.RecoverableGapCandidates.Count == 0)
+        {
+            return;
+        }
+
+        analysisResult.RecoverableGapPromotion = DmpGapRecoveryPromoter.Apply(
+            analysisResult.EsmRecords,
+            analysisResult.RecoverableGapCandidates,
+            options.GapRecovery);
     }
 
     private static void ApplyCellWorldspaceAuthorityIfNeeded(

@@ -14,6 +14,11 @@ public sealed class ConversionPipelineStats
     public int CellsMerged { get; set; }
     public int Warnings { get; set; }
     public int Errors { get; set; }
+    public int RecoverableGapCandidates { get; set; }
+    public int PromotedGapRawRecords { get; set; }
+    public int PromotedGapRuntimeDialogue { get; set; }
+    public int PromotedGapPlacedRefs { get; set; }
+    public int SkippedGapCandidates { get; set; }
 
     /// <summary>Per-record-type counts of records emitted to the output ESP.</summary>
     public Dictionary<string, int> EmittedByType { get; } = new(StringComparer.Ordinal);

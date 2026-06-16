@@ -151,6 +151,14 @@ public sealed record PluginBuildOptions
     public bool ReplaceCellTemporariesOnOverride { get; init; }
 
     /// <summary>
+    ///     Experimental opt-in: scan uncovered DMP gaps for validated raw ESM records and
+    ///     RTTI-backed runtime forms, then promote only candidates that existing semantic
+    ///     readers can consume safely. Browser/audit discovery is separate; this switch
+    ///     changes DMP→ESP parse inputs and is off by default.
+    /// </summary>
+    public bool RecoverGaps { get; init; }
+
+    /// <summary>
     ///     Diagnostic: worldspace FormIDs whose cells (and all nested REFR/ACHR/ACRE
     ///     placements + per-cell LAND/NAVM) the converter should drop from emission
     ///     entirely. Used to bisect crashes that point at a specific worldspace —

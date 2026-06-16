@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Recovery;
 
 namespace FalloutXbox360Utils.Core;
 
@@ -26,6 +27,11 @@ public class AnalysisResult
     // ESM record data
     public EsmRecordScanResult? EsmRecords { get; set; }
     public Dictionary<uint, string> FormIdMap { get; set; } = [];
+
+    // Recoverable evidence found in coverage gaps (DMP only)
+    public List<DmpGapRecoveryCandidate> RecoverableGapCandidates { get; } = [];
+    public DmpGapRecoverySummary? RecoverableGapSummary { get; set; }
+    public DmpGapRecoveryPromotionResult? RecoverableGapPromotion { get; set; }
 
     // Runtime asset scanning results (DMP only)
     public List<ExtractedMesh>? RuntimeMeshes { get; set; }
