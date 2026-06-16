@@ -53,7 +53,7 @@ internal static class EsmWorldExtractor
 
             foreach (var header in refrRecords)
             {
-                var dataStart = header.Offset + 24;
+                var dataStart = header.Offset + header.HeaderSize;
                 var dataSize = (int)header.DataSize;
 
                 if (dataStart + dataSize > fileSize)
@@ -135,7 +135,7 @@ internal static class EsmWorldExtractor
                         position = new PositionSubrecord(
                             pos.Value.x, pos.Value.y, pos.Value.z,
                             pos.Value.rotX, pos.Value.rotY, pos.Value.rotZ,
-                            header.Offset + 24 + sub.DataOffset, header.IsBigEndian);
+                            header.Offset + header.HeaderSize + sub.DataOffset, header.IsBigEndian);
                     }
 
                     break;
@@ -198,7 +198,7 @@ internal static class EsmWorldExtractor
                             ReadXtelFloat(subData, 16, header.IsBigEndian),
                             ReadXtelFloat(subData, 20, header.IsBigEndian),
                             ReadXtelFloat(subData, 24, header.IsBigEndian),
-                            header.Offset + 24 + sub.DataOffset, header.IsBigEndian);
+                            header.Offset + header.HeaderSize + sub.DataOffset, header.IsBigEndian);
                     }
 
                     if (sub.DataLength >= 29)
@@ -379,7 +379,7 @@ internal static class EsmWorldExtractor
             foreach (var header in landRecords)
             {
                 // Read the record data (after 24-byte header)
-                var dataStart = header.Offset + 24;
+                var dataStart = header.Offset + header.HeaderSize;
                 var dataSize = (int)header.DataSize;
 
                 if (dataStart + dataSize > fileSize)

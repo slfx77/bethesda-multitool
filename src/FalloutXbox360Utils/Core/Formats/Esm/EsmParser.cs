@@ -107,7 +107,9 @@ public static class EsmParser
     /// </summary>
     public static EsmFileHeader? ParseFileHeader(ReadOnlySpan<byte> data)
     {
-        if (data.Length < MainRecordHeaderSize)
+        // Header framing varies by game (Oblivion = 20 bytes, FO3/FNV/Skyrim/FO4/Starfield = 24).
+        var format = PluginFormat.Detect(data);
+        if (data.Length < format.RecordHeaderSize)
         {
             return null;
         }
@@ -122,14 +124,14 @@ public static class EsmParser
             return null;
         }
 
-        var header = ParseRecordHeader(data, bigEndian);
+        var header = ParseRecordHeader(data, bigEndian, format);
         if (header == null)
         {
             return null;
         }
 
         // Parse TES4 subrecords
-        var headerData = data.Slice(MainRecordHeaderSize, (int)header.DataSize);
+        var headerData = data.Slice(format.RecordHeaderSize, (int)header.DataSize);
         var subrecords = ParseSubrecords(headerData, bigEndian);
 
         string? author = null;
@@ -176,11 +178,16 @@ public static class EsmParser
     }
 
     /// <summary>
-    ///     Parse a main record header (24 bytes for FNV).
+    ///     Parse a main record header. 24 bytes for FO3/FNV/Skyrim/FO4/Starfield; 20 bytes for
+    ///     Oblivion (no VCS/version trailer). The shared fields (signature, data size, flags, FormID,
+    ///     timestamp) sit at identical offsets in both layouts. Pass <paramref name="format" /> to
+    ///     parse a non-default layout; when null, the 24-byte FNV layout is assumed.
     /// </summary>
-    public static MainRecordHeader? ParseRecordHeader(ReadOnlySpan<byte> data, bool bigEndian = false)
+    public static MainRecordHeader? ParseRecordHeader(ReadOnlySpan<byte> data, bool bigEndian = false,
+        PluginFormat? format = null)
     {
-        if (data.Length < MainRecordHeaderSize)
+        var fmt = format ?? PluginFormat.Fnv;
+        if (data.Length < fmt.RecordHeaderSize)
         {
             return null;
         }
@@ -201,8 +208,15 @@ public static class EsmParser
         var flags = ReadUInt32(data, 8, bigEndian);
         var formId = ReadUInt32(data, 12, bigEndian);
         var timestamp = ReadUInt32(data, 16, bigEndian);
-        var vcsInfo = ReadUInt16(data, 20, bigEndian);
-        var version = ReadUInt16(data, 22, bigEndian);
+
+        // The VCS/form-version trailer (offsets 20-23) only exists in the 24-byte layout.
+        ushort vcsInfo = 0;
+        ushort version = 0;
+        if (fmt.HasRecordVersionTrailer && data.Length >= 24)
+        {
+            vcsInfo = ReadUInt16(data, 20, bigEndian);
+            version = ReadUInt16(data, 22, bigEndian);
+        }
 
         return new MainRecordHeader
         {
@@ -217,11 +231,15 @@ public static class EsmParser
     }
 
     /// <summary>
-    ///     Parse a GRUP (group) header.
+    ///     Parse a GRUP (group) header. 24 bytes for FO3/FNV/Skyrim/FO4/Starfield; 20 bytes for
+    ///     Oblivion (which omits the trailing unknown field). Pass <paramref name="format" /> for a
+    ///     non-default layout; when null, the 24-byte FNV layout is assumed.
     /// </summary>
-    public static GroupHeader? ParseGroupHeader(ReadOnlySpan<byte> data, bool bigEndian = false)
+    public static GroupHeader? ParseGroupHeader(ReadOnlySpan<byte> data, bool bigEndian = false,
+        PluginFormat? format = null)
     {
-        if (data.Length < 24)
+        var fmt = format ?? PluginFormat.Fnv;
+        if (data.Length < fmt.GroupHeaderSize)
         {
             return null;
         }
@@ -236,7 +254,9 @@ public static class EsmParser
         var label = data.Slice(8, 4).ToArray();
         var groupType = (int)ReadUInt32(data, 12, bigEndian);
         var stamp = ReadUInt32(data, 16, bigEndian);
-        var unknown = ReadUInt32(data, 20, bigEndian);
+
+        // The trailing unknown field (offsets 20-23) only exists in the 24-byte layout.
+        var unknown = fmt.GroupHeaderSize >= 24 && data.Length >= 24 ? ReadUInt32(data, 20, bigEndian) : 0u;
 
         return new GroupHeader
         {

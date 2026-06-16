@@ -374,7 +374,7 @@ public sealed class RecordParserContext
 
     public string? FindFullNameInRecordBounds(DetectedMainRecord record)
     {
-        var dataStart = record.Offset + 24;
+        var dataStart = record.Offset + record.HeaderSize;
         var dataEnd = dataStart + record.DataSize;
 
         return ScanResult.FullNames
@@ -397,7 +397,7 @@ public sealed class RecordParserContext
     /// </summary>
     public (byte[] Data, int Size)? ReadRecordData(DetectedMainRecord record, byte[] buffer)
     {
-        var dataStart = record.Offset + 24;
+        var dataStart = record.Offset + record.HeaderSize;
         var dataSize = (int)record.DataSize;
 
         if (dataStart + dataSize > FileSize)
@@ -682,7 +682,7 @@ public sealed class RecordParserContext
 
             var candidate = sortedRecords[idx];
             // Verify EDID falls within this record's data region
-            if (edid.Offset < candidate.Offset + candidate.DataSize + 24)
+            if (edid.Offset < candidate.Offset + candidate.DataSize + candidate.HeaderSize)
             {
                 map.TryAdd(candidate.FormId, edid.Name);
             }
@@ -718,17 +718,18 @@ public sealed class RecordParserContext
             return FalloutGame.Unknown;
         }
 
-        // Read TES4 record data and look for HEDR subrecord
-        var buffer = new byte[Math.Min(tes4.DataSize + 24, 4096)];
+        // Read TES4 record data and look for HEDR subrecord. Header size varies (Oblivion = 20).
+        var headerSize = tes4.HeaderSize;
+        var buffer = new byte[Math.Min(tes4.DataSize + (uint)headerSize, 4096)];
         var readSize = Math.Min(buffer.Length, (int)(FileSize - tes4.Offset));
-        if (readSize < 36) // minimum: 24-byte record header + 6-byte HEDR header + 4-byte version + 2 padding
+        if (readSize < headerSize + 12) // record header + 6-byte HEDR header + 4-byte version + 2 padding
         {
             return FalloutGame.Unknown;
         }
 
         try
         {
-            Accessor.ReadArray(tes4.Offset + 24, buffer, 0, readSize - 24);
+            Accessor.ReadArray(tes4.Offset + headerSize, buffer, 0, readSize - headerSize);
         }
         catch
         {
@@ -736,7 +737,7 @@ public sealed class RecordParserContext
         }
 
         // Iterate subrecords within TES4 to find HEDR
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(buffer, readSize - 24, tes4.IsBigEndian))
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(buffer, readSize - headerSize, tes4.IsBigEndian))
         {
             if (sub.Signature != "HEDR" || sub.DataLength < 4)
             {

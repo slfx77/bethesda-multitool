@@ -12,6 +12,13 @@ public record DetectedMainRecord(
     long Offset,
     bool IsBigEndian)
 {
+    /// <summary>
+    ///     Size in bytes of this record's header (where its subrecord data begins, relative to
+    ///     <see cref="Offset" />). 24 for FO3/FNV/Skyrim/FO4/Starfield and DMP-derived records;
+    ///     20 for Oblivion. Defaults to 24 so existing call sites are unchanged.
+    /// </summary>
+    public int HeaderSize { get; init; } = 24;
+
     /// <summary>Whether this is a compressed record.</summary>
     public bool IsCompressed => (Flags & 0x00040000) != 0;
 

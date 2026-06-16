@@ -36,23 +36,24 @@ internal static class EsmDescriptorScanner
         var refrStates = new Dictionary<long, RefrState>();
 
         var bigEndian = EsmParser.IsBigEndian(data);
-        var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
+        var format = PluginFormat.Detect(data);
+        var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian, format);
         if (tes4Header == null || tes4Header.Signature != "TES4")
         {
             return new EsmDescriptorScanResult(scanResult, grupHeaders, formIdMap);
         }
 
-        var offset = (long)EsmParser.MainRecordHeaderSize + tes4Header.DataSize;
-        while (offset + EsmParser.MainRecordHeaderSize <= data.Length)
+        var offset = (long)format.RecordHeaderSize + tes4Header.DataSize;
+        while (offset + format.RecordHeaderSize <= data.Length)
         {
             var sig = ReadSignature(data[(int)offset..], bigEndian);
 
             if (sig == "GRUP")
             {
-                var actualEnd = ParseGroupRecursive(data, offset, bigEndian, scanResult, grupHeaders, formIdMap,
-                    refrStates);
-                var groupHeader = EsmParser.ParseGroupHeader(data[(int)offset..], bigEndian);
-                if (groupHeader == null || groupHeader.GroupSize < GrupHeaderInfo.HeaderSize)
+                var actualEnd = ParseGroupRecursive(data, offset, bigEndian, format, scanResult, grupHeaders,
+                    formIdMap, refrStates);
+                var groupHeader = EsmParser.ParseGroupHeader(data[(int)offset..], bigEndian, format);
+                if (groupHeader == null || groupHeader.GroupSize < format.GroupHeaderSize)
                 {
                     break;
                 }
@@ -62,7 +63,7 @@ internal static class EsmDescriptorScanner
             }
             else if (sig == "TOFT")
             {
-                var toftHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian);
+                var toftHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian, format);
                 if (toftHeader == null)
                 {
                     break;
@@ -70,26 +71,26 @@ internal static class EsmDescriptorScanner
 
                 if (toftHeader.DataSize > 0)
                 {
-                    ScanToftBlock(data, offset + EsmParser.MainRecordHeaderSize,
-                        offset + EsmParser.MainRecordHeaderSize + toftHeader.DataSize,
-                        bigEndian, scanResult, formIdMap, refrStates);
-                    offset += EsmParser.MainRecordHeaderSize + toftHeader.DataSize;
+                    ScanToftBlock(data, offset + format.RecordHeaderSize,
+                        offset + format.RecordHeaderSize + toftHeader.DataSize,
+                        bigEndian, format, scanResult, formIdMap, refrStates);
+                    offset += format.RecordHeaderSize + toftHeader.DataSize;
                 }
                 else
                 {
-                    offset += EsmParser.MainRecordHeaderSize;
+                    offset += format.RecordHeaderSize;
                 }
             }
             else
             {
-                var recordHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian);
+                var recordHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian, format);
                 if (recordHeader == null)
                 {
                     break;
                 }
 
-                ProcessRecord(data, offset, recordHeader, bigEndian, scanResult, formIdMap, refrStates);
-                offset += EsmParser.MainRecordHeaderSize + recordHeader.DataSize;
+                ProcessRecord(data, offset, recordHeader, bigEndian, format, scanResult, formIdMap, refrStates);
+                offset += format.RecordHeaderSize + recordHeader.DataSize;
             }
         }
 
@@ -101,13 +102,14 @@ internal static class EsmDescriptorScanner
         ReadOnlySpan<byte> data,
         long groupOffset,
         bool bigEndian,
+        PluginFormat format,
         EsmRecordScanResult scanResult,
         List<GrupHeaderInfo> grupHeaders,
         Dictionary<uint, string> formIdMap,
         Dictionary<long, RefrState> refrStates)
     {
-        var groupHeader = EsmParser.ParseGroupHeader(data[(int)groupOffset..], bigEndian);
-        if (groupHeader == null || groupHeader.GroupSize < GrupHeaderInfo.HeaderSize)
+        var groupHeader = EsmParser.ParseGroupHeader(data[(int)groupOffset..], bigEndian, format);
+        if (groupHeader == null || groupHeader.GroupSize < format.GroupHeaderSize)
         {
             return groupOffset;
         }
@@ -122,18 +124,18 @@ internal static class EsmDescriptorScanner
         });
 
         var groupEnd = groupOffset + groupHeader.GroupSize;
-        var offset = groupOffset + GrupHeaderInfo.HeaderSize;
+        var offset = groupOffset + format.GroupHeaderSize;
 
-        while (offset + EsmParser.MainRecordHeaderSize <= data.Length && offset < groupEnd)
+        while (offset + format.RecordHeaderSize <= data.Length && offset < groupEnd)
         {
             var sig = ReadSignature(data[(int)offset..], bigEndian);
 
             if (sig == "GRUP")
             {
-                var nestedEnd = ParseGroupRecursive(data, offset, bigEndian, scanResult, grupHeaders, formIdMap,
-                    refrStates);
-                var nestedHeader = EsmParser.ParseGroupHeader(data[(int)offset..], bigEndian);
-                if (nestedHeader == null || nestedHeader.GroupSize < GrupHeaderInfo.HeaderSize)
+                var nestedEnd = ParseGroupRecursive(data, offset, bigEndian, format, scanResult, grupHeaders,
+                    formIdMap, refrStates);
+                var nestedHeader = EsmParser.ParseGroupHeader(data[(int)offset..], bigEndian, format);
+                if (nestedHeader == null || nestedHeader.GroupSize < format.GroupHeaderSize)
                 {
                     break;
                 }
@@ -143,7 +145,7 @@ internal static class EsmDescriptorScanner
             }
             else if (sig == "TOFT")
             {
-                var toftHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian);
+                var toftHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian, format);
                 if (toftHeader == null)
                 {
                     break;
@@ -151,26 +153,26 @@ internal static class EsmDescriptorScanner
 
                 if (toftHeader.DataSize > 0)
                 {
-                    ScanToftBlock(data, offset + EsmParser.MainRecordHeaderSize,
-                        offset + EsmParser.MainRecordHeaderSize + toftHeader.DataSize,
-                        bigEndian, scanResult, formIdMap, refrStates);
-                    offset += EsmParser.MainRecordHeaderSize + toftHeader.DataSize;
+                    ScanToftBlock(data, offset + format.RecordHeaderSize,
+                        offset + format.RecordHeaderSize + toftHeader.DataSize,
+                        bigEndian, format, scanResult, formIdMap, refrStates);
+                    offset += format.RecordHeaderSize + toftHeader.DataSize;
                 }
                 else
                 {
-                    offset += EsmParser.MainRecordHeaderSize;
+                    offset += format.RecordHeaderSize;
                 }
             }
             else
             {
-                var recordHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian);
+                var recordHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian, format);
                 if (recordHeader == null)
                 {
                     break;
                 }
 
-                ProcessRecord(data, offset, recordHeader, bigEndian, scanResult, formIdMap, refrStates);
-                offset += EsmParser.MainRecordHeaderSize + recordHeader.DataSize;
+                ProcessRecord(data, offset, recordHeader, bigEndian, format, scanResult, formIdMap, refrStates);
+                offset += format.RecordHeaderSize + recordHeader.DataSize;
             }
         }
 
@@ -182,12 +184,13 @@ internal static class EsmDescriptorScanner
         long start,
         long end,
         bool bigEndian,
+        PluginFormat format,
         EsmRecordScanResult scanResult,
         Dictionary<uint, string> formIdMap,
         Dictionary<long, RefrState> refrStates)
     {
         var offset = start;
-        while (offset + EsmParser.MainRecordHeaderSize <= end)
+        while (offset + format.RecordHeaderSize <= end)
         {
             var sig = ReadSignature(data[(int)offset..], bigEndian);
             if (sig == "GRUP")
@@ -195,7 +198,7 @@ internal static class EsmDescriptorScanner
                 break;
             }
 
-            var header = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian);
+            var header = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian, format);
             if (header == null)
             {
                 break;
@@ -205,26 +208,26 @@ internal static class EsmDescriptorScanner
             {
                 if (header.DataSize > 0)
                 {
-                    ScanToftBlock(data, offset + EsmParser.MainRecordHeaderSize,
-                        offset + EsmParser.MainRecordHeaderSize + header.DataSize,
-                        bigEndian, scanResult, formIdMap, refrStates);
-                    offset += EsmParser.MainRecordHeaderSize + header.DataSize;
+                    ScanToftBlock(data, offset + format.RecordHeaderSize,
+                        offset + format.RecordHeaderSize + header.DataSize,
+                        bigEndian, format, scanResult, formIdMap, refrStates);
+                    offset += format.RecordHeaderSize + header.DataSize;
                 }
                 else
                 {
-                    offset += EsmParser.MainRecordHeaderSize;
+                    offset += format.RecordHeaderSize;
                 }
 
                 continue;
             }
 
-            var recordEnd = offset + EsmParser.MainRecordHeaderSize + header.DataSize;
+            var recordEnd = offset + format.RecordHeaderSize + header.DataSize;
             if (recordEnd <= offset || recordEnd > end)
             {
                 break;
             }
 
-            ProcessRecord(data, offset, header, bigEndian, scanResult, formIdMap, refrStates);
+            ProcessRecord(data, offset, header, bigEndian, format, scanResult, formIdMap, refrStates);
             offset = recordEnd;
         }
     }
@@ -234,6 +237,7 @@ internal static class EsmDescriptorScanner
         long offset,
         MainRecordHeader header,
         bool bigEndian,
+        PluginFormat format,
         EsmRecordScanResult scanResult,
         Dictionary<uint, string> formIdMap,
         Dictionary<long, RefrState> refrStates)
@@ -244,10 +248,13 @@ internal static class EsmDescriptorScanner
             header.Flags,
             header.FormId,
             offset,
-            bigEndian);
+            bigEndian)
+        {
+            HeaderSize = format.RecordHeaderSize
+        };
         scanResult.MainRecords.Add(record);
 
-        var dataStart = offset + EsmParser.MainRecordHeaderSize;
+        var dataStart = offset + format.RecordHeaderSize;
         if (dataStart + header.DataSize > fileData.Length)
         {
             return;

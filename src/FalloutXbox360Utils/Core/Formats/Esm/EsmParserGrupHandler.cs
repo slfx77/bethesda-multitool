@@ -23,25 +23,26 @@ internal static class EsmParserGrupHandler
         var grupHeaders = new List<GrupHeaderInfo>();
 
         var bigEndian = EsmParser.IsBigEndian(data);
+        var format = PluginFormat.Detect(data);
 
-        var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian);
+        var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian, format);
         if (tes4Header == null || tes4Header.Signature != "TES4")
         {
             return (records, grupHeaders);
         }
 
-        var offset = (long)EsmParser.MainRecordHeaderSize + tes4Header.DataSize;
+        var offset = (long)format.RecordHeaderSize + tes4Header.DataSize;
 
-        while (offset + EsmParser.MainRecordHeaderSize <= data.Length)
+        while (offset + format.RecordHeaderSize <= data.Length)
         {
             var sig = ReadSignature(data[(int)offset..], bigEndian);
 
             if (sig == "GRUP")
             {
-                var actualEnd = ParseGroupRecursive(data, offset, bigEndian, records, grupHeaders);
+                var actualEnd = ParseGroupRecursive(data, offset, bigEndian, format, records, grupHeaders);
 
-                var groupHeader = EsmParser.ParseGroupHeader(data[(int)offset..], bigEndian);
-                if (groupHeader == null || groupHeader.GroupSize < 24)
+                var groupHeader = EsmParser.ParseGroupHeader(data[(int)offset..], bigEndian, format);
+                if (groupHeader == null || groupHeader.GroupSize < format.GroupHeaderSize)
                 {
                     break;
                 }
@@ -51,7 +52,7 @@ internal static class EsmParserGrupHandler
             }
             else if (sig == "TOFT")
             {
-                var toftHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian);
+                var toftHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian, format);
                 if (toftHeader == null)
                 {
                     break;
@@ -59,25 +60,25 @@ internal static class EsmParserGrupHandler
 
                 if (toftHeader.DataSize > 0)
                 {
-                    ScanToftBlock(data, offset + EsmParser.MainRecordHeaderSize,
-                        offset + EsmParser.MainRecordHeaderSize + toftHeader.DataSize,
-                        bigEndian, records);
-                    offset += EsmParser.MainRecordHeaderSize + toftHeader.DataSize;
+                    ScanToftBlock(data, offset + format.RecordHeaderSize,
+                        offset + format.RecordHeaderSize + toftHeader.DataSize,
+                        bigEndian, format, records);
+                    offset += format.RecordHeaderSize + toftHeader.DataSize;
                 }
                 else
                 {
-                    offset += EsmParser.MainRecordHeaderSize;
+                    offset += format.RecordHeaderSize;
                 }
             }
             else
             {
-                var recordHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian);
+                var recordHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian, format);
                 if (recordHeader == null)
                 {
                     break;
                 }
 
-                var subrecords = ParseRecordSubrecords(data, offset, recordHeader, bigEndian);
+                var subrecords = ParseRecordSubrecords(data, offset, recordHeader, bigEndian, format);
 
                 records.Add(new ParsedMainRecord
                 {
@@ -86,7 +87,7 @@ internal static class EsmParserGrupHandler
                     Subrecords = subrecords
                 });
 
-                offset += EsmParser.MainRecordHeaderSize + recordHeader.DataSize;
+                offset += format.RecordHeaderSize + recordHeader.DataSize;
             }
         }
 
@@ -102,11 +103,12 @@ internal static class EsmParserGrupHandler
         ReadOnlySpan<byte> data,
         long groupOffset,
         bool bigEndian,
+        PluginFormat format,
         List<ParsedMainRecord> records,
         List<GrupHeaderInfo> grupHeaders)
     {
-        var groupHeader = EsmParser.ParseGroupHeader(data[(int)groupOffset..], bigEndian);
-        if (groupHeader == null || groupHeader.GroupSize < 24)
+        var groupHeader = EsmParser.ParseGroupHeader(data[(int)groupOffset..], bigEndian, format);
+        if (groupHeader == null || groupHeader.GroupSize < format.GroupHeaderSize)
         {
             return groupOffset;
         }
@@ -121,18 +123,18 @@ internal static class EsmParserGrupHandler
         });
 
         var groupEnd = groupOffset + groupHeader.GroupSize;
-        var offset = groupOffset + 24;
+        var offset = groupOffset + format.GroupHeaderSize;
 
-        while (offset + EsmParser.MainRecordHeaderSize <= data.Length && offset < groupEnd)
+        while (offset + format.RecordHeaderSize <= data.Length && offset < groupEnd)
         {
             var sig = ReadSignature(data[(int)offset..], bigEndian);
 
             if (sig == "GRUP")
             {
-                var nestedEnd = ParseGroupRecursive(data, offset, bigEndian, records, grupHeaders);
+                var nestedEnd = ParseGroupRecursive(data, offset, bigEndian, format, records, grupHeaders);
 
-                var nestedHeader = EsmParser.ParseGroupHeader(data[(int)offset..], bigEndian);
-                if (nestedHeader == null || nestedHeader.GroupSize < 24)
+                var nestedHeader = EsmParser.ParseGroupHeader(data[(int)offset..], bigEndian, format);
+                if (nestedHeader == null || nestedHeader.GroupSize < format.GroupHeaderSize)
                 {
                     break;
                 }
@@ -142,7 +144,7 @@ internal static class EsmParserGrupHandler
             }
             else if (sig == "TOFT")
             {
-                var toftHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian);
+                var toftHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian, format);
                 if (toftHeader == null)
                 {
                     break;
@@ -150,25 +152,25 @@ internal static class EsmParserGrupHandler
 
                 if (toftHeader.DataSize > 0)
                 {
-                    ScanToftBlock(data, offset + EsmParser.MainRecordHeaderSize,
-                        offset + EsmParser.MainRecordHeaderSize + toftHeader.DataSize,
-                        bigEndian, records);
-                    offset += EsmParser.MainRecordHeaderSize + toftHeader.DataSize;
+                    ScanToftBlock(data, offset + format.RecordHeaderSize,
+                        offset + format.RecordHeaderSize + toftHeader.DataSize,
+                        bigEndian, format, records);
+                    offset += format.RecordHeaderSize + toftHeader.DataSize;
                 }
                 else
                 {
-                    offset += EsmParser.MainRecordHeaderSize;
+                    offset += format.RecordHeaderSize;
                 }
             }
             else
             {
-                var recordHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian);
+                var recordHeader = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian, format);
                 if (recordHeader == null)
                 {
                     break;
                 }
 
-                var subrecords = ParseRecordSubrecords(data, offset, recordHeader, bigEndian);
+                var subrecords = ParseRecordSubrecords(data, offset, recordHeader, bigEndian, format);
 
                 records.Add(new ParsedMainRecord
                 {
@@ -177,7 +179,7 @@ internal static class EsmParserGrupHandler
                     Subrecords = subrecords
                 });
 
-                offset += EsmParser.MainRecordHeaderSize + recordHeader.DataSize;
+                offset += format.RecordHeaderSize + recordHeader.DataSize;
             }
         }
 
@@ -193,11 +195,12 @@ internal static class EsmParserGrupHandler
         long start,
         long end,
         bool bigEndian,
+        PluginFormat format,
         List<ParsedMainRecord> records)
     {
         var offset = start;
 
-        while (offset + EsmParser.MainRecordHeaderSize <= end)
+        while (offset + format.RecordHeaderSize <= end)
         {
             var sig = ReadSignature(data[(int)offset..], bigEndian);
             if (sig == "GRUP")
@@ -205,7 +208,7 @@ internal static class EsmParserGrupHandler
                 break;
             }
 
-            var header = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian);
+            var header = EsmParser.ParseRecordHeader(data[(int)offset..], bigEndian, format);
             if (header == null)
             {
                 break;
@@ -215,26 +218,26 @@ internal static class EsmParserGrupHandler
             {
                 if (header.DataSize > 0)
                 {
-                    ScanToftBlock(data, offset + EsmParser.MainRecordHeaderSize,
-                        offset + EsmParser.MainRecordHeaderSize + header.DataSize,
-                        bigEndian, records);
-                    offset += EsmParser.MainRecordHeaderSize + header.DataSize;
+                    ScanToftBlock(data, offset + format.RecordHeaderSize,
+                        offset + format.RecordHeaderSize + header.DataSize,
+                        bigEndian, format, records);
+                    offset += format.RecordHeaderSize + header.DataSize;
                 }
                 else
                 {
-                    offset += EsmParser.MainRecordHeaderSize;
+                    offset += format.RecordHeaderSize;
                 }
 
                 continue;
             }
 
-            var recordEnd = offset + EsmParser.MainRecordHeaderSize + header.DataSize;
+            var recordEnd = offset + format.RecordHeaderSize + header.DataSize;
             if (recordEnd <= offset || recordEnd > end)
             {
                 break;
             }
 
-            var recordDataSlice = data.Slice((int)offset + EsmParser.MainRecordHeaderSize, (int)header.DataSize);
+            var recordDataSlice = data.Slice((int)offset + format.RecordHeaderSize, (int)header.DataSize);
             var subrecords = EsmParser.ParseSubrecords(recordDataSlice, bigEndian);
 
             records.Add(new ParsedMainRecord
@@ -355,9 +358,9 @@ internal static class EsmParserGrupHandler
     ///     Parse subrecords for a record, handling compressed records.
     /// </summary>
     private static List<ParsedSubrecord> ParseRecordSubrecords(ReadOnlySpan<byte> data, long offset,
-        MainRecordHeader recordHeader, bool bigEndian)
+        MainRecordHeader recordHeader, bool bigEndian, PluginFormat format)
     {
-        var recordDataSlice = data.Slice((int)offset + EsmParser.MainRecordHeaderSize, (int)recordHeader.DataSize);
+        var recordDataSlice = data.Slice((int)offset + format.RecordHeaderSize, (int)recordHeader.DataSize);
 
         if ((recordHeader.Flags & EsmParser.CompressedFlag) != 0 && recordDataSlice.Length > 4)
         {

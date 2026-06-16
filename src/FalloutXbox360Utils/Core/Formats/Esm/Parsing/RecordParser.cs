@@ -370,8 +370,9 @@ public sealed class RecordParser
             "ASPC", "MSET", "CHIP", "CSNO", "DOBJ", "ADDN", "TREE", "IMAD",
             "IDLM", "PWAT",
             // SCOL is parsed via the typed _miscStaticObjects.ParseStaticCollections() path.
+            // CLMT is parsed via the typed _miscEnvironment.ParseClimate() path (atmosphere data).
             // Phase 10: small PDB-defined types with no parity-relevant fields beyond identity
-            "IMGS", "CLMT", "GRAS", "AMEF",
+            "IMGS", "GRAS", "AMEF",
             // FLOR (Flora): harvestable plants. ESM-side coverage so flora carries through
             // (EDID/FULL/MODL/OBND + PFIG ingredient, SNAM sound, SCRI script via schema/fallback)
             // even when no DMP is supplied — previously only the runtime RuntimeFlorReader populated it.
@@ -415,6 +416,7 @@ public sealed class RecordParser
         var navMeshes = _miscGameSystems.ParseNavMeshes();
         var encounterZones = _miscGameSystems.ParseEncounterZones();
         var weather = _miscEnvironment.ParseWeather();
+        var climate = _miscEnvironment.ParseClimate();
         var loadScreenTypes = _miscEnvironment.ParseLoadScreenTypes();
         var audioLocationControllers = _miscEnvironment.ParseAudioLocationControllers();
         var idleAnimations = _ai.ParseIdleAnimations();
@@ -443,6 +445,7 @@ public sealed class RecordParser
         var modelIndex = new Dictionary<uint, string>();
         ObjectIndexBuilder.BuildAndEnrich(
             statics, activators, doors, lights, furniture,
+            staticCollections,
             weapons, armor, ammo, consumables, miscItems, books,
             containers, keys, notes, weaponMods, sounds, genericRecords,
             cells, worldspaces, modelIndex, phaseSw);
@@ -552,6 +555,7 @@ public sealed class RecordParser
             NavMeshes = navMeshes,
             EncounterZones = encounterZones,
             Weather = weather,
+            Climate = climate,
 
             ModelPathIndex = modelIndex,
             FormIdToEditorId = new Dictionary<uint, string>(_context.FormIdToEditorId),
