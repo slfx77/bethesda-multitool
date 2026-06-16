@@ -86,11 +86,15 @@ internal static class WorldMapExporter
                         bestPerCell[cellKey] = (key.pixelsPerCell, bmp);
                     }
                 }
+                // Outset by ~1 export pixel in world units so adjacent opaque tiles overlap and no
+                // seam shows when the grid is off — mirrors WorldMapOverviewRenderer.DrawTextureCellBitmaps.
+                var outset = Math.Min(1f / pixelsPerWorldUnit, CellWorldSize * 0.01f);
                 foreach (var ((gx, gy), (_, bmp)) in bestPerCell)
                 {
                     var originX = gx * CellWorldSize;
                     var originY = -(gy + 1) * CellWorldSize;
-                    ds.DrawImage(bmp, new Rect(originX, originY, CellWorldSize, CellWorldSize));
+                    ds.DrawImage(bmp, new Rect(originX - outset, originY - outset,
+                        CellWorldSize + 2 * outset, CellWorldSize + 2 * outset));
                 }
             }
             else if (worldHeightmapBitmap != null)

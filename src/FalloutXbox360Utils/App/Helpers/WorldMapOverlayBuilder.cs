@@ -93,7 +93,10 @@ internal static class WorldMapOverlayBuilder
             NavMeshesByCell = BuildNavMeshIndex(semantic.NavMeshes),
             LandTexturesByFormId = BuildLandTextureIndex(semantic.LandTextures),
             TextureSetsByFormId = BuildTextureSetIndex(semantic.TextureSets),
-            WatersByFormId = BuildWaterIndex(semantic.Water)
+            WatersByFormId = BuildWaterIndex(semantic.Water),
+            WeathersByFormId = BuildWeatherIndex(semantic.Weather),
+            ClimatesByFormId = BuildClimateIndex(semantic.Climate),
+            AllWeathers = BuildAllWeathers(semantic.Weather)
         };
     }
 
@@ -217,7 +220,10 @@ internal static class WorldMapOverlayBuilder
             NavMeshesByCell = BuildNavMeshIndex(suppRecords.NavMeshes),
             LandTexturesByFormId = BuildLandTextureIndex(suppRecords.LandTextures),
             TextureSetsByFormId = BuildTextureSetIndex(suppRecords.TextureSets),
-            WatersByFormId = BuildWaterIndex(suppRecords.Water)
+            WatersByFormId = BuildWaterIndex(suppRecords.Water),
+            WeathersByFormId = BuildWeatherIndex(suppRecords.Weather),
+            ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),
+            AllWeathers = BuildAllWeathers(suppRecords.Weather)
         };
     }
 
@@ -268,6 +274,29 @@ internal static class WorldMapOverlayBuilder
         }
         return dict;
     }
+
+    private static Dictionary<uint, WeatherRecord> BuildWeatherIndex(List<WeatherRecord> records)
+    {
+        var dict = new Dictionary<uint, WeatherRecord>(records.Count);
+        foreach (var r in records)
+        {
+            dict.TryAdd(r.FormId, r);
+        }
+        return dict;
+    }
+
+    private static Dictionary<uint, ClimateRecord> BuildClimateIndex(List<ClimateRecord> records)
+    {
+        var dict = new Dictionary<uint, ClimateRecord>(records.Count);
+        foreach (var r in records)
+        {
+            dict.TryAdd(r.FormId, r);
+        }
+        return dict;
+    }
+
+    private static List<WeatherRecord> BuildAllWeathers(List<WeatherRecord> records) =>
+        records.OrderBy(r => r.EditorId ?? $"0x{r.FormId:X8}", StringComparer.OrdinalIgnoreCase).ToList();
 
     private static List<PlacedReference> BuildSaveOverlayMarkers(
         SaveFile save, uint[] formIdArray, FormIdResolver resolver)

@@ -39,13 +39,54 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     /// <summary>
     ///     Tracking-only conformance (session-scoped; dropped wholesale with its
     ///     <see cref="WorldViewData" />, never trimmed — shedding derived grids mid-render would
-    ///     just thrash rebuilds). Entries = decoded products across the five per-cell maps.
+    ///     just thrash rebuilds). Entries = decoded products across the five per-cell maps;
+    ///     <see cref="Core.Diagnostics.ResourceStats.EstimatedBytes" /> sums their managed footprint.
+    ///     The terrain texture sets dominate (~68 KB each — a 1089-vertex × 4-Vector4 weight grid)
+    ///     and are warmed for every cell of the worldspace at load, so this number is the single
+    ///     largest managed consumer once a big worldspace is open; it used to report 0, hiding it.
     /// </summary>
-    public Core.Diagnostics.ResourceStats GetStats() => new()
+    public Core.Diagnostics.ResourceStats GetStats()
     {
-        EntryCount = _terrain.Count + _textureWinners.Count + _placements.Count +
-                     _placementSpatialIndexes.Count + _terrainTextureSets.Count,
-    };
+        long bytes = 0;
+
+        foreach (var cell in _terrain.Values)
+        {
+            bytes += cell.EstimatedBytes;
+        }
+
+        foreach (var winners in _textureWinners.Values)
+        {
+            // uint?[] — each Nullable<uint> element is 8 bytes (value + has-value flag, padded).
+            bytes += winners.Value is { } grid ? (long)grid.Winners.Length * 8L : 0L;
+        }
+
+        var refSize = System.Runtime.CompilerServices.Unsafe.SizeOf<RenderableReference>();
+        foreach (var list in _placements.Values)
+        {
+            bytes += (long)list.Count * refSize;
+        }
+
+        foreach (var index in _placementSpatialIndexes.Values)
+        {
+            bytes += index.EstimatedBytes;
+        }
+
+        foreach (var set in _terrainTextureSets.Values)
+        {
+            if (set.Value is { } textureSet)
+            {
+                bytes += (long)textureSet.VertexWeights.Length * 16L /* sizeof(Vector4) */ +
+                         (long)textureSet.SlotFormIds.Length * sizeof(uint);
+            }
+        }
+
+        return new()
+        {
+            EntryCount = _terrain.Count + _textureWinners.Count + _placements.Count +
+                         _placementSpatialIndexes.Count + _terrainTextureSets.Count,
+            EstimatedBytes = bytes,
+        };
+    }
 
     internal DecodedTerrainCell GetTerrain(CellRecord cell) =>
         _terrain.GetOrAdd(cell, static c => DecodedTerrainCell.Decode(c));
@@ -178,6 +219,27 @@ internal sealed class ReferencePlacementSpatialIndex
 
     internal int Count { get; }
 
+    /// <summary>
+    ///     Approximate managed footprint: the per-bucket placement arrays (the placements are
+    ///     copied out of the cell's list into per-bucket arrays) plus each bucket's two bounds
+    ///     vectors. The struct payload of every placement is duplicated here relative to the
+    ///     <c>_placements</c> list it was built from.
+    /// </summary>
+    internal long EstimatedBytes
+    {
+        get
+        {
+            var refSize = System.Runtime.CompilerServices.Unsafe.SizeOf<RenderableReference>();
+            long bytes = (long)_buckets.Length * (2 * 12 + 8); // 2 Vector3 bounds + array reference
+            foreach (var bucket in _buckets)
+            {
+                bytes += (long)bucket.Placements.Length * refSize;
+            }
+
+            return bytes;
+        }
+    }
+
     internal static ReferencePlacementSpatialIndex Build(IReadOnlyList<RenderableReference> placements)
     {
         if (placements.Count == 0)
@@ -301,6 +363,14 @@ internal sealed class DecodedTerrainCell
     internal bool FromRuntimeTerrain { get; }
     internal bool MissingTerrain { get; }
     internal bool HasTerrain => Heights.Length == HeightCount;
+
+    /// <summary>
+    ///     Approximate managed footprint: the 33×33 height grid plus the most recent low-res
+    ///     water mask. The per-height-bits water-mask dictionary is deliberately not walked (it
+    ///     would need its lock on the render thread's hot path and is tiny — 1089 B per cached
+    ///     height — next to the 68 KB terrain texture sets that dominate this cache).
+    /// </summary>
+    internal long EstimatedBytes => (long)Heights.Length * sizeof(float) + (LowResWaterMask?.Length ?? 0);
 
     internal static DecodedTerrainCell Decode(CellRecord cell)
     {

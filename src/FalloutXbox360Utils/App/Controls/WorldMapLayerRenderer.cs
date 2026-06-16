@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
@@ -6,6 +5,7 @@ using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
+using FalloutXbox360Utils.Core.Orchestration;
 
 namespace FalloutXbox360Utils;
 
@@ -19,7 +19,6 @@ internal static class WorldMapLayerRenderer
 {
     private const int HmGridSize = 33;
     internal const int HeightmapPixelsPerCell = HmGridSize;
-    private const int DefaultTerrainTextureAggregateConcurrency = 1;
     private const int MaxLoggedTerrainAggregateCellFailures = 8;
 
     /// <summary>Water tint for the underwater overlay, matches HeightmapRenderer.</summary>
@@ -152,13 +151,16 @@ internal static class WorldMapLayerRenderer
         // default; callers can raise the centralized aggregate-concurrency env var when
         // stress-testing after crash fixes.
         var cells = EnumerateCellsWithGrid(cellSource).ToList();
-        var aggregateConcurrency = GetTerrainTextureAggregateConcurrency();
+        var aggregatePolicy = ConcurrencyPolicy.Fixed(1).WithEnvironmentOverride(
+            EnvironmentVariables.Map2D.TerrainTextureAggregateConcurrency, max: int.MaxValue);
+        var aggregateConcurrency = aggregatePolicy.Resolve();
         Map2DProfilerTrace.Event("terrain-aggregate-start",
             $"cells={cells.Count} ppc={ppc} size={width}x{height} concurrency={aggregateConcurrency}");
         var loggedFailures = 0;
-        Parallel.ForEach(
+        ParallelWork.ForEach(
+            "map-layer-render",
             cells,
-            new ParallelOptions { MaxDegreeOfParallelism = aggregateConcurrency },
+            aggregatePolicy,
             cell =>
         {
             try
@@ -247,9 +249,14 @@ internal static class WorldMapLayerRenderer
         return result.Count == 0 ? null : result;
     }
 
-    /// <summary>One streamed cell from <see cref="StreamTerrainTexturesPerCell" />.</summary>
+    /// <summary>
+    ///     One streamed cell from <see cref="StreamTerrainTexturesPerCell" />. <see cref="Pixels" /> is
+    ///     the water-FREE terrain tile; <see cref="Water" /> is the standalone premultiplied water tile
+    ///     (same dimensions) or <c>null</c> for a dry cell. The consumer caches them as two aligned
+    ///     layers and draws water after the placed-object overlay.
+    /// </summary>
     internal readonly record struct TerrainTextureCellResult(
-        int GridX, int GridY, int PixelsPerCell, byte[] Pixels);
+        int GridX, int GridY, int PixelsPerCell, byte[] Pixels, byte[]? Water);
 
     /// <summary>
     ///     Decodes cells in parallel on background workers and yields each completed cell
@@ -269,7 +276,6 @@ internal static class WorldMapLayerRenderer
         IReadOnlyList<CellRecord> cellSource,
         LandscapeTexturePalette palette,
         float? defaultWaterHeight,
-        bool showWater,
         WorldRenderCache? cache,
         int pixelsPerCell,
         WaterColorPalette? waterPalette = null,
@@ -320,12 +326,18 @@ internal static class WorldMapLayerRenderer
                             // throw, which would manifest as "rendering stops at a radius"
                             // from the user's POV. Log + skip the offender, continue with
                             // the rest of the viewport.
+                            // Terrain WITHOUT water (showWater:false) + a standalone water tile. The
+                            // water tile is built UNCONDITIONALLY (regardless of the incoming showWater)
+                            // so toggling water on later is a pure redraw — no re-stream (2D-6). The
+                            // draw-time toggle decides whether the cached water layer is painted.
                             var bytes = RenderTerrainTextureCellOverview(
-                                cell, palette, defaultWaterHeight, showWater, cache, pixelsPerCell, cellByGrid, waterPalette);
+                                cell, palette, defaultWaterHeight, showWater: false, cache, pixelsPerCell, cellByGrid, waterPalette);
                             if (bytes is not null)
                             {
+                                var water = BuildCellWaterTile(
+                                    cell, defaultWaterHeight, pixelsPerCell, cache, cellByGrid, waterPalette);
                                 channel.Writer.TryWrite(new TerrainTextureCellResult(
-                                    cell.GridX!.Value, cell.GridY!.Value, pixelsPerCell, bytes));
+                                    cell.GridX!.Value, cell.GridY!.Value, pixelsPerCell, bytes, water));
                             }
                         }
                         catch (OperationCanceledException)
@@ -962,17 +974,6 @@ internal static class WorldMapLayerRenderer
         }
     }
 
-    private static int GetTerrainTextureAggregateConcurrency()
-    {
-        var raw = EnvironmentVariables.Get(EnvironmentVariables.Map2D.TerrainTextureAggregateConcurrency);
-        if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-        {
-            return Math.Max(1, parsed);
-        }
-
-        return DefaultTerrainTextureAggregateConcurrency;
-    }
-
     private static void AddWeighted(
         (byte R, byte G, byte B) color,
         float weight,
@@ -1092,44 +1093,8 @@ internal static class WorldMapLayerRenderer
     {
         if (!showWater) return;
 
-        // Water mask: when the texture path requests pixelsPerCell > HmGridSize we build the
-        // mask directly at the target resolution by bilinear-interpolating heights per pixel
-        // and producing a linear shoreline fade from the height-vs-waterH delta. That replaces
-        // the legacy "build at 33×33, blur, nearest-neighbor upscale" chain, which produced
-        // visible blocky shorelines at high zoom. Cross-cell continuity is automatic because
-        // adjacent cells share their edge vertices — no neighbor params needed in this path.
-        // The 33×33 path stays for heightmap-overview mode where pixelsPerCell == HmGridSize
-        // (the upscale step was the only thing that needed replacing). Neighbor extension is
-        // still required there because the 3×3 box blur clamps at borders.
-        var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
-        var waterH = ResolveWaterHeight(cell, defaultWaterHeight);
-
-        byte[]? hiResMask;
-        if (pixelsPerCell == HmGridSize)
-        {
-            byte[]? lowResMask;
-            if (cellByGrid is not null && cell.GridX is int gx && cell.GridY is int gy)
-            {
-                lowResMask = DecodedTerrainCell.BuildLowResWaterMaskWithNeighbors(
-                    terrain,
-                    GetNeighborTerrain(cellByGrid, gx, gy + 1, cache),
-                    GetNeighborTerrain(cellByGrid, gx, gy - 1, cache),
-                    GetNeighborTerrain(cellByGrid, gx + 1, gy, cache),
-                    GetNeighborTerrain(cellByGrid, gx - 1, gy, cache),
-                    waterH);
-            }
-            else
-            {
-                lowResMask = terrain.GetLowResWaterMask(waterH);
-            }
-            if (lowResMask is null) return;
-            hiResMask = lowResMask;
-        }
-        else
-        {
-            hiResMask = terrain.GetHiResWaterMask(waterH, pixelsPerCell);
-            if (hiResMask is null) return;
-        }
+        var hiResMask = ComputeCellWaterMask(cell, defaultWaterHeight, pixelsPerCell, cache, cellByGrid);
+        if (hiResMask is null) return;
 
         // DNAM color path: when the WATR record exposed Shallow/Deep colors, lerp Shallow→Deep
         // by mask intensity so different worldspaces' waters (Potomac muddy brown vs Lake Mead
@@ -1144,6 +1109,112 @@ internal static class WorldMapLayerRenderer
         {
             OverlayWater(rgba, hiResMask, pixelsPerCell, pixelsPerCell);
         }
+    }
+
+    /// <summary>
+    ///     Computes the per-pixel water coverage mask for one cell (0 = dry, up to ~180 interior
+    ///     pre-blur, with a soft shoreline fade), or <c>null</c> when the cell has no water. Shared by
+    ///     the bake path (<see cref="ApplyCellWaterOverlay" />, still used for export + secondary
+    ///     layers) and the standalone water-tile path (<see cref="BuildCellWaterTile" />) so both read
+    ///     the SAME shoreline geometry.
+    ///     <para>
+    ///         When the texture path requests <c>pixelsPerCell &gt; HmGridSize</c> the mask is built
+    ///         directly at the target resolution (per-pixel bilinear height vs waterH → linear shoreline
+    ///         fade), which replaces the legacy "33×33, blur, nearest-neighbor upscale" chain that
+    ///         produced blocky high-zoom shorelines. Cross-cell continuity is automatic there because
+    ///         adjacent cells share edge vertices. The 33×33 path keeps the neighbor-aware blur because
+    ///         its 3×3 box blur clamps at borders.
+    ///     </para>
+    /// </summary>
+    private static byte[]? ComputeCellWaterMask(CellRecord cell, float? defaultWaterHeight,
+        int pixelsPerCell, WorldRenderCache? cache,
+        IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid)
+    {
+        var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
+        var waterH = ResolveWaterHeight(cell, defaultWaterHeight);
+
+        if (pixelsPerCell == HmGridSize)
+        {
+            if (cellByGrid is not null && cell.GridX is int gx && cell.GridY is int gy)
+            {
+                return DecodedTerrainCell.BuildLowResWaterMaskWithNeighbors(
+                    terrain,
+                    GetNeighborTerrain(cellByGrid, gx, gy + 1, cache),
+                    GetNeighborTerrain(cellByGrid, gx, gy - 1, cache),
+                    GetNeighborTerrain(cellByGrid, gx + 1, gy, cache),
+                    GetNeighborTerrain(cellByGrid, gx - 1, gy, cache),
+                    waterH);
+            }
+
+            return terrain.GetLowResWaterMask(waterH);
+        }
+
+        return terrain.GetHiResWaterMask(waterH, pixelsPerCell);
+    }
+
+    /// <summary>
+    ///     Renders a cell's water as a STANDALONE premultiplied-alpha RGBA tile (RGB = water colour ×
+    ///     coverage, A = coverage). Drawn source-over onto the water-free terrain tile it reproduces the
+    ///     old baked overlay byte-for-byte (<c>dst + (colour − dst)·coverage</c>), but as its own layer
+    ///     it can be drawn AFTER the placed-object overlay (so models are occluded by water — 2D-5) and
+    ///     toggled without rebuilding the terrain cache (2D-6). Returns <c>null</c> for a dry cell.
+    ///     Premultiplied so it matches how the terrain tiles are uploaded (<c>CanvasBitmap.CreateFromBytes</c>
+    ///     default alpha mode) and blends correctly under Win2D source-over.
+    /// </summary>
+    internal static byte[]? BuildCellWaterTile(CellRecord cell, float? defaultWaterHeight,
+        int pixelsPerCell, WorldRenderCache? cache,
+        IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid,
+        WaterColorPalette? waterPalette)
+    {
+        var mask = ComputeCellWaterMask(cell, defaultWaterHeight, pixelsPerCell, cache, cellByGrid);
+        if (mask is null) return null;
+
+        var pixelCount = pixelsPerCell * pixelsPerCell;
+        var tile = new byte[pixelCount * 4];
+        var any = false;
+
+        if (waterPalette is not null)
+        {
+            // Mirror OverlayWaterColored: colour = lerp(Shallow, Deep, mask/180); coverage = mask/255.
+            const float MaskInteriorMax = 180f;
+            float shallowR = waterPalette.Shallow.R, shallowG = waterPalette.Shallow.G, shallowB = waterPalette.Shallow.B;
+            float deepR = waterPalette.Deep.R, deepG = waterPalette.Deep.G, deepB = waterPalette.Deep.B;
+            for (var i = 0; i < pixelCount; i++)
+            {
+                var maskValue = mask[i];
+                if (maskValue == 0) continue;
+                any = true;
+
+                var depthT = maskValue / MaskInteriorMax;
+                if (depthT > 1f) depthT = 1f;
+                var coverage = maskValue / 255f;
+
+                var dst = i * 4;
+                tile[dst] = (byte)((shallowR + (deepR - shallowR) * depthT) * coverage);
+                tile[dst + 1] = (byte)((shallowG + (deepG - shallowG) * depthT) * coverage);
+                tile[dst + 2] = (byte)((shallowB + (deepB - shallowB) * depthT) * coverage);
+                tile[dst + 3] = maskValue;
+            }
+        }
+        else
+        {
+            // Mirror OverlayWater: solid blue, coverage = mask/255.
+            for (var i = 0; i < pixelCount; i++)
+            {
+                var maskValue = mask[i];
+                if (maskValue == 0) continue;
+                any = true;
+
+                var coverage = maskValue / 255f;
+                var dst = i * 4;
+                tile[dst] = (byte)(WaterR * coverage);
+                tile[dst + 1] = (byte)(WaterG * coverage);
+                tile[dst + 2] = (byte)(WaterB * coverage);
+                tile[dst + 3] = maskValue;
+            }
+        }
+
+        return any ? tile : null;
     }
 
     private static DecodedTerrainCell? GetNeighborTerrain(

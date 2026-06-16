@@ -60,11 +60,16 @@
 
     <!-- Win2D Canvas -->
     <canvas:CanvasControl x:Name="MapCanvas" Grid.Row="1"
+                          IsTabStop="True"
+                          AutomationProperties.Name="World map"
                           Draw="MapCanvas_Draw"
                           PointerPressed="MapCanvas_PointerPressed"
                           PointerMoved="MapCanvas_PointerMoved"
                           PointerReleased="MapCanvas_PointerReleased"
-                          PointerWheelChanged="MapCanvas_PointerWheelChanged" />
+                          PointerWheelChanged="MapCanvas_PointerWheelChanged"
+                          KeyDown="MapCanvas_KeyDown"
+                          KeyUp="MapCanvas_KeyUp"
+                          LostFocus="MapCanvas_LostFocus" />
 
     <Border x:Name="LayerBuildOverlay" Grid.Row="1"
             HorizontalAlignment="Center" VerticalAlignment="Top"

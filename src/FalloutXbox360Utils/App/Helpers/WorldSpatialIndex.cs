@@ -267,10 +267,16 @@ internal sealed class WorldSpatialIndex
         }
     }
 
+    /// <summary>
+    ///     Enumerates cells whose XY footprint clips a <b>square</b> of half-extent
+    ///     <paramref name="radius" /> centered at (<paramref name="canvasX" />, <paramref name="canvasY" />)
+    ///     — the 3D viewer's "Dist" loads a square of cells, not a circle. A cell counts as inside
+    ///     iff its closest point is within <paramref name="radius" /> of the center along both axes
+    ///     (Chebyshev distance).
+    /// </summary>
     internal void QueryCellsInRadius(float canvasX, float canvasY, float radius, List<WorldSpatialCell> destination)
     {
         destination.Clear();
-        var radiusSq = radius * radius;
         var (startX, endX, startY, endY) = BucketRangeForCanvasRect(
             new Vector2(canvasX - radius, canvasY - radius),
             new Vector2(canvasX + radius, canvasY + radius),
@@ -290,7 +296,7 @@ internal sealed class WorldSpatialIndex
                 var closestY = Math.Clamp(canvasY, minY, maxY);
                 var dx = canvasX - closestX;
                 var dy = canvasY - closestY;
-                if (dx * dx + dy * dy < radiusSq)
+                if (MathF.Abs(dx) < radius && MathF.Abs(dy) < radius)
                 {
                     destination.Add(new WorldSpatialCell((gx, gy), cell, CellCenterCanvas(gx, gy)));
                 }
@@ -307,7 +313,6 @@ internal sealed class WorldSpatialIndex
         var gameYMax = -(canvasY - radius);
         var chunkStartY = FloorDiv((int)MathF.Floor(gameYMin / WorldGridConstants.CellSize), ChunkCellSize);
         var chunkEndY = FloorDiv((int)MathF.Floor(gameYMax / WorldGridConstants.CellSize), ChunkCellSize);
-        var radiusSq = radius * radius;
 
         for (var cy = chunkStartY; cy <= chunkEndY; cy++)
         {
@@ -326,7 +331,9 @@ internal sealed class WorldSpatialIndex
                     var closestY = Math.Clamp(canvasY, minY, maxY);
                     var dx = canvasX - closestX;
                     var dy = canvasY - closestY;
-                    if (dx * dx + dy * dy < radiusSq)
+                    // Square (Chebyshev) test — match QueryCellsInRadius / VisibilityCylinder.ContainsCell
+                    // so water streams in the same square footprint as terrain + refs, not a circle.
+                    if (MathF.Abs(dx) < radius && MathF.Abs(dy) < radius)
                     {
                         destination.Add(water);
                     }

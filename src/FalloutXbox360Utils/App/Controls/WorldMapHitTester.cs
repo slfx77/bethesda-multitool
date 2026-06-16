@@ -2,6 +2,7 @@ using System.Numerics;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 
 namespace FalloutXbox360Utils;
 
@@ -46,8 +47,11 @@ internal static class WorldMapHitTester
 
             if (halfW >= 1f || halfH >= 1f)
             {
-                // Transform test point into object's local (unrotated) space
-                var inverseRotation = Matrix3x2.CreateRotation(obj.RotZ, pos);
+                // Transform test point into object's local (unrotated) space — inverse of the shared
+                // draw yaw (PlacedReferenceTransform.MapCanvasYawRadians), so it tracks the fill/outline
+                // paths automatically if the convention changes.
+                var inverseRotation = Matrix3x2.CreateRotation(
+                    -PlacedReferenceTransform.MapCanvasYawRadians(obj.RotZ), pos);
                 var localPoint = Vector2.Transform(worldPos, inverseRotation);
 
                 // Add small padding for usability (5 screen pixels)

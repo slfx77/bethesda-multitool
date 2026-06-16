@@ -83,6 +83,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private Vector2 _panOffsetAtStart;
     private Vector2 _panStartScreen;
 
+    // --- WASD keyboard panning ---
+    // Held W/A/S/D keys; the viewport timer integrates a steady screen-space nudge each tick while
+    // any are down (and is kept alive until they're released). Screen-space px/tick so the pan rate
+    // is steady on screen regardless of zoom (matches the pointer-drag pan, which also moves _panOffset
+    // in screen pixels).
+    private readonly HashSet<Windows.System.VirtualKey> _panKeysDown = new();
+    private const float PanPixelsPerTick = 22f;
+
     // --- Click detection ---
     private Vector2 _pointerDownScreen;
     private bool _pointerWasDragged;
@@ -205,6 +213,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     /// </summary>
     private OrderedDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? _layerCellBitmaps;
 
+    /// <summary>
+    ///     Standalone water tiles for the TerrainTextures overview, co-streamed with
+    ///     <see cref="_layerCellBitmaps" /> and kept in lockstep with it (same keys; a subset — only
+    ///     wet cells have an entry). Drawn AFTER the placed-object overlay so models are occluded by
+    ///     water (2D-5), and as its own layer so toggling water is a pure redraw with no re-stream
+    ///     (2D-6). Every add/replace/evict/clear on <see cref="_layerCellBitmaps" /> mirrors here.
+    /// </summary>
+    private OrderedDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? _layerWaterCellBitmaps;
+
     /// <summary>Which layer the cached cell bitmaps belong to. Used to detect layer switches.</summary>
     private WorldMapLayer? _layerCellBitmapsLayer;
 
@@ -241,6 +258,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     /// </summary>
     private int _layerCellBitmapCap = MinLayerCellBitmapCap;
 
+    /// <summary>
+    ///     Hysteresis for <see cref="_layerCellBitmapCap" />: grows instantly with the viewport,
+    ///     but holds the high-water cap (then decays by halving) when the request transiently
+    ///     collapses — e.g. a pan sweeping off the populated cell region — so the pan-back
+    ///     history isn't mass-evicted at every sweep boundary.
+    /// </summary>
+    private readonly LayerCellBitmapCapPolicy _layerCellBitmapCapPolicy = new(minCap: MinLayerCellBitmapCap);
+
     private TerrainTextureViewportKey? _terrainTextureViewportKey;
 
     // --- Pan/Zoom ---
@@ -267,6 +292,17 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private CancellationTokenSource? _topDownCts;
     private (ViewMode Mode, uint Cell, uint Ws, bool HideDisabled, bool Eligible)? _topDownContext;
     private (int TlX, int TlY, int BrX, int BrY, int ZoomBucket)? _topDownBoundsKey;
+
+    /// <summary>Minimum interval between top-down overlay render requests. The render is a full
+    /// offscreen scene render + GPU readback + CanvasBitmap upload; without this gate the ~30 Hz
+    /// <see cref="ViewportRebuildTimer_Tick" /> re-rendered the whole scene every tick while the
+    /// scene streamed (<see cref="_topDownIncomplete" />), starving pan/zoom. ~3 requests/sec while
+    /// streaming; 0 once complete + static.</summary>
+    private const int TopDownMinIntervalMs = 300;
+
+    /// <summary><see cref="Environment.TickCount64" /> of the last issued top-down request. Reset to
+    /// 0 on cancel/enable so the first request after enabling the overlay fires immediately.</summary>
+    private long _topDownLastRequestTick;
 
     /// <summary>Fraction of the viewport added as a margin on each side of the top-down render, so a
     /// small pan reveals already-covered area instead of a blank edge before the next refresh.</summary>
@@ -445,6 +481,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _topDownContext = null;
             _topDownBoundsKey = null;
             _topDownRequestPending = true;
+            _topDownLastRequestTick = 0; // first request after enabling fires immediately (no 300ms stall)
             EnsureViewportTimerRunning();
         }
         else
@@ -490,6 +527,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _topDownRequestPending = false;
         _topDownContext = null;
         _topDownBoundsKey = null;
+        _topDownLastRequestTick = 0; // next enable/request fires immediately rather than waiting out the gate
         if (_topDownCts is not null)
         {
             try { _topDownCts.Cancel(); }
@@ -522,13 +560,25 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private void WaterCheckBox_Changed(object sender, RoutedEventArgs e)
     {
         _showWater = WaterCheckBox.IsChecked == true;
-        // keepCurrentBitmap MUST be false here. The water state is baked into every cached
-        // bitmap (heightmap and per-cell TerrainTextures alike), and EnsureHeightmapBitmap's
-        // "diff against the cached dict" filter would skip every viewport cell as already-
-        // built and the stream would render nothing. Discarding the cache is the only way
-        // the next stream pass actually re-renders the visible cells with the new water
-        // state — without it, the user has to pan cells off-screen and back to refresh.
-        InvalidateWorldBitmap(keepCurrentBitmap: false);
+        // TerrainTextures (per-cell overview) carries water as a SEPARATE cached layer co-streamed with
+        // the terrain tiles, so toggling it is a pure redraw — no cache discard, no re-stream (2D-6).
+        // Every OTHER layer (heightmap, vertex colors, slope, regions, and the zoomed-out TerrainTextures
+        // aggregate) still bakes water into its bitmap, so those need the full invalidate to re-render.
+        // keepCurrentBitmap MUST stay false there: EnsureHeightmapBitmap's "diff against the cached dict"
+        // filter would skip every viewport cell as already-built and the stream would render nothing —
+        // discarding the cache is the only way the next pass re-renders with the new water state.
+        var perCellWaterLayer = _currentLayer == WorldMapLayer.TerrainTextures
+            && !_terrainTexturesAggregateActive;
+        if (!perCellWaterLayer)
+        {
+            InvalidateWorldBitmap(keepCurrentBitmap: false);
+        }
+        // The rendered-models overlay bakes water into its readback (height-correct), so a water toggle
+        // must re-render it. Clearing the bounds key makes the next MaybeScheduleTopDownRequest re-request.
+        if (_showRenderedObjects)
+        {
+            _topDownBoundsKey = null;
+        }
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
         if (_state.SelectedCell is not null)
@@ -675,7 +725,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             Map2DProfilerTrace.Event("cache-gen-bump",
                 $"to={_layerCellBitmapsCacheGen} reason=ClearWorldBitmaps disposed={disposed}");
         }
+        if (_layerWaterCellBitmaps is not null)
+        {
+            foreach (var bmp in _layerWaterCellBitmaps.Values) bmp.Dispose();
+            _layerWaterCellBitmaps = null;
+        }
         _layerCellBitmapsLayer = null;
+        // The cache the held cap was sized for is gone; let the next rebuild size fresh.
+        _layerCellBitmapCapPolicy.Reset();
     }
 
     // ========================================================================
@@ -1196,6 +1253,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             var overviewMinX = aggActive ? _terrainAggMinX : _worldHmMinX;
             var overviewMaxY = aggActive ? _terrainAggMaxY : _worldHmMaxY;
             var overviewCells = aggActive ? null : _layerCellBitmaps;
+            // Standalone water layer rides with the per-cell terrain path ONLY — so it can never paint a
+            // stale texture-layer water cache over the heightmap/aggregate (those bake their own water).
+            var overviewWater = overviewCells is not null ? _layerWaterCellBitmaps : null;
             var overviewBmpPixelsPerCell = aggActive
                 ? _terrainAggPixelsPerCell
                 : WorldMapLayerRenderer.HeightmapPixelsPerCell;
@@ -1211,7 +1271,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 _markerIconBitmaps, _currentColorScheme,
                 _showCellGrid,
                 _showRenderedObjects, _topDownOverlay,
-                _topDownWorldMinX, _topDownWorldMaxX, _topDownWorldMinY, _topDownWorldMaxY);
+                _topDownWorldMinX, _topDownWorldMaxX, _topDownWorldMinY, _topDownWorldMaxY,
+                overviewWater, _showWater);
 
             if (_showNavMesh)
             {
@@ -1268,7 +1329,52 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _pointerWasDragged = false;
         _pointerDownScreen = _panStartScreen;
         MapCanvas.CapturePointer(e.Pointer);
+        // Take keyboard focus so WASD panning works after a click without tabbing to the canvas.
+        MapCanvas.Focus(FocusState.Pointer);
         e.Handled = true;
+    }
+
+    private void MapCanvas_KeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+    {
+        if (e.Key is Windows.System.VirtualKey.W or Windows.System.VirtualKey.A
+            or Windows.System.VirtualKey.S or Windows.System.VirtualKey.D)
+        {
+            _panKeysDown.Add(e.Key);
+            EnsureViewportTimerRunning(); // the timer integrates the pan + won't idle-stop while keys are held
+            e.Handled = true;
+        }
+    }
+
+    private void MapCanvas_KeyUp(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+    {
+        if (_panKeysDown.Remove(e.Key)) e.Handled = true;
+    }
+
+    // Drop held keys when focus leaves the canvas (alt-tab / click away) so motion can't get stuck.
+    private void MapCanvas_LostFocus(object sender, RoutedEventArgs e) => _panKeysDown.Clear();
+
+    /// <summary>
+    ///     Integrates held-WASD panning into <see cref="_panOffset" /> (screen-space, like the pointer
+    ///     drag). W/S reveal north/south, A/D reveal west/east — i.e. the camera moves in the key's
+    ///     direction. Returns true if the view moved this tick. Suppressed while a pointer drag is
+    ///     active so the two pan paths don't fight.
+    /// </summary>
+    private bool ApplyKeyboardPan()
+    {
+        if (_panKeysDown.Count == 0 || _isPanning) return false;
+        var dx = 0f;
+        var dy = 0f;
+        if (_panKeysDown.Contains(Windows.System.VirtualKey.A)) dx += PanPixelsPerTick;
+        if (_panKeysDown.Contains(Windows.System.VirtualKey.D)) dx -= PanPixelsPerTick;
+        if (_panKeysDown.Contains(Windows.System.VirtualKey.W)) dy += PanPixelsPerTick;
+        if (_panKeysDown.Contains(Windows.System.VirtualKey.S)) dy -= PanPixelsPerTick;
+        if (dx == 0f && dy == 0f) return false;
+
+        _panOffset = new Vector2(_panOffset.X + dx, _panOffset.Y + dy);
+        _viewportRebuildPending = true; // re-stream terrain for the shifted viewport
+        _topDownRequestPending = true;  // keep the rendered-models overlay in sync when it's on
+        MapCanvas.Invalidate();
+        return true;
     }
 
     private void MapCanvas_PointerMoved(object sender, PointerRoutedEventArgs e)
@@ -1690,6 +1796,25 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var terrainTextureKey = viewportRequest.Key;
         var viewportCellCount = viewportRequest.Cells.Count;
 
+        // An empty request means the viewport is entirely off the populated cell region (mid
+        // pan-stress sweep, or scrolled past the worldspace edge). That's "no viewport signal",
+        // not a real resize: keep the cap and the cache as-is (the pan-back history is exactly
+        // what the user is about to scroll back onto), don't cancel the trailing stream, and
+        // don't dispatch a junk build.
+        if (viewportCellCount == 0)
+        {
+            _terrainTextureViewportKey = terrainTextureKey;
+            // Off-region time must not count against the cap's hold window, or a >holdMs
+            // excursion would decay the cap on the first partial re-entry frame and mass-evict
+            // the very pan-back history the hold protects.
+            _layerCellBitmapCapPolicy.Touch(Environment.TickCount64);
+            Map2DProfilerTrace.Event("viewport-rebuild",
+                $"layer={_currentLayer} ppc={texturePixelsPerCell} viewport=0 cap={_layerCellBitmapCap} cacheSize={_layerCellBitmaps?.Count ?? 0} toBuild=0 kind=empty");
+            HideLayerBuildStatus();
+            MapCanvas.Invalidate();
+            return;
+        }
+
         // Scale the in-stream LRU cap to the current viewport BEFORE the stream starts.
         // Otherwise, with a large viewport (~6000 cells for zoomed-out WastelandNV), the
         // 256-entry default would evict cells we just rendered, in the same stream, before
@@ -1698,8 +1823,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // ×3 budget: 1× current viewport + 1× zoom-transition stand-ins at a stale resolution
         // + 1× pan-back history (cells the user just scrolled off-screen). The 1× pan slot
         // is what makes "pan off, pan back" a cache hit instead of a re-render — see the
-        // LRU touch below.
-        _layerCellBitmapCap = Math.Max(MinLayerCellBitmapCap, viewportRequest.Cells.Count * 3);
+        // LRU touch below. The policy adds shrink hysteresis: a transiently collapsed request
+        // (sweep exiting the populated region) must not drag the cap down and mass-evict that
+        // pan-back history.
+        _layerCellBitmapCap = _layerCellBitmapCapPolicy.Update(viewportCellCount, Environment.TickCount64);
 
         // Incremental rebuild for the TerrainTextures live view: keep already-built cell
         // bitmaps inside the new viewport, evict cells that scrolled off, and dispatch a
@@ -1929,6 +2056,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             var render = await provider.RenderTopDownAsync(
                 worldMinX, worldMaxX, worldMinY, worldMaxY, pxW, pxH,
                 showDisabled: !_hideDisabledActors,
+                showWater: _showWater,
                 worldspaceFormId: _state.SelectedWorldspace?.FormId, ct);
 
             if (gen != _topDownGen) return; // superseded (teardown / toggle off)
@@ -1996,6 +2124,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         try
         {
             DrainPendingCellApplies();
+            ApplyKeyboardPan();
 
             // While a zoom gesture is settling, hold off the rebuild (keep pending set) so we don't
             // re-stream throwaway intermediate zoom levels. Each wheel notch re-arms _zoomSettleTicks.
@@ -2012,16 +2141,21 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             }
 
             // Rendered-models overlay: request a fresh top-down render once the view settles (not mid
-            // pan/zoom), or keep re-requesting while the last render was still streaming in.
+            // pan/zoom), or keep re-requesting while the last render was still streaming in. Gated to
+            // TopDownMinIntervalMs so the incomplete-streaming re-request loop fires at a throttled
+            // cadence (~3/sec) instead of every ~30 Hz tick — each request is a full scene render +
+            // readback + CanvasBitmap upload, which otherwise starves pan/zoom (bug: overlay crawl).
             if (_showRenderedObjects
                 && _zoomSettleTicks == 0
                 && !_isPanning
                 && !_topDownInFlight
                 && _topDownProvider?.CanRenderTopDown == true
                 && (_topDownRequestPending || _topDownIncomplete)
-                && IsTopDownEligible())
+                && IsTopDownEligible()
+                && Environment.TickCount64 - _topDownLastRequestTick >= TopDownMinIntervalMs)
             {
                 _topDownRequestPending = false;
+                _topDownLastRequestTick = Environment.TickCount64;
                 _ = RequestTopDownOverlayAsync();
             }
         }
@@ -2036,6 +2170,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         if (!_viewportRebuildPending
             && _zoomSettleTicks == 0
             && !_isPanning
+            && _panKeysDown.Count == 0
             && _pendingCellApplies.IsEmpty
             && Volatile.Read(ref _activeTerrainStreams) == 0
             && !(_showRenderedObjects && (_topDownInFlight || _topDownRequestPending || _topDownIncomplete)))
@@ -2104,7 +2239,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     requestCells,
                     palette,
                     _currentDefaultWaterHeight,
-                    _showWater,
                     _data?.RenderCache,
                     pixelsPerCell,
                     _currentWaterPalette,
@@ -2222,6 +2356,25 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized));
         _layerCellBitmapsLayer = WorldMapLayer.TerrainTextures;
 
+        // Water tile travels in lockstep with the terrain tile under the SAME key (it is a subset —
+        // dry cells carry no tile). Premultiplied bytes → default alpha mode, so source-over over the
+        // water-free terrain reproduces the old baked overlay exactly.
+        if (_layerWaterCellBitmaps is not null && _layerWaterCellBitmaps.TryGetValue(key, out var staleWater))
+        {
+            staleWater.Dispose();
+            _layerWaterCellBitmaps.Remove(key);
+        }
+        if (cell.Water is { } waterBytes)
+        {
+            _layerWaterCellBitmaps ??= new OrderedDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>();
+            _layerWaterCellBitmaps.Add(key, CanvasBitmap.CreateFromBytes(
+                MapCanvas,
+                waterBytes,
+                cell.PixelsPerCell,
+                cell.PixelsPerCell,
+                Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized));
+        }
+
         Map2DProfilerTrace.Event("cache-add",
             $"cell=({cell.GridX},{cell.GridY},{cell.PixelsPerCell}) replaced={replacedStale} dictSize={_layerCellBitmaps.Count} cap={_layerCellBitmapCap}");
 
@@ -2236,6 +2389,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             var oldest = _layerCellBitmaps.GetAt(0);
             oldest.Value.Dispose();
             _layerCellBitmaps.RemoveAt(0);
+            // Evict the water tile for the same key (if any) so the water cache can never outgrow the
+            // terrain cache — it's a subset keyed identically.
+            if (_layerWaterCellBitmaps is not null && _layerWaterCellBitmaps.TryGetValue(oldest.Key, out var evictWater))
+            {
+                evictWater.Dispose();
+                _layerWaterCellBitmaps.Remove(oldest.Key);
+            }
             Map2DProfilerTrace.Event("cache-evict",
                 $"cell=({oldest.Key.gx},{oldest.Key.gy},{oldest.Key.pixelsPerCell}) reason=cap dictSize={_layerCellBitmaps.Count} cap={_layerCellBitmapCap}");
         }
@@ -2322,14 +2482,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             }
         }
 
-        if (visibleCells.Count == 0)
-        {
-            visibleCells = activeCells
-                .Where(c => c.GridX.HasValue && c.GridY.HasValue)
-                .Take(1)
-                .ToList();
-        }
-
+        // An empty result is a valid signal (viewport entirely off the populated region);
+        // RebuildTerrainTextureViewport treats it as "no viewport" and keeps cap/cache/stream
+        // untouched. The old Take(1) fallback here dispatched a junk 1-cell off-screen build
+        // and cancelled the live stream at every pan-stress sweep boundary.
         return new TerrainTextureViewportRequest(key, visibleCells, pixelsPerCell);
     }
 
@@ -2528,6 +2684,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     $"to={_layerCellBitmapsCacheGen} reason=ApplyWorldBitmapBuildResult disposed={disposed}");
             }
             _layerCellBitmapsLayer = null;
+            // The cache the held cap was sized for was just replaced; size fresh next rebuild.
+            _layerCellBitmapCapPolicy.Reset();
         }
 
         if (result.CellPixels is not null)
@@ -2697,6 +2855,22 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         set => LayerComboBox.SelectedIndex = (int)value;
     }
 
+    /// <summary>
+    ///     Profiler hook to drive the "Rendered models" top-down overlay (so a headless run is a true
+    ///     full-path perf test, not a 2D-only one). Routes through the real checkbox so the existing
+    ///     handler runs — which gates enabling on <c>TopDownProvider.CanRenderTopDown</c> and kicks the
+    ///     first overlay request. The caller must therefore wait until the provider is ready before
+    ///     setting <c>true</c>, else the gate leaves it off.
+    /// </summary>
+    internal bool Profiler_ShowRenderedObjects
+    {
+        get => _showRenderedObjects;
+        set
+        {
+            if (RenderedObjectsCheckBox is not null) RenderedObjectsCheckBox.IsChecked = value;
+        }
+    }
+
     internal float Profiler_Zoom => _zoom;
 
     internal Vector2 Profiler_PanOffset => _panOffset;
@@ -2705,6 +2879,31 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     internal int Profiler_CacheCap => _layerCellBitmapCap;
     internal int Profiler_BuildVersion => _worldHeightmapBuildVersion;
     internal int Profiler_CacheGen => _layerCellBitmapsCacheGen;
+
+    /// <summary>
+    ///     Coverage of the CURRENT viewport by the per-cell bitmap cache at the target
+    ///     resolution: (populated cells visible, of those cached at the current ppc tier).
+    ///     A pan-stress scenario asserts cached ≈ visible at the end of its sweeps — the
+    ///     numeric form of "no permanently unpainted cells".
+    /// </summary>
+    internal (int Visible, int Cached) Profiler_VisibleCellCoverage()
+    {
+        var activeCells = GetActiveCells();
+        if (activeCells.Count == 0) return (0, 0);
+
+        var request = BuildTerrainTextureViewportRequest(
+            (float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight, activeCells);
+        if (_layerCellBitmaps is null) return (request.Cells.Count, 0);
+
+        var cached = 0;
+        foreach (var c in request.Cells)
+        {
+            if (c.GridX is not int gx || c.GridY is not int gy) continue;
+            if (_layerCellBitmaps.ContainsKey((gx, gy, request.PixelsPerCell))) cached++;
+        }
+
+        return (request.Cells.Count, cached);
+    }
 
     /// <summary>
     ///     Set zoom + pan together (atomic, single invalidate). Mirrors the math used by

@@ -1,6 +1,8 @@
 using System.Numerics;
+using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm.Enums;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Microsoft.Graphics.Canvas;
@@ -63,7 +65,9 @@ internal static class WorldMapOverviewRenderer
         bool showRenderedObjects = false,
         CanvasBitmap? renderedObjectsOverlay = null,
         float overlayWorldMinX = 0f, float overlayWorldMaxX = 0f,
-        float overlayWorldMinY = 0f, float overlayWorldMaxY = 0f)
+        float overlayWorldMinY = 0f, float overlayWorldMaxY = 0f,
+        IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? waterCellBitmaps = null,
+        bool showWater = true)
     {
         var transform = WorldMapViewportHelper.GetViewTransform(zoom, panOffset);
         ds.Transform = transform;
@@ -75,7 +79,7 @@ internal static class WorldMapOverviewRenderer
         //    is set at a time per EnsureHeightmapBitmap.
         if (textureCellBitmaps is not null)
         {
-            DrawTextureCellBitmaps(ds, textureCellBitmaps);
+            DrawTextureCellBitmaps(ds, textureCellBitmaps, zoom);
         }
         else if (worldHeightmapBitmap != null)
         {
@@ -112,6 +116,16 @@ internal static class WorldMapOverviewRenderer
         {
             DrawRenderedObjectsOverlay(ds, renderedObjectsOverlay!,
                 overlayWorldMinX, overlayWorldMaxX, overlayWorldMinY, overlayWorldMaxY);
+        }
+
+        // 2c. Water layer — a standalone translucent layer over the terrain (2D-5/2D-6). SKIPPED when the
+        //     rendered-models overlay is active: that overlay already renders water THROUGH the 3D depth
+        //     buffer (height-correct — docks above water show, submerged geometry is covered), which a
+        //     flat 2D layer can't reproduce. Without the overlay there are no model heights to respect,
+        //     so flat-water-over-terrain is correct. Per-cell only; the aggregate LOD still bakes water.
+        if (showWater && !overlayActive && waterCellBitmaps is not null)
+        {
+            DrawWaterCellBitmaps(ds, waterCellBitmaps, zoom);
         }
 
         // 3. Placed objects (LOD-based) — skipped when the rendered-models overlay replaces them.
@@ -528,7 +542,10 @@ internal static class WorldMapOverviewRenderer
 
             if (outlineOnly)
             {
-                var rotation = Matrix3x2.CreateRotation(-obj.RotZ, pos);
+                // Footprint yaw from the shared PlacedReferenceTransform (same source the 3D viewer
+                // and WorldMapDrawingHelper use), so the outline path can't drift from the fill path.
+                var rotation = Matrix3x2.CreateRotation(
+                    PlacedReferenceTransform.MapCanvasYawRadians(obj.RotZ), pos);
                 Span<Vector2> corners = stackalloc Vector2[4];
                 corners[0] = Vector2.Transform(new Vector2(pos.X - halfW, pos.Y - halfH), rotation);
                 corners[1] = Vector2.Transform(new Vector2(pos.X + halfW, pos.Y - halfH), rotation);
@@ -705,44 +722,138 @@ internal static class WorldMapOverviewRenderer
     }
 
     /// <summary>
+    ///     Minification factor (cached-tile pixels ÷ on-screen cell pixels) above which a tile is
+    ///     resampled with the expensive <see cref="CanvasImageInterpolation.HighQualityCubic" />
+    ///     anti-aliasing filter. At or below it the tile is close to screen resolution (the cache holds
+    ///     a tier sized to the current zoom — see <c>ChooseTerrainTexturePixelsPerCell</c>), so cheap
+    ///     bilinear is indistinguishable and ~4× faster per output pixel. Cubic is reserved for the
+    ///     transient case where only a stale higher-res tier is cached (just after a zoom-out, before
+    ///     the matching tier streams in) — there the heavy minification WOULD alias under bilinear.
+    /// </summary>
+    private const float MipCubicMinifyThreshold = 2.2f;
+
+    /// <summary>Profiling A/B: when set, revert to the pre-mip "highest tier + always cubic" draw.</summary>
+    private static readonly bool s_legacyTerrainDraw =
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Map2D.LegacyTerrainDraw);
+
+    /// <summary>
     ///     Composites the per-cell TerrainTextures bitmaps. Each entry is its own
-    ///     <see cref="CanvasBitmap" /> drawn into the cell's world rect. With multi-resolution
-    ///     caching (P2) the dict may hold multiple <c>pixelsPerCell</c> entries for the same
-    ///     <c>(gx, gy)</c>; we draw the highest-resolution one available — Win2D handles the
-    ///     downsample, and a higher-res stand-in always reads better than a blurry lower-res
-    ///     fallback. Cesium's "Ancestor Meets SSE" pattern.
+    ///     <see cref="CanvasBitmap" /> drawn into the cell's world rect. With multi-resolution caching
+    ///     (P2) the dict may hold multiple <c>pixelsPerCell</c> tiers for one <c>(gx, gy)</c>; the tier
+    ///     set (33/66/132/264/528) is a factor-2 mip chain, so we pick the SMALLEST tier that still
+    ///     covers the on-screen cell size (mip selection) rather than the absolute highest. That avoids
+    ///     cubic-minifying a stale 528-px tile 8–16× when zoomed out — the old "always highest" rule —
+    ///     which both aliased (2D-3) and was the dominant per-frame cost (2D-2). The chosen tile is then
+    ///     drawn with bilinear when it's near screen resolution and cubic only when heavily minified.
     /// </summary>
     private static void DrawTextureCellBitmaps(
         CanvasDrawingSession ds,
-        IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap> bitmaps)
+        IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap> bitmaps,
+        float zoom)
     {
-        // Per-frame scan over ≤256 entries (typical fill viewport) to pick best-available per
-        // (gx, gy). Reused thread-local scratch dict avoids a 60-Hz allocation; clear + refill
-        // keeps GC out of the critical path.
+        // Outset each tile's destination rect by ~1 device pixel in world units so adjacent
+        // OPAQUE tiles overlap by ~1px and the inter-tile seam disappears (the seam shows when the
+        // cell-grid overlay — which used to mask it — is hidden). World-units-per-screen-pixel =
+        // 1/zoom (the view transform is Scale(zoom)·Translate(pan)). The CellWorldSize*0.01f clamp
+        // caps the outset at very low zoom (where the seam is already sub-pixel) so it can never
+        // reach a non-adjacent cell. Lossless: tiles are opaque (alpha=255) with a +1-cell blend
+        // margin, so the overlap band is opaque-over-opaque with identical edge colors — no
+        // darkening, and mixed per-cell resolutions are fine.
+        var outset = Math.Min(1f / Math.Max(zoom, 1e-6f), CellWorldSize * 0.01f);
+
+        // Target on-screen pixels per cell = the mip level we want. The cache may hold several tiers
+        // per cell; pick the one nearest this (smallest tier that still covers it).
+        var targetScreenPpc = CellWorldSize * Math.Max(zoom, 1e-6f);
+
+        // Per-frame scan over ≤256 entries (typical fill viewport) to pick the mip-correct tier per
+        // (gx, gy). Reused thread-local scratch dict avoids a 60-Hz allocation; clear + refill keeps
+        // GC out of the critical path.
         var bestPerCell = t_bestPerCellScratch ??= new Dictionary<(int gx, int gy), (int ppc, CanvasBitmap bmp)>(256);
         bestPerCell.Clear();
         foreach (var (key, bmp) in bitmaps)
         {
             var cellKey = (key.gx, key.gy);
-            if (!bestPerCell.TryGetValue(cellKey, out var current) || key.pixelsPerCell > current.ppc)
-            {
-                bestPerCell[cellKey] = (key.pixelsPerCell, bmp);
-            }
+            var candidate = (key.pixelsPerCell, bmp);
+            bestPerCell[cellKey] = bestPerCell.TryGetValue(cellKey, out var current)
+                ? s_legacyTerrainDraw
+                    ? (key.pixelsPerCell > current.ppc ? candidate : current) // legacy: highest tier
+                    : PickMipTier(current, candidate, targetScreenPpc)
+                : candidate;
         }
 
-        foreach (var ((gx, gy), (_, bmp)) in bestPerCell)
+        foreach (var ((gx, gy), (ppc, bmp)) in bestPerCell)
         {
             var originX = gx * CellWorldSize;
             var originY = -(gy + 1) * CellWorldSize;
-            // HighQualityCubic: just past the aggregate→per-cell switch, 132 px/cell tiles are
-            // minified several × on screen; default bilinear aliases (moire). Output is tiny per
-            // cell, so the better filter costs little.
+            // Bilinear when the tile is near screen resolution (mip-correct — the common steady state),
+            // cubic only when a stale higher-res tier is the lone stand-in and would alias minified.
+            var interpolation = s_legacyTerrainDraw || ppc > targetScreenPpc * MipCubicMinifyThreshold
+                ? CanvasImageInterpolation.HighQualityCubic
+                : CanvasImageInterpolation.Linear;
+            var src = bmp.SizeInPixels;
+            ds.DrawImage(bmp,
+                new Rect(originX - outset, originY - outset,
+                    CellWorldSize + 2 * outset, CellWorldSize + 2 * outset),
+                new Rect(0, 0, src.Width, src.Height),
+                1f,
+                interpolation);
+        }
+    }
+
+    /// <summary>
+    ///     Mip selection between two cached tiers of the same cell: prefer the SMALLEST tier whose
+    ///     resolution still covers the on-screen cell size (so it's minified, never blurrily upscaled);
+    ///     when neither covers it (all cached tiers are below screen resolution) prefer the LARGEST
+    ///     (best for the unavoidable magnification).
+    /// </summary>
+    private static (int ppc, CanvasBitmap bmp) PickMipTier(
+        (int ppc, CanvasBitmap bmp) a, (int ppc, CanvasBitmap bmp) b, float targetScreenPpc)
+    {
+        var aCovers = a.ppc >= targetScreenPpc;
+        var bCovers = b.ppc >= targetScreenPpc;
+        if (aCovers && bCovers) return a.ppc <= b.ppc ? a : b; // both cover → smaller is closest to screen res
+        if (aCovers) return a;
+        if (bCovers) return b;
+        return a.ppc >= b.ppc ? a : b;                          // neither covers → larger magnifies best
+    }
+
+    /// <summary>
+    ///     Composites the per-cell standalone water tiles over whatever is already drawn (terrain + the
+    ///     model overlay). Mirrors <see cref="DrawTextureCellBitmaps" />'s best-resolution-per-cell pick
+    ///     but draws at the EXACT cell rect with NO seam outset: the water tiles are translucent, so an
+    ///     overlapping outset band would double-composite into visibly darker seams. Adjacent water tiles
+    ///     meeting edge-to-edge is correct (shoreline coverage already fades to 0 at dry edges).
+    /// </summary>
+    private static void DrawWaterCellBitmaps(
+        CanvasDrawingSession ds,
+        IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap> bitmaps,
+        float zoom)
+    {
+        var targetScreenPpc = CellWorldSize * Math.Max(zoom, 1e-6f);
+        var bestPerCell = t_bestPerCellScratch ??= new Dictionary<(int gx, int gy), (int ppc, CanvasBitmap bmp)>(256);
+        bestPerCell.Clear();
+        foreach (var (key, bmp) in bitmaps)
+        {
+            var cellKey = (key.gx, key.gy);
+            var candidate = (key.pixelsPerCell, bmp);
+            bestPerCell[cellKey] = bestPerCell.TryGetValue(cellKey, out var current)
+                ? PickMipTier(current, candidate, targetScreenPpc)
+                : candidate;
+        }
+
+        foreach (var ((gx, gy), (ppc, bmp)) in bestPerCell)
+        {
+            var originX = gx * CellWorldSize;
+            var originY = -(gy + 1) * CellWorldSize;
+            var interpolation = ppc > targetScreenPpc * MipCubicMinifyThreshold
+                ? CanvasImageInterpolation.HighQualityCubic
+                : CanvasImageInterpolation.Linear;
             var src = bmp.SizeInPixels;
             ds.DrawImage(bmp,
                 new Rect(originX, originY, CellWorldSize, CellWorldSize),
                 new Rect(0, 0, src.Width, src.Height),
                 1f,
-                CanvasImageInterpolation.HighQualityCubic);
+                interpolation);
         }
     }
 

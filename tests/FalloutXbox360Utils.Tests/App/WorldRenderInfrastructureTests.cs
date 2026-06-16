@@ -4,6 +4,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.App;
@@ -42,6 +43,37 @@ public sealed class WorldRenderInfrastructureTests
         Assert.NotNull(mask);
         Assert.Same(mask, maskAgain);
         Assert.All(mask!, value => Assert.Equal((byte)180, value));
+    }
+
+    [Fact]
+    public void WorldRenderCache_GetStats_ReportsManagedBytes_DominatedByTerrainTextureSets()
+    {
+        // Regression pin: GetStats used to report EstimatedBytes = 0, hiding the single largest
+        // managed consumer (the per-cell terrain texture sets, ~68 KB each, warmed for every cell
+        // of an open worldspace). That blind spot is what made the TheStripWorldNew crawl hard to
+        // localize from the diagnostics panel.
+        var cell = new CellRecord
+        {
+            FormId = 0x300,
+            GridX = 0,
+            GridY = 0,
+            Heightmap = new LandHeightmap { HeightOffset = 0f, HeightDeltas = new sbyte[33 * 33] }
+        };
+        var cache = new WorldRenderCache();
+
+        Assert.Equal(0, cache.GetStats().EstimatedBytes);
+
+        cache.GetTerrain(cell);
+        var afterTerrain = cache.GetStats();
+        Assert.Equal(1, afterTerrain.EntryCount);
+        Assert.True(afterTerrain.EstimatedBytes >= 33 * 33 * sizeof(float));
+
+        cache.GetOrBuildTerrainTextureSet(cell, static () => new CellTerrainTextureSet());
+        var afterSet = cache.GetStats();
+        Assert.Equal(2, afterSet.EntryCount);
+        // The texture set's per-vertex weight grid (1089 verts × 4 Vector4 × 16 B) dwarfs the
+        // height grid — this is the dominant term the panel was previously blind to.
+        Assert.True(afterSet.EstimatedBytes - afterTerrain.EstimatedBytes >= 1089 * 4 * 16);
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using System.Numerics;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Effects;
 using Microsoft.Graphics.Canvas.Geometry;
@@ -21,7 +22,12 @@ internal static class WorldMapDrawingHelper
     internal static CanvasGeometry CreateRotatedRectGeometry(
         ICanvasResourceCreator resourceCreator, Vector2 center, float halfW, float halfH, float rotZ)
     {
-        var rotation = Matrix3x2.CreateRotation(-rotZ, center);
+        // Footprint yaw comes from the shared PlacedReferenceTransform so the 2D map and 3D viewer
+        // can never drift apart: the 3D renderer negates the DATA Euler angles, and the Y-flipped map
+        // canvas (pos = (X, −Y)) negates the apparent sense again, so the canvas yaw is +rotZ. Routing
+        // through the helper means a future convention change updates both views from one place.
+        var rotation = Matrix3x2.CreateRotation(
+            PlacedReferenceTransform.MapCanvasYawRadians(rotZ), center);
         Span<Vector2> corners = stackalloc Vector2[4];
         corners[0] = Vector2.Transform(new Vector2(center.X - halfW, center.Y - halfH), rotation);
         corners[1] = Vector2.Transform(new Vector2(center.X + halfW, center.Y - halfH), rotation);

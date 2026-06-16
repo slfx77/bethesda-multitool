@@ -29,9 +29,15 @@ internal interface ITopDownSceneRenderer
     ///     initial worldspace independently, so without this the overlay would render whichever
     ///     worldspace the 3D view happens to hold. Returns null if no matching exterior worldspace.
     /// </param>
+    /// <param name="showWater">
+    ///     When true, water is rendered into the top-down pass so it occludes submerged geometry but
+    ///     not docks/bridges above the water plane — height-correct via the scene depth buffer (a flat
+    ///     2D water overlay can't do this). The 2D map suppresses its own water layer wherever this
+    ///     overlay is drawn, so this must follow the map's water toggle.
+    /// </param>
     Task<TopDownRender?> RenderTopDownAsync(
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
-        int pixelWidth, int pixelHeight, bool showDisabled, uint? worldspaceFormId, CancellationToken ct);
+        int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId, CancellationToken ct);
 }
 
 /// <summary>
