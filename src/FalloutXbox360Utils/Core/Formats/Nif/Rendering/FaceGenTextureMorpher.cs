@@ -1,5 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
+using FalloutXbox360Utils.Core.Orchestration;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
@@ -62,6 +63,11 @@ internal static class FaceGenTextureMorpher
         TextureAccumulationMode accumulationMode,
         DeltaTextureEncodingMode encodingMode)
     {
+        if (DebugExportDir != null)
+        {
+            ExportDebugCoefficients(textureCoeffs);
+        }
+
         var encodedDeltaTexture = BuildNativeDeltaTexture(
             egt,
             textureCoeffs,
@@ -248,7 +254,7 @@ internal static class FaceGenTextureMorpher
             ExportDebugNative(nativeR, nativeG, nativeB, egtW, egtH);
 
         var pixels = new byte[egtW * egtH * 4];
-        Parallel.For(0, egtH, y =>
+        ParallelWork.For("facegen-rows", 0, egtH, ConcurrencyPolicy.FullCores, y =>
         {
             var srcFy = (y + 0.5f) * texH / egtH - 0.5f;
 
@@ -289,7 +295,7 @@ internal static class FaceGenTextureMorpher
         }
 
         var pixels = (byte[])baseTexture.Pixels.Clone();
-        Parallel.For(0, texH, y =>
+        ParallelWork.For("facegen-rows", 0, texH, ConcurrencyPolicy.FullCores, y =>
         {
             var srcFy = (y + 0.5f) * deltaH / texH - 0.5f;
 
@@ -310,7 +316,83 @@ internal static class FaceGenTextureMorpher
             }
         });
 
+        if (DebugExportDir != null)
+        {
+            var label = DebugLabel ?? "unknown";
+            Directory.CreateDirectory(DebugExportDir);
+            PngWriter.SaveRgba(pixels, texW, texH,
+                Path.Combine(DebugExportDir, $"{label}_egt_composite_{texW}x{texH}.png"));
+        }
+
         return DecodedTexture.FromBaseLevel(pixels, texW, texH);
+    }
+
+    /// <summary>
+    ///     Dumps every FaceGen coefficient array on the appearance (merged + raw
+    ///     NPC/race) to {DebugExportDir}/{label}_facegen_coeffs.txt. No-op unless
+    ///     <see cref="DebugExportDir" /> is set (--export-egt).
+    /// </summary>
+    internal static void ExportDebugAppearanceCoefficients(NpcAppearance npc)
+    {
+        if (DebugExportDir == null)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(DebugExportDir);
+        var label = DebugLabel ?? "unknown";
+        var lines = new List<string>();
+        foreach (var (name, arr) in new (string, float[]?)[]
+                 {
+                     ("FGGS(merged)", npc.FaceGenSymmetricCoeffs),
+                     ("FGGA(merged)", npc.FaceGenAsymmetricCoeffs),
+                     ("FGTS(merged)", npc.FaceGenTextureCoeffs),
+                     ("FGTS(npc)", npc.NpcFaceGenTextureCoeffs),
+                     ("FGTS(race)", npc.RaceFaceGenTextureCoeffs)
+                 })
+        {
+            if (arr == null)
+            {
+                lines.Add($"{name}: (null)");
+                continue;
+            }
+
+            var rms = Math.Sqrt(arr.Sum(v => (double)v * v) / Math.Max(1, arr.Length));
+            lines.Add($"{name}: count={arr.Length} rms={rms:F6}");
+            for (var row = 0; row < arr.Length; row += 10)
+            {
+                var end = Math.Min(row + 10, arr.Length);
+                lines.Add("  " + string.Join(" ",
+                    Enumerable.Range(row, end - row).Select(i => arr[i].ToString("F6"))));
+            }
+        }
+
+        File.WriteAllLines(
+            Path.Combine(DebugExportDir, $"{label}_facegen_coeffs.txt"),
+            lines);
+    }
+
+    private static void ExportDebugCoefficients(float[] textureCoeffs)
+    {
+        var label = DebugLabel ?? "unknown";
+        Directory.CreateDirectory(DebugExportDir!);
+        var rms = Math.Sqrt(textureCoeffs.Sum(v => (double)v * v) / Math.Max(1, textureCoeffs.Length));
+        var lines = new List<string>
+        {
+            $"count: {textureCoeffs.Length}",
+            $"rms: {rms:F6}",
+            "values:"
+        };
+        for (var row = 0; row < textureCoeffs.Length; row += 10)
+        {
+            var end = Math.Min(row + 10, textureCoeffs.Length);
+            lines.Add("  " + string.Join(" ",
+                Enumerable.Range(row, end - row).Select(i => textureCoeffs[i].ToString("F6"))));
+        }
+
+        File.WriteAllLines(
+            Path.Combine(DebugExportDir!, $"{label}_egt_coeffs.txt"),
+            lines);
     }
 
     private static void ExportDebugNative(
@@ -627,7 +709,7 @@ internal static class FaceGenTextureMorpher
         var deltaG = new float[outputWidth * outputHeight];
         var deltaB = new float[outputWidth * outputHeight];
 
-        Parallel.For(0, outputHeight, y =>
+        ParallelWork.For("facegen-rows", 0, outputHeight, ConcurrencyPolicy.FullCores, y =>
         {
             // The parser already materializes EGT rows in top-to-bottom image order.
             var egtFy = (y + 0.5f) * egtH / outputHeight - 0.5f;

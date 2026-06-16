@@ -26,6 +26,7 @@ public sealed class NpcExportCommandSupportTests
             harness.NpcOption,
             harness.VerboseOption,
             harness.DmpOption,
+            harness.DmpEquipOption,
             harness.HeadOnlyOption,
             harness.NoEquipOption,
             harness.NoEgmOption,
@@ -80,6 +81,7 @@ public sealed class NpcExportCommandSupportTests
             harness.NpcOption,
             harness.VerboseOption,
             harness.DmpOption,
+            harness.DmpEquipOption,
             harness.HeadOnlyOption,
             harness.NoEquipOption,
             harness.NoEgmOption,
@@ -134,6 +136,7 @@ public sealed class NpcExportCommandSupportTests
             harness.NpcOption,
             harness.VerboseOption,
             harness.DmpOption,
+            harness.DmpEquipOption,
             harness.HeadOnlyOption,
             harness.NoEquipOption,
             harness.NoEgmOption,
@@ -186,6 +189,7 @@ public sealed class NpcExportCommandSupportTests
             harness.NpcOption,
             harness.VerboseOption,
             harness.DmpOption,
+            harness.DmpEquipOption,
             harness.HeadOnlyOption,
             harness.NoEquipOption,
             harness.NoEgmOption,
@@ -213,6 +217,56 @@ public sealed class NpcExportCommandSupportTests
 
         Assert.False(success);
         Assert.Equal("--wireframe is not supported in GLB export mode", error);
+    }
+
+    [Fact]
+    public void TryCreateSettings_DmpEquipWithoutDmp_Fails()
+    {
+        var harness = CreateHarness();
+        var parseResult = harness.Command.Parse([
+            "meshes.bsa",
+            "--esm", "FalloutNV.esm",
+            "--output", "glb-out",
+            "--dmp-equip"
+        ]);
+
+        var success = NpcExportCommandSupport.TryCreateSettings(
+            parseResult,
+            harness.MeshesBsaArgument,
+            harness.EsmOption,
+            harness.TexturesBsaOption,
+            harness.OutputOption,
+            harness.NpcOption,
+            harness.VerboseOption,
+            harness.DmpOption,
+            harness.DmpEquipOption,
+            harness.HeadOnlyOption,
+            harness.NoEquipOption,
+            harness.NoEgmOption,
+            harness.NoEgtOption,
+            harness.BindPoseOption,
+            harness.AnimOption,
+            harness.WeaponOption,
+            harness.NoWeaponOption,
+            harness.RasterSizeOption,
+            harness.ExportEgtOption,
+            harness.NoBilinearOption,
+            harness.NoBumpOption,
+            harness.NoTexOption,
+            harness.BumpStrengthOption,
+            harness.GpuOption,
+            harness.CpuOption,
+            harness.SkeletonOption,
+            harness.WireframeOption,
+            harness.IsoOption,
+            harness.ElevationOption,
+            harness.SideOption,
+            harness.TrimetricOption,
+            out _,
+            out var error);
+
+        Assert.False(success);
+        Assert.Equal("--dmp-equip requires --dmp", error);
     }
 
     [Fact]
@@ -263,6 +317,7 @@ public sealed class NpcExportCommandSupportTests
         };
         var verboseOption = new Option<bool>("-v", "--verbose");
         var dmpOption = new Option<string?>("--dmp");
+        var dmpEquipOption = new Option<bool>("--dmp-equip");
         var headOnlyOption = new Option<bool>("--head-only");
         var noEquipOption = new Option<bool>("--no-equip");
         var noEgmOption = new Option<bool>("--no-egm");
@@ -293,6 +348,7 @@ public sealed class NpcExportCommandSupportTests
         command.Options.Add(npcOption);
         command.Options.Add(verboseOption);
         command.Options.Add(dmpOption);
+        command.Options.Add(dmpEquipOption);
         command.Options.Add(headOnlyOption);
         command.Options.Add(noEquipOption);
         command.Options.Add(noEgmOption);
@@ -325,6 +381,7 @@ public sealed class NpcExportCommandSupportTests
             npcOption,
             verboseOption,
             dmpOption,
+            dmpEquipOption,
             headOnlyOption,
             noEquipOption,
             noEgmOption,
@@ -358,6 +415,7 @@ public sealed class NpcExportCommandSupportTests
         Option<string[]?> NpcOption,
         Option<bool> VerboseOption,
         Option<string?> DmpOption,
+        Option<bool> DmpEquipOption,
         Option<bool> HeadOnlyOption,
         Option<bool> NoEquipOption,
         Option<bool> NoEgmOption,

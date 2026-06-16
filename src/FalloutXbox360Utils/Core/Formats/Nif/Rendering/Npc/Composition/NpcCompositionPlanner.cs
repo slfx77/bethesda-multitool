@@ -221,6 +221,7 @@ internal static class NpcCompositionPlanner
             effectiveHeadTexturePath != null)
         {
             FaceGenTextureMorpher.DebugLabel = NpcTextureHelpers.BuildNpcRenderName(npc);
+            FaceGenTextureMorpher.ExportDebugAppearanceCoefficients(npc);
             var egtPath = Path.ChangeExtension(npc.BaseHeadNifPath, ".egt");
             if (!caches.EgtFiles.TryGetValue(egtPath, out var egt))
             {

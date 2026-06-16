@@ -86,8 +86,9 @@ internal sealed class NpcEquipmentResolver
             }
 
             AddArmorVisuals(
-                armorChoice.Armor,
+                armorChoice,
                 isFemale,
+                slotToArmor,
                 seenMeshes,
                 equippedItems);
         }
@@ -120,11 +121,13 @@ internal sealed class NpcEquipmentResolver
     }
 
     private void AddArmorVisuals(
-        ArmoScanEntry armor,
+        ResolvedArmorChoice armorChoice,
         bool isFemale,
+        Dictionary<uint, ResolvedArmorChoice> slotToArmor,
         HashSet<string> seenMeshes,
         List<EquippedItem> equippedItems)
     {
+        var armor = armorChoice.Armor;
         AddEquippedItem(
             SelectMeshPath(armor, isFemale),
             armor.BipedFlags,
@@ -145,6 +148,14 @@ internal sealed class NpcEquipmentResolver
                 continue;
             }
 
+            // BipedModelList addons are fill-in visuals (e.g. an outfit's bare hands).
+            // A dedicated armor equipped on the same biped slot supersedes them — the
+            // vault suit's lefthand.nif must not render under the Pip-Boy glove.
+            if (IsAddonSlotOwnedByOtherArmor(addon.BipedFlags, armorChoice.FormId, slotToArmor))
+            {
+                continue;
+            }
+
             AddEquippedItem(
                 SelectAddonMeshPath(addon, isFemale),
                 addon.BipedFlags,
@@ -152,6 +163,25 @@ internal sealed class NpcEquipmentResolver
                 seenMeshes,
                 equippedItems);
         }
+    }
+
+    private static bool IsAddonSlotOwnedByOtherArmor(
+        uint addonBipedFlags,
+        uint armorFormId,
+        Dictionary<uint, ResolvedArmorChoice> slotToArmor)
+    {
+        for (var bit = 0; bit < 20; bit++)
+        {
+            var slot = 1u << bit;
+            if ((addonBipedFlags & slot) != 0 &&
+                slotToArmor.TryGetValue(slot, out var owner) &&
+                owner.FormId != armorFormId)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void AddEquippedItem(

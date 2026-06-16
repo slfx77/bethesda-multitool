@@ -147,8 +147,12 @@ internal sealed class NpcShowRenderer : IRecordDisplayRenderer
         {
             if (arr is { Length: > 0 })
             {
+                // RMS is what the engine's MergeFaceGenCoord clamp tests
+                // (sqrt(sumSq / count)); print it to make overdriven coefficient
+                // sets visible at a glance when comparing ESM vs DMP sources.
+                var rms = Math.Sqrt(arr.Sum(v => (double)v * v) / arr.Length);
                 lines.Add("");
-                lines.Add($"[bold]{label} ({arr.Length} floats):[/]");
+                lines.Add($"[bold]{label} ({arr.Length} floats, RMS {rms:F4}):[/]");
                 for (var row = 0; row < arr.Length; row += 10)
                 {
                     var end = Math.Min(row + 10, arr.Length);

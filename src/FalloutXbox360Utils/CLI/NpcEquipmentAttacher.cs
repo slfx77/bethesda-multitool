@@ -40,6 +40,8 @@ internal static class NpcEquipmentAttacher
             }
         }
 
+        var pipBoyVisible = EquippedItem.AnyPipBoy(npc.EquippedItems);
+
         foreach (var item in npc.EquippedItems)
         {
             if (NpcTextureHelpers.IsHeadEquipment(item.BipedFlags))
@@ -104,6 +106,12 @@ internal static class NpcEquipmentAttacher
 
             foreach (var sub in equipModel.Submeshes)
             {
+                if (NifBlockParsers.IsPipBoyScreenShape(sub.ShapeName) ||
+                    NifBlockParsers.IsSuppressedPipBoyVariantShape(sub.ShapeName, pipBoyVisible))
+                {
+                    continue;
+                }
+
                 Log.Debug(
                     "  Equip sub: tex={0}, alphaBlend={1}, alphaTest={2} func={3} thresh={4}, matAlpha={5:F2}, doubleSided={6}, verts={7}",
                     sub.DiffuseTexturePath ?? "(null)",
@@ -153,6 +161,7 @@ internal static class NpcEquipmentAttacher
         ArgumentNullException.ThrowIfNull(bodyModel);
 
         var idleBoneTransforms = plan.Skeleton?.BodySkinningBones;
+        var pipBoyVisible = EquippedItem.AnyPipBoy(plan.BodyEquipment);
         foreach (var item in plan.BodyEquipment)
         {
             var equipRaw = NpcMeshHelpers.LoadNifRawFromBsa(item.MeshPath, meshArchives);
@@ -204,6 +213,15 @@ internal static class NpcEquipmentAttacher
 
             foreach (var sub in equipModel.Submeshes)
             {
+                var skipped = NifBlockParsers.IsPipBoyScreenShape(sub.ShapeName) ||
+                              NifBlockParsers.IsSuppressedPipBoyVariantShape(sub.ShapeName, pipBoyVisible);
+                Log.Debug("  Equip shape '{0}' from '{1}': pipBoyVisible={2} skipped={3}",
+                    sub.ShapeName ?? "(null)", item.MeshPath, pipBoyVisible, skipped);
+                if (skipped)
+                {
+                    continue;
+                }
+
                 if (plan.EffectiveBodyTexturePath != null &&
                     NpcTextureHelpers.IsEquipmentSkinSubmesh(sub.DiffuseTexturePath))
                 {

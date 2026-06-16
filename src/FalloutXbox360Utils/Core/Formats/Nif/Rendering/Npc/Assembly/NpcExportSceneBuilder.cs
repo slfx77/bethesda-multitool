@@ -74,7 +74,8 @@ internal static class NpcExportSceneBuilder
         Dictionary<string, int> nodeIndicesByBoneName,
         Action<RenderableSubmesh>? mutateSubmesh = null,
         string? filterShapeName = null,
-        float[]? preSkinMorphDeltas = null)
+        float[]? preSkinMorphDeltas = null,
+        Func<string?, bool>? excludeShape = null)
     {
         var extracted = LoadExtractedNif(
             nifPath,
@@ -88,6 +89,11 @@ internal static class NpcExportSceneBuilder
 
         foreach (var part in extracted.MeshParts)
         {
+            if (excludeShape?.Invoke(part.Name) == true)
+            {
+                continue;
+            }
+
             mutateSubmesh?.Invoke(part.Submesh);
             if (part.Skin != null)
             {

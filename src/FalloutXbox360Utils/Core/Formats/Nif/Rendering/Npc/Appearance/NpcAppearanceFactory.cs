@@ -5,6 +5,9 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Appearance;
 
 internal sealed class NpcAppearanceFactory
 {
+    /// <summary>The player's base NPC_ record ("PlayerBase", engine-reserved FormID).</summary>
+    private const uint PlayerBaseFormId = 0x7;
+
     private readonly NpcEquipmentResolver _equipmentResolver;
     private readonly NpcHeadPartPathResolver _headPartPathResolver;
     private readonly NpcAppearanceIndex _index;
@@ -239,8 +242,25 @@ internal sealed class NpcAppearanceFactory
             isFemale,
             race?.MaleFaceGenTexture,
             race?.FemaleFaceGenTexture);
+        // In-game, an ESM NPC's face TEXTURE comes from the GECK prebake of the
+        // AUTHORED coefficients (bLoadFaceGenHeadEGTFiles=0 → FaceMods\<id>_0.dds);
+        // the engine never re-bakes ESM NPCs from the live TESNPC arrays, and those
+        // live arrays drift at runtime (per-NPC materialization/reseeding — see
+        // docs/facegen_head_rendering_pipeline.md "runtime FGTS drift"). Baking from
+        // the drifted live values produces face textures the game never displays
+        // (displaced nose-corner shading, tinted lips, brow bands). Prefer authored
+        // FGTS when the NPC exists in the ESM; keep live values for the player
+        // (FormID 0x7), whose in-game texture IS runtime-baked from live state, and
+        // for runtime-only actors with no authored record.
+        var npcTextureCoefficients = npcRecord.FaceGenTextureSymmetric;
+        if (npcRecord.FormId != PlayerBaseFormId &&
+            esmNpc?.FaceGenTexture is { Length: > 0 } authoredTextureCoefficients)
+        {
+            npcTextureCoefficients = authoredTextureCoefficients;
+        }
+
         var textureCoefficients = NpcFaceGenCoefficientMerger.Merge(
-            npcRecord.FaceGenTextureSymmetric,
+            npcTextureCoefficients,
             raceTextureCoefficients);
         // Runtime worn armor (from the dump's BipedAnim slots) replaces the base
         // record's inventory for equipment when present; the weapon path below
@@ -290,7 +310,7 @@ internal sealed class NpcAppearanceFactory
             FaceGenSymmetricCoeffs = symmetricCoefficients,
             FaceGenAsymmetricCoeffs = asymmetricCoefficients,
             FaceGenTextureCoeffs = textureCoefficients,
-            NpcFaceGenTextureCoeffs = npcRecord.FaceGenTextureSymmetric,
+            NpcFaceGenTextureCoeffs = npcTextureCoefficients,
             RaceFaceGenTextureCoeffs = raceTextureCoefficients,
             EquippedItems = equippedItems,
             WeaponVisual = weaponVisual,
