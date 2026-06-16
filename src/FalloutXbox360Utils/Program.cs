@@ -96,6 +96,7 @@ public static class Program
         rootCommand.Subcommands.Add(ExportCommand.Create());
         rootCommand.Subcommands.Add(AnalyzeCommand.Create());
         rootCommand.Subcommands.Add(ReportCommand.Create());
+        rootCommand.Subcommands.Add(CLI.Commands.Version.VersionTrackCommand.Create());
 
         var exitCode = rootCommand.Parse(args).Invoke();
 

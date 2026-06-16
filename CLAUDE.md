@@ -107,10 +107,10 @@ save decode <file>              # Decode Xbox 360 save game file
 save report <file>              # Generate save game analysis report
 
 # Version tracking commands
-version extract <file>          # Extract version identifiers from builds
-version inventory <dir>         # Inventory of build versions
-version report <dir>            # Build version comparison report
-version track <dir>             # Track build history
+version-track inventory [--builds <dir>] [--dumps <dir>]  # Build timeline w/ PE-timestamp dates
+                                                          #   (defaults: Sample/Full_360_Builds, Sample/MemoryDump)
+version-track extract <file>    # Full snapshot of one ESM/DMP (slow: scans textures/geometry/runtime)
+version-track report            # Cross-build comparison report
 ```
 
 ### EsmAnalyzer Commands (niche debugging)
