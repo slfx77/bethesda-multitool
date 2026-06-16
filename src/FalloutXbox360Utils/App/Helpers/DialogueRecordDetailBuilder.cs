@@ -262,6 +262,11 @@ internal static class DialogueRecordDetailBuilder
         }
 
         rows.Add(new DetailRow("INFO Count", linkedTopic.InfoChain.Count.ToString()));
+        if (linkedTopic.InfoChain.Count == 0)
+        {
+            rows.Add(new DetailRow("Status",
+                "DIAL topic preserved; no linked INFO records were recovered."));
+        }
 
         // Quest link
         if (linkedTopic.Topic?.QuestFormId is > 0)

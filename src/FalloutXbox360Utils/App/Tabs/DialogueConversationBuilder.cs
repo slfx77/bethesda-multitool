@@ -287,8 +287,9 @@ internal static class DialogueConversationBuilder
         bool isGoodbyeTopic = false)
     {
         var isVisited = visitedTopicFormIds.Contains(targetTopic.TopicFormId);
+        var hasNoInfo = targetTopic.InfoChain.Count == 0;
         var contentPanel = DialogueTreeRenderer.BuildChoiceContent(
-            displayText, isVisited, challengeOutcome, speechChallengeDifficulty, isGoodbyeTopic);
+            displayText, isVisited, challengeOutcome, speechChallengeDifficulty, isGoodbyeTopic, hasNoInfo);
 
         var button = new Button
         {

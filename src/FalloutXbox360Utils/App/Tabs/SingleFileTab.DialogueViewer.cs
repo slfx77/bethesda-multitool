@@ -56,7 +56,7 @@ public sealed partial class SingleFileTab
 
         if (!_session.DialogueViewerPopulated && _session.SemanticResult != null)
         {
-            _ = PopulateDialogueViewerAsync();
+            _tasks.Post("populate-dialogue", PopulateDialogueViewerAsync);
         }
 
         _dialogueSpeakerFilter = null;
@@ -86,7 +86,7 @@ public sealed partial class SingleFileTab
 
     #region Dialogue Population
 
-    private async Task PopulateDialogueViewerAsync()
+    private async Task PopulateDialogueViewerAsync(CancellationToken cancellationToken)
     {
         if (_session.DialogueViewerPopulated)
         {
@@ -105,6 +105,10 @@ public sealed partial class SingleFileTab
                 DialogueViewerProgressBar.IsIndeterminate = false;
                 await EnsureSemanticParseAsync();
             }
+
+            // A new-file load may have cancelled this populate while the parse ran; stop before
+            // writing into the (possibly reopened) session.
+            cancellationToken.ThrowIfCancellationRequested();
 
             var result = _session.SemanticResult;
             if (result?.DialogueTree == null)

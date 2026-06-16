@@ -100,6 +100,20 @@ public class DialogueViewerLogicTests
     }
 
     [Fact]
+    public void CollectLinkedTopics_PreservesTopicsWithoutInfos()
+    {
+        var emptyTopic = MakeTopic(2, "DeadTopic");
+        var liveTopic = MakeTopic(3, "LiveTopic", MakeInfo(300));
+        var source = MakeInfo(100, linkedTopics: [emptyTopic, liveTopic]);
+
+        var result = DialogueViewerHelper.CollectLinkedTopics([source], 1);
+
+        Assert.Equal(2, result.Count);
+        Assert.True(result.ContainsKey(2));
+        Assert.True(result.ContainsKey(3));
+    }
+
+    [Fact]
     public void CollectLinkedTopics_EmptyChain_ReturnsEmpty()
     {
         var result = DialogueViewerHelper.CollectLinkedTopics([], 1);

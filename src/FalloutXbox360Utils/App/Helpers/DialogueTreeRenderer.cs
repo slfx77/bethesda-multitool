@@ -447,7 +447,7 @@ internal static class DialogueTreeRenderer
     public static StackPanel BuildChoiceContent(
         string displayText, bool isVisited,
         string? challengeOutcome = null, string? speechChallengeDifficulty = null,
-        bool isGoodbyeTopic = false)
+        bool isGoodbyeTopic = false, bool hasNoInfo = false)
     {
         var contentPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
 
@@ -511,6 +511,23 @@ internal static class DialogueTreeRenderer
                     Text = "Visited",
                     FontSize = 11,
                     Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+                },
+                Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"],
+                CornerRadius = new CornerRadius(2),
+                Padding = new Thickness(4, 1, 4, 1),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+        }
+
+        if (hasNoInfo)
+        {
+            contentPanel.Children.Add(new Border
+            {
+                Child = new TextBlock
+                {
+                    Text = "No INFO",
+                    FontSize = 11,
+                    Foreground = (Brush)Application.Current.Resources["SystemFillColorCautionBrush"]
                 },
                 Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"],
                 CornerRadius = new CornerRadius(2),
