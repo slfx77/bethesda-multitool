@@ -20,6 +20,7 @@ internal static class NpcExportBodyAssembler
         NpcMeshArchiveSet meshArchives,
         NpcExportSceneBuilder.SkeletonContext skeletonContext)
     {
+        var pipBoyVisible = EquippedItem.AnyPipBoy(plan.BodyEquipment);
         foreach (var item in plan.BodyEquipment)
         {
             if (item.AttachmentMode != EquipmentAttachmentMode.None)
@@ -39,7 +40,7 @@ internal static class NpcExportBodyAssembler
                     {
                         foreach (var part in extracted.MeshParts)
                         {
-                            if (NifBlockParsers.IsPipBoyScreenShape(part.Name))
+                            if (IsExcludedPipBoyShape(part.Name, pipBoyVisible))
                             {
                                 continue;
                             }
@@ -67,8 +68,20 @@ internal static class NpcExportBodyAssembler
                 submesh => ApplyEquipmentTextureOverride(
                     submesh,
                     plan.EffectiveBodyTexturePath,
-                    plan.EffectiveHandTexturePath));
+                    plan.EffectiveHandTexturePath),
+                excludeShape: name => IsExcludedPipBoyShape(name, pipBoyVisible));
         }
+    }
+
+    /// <summary>
+    ///     Pip-Boy shapes that must not appear in a static render/export: the dynamic
+    ///     screen/glare shapes (always), and the PipBoyOn/PipBoyOff sleeve variant that
+    ///     does not match the current Pip-Boy state.
+    /// </summary>
+    private static bool IsExcludedPipBoyShape(string? shapeName, bool pipBoyVisible)
+    {
+        return NifBlockParsers.IsPipBoyScreenShape(shapeName) ||
+               NifBlockParsers.IsSuppressedPipBoyVariantShape(shapeName, pipBoyVisible);
     }
 
     internal static void AddBodyEquipment(
@@ -86,6 +99,7 @@ internal static class NpcExportBodyAssembler
             return;
         }
 
+        var pipBoyVisible = EquippedItem.AnyPipBoy(npc.EquippedItems);
         foreach (var item in npc.EquippedItems)
         {
             if (NpcTextureHelpers.IsHeadEquipment(item.BipedFlags))
@@ -105,7 +119,7 @@ internal static class NpcExportBodyAssembler
                     {
                         foreach (var part in extracted.MeshParts)
                         {
-                            if (NifBlockParsers.IsPipBoyScreenShape(part.Name))
+                            if (IsExcludedPipBoyShape(part.Name, pipBoyVisible))
                             {
                                 continue;
                             }
@@ -127,7 +141,8 @@ internal static class NpcExportBodyAssembler
                 item.MeshPath,
                 meshArchives,
                 nodeIndicesByBoneName,
-                submesh => ApplyEquipmentTextureOverride(submesh, effectiveBodyTex, effectiveHandTex));
+                submesh => ApplyEquipmentTextureOverride(submesh, effectiveBodyTex, effectiveHandTex),
+                excludeShape: name => IsExcludedPipBoyShape(name, pipBoyVisible));
         }
     }
 

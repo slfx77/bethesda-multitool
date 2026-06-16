@@ -5,6 +5,15 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 /// </summary>
 internal sealed class RenderableSubmesh
 {
+    /// <summary>
+    ///     Sentinel <see cref="DiffuseTexturePath" /> marking placed water-shader geometry
+    ///     (WaterShaderProperty NIFs carry no diffuse). The D3D12 mesh cache maps it to
+    ///     <c>GpuTextureCache12.WaterSurface</c> so cave/pool water renders as translucent blue water
+    ///     rather than the opaque-white fallback. Reuses the diffuse-path string so no new field has
+    ///     to be threaded through the decode + persistent-cache pipeline.
+    /// </summary>
+    public const string WaterSurfaceTexturePath = "fallout:water-surface";
+
     /// <summary>Name of the source NiTriShape/NiTriStrips block, if available.</summary>
     public string? ShapeName { get; init; }
 

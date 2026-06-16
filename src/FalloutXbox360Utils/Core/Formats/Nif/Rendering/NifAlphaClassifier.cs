@@ -4,6 +4,10 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
 internal static class NifAlphaClassifier
 {
+    // BSShaderFlags2 bit 0 = ZBuffer_Write (see nif.xml "BSShaderFlags2"). When set, the engine
+    // writes depth for the shape regardless of its alpha-blend state — i.e. it is an occluder.
+    private const uint ZBufferWriteFlag = 1u << 0;
+
     internal static NifAlphaRenderState Classify(
         RenderableSubmesh submesh,
         DecodedTexture? diffuseTexture)
@@ -22,6 +26,22 @@ internal static class NifAlphaClassifier
             alphaTestFunction = 4;
         }
 
+        var isHair = IsHairLikeSubmesh(submesh);
+
+        // Depth-writing "blend": a shape whose BSShaderProperty has ZBuffer_Write set is authored to
+        // occlude (e.g. the MobileHomeASNV cabin shell — alpha-blend + alpha-test on an opaque hull
+        // with window cutouts), not to be see-through transparency (glass/decals/smoke leave the bit
+        // clear). Our renderer only writes depth in the opaque/cutout pass, so drop the blend here and
+        // let the switch route it to Cutout (when it alpha-tests) or Opaque. Without this its own
+        // interior faces render in the depth-write-off blend pass and show through the roof. Hair keeps
+        // its A2C path (it sets the bit too, but A2C already writes depth).
+        if (hasAlphaBlend && !isHair &&
+            submesh.ShaderMetadata?.ShaderFlags2 is { } shaderFlags2 &&
+            (shaderFlags2 & ZBufferWriteFlag) != 0)
+        {
+            hasAlphaBlend = false;
+        }
+
         // Hair / brow / lash submeshes use alpha-to-coverage instead of plain blend.
         // Bethesda's engine renders these via BSRenderState::SetAlphaToCoverageEnable to avoid
         // strand stacking (visible as brown patches on the forehead with standard sorted blend).
@@ -29,7 +49,7 @@ internal static class NifAlphaClassifier
         // renderer routes to its AlphaToCoverageEnable pipeline on the 4x MSAA render target.
         var renderMode = (hasAlphaBlend, hasAlphaTest) switch
         {
-            (true, _) when IsHairLikeSubmesh(submesh) => NifAlphaRenderMode.AlphaToCoverage,
+            (true, _) when isHair => NifAlphaRenderMode.AlphaToCoverage,
             (true, _) => NifAlphaRenderMode.Blend,
             (_, true) => NifAlphaRenderMode.Cutout,
             _ => NifAlphaRenderMode.Opaque

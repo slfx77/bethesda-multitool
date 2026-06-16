@@ -53,14 +53,55 @@ internal static class NifBlockParsers
     }
 
     /// <summary>
-    ///     Pip-Boy screen/glare shapes that show dynamic UI in-game but render as
-    ///     flat untextured surfaces in static exports.
+    ///     Pip-Boy effect shapes that FOPipboyManager drives at runtime (screen glare,
+    ///     the flashlight quad, per-tab button glows) and that render as blown-out
+    ///     overlays in a static render/export. The physical screen face
+    ///     ("pipboyscreen", textured with Screen.dds) is kept — only the dynamic
+    ///     effect quads are dropped. "PipboyLightEffect" is the FXWHITE flashlight
+    ///     billboard, off by default in-game (FOPipboyManager::ShowPipboyLightEffect).
     /// </summary>
     internal static bool IsPipBoyScreenShape(string? name)
     {
-        return name != null &&
-               (name.Equals("ScreenLit", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("glare", StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        // The render extractor names instanced submeshes "<shape>:<n>" — compare the
+        // base shape name so "ScreenLit:0" matches like the export path's "ScreenLit".
+        var colon = name.IndexOf(':', StringComparison.Ordinal);
+        var baseName = colon >= 0 ? name.AsSpan(0, colon) : name.AsSpan();
+
+        return baseName.Equals("ScreenLit", StringComparison.OrdinalIgnoreCase) ||
+               baseName.Equals("glare", StringComparison.OrdinalIgnoreCase) ||
+               baseName.Equals("PipboyLightEffect", StringComparison.OrdinalIgnoreCase) ||
+               baseName.Equals("StatsGlow", StringComparison.OrdinalIgnoreCase) ||
+               baseName.Equals("ItemsGlow", StringComparison.OrdinalIgnoreCase) ||
+               baseName.Equals("DataGlow", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    ///     Armor/clothing meshes carry alternate left-forearm geometry that the engine
+    ///     toggles when a Pip-Boy is worn. Decompile-verified against
+    ///     <c>BipedAnim::AttachSkinnedObject</c> (MemDebug XEX, VA 0x822FBE40): the
+    ///     engine lowercases each root child name and prefix-matches it — with
+    ///     <c>abPipboy</c> set it removes <c>pipboyoff*</c> shapes (full sleeve), and
+    ///     without it removes <c>pipboyon*</c> shapes (cut-away sleeve). Returns true
+    ///     when <paramref name="name" /> is the variant that should NOT be drawn for
+    ///     the given Pip-Boy state.
+    /// </summary>
+    internal static bool IsSuppressedPipBoyVariantShape(string? name, bool pipBoyVisible)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        // "PipBoyOff…" never matches the "PipBoyOn" prefix (they diverge at index 7),
+        // so plain StartsWith mirrors the engine's strncmp exactly.
+        return pipBoyVisible
+            ? name.StartsWith("PipBoyOff", StringComparison.OrdinalIgnoreCase)
+            : name.StartsWith("PipBoyOn", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static int ParseShapeSkinInstanceRef(
