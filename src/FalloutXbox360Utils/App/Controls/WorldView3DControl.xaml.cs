@@ -67,6 +67,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainRenderer12? _terrain;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainTextureResolver12? _textureResolver12;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12? _water;
+    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyboxRenderer12? _sky;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.NavMeshRenderer12? _navMesh;
     // v3 Phase 3 placed-object pipeline. Parallel to the terrain pipeline; owns separate
     // CPU NIF texture metadata and D3D12 GPU texture payload resolvers.
@@ -117,6 +118,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private const uint NoDepthSrv = 0xFFFFFFFF;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation? _depthSrv;
     private bool _suppressWorldspaceSelectionEvent;
+    // Atmosphere weather/time (P4). _selectedWeather null = the placeholder palette (no NAM0 colors);
+    // _climateDefaultWeather is the current worldspace climate's default (the "(Climate default)"
+    // dropdown item); _currentClimateTiming drives the sun curve + the NAM0 time-band blend.
+    private WeatherRecord? _selectedWeather;
+    private WeatherRecord? _climateDefaultWeather;
+    private AtmosphereState.ClimateTiming _currentClimateTiming = AtmosphereState.ClimateTiming.Default;
+    private bool _suppressWeatherSelectionEvent;
     // Interiors are browsed via the shared 2D-viewer cell browser (searchable/filterable grouped
     // list — appropriate for the hundreds of interiors a dropdown can't handle), NOT the worldspace
     // combo. _selectedInterior is the interior currently loaded into the 3D scene (null = exterior
@@ -148,6 +156,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // Atmosphere lighting (P3) — directional sun + ambient via the shared b3 CB. On by default; when
     // off, the shaders fall back to the legacy flat shade (pixel-identical to the pre-atmosphere look).
     private bool _showLighting = true;
+    // Skybox (P5) — horizon→top gradient + sun disc drawn first, depth off. On by default; off ⇒ the
+    // flat dark-blue clear shows. Also gates whether water mirrors the atmosphere sky vs its DNAM color.
+    private bool _showSky = true;
     private float _renderDistance = DefaultRenderDistance;
 
     public WorldView3DControl()
@@ -252,6 +263,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             ? $"Interiors ({data.InteriorCells.Count})"
             : "Interiors";
         InteriorsButton.IsEnabled = data.InteriorCells.Count > 0;
+
+        // Weather dropdown: "(Climate default)" + all weathers (P4). Built once here; the worldspace
+        // selection below refreshes the climate default + timing it resolves against.
+        PopulateWeatherDropdown();
 
         if (WorldspaceComboBox.Items.Count > 0)
         {
@@ -976,6 +991,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _navMesh = null;
         _water?.Dispose();
         _water = null;
+        _sky?.Dispose();
+        _sky = null;
         _terrain?.Dispose();
         _terrain = null;
         _textureResolver12?.Dispose();
@@ -998,7 +1015,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // so guard with a "first press" set.
         if (e.Key is VirtualKey.Number1 or VirtualKey.Number2 or VirtualKey.Number3
             or VirtualKey.Number4 or VirtualKey.Number5 or VirtualKey.Number6 or VirtualKey.Number7
-            or VirtualKey.Number8 or VirtualKey.F or VirtualKey.PageUp or VirtualKey.PageDown)
+            or VirtualKey.Number8 or VirtualKey.Number9
+            or VirtualKey.F or VirtualKey.PageUp or VirtualKey.PageDown)
         {
             if (_toggleKeysDown.Add(e.Key))
             {
@@ -1012,6 +1030,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 else if (e.Key == VirtualKey.Number6) SetShowNavMesh(!_showNavMesh);
                 else if (e.Key == VirtualKey.Number7) SetShowDisabled(!_showDisabled);
                 else if (e.Key == VirtualKey.Number8) LightingToggle.IsChecked = !_showLighting;
+                else if (e.Key == VirtualKey.Number9) SkyboxToggle.IsChecked = !_showSky;
                 else if (e.Key == VirtualKey.F)
                     _controller.Mode = _controller.Mode == CameraMode.Walk ? CameraMode.Fly : CameraMode.Walk;
                 else if (e.Key == VirtualKey.PageUp)
@@ -1320,10 +1339,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // sky/fog off until their phases enable the shader paths.
     private void BindAtmosphereConstants(Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex)
     {
-        var resolved = AtmosphereState.Resolve(_gameHour, lightingEnabled: _showLighting);
+        var resolved = AtmosphereState.Resolve(
+            _gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: _showLighting);
         var constants = AtmosphereConstants.From(
             resolved, _gameHour, lightingEnabled: _showLighting ? 1f : 0f,
-            skyEnabled: 0f, fogEnabled: 0f, time: 0f);
+            skyEnabled: _showSky ? 1f : 0f, fogEnabled: 0f, time: 0f);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
@@ -1445,6 +1465,14 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // off until their phases enable those shader paths. Bound once — the renderers only set their
         // own PSO + slots, never the root signature, so this CBV survives every scene pass.
         BindAtmosphereConstants(cmd, recorder.FrameIndex);
+
+        // Skybox FIRST (P5) — gradient + sun disc into the cleared color target, depth test/write OFF,
+        // so terrain/references overwrite it via the normal depth pass (sidesteps reversed-Z at
+        // infinity). OFF ⇒ the flat dark-blue clear shows. Reads the b3 atmosphere CB bound just above.
+        if (_showSky)
+        {
+            _sky?.Render(viewProj);
+        }
 
         // Layer order matches D3D11: terrain → references → water → wireframe. Water is
         // alpha-blended depth-read, so it must come after terrain + references (which write
@@ -1801,6 +1829,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 DetailedProfilingEnabled = _profileLogging,
             };
 
+            // Atmosphere skybox (P5) — no per-ESM data; reads the shared b3 CB + its own invViewProj.
+            _sky = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyboxRenderer12(
+                _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12);
+
             // Navmesh overlay — like water/cellgrid, no per-ESM dependency at construction;
             // the navmesh-by-cell data + spatial index arrive in LoadData via TryBuildCellGrid.
             _navMesh = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.NavMeshRenderer12(
@@ -2041,6 +2073,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private void LightingToggle_Changed(object sender, RoutedEventArgs e)
         => _showLighting = LightingToggle.IsChecked == true;
 
+    private void SkyboxToggle_Changed(object sender, RoutedEventArgs e)
+        => _showSky = SkyboxToggle.IsChecked == true;
+
     private void NavMeshCheckBox_Changed(object sender, RoutedEventArgs e)
         => SetShowNavMesh(NavMeshCheckBox.IsChecked == true);
 
@@ -2071,6 +2106,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         {
             HideStatus();
         }
+
+        RefreshAtmosphereForCurrentWorldspace();
     }
 
     private void TryBuildCellGrid()
@@ -2183,6 +2220,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         HideInteriorBrowser();
         TryBuildCellGrid();
         ResetCameraToInteriorBounds(item.Cell);
+        RefreshAtmosphereForCurrentWorldspace();
     }
 
     /// <summary>
@@ -2270,6 +2308,94 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             : null;
     }
 
+    // --- Atmosphere weather/time (P4) ----------------------------------------------------------------
+
+    /// <summary>The WorldspaceRecord currently shown in the 3D scene, or null for an interior /
+    /// unlinked-exterior / nothing selected (those have no climate → placeholder atmosphere).</summary>
+    private WorldspaceRecord? CurrentExteriorWorldspace()
+    {
+        if (_data is null || _selectedInterior is not null) return null;
+        var index = WorldspaceComboBox.SelectedIndex;
+        return index >= 0 && index < _data.Worldspaces.Count ? _data.Worldspaces[index] : null;
+    }
+
+    private ClimateRecord? ResolveClimate(WorldspaceRecord? ws)
+    {
+        if (_data is null || ws?.ClimateFormId is not uint climateFormId) return null;
+        return _data.ClimatesByFormId.TryGetValue(climateFormId, out var climate) ? climate : null;
+    }
+
+    /// <summary>The climate's default weather = its first WLST entry (highest-priority candidate),
+    /// resolved to a record. Null when the worldspace has no climate / weather list.</summary>
+    private WeatherRecord? ResolveClimateDefaultWeather(WorldspaceRecord? ws)
+    {
+        var climate = ResolveClimate(ws);
+        if (_data is null || climate is null || climate.WeatherTypes.Count == 0) return null;
+        return _data.WeathersByFormId.TryGetValue(climate.WeatherTypes[0].WeatherFormId, out var w) ? w : null;
+    }
+
+    /// <summary>Refreshes the climate timing + default weather for whatever worldspace is now showing,
+    /// then re-applies the dropdown selection (so "(Climate default)" picks up the new default).</summary>
+    private void RefreshAtmosphereForCurrentWorldspace()
+    {
+        var ws = CurrentExteriorWorldspace();
+        _currentClimateTiming = AtmosphereState.ClimateTiming.FromClimateData(ResolveClimate(ws)?.Timing);
+        _climateDefaultWeather = ResolveClimateDefaultWeather(ws);
+        ApplyWeatherSelection();
+    }
+
+    /// <summary>Maps the weather dropdown's current selection to <see cref="_selectedWeather" /> (the
+    /// "(Climate default)" item resolves to the current worldspace default, or null = placeholder).</summary>
+    private void ApplyWeatherSelection()
+    {
+        _selectedWeather = WeatherComboBox?.SelectedItem is WeatherDropdownItem item
+            ? item.IsClimateDefault ? _climateDefaultWeather : item.Weather
+            : null;
+    }
+
+    /// <summary>Builds the weather dropdown once per load: a "(Climate default)" entry plus every
+    /// weather in the file (by EditorId). Defaults the selection to "(Climate default)".</summary>
+    private void PopulateWeatherDropdown()
+    {
+        if (WeatherComboBox is null || _data is null) return;
+
+        var items = new List<WeatherDropdownItem> { new("(Climate default)", null, true) };
+        foreach (var w in _data.AllWeathers)
+        {
+            items.Add(new WeatherDropdownItem(WeatherLabel(w), w, false));
+        }
+
+        _suppressWeatherSelectionEvent = true;
+        WeatherComboBox.ItemsSource = items;
+        WeatherComboBox.SelectedIndex = 0;
+        _suppressWeatherSelectionEvent = false;
+    }
+
+    private void WeatherComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // Null-guard _data — the handler can early-fire during XAML load before LoadData runs.
+        if (_suppressWeatherSelectionEvent || _data is null) return;
+        ApplyWeatherSelection();
+    }
+
+    private void TimeSlider_ValueChanged(
+        object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        // Continuous input — no _show flag; the next frame's BindAtmosphereConstants reads _gameHour.
+        _gameHour = (float)e.NewValue;
+    }
+
+    private static string WeatherLabel(WeatherRecord w) =>
+        string.IsNullOrEmpty(w.EditorId) ? $"0x{w.FormId:X8}" : $"{w.EditorId} (0x{w.FormId:X8})";
+
+    /// <summary>One weather dropdown entry. The first item is the climate-default sentinel
+    /// (<see cref="IsClimateDefault" /> true, <see cref="Weather" /> resolved per worldspace at
+    /// selection time); the rest carry a concrete weather. <see cref="ToString" /> drives the display.</summary>
+    private sealed record WeatherDropdownItem(string Label, WeatherRecord? Weather, bool IsClimateDefault)
+    {
+        public override string ToString() => Label;
+    }
+
     /// <summary>
     ///     Ensures the active worldspace matches <paramref name="worldspaceFormId" /> (null = the
     ///     unlinked-exterior set) so the top-down overlay renders the worldspace the 2D map is showing.
@@ -2307,6 +2433,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         WorldspaceComboBox.SelectedIndex = targetIndex;
         _suppressWorldspaceSelectionEvent = false;
         TryBuildCellGrid();
+        RefreshAtmosphereForCurrentWorldspace();
         return true;
     }
 
@@ -2366,6 +2493,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _lastHudUpdateTimestamp = now;
 
         var mode = _controller.Mode == CameraMode.Walk ? "walk" : "fly";
+        // Time-of-day readout (P4) — the slider drives _gameHour; show it as HH:MM.
+        var hour = (int)_gameHour;
+        var minute = (int)((_gameHour - hour) * 60f);
         // Backend chip — D3D12 shows the feature level for at-a-glance diagnostics.
         var backend = _gpu12 is not null
             ? $"D3D12 {_gpu12.FeatureLevel}"
@@ -2378,7 +2508,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             $"pos: ({_camera.Position.X:0}, {_camera.Position.Y:0}, {_camera.Position.Z:0})   " +
             $"speed: {_controller.MoveSpeed:0}   " +
             $"dist: {_renderDistance / WorldGridConstants.CellSize:0.#}c   " +
-            $"mode: {mode}\n" +
+            $"mode: {mode}   time {hour:00}:{minute:00}\n" +
             "WASD move   Q/E up/down   mouse-wheel speed   drag to look   " +
             "PgUp/PgDn view distance   F fly/walk   click select (click again = cycle)   Esc deselect";
 

@@ -110,6 +110,22 @@ internal sealed class WorldViewData
         new Dictionary<uint, WaterRecord>();
 
     /// <summary>
+    ///     Weather (WTHR) records keyed by FormID. Used by the 3D viewer's atmosphere layer to resolve
+    ///     a worldspace climate's weather candidates and to drive the time-of-day/weather color blend.
+    /// </summary>
+    public IReadOnlyDictionary<uint, WeatherRecord> WeathersByFormId { get; init; } =
+        new Dictionary<uint, WeatherRecord>();
+
+    /// <summary>Climate (CLMT) records keyed by FormID. A worldspace's <c>ClimateFormId</c> (CNAM)
+    /// resolves through here to its sunrise/sunset timing and default weather list.</summary>
+    public IReadOnlyDictionary<uint, ClimateRecord> ClimatesByFormId { get; init; } =
+        new Dictionary<uint, ClimateRecord>();
+
+    /// <summary>All weather records, sorted by EditorId — populates the 3D viewer's weather dropdown
+    /// (the user can preview any weather, not just the current climate's candidates).</summary>
+    public IReadOnlyList<WeatherRecord> AllWeathers { get; init; } = [];
+
+    /// <summary>
     ///     Additional data-file paths (ESM/ESP/DMP) from the active Load Order. When a DMP file
     ///     is loaded as <see cref="SourceFilePath" />, it has no adjacent BSAs of its own;
     ///     <c>WorldView3DControl</c> falls back to these paths to discover texture BSAs
