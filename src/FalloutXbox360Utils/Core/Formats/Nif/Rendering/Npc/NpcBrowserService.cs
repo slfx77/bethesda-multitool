@@ -67,7 +67,9 @@ internal sealed class NpcBrowserService : IDisposable
         }
 
         var resolver = NpcAppearanceResolver.Build(esmData, bigEndian);
-        var meshArchives = NpcMeshArchiveSet.Open(bsaPaths.MeshesBsaPath!, bsaPaths.ExtraMeshesBsaPaths);
+        var meshArchives = NpcMeshArchiveSet.Open(
+            bsaPaths.MeshesBsaPaths[0],
+            bsaPaths.MeshesBsaPaths.Length > 1 ? bsaPaths.MeshesBsaPaths[1..] : null);
         var textureResolver = new NifTextureResolver(bsaPaths.TexturesBsaPaths);
         var pluginName = Path.GetFileName(esmPath);
 
@@ -94,7 +96,9 @@ internal sealed class NpcBrowserService : IDisposable
         }
 
         var resolver = NpcAppearanceResolver.Build(esmData, esmBigEndian);
-        var meshArchives = NpcMeshArchiveSet.Open(bsaPaths.MeshesBsaPath!, bsaPaths.ExtraMeshesBsaPaths);
+        var meshArchives = NpcMeshArchiveSet.Open(
+            bsaPaths.MeshesBsaPaths[0],
+            bsaPaths.MeshesBsaPaths.Length > 1 ? bsaPaths.MeshesBsaPaths[1..] : null);
         var textureResolver = new NifTextureResolver(bsaPaths.TexturesBsaPaths);
         var pluginName = Path.GetFileName(esmPath);
 

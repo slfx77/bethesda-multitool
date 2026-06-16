@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using SharpGen.Runtime;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.CLI;
@@ -62,6 +63,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // gone. With a single backend the renderer fields are the concrete D3D12 types directly; the
     // I*Renderer interfaces remain (the renderers implement them) but add no indirection here.
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.CellGridDebugRenderer12? _cellGrid;
+    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SelectionHighlightRenderer12? _selectionHighlight;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainRenderer12? _terrain;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainTextureResolver12? _textureResolver12;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12? _water;
@@ -76,8 +78,23 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12? _references;
     private WorldViewData? _data;
     private DateTime _lastFrameTime;
+    // Atmosphere: current game hour (0..24) feeding the shared b3 atmosphere CB. Defaults to noon; the
+    // P4 time-of-day slider will drive it. The lighting/sky/water shaders read the resolved atmosphere
+    // (wired in P3+); until then the CB is uploaded but unread (an invisible no-op).
+    private float _gameHour = 12f;
     private bool _mouseDragActive;
     private Vector2 _previousPointerPosition;
+    // Click-vs-drag tracking for object picking: a press that releases without moving past the
+    // threshold is a click (ray-pick), anything more is a camera-look drag.
+    private Vector2 _pointerPressPosition;
+    private bool _pointerDragMoved;
+    private const float ClickMoveThresholdPixels = 4f;
+    private readonly List<global::FalloutXbox360Utils.WorldSpatialCell> _pickCellScratch = new();
+    // 3D-5/3D-9 selection state. _selectedReference is the current selection (null = none); the pick
+    // collects all ray hits into _pickHitScratch (sorted by distance) so a repeat click on the same
+    // stack cycles to the next object behind the current one (GECK click-through).
+    private PlacedReference? _selectedReference;
+    private readonly List<PickHit> _pickHitScratch = new();
     private bool _renderLoopAttached;
     // v3 Pass 4 Step 3 — D3D12-only backend. The renderer interfaces (`I*Renderer`) plug
     // straight into the D3D12 concrete impls; no D3D11 fallback fields remain.
@@ -118,15 +135,19 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private int _lastGcGen1Collections = GC.CollectionCount(1);
     private int _lastGcGen2Collections = GC.CollectionCount(2);
 
-    // Layer visibility — toggled by D1/D2/D3 keys, all default-on. D4 toggles textured-vs-VCLR-only.
+    // Layer visibility — toggled by D1/D2/D3 keys. D4 toggles textured-vs-VCLR-only.
     // D5 toggles placed-object (REFR) rendering (v3 Phase 3).
-    private bool _showWireframe = true;
+    // The cell-boundary grid is a debug overlay → default OFF (must match CellsCheckBox.IsChecked in XAML).
+    private bool _showWireframe;
     private bool _showTerrain = true;
     private bool _showWater = true;
     private bool _vclrOnlyMode;
     private bool _showReferences = true;
     private bool _showNavMesh;
     private bool _showDisabled;
+    // Atmosphere lighting (P3) — directional sun + ambient via the shared b3 CB. On by default; when
+    // off, the shaders fall back to the legacy flat shade (pixel-identical to the pre-atmosphere look).
+    private bool _showLighting = true;
     private float _renderDistance = DefaultRenderDistance;
 
     public WorldView3DControl()
@@ -249,24 +270,36 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _ = InspectCell;
     }
 
-    internal static void SelectObject(PlacedReference? obj)
+    /// <summary>Sets (or clears, with null) the current 3D selection and its outline programmatically.</summary>
+    internal void SelectObject(PlacedReference? obj)
     {
-        // Phase 5 will frame the camera on the selected object. For now: no-op.
-        _ = obj;
+        _selectedReference = obj;
+        _pickHitScratch.Clear();
+        UpdateHighlightFromSelection();
     }
 
     // Lifecycle -----------------------------------------------------------------------------
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (!TryInitD3D12Backend())
+        // The control instance lives for the whole app session; a SubTabView tab switch unloads +
+        // reloads its content. First load creates the device-level backend; on return the device +
+        // scene pipelines persist (OnUnloaded only released the swapchain surface), so we just
+        // re-hook input + recreate the surface. This is what keeps 3D + the 2D top-down overlay
+        // working after switching to another tab and back, without re-streaming the scene.
+        var firstInit = _gpu12 is null;
+        if (firstInit)
         {
-            ShowStatus("3D view unavailable: D3D12 init failed (see logs).");
-            return;
+            if (!TryInitD3D12Backend())
+            {
+                ShowStatus("3D view unavailable: D3D12 init failed (see logs).");
+                return;
+            }
+            Log.Info("WorldView3DControl: D3D12 backend active.");
         }
-        Log.Info("WorldView3DControl: D3D12 backend active.");
 
-        // The XAML markup compiler types RenderPanel as SwapChainPanel; subscribe input handlers.
+        // (Re)subscribe input handlers — OnUnloaded unconditionally unsubscribes them, so this never
+        // double-subscribes. The XAML markup compiler types RenderPanel as SwapChainPanel.
         RenderPanel.SizeChanged += OnRenderPanelSizeChanged;
         RenderPanel.CompositionScaleChanged += OnRenderPanelCompositionScaleChanged;
         RenderPanel.KeyDown += OnRenderPanelKeyDown;
@@ -280,19 +313,106 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         RenderPanel.Focus(FocusState.Programmatic);
 
         // Walk-mode ground sampling: read the camera's current cell heightmap and bilinearly
-        // interpolate. _cellGridLookup is set in TryBuildCellGrid below.
+        // interpolate. _cellGridLookup is set in TryBuildCellGrid. On return the grid persists.
         _controller.GroundHeightSampler = SampleGroundHeight;
 
-        TryBuildCellGrid();
+        if (firstInit)
+        {
+            TryBuildCellGrid();
+        }
         UpdateHudLayoutBounds();
+        // _surface12 was released on unload, so on return this recreates the swapchain on the
+        // re-attached panel + EnsureDepthSrv + AttachRenderLoop (its create branch).
         TryEnsureSurface();
     }
 
+    // How far above the eye the down-ray starts, so a surface the camera is already resting on still
+    // registers against float error. Also the slack on the "surface must be at/below the eye" rule.
+    private const float GroundRaycastEpsUp = 8f;
+
     private float? SampleGroundHeight(float worldX, float worldY)
     {
-        return _cellGridLookup is null
-            ? null
-            : TerrainHeightSampler.Sample(_cellGridLookup, worldX, worldY, _data?.RenderCache);
+        if (_cellGridLookup is null) return null;
+        var terrain = TerrainHeightSampler.Sample(_cellGridLookup, worldX, worldY, _data?.RenderCache);
+
+        // Real downward triangle raycast so walk mode rides ON the actual surface of placed meshes
+        // (floors, walkways, rocks, roofs) instead of their axis-aligned bounding box — rotation is
+        // respected, and a roof ABOVE the eye is never grabbed because the ray starts at the eye and
+        // casts down. Ground = max(terrain, highest object surface at/below the eye).
+        var objectHit = RaycastObjectGround(worldX, worldY, _camera.Position.Z);
+        if (terrain is { } t) return objectHit is { } m && m > t ? m : t;
+        return objectHit; // null only when neither terrain nor an object sits under the camera
+    }
+
+    /// <summary>
+    ///     Casts a ray straight down from just above the eye and returns the world Z of the highest
+    ///     placed-object surface at/below the eye under (<paramref name="worldX" />,
+    ///     <paramref name="worldY" />), or <c>null</c> when nothing is hit. Scans the camera's cell and
+    ///     its 8 neighbours (a ref whose origin sits in an adjacent cell can still overlap the camera
+    ///     footprint). Warm meshes raycast against real triangles; cold meshes fall back to the OBND box
+    ///     for that frame. Only called once per frame in walk mode (<c>SnapToGround</c>).
+    /// </summary>
+    private float? RaycastObjectGround(float worldX, float worldY, float eyeZ)
+    {
+        if (_cellGridLookup is null) return null;
+        var gx = (int)MathF.Floor(worldX / WorldGridConstants.CellSize);
+        var gy = (int)MathF.Floor(worldY / WorldGridConstants.CellSize);
+
+        var origin = new Vector3(worldX, worldY, eyeZ + GroundRaycastEpsUp);
+        var down = new Vector3(0f, 0f, -1f);
+
+        float? best = null;
+        for (var dy = -1; dy <= 1; dy++)
+        for (var dx = -1; dx <= 1; dx++)
+        {
+            if (!_cellGridLookup.TryGetValue((gx + dx, gy + dy), out var cell)) continue;
+            foreach (var p in cell.PlacedObjects)
+            {
+                if (string.IsNullOrEmpty(p.ModelPath)) continue;
+                if (!_showDisabled && p.IsInitiallyDisabled) continue;
+                if (p.RecordType is "ACHR" or "ACRE") continue; // skinned actors carry no static collision
+                if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||
+                    RenderableReference.IsImposterModelPath(p.ModelPath)) continue;
+
+                var hit = TryRaycastReferenceGround(p, origin, down, eyeZ);
+                if (hit is { } h && (best is null || h > best)) best = h;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    ///     Intersects the world-space down-ray with one placed reference. Transforms the ray into the
+    ///     mesh's local space (inverting the placement world matrix — rotation/scale exact), raycasts
+    ///     the cached collision triangles, then maps the local hit point back to world to read its Z.
+    ///     Falls back to the rotation-ignoring OBND box top when the collision mesh isn't cached yet.
+    /// </summary>
+    private float? TryRaycastReferenceGround(PlacedReference p, Vector3 worldOrigin, Vector3 worldDir, float eyeZ)
+    {
+        if (_referenceMeshCache12 is not null &&
+            _referenceMeshCache12.TryGetCollisionMesh(p.ModelPath!, out var collision) &&
+            collision is not null)
+        {
+            var world = PlacedReferenceTransform.ComposeWorldMatrix(p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
+            if (!Matrix4x4.Invert(world, out var inv)) return null;
+
+            var localOrigin = Vector3.Transform(worldOrigin, inv);
+            var localDir = Vector3.TransformNormal(worldDir, inv);
+            if (!collision.RaycastNearest(localOrigin, localDir, out var tLocal)) return null;
+
+            var worldHit = Vector3.Transform(localOrigin + localDir * tLocal, world);
+            return worldHit.Z; // already constrained to the down-ray, so it is at/below the eye
+        }
+
+        // Cold-mesh fallback: axis-aligned OBND box top placed at the ref origin (rotation ignored),
+        // gated by the same "at/below the eye" rule so it never yanks the camera onto a roof.
+        if (p.Bounds is not { } b) return null;
+        var scale = p.Scale > 0f ? p.Scale : 1f;
+        if (worldOrigin.X < p.X + b.X1 * scale || worldOrigin.X > p.X + b.X2 * scale) return null;
+        if (worldOrigin.Y < p.Y + b.Y1 * scale || worldOrigin.Y > p.Y + b.Y2 * scale) return null;
+        var top = p.Z + b.Z2 * scale;
+        return top <= eyeZ + GroundRaycastEpsUp ? top : null;
     }
 
     /// <summary>
@@ -332,16 +452,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             var dir = Path.GetDirectoryName(Path.GetFullPath(candidatePath));
             if (string.IsNullOrEmpty(dir) || !seenDirs.Add(dir)) return;
             var discovery = BsaDiscovery.Discover(candidatePath);
-            if (discovery.MeshesBsaPath is { } primary && seenBsas.Add(primary))
+            foreach (var bsa in discovery.MeshesBsaPaths)
             {
-                result.Add(primary);
-            }
-            if (discovery.ExtraMeshesBsaPaths is { } extras)
-            {
-                foreach (var extra in extras)
-                {
-                    if (seenBsas.Add(extra)) result.Add(extra);
-                }
+                if (seenBsas.Add(bsa)) result.Add(bsa);
             }
         }
     }
@@ -386,15 +499,33 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             _referenceTextureCache12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTextureCache12(
                     _gpu12, _commandRecorder12, _cbvSrvUavHeap12!, _referenceGpuTextureResolver12, _deletionQueue12)
                 .RegisterWith(FalloutXbox360Utils.Core.Diagnostics.ResourceRegistry.Instance, "reference");
+            // Capacity/budget env knobs are diagnostic levers for eviction-pressure stress gates
+            // (e.g. capacity 64 + 16 MB makes the LRU eviction cascade fire constantly); defaults
+            // preserve the shipped behavior. Read here, not in the cache — same as `capacity` always was.
             _referenceMeshCache12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceMeshCache12(
                 _gpu12, _meshArchives, _referenceTextureResolver, _referenceTextureCache12,
-                _deletionQueue12, capacity: 2048);
+                _deletionQueue12,
+                capacity: FalloutXbox360Utils.Core.EnvironmentVariables.GetClampedInt(
+                    FalloutXbox360Utils.Core.EnvironmentVariables.Viewer.ReferenceMeshCapacity,
+                    defaultValue: 2048, min: 8, max: 65_536),
+                decodedCacheByteBudget: FalloutXbox360Utils.Core.EnvironmentVariables.GetClampedLong(
+                    FalloutXbox360Utils.Core.EnvironmentVariables.Viewer.ReferenceDecodedCacheMegabytes,
+                    defaultValue: 256, min: 4, max: 8_192) * 1024L * 1024L,
+                // Auto-size the resident-mesh cap to each worldspace's working set UNLESS the capacity
+                // knob is explicitly set (then honor the pinned value — used by eviction stress gates).
+                autoSizeMeshCapacity: FalloutXbox360Utils.Core.EnvironmentVariables.Get(
+                    FalloutXbox360Utils.Core.EnvironmentVariables.Viewer.ReferenceMeshCapacity) is null);
             _references = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12,
                 _cbvSrvUavHeap12, _referenceMeshCache12)
             {
                 DetailedProfilingEnabled = _profileLogging,
                 ShowInitiallyDisabled = _showDisabled, // persist the toggle across ESM reloads
+                // Markers/imposters are hidden by default to match the game; opt back in via env knobs.
+                ShowMarkers = FalloutXbox360Utils.Core.EnvironmentVariables.IsEnabled(
+                    FalloutXbox360Utils.Core.EnvironmentVariables.Viewer.ShowMarkers),
+                ShowImposters = FalloutXbox360Utils.Core.EnvironmentVariables.IsEnabled(
+                    FalloutXbox360Utils.Core.EnvironmentVariables.Viewer.ShowImposters),
             };
             Log.Info("WorldView3DControl: reference pipeline initialised ({0} meshes BSA(s), {1} textures BSA(s)).",
                 meshBsas.Length, textureBsas.Length);
@@ -437,6 +568,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     /// </summary>
     private Task? _topDownReadbackTask;
 
+    /// <summary>Reused across top-down overlay requests to avoid per-request allocation of two
+    /// committed textures + RTV/DSV heaps + a readback buffer. Recreated only when the supersampled
+    /// dimensions change; disposed in <see cref="DisposeRenderResources" />.</summary>
+    private GpuOffscreenSceneTarget12? _topDownTarget;
+    private int _topDownTargetW;
+    private int _topDownTargetH;
+
     // Explicit interface implementation: the interface + TopDownRender are internal, so these can't
     // be public members on this public control (CS0050). The 2D map only ever calls them via the
     // ITopDownSceneRenderer reference it's handed, so explicit implementation is exactly right.
@@ -453,7 +591,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     /// <inheritdoc />
     async Task<TopDownRender?> ITopDownSceneRenderer.RenderTopDownAsync(
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
-        int pixelWidth, int pixelHeight, bool showDisabled, uint? worldspaceFormId, CancellationToken ct)
+        int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId, CancellationToken ct)
     {
         if (!CanRenderTopDownCore) return null;
         if (worldMaxX <= worldMinX || worldMaxY <= worldMinY) return null;
@@ -467,8 +605,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
         var finalW = Math.Clamp(pixelWidth, 1, MaxTopDownFinalDimension);
         var finalH = Math.Clamp(pixelHeight, 1, MaxTopDownFinalDimension);
-        var ssWidth = finalW * TopDownSupersample;
-        var ssHeight = finalH * TopDownSupersample;
+        // When scene MSAA is active the offscreen target is multisampled (GpuOffscreenSceneTarget12
+        // reads GpuDevice12.SceneSampleCount), so MSAA provides the edge AA and we skip the
+        // supersample multiply — keeping the target memory-neutral (4x MSAA at NxN == 1 sample at
+        // 2Nx2N) and the terrain/reference PSOs (SampleDesc = SceneSampleCount) matching the target.
+        var supersample = _gpu12!.SceneSampleCount > 1 ? 1 : TopDownSupersample;
+        var ssWidth = finalW * supersample;
+        var ssHeight = finalH * supersample;
 
         // Orthographic top-down viewProj + covering cylinder (see TopDownViewProjBuilder for the
         // orientation contract — east→right, north→top, no readback flip). The renderers treat
@@ -477,14 +620,26 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         var cylinder = TopDownViewProjBuilder.BuildCoverCylinder(
             worldMinX, worldMaxX, worldMinY, worldMaxY, WorldGridConstants.CellSize);
 
+        // Reuse the offscreen target across requests; recreate only when the supersampled size
+        // changes. Avoids per-request allocation of two committed textures + RTV/DSV heaps + a
+        // readback buffer (steady allocator/GPU churn that compounded the overlay-on slowdown).
         GpuOffscreenSceneTarget12 target;
         try
         {
-            target = new GpuOffscreenSceneTarget12(_gpu12!, ssWidth, ssHeight);
+            if (_topDownTarget is null || _topDownTargetW != ssWidth || _topDownTargetH != ssHeight)
+            {
+                _topDownTarget?.Dispose();
+                _topDownTarget = new GpuOffscreenSceneTarget12(_gpu12!, ssWidth, ssHeight);
+                _topDownTargetW = ssWidth;
+                _topDownTargetH = ssHeight;
+            }
+            target = _topDownTarget;
         }
         catch (Exception ex)
         {
             Log.Warn("WorldView3DControl: top-down target alloc failed: {0}", ex.Message);
+            _topDownTarget = null;
+            _topDownTargetW = _topDownTargetH = 0;
             return null;
         }
 
@@ -517,10 +672,26 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 // RenderFrameD3D12.
                 cmd.SetDescriptorHeaps(1, new[] { _cbvSrvUavHeap12.Heap });
                 cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
+                // Bind the atmosphere CB here too so the references the overlay draws are lit
+                // consistently with the live view (reference.frag reads b3 — P3).
+                BindAtmosphereConstants(cmd, recorder.FrameIndex);
 
                 target.Bind(cmd);
                 _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs
                 _references.Render(viewProj, cylinder);        // textured objects, depth-tested
+                if (showWater && _water is not null)
+                {
+                    // Height-correct water for the overlay: the offscreen DSV already holds the terrain +
+                    // reference depth, so a depth-tested water pass lets the ortho-topmost surface win —
+                    // submerged geometry is covered by water, geometry ABOVE the water plane (docks,
+                    // bridges) shows through. A flat 2D water layer can't do this; that's why the map
+                    // suppresses its own water wherever this overlay draws. No depth SRV → the hardware
+                    // depth-test water PSO (same path the live frame uses when no SRV is bound); near/far
+                    // are unused without the SRV soft-fade.
+                    _water.SetNifWaterPlanes(_references.NifWaterPlanes);
+                    _water.SetSceneDepth(NoDepthSrv, _camera.NearPlane, _camera.FarPlane);
+                    _water.Render(viewProj, cylinder);
+                }
                 target.RecordReadback(cmd);
             }
             finally
@@ -534,7 +705,15 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         }
         catch (Exception ex)
         {
-            target.Dispose();
+            // The render failed mid-record, so the shared target's resource state may be
+            // inconsistent. EndFrame already submitted whatever was recorded; drain the GPU before
+            // dropping the shared target so the next request rebuilds it cleanly (and we never
+            // release a resource the GPU still references).
+            try { _commandRecorder12?.WaitForGpuIdle(); }
+            catch (Exception waitEx) { Log.Warn("WaitForGpuIdle after top-down failure threw: {0}", waitEx.Message); }
+            _topDownTarget?.Dispose();
+            _topDownTarget = null;
+            _topDownTargetW = _topDownTargetH = 0;
             Log.Warn("WorldView3DControl: top-down render failed: {0}", ex.Message);
             try { _gpu12?.PumpDebugMessages(); }
             catch (Exception pumpEx) { Log.Warn("PumpDebugMessages threw: {0}", pumpEx.Message); }
@@ -547,29 +726,23 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             _terrain.StreamingThrottled = prevTerrainThrottled;
         }
 
-        // Off the UI thread: wait for the submission fence, then map + downsample. ct is NOT passed
-        // to Task.Run so the body always runs and the finally always disposes the target after the
-        // GPU is done (disposing a resource the GPU still references would crash). The fence is
-        // captured HERE: the body must not dereference _gpu12, which the UI thread nulls during
-        // teardown while this task is still in flight.
+        // Off the UI thread: wait for the submission fence, then map + downsample. The target is
+        // SHARED/reused across requests, so the body must NOT dispose it (RecordReadback left the
+        // color target back in RenderTarget state for the next Bind). Teardown disposes it in
+        // DisposeRenderResources, which first drains _topDownReadbackTask so this map completes
+        // before the resource is released. The fence is captured HERE: the body must not dereference
+        // _gpu12, which the UI thread nulls during teardown while this task is still in flight.
         var frameFence = _gpu12!.FrameFence;
         var readbackTask = Task.Run(() =>
         {
-            try
-            {
-                WaitForFrameFence(frameFence, fenceValue);
-                ct.ThrowIfCancellationRequested();
-                var ssBytes = target.ReadbackToBytes();
-                var pixels = TopDownSupersample > 1
-                    ? NifSpriteRenderer.Downsample(ssBytes, ssWidth, ssHeight, TopDownSupersample)
-                    : ssBytes;
-                return new TopDownRender(pixels, finalW, finalH,
-                    worldMinX, worldMaxX, worldMinY, worldMaxY, isComplete);
-            }
-            finally
-            {
-                target.Dispose();
-            }
+            WaitForFrameFence(frameFence, fenceValue);
+            ct.ThrowIfCancellationRequested();
+            var ssBytes = target.ReadbackToBytes();
+            var pixels = supersample > 1
+                ? NifSpriteRenderer.Downsample(ssBytes, ssWidth, ssHeight, supersample)
+                : ssBytes;
+            return new TopDownRender(pixels, finalW, finalH,
+                worldMinX, worldMaxX, worldMinY, worldMaxY, isComplete);
         });
         _topDownReadbackTask = readbackTask;
         try
@@ -629,8 +802,6 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        DetachRenderLoop();
-
         RenderPanel.SizeChanged -= OnRenderPanelSizeChanged;
         RenderPanel.CompositionScaleChanged -= OnRenderPanelCompositionScaleChanged;
         RenderPanel.KeyDown -= OnRenderPanelKeyDown;
@@ -641,8 +812,40 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         RenderPanel.PointerReleased -= OnRenderPanelPointerReleased;
         RenderPanel.PointerWheelChanged -= OnRenderPanelPointerWheelChanged;
 
-        DisposeRenderResources();
+        // Light teardown: a tab switch unloads this content but the control instance persists.
+        // Keep the device + scene alive (see DetachForUnload / OnLoaded); full teardown is Dispose().
+        DetachForUnload();
         _ = _pointerStartPosition;
+    }
+
+    /// <summary>
+    ///     Light teardown for a tab-switch unload (the SubTabView swaps WorldMapTab content out of
+    ///     the visual tree). Detaches the render loop and releases ONLY the swapchain surface — its
+    ///     back buffers are bound to the SwapChainPanel being unloaded. The D3D12 device, descriptor
+    ///     heaps, root signature, and the per-data scene pipelines (_terrain/_references/_water/
+    ///     _navMesh/_cellGrid) + caches stay resident so 3D rendering and the 2D top-down overlay
+    ///     resume instantly on return without re-streaming or resetting the camera. The persistent
+    ///     <see cref="_depthSrv" /> slot is intentionally NOT nulled (its heap persists; EnsureDepthSrv
+    ///     re-points it at the new depth resource on return — nulling would leak a persistent slot per
+    ///     switch). Full teardown (device + all pipelines) lives in <see cref="DisposeRenderResources" />.
+    /// </summary>
+    private void DetachForUnload()
+    {
+        // Drain any in-flight top-down readback first — its Task.Run body maps the readback buffer,
+        // which must not race the surface release below. Non-pumping: Task.Wait() on the STA UI
+        // thread pumps messages and can re-enter XAML → CheckReentrancy fail-fast (see NonPumpingWait).
+        var readback = _topDownReadbackTask;
+        if (readback is { IsCompleted: false })
+        {
+            Core.Orchestration.NonPumpingWait.Wait(readback);
+            _ = readback.Exception; // observe so it never resurfaces as an UnobservedTaskException
+        }
+
+        DetachRenderLoop();
+        // The surface's back buffers must not be referenced by in-flight command lists when disposed.
+        _commandRecorder12?.WaitForGpuIdle();
+        _surface12?.Dispose();
+        _surface12 = null;
     }
 
     private void OnRenderPanelSizeChanged(object sender, SizeChangedEventArgs e)
@@ -721,6 +924,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     /// </summary>
     private void EnsureDepthSrv()
     {
+        // Under scene MSAA the depth is multisampled (D32_Float MS) and can't be bound as a plain
+        // Texture2D SRV; the water depth-fade is gated off in that mode and uses the view-angle proxy
+        // fade instead (RenderFrameD3D12's waterUsesDepth stays false while _depthSrv is null).
+        if (_surface12?.IsMsaa == true) return;
+
         var depth = _surface12?.DepthResource;
         if (_gpu12 is null || _cbvSrvUavHeap12 is null || depth is null)
         {
@@ -755,6 +963,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
         _commandRecorder12?.WaitForGpuIdle();
 
+        // Reused top-down overlay target — safe to release now (the readback above is drained and
+        // the GPU is idle).
+        _topDownTarget?.Dispose();
+        _topDownTarget = null;
+        _topDownTargetW = _topDownTargetH = 0;
+
         // Reference pipeline disposes first — it borrows the texture caches / mesh archives
         // but owns its own copy, so this is independent of the terrain stack.
         DisposeReferencePipeline();
@@ -768,6 +982,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _textureResolver12 = null;
         _cellGrid?.Dispose();
         _cellGrid = null;
+        _selectionHighlight?.Dispose();
+        _selectionHighlight = null;
         DisposeD3D12Backend();
     }
 
@@ -782,21 +998,20 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // so guard with a "first press" set.
         if (e.Key is VirtualKey.Number1 or VirtualKey.Number2 or VirtualKey.Number3
             or VirtualKey.Number4 or VirtualKey.Number5 or VirtualKey.Number6 or VirtualKey.Number7
-            or VirtualKey.F or VirtualKey.PageUp or VirtualKey.PageDown)
+            or VirtualKey.Number8 or VirtualKey.F or VirtualKey.PageUp or VirtualKey.PageDown)
         {
             if (_toggleKeysDown.Add(e.Key))
             {
-                if (e.Key == VirtualKey.Number1) _showWireframe = !_showWireframe;
-                else if (e.Key == VirtualKey.Number2) _showTerrain = !_showTerrain;
-                else if (e.Key == VirtualKey.Number3) _showWater = !_showWater;
-                else if (e.Key == VirtualKey.Number4)
-                {
-                    _vclrOnlyMode = !_vclrOnlyMode;
-                    _terrain?.SetVclrOnlyMode(_vclrOnlyMode);
-                }
-                else if (e.Key == VirtualKey.Number5) _showReferences = !_showReferences;
+                // Each toggle key flips its toolbar ToggleButton, whose Changed handler updates the
+                // backing field — so keyboard and toolbar stay in sync (3D-6).
+                if (e.Key == VirtualKey.Number1) CellsCheckBox.IsChecked = !_showWireframe;
+                else if (e.Key == VirtualKey.Number2) TerrainToggle.IsChecked = !_showTerrain;
+                else if (e.Key == VirtualKey.Number3) WaterCheckBox.IsChecked = !_showWater;
+                else if (e.Key == VirtualKey.Number4) VclrToggle.IsChecked = !_vclrOnlyMode;
+                else if (e.Key == VirtualKey.Number5) RefsToggle.IsChecked = !_showReferences;
                 else if (e.Key == VirtualKey.Number6) SetShowNavMesh(!_showNavMesh);
                 else if (e.Key == VirtualKey.Number7) SetShowDisabled(!_showDisabled);
+                else if (e.Key == VirtualKey.Number8) LightingToggle.IsChecked = !_showLighting;
                 else if (e.Key == VirtualKey.F)
                     _controller.Mode = _controller.Mode == CameraMode.Walk ? CameraMode.Fly : CameraMode.Walk;
                 else if (e.Key == VirtualKey.PageUp)
@@ -804,6 +1019,14 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 else if (e.Key == VirtualKey.PageDown)
                     SetRenderDistance(_renderDistance / RenderDistanceStep);
             }
+            e.Handled = true;
+            return;
+        }
+
+        // 3D-5 — Esc clears the current selection (no InspectObject fired; nothing to inspect).
+        if (e.Key == VirtualKey.Escape)
+        {
+            ClearSelection3D();
             e.Handled = true;
             return;
         }
@@ -833,6 +1056,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
         _mouseDragActive = RenderPanel.CapturePointer(e.Pointer);
         _previousPointerPosition = new Vector2((float)point.Position.X, (float)point.Position.Y);
+        _pointerPressPosition = _previousPointerPosition;
+        _pointerDragMoved = false;
         RenderPanel.Focus(FocusState.Pointer);
         e.Handled = true;
     }
@@ -844,6 +1069,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         var current = new Vector2((float)point.Position.X, (float)point.Position.Y);
         var delta = current - _previousPointerPosition;
         _previousPointerPosition = current;
+        if ((current - _pointerPressPosition).Length() > ClickMoveThresholdPixels) _pointerDragMoved = true;
         if (delta != Vector2.Zero) _controller.OnMouseDelta(delta);
     }
 
@@ -852,7 +1078,178 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         if (!_mouseDragActive) return;
         RenderPanel.ReleasePointerCapture(e.Pointer);
         _mouseDragActive = false;
+        // A press released without a look-drag is a pick click.
+        if (!_pointerDragMoved)
+        {
+            var point = e.GetCurrentPoint(RenderPanel);
+            TryPickObject(new Vector2((float)point.Position.X, (float)point.Position.Y));
+        }
         e.Handled = true;
+    }
+
+    /// <summary>
+    ///     Screen-ray object picking: unprojects the click through the (reversed-Z) view-projection,
+    ///     ray-tests every nearby placed reference's bounding sphere, and raises
+    ///     <see cref="InspectObject" /> for the nearest hit (wired to the shared inspection panel).
+    /// </summary>
+    private void TryPickObject(Vector2 screen)
+    {
+        if (_data is null || _spatialIndex is null) return;
+        var width = (float)RenderPanel.ActualWidth;
+        var height = (float)RenderPanel.ActualHeight;
+        if (width <= 0f || height <= 0f) return;
+
+        // Rebuild the exact view-projection the render loop uses (CameraState.GetProjectionMatrix
+        // applies reversed-Z), then invert it to unproject the click into a world-space ray.
+        var view = _camera.GetViewMatrix();
+        var proj = _camera.GetProjectionMatrix(width / height);
+        if (!Matrix4x4.Invert(view * proj, out var invViewProj)) return;
+
+        var ndcX = 2f * (screen.X / width) - 1f;
+        var ndcY = 1f - 2f * (screen.Y / height);
+        Vector3 Unproject(float ndcZ)
+        {
+            var h = Vector4.Transform(new Vector4(ndcX, ndcY, ndcZ, 1f), invViewProj);
+            return new Vector3(h.X, h.Y, h.Z) / h.W;
+        }
+        var nearWorld = Unproject(1f); // reversed-Z: near plane = depth 1
+        var rayDir = Unproject(0f) - nearWorld; // toward the far plane (depth 0)
+        var rayLen = rayDir.Length();
+        if (rayLen < 1e-4f) return;
+        rayDir /= rayLen;
+
+        // Limit candidates to cells within the render distance (what's actually drawn).
+        _pickCellScratch.Clear();
+        _spatialIndex.QueryCellsInRadius(_camera.Position.X, -_camera.Position.Y, _renderDistance, _pickCellScratch);
+
+        // 3D-9 click-through: collect ALL hits along the ray (same filters as the renderer so the
+        // pickable set matches the visible set), sorted nearest-first.
+        _pickHitScratch.Clear();
+        foreach (var spatialCell in _pickCellScratch)
+        {
+            foreach (var placement in spatialCell.Cell.PlacedObjects)
+            {
+                if (RenderableReference.TryBuild(placement) is not { } r) continue;
+                if (!_showDisabled && r.IsInitiallyDisabled) continue;
+                if (r.IsMarker || r.IsImposter) continue; // hidden in the view by default
+                // Broadphase: cheap bounding-sphere reject. Narrowphase: ray vs the OBND-tight
+                // oriented box — the exact box the selection highlight draws — so the pick lands on
+                // the clicked mesh instead of the near edge of an oversized bounding sphere.
+                if (!RaySphereHit(nearWorld, rayDir, r.BoundsCenter, r.BoundsRadius, out var t)) continue;
+                if (placement.Bounds is { } b && !RayObbHit(nearWorld, rayDir, b, r.WorldMatrix, out t)) continue;
+                _pickHitScratch.Add(new PickHit(placement, placement.FormId, t));
+            }
+        }
+
+        if (_pickHitScratch.Count == 0) return; // click on empty space → keep the current selection
+        _pickHitScratch.Sort(static (a, b) => a.T.CompareTo(b.T));
+
+        // If the current selection is still under this ray, advance to the next hit behind it (wrapping
+        // past the last back to the nearest); otherwise select the nearest hit. Membership is recomputed
+        // from the fresh list each click, so the cycle can't desync.
+        var current = -1;
+        if (_selectedReference is { } sel)
+        {
+            for (var i = 0; i < _pickHitScratch.Count; i++)
+            {
+                if (_pickHitScratch[i].FormId == sel.FormId) { current = i; break; }
+            }
+        }
+        var next = current >= 0 ? (current + 1) % _pickHitScratch.Count : 0;
+
+        _selectedReference = _pickHitScratch[next].Placement;
+        UpdateHighlightFromSelection();
+        InspectObject?.Invoke(this, _selectedReference);
+    }
+
+    private readonly record struct PickHit(PlacedReference Placement, uint FormId, float T);
+
+    /// <summary>Rebuilds the selection outline from the current <see cref="_selectedReference" />.</summary>
+    private void UpdateHighlightFromSelection()
+    {
+        if (_selectionHighlight is null) return;
+        if (_selectedReference is not { } placement || RenderableReference.TryBuild(placement) is not { } r)
+        {
+            _selectionHighlight.ClearSelection();
+            return;
+        }
+
+        if (placement.Bounds is { } b)
+        {
+            // OBND is the object's local-space AABB; the world matrix (which includes scale) places it.
+            _selectionHighlight.SetSelection(
+                new Vector3(b.X1, b.Y1, b.Z1),
+                new Vector3(b.X2, b.Y2, b.Z2),
+                r.WorldMatrix);
+        }
+        else
+        {
+            // No OBND — fall back to a world-space cube around the bounding sphere (identity world).
+            var c = r.BoundsCenter;
+            var rad = r.BoundsRadius;
+            _selectionHighlight.SetSelection(
+                new Vector3(c.X - rad, c.Y - rad, c.Z - rad),
+                new Vector3(c.X + rad, c.Y + rad, c.Z + rad),
+                Matrix4x4.Identity);
+        }
+    }
+
+    /// <summary>Clears the 3D selection + its outline. Called on Esc, worldspace switch, and reload.</summary>
+    private void ClearSelection3D()
+    {
+        _selectedReference = null;
+        _pickHitScratch.Clear();
+        _selectionHighlight?.ClearSelection();
+    }
+
+    /// <summary>Ray vs sphere; returns the nearest non-negative hit distance along a unit-length ray.</summary>
+    private static bool RaySphereHit(Vector3 origin, Vector3 dir, Vector3 center, float radius, out float t)
+    {
+        t = 0f;
+        var m = origin - center;
+        var b = Vector3.Dot(m, dir);
+        var c = Vector3.Dot(m, m) - radius * radius;
+        if (c > 0f && b > 0f) return false;       // outside the sphere and pointing away
+        var disc = b * b - c;
+        if (disc < 0f) return false;              // misses
+        var hit = -b - MathF.Sqrt(disc);
+        t = hit < 0f ? 0f : hit;                  // origin inside the sphere → 0
+        return true;
+    }
+
+    /// <summary>
+    ///     Ray vs oriented bounding box — the object's OBND transformed by its world matrix (the same
+    ///     box the selection highlight draws). The ray is mapped into the box's local space, where the
+    ///     OBND is axis-aligned, and slab-tested. The affine map preserves the ray parameter, so the
+    ///     returned <paramref name="t" /> stays in world-ray units (consistent with the sphere
+    ///     broadphase). Returns the entry distance, clamped to 0 when the camera is inside the box.
+    /// </summary>
+    private static bool RayObbHit(Vector3 origin, Vector3 dir, ObjectBounds bounds, Matrix4x4 world, out float t)
+    {
+        t = 0f;
+        if (!Matrix4x4.Invert(world, out var invWorld)) return false;
+        var lo = Vector3.Transform(origin, invWorld);
+        var ld = Vector3.TransformNormal(dir, invWorld);
+
+        var tMin = 0f;
+        var tMax = float.PositiveInfinity;
+        if (!SlabClip(lo.X, ld.X, bounds.X1, bounds.X2, ref tMin, ref tMax)) return false;
+        if (!SlabClip(lo.Y, ld.Y, bounds.Y1, bounds.Y2, ref tMin, ref tMax)) return false;
+        if (!SlabClip(lo.Z, ld.Z, bounds.Z1, bounds.Z2, ref tMin, ref tMax)) return false;
+        t = tMin;
+        return true;
+
+        static bool SlabClip(float o, float d, float lo, float hi, ref float tMin, ref float tMax)
+        {
+            if (MathF.Abs(d) < 1e-8f) return o >= lo && o <= hi; // parallel: inside the slab, else miss
+            var inv = 1f / d;
+            var t1 = (lo - o) * inv;
+            var t2 = (hi - o) * inv;
+            if (t1 > t2) (t1, t2) = (t2, t1);
+            if (t1 > tMin) tMin = t1;
+            if (t2 < tMax) tMax = t2;
+            return tMin <= tMax;
+        }
     }
 
     private void OnRenderPanelPointerWheelChanged(object sender, PointerRoutedEventArgs e)
@@ -917,6 +1314,55 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     ///     descriptor heaps, and per-frame allocators once, then each renderer records its
     ///     own terrain/reference/wireframe draws into the same command list.
     /// </summary>
+    // Builds the shared atmosphere from the current game hour and uploads it to the b3 root CBV,
+    // bound for the whole scene. A 112-byte once-per-frame upload off the per-frame ring (always the
+    // first allocation after ResetFrame, so it can't overflow). Flags: lighting on by default (P3),
+    // sky/fog off until their phases enable the shader paths.
+    private void BindAtmosphereConstants(Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex)
+    {
+        var resolved = AtmosphereState.Resolve(_gameHour, lightingEnabled: _showLighting);
+        var constants = AtmosphereConstants.From(
+            resolved, _gameHour, lightingEnabled: _showLighting ? 1f : 0f,
+            skyEnabled: 0f, fogEnabled: 0f, time: 0f);
+        var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
+        unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
+        cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
+    }
+
+    // CPU mirror of the b3 `cbuffer Atmosphere` the lighting/sky/water shaders declare in P3+. 7 float4
+    // = 112 bytes (CB-aligned by the ring buffer). When a flag is 0 the shader falls back to its
+    // pre-atmosphere behavior, so the toggles default the scene to today's look until turned on.
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct AtmosphereConstants
+    {
+        public Vector4 SunDirIntensity;    // xyz = sun world dir (toward sun), w = intensity
+        public Vector4 SunColorLighting;   // rgb = sun color, w = lightingEnabled (0/1)
+        public Vector4 AmbientColor;       // rgb = ambient, w = spare
+        public Vector4 SkyTopSkyEnabled;   // rgb = sky-top color, w = skyEnabled (0/1)
+        public Vector4 SkyHorizon;         // rgb = sky-horizon color, w = spare
+        public Vector4 FogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
+        public Vector4 Params;             // x = gameHour, y = fogNear, z = fogFar, w = time
+
+        public const uint ByteSize = 7 * 16;
+
+        public static AtmosphereConstants From(
+            AtmosphereState.Resolved a,
+            float gameHour,
+            float lightingEnabled,
+            float skyEnabled,
+            float fogEnabled,
+            float time) => new()
+            {
+                SunDirIntensity = new Vector4(a.SunWorldDirection, a.SunIntensity),
+                SunColorLighting = new Vector4(a.SunColor, lightingEnabled),
+                AmbientColor = new Vector4(a.AmbientColor, 0f),
+                SkyTopSkyEnabled = new Vector4(a.SkyTopColor, skyEnabled),
+                SkyHorizon = new Vector4(a.SkyHorizonColor, 0f),
+                FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
+                Params = new Vector4(gameHour, a.FogNear, a.FogFar, time),
+            };
+    }
+
     private void RenderFrameD3D12()
     {
         var frameNumber = ++_profileFrameIndex;
@@ -941,20 +1387,30 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         var beginFrameMs = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartProfileTimestamp();
-        var (backBuffer, rtvHandle) = surface.AcquireBackBufferRtv();
+        var (backBuffer, backRtv) = surface.AcquireBackBufferRtv();
+        // Scene renders into the MSAA color target (resolved into the back buffer before Present)
+        // when scene-wide MSAA is active; otherwise straight into the back buffer.
+        var sceneRtv = surface.IsMsaa ? surface.MsaaColorRtv : backRtv;
+        var sceneDsv = surface.DepthStencilView;
         var acquireMs = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartProfileTimestamp();
-        // PRESENT → RENDER_TARGET so we can write to the back buffer.
-        cmd.ResourceBarrierTransition(backBuffer,
-            Vortice.Direct3D12.ResourceStates.Present,
-            Vortice.Direct3D12.ResourceStates.RenderTarget);
+        // The MSAA color target stays in RENDER_TARGET across frames; only the non-MSAA back buffer
+        // needs PRESENT → RENDER_TARGET here (the MSAA back buffer is handled by ResolveTo at frame end).
+        if (!surface.IsMsaa)
+        {
+            cmd.ResourceBarrierTransition(backBuffer,
+                Vortice.Direct3D12.ResourceStates.Present,
+                Vortice.Direct3D12.ResourceStates.RenderTarget);
+        }
 
-        cmd.ClearRenderTargetView(rtvHandle,
+        cmd.ClearRenderTargetView(sceneRtv,
             new Vortice.Mathematics.Color4(0x1B / 255f, 0x24 / 255f, 0x36 / 255f, 1f));
-        cmd.ClearDepthStencilView(surface.DepthStencilView,
-            Vortice.Direct3D12.ClearFlags.Depth, 1f, 0);
-        cmd.OMSetRenderTargets(rtvHandle, surface.DepthStencilView);
+        // Reversed-Z: clear depth to 0 (the far value). Pairs with CameraState.ReverseZ + every
+        // scene PSO's GreaterEqual depth test.
+        cmd.ClearDepthStencilView(sceneDsv,
+            Vortice.Direct3D12.ClearFlags.Depth, 0f, 0);
+        cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
         cmd.RSSetViewport(new Vortice.Mathematics.Viewport(0, 0, surface.Width, surface.Height, 0f, 1f));
         cmd.RSSetScissorRect((int)surface.Width, (int)surface.Height);
 
@@ -971,12 +1427,24 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         segmentStarted = StartProfileTimestamp();
         // Camera + cylinder match the D3D11 path so visible-cell sets are identical.
         var aspect = surface.Width / (float)surface.Height;
-        _camera.FarPlane = _renderDistance;
+        // Decouple the far plane from the streaming radius: the cylinder (= _renderDistance) controls
+        // what LOADS; the far plane only needs to be large enough never to clip the loaded set from
+        // any altitude/tilt (this was the horizon-cutoff bug — far plane == render distance). The
+        // farthest loaded point is within _renderDistance horizontally and |Z| vertically of the
+        // camera, so cover that plus a couple cells of slack. Reversed-Z keeps precision at range.
+        _camera.FarPlane = _renderDistance * 2f + MathF.Abs(_camera.Position.Z)
+                           + 2f * WorldGridConstants.CellSize;
         var view = _camera.GetViewMatrix();
         var proj = _camera.GetProjectionMatrix(aspect);
         var viewProj = view * proj;
         var cylinder = new VisibilityCylinder(_camera.Position, _renderDistance);
         var cameraMs = ElapsedMilliseconds(segmentStarted);
+
+        // Resolve + upload the shared atmosphere CB (b3) once per frame, bound for the whole scene.
+        // terrain/reference/water read it for directional + ambient lighting (P3); sky/fog flags stay
+        // off until their phases enable those shader paths. Bound once — the renderers only set their
+        // own PSO + slots, never the root signature, so this CBV survives every scene pass.
+        BindAtmosphereConstants(cmd, recorder.FrameIndex);
 
         // Layer order matches D3D11: terrain → references → water → wireframe. Water is
         // alpha-blended depth-read, so it must come after terrain + references (which write
@@ -988,9 +1456,19 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         var terrainMs = ElapsedMilliseconds(segmentStarted);
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesStart);
-        var visibleReferences = _showReferences ? _references?.Render(viewProj, cylinder) ?? 0 : 0;
+        // 3D-8: opaque references draw now (write depth) but blended/transparent submeshes are deferred
+        // until AFTER the water pass via RenderBlendedDeferred(), so water never paints over them.
+        var visibleReferences = _showReferences ? _references?.Render(viewProj, cylinder, deferBlended: true) ?? 0 : 0;
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesEnd);
         var referencesMs = ElapsedMilliseconds(segmentStarted);
+        // Hand the water renderer the placed-NIF water planes the reference pass accumulated (cave/
+        // pool water embedded in REFR meshes) so they draw with the real Fresnel/ripple/depth-fade
+        // water shader instead of the flat slab. Cheap reference assignment; the list grows as those
+        // references' meshes stream in.
+        if (_water is not null && _references is not null)
+        {
+            _water.SetNifWaterPlanes(_references.NifWaterPlanes);
+        }
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterStart);
         // Feed water the real scene depth (terrain + references already wrote it) so it computes the
@@ -1006,7 +1484,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             _camera.FarPlane);
         if (waterUsesDepth)
         {
-            cmd.OMSetRenderTargets(rtvHandle); // drop the DSV; keep the back-buffer RTV
+            cmd.OMSetRenderTargets(sceneRtv); // drop the DSV; keep the scene color RTV
             cmd.ResourceBarrierTransition(depthRes!,
                 Vortice.Direct3D12.ResourceStates.DepthWrite,
                 Vortice.Direct3D12.ResourceStates.PixelShaderResource);
@@ -1017,10 +1495,14 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             cmd.ResourceBarrierTransition(depthRes!,
                 Vortice.Direct3D12.ResourceStates.PixelShaderResource,
                 Vortice.Direct3D12.ResourceStates.DepthWrite);
-            cmd.OMSetRenderTargets(rtvHandle, surface.DepthStencilView);
+            cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
         }
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterEnd);
         var waterMs = ElapsedMilliseconds(segmentStarted);
+        // 3D-8: blended (transparent) reference submeshes draw AFTER water so water never paints over
+        // them. Water wrote no depth, so they depth-test against the opaque scene depth (terrain +
+        // opaque refs); the DSV was restored above, so this stays depth-correct.
+        if (_showReferences) _references?.RenderBlendedDeferred();
         // Navmesh overlay — translucent, drawn after water (depth-read) and before the
         // depth-disabled wireframe so the grid still stays on top.
         var visibleNavMesh = _showNavMesh ? _navMesh?.Render(viewProj, cylinder) ?? 0 : 0;
@@ -1030,6 +1512,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WireframeEnd);
         var wireframeMs = ElapsedMilliseconds(segmentStarted);
 
+        // 3D-5 — selection outline, drawn last + depth-disabled so it stays visible on top of everything
+        // (no-op when nothing is selected).
+        _selectionHighlight?.Render(viewProj);
+
         segmentStarted = StartProfileTimestamp();
         var visible = Math.Max(visibleTerrain, visibleWireframe);
         var totalCells = _terrain?.CellCount ?? _cellGrid?.CellCount ?? 0;
@@ -1037,10 +1523,19 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         var hudMs = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartProfileTimestamp();
-        // RENDER_TARGET → PRESENT so DXGI can flip.
-        cmd.ResourceBarrierTransition(backBuffer,
-            Vortice.Direct3D12.ResourceStates.RenderTarget,
-            Vortice.Direct3D12.ResourceStates.Present);
+        if (surface.IsMsaa)
+        {
+            // Resolve the multisampled scene color into the back buffer; leaves the back buffer in
+            // PRESENT (and the MSAA color back in RENDER_TARGET for the next frame).
+            surface.ResolveTo(cmd, backBuffer);
+        }
+        else
+        {
+            // RENDER_TARGET → PRESENT so DXGI can flip.
+            cmd.ResourceBarrierTransition(backBuffer,
+                Vortice.Direct3D12.ResourceStates.RenderTarget,
+                Vortice.Direct3D12.ResourceStates.Present);
+        }
 
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.FrameEnd);
         _gpuTimestampProfiler12?.ResolveActiveFrame(cmd);
@@ -1247,13 +1742,17 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             if (_gpu12 is null) return false;
 
             _commandRecorder12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12(_gpu12);
-            // 16 MB per frame slot — generous, easy to walk back if needed. Sized so the worst
-            // realistic WastelandNV frame (~1500 draws × 80 B per-draw CB + padding) fits with
-            // 100× headroom for future per-frame instance buffers (Step 4 instancing).
+            // 64 MB per frame slot (env-overridable). Shared by every renderer's per-draw CBs. The
+            // live view is frustum+cylinder culled so it stays well under this, but the unthrottled
+            // top-down overlay can render a very dense window in one pass; 64 MB gives ~262 k
+            // 256-byte allocations of headroom (4× the prior 16 MB) before TryAllocate degrades
+            // gracefully (stops adding draws, presents what fit) rather than abandoning the frame.
+            var ringMegabytes = EnvironmentVariables.GetClampedInt(
+                EnvironmentVariables.Viewer.RingBufferMegabytes, defaultValue: 64, min: 16, max: 512);
             _ringBuffer12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuRingBuffer12(
                 _gpu12,
                 FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12.FramesInFlight,
-                bytesPerFrame: 16 * 1024 * 1024);
+                bytesPerFrame: (uint)ringMegabytes * 1024 * 1024);
             // CBV/SRV/UAV heap layout (4a — bindless): persistent region 0..16383 holds
             // every texture's bindless SRV (stable index over a worldspace session); the
             // remaining 114688 slots ring across N frames for per-frame transient SRVs
@@ -1287,6 +1786,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             {
                 DetailedProfilingEnabled = _profileLogging,
             };
+
+            // 3D-5 — selection outline overlay. Same lightweight backend handles as the cell grid;
+            // created once and reused across worldspace/cell switches (selection state lives on the
+            // control and is cleared on those switches).
+            _selectionHighlight = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SelectionHighlightRenderer12(
+                _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12);
 
             // Step 2e — WaterRenderer12 doesn't depend on per-ESM data (water height is
             // discovered at LoadData), so we can instantiate up front alongside CellGrid.
@@ -1515,8 +2020,26 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // Toolbar checkboxes mirror the 2D viewer. Handlers fire once during XAML load with
     // IsChecked="True" (Water only) before sibling fields are assigned, so each must be safe to
     // call before LoadData — they touch only their own control (assigned) and null-guarded state.
+    private void CellsCheckBox_Changed(object sender, RoutedEventArgs e)
+        => _showWireframe = CellsCheckBox.IsChecked == true;
+
+    private void TerrainToggle_Changed(object sender, RoutedEventArgs e)
+        => _showTerrain = TerrainToggle.IsChecked == true;
+
     private void WaterCheckBox_Changed(object sender, RoutedEventArgs e)
         => _showWater = WaterCheckBox.IsChecked == true;
+
+    private void VclrToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _vclrOnlyMode = VclrToggle.IsChecked == true;
+        _terrain?.SetVclrOnlyMode(_vclrOnlyMode);
+    }
+
+    private void RefsToggle_Changed(object sender, RoutedEventArgs e)
+        => _showReferences = RefsToggle.IsChecked == true;
+
+    private void LightingToggle_Changed(object sender, RoutedEventArgs e)
+        => _showLighting = LightingToggle.IsChecked == true;
 
     private void NavMeshCheckBox_Changed(object sender, RoutedEventArgs e)
         => SetShowNavMesh(NavMeshCheckBox.IsChecked == true);
@@ -1524,22 +2047,39 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private void DisabledCheckBox_Changed(object sender, RoutedEventArgs e)
         => SetShowDisabled(DisabledCheckBox.IsChecked == true);
 
-    private void WorldspaceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void WorldspaceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressWorldspaceSelectionEvent || _data is null) return;
         if (WorldspaceComboBox.SelectedIndex < 0) return;
 
-        // Picking a worldspace leaves interior mode and shows that exterior.
+        // Picking a worldspace leaves interior mode and shows that exterior. Building the spatial
+        // index + loading the renderers for a large worldspace briefly blocks the UI thread, which
+        // used to read as a frozen blank with no feedback. Show a loading overlay first and yield so
+        // it actually paints before the blocking work, then hide it once the grid is built (mesh /
+        // terrain streaming continues asynchronously afterwards while the controls stay responsive).
         _selectedInterior = null;
         HideInteriorBrowser();
-        TryBuildCellGrid();
-        ResetCameraToDataCentroid();
-        ApplyStressSceneBookmarkIfRequested();
+        ShowStatus("Loading worldspace…");
+        try
+        {
+            await System.Threading.Tasks.Task.Yield();
+            TryBuildCellGrid();
+            ResetCameraToDataCentroid();
+            ApplyStressSceneBookmarkIfRequested();
+        }
+        finally
+        {
+            HideStatus();
+        }
     }
 
     private void TryBuildCellGrid()
     {
         if (_data is null) return;
+
+        // 3D-5 — the prior selection belongs to the set we're replacing (different worldspace/cell, and
+        // FormIDs can be reused), so drop it on every rebuild.
+        ClearSelection3D();
 
         if (_selectedInterior is { } interior)
         {
@@ -1559,6 +2099,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         var appearance = GetSelectedWaterAppearance(_data);
         var noiseIndex = _textureResolver12?.ResolveNormalMapBindlessIndex(appearance?.NoiseTexture);
         _cellGrid?.LoadData(cellList, _spatialIndex);
+        if (ComputeGridZExtent(cellList) is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, noiseIndex);
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
@@ -1625,10 +2166,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         CellBrowserCountText.Text = $"{items.Count} cells";
     }
 
-    private void CellListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void CellListView_ItemClick(object sender, ItemClickEventArgs e)
     {
-        // Fires with null while the ItemsSource is (re)built by populate/filter — ignore those.
-        if (CellListView.SelectedItem is not WorldMapControl.CellListItem item) return;
+        // ItemClick (not SelectionChanged) so ONLY a real user click loads a cell. Reassigning
+        // ItemsSource on open/filter auto-selects item 0 and fired SelectionChanged, which used to
+        // load the first interior on open and hijack every search keystroke — ItemClick never fires
+        // for programmatic selection or type-ahead, so both symptoms are gone.
+        if (e.ClickedItem is not WorldMapControl.CellListItem item) return;
 
         _selectedInterior = item.Cell;
         // Drop the combo selection so re-picking the same worldspace later still returns to exterior.
@@ -1656,10 +2200,45 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         var cellList = new List<CellRecord> { interior };
 
         _cellGrid?.LoadData(cellList, _spatialIndex);
+        if (ComputeGridZExtent(cellList) is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.LoadData(_cellGridLookup, worldspaceDefaultWaterHeight: null, _spatialIndex);
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
+    }
+
+    /// <summary>
+    ///     Computes the vertical (Z) extent the cell-grid walls should span for the loaded cells,
+    ///     from the placed-object Z range (objects rest on the terrain, so this brackets the relief
+    ///     and tall structures) plus a one-cell margin, with a minimum span so flat worldspaces still
+    ///     show tall-enough walls. Returns null when no finite placed-object Z exists (grid keeps its
+    ///     default extent).
+    /// </summary>
+    private static (float zMin, float zMax)? ComputeGridZExtent(IReadOnlyCollection<CellRecord> cells)
+    {
+        float minZ = float.MaxValue, maxZ = float.MinValue;
+        foreach (var cell in cells)
+        {
+            foreach (var o in cell.PlacedObjects)
+            {
+                if (!float.IsFinite(o.Z)) continue;
+                if (o.Z < minZ) minZ = o.Z;
+                if (o.Z > maxZ) maxZ = o.Z;
+            }
+        }
+        if (minZ > maxZ) return null;
+
+        var margin = WorldGridConstants.CellSize;
+        var zMin = minZ - margin;
+        var zMax = maxZ + margin;
+        var minSpan = WorldGridConstants.CellSize * 2f;
+        if (zMax - zMin < minSpan)
+        {
+            var mid = (zMin + zMax) * 0.5f;
+            zMin = mid - minSpan * 0.5f;
+            zMax = mid + minSpan * 0.5f;
+        }
+        return (zMin, zMax);
     }
 
     /// <summary>
@@ -1786,27 +2365,33 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         }
         _lastHudUpdateTimestamp = now;
 
-        var w = _showWireframe ? "on" : "off";
-        var t = _showTerrain ? "on" : "off";
-        var wa = _showWater ? "on" : "off";
-        var v = _vclrOnlyMode ? "on" : "off";
-        var r = _showReferences ? "on" : "off";
-        var nm = _showNavMesh ? "on" : "off";
-        var dis = _showDisabled ? "shown" : "hidden";
         var mode = _controller.Mode == CameraMode.Walk ? "walk" : "fly";
-        var keyHint = _controller.Mode == CameraMode.Walk ? "WASD" : "WASD + Q/E";
         // Backend chip — D3D12 shows the feature level for at-a-glance diagnostics.
         var backend = _gpu12 is not null
             ? $"D3D12 {_gpu12.FeatureLevel}"
             : "D3D11";
+        // Layer on/off state now lives in the toolbar toggle buttons (3D-6), so the HUD spends the
+        // freed space spelling out the movement controls (3D-10).
         var text =
             $"[{backend}]   " +
             $"Cells: {visible} / {total}   refs: {visibleReferences}   nav: {visibleNavMesh}   " +
             $"pos: ({_camera.Position.X:0}, {_camera.Position.Y:0}, {_camera.Position.Z:0})   " +
             $"speed: {_controller.MoveSpeed:0}   " +
             $"dist: {_renderDistance / WorldGridConstants.CellSize:0.#}c   " +
-            $"[F]mode:{mode} [1]wire:{w} [2]terrain:{t} [3]water:{wa} [4]vclr-only:{v} [5]refs:{r} [6]nav:{nm} [7]disabled:{dis}   " +
-            $"PgUp/PgDn   {keyHint}   drag to look";
+            $"mode: {mode}\n" +
+            "WASD move   Q/E up/down   mouse-wheel speed   drag to look   " +
+            "PgUp/PgDn view distance   F fly/walk   click select (click again = cycle)   Esc deselect";
+
+        // Draw-cap signal: when a dense frame can't fit every per-draw CB in the shared ring slot,
+        // the renderer skips the overflow (instead of throwing + blanking the scene). Surface it so
+        // the soft cap is visible — raise FALLOUT_VIEWER_RING_BUFFER_MB if this is persistently > 0.
+        var truncatedDraws = _references?.LastFrameDrawsTruncated ?? 0;
+        if (truncatedDraws > 0)
+        {
+            var ringTotalMib = _ringBuffer12 is not null ? _ringBuffer12.BytesPerFrame / (1024.0 * 1024.0) : 0;
+            text += $"\n⚠ DRAW-CAP: {truncatedDraws} draws skipped this frame " +
+                    $"(ring {ringTotalMib:0}MiB full — raise FALLOUT_VIEWER_RING_BUFFER_MB)";
+        }
         if (_showFrameStats && _terrain is not null)
         {
             var stats = _terrain.LastStats;

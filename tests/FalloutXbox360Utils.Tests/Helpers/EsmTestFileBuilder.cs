@@ -214,7 +214,7 @@ internal sealed class EsmTestFileBuilder
     {
         using var ms = new MemoryStream();
 
-        var cellRecord = BuildCellRecord(cell.FormId, cell.EditorId, cell.GridX, cell.GridY);
+        var cellRecord = BuildCellRecord(cell.FormId, cell.EditorId, cell.GridX, cell.GridY, cell.XclcByteCount);
         ms.Write(cellRecord);
 
         if (cell.PersistentRefs.Count > 0)
@@ -285,7 +285,8 @@ internal sealed class EsmTestFileBuilder
         return buf;
     }
 
-    private static byte[] BuildCellRecord(uint formId, string? editorId, int? gridX, int? gridY)
+    private static byte[] BuildCellRecord(uint formId, string? editorId, int? gridX, int? gridY,
+        int xclcByteCount = 12)
     {
         var subs = new List<(string, byte[])>();
 
@@ -297,10 +298,11 @@ internal sealed class EsmTestFileBuilder
         // DATA subrecord (1 byte flags — 0 = no flags)
         subs.Add(("DATA", [0]));
 
-        // XCLC subrecord (grid coordinates, 12 bytes: X int32, Y int32, flags uint32)
+        // XCLC subrecord: X int32, Y int32, then an optional trailing field. Fallout 3 writes 8 bytes
+        // (X, Y); Fallout NV writes 12 (X, Y, forceHideLand).
         if (gridX.HasValue && gridY.HasValue)
         {
-            var xclc = new byte[12];
+            var xclc = new byte[xclcByteCount];
             BinaryPrimitives.WriteInt32LittleEndian(xclc, gridX.Value);
             BinaryPrimitives.WriteInt32LittleEndian(xclc.AsSpan(4), gridY.Value);
             subs.Add(("XCLC", xclc));
@@ -396,6 +398,10 @@ internal sealed class EsmTestFileBuilder
         public string? EditorId { get; init; }
         public int GridX { get; init; }
         public int GridY { get; init; }
+
+        /// <summary>XCLC byte length: 8 (Fallout 3: X, Y) or 12 (Fallout NV: X, Y, forceHideLand).</summary>
+        public int XclcByteCount { get; init; } = 12;
+
         public List<PlacedRefData> PersistentRefs { get; init; } = [];
         public List<PlacedRefData> TemporaryRefs { get; init; } = [];
     }

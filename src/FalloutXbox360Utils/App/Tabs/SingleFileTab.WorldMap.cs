@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Localization;
@@ -18,7 +19,7 @@ public sealed partial class SingleFileTab
     private CellRecord? _selectedWorldCell;
     private PlacedReference? _selectedWorldObject;
 
-    private async Task PopulateWorldMapAsync()
+    private async Task PopulateWorldMapAsync(CancellationToken cancellationToken)
     {
         var loadGeneration = Volatile.Read(ref _worldMapLoadGeneration);
         if (_session.WorldMapPopulated)
@@ -26,10 +27,13 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        await _worldMapLoadGate.WaitAsync();
+        // Cancellation while WAITING throws before the gate is acquired (outside the try), so the
+        // finally's Release stays balanced.
+        await _worldMapLoadGate.WaitAsync(cancellationToken);
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!IsCurrentWorldMapLoad(loadGeneration) || _session.WorldMapPopulated)
             {
                 return;
@@ -46,6 +50,7 @@ public sealed partial class SingleFileTab
             if (_session.IsSaveFile)
             {
                 var worldData = await BuildSaveWorldDataAsync();
+                cancellationToken.ThrowIfCancellationRequested();
                 if (!IsCurrentWorldMapLoad(loadGeneration))
                 {
                     return;
@@ -67,6 +72,7 @@ public sealed partial class SingleFileTab
             {
                 WorldMapProgressBar.IsIndeterminate = false;
                 await EnsureSemanticParseAsync();
+                cancellationToken.ThrowIfCancellationRequested();
                 if (!IsCurrentWorldMapLoad(loadGeneration))
                 {
                     return;
@@ -80,10 +86,31 @@ public sealed partial class SingleFileTab
                 return;
             }
 
-            // Merge load order records so DLC worldspaces appear on the map
+            // Snapshot the primary's own worldspaces before merging supplementary Load-Order records.
+            // A DMP must show only the worldspaces it captured; Load-Order ESM worldspaces are merged
+            // in for terrain/asset data but are filtered back out of the picker below.
+            var primaryWorldspaceIds = semantic.Worldspaces.Select(w => w.FormId).ToHashSet();
+
+            // Merge load order records so DLC worldspaces appear on the map.
             var loadOrderRecords = _session.LoadOrder.BuildMergedRecords();
             if (loadOrderRecords != null)
-                semantic = loadOrderRecords.MergeWith(semantic);
+            {
+                // Precedence is type-aware: an opened ESM/ESP is the base the Load Order layers on top
+                // of (later wins → ESP edits apply); an opened DMP/save is the runtime truth and wins
+                // over the Load Order. MergeList unions by FormID either way, so DLC/new worldspaces
+                // still appear.
+                semantic = _session.IsEsmFile
+                    ? semantic.MergeWith(loadOrderRecords)
+                    : loadOrderRecords.MergeWith(semantic);
+
+                // Re-link cells to worldspaces against the MERGED cell list so overridden/added cells
+                // reach the viewer (which reads ws.Cells), not each worldspace's pre-merge cells.
+                semantic.RelinkWorldspaceCells();
+
+                // Hide worldspaces not captured in the dump for a memory-dump primary.
+                if (!_session.IsEsmFile && !_session.IsSaveFile)
+                    semantic = semantic.WithWorldspacesFilteredTo(primaryWorldspaceIds);
+            }
 
             WorldMapStatusText.Text = Strings.Status_BuildingWorldIndex;
 
@@ -91,6 +118,7 @@ public sealed partial class SingleFileTab
             var filePath = _session.FilePath;
             var esmWorldData = await Task.Run(() =>
                 WorldMapOverlayBuilder.BuildFromRecords(semantic, filePath));
+            cancellationToken.ThrowIfCancellationRequested();
             if (!IsCurrentWorldMapLoad(loadGeneration))
             {
                 return;
@@ -99,7 +127,7 @@ public sealed partial class SingleFileTab
             esmWorldData.AdditionalDataPaths = CollectLoadOrderPaths();
             ApplyWorldMapData(esmWorldData);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             if (IsCurrentWorldMapLoad(loadGeneration))
             {
@@ -139,6 +167,10 @@ public sealed partial class SingleFileTab
 
         WorldMapPlaceholder.Visibility = Visibility.Collapsed;
         WorldMapContent.Visibility = Visibility.Visible;
+
+        // World data is the single largest CPU-cache load; give trimmable caches a chance to
+        // shed older session weight right away instead of waiting for the timer tick.
+        MemoryBudgetCoordinator.Instance.CheckNow("world-load");
     }
 
     /// <summary>
@@ -227,7 +259,14 @@ public sealed partial class SingleFileTab
             ? "View the base record in Records"
             : "Base record not available in Records (record type not reconstructed)");
 
-        WorldMapControl?.SelectObject(obj);
+        // 2D-1: a pick in the 3D viewer must NOT drive the 2D map's selection — the 3D viewer owns its
+        // own highlight, and the picked object may belong to a different worldspace than the 2D map is
+        // showing (the leak this guards against). Only sync the 2D-map selection when the inspect came
+        // from the 2D map or a 2D-map navigation (sender == null), not from WorldView3DControl.
+        if (!ReferenceEquals(sender, WorldView3DControl))
+        {
+            WorldMapControl?.SelectObject(obj);
+        }
 
         var worldResolver = _session.WorldViewData?.Resolver ?? _session.Resolver;
         WorldObjectTitle.Text = PlacedObjectCategoryResolver.GetObjectInspectionTitle(
@@ -595,7 +634,7 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        await PopulateWorldMapAsync();
+        await _tasks.RunExclusiveAsync("populate-worldmap", PopulateWorldMapAsync);
         if (_session.WorldViewData == null)
         {
             return;
@@ -631,7 +670,7 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        await PopulateWorldMapAsync();
+        await _tasks.RunExclusiveAsync("populate-worldmap", PopulateWorldMapAsync);
         if (_session.WorldViewData == null)
         {
             return;

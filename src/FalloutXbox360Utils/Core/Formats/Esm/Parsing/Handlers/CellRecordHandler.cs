@@ -346,14 +346,18 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 case "DATA" when sub.DataLength >= 1:
                     flags = subData[0];
                     break;
-                case "XCLC" when sub.DataLength >= 12:
+                case "XCLC" when sub.DataLength >= 8:
                 {
-                    if (SubrecordSchemaView.TryRead("XCLC", null, subData, record.IsBigEndian) is { } v)
-                    {
-                        gridX = v.Int32("X");
-                        gridY = v.Int32("Y");
-                    }
-
+                    // XCLC is 8 bytes in Fallout 3 (X, Y int32) and 12 bytes in Fallout NV (X, Y,
+                    // forceHideLand). Read the two grid int32s directly so the FNV-only trailing field
+                    // is optional — gating on >= 12 (and the size-12-keyed schema) silently dropped the
+                    // grid on every FO3 exterior cell, filtering its terrain out of the world viewer.
+                    gridX = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
+                    gridY = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData[4..])
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData[4..]);
                     break;
                 }
                 case "XCLW" when sub.DataLength >= 4:

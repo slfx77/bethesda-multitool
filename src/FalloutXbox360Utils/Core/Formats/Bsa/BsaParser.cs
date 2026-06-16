@@ -32,53 +32,30 @@ public static class BsaParser
     {
         using var reader = new BinaryReader(stream, Encoding.ASCII, true);
 
-        // Read and validate magic
-        var magic = reader.ReadBytes(4);
-        if (!magic.SequenceEqual(BsaMagic))
-        {
-            throw new InvalidDataException(
-                $"Invalid BSA magic: expected 'BSA\\0', got '{Encoding.ASCII.GetString(magic)}'");
-        }
+        var header = ReadHeaderCore(reader);
+        var archiveFlags = header.ArchiveFlags;
+        var folderCount = header.FolderCount;
 
-        // Read version - BSA is always little-endian
-        var version = reader.ReadUInt32();
-
-        // Valid versions are 103-105
-        if (version is < 103 or > 105)
-        {
-            throw new InvalidDataException($"Invalid BSA version: {version} (expected 103-105)");
-        }
-
-        // Read the rest of the header - all little-endian
-        var offset = reader.ReadUInt32();
-        var archiveFlags = (BsaArchiveFlags)reader.ReadUInt32();
-        var folderCount = reader.ReadUInt32();
-        var fileCount = reader.ReadUInt32();
-        var totalFolderNameLength = reader.ReadUInt32();
-        var totalFileNameLength = reader.ReadUInt32();
-        var fileFlags = (BsaFileFlags)reader.ReadUInt16();
-        _ = reader.ReadUInt16(); // Padding
-
-        var header = new BsaHeader
-        {
-            FileId = "BSA",
-            Version = version,
-            FolderRecordOffset = offset,
-            ArchiveFlags = archiveFlags,
-            FolderCount = folderCount,
-            FileCount = fileCount,
-            TotalFolderNameLength = totalFolderNameLength,
-            TotalFileNameLength = totalFileNameLength,
-            FileFlags = fileFlags
-        };
-
-        // Read folder records
+        // Read folder records. v103/v104 use a 16-byte record (hash+count+u32 offset); v105
+        // (Skyrim Special Edition) inserts a 4-byte pad and widens the offset to 64-bit, making
+        // the record 24 bytes. The folder offset itself is only informational here (file records
+        // carry absolute data offsets), so the widened value is truncated to uint for storage.
+        var isV105 = header.Version >= 105;
         var folders = new List<BsaFolderRecord>((int)folderCount);
         for (var i = 0; i < folderCount; i++)
         {
             var nameHash = reader.ReadUInt64();
             var count = reader.ReadUInt32();
-            var folderOffset = reader.ReadUInt32();
+            uint folderOffset;
+            if (isV105)
+            {
+                _ = reader.ReadUInt32(); // padding (unknown / always 0)
+                folderOffset = (uint)reader.ReadUInt64();
+            }
+            else
+            {
+                folderOffset = reader.ReadUInt32();
+            }
 
             folders.Add(new BsaFolderRecord
             {
@@ -140,6 +117,70 @@ public static class BsaParser
             Folders = folders,
             FilePath = filePath
         };
+    }
+
+    /// <summary>
+    ///     Reads and validates the 36-byte BSA header from the current reader position. Shared by
+    ///     <see cref="Parse(Stream, string)" /> and <see cref="TryReadHeader" />. Throws
+    ///     <see cref="InvalidDataException" /> on bad magic or unsupported version.
+    /// </summary>
+    private static BsaHeader ReadHeaderCore(BinaryReader reader)
+    {
+        var magic = reader.ReadBytes(4);
+        if (!magic.SequenceEqual(BsaMagic))
+        {
+            throw new InvalidDataException(
+                $"Invalid BSA magic: expected 'BSA\\0', got '{Encoding.ASCII.GetString(magic)}'");
+        }
+
+        // BSA is always little-endian; valid versions are 103-105.
+        var version = reader.ReadUInt32();
+        if (version is < 103 or > 105)
+        {
+            throw new InvalidDataException($"Invalid BSA version: {version} (expected 103-105)");
+        }
+
+        var offset = reader.ReadUInt32();
+        var archiveFlags = (BsaArchiveFlags)reader.ReadUInt32();
+        var folderCount = reader.ReadUInt32();
+        var fileCount = reader.ReadUInt32();
+        var totalFolderNameLength = reader.ReadUInt32();
+        var totalFileNameLength = reader.ReadUInt32();
+        var fileFlags = (BsaFileFlags)reader.ReadUInt16();
+        _ = reader.ReadUInt16(); // Padding
+
+        return new BsaHeader
+        {
+            FileId = "BSA",
+            Version = version,
+            FolderRecordOffset = offset,
+            ArchiveFlags = archiveFlags,
+            FolderCount = folderCount,
+            FileCount = fileCount,
+            TotalFolderNameLength = totalFolderNameLength,
+            TotalFileNameLength = totalFileNameLength,
+            FileFlags = fileFlags
+        };
+    }
+
+    /// <summary>
+    ///     Reads only the BSA header (no folder/file record tables) so callers can classify an archive
+    ///     by its <see cref="BsaFileFlags" /> content bits cheaply. Returns null if the file is missing,
+    ///     unreadable, or not a valid BSA.
+    /// </summary>
+    public static BsaHeader? TryReadHeader(string filePath)
+    {
+        try
+        {
+            using var stream = File.OpenRead(filePath);
+            using var reader = new BinaryReader(stream, Encoding.ASCII, true);
+            return ReadHeaderCore(reader);
+        }
+        catch (Exception ex) when (
+            ex is IOException or InvalidDataException or UnauthorizedAccessException or EndOfStreamException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

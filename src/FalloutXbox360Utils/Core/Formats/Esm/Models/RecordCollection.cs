@@ -277,6 +277,9 @@ public record RecordCollection
     /// <summary>Parsed Weather (WTHR) records.</summary>
     public List<WeatherRecord> Weather { get; init; } = [];
 
+    /// <summary>Parsed Climate (CLMT) records.</summary>
+    public List<ClimateRecord> Climate { get; init; } = [];
+
     /// <summary>
     ///     FormID → model path (.nif) mapping from STAT, ACTI, DOOR, LIGH, FURN, WEAP, ARMO, AMMO, ALCH, MISC, BOOK, CONT
     ///     records.
@@ -440,6 +443,7 @@ public record RecordCollection
             LightingTemplates = MergeList(LightingTemplates, overlay.LightingTemplates, r => r.FormId),
             NavMeshes = MergeList(NavMeshes, overlay.NavMeshes, r => r.FormId),
             Weather = MergeList(Weather, overlay.Weather, r => r.FormId),
+            Climate = MergeList(Climate, overlay.Climate, r => r.FormId),
 
             // Dictionaries: overlay overwrites base
             ModelPathIndex = MergeDictionary(ModelPathIndex, overlay.ModelPathIndex),
@@ -450,6 +454,73 @@ public record RecordCollection
 
             TotalRecordsProcessed = TotalRecordsProcessed + overlay.TotalRecordsProcessed
         };
+    }
+
+    /// <summary>
+    ///     Rebuilds every <see cref="WorldspaceRecord.Cells" /> list from this collection's (possibly
+    ///     merged) top-level <see cref="Cells" />, grouped by <see cref="CellRecord.WorldspaceFormId" />.
+    ///     Call after <see cref="MergeWith" />: that method merges the flat <see cref="Cells" /> and
+    ///     <see cref="Worldspaces" /> lists by FormID but leaves each worldspace pointing at the cells
+    ///     it was linked with at its <em>own</em> parse time, so an overridden/added cell never reaches
+    ///     consumers that read <c>ws.Cells</c> (the 3D viewer, the 2D overlay builder). Each
+    ///     worldspace's list is reset first so a fully-overridden worldspace cannot retain stale
+    ///     references. Mirrors <c>CellLinkageHandler.LinkCellsToWorldspaces</c> but clear-first.
+    ///     Mutates this collection's <see cref="Worldspaces" /> list in place (replacing slots with
+    ///     <c>ws with { Cells = … }</c>; the shared source records are never mutated) and returns this.
+    /// </summary>
+    public RecordCollection RelinkWorldspaceCells()
+    {
+        if (Worldspaces.Count == 0)
+        {
+            return this;
+        }
+
+        var indexByFormId = new Dictionary<uint, int>(Worldspaces.Count);
+        for (var i = 0; i < Worldspaces.Count; i++)
+        {
+            indexByFormId.TryAdd(Worldspaces[i].FormId, i);
+        }
+
+        var cellsByWorldspace = new Dictionary<uint, List<CellRecord>>();
+        foreach (var cell in Cells)
+        {
+            if (cell.WorldspaceFormId is > 0 && indexByFormId.ContainsKey(cell.WorldspaceFormId.Value))
+            {
+                if (!cellsByWorldspace.TryGetValue(cell.WorldspaceFormId.Value, out var list))
+                {
+                    list = [];
+                    cellsByWorldspace[cell.WorldspaceFormId.Value] = list;
+                }
+
+                list.Add(cell);
+            }
+        }
+
+        for (var i = 0; i < Worldspaces.Count; i++)
+        {
+            var ws = Worldspaces[i];
+            var cells = cellsByWorldspace.TryGetValue(ws.FormId, out var list) ? list : [];
+            Worldspaces[i] = ws with { Cells = cells };
+        }
+
+        return this;
+    }
+
+    /// <summary>
+    ///     Returns a copy whose <see cref="Worldspaces" /> contains only entries whose FormID is in
+    ///     <paramref name="keep" />. Scopes a DMP view to the worldspaces actually captured in the dump:
+    ///     Load-Order ESM worldspaces are still merged in (their cells/terrain back the captured
+    ///     worldspaces) but must not appear in the worldspace picker. All other collections (cells,
+    ///     markers, terrain) are shared by reference, so navigation and interiors are unaffected.
+    /// </summary>
+    public RecordCollection WithWorldspacesFilteredTo(IReadOnlySet<uint> keep)
+    {
+        if (Worldspaces.Count == 0 || Worldspaces.All(w => keep.Contains(w.FormId)))
+        {
+            return this;
+        }
+
+        return this with { Worldspaces = Worldspaces.Where(w => keep.Contains(w.FormId)).ToList() };
     }
 
     /// <summary>Creates a FormIdResolver from this collection's dictionaries.</summary>

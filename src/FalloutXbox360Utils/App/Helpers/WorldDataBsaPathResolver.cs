@@ -62,9 +62,9 @@ internal static class WorldDataBsaPathResolver
             if (discovery.TexturesBsaPaths.Length == 0)
             {
                 Log.Info(
-                    "BsaResolver {0} '{1}': BsaDiscovery returned 0 texture BSAs (meshesBsa={2}). " +
-                    "Note BsaDiscovery early-returns Empty when no *Meshes*.bsa is present.",
-                    label, dir, discovery.MeshesBsaPath ?? "(none)");
+                    "BsaResolver {0} '{1}': BsaDiscovery returned 0 texture BSAs ({2} mesh BSA(s)). " +
+                    "Archives are classified by BsaFileFlags content bits, not filename.",
+                    label, dir, discovery.MeshesBsaPaths.Length);
                 return;
             }
             var added = 0;
