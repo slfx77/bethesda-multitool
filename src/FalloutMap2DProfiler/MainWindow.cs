@@ -33,8 +33,9 @@ internal sealed class MainWindow : Window, IDisposable
         // FALLOUT_PROFILER_WITH_3D=1 replicates SingleFileTab's 2D+3D coupling: both controls share
         // one WorldViewData and their terrain paths run concurrently. That coupling is the regime
         // that triggers the WastelandNV-scale heap corruption the 3D-only profiler can't reproduce.
-        // Gated so the existing 2D-only scenarios are unaffected by default.
-        if (EnvironmentVariables.IsEnabled(EnvironmentVariables.Profiler.With3D))
+        // --rendered-models implies the same coupling AND turns on the top-down overlay so the run is
+        // a true full-path perf test. Gated so the existing 2D-only scenarios are unaffected by default.
+        if (EnvironmentVariables.IsEnabled(EnvironmentVariables.Profiler.With3D) || _options.RenderedModels)
         {
             _worldView3D = new WorldView3DControl();
         }
@@ -172,6 +173,15 @@ internal sealed class MainWindow : Window, IDisposable
                     _worldView3D.LoadData(data);
                     _worldMap.TopDownProvider = _worldView3D;
                     Log.Info("Profiler: 3D control loaded + wired — 2D+3D coupling active.");
+
+                    if (_options.RenderedModels)
+                    {
+                        // The overlay lives on the TerrainTextures layer (where the mip/perf + water work
+                        // is); a scenario may re-select it, which is idempotent. Then enable the overlay
+                        // once the 3D provider's D3D12 backend + terrain/reference pipelines are up.
+                        _worldMap.Profiler_Layer = WorldMapLayer.TerrainTextures;
+                        EnableRenderedModelsWhenReady();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -189,6 +199,13 @@ internal sealed class MainWindow : Window, IDisposable
                 _options.ProfileOutputPath);
             SetStatus(summary);
             Log.Info(summary);
+
+            // Log the worldspace list so a profiling run can pick the right --worldspace index.
+            var labels = _worldMap.Profiler_WorldspaceLabels;
+            for (var i = 0; i < labels.Count; i++)
+            {
+                Log.Info("Profiler: worldspace[{0}] = {1}", i, labels[i]);
+            }
 
             if (_options.WorldspaceIndex is int wsIdx)
             {
@@ -231,6 +248,42 @@ internal sealed class MainWindow : Window, IDisposable
 
         Log.Info("Profiler: starting scenario '{0}'.", _options.ScenarioName);
         _ = scenario.RunAsync(_worldMap, DispatcherQueue);
+    }
+
+    /// <summary>
+    ///     Polls the 3D provider until its D3D12 backend + terrain/reference pipelines report ready
+    ///     (<see cref="ITopDownSceneRenderer.CanRenderTopDown" />), then enables the rendered-models
+    ///     overlay. The overlay gate in WorldMapControl ignores an enable issued before the provider is
+    ///     ready, so the poll is the robust way to turn it on autonomously. Bounded (~30s) so a provider
+    ///     that never comes up (no Meshes BSA / D3D12 down) doesn't poll forever.
+    /// </summary>
+    private void EnableRenderedModelsWhenReady()
+    {
+        if (_worldView3D is not ITopDownSceneRenderer provider)
+        {
+            return;
+        }
+
+        var timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(250);
+        timer.IsRepeating = true;
+        var attempts = 0;
+        timer.Tick += (_, _) =>
+        {
+            attempts++;
+            if (provider.CanRenderTopDown)
+            {
+                _worldMap.Profiler_ShowRenderedObjects = true;
+                timer.Stop();
+                Log.Info("Profiler: rendered-models overlay enabled (provider ready after {0} poll(s)).", attempts);
+            }
+            else if (attempts >= 120)
+            {
+                timer.Stop();
+                Log.Warn("Profiler: 3D provider never became ready after {0} polls; rendered-models overlay NOT enabled.", attempts);
+            }
+        };
+        timer.Start();
     }
 
     private void StartTimedExitIfRequested()

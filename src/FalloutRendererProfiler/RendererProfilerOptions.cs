@@ -50,6 +50,15 @@ internal sealed record RendererProfilerOptions
     /// </summary>
     internal int? CaptureWorldspaceIndex { get; init; }
 
+    /// <summary>
+    ///     When set with --capture-topdown, overrides the capture window center with these world
+    ///     coordinates (the selected worldspace's FormId is still used for the overlay sync). Lets a
+    ///     headless capture be aimed at a specific landmark (e.g. Camp McCarran) rather than the
+    ///     camera pose or worldspace centroid.
+    /// </summary>
+    internal float? CaptureCenterX { get; init; }
+    internal float? CaptureCenterY { get; init; }
+
     internal static string Usage =>
         """
         FalloutRendererProfiler
@@ -79,6 +88,8 @@ internal sealed record RendererProfilerOptions
           --capture-topdown <path>    Render one top-down "Rendered models" overlay to a PNG, log coverage, then exit.
           --capture-cells <n>         Top-down capture window size in cells (default 6).
           --capture-worldspace <i>    Target exterior worldspace index i (centered on its centroid) — tests the top-down worldspace sync.
+          --capture-center-x <x>      Override the capture window center X (world units). Aims the capture at a landmark.
+          --capture-center-y <y>      Override the capture window center Y (world units).
 
         Examples:
           FalloutRendererProfiler --input "C:\Games\Fallout New Vegas\Data\FalloutNV.esm" --duration-seconds 60
@@ -111,6 +122,8 @@ internal sealed record RendererProfilerOptions
         string? captureTopDown = null;
         var captureSpanCells = 6;
         int? captureWorldspaceIndex = null;
+        float? captureCenterX = null;
+        float? captureCenterY = null;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -250,6 +263,42 @@ internal sealed record RendererProfilerOptions
                     captureWorldspaceIndex = wsIdx;
                     break;
 
+                // Read the value directly (not via RequireValue) so negative coordinates,
+                // which start with '-', are accepted rather than treated as a missing value.
+                case "--capture-center-x":
+                    if (i + 1 >= args.Length)
+                    {
+                        error = $"{arg} requires a value.";
+                        return Fail(out options, error);
+                    }
+
+                    if (!float.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var ccx) ||
+                        !float.IsFinite(ccx))
+                    {
+                        error = $"{arg} must be a finite number.";
+                        return Fail(out options, error);
+                    }
+
+                    captureCenterX = ccx;
+                    break;
+
+                case "--capture-center-y":
+                    if (i + 1 >= args.Length)
+                    {
+                        error = $"{arg} requires a value.";
+                        return Fail(out options, error);
+                    }
+
+                    if (!float.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var ccy) ||
+                        !float.IsFinite(ccy))
+                    {
+                        error = $"{arg} must be a finite number.";
+                        return Fail(out options, error);
+                    }
+
+                    captureCenterY = ccy;
+                    break;
+
                 case "--width":
                     if (!TryReadPositiveInt(args, ref i, arg, out width, out error))
                     {
@@ -328,7 +377,9 @@ internal sealed record RendererProfilerOptions
             WindowHeight = Math.Max(height, 480),
             CaptureTopDownPath = string.IsNullOrWhiteSpace(captureTopDown) ? null : Path.GetFullPath(captureTopDown),
             CaptureSpanCells = captureSpanCells,
-            CaptureWorldspaceIndex = captureWorldspaceIndex
+            CaptureWorldspaceIndex = captureWorldspaceIndex,
+            CaptureCenterX = captureCenterX,
+            CaptureCenterY = captureCenterY
         };
         error = null;
         return true;

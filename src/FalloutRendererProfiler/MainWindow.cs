@@ -238,6 +238,18 @@ internal sealed class MainWindow : Window, IDisposable
                 targetFormId = _worldView.Profiler_SelectedWorldspaceFormId;
             }
 
+            // Explicit center override (e.g. aim the capture at a landmark like Camp McCarran).
+            // Keeps the selected/worldspace FormId for the overlay sync; only the window moves.
+            if (_options.CaptureCenterX is float overrideX)
+            {
+                cx = overrideX;
+            }
+
+            if (_options.CaptureCenterY is float overrideY)
+            {
+                cy = overrideY;
+            }
+
             var half = Math.Max(1, _options.CaptureSpanCells) * 0.5f * WorldGridConstants.CellSize;
             float minX = cx - half, maxX = cx + half, minY = cy - half, maxY = cy + half;
             const int px = 512;
@@ -247,6 +259,7 @@ internal sealed class MainWindow : Window, IDisposable
             {
                 render = await provider.RenderTopDownAsync(
                     minX, maxX, minY, maxY, px, px, showDisabled: true,
+                    showWater: true,
                     worldspaceFormId: targetFormId, CancellationToken.None);
                 if (render is null)
                 {

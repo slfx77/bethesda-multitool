@@ -64,6 +64,12 @@ internal sealed class PanStressScenario : Map2DScenario
             }
         }
 
+        // Settle, then report viewport coverage: with cap hysteresis holding the pan-back
+        // history, cached should ≈ visible (the numeric form of "no permanently blank cells").
+        await Task.Delay(2000);
+        var (visible, cached) = await UiAsync(queue, control.Profiler_VisibleCellCoverage);
+        log.Info("Scenario(pan-stress): final coverage visible={0} cached={1}", visible, cached);
+
         log.Info("Scenario(pan-stress): complete.");
         await Task.Delay(1000);
     }

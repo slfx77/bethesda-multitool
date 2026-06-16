@@ -17,6 +17,15 @@ internal sealed record Map2DProfilerOptions
     internal int? WorldspaceIndex { get; init; }
     internal string? ScenarioName { get; init; }
     internal bool Verbose { get; init; }
+
+    /// <summary>
+    ///     Brings up the 3D <c>WorldView3DControl</c> as the map's top-down provider AND enables the
+    ///     "Rendered models" overlay once it is ready — so the profiler exercises the FULL draw path
+    ///     (terrain tiles + the per-frame top-down model+water overlay), not the 2D-only one. Implies
+    ///     the 2D+3D coupling regime (same as <c>FALLOUT_PROFILER_WITH_3D=1</c>) and selects the
+    ///     TerrainTextures layer where the overlay + mip/perf work live.
+    /// </summary>
+    internal bool RenderedModels { get; init; }
     internal int WindowWidth { get; init; } = 1450;
     internal int WindowHeight { get; init; } = 900;
 
@@ -35,6 +44,9 @@ internal sealed record Map2DProfilerOptions
           --worldspace <index>        Select worldspace by index after data loads.
           --scenario <name>           Run a scripted scenario after worldspace selection.
                                       Names: zoom-pan-zigzag (default if --duration is set)
+          --rendered-models           Bring up the 3D viewer + enable the "Rendered models" overlay
+                                      so the run is a TRUE full-path perf test (terrain tiles + the
+                                      per-frame top-down model/water overlay). Selects TerrainTextures.
           --duration-seconds <n>      Exit automatically after the scenario completes (or after N seconds).
           --verbose                   Enables debug logging.
           --width <px>                Window width. Default: 1450.
@@ -63,6 +75,7 @@ internal sealed record Map2DProfilerOptions
         int? worldspaceIndex = null;
         string? scenarioName = null;
         var verbose = false;
+        var renderedModels = false;
         var width = 1450;
         var height = 900;
 
@@ -128,6 +141,10 @@ internal sealed record Map2DProfilerOptions
                     verbose = true;
                     break;
 
+                case "--rendered-models":
+                    renderedModels = true;
+                    break;
+
                 case "--width":
                     if (!TryReadPositiveInt(args, ref i, arg, out width, out error))
                     {
@@ -189,6 +206,7 @@ internal sealed record Map2DProfilerOptions
             WorldspaceIndex = worldspaceIndex,
             ScenarioName = scenarioName,
             Verbose = verbose,
+            RenderedModels = renderedModels,
             WindowWidth = Math.Max(width, 640),
             WindowHeight = Math.Max(height, 480)
         };

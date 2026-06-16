@@ -69,8 +69,24 @@ internal static class EnvironmentVariables
         public const string ReferenceUploadBytesPerFrame = "FALLOUT_VIEWER_REFERENCE_UPLOAD_BYTES_PER_FRAME";
         public const string ReferenceUploadsPerFrame = "FALLOUT_VIEWER_REFERENCE_UPLOADS_PER_FRAME";
         public const string ReferenceUploadMillisecondsPerFrame = "FALLOUT_VIEWER_REFERENCE_UPLOAD_MS_PER_FRAME";
+
+        /// <summary>Resident-mesh LRU entry cap for the 3D viewer's reference cache (default 2048). Diagnostic lever: tiny values force constant eviction-cascade churn for stress gates.</summary>
+        public const string ReferenceMeshCapacity = "FALLOUT_VIEWER_REFERENCE_MESH_CAPACITY";
+
+        /// <summary>Decoded CPU mesh cache byte budget in MEGABYTES (default 256). Diagnostic lever, same purpose as <see cref="ReferenceMeshCapacity" />.</summary>
+        public const string ReferenceDecodedCacheMegabytes = "FALLOUT_VIEWER_REFERENCE_DECODED_CACHE_MB";
+
         public const string DisableReferenceFrustum = "FALLOUT_VIEWER_DISABLE_REFERENCE_FRUSTUM";
         public const string ReferenceDistanceLod = "FALLOUT_VIEWER_REFERENCE_DISTANCE_LOD";
+
+        /// <summary>Per-frame upload-heap ring-buffer size in MEGABYTES (default 64). Shared by every D3D12 renderer's per-draw CBs; raise if a very dense top-down render reports "frame slot exhausted".</summary>
+        public const string RingBufferMegabytes = "FALLOUT_VIEWER_RING_BUFFER_MB";
+
+        /// <summary>When 1, renders engine marker objects (XMarker/heading, map/travel markers, etc.) that are hidden by default to match the game.</summary>
+        public const string ShowMarkers = "FALLOUT_VIEWER_SHOW_MARKERS";
+
+        /// <summary>When 1, renders imposter (distant LOD stand-in) objects that are suppressed by default where a co-located full model exists.</summary>
+        public const string ShowImposters = "FALLOUT_VIEWER_SHOW_IMPOSTERS";
 
         public const string TextureResolveConcurrency = "FALLOUT_VIEWER_TEXTURE_RESOLVE_CONCURRENCY";
         public const string RetainTexturePayloads = "FALLOUT_VIEWER_RETAIN_TEXTURE_PAYLOADS";
@@ -87,6 +103,14 @@ internal static class EnvironmentVariables
         public const string Trace = "FALLOUT_MAP2D_TRACE";
         public const string TopDownDump = "FALLOUT_MAP2D_TOPDOWN_DUMP";
         public const string TerrainTextureAggregateConcurrency = "FALLOUT_MAP2D_TERRAIN_TEXTURE_AGGREGATE_CONCURRENCY";
+
+        /// <summary>
+        ///     Profiling A/B knob: when set, <c>WorldMapOverviewRenderer.DrawTextureCellBitmaps</c>
+        ///     reverts to the pre-mip behaviour (draw the highest-res cached tier per cell, always
+        ///     HighQualityCubic). Lets the profiler measure the mip-selection + bilinear perf change
+        ///     without a code revert. Unset = the current mip-aware path.
+        /// </summary>
+        public const string LegacyTerrainDraw = "FALLOUT_MAP2D_LEGACY_TERRAIN_DRAW";
     }
 
     public static class Profiler
@@ -102,7 +126,7 @@ internal static class EnvironmentVariables
 
     public static class Memory
     {
-        /// <summary>CPU-cache byte budget in MB (default 3072) enforced by the MemoryBudgetCoordinator.</summary>
+        /// <summary>Opt-in CPU-cache byte budget in MB for the MemoryBudgetCoordinator. UNSET = no cap (default): caches are tracked but never trimmed. Set a positive value to enable trimming when CpuCache bytes exceed it.</summary>
         public const string BudgetMegabytes = "FALLOUT_MEMORY_BUDGET_MB";
 
         /// <summary>Coordinator check interval in seconds (default 5).</summary>
