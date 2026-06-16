@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Dds;
+using FalloutXbox360Utils.Core.Orchestration;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 
@@ -169,7 +170,7 @@ internal static class NifSpriteRenderer
         // Within a render layer, opaque/cutout triangles run before blended triangles so
         // thin shells write depth before later transparent overlays are composited.
         var bandCount = Math.Max(1, Environment.ProcessorCount);
-        Parallel.For(0, bandCount, bandIdx =>
+        ParallelWork.For("sprite-rows", 0, bandCount, ConcurrencyPolicy.FullCores, bandIdx =>
         {
             var bMinY = bandIdx * ssHeight / bandCount;
             var bMaxY = (bandIdx + 1) * ssHeight / bandCount - 1;

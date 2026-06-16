@@ -6,6 +6,7 @@ using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using FalloutXbox360Utils.Core.Orchestration;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI;
@@ -69,7 +70,9 @@ internal static class RenderNifProcessor
 
         // GPU renderer (single-threaded when active)
         var (gpuDevice, gpuRenderer) = TryCreateGpuRenderer(s);
-        var parallelism = gpuRenderer != null ? 1 : s.Parallelism;
+        var policy = gpuRenderer != null
+            ? ConcurrencyPolicy.Serial
+            : ConcurrencyPolicy.FullCores.WithExplicitOverride(s.Parallelism);
 
         try
         {
@@ -94,8 +97,7 @@ internal static class RenderNifProcessor
                         : "Rendering sprites";
                     var task = ctx.AddTask(taskLabel, maxValue: nifFiles.Count);
 
-                    await Parallel.ForEachAsync(nifFiles,
-                        new ParallelOptions { MaxDegreeOfParallelism = parallelism, CancellationToken = ct },
+                    await ParallelWork.ForEachAsync("render-nif", nifFiles, policy,
                         async (file, _) =>
                         {
                             try
@@ -135,7 +137,7 @@ internal static class RenderNifProcessor
 
                             task.Increment(1);
                             await Task.CompletedTask;
-                        });
+                        }, cancellationToken: ct);
                 });
 
             RenderNifHelpers.WriteIndexAndSummary(s.OutputDir, index, stats, textureResolver, ct);
@@ -193,7 +195,9 @@ internal static class RenderNifProcessor
         try
         {
             var (gpuDevice, gpuRenderer) = TryCreateGpuRenderer(s);
-            var parallelism = gpuRenderer != null ? 1 : s.Parallelism;
+            var policy = gpuRenderer != null
+                ? ConcurrencyPolicy.Serial
+                : ConcurrencyPolicy.FullCores.WithExplicitOverride(s.Parallelism);
 
             var index = new ConcurrentDictionary<string, SpriteIndexEntry>();
             var stats = new ProcessingStats();
@@ -213,8 +217,7 @@ internal static class RenderNifProcessor
                         : "Rendering sprites";
                     var task = ctx.AddTask(taskLabel, maxValue: nifPaths.Length);
 
-                    await Parallel.ForEachAsync(nifPaths,
-                        new ParallelOptions { MaxDegreeOfParallelism = parallelism, CancellationToken = ct },
+                    await ParallelWork.ForEachAsync("render-nif", nifPaths, policy,
                         async (nifPath, _) =>
                         {
                             try
@@ -247,7 +250,7 @@ internal static class RenderNifProcessor
 
                             task.Increment(1);
                             await Task.CompletedTask;
-                        });
+                        }, cancellationToken: ct);
                 });
 
             RenderNifHelpers.WriteIndexAndSummary(s.OutputDir, index, stats, textureResolver, ct);

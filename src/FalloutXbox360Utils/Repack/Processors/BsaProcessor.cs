@@ -5,6 +5,7 @@ using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Xma;
+using FalloutXbox360Utils.Core.Orchestration;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Repack.Processors;
@@ -446,13 +447,7 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
             var convertedFiles = new ConcurrentDictionary<int, (string Path, byte[] Data)>();
 
             // Use more threads for NIF since it's CPU-bound in-process conversion
-            var nifParallelOptions = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Math.Max(Environment.ProcessorCount - 1, 1),
-                CancellationToken = cancellationToken
-            };
-
-            await Parallel.ForEachAsync(nifFiles, nifParallelOptions, async (nifFile, ct) =>
+            await ParallelWork.ForEachAsync("bsa-repack", nifFiles, ConcurrencyPolicy.CoresMinusOne, async (nifFile, _) =>
             {
                 var (index, relativePath, nifData) = nifFile;
                 var fileName = Path.GetFileName(relativePath);
@@ -502,7 +497,7 @@ Get-ChildItem -Path $inputDir -Filter '*.xma' | ForEach-Object -Parallel {{
                 }
 
                 await Task.CompletedTask; // Satisfy async signature
-            });
+            }, cancellationToken: cancellationToken);
 
             // Apply converted files
             foreach (var kvp in convertedFiles)

@@ -9,6 +9,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Output;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Pipeline;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.Writers;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Orchestration;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Dmp;
@@ -163,7 +164,7 @@ internal static class DmpCandidateOverlayCommand
         var resolvedLock = new object();
         var done = 0;
 
-        Parallel.ForEach(dumps, new ParallelOptions { MaxDegreeOfParallelism = maxParallel }, file =>
+        ParallelWork.ForEach("dmp-overlay", dumps, ConcurrencyPolicy.Fixed(maxParallel), file =>
         {
             try
             {

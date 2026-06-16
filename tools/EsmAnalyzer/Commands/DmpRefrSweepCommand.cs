@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Orchestration;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
@@ -121,7 +122,8 @@ internal static class DmpRefrSweepCommand
         var results = new ConcurrentBag<DumpResult>();
         var done = 0;
 
-        Parallel.ForEach(dmpFiles, new ParallelOptions { MaxDegreeOfParallelism = maxParallel }, file =>
+        ParallelWork.ForEach("refr-sweep", dmpFiles,
+            ConcurrencyPolicy.HalfCoresClamped(2, int.MaxValue).WithExplicitOverride(maxParallel), file =>
         {
             try
             {

@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats;
+using FalloutXbox360Utils.Core.Orchestration;
 
 namespace FalloutXbox360Utils.Core.Minidump;
 
@@ -65,8 +66,7 @@ internal sealed class MinidumpFileScanner
         var maxPatternLength = _signatureMatcher.MaxPatternLength;
 
         // Process region groups in parallel
-        Parallel.ForEach(regionGroups,
-            new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+        ParallelWork.ForEach("minidump-scan", regionGroups, ConcurrencyPolicy.FullCores,
             group =>
             {
                 var groupMatches = ScanRegionGroup(accessor, group, maxPatternLength);

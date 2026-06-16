@@ -1,4 +1,5 @@
 using DDXConv;
+using FalloutXbox360Utils.Core.Orchestration;
 
 namespace FalloutXbox360Utils.Core.Formats.Ddx;
 
@@ -103,7 +104,7 @@ public class DdxConverter(bool verbose = false, bool saveAtlas = false)
             var failed = 0;
             var unsupported = 0;
 
-            Parallel.ForEach(ddxFiles, new ParallelOptions { CancellationToken = cancellationToken }, ddxFile =>
+            ParallelWork.ForEach("ddx-convert", ddxFiles, ConcurrencyPolicy.FullCores, ddxFile =>
             {
                 var relativePath = Path.GetRelativePath(inputDir, ddxFile);
                 var outputPath = Path.Combine(outputDir, Path.ChangeExtension(relativePath, ".dds"));
@@ -126,7 +127,7 @@ public class DdxConverter(bool verbose = false, bool saveAtlas = false)
                     Interlocked.Increment(ref failed);
                     progressCallback?.Invoke(ddxFile, "FAIL", ex.Message);
                 }
-            });
+            }, cancellationToken: cancellationToken);
 
             result.Converted = converted;
             result.Failed = failed;
@@ -135,7 +136,7 @@ public class DdxConverter(bool verbose = false, bool saveAtlas = false)
             if (pcFriendly)
             {
                 var normalMaps = Directory.GetFiles(outputDir, "*_n.dds", SearchOption.AllDirectories);
-                Parallel.ForEach(normalMaps, normalMap =>
+                ParallelWork.ForEach("ddx-pc-merge", normalMaps, ConcurrencyPolicy.FullCores, normalMap =>
                 {
                     var specMap = normalMap.Replace("_n.dds", "_s.dds", StringComparison.Ordinal);
                     try

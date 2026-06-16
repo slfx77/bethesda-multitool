@@ -6,6 +6,7 @@ using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Ddx;
 using FalloutXbox360Utils.Core.Formats.Esm.Plugin.AssetPacking;
 using FalloutXbox360Utils.Core.Formats.Xma;
+using FalloutXbox360Utils.Core.Orchestration;
 using Spectre.Console;
 
 namespace FalloutXbox360Utils.CLI.Commands.Bsa;
@@ -403,7 +404,7 @@ internal static class BsaConvertCommand
             {
                 var task = ctx.AddTask("[green]XMA -> WAV[/]", maxValue: xmaFiles.Length);
 
-                await Parallel.ForEachAsync(xmaFiles, cancellationToken, async (xmaFile, ct) =>
+                await ParallelWork.ForEachAsync("bsa-convert", xmaFiles, ConcurrencyPolicy.FullCores, async (xmaFile, ct) =>
                 {
                     var xmaData = await File.ReadAllBytesAsync(xmaFile, ct);
                     var result = await XmaWavConverter.ConvertAsync(xmaData);
@@ -421,7 +422,7 @@ internal static class BsaConvertCommand
                     }
 
                     task.Increment(1);
-                });
+                }, cancellationToken: cancellationToken);
             });
 
         AnsiConsole.MarkupLine("  Converted: {0:N0}, Failed: {1:N0}", xmaConverted, xmaFailed);

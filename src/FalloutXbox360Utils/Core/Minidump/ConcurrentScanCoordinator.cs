@@ -3,6 +3,7 @@ using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
+using FalloutXbox360Utils.Core.Orchestration;
 
 namespace FalloutXbox360Utils.Core.Minidump;
 
@@ -75,7 +76,7 @@ internal static class ConcurrentScanCoordinator
     {
         var log = Logger.Instance;
 
-        // Result containers (assigned from within Task.Run lambdas)
+        // Result containers (assigned from within RunNamedAsync lambdas)
         List<(string SignatureId, long Offset)>? matches = null;
         EsmRecordScanResult? esmRecords = null;
         List<DetectedAssetString>? assetStrings = null;
@@ -106,7 +107,7 @@ internal static class ConcurrentScanCoordinator
         var tasks = new List<Task>(6);
 
         // 1. Signature scanning (Aho-Corasick, visits every byte, parallel by region)
-        tasks.Add(Task.Run(() =>
+        tasks.Add(ParallelWork.RunNamedAsync("scan-signatures", () =>
         {
             var scanSw = Stopwatch.StartNew();
             matches = fileScanner.FindAllMatchesParallel(accessor, result.FileSize, minidumpInfo, scanProgress);
@@ -115,7 +116,7 @@ internal static class ConcurrentScanCoordinator
         }, ct));
 
         // 2. ESM record scanning (16MB chunks, skip-ahead optimization)
-        tasks.Add(Task.Run(() =>
+        tasks.Add(ParallelWork.RunNamedAsync("scan-esm-records", () =>
         {
             var scanSw = Stopwatch.StartNew();
             esmRecords = EsmRecordScanner.ScanForRecordsMemoryMapped(
@@ -125,7 +126,7 @@ internal static class ConcurrentScanCoordinator
         }, ct));
 
         // 3. Asset string detection (4MB chunks, null-terminated string search)
-        tasks.Add(Task.Run(() =>
+        tasks.Add(ParallelWork.RunNamedAsync("scan-asset-strings", () =>
         {
             var scanSw = Stopwatch.StartNew();
             assetStrings = EsmStringDetector.ScanForAssetStrings(accessor, result.FileSize, verbose);
@@ -140,7 +141,7 @@ internal static class ConcurrentScanCoordinator
             var geoScanner = new RuntimeGeometryScanner(context);
             var texScanner = new RuntimeTextureScanner(context);
 
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ParallelWork.RunNamedAsync("scan-geometry", () =>
             {
                 var scanSw = Stopwatch.StartNew();
                 meshes = geoScanner.ScanForMeshes();
@@ -148,7 +149,7 @@ internal static class ConcurrentScanCoordinator
                     meshes.Count, scanSw.ElapsedMilliseconds);
             }, ct));
 
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ParallelWork.RunNamedAsync("scan-textures", () =>
             {
                 var scanSw = Stopwatch.StartNew();
                 textures = texScanner.ScanForTextures();
@@ -158,7 +159,7 @@ internal static class ConcurrentScanCoordinator
 
             // 6. GPU-prepared texture scanning (NiXenonSourceTextureData structs)
             var gpuTexScanner = new RuntimeGpuTextureScanner(context);
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ParallelWork.RunNamedAsync("scan-gpu-textures", () =>
             {
                 var scanSw = Stopwatch.StartNew();
                 gpuTextures = gpuTexScanner.ScanForGpuTextures();

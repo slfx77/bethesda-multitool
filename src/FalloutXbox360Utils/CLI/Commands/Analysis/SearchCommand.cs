@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
+using FalloutXbox360Utils.Core.Orchestration;
 using FalloutXbox360Utils.Core.Utils;
 using Spectre.Console;
 
@@ -251,7 +252,7 @@ public static class SearchCommand
     {
         var results = new (string fileName, long fileSize, int matchCount)[files.Count];
 
-        Parallel.For(0, files.Count, i =>
+        ParallelWork.For("search-files", 0, files.Count, ConcurrencyPolicy.FullCores, i =>
         {
             var file = files[i];
             try

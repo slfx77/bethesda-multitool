@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Esm.Reporting;
+using FalloutXbox360Utils.Core.Orchestration;
 using FalloutXbox360Utils.Core.Semantic;
 using FalloutXbox360Utils.Core.Utils;
 
@@ -168,12 +169,8 @@ public sealed class AssetPackingService
                 var packedFiles = new ConcurrentBag<(string Path, byte[] Data)>();
                 var stats = new RunningStats();
 
-                var parallelOptions = new ParallelOptions
-                {
-                    MaxDegreeOfParallelism = Environment.ProcessorCount,
-                    CancellationToken = cancellationToken
-                };
-                await Parallel.ForEachAsync(requested, parallelOptions,
+                await ParallelWork.ForEachAsync(
+                    "asset-pack-resolve", requested, ConcurrencyPolicy.FullCores,
                     async (requestedPath, ct) =>
                     {
                         var resolution = resolver.Resolve(requestedPath);
@@ -215,7 +212,7 @@ public sealed class AssetPackingService
 
                                 break;
                         }
-                    }).ConfigureAwait(false);
+                    }, cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 sink.Info("AssetPacking",
                     $"Summary: already-in-baseline={stats.AlreadyInBaseline}, " +
@@ -367,13 +364,10 @@ public sealed class AssetPackingService
         var discovered = new ConcurrentBag<string>();
         var scanned = 0;
         var scanFailures = 0;
-        var parallelOptions = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = Environment.ProcessorCount,
-            CancellationToken = cancellationToken
-        };
 
-        await Parallel.ForEachAsync(nifPaths, parallelOptions, (nifPath, ct) =>
+        await ParallelWork.ForEachAsync(
+            "asset-pack-nif-scan", nifPaths, ConcurrencyPolicy.FullCores,
+            (nifPath, ct) =>
         {
             ct.ThrowIfCancellationRequested();
 
@@ -404,7 +398,7 @@ public sealed class AssetPackingService
 
             Interlocked.Increment(ref scanned);
             return ValueTask.CompletedTask;
-        }).ConfigureAwait(false);
+        }, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var added = 0;
         foreach (var path in discovered)
