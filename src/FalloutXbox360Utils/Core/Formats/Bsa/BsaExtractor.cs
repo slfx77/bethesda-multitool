@@ -409,6 +409,14 @@ public sealed class BsaExtractor : IDisposable
             {
                 accessor.ReadArray(4, compressedData, 0, compressedSize);
 
+                // Skyrim Special Edition (BSA v105) compresses with LZ4 block format; v103/v104
+                // (Oblivion / FO3 / FNV / Skyrim LE) use zlib (occasionally raw deflate).
+                if (Archive.Header.Version >= 105)
+                {
+                    return Lz4BlockDecoder.DecodeFrame(
+                        compressedData.AsSpan(0, compressedSize), (int)uncompressedSize);
+                }
+
                 // Decompress using zlib (deflate with 2-byte header)
                 var result = new byte[uncompressedSize];
                 using var compressedStream = new MemoryStream(compressedData, 0, compressedSize);
