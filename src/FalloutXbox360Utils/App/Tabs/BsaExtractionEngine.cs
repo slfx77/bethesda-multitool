@@ -6,6 +6,7 @@ using System.Threading.Channels;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Ddx;
+using FalloutXbox360Utils.Core.Orchestration;
 
 namespace FalloutXbox360Utils;
 
@@ -233,16 +234,9 @@ internal sealed class BsaExtractionEngine
         }
 
         // Extract files - can run multiple extractions in parallel
-        var extractionTasks = new List<Task>();
-        var semaphore = new SemaphoreSlim(4); // Limit concurrent extractions
-
-        foreach (var entry in selectedEntries)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            await semaphore.WaitAsync(cancellationToken);
-
-            var task = Task.Run(async () =>
+        await ParallelWork.ForEachAsync(
+            "bsa-extract", selectedEntries, ConcurrencyPolicy.Fixed(4),
+            async (entry, _) =>
             {
                 var extractionSucceeded = false;
                 var statusMessage = "Extracted";
@@ -271,15 +265,8 @@ internal sealed class BsaExtractionEngine
 
                 callbacks.OnProgress(current, total, entry.FileName);
                 callbacks.OnFileComplete(entry, extractionSucceeded, statusMessage, pendingConversion);
-
-                semaphore.Release();
-            }, cancellationToken);
-
-            extractionTasks.Add(task);
-        }
-
-        // Wait for all extractions to complete
-        await Task.WhenAll(extractionTasks);
+            },
+            cancellationToken: cancellationToken);
 
         // Signal completion to XMA/NIF conversion workers
         conversionChannel.Writer.Complete();

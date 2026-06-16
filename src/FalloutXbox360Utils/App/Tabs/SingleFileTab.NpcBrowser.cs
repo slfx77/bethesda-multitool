@@ -38,7 +38,7 @@ public sealed partial class SingleFileTab
         // Ensure the NPC browser is populated
         if (!_session.NpcBrowserPopulated)
         {
-            await PopulateNpcBrowserAsync();
+            await _tasks.RunExclusiveAsync("populate-npcs", PopulateNpcBrowserAsync);
         }
 
         // Select the NPC in the list
@@ -66,7 +66,7 @@ public sealed partial class SingleFileTab
 
     #region Initialization
 
-    private async Task PopulateNpcBrowserAsync()
+    private async Task PopulateNpcBrowserAsync(CancellationToken cancellationToken)
     {
         if (_session.NpcBrowserPopulated)
         {
@@ -105,6 +105,7 @@ public sealed partial class SingleFileTab
             var bsaPaths = await NpcBrowserWorkflowService.DiscoverBsaPathsAsync(
                 esmPath,
                 _session.NpcBsaDirectory);
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (!bsaPaths.HasMeshes)
             {
@@ -130,6 +131,7 @@ public sealed partial class SingleFileTab
                 service = await NpcBrowserWorkflowService.CreateFromEsmAsync(esmPath, bigEndian, bsaPaths);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             if (service == null)
             {
                 NpcBrowserProgressBar.Visibility = Visibility.Collapsed;
@@ -151,7 +153,7 @@ public sealed partial class SingleFileTab
 
             await InitializeWebViewAsync();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             NpcBrowserProgressBar.Visibility = Visibility.Collapsed;
             NpcBrowserStatusText.Text = $"Error: {ex.Message}";
@@ -673,7 +675,7 @@ public sealed partial class SingleFileTab
         _session.NpcBsaDirectory = bsaDir;
         NpcBsaPathPanel.Visibility = Visibility.Collapsed;
         _session.NpcBrowserPopulated = false;
-        await PopulateNpcBrowserAsync();
+        await _tasks.RunExclusiveAsync("populate-npcs", PopulateNpcBrowserAsync);
     }
 
     #endregion

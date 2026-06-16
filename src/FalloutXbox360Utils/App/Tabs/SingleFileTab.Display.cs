@@ -81,7 +81,10 @@ public sealed partial class SingleFileTab
         CoveragePlaceholder.Visibility = Visibility.Collapsed;
         CoverageContent.Visibility = Visibility.Visible;
 
-        _session.CoverageGaps = ResultsFormatter.BuildCoverageGapEntries(coverage, FormatSize);
+        _session.CoverageGaps = ResultsFormatter.BuildCoverageGapEntries(
+            coverage,
+            FormatSize,
+            _session.AnalysisResult?.RecoverableGapCandidates);
 
         _coverageGapSortColumn = CoverageGapSortColumn.Index;
         _coverageGapSortAscending = true;
@@ -175,7 +178,7 @@ public sealed partial class SingleFileTab
             CreateFormIdLink = CreateFormIdLink,
             NavigateToCellInWorldMap = async cellFormId =>
             {
-                await PopulateWorldMapAsync();
+                await _tasks.RunExclusiveAsync("populate-worldmap", PopulateWorldMapAsync);
                 NavigateToCellInWorldMap(cellFormId);
                 SubTabView.SelectedItem = WorldMapTab;
             }

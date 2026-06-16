@@ -109,6 +109,11 @@
               Content="Compress records"
               MinWidth="0"
               ToolTipService.ToolTip="zlib-compresses each record in the output ESP, typically shrinking the file by 30-60% with no loss of data. Fully compatible with Fallout: New Vegas. Turn off only if you need to inspect or diff the raw uncompressed record bytes." />
+            <CheckBox
+              x:Name="RecoverGapsCheckBox"
+              Content="Recover validated gap data (experimental)"
+              MinWidth="0"
+              ToolTipService.ToolTip="Opt-in DMP recovery pass: scans uncovered memory gaps for validated raw ESM records and runtime TESForm structs, then promotes only candidates the converter can safely parse. Off by default; browser/audit visibility is unaffected." />
           </StackPanel>
 
           <StackPanel Spacing="4">

@@ -17,7 +17,7 @@ public sealed partial class SingleFileTab
 {
     #region Report Generation
 
-    private async Task GenerateReportsAsync()
+    private async Task GenerateReportsAsync(CancellationToken cancellationToken)
     {
         ReportsProgressBar.Visibility = Visibility.Visible;
         ReportsProgressBar.IsIndeterminate = true;
@@ -34,6 +34,7 @@ public sealed partial class SingleFileTab
 
                 var saveReports = await Task.Run(() =>
                     SaveReportGenerator.GenerateAllReports(saveData, decodedForms, resolver));
+                cancellationToken.ThrowIfCancellationRequested();
 
                 _reportEntries.Clear();
                 foreach (var (filename, content) in saveReports.OrderBy(kvp => kvp.Key))
@@ -59,6 +60,7 @@ public sealed partial class SingleFileTab
 
             // ESM/DMP reports path
             await EnsureSemanticParseAsync();
+            cancellationToken.ThrowIfCancellationRequested();
             if (_session.SemanticResult == null) return;
 
             StatusTextBlock.Text = Strings.Status_GeneratingReports;
@@ -78,6 +80,7 @@ public sealed partial class SingleFileTab
                         _session.CoverageResult);
                 });
 
+                cancellationToken.ThrowIfCancellationRequested();
                 _session.StringPool = stringData?.StringPool;
                 _session.StringOwnership = stringData?.OwnershipAnalysis;
             }
@@ -92,6 +95,7 @@ public sealed partial class SingleFileTab
 
             var reports = await Task.Run(() =>
                 GeckReportGenerator.GenerateAllReports(sources));
+            cancellationToken.ThrowIfCancellationRequested();
 
             _reportEntries.Clear();
             foreach (var (filename, content) in reports.OrderBy(kvp => kvp.Key))
@@ -112,7 +116,7 @@ public sealed partial class SingleFileTab
                 ReportsContent.Visibility = Visibility.Visible;
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await ShowDialogAsync("Report Generation Failed",
                 $"{ex.GetType().Name}: {ex.Message}", true);

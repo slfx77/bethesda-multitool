@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core;
+using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
+using FalloutXbox360Utils.Core.Orchestration;
 using FalloutXbox360Utils.Core.Semantic;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
@@ -39,6 +41,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     public void Dispose()
     {
         _searchDebounceToken?.Dispose();
+        _tasks.Dispose();
         _session.Dispose();
     }
 
@@ -81,7 +84,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             !_session.DialogueViewerPopulated &&
             _session.HasEsmRecords)
         {
-            _ = PopulateDialogueViewerAsync();
+            _tasks.Post("populate-dialogue", PopulateDialogueViewerAsync);
         }
 
         // Auto-populate World Map when first selected (also available for save files)
@@ -89,7 +92,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             !_session.WorldMapPopulated &&
             (_session.HasEsmRecords || _session.IsSaveFile))
         {
-            await PopulateWorldMapAsync();
+            await _tasks.RunExclusiveAsync("populate-worldmap", PopulateWorldMapAsync);
         }
 
         // Auto-populate NPC Browser when first selected
@@ -97,7 +100,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             !_session.NpcBrowserPopulated &&
             _session.HasEsmRecords)
         {
-            _ = PopulateNpcBrowserAsync();
+            _tasks.Post("populate-npcs", PopulateNpcBrowserAsync);
         }
 
         // Auto-generate reports when first selected (ESM or save files)
@@ -105,7 +108,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             _reportEntries.Count == 0 &&
             (_session.HasEsmRecords || _session.IsSaveFile))
         {
-            _ = GenerateReportsAsync();
+            _tasks.Post("generate-reports", GenerateReportsAsync);
         }
     }
 
@@ -151,6 +154,15 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private readonly ObservableCollection<ReportEntry> _reportEntries = [];
     private readonly AnalysisSessionState _session = new();
     private readonly CarvedFilesSorter _sorter = new();
+
+    /// <summary>
+    ///     Session-scoped background populates (dialogue/world/NPC/reports). Single-flight per key;
+    ///     drained before the session is reopened or disposed so no populate outlives the state it
+    ///     reads (the torn-collection bug class).
+    /// </summary>
+    private readonly SessionTaskRunner _tasks =
+        new SessionTaskRunner(nameof(SingleFileTab)).RegisterWith(ResourceRegistry.Instance);
+
     private readonly SemaphoreSlim _worldMapLoadGate = new(1, 1);
 
     private AnalysisResult? _analysisResult;
@@ -204,8 +216,11 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         if (AnalyzeButton.IsEnabled) AnalyzeButton_Click(this, new RoutedEventArgs());
     }
 
-    private void SingleFileTab_Unloaded(object sender, RoutedEventArgs e)
+    private async void SingleFileTab_Unloaded(object sender, RoutedEventArgs e)
     {
+        // Quiesce background populates before tearing down the session state they read from.
+        await _tasks.CancelAllAndDrainAsync();
+        _tasks.Dispose();
         _session.Dispose();
     }
 
@@ -242,6 +257,11 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             // Save selected tab before disabling — SelectedItem may not be readable while disabled
             var selectedTabForAutoPopulate = SubTabView.SelectedItem;
             SetPipelinePhase(AnalysisPipelinePhase.Scanning);
+
+            // The phase gate stops NEW populates; this stops the OLD session's in-flight ones
+            // before their state is torn down and reopened below.
+            await _tasks.CancelAllAndDrainAsync();
+
             _carvedFiles.ReplaceAll([]);
             _allCarvedFiles.Clear();
             _sorter.Reset();

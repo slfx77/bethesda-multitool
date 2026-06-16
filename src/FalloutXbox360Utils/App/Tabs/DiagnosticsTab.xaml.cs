@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Text;
 using FalloutXbox360Utils.CLI.Shared;
@@ -24,9 +25,20 @@ public sealed partial class DiagnosticsTab : UserControl
     private readonly DispatcherQueueTimer _refreshTimer;
     private readonly Dictionary<string, ResourceStatRow> _rows = new(StringComparer.Ordinal);
 
+    // Persistent grouped source, bound to the ListView ONCE. Each refresh reconciles rows and
+    // groups in place (add new, remove vanished, update values) instead of replacing ItemsSource —
+    // so the scroll position survives. Transient ParallelWork rows register/unregister every tick,
+    // which previously churned the row set and triggered a full ItemsSource rebuild (scroll-to-top)
+    // on every refresh. The CollectionViewSource is held in a field so it is not collected.
+    private readonly ObservableCollection<DiagnosticsGroup> _groups = [];
+    private readonly CollectionViewSource _groupedSource;
+
     public DiagnosticsTab()
     {
         InitializeComponent();
+
+        _groupedSource = new CollectionViewSource { IsSourceGrouped = true, Source = _groups };
+        ResourceListView.ItemsSource = _groupedSource.View;
 
         _refreshTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
         _refreshTimer.Interval = RefreshInterval;
@@ -61,35 +73,87 @@ public sealed partial class DiagnosticsTab : UserControl
 
         UpdateProcessStats(registry);
 
-        // In-place updates when the resource set is unchanged; rebuild the grouped source only on
-        // registration churn (new sessions, disposed caches).
-        var setChanged = snapshot.Count != _rows.Count ||
-                         snapshot.Any(row => !_rows.ContainsKey(row.DisplayName));
-        if (setChanged)
-        {
-            _rows.Clear();
-            foreach (var record in snapshot)
-            {
-                _rows[record.DisplayName] = new ResourceStatRow(record.DisplayName, record.Category);
-            }
-
-            var grouped = _rows.Values
-                .OrderBy(static r => r.Category)
-                .ThenBy(static r => r.Name, StringComparer.Ordinal)
-                .GroupBy(static r => r.CategoryLabel)
-                .ToList();
-            ResourceListView.ItemsSource = new CollectionViewSource
-            {
-                IsSourceGrouped = true,
-                Source = grouped,
-            }.View;
-        }
-
+        // Reconcile in place: update existing rows' values, add new rows into their (sorted) group,
+        // remove vanished rows (and their group when it empties). No ItemsSource replacement, so the
+        // scroll position is preserved even as transient ParallelWork rows come and go.
+        var seen = new HashSet<string>(_rows.Count, StringComparer.Ordinal);
         foreach (var record in snapshot)
         {
+            seen.Add(record.DisplayName);
             if (_rows.TryGetValue(record.DisplayName, out var row))
             {
                 row.Update(record.Stats);
+            }
+            else
+            {
+                row = new ResourceStatRow(record.DisplayName, record.Category);
+                row.Update(record.Stats);
+                _rows[record.DisplayName] = row;
+                InsertRow(row);
+            }
+        }
+
+        if (_rows.Count != seen.Count)
+        {
+            foreach (var name in _rows.Keys.Where(k => !seen.Contains(k)).ToList())
+            {
+                RemoveRow(name);
+            }
+        }
+    }
+
+    /// <summary>Inserts a new row into its category group (creating the group in category order), kept name-sorted.</summary>
+    private void InsertRow(ResourceStatRow row)
+    {
+        var group = FindOrCreateGroup(row.Category, row.CategoryLabel);
+        var index = 0;
+        while (index < group.Count && string.CompareOrdinal(group[index].Name, row.Name) < 0)
+        {
+            index++;
+        }
+
+        group.Insert(index, row);
+    }
+
+    private DiagnosticsGroup FindOrCreateGroup(ResourceCategory category, string label)
+    {
+        var index = 0;
+        foreach (var existing in _groups)
+        {
+            if (existing.Category == category)
+            {
+                return existing;
+            }
+
+            if (existing.Category < category)
+            {
+                index++;
+            }
+        }
+
+        var group = new DiagnosticsGroup(label, category);
+        _groups.Insert(index, group);
+        return group;
+    }
+
+    private void RemoveRow(string name)
+    {
+        if (!_rows.TryGetValue(name, out var row))
+        {
+            return;
+        }
+
+        _rows.Remove(name);
+        foreach (var group in _groups)
+        {
+            if (group.Category == row.Category && group.Remove(row))
+            {
+                if (group.Count == 0)
+                {
+                    _groups.Remove(group);
+                }
+
+                return;
             }
         }
     }
@@ -127,4 +191,23 @@ public sealed partial class DiagnosticsTab : UserControl
         Clipboard.SetContent(package);
         MainWindow.Instance?.SetStatus($"Copied {snapshot.Count} resource rows to clipboard.");
     }
+}
+
+/// <summary>
+///     One category group in the Diagnostics ListView: an observable collection of rows whose
+///     <see cref="Key" /> labels the group header (bound in XAML) and whose <see cref="Category" />
+///     orders the groups. Mutated in place by <see cref="DiagnosticsTab" />'s refresh so the grouped
+///     ListView updates without losing scroll position.
+/// </summary>
+public sealed class DiagnosticsGroup : ObservableCollection<ResourceStatRow>
+{
+    internal DiagnosticsGroup(string key, ResourceCategory category)
+    {
+        Key = key;
+        Category = category;
+    }
+
+    public string Key { get; }
+
+    internal ResourceCategory Category { get; }
 }

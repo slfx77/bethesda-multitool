@@ -62,13 +62,17 @@ public sealed partial class SingleFileTab
                                <ColumnDefinition Width="110" />
                                <ColumnDefinition Width="90" />
                                <ColumnDefinition Width="140" />
+                               <ColumnDefinition Width="110" />
+                               <ColumnDefinition Width="190" />
                                <ColumnDefinition Width="*" />
                            </Grid.ColumnDefinitions>
                            <TextBlock Grid.Column="0" FontSize="11" Text="{Binding Index}" />
                            <TextBlock Grid.Column="1" FontFamily="Consolas" FontSize="11" Text="{Binding FileOffset}" />
                            <TextBlock Grid.Column="2" FontSize="11" Text="{Binding Size}" />
                            <TextBlock Grid.Column="3" FontSize="11" Text="{Binding Classification}" />
-                           <TextBlock Grid.Column="4" FontSize="11" Text="{Binding Context}" TextTrimming="CharacterEllipsis" />
+                           <TextBlock Grid.Column="4" FontSize="11" Text="{Binding Recoverable}" TextTrimming="CharacterEllipsis" />
+                           <TextBlock Grid.Column="5" FontSize="11" Text="{Binding Evidence}" TextTrimming="CharacterEllipsis" />
+                           <TextBlock Grid.Column="6" FontSize="11" Text="{Binding Context}" TextTrimming="CharacterEllipsis" />
                        </Grid>
                    </DataTemplate>
                    """;

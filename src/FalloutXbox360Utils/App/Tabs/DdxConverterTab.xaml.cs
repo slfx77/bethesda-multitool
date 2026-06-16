@@ -1,6 +1,7 @@
 using Windows.Storage.Pickers;
 using FalloutXbox360Utils.Core.Formats;
 using FalloutXbox360Utils.Core.Formats.Ddx;
+using FalloutXbox360Utils.Core.Orchestration;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using WinRT.Interop;
@@ -243,14 +244,12 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
             var entries = new DdxFileEntry[ddxFiles.Length];
             var processedCount = 0;
 
-            // Use Parallel.ForEach with synchronous I/O - much faster for small reads
-            Parallel.ForEach(
-                Enumerable.Range(0, ddxFiles.Length),
-                new ParallelOptions
-                {
-                    CancellationToken = cancellationToken,
-                    MaxDegreeOfParallelism = Environment.ProcessorCount * 2
-                },
+            // Use ParallelWork.For with synchronous I/O - much faster for small reads
+            ParallelWork.For(
+                "ddx-tab-scan",
+                0,
+                ddxFiles.Length,
+                ConcurrencyPolicy.DoubleCores,
                 index =>
                 {
                     var filePath = ddxFiles[index];
@@ -273,7 +272,8 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
                         {
                             if (current > ConversionProgressBar.Value) ConversionProgressBar.Value = current;
                         });
-                });
+                },
+                cancellationToken: cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
             return entries;

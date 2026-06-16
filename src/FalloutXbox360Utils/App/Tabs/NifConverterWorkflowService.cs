@@ -1,6 +1,7 @@
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using FalloutXbox360Utils.Core.Orchestration;
 using FalloutXbox360Utils.CLI;
 
 namespace FalloutXbox360Utils;
@@ -27,13 +28,11 @@ internal static class NifConverterWorkflowService
             var entries = new NifFileEntry[nifFiles.Count];
             var processedCount = 0;
 
-            Parallel.ForEach(
-                Enumerable.Range(0, nifFiles.Count),
-                new ParallelOptions
-                {
-                    MaxDegreeOfParallelism = Environment.ProcessorCount * 2,
-                    CancellationToken = cancellationToken
-                },
+            ParallelWork.For(
+                "nif-convert",
+                0,
+                nifFiles.Count,
+                ConcurrencyPolicy.DoubleCores,
                 index =>
                 {
                     var filePath = nifFiles[index];
@@ -55,7 +54,8 @@ internal static class NifConverterWorkflowService
                     {
                         progress.Report(new NifScanProgress(current, nifFiles.Count));
                     }
-                });
+                },
+                cancellationToken: cancellationToken);
 
             return entries;
         }, cancellationToken);

@@ -8,6 +8,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Character;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Formats.SaveGame;
 using FalloutXbox360Utils.Core.Minidump;
+using FalloutXbox360Utils.Core.Recovery;
 using FalloutXbox360Utils.Core.Semantic;
 using FalloutXbox360Utils.Localization;
 using Microsoft.UI.Xaml;
@@ -230,7 +231,8 @@ public sealed partial class SingleFileTab
                     new SemanticFileLoadOptions
                     {
                         FileType = fileType,
-                        AnalysisProgress = progress
+                        AnalysisProgress = progress,
+                        GapRecovery = DmpGapRecoveryOptions.DiscoverOnly
                     });
                 return new FileAnalysisArtifacts(result, null);
             }
@@ -361,7 +363,9 @@ public sealed partial class SingleFileTab
 
             if (_session.CoverageResult.Error == null)
             {
-                await HexViewer.AddCoverageGapRegionsAsync(_session.CoverageResult);
+                await HexViewer.AddCoverageGapRegionsAsync(
+                    _session.CoverageResult,
+                    _session.AnalysisResult?.RecoverableGapCandidates);
             }
         }
         catch (Exception coverageEx)
@@ -438,6 +442,9 @@ public sealed partial class SingleFileTab
             {
                 ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
                 var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, resolver);
+                EsmBrowserTreeBuilder.AppendRecoverableGapCategory(
+                    builtTree,
+                    _session.AnalysisResult?.RecoverableGapCandidates);
 
                 // Build reverse placement index for Count (base FormID → world placements)
                 var placementIndex = semanticResult.BuildBaseToPlacementsMap();
@@ -548,19 +555,19 @@ public sealed partial class SingleFileTab
         }
         else if (ReferenceEquals(selected, DialogueViewerTab))
         {
-            _ = PopulateDialogueViewerAsync();
+            _tasks.Post("populate-dialogue", PopulateDialogueViewerAsync);
         }
         else if (ReferenceEquals(selected, WorldMapTab))
         {
-            _ = PopulateWorldMapAsync();
+            _tasks.Post("populate-worldmap", PopulateWorldMapAsync);
         }
         else if (ReferenceEquals(selected, NpcBrowserTab))
         {
-            _ = PopulateNpcBrowserAsync();
+            _tasks.Post("populate-npcs", PopulateNpcBrowserAsync);
         }
         else if (ReferenceEquals(selected, ReportsTab))
         {
-            await GenerateReportsAsync();
+            await _tasks.RunExclusiveAsync("generate-reports", GenerateReportsAsync);
         }
     }
 
