@@ -87,6 +87,7 @@ public static class Program
         rootCommand.Subcommands.Add(EsmCommand.Create());
         rootCommand.Subcommands.Add(BsaCommand.Create());
         rootCommand.Subcommands.Add(Ba2Command.Create());
+        rootCommand.Subcommands.Add(BtdCommand.Create());
         rootCommand.Subcommands.Add(DialogueCommand.Create());
         rootCommand.Subcommands.Add(WorldCommand.Create());
         rootCommand.Subcommands.Add(RepackCommand.Create());
