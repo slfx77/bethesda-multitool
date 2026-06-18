@@ -42,6 +42,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(HexCommands.CreateHexCommand());
         rootCommand.Subcommands.Add(HavokCommands.CreateHavokCommand());
         rootCommand.Subcommands.Add(HavokCommands.CreateHavokCompareCommand());
+        rootCommand.Subcommands.Add(HavokCommands.CreateHavokDumpCommand());
         rootCommand.Subcommands.Add(ScanCommands.CreateScanCommand());
         rootCommand.Subcommands.Add(ScanCommands.CreateAnimatedCommand());
         rootCommand.Subcommands.Add(ParityCommands.CreateParityCommand());

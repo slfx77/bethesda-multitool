@@ -56,6 +56,70 @@ internal static class HavokCommands
         }
     }
 
+    /// <summary>
+    ///     Decodes a NIF's Havok (bhk*) collision via the production
+    ///     <see cref="FalloutXbox360Utils.Core.Formats.Nif.Collision.HavokCollisionExtractor" /> and dumps
+    ///     the merged triangle soup's vertex/triangle counts + AABB, plus a per-collision-object listing.
+    ///     Compare the AABB to the visual mesh's AABB on a known bridge to confirm scale (a 7× mismatch =
+    ///     wrong Havok scale) and frame (offset/rotation = wrong node transform).
+    /// </summary>
+    private static void HavokDump(string path)
+    {
+        var data = File.ReadAllBytes(path);
+        var nif = FalloutXbox360Utils.Core.Formats.Nif.NifParser.Parse(data);
+        if (nif is null)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] failed to parse NIF.");
+            return;
+        }
+
+        AnsiConsole.WriteLine($"File: {path}");
+        AnsiConsole.WriteLine(
+            $"Endian: {(nif.IsBigEndian ? "Big (Xbox 360)" : "Little (PC)")}, Blocks: {nif.Blocks.Count}");
+        AnsiConsole.WriteLine();
+
+        var collisionObjects = 0;
+        for (var i = 0; i < nif.Blocks.Count; i++)
+        {
+            var type = nif.Blocks[i].TypeName;
+            if (type is not ("bhkCollisionObject" or "bhkBlendCollisionObject" or "bhkSPCollisionObject"))
+            {
+                continue;
+            }
+
+            collisionObjects++;
+            var off = nif.Blocks[i].DataOffset;
+            var target = ReadInt32(data, off, nif.IsBigEndian);
+            var body = ReadInt32(data, off + 6, nif.IsBigEndian);
+            var bodyType = body >= 0 && body < nif.Blocks.Count ? nif.Blocks[body].TypeName : "(none)";
+            AnsiConsole.WriteLine($"  bhkCollisionObject #{i}: Target=#{target}, Body=#{body} ({bodyType})");
+        }
+
+        AnsiConsole.WriteLine($"Collision objects: {collisionObjects}");
+        AnsiConsole.WriteLine();
+
+        var soup = FalloutXbox360Utils.Core.Formats.Nif.Collision.HavokCollisionExtractor.TryExtract(
+            data, nif, nif.IsBigEndian);
+        if (soup is not { } s)
+        {
+            AnsiConsole.WriteLine("No decodable Havok collision (packed tri-strips) found → visual-mesh fallback.");
+            return;
+        }
+
+        var min = new System.Numerics.Vector3(float.PositiveInfinity);
+        var max = new System.Numerics.Vector3(float.NegativeInfinity);
+        foreach (var p in s.Positions)
+        {
+            min = System.Numerics.Vector3.Min(min, p);
+            max = System.Numerics.Vector3.Max(max, p);
+        }
+
+        AnsiConsole.WriteLine($"Decoded soup: {s.Positions.Length} verts, {s.Triangles.Length / 3} triangles");
+        AnsiConsole.WriteLine($"  AABB min:  ({min.X:F2}, {min.Y:F2}, {min.Z:F2})");
+        AnsiConsole.WriteLine($"  AABB max:  ({max.X:F2}, {max.Y:F2}, {max.Z:F2})");
+        AnsiConsole.WriteLine($"  AABB size: ({max.X - min.X:F2}, {max.Y - min.Y:F2}, {max.Z - min.Z:F2})");
+    }
+
     private static void HavokCompare(string xboxPath, string pcPath, int xboxBlock, int pcBlock)
     {
         var xboxData = File.ReadAllBytes(xboxPath);
@@ -470,6 +534,16 @@ internal static class HavokCommands
         command.Arguments.Add(fileArg);
         command.Arguments.Add(blockArg);
         command.SetAction(parseResult => Havok(parseResult.GetValue(fileArg), parseResult.GetValue(blockArg)));
+        return command;
+    }
+
+    public static Command CreateHavokDumpCommand()
+    {
+        var command = new Command("havokdump",
+            "Decode a NIF's Havok collision (production extractor) and dump its triangle-soup counts + AABB");
+        var fileArg = new Argument<string>("file") { Description = "NIF file path" };
+        command.Arguments.Add(fileArg);
+        command.SetAction(parseResult => HavokDump(parseResult.GetValue(fileArg)!));
         return command;
     }
 

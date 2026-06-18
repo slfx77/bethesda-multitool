@@ -200,6 +200,14 @@
                   Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
         <CheckBox x:Name="FilterNamedOnly" Content="Named only"
                   Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
+        <ComboBox x:Name="CellSortCombo" MinWidth="120" VerticalAlignment="Center"
+                  SelectedIndex="0"
+                  AutomationProperties.Name="Sort cells"
+                  ToolTipService.ToolTip="Sort cells within each group"
+                  SelectionChanged="CellSortCombo_SelectionChanged">
+          <ComboBoxItem Content="Sort: Grid" />
+          <ComboBoxItem Content="Sort: Object count" />
+        </ComboBox>
       </StackPanel>
       <ListView x:Name="CellListView" Grid.Row="2"
                 SelectionMode="Single"

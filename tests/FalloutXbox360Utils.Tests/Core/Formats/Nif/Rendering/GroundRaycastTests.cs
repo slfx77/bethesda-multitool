@@ -138,6 +138,38 @@ public sealed class GroundRaycastTests
         Assert.Equal(300f, worldHit.Z, 1e-2f);
     }
 
+    [Fact]
+    public void CollisionMesh_GapInVisualMesh_BridgedByGaplessHavokQuad()
+    {
+        // The bug this fixes: a plank bridge's VISUAL mesh has gaps between planks, so a walk-mode
+        // down-ray at a gap falls through. The HAVOK collision mesh is gapless and bridges it.
+        // Two "planks" with a gap across x∈[-5,5]; a down-ray at x=0 misses the visual soup …
+        var visual = new List<Vector3>();
+        var visualTris = new List<int>();
+        AppendQuadXSpan(visual, visualTris, x0: -50f, x1: -5f, z: 100f);
+        AppendQuadXSpan(visual, visualTris, x0: 5f, x1: 50f, z: 100f);
+        var visualMesh = new CollisionMesh(visual.ToArray(), visualTris.ToArray());
+        Assert.False(visualMesh.RaycastNearest(new Vector3(0, 0, 300), new Vector3(0, 0, -1), out _));
+
+        // … but the gapless Havok quad spanning the whole bridge is hit at the expected Z.
+        var havok = new List<Vector3>();
+        var havokTris = new List<int>();
+        AppendQuadXSpan(havok, havokTris, x0: -50f, x1: 50f, z: 100f);
+        var havokMesh = new CollisionMesh(havok.ToArray(), havokTris.ToArray());
+        Assert.True(havokMesh.RaycastNearest(new Vector3(0, 0, 300), new Vector3(0, 0, -1), out var t));
+        Assert.Equal(200f, t, Tol); // 300 - 100
+    }
+
+    private static void AppendQuadXSpan(List<Vector3> positions, List<int> triangles, float x0, float x1, float z)
+    {
+        var b = positions.Count;
+        positions.Add(new Vector3(x0, -50f, z));
+        positions.Add(new Vector3(x1, -50f, z));
+        positions.Add(new Vector3(x1, 50f, z));
+        positions.Add(new Vector3(x0, 50f, z));
+        triangles.AddRange([b, b + 1, b + 2, b, b + 2, b + 3]);
+    }
+
     private static CollisionMesh BuildHorizontalQuad(float z, float halfSize)
     {
         var positions = new List<Vector3>();

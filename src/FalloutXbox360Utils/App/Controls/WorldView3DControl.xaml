@@ -128,7 +128,7 @@
                           AutomationProperties.Name="Editor markers"
                           ToolTipService.ToolTip="Show editor/engine markers (XMarkers, travel/door markers)"
                           Checked="EditorMarkersCheckBox_Changed" Unchecked="EditorMarkersCheckBox_Changed" />
-                <CheckBox x:Name="ActivatorsCheckBox" IsChecked="False" Content="Activators"
+                <CheckBox x:Name="ActivatorsCheckBox" IsChecked="True" Content="Activators"
                           AutomationProperties.Name="Activators"
                           ToolTipService.ToolTip="Show activator objects (levers, terminals, buttons)"
                           Checked="ActivatorsCheckBox_Changed" Unchecked="ActivatorsCheckBox_Changed" />
@@ -136,6 +136,10 @@
                           AutomationProperties.Name="Initially-disabled objects"
                           ToolTipService.ToolTip="Show objects flagged initially-disabled (press 7)"
                           Checked="DisabledCheckBox_Changed" Unchecked="DisabledCheckBox_Changed" />
+                <CheckBox x:Name="CollisionCheckBox" IsChecked="False" Content="Havok collision"
+                          AutomationProperties.Name="Havok collision"
+                          ToolTipService.ToolTip="Overlay each object's walk-mode collision mesh as a green wireframe (compare against the rendered meshes)"
+                          Checked="CollisionCheckBox_Changed" Unchecked="CollisionCheckBox_Changed" />
               </StackPanel>
             </Flyout>
           </DropDownButton.Flyout>
@@ -212,6 +216,14 @@
                     Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
           <CheckBox x:Name="FilterNamedOnly" Content="Named only"
                     Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
+          <ComboBox x:Name="CellSortCombo" MinWidth="120" VerticalAlignment="Center"
+                    SelectedIndex="0"
+                    AutomationProperties.Name="Sort cells"
+                    ToolTipService.ToolTip="Sort cells within each group"
+                    SelectionChanged="CellSortCombo_SelectionChanged">
+            <ComboBoxItem Content="Sort: Grid" />
+            <ComboBoxItem Content="Sort: Object count" />
+          </ComboBox>
           <TextBlock x:Name="CellBrowserCountText" VerticalAlignment="Center" FontSize="11"
                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </StackPanel>

@@ -3,6 +3,16 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 
 namespace FalloutXbox360Utils;
 
+/// <summary>Order of cells within each group in the cell browser.</summary>
+internal enum CellSortMode
+{
+    /// <summary>By grid coordinates (interiors fall back to FormID order). The default.</summary>
+    Grid,
+
+    /// <summary>By descending placed-object count, so the busiest cells surface first.</summary>
+    ObjectCount
+}
+
 /// <summary>
 ///     Cell browser logic: builds cell list items, applies filters, and groups cells
 ///     for display in the grouped ListView.
@@ -96,13 +106,22 @@ internal static class WorldMapCellBrowser
     }
 
     internal static List<WorldMapControl.CellListGroup> BuildGroupedSource(
-        List<WorldMapControl.CellListItem> items)
+        List<WorldMapControl.CellListItem> items, CellSortMode sort = CellSortMode.Grid)
     {
-        var sorted = items
+        // Groups are always ordered the same way (worldspace sort order, then name). Within a group,
+        // Grid mode orders by grid coords (the original behavior); ObjectCount mode orders by descending
+        // placed-object count so the busiest cells surface first.
+        var byGroup = items
             .OrderBy(i => WorldMapColors.GetGroupSortOrder(i.Group))
-            .ThenBy(i => i.Group)
-            .ThenBy(i => i.Cell.GridX ?? int.MaxValue)
-            .ThenBy(i => i.Cell.GridY ?? int.MaxValue);
+            .ThenBy(i => i.Group);
+        var sorted = sort == CellSortMode.ObjectCount
+            ? byGroup
+                .ThenByDescending(i => i.Cell.PlacedObjects.Count)
+                .ThenBy(i => i.Cell.GridX ?? int.MaxValue)
+                .ThenBy(i => i.Cell.GridY ?? int.MaxValue)
+            : byGroup
+                .ThenBy(i => i.Cell.GridX ?? int.MaxValue)
+                .ThenBy(i => i.Cell.GridY ?? int.MaxValue);
 
         var grouped = sorted.GroupBy(i => i.Group);
         var source = new List<WorldMapControl.CellListGroup>();

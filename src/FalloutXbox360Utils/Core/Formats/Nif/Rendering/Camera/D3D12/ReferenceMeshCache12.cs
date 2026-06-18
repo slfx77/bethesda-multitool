@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
 using FalloutXbox360Utils.Core.Diagnostics;
+using FalloutXbox360Utils.Core.Formats.Nif.Collision;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
 using FalloutXbox360Utils.Core.Formats.SpeedTree;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
@@ -93,6 +94,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // archive-path (trees\<name>.spt) → recorded tree height (TREE OBND Z-extent), so the procedural
     // SpeedTree generator can size each tree from the ESM data rather than a magic constant.
     private readonly IReadOnlyDictionary<string, float>? _speedTreeHeights;
+
+    // archive-path (trees\<name>.spt) → the leaf atlas from the TREE record's ICON (the engine's
+    // authoritative leaf texture; the .spt's own dev-era material often never shipped).
+    private readonly IReadOnlyDictionary<string, string>? _speedTreeLeafTextures;
     private bool _disposed;
 
     public ReferenceMeshCache12(
@@ -105,12 +110,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         long decodedCacheByteBudget = DefaultDecodedMeshCacheByteBudget,
         ReferenceDecodedMeshDiskCache12? persistentDecodedCache = null,
         bool autoSizeMeshCapacity = true,
-        IReadOnlyDictionary<string, float>? speedTreeHeights = null)
+        IReadOnlyDictionary<string, float>? speedTreeHeights = null,
+        IReadOnlyDictionary<string, string>? speedTreeLeafTextures = null)
     {
         if (capacity <= 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be > 0.");
 
         _speedTreeHeights = speedTreeHeights;
+        _speedTreeLeafTextures = speedTreeLeafTextures;
         _meshArchives = meshArchives;
         _textureResolver = textureResolver;
         _textureCache = textureCache;
@@ -608,7 +615,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 sub.IsBillboard));
         }
 
-        return new ReferenceDecodedMeshPayload12(submeshes);
+        return new ReferenceDecodedMeshPayload12(submeshes, decoded.CollisionPositions, decoded.CollisionTriangles);
     }
 
     private static DecodedNifMesh12 FromPersistentPayload(ReferenceDecodedMeshPayload12 payload)
@@ -636,7 +643,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 sub.IsBillboard));
         }
 
-        return new DecodedNifMesh12(submeshes);
+        return new DecodedNifMesh12(submeshes, payload.CollisionPositions, payload.CollisionTriangles);
     }
 
     private static long EstimateDecodedMeshBytes(DecodedNifMesh12 decoded)
@@ -649,6 +656,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             total += (long)submesh.Indices.Length * sizeof(ushort);
             total += 256;
         }
+
+        if (decoded.CollisionPositions is { } cp) total += (long)cp.Length * 12;
+        if (decoded.CollisionTriangles is { } ct) total += (long)ct.Length * sizeof(int);
 
         return total;
     }
@@ -675,6 +685,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
             nifBytes = nifData.Length;
 
+            // Decoded Havok collision soup (set only on the NIF path below; SpeedTree has none).
+            Vector3[]? collisionPositions = null;
+            int[]? collisionTriangles = null;
+
             NifRenderableModel? model;
             if (lookupPath.EndsWith(".spt", StringComparison.OrdinalIgnoreCase))
             {
@@ -695,8 +709,17 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     targetHeight = h;
                 }
 
+                // The engine sources the leaf atlas from the TREE record's ICON, not the .spt's dev-era
+                // material (which often never shipped). Use it when we have it for this .spt.
+                string? leafTexture = null;
+                _speedTreeLeafTextures?.TryGetValue(lookupPath, out leafTexture);
+
                 var seed = spt.General.Token2005 != 0 ? spt.General.Token2005 : StableSeed(lookupPath);
-                var sptOptions = SptGeometryOptions.FromEnvironment() with { TargetHeight = targetHeight };
+                var sptOptions = SptGeometryOptions.FromEnvironment() with
+                {
+                    TargetHeight = targetHeight,
+                    LeafTextureOverride = leafTexture,
+                };
                 model = SptGeometryBuilder.Build(spt, seed, sptOptions);
             }
             else
@@ -767,7 +790,19 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     treatRootsAsIdentity: true,
                     // Flag geometry under a NiBillboardNode (e.g. NVashpile smoke glow) so the renderer
                     // re-aims it at the camera per frame instead of using the baked-in orientation.
-                    collectBillboards: true);
+                    collectBillboards: true,
+                    // Drop the per-bone proxy boxes on animated cloth (e.g. NV_NCR_Flag.NIF) that
+                    // would otherwise render as untextured "havok" blocks beside the flag.
+                    dropBoneAttachedShapes: true);
+
+                // Decode Havok (bhk*) collision geometry from the same (converted, LE) buffer/parse,
+                // off the render thread. Walk mode prefers this gapless physics mesh over the visual
+                // submeshes so the camera doesn't fall through plank gaps. Null when the NIF has none.
+                if (HavokCollisionExtractor.TryExtract(nifData, nif) is { } havok)
+                {
+                    collisionPositions = havok.Positions;
+                    collisionTriangles = havok.Triangles;
+                }
             }
 
             if (model is null)
@@ -828,7 +863,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
             submeshCount = submeshes.Count;
             result = "success";
-            return new DecodedNifMesh12(submeshes);
+            return new DecodedNifMesh12(submeshes, collisionPositions, collisionTriangles);
         }
         finally
         {
@@ -1050,6 +1085,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     /// </summary>
     private static CollisionMesh? BuildCollisionMesh(DecodedNifMesh12 decoded)
     {
+        // Prefer the NIF's Havok (bhk*) collision mesh when present — it's the gapless physics surface,
+        // so walk mode rides plank bridges / catwalks instead of falling through the visual-mesh gaps.
+        if (decoded.CollisionTriangles is { Length: >= 3 } havokTris &&
+            decoded.CollisionPositions is { Length: > 0 } havokPos)
+        {
+            return new CollisionMesh(havokPos, havokTris);
+        }
+
         var positions = new List<Vector3>();
         var triangles = new List<int>();
         foreach (var sub in decoded.Submeshes)
@@ -1180,7 +1223,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         bool IsNegative,
         long ByteSize);
 
-    private sealed record DecodedNifMesh12(IReadOnlyList<DecodedSubmesh12> Submeshes);
+    // CollisionPositions/CollisionTriangles carry the NIF's decoded Havok (bhk*) collision soup when
+    // present (root-local treatRootsAsIdentity frame, same as the visual submeshes). BuildCollisionMesh
+    // prefers them over the visual-mesh soup so walk mode rides the gapless physics mesh. Null when the
+    // NIF has no decodable Havok collision (→ visual-mesh fallback).
+    private sealed record DecodedNifMesh12(
+        IReadOnlyList<DecodedSubmesh12> Submeshes,
+        Vector3[]? CollisionPositions = null,
+        int[]? CollisionTriangles = null);
 
     private sealed record DecodedSubmesh12(
         GpuMeshUploader.GpuVertex[] Vertices,

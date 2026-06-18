@@ -128,6 +128,17 @@ internal sealed class FlythroughCameraController
     /// </summary>
     public Func<float, float, float?>? GroundHeightSampler { get; set; }
 
+    /// <summary>
+    ///     Walk-mode ceiling lookup used during a jump's ascent. <c>(worldX, worldY) → world Z of the
+    ///     nearest surface ABOVE the eye</c>, or <c>null</c> when nothing is overhead. When set, a jump
+    ///     under a low roof bonks (the eye stops at the ceiling minus <see cref="CeilingHeadroom" />)
+    ///     instead of the camera being lifted on top. Null leaves jumping unconstrained overhead.
+    /// </summary>
+    public Func<float, float, float?>? CeilingHeightSampler { get; set; }
+
+    /// <summary>Clearance kept between the eye and a ceiling on jump contact (world units).</summary>
+    public float CeilingHeadroom { get; set; } = 8f;
+
     public void OnKeyDown(VirtualKey key) => _keysDown.Add(key);
     public void OnKeyUp(VirtualKey key) => _keysDown.Remove(key);
 
@@ -256,6 +267,19 @@ internal sealed class FlythroughCameraController
         _verticalVelocity -= Gravity * deltaSeconds;
         var pos = _camera.Position;
         var newZ = pos.Z + _verticalVelocity * deltaSeconds;
+
+        // Ceiling: while ascending, stop the eye at the nearest surface overhead (minus headroom) so a
+        // jump under a low roof bonks instead of clipping through and being lifted on top. Zeroing the
+        // velocity lets gravity pull the camera back down next frame.
+        if (_verticalVelocity > 0f && CeilingHeightSampler is { } ceilingSampler)
+        {
+            var clamped = WalkVerticalMath.ClampToCeiling(newZ, ceilingSampler(pos.X, pos.Y), CeilingHeadroom);
+            if (clamped < newZ)
+            {
+                newZ = clamped;
+                _verticalVelocity = 0f;
+            }
+        }
 
         // Land once we descend to the eye-height floor above the ground beneath the (possibly
         // air-controlled) X/Y. GroundHeightSampler null over a no-terrain cell leaves us airborne

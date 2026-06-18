@@ -34,6 +34,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     // --- Cell browser ---
     private List<CellListItem> _allCellItems = [];
+    // Sort order within each group of the cell browser (Grid default; "Object count" surfaces the
+    // busiest cells first). Driven by the CellSortCombo dropdown.
+    private CellSortMode _cellSortMode = CellSortMode.Grid;
     private byte[]? _cachedGrayscale;
     private int _cachedHmWidth, _cachedHmHeight;
     private byte[]? _cachedWaterMask;
@@ -60,6 +63,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private float? _currentDefaultWaterHeight;
     private WaterColorPalette? _currentWaterPalette;
     private WorldViewData? _data;
+
+    // Active worldspace's cell-edge size in world units (4096 Fallout-family, 8192 Morrowind), set from
+    // WorldViewData.CellWorldSize on load. Keeps the 2D map's cell↔canvas↔screen mapping in the same
+    // coordinate system as the 3D viewer + the top-down "Rendered models" overlay.
+    private float _cellSize = WorldGridConstants.CellSize;
 
     // --- Markers ---
     private bool _hideDisabledActors = true;
@@ -418,6 +426,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _cellGridLookup = null;
 
         _data = data;
+        _cellSize = data.CellWorldSize;
         // The top-down "Rendered models" overlay bakes placement lists through this same cache, so
         // seed the category index here too (idempotent with the 3D control's LoadData).
         data.RenderCache.CategoryIndex = data.CategoryIndex;
@@ -1255,6 +1264,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void CellSearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyCellFilters();
 
+    private void CellSortCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _cellSortMode = CellSortCombo.SelectedIndex == 1 ? CellSortMode.ObjectCount : CellSortMode.Grid;
+        if (_allCellItems.Count > 0) ApplyCellFilters();
+    }
+
     private void ApplyCellFilters()
     {
         var query = CellSearchBox.Text?.Trim() ?? "";
@@ -1763,7 +1778,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void RebuildCellListFromItems(List<CellListItem> items)
     {
-        var source = WorldMapCellBrowser.BuildGroupedSource(items);
+        var source = WorldMapCellBrowser.BuildGroupedSource(items, _cellSortMode);
         var cvs = new Microsoft.UI.Xaml.Data.CollectionViewSource
         {
             IsSourceGrouped = true, Source = source
@@ -1836,7 +1851,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         {
             // Zoomed out far enough that a cell is tiny on screen → use the aggregate LOD (one
             // downscaled whole-worldspace bitmap) instead of streaming the whole worldspace per-cell.
-            var screenPxPerCell = WorldGridConstants.CellSize * _zoom;
+            var screenPxPerCell = _cellSize * _zoom;
             var wantAggregate = screenPxPerCell < TerrainAggregateScreenPxThreshold && !_terrainAggregateUnavailable;
             _terrainTexturesAggregateActive = wantAggregate;
 
@@ -2044,10 +2059,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var centerY = (vpTl.Y + vpBr.Y) * 0.5f;
         requestCells.Sort((a, b) =>
         {
-            var ax = (a.GridX!.Value + 0.5f) * WorldGridConstants.CellSize - centerX;
-            var ay = -(a.GridY!.Value + 0.5f) * WorldGridConstants.CellSize - centerY;
-            var bx = (b.GridX!.Value + 0.5f) * WorldGridConstants.CellSize - centerX;
-            var by = -(b.GridY!.Value + 0.5f) * WorldGridConstants.CellSize - centerY;
+            var ax = (a.GridX!.Value + 0.5f) * _cellSize - centerX;
+            var ay = -(a.GridY!.Value + 0.5f) * _cellSize - centerY;
+            var bx = (b.GridX!.Value + 0.5f) * _cellSize - centerX;
+            var by = -(b.GridY!.Value + 0.5f) * _cellSize - centerY;
             return (ax * ax + ay * ay).CompareTo(bx * bx + by * by);
         });
 
@@ -2604,8 +2619,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         const int baseMarginCells = 1;
         const int preloadMarginCells = 3;
         const float velocityThresholdPx = 6f;
-        var marginWorld = WorldGridConstants.CellSize * baseMarginCells;
-        var preloadWorld = WorldGridConstants.CellSize * preloadMarginCells;
+        var marginWorld = _cellSize * baseMarginCells;
+        var preloadWorld = _cellSize * preloadMarginCells;
 
         var biasLeft = _panVelocity.X > velocityThresholdPx ? preloadWorld : marginWorld;
         var biasRight = _panVelocity.X < -velocityThresholdPx ? preloadWorld : marginWorld;
@@ -2618,10 +2633,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         minCanvasY = Math.Min(tlWorld.Y, brWorld.Y) - biasBottomWorld;
         maxCanvasY = Math.Max(tlWorld.Y, brWorld.Y) + biasTopWorld;
 
-        var minGx = (int)MathF.Floor(minCanvasX / WorldGridConstants.CellSize);
-        var maxGx = (int)MathF.Floor(maxCanvasX / WorldGridConstants.CellSize);
-        var minGy = (int)MathF.Floor(-maxCanvasY / WorldGridConstants.CellSize);
-        var maxGy = (int)MathF.Floor(-minCanvasY / WorldGridConstants.CellSize);
+        var minGx = (int)MathF.Floor(minCanvasX / _cellSize);
+        var maxGx = (int)MathF.Floor(maxCanvasX / _cellSize);
+        var minGy = (int)MathF.Floor(-maxCanvasY / _cellSize);
+        var maxGy = (int)MathF.Floor(-minCanvasY / _cellSize);
         return new TerrainTextureViewportKey(minGx, maxGx, minGy, maxGy, pixelsPerCell);
     }
 
@@ -2664,9 +2679,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         return new TerrainTextureViewportRequest(key, visibleCells, pixelsPerCell);
     }
 
-    private static int ChooseTerrainTexturePixelsPerCell(float zoom)
+    private int ChooseTerrainTexturePixelsPerCell(float zoom)
     {
-        var screenPixelsPerCell = WorldGridConstants.CellSize * zoom;
+        var screenPixelsPerCell = _cellSize * zoom;
 
         // Low tiers (33/66) for the aggregate→per-cell transition zone: rendering cells at ~display
         // resolution keeps minification to ≤~1.4× (vs ~5× at a fixed 132), which — with the
@@ -3287,8 +3302,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             if (c.GridX is not int gx || c.GridY is not int gy) continue;
             // Canvas-world space: X grows east, Y is the NEGATED grid Y (north is up / min canvas Y),
             // matching WorldMapViewportHelper.GetViewTransform and the cell rects drawn in the overview.
-            sx += (gx + 0.5) * WorldGridConstants.CellSize;
-            sy += -(gy + 0.5) * WorldGridConstants.CellSize;
+            sx += (gx + 0.5) * _cellSize;
+            sy += -(gy + 0.5) * _cellSize;
             n++;
         }
 

@@ -15,8 +15,9 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///     <para>
 ///         Container handling (header, key echo, negatives, atomic writes, prune, stats) lives in
 ///         <see cref="DiskBlobCache" />; this type owns only the payload serialization and the
-///         metadata-based key. The on-disk format is byte-identical to the pre-extraction
-///         implementation — existing warm caches stay valid.
+///         metadata-based key. The payload format is versioned by <see cref="DecoderVersion" /> — any
+///         change to the serialized bytes (e.g. the appended Havok collision soup) must bump it so
+///         stale warm caches are invalidated rather than misread.
 ///     </para>
 /// </summary>
 internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
@@ -32,11 +33,16 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Bumped 3→4: NiBillboardNode subtrees now bake with the node's rotation dropped (translation
     // kept) and the new IsBillboard flag rides the payload, so old caches lack the field and would
     // bake the smoke glow with the wrong orientation.
-    internal const int DecoderVersion = 4;
+    // Bumped 4→5: the payload now carries the NIF's decoded Havok (bhk*) collision soup (used by
+    // walk-mode ground/ceiling sampling). Old caches lack those trailing fields, so a warm read would
+    // both deserialize wrong AND silently lose collision — invalidate them.
+    internal const int DecoderVersion = 5;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
     private const int MaxIndicesPerSubmesh = 6_000_000;
+    private const int MaxCollisionVertices = 4_000_000;
+    private const int MaxCollisionIndices = 12_000_000;
     private const int MaxStringBytes = 8 * 1024;
     private const string FileExtension = ".fdmc";
     private static readonly byte[] Magic = Encoding.ASCII.GetBytes("FNVMC12\0");
@@ -155,6 +161,16 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         {
             WriteSubmesh(writer, submesh);
         }
+
+        // Havok collision soup (trailing, optional). Counts of 0 mean "no Havok collision" → null.
+        var collisionPositions = mesh.CollisionPositions ?? [];
+        var collisionTriangles = mesh.CollisionTriangles ?? [];
+        ValidateRange(collisionPositions.Length, 0, MaxCollisionVertices, nameof(mesh.CollisionPositions));
+        ValidateRange(collisionTriangles.Length, 0, MaxCollisionIndices, nameof(mesh.CollisionTriangles));
+        writer.Write(collisionPositions.Length);
+        foreach (var p in collisionPositions) WriteVector3(writer, p);
+        writer.Write(collisionTriangles.Length);
+        foreach (var t in collisionTriangles) writer.Write(t);
     }
 
     private static ReferenceDecodedMeshPayload12 ReadMesh(BinaryReader reader)
@@ -171,7 +187,23 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             throw new InvalidDataException("Decoded mesh cache payload has no submeshes.");
         }
 
-        return new ReferenceDecodedMeshPayload12(submeshes);
+        var collisionVertexCount = ReadInt32(reader, 0, MaxCollisionVertices);
+        Vector3[]? collisionPositions = null;
+        if (collisionVertexCount > 0)
+        {
+            collisionPositions = new Vector3[collisionVertexCount];
+            for (var i = 0; i < collisionVertexCount; i++) collisionPositions[i] = ReadVector3(reader);
+        }
+
+        var collisionIndexCount = ReadInt32(reader, 0, MaxCollisionIndices);
+        int[]? collisionTriangles = null;
+        if (collisionIndexCount > 0)
+        {
+            collisionTriangles = new int[collisionIndexCount];
+            for (var i = 0; i < collisionIndexCount; i++) collisionTriangles[i] = reader.ReadInt32();
+        }
+
+        return new ReferenceDecodedMeshPayload12(submeshes, collisionPositions, collisionTriangles);
     }
 
     private static void WriteSubmesh(BinaryWriter writer, ReferenceDecodedSubmeshPayload12 submesh)
@@ -299,7 +331,9 @@ internal readonly record struct ReferenceDecodedMeshDiskCacheEntry12(
     bool IsNegative);
 
 internal sealed record ReferenceDecodedMeshPayload12(
-    IReadOnlyList<ReferenceDecodedSubmeshPayload12> Submeshes);
+    IReadOnlyList<ReferenceDecodedSubmeshPayload12> Submeshes,
+    Vector3[]? CollisionPositions = null,
+    int[]? CollisionTriangles = null);
 
 internal sealed record ReferenceDecodedSubmeshPayload12(
     GpuMeshUploader.GpuVertex[] Vertices,
