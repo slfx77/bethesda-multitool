@@ -88,8 +88,12 @@ public record CellRecord
     /// <summary>FormIDs of cells reachable via doors in this cell.</summary>
     public List<uint> LinkedCellFormIds { get; init; } = [];
 
-    /// <summary>Associated LAND record heightmap (if found).</summary>
-    public LandHeightmap? Heightmap { get; init; }
+    /// <summary>
+    ///     Associated LAND record heightmap (if found). Settable so the Fallout 76 terrain injector
+    ///     can attach BTD-decoded heights post-parse (FO76 stores heights in external .btd files, not
+    ///     in-record VHGT). See <see cref="FalloutXbox360Utils.Core.Formats.Esm.Land.Fo76TerrainInjector" />.
+    /// </summary>
+    public LandHeightmap? Heightmap { get; set; }
 
     /// <summary>Associated LAND visual subrecords (VCLR/VTEX/BTXT/ATXT/VTXT), if found.</summary>
     public LandVisualData? LandVisualData { get; init; }

@@ -30,6 +30,9 @@ public enum BethesdaGame
     /// <summary>Fallout 4 (TES4): 24-byte headers.</summary>
     Fallout4,
 
+    /// <summary>Fallout 76 (TES4): 24-byte headers; main master <c>SeventySix.esm</c>.</summary>
+    Fallout76,
+
     /// <summary>Starfield (TES4): 24-byte headers.</summary>
     Starfield
 }
@@ -118,8 +121,11 @@ public readonly record struct PluginFormat(
             : BinaryPrimitives.ReadSingleLittleEndian(data.Slice(versionOffset, 4));
 
         // Ranges overlap across games (Skyrim 0.94 == FO3 0.94), so this is a coarse best guess.
+        // Fallout 76 is the exception: its HEDR version is an order of magnitude higher (e.g. 263.0),
+        // so anything >= 2.0 is unambiguously FO76 (no other TES4 game exceeds Skyrim SE's 1.7).
         return version switch
         {
+            >= 2.0f => BethesdaGame.Fallout76,
             >= 1.30f => BethesdaGame.FalloutNewVegas,
             >= 0.955f => BethesdaGame.Starfield,
             >= 0.945f => BethesdaGame.Fallout4,

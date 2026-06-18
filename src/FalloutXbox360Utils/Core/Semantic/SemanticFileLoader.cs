@@ -147,6 +147,15 @@ internal static class SemanticFileLoader
         var parser = new RecordParser(context);
         var records = parser.ParseAll(options.ParseProgress, options.ResidentRecoveryMasterFormIds);
         ApplyCellWorldspaceAuthorityIfNeeded(records, analysisResult.EsmRecords, fileType, options);
+
+        // Fallout 76 stores terrain heights in external .btd files, not in-record VHGT. Attach them to
+        // exterior cells so the 2D/3D terrain renderers (which read through the shared height
+        // abstraction) light up. No-op for every other game.
+        if (fileType == AnalysisFileType.EsmFile)
+        {
+            Formats.Esm.Land.Fo76TerrainInjector.Inject(records, filePath);
+        }
+
         var resolver = records.CreateResolver(analysisResult.FormIdMap);
 
         return new UnifiedAnalysisResult

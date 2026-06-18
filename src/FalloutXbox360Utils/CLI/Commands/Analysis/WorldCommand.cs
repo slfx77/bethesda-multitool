@@ -21,6 +21,43 @@ public static class WorldCommand
         command.Subcommands.Add(CreateMarkersCommand());
         command.Subcommands.Add(CreateCellCommand());
         command.Subcommands.Add(CreatePersistentCommand());
+        command.Subcommands.Add(CreateHeightmapCommand());
+
+        return command;
+    }
+
+    private static Command CreateHeightmapCommand()
+    {
+        var command = new Command(
+            "heightmap",
+            "Render a worldspace terrain heightmap to a grayscale PNG from parsed cell heights "
+            + "(includes Fallout 76 BTD-injected terrain)");
+
+        var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
+        var outputOpt = new Option<string>("-o", "--output") { Description = "Output PNG path", Required = true };
+        var worldspaceOpt = new Option<string?>("-w", "--worldspace")
+        {
+            Description = "Worldspace editor ID, full name, or FormID (default: the one with the most terrain)"
+        };
+        var cellPxOpt = new Option<int>("--cell-px")
+        {
+            Description = "Pixels rendered per cell, 1..33 (default 8)", DefaultValueFactory = _ => 8
+        };
+
+        command.Arguments.Add(inputArg);
+        command.Options.Add(outputOpt);
+        command.Options.Add(worldspaceOpt);
+        command.Options.Add(cellPxOpt);
+
+        command.SetAction(async (parseResult, cancellationToken) =>
+        {
+            await RunHeightmapAsync(
+                parseResult.GetValue(inputArg)!,
+                parseResult.GetValue(outputOpt)!,
+                parseResult.GetValue(worldspaceOpt),
+                parseResult.GetValue(cellPxOpt),
+                cancellationToken);
+        });
 
         return command;
     }
@@ -185,6 +222,127 @@ public static class WorldCommand
         }
 
         return (result.Cells.FirstOrDefault(c => c.FormId == formId), null);
+    }
+
+    private static async Task RunHeightmapAsync(
+        string input, string output, string? worldspaceSel, int cellPx, CancellationToken cancellationToken)
+    {
+        var result = await LoadAndParseAsync(input, cancellationToken);
+        if (result == null)
+        {
+            return;
+        }
+
+        cellPx = Math.Clamp(cellPx, 1, 33);
+        var ws = SelectWorldspaceForHeightmap(result, worldspaceSel);
+        if (ws == null)
+        {
+            AnsiConsole.MarkupLine("[red]No worldspace with terrain heightmap data found.[/]");
+            return;
+        }
+
+        var cells = ws.Cells
+            .Where(c => !c.IsInterior && c.GridX.HasValue && c.GridY.HasValue && c.Heightmap != null)
+            .ToList();
+        if (cells.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[red]Worldspace has no exterior cells with heightmap data.[/]");
+            return;
+        }
+
+        int minGx = cells.Min(c => c.GridX!.Value);
+        int maxGx = cells.Max(c => c.GridX!.Value);
+        int minGy = cells.Min(c => c.GridY!.Value);
+        int maxGy = cells.Max(c => c.GridY!.Value);
+        long width = (long)(maxGx - minGx + 1) * cellPx;
+        long height = (long)(maxGy - minGy + 1) * cellPx;
+        if (width * height > 400_000_000L)
+        {
+            AnsiConsole.MarkupLine("[red]Heightmap would be {0:N0}x{1:N0} px — lower --cell-px.[/]", width, height);
+            return;
+        }
+
+        // Decode every cell once, tracking the global height range for normalization.
+        var grids = new Dictionary<(int X, int Y), float[,]>(cells.Count);
+        var gMin = float.MaxValue;
+        var gMax = float.MinValue;
+        foreach (var cell in cells)
+        {
+            var hm = cell.Heightmap!.CalculateHeights();
+            grids[(cell.GridX!.Value, cell.GridY!.Value)] = hm;
+            var edge = hm.GetLength(0);
+            for (var y = 0; y < edge; y++)
+            {
+                for (var x = 0; x < edge; x++)
+                {
+                    var v = hm[y, x];
+                    if (v < gMin)
+                    {
+                        gMin = v;
+                    }
+
+                    if (v > gMax)
+                    {
+                        gMax = v;
+                    }
+                }
+            }
+        }
+
+        var scale = gMax > gMin ? 255.0f / (gMax - gMin) : 0f;
+        var pixels = new byte[width * height];
+        foreach (var ((gx, gy), hm) in grids)
+        {
+            var edge = hm.GetLength(0);
+            var baseCol = (long)(gx - minGx) * cellPx;
+            var cellTopRow = (long)(maxGy - gy) * cellPx; // north-up
+            for (var py = 0; py < cellPx; py++)
+            {
+                var sy = cellPx == 1 ? 0 : (int)Math.Round(py * (double)(edge - 1) / (cellPx - 1));
+                var row = cellTopRow + (cellPx - 1 - py); // sample row 0 is the south edge -> bottom
+                var dst = (row * width) + baseCol;
+                for (var px = 0; px < cellPx; px++)
+                {
+                    var sx = cellPx == 1 ? 0 : (int)Math.Round(px * (double)(edge - 1) / (cellPx - 1));
+                    var g = (int)((hm[sy, sx] - gMin) * scale);
+                    pixels[dst + px] = (byte)Math.Clamp(g, 0, 255);
+                }
+            }
+        }
+
+        var dir = Path.GetDirectoryName(Path.GetFullPath(output));
+        if (!string.IsNullOrEmpty(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+
+        Core.Formats.Esm.Analysis.PngWriter.SaveGrayscale(pixels, (int)width, (int)height, output);
+        var label = ws.EditorId ?? ws.FullName ?? $"0x{ws.FormId:X8}";
+        AnsiConsole.MarkupLine(
+            "[green]Wrote[/] {0} ({1:N0}x{2:N0}) — worldspace [cyan]{3}[/], {4:N0} cells, height {5:F0}..{6:F0}",
+            output, width, height, label, cells.Count, gMin, gMax);
+    }
+
+    private static WorldspaceRecord? SelectWorldspaceForHeightmap(RecordCollection result, string? sel)
+    {
+        if (!string.IsNullOrEmpty(sel))
+        {
+            var match = result.Worldspaces.FirstOrDefault(w =>
+                string.Equals(w.EditorId, sel, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(w.FullName, sel, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                return match;
+            }
+
+            var formId = CliHelpers.ParseFormId(sel);
+            return formId is { } id ? result.Worldspaces.FirstOrDefault(w => w.FormId == id) : null;
+        }
+
+        return result.Worldspaces
+            .Where(w => w.Cells.Any(c => c.Heightmap != null))
+            .OrderByDescending(w => w.Cells.Count(c => c.Heightmap != null))
+            .FirstOrDefault();
     }
 
     private static void RenderCellDetails(CellRecord cell, string? worldspaceName)
