@@ -255,6 +255,15 @@ internal static class NifShaderTexturePropertyReader
         var pos = propBlock.DataOffset;
         var end = propBlock.DataOffset + propBlock.Size;
 
+        // Fallout 76 (bsVer >= 155) has no inline Texture Set ref (nif.xml gates it to <= FO4) and no
+        // leading "Shader Type" field. The shader's Name instead points at a .bgsm/.bgem material file
+        // under materials\; hand that to the resolver as the diffuse slot — it parses the material and
+        // resolves the real texture. (See NifTextureResolver.LoadFromMaterial.)
+        if (nif.BsVersion >= 155)
+        {
+            return ReadFallout76MaterialSlot(data, nif, propBlock);
+        }
+
         // Leading "Shader Type" field, present for BSLightingShaderProperty in Skyrim (bsVer 83)
         // through Fallout 4 (bsVer 130).
         if (nif.BsVersion is >= 83 and <= 130)
@@ -283,6 +292,36 @@ internal static class NifShaderTexturePropertyReader
         return textureSetBlock.TypeName == "BSShaderTextureSet"
             ? ReadTextureSetSlots(data, textureSetBlock, nif.IsBigEndian)
             : [];
+    }
+
+    /// <summary>
+    ///     Fallout 76 BSLightingShaderProperty texture resolution: the NiObjectNET <c>Name</c> (a String
+    ///     table index, since FO76 has no inline texture set) is a <c>.bgsm</c>/<c>.bgem</c> material
+    ///     path. Returned as the diffuse slot so the resolver can parse the material and load its
+    ///     textures. Returns empty when the Name isn't a material path.
+    /// </summary>
+    private static List<string?> ReadFallout76MaterialSlot(byte[] data, NifInfo nif, BlockInfo propBlock)
+    {
+        if (propBlock.DataOffset + 4 > data.Length)
+        {
+            return [];
+        }
+
+        var nameIndex = BinaryUtils.ReadInt32(data, propBlock.DataOffset, nif.IsBigEndian);
+        if (nameIndex < 0 || nameIndex >= nif.Strings.Count)
+        {
+            return [];
+        }
+
+        var name = nif.Strings[nameIndex];
+        if (string.IsNullOrEmpty(name) ||
+            (!name.EndsWith(".bgsm", StringComparison.OrdinalIgnoreCase) &&
+             !name.EndsWith(".bgem", StringComparison.OrdinalIgnoreCase)))
+        {
+            return [];
+        }
+
+        return CreateFixedTextureSlots(name);
     }
 
     private static List<string?> ReadTextureSetSlots(

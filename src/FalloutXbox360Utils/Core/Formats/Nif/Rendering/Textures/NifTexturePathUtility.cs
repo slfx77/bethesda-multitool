@@ -21,7 +21,11 @@ internal static class NifTexturePathUtility
             normalized = normalized[5..];
         }
 
-        if (!normalized.StartsWith("textures\\", StringComparison.Ordinal))
+        // Fallout 4 / Fallout 76 material files (.bgsm/.bgem) live under materials\, not textures\ —
+        // the BSLightingShaderProperty Name points at one. Leave those (and any already-textures\ path)
+        // untouched; everything else is a texture relative to textures\.
+        if (!normalized.StartsWith("textures\\", StringComparison.Ordinal) &&
+            !normalized.StartsWith("materials\\", StringComparison.Ordinal))
         {
             normalized = "textures\\" + normalized;
         }

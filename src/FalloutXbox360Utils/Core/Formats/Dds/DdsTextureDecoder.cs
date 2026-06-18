@@ -43,6 +43,14 @@ internal static class DdsTextureDecoder
             return DecodeUncompressedRgb(ddsData, width, height, mipCount);
         }
 
+        // DX10 extended header: the real format is a DXGI enum at offset 128 and the surface data
+        // starts after the 20-byte DX10 header (offset 148). Fallout 4 / Fallout 76 BA2 textures use
+        // this for sRGB and BC6H/BC7 formats (classic FourCC otherwise).
+        if (fourcc == "DX10")
+        {
+            return DecodeDx10(ddsData, width, height, mipCount);
+        }
+
         return fourcc switch
         {
             "DXT1" => DecodeMipChain(
@@ -85,6 +93,49 @@ internal static class DdsTextureDecoder
                 mipCount,
                 DecodeBc5Level,
                 static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 16)),
+            _ => null
+        };
+    }
+
+    /// <summary>
+    ///     Decodes a DX10-header DDS by its DXGI format. Block-compressed surfaces route to the
+    ///     existing BC1–BC5 decoders (sRGB variants share the same block layout); plain 32-bit formats
+    ///     route to the uncompressed path. The surface data starts at offset 148 (128-byte header +
+    ///     20-byte DX10 header). Returns null for formats with no decoder yet (BC6H, BC7).
+    /// </summary>
+    private static DecodedTexture? DecodeDx10(byte[] data, int width, int height, int mipCount)
+    {
+        const int dataOffset = 148; // 128-byte DDS header + 20-byte DX10 header
+        if (data.Length < dataOffset)
+        {
+            return null;
+        }
+
+        var dxgiFormat = BitConverter.ToUInt32(data, 128);
+        return dxgiFormat switch
+        {
+            // BC1 (DXT1): TYPELESS / UNORM / UNORM_SRGB
+            70 or 71 or 72 => DecodeMipChain(data, dataOffset, width, height, mipCount,
+                DecodeDxt1Level, static (w, h) => GetCompressedLevelSize(w, h, 8)),
+            // BC2 (DXT3)
+            73 or 74 or 75 => DecodeMipChain(data, dataOffset, width, height, mipCount,
+                DecodeDxt3Level, static (w, h) => GetCompressedLevelSize(w, h, 16)),
+            // BC3 (DXT5)
+            76 or 77 or 78 => DecodeMipChain(data, dataOffset, width, height, mipCount,
+                DecodeDxt5Level, static (w, h) => GetCompressedLevelSize(w, h, 16)),
+            // BC4 (ATI1, single channel)
+            79 or 80 => DecodeMipChain(data, dataOffset, width, height, mipCount,
+                DecodeBc4Level, static (w, h) => GetCompressedLevelSize(w, h, 8)),
+            // BC5 (ATI2, two channel)
+            82 or 83 => DecodeMipChain(data, dataOffset, width, height, mipCount,
+                DecodeBc5Level, static (w, h) => GetCompressedLevelSize(w, h, 16)),
+            // R8G8B8A8 UNORM / UNORM_SRGB
+            28 or 29 => DecodeMipChain(data, dataOffset, width, height, mipCount,
+                static (s, o, w, h) => DecodeRgbLevel(s, o, w, h, 4, 0, 1, 2, 3), static (w, h) => w * h * 4),
+            // B8G8R8A8 UNORM / UNORM_SRGB
+            87 or 91 => DecodeMipChain(data, dataOffset, width, height, mipCount,
+                static (s, o, w, h) => DecodeRgbLevel(s, o, w, h, 4, 2, 1, 0, 3), static (w, h) => w * h * 4),
+            // BC6H (95/96) and BC7 (97/98/99) need dedicated decoders — not yet supported.
             _ => null
         };
     }

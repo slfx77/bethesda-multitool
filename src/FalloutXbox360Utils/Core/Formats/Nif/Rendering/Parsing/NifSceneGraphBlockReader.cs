@@ -445,7 +445,16 @@ internal static class NifSceneGraphBlockReader
             return null;
         }
 
-        pos += 16; // Bounding Sphere (NiBound: Center vec3 + Radius float). No Bounding Box pre-F76.
+        pos += 16; // Bounding Sphere (NiBound: Center vec3 + Radius float).
+
+        // Fallout 76 (bsVersion ≥ 155) inserts a BSBoundingBox (Center vec3 + Dimensions vec3) right
+        // after the Bounding Sphere — nif.xml BSTriShape, vercond #BS_GTE_F76#. Skipping it keeps the
+        // skin/shader/alpha refs, vertex descriptor and counts aligned (else FO76 reads garbage counts
+        // and the shape is dropped as inconsistent → "no renderable geometry").
+        if (bsVersion >= 155)
+        {
+            pos += 24;
+        }
 
         // Skin / Shader Property / Alpha Property refs (3 × int32).
         if (pos + 12 + 8 > end)

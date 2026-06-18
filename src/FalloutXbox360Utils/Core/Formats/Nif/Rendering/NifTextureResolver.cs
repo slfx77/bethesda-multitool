@@ -132,6 +132,13 @@ internal sealed class NifTextureResolver : IDisposable
             return _loadTextureOverride(path);
         }
 
+        // Fallout 4 / Fallout 76 shapes point at a .bgsm/.bgem material file (under materials\) instead
+        // of carrying an inline texture set. Parse it and resolve its diffuse texture instead.
+        if (path.EndsWith(".bgsm", StringComparison.Ordinal) || path.EndsWith(".bgem", StringComparison.Ordinal))
+        {
+            return LoadFromMaterial(path);
+        }
+
         var texture = NifTextureLoader.TryLoadFromSources(path, _sources);
         if (texture != null)
         {
@@ -157,5 +164,31 @@ internal sealed class NifTextureResolver : IDisposable
 
         var ddxPath = string.Concat(path.AsSpan(0, path.Length - 4), ".ddx");
         return NifTextureLoader.TryLoadFromSources(ddxPath, _sources);
+    }
+
+    /// <summary>
+    ///     Resolves a FO4/FO76 material (<c>.bgsm</c>/<c>.bgem</c>) to a decoded texture: loads the raw
+    ///     material from the sources (it lives under <c>materials\</c>), parses its texture-path table,
+    ///     and resolves the diffuse texture. The materials archive must be among the configured sources.
+    /// </summary>
+    private DecodedTexture? LoadFromMaterial(string materialPath)
+    {
+        byte[]? raw = null;
+        foreach (var source in _sources)
+        {
+            raw = source.TryLoadRaw(materialPath);
+            if (raw is not null)
+            {
+                break;
+            }
+        }
+
+        var diffuse = raw is null ? null : Materials.BgsmMaterial.Parse(raw)?.Diffuse;
+        if (string.IsNullOrEmpty(diffuse))
+        {
+            return null;
+        }
+
+        return NifTextureLoader.TryLoadFromSources(NifTexturePathUtility.Normalize(diffuse), _sources);
     }
 }

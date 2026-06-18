@@ -324,17 +324,38 @@ internal static class NifParser
 
     private static int ParseBethesdaHeader(byte[] data, int pos, NifInfo info)
     {
-        info.BsVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        var bsVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        info.BsVersion = bsVersion;
         pos += 4;
 
-        // Skip ShortStrings (author, process script, export script)
-        for (var i = 0; i < 3; i++)
+        // BSStreamHeader, per nif.xml — the export-metadata fields are version-gated, NOT a fixed set
+        // of three ShortStrings. Getting the count wrong (e.g. FO4's Max Filepath, FO76's Unknown Int)
+        // desyncs the block-types table that follows, so no geometry is found. An ExportString is a
+        // 1-byte length prefix (including the null terminator) followed by that many bytes.
+        pos = SkipExportString(data, pos);          // Author (all Bethesda)
+        if (bsVersion > 130)
         {
-            pos += 1 + data[pos];
+            pos += 4;                               // Unknown Int (uint): FO4 131+, FO76, Starfield
         }
 
+        if (bsVersion < 131)
+        {
+            pos = SkipExportString(data, pos);      // Process Script: Skyrim SE, FO4 130
+        }
+
+        pos = SkipExportString(data, pos);          // Export Script (all Bethesda)
+        if (bsVersion is >= 103 and < 170)
+        {
+            pos = SkipExportString(data, pos);      // Max Filepath: FO4, FO76
+        }
+
+        // bsVersion >= 170 (Starfield) adds an "Unknown Data" (ExportDataSF) block here — not handled.
         return pos;
     }
+
+    /// <summary>Advances past one BSStreamHeader ExportString (1-byte length incl. terminator + bytes).</summary>
+    private static int SkipExportString(byte[] data, int pos)
+        => pos >= 0 && pos < data.Length ? pos + 1 + data[pos] : pos;
 
     private static int ParseBlockTypeNames(byte[] data, int pos, int numBlockTypes, NifInfo info)
     {
