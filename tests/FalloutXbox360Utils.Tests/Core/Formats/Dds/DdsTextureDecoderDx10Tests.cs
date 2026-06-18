@@ -82,4 +82,57 @@ public class DdsTextureDecoderDx10Tests
         buffer[offset + 2] = (byte)(value >> 16);
         buffer[offset + 3] = (byte)(value >> 24);
     }
+
+    [Fact]
+    public void Decode_Bc5SignedFlatNormal_ProducesMidGrayWithZUp()
+    {
+        // BC5S (signed) is the Fallout 4/76 tangent-space normal map format. An all-zero block means
+        // both endpoints/indices are 0 → signed value 0 → mid-gray X/Y; the reconstructed Z points up.
+        // (Decoding it as UNSIGNED would put the zero point at 0/black, which is the bug being fixed.)
+        var result = DdsTextureDecoder.Decode(BuildClassicDds("BC5S", new byte[16], blockBytes: 16));
+
+        Assert.NotNull(result);
+        var px = result!.Pixels; // RGBA of pixel 0
+        Assert.InRange(px[0], 126, 130); // X ≈ 0 → 128
+        Assert.InRange(px[1], 126, 130); // Y ≈ 0 → 128
+        Assert.InRange(px[2], 250, 255); // Z ≈ +1 → ~255
+        Assert.Equal(255, px[3]);
+    }
+
+    [Fact]
+    public void Decode_Bc5SignedMaxRed_ProducesFullRedChannel()
+    {
+        // Red-channel endpoints both +127 (= +1.0); green block zero. Index 0 selects endpoint 0.
+        var block = new byte[16];
+        block[0] = 127;
+        block[1] = 127;
+        var result = DdsTextureDecoder.Decode(BuildClassicDds("BC5S", block, blockBytes: 16));
+
+        Assert.NotNull(result);
+        Assert.InRange(result!.Pixels[0], 253, 255); // X = +1 → ~255
+    }
+
+    /// <summary>Builds a 4×4, single-mip DDS with a classic <paramref name="fourCc" /> pixel format.</summary>
+    private static byte[] BuildClassicDds(string fourCc, byte[] block, int blockBytes)
+    {
+        var dds = new byte[128 + blockBytes];
+        dds[0] = (byte)'D';
+        dds[1] = (byte)'D';
+        dds[2] = (byte)'S';
+        dds[3] = (byte)' ';
+        WriteU32(dds, 4, 124);
+        WriteU32(dds, 8, 0x1007);
+        WriteU32(dds, 12, 4); // height
+        WriteU32(dds, 16, 4); // width
+        WriteU32(dds, 28, 1); // mip count
+        WriteU32(dds, 76, 32); // pixel-format size
+        WriteU32(dds, 80, 0x4); // DDPF_FOURCC
+        for (var i = 0; i < 4; i++)
+        {
+            dds[84 + i] = (byte)fourCc[i];
+        }
+
+        Array.Copy(block, 0, dds, 128, Math.Min(block.Length, blockBytes));
+        return dds;
+    }
 }

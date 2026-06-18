@@ -79,21 +79,39 @@ internal static class DdsTextureDecoder
                 mipCount,
                 DecodeDxt5Level,
                 static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 16)),
-            "ATI1" => DecodeMipChain(
+            // BC4 single-channel: "ATI1"/"BC4U" unsigned; "BC4S" signed (Fallout 4/76 spec maps).
+            "ATI1" or "BC4U" => DecodeMipChain(
                 ddsData,
                 128,
                 width,
                 height,
                 mipCount,
-                DecodeBc4Level,
+                static (s, o, w, h) => DecodeBc4Level(s, o, w, h),
                 static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 8)),
-            "ATI2" => DecodeMipChain(
+            "BC4S" => DecodeMipChain(
                 ddsData,
                 128,
                 width,
                 height,
                 mipCount,
-                DecodeBc5Level,
+                static (s, o, w, h) => DecodeBc4Level(s, o, w, h, signedFmt: true),
+                static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 8)),
+            // BC5 two-channel: "ATI2"/"BC5U" unsigned; "BC5S" signed (Fallout 4/76 normal maps).
+            "ATI2" or "BC5U" => DecodeMipChain(
+                ddsData,
+                128,
+                width,
+                height,
+                mipCount,
+                static (s, o, w, h) => DecodeBc5Level(s, o, w, h),
+                static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 16)),
+            "BC5S" => DecodeMipChain(
+                ddsData,
+                128,
+                width,
+                height,
+                mipCount,
+                static (s, o, w, h) => DecodeBc5Level(s, o, w, h, signedFmt: true),
                 static (mipWidth, mipHeight) => GetCompressedLevelSize(mipWidth, mipHeight, 16)),
             _ => null
         };
@@ -125,12 +143,16 @@ internal static class DdsTextureDecoder
             // BC3 (DXT5)
             76 or 77 or 78 => DecodeMipChain(data, dataOffset, width, height, mipCount,
                 DecodeDxt5Level, static (w, h) => GetCompressedLevelSize(w, h, 16)),
-            // BC4 (ATI1, single channel)
+            // BC4 (single channel): 79 = UNORM, 81 = SNORM
             79 or 80 => DecodeMipChain(data, dataOffset, width, height, mipCount,
-                DecodeBc4Level, static (w, h) => GetCompressedLevelSize(w, h, 8)),
-            // BC5 (ATI2, two channel)
+                static (s, o, w, h) => DecodeBc4Level(s, o, w, h), static (w, h) => GetCompressedLevelSize(w, h, 8)),
+            81 => DecodeMipChain(data, dataOffset, width, height, mipCount,
+                static (s, o, w, h) => DecodeBc4Level(s, o, w, h, signedFmt: true), static (w, h) => GetCompressedLevelSize(w, h, 8)),
+            // BC5 (two channel): 82 = UNORM, 84 = SNORM
             82 or 83 => DecodeMipChain(data, dataOffset, width, height, mipCount,
-                DecodeBc5Level, static (w, h) => GetCompressedLevelSize(w, h, 16)),
+                static (s, o, w, h) => DecodeBc5Level(s, o, w, h), static (w, h) => GetCompressedLevelSize(w, h, 16)),
+            84 => DecodeMipChain(data, dataOffset, width, height, mipCount,
+                static (s, o, w, h) => DecodeBc5Level(s, o, w, h, signedFmt: true), static (w, h) => GetCompressedLevelSize(w, h, 16)),
             // R8G8B8A8 UNORM / UNORM_SRGB
             28 or 29 => DecodeMipChain(data, dataOffset, width, height, mipCount,
                 static (s, o, w, h) => DecodeRgbLevel(s, o, w, h, 4, 0, 1, 2, 3), static (w, h) => w * h * 4),
@@ -556,7 +578,7 @@ internal static class DdsTextureDecoder
         }
     }
 
-    private static byte[]? DecodeBc4Level(byte[] data, int offset, int width, int height)
+    private static byte[]? DecodeBc4Level(byte[] data, int offset, int width, int height, bool signedFmt = false)
     {
         var requiredSize = offset + GetCompressedLevelSize(width, height, 8);
         if (data.Length < requiredSize)
@@ -573,7 +595,7 @@ internal static class DdsTextureDecoder
         {
             for (var bx = 0; bx < blocksWide; bx++)
             {
-                DecodeAlphaBlockToChannel(data, pos, pixels, bx * 4, by * 4, width, height, 0);
+                DecodeAlphaBlockToChannel(data, pos, pixels, bx * 4, by * 4, width, height, 0, signedFmt);
                 pos += 8;
             }
         }
@@ -590,7 +612,7 @@ internal static class DdsTextureDecoder
         return pixels;
     }
 
-    private static byte[]? DecodeBc5Level(byte[] data, int offset, int width, int height)
+    private static byte[]? DecodeBc5Level(byte[] data, int offset, int width, int height, bool signedFmt = false)
     {
         var requiredSize = offset + GetCompressedLevelSize(width, height, 16);
         if (data.Length < requiredSize)
@@ -608,9 +630,9 @@ internal static class DdsTextureDecoder
             for (var bx = 0; bx < blocksWide; bx++)
             {
                 // Red channel block (8 bytes) → channel 0
-                DecodeAlphaBlockToChannel(data, pos, pixels, bx * 4, by * 4, width, height, 0);
+                DecodeAlphaBlockToChannel(data, pos, pixels, bx * 4, by * 4, width, height, 0, signedFmt);
                 // Green channel block (8 bytes) → channel 1
-                DecodeAlphaBlockToChannel(data, pos + 8, pixels, bx * 4, by * 4, width, height, 1);
+                DecodeAlphaBlockToChannel(data, pos + 8, pixels, bx * 4, by * 4, width, height, 1, signedFmt);
                 pos += 16;
             }
         }
@@ -631,8 +653,14 @@ internal static class DdsTextureDecoder
     }
 
     private static void DecodeAlphaBlockToChannel(byte[] data, int pos, byte[] pixels,
-        int blockX, int blockY, int width, int height, int channelOffset)
+        int blockX, int blockY, int width, int height, int channelOffset, bool signedFmt = false)
     {
+        if (signedFmt)
+        {
+            DecodeSignedChannelBlock(data, pos, pixels, blockX, blockY, width, height, channelOffset);
+            return;
+        }
+
         var alpha0 = data[pos];
         var alpha1 = data[pos + 1];
 
@@ -679,6 +707,64 @@ internal static class DdsTextureDecoder
 
                 var pIdx = (pixelY * width + pixelX) * 4;
                 pixels[pIdx + channelOffset] = palette[idx];
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Decodes one BC4/BC5 SNORM channel block to an 8-bit UNORM channel. Endpoints are signed bytes
+    ///     in [-1, 1] (both -128 and -127 map to -1); the decoded signed value is mapped to UNORM so the
+    ///     zero point lands at 128, matching a standard normal map (and the BC5 Z-reconstruction). The
+    ///     interpolation is done in float to avoid the integer round-bias that the unsigned path uses.
+    /// </summary>
+    private static void DecodeSignedChannelBlock(byte[] data, int pos, byte[] pixels,
+        int blockX, int blockY, int width, int height, int channelOffset)
+    {
+        var e0 = Math.Max((int)(sbyte)data[pos], -127) / 127f;
+        var e1 = Math.Max((int)(sbyte)data[pos + 1], -127) / 127f;
+
+        Span<float> palette = stackalloc float[8];
+        palette[0] = e0;
+        palette[1] = e1;
+        if (e0 > e1)
+        {
+            for (var i = 2; i < 8; i++)
+            {
+                palette[i] = (((8 - i) * e0) + ((i - 1) * e1)) / 7f;
+            }
+        }
+        else
+        {
+            for (var i = 2; i < 6; i++)
+            {
+                palette[i] = (((6 - i) * e0) + ((i - 1) * e1)) / 5f;
+            }
+
+            palette[6] = -1f;
+            palette[7] = 1f;
+        }
+
+        ulong bits = 0;
+        for (var i = 0; i < 6; i++)
+        {
+            bits |= (ulong)data[pos + 2 + i] << (i * 8);
+        }
+
+        for (var py = 0; py < 4; py++)
+        {
+            var pixelY = blockY + py;
+            if (pixelY >= height) break;
+
+            for (var px = 0; px < 4; px++)
+            {
+                var pixelX = blockX + px;
+                if (pixelX >= width) break;
+
+                var idx = (int)(bits & 0x7);
+                bits >>= 3;
+
+                var unorm = (int)MathF.Round(((palette[idx] * 0.5f) + 0.5f) * 255f);
+                pixels[((pixelY * width + pixelX) * 4) + channelOffset] = (byte)Math.Clamp(unorm, 0, 255);
             }
         }
     }
