@@ -32,17 +32,25 @@ public class DdsTextureDecoderDx10Tests
     }
 
     [Fact]
-    public void Decode_Dx10Bc7_ReturnsNullUntilDecoderExists()
+    public void Decode_Dx10Bc7_Decodes()
     {
-        // BC7 has no decoder yet; it must fail cleanly (null), not throw.
-        var dds = BuildDx10Dds(DxgiBc7UnormSrgb, blockBytes: 16);
-        Assert.Null(DdsTextureDecoder.Decode(dds));
+        // BC7 (DXGI 98/99) now decodes via BCnEncoder.Net. Use a well-formed single-block bitstream:
+        // byte 0 = 0x40 selects BC7 mode 6 (single subset), the rest of the block is zero.
+        var dds = BuildDx10Dds(DxgiBc7UnormSrgb, blockBytes: 16, firstBlockByte: 0x40);
+
+        var result = DdsTextureDecoder.Decode(dds);
+
+        Assert.NotNull(result);
+        Assert.Equal(4, result!.Width);
+        Assert.Equal(4, result.Height);
+        Assert.Equal(4 * 4 * 4, result.Pixels.Length);
     }
 
     /// <summary>Builds a 4×4, single-mip DDS with a DX10 header carrying <paramref name="dxgiFormat" />.</summary>
-    private static byte[] BuildDx10Dds(uint dxgiFormat, int blockBytes)
+    private static byte[] BuildDx10Dds(uint dxgiFormat, int blockBytes, byte firstBlockByte = 0)
     {
         var dds = new byte[148 + blockBytes]; // 128 header + 20 DX10 header + one 4x4 block
+        dds[148] = firstBlockByte; // block-0 byte 0 (e.g. BC7 mode selector)
         // "DDS " magic + header size 124.
         dds[0] = (byte)'D';
         dds[1] = (byte)'D';

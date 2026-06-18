@@ -82,6 +82,7 @@
   <!-- Shared packages -->
   <ItemGroup>
     <PackageReference Include="Magick.NET-Q16-AnyCPU" />
+    <PackageReference Include="BCnEncoder.Net" />
     <PackageReference Include="SharpGLTF.Toolkit" />
     <PackageReference Include="System.CommandLine" />
     <PackageReference Include="Spectre.Console" />

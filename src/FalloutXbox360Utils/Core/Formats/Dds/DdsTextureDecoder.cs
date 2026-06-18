@@ -1,4 +1,6 @@
 using System.Text;
+using BCnEncoder.Decoder;
+using BCnEncoder.Shared;
 
 namespace FalloutXbox360Utils.Core.Formats.Dds;
 
@@ -135,9 +137,53 @@ internal static class DdsTextureDecoder
             // B8G8R8A8 UNORM / UNORM_SRGB
             87 or 91 => DecodeMipChain(data, dataOffset, width, height, mipCount,
                 static (s, o, w, h) => DecodeRgbLevel(s, o, w, h, 4, 2, 1, 0, 3), static (w, h) => w * h * 4),
-            // BC6H (95/96) and BC7 (97/98/99) need dedicated decoders — not yet supported.
+            // BC6H HDR (96 = signed, 95 = unsigned) — decoded to LDR RGBA by the library.
+            95 or 96 => DecodeMipChain(data, dataOffset, width, height, mipCount,
+                (s, o, w, h) => DecodeBcnLevel(s, o, w, h, dxgiFormat == 96 ? CompressionFormat.Bc6S : CompressionFormat.Bc6U, 16),
+                static (w, h) => GetCompressedLevelSize(w, h, 16)),
+            // BC7 (97 TYPELESS / 98 UNORM / 99 UNORM_SRGB)
+            97 or 98 or 99 => DecodeMipChain(data, dataOffset, width, height, mipCount,
+                static (s, o, w, h) => DecodeBcnLevel(s, o, w, h, CompressionFormat.Bc7, 16),
+                static (w, h) => GetCompressedLevelSize(w, h, 16)),
             _ => null
         };
+    }
+
+    /// <summary>
+    ///     Decodes one BC6H/BC7 mip level to RGBA8 via the BCnEncoder.Net managed decoder (Microsoft's
+    ///     DirectXTex is native-only; ImageMagick can't decode these formats). Returns null on any
+    ///     failure so the caller falls back gracefully rather than throwing.
+    /// </summary>
+    private static byte[]? DecodeBcnLevel(
+        byte[] data, int offset, int width, int height, CompressionFormat format, int bytesPerBlock)
+    {
+        var size = GetCompressedLevelSize(width, height, bytesPerBlock);
+        if (offset + size > data.Length)
+        {
+            return null;
+        }
+
+        try
+        {
+            var input = new byte[size];
+            Array.Copy(data, offset, input, 0, size);
+            var pixels = new BcDecoder().DecodeRaw(input, width, height, format);
+            var rgba = new byte[width * height * 4];
+            var count = Math.Min(pixels.Length, width * height);
+            for (var i = 0; i < count; i++)
+            {
+                rgba[(i * 4) + 0] = pixels[i].r;
+                rgba[(i * 4) + 1] = pixels[i].g;
+                rgba[(i * 4) + 2] = pixels[i].b;
+                rgba[(i * 4) + 3] = pixels[i].a;
+            }
+
+            return rgba;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IndexOutOfRangeException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

@@ -17,6 +17,10 @@
 
     <!-- Image / model / GPU -->
     <PackageVersion Include="Magick.NET-Q16-AnyCPU" Version="14.13.1" />
+    <!-- Pure-managed BCn decoder (BC1-7 + BC6H) for DX10-header DDS (FO4/FO76). ImageSharp-free base
+         package; 2.2.0 matches the transitive version the DDXConv submodule's BCnEncoder.Net.ImageSharp
+         pulls in (its 1.1.2 wrapper depends on base 2.2.0). -->
+    <PackageVersion Include="BCnEncoder.Net" Version="2.2.0" />
     <PackageVersion Include="SharpGLTF.Toolkit" Version="1.0.6" />
     <PackageVersion Include="Vortice.Direct3D11" Version="3.8.3" />
     <PackageVersion Include="Vortice.Direct3D12" Version="3.8.2" />
