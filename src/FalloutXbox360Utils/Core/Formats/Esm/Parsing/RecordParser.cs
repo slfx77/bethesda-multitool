@@ -102,6 +102,21 @@ public sealed class RecordParser
         var totalSw = Stopwatch.StartNew();
         var phaseSw = Stopwatch.StartNew();
 
+        // Morrowind (TES3) plugins use a flat record stream with 4-byte subrecord sizes and entirely
+        // different record/subrecord layouts — the TES4 typed handlers below would misread every byte.
+        // Route them to the dedicated TES3 parser, which decodes each record into a GenericEsmRecord
+        // with typed Fields that the same show / list / stats surface consumes.
+        if (_context.ScanResult.IsTes3)
+        {
+            progress?.Report((0, "Parsing TES3 records..."));
+            var tes3Result = new Tes3.Tes3RecordParser(_context).ParseAll();
+            totalSw.Stop();
+            Logger.Instance.Info(
+                $"[Semantic Parse] Complete (TES3). Time: {totalSw.Elapsed}, Records: {tes3Result.TotalRecordsProcessed}");
+            progress?.Report((100, "Complete"));
+            return tes3Result;
+        }
+
         // Parsed record types — single source of truth lives in EsmParsedRecordTypes, which is
         // completeness-checked against RecordCollection so a new parser can't silently end up
         // mislabeled as "not parsed". Anything not in this set falls into UnparsedTypeCounts below.

@@ -83,6 +83,7 @@ internal static class NifBoneTransformResolver
             data,
             nif.Blocks[boneNodeIndex],
             nif.BsVersion,
-            be);
+            be,
+            nif.HasInlineStrings);
     }
 }

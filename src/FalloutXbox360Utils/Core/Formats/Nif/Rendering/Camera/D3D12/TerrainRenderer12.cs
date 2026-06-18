@@ -46,15 +46,18 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
     // Wall-clock ceiling on render-thread cell build/upload work per frame. The primary pacer:
     // bounds the movement-stutter spike when many new cells enter view at high render distance by
-    // capping *how long* building may take. Tuned against MeshBuildUploadMilliseconds.
-    private const double MaxMeshBuildMillisecondsPerFrame = 2.0;
+    // capping *how long* building may take. Tuned against MeshBuildUploadMilliseconds. Raised from
+    // 2.0 → 3.0 so a zoomed-out view (hundreds of visible cells) fills its edges noticeably faster
+    // without a perceptible per-frame hitch.
+    private const double MaxMeshBuildMillisecondsPerFrame = 3.0;
 
     // Async cell build runs off the render thread, but it still allocates enough to compete with
-    // mesh decode and trigger visible GC pauses. Keep the default conservative and tune via env
-    // when profiling throughput on a specific machine.
+    // mesh decode and trigger visible GC pauses. Default 4 (was 2): with MaxBuildStartsPerFrame
+    // tracking this, ~4 cells/frame begin building instead of 2, so the terrain edge backlog at a
+    // zoomed-out camera clears about twice as fast. Tune via env (down on GC-bound machines, up to 16).
     private static readonly int MaxConcurrentBuildTasks = ParsePositiveIntEnvironment(
         EnvironmentVariables.Viewer.TerrainBuildConcurrency,
-        defaultValue: 2,
+        defaultValue: 4,
         min: 1,
         max: 16);
 
@@ -139,7 +142,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private Dictionary<(int gx, int gy), CellRecord>? _cells;
     private global::FalloutXbox360Utils.WorldSpatialIndex? _spatialIndex;
     private global::FalloutXbox360Utils.WorldRenderCache? _renderCache;
-    private bool _vclrOnlyMode;
+    private bool _showTextures = true;
+    private bool _showVertexColors = true;
     private bool _disposed;
 
     public TerrainRenderer12(
@@ -281,7 +285,11 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private int EffectiveMaxConcurrentBuildTasks =>
         StreamingThrottled ? MaxConcurrentBuildTasks : Math.Max(MaxConcurrentBuildTasks, UnthrottledMaxConcurrentBuildTasks);
 
-    public void SetVclrOnlyMode(bool on) => _vclrOnlyMode = on;
+    public void SetDebugModes(bool showTextures, bool showVertexColors)
+    {
+        _showTextures = showTextures;
+        _showVertexColors = showVertexColors;
+    }
 
     /// <summary>
     ///     Render-thread-only LRU of per-cell terrain meshes (replaces the bespoke
@@ -387,10 +395,15 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         var perFrameAlloc = _ringBuffer.Allocate(frameIndex, PerFrameByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(Matrix4x4*)perFrameAlloc.CpuPtr = viewProj; }
 
-        // Per-mode CB (b2): x = VCLR-only debug, y = diffuse UV scale (formerly in the
-        // per-quadrant CB, now per-frame since every cell uses the same scale). z/w padding.
+        // Per-mode CB (b2): x = show diffuse textures (1/0), y = diffuse UV scale (formerly in the
+        // per-quadrant CB, now per-frame since every cell uses the same scale), z = apply VCLR tint
+        // (1/0), w = padding. textures off + vclr on reproduces the old VCLR-only debug look.
         var perModeAlloc = _ringBuffer.Allocate(frameIndex, PerModeByteSize, GpuRingBuffer12.CbAlignment);
-        unsafe { *(Vector4*)perModeAlloc.CpuPtr = new Vector4(_vclrOnlyMode ? 1f : 0f, DefaultDiffuseUvScale, 0f, 0f); }
+        unsafe
+        {
+            *(Vector4*)perModeAlloc.CpuPtr = new Vector4(
+                _showTextures ? 1f : 0f, DefaultDiffuseUvScale, _showVertexColors ? 1f : 0f, 0f);
+        }
 
         cmd.SetPipelineState(pso);
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);

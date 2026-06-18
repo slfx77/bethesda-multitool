@@ -74,7 +74,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
@@ -194,7 +194,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
@@ -350,7 +350,7 @@ internal sealed class MiscWorldObjectHandler(RecordParserContext context) : Reco
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);

@@ -333,7 +333,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     break;
                 case "NAM1":
                     FlushCurrentResponse();
-                    currentResponseText = EsmStringUtils.ReadNullTermString(subData);
+                    currentResponseText = Context.ReadDialogueText(subData);
                     break;
                 case "RNAM":
                     promptText = EsmStringUtils.ReadNullTermString(subData);

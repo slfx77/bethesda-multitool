@@ -1,3 +1,5 @@
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
+
 namespace FalloutXbox360Utils;
 
 /// <summary>
@@ -35,9 +37,15 @@ internal interface ITopDownSceneRenderer
     ///     2D water overlay can't do this). The 2D map suppresses its own water layer wherever this
     ///     overlay is drawn, so this must follow the map's water toggle.
     /// </param>
+    /// <param name="hiddenCategories">
+    ///     Placed-object categories to hide in the overlay — the 2D map's legend filter, so the
+    ///     "Rendered models" overlay matches the rest of the map (the user's category toggles drive
+    ///     the rendered 3D meshes too, not just the 2D markers). Empty = show all.
+    /// </param>
     Task<TopDownRender?> RenderTopDownAsync(
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
-        int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId, CancellationToken ct);
+        int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId,
+        IReadOnlyCollection<PlacedObjectCategory> hiddenCategories, CancellationToken ct);
 }
 
 /// <summary>

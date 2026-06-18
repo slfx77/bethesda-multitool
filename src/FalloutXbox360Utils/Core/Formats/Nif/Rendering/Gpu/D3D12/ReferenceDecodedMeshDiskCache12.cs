@@ -29,7 +29,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Bumped 2→3: placed-reference bake now discards the scene-root node's own authored transform
     // (treatRootsAsIdentity) so non-identity root rotations (e.g. McMarranWalls wallReg 90°,
     // monorail curves 15°) are no longer baked into the vertices — the decoded positions change.
-    internal const int DecoderVersion = 3;
+    // Bumped 3→4: NiBillboardNode subtrees now bake with the node's rotation dropped (translation
+    // kept) and the new IsBillboard flag rides the payload, so old caches lack the field and would
+    // bake the smoke glow with the wrong orientation.
+    internal const int DecoderVersion = 4;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -207,6 +210,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(submesh.DoubleSided);
         writer.Write(submesh.IsEmissive);
         WriteVector3(writer, submesh.LocalBoundsCenter);
+        writer.Write(submesh.IsBillboard);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -255,7 +259,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadSingle(),
             reader.ReadBoolean(),
             reader.ReadBoolean(),
-            ReadVector3(reader));
+            ReadVector3(reader),
+            reader.ReadBoolean());
     }
 
     private static void WriteVector2(BinaryWriter writer, Vector2 value)
@@ -312,4 +317,5 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     float MaterialAlpha,
     bool DoubleSided,
     bool IsEmissive,
-    Vector3 LocalBoundsCenter);
+    Vector3 LocalBoundsCenter,
+    bool IsBillboard);

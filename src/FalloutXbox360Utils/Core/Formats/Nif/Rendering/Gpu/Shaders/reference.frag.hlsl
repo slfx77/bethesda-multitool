@@ -27,7 +27,24 @@ cbuffer Atmosphere : register(b3)
     float4 uSkyHorizon;         // rgb = sky-horizon color, w = spare
     float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
     float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = time
+    float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
 };
+
+// Engine distance fog (grounded in Sky::UpdateFog): a linear near→far ramp toward the resolved fog
+// color, raised to the weather's fog power. fogEnabled (uFogColorFogEnabled.w) gates it; OFF returns
+// the color unchanged. near/far/power are the daylight-blended WTHR FNAM values from AtmosphereState.
+float3 ApplyFog(float3 color, float3 worldPos)
+{
+    if (uFogColorFogEnabled.w < 0.5)
+    {
+        return color;
+    }
+
+    float dist = length(worldPos - uCameraPosFogPower.xyz);
+    float f = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
+    f = pow(f, max(uCameraPosFogPower.w, 0.01));
+    return lerp(color, uFogColorFogEnabled.rgb, f);
+}
 
 // Per-pixel light factor (rgb) for a world-space normal. When lighting is disabled
 // (uSunColorLighting.w == 0) this returns the EXACT legacy flat shade — scalar 0.4 + 0.6*lambert
@@ -59,6 +76,7 @@ struct PSInput
     nointerpolation float4 vRenderState : TEXCOORD6;
     nointerpolation float4 vTextureState : TEXCOORD7;
     nointerpolation uint4  vTexIndices  : TEXCOORD8;
+    float3 vWorldPos    : TEXCOORD9;
     bool   IsFrontFace  : SV_IsFrontFace;
 };
 
@@ -129,5 +147,5 @@ float4 main(PSInput input) : SV_Target
     float outAlpha = input.vAlphaState.w > 0.5
         ? saturate(sampleAlpha * input.vAlphaState.z)
         : 1.0;
-    return float4(sample.rgb * input.vVertexColor.rgb * shade, outAlpha);
+    return float4(ApplyFog(sample.rgb * input.vVertexColor.rgb * shade, input.vWorldPos), outAlpha);
 }

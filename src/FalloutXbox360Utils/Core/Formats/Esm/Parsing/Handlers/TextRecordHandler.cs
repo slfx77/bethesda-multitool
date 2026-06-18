@@ -74,10 +74,10 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "DESC":
-                    text = EsmStringUtils.ReadNullTermString(subData);
+                    text = Context.ReadDescription(subData);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
@@ -241,7 +241,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
@@ -396,11 +396,11 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "DESC":
                     description =
-                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                        Context.ReadDescription(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "ICON":
                     icon = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
@@ -495,7 +495,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "DATA" when sub.DataLength >= 1:
                     noteType = subData[0];
@@ -530,7 +530,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                 case "DESC": // Fallback for text content
                     if (string.IsNullOrEmpty(text))
                     {
-                        text = EsmStringUtils.ReadNullTermString(subData);
+                        text = Context.ReadDescription(subData);
                     }
 
                     break;

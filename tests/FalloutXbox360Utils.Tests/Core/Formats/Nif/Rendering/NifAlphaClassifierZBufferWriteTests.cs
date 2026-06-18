@@ -25,15 +25,18 @@ public sealed class NifAlphaClassifierZBufferWriteTests
     }
 
     [Fact]
-    public void Classify_BlendWithZBufferWriteNoAlphaTest_RoutesToOpaque()
+    public void Classify_PureBlendWithZBufferWriteNoAlphaTest_StaysBlend()
     {
+        // A pure alpha-blend shape (NO alpha-test) is genuine transparency — a decal/glass/smoke — even
+        // when it sets ZBuffer_Write. Stripping its blend (the over-broad earlier heuristic) made decals
+        // render fully opaque; only alpha-blend + alpha-TEST occluders (cabin shell) should be stripped.
         var submesh = CreateSubmesh(hasAlphaBlend: true, hasAlphaTest: false, shaderFlags2: 0x1u);
 
         var state = NifAlphaClassifier.Classify(submesh, diffuseTexture: null);
 
-        Assert.Equal(NifAlphaRenderMode.Opaque, state.RenderMode);
-        Assert.True(state.WritesDepth);
-        Assert.False(state.HasAlphaBlend);
+        Assert.Equal(NifAlphaRenderMode.Blend, state.RenderMode);
+        Assert.False(state.WritesDepth);
+        Assert.True(state.HasAlphaBlend);
     }
 
     [Fact]

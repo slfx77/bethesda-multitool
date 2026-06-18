@@ -67,6 +67,12 @@ public static class FileTypeDetector
             return AnalysisFileType.EsmFile;
         }
 
+        // Morrowind ESM/ESP (TES3, little-endian): "TES3" (0x54 0x45 0x53 0x33).
+        if (header[0] == 'T' && header[1] == 'E' && header[2] == 'S' && header[3] == '3')
+        {
+            return AnalysisFileType.EsmFile;
+        }
+
         // Xbox 360 ESM (big-endian): "4SET" (0x34 0x53 0x45 0x54)
         if (header[0] == '4' && header[1] == 'S' && header[2] == 'E' && header[3] == 'T')
         {

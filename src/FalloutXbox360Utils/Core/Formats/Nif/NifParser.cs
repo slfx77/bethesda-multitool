@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
+using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
+using FalloutXbox360Utils.Core.Formats.Nif.Schema;
 using FalloutXbox360Utils.Core.Utils;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif;
@@ -9,6 +11,8 @@ namespace FalloutXbox360Utils.Core.Formats.Nif;
 /// </summary>
 internal static class NifParser
 {
+    private static readonly Logger Log = Logger.Instance;
+
     /// <summary>
     ///     Parse NIF file and extract header/block information.
     /// </summary>
@@ -26,6 +30,15 @@ internal static class NifParser
             return null;
         }
 
+        // Morrowind / pre-Gamebryo NetImmerse (4.0.0.2): version then Num Blocks directly — no endian
+        // byte (< 20.0.0.3), no user version (< 10.0.1.8), no BS stream header, no Block Types table
+        // (each block is prefixed by its type name as a SizedString). Handled on a dedicated path.
+        if (pos + 4 <= data.Length &&
+            BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos)) == 0x04000002)
+        {
+            return ParseMorrowindNif(data, pos, info);
+        }
+
         pos = ParseVersionInfo(data, pos, info);
         if (!IsBethesdaVersion(info.BinaryVersion,
                 info.UserVersion))
@@ -34,6 +47,16 @@ internal static class NifParser
         }
 
         pos = ParseBethesdaHeader(data, pos, info);
+
+        // This (modern) path locates blocks via the header's per-block "Block Size" array (added in
+        // NIF 20.2.0.5) and reads block names from the header String table (added in 20.1.0.1). Older
+        // Bethesda NIFs — Oblivion is 20.0.0.4/20.0.0.5 — have neither, so their block boundaries are
+        // recovered by field-walking each block (the schema in measure mode). See ParseLegacyBlocks.
+        if (info.BinaryVersion < 0x14020005)
+        {
+            return ParseLegacyBlocks(data, pos, info);
+        }
+
         var numBlockTypes = BinaryUtils.ReadUInt16(data, pos, info.IsBigEndian);
         pos += 2;
 
@@ -51,6 +74,198 @@ internal static class NifParser
 
         BuildBlockList(info, blockTypeIndices, blockSizes, pos);
         return info;
+    }
+
+    /// <summary>
+    ///     Parse a Morrowind-era NetImmerse NIF (4.0.0.2): after the version + Num Blocks, each block is
+    ///     written as a SizedString type name followed by the block body (no header Block Types table,
+    ///     no Block Size array, no String table). Block byte ranges and inline names are recovered with
+    ///     the schema measure walk, exactly like the Oblivion path.
+    /// </summary>
+    private static NifInfo ParseMorrowindNif(byte[] data, int pos, NifInfo info)
+    {
+        info.BinaryVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        info.IsBigEndian = false; // Morrowind PC; the Endian-Type byte arrives only at 20.0.0.3.
+        info.UserVersion = 0;
+        info.BsVersion = 0; // no BS stream header
+        info.HasInlineStrings = true; // < 20.1.0.1: names are inline SizedStrings
+        info.IsMorrowind = true; // legacy NiObjectNET/NiAVObject/NiGeometryData layout
+        pos += 4;
+
+        if (pos + 4 > data.Length)
+        {
+            return info;
+        }
+
+        info.BlockCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        pos += 4;
+        if (info.BlockCount is < 0 or > 100000)
+        {
+            info.BlockCount = 0;
+            return info;
+        }
+
+        var converter = new NifSchemaConverter(
+            NifSchema.LoadEmbedded(), info.BinaryVersion, 0, 0, measure: true);
+
+        for (var i = 0; i < info.BlockCount; i++)
+        {
+            // Each block is preceded by its type name as a uint32-length-prefixed string.
+            if (pos + 4 > data.Length)
+            {
+                return AbortMorrowindBlocks(info);
+            }
+
+            var typeLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+            pos += 4;
+            if (typeLen is <= 0 or > 256 || pos + typeLen > data.Length)
+            {
+                return AbortMorrowindBlocks(info);
+            }
+
+            var typeName = Encoding.ASCII.GetString(data, pos, typeLen);
+            pos += typeLen;
+
+            var (size, name) = converter.MeasureBlock(data, pos, data.Length, typeName);
+            if (size < 0)
+            {
+                Log.Debug($"NIF Morrowind measure: cannot size block {i} ('{typeName}'); aborting block list.");
+                return AbortMorrowindBlocks(info);
+            }
+
+            info.Blocks.Add(new BlockInfo
+            {
+                Index = i,
+                TypeIndex = 0,
+                TypeName = typeName,
+                Size = size,
+                DataOffset = pos
+            });
+
+            if (name != null)
+            {
+                info.BlockNames[i] = name;
+            }
+
+            pos += size;
+        }
+
+        return info;
+    }
+
+    private static NifInfo AbortMorrowindBlocks(NifInfo info)
+    {
+        info.Blocks.Clear();
+        info.BlockNames.Clear();
+        return info;
+    }
+
+    /// <summary>
+    ///     Parse the block table for pre-20.2.0.5 NIFs (Oblivion 20.0.0.x): the header still has the
+    ///     Block Types table + per-block Type Index (since 5.0.0.1) but NO Block Size array and NO
+    ///     String table. Block byte ranges are recovered by field-walking each block with the schema
+    ///     in measure mode; object names are read inline. NIFs older than 5.0.0.1 (Morrowind 4.0.0.2,
+    ///     which has neither a Block Types table nor a BS stream header) are returned header-only here
+    ///     and handled by the dedicated legacy-Gamebryo path.
+    /// </summary>
+    private static NifInfo? ParseLegacyBlocks(byte[] data, int pos, NifInfo info)
+    {
+        info.HasInlineStrings = info.BinaryVersion < 0x14010001;
+
+        if (info.BinaryVersion < 0x05000001)
+        {
+            return info; // No Block Types table — not handled on this path.
+        }
+
+        if (pos + 2 > data.Length)
+        {
+            return info;
+        }
+
+        var numBlockTypes = BinaryUtils.ReadUInt16(data, pos, info.IsBigEndian);
+        pos += 2;
+
+        pos = ParseBlockTypeNames(data, pos, numBlockTypes, info);
+        if (pos < 0)
+        {
+            return null;
+        }
+
+        // Per-block Type Index — but no Block Size array (that arrives at 20.2.0.5).
+        var blockTypeIndices = new ushort[info.BlockCount];
+        for (var i = 0; i < info.BlockCount; i++)
+        {
+            if (pos + 2 > data.Length)
+            {
+                return info;
+            }
+
+            blockTypeIndices[i] = BinaryUtils.ReadUInt16(data, pos, info.IsBigEndian);
+            pos += 2;
+        }
+
+        // No String table (< 20.1.0.1). Groups follow (since 5.0.0.6; present in Oblivion), then data.
+        pos = SkipGroups(data, pos, info.IsBigEndian);
+
+        MeasureLegacyBlocks(data, pos, info, blockTypeIndices);
+        return info;
+    }
+
+    /// <summary>
+    ///     Field-walk every block (schema measure mode) to recover its byte offset/size and capture its
+    ///     inline NiObjectNET.Name. With no per-block size array, one mis-sized block desyncs all that
+    ///     follow — so an unsizable (schema-unknown) block type aborts the block list rather than
+    ///     emitting wrong offsets (the file then renders as "no geometry", but never crashes).
+    /// </summary>
+    private static void MeasureLegacyBlocks(byte[] data, int dataStart, NifInfo info, ushort[] blockTypeIndices)
+    {
+        var converter = new NifSchemaConverter(
+            NifSchema.LoadEmbedded(),
+            info.BinaryVersion,
+            (int)info.UserVersion,
+            (int)info.BsVersion,
+            measure: true);
+
+        var pos = dataStart;
+        for (var i = 0; i < info.BlockCount; i++)
+        {
+            var typeName = blockTypeIndices[i] < info.BlockTypeNames.Count
+                ? info.BlockTypeNames[blockTypeIndices[i]]
+                : "Unknown";
+
+            if (pos > data.Length)
+            {
+                Log.Debug($"NIF legacy measure: block {i} ('{typeName}') starts past EOF; aborting block list.");
+                info.Blocks.Clear();
+                info.BlockNames.Clear();
+                return;
+            }
+
+            var (size, name) = converter.MeasureBlock(data, pos, data.Length, typeName);
+            if (size < 0)
+            {
+                Log.Debug($"NIF legacy measure: cannot size block {i} ('{typeName}'); aborting block list.");
+                info.Blocks.Clear();
+                info.BlockNames.Clear();
+                return;
+            }
+
+            info.Blocks.Add(new BlockInfo
+            {
+                Index = i,
+                TypeIndex = blockTypeIndices[i],
+                TypeName = typeName,
+                Size = size,
+                DataOffset = pos
+            });
+
+            if (name != null)
+            {
+                info.BlockNames[i] = name;
+            }
+
+            pos += size;
+        }
     }
 
     /// <summary>
@@ -218,6 +433,13 @@ internal static class NifParser
 
     public static bool IsBethesdaVersion(uint binaryVersion, uint userVersion)
     {
-        return binaryVersion == 0x14020007 && (userVersion == 11 || userVersion == 12);
+        return binaryVersion switch
+        {
+            // FO3 / FNV / Skyrim / Fallout 4 / Starfield (NIF 20.2.0.7).
+            0x14020007 => userVersion is 11 or 12,
+            // Oblivion (NIF 20.0.0.4 / 20.0.0.5).
+            0x14000004 or 0x14000005 => userVersion == 11,
+            _ => false
+        };
     }
 }

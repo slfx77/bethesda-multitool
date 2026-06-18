@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -186,6 +187,22 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     the imposter once that geometry's region loads. Driven by <c>RenderableReference.IsImposter</c>.
     /// </summary>
     public bool ShowImposters { get; set; }
+
+    // Per-category visibility filter. References whose RenderableReference.Category is in this set are
+    // culled (e.g. activators off by default in the 3D view; the 2D legend's hidden set for the
+    // top-down overlay). Mutated only via SetHiddenCategories, which invalidates the cull cache.
+    private readonly HashSet<PlacedObjectCategory> _hiddenCategories = [];
+
+    /// <summary>
+    ///     Replaces the set of <see cref="PlacedObjectCategory" /> values whose references are hidden.
+    ///     Invalidates the cull cache so the next frame re-filters. Pass an empty set to show all.
+    /// </summary>
+    public void SetHiddenCategories(IEnumerable<PlacedObjectCategory> hidden)
+    {
+        _hiddenCategories.Clear();
+        foreach (var category in hidden) _hiddenCategories.Add(category);
+        _cullCacheValid = false;
+    }
 
     /// <summary>
     ///     Number of per-draw allocations that didn't fit the shared ring buffer this frame and were
@@ -397,6 +414,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         culled++;
                         continue;
                     }
+                    // Per-category visibility (activators off by default; 2D legend toggles for the
+                    // top-down overlay). The set is empty in the common case so this is one HashSet
+                    // count check per candidate.
+                    if (_hiddenCategories.Count > 0 && _hiddenCategories.Contains(r.Category))
+                    {
+                        culled++;
+                        continue;
+                    }
                     // Cull bounds: once a mesh is resident, use its ACTUAL local bounding sphere (radius
                     // around the NIF origin, scaled into world) instead of the OBND-or-256-fallback baked
                     // at LoadData. The mesh sphere is conservative (contains all geometry) and centered at
@@ -509,11 +534,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var anySubmeshDrawn = false;
             foreach (var sub in mesh.Submeshes)
             {
-                if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend)
+                // Billboards must take the per-draw blended path even when opaque: the instanced
+                // opaque path has no per-draw matrix, but a billboard needs a unique camera-facing
+                // world matrix per placement.
+                if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard)
                 {
                     var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, r.WorldMatrix);
+                    var world = sub.IsBillboard
+                        ? BuildBillboardWorld(sub.LocalBoundsCenter, r.WorldMatrix, worldCenter, cylinder.Position)
+                        : r.WorldMatrix;
                     _blendedDraws.Add(new BlendedReferenceDraw(
-                        r.WorldMatrix,
+                        world,
                         sub,
                         Vector3.DistanceSquared(worldCenter, cylinder.Position),
                         sub.AlphaState,
@@ -1145,6 +1176,35 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         /// material/texture state is per-batch and lives in the InstanceDraw CBV at draw time).</summary>
         public List<Matrix4x4> Instances { get; } = new(16);
         public int LastTouchedFrame { get; set; }
+    }
+
+    /// <summary>
+    ///     Builds a cylindrical (billboardUp / ROTATE_ABOUT_UP) camera-facing world matrix for a
+    ///     submesh that sat under a <c>NiBillboardNode</c>. The quad spins about the world up axis (Z)
+    ///     to face the camera and ignores the REFR placement rotation — only the placement's world
+    ///     position and uniform scale are kept. The bake already dropped the billboard node's own
+    ///     rotation (NifSceneGraphWalker.WalkNode), so the quad sits at <paramref name="worldCenter" />
+    ///     in its authored local orientation, re-aimable here.
+    ///     <para>
+    ///         Convention: the quad's local +Y is assumed to be its facing axis, hence the
+    ///         <c>-π/2</c> term that maps +Y onto the horizontal camera direction. If the smoke renders
+    ///         90° off or back-facing in the GUI, drop the <c>-π/2</c> (local +X facing) or flip the
+    ///         sign — fast to iterate once visible.
+    ///     </para>
+    /// </summary>
+    private static Matrix4x4 BuildBillboardWorld(
+        Vector3 localBoundsCenter, Matrix4x4 world, Vector3 worldCenter, Vector3 cameraPosition)
+    {
+        var toCam = cameraPosition - worldCenter;
+        toCam.Z = 0f;
+        var facing = toCam.LengthSquared() > 1e-6f ? Vector3.Normalize(toCam) : Vector3.UnitX;
+        var angle = MathF.Atan2(facing.Y, facing.X) - MathF.PI / 2f;
+        // Uniform scale = length of the placement matrix's first row (X axis).
+        var scale = new Vector3(world.M11, world.M12, world.M13).Length();
+        var rs = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateRotationZ(angle);
+        // Anchor the quad so its local bounds center maps to the placement's world position.
+        rs.Translation = worldCenter - Vector3.TransformNormal(localBoundsCenter, rs);
+        return rs;
     }
 
     private readonly record struct BlendedReferenceDraw(

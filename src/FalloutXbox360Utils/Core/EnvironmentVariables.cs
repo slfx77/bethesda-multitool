@@ -88,6 +88,30 @@ internal static class EnvironmentVariables
         /// <summary>When 1, renders imposter (distant LOD stand-in) objects that are suppressed by default where a co-located full model exists.</summary>
         public const string ShowImposters = "FALLOUT_VIEWER_SHOW_IMPOSTERS";
 
+        /// <summary>SpeedTree fallback trunk height in native units (default 90) — used only when the TREE record has no OBND. Live-tunable; .spt geometry is not disk-cached.</summary>
+        public const string SpeedTreeHeight = "FALLOUT_VIEWER_SPT_HEIGHT";
+
+        /// <summary>SpeedTree final-height tuning multiplier on the data-driven (OBND) tree height (default 1.0).</summary>
+        public const string SpeedTreeHeightScale = "FALLOUT_VIEWER_SPT_HEIGHT_SCALE";
+
+        /// <summary>SpeedTree leaf-card size multiplier (default 1.0).</summary>
+        public const string SpeedTreeLeafScale = "FALLOUT_VIEWER_SPT_LEAF_SCALE";
+
+        /// <summary>SpeedTree leaf cards per terminal-branch ring (default 2).</summary>
+        public const string SpeedTreeLeafCount = "FALLOUT_VIEWER_SPT_LEAF_COUNT";
+
+        /// <summary>SpeedTree child-branch declination in degrees, higher = bushier/wider (default 62).</summary>
+        public const string SpeedTreeBranchAngle = "FALLOUT_VIEWER_SPT_BRANCH_ANGLE";
+
+        /// <summary>SpeedTree child-branch count multiplier (default 1.0).</summary>
+        public const string SpeedTreeChildDensity = "FALLOUT_VIEWER_SPT_CHILD_DENSITY";
+
+        /// <summary>SpeedTree per-ring curl/bend strength in radians (default 0.13).</summary>
+        public const string SpeedTreeCurl = "FALLOUT_VIEWER_SPT_CURL";
+
+        /// <summary>SpeedTree gravity/droop strength — higher = lower, wider, droopier crown (default 0.6).</summary>
+        public const string SpeedTreeGravity = "FALLOUT_VIEWER_SPT_GRAVITY";
+
         public const string TextureResolveConcurrency = "FALLOUT_VIEWER_TEXTURE_RESOLVE_CONCURRENCY";
         public const string RetainTexturePayloads = "FALLOUT_VIEWER_RETAIN_TEXTURE_PAYLOADS";
         public const string PersistentTextureCache = "FALLOUT_VIEWER_PERSISTENT_TEXTURE_CACHE";

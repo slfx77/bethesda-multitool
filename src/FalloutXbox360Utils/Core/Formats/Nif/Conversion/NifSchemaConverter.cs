@@ -4,6 +4,7 @@
 
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.Nif.Expressions;
 using FalloutXbox360Utils.Core.Formats.Nif.Schema;
 using static FalloutXbox360Utils.Core.Formats.Nif.Conversion.NifEndianUtils;
@@ -20,20 +21,72 @@ internal sealed class NifSchemaConverter
     private const string StripsFieldName = "Strips";
     private const string TrianglesFieldName = "Triangles";
 
+    // `bool` is a 32-bit int up to and including NIF 4.0.0.2, then an 8-bit byte from 4.1.0.1 on
+    // (see nif.xml <basic name="bool">). The schema stores the modern 1-byte size, which is correct
+    // for every Bethesda stream we convert (Oblivion 20.0.0.x, FO3/FNV/Skyrim 20.2.0.x) — only the
+    // Morrowind-era legacy-Gamebryo measure path (4.0.0.2) needs the widened 4-byte width.
+    private const uint BoolWidensAtOrBelowVersion = 0x04000002;
+
     private static readonly Logger Log = Logger.Instance;
+
+    private static readonly int[] EmptyRemap = [];
 
     private readonly NifSchema _schema;
     private readonly NifVersionContext _versionContext;
+
+    // Measure-only mode: walk fields and advance position WITHOUT byte-swapping or block-ref remapping.
+    // Used by NifParser to recover per-block byte ranges for older NIFs (Oblivion 20.0.0.x, Morrowind
+    // 4.0.0.2) whose headers lack the Block Size array. The data is native little-endian PC, so the
+    // count/length read-backs (which already use LittleEndian) are correct without any swap; swapping
+    // would corrupt them. Inline-vs-index string resolution is handled by the schema itself (the
+    // `string` struct's String/Index fields are version-gated since=20.1.0.3 / until=20.0.0.5).
+    private readonly bool _measure;
+
+    // Per-block Name capture during a measure pass (the block's NiObjectNET.Name inline string).
+    private bool _capturingName;
+    private string? _capturedName;
 
     // Reused across blocks (one converter instance is confined to a single conversion = single thread;
     // see NifOutputWriter). Cleared per TryConvert instead of allocating a fresh dictionary per block.
     private readonly Dictionary<string, object> _fieldValues = new();
 
-    public NifSchemaConverter(NifSchema schema, uint version = 0x14020007, int userVersion = 0, int bsVersion = 34)
+    public NifSchemaConverter(NifSchema schema, uint version = 0x14020007, int userVersion = 0,
+        int bsVersion = 34, bool measure = false)
     {
         _schema = schema;
+        _measure = measure;
         _versionContext = new NifVersionContext
             { Version = version, UserVersion = (uint)userVersion, BsVersion = bsVersion };
+    }
+
+    /// <summary>
+    ///     Measure a single block by field-walking its schema definition WITHOUT mutating bytes, for
+    ///     NIFs whose header has no per-block Block Size array. Returns the block's byte length
+    ///     (cursor advance) and its captured NiObjectNET.Name (inline <c>SizedString</c>, or null for
+    ///     blocks that don't derive from NiObjectNET / have no name). Returns size -1 when the block
+    ///     type is unknown to the schema, which the caller must treat as a hard failure (a wrong size
+    ///     desyncs every following block — there is no per-block size to resync from).
+    /// </summary>
+    public (int Size, string? Name) MeasureBlock(byte[] buf, int startPos, int dataSectionEnd, string blockType)
+    {
+        if (!_measure)
+        {
+            throw new InvalidOperationException("MeasureBlock requires a converter constructed with measure: true.");
+        }
+
+        var objDef = _schema.GetObject(blockType);
+        if (objDef == null)
+        {
+            return (-1, null);
+        }
+
+        _fieldValues.Clear();
+        _capturingName = false;
+        _capturedName = null;
+
+        var context = new ConversionContext(buf, startPos, dataSectionEnd, EmptyRemap, _fieldValues, blockType);
+        ConvertFields(context, objDef.AllFields);
+        return (context.Position - startPos, _capturedName);
     }
 
     /// <summary>
@@ -252,6 +305,16 @@ internal sealed class NifSchemaConverter
     }
 
     /// <summary>
+    ///     Returns the on-disk byte width of a basic type for the current NIF version. Identical to
+    ///     the schema's stored size except for <c>bool</c>, which is 4 bytes up to and including
+    ///     4.0.0.2 (Morrowind) and 1 byte thereafter — the schema stores only the modern 1-byte width.
+    /// </summary>
+    private int EffectiveTypeSize(string typeName, int schemaSize)
+    {
+        return typeName == "bool" && _versionContext.Version <= BoolWidensAtOrBelowVersion ? 4 : schemaSize;
+    }
+
+    /// <summary>
     ///     Parses a version string like "20.2.0.7" or "4.2.2.0" into a uint.
     /// </summary>
     private static uint ParseVersionString(string version)
@@ -271,6 +334,14 @@ internal sealed class NifSchemaConverter
 
     private void ConvertField(ConversionContext ctx, NifFieldDef field, int depth = 0)
     {
+        // Arm Name capture for the block's own NiObjectNET.Name (always the first top-level field of a
+        // named block). Only depth 0 so nested struct "Name" fields (e.g. SemanticData) don't override
+        // it. The actual capture happens at the inline SizedString inside the `string` struct.
+        if (_measure && depth == 0 && _capturedName == null && field.Name == "Name")
+        {
+            _capturingName = true;
+        }
+
         // If field has an arg attribute, evaluate it and set #ARG# before processing
         // This is needed for structs that use #ARG# in their field conditions
         var hadPreviousArg = ctx.FieldValues.TryGetValue(ArgPlaceholder, out var previousArg);
@@ -358,7 +429,7 @@ internal sealed class NifSchemaConverter
     ///     looks off (missing values, non-4-aligned size, out-of-bounds), bail and let the
     ///     normal path run — better to fall back to legacy behavior than corrupt bytes.
     /// </summary>
-    private static bool TryConvertNiAgdDataBlockData(ConversionContext ctx, NifFieldDef field)
+    private bool TryConvertNiAgdDataBlockData(ConversionContext ctx, NifFieldDef field)
     {
         if (field.Width is null
             || !ctx.FieldValues.TryGetValue("Num Data", out var numDataObj)
@@ -392,9 +463,12 @@ internal sealed class NifSchemaConverter
             return false;
         }
 
-        for (var offset = 0; offset < totalInt; offset += 4)
+        if (!_measure)
         {
-            SwapUInt32InPlace(ctx.Buffer, ctx.Position + offset);
+            for (var offset = 0; offset < totalInt; offset += 4)
+            {
+                SwapUInt32InPlace(ctx.Buffer, ctx.Position + offset);
+            }
         }
 
         ctx.Position += totalInt;
@@ -487,7 +561,13 @@ internal sealed class NifSchemaConverter
         {
             if (arrayValues is not null && ctx.Position + 2 <= ctx.End)
             {
-                arrayValues[i] = BinaryPrimitives.ReadUInt16BigEndian(ctx.Buffer.AsSpan(ctx.Position, 2));
+                // Capture the width value in the SOURCE endianness: the convert path reads Xbox
+                // big-endian data (before the in-place swap), the measure path reads native PC
+                // little-endian. Reading BE on already-LE data byte-swaps the strip length and blows
+                // up the jagged Points array (over-read to EOF).
+                arrayValues[i] = _measure
+                    ? BinaryPrimitives.ReadUInt16LittleEndian(ctx.Buffer.AsSpan(ctx.Position, 2))
+                    : BinaryPrimitives.ReadUInt16BigEndian(ctx.Buffer.AsSpan(ctx.Position, 2));
             }
 
             ConvertSingleValue(ctx, field.Type, depth);
@@ -605,13 +685,20 @@ internal sealed class NifSchemaConverter
         // *Flags, *Type, Compressed, Interpolation for #ARG#, Block Size for NiAGDDataBlock.Data).
         // The decision is precomputed once at schema load — see NifFieldDef.StoresValueForLaterUse /
         // ComputeStoresValueForLaterUse (byte-for-byte the same predicate that used to run inline here).
-        if (!field.StoresValueForLaterUse)
+        //
+        // In MEASURE mode, store EVERY scalar instead: the convert path's predicate is enough only
+        // because conversion is bounded by the header's known block size, so an array whose length
+        // field the predicate skips (e.g. ByteArray.Data → "Data Size") can be silently not-advanced —
+        // its bytes need no swap and it's the block tail. The unbounded measure walk has no such
+        // boundary, so a skipped array under-reads the block and desyncs every block after it.
+        if (!_measure && !field.StoresValueForLaterUse)
         {
             return;
         }
 
         // Get the size from the schema - this handles enums, bitfields, basic types correctly
-        var size = _schema.GetTypeSize(field.Type) ?? 0;
+        // (widened for the version-dependent `bool` width).
+        var size = EffectiveTypeSize(field.Type, _schema.GetTypeSize(field.Type) ?? 0);
 
         if (size > 0 && ctx.Position >= size)
         {
@@ -691,7 +778,7 @@ internal sealed class NifSchemaConverter
         return null;
     }
 
-    private static bool TryConvertStringType(ConversionContext ctx, string typeName)
+    private bool TryConvertStringType(ConversionContext ctx, string typeName)
     {
         switch (typeName)
         {
@@ -813,17 +900,20 @@ internal sealed class NifSchemaConverter
             }
         }
 
-        if (structDef.FixedSize == 2)
+        if (!_measure)
         {
-            SwapUInt16InPlace(ctx.Buffer, ctx.Position);
-        }
-        else if (structDef.FixedSize == 4)
-        {
-            SwapUInt32InPlace(ctx.Buffer, ctx.Position);
-        }
-        else if (structDef.FixedSize == 8)
-        {
-            SwapUInt64InPlace(ctx.Buffer, ctx.Position);
+            if (structDef.FixedSize == 2)
+            {
+                SwapUInt16InPlace(ctx.Buffer, ctx.Position);
+            }
+            else if (structDef.FixedSize == 4)
+            {
+                SwapUInt32InPlace(ctx.Buffer, ctx.Position);
+            }
+            else if (structDef.FixedSize == 8)
+            {
+                SwapUInt64InPlace(ctx.Buffer, ctx.Position);
+            }
         }
 
         ctx.Position += structDef.FixedSize.Value;
@@ -840,26 +930,30 @@ internal sealed class NifSchemaConverter
         }
 
         // Bulk swap based on size
-        if (size.Value == 2)
+        if (!_measure)
         {
-            SwapUInt16InPlace(ctx.Buffer, ctx.Position);
-        }
-        else if (size.Value == 4)
-        {
-            SwapUInt32InPlace(ctx.Buffer, ctx.Position);
-        }
-        else if (size.Value == 8)
-        {
-            SwapUInt64InPlace(ctx.Buffer, ctx.Position);
+            if (size.Value == 2)
+            {
+                SwapUInt16InPlace(ctx.Buffer, ctx.Position);
+            }
+            else if (size.Value == 4)
+            {
+                SwapUInt32InPlace(ctx.Buffer, ctx.Position);
+            }
+            else if (size.Value == 8)
+            {
+                SwapUInt64InPlace(ctx.Buffer, ctx.Position);
+            }
         }
 
         ctx.Position += size.Value;
     }
 
     /// <summary>
-    ///     Converts a SizedString (uint length + chars) - swaps the length field.
+    ///     Converts a SizedString (uint length + chars) - swaps the length field. In measure mode the
+    ///     swap is skipped (data is already LE) and the string is captured when Name capture is armed.
     /// </summary>
-    private static void ConvertSizedString(ConversionContext ctx)
+    private void ConvertSizedString(ConversionContext ctx)
     {
         if (ctx.Position + 4 > ctx.End)
         {
@@ -867,21 +961,39 @@ internal sealed class NifSchemaConverter
         }
 
         // Swap the length (uint, 4 bytes)
-        SwapUInt32InPlace(ctx.Buffer, ctx.Position);
+        if (!_measure)
+        {
+            SwapUInt32InPlace(ctx.Buffer, ctx.Position);
+        }
+
         var length = BinaryPrimitives.ReadUInt32LittleEndian(ctx.Buffer.AsSpan(ctx.Position, 4));
         ctx.Position += 4;
 
         // Skip the string data (chars don't need swapping)
         if (length is > 0 and < 0x10000) // Sanity check
         {
+            if (_measure && _capturingName)
+            {
+                _capturingName = false;
+                if (ctx.Position + (int)length <= ctx.End)
+                {
+                    _capturedName = Encoding.ASCII.GetString(ctx.Buffer, ctx.Position, (int)length);
+                }
+            }
+
             ctx.Position += (int)length;
+        }
+        else if (_measure)
+        {
+            // Empty/oversized name: disarm so a later inline string isn't mistaken for the block name.
+            _capturingName = false;
         }
     }
 
     /// <summary>
     ///     Converts a SizedString16 (ushort length + chars) - swaps the length field.
     /// </summary>
-    private static void ConvertSizedString16(ConversionContext ctx)
+    private void ConvertSizedString16(ConversionContext ctx)
     {
         if (ctx.Position + 2 > ctx.End)
         {
@@ -889,7 +1001,11 @@ internal sealed class NifSchemaConverter
         }
 
         // Swap the length (ushort, 2 bytes)
-        SwapUInt16InPlace(ctx.Buffer, ctx.Position);
+        if (!_measure)
+        {
+            SwapUInt16InPlace(ctx.Buffer, ctx.Position);
+        }
+
         var length = BinaryPrimitives.ReadUInt16LittleEndian(ctx.Buffer.AsSpan(ctx.Position, 2));
         ctx.Position += 2;
 
@@ -900,16 +1016,17 @@ internal sealed class NifSchemaConverter
         }
     }
 
-    private static void ConvertBasicType(ConversionContext ctx, NifBasicType basic)
+    private void ConvertBasicType(ConversionContext ctx, NifBasicType basic)
     {
-        if (ctx.Position + basic.Size > ctx.End)
+        var size = EffectiveTypeSize(basic.Name, basic.Size);
+        if (ctx.Position + size > ctx.End)
         {
             return;
         }
 
         var pos = ctx.Position; // Save position before modifying
 
-        switch (basic.Size)
+        switch (size)
         {
             case 1:
                 // No swap needed for single bytes
@@ -917,23 +1034,34 @@ internal sealed class NifSchemaConverter
                 break;
 
             case 2:
-                SwapUInt16InPlace(ctx.Buffer, pos);
+                if (!_measure)
+                {
+                    SwapUInt16InPlace(ctx.Buffer, pos);
+                }
+
                 ctx.Position += 2;
                 break;
 
             case 4:
-                SwapUInt32InPlace(ctx.Buffer, pos);
-                // Handle block references (Ref, Ptr) that need remapping
-                if (basic.IsGeneric)
+                if (!_measure)
                 {
-                    RemapBlockRef(ctx.Buffer, pos, ctx.BlockRemap);
+                    SwapUInt32InPlace(ctx.Buffer, pos);
+                    // Handle block references (Ref, Ptr) that need remapping
+                    if (basic.IsGeneric)
+                    {
+                        RemapBlockRef(ctx.Buffer, pos, ctx.BlockRemap);
+                    }
                 }
 
                 ctx.Position += 4;
                 break;
 
             case 8:
-                SwapUInt64InPlace(ctx.Buffer, pos);
+                if (!_measure)
+                {
+                    SwapUInt64InPlace(ctx.Buffer, pos);
+                }
+
                 ctx.Position += 8;
                 break;
         }

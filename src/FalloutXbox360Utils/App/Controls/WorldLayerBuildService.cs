@@ -53,24 +53,24 @@ internal static class WorldLayerBuildService
                     cells is null ? "Terrain textures produced no renderable cells." : null);
             }
 
-            if (ShouldUsePerCellOverview(request))
+            if (ShouldUseCoarseTileOverview(request))
             {
-                var cells = request.Layer switch
-                {
-                    WorldMapLayer.VertexColors => WorldMapLayerRenderer.RenderVertexColorsPerCell(
-                        request.ActiveCells, request.DefaultWaterHeight, request.ShowWater, request.Cache),
-                    WorldMapLayer.TerrainRegions => WorldMapLayerRenderer.RenderTerrainRegionsPerCell(
-                        request.ActiveCells, request.DefaultWaterHeight, request.ShowWater, request.Cache),
-                    WorldMapLayer.TerrainTextures => WorldMapLayerRenderer.RenderTerrainRegionsPerCell(
-                        request.ActiveCells, request.DefaultWaterHeight, request.ShowWater, request.Cache),
-                    _ => null
-                };
+                // Oversized worldspace: render the terrain-derived layer as a small set of COARSE
+                // multi-cell tiles (bounded count + memory) instead of one giant bitmap (the FO76
+                // APPALACHIA freeze) or thousands of per-cell tiles. The coarse renderer adapts its
+                // px/cell to the worldspace size and reuses the single-cell renderers internally.
+                var tiles = WorldMapLayerRenderer.RenderLayerCoarseTiles(
+                    request.Layer, request.ActiveCells, request.DefaultWaterHeight, request.ShowWater,
+                    request.ColorScheme, request.Cache);
                 return new LayerBuildResult(
                     request.Version,
                     null,
-                    cells,
-                    WorldMapLayerRenderer.HeightmapPixelsPerCell,
-                    cells is null ? $"{request.Layer.DisplayName()} produced no renderable cells." : null);
+                    null,
+                    0,
+                    tiles is null ? $"{request.Layer.DisplayName()} produced no renderable cells." : null,
+                    tiles?.Tiles,
+                    tiles?.TileCellSpan ?? 0,
+                    tiles?.PixelsPerCell ?? 0);
             }
 
             var layer = request.Layer switch
@@ -96,9 +96,15 @@ internal static class WorldLayerBuildService
         });
     }
 
-    private static bool ShouldUsePerCellOverview(LayerBuildRequest request)
+    private static bool ShouldUseCoarseTileOverview(LayerBuildRequest request)
     {
-        if (request.Layer is not (WorldMapLayer.VertexColors or WorldMapLayer.TerrainRegions or WorldMapLayer.TerrainTextures))
+        // Above the single-bitmap size ceiling a huge worldspace (FO76 APPALACHIA) would otherwise build
+        // one multi-GB bitmap and freeze. These terrain-derived layers instead render as COARSE
+        // multi-cell tiles — a bounded set of mid-resolution bitmaps covering blocks of cells. (The
+        // TerrainTextures *textured* path has its own aggregate + per-cell streaming above; this branch
+        // only covers its no-palette regions fallback.)
+        if (request.Layer is not (WorldMapLayer.Heightmap or WorldMapLayer.VertexColors
+            or WorldMapLayer.TerrainRegions or WorldMapLayer.TerrainTextures or WorldMapLayer.Slope))
         {
             return false;
         }
@@ -203,4 +209,9 @@ internal sealed record LayerBuildResult(
     WorldMapLayerRenderer.LayerBitmap? Bitmap,
     Dictionary<(int gx, int gy), byte[]>? CellPixels,
     int CellPixelsPerCell,
-    string? Message);
+    string? Message,
+    // Coarse multi-cell tiles (oversized-worldspace overview). Each tile covers CoarseTileCellSpan²
+    // cells at CoarseTilePixelsPerCell px/cell; positioned/sized off the cell span by the draw path.
+    Dictionary<(int tileGx, int tileGy), byte[]>? CoarseTiles = null,
+    int CoarseTileCellSpan = 0,
+    int CoarseTilePixelsPerCell = 0);

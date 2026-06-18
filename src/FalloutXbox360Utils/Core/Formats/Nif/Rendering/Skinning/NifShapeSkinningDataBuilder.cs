@@ -57,7 +57,8 @@ internal static class NifShapeSkinningDataBuilder
             var numVertices = NifBlockParsers.ReadVertexCount(
                 data,
                 nif.Blocks[dataIndex],
-                be);
+                be,
+                nif.IsMorrowind);
             if (numVertices <= 0)
             {
                 continue;

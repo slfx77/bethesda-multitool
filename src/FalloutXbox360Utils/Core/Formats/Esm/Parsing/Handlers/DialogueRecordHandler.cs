@@ -93,7 +93,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
                                 break;
                             }
                             case "FULL":
-                                fullName = EsmStringUtils.ReadNullTermString(subData);
+                                fullName = Context.ReadFullName(subData);
                                 break;
                             case "TNAM" when sub.DataLength == 4:
                                 speakerFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -464,7 +464,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "DATA" when sub.DataLength >= 2:
                     flags = subData[0];

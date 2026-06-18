@@ -58,12 +58,24 @@ internal static class WorldMapLayerRenderer
 
         foreach (var cell in EnumerateCellsWithGrid(cellSource))
         {
-            var vc = cell.LandVisualData?.VertexColors;
-            if (vc is not { Length: HmGridSize * HmGridSize * 3 }) continue;
-
             var imgCellX = cell.GridX!.Value - minX;
             var imgCellY = maxY - cell.GridY!.Value;
-            BlitVertexColorsToCell(rgba, width, vc, imgCellX, imgCellY);
+
+            var vc = cell.LandVisualData?.VertexColors;
+            if (vc is { Length: HmGridSize * HmGridSize * 3 })
+            {
+                BlitVertexColorsToCell(rgba, width, vc, imgCellX, imgCellY);
+                continue;
+            }
+
+            // Valid terrain cell with no VCLR subrecord — the engine treats absent vertex color as
+            // white (no tint), so fill the cell white instead of leaving the "missing" background
+            // showing. HasTerrain matches ComputeHeightmapData's extent test, so this cell is in-bounds.
+            var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
+            if (terrain.HasTerrain)
+            {
+                FillCellWhite(rgba, width, imgCellX, imgCellY);
+            }
         }
 
         if (showWater) OverlayWater(rgba, waterMask, width, height);
@@ -217,9 +229,13 @@ internal static class WorldMapLayerRenderer
 
     /// <summary>
     ///     Highest overview/detail cell texture resolution used by the viewport-dependent
-    ///     terrain texture path. 528 = 16 samples per LAND vertex interval.
+    ///     terrain texture path. 1056 = 32 samples per LAND vertex interval (≈132 px per 512-unit
+    ///     tile-repeat), so a tile-repeat displayed wider than ~128 px samples the 256 mip and
+    ///     downscales instead of magnifying a lower mip — the zoomed-in sharpness the lower 528 cap
+    ///     couldn't provide. Only a handful of cells are resident at this zoom, so the 4.5 MB/cell
+    ///     bitmaps stay memory-bounded.
     /// </summary>
-    internal const int MaxTexturePixelsPerCell = TexturePixelsPerCell * 4;
+    internal const int MaxTexturePixelsPerCell = TexturePixelsPerCell * 8;
 
     /// <summary>
     ///     Renders the terrain-textures layer as one RGBA bitmap per cell. Composed at draw
@@ -369,34 +385,236 @@ internal static class WorldMapLayerRenderer
         await renderTask.ConfigureAwait(false);
     }
 
-    internal static Dictionary<(int gx, int gy), byte[]>? RenderVertexColorsPerCell(
+    // ========================================================================
+    // Coarse multi-cell tiling (zoomed-out overview for oversized worldspaces)
+    // ========================================================================
+
+    /// <summary>"Max tile size" in pixels per edge — the upper bound on one coarse tile's bitmap so a
+    /// huge worldspace is split into a bounded set of GPU textures instead of one giant bitmap (which
+    /// froze on FO76's APPALACHIA) or thousands of per-cell tiles (one GPU texture + DrawImage each).</summary>
+    internal const int CoarseTilePixelSize = 512;
+
+    /// <summary>Virtual long-edge resolution the whole coarse overview is sized to. Drives the adaptive
+    /// px/cell so total tile memory + count stay bounded regardless of how scattered the cells are.</summary>
+    internal const int CoarseOverviewTargetLongEdge = 4096;
+
+    /// <summary>Floor for the adaptive coarse px/cell — never drop below this even for the largest grids.</summary>
+    internal const int MinCoarsePixelsPerCell = 4;
+
+    /// <summary>A built coarse-tile overview: each tile covers a <see cref="TileCellSpan" />² block of
+    /// cells rendered at <see cref="PixelsPerCell" /> px/cell, so its bitmap is
+    /// (TileCellSpan·PixelsPerCell)² RGBA. Tiles are keyed by tile-grid coords (cell ÷ TileCellSpan,
+    /// floored) so the draw can position each at tileGx·TileCellSpan·CellWorldSize.</summary>
+    internal readonly record struct CoarseTileSet(
+        Dictionary<(int tileGx, int tileGy), byte[]> Tiles,
+        int TileCellSpan,
+        int PixelsPerCell);
+
+    /// <summary>
+    ///     Renders one of the terrain-derived overview layers (heightmap / vertex colors / regions /
+    ///     slope) as COARSE TILES: a small set of multi-cell bitmaps instead of one giant whole-worldspace
+    ///     bitmap (the FO76 APPALACHIA freeze) or one bitmap per cell (13k GPU textures + draw calls). The
+    ///     px/cell adapts to the worldspace size so total memory + tile count stay bounded for any grid
+    ///     extent or scatter. Each cell is rendered with the existing single-cell renderers, then box-
+    ///     downsampled to the adaptive px/cell and blitted into its tile. Returns null when no cell
+    ///     produced renderable terrain.
+    /// </summary>
+    internal static CoarseTileSet? RenderLayerCoarseTiles(
+        WorldMapLayer layer,
         List<CellRecord> cellSource, float? defaultWaterHeight, bool showWater,
-        WorldRenderCache? cache = null)
+        HeightmapColorScheme scheme, WorldRenderCache? cache,
+        int targetLongEdge = CoarseOverviewTargetLongEdge,
+        int tilePixelSize = CoarseTilePixelSize)
     {
-        var result = new Dictionary<(int gx, int gy), byte[]>();
+        var hasGrid = false;
+        int minX = int.MaxValue, maxX = int.MinValue, minY = int.MaxValue, maxY = int.MinValue;
         foreach (var cell in EnumerateCellsWithGrid(cellSource))
         {
-            var bytes = RenderVertexColorsForCell(cell, defaultWaterHeight, showWater, cache)
-                        ?? RenderMissingCell(cell, defaultWaterHeight, showWater, cache);
-            result[(cell.GridX!.Value, cell.GridY!.Value)] = bytes;
+            hasGrid = true;
+            var gx = cell.GridX!.Value;
+            var gy = cell.GridY!.Value;
+            if (gx < minX) minX = gx;
+            if (gx > maxX) maxX = gx;
+            if (gy < minY) minY = gy;
+            if (gy > maxY) maxY = gy;
+        }
+        if (!hasGrid) return null;
+
+        var maxSpan = Math.Max(maxX - minX + 1, maxY - minY + 1);
+        var ppc = Math.Clamp(targetLongEdge / Math.Max(1, maxSpan), MinCoarsePixelsPerCell, HmGridSize);
+        var tileCellSpan = Math.Max(1, tilePixelSize / ppc);
+        var tileSidePx = tileCellSpan * ppc;
+
+        // Heightmap tint needs a worldspace-global height range so every tile shares one normalization
+        // (a per-tile range would make each tile its own contrast). The other layers are per-cell.
+        var globalMin = 0f;
+        var globalRange = 1f;
+        if (layer == WorldMapLayer.Heightmap &&
+            !TryComputeGlobalHeightRange(cellSource, cache, out globalMin, out globalRange))
+        {
+            return null;
         }
 
-        return result.Count == 0 ? null : result;
+        var tiles = new Dictionary<(int tileGx, int tileGy), byte[]>();
+        foreach (var cell in EnumerateCellsWithGrid(cellSource))
+        {
+            var gx = cell.GridX!.Value;
+            var gy = cell.GridY!.Value;
+
+            var cell33 = RenderCellForLayer(layer, cell, globalMin, globalRange,
+                             defaultWaterHeight, showWater, scheme, cache)
+                         ?? RenderMissingCell(cell, defaultWaterHeight, showWater, cache);
+            var cellPixels = ppc == HmGridSize ? cell33 : DownsampleCell(cell33, HmGridSize, ppc);
+
+            var tileGx = FloorDiv(gx, tileCellSpan);
+            var tileGy = FloorDiv(gy, tileCellSpan);
+            if (!tiles.TryGetValue((tileGx, tileGy), out var tile))
+            {
+                tile = new byte[tileSidePx * tileSidePx * 4];
+                tiles[(tileGx, tileGy)] = tile;
+            }
+
+            // Cell position inside the tile. Image Y grows southward (north at top), so the tile's top
+            // pixel row is its northernmost cell — mirror the per-cell aggregate's `maxY - gy` flip.
+            var localCellX = gx - tileGx * tileCellSpan;
+            var topCellY = (tileGy + 1) * tileCellSpan - 1;
+            var localImgCellY = topCellY - gy;
+            BlitCellRgbaBlock(tile, tileSidePx, cellPixels, ppc, localCellX * ppc, localImgCellY * ppc);
+        }
+
+        return tiles.Count == 0 ? null : new CoarseTileSet(tiles, tileCellSpan, ppc);
     }
 
-    internal static Dictionary<(int gx, int gy), byte[]>? RenderTerrainRegionsPerCell(
-        List<CellRecord> cellSource, float? defaultWaterHeight, bool showWater,
-        WorldRenderCache? cache = null)
+    private static bool TryComputeGlobalHeightRange(
+        List<CellRecord> cellSource, WorldRenderCache? cache, out float globalMin, out float globalRange)
     {
-        var result = new Dictionary<(int gx, int gy), byte[]>();
+        globalMin = float.MaxValue;
+        var globalMax = float.MinValue;
         foreach (var cell in EnumerateCellsWithGrid(cellSource))
         {
-            var bytes = RenderTerrainRegionsForCell(cell, defaultWaterHeight, showWater, cache)
-                        ?? RenderMissingCell(cell, defaultWaterHeight, showWater, cache);
-            result[(cell.GridX!.Value, cell.GridY!.Value)] = bytes;
+            var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
+            if (!terrain.HasTerrain) continue;
+            for (var y = 0; y < HmGridSize; y++)
+            {
+                for (var x = 0; x < HmGridSize; x++)
+                {
+                    var h = terrain.HeightAt(x, y);
+                    if (h < globalMin) globalMin = h;
+                    if (h > globalMax) globalMax = h;
+                }
+            }
         }
 
-        return result.Count == 0 ? null : result;
+        if (globalMin > globalMax)
+        {
+            globalRange = 1f;
+            return false; // no terrain in any cell
+        }
+
+        globalRange = globalMax - globalMin;
+        if (globalRange < 0.001f) globalRange = 1f;
+        return true;
+    }
+
+    private static byte[]? RenderCellForLayer(
+        WorldMapLayer layer, CellRecord cell, float globalMin, float globalRange,
+        float? defaultWaterHeight, bool showWater, HeightmapColorScheme scheme, WorldRenderCache? cache)
+        => layer switch
+        {
+            WorldMapLayer.Heightmap =>
+                RenderHeightmapForCell(cell, globalMin, globalRange, defaultWaterHeight, showWater, scheme, cache),
+            WorldMapLayer.VertexColors =>
+                RenderVertexColorsForCell(cell, defaultWaterHeight, showWater, cache),
+            WorldMapLayer.TerrainRegions =>
+                RenderTerrainRegionsForCell(cell, defaultWaterHeight, showWater, cache),
+            // No-palette fallback (no Textures BSA next to the ESM): regions stand in for textures.
+            WorldMapLayer.TerrainTextures =>
+                RenderTerrainRegionsForCell(cell, defaultWaterHeight, showWater, cache),
+            WorldMapLayer.Slope =>
+                RenderSlopeForCell(cell, defaultWaterHeight, showWater, cache),
+            _ => null
+        };
+
+    /// <summary>Box-downsamples a square <paramref name="srcSize" />² RGBA cell tile to
+    /// <paramref name="dstSize" />² (averaging the covered source texels). Used to render coarse-tile
+    /// cells below the native 33 px/cell so a large worldspace's overview stays memory-bounded.</summary>
+    private static byte[] DownsampleCell(byte[] src, int srcSize, int dstSize)
+    {
+        if (dstSize >= srcSize) return src;
+        var dst = new byte[dstSize * dstSize * 4];
+        var scale = (float)srcSize / dstSize;
+        for (var dy = 0; dy < dstSize; dy++)
+        {
+            var sy0 = (int)(dy * scale);
+            var sy1 = Math.Min(srcSize, (int)((dy + 1) * scale));
+            if (sy1 <= sy0) sy1 = sy0 + 1;
+            for (var dx = 0; dx < dstSize; dx++)
+            {
+                var sx0 = (int)(dx * scale);
+                var sx1 = Math.Min(srcSize, (int)((dx + 1) * scale));
+                if (sx1 <= sx0) sx1 = sx0 + 1;
+
+                int r = 0, g = 0, b = 0, a = 0, n = 0;
+                for (var sy = sy0; sy < sy1; sy++)
+                {
+                    for (var sx = sx0; sx < sx1; sx++)
+                    {
+                        var s = (sy * srcSize + sx) * 4;
+                        r += src[s];
+                        g += src[s + 1];
+                        b += src[s + 2];
+                        a += src[s + 3];
+                        n++;
+                    }
+                }
+
+                var d = (dy * dstSize + dx) * 4;
+                dst[d] = (byte)(r / n);
+                dst[d + 1] = (byte)(g / n);
+                dst[d + 2] = (byte)(b / n);
+                dst[d + 3] = (byte)(a / n);
+            }
+        }
+
+        return dst;
+    }
+
+    /// <summary>Floored integer division (handles negative cell coords so tile-grid bucketing is
+    /// contiguous across the origin).</summary>
+    private static int FloorDiv(int a, int b)
+        => a >= 0 ? a / b : -(((-a) + b - 1) / b);
+
+    /// <summary>Single-cell tinted heightmap tile, normalized against the worldspace-global height
+    /// range so it matches its neighbors. Water uses the shared per-cell overlay.</summary>
+    private static byte[]? RenderHeightmapForCell(
+        CellRecord cell, float globalMin, float globalRange,
+        float? defaultWaterHeight, bool showWater, HeightmapColorScheme scheme,
+        WorldRenderCache? cache)
+    {
+        var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
+        if (!terrain.HasTerrain) return null;
+
+        var rgba = new byte[HmGridSize * HmGridSize * 4];
+        var tR = scheme.R / 255f;
+        var tG = scheme.G / 255f;
+        var tB = scheme.B / 255f;
+        for (var py = 0; py < HmGridSize; py++)
+        {
+            for (var px = 0; px < HmGridSize; px++)
+            {
+                var height = terrain.HeightAt(px, HmGridSize - 1 - py);
+                var normalized = Math.Clamp((height - globalMin) / globalRange, 0f, 1f);
+                var gray = normalized * 255f;
+                var idx = (py * HmGridSize + px) * 4;
+                rgba[idx] = (byte)(gray * tR);
+                rgba[idx + 1] = (byte)(gray * tG);
+                rgba[idx + 2] = (byte)(gray * tB);
+                rgba[idx + 3] = 255;
+            }
+        }
+
+        ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, cache: cache);
+        return rgba;
     }
 
     /// <summary>
@@ -643,10 +861,20 @@ internal static class WorldMapLayerRenderer
         WorldRenderCache? cache = null)
     {
         var vc = cell.LandVisualData?.VertexColors;
-        if (vc is not { Length: HmGridSize * HmGridSize * 3 }) return null;
-
         var rgba = new byte[HmGridSize * HmGridSize * 4];
-        BlitVertexColorsToCell(rgba, HmGridSize, vc, imgCellX: 0, imgCellY: 0);
+        if (vc is { Length: HmGridSize * HmGridSize * 3 })
+        {
+            BlitVertexColorsToCell(rgba, HmGridSize, vc, imgCellX: 0, imgCellY: 0);
+        }
+        else
+        {
+            // No VCLR: render white (engine default) for a valid terrain cell; nothing for a cell
+            // without terrain so it stays blank rather than a misleading white tile.
+            var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
+            if (!terrain.HasTerrain) return null;
+            FillCellWhite(rgba, HmGridSize, imgCellX: 0, imgCellY: 0);
+        }
+
         ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, cache: cache);
         return rgba;
     }
@@ -719,6 +947,25 @@ internal static class WorldMapLayerRenderer
     // ========================================================================
     // Per-pixel blitters
     // ========================================================================
+
+    /// <summary>Fills one cell's px block with opaque white — the engine's default (no-tint) vertex
+    /// color, used for valid terrain cells that carry no VCLR subrecord.</summary>
+    private static void FillCellWhite(byte[] rgba, int stride, int imgCellX, int imgCellY)
+    {
+        for (var py = 0; py < HmGridSize; py++)
+        {
+            for (var px = 0; px < HmGridSize; px++)
+            {
+                var imgX = imgCellX * HmGridSize + px;
+                var imgY = imgCellY * HmGridSize + py;
+                var dst = (imgY * stride + imgX) * 4;
+                rgba[dst] = 255;
+                rgba[dst + 1] = 255;
+                rgba[dst + 2] = 255;
+                rgba[dst + 3] = 255;
+            }
+        }
+    }
 
     private static void BlitVertexColorsToCell(byte[] rgba, int stride, byte[] vc, int imgCellX, int imgCellY)
     {
@@ -796,6 +1043,15 @@ internal static class WorldMapLayerRenderer
         // (worldUnitsPerPixel < WorldUnitsPerTile for any sane pixelsPerCell, so one wrap
         // step is sufficient).
         var tileStridePerPixel = worldUnitsPerPixel / LandscapeTexturePalette.WorldUnitsPerTile;
+
+        // Footprint-driven mip selection: how many mip-0 (TileSize) texels one output pixel spans.
+        // pixelsPerCell is constant for the whole cell, so the footprint — and thus the pyramid level —
+        // is too; pick it once and reuse it per pixel. Zoomed-out renders (small pixelsPerCell) sample a
+        // small, area-averaged mip → no minification moire; near-1:1 keeps the full tile. This is the
+        // "use the DDS's own mip levels for the size it's displayed" behavior, done per output pixel.
+        var texelsPerPixel = tileStridePerPixel * LandscapeTexturePalette.TileSize;
+        var mipLevel = LandscapeTexturePalette.MipLevelForFootprint(texelsPerPixel);
+
         var tileFracX0 = LandscapeTexturePalette.WorldToTileFraction(cellOriginX);
         var worldYAtPy0 = cellOriginY + (pixelsPerCell - 1) * worldUnitsPerPixel;
         var tileFracY = LandscapeTexturePalette.WorldToTileFraction(worldYAtPy0);
@@ -844,7 +1100,7 @@ internal static class WorldMapLayerRenderer
                         && v00.E0.FormId == v01.E0.FormId
                         && v00.E0.FormId == v11.E0.FormId)
                     {
-                        color = SampleLayer(palette, v00.E0.FormId, tileFracX, tileFracY);
+                        color = SampleLayer(palette, v00.E0.FormId, tileFracX, tileFracY, mipLevel);
                     }
                     else
                     {
@@ -868,7 +1124,7 @@ internal static class WorldMapLayerRenderer
                         {
                             var entry = combined[i];
                             if (entry.Weight <= 0f) continue;
-                            var sample = SampleLayer(palette, entry.FormId, tileFracX, tileFracY);
+                            var sample = SampleLayer(palette, entry.FormId, tileFracX, tileFracY, mipLevel);
                             if (sample is null) continue;
                             AddWeighted(sample.Value, entry.Weight,
                                 ref weightedR, ref weightedG, ref weightedB);
@@ -886,7 +1142,7 @@ internal static class WorldMapLayerRenderer
                     }
                 }
 
-                color ??= palette.SampleEngineDefault(tileFracX, tileFracY);
+                color ??= palette.SampleEngineDefault(tileFracX, tileFracY, mipLevel);
                 var (r, g, b) = color ?? (DefaultTerrainR, DefaultTerrainG, DefaultTerrainB);
 
                 var imgX = imgCellX * pixelsPerCell + px;
@@ -920,14 +1176,14 @@ internal static class WorldMapLayerRenderer
     ///     even the engine-default texture is absent.
     /// </summary>
     private static (byte R, byte G, byte B)? SampleLayer(
-        LandscapeTexturePalette palette, uint formId, float tileFracX, float tileFracY)
+        LandscapeTexturePalette palette, uint formId, float tileFracX, float tileFracY, int mipLevel)
     {
         if (formId == CellLayerWeightTable.EngineDefaultSentinelFormId)
         {
-            return palette.SampleEngineDefault(tileFracX, tileFracY);
+            return palette.SampleEngineDefault(tileFracX, tileFracY, mipLevel);
         }
-        return palette.Sample(formId, tileFracX, tileFracY)
-            ?? palette.SampleEngineDefault(tileFracX, tileFracY);
+        return palette.Sample(formId, tileFracX, tileFracY, mipLevel)
+            ?? palette.SampleEngineDefault(tileFracX, tileFracY, mipLevel);
     }
 
     /// <summary>
@@ -1171,12 +1427,24 @@ internal static class WorldMapLayerRenderer
 
         var pixelCount = pixelsPerCell * pixelsPerCell;
         var tile = new byte[pixelCount * 4];
-        var any = false;
+        return WriteWaterTilePixels(tile, mask, pixelCount, waterPalette) ? tile : null;
+    }
 
+    /// <summary>
+    ///     Writes a premultiplied-alpha water layer (RGB = water colour × coverage, A = mask) from a
+    ///     coverage <paramref name="mask" /> into a transparent <paramref name="tile" /> buffer. Source
+    ///     of truth for the standalone-water look, shared by the per-cell <see cref="BuildCellWaterTile" />
+    ///     and the whole-worldspace <see cref="RenderWorldWaterAggregate" />. Colour matches the old bake:
+    ///     DNAM Shallow→Deep lerp by depth (mask/180) when a palette is given, else solid blue; coverage
+    ///     is always mask/255 (same shoreline AA as <see cref="OverlayWater" />). Returns whether any
+    ///     non-dry pixel was written.
+    /// </summary>
+    private static bool WriteWaterTilePixels(byte[] tile, byte[] mask, int pixelCount, WaterColorPalette? waterPalette)
+    {
+        var any = false;
         if (waterPalette is not null)
         {
-            // Mirror OverlayWaterColored: colour = lerp(Shallow, Deep, mask/180); coverage = mask/255.
-            const float MaskInteriorMax = 180f;
+            const float MaskInteriorMax = 180f; // Mirror OverlayWaterColored: lerp Shallow→Deep by mask/180.
             float shallowR = waterPalette.Shallow.R, shallowG = waterPalette.Shallow.G, shallowB = waterPalette.Shallow.B;
             float deepR = waterPalette.Deep.R, deepG = waterPalette.Deep.G, deepB = waterPalette.Deep.B;
             for (var i = 0; i < pixelCount; i++)
@@ -1198,8 +1466,7 @@ internal static class WorldMapLayerRenderer
         }
         else
         {
-            // Mirror OverlayWater: solid blue, coverage = mask/255.
-            for (var i = 0; i < pixelCount; i++)
+            for (var i = 0; i < pixelCount; i++) // Mirror OverlayWater: solid blue, coverage = mask/255.
             {
                 var maskValue = mask[i];
                 if (maskValue == 0) continue;
@@ -1214,7 +1481,30 @@ internal static class WorldMapLayerRenderer
             }
         }
 
-        return any ? tile : null;
+        return any;
+    }
+
+    /// <summary>
+    ///     Whole-worldspace standalone water layer: one premultiplied-alpha bitmap (transparent where
+    ///     dry) built from the SAME 33 px/cell coverage mask the heightmap/vertex/region/slope aggregates
+    ///     use (<see cref="HeightmapRenderer.ComputeHeightmapData" />), so it aligns with them exactly and
+    ///     also registers over the adaptive-resolution TerrainTextures aggregate (drawn scaled in world
+    ///     space). Lets every world-overview layer render water-free and draw water as one toggle-able
+    ///     pass after the rendered-models overlay — mirroring the per-cell <see cref="BuildCellWaterTile" />
+    ///     path at the zoomed-out LODs. Returns null when the worldspace has no water.
+    /// </summary>
+    internal static LayerBitmap? RenderWorldWaterAggregate(
+        List<CellRecord> cellSource, float? defaultWaterHeight,
+        WorldRenderCache? cache = null, WaterColorPalette? waterPalette = null)
+    {
+        var hm = HeightmapRenderer.ComputeHeightmapData(cellSource, defaultWaterHeight, cache);
+        if (hm == null) return null;
+        var (_, waterMask, width, height, minX, maxY) = hm.Value;
+
+        var rgba = new byte[width * height * 4];
+        return WriteWaterTilePixels(rgba, waterMask, width * height, waterPalette)
+            ? new LayerBitmap(rgba, width, height, minX, maxY)
+            : null;
     }
 
     private static DecodedTerrainCell? GetNeighborTerrain(
@@ -1228,9 +1518,10 @@ internal static class WorldMapLayerRenderer
 
     internal static int NormalizeTexturePixelsPerCell(int pixelsPerCell)
     {
-        // Snap to the tier set {33, 66, 132, 264, 528}. The two low tiers serve the zoomed-out
+        // Snap to the tier set {33, 66, 132, 264, 528, 1056}. The two low tiers serve the zoomed-out
         // transition zone (see ChooseTerrainTexturePixelsPerCell) so cells render near display
-        // resolution instead of a heavily-minified 132.
+        // resolution instead of a heavily-minified 132; the 1056 top tier is the zoomed-in detail
+        // resolution that lets a tile-repeat sample the 256 mip and downscale.
         if (pixelsPerCell <= HmGridSize)
         {
             return HmGridSize; // 33
@@ -1251,7 +1542,12 @@ internal static class WorldMapLayerRenderer
             return TexturePixelsPerCell * 2; // 264
         }
 
-        return MaxTexturePixelsPerCell;
+        if (pixelsPerCell <= TexturePixelsPerCell * 4)
+        {
+            return TexturePixelsPerCell * 4; // 528
+        }
+
+        return MaxTexturePixelsPerCell; // 1056
     }
 
     private static void OverlayWater(byte[] rgba, byte[] waterMask, int width, int height)

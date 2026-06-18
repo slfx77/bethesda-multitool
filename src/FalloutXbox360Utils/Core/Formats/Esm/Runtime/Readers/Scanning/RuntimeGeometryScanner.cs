@@ -100,6 +100,25 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
     }
 
     /// <summary>
+    ///     Read and extract a single mesh from a known <c>NiTriShapeData</c>/<c>NiTriStripsData</c>
+    ///     virtual address (e.g. a NiTriShape's <c>m_spModelData</c> reached by walking a node graph),
+    ///     bypassing the heap scan. Returns null if the VA is uncaptured or the geometry is invalid.
+    /// </summary>
+    public ExtractedMesh? ExtractMeshAtVa(uint niGeometryDataVa)
+    {
+        var fileOffset = _context.VaToFileOffset(niGeometryDataVa);
+        if (fileOffset is null)
+        {
+            return null;
+        }
+
+        var buffer = _context.ReadBytesAtVa(niGeometryDataVa, TriShapeStructSize);
+        return buffer is null || buffer.Length < TriShapeStructSize
+            ? null
+            : ValidateAndExtract(buffer, 0, fileOffset.Value);
+    }
+
+    /// <summary>
     ///     Fast filter applied at every 16-byte aligned offset.
     ///     Rejects non-candidates quickly before expensive pointer dereferencing.
     ///     Each check is ordered cheapest-first (local byte reads before pointer validation).

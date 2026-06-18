@@ -47,34 +47,47 @@ internal static class NifSubmeshExtractor
             transform = Matrix4x4.Identity;
         }
 
-        var submesh = dataBlock.TypeName switch
-        {
-            "NiTriShapeData" => ExtractTriShapeData(
+        // Morrowind (NIF 4.0.0.2) NiTri*Data uses a distinct NiGeometryData layout (no Group ID,
+        // 32-bit booleans, an always-present Bounding Sphere, and the legacy Data Flags + Has UV
+        // before the UV sets), so it takes a dedicated reader rather than the FNV/Oblivion one.
+        var submesh = nif.IsMorrowind && dataBlock.TypeName is "NiTriShapeData" or "NiTriStripsData"
+            ? ExtractMorrowindGeometryData(
                 data,
                 dataBlock,
                 nif.IsBigEndian,
-                nif.BsVersion,
                 transform,
                 skinning,
                 useDualQuaternionSkinning,
                 preSkinMorphDeltas,
-                shapeName),
-            "NiTriStripsData" => ExtractTriStripsData(
-                data,
-                dataBlock,
-                nif.IsBigEndian,
-                nif.BsVersion,
-                transform,
-                skinning,
-                useDualQuaternionSkinning,
-                preSkinMorphDeltas,
-                shapeName),
-            // BSTriShape and its variants are self-contained (the shape block IS its own data block,
-            // so dataIndex == shapeIndex). Skyrim SE / Fallout 4 / Fallout 76 geometry.
-            "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape"
-                => ExtractBsTriShape(data, dataBlock, nif.IsBigEndian, nif.BsVersion, transform, shapeName),
-            _ => null
-        };
+                shapeName)
+            : dataBlock.TypeName switch
+            {
+                "NiTriShapeData" => ExtractTriShapeData(
+                    data,
+                    dataBlock,
+                    nif.IsBigEndian,
+                    nif.BsVersion,
+                    transform,
+                    skinning,
+                    useDualQuaternionSkinning,
+                    preSkinMorphDeltas,
+                    shapeName),
+                "NiTriStripsData" => ExtractTriStripsData(
+                    data,
+                    dataBlock,
+                    nif.IsBigEndian,
+                    nif.BsVersion,
+                    transform,
+                    skinning,
+                    useDualQuaternionSkinning,
+                    preSkinMorphDeltas,
+                    shapeName),
+                // BSTriShape and its variants are self-contained (the shape block IS its own data block,
+                // so dataIndex == shapeIndex). Skyrim SE / Fallout 4 / Fallout 76 geometry.
+                "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape"
+                    => ExtractBsTriShape(data, dataBlock, nif.IsBigEndian, nif.BsVersion, transform, shapeName),
+                _ => null
+            };
 
         if (submesh == null)
         {
@@ -139,7 +152,7 @@ internal static class NifSubmeshExtractor
             return null;
         }
 
-        if (bsVersion >= 34)
+        if (bsVersion >= 11)
         {
             pos += 2;
         }
@@ -157,7 +170,7 @@ internal static class NifSubmeshExtractor
         }
 
         ushort bsVectorFlags = 0;
-        if (bsVersion >= 34)
+        if (bsVersion >= 11)
         {
             if (pos + 2 > end)
             {
@@ -188,7 +201,7 @@ internal static class NifSubmeshExtractor
             normals = NifGeometryDataReader.ReadVertexPositions(data, pos, numVerts, be);
             pos += numVerts * 12;
 
-            if (bsVersion >= 34)
+            if (bsVersion >= 11)
             {
                 pos += 16;
                 if ((bsVectorFlags & 0x1000) != 0)
@@ -207,7 +220,7 @@ internal static class NifSubmeshExtractor
                 }
             }
         }
-        else if (bsVersion >= 34)
+        else if (bsVersion >= 11)
         {
             pos += 16;
         }
@@ -229,7 +242,7 @@ internal static class NifSubmeshExtractor
         }
 
         float[]? uvs = null;
-        if (bsVersion >= 34)
+        if (bsVersion >= 11)
         {
             var numUvSets = (bsVectorFlags & 0x0001) != 0 ? 1 : 0;
             if (numUvSets > 0 && pos + numVerts * 8 <= end)
@@ -324,6 +337,269 @@ internal static class NifSubmeshExtractor
         };
     }
 
+    /// <summary>
+    ///     Extract geometry from a Morrowind (NIF 4.0.0.2) NiTriShapeData / NiTriStripsData block.
+    ///     The NiGeometryData base differs from FNV/Oblivion: there is no Group ID, booleans are
+    ///     32-bit, the Bounding Sphere is always present (right after the normals), and the legacy
+    ///     Data Flags (ushort, low 6 bits = UV-set count) + Has UV (32-bit bool) precede the UV sets.
+    ///     Triangle data is either a triangle list (NiTriShapeData) or triangle strips
+    ///     (NiTriStripsData: Num Strips + Strip Lengths + jagged Points). Field offsets validated
+    ///     byte-for-byte against the schema measure walk; see the format note on NifInfo.IsMorrowind.
+    /// </summary>
+    private static RenderableSubmesh? ExtractMorrowindGeometryData(
+        byte[] data,
+        BlockInfo block,
+        bool be,
+        Matrix4x4 transform,
+        ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning,
+        bool useDualQuaternionSkinning,
+        float[]? preSkinMorphDeltas,
+        string? shapeName)
+    {
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+        var isStrips = block.TypeName == "NiTriStripsData";
+
+        if (pos + 2 > end)
+        {
+            return null;
+        }
+
+        var numVerts = BinaryUtils.ReadUInt16(data, pos, be);
+        pos += 2;
+        if (numVerts == 0)
+        {
+            return null;
+        }
+
+        // Has Vertices (32-bit bool) + Vertices (Vector3 × numVerts).
+        if (pos + 4 > end)
+        {
+            return null;
+        }
+
+        var hasVertices = BinaryUtils.ReadUInt32(data, pos, be) != 0;
+        pos += 4;
+        float[]? positions = null;
+        if (hasVertices)
+        {
+            if (pos + numVerts * 12 > end)
+            {
+                return null;
+            }
+
+            positions = NifGeometryDataReader.ReadVertexPositions(data, pos, numVerts, be);
+            pos += numVerts * 12;
+        }
+
+        // Has Normals (32-bit bool) + Normals (Vector3 × numVerts). No tangents/bitangents (< 10.1.0.0).
+        if (pos + 4 > end)
+        {
+            return null;
+        }
+
+        var hasNormals = BinaryUtils.ReadUInt32(data, pos, be) != 0;
+        pos += 4;
+        float[]? normals = null;
+        if (hasNormals)
+        {
+            if (pos + numVerts * 12 > end)
+            {
+                return null;
+            }
+
+            normals = NifGeometryDataReader.ReadVertexPositions(data, pos, numVerts, be);
+            pos += numVerts * 12;
+        }
+
+        // Bounding Sphere (NiBound: Vector3 center + float radius) — always present.
+        pos += 16;
+
+        // Has Vertex Colors (32-bit bool) + Vertex Colors (Color4 × numVerts).
+        if (pos + 4 > end)
+        {
+            return null;
+        }
+
+        var hasColors = BinaryUtils.ReadUInt32(data, pos, be) != 0;
+        pos += 4;
+        byte[]? vertexColors = null;
+        if (hasColors)
+        {
+            if (pos + numVerts * 16 > end)
+            {
+                return null;
+            }
+
+            vertexColors = NifGeometryDataReader.ReadVertexColors(data, pos, numVerts, be);
+            pos += numVerts * 16;
+        }
+
+        // Data Flags (ushort, low 6 bits = UV-set count) + Has UV (32-bit bool) + UV Sets.
+        if (pos + 6 > end)
+        {
+            return null;
+        }
+
+        var numUvSets = BinaryUtils.ReadUInt16(data, pos, be) & 0x3F;
+        pos += 2;
+        pos += 4; // Has UV (32-bit bool)
+        float[]? uvs = null;
+        if (numUvSets > 0)
+        {
+            if (pos + numVerts * 8 > end)
+            {
+                return null;
+            }
+
+            uvs = NifGeometryDataReader.ReadUvs(data, pos, numVerts, be);
+        }
+
+        pos += numUvSets * numVerts * 8;
+
+        // NiTriBasedGeomData: Num Triangles.
+        if (pos + 2 > end)
+        {
+            return null;
+        }
+
+        var numTriangles = BinaryUtils.ReadUInt16(data, pos, be);
+        pos += 2;
+
+        var triangles = isStrips
+            ? ReadMorrowindStripTriangles(data, ref pos, end, be)
+            : ReadMorrowindListTriangles(data, ref pos, end, be, numTriangles);
+
+        if (triangles == null || triangles.Length == 0 || positions == null)
+        {
+            return null;
+        }
+
+        if (preSkinMorphDeltas != null)
+        {
+            var count = Math.Min(positions.Length, preSkinMorphDeltas.Length);
+            for (var i = 0; i < count; i++)
+            {
+                positions[i] += preSkinMorphDeltas[i];
+            }
+        }
+
+        var bindPosePositions = skinning.HasValue
+            ? NifGeometryTransformUtils.TransformPositions(positions, transform)
+            : null;
+
+        var transformed = ApplySkinningOrTransform(
+            positions,
+            normals,
+            null,
+            null,
+            transform,
+            skinning,
+            useDualQuaternionSkinning,
+            shapeName);
+
+        return new RenderableSubmesh
+        {
+            ShapeName = shapeName,
+            Positions = transformed.Positions,
+            Triangles = triangles,
+            Normals = transformed.Normals
+                      ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
+            UVs = uvs,
+            VertexColors = vertexColors,
+            Tangents = transformed.Tangents,
+            Bitangents = transformed.Bitangents,
+            BindPosePositions = bindPosePositions
+        };
+    }
+
+    // NiTriShapeData triangle list (Morrowind): Num Triangle Points (uint) + Triangle[] (3 × ushort).
+    private static ushort[]? ReadMorrowindListTriangles(byte[] data, ref int pos, int end, bool be, int numTriangles)
+    {
+        pos += 4; // Num Triangle Points (= numTriangles * 3); recomputable, skip
+        if (numTriangles == 0 || pos + numTriangles * 6 > end)
+        {
+            return null;
+        }
+
+        var triangles = new ushort[numTriangles * 3];
+        for (var i = 0; i < triangles.Length; i++)
+        {
+            triangles[i] = BinaryUtils.ReadUInt16(data, pos, be);
+            pos += 2;
+        }
+
+        return triangles;
+    }
+
+    // NiTriStripsData strips (Morrowind, < 10.0.1.3 so no Has Points flag): Num Strips (ushort) +
+    // Strip Lengths (ushort × Num Strips) + Points (ushort, sum of strip lengths). Each strip is
+    // unwound into a triangle list with standard winding-flip on odd triangles; degenerates dropped.
+    private static ushort[]? ReadMorrowindStripTriangles(byte[] data, ref int pos, int end, bool be)
+    {
+        if (pos + 2 > end)
+        {
+            return null;
+        }
+
+        int numStrips = BinaryUtils.ReadUInt16(data, pos, be);
+        pos += 2;
+        if (numStrips is <= 0 or > 10000 || pos + numStrips * 2 > end)
+        {
+            return null;
+        }
+
+        var stripLengths = new int[numStrips];
+        for (var i = 0; i < numStrips; i++)
+        {
+            stripLengths[i] = BinaryUtils.ReadUInt16(data, pos, be);
+            pos += 2;
+        }
+
+        var triangles = new List<ushort>();
+        for (var s = 0; s < numStrips; s++)
+        {
+            var len = stripLengths[s];
+            if (len < 0 || pos + len * 2 > end)
+            {
+                return null;
+            }
+
+            var strip = new ushort[len];
+            for (var i = 0; i < len; i++)
+            {
+                strip[i] = BinaryUtils.ReadUInt16(data, pos, be);
+                pos += 2;
+            }
+
+            for (var i = 0; i + 2 < len; i++)
+            {
+                var a = strip[i];
+                var b = strip[i + 1];
+                var c = strip[i + 2];
+                if (a == b || b == c || a == c)
+                {
+                    continue; // degenerate (strip restart)
+                }
+
+                if ((i & 1) == 0)
+                {
+                    triangles.Add(a);
+                    triangles.Add(b);
+                    triangles.Add(c);
+                }
+                else
+                {
+                    triangles.Add(a);
+                    triangles.Add(c);
+                    triangles.Add(b);
+                }
+            }
+        }
+
+        return triangles.Count > 0 ? triangles.ToArray() : null;
+    }
+
     internal static RenderableSubmesh? ExtractTriStripsData(
         byte[] data,
         BlockInfo block,
@@ -355,7 +631,12 @@ internal static class NifSubmeshExtractor
             return null;
         }
 
-        if (bsVersion >= 34)
+        // bsVersion >= 11 = Oblivion (BS 11) and later (FO3/FNV BS 34). They share an identical
+        // NiGeometryData layout — Keep Flags + Compress Flags (since NIF 10.1.0.0), a Data Flags
+        // ushort, and a Bounding Sphere — so all these reads are version-gated together. (Skyrim+,
+        // bsVersion > 34, adds a Material CRC and uses BSTriShape, not NiTri*Data.) Morrowind
+        // (bsVersion 0, NIF 4.0.0.2) predates Keep/Compress Flags and takes the older else-paths.
+        if (bsVersion >= 11)
         {
             pos += 2;
         }
@@ -369,7 +650,7 @@ internal static class NifSubmeshExtractor
         pos += numVerts * 12;
 
         ushort bsVectorFlags = 0;
-        if (bsVersion >= 34)
+        if (bsVersion >= 11)
         {
             if (pos + 2 > end)
             {
@@ -400,7 +681,7 @@ internal static class NifSubmeshExtractor
             normals = NifGeometryDataReader.ReadVertexPositions(data, pos, numVerts, be);
             pos += numVerts * 12;
 
-            if (bsVersion >= 34)
+            if (bsVersion >= 11)
             {
                 pos += 16;
                 if ((bsVectorFlags & 0x1000) != 0)
@@ -419,7 +700,7 @@ internal static class NifSubmeshExtractor
                 }
             }
         }
-        else if (bsVersion >= 34)
+        else if (bsVersion >= 11)
         {
             pos += 16;
         }
@@ -436,7 +717,7 @@ internal static class NifSubmeshExtractor
         }
 
         float[]? uvs = null;
-        if (bsVersion >= 34)
+        if (bsVersion >= 11)
         {
             var numUvSets = (bsVectorFlags & 0x0001) != 0 ? 1 : 0;
             if (numUvSets > 0 && pos + numVerts * 8 <= end)

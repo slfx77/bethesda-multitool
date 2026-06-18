@@ -13,8 +13,10 @@ internal interface ITerrainRenderer : IWorldRenderer
     /// Used in the HUD status overlay.</summary>
     int CellCount { get; }
 
-    /// <summary>Toggles VCLR-only debug mode (Phase 2a look). Applied on next render.</summary>
-    void SetVclrOnlyMode(bool on);
+    /// <summary>Independently toggles terrain diffuse texturing and per-vertex (VCLR) tinting.
+    /// Both on = engine look; textures off + vclr on = the old "vertex colors only" debug mode;
+    /// both off = flat shaded. Applied on the next render.</summary>
+    void SetDebugModes(bool showTextures, bool showVertexColors);
 
     /// <summary>When <c>false</c>, the per-frame cell build/upload budget is lifted so a few back-to-back
     /// renders build the whole visible terrain — used by the top-down overlay's depth pre-pass so ground

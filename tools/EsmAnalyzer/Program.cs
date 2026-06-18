@@ -53,6 +53,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(TranscriptDiagCommands.CreateTranscriptDiagCommand());
         rootCommand.Subcommands.Add(DialogueQcCommand.CreateDialogueQcCommand());
         rootCommand.Subcommands.Add(GenFaceGenCommands.CreateGenFaceGenCommand());
+        rootCommand.Subcommands.Add(SpeedTreeCommands.CreateSptCommand());
 
         // ===== Backward compatibility aliases =====
         rootCommand.Subcommands.Add(FormIdAuditCommands.CreateFormIdAuditCommand());  // "formid-audit" at root

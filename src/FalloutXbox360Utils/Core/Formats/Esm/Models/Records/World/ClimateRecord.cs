@@ -41,8 +41,10 @@ public sealed record ClimateWeatherEntry(uint WeatherFormId, int Chance, uint Gl
 
 /// <summary>
 ///     CLMT TNAM timing block (6 bytes). The four time fields are stored RAW (one byte each) exactly as
-///     in the record — the byte→hours encoding is confirmed in atmosphere Phase 2b before the sun curve
-///     consumes them (FNV is believed to store ~10-minute units, i.e. hours ≈ value / 6).
+///     in the record. Byte→hours = value × 1/6 (10-minute units) — CONFIRMED by the engine decompile:
+///     <c>TESClimate::Load</c> reads the 6-byte TNAM into <c>climate+0x60</c> and <c>Sky::GetSunriseBegin</c>
+///     reads <c>climate+0x60</c> and multiplies by <c>0.16666667</c>. See
+///     <c>AtmosphereState.ClimateTiming.FromClimateData</c>.
 /// </summary>
 public sealed record ClimateTimingData(
     byte SunriseBegin,

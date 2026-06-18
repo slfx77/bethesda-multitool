@@ -122,7 +122,8 @@ internal static class NifGeometryExtractor
         float[]? preSkinMorphDeltas = null,
         HashSet<int>? excludeBlockIndices = null,
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null,
-        bool treatRootsAsIdentity = false)
+        bool treatRootsAsIdentity = false,
+        bool collectBillboards = false)
     {
         if (nif.Blocks.Count == 0)
         {
@@ -210,8 +211,12 @@ internal static class NifGeometryExtractor
         // Compute world transforms by walking the scene graph from root.
         // Static NIF transforms represent the rest pose — animation overrides are not applied
         // since NiControllerSequence keyframes define runtime motion, not the initial pose.
+        // When collectBillboards is set, shapes under a NiBillboardNode bake with the node's rotation
+        // dropped (translation kept) and their indices land in billboardShapes so the caller can flag
+        // them for per-frame camera facing.
+        var billboardShapes = collectBillboards ? new HashSet<int>() : null;
         NifSceneGraphWalker.ComputeWorldTransforms(data, nif, nodeChildren, nodeTransforms, animOverrides,
-            treatRootsAsIdentity);
+            treatRootsAsIdentity, billboardShapes);
 
         Dictionary<int, ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)>
             shapeSkinning;
@@ -348,6 +353,7 @@ internal static class NifGeometryExtractor
             if (submesh != null)
             {
                 submesh.SourceBlockIndex = shapeIndex;
+                submesh.IsBillboard = billboardShapes?.Contains(shapeIndex) == true;
 
                 if (propRefs != null &&
                     submesh.UVs != null &&

@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Threading;
 using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
+using FalloutXbox360Utils.Core.Formats.SpeedTree;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using FalloutXbox360Utils.Core.Orchestration;
@@ -88,6 +89,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // When true, LoadData resizes _meshLru to the worldspace's working set (default). False when the
     // FALLOUT_VIEWER_REFERENCE_MESH_CAPACITY env knob pins a fixed cap for eviction-cascade stress gates.
     private readonly bool _autoSizeMeshCapacity;
+
+    // archive-path (trees\<name>.spt) → recorded tree height (TREE OBND Z-extent), so the procedural
+    // SpeedTree generator can size each tree from the ESM data rather than a magic constant.
+    private readonly IReadOnlyDictionary<string, float>? _speedTreeHeights;
     private bool _disposed;
 
     public ReferenceMeshCache12(
@@ -99,11 +104,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         int capacity,
         long decodedCacheByteBudget = DefaultDecodedMeshCacheByteBudget,
         ReferenceDecodedMeshDiskCache12? persistentDecodedCache = null,
-        bool autoSizeMeshCapacity = true)
+        bool autoSizeMeshCapacity = true,
+        IReadOnlyDictionary<string, float>? speedTreeHeights = null)
     {
         if (capacity <= 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be > 0.");
 
+        _speedTreeHeights = speedTreeHeights;
         _meshArchives = meshArchives;
         _textureResolver = textureResolver;
         _textureCache = textureCache;
@@ -503,6 +510,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             return false;
         }
 
+        // SpeedTree geometry is generated procedurally (cheap, and the algorithm is still being
+        // tuned). Never serve it from the on-disk cache, or generator changes / live option tweaks
+        // would be masked by a stale entry keyed on the unchanged .spt bytes.
+        if (SpeedTreeModelPath.IsSpt(modelPath))
+        {
+            return false;
+        }
+
         var metadata = _meshArchives.GetLookupMetadata(modelPath);
 
         if (!_persistentDecodedCache.TryLoad(metadata, out var cached))
@@ -547,6 +562,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             return;
         }
 
+        // SpeedTree geometry is regenerated each session (see TryLoadPersistentDecodedCache) — never
+        // persist it.
+        if (SpeedTreeModelPath.IsSpt(modelPath))
+        {
+            return;
+        }
+
         try
         {
             var metadata = _meshArchives.GetLookupMetadata(modelPath);
@@ -582,7 +604,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 sub.MaterialAlpha,
                 sub.DoubleSided,
                 sub.IsEmissive,
-                sub.LocalBoundsCenter));
+                sub.LocalBoundsCenter,
+                sub.IsBillboard));
         }
 
         return new ReferenceDecodedMeshPayload12(submeshes);
@@ -609,7 +632,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 sub.MaterialAlpha,
                 sub.DoubleSided,
                 sub.IsEmissive,
-                sub.LocalBoundsCenter));
+                sub.LocalBoundsCenter,
+                sub.IsBillboard));
         }
 
         return new DecodedNifMesh12(submeshes);
@@ -651,68 +675,100 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
             nifBytes = nifData.Length;
 
-            // Cheap endianness probe avoids fully parsing the source NIF just to decide whether it
-            // needs big-endian conversion. A determinate probe (true/false) is byte-for-byte the same
-            // verdict a full parse would give; null means the header wasn't cheaply readable, so fall
-            // back to a full parse. This drops the BE mesh path from three parses (source +
-            // convert-internal + converted output) to two.
-            var probe = NifParser.TryProbeEndianness(nifData);
-            NifInfo? sourceInfo = null;
-            bool isBigEndian;
-            if (probe.HasValue)
+            NifRenderableModel? model;
+            if (lookupPath.EndsWith(".spt", StringComparison.OrdinalIgnoreCase))
             {
-                isBigEndian = probe.Value;
+                // SpeedTree tree: the .spt is a procedural recipe, not a NIF. Parse it and generate
+                // geometry (branch tubes + scattered leaf cards) via SptGeometryBuilder. Size is
+                // data-driven from the TREE record's OBND height; the seed is the .spt's own embedded
+                // value (token 2005 == TREE SNAM), falling back to a stable per-path hash.
+                var spt = SptFile.TryParse(nifData);
+                if (spt is null)
+                {
+                    result = "spt-parse-failed";
+                    return null;
+                }
+
+                float? targetHeight = null;
+                if (_speedTreeHeights is not null && _speedTreeHeights.TryGetValue(lookupPath, out var h))
+                {
+                    targetHeight = h;
+                }
+
+                var seed = spt.General.Token2005 != 0 ? spt.General.Token2005 : StableSeed(lookupPath);
+                var sptOptions = SptGeometryOptions.FromEnvironment() with { TargetHeight = targetHeight };
+                model = SptGeometryBuilder.Build(spt, seed, sptOptions);
             }
             else
             {
-                sourceInfo = NifParser.Parse(nifData);
-                if (sourceInfo is null)
+                // Cheap endianness probe avoids fully parsing the source NIF just to decide whether it
+                // needs big-endian conversion. A determinate probe (true/false) is byte-for-byte the same
+                // verdict a full parse would give; null means the header wasn't cheaply readable, so fall
+                // back to a full parse. This drops the BE mesh path from three parses (source +
+                // convert-internal + converted output) to two.
+                var probe = NifParser.TryProbeEndianness(nifData);
+                NifInfo? sourceInfo = null;
+                bool isBigEndian;
+                if (probe.HasValue)
                 {
-                    result = "parse-failed";
-                    return null;
+                    isBigEndian = probe.Value;
                 }
-                isBigEndian = sourceInfo.IsBigEndian;
-            }
+                else
+                {
+                    sourceInfo = NifParser.Parse(nifData);
+                    if (sourceInfo is null)
+                    {
+                        result = "parse-failed";
+                        return null;
+                    }
 
-            NifInfo? nif;
-            if (isBigEndian)
-            {
-                var converted = NifConverter.Convert(nifData);
-                if (!converted.Success || converted.OutputData is null)
-                {
-                    result = "convert-failed";
-                    return null;
+                    isBigEndian = sourceInfo.IsBigEndian;
                 }
-                nifData = converted.OutputData;
-                nif = NifParser.Parse(nifData);
-                if (nif is null)
-                {
-                    result = "converted-parse-failed";
-                    return null;
-                }
-            }
-            else
-            {
-                // LE source: reuse the fallback parse if we already made one, else parse now.
-                nif = sourceInfo ?? NifParser.Parse(nifData);
-                if (nif is null)
-                {
-                    result = "parse-failed";
-                    return null;
-                }
-            }
 
-            var model = NifGeometryExtractor.Extract(
-                nifData, nif,
-                textureResolver: _textureResolver,
-                bindPoseOnly: false,
-                skipSkinning: true,
-                // Placed references get their scene-root world transform from the REFR placement
-                // (RenderableReference.ComposeWorldMatrix). Discard the root node's OWN authored
-                // transform so a non-identity root rotation (e.g. McMarranWalls wallReg at 90°,
-                // monorail curves at 15°) is not injected twice — which rendered those meshes
-                // rotated by the root angle (perpendicular for the 90° walls).
-                treatRootsAsIdentity: true);
+                NifInfo? nif;
+                if (isBigEndian)
+                {
+                    var converted = NifConverter.Convert(nifData);
+                    if (!converted.Success || converted.OutputData is null)
+                    {
+                        result = "convert-failed";
+                        return null;
+                    }
+
+                    nifData = converted.OutputData;
+                    nif = NifParser.Parse(nifData);
+                    if (nif is null)
+                    {
+                        result = "converted-parse-failed";
+                        return null;
+                    }
+                }
+                else
+                {
+                    // LE source: reuse the fallback parse if we already made one, else parse now.
+                    nif = sourceInfo ?? NifParser.Parse(nifData);
+                    if (nif is null)
+                    {
+                        result = "parse-failed";
+                        return null;
+                    }
+                }
+
+                model = NifGeometryExtractor.Extract(
+                    nifData, nif,
+                    textureResolver: _textureResolver,
+                    bindPoseOnly: false,
+                    skipSkinning: true,
+                    // Placed references get their scene-root world transform from the REFR placement
+                    // (RenderableReference.ComposeWorldMatrix). Discard the root node's OWN authored
+                    // transform so a non-identity root rotation (e.g. McMarranWalls wallReg at 90°,
+                    // monorail curves at 15°) is not injected twice — which rendered those meshes
+                    // rotated by the root angle (perpendicular for the 90° walls).
+                    treatRootsAsIdentity: true,
+                    // Flag geometry under a NiBillboardNode (e.g. NVashpile smoke glow) so the renderer
+                    // re-aims it at the camera per frame instead of using the baked-in orientation.
+                    collectBillboards: true);
+            }
 
             if (model is null)
             {
@@ -760,7 +816,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     alphaState.MaterialAlpha,
                     sub.IsDoubleSided,
                     sub.IsEmissive,
-                    ComputeLocalBoundsCenter(sub.Positions)));
+                    ComputeLocalBoundsCenter(sub.Positions),
+                    sub.IsBillboard));
             }
 
             if (submeshes.Count == 0)
@@ -789,6 +846,21 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 });
             }
         }
+    }
+
+    /// <summary>
+    ///     Stable FNV-1a hash of the model path, used to seed the deterministic SpeedTree generator so
+    ///     the same tree type produces identical geometry across decode/cache cycles and process runs.
+    /// </summary>
+    private static uint StableSeed(string path)
+    {
+        var hash = 2166136261u;
+        foreach (var ch in path)
+        {
+            hash = (hash ^ char.ToLowerInvariant(ch)) * 16777619u;
+        }
+
+        return hash;
     }
 
     private CachedNifMesh12? UploadDecodedMesh(string modelPath, DecodedNifMesh12 decoded)
@@ -918,7 +990,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     MaterialAlpha = sub.MaterialAlpha,
                     DoubleSided = sub.DoubleSided,
                     IsEmissive = sub.IsEmissive,
-                    LocalBoundsCenter = sub.LocalBoundsCenter
+                    LocalBoundsCenter = sub.LocalBoundsCenter,
+                    IsBillboard = sub.IsBillboard
                 });
             }
             catch (Exception ex)
@@ -1051,6 +1124,17 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private static string NormalizeModelPath(string modelPath)
     {
         var normalized = modelPath.Replace('/', '\\').Trim();
+
+        // SpeedTree trees ship at the BSA root under "trees\" (e.g. "trees\wastelandshrub01.spt"),
+        // NOT under "meshes\" like NIFs — and the TREE MODL is typically a bare name with a leading
+        // backslash ("\WastelandShrub01.spt"). Normalize to "trees\<name>.spt" so the archive hit
+        // matches; prepending "meshes\" (correct for NIFs) would miss every .spt and the tree would
+        // silently render nothing.
+        if (SpeedTreeModelPath.IsSpt(normalized))
+        {
+            return SpeedTreeModelPath.ToArchivePath(normalized);
+        }
+
         return normalized.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
             ? normalized
             : "meshes\\" + normalized.TrimStart('\\');
@@ -1114,7 +1198,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         float MaterialAlpha,
         bool DoubleSided,
         bool IsEmissive,
-        Vector3 LocalBoundsCenter);
+        Vector3 LocalBoundsCenter,
+        bool IsBillboard);
 }
 
 internal sealed class CachedNifMesh12 : IDisposable
@@ -1258,5 +1343,12 @@ internal sealed class CachedSubmesh12
     public required bool DoubleSided { get; init; }
     public required bool IsEmissive { get; init; }
     public required Vector3 LocalBoundsCenter { get; init; }
+
+    /// <summary>
+    ///     True if this submesh sat under a <c>NiBillboardNode</c> in the source NIF. The renderer
+    ///     routes it to the per-draw blended path and replaces the placement world matrix with a
+    ///     cylindrical camera-facing matrix so the quad re-aims at the camera every frame.
+    /// </summary>
+    public required bool IsBillboard { get; init; }
 }
 #endif

@@ -12,6 +12,11 @@ internal static class WorldHeightNormalizer
     // Distinct from "no XCLW present" (null) so authoring intent survives the parse.
     internal const uint NoWaterSentinelBits = 0x7F7FFFFFu;
 
+    // The canonical IEEE-754 value for the no-water sentinel. Any "no explicit water
+    // height" marker collapses to this single value so a downstream IsNoWaterSentinel
+    // check catches them all.
+    internal static float NoWaterSentinel => BitConverter.UInt32BitsToSingle(NoWaterSentinelBits);
+
     internal static float NormalizeReportableHeight(float value)
     {
         return IsReportableHeight(value) ? value : 0f;
@@ -39,11 +44,17 @@ internal static class WorldHeightNormalizer
         return value.HasValue && IsNoWaterSentinel(value.Value);
     }
 
-    // Preserves the no-water sentinel as-is; otherwise applies the reportable-height
-    // normalization. Use this from raw-bytes parsers so the sentinel survives downstream.
+    // Used from raw-bytes water-height parsers (XCLW / worldspace DNAM water). A real,
+    // in-range height passes through unchanged. Everything else — the canonical FLT_MAX
+    // sentinel (0x7F7FFFFF), Skyrim's additional "no explicit height" markers (e.g.
+    // -2147483648 / ~4.29e9 seen on Tamriel coast cells), and NaN/Inf — collapses to the
+    // canonical no-water sentinel. Collapsing rather than clamping to 0 is load-bearing:
+    // the water resolvers read the sentinel as "no override — fall back to the worldspace
+    // default water height," whereas a 0 reads as a real sea-level plane and floods the
+    // entire cell (the Skyrim "water at the wrong level" bug).
     internal static float PreserveSentinelOrNormalize(float value)
     {
-        return IsNoWaterSentinel(value) ? value : NormalizeReportableHeight(value);
+        return IsReportableHeight(value) ? value : NoWaterSentinel;
     }
 
     internal static float? PreserveSentinelOrNormalize(float? value)

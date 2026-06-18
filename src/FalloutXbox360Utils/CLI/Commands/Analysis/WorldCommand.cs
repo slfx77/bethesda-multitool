@@ -206,7 +206,8 @@ public static class WorldCommand
 
         if (cell.GridX.HasValue && cell.GridY.HasValue)
         {
-            detailTable.AddRow("Grid", $"[{cell.GridX.Value}, {cell.GridY.Value}]");
+            // Escape the brackets — Spectre treats '[' as a markup-tag opener.
+            detailTable.AddRow("Grid", $"[[{cell.GridX.Value}, {cell.GridY.Value}]]");
         }
 
         if (worldspaceName != null)

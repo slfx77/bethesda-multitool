@@ -117,11 +117,11 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "DESC":
                     description =
-                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                        Context.ReadDescription(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "ICON":
                     icon = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
@@ -218,7 +218,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "ICON":
                     texturePath =
@@ -285,7 +285,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
@@ -359,7 +359,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
@@ -550,11 +550,11 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "DESC":
                     description =
-                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                        Context.ReadDescription(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "ICON":
                     icon = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
@@ -645,7 +645,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "DATA" when sub.DataLength >= 8:
                 {
@@ -717,7 +717,7 @@ internal sealed class MiscBasicTypeHandler(RecordParserContext context) : Record
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "DATA" when sub.DataLength >= 1:
                     flags = data[sub.DataOffset];

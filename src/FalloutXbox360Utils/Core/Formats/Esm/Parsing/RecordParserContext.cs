@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
+using FalloutXbox360Utils.Core.Formats.Esm.Localization;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
@@ -28,10 +29,11 @@ public sealed class RecordParserContext
         Dictionary<uint, string>? formIdCorrelations = null,
         MemoryMappedViewAccessor? accessor = null,
         long fileSize = 0,
-        MinidumpInfo? minidumpInfo = null)
+        MinidumpInfo? minidumpInfo = null,
+        LocalizedStringTables? localizedStrings = null)
         : this(scanResult, formIdCorrelations,
             accessor != null ? new MmfMemoryAccessor(accessor) : null,
-            fileSize, minidumpInfo)
+            fileSize, minidumpInfo, localizedStrings)
     {
     }
 
@@ -40,12 +42,14 @@ public sealed class RecordParserContext
         Dictionary<uint, string>? formIdCorrelations,
         IMemoryAccessor? accessor,
         long fileSize,
-        MinidumpInfo? minidumpInfo)
+        MinidumpInfo? minidumpInfo,
+        LocalizedStringTables? localizedStrings = null)
     {
         ScanResult = scanResult;
         Accessor = accessor;
         FileSize = fileSize;
         MinidumpInfo = minidumpInfo;
+        LocalizedStrings = localizedStrings;
 
         // Create runtime struct reader if we have both accessor and minidump info
         // Uses probe-based auto-detection of early vs final build struct layout
@@ -151,6 +155,48 @@ public sealed class RecordParserContext
 
     /// <summary>Detected game version (FO3 vs FNV), auto-detected from TES4/HEDR.</summary>
     public FalloutGame Game { get; }
+
+    /// <summary>
+    ///     External string tables for a localized plugin (Skyrim/FO4/Starfield with the TES4 0x80
+    ///     flag). Null for non-localized plugins, in which case <see cref="ReadLString" /> reads
+    ///     inline zstrings exactly as before.
+    /// </summary>
+    public LocalizedStringTables? LocalizedStrings { get; }
+
+    /// <summary>
+    ///     Read a localizable string subrecord. For a localized plugin the subrecord holds a 4-byte
+    ///     string ID resolved against the matching external table; otherwise (and for any unknown
+    ///     ID) the bytes are read as an inline Windows-1252 null-terminated string. This is what
+    ///     fixes localized plugins showing a single garbage character for FULL/DESC/dialogue text.
+    /// </summary>
+    public string ReadLString(ReadOnlySpan<byte> subData, LStringKind kind)
+    {
+        if (LocalizedStrings is { } tables)
+        {
+            if (subData.Length < 4)
+            {
+                return string.Empty;
+            }
+
+            var stringId = BinaryPrimitives.ReadUInt32LittleEndian(subData);
+            var resolved = tables.Resolve(stringId, kind);
+            if (resolved != null)
+            {
+                return resolved;
+            }
+        }
+
+        return EsmStringUtils.ReadNullTermString(subData);
+    }
+
+    /// <summary>Read a FULL display-name subrecord (resolves via the .STRINGS table if localized).</summary>
+    public string ReadFullName(ReadOnlySpan<byte> subData) => ReadLString(subData, LStringKind.Strings);
+
+    /// <summary>Read a DESC description subrecord (resolves via the .DLSTRINGS table if localized).</summary>
+    public string ReadDescription(ReadOnlySpan<byte> subData) => ReadLString(subData, LStringKind.DlStrings);
+
+    /// <summary>Read a dialogue response text subrecord (resolves via the .ILSTRINGS table if localized).</summary>
+    public string ReadDialogueText(ReadOnlySpan<byte> subData) => ReadLString(subData, LStringKind.IlStrings);
 
     /// <summary>
     ///     Mutable: handlers write to this during parsing (e.g., EDID subrecord enrichment).

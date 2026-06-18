@@ -37,6 +37,14 @@ internal static class EsmDescriptorScanner
 
         var bigEndian = EsmParser.IsBigEndian(data);
         var format = PluginFormat.Detect(data);
+
+        // Morrowind (TES3) is a flat record stream with a different framing — no GRUPs, no FormIDs,
+        // 16-byte record headers, and 4-byte subrecord sizes. Walk it separately.
+        if (format.Game == BethesdaGame.Morrowind)
+        {
+            return ScanTes3(data, scanResult, grupHeaders, formIdMap);
+        }
+
         var tes4Header = EsmParser.ParseRecordHeader(data, bigEndian, format);
         if (tes4Header == null || tes4Header.Signature != "TES4")
         {
@@ -229,6 +237,108 @@ internal static class EsmDescriptorScanner
 
             ProcessRecord(data, offset, header, bigEndian, format, scanResult, formIdMap, refrStates);
             offset = recordEnd;
+        }
+    }
+
+    /// <summary>
+    ///     Scan a Morrowind (TES3) plugin: a flat sequence of records with no GRUPs and no FormIDs.
+    ///     Each record is a 16-byte header (Type + Data Size + Header1 + Flags) followed by its
+    ///     subrecords, which use a 4-byte size field (vs 2-byte in TES4+). Sequential FormIDs are
+    ///     synthesized so the FormID-keyed downstream pipeline can index the records. Subrecord-level
+    ///     semantics differ entirely from TES4 — this enumerates record types and editor IDs so the
+    ///     plugin loads and its structure is browsable; per-type field parsing is not modeled here.
+    /// </summary>
+    private static EsmDescriptorScanResult ScanTes3(
+        ReadOnlySpan<byte> data,
+        EsmRecordScanResult scanResult,
+        List<GrupHeaderInfo> grupHeaders,
+        Dictionary<uint, string> formIdMap)
+    {
+        const int tes3HeaderSize = 16;
+        uint syntheticFormId = 1;
+        long offset = 0;
+        scanResult.IsTes3 = true;
+
+        while (offset + tes3HeaderSize <= data.Length)
+        {
+            var sig = ReadSignature(data[(int)offset..], false);
+            if (!IsValidSignature(sig))
+            {
+                break;
+            }
+
+            var dataSize = ReadUInt32(data, (int)offset + 4, false);
+            var flags = ReadUInt32(data, (int)offset + 12, false);
+            var dataStart = offset + tes3HeaderSize;
+            if (dataStart + dataSize > data.Length)
+            {
+                break;
+            }
+
+            var formId = syntheticFormId++;
+            var record = new DetectedMainRecord(sig, dataSize, flags, formId, offset, false)
+            {
+                HeaderSize = tes3HeaderSize
+            };
+            scanResult.MainRecords.Add(record);
+
+            ProcessTes3Subrecords(
+                data.Slice((int)dataStart, (int)dataSize), record, formId, scanResult, formIdMap);
+
+            offset = dataStart + dataSize;
+        }
+
+        return new EsmDescriptorScanResult(scanResult, grupHeaders, formIdMap);
+    }
+
+    private static void ProcessTes3Subrecords(
+        ReadOnlySpan<byte> recordData,
+        DetectedMainRecord record,
+        uint formId,
+        EsmRecordScanResult scanResult,
+        Dictionary<uint, string> formIdMap)
+    {
+        var offset = 0;
+        while (offset + 8 <= recordData.Length)
+        {
+            var sig = ReadSignature(recordData[offset..], false);
+            if (!IsValidSignature(sig))
+            {
+                break;
+            }
+
+            var length = checked((int)ReadUInt32(recordData, offset + 4, false));
+            offset += 8;
+            if (length < 0 || offset + length > recordData.Length)
+            {
+                break;
+            }
+
+            var subData = recordData.Slice(offset, length);
+            switch (sig)
+            {
+                case "NAME": // Morrowind's per-record object/editor ID
+                {
+                    var editorId = EsmStringUtils.ReadNullTermString(subData);
+                    scanResult.EditorIds.Add(new EdidRecord(editorId, record.Offset));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        formIdMap.TryAdd(formId, editorId);
+                    }
+
+                    break;
+                }
+                case "FNAM": // display / full name
+                    scanResult.FullNames.Add(new TextSubrecord(
+                        "FULL", EsmStringUtils.ReadNullTermString(subData), record.Offset));
+                    break;
+                case "MODL":
+                    scanResult.ModelPaths.Add(new TextSubrecord(
+                        "MODL", EsmStringUtils.ReadNullTermString(subData), record.Offset));
+                    break;
+            }
+
+            offset += length;
         }
     }
 

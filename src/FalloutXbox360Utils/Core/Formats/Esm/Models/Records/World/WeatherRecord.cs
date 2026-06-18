@@ -20,15 +20,16 @@ public record WeatherRecord
 
     /// <summary>
     ///     NAM0 "Weather Colors": one <see cref="WeatherColor" /> per color category (FNV ships 15 —
-    ///     240 bytes = 15 × 4 time-bands × RGBA). Index meaning is <see cref="WeatherColorType" />
-    ///     (provisional from xEdit, to be confirmed against the engine decompile before the atmosphere
-    ///     renderer maps them). Empty when the record carries no NAM0.
+    ///     240 bytes = 15 × 4 time-bands × RGBA). Index meaning is <see cref="WeatherColorType" />.
+    ///     Empty when the record carries no NAM0.
     /// </summary>
     public IReadOnlyList<WeatherColor> Colors { get; init; } = [];
 
     /// <summary>
-    ///     FNAM "Fog Distances" — 6 floats: Day Near, Day Far, Night Near, Night Far, Day Max, Night
-    ///     Max (last two are FNV's two-float extension over FO3). Empty when absent.
+    ///     FNAM "Fog Distances" — 6 floats: Day Near, Day Far, Night Near, Night Far, Day Max/Power,
+    ///     Night Max/Power (the last two are FNV's two-float extension over FO3). The engine feeds the
+    ///     5th/6th floats to the distance-fog exponent — <c>Sky::UpdateFog</c> stores them at the fog
+    ///     "power" field — so the atmosphere renderer treats them as the fog power. Empty when absent.
     /// </summary>
     public IReadOnlyList<float> FogDistances { get; init; } = [];
 
@@ -46,15 +47,19 @@ public record WeatherRecord
 public readonly record struct WeatherRgba(byte R, byte G, byte B, byte A);
 
 /// <summary>
-///     One NAM0 color category sampled at the four times of day. The atmosphere renderer interpolates
-///     between adjacent bands based on the game hour relative to the climate's sunrise/sunset.
+///     One NAM0 color category sampled at the four times of day. Band order is Sunrise / Day / Sunset /
+///     Night — CONFIRMED by the engine decompile (<c>TESWeather::GetCloudColor</c> keys its default
+///     colors as band 0=sunrise, 1=day, 2=sunset, 3=night). The atmosphere renderer holds each band
+///     steady between the climate's sunrise/sunset windows and cross-fades only within them.
 /// </summary>
 public sealed record WeatherColor(WeatherRgba Sunrise, WeatherRgba Day, WeatherRgba Sunset, WeatherRgba Night);
 
 /// <summary>
-///     Index meaning of the <see cref="WeatherRecord.Colors" /> array (FNV WTHR NAM0). Order per
-///     xEdit's <c>wbWTHR</c> definition. PROVISIONAL — confirm against the engine decompile (Sky/
-///     TESWeather color upload) in atmosphere Phase 2b before the renderer keys off these indices.
+///     Index meaning of the <see cref="WeatherRecord.Colors" /> array (FNV WTHR NAM0), per xEdit's
+///     <c>wbWTHR</c> definition. <see cref="Ambient" /> (3) and <see cref="Sunlight" /> (4) are CONFIRMED
+///     by the engine decompile — <c>Sky::UpdateColors</c> special-cases exactly those two category
+///     indices for the directional-light intensity scale; the remaining indices (incl. SkyUpper=0,
+///     Fog=1, SkyLower=7) are corroborated by the same 10-category upload loop.
 /// </summary>
 public enum WeatherColorType
 {

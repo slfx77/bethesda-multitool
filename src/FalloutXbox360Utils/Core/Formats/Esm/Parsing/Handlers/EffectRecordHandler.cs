@@ -52,7 +52,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "ENIT" when sub.DataLength >= 12:
                 {
@@ -163,11 +163,11 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "DESC":
                     description =
-                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                        Context.ReadDescription(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "ICON":
                     icon = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
@@ -367,10 +367,10 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "DESC":
-                    description = EsmStringUtils.ReadNullTermString(subData);
+                    description = Context.ReadDescription(subData);
                     break;
                 case "ICON":
                 case "MICO":
@@ -646,7 +646,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "SPIT" when sub.DataLength >= 16:
                 {

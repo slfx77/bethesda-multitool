@@ -26,13 +26,45 @@ internal static class EsmBrowserTreeBuilder
     {
         var root = new ObservableCollection<EsmBrowserNode>();
 
+        // Generic (un-typed) records grouped by 4-char record type. Games whose records have no
+        // dedicated typed list \u2014 Morrowind/TES3 \u2014 land here; the Pick() helper below routes them into
+        // the same categories as FNV/Skyrim typed records (consuming the type so the "Other Records"
+        // catch-all at the end only shows what's left).
+        var byType = result.GenericRecords.Count > 0
+            ? result.GenericRecords
+                .GroupBy(r => r.RecordType, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => (IList)g.ToList(), StringComparer.Ordinal)
+            : new Dictionary<string, IList>(StringComparer.Ordinal);
+
+        IList Pick(IList typed, params string[] types)
+        {
+            if (typed.Count > 0)
+            {
+                return typed;
+            }
+
+            var combined = new List<GenericEsmRecord>();
+            foreach (var t in types)
+            {
+                if (byType.TryGetValue(t, out var recs))
+                {
+                    combined.AddRange(recs.Cast<GenericEsmRecord>());
+                    byType.Remove(t);
+                }
+            }
+
+            return combined;
+        }
+
         AddCategory(root, "Characters", "\uE77B", [
-            ("NPCs", result.Npcs),
-            ("Creatures", result.Creatures),
-            ("Races", result.Races),
-            ("Factions", result.Factions),
-            ("Classes", result.Classes),
-            ("Body Part Data", result.BodyPartData),
+            ("NPCs", Pick(result.Npcs, "NPC_")),
+            ("Creatures", Pick(result.Creatures, "CREA")),
+            ("Races", Pick(result.Races, "RACE")),
+            ("Factions", Pick(result.Factions, "FACT")),
+            ("Classes", Pick(result.Classes, "CLAS")),
+            ("Birthsigns", Pick(Array.Empty<GenericEsmRecord>(), "BSGN")),
+            ("Skills", Pick(Array.Empty<GenericEsmRecord>(), "SKIL")),
+            ("Body Parts", Pick(result.BodyPartData, "BODY")),
             ("Actor Value Info", result.ActorValueInfos)
         ]);
 
@@ -45,39 +77,47 @@ internal static class EsmBrowserTreeBuilder
         AddCategory(root, "Quests & Dialogue", "\uE8BD", [
             ("Quests", result.Quests),
             ("Notes", result.Notes),
-            ("Books", result.Books),
+            ("Books", Pick(result.Books, "BOOK")),
             ("Terminals", result.Terminals),
             ("Messages", result.Messages),
-            ("Scripts", result.Scripts)
+            ("Scripts", Pick(result.Scripts, "SCPT"))
         ]);
 
         AddCategory(root, "Items", "\uE7BF", [
-            ("Weapons", result.Weapons),
-            ("Armor", result.Armor),
+            ("Weapons", Pick(result.Weapons, "WEAP")),
+            ("Armor", Pick(result.Armor, "ARMO")),
+            ("Clothing", Pick(Array.Empty<GenericEsmRecord>(), "CLOT")),
             ("Armor Addons", result.ArmorAddons),
             ("Ammo", result.Ammo),
             ("Consumables", result.Consumables),
-            ("Misc Items", result.MiscItems),
+            ("Potions", Pick(Array.Empty<GenericEsmRecord>(), "ALCH")),
+            ("Ingredients", Pick(result.Ingredients, "INGR")),
+            ("Apparatus", Pick(Array.Empty<GenericEsmRecord>(), "APPA")),
+            ("Tools", Pick(Array.Empty<GenericEsmRecord>(), "REPA", "PROB", "LOCK")),
+            ("Misc Items", Pick(result.MiscItems, "MISC")),
             ("Keys", result.Keys),
-            ("Containers", result.Containers)
+            ("Containers", Pick(result.Containers, "CONT"))
         ]);
 
         AddCategory(root, "Abilities", "\uE945", [
             ("Perks", result.Perks),
-            ("Spells", result.Spells),
-            ("Enchantments", result.Enchantments),
+            ("Spells", Pick(result.Spells, "SPEL")),
+            ("Enchantments", Pick(result.Enchantments, "ENCH")),
+            ("Magic Effects", Pick(Array.Empty<GenericEsmRecord>(), "MGEF")),
             ("Base Effects", result.BaseEffects)
         ]);
 
         // World objects (base definitions only - spatial visualization is in the World Map tab)
         AddCategory(root, "World Objects", "\uE774", [
             ("Worldspaces", result.Worldspaces),
-            ("Leveled Lists", result.LeveledLists),
-            ("Activators", result.Activators),
-            ("Lights", result.Lights),
-            ("Doors", result.Doors),
-            ("Statics", result.Statics),
+            ("Leveled Lists", Pick(result.LeveledLists, "LEVI", "LEVC")),
+            ("Activators", Pick(result.Activators, "ACTI")),
+            ("Lights", Pick(result.Lights, "LIGH")),
+            ("Doors", Pick(result.Doors, "DOOR")),
+            ("Statics", Pick(result.Statics, "STAT")),
             ("Furniture", result.Furniture),
+            ("Land Textures", Pick(result.LandTextures, "LTEX")),
+            ("Regions", Pick(result.Regions, "REGN")),
             ("Water", result.Water),
             ("Weather", result.Weather),
             ("Nav Meshes", result.NavMeshes),
@@ -85,8 +125,8 @@ internal static class EsmBrowserTreeBuilder
         ]);
 
         AddCategory(root, "Game Data", "\uE8F1", [
-            ("Game Settings", result.GameSettings),
-            ("Globals", result.Globals),
+            ("Game Settings", Pick(result.GameSettings, "GMST")),
+            ("Globals", Pick(result.Globals, "GLOB")),
             ("Form Lists", result.FormLists),
             ("Weapon Mods", result.WeaponMods),
             ("Recipes", result.Recipes),
@@ -96,13 +136,8 @@ internal static class EsmBrowserTreeBuilder
             ("Explosions", result.Explosions)
         ]);
 
-        // Add generic records grouped by type + specialized Phase 2 records into categories
-        var byType = result.GenericRecords.Count > 0
-            ? result.GenericRecords
-                .GroupBy(r => r.RecordType)
-                .ToDictionary(g => g.Key, g => (IList)g.ToList())
-            : new Dictionary<string, IList>();
-
+        // Graphics + specialized Phase 2 records (byType built at the top; Pick() above has already
+        // consumed the types it routed into named categories).
         var graphicsSubs = new List<(string Name, IList Records)>();
         if (result.TextureSets.Count > 0) graphicsSubs.Add(("Texture Sets", result.TextureSets));
         graphicsSubs.AddRange(BuildGenericSubcategories(byType,
@@ -112,9 +147,11 @@ internal static class EsmBrowserTreeBuilder
         AddCategory(root, "Graphics", "\uE790", graphicsSubs.ToArray());
 
         var audioSubs = new List<(string Name, IList Records)>();
-        if (result.Sounds.Count > 0) audioSubs.Add(("Sounds", result.Sounds));
+        var sounds = Pick(result.Sounds, "SOUN");
+        if (sounds.Count > 0) audioSubs.Add(("Sounds", sounds));
         if (result.MusicTypes.Count > 0) audioSubs.Add(("Music Types", result.MusicTypes));
         audioSubs.AddRange(BuildGenericSubcategories(byType,
+            ("Sound Generators", "SNDG"),
             ("Acoustic Spaces", "ASPC"),
             ("Media Sets", "MSET")));
         AddCategory(root, "Audio", "\uE767", audioSubs.ToArray());
@@ -131,6 +168,23 @@ internal static class EsmBrowserTreeBuilder
             ("Casino Chips", "CHIP"),
             ("Casinos", "CSNO"),
             ("Default Objects", "DOBJ")));
+
+        // Any remaining generic record types not mapped to a named subcategory above — surface them
+        // by type so nothing is hidden (every Morrowind/TES3 record type lands here, decoded but
+        // without a dedicated typed list). Sorted by count, descending.
+        if (byType.Count > 0)
+        {
+            var otherSubs = byType
+                .Where(kv => kv.Value.Count > 0)
+                .OrderByDescending(kv => kv.Value.Count)
+                .ThenBy(kv => kv.Key, StringComparer.Ordinal)
+                .Select(kv => (kv.Key, kv.Value))
+                .ToArray();
+            if (otherSubs.Length > 0)
+            {
+                AddCategory(root, "Other Records", "", otherSubs);
+            }
+        }
 
         return root;
     }
@@ -169,6 +223,9 @@ internal static class EsmBrowserTreeBuilder
             {
                 result.Add((displayName, records));
             }
+
+            // Consume the type so the "Other Records" catch-all doesn't list it again.
+            byType.Remove(recordType);
         }
 
         return result.ToArray();

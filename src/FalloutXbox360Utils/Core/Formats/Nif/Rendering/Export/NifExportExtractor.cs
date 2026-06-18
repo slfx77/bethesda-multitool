@@ -222,7 +222,7 @@ internal static class NifExportExtractor
             return null;
         }
 
-        var numVertices = NifBlockParsers.ReadVertexCount(data, nif.Blocks[dataIndex], nif.IsBigEndian);
+        var numVertices = NifBlockParsers.ReadVertexCount(data, nif.Blocks[dataIndex], nif.IsBigEndian, nif.IsMorrowind);
         if (numVertices <= 0)
         {
             return null;

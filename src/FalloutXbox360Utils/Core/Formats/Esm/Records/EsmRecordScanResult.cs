@@ -13,6 +13,14 @@ public record EsmRecordScanResult
     /// <summary>Detected game version (FO3 vs FNV), auto-detected from TES4/HEDR if available.</summary>
     public FalloutGame Game { get; set; } = FalloutGame.Unknown;
 
+    /// <summary>
+    ///     True when the source is a Morrowind (TES3) plugin. TES3 uses a flat record stream with
+    ///     4-byte subrecord sizes and wholly different record/subrecord layouts, so the TES4 typed
+    ///     parsers don't apply — <see cref="Parsing.RecordParser" /> routes these to the dedicated
+    ///     <see cref="Tes3.Tes3RecordParser" /> instead.
+    /// </summary>
+    public bool IsTes3 { get; set; }
+
     // Subrecord detections (original)
     public List<GmstRecord> GameSettings { get; init; } = [];
     public List<EdidRecord> EditorIds { get; init; } = [];

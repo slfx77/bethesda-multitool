@@ -260,7 +260,9 @@ internal sealed class MainWindow : Window, IDisposable
                 render = await provider.RenderTopDownAsync(
                     minX, maxX, minY, maxY, px, px, showDisabled: true,
                     showWater: true,
-                    worldspaceFormId: targetFormId, CancellationToken.None);
+                    worldspaceFormId: targetFormId,
+                    hiddenCategories: System.Array.Empty<FalloutXbox360Utils.Core.Formats.Esm.Models.PlacedObjectCategory>(),
+                    CancellationToken.None);
                 if (render is null)
                 {
                     await Task.Delay(250);

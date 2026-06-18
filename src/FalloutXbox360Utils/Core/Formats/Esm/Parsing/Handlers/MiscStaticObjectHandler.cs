@@ -159,7 +159,7 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);

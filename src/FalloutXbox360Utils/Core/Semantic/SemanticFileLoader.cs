@@ -1,6 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using FalloutXbox360Utils.Core.Coverage;
 using FalloutXbox360Utils.Core.Formats.Esm;
+using FalloutXbox360Utils.Core.Formats.Esm.Localization;
 using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
 using FalloutXbox360Utils.Core.Minidump;
@@ -130,12 +131,20 @@ internal static class SemanticFileLoader
 
         ApplyDmpGapRecoveryPromotionsIfNeeded(analysisResult, options);
 
-        var parser = new RecordParser(
+        // Localized plugins (Skyrim/FO4/Starfield) store FULL/DESC/dialogue text as string-table
+        // IDs, not inline text. Load the tables (loose Data\Strings or inside a BSA) so the handlers
+        // resolve real names instead of the first byte of the ID. Null for non-localized plugins.
+        var localizedStrings = fileType == AnalysisFileType.EsmFile
+            ? LocalizedStringTables.TryLoad(filePath)
+            : null;
+        var context = new RecordParserContext(
             analysisResult.EsmRecords,
             analysisResult.FormIdMap,
             accessor,
             fileSize,
-            analysisResult.MinidumpInfo);
+            analysisResult.MinidumpInfo,
+            localizedStrings);
+        var parser = new RecordParser(context);
         var records = parser.ParseAll(options.ParseProgress, options.ResidentRecoveryMasterFormIds);
         ApplyCellWorldspaceAuthorityIfNeeded(records, analysisResult.EsmRecords, fileType, options);
         var resolver = records.CreateResolver(analysisResult.FormIdMap);

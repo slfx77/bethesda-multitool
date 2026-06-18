@@ -133,10 +133,26 @@ internal sealed class NifTextureResolver : IDisposable
         }
 
         var texture = NifTextureLoader.TryLoadFromSources(path, _sources);
-        if (texture != null ||
-            !path.EndsWith(".dds", StringComparison.Ordinal))
+        if (texture != null)
         {
             return texture;
+        }
+
+        // Older NIFs (Morrowind, some Oblivion) reference textures by their authoring extension
+        // (.tga / .bmp) while the archive stores the compiled .dds. Bethesda's loader swaps to .dds;
+        // mirror that when the literal lookup misses and the path isn't already a .dds/.ddx form.
+        if (NifTexturePathUtility.TrySwapToDdsExtension(path, out var ddsSwapped))
+        {
+            texture = NifTextureLoader.TryLoadFromSources(ddsSwapped, _sources);
+            if (texture != null)
+            {
+                return texture;
+            }
+        }
+
+        if (!path.EndsWith(".dds", StringComparison.Ordinal))
+        {
+            return null;
         }
 
         var ddxPath = string.Concat(path.AsSpan(0, path.Length - 4), ".ddx");

@@ -5,12 +5,14 @@ using FalloutXbox360Utils.Core.Formats.Esm.Enums;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.Effects;
 using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Windows.Foundation;
 using Windows.Storage.Pickers;
 using Windows.UI;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
@@ -39,6 +41,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // --- Cell grid lookup ---
     private Dictionary<(int x, int y), CellRecord>? _cellGridLookup;
     private CanvasBitmap? _cellHeightmapBitmap;
+    // Standalone water layer for the single-cell detail view (built water-free + this). Drawn over the
+    // cell bitmap; suppressed when the rendered-models overlay is active. Toggling water is a redraw.
+    private CanvasBitmap? _cellWaterBitmap;
     private WorldSpatialIndex? _spatialIndex;
 
     // --- Heightmap tinting ---
@@ -70,6 +75,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // --- Marker icon bitmaps ---
     private Dictionary<MapMarkerType, CanvasBitmap>? _markerIconBitmaps;
 
+    // Pre-tinted marker icons, rebuilt only when the color scheme changes. The overview used to build a
+    // ColorMatrixEffect PER MARKER PER FRAME (DrawTintedIcon) — hundreds of Direct2D effect graphs every
+    // frame at zoomed-out overview where every worldspace marker is in view — which tanked frame time
+    // (hiding markers was a huge speedup). Tinting each icon once and blitting the cached bitmap collapses
+    // that to a handful of one-time tint passes. Keyed by the scheme's packed ARGB so a scheme change rebuilds.
+    private Dictionary<MapMarkerType, CanvasBitmap>? _tintedMarkerIconBitmaps;
+    private uint _tintedMarkerColorArgb;
+
     // --- State ---
     private Vector2 _panOffset;
 
@@ -97,6 +110,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private bool _showWater = true;
     private bool _showCellGrid = true;
     private bool _suppressNavEvents;
+    // True only during InitializeComponent — the filter toggles now live in toolbar flyouts that set
+    // IsChecked in XAML, firing their handlers during load before LegendPanel/MapCanvas exist. The
+    // handlers no-op until the constructor clears this; backing fields default to the checked values.
+    private bool _initializing = true;
 
     // --- Heightmap bitmaps ---
     private CanvasBitmap? _worldHeightmapBitmap;
@@ -118,6 +135,18 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private bool _terrainAggregateUnavailable; // worldspace too large for one bitmap → keep per-cell
     private int _terrainAggregateVersion;
     private bool _terrainAggregateBuilding;
+
+    // --- Standalone world water layer (zoomed-out / secondary layers) ---
+    // One premult-alpha water bitmap (33 px/cell, transparent where dry), built once per worldspace from
+    // the shared heightmap water mask. Drawn over WHATEVER non-per-cell terrain layer is active
+    // (heightmap/vertex/slope/regions/terrain-aggregate) so those render water-free and the water toggle
+    // is a draw-time redraw — the zoomed-out counterpart of the per-cell _layerWaterCellBitmaps. Suppressed
+    // when the rendered-models overlay is active (that path supplies height-correct water).
+    private CanvasBitmap? _worldWaterBitmap;
+    private int _worldWaterMinX, _worldWaterMaxY, _worldWaterPixelWidth, _worldWaterPixelHeight;
+    private uint? _worldWaterWorldspaceFormId;
+    private bool _worldWaterBuilding;
+    private int _worldWaterVersion;
 
     /// <summary>Screen px/cell below which TerrainTextures uses the aggregate LOD (a cell smaller than
     /// this can't show full per-cell texture detail anyway, and per-cell streaming would flood).</summary>
@@ -155,6 +184,22 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     /// <summary>Max cell bitmaps uploaded per timer tick. ~48 × 30 ticks/s ≈ 1440 uploads/s.</summary>
     private const int MaxCellAppliesPerTick = 48;
+
+    /// <summary>
+    ///     Byte ceiling on GPU uploads per drain tick. The count cap alone assumes uniformly-small cells;
+    ///     at the 1056 px/cell tier a cell is ~4.5 MB, so 48 of them would dump &gt;200 MB of synchronous
+    ///     GPU upload in one UI tick and freeze the app on a zoom transition. Stopping a tick at this byte
+    ///     budget bounds the per-tick upload time regardless of tier (≈5 big cells or 48 small ones).
+    /// </summary>
+    private const long MaxCellApplyBytesPerTick = 24L * 1024 * 1024;
+
+    /// <summary>
+    ///     Soft GPU-memory ceiling for the per-cell bitmap cache. The LRU cap is a COUNT; at 4.5 MB per
+    ///     1056 px/cell tile a 256-entry cap would retain &gt;1 GB of GPU textures while panning zoomed in,
+    ///     risking device removal. The effective count cap is clamped so count × current-tier-cell-bytes
+    ///     stays under this (e.g. ~85 cells at 1056, the full count at the small tiers).
+    /// </summary>
+    private const long MaxLayerCellResidentBytes = 384L * 1024 * 1024;
 
     /// <summary>
     ///     In-flight TerrainTextures streams (Interlocked). Keeps the throttle timer ticking while
@@ -221,6 +266,21 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     ///     (2D-6). Every add/replace/evict/clear on <see cref="_layerCellBitmaps" /> mirrors here.
     /// </summary>
     private OrderedDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? _layerWaterCellBitmaps;
+
+    /// <summary>
+    ///     Coarse multi-cell tiles for an oversized-worldspace overview (FO76 APPALACHIA). Built in one
+    ///     pass (not streamed) for the terrain-derived layers above the single-bitmap size ceiling: a
+    ///     bounded set of mid-resolution bitmaps each covering <see cref="_coarseTileCellSpan" />² cells,
+    ///     instead of one multi-GB bitmap (freeze) or thousands of per-cell tiles. Mutually exclusive
+    ///     with <see cref="_worldHeightmapBitmap" /> + <see cref="_layerCellBitmaps" />.
+    /// </summary>
+    private Dictionary<(int tileGx, int tileGy), CanvasBitmap>? _coarseTileBitmaps;
+
+    /// <summary>Cells per edge covered by each entry in <see cref="_coarseTileBitmaps" />.</summary>
+    private int _coarseTileCellSpan;
+
+    /// <summary>Px/cell each coarse tile was rendered at (drives the draw interpolation choice).</summary>
+    private int _coarseTilePixelsPerCell;
 
     /// <summary>Which layer the cached cell bitmaps belong to. Used to detect layer switches.</summary>
     private WorldMapLayer? _layerCellBitmapsLayer;
@@ -330,6 +390,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     public WorldMapControl()
     {
         InitializeComponent();
+        _initializing = false; // XAML load done — filter toggle handlers may now run for real.
         // Cancel any in-flight TerrainTextures stream when the control unloads (tab switch
         // or app shutdown). Without this, the async loop in StreamAndApplyTerrainTexturesAsync
         // keeps producing cells, tries to enqueue onto a now-null DispatcherQueue, and throws
@@ -352,12 +413,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         TopDownProvider = null;
         CancelTopDownOverlay();
         DisposeWorldBitmaps();
-        _cellHeightmapBitmap?.Dispose();
-        _cellHeightmapBitmap = null;
+        DisposeCellDetailBitmaps();
         _spatialIndex = null;
         _cellGridLookup = null;
 
         _data = data;
+        // The top-down "Rendered models" overlay bakes placement lists through this same cache, so
+        // seed the category index here too (idempotent with the 3D control's LoadData).
+        data.RenderCache.CategoryIndex = data.CategoryIndex;
         _state.LoadData(data);
         _worldHeightmapDirty = true;
         _currentColorScheme = HeightmapColorScheme.DefaultForFile(data.SourceFilePath);
@@ -432,6 +495,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void OnLegendCategoryToggled(PlacedObjectCategory category)
     {
+        // The rendered-models overlay shares this category filter — drop it so it re-renders with the
+        // new set (covers the user report that category toggles didn't affect the 3D meshes).
+        InvalidateTopDownOverlay();
+
         // Keep the toolbar Map markers checkbox in sync with legend clicks.
         if (category != PlacedObjectCategory.MapMarker || MapMarkersCheckBox is null) return;
         var visible = !_hiddenCategories.Contains(PlacedObjectCategory.MapMarker);
@@ -445,7 +512,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void MapMarkersCheckBox_Changed(object sender, RoutedEventArgs e)
     {
-        if (_suppressMarkersCheckboxEvent) return;
+        if (_initializing || _suppressMarkersCheckboxEvent) return;
         if (MapMarkersCheckBox.IsChecked == true)
         {
             _hiddenCategories.Remove(PlacedObjectCategory.MapMarker);
@@ -454,18 +521,21 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         {
             _hiddenCategories.Add(PlacedObjectCategory.MapMarker);
         }
+        InvalidateTopDownOverlay();
         BuildLegendPanel();
         MapCanvas?.Invalidate();
     }
 
     private void NavMeshCheckBox_Changed(object sender, RoutedEventArgs e)
     {
+        if (_initializing) return;
         _showNavMesh = NavMeshCheckBox?.IsChecked == true;
         MapCanvas?.Invalidate();
     }
 
     private void CellGridCheckBox_Changed(object sender, RoutedEventArgs e)
     {
+        if (_initializing) return;
         // Pure overlay toggle — no bitmap rebuild, just redraw the composite with/without the grid.
         _showCellGrid = CellGridCheckBox?.IsChecked == true;
         MapCanvas?.Invalidate();
@@ -473,6 +543,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void RenderedObjectsCheckBox_Changed(object sender, RoutedEventArgs e)
     {
+        if (_initializing) return;
         _showRenderedObjects = RenderedObjectsCheckBox?.IsChecked == true
             && _topDownProvider?.CanRenderTopDown == true;
         if (_showRenderedObjects)
@@ -559,39 +630,48 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     private void WaterCheckBox_Changed(object sender, RoutedEventArgs e)
     {
+        if (_initializing) return;
         _showWater = WaterCheckBox.IsChecked == true;
-        // TerrainTextures (per-cell overview) carries water as a SEPARATE cached layer co-streamed with
-        // the terrain tiles, so toggling it is a pure redraw — no cache discard, no re-stream (2D-6).
-        // Every OTHER layer (heightmap, vertex colors, slope, regions, and the zoomed-out TerrainTextures
-        // aggregate) still bakes water into its bitmap, so those need the full invalidate to re-render.
-        // keepCurrentBitmap MUST stay false there: EnsureHeightmapBitmap's "diff against the cached dict"
-        // filter would skip every viewport cell as already-built and the stream would render nothing —
-        // discarding the cache is the only way the next pass re-renders with the new water state.
-        var perCellWaterLayer = _currentLayer == WorldMapLayer.TerrainTextures
-            && !_terrainTexturesAggregateActive;
-        if (!perCellWaterLayer)
-        {
-            InvalidateWorldBitmap(keepCurrentBitmap: false);
-        }
-        // The rendered-models overlay bakes water into its readback (height-correct), so a water toggle
-        // must re-render it. Clearing the bounds key makes the next MaybeScheduleTopDownRequest re-request.
+        // Every view now renders terrain water-FREE and draws water as a separate, toggle-able layer —
+        // per-cell tiles (zoomed-in TerrainTextures), the shared world water bitmap (aggregate + secondary
+        // layers), or the cell-detail water bitmap. So toggling water is a pure REDRAW: no bitmap rebuild,
+        // no cache discard, no re-stream (2D-6) on any layer/zoom.
+        // The rendered-models overlay bakes height-correct water into its readback, so a water toggle must
+        // re-render it; clearing the bounds key makes the next MaybeScheduleTopDownRequest re-request.
         if (_showRenderedObjects)
         {
             _topDownBoundsKey = null;
         }
+        MapCanvas.Invalidate();
+    }
+
+    /// <summary>
+    ///     Rebuilds the cell-detail bitmap PAIR for <paramref name="cell" />: the terrain bitmap rendered
+    ///     water-FREE plus the standalone water bitmap. Built once per selected cell; water is a separate
+    ///     draw-time layer, so the water toggle is a pure redraw and never rebuilds these.
+    /// </summary>
+    private void RebuildCellDetailBitmaps(CellRecord cell)
+    {
+        _cellHeightmapBitmap?.Dispose();
+        _cellWaterBitmap?.Dispose();
+        _cellHeightmapBitmap = WorldMapCellDetailRenderer.BuildCellHeightmapBitmap(
+            MapCanvas, cell, _currentDefaultWaterHeight, _currentColorScheme,
+            showWater: false, _currentLayer, _data, _data?.RenderCache);
+        _cellWaterBitmap = WorldMapCellDetailRenderer.BuildCellWaterBitmap(
+            MapCanvas, cell, _currentDefaultWaterHeight, _currentLayer, _data?.RenderCache);
+    }
+
+    private void DisposeCellDetailBitmaps()
+    {
         _cellHeightmapBitmap?.Dispose();
         _cellHeightmapBitmap = null;
-        if (_state.SelectedCell is not null)
-        {
-            _cellHeightmapBitmap = WorldMapCellDetailRenderer.BuildCellHeightmapBitmap(
-                MapCanvas, _state.SelectedCell, _currentDefaultWaterHeight,
-                _currentColorScheme, _showWater, _currentLayer, _data, _data?.RenderCache);
-        }
-        MapCanvas.Invalidate();
+        _cellWaterBitmap?.Dispose();
+        _cellWaterBitmap = null;
     }
 
     private void DisabledCheckBox_Changed(object sender, RoutedEventArgs e)
     {
+        if (_initializing) return;
         _hideDisabledActors = DisabledCheckBox.IsChecked != true;
         MapCanvas.Invalidate();
     }
@@ -637,8 +717,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         DisposeWorldBitmaps();
         _worldHeightmapDirty = true;
         HideLayerBuildStatus();
-        _cellHeightmapBitmap?.Dispose();
-        _cellHeightmapBitmap = null;
+        DisposeCellDetailBitmaps();
         WorldspaceComboBox.Items.Clear();
         ExportButton.IsEnabled = false;
         MapCanvas.Invalidate();
@@ -649,8 +728,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         CancelTerrainStream();
         CancelTopDownOverlay();
         DisposeWorldBitmaps();
-        _cellHeightmapBitmap?.Dispose();
-        _cellHeightmapBitmap = null;
+        DisposeCellDetailBitmaps();
         DisposeMarkerIcons();
     }
 
@@ -714,6 +792,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _terrainTexturesAggregateActive = false;
         _terrainAggregateUnavailable = false;
         _terrainAggregateVersion++;
+        // World water layer is worldspace-specific (not layer/water-toggle specific); drop it so a
+        // worldspace switch rebuilds it. The version bump drops any in-flight build's result.
+        _worldWaterBitmap?.Dispose();
+        _worldWaterBitmap = null;
+        _worldWaterWorldspaceFormId = null;
+        _worldWaterVersion++;
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
         if (_layerCellBitmaps is not null)
@@ -730,9 +814,22 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             foreach (var bmp in _layerWaterCellBitmaps.Values) bmp.Dispose();
             _layerWaterCellBitmaps = null;
         }
+        DisposeCoarseTileBitmaps();
         _layerCellBitmapsLayer = null;
         // The cache the held cap was sized for is gone; let the next rebuild size fresh.
         _layerCellBitmapCapPolicy.Reset();
+    }
+
+    /// <summary>Disposes the coarse multi-cell tile bitmaps and clears the cache (idempotent).</summary>
+    private void DisposeCoarseTileBitmaps()
+    {
+        if (_coarseTileBitmaps is not null)
+        {
+            foreach (var bmp in _coarseTileBitmaps.Values) bmp.Dispose();
+            _coarseTileBitmaps = null;
+        }
+        _coarseTileCellSpan = 0;
+        _coarseTilePixelsPerCell = 0;
     }
 
     // ========================================================================
@@ -764,8 +861,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         InvalidateWorldBitmap(keepCurrentBitmap: false);
         _worldHmMinX = _worldHmMaxY = _worldHmPixelWidth = _worldHmPixelHeight = 0;
-        _cellHeightmapBitmap?.Dispose();
-        _cellHeightmapBitmap = null;
+        DisposeCellDetailBitmaps();
         BuildCellGridLookup();
         SetCanvasMode(true);
         ExportButton.IsEnabled = true;
@@ -783,8 +879,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         _currentColorScheme = HeightmapColorScheme.Presets[idx];
         InvalidateWorldBitmap(keepCurrentBitmap: true);
-        _cellHeightmapBitmap?.Dispose();
-        _cellHeightmapBitmap = null;
+        DisposeCellDetailBitmaps();
         MapCanvas.Invalidate();
     }
 
@@ -810,10 +905,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         if (_cellHeightmapBitmap is not null && _state.SelectedCell is not null)
         {
-            _cellHeightmapBitmap.Dispose();
-            _cellHeightmapBitmap = WorldMapCellDetailRenderer.BuildCellHeightmapBitmap(
-                MapCanvas, _state.SelectedCell, _currentDefaultWaterHeight,
-                _currentColorScheme, _showWater, _currentLayer, _data, _data?.RenderCache);
+            RebuildCellDetailBitmaps(_state.SelectedCell);
         }
 
         MapCanvas?.Invalidate();
@@ -828,8 +920,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     internal void RestoreNavState(WorldNavState state)
     {
         _suppressNavEvents = true;
-        _cellHeightmapBitmap?.Dispose();
-        _cellHeightmapBitmap = null;
+        DisposeCellDetailBitmaps();
         HoverInfoText.Text = "";
 
         switch (state.Mode)
@@ -1219,6 +1310,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // A render exception here used to crash the whole app silently (routed to the console-only
         // App.UnhandledException). Catch + log with full context, skip the bad frame, keep the window
         // alive. The next Invalidate redraws cleanly once the transient condition clears.
+        var drawStart = System.Diagnostics.Stopwatch.GetTimestamp();
         try
         {
             DrawMapContent(ds, canvasW, canvasH);
@@ -1226,6 +1318,16 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         catch (Exception ex)
         {
             LogUiThreadFault("MapCanvas_Draw", ex);
+        }
+
+        if (Map2DProfilerTrace.IsEnabled)
+        {
+            var drawMs = System.Diagnostics.Stopwatch.GetElapsedTime(drawStart).TotalMilliseconds;
+            if (drawMs >= 40)
+            {
+                Map2DProfilerTrace.Event("slow-draw",
+                    $"ms={drawMs:F0} zoom={_zoom:F4} layer={_currentLayer} cacheSize={_layerCellBitmaps?.Count ?? 0}");
+            }
         }
     }
 
@@ -1241,6 +1343,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         if (_state.Mode == ViewMode.WorldOverview)
         {
             EnsureMarkerIcons(MapCanvas);
+            // Pre-tint the marker icons once for this color scheme (rebuilt only on scheme change) so the
+            // overview blits cached bitmaps instead of building a ColorMatrixEffect per marker per frame.
+            var tintedMarkers = EnsureTintedMarkerIcons(MapCanvas, _currentColorScheme) ?? _markerIconBitmaps;
+            // Build the standalone world water layer once per worldspace (cheap guard); used as the water
+            // pass over every non-per-cell terrain layer (heightmap/vertex/slope/regions/terrain-aggregate).
+            EnsureWorldWaterBitmap(_state.SelectedWorldspace?.FormId);
 
             // TerrainTextures aggregate LOD: when active, composite the single downscaled bitmap and
             // suppress the per-cell dict so the renderer draws the aggregate (it prefers per-cell when
@@ -1252,10 +1360,21 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             var overviewBmpH = aggActive ? _terrainAggPixelHeight : _worldHmPixelHeight;
             var overviewMinX = aggActive ? _terrainAggMinX : _worldHmMinX;
             var overviewMaxY = aggActive ? _terrainAggMaxY : _worldHmMaxY;
-            var overviewCells = aggActive ? null : _layerCellBitmaps;
-            // Standalone water layer rides with the per-cell terrain path ONLY — so it can never paint a
-            // stale texture-layer water cache over the heightmap/aggregate (those bake their own water).
+            // ONLY the TerrainTextures layer draws the per-cell tile cache. Other layers (Heightmap,
+            // VertexColors, Slope, Regions) draw their single aggregate bitmap. Without the layer check,
+            // a TerrainTextures session that streamed the whole worldspace left _layerCellBitmaps populated
+            // (up to ~16k tiles), and every Heightmap redraw then scanned + DrawImage'd all of them — a
+            // continuous UI-thread peg (confirmed via a process dump: the hot thread sat in
+            // DrawTextureCellBitmaps with a 16,396-entry cache while on the Heightmap layer). aggActive
+            // already implies the TerrainTextures layer, so it stays correct for the aggregate LOD too.
+            var overviewCells = (_currentLayer == WorldMapLayer.TerrainTextures && !aggActive)
+                ? _layerCellBitmaps
+                : null;
+            // Exactly one flat-water source per frame: the per-cell tile cache when the per-cell terrain
+            // path is active (zoomed-in TerrainTextures), else the shared world water bitmap (aggregate +
+            // every secondary single-bitmap layer). Both are suppressed when the overlay is active.
             var overviewWater = overviewCells is not null ? _layerWaterCellBitmaps : null;
+            var worldWaterBmp = overviewCells is null ? _worldWaterBitmap : null;
             var overviewBmpPixelsPerCell = aggActive
                 ? _terrainAggPixelsPerCell
                 : WorldMapLayerRenderer.HeightmapPixelsPerCell;
@@ -1268,11 +1387,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 _zoom, _panOffset, canvasW, canvasH,
                 _hiddenCategories, _hideDisabledActors,
                 _state.SelectedObject, _hoveredObject,
-                _markerIconBitmaps, _currentColorScheme,
+                tintedMarkers, _currentColorScheme,
                 _showCellGrid,
                 _showRenderedObjects, _topDownOverlay,
                 _topDownWorldMinX, _topDownWorldMaxX, _topDownWorldMinY, _topDownWorldMaxY,
-                overviewWater, _showWater);
+                overviewWater, _showWater,
+                worldWaterBmp, _worldWaterMinX, _worldWaterMaxY,
+                _worldWaterPixelWidth, _worldWaterPixelHeight,
+                WorldMapLayerRenderer.HeightmapPixelsPerCell,
+                _coarseTileBitmaps, _coarseTileCellSpan, _coarseTilePixelsPerCell);
 
             if (_showNavMesh)
             {
@@ -1302,7 +1425,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 _hiddenCategories, _hideDisabledActors,
                 _state.SelectedObject, _hoveredObject,
                 _showRenderedObjects && IsTopDownEligible(), _topDownOverlay,
-                _topDownWorldMinX, _topDownWorldMaxX, _topDownWorldMinY, _topDownWorldMaxY);
+                _topDownWorldMinX, _topDownWorldMaxX, _topDownWorldMinY, _topDownWorldMaxY,
+                _cellWaterBitmap, _showWater);
 
             if (_showNavMesh)
             {
@@ -1546,10 +1670,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         HoverInfoText.Text = FormatCellDisplayName(cell);
 
-        _cellHeightmapBitmap?.Dispose();
-        _cellHeightmapBitmap = WorldMapCellDetailRenderer.BuildCellHeightmapBitmap(
-            MapCanvas, cell, _currentDefaultWaterHeight, _currentColorScheme, _showWater,
-            _currentLayer, _data, _data?.RenderCache);
+        RebuildCellDetailBitmaps(cell);
 
         WorldMapViewportHelper.ZoomToFitCell(cell,
             (float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight,
@@ -1614,8 +1735,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _state.EnsureOverviewMode();
         if (wasCellDetail)
         {
-            _cellHeightmapBitmap?.Dispose();
-            _cellHeightmapBitmap = null;
+            DisposeCellDetailBitmaps();
         }
 
         SetCanvasMode(true);
@@ -1764,7 +1884,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _data,
             _currentDefaultWaterHeight,
             _currentColorScheme,
-            _showWater,
+            // ShowWater=false: live world-overview layers render water-FREE; the standalone world water
+            // bitmap (_worldWaterBitmap) is the toggle-able water pass. Export keeps baking via
+            // WorldMapHeightmapBuilder (a separate path).
+            false,
             _currentLayer,
             _cachedGrayscale,
             _cachedWaterMask,
@@ -1827,6 +1950,17 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // (sweep exiting the populated region) must not drag the cap down and mass-evict that
         // pan-back history.
         _layerCellBitmapCap = _layerCellBitmapCapPolicy.Update(viewportCellCount, Environment.TickCount64);
+
+        // Byte clamp on top of the count cap: a tile is texturePixelsPerCell² × 4 bytes (4.5 MB at the
+        // 1056 tier), so the count-only cap could retain >1 GB of GPU textures while panning zoomed in.
+        // Clamp so count × current-tile-bytes stays under the resident-byte ceiling — auto-shrinks the
+        // cap to ~85 at 1056 and leaves it at the full count for the small tiers (where bytes are tiny).
+        var tileBytes = (long)texturePixelsPerCell * texturePixelsPerCell * 4;
+        if (tileBytes > 0)
+        {
+            var byteCap = (int)Math.Min(int.MaxValue, Math.Max(MinLayerCellBitmapCap, MaxLayerCellResidentBytes / tileBytes));
+            _layerCellBitmapCap = Math.Min(_layerCellBitmapCap, byteCap);
+        }
 
         // Incremental rebuild for the TerrainTextures live view: keep already-built cell
         // bitmaps inside the new viewport, evict cells that scrolled off, and dispatch a
@@ -2003,6 +2137,23 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     }
 
     /// <summary>
+    ///     Drops the cached "Rendered models" overlay and schedules a fresh render. Called when the
+    ///     legend's category filter changes (the overlay shares that filter via RenderTopDownAsync, but
+    ///     the per-draw request key doesn't track categories, so a toggle wouldn't otherwise refresh it).
+    /// </summary>
+    private void InvalidateTopDownOverlay()
+    {
+        if (!_showRenderedObjects || _topDownProvider?.CanRenderTopDown != true) return;
+        DisposeTopDownOverlay();
+        _topDownBoundsKey = null;
+        if (IsTopDownEligible())
+        {
+            _topDownRequestPending = true;
+            EnsureViewportTimerRunning();
+        }
+    }
+
+    /// <summary>
     ///     Requests a top-down render of the visible world rect (+ a margin) from the 3D provider,
     ///     uploads the BGRA readback as a <see cref="CanvasBitmap" />, and stores it as the overlay.
     ///     Runs on the UI thread (the provider records D3D12 on the device thread and offloads only
@@ -2057,7 +2208,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 worldMinX, worldMaxX, worldMinY, worldMaxY, pxW, pxH,
                 showDisabled: !_hideDisabledActors,
                 showWater: _showWater,
-                worldspaceFormId: _state.SelectedWorldspace?.FormId, ct);
+                worldspaceFormId: _state.SelectedWorldspace?.FormId,
+                // Apply the legend's category filter to the rendered-models overlay so category
+                // toggles drive the 3D meshes too (snapshot — the render awaits off the UI thread).
+                hiddenCategories: new HashSet<PlacedObjectCategory>(_hiddenCategories),
+                ct);
 
             if (gen != _topDownGen) return; // superseded (teardown / toggle off)
             if (render is null) { _topDownIncomplete = false; return; }
@@ -2118,6 +2273,11 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             return;
         }
 
+        // Diagnostic: this tick runs on the UI thread, so a long tick IS a visible stall/freeze.
+        // Time it and emit a `slow-tick` trace when it exceeds the budget — unambiguous (unlike a
+        // draw-gap, which idle pauses also produce) for attributing a freeze to the streaming path.
+        var tickStart = System.Diagnostics.Stopwatch.GetTimestamp();
+
         // Same rationale as MapCanvas_Draw: a throw here (e.g. a per-cell GPU upload in
         // DrainPendingCellApplies, or a viewport rebuild) otherwise escapes to App.UnhandledException
         // and kills the window. Log with context + skip this tick; the timer fires again next interval.
@@ -2164,6 +2324,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             LogUiThreadFault("ViewportRebuildTimer_Tick", ex);
         }
 
+        var tickMs = System.Diagnostics.Stopwatch.GetElapsedTime(tickStart).TotalMilliseconds;
+        if (tickMs >= 40)
+        {
+            Map2DProfilerTrace.Event("slow-tick",
+                $"ms={tickMs:F0} layer={_currentLayer} cacheSize={_layerCellBitmaps?.Count ?? 0} cap={_layerCellBitmapCap} ppc-tier={ChooseTerrainTexturePixelsPerCell(_zoom)}");
+        }
+
         // Idle: no pending rebuild, not zoom-settling, not actively panning, nothing left to apply,
         // no stream still producing cells, and no top-down overlay work outstanding. Stop until the
         // next viewport change / pointer event.
@@ -2192,6 +2359,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private void DrainPendingCellApplies()
     {
         var uploads = 0;
+        long uploadBytes = 0;
         var applied = false;
         while (_pendingCellApplies.TryDequeue(out var item))
         {
@@ -2208,7 +2376,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
             ApplyOneTerrainTextureCell(item.cacheGen, item.cell);
             applied = true;
-            if (++uploads >= MaxCellAppliesPerTick) break;
+            // Stop on EITHER the count cap OR the byte budget. Without the byte budget a tick of big
+            // (1056²≈4.5 MB) cells dumps >200 MB of synchronous GPU upload and freezes the UI on a zoom
+            // transition; the byte check paces large tiers to ~5 cells/tick while small tiers still drain
+            // 48/tick. The just-applied cell always counts, so progress is guaranteed (no starvation).
+            var ppc = item.cell.PixelsPerCell;
+            uploadBytes += (long)ppc * ppc * 4;
+            if (item.cell.Water is not null) uploadBytes += (long)ppc * ppc * 4;
+            if (++uploads >= MaxCellAppliesPerTick || uploadBytes >= MaxCellApplyBytesPerTick) break;
         }
 
         if (applied) MapCanvas.Invalidate();
@@ -2517,7 +2692,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             return WorldMapLayerRenderer.TexturePixelsPerCell * 2; // 264
         }
 
-        return WorldMapLayerRenderer.MaxTexturePixelsPerCell; // 528
+        if (screenPixelsPerCell <= WorldMapLayerRenderer.TexturePixelsPerCell * 5f)
+        {
+            return WorldMapLayerRenderer.TexturePixelsPerCell * 4; // 528
+        }
+
+        // Zoomed in past ~660 screen px/cell: render at 1056 so the composite carries ~132 px per
+        // tile-repeat (sampled from the 256 mip, downscaled) instead of magnifying the 528 tier. Few
+        // cells are visible at this zoom, so the larger per-cell bitmaps stay memory-bounded.
+        return WorldMapLayerRenderer.MaxTexturePixelsPerCell; // 1056
     }
 
     /// <summary>
@@ -2544,7 +2727,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _data,
             _currentDefaultWaterHeight,
             _currentColorScheme,
-            _showWater,
+            // ShowWater=false: the zoomed-out terrain aggregate renders water-FREE; the world water
+            // bitmap is drawn over it (scaled) as the toggle-able water pass.
+            false,
             WorldMapLayer.TerrainTextures,
             _cachedGrayscale,
             _cachedWaterMask,
@@ -2618,6 +2803,81 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         MapCanvas.Invalidate();
     }
 
+    /// <summary>
+    ///     Lazily builds the standalone world water bitmap (<see cref="_worldWaterBitmap" />) once per
+    ///     worldspace. Cheap CPU-only pass (33 px/cell water mask → premult RGBA), so it runs on a
+    ///     background task rather than the heavier <see cref="WorldLayerBuildService" /> path. Built
+    ///     regardless of the water toggle so toggling water ON is an instant redraw. No-op when already
+    ///     built/building for this worldspace.
+    /// </summary>
+    private void EnsureWorldWaterBitmap(uint? worldspaceFormId)
+    {
+        if (_worldWaterBuilding || _data is null) return;
+        // Build ONCE per worldspace — keyed on the worldspace, NOT on a non-null bitmap. A worldspace
+        // with no water makes RenderWorldWaterAggregate return null; the old `_worldWaterBitmap is not
+        // null` guard then never tripped, so this re-kicked a FULL-worldspace water build EVERY draw
+        // (each a whole-heightmap pass on a background core) and its completion re-Invalidate'd the
+        // canvas — a continuous CPU peg with the map visually static. Confirmed via process dump
+        // (_worldWaterBuilding=1, every other thread idle). A worldspace switch clears the id in
+        // ClearWorldBitmaps so a real change still rebuilds.
+        if (_worldWaterWorldspaceFormId == worldspaceFormId) return;
+
+        var cells = GetActiveCells();
+        if (cells.Count == 0) return;
+
+        _worldWaterBuilding = true;
+        // Mark this worldspace attempted up front so a null result (no water) OR a build exception can't
+        // re-trigger the guard above next frame. ApplyWorldWaterResult re-affirms it on completion.
+        _worldWaterWorldspaceFormId = worldspaceFormId;
+        var version = ++_worldWaterVersion;
+        var defaultWaterHeight = _currentDefaultWaterHeight;
+        var palette = _currentWaterPalette; // toggle-independent: the bitmap is built coloured, drawn only when _showWater
+        var cache = _data.RenderCache;
+        // Snapshot the cell list for the background pass (mirrors the terrain-aggregate build).
+        _ = BuildWorldWaterBitmapAsync(cells.ToList(), defaultWaterHeight, palette, cache, version, worldspaceFormId);
+    }
+
+    private async Task BuildWorldWaterBitmapAsync(
+        List<CellRecord> cells, float? defaultWaterHeight, WaterColorPalette? palette,
+        WorldRenderCache? cache, int version, uint? worldspaceFormId)
+    {
+        try
+        {
+            var bmp = await Task.Run(() =>
+                WorldMapLayerRenderer.RenderWorldWaterAggregate(cells, defaultWaterHeight, cache, palette))
+                .ConfigureAwait(false);
+            _ = DispatcherQueue.TryEnqueue(() => ApplyWorldWaterResult(bmp, version, worldspaceFormId));
+        }
+        catch (Exception ex)
+        {
+            FalloutXbox360Utils.Core.Logger.Instance.Warn("World water bitmap build failed: {0}", ex.ToString());
+            _ = DispatcherQueue.TryEnqueue(() => { _worldWaterBuilding = false; });
+        }
+    }
+
+    private void ApplyWorldWaterResult(WorldMapLayerRenderer.LayerBitmap? bmp, int version, uint? worldspaceFormId)
+    {
+        _worldWaterBuilding = false;
+        if (version != _worldWaterVersion) return; // superseded (worldspace switched / cache cleared)
+
+        _worldWaterBitmap?.Dispose();
+        _worldWaterBitmap = null;
+        if (bmp is { } b)
+        {
+            _worldWaterBitmap = CanvasBitmap.CreateFromBytes(
+                MapCanvas, b.Pixels, b.Width, b.Height,
+                Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+            _worldWaterMinX = b.MinCellX;
+            _worldWaterMaxY = b.MaxCellY;
+            _worldWaterPixelWidth = b.Width;
+            _worldWaterPixelHeight = b.Height;
+        }
+        _worldWaterWorldspaceFormId = worldspaceFormId;
+        Map2DProfilerTrace.Event("world-water-built",
+            $"ws=0x{worldspaceFormId ?? 0:X8} present={(_worldWaterBitmap is not null)} size={_worldWaterPixelWidth}x{_worldWaterPixelHeight}");
+        MapCanvas.Invalidate();
+    }
+
     private async Task BuildAndApplyWorldBitmapAsync(LayerBuildRequest request)
     {
         try
@@ -2650,7 +2910,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             return;
         }
 
-        var hasContent = result.Bitmap is not null || result.CellPixels is not null;
+        var hasContent = result.Bitmap is not null || result.CellPixels is not null
+            || result.CoarseTiles is not null;
         if (!hasContent)
         {
             if (_currentLayer == WorldMapLayer.TerrainTextures)
@@ -2683,6 +2944,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 Map2DProfilerTrace.Event("cache-gen-bump",
                     $"to={_layerCellBitmapsCacheGen} reason=ApplyWorldBitmapBuildResult disposed={disposed}");
             }
+            DisposeCoarseTileBitmaps();
             _layerCellBitmapsLayer = null;
             // The cache the held cap was sized for was just replaced; size fresh next rebuild.
             _layerCellBitmapCapPolicy.Reset();
@@ -2707,6 +2969,26 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized));
             }
             _layerCellBitmapsLayer = _currentLayer;
+        }
+        else if (result.CoarseTiles is not null)
+        {
+            // Oversized worldspace: one bitmap per coarse tile (bounded count). The cleared-above state
+            // guarantees _coarseTileBitmaps is null here, so this is always a fresh full build.
+            _coarseTileBitmaps = new Dictionary<(int tileGx, int tileGy), CanvasBitmap>(result.CoarseTiles.Count);
+            _coarseTileCellSpan = result.CoarseTileCellSpan;
+            _coarseTilePixelsPerCell = result.CoarseTilePixelsPerCell;
+            var tileSidePx = result.CoarseTileCellSpan * result.CoarseTilePixelsPerCell;
+            foreach (var ((tileGx, tileGy), pixels) in result.CoarseTiles)
+            {
+                _coarseTileBitmaps[(tileGx, tileGy)] = CanvasBitmap.CreateFromBytes(
+                    MapCanvas,
+                    pixels,
+                    tileSidePx,
+                    tileSidePx,
+                    Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+            }
+            Map2DProfilerTrace.Event("coarse-tiles-built",
+                $"layer={_currentLayer} tiles={_coarseTileBitmaps.Count} span={_coarseTileCellSpan} ppc={_coarseTilePixelsPerCell}");
         }
         else if (result.Bitmap is { } bitmap)
         {
@@ -2774,12 +3056,67 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
     }
 
+    /// <summary>
+    ///     Returns marker icons pre-tinted to the current color scheme, rebuilding the cache only when the
+    ///     scheme changes. Tinting once here (a handful of one-shot <see cref="ColorMatrixEffect" /> passes
+    ///     into per-icon render targets) replaces the old per-marker-per-frame effect in
+    ///     <c>DrawMapMarkers</c>, which dominated frame time at zoomed-out overview (every worldspace marker
+    ///     in view). Returns null if the base icons aren't loaded yet.
+    /// </summary>
+    private Dictionary<MapMarkerType, CanvasBitmap>? EnsureTintedMarkerIcons(
+        ICanvasResourceCreator resourceCreator, HeightmapColorScheme scheme)
+    {
+        if (_markerIconBitmaps is null) return null;
+
+        var argb = (uint)((255 << 24) | (scheme.R << 16) | (scheme.G << 8) | scheme.B);
+        if (_tintedMarkerIconBitmaps is not null && _tintedMarkerColorArgb == argb)
+        {
+            return _tintedMarkerIconBitmaps;
+        }
+
+        DisposeTintedMarkerIcons();
+        var tintScale = new Matrix5x4
+        {
+            M11 = scheme.R / 255f, M22 = scheme.G / 255f, M33 = scheme.B / 255f, M44 = 1f
+        };
+        var tinted = new Dictionary<MapMarkerType, CanvasBitmap>(_markerIconBitmaps.Count);
+        foreach (var (type, icon) in _markerIconBitmaps)
+        {
+            var w = (float)icon.SizeInPixels.Width;
+            var h = (float)icon.SizeInPixels.Height;
+            // 96 DPI render target → DIPs == pixels, so the icon maps 1:1 with no resample.
+            var rt = new CanvasRenderTarget(resourceCreator, w, h, 96f);
+            using (var rtds = rt.CreateDrawingSession())
+            {
+                rtds.Clear(Colors.Transparent);
+                using var tintEffect = new ColorMatrixEffect { Source = icon, ColorMatrix = tintScale };
+                rtds.DrawImage(tintEffect, new Rect(0, 0, w, h), new Rect(0, 0, w, h));
+            }
+            tinted[type] = rt; // CanvasRenderTarget is a CanvasBitmap; blit it directly per marker.
+        }
+
+        _tintedMarkerIconBitmaps = tinted;
+        _tintedMarkerColorArgb = argb;
+        return tinted;
+    }
+
     private void DisposeMarkerIcons()
     {
         if (_markerIconBitmaps != null)
         {
             foreach (var bmp in _markerIconBitmaps.Values) bmp.Dispose();
             _markerIconBitmaps = null;
+        }
+        DisposeTintedMarkerIcons();
+    }
+
+    private void DisposeTintedMarkerIcons()
+    {
+        if (_tintedMarkerIconBitmaps != null)
+        {
+            foreach (var bmp in _tintedMarkerIconBitmaps.Values) bmp.Dispose();
+            _tintedMarkerIconBitmaps = null;
+            _tintedMarkerColorArgb = 0;
         }
     }
 

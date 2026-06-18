@@ -186,12 +186,41 @@ internal static class ResultsFormatter
     internal static (string Name, (string Label, int Count)[] Records)[] BuildRecordBreakdownCategories(
         Core.Formats.Esm.Models.RecordCollection r)
     {
-        return
-        [
+        // Games whose records have no typed list (Morrowind/TES3) land in GenericRecords. Count by
+        // type and prefer the typed-list count, falling back to the generic group — so the breakdown
+        // shows the same categories for every game. Consumed types are tracked for the catch-all.
+        var byType = r.GenericRecords
+            .GroupBy(x => x.RecordType, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        var consumed = new HashSet<string>(StringComparer.Ordinal);
+
+        int C(int typed, params string[] types)
+        {
+            if (typed > 0)
+            {
+                return typed;
+            }
+
+            var sum = 0;
+            foreach (var t in types)
+            {
+                if (byType.TryGetValue(t, out var n))
+                {
+                    sum += n;
+                    consumed.Add(t);
+                }
+            }
+
+            return sum;
+        }
+
+        var categories = new List<(string Name, (string Label, int Count)[] Records)>
+        {
             ("Characters",
             [
-                ("NPCs", r.Npcs.Count), ("Creatures", r.Creatures.Count), ("Races", r.Races.Count),
-                ("Factions", r.Factions.Count)
+                ("NPCs", C(r.Npcs.Count, "NPC_")), ("Creatures", C(r.Creatures.Count, "CREA")),
+                ("Races", C(r.Races.Count, "RACE")), ("Factions", C(r.Factions.Count, "FACT")),
+                ("Birthsigns", C(0, "BSGN")), ("Skills", C(0, "SKIL")), ("Body Parts", C(0, "BODY"))
             ]),
             ("Character Appearance",
             [
@@ -204,35 +233,45 @@ internal static class ResultsFormatter
             ]),
             ("Quests & Dialogue",
             [
-                ("Quests", r.Quests.Count), ("Dialog Topics", r.DialogTopics.Count),
-                ("Dialogue", r.Dialogues.Count),
-                ("Notes", r.Notes.Count), ("Books", r.Books.Count), ("Terminals", r.Terminals.Count),
-                ("Scripts", r.Scripts.Count)
+                ("Quests", r.Quests.Count), ("Dialog Topics", C(r.DialogTopics.Count, "DIAL")),
+                ("Dialogue", C(r.Dialogues.Count, "INFO")),
+                ("Notes", r.Notes.Count), ("Books", C(r.Books.Count, "BOOK")), ("Terminals", r.Terminals.Count),
+                ("Scripts", C(r.Scripts.Count, "SCPT"))
             ]),
             ("Items",
             [
-                ("Weapons", r.Weapons.Count), ("Armor", r.Armor.Count), ("Ammo", r.Ammo.Count),
-                ("Consumables", r.Consumables.Count), ("Misc Items", r.MiscItems.Count), ("Keys", r.Keys.Count),
-                ("Containers", r.Containers.Count), ("Leveled Lists", r.LeveledLists.Count)
+                ("Weapons", C(r.Weapons.Count, "WEAP")), ("Armor", C(r.Armor.Count, "ARMO")),
+                ("Clothing", C(0, "CLOT")), ("Ammo", r.Ammo.Count), ("Consumables", r.Consumables.Count),
+                ("Potions", C(0, "ALCH")), ("Ingredients", C(r.Ingredients.Count, "INGR")),
+                ("Apparatus", C(0, "APPA")), ("Tools", C(0, "REPA", "PROB", "LOCK")),
+                ("Misc Items", C(r.MiscItems.Count, "MISC")), ("Keys", r.Keys.Count),
+                ("Containers", C(r.Containers.Count, "CONT")), ("Leveled Lists", C(r.LeveledLists.Count, "LEVI", "LEVC"))
             ]),
             ("Abilities",
             [
-                ("Perks", r.Perks.Count), ("Spells", r.Spells.Count), ("Enchantments", r.Enchantments.Count),
+                ("Perks", r.Perks.Count), ("Spells", C(r.Spells.Count, "SPEL")),
+                ("Enchantments", C(r.Enchantments.Count, "ENCH")), ("Magic Effects", C(0, "MGEF")),
                 ("Base Effects", r.BaseEffects.Count)
             ]),
             ("World",
             [
                 ("Cells", r.Cells.Count), ("Worldspaces", r.Worldspaces.Count),
-                ("Map Markers", r.MapMarkers.Count),
-                ("Statics", r.Statics.Count), ("Doors", r.Doors.Count), ("Lights", r.Lights.Count),
-                ("Furniture", r.Furniture.Count), ("Activators", r.Activators.Count)
+                ("Map Markers", r.MapMarkers.Count), ("Land Textures", C(r.LandTextures.Count, "LTEX")),
+                ("Regions", C(r.Regions.Count, "REGN")),
+                ("Statics", C(r.Statics.Count, "STAT")), ("Doors", C(r.Doors.Count, "DOOR")),
+                ("Lights", C(r.Lights.Count, "LIGH")),
+                ("Furniture", r.Furniture.Count), ("Activators", C(r.Activators.Count, "ACTI"))
             ]),
             ("Gameplay",
             [
-                ("Globals", r.Globals.Count), ("Game Settings", r.GameSettings.Count),
-                ("Classes", r.Classes.Count),
+                ("Globals", C(r.Globals.Count, "GLOB")), ("Game Settings", C(r.GameSettings.Count, "GMST")),
+                ("Classes", C(r.Classes.Count, "CLAS")),
                 ("Challenges", r.Challenges.Count), ("Reputations", r.Reputations.Count),
                 ("Messages", r.Messages.Count), ("Form Lists", r.FormLists.Count)
+            ]),
+            ("Audio",
+            [
+                ("Sounds", C(r.Sounds.Count, "SOUN")), ("Sound Generators", C(0, "SNDG"))
             ]),
             ("Crafting & Combat",
             [
@@ -242,7 +281,20 @@ internal static class ResultsFormatter
                 ("Projectiles", r.Projectiles.Count),
                 ("Explosions", r.Explosions.Count)
             ])
-        ];
+        };
+
+        // Any generic types not mapped above (e.g. PGRD/SSCR) — surface them so the breakdown is complete.
+        var other = byType
+            .Where(kv => !consumed.Contains(kv.Key) && kv.Value > 0)
+            .OrderByDescending(kv => kv.Value)
+            .Select(kv => (kv.Key, kv.Value))
+            .ToArray();
+        if (other.Length > 0)
+        {
+            categories.Add(("Other Records", other));
+        }
+
+        return categories.ToArray();
     }
 
     /// <summary>

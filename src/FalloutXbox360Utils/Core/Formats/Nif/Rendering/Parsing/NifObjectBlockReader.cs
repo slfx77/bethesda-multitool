@@ -12,11 +12,15 @@ internal static class NifObjectBlockReader
         byte[] data,
         BlockInfo block,
         uint bsVersion,
-        bool be)
+        bool be,
+        bool hasInlineStrings = false)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
-        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be))
+        // Morrowind (bsVersion 0) uses the legacy NiObjectNET header (single Extra Data ref). The
+        // transform itself (Flags + Translation/Rotation/Scale) is identical; Velocity follows it and
+        // does not affect the matrix, so no further Morrowind branching is needed here.
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be, hasInlineStrings, bsVersion == 0))
         {
             return Matrix4x4.Identity;
         }
@@ -82,6 +86,13 @@ internal static class NifObjectBlockReader
         if (block.Size < 4)
         {
             return null;
+        }
+
+        // Older NIFs (Oblivion/Morrowind) have no string table; the measure pass captured each
+        // block's inline NiObjectNET.Name into BlockNames.
+        if (nif.HasInlineStrings)
+        {
+            return nif.BlockNames.GetValueOrDefault(block.Index);
         }
 
         var nameIndex = BinaryUtils.ReadInt32(

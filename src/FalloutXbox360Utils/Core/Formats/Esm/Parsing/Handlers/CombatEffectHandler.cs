@@ -55,7 +55,7 @@ internal sealed class CombatEffectHandler(RecordParserContext context) : RecordH
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset,
@@ -166,7 +166,7 @@ internal sealed class CombatEffectHandler(RecordParserContext context) : RecordH
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset,

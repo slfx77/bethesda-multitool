@@ -16,6 +16,14 @@ internal sealed class WorldViewData
     public required List<WorldspaceRecord> Worldspaces { get; init; }
     public required List<CellRecord> InteriorCells { get; init; }
     public required Dictionary<uint, ObjectBounds> BoundsIndex { get; init; }
+
+    /// <summary>
+    ///     SpeedTree archive path (<c>trees\&lt;name&gt;.spt</c>) → recorded tree height (TREE OBND
+    ///     Z-extent). Lets the procedural <c>.spt</c> geometry generator size each tree from the ESM
+    ///     data instead of a constant. Case-insensitive keys.
+    /// </summary>
+    public Dictionary<string, float> SpeedTreeHeights { get; init; } = [];
+
     public required Dictionary<uint, PlacedObjectCategory> CategoryIndex { get; init; }
     public required FormIdResolver Resolver { get; init; }
     public required List<PlacedReference> MapMarkers { get; init; }

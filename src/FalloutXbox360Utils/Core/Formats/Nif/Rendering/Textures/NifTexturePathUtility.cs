@@ -28,4 +28,29 @@ internal static class NifTexturePathUtility
 
         return normalized;
     }
+
+    /// <summary>
+    ///     Produces the <c>.dds</c> variant of a texture path for the loader's extension fallback.
+    ///     Morrowind (and some Oblivion) NIFs reference textures by their authoring extension
+    ///     (<c>.tga</c> / <c>.bmp</c>) while archives store the compiled <c>.dds</c>. Returns false
+    ///     when the path has no extension or is already <c>.dds</c> (nothing to swap).
+    /// </summary>
+    internal static bool TrySwapToDdsExtension(string path, out string ddsPath)
+    {
+        ddsPath = path;
+        if (path.EndsWith(".dds", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var dot = path.LastIndexOf('.');
+        var slash = path.LastIndexOf('\\');
+        if (dot <= slash || dot < 0)
+        {
+            return false; // no extension (the last '.' is in a directory name, or absent)
+        }
+
+        ddsPath = string.Concat(path.AsSpan(0, dot), ".dds");
+        return true;
+    }
 }

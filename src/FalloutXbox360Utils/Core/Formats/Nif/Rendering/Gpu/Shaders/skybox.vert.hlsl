@@ -4,9 +4,15 @@
 // scene's forward mul(uViewProj, worldPos)), so mul(uInvViewProj, clip) is the exact inverse.
 // Drawn FIRST with depth test/write OFF, so it fills the cleared color target behind all geometry.
 
+// Shared with the fragment shader (b0). The VS only needs uInvViewProj; the cloud/star fields are
+// consumed by the FS but must be declared here so the cbuffer layout matches.
 cbuffer SkyParams : register(b0)
 {
     float4x4 uInvViewProj;
+    float4 uCloudTintOpacity;
+    float4 uStarTintFade;
+    float4 uCloudScroll;
+    uint4  uSkyTexIndices;
 };
 
 struct VSOutput

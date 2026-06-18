@@ -9,18 +9,20 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 /// </summary>
 internal static class NifBlockParsers
 {
-    internal static bool SkipNiObjectNET(byte[] data, ref int pos, int end, bool be)
+    internal static bool SkipNiObjectNET(byte[] data, ref int pos, int end, bool be,
+        bool hasInlineStrings = false)
     {
-        return NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be);
+        return NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be, hasInlineStrings);
     }
 
     internal static Matrix4x4 ParseNiAVObjectTransform(
         byte[] data,
         BlockInfo block,
         uint bsVersion,
-        bool be)
+        bool be,
+        bool hasInlineStrings = false)
     {
-        return NifObjectBlockReader.ParseNiAVObjectTransform(data, block, bsVersion, be);
+        return NifObjectBlockReader.ParseNiAVObjectTransform(data, block, bsVersion, be, hasInlineStrings);
     }
 
     internal static string? ReadBlockName(byte[] data, BlockInfo block, NifInfo nif)
@@ -132,32 +134,35 @@ internal static class NifBlockParsers
         return NifSceneGraphBlockReader.ParseGeometryAdditionalDataRef(data, block, bsVersion, be);
     }
 
-    internal static int ReadVertexCount(byte[] data, BlockInfo block, bool be)
+    internal static int ReadVertexCount(byte[] data, BlockInfo block, bool be, bool morrowind = false)
     {
-        return NifSceneGraphBlockReader.ReadVertexCount(data, block, be);
+        return NifSceneGraphBlockReader.ReadVertexCount(data, block, be, morrowind);
     }
 
     internal static List<int>? ParseNodeChildren(
         byte[] data,
         BlockInfo block,
         uint bsVersion,
-        bool be)
+        bool be,
+        bool hasInlineStrings = false)
     {
-        return NifSceneGraphBlockReader.ParseNodeChildren(data, block, bsVersion, be);
+        return NifSceneGraphBlockReader.ParseNodeChildren(data, block, bsVersion, be, hasInlineStrings);
     }
 
-    internal static int ParseShapeDataRef(byte[] data, BlockInfo block, uint bsVersion, bool be)
+    internal static int ParseShapeDataRef(byte[] data, BlockInfo block, uint bsVersion, bool be,
+        bool hasInlineStrings = false)
     {
-        return NifSceneGraphBlockReader.ParseShapeDataRef(data, block, bsVersion, be);
+        return NifSceneGraphBlockReader.ParseShapeDataRef(data, block, bsVersion, be, hasInlineStrings);
     }
 
     internal static List<int>? ParseShapePropertyRefs(
         byte[] data,
         BlockInfo block,
         uint bsVersion,
-        bool be)
+        bool be,
+        bool hasInlineStrings = false)
     {
-        return NifSceneGraphBlockReader.ParseShapePropertyRefs(data, block, bsVersion, be);
+        return NifSceneGraphBlockReader.ParseShapePropertyRefs(data, block, bsVersion, be, hasInlineStrings);
     }
 
     internal static RenderableSubmesh? ExtractSubmesh(

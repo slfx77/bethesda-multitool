@@ -99,7 +99,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "ACBS" when sub.DataLength >= 24:
                     // Proto-build ACBS may include trailing bytes beyond the standard 24

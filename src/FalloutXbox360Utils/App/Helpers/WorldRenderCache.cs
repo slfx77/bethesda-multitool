@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Numerics;
+using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
@@ -31,6 +32,15 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     // build burst when entering a new area.
     private readonly ConcurrentDictionary<CellRecord, Cached<CellTerrainTextureSet>> _terrainTextureSets =
         new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    ///     Base-FormID → <see cref="PlacedObjectCategory" /> index (the owning
+    ///     <see cref="WorldViewData.CategoryIndex" />). Set once at LoadData, before any placement
+    ///     list is baked, so each <see cref="RenderableReference" /> carries its category for the
+    ///     renderer's per-category visibility filter (e.g. activators hidden by default). Null until
+    ///     set → placements bake with <see cref="PlacedObjectCategory.Unknown" />.
+    /// </summary>
+    internal IReadOnlyDictionary<uint, PlacedObjectCategory>? CategoryIndex { get; set; }
 
     public string ResourceName => nameof(WorldRenderCache);
 
@@ -128,7 +138,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     ///     <c>ReferenceRenderer12</c> iterates this directly in its per-frame loop.
     /// </summary>
     internal IReadOnlyList<RenderableReference> GetPlacementList(CellRecord cell) =>
-        _placements.GetOrAdd(cell, static c => BuildPlacementList(c));
+        _placements.GetOrAdd(cell, static (c, self) => self.BuildPlacementList(c), this);
 
     /// <summary>
     ///     Returns this cell's static-mesh references whose cached aggregate bucket bounds may
@@ -154,7 +164,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         return index.Count;
     }
 
-    private static IReadOnlyList<RenderableReference> BuildPlacementList(CellRecord cell)
+    private IReadOnlyList<RenderableReference> BuildPlacementList(CellRecord cell)
     {
         var placements = cell.PlacedObjects;
         if (placements.Count == 0)
@@ -162,10 +172,14 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
             return Array.Empty<RenderableReference>();
         }
 
+        var categoryIndex = CategoryIndex;
         var built = new List<RenderableReference>(placements.Count);
         foreach (var p in placements)
         {
-            var renderable = RenderableReference.TryBuild(p);
+            var category = categoryIndex is not null && categoryIndex.TryGetValue(p.BaseFormId, out var c)
+                ? c
+                : PlacedObjectCategory.Unknown;
+            var renderable = RenderableReference.TryBuild(p, category);
             if (renderable.HasValue) built.Add(renderable.Value);
         }
         // Sort by ModelPath so consecutive draws batch on the same SRV — adjacent REFRs

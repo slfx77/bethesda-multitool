@@ -72,7 +72,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
@@ -203,7 +203,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
@@ -373,7 +373,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
@@ -579,7 +579,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);

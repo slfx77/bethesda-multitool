@@ -28,14 +28,15 @@ internal static class NifAlphaClassifier
 
         var isHair = IsHairLikeSubmesh(submesh);
 
-        // Depth-writing "blend": a shape whose BSShaderProperty has ZBuffer_Write set is authored to
-        // occlude (e.g. the MobileHomeASNV cabin shell — alpha-blend + alpha-test on an opaque hull
-        // with window cutouts), not to be see-through transparency (glass/decals/smoke leave the bit
-        // clear). Our renderer only writes depth in the opaque/cutout pass, so drop the blend here and
-        // let the switch route it to Cutout (when it alpha-tests) or Opaque. Without this its own
-        // interior faces render in the depth-write-off blend pass and show through the roof. Hair keeps
-        // its A2C path (it sets the bit too, but A2C already writes depth).
-        if (hasAlphaBlend && !isHair &&
+        // Depth-writing "blend": a shape that is alpha-blend + alpha-TEST and has ZBuffer_Write set is
+        // an authored occluder with cutouts (e.g. the MobileHomeASNV cabin shell — an opaque hull with
+        // window holes), not see-through transparency. Our renderer only writes depth in the
+        // opaque/cutout pass, so drop the blend and let the switch route it to Cutout (it alpha-tests)
+        // — otherwise its interior faces render in the depth-write-off blend pass and show through the
+        // roof. The alpha-test requirement is load-bearing: pure-blend decals/glass/smoke (alpha-blend,
+        // NO alpha-test) sometimes ALSO set ZBuffer_Write, and stripping their blend made them render
+        // fully opaque. Hair keeps its A2C path (it sets the bit too, but A2C already writes depth).
+        if (hasAlphaBlend && hasAlphaTest && !isHair &&
             submesh.ShaderMetadata?.ShaderFlags2 is { } shaderFlags2 &&
             (shaderFlags2 & ZBufferWriteFlag) != 0)
         {

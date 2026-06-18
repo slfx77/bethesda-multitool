@@ -148,6 +148,15 @@ internal sealed class RenderableSubmesh
     /// </summary>
     public int SourceBlockIndex { get; set; } = -1;
 
+    /// <summary>
+    ///     True if this submesh's geometry sat under a <c>NiBillboardNode</c> in the source NIF
+    ///     (e.g. the smoke glow under "billboardUp" in effects\NVashpile01.NIF). The billboard node's
+    ///     own rotation is dropped during the bake (only its translation is kept) so the renderer can
+    ///     re-aim the quad at the camera per frame instead of using the baked-in orientation. Only set
+    ///     when the caller opts in via <c>NifGeometryExtractor.Extract(collectBillboards: true)</c>.
+    /// </summary>
+    public bool IsBillboard { get; set; }
+
     public int VertexCount => Positions.Length / 3;
     public int TriangleCount => Triangles.Length / 3;
 }

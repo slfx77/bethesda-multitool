@@ -104,16 +104,18 @@ internal static class PropertyPanelBuilder
 
         currentRow++;
 
-        // Build sub-items grid
-        var subItemsGrid = BuildSubItemsGrid(prop, callbacks);
-
+        // Lazy sub-items: build the rows only when the section is first expanded (default-expanded
+        // sections build now). A record placed thousands of times (e.g. WastelandShrub01 → 18k REFRs)
+        // would otherwise materialize every row on SELECT and hang the UI thread populating a
+        // non-virtualized grid; deferring (+ the row cap in BuildSubItemsGrid) keeps selection instant.
         mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var subItemsContainer = new Border
         {
-            Child = subItemsGrid,
             // Bottom margin keeps the last list item from butting against the next category header's
             // colored background — sub-items only contribute 1px bottom padding versus 2px for simple rows.
-            Margin = new Thickness(18, 0, 0, 4)
+            Margin = new Thickness(18, 0, 0, 4),
+            Visibility = prop.IsExpandedByDefault ? Visibility.Visible : Visibility.Collapsed,
+            Child = prop.IsExpandedByDefault ? BuildSubItemsGrid(prop, callbacks) : null
         };
         Grid.SetRow(subItemsContainer, currentRow);
         Grid.SetColumn(subItemsContainer, 1);
@@ -121,12 +123,14 @@ internal static class PropertyPanelBuilder
         mainGrid.Children.Add(subItemsContainer);
         currentRow++;
 
-        // Click handlers for expand/collapse
+        // Click handlers for expand/collapse — sub-items are built on first expand.
         var capturedIcon = expandIcon;
-        var capturedSubItems = subItemsGrid;
-        expandIcon.PointerPressed += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
-        nameText.PointerPressed += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
-        countText.PointerPressed += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
+        var capturedContainer = subItemsContainer;
+        var capturedProp = prop;
+        void Toggle() => ToggleExpandSection(capturedIcon, capturedContainer, capturedProp, callbacks);
+        expandIcon.PointerPressed += (_, _) => Toggle();
+        nameText.PointerPressed += (_, _) => Toggle();
+        countText.PointerPressed += (_, _) => Toggle();
 
         propertyRowIndex++;
     }
@@ -185,21 +189,28 @@ internal static class PropertyPanelBuilder
         currentRow++;
     }
 
+    /// <summary>Hard cap on rendered sub-rows. The detail grid is not virtualized, so a record placed
+    /// thousands of times would freeze the UI building every row on expand; we render the first N and
+    /// state the remainder in a footer (no silent truncation).</summary>
+    private const int MaxRenderedSubItems = 1000;
+
     private static Grid BuildSubItemsGrid(EsmPropertyEntry prop, Callbacks callbacks)
     {
-        var subItemsGrid = new Grid
-        {
-            Visibility = prop.IsExpandedByDefault ? Visibility.Visible : Visibility.Collapsed
-        };
+        // Visibility is owned by the wrapping Border (set in AddExpandableRow) — the grid itself is
+        // always visible once built.
+        var subItemsGrid = new Grid();
         subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         subItemsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         subItemsGrid.ColumnDefinitions.Add(
             new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
+        var items = prop.SubItems!;
+        var renderCount = Math.Min(items.Count, MaxRenderedSubItems);
         var subRow = 0;
-        foreach (var sub in prop.SubItems!)
+        for (var subIndex = 0; subIndex < renderCount; subIndex++)
         {
+            var sub = items[subIndex];
             subItemsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             if (sub.Col1 != null || sub.Col2 != null || sub.Col3 != null || sub.Col4 != null)
@@ -224,6 +235,23 @@ internal static class PropertyPanelBuilder
             }
 
             subRow++;
+        }
+
+        if (items.Count > renderCount)
+        {
+            subItemsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var moreText = new TextBlock
+            {
+                Text = $"… and {items.Count - renderCount:N0} more (showing first {renderCount:N0})",
+                FontSize = 11,
+                FontStyle = Windows.UI.Text.FontStyle.Italic,
+                Padding = new Thickness(0, 2, 4, 1),
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)
+                    Application.Current.Resources["TextFillColorSecondaryBrush"]
+            };
+            Grid.SetRow(moreText, subRow);
+            Grid.SetColumnSpan(moreText, 4);
+            subItemsGrid.Children.Add(moreText);
         }
 
         return subItemsGrid;
@@ -588,8 +616,17 @@ internal static class PropertyPanelBuilder
         }
     }
 
-    private static void ToggleExpandSection(TextBlock expandIcon, UIElement subItemsContainer)
+    private static void ToggleExpandSection(
+        TextBlock expandIcon, Border subItemsContainer, EsmPropertyEntry prop, Callbacks callbacks)
     {
+        // Lazy materialization: build the sub-item rows the first time the section is expanded, so a
+        // record with a very long list (thousands of placements) selects instantly and only pays the
+        // row-building cost when the user actually opens it.
+        if (subItemsContainer.Child is null)
+        {
+            subItemsContainer.Child = BuildSubItemsGrid(prop, callbacks);
+        }
+
         var isCollapsed = subItemsContainer.Visibility == Visibility.Collapsed;
         subItemsContainer.Visibility = isCollapsed ? Visibility.Visible : Visibility.Collapsed;
         expandIcon.Text = isCollapsed ? "\u25BC" : "\u25B6";

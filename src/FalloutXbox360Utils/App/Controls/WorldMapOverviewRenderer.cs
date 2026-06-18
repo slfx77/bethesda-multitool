@@ -67,17 +67,29 @@ internal static class WorldMapOverviewRenderer
         float overlayWorldMinX = 0f, float overlayWorldMaxX = 0f,
         float overlayWorldMinY = 0f, float overlayWorldMaxY = 0f,
         IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? waterCellBitmaps = null,
-        bool showWater = true)
+        bool showWater = true,
+        CanvasBitmap? worldWaterBitmap = null,
+        int worldWaterMinX = 0, int worldWaterMaxY = 0,
+        int worldWaterPixelWidth = 0, int worldWaterPixelHeight = 0,
+        int worldWaterPixelsPerCell = 33,
+        IReadOnlyDictionary<(int tileGx, int tileGy), CanvasBitmap>? coarseTileBitmaps = null,
+        int coarseTileCellSpan = 0,
+        int coarseTilePixelsPerCell = 0)
     {
         var transform = WorldMapViewportHelper.GetViewTransform(zoom, panOffset);
         ds.Transform = transform;
 
         var overlayActive = showRenderedObjects && renderedObjectsOverlay is not null;
 
-        // 1. Layer background — either a single giant bitmap (most layers) or a per-cell
-        //    composite (TerrainTextures, to dodge the GPU max-texture-size limit). Only one
-        //    is set at a time per EnsureHeightmapBitmap.
-        if (textureCellBitmaps is not null)
+        // 1. Layer background — one of: coarse multi-cell tiles (oversized worldspace, e.g. FO76
+        //    APPALACHIA), a per-cell composite (TerrainTextures, to dodge the GPU max-texture-size
+        //    limit), or a single giant bitmap (most layers at normal sizes). Only one is set at a time
+        //    per EnsureHeightmapBitmap.
+        if (coarseTileBitmaps is not null && coarseTileCellSpan > 0)
+        {
+            DrawCoarseTileBitmaps(ds, coarseTileBitmaps, coarseTileCellSpan, coarseTilePixelsPerCell, zoom);
+        }
+        else if (textureCellBitmaps is not null)
         {
             DrawTextureCellBitmaps(ds, textureCellBitmaps, zoom);
         }
@@ -92,20 +104,25 @@ internal static class WorldMapOverviewRenderer
             var bitmapX = worldHmMinX * CellWorldSize;
             var bitmapY = -(worldHmMaxY + 1) * CellWorldSize;
 
-            // HighQualityCubic minifies far better than the default bilinear (no mips on a CanvasBitmap),
-            // which is what made the zoomed-out aggregate moire. Source rect = the full bitmap.
+            // A plain CanvasBitmap has no mip chain, so a fixed-tap cubic still moires the aggregate once
+            // it is shrunk several-fold (the zoomed-out case). Anisotropic minification resamples it
+            // through D2D's internally-generated mip pyramid + anisotropic footprint — the same thing a
+            // GPU sampler does — which is what removes the shimmer. One DrawImage/frame, so quality-first.
+            // Source rect = the full bitmap.
+            var aggInterp = ChooseInterpolation(ppc, CellWorldSize * Math.Max(zoom, 1e-6f), preferQuality: true);
             ds.DrawImage(worldHeightmapBitmap,
                 new Rect(bitmapX, bitmapY, bitmapWorldW, bitmapWorldH),
                 new Rect(0, 0, worldHmPixelWidth, worldHmPixelHeight),
                 1f,
-                CanvasImageInterpolation.HighQualityCubic);
+                aggInterp);
         }
 
         // 2. Cell grid (optional overlay)
         if (showCellGrid)
         {
             DrawCellGrid(ds, activeCells, cellGridLookup,
-                worldHeightmapBitmap is not null || textureCellBitmaps is not null,
+                worldHeightmapBitmap is not null || textureCellBitmaps is not null
+                || (coarseTileBitmaps is not null && coarseTileCellSpan > 0),
                 zoom, panOffset, canvasWidth, canvasHeight);
         }
 
@@ -122,10 +139,28 @@ internal static class WorldMapOverviewRenderer
         //     rendered-models overlay is active: that overlay already renders water THROUGH the 3D depth
         //     buffer (height-correct — docks above water show, submerged geometry is covered), which a
         //     flat 2D layer can't reproduce. Without the overlay there are no model heights to respect,
-        //     so flat-water-over-terrain is correct. Per-cell only; the aggregate LOD still bakes water.
-        if (showWater && !overlayActive && waterCellBitmaps is not null)
+        //     so flat-water-over-terrain is correct. Exactly one source: per-cell tiles for the zoomed-in
+        //     TerrainTextures path, else the shared world water bitmap for the aggregate + secondary layers.
+        if (showWater && !overlayActive)
         {
-            DrawWaterCellBitmaps(ds, waterCellBitmaps, zoom);
+            if (waterCellBitmaps is not null)
+            {
+                DrawWaterCellBitmaps(ds, waterCellBitmaps, zoom);
+            }
+            else if (worldWaterBitmap is not null)
+            {
+                // Same world-rect math as the aggregate-terrain branch (33 px/cell, scaled to world space).
+                var ppc = worldWaterPixelsPerCell > 0 ? worldWaterPixelsPerCell : 33f;
+                var pixelScale = CellWorldSize / ppc;
+                var src = worldWaterBitmap.SizeInPixels;
+                var waterInterp = ChooseInterpolation(ppc, CellWorldSize * Math.Max(zoom, 1e-6f), preferQuality: true);
+                ds.DrawImage(worldWaterBitmap,
+                    new Rect(worldWaterMinX * CellWorldSize, -(worldWaterMaxY + 1) * CellWorldSize,
+                        worldWaterPixelWidth * pixelScale, worldWaterPixelHeight * pixelScale),
+                    new Rect(0, 0, src.Width, src.Height),
+                    1f,
+                    waterInterp);
+            }
         }
 
         // 3. Placed objects (LOD-based) — skipped when the rendered-models overlay replaces them.
@@ -344,6 +379,13 @@ internal static class WorldMapOverviewRenderer
 
         var tint = Color.FromArgb(255, colorScheme.R, colorScheme.G, colorScheme.B);
 
+        // Per-marker label DrawText (text layout + glyph run) is the dominant remaining marker cost at
+        // a zoomed-out overview where hundreds are in view; the icons themselves are cheap cached blits.
+        // Cap how many labels we lay out per draw — in a dense cluster the labels overlap into
+        // unreadability anyway, so omitting the overflow is a free perf win. Icons still all draw.
+        const int maxLabelsPerDraw = 250;
+        var labelsDrawn = 0;
+
         foreach (var marker in filteredMarkers)
         {
             var pos = new Vector2(marker.X, -marker.Y);
@@ -360,7 +402,11 @@ internal static class WorldMapOverviewRenderer
             if (marker.MarkerType.HasValue &&
                 markerIconBitmaps?.TryGetValue(marker.MarkerType.Value, out var icon) == true)
             {
-                WorldMapDrawingHelper.DrawTintedIcon(ds, icon, destRect, tint);
+                // Icons are pre-tinted to the color scheme by EnsureTintedMarkerIcons, so this is a plain
+                // blit — NOT a per-marker ColorMatrixEffect (which dominated frame time at zoomed-out
+                // overview where every worldspace marker is in view).
+                var iconSrc = new Rect(0, 0, icon.SizeInPixels.Width, icon.SizeInPixels.Height);
+                ds.DrawImage(icon, destRect, iconSrc);
             }
             else
             {
@@ -372,10 +418,11 @@ internal static class WorldMapOverviewRenderer
                 ds.DrawText(glyph, destRect, Colors.White, glyphFormat);
             }
 
-            if (zoom > 0.05f && !string.IsNullOrEmpty(marker.MarkerName))
+            if (zoom > 0.05f && labelsDrawn < maxLabelsPerDraw && !string.IsNullOrEmpty(marker.MarkerName))
             {
                 var labelPos = new Vector2(pos.X + markerSize / 2 + 2f / zoom, pos.Y - markerSize / 4);
                 ds.DrawText(marker.MarkerName, labelPos, tint, labelFormat);
+                labelsDrawn++;
             }
         }
     }
@@ -746,6 +793,40 @@ internal static class WorldMapOverviewRenderer
     ///     which both aliased (2D-3) and was the dominant per-frame cost (2D-2). The chosen tile is then
     ///     drawn with bilinear when it's near screen resolution and cubic only when heavily minified.
     /// </summary>
+    /// <summary>
+    ///     Composites the coarse multi-cell tiles produced for an oversized worldspace (FO76 APPALACHIA).
+    ///     Each tile covers a <paramref name="tileCellSpan" />² block of cells, so it's positioned at the
+    ///     tile-grid origin (<c>tileGx·tileCellSpan·CellWorldSize</c>) and sized to span that whole block.
+    ///     World north-Y maps to canvas <c>-Y</c>, so the tile's top edge is its northernmost cell row —
+    ///     matching <see cref="DrawTextureCellBitmaps" />'s per-cell placement with span 1. Tiles are
+    ///     opaque; a ~1px world-space outset hides the inter-tile seam exactly like the per-cell path.
+    /// </summary>
+    private static void DrawCoarseTileBitmaps(
+        CanvasDrawingSession ds,
+        IReadOnlyDictionary<(int tileGx, int tileGy), CanvasBitmap> bitmaps,
+        int tileCellSpan, int pixelsPerCell, float zoom)
+    {
+        var tileWorldSize = tileCellSpan * CellWorldSize;
+        var outset = Math.Min(1f / Math.Max(zoom, 1e-6f), CellWorldSize * 0.01f);
+        // Source px/cell vs on-screen px/cell drives the minify/magnify interpolation choice (GPU-sampler
+        // analogue). One DrawImage per tile (≤ a few dozen), so quality-first anisotropic minification.
+        var targetScreenPpc = CellWorldSize * Math.Max(zoom, 1e-6f);
+
+        foreach (var ((tileGx, tileGy), bmp) in bitmaps)
+        {
+            var originX = tileGx * tileWorldSize;
+            var originY = -(tileGy + 1) * tileWorldSize;
+            var src = bmp.SizeInPixels;
+            var interpolation = ChooseInterpolation(pixelsPerCell, targetScreenPpc, preferQuality: true);
+            ds.DrawImage(bmp,
+                new Rect(originX - outset, originY - outset,
+                    tileWorldSize + 2 * outset, tileWorldSize + 2 * outset),
+                new Rect(0, 0, src.Width, src.Height),
+                1f,
+                interpolation);
+        }
+    }
+
     private static void DrawTextureCellBitmaps(
         CanvasDrawingSession ds,
         IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap> bitmaps,
@@ -785,11 +866,12 @@ internal static class WorldMapOverviewRenderer
         {
             var originX = gx * CellWorldSize;
             var originY = -(gy + 1) * CellWorldSize;
-            // Bilinear when the tile is near screen resolution (mip-correct — the common steady state),
-            // cubic only when a stale higher-res tier is the lone stand-in and would alias minified.
-            var interpolation = s_legacyTerrainDraw || ppc > targetScreenPpc * MipCubicMinifyThreshold
-                ? CanvasImageInterpolation.HighQualityCubic
-                : CanvasImageInterpolation.Linear;
+            // Cheap bilinear when the tile is near screen resolution (mip-correct — the common steady
+            // state). When only a stale higher-res tier stands in, it would be minified several-fold and
+            // alias: anisotropic (mip-pyramid + anisotropic footprint) resamples it cleanly instead of
+            // the old fixed-tap cubic. ChooseInterpolation centralizes the policy; per-cell tiles keep
+            // the perf-validated Linear steady state (preferQuality: false).
+            var interpolation = ChooseInterpolation(ppc, targetScreenPpc, preferQuality: false);
             var src = bmp.SizeInPixels;
             ds.DrawImage(bmp,
                 new Rect(originX - outset, originY - outset,
@@ -815,6 +897,57 @@ internal static class WorldMapOverviewRenderer
         if (aCovers) return a;
         if (bCovers) return b;
         return a.ppc >= b.ppc ? a : b;                          // neither covers → larger magnifies best
+    }
+
+    /// <summary>
+    ///     Picks the Win2D interpolation mode for compositing a terrain/water tile (or the aggregate
+    ///     bitmap) from its source resolution (<paramref name="sourcePpc" />, px/cell) versus the
+    ///     on-screen cell size (<paramref name="targetScreenPpc" />). The progression mirrors a GPU
+    ///     texture sampler:
+    ///     <list type="bullet">
+    ///       <item>Heavy minification (source ≫ screen) → <see cref="CanvasImageInterpolation.Anisotropic" />:
+    ///         Direct2D resamples through an internally-generated mip pyramid with an anisotropic
+    ///         footprint. This is what actually removes the zoomed-out moire/shimmer — a fixed-tap
+    ///         cubic under-samples once the image is shrunk more than a few-fold.</item>
+    ///       <item>Mild minification (source modestly above screen) → <see cref="CanvasImageInterpolation.Linear" />
+    ///         for perf-sensitive per-cell tiles (no visible aliasing there, ~4× cheaper per output
+    ///         pixel — the steady state validated by the 2D-2/2D-3 work), or <see cref="CanvasImageInterpolation.Anisotropic" />
+    ///         when <paramref name="preferQuality" /> is set (the single aggregate draw, where cost is
+    ///         one DrawImage/frame and quality wins).</item>
+    ///       <item>Magnification (source below screen) → <see cref="CanvasImageInterpolation.HighQualityCubic" />:
+    ///         cubic upscales a low-res tier/aggregate cleanly.</item>
+    ///     </list>
+    ///     The <c>FALLOUT_MAP2D_LEGACY_TERRAIN_DRAW</c> A/B toggle forces the pre-anisotropic
+    ///     "always HighQualityCubic" behavior.
+    /// </summary>
+    private static CanvasImageInterpolation ChooseInterpolation(
+        float sourcePpc, float targetScreenPpc, bool preferQuality)
+    {
+        if (s_legacyTerrainDraw)
+        {
+            return CanvasImageInterpolation.HighQualityCubic;
+        }
+
+        if (!preferQuality)
+        {
+            // Perf-sensitive per-cell tiles — the proven 2D-3 policy, UNCHANGED: HighQualityCubic only for
+            // the heavy-minify transient (a stale higher-res tier standing in just after a zoom/pan), cheap
+            // bilinear for the near-screen steady state. Anisotropic is deliberately NOT used here: the
+            // per-cell view is the zoomed-IN regime (tiles near screen res, with their own mip-tier chain),
+            // so it doesn't show the reported moire — that lives in the zoomed-OUT aggregate below. Spending
+            // anisotropic across hundreds of transient tiles only inflates the churn tail for no visible win.
+            return sourcePpc > targetScreenPpc * MipCubicMinifyThreshold
+                ? CanvasImageInterpolation.HighQualityCubic
+                : CanvasImageInterpolation.Linear;
+        }
+
+        // Single aggregate draw (one DrawImage/frame, so its extra cost is free): quality-first. This is
+        // the zoomed-out bitmap where the graininess/moire was reported. Minification resamples through
+        // D2D's internally-generated mip pyramid + anisotropic footprint — the GPU-sampler equivalent that
+        // a fixed-tap cubic can't match once the image is shrunk several-fold. Magnification uses cubic.
+        return sourcePpc > targetScreenPpc
+            ? CanvasImageInterpolation.Anisotropic
+            : CanvasImageInterpolation.HighQualityCubic;
     }
 
     /// <summary>
@@ -845,9 +978,7 @@ internal static class WorldMapOverviewRenderer
         {
             var originX = gx * CellWorldSize;
             var originY = -(gy + 1) * CellWorldSize;
-            var interpolation = ppc > targetScreenPpc * MipCubicMinifyThreshold
-                ? CanvasImageInterpolation.HighQualityCubic
-                : CanvasImageInterpolation.Linear;
+            var interpolation = ChooseInterpolation(ppc, targetScreenPpc, preferQuality: false);
             var src = bmp.SizeInPixels;
             ds.DrawImage(bmp,
                 new Rect(originX, originY, CellWorldSize, CellWorldSize),

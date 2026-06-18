@@ -13,7 +13,7 @@ internal enum CameraMode
     /// <summary>
     ///     First-person walk: WASD pans, Q/E are ignored, the camera Z is snapped each frame to
     ///     the terrain height under the camera plus <see cref="FlythroughCameraController.EyeHeight" />.
-    ///     MoveSpeed defaults to the in-game player walking pace.
+    ///     Space jumps (gravity-integrated hop). MoveSpeed defaults to the in-game player walking pace.
     /// </summary>
     Walk
 }
@@ -56,6 +56,10 @@ internal sealed class FlythroughCameraController
     private CameraMode _mode = CameraMode.Fly;
     private float _flyMoveSpeed = FlySpeedDefault;
     private float _walkMoveSpeed = WalkSpeedDefault;
+    // Walk-mode jump state. _airborne gates SnapToGround (which would otherwise glue the camera to
+    // the ground every frame); _verticalVelocity integrates against Gravity until we land.
+    private bool _airborne;
+    private float _verticalVelocity;
 
     public FlythroughCameraController(CameraState camera)
     {
@@ -73,6 +77,9 @@ internal sealed class FlythroughCameraController
         {
             if (_mode == value) return;
             _mode = value;
+            // Leaving any in-progress jump behind on a mode switch.
+            _airborne = false;
+            _verticalVelocity = 0f;
             if (_mode == CameraMode.Walk) SnapToGround();
         }
     }
@@ -108,6 +115,13 @@ internal sealed class FlythroughCameraController
     /// <summary>Height the camera is held above ground when in <see cref="CameraMode.Walk" />.</summary>
     public float EyeHeight { get; set; } = WalkEyeHeightDefault;
 
+    /// <summary>Initial upward velocity (units/sec) of a walk-mode jump. Default ≈ a ~160-unit hop
+    /// against <see cref="Gravity" /> (a bit over the 128-unit player capsule height).</summary>
+    public float JumpSpeed { get; set; } = 700f;
+
+    /// <summary>Downward acceleration (units/sec²) applied while airborne in walk mode.</summary>
+    public float Gravity { get; set; } = 1500f;
+
     /// <summary>
     ///     Walk-mode ground-height lookup. <c>(worldX, worldY) → groundZ</c> or <c>null</c> when
     ///     the camera is over a cell without terrain data (in which case the Z is left alone).
@@ -135,7 +149,7 @@ internal sealed class FlythroughCameraController
         ApplyMouseLook();
         ApplyKeyboardMovement(deltaSeconds);
 
-        if (_mode == CameraMode.Walk) SnapToGround();
+        if (_mode == CameraMode.Walk) UpdateWalkVertical(deltaSeconds);
 
         _accumulatedMouseDelta = Vector2.Zero;
         _accumulatedScroll = 0f;
@@ -208,6 +222,56 @@ internal sealed class FlythroughCameraController
         var flat = new Vector3(v.X, v.Y, 0f);
         var len = flat.Length();
         return len > 0.0001f ? flat / len : Vector3.UnitY;
+    }
+
+    /// <summary>
+    ///     Walk-mode vertical integration. Grounded: snaps to the terrain (Space launches a jump).
+    ///     Airborne: integrates <see cref="Gravity" /> against <see cref="JumpSpeed" /> and lands back
+    ///     on the terrain under the camera. Without a <see cref="GroundHeightSampler" /> there is no
+    ///     ground to jump from (and nothing to land on), so jumping is disabled and any in-progress
+    ///     hop is cancelled — the camera Z is left wherever it is.
+    /// </summary>
+    private void UpdateWalkVertical(float deltaSeconds)
+    {
+        if (GroundHeightSampler is null)
+        {
+            _airborne = false;
+            _verticalVelocity = 0f;
+            return;
+        }
+
+        // Launch a jump when grounded and Space is held (re-hops after landing if still held).
+        if (!_airborne && _keysDown.Contains(VirtualKey.Space))
+        {
+            _airborne = true;
+            _verticalVelocity = JumpSpeed;
+        }
+
+        if (!_airborne)
+        {
+            SnapToGround();
+            return;
+        }
+
+        _verticalVelocity -= Gravity * deltaSeconds;
+        var pos = _camera.Position;
+        var newZ = pos.Z + _verticalVelocity * deltaSeconds;
+
+        // Land once we descend to the eye-height floor above the ground beneath the (possibly
+        // air-controlled) X/Y. GroundHeightSampler null over a no-terrain cell leaves us airborne
+        // until we drift back over terrain.
+        if (_verticalVelocity <= 0f && GroundHeightSampler(pos.X, pos.Y) is float ground)
+        {
+            var floor = ground + EyeHeight;
+            if (newZ <= floor)
+            {
+                newZ = floor;
+                _airborne = false;
+                _verticalVelocity = 0f;
+            }
+        }
+
+        _camera.Position = new Vector3(pos.X, pos.Y, newZ);
     }
 
     /// <summary>

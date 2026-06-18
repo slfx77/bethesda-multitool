@@ -26,6 +26,14 @@ public record CellRecord
     /// <summary>Parent worldspace FormID (null for interior cells).</summary>
     public uint? WorldspaceFormId { get; init; }
 
+    /// <summary>
+    ///     Exterior cell edge length in world units, when it differs from the engine default
+    ///     (<c>TerrainConstants.LandCellWorldSize</c> = 4096, used by FO3/FNV/Oblivion/Skyrim).
+    ///     Morrowind exterior cells are 8192. 0 means "use the default" — the terrain builder reads
+    ///     this to place + space the heightmap so it aligns with the cell's absolute-coordinate objects.
+    /// </summary>
+    public float CellWorldSize { get; init; }
+
     /// <summary>Diagnostic source for the current worldspace assignment.</summary>
     public string? WorldspaceAssignmentSource { get; init; }
 

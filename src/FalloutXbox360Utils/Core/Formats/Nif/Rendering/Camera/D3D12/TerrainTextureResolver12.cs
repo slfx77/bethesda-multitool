@@ -103,6 +103,19 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         return _textureCache.GetOrUpload(texturePath, isNormalMap: true).BindlessIndex;
     }
 
+    /// <summary>
+    ///     Resolves an arbitrary diffuse texture path (e.g. the CLMT sun texture or a fixed sky texture
+    ///     like <c>textures\sky\sun.dds</c>) to its stable bindless SRV index, or <c>null</c> when no
+    ///     path is given. Streams through the same <see cref="GpuTextureCache12" /> as terrain (the
+    ///     index is valid in the slot-4 bindless table immediately, pointing at a placeholder until the
+    ///     real texture lands). Used by the sky-billboard renderer for the sun / moon textures.
+    /// </summary>
+    public uint? ResolveDiffuseBindlessIndex(string? texturePath)
+    {
+        if (string.IsNullOrWhiteSpace(texturePath)) return null;
+        return _textureCache.GetOrUpload(texturePath).BindlessIndex;
+    }
+
     public void Dispose()
     {
         _byLtex.Clear();

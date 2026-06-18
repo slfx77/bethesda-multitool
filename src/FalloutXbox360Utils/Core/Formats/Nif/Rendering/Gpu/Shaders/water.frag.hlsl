@@ -47,7 +47,24 @@ cbuffer Atmosphere : register(b3)
     float4 uSkyHorizon;         // rgb = sky-horizon color, w = spare
     float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
     float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = time
+    float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
 };
+
+// Engine distance fog (grounded in Sky::UpdateFog): a linear near→far ramp toward the resolved fog
+// color, raised to the weather's fog power — the same helper terrain/reference use, so distant water
+// recedes into the same haze. fogEnabled (uFogColorFogEnabled.w) gates it.
+float3 ApplyFog(float3 color, float3 worldPos)
+{
+    if (uFogColorFogEnabled.w < 0.5)
+    {
+        return color;
+    }
+
+    float dist = length(worldPos - uCameraPosFogPower.xyz);
+    float f = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
+    f = pow(f, max(uCameraPosFogPower.w, 0.01));
+    return lerp(color, uFogColorFogEnabled.rgb, f);
+}
 
 // Bindless texture table (slot 4, space1) shared with terrain/references. The NNAM normal map
 // lives at uNoiseParams.x (FNV NoiseMap, sampler s2). s0 is the shared anisotropic-wrap sampler.
@@ -199,5 +216,5 @@ float4 main(PSInput input) : SV_Target
     color += (sunSpec + skyGlint) * sunCol;
 
     float alpha = lerp(0.6, 0.95, saturate(F));
-    return float4(saturate(color), alpha);
+    return float4(ApplyFog(saturate(color), input.vWorldPos), alpha);
 }

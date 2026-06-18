@@ -51,6 +51,17 @@ internal static class HeightmapRenderer
         var imgW = gridW * HmGridSize;
         var imgH = gridH * HmGridSize;
 
+        // Guard against an oversized worldspace (e.g. FO76's APPALACHIA, or any worldspace with terrain
+        // cells scattered across a huge grid extent): the two byte buffers below are imgW*imgH each, so a
+        // multi-thousand-cell span allocates gigabytes and freezes/OOMs the app. Above the cap we skip
+        // the heightmap (the worldspace simply renders without the terrain-derived layers) rather than
+        // hang. long math avoids the int overflow a huge product would otherwise silently wrap to.
+        const long maxHeightmapPixels = 200_000_000L; // ~200 MB per byte buffer
+        if ((long)imgW * imgH > maxHeightmapPixels)
+        {
+            return null;
+        }
+
         // Compute global height range
         var globalMin = float.MaxValue;
         var globalMax = float.MinValue;

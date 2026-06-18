@@ -4,6 +4,7 @@ using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.SaveGame;
+using FalloutXbox360Utils.Core.Formats.SpeedTree;
 
 namespace FalloutXbox360Utils;
 
@@ -74,6 +75,7 @@ internal static class WorldMapOverlayBuilder
             CellByFormId = cellByFormId,
             RefrToCellIndex = refrToCellIndex,
             BoundsIndex = boundsIndex,
+            SpeedTreeHeights = BuildSpeedTreeHeights(semantic),
             CategoryIndex = categoryIndex,
             Resolver = semantic.CreateResolver(),
             MapMarkers = semantic.MapMarkers,
@@ -199,6 +201,7 @@ internal static class WorldMapOverlayBuilder
             CellByFormId = cellByFormId,
             RefrToCellIndex = refrToCellIndex,
             BoundsIndex = boundsIndex,
+            SpeedTreeHeights = BuildSpeedTreeHeights(suppRecords),
             CategoryIndex = categoryIndex,
             Resolver = resolver,
             MapMarkers = suppRecords.MapMarkers,
@@ -225,6 +228,31 @@ internal static class WorldMapOverlayBuilder
             ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),
             AllWeathers = BuildAllWeathers(suppRecords.Weather)
         };
+    }
+
+    /// <summary>
+    ///     Map each SpeedTree <c>.spt</c> archive path to its recorded height (TREE record OBND Z-extent)
+    ///     so the procedural generator can size trees from the ESM rather than a constant.
+    /// </summary>
+    private static Dictionary<string, float> BuildSpeedTreeHeights(RecordCollection semantic)
+    {
+        var map = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        foreach (var record in semantic.GenericRecords)
+        {
+            if (record.Bounds is not { } bounds || record.ModelPath is not { } modelPath ||
+                !SpeedTreeModelPath.IsSpt(modelPath))
+            {
+                continue;
+            }
+
+            var height = bounds.Z2 - bounds.Z1;
+            if (height > 0)
+            {
+                map[SpeedTreeModelPath.ToArchivePath(modelPath)] = height;
+            }
+        }
+
+        return map;
     }
 
     private static Dictionary<uint, List<NavMeshRecord>> BuildNavMeshIndex(List<NavMeshRecord> navMeshes)

@@ -11,51 +11,129 @@
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!-- Toolbar -->
+    <!-- Toolbar — unified with the 3D viewer's icon + submenu style (2.2). Navigation dropdowns +
+         map-data selectors stay on the bar; Fit/Export are icon buttons; the former bottom filter
+         strip is consolidated into Layers / Visibility submenus (FilterCheckboxPanel, hidden in
+         cell-browser mode). Every filter keeps its x:Name + handler so code-behind is unchanged. -->
     <Grid Grid.Row="0" Padding="0,0,0,8" ColumnSpacing="8">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
-      <ComboBox x:Name="WorldspaceComboBox" Grid.Column="0" MinWidth="220"
-                SelectionChanged="WorldspaceComboBox_SelectionChanged"
-                AutomationProperties.Name="Worldspace"
-                PlaceholderText="Select Worldspace" />
-      <Button x:Name="InteriorsButton" Grid.Column="1" Content="Interiors"
-              Click="InteriorsButton_Click"
-              ToolTipService.ToolTip="Browse interior cells" />
-      <Button x:Name="AllCellsButton" Grid.Column="2" Content="All Cells"
-              Click="AllCellsButton_Click"
-              ToolTipService.ToolTip="Browse all cells" />
-      <Border Grid.Column="3" Width="1" Height="20" VerticalAlignment="Center"
-              Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
-      <Button Grid.Column="4" Content="Fit" Click="ZoomFit_Click"
-              ToolTipService.ToolTip="Zoom to fit" />
-      <TextBlock x:Name="ZoomLevelText" Grid.Column="5" VerticalAlignment="Center" FontSize="11"
+
+      <!-- Left: worldspace / cell navigation -->
+      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <ComboBox x:Name="WorldspaceComboBox" MinWidth="220"
+                  SelectionChanged="WorldspaceComboBox_SelectionChanged"
+                  AutomationProperties.Name="Worldspace"
+                  PlaceholderText="Select Worldspace" />
+        <Button x:Name="InteriorsButton" Content="Interiors"
+                Click="InteriorsButton_Click"
+                ToolTipService.ToolTip="Browse interior cells" />
+        <Button x:Name="AllCellsButton" Content="All Cells"
+                Click="AllCellsButton_Click"
+                ToolTipService.ToolTip="Browse all cells" />
+      </StackPanel>
+
+      <TextBlock x:Name="ZoomLevelText" Grid.Column="1" HorizontalAlignment="Right"
+                 VerticalAlignment="Center" FontSize="11" Margin="0,0,8,0"
                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-      <Button x:Name="ExportButton" Grid.Column="7" Content="Export"
-              Click="ExportButton_Click"
-              ToolTipService.ToolTip="Export worldspace as PNG for comparison"
-              IsEnabled="False" />
-      <ComboBox x:Name="LayerComboBox" Grid.Column="8" MinWidth="150"
-                SelectionChanged="LayerComboBox_SelectionChanged"
-                AutomationProperties.Name="Map layer"
-                ToolTipService.ToolTip="Map data layer" />
-      <ComboBox x:Name="ColorSchemeComboBox" Grid.Column="9" MinWidth="100"
-                SelectionChanged="ColorSchemeComboBox_SelectionChanged"
-                AutomationProperties.Name="Heightmap color scheme"
-                ToolTipService.ToolTip="Heightmap color scheme" />
+
+      <!-- Right: map controls (always visible) + filter submenus (hidden in cell-browser mode) -->
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Button Click="ZoomFit_Click" MinWidth="0" Padding="9,6"
+                ToolTipService.ToolTip="Zoom to fit" AutomationProperties.Name="Zoom to fit">
+          <FontIcon Glyph="&#xE740;" FontSize="14" />
+        </Button>
+        <Button x:Name="ExportButton" Click="ExportButton_Click" IsEnabled="False"
+                MinWidth="0" Padding="9,6"
+                ToolTipService.ToolTip="Export worldspace as PNG for comparison"
+                AutomationProperties.Name="Export worldspace as PNG">
+          <FontIcon Glyph="&#xE74E;" FontSize="14" />
+        </Button>
+        <ComboBox x:Name="LayerComboBox" MinWidth="150"
+                  SelectionChanged="LayerComboBox_SelectionChanged"
+                  AutomationProperties.Name="Map layer"
+                  ToolTipService.ToolTip="Map data layer" />
+        <ComboBox x:Name="ColorSchemeComboBox" MinWidth="100"
+                  SelectionChanged="ColorSchemeComboBox_SelectionChanged"
+                  AutomationProperties.Name="Heightmap color scheme"
+                  ToolTipService.ToolTip="Heightmap color scheme" />
+
+        <StackPanel x:Name="FilterCheckboxPanel" Orientation="Horizontal" Spacing="6"
+                    VerticalAlignment="Center">
+
+          <!-- Layers: cell grid / nav mesh (vertex coloring is a map data layer here, not a toggle) -->
+          <DropDownButton AutomationProperties.Name="Layers menu" ToolTipService.ToolTip="Layers">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <FontIcon Glyph="&#xE81E;" FontSize="14" />
+              <TextBlock Text="Layers" />
+            </StackPanel>
+            <DropDownButton.Flyout>
+              <Flyout>
+                <StackPanel Spacing="8" MinWidth="200">
+                  <CheckBox x:Name="CellGridCheckBox" Content="Cell grid" IsChecked="True"
+                            AutomationProperties.Name="Cell grid"
+                            ToolTipService.ToolTip="Show the cell grid overlay"
+                            Checked="CellGridCheckBox_Changed" Unchecked="CellGridCheckBox_Changed" />
+                  <CheckBox x:Name="NavMeshCheckBox" Content="Nav mesh" IsChecked="False"
+                            AutomationProperties.Name="Nav mesh"
+                            ToolTipService.ToolTip="Show the navmesh overlay"
+                            Checked="NavMeshCheckBox_Changed" Unchecked="NavMeshCheckBox_Changed" />
+                </StackPanel>
+              </Flyout>
+            </DropDownButton.Flyout>
+          </DropDownButton>
+
+          <!-- Visibility: water / map markers / disabled / rendered models / dangling-REFR picker -->
+          <DropDownButton AutomationProperties.Name="Visibility menu" ToolTipService.ToolTip="Visibility">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <FontIcon Glyph="&#xE890;" FontSize="14" />
+              <TextBlock Text="Visibility" />
+            </StackPanel>
+            <DropDownButton.Flyout>
+              <Flyout>
+                <StackPanel Spacing="8" MinWidth="260">
+                  <CheckBox x:Name="WaterCheckBox" Content="Water" IsChecked="True"
+                            AutomationProperties.Name="Water"
+                            ToolTipService.ToolTip="Show water surfaces"
+                            Checked="WaterCheckBox_Changed" Unchecked="WaterCheckBox_Changed" />
+                  <CheckBox x:Name="MapMarkersCheckBox" Content="Map markers" IsChecked="True"
+                            AutomationProperties.Name="Map markers"
+                            ToolTipService.ToolTip="Show map markers"
+                            Checked="MapMarkersCheckBox_Changed" Unchecked="MapMarkersCheckBox_Changed" />
+                  <CheckBox x:Name="DisabledCheckBox" Content="Initially disabled" IsChecked="False"
+                            AutomationProperties.Name="Initially disabled"
+                            ToolTipService.ToolTip="Show objects flagged initially-disabled"
+                            Checked="DisabledCheckBox_Changed" Unchecked="DisabledCheckBox_Changed" />
+                  <CheckBox x:Name="RenderedObjectsCheckBox" Content="Rendered models" IsChecked="False"
+                            IsEnabled="False"
+                            AutomationProperties.Name="Render placed objects top-down via the 3D renderer"
+                            ToolTipService.ToolTip="Replace placed-object dots/boxes with a top-down rendered view of the actual models, occluded by terrain (exterior cells only; needs Meshes + Textures BSAs)"
+                            Checked="RenderedObjectsCheckBox_Changed" Unchecked="RenderedObjectsCheckBox_Changed" />
+                  <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                    <TextBlock x:Name="DanglingRefsLabel" Text="Dangling REFRs:" VerticalAlignment="Center"
+                               FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <ComboBox x:Name="DanglingRefsComboBox" MinWidth="100"
+                              AutomationProperties.Name="Dangling REFR confidence threshold"
+                              SelectionChanged="DanglingRefsComboBox_SelectionChanged"
+                              ToolTipService.ToolTip="Memory-dump (DMP) feature only — has no effect on ESM/ESP files. Shows heap-resident REFRs that the cell-traversal pipeline missed, at or above the chosen confidence level.">
+                      <ComboBoxItem Content="None" />
+                      <ComboBoxItem Content="High" />
+                      <ComboBoxItem Content="Medium" />
+                      <ComboBoxItem Content="Low" />
+                    </ComboBox>
+                  </StackPanel>
+                </StackPanel>
+              </Flyout>
+            </DropDownButton.Flyout>
+          </DropDownButton>
+
+        </StackPanel>
+      </StackPanel>
     </Grid>
 
     <!-- Win2D Canvas -->
@@ -169,37 +247,5 @@
       <TextBlock x:Name="CoordsText" Grid.Column="1" FontSize="11" FontFamily="Consolas"
                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
     </Grid>
-
-    <!-- Filter checkboxes -->
-    <StackPanel x:Name="FilterCheckboxPanel" Grid.Row="3" Orientation="Horizontal"
-                Spacing="8" Padding="0,4,0,0">
-      <CheckBox x:Name="WaterCheckBox" Content="Water" IsChecked="True"
-                Checked="WaterCheckBox_Changed" Unchecked="WaterCheckBox_Changed" />
-      <CheckBox x:Name="CellGridCheckBox" Content="Cell grid" IsChecked="True"
-                Checked="CellGridCheckBox_Changed" Unchecked="CellGridCheckBox_Changed" />
-      <CheckBox x:Name="DisabledCheckBox" Content="Initially Disabled" IsChecked="False"
-                Checked="DisabledCheckBox_Changed" Unchecked="DisabledCheckBox_Changed" />
-      <CheckBox x:Name="MapMarkersCheckBox" Content="Map markers" IsChecked="True"
-                Checked="MapMarkersCheckBox_Changed" Unchecked="MapMarkersCheckBox_Changed" />
-      <CheckBox x:Name="NavMeshCheckBox" Content="Nav mesh" IsChecked="False"
-                Checked="NavMeshCheckBox_Changed" Unchecked="NavMeshCheckBox_Changed" />
-      <CheckBox x:Name="RenderedObjectsCheckBox" Content="Rendered models" IsChecked="False"
-                IsEnabled="False"
-                AutomationProperties.Name="Render placed objects top-down via the 3D renderer"
-                ToolTipService.ToolTip="Replace placed-object dots/boxes with a top-down rendered view of the actual models, occluded by terrain (exterior cells only; needs Meshes + Textures BSAs)"
-                Checked="RenderedObjectsCheckBox_Changed" Unchecked="RenderedObjectsCheckBox_Changed" />
-      <TextBlock x:Name="DanglingRefsLabel" Text="Dangling REFRs:" VerticalAlignment="Center"
-                 FontSize="12"
-                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-      <ComboBox x:Name="DanglingRefsComboBox" MinWidth="100"
-                AutomationProperties.Name="Dangling REFR confidence threshold"
-                SelectionChanged="DanglingRefsComboBox_SelectionChanged"
-                ToolTipService.ToolTip="Show heap-resident REFRs that the cell-traversal pipeline missed, at or above the chosen confidence level">
-        <ComboBoxItem Content="None" />
-        <ComboBoxItem Content="High" />
-        <ComboBoxItem Content="Medium" />
-        <ComboBoxItem Content="Low" />
-      </ComboBox>
-    </StackPanel>
   </Grid>
 </UserControl>

@@ -215,7 +215,13 @@ public sealed partial class SingleFileTab
         _selectedWorldObject = null;
         ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
         ViewCellInDetailButton.Visibility = Visibility.Visible;
-        WorldMapControl?.SelectObject(null);
+
+        // Mirror the 2D-1 guard in WorldMap_InspectObject: a cell inspected from the 3D viewer must
+        // not clear the hidden 2D map's selection (the 3D viewer owns its own highlight).
+        if (!ReferenceEquals(sender, WorldView3DControl))
+        {
+            WorldMapControl?.SelectObject(null);
+        }
 
         var name = cell.EditorId ?? cell.FullName ?? $"0x{cell.FormId:X8}";
         WorldObjectTitle.Text = cell.GridX.HasValue && cell.GridY.HasValue
@@ -610,6 +616,15 @@ public sealed partial class SingleFileTab
     {
         if (_session.WorldViewData?.CellByFormId.TryGetValue(cellFormId, out var cell) != true || cell == null)
         {
+            return;
+        }
+
+        // Route the jump to whichever viewer is active. A door-destination link clicked while the
+        // 3D view is showing must drive the 3D camera, not silently re-select the hidden 2D map
+        // (WorldViewModeComboBox: 0 = 2D Map, 1 = 3D View).
+        if (WorldViewModeComboBox.SelectedIndex == 1)
+        {
+            WorldView3DControl.NavigateToCell(cell);
             return;
         }
 

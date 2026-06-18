@@ -10,29 +10,49 @@ namespace FalloutXbox360Utils;
 
 /// <summary>
 ///     LTEX → diffuse-texture tile cache for the "Terrain textures" layer.
-///     Resolves LTEX → TXST → BSA → DDS, decodes the texture, downsamples it to a fixed
-///     <see cref="TileSize" />×<see cref="TileSize" /> RGBA tile, and serves per-pixel
-///     samples wrapped in world-space.
-///     Cached per source ESM path; first access of a worldspace pays the BSA + DDS cost
-///     once, subsequent renders sample from memory.
+///     Resolves LTEX → TXST → BSA → DDS, decodes the texture, and builds a square
+///     <see cref="MipLevelCount" />-level <b>mip pyramid</b> (<see cref="TileSize" />→1) from the
+///     DDS's own pre-filtered levels, then serves per-pixel samples wrapped in world-space.
+///     The per-cell rasterizer picks the pyramid level matching its render footprint (how many
+///     texels one output pixel spans), so zoomed-out composites read from a small, area-averaged
+///     mip — the textbook fix for the minification moire/graininess a single-level tile produced.
+///     Cached per source ESM path; first access of a worldspace pays the BSA + DDS cost once,
+///     subsequent renders sample from memory.
 /// </summary>
 internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
 {
     /// <summary>
-    ///     Output tile resolution. 128 gives enough texel headroom for the base overview
-    ///     bucket's ~16 samples per cell-axis-per-tile, while the high-res bucket keeps ~66.
-    ///     Smaller tiles starved the sampler; larger ones quickly burn cache memory across
-    ///     all the LTEXes a worldspace references.
+    ///     Top (mip 0) tile resolution. 256 matches the Xbox native landscape-texture size (PC ships 512,
+    ///     downsized here), so a zoomed-in cell at the highest per-cell tier (1056 px/cell ⇒ ~132 texels
+    ///     per 512-unit tile-repeat) samples real detail instead of an upscaled 128 tile. Lower mips
+    ///     (128…1) are derived below it for the zoomed-out footprints. Memory is ~4× a 128 tile per LTEX
+    ///     but bounded by the worldspace's LTEX count.
     /// </summary>
-    private const int TileSize = 128;
+    internal const int TileSize = 256;
 
     private const int TileBytes = TileSize * TileSize * 4;
+
+    /// <summary>
+    ///     Mip levels per cached pyramid: TileSize(256), 128, 64, 32, 16, 8, 4, 2, 1 — i.e. log2(256)+1 = 9.
+    ///     Level <c>i</c> has dimension <c>TileSize &gt;&gt; i</c>.
+    /// </summary>
+    internal const int MipLevelCount = 9;
+
+    /// <summary>Highest valid pyramid index (the 1×1 average-color level).</summary>
+    internal const int MaxMipLevel = MipLevelCount - 1;
+
+    /// <summary>
+    ///     Bytes of one full pyramid: (256² + 128² + … + 1²) × 4 ≈ <see cref="TileBytes" /> × 4/3.
+    ///     Used for the cache's memory accounting.
+    /// </summary>
+    private const int PyramidBytes =
+        (256 * 256 + 128 * 128 + 64 * 64 + 32 * 32 + 16 * 16 + 8 * 8 + 4 * 4 + 2 * 2 + 1 * 1) * 4;
 
     /// <summary>
     ///     Matches TESObjectLAND::InitializeStatics: fLandTextureTilingMult defaults to 2,
     ///     producing a 0.5 UV step per 256-unit LAND interval, or 8 repeats per cell.
     ///     <c>internal</c> so the per-cell rasterizer can precompute its tile-space stride
-    ///     and call the <see cref="Sample(uint, float, float)" /> tile-fraction overload
+    ///     and call the <see cref="Sample(uint, float, float, int)" /> tile-fraction overload
     ///     once per pixel instead of doing the float-modulo in the inner loop.
     /// </summary>
     internal const float WorldUnitsPerTile = 512f;
@@ -45,7 +65,7 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
     private static readonly object s_cacheLock = new();
 
     /// <summary>Sentinel used to memoize "tried to load but failed" so we don't retry every pixel.</summary>
-    private static readonly byte[] s_missSentinel = [];
+    private static readonly byte[][] s_missSentinel = [];
 
     // Engine-default landscape texture path lives in EngineDefaultLandscapeTexture.DiffusePath
     // (sibling helper under Core/Formats/Nif/Rendering/Textures/). Shared with the 3D viewer's
@@ -67,10 +87,11 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
     ///     <see cref="ConcurrentDictionary{TKey, TValue}" /> so the per-pixel
     ///     <see cref="Sample" /> path is fully lock-free on a cache hit. With 6 parallel
     ///     workers × millions of samples, a regular Dictionary lock made this the worst
-    ///     bottleneck in the streaming pipeline.
+    ///     bottleneck in the streaming pipeline. Each value is a mip pyramid (see
+    ///     <see cref="MipLevelCount" />); an empty array is the miss sentinel.
     /// </summary>
-    private readonly ConcurrentDictionary<uint, byte[]> _tiles = new();
-    private byte[]? _engineDefaultTile;
+    private readonly ConcurrentDictionary<uint, byte[][]> _tiles = new();
+    private byte[][]? _engineDefaultTile;
     private int _engineDefaultLoaded;  // 0 = not loaded, 1 = loaded; written via Volatile to publish the tile
 
     private LandscapeTexturePalette(WorldViewData data, List<INifTextureSource> sources)
@@ -94,7 +115,7 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
     /// </summary>
     public ResourceStats GetStats() => new()
     {
-        EstimatedBytes = (long)_tiles.Count * TileBytes,
+        EstimatedBytes = (long)_tiles.Count * PyramidBytes,
         EntryCount = _tiles.Count,
     };
 
@@ -110,7 +131,7 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
             return 0;
         }
 
-        var released = (long)_tiles.Count * TileBytes;
+        var released = (long)_tiles.Count * PyramidBytes;
         _tiles.Clear();
         lock (_tileLoadLock)
         {
@@ -211,30 +232,53 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
     }
 
     /// <summary>
-    ///     Sample the diffuse color for this LTEX FormID at pre-resolved tile-space fractions.
-    ///     <paramref name="tileFracX" /> and <paramref name="tileFracY" /> must already be in
-    ///     <c>[0, 1)</c> — the per-cell rasterizer is expected to seed them from
-    ///     <see cref="WorldToTileFraction" /> once and advance them by a precomputed stride per
-    ///     pixel, which keeps the float-modulo out of the per-pixel inner loop.
+    ///     Pick the mip-pyramid level for a render footprint of <paramref name="texelsPerPixel" />
+    ///     mip-0 texels per output pixel, using a <b>prefer-downscale</b> policy: <c>floor(log2(texels))</c>
+    ///     selects the SMALLEST level still at least the footprint resolution, so the tile is always
+    ///     minified (≤2× per level) rather than upscaled from a too-small mip. That keeps the most detail
+    ///     the footprint can carry — e.g. a tile-repeat displayed wider than 128 px reads from the 256 mip
+    ///     and downscales, instead of blurrily magnifying a 128 mip. The all-the-way-out footprints still
+    ///     land on the tiny pre-filtered mips (no moire). <c>≤1</c> texel/pixel (magnifying or 1:1) keeps
+    ///     the full <see cref="TileSize" /> tile. The whole cell renders at one resolution, so the caller
+    ///     selects this once and reuses it per pixel.
     /// </summary>
-    internal (byte R, byte G, byte B)? Sample(uint ltexFormId, float tileFracX, float tileFracY)
+    internal static int MipLevelForFootprint(float texelsPerPixel)
     {
-        var tile = TryGetTile(ltexFormId);
-        if (tile is null) return null;
-        return SampleFromTileFraction(tile, tileFracX, tileFracY);
+        if (texelsPerPixel <= 1f)
+        {
+            return 0;
+        }
+
+        var level = (int)MathF.Floor(MathF.Log2(texelsPerPixel));
+        return Math.Clamp(level, 0, MaxMipLevel);
+    }
+
+    /// <summary>
+    ///     Sample the diffuse color for this LTEX FormID at pre-resolved tile-space fractions, from
+    ///     pyramid level <paramref name="mipLevel" /> (see <see cref="MipLevelForFootprint" />).
+    ///     <paramref name="tileFracX" /> and <paramref name="tileFracY" /> must already be in
+    ///     <c>[0, 1)</c> — the per-cell rasterizer seeds them from <see cref="WorldToTileFraction" />
+    ///     once and advances them by a precomputed stride per pixel, keeping the float-modulo out of
+    ///     the per-pixel inner loop.
+    /// </summary>
+    internal (byte R, byte G, byte B)? Sample(uint ltexFormId, float tileFracX, float tileFracY, int mipLevel)
+    {
+        var pyramid = TryGetTile(ltexFormId);
+        if (pyramid is null) return null;
+        return SamplePyramid(pyramid, mipLevel, tileFracX, tileFracY);
     }
 
     /// <summary>
     ///     Sample FNV's engine-default landscape diffuse texture
-    ///     (<c>textures\landscape\DirtWasteland01</c>) at pre-resolved tile-space fractions.
-    ///     Returns null only if the BSA doesn't ship that texture, in which case the caller
-    ///     should fall back to a hardcoded RGB tint.
+    ///     (<c>textures\landscape\DirtWasteland01</c>) at pre-resolved tile-space fractions, from
+    ///     pyramid level <paramref name="mipLevel" />. Returns null only if the BSA doesn't ship that
+    ///     texture, in which case the caller should fall back to a hardcoded RGB tint.
     /// </summary>
-    internal (byte R, byte G, byte B)? SampleEngineDefault(float tileFracX, float tileFracY)
+    internal (byte R, byte G, byte B)? SampleEngineDefault(float tileFracX, float tileFracY, int mipLevel)
     {
-        var tile = GetEngineDefaultTile();
-        if (tile is null) return null;
-        return SampleFromTileFraction(tile, tileFracX, tileFracY);
+        var pyramid = GetEngineDefaultTile();
+        if (pyramid is null) return null;
+        return SamplePyramid(pyramid, mipLevel, tileFracX, tileFracY);
     }
 
     /// <summary>
@@ -251,7 +295,15 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
         return fr / WorldUnitsPerTile;
     }
 
-    private static (byte R, byte G, byte B) SampleFromTileFraction(byte[] tile, float tileFracX, float tileFracY)
+    private static (byte R, byte G, byte B) SamplePyramid(
+        byte[][] pyramid, int mipLevel, float tileFracX, float tileFracY)
+    {
+        var level = Math.Clamp(mipLevel, 0, pyramid.Length - 1);
+        return SampleFromTileFraction(pyramid[level], TileSize >> level, tileFracX, tileFracY);
+    }
+
+    private static (byte R, byte G, byte B) SampleFromTileFraction(
+        byte[] tile, int tileSize, float tileFracX, float tileFracY)
     {
         // Caller-side stepper guarantees [0, 1); a defensive clamp here avoids out-of-bounds
         // reads if rounding error pushes the input slightly past 1.0 (e.g., accumulated
@@ -259,19 +311,19 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
         if (tileFracX < 0f) tileFracX = 0f; else if (tileFracX >= 1f) tileFracX = 0.9999999f;
         if (tileFracY < 0f) tileFracY = 0f; else if (tileFracY >= 1f) tileFracY = 0.9999999f;
 
-        var x = tileFracX * TileSize;
-        var y = tileFracY * TileSize;
+        var x = tileFracX * tileSize;
+        var y = tileFracY * tileSize;
         var x0 = (int)x;
         var y0 = (int)y;
-        var x1 = (x0 + 1) % TileSize;
-        var y1 = (y0 + 1) % TileSize;
+        var x1 = (x0 + 1) % tileSize;
+        var y1 = (y0 + 1) % tileSize;
         var fx = x - x0;
         var fy = y - y0;
 
-        var c00 = Pixel(tile, x0, y0);
-        var c10 = Pixel(tile, x1, y0);
-        var c01 = Pixel(tile, x0, y1);
-        var c11 = Pixel(tile, x1, y1);
+        var c00 = Pixel(tile, tileSize, x0, y0);
+        var c10 = Pixel(tile, tileSize, x1, y0);
+        var c01 = Pixel(tile, tileSize, x0, y1);
+        var c11 = Pixel(tile, tileSize, x1, y1);
 
         return (
             LerpByte(Lerp(c00.R, c10.R, fx), Lerp(c01.R, c11.R, fx), fy),
@@ -279,7 +331,7 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
             LerpByte(Lerp(c00.B, c10.B, fx), Lerp(c01.B, c11.B, fx), fy));
     }
 
-    private byte[]? GetEngineDefaultTile()
+    private byte[][]? GetEngineDefaultTile()
     {
         // Fast path: lock-free read of the published flag. Once Preload (or any earlier call)
         // has loaded the tile, all subsequent calls hit this branch — including all the
@@ -303,7 +355,7 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
         }
     }
 
-    private byte[]? TryGetTile(uint ltexFormId)
+    private byte[][]? TryGetTile(uint ltexFormId)
     {
         // Fast path: lock-free read on ConcurrentDictionary. After Preload, every parallel
         // worker hits this branch and never touches a lock — the critical perf win that lets
@@ -325,12 +377,12 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
             if (loaded is null)
             {
                 // LTEX has no resolvable tile (missing TXST, BSA entry, broken DDX, …).
-                // Cache the engine-default tile bytes under this FormID so subsequent
-                // samples take the lock-free fast path with a single dictionary lookup
-                // instead of routing through a separate SampleEngineDefault call on every
-                // pixel. Mirrors what the per-pixel sampler would compose anyway, just
-                // collapses two lookups into one. Monitor (lock) is reentrant on the same
-                // thread, so the nested acquire inside GetEngineDefaultTile is fine.
+                // Cache the engine-default pyramid under this FormID so subsequent samples take
+                // the lock-free fast path with a single dictionary lookup instead of routing
+                // through a separate SampleEngineDefault call on every pixel. Mirrors what the
+                // per-pixel sampler would compose anyway, just collapses two lookups into one.
+                // Monitor (lock) is reentrant on the same thread, so the nested acquire inside
+                // GetEngineDefaultTile is fine.
                 loaded = GetEngineDefaultTile();
             }
             _tiles[ltexFormId] = loaded ?? s_missSentinel;
@@ -338,17 +390,26 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
         }
     }
 
-    private byte[]? LoadTileForLtex(uint ltexFormId)
+    private byte[][]? LoadTileForLtex(uint ltexFormId)
     {
         var path = LandscapeTexturePathResolver.ResolveDiffuse(
             ltexFormId, _data.LandTexturesByFormId, _data.TextureSetsByFormId);
         return path is null ? null : LoadTileFromPath(path);
     }
 
-    private byte[]? LoadTileFromPath(string ddsPath)
+    private byte[][]? LoadTileFromPath(string ddsPath)
     {
         var path = NifTexturePathUtility.Normalize(ddsPath);
         var texture = NifTextureLoader.TryLoadFromSources(path, _sources);
+
+        // Morrowind LTEX paths reference the authoring extension (.tga / .bmp) while the archive
+        // stores the compiled .dds — retry with .dds when the literal lookup misses. Mirrors
+        // NifTextureResolver.LoadTexture.
+        if (texture is null && NifTexturePathUtility.TrySwapToDdsExtension(path, out var ddsSwapped))
+        {
+            texture = NifTextureLoader.TryLoadFromSources(ddsSwapped, _sources);
+            path = ddsSwapped;
+        }
 
         // Xbox 360 BSAs hold .ddx files (DXT compressed in a wrapper); TXST paths still say
         // .dds, so retry with the .ddx extension. Mirrors NifTextureResolver.LoadTexture.
@@ -372,7 +433,53 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
             }
         }
 
-        return ResizeToTile(bestMip.Pixels, bestMip.Width, bestMip.Height);
+        var baseTile = ResizeToTile(bestMip.Pixels, bestMip.Width, bestMip.Height);
+        return BuildPyramid(baseTile);
+    }
+
+    /// <summary>
+    ///     Builds the <see cref="MipLevelCount" />-level square pyramid from the mip-0
+    ///     <paramref name="baseTile" /> (<see cref="TileSize" />²) by repeated 2× box-downsample.
+    ///     A box reduction of an already box-filtered level is mathematically the same as box-filtering
+    ///     the original full-resolution image to that size, so these levels match what the DDS's own
+    ///     mip chain would give — without paying to resize each native mip separately.
+    /// </summary>
+    private static byte[][] BuildPyramid(byte[] baseTile)
+    {
+        var levels = new byte[MipLevelCount][];
+        levels[0] = baseTile;
+        for (var i = 1; i < MipLevelCount; i++)
+        {
+            levels[i] = Downsample2x(levels[i - 1], TileSize >> (i - 1));
+        }
+        return levels;
+    }
+
+    /// <summary>2× box-downsample of a <paramref name="srcSize" />² RGBA tile (averages each 2×2 block).</summary>
+    private static byte[] Downsample2x(byte[] src, int srcSize)
+    {
+        var dstSize = Math.Max(1, srcSize / 2);
+        var dst = new byte[dstSize * dstSize * 4];
+        for (var dy = 0; dy < dstSize; dy++)
+        {
+            var sy0 = dy * 2;
+            var sy1 = Math.Min(sy0 + 1, srcSize - 1);
+            for (var dx = 0; dx < dstSize; dx++)
+            {
+                var sx0 = dx * 2;
+                var sx1 = Math.Min(sx0 + 1, srcSize - 1);
+                var i00 = (sy0 * srcSize + sx0) * 4;
+                var i10 = (sy0 * srcSize + sx1) * 4;
+                var i01 = (sy1 * srcSize + sx0) * 4;
+                var i11 = (sy1 * srcSize + sx1) * 4;
+                var d = (dy * dstSize + dx) * 4;
+                for (var c = 0; c < 4; c++)
+                {
+                    dst[d + c] = (byte)((src[i00 + c] + src[i10 + c] + src[i01 + c] + src[i11 + c] + 2) >> 2);
+                }
+            }
+        }
+        return dst;
     }
 
     private static byte[] ResizeToTile(byte[] pixels, int width, int height)
@@ -395,9 +502,9 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
         return result;
     }
 
-    private static (byte R, byte G, byte B) Pixel(byte[] tile, int x, int y)
+    private static (byte R, byte G, byte B) Pixel(byte[] tile, int tileSize, int x, int y)
     {
-        var idx = (y * TileSize + x) * 4;
+        var idx = (y * tileSize + x) * 4;
         return (tile[idx], tile[idx + 1], tile[idx + 2]);
     }
 

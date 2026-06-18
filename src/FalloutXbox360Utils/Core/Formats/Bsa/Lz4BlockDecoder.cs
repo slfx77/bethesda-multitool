@@ -12,7 +12,11 @@ namespace FalloutXbox360Utils.Core.Formats.Bsa;
 ///         Implemented inline to avoid a third-party dependency. <see cref="DecodeFrame" /> parses
 ///         the frame envelope and dispatches each block to <see cref="DecodeBlock" />, which decodes
 ///         the raw LZ4 block format (token = literal/match lengths, 2-byte little-endian match
-///         offset, overlapping match copy).
+///         offset, overlapping match copy). Blocks decode into a single shared output buffer at a
+///         running absolute position so matches may reference data from <b>earlier</b> blocks —
+///         LZ4's default block-linked mode, which Bethesda uses for any texture large enough to
+///         span multiple blocks. (Block-independent frames simply emit no cross-block matches, so
+///         the same code path decodes them correctly too.)
 ///     </para>
 /// </summary>
 internal static class Lz4BlockDecoder
@@ -60,7 +64,9 @@ internal static class Lz4BlockDecoder
                 throw new InvalidDataException("LZ4 block extends past frame end.");
             }
 
-            written += DecodeOneBlock(src.Slice(pos, size), dst.AsSpan(written), isUncompressed);
+            // Decode into the shared buffer at the running absolute position so block-linked
+            // matches can reach back into earlier blocks' output.
+            written = DecodeOneBlock(src.Slice(pos, size), dst, written, isUncompressed);
 
             pos += size;
             if (hasBlockChecksum)
@@ -92,30 +98,35 @@ internal static class Lz4BlockDecoder
         return pos + 1; // Header Checksum (HC) byte
     }
 
-    private static int DecodeOneBlock(ReadOnlySpan<byte> block, Span<byte> dst, bool isUncompressed)
+    /// <summary>
+    ///     Decode one block into the shared output buffer <paramref name="dst" /> starting at the
+    ///     absolute position <paramref name="dPos" />. Returns the new absolute position.
+    /// </summary>
+    private static int DecodeOneBlock(ReadOnlySpan<byte> block, Span<byte> dst, int dPos, bool isUncompressed)
     {
         if (!isUncompressed)
         {
-            return DecodeBlock(block, dst);
+            return DecodeBlock(block, dst, dPos);
         }
 
-        if (block.Length > dst.Length)
+        if (dPos + block.Length > dst.Length)
         {
             throw new InvalidDataException("LZ4 uncompressed block exceeds output buffer.");
         }
 
-        block.CopyTo(dst);
-        return block.Length;
+        block.CopyTo(dst.Slice(dPos));
+        return dPos + block.Length;
     }
 
     /// <summary>
-    ///     Decode a single raw LZ4 block into <paramref name="dst" />, consuming all of
-    ///     <paramref name="src" />. Returns the number of bytes written.
+    ///     Decode a single raw LZ4 block into <paramref name="dst" /> starting at absolute position
+    ///     <paramref name="dPos" />, consuming all of <paramref name="src" />. Matches are resolved
+    ///     against the whole output written so far (including earlier blocks), so this supports
+    ///     block-linked frames. Returns the new absolute write position.
     /// </summary>
-    public static int DecodeBlock(ReadOnlySpan<byte> src, Span<byte> dst)
+    public static int DecodeBlock(ReadOnlySpan<byte> src, Span<byte> dst, int dPos = 0)
     {
         var sPos = 0;
-        var dPos = 0;
 
         while (sPos < src.Length)
         {

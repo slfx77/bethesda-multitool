@@ -31,7 +31,9 @@ internal static class WorldMapCellDetailRenderer
         bool showRenderedObjects = false,
         CanvasBitmap? renderedObjectsOverlay = null,
         float overlayWorldMinX = 0f, float overlayWorldMaxX = 0f,
-        float overlayWorldMinY = 0f, float overlayWorldMaxY = 0f)
+        float overlayWorldMinY = 0f, float overlayWorldMaxY = 0f,
+        CanvasBitmap? cellWaterBitmap = null,
+        bool showWater = true)
     {
         ds.Transform = WorldMapViewportHelper.GetViewTransform(zoom, panOffset);
 
@@ -58,6 +60,21 @@ internal static class WorldMapCellDetailRenderer
             var originY = -(cellY + 1) * CellWorldSize;
             ds.DrawRectangle(new Rect(originX, originY, CellWorldSize, CellWorldSize),
                 Color.FromArgb(80, 255, 255, 255), 2f / zoom);
+        }
+
+        // 2a. Water layer (flat) — over the water-free cell bitmap; suppressed when the overlay is active
+        //     (it supplies height-correct water). Opacity matches the cell bitmap's 200 alpha so water and
+        //     land read equally translucent, reproducing the old baked look. Same gate as overview step 2c.
+        if (showWater && !overlayActive && cellWaterBitmap != null
+            && selectedCell.GridX.HasValue && selectedCell.GridY.HasValue)
+        {
+            var wOriginX = selectedCell.GridX.Value * CellWorldSize;
+            var wOriginY = -(selectedCell.GridY.Value + 1) * CellWorldSize;
+            var src = cellWaterBitmap.SizeInPixels;
+            ds.DrawImage(cellWaterBitmap,
+                new Rect(wOriginX, wOriginY, CellWorldSize, CellWorldSize),
+                new Rect(0, 0, src.Width, src.Height),
+                200f / 255f);
         }
 
         // 2b. Rendered-models overlay (exterior cells only — the caller passes null for interiors).
@@ -194,6 +211,28 @@ internal static class WorldMapCellDetailRenderer
 
         return CanvasBitmap.CreateFromBytes(
             canvas, pixels, HmGridSize, HmGridSize,
+            Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
+    }
+
+    /// <summary>
+    ///     Builds the single-cell standalone water bitmap (premult RGBA, transparent where dry) that
+    ///     <see cref="BuildCellHeightmapBitmap" /> (rendered water-free) is paired with. Reuses the same
+    ///     <see cref="WorldMapLayerRenderer.BuildCellWaterTile" /> as the overview per-cell path, at the
+    ///     cell's render resolution so it aligns with the cell bitmap. Solid-blue (no palette), matching
+    ///     the cell-detail's prior baked water. Returns null for a dry cell.
+    /// </summary>
+    internal static CanvasBitmap? BuildCellWaterBitmap(
+        CanvasControl canvas, CellRecord cell, float? currentDefaultWaterHeight,
+        WorldMapLayer layer = WorldMapLayer.Heightmap, WorldRenderCache? cache = null)
+    {
+        var ppc = layer == WorldMapLayer.TerrainTextures
+            ? WorldMapLayerRenderer.MaxTexturePixelsPerCell
+            : HmGridSize;
+        var tile = WorldMapLayerRenderer.BuildCellWaterTile(
+            cell, currentDefaultWaterHeight, ppc, cache, cellByGrid: null, waterPalette: null);
+        if (tile is null) return null;
+        return CanvasBitmap.CreateFromBytes(
+            canvas, tile, ppc, ppc,
             Windows.Graphics.DirectX.DirectXPixelFormat.R8G8B8A8UIntNormalized);
     }
 }

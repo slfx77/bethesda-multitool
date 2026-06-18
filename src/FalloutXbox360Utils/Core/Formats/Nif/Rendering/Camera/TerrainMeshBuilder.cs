@@ -110,8 +110,13 @@ internal static class TerrainMeshBuilder
 
         if (cell.GridX is not int gx || cell.GridY is not int gy) return false;
 
-        var originX = gx * TerrainConstants.LandCellWorldSize;
-        var originY = gy * TerrainConstants.LandCellWorldSize;
+        // Most games use the engine-default 4096-unit cell; Morrowind exterior cells are 8192. The
+        // grid resolution stays 33×33, so the vertex spacing scales with the cell size and the origin
+        // tracks the cell's absolute world coordinates (matching its placed objects).
+        var cellSize = cell.CellWorldSize > 0f ? cell.CellWorldSize : TerrainConstants.LandCellWorldSize;
+        var spacing = cellSize / LastIndex;
+        var originX = gx * cellSize;
+        var originY = gy * cellSize;
         var terrain = cache?.GetTerrain(cell);
         if (terrain is not null)
         {
@@ -124,7 +129,7 @@ internal static class TerrainMeshBuilder
         var heights = ResolveHeights(cell);
         if (heights is null) return false;
 
-        FillVertices(heights, originX, originY, cell.LandVisualData?.VertexColors, vertices);
+        FillVertices(heights, originX, originY, spacing, cell.LandVisualData?.VertexColors, vertices);
         return true;
     }
 
@@ -139,6 +144,7 @@ internal static class TerrainMeshBuilder
         float[,] heights,
         float originX,
         float originY,
+        float spacing,
         byte[]? vertexColors,
         Span<GpuMeshUploader.GpuVertex> vertices)
     {
@@ -150,14 +156,14 @@ internal static class TerrainMeshBuilder
             {
                 var idx = j * Grid + i;
                 var position = new Vector3(
-                    originX + i * VertexSpacing,
-                    originY + j * VertexSpacing,
+                    originX + i * spacing,
+                    originY + j * spacing,
                     heights[j, i]);
 
                 vertices[idx] = new GpuMeshUploader.GpuVertex
                 {
                     Position = position,
-                    Normal = ComputeNormal(heights, i, j),
+                    Normal = ComputeNormal(heights, i, j, spacing),
                     TexCoord = new Vector2(i / (float)LastIndex, j / (float)LastIndex),
                     VertexColor = hasColors ? ReadVertexColor(vertexColors!, idx) : Vector4.One,
                     Tangent = Vector3.Zero,
@@ -199,7 +205,7 @@ internal static class TerrainMeshBuilder
         }
     }
 
-    private static Vector3 ComputeNormal(float[,] heights, int i, int j)
+    private static Vector3 ComputeNormal(float[,] heights, int i, int j, float spacing)
     {
         // Central differences in cell-local units, falling back to forward/backward at edges.
         // dz/dx ≈ (h[i+1] - h[i-1]) / (2 * spacing); same for dz/dy. The surface normal of
@@ -210,8 +216,8 @@ internal static class TerrainMeshBuilder
         float hyPlus = j < LastIndex ? heights[j + 1, i] : heights[j, i];
 
         // Span = 2 * spacing for interior, 1 * spacing at edges (forward/backward diff).
-        var xSpan = (i > 0 && i < LastIndex) ? 2f * VertexSpacing : VertexSpacing;
-        var ySpan = (j > 0 && j < LastIndex) ? 2f * VertexSpacing : VertexSpacing;
+        var xSpan = (i > 0 && i < LastIndex) ? 2f * spacing : spacing;
+        var ySpan = (j > 0 && j < LastIndex) ? 2f * spacing : spacing;
 
         var dx = (hxPlus - hxMinus) / xSpan;
         var dy = (hyPlus - hyMinus) / ySpan;

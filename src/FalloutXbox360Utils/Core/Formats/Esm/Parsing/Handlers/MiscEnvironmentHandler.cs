@@ -72,7 +72,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "NNAM":
                     noiseTexture = EsmStringUtils.ReadNullTermString(subData);
@@ -990,7 +990,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     break;
                 case "FULL":
                     fullName =
-                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                        Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "NAM3" when sub.DataLength >= 4:
                     locationDelay = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);

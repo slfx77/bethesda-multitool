@@ -103,7 +103,7 @@ internal sealed class WeaponProjectileEnricher(RecordParserContext context)
                         modelPath = EsmStringUtils.ReadNullTermString(subData);
                         break;
                     case "FULL":
-                        fullName = EsmStringUtils.ReadNullTermString(subData);
+                        fullName = context.ReadFullName(subData);
                         break;
                     case "DATA" when sub.DataLength >= 64:
                     {

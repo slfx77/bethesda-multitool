@@ -53,6 +53,7 @@ struct VSOutput
     float4 vLayerWeights1 : TEXCOORD4;
     float4 vLayerWeights2 : TEXCOORD5;
     float4 vLayerWeights3 : TEXCOORD6;
+    float3 vWorldPos     : TEXCOORD7;  // world-space position for per-pixel distance fog
 };
 
 VSOutput main(VSInput input)
@@ -66,5 +67,6 @@ VSOutput main(VSInput input)
     o.vLayerWeights1 = input.aLayerWeights1;
     o.vLayerWeights2 = input.aLayerWeights2;
     o.vLayerWeights3 = input.aLayerWeights3;
+    o.vWorldPos = input.aPosition; // terrain verts are already world-space (no model matrix)
     return o;
 }

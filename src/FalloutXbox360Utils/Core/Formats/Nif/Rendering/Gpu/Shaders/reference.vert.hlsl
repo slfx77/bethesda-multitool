@@ -51,6 +51,7 @@ struct VSOutput
     nointerpolation float4 vRenderState : TEXCOORD6;
     nointerpolation float4 vTextureState : TEXCOORD7;
     nointerpolation uint4  vTexIndices  : TEXCOORD8;
+    float3 vWorldPos    : TEXCOORD9;  // world-space position for per-pixel distance fog
 };
 
 VSOutput main(VSInput input)
@@ -58,6 +59,7 @@ VSOutput main(VSInput input)
     VSOutput o;
     float4 worldPos = mul(uWorld, float4(input.aPosition, 1.0));
     o.Position = mul(uViewProj, worldPos);
+    o.vWorldPos = worldPos.xyz;
     // Uniform scale only — pass the normal through the world rotation (3x3 sub-matrix). For
     // non-uniform scale we'd want the inverse-transpose, but Bethesda REFR.Scale is uniform.
     o.vWorldNormal = mul((float3x3)uWorld, input.aNormal);

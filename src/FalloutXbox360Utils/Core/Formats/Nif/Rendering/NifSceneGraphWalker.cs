@@ -45,7 +45,7 @@ internal static class NifSceneGraphWalker
 
             if (NodeTypes.Contains(block.TypeName))
             {
-                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, be);
+                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, be, nif.HasInlineStrings);
                 if (children != null)
                 {
                     nodeChildren[i] = children;
@@ -122,7 +122,7 @@ internal static class NifSceneGraphWalker
                     }
                 }
 
-                var dataRef = NifBlockParsers.ParseShapeDataRef(data, block, nif.BsVersion, be);
+                var dataRef = NifBlockParsers.ParseShapeDataRef(data, block, nif.BsVersion, be, nif.HasInlineStrings);
                 if (dataRef >= 0 && dataRef < nif.Blocks.Count)
                 {
                     shapeDataMap[i] = dataRef;
@@ -130,7 +130,7 @@ internal static class NifSceneGraphWalker
 
                 if (shapePropertyMap != null)
                 {
-                    var propRefs = NifBlockParsers.ParseShapePropertyRefs(data, block, nif.BsVersion, be);
+                    var propRefs = NifBlockParsers.ParseShapePropertyRefs(data, block, nif.BsVersion, be, nif.HasInlineStrings);
                     if (propRefs != null && propRefs.Count > 0)
                     {
                         shapePropertyMap[i] = propRefs;
@@ -155,10 +155,18 @@ internal static class NifSceneGraphWalker
     ///         paths that key bone transforms off the full hierarchy.
     ///     </para>
     /// </summary>
+    /// <param name="billboardShapes">
+    ///     When non-null, shapes that sit under a <c>NiBillboardNode</c> are baked with the billboard
+    ///     node's <em>rotation dropped</em> (translation kept) so the renderer can re-aim them at the
+    ///     camera per frame, and their block indices are collected into this set. Null (default) keeps
+    ///     the legacy bake — the billboard node's full transform is baked in like any other node — so
+    ///     the single-NIF / NPC / export paths are unaffected.
+    /// </param>
     internal static void ComputeWorldTransforms(byte[] data, NifInfo nif,
         Dictionary<int, List<int>> nodeChildren, Dictionary<int, Matrix4x4> worldTransforms,
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null,
-        bool treatRootsAsIdentity = false)
+        bool treatRootsAsIdentity = false,
+        HashSet<int>? billboardShapes = null)
     {
         // Find root nodes: nodes that are not children of any other node
         var allChildren = new HashSet<int>();
@@ -183,7 +191,7 @@ internal static class NifSceneGraphWalker
             {
                 // This is a root node
                 WalkNode(data, nif, i, Matrix4x4.Identity, nodeChildren, worldTransforms, animOverrides,
-                    ignoreOwnTransform: treatRootsAsIdentity);
+                    ignoreOwnTransform: treatRootsAsIdentity, billboardShapes: billboardShapes);
             }
         }
 
@@ -197,7 +205,8 @@ internal static class NifSceneGraphWalker
                 // so the shape's own authored transform is discarded for a placed-ref bake.
                 worldTransforms[i] = treatRootsAsIdentity
                     ? Matrix4x4.Identity
-                    : NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[i], nif.BsVersion, nif.IsBigEndian);
+                    : NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[i], nif.BsVersion, nif.IsBigEndian,
+                        nif.HasInlineStrings);
             }
         }
     }
@@ -205,7 +214,9 @@ internal static class NifSceneGraphWalker
     internal static void WalkNode(byte[] data, NifInfo nif, int blockIndex, Matrix4x4 parentTransform,
         Dictionary<int, List<int>> nodeChildren, Dictionary<int, Matrix4x4> worldTransforms,
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null,
-        bool ignoreOwnTransform = false)
+        bool ignoreOwnTransform = false,
+        HashSet<int>? billboardShapes = null,
+        bool underBillboard = false)
     {
         var block = nif.Blocks[blockIndex];
         // A placed-reference's scene root has its own authored transform replaced by the REFR
@@ -213,7 +224,8 @@ internal static class NifSceneGraphWalker
         // relative to identity. See ComputeWorldTransforms' treatRootsAsIdentity note.
         var localTransform = ignoreOwnTransform
             ? Matrix4x4.Identity
-            : NifBlockParsers.ParseNiAVObjectTransform(data, block, nif.BsVersion, nif.IsBigEndian);
+            : NifBlockParsers.ParseNiAVObjectTransform(data, block, nif.BsVersion, nif.IsBigEndian,
+                nif.HasInlineStrings);
 
         // If animation overrides are available, merge per-channel: animation rotation
         // replaces bind pose rotation, but bind pose translation/scale are preserved
@@ -264,15 +276,37 @@ internal static class NifSceneGraphWalker
             var childType = nif.Blocks[childIdx].TypeName;
             if (NodeTypes.Contains(childType))
             {
-                WalkNode(data, nif, childIdx, worldTransform, nodeChildren, worldTransforms, animOverrides);
+                if (billboardShapes != null && childType == "NiBillboardNode")
+                {
+                    // Billboard subtree: the engine re-orients a NiBillboardNode toward the camera every
+                    // frame, so its authored rotation is meaningless for a static bake. Fold only the
+                    // node's world TRANSLATION into the subtree parent (drop its rotation) so the quad
+                    // lands at the right spot in its authored local orientation, then flag every shape
+                    // underneath as a billboard for the renderer to re-aim per frame.
+                    var bbLocal = NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[childIdx],
+                        nif.BsVersion, nif.IsBigEndian, nif.HasInlineStrings);
+                    var bbWorld = bbLocal * worldTransform;
+                    var bbParent = Matrix4x4.CreateTranslation(bbWorld.Translation);
+                    WalkNode(data, nif, childIdx, bbParent, nodeChildren, worldTransforms, animOverrides,
+                        ignoreOwnTransform: true, billboardShapes: billboardShapes, underBillboard: true);
+                }
+                else
+                {
+                    WalkNode(data, nif, childIdx, worldTransform, nodeChildren, worldTransforms, animOverrides,
+                        billboardShapes: billboardShapes, underBillboard: underBillboard);
+                }
             }
             else if (ShapeTypes.Contains(childType))
             {
                 // Shape inherits parent's world transform + its own local transform
                 var shapeLocal =
                     NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[childIdx], nif.BsVersion,
-                        nif.IsBigEndian);
+                        nif.IsBigEndian, nif.HasInlineStrings);
                 worldTransforms[childIdx] = shapeLocal * worldTransform;
+                if (underBillboard)
+                {
+                    billboardShapes?.Add(childIdx);
+                }
             }
         }
     }
@@ -294,7 +328,7 @@ internal static class NifSceneGraphWalker
             var block = nif.Blocks[i];
             if (NodeTypes.Contains(block.TypeName))
             {
-                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, be);
+                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, be, nif.HasInlineStrings);
                 if (children != null)
                 {
                     nodeChildren[i] = children;
@@ -313,7 +347,7 @@ internal static class NifSceneGraphWalker
             }
 
             var controllerRef = NifBinaryCursor.ReadNiObjectNETControllerRef(
-                data, block.DataOffset, block.DataOffset + block.Size, be);
+                data, block.DataOffset, block.DataOffset + block.Size, be, nif.HasInlineStrings, nif.IsMorrowind);
 
             // Walk the controller chain (NiTimeController has a nextController ref at offset 4)
             while (controllerRef >= 0 && controllerRef < nif.Blocks.Count)

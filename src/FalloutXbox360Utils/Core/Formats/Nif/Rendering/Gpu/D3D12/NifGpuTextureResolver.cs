@@ -158,10 +158,25 @@ internal sealed class NifGpuTextureResolver : IDisposable
     private GpuTexturePayload? LoadTextureUncached(string path)
     {
         var texture = TryLoadFromSources(path);
-        if (texture != null ||
-            !path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+        if (texture != null)
         {
             return texture;
+        }
+
+        // Older NIFs (Morrowind, some Oblivion) reference textures by their authoring extension
+        // (.tga / .bmp) while archives store the compiled .dds — fall back to the .dds variant.
+        if (NifTexturePathUtility.TrySwapToDdsExtension(path, out var ddsSwapped))
+        {
+            texture = TryLoadFromSources(ddsSwapped);
+            if (texture != null)
+            {
+                return texture;
+            }
+        }
+
+        if (!path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
         }
 
         var ddxPath = string.Concat(path.AsSpan(0, path.Length - 4), ".ddx");

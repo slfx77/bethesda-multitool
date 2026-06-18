@@ -1,4 +1,5 @@
 using FalloutXbox360Utils.Core.Formats.Bsa;
+using FalloutXbox360Utils.Core.Formats.Bsa.Ba2;
 
 namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc;
 
@@ -22,7 +23,10 @@ internal static class BsaDiscovery
         var bsaPaths = Directory.GetFiles(dir, "*.bsa")
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        if (bsaPaths.Length == 0)
+        var ba2Paths = Directory.GetFiles(dir, "*.ba2")
+            .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (bsaPaths.Length == 0 && ba2Paths.Length == 0)
         {
             return BsaDiscoveryResult.Empty;
         }
@@ -32,6 +36,37 @@ internal static class BsaDiscovery
         foreach (var path in bsaPaths)
         {
             var (hasMeshes, hasTextures) = ClassifyContent(path);
+            if (hasMeshes)
+            {
+                meshes.Add(path);
+            }
+
+            if (hasTextures)
+            {
+                textures.Add(path);
+            }
+        }
+
+        // BA2 (Fallout 4 / Fallout 76). DX10 archives hold textures only; GNRL archives hold
+        // meshes/materials/etc. Both the texture path (NifTextureArchiveSourceFactory) and the mesh
+        // path (NpcMeshArchiveSet) are now BA2-aware, so classify by content and route accordingly.
+        // DX10 → textures by definition. GNRL → scan its name-table paths for meshes\/textures\
+        // prefixes (BA2 has no BSA-style content-flag bits).
+        foreach (var path in ba2Paths)
+        {
+            var header = Ba2Parser.TryReadHeader(path);
+            if (header is null)
+            {
+                continue;
+            }
+
+            if (header.Type == Ba2HeaderType.Texture)
+            {
+                textures.Add(path);
+                continue;
+            }
+
+            var (hasMeshes, hasTextures) = ClassifyBa2GeneralContent(path);
             if (hasMeshes)
             {
                 meshes.Add(path);
@@ -104,5 +139,44 @@ internal static class BsaDiscovery
         }
 
         return (hasMeshes, hasTextures);
+    }
+
+    /// <summary>
+    ///     Classifies a GNRL (general) BA2 by scanning its name-table paths for <c>meshes\</c> /
+    ///     <c>textures\</c> prefixes. BA2 has no BSA-style content-flag bits, so this is the only signal.
+    ///     A GNRL BA2 with no usable name table (hash-only paths) classifies as neither — it can't be
+    ///     path-resolved anyway, so it's correctly skipped.
+    /// </summary>
+    private static (bool Meshes, bool Textures) ClassifyBa2GeneralContent(string ba2Path)
+    {
+        try
+        {
+            var archive = Ba2Parser.Parse(ba2Path);
+            var hasMeshes = false;
+            var hasTextures = false;
+            foreach (var file in archive.AllFiles)
+            {
+                var path = file.FullPath;
+                if (path.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasMeshes = true;
+                }
+                else if (path.StartsWith("textures\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasTextures = true;
+                }
+
+                if (hasMeshes && hasTextures)
+                {
+                    break;
+                }
+            }
+
+            return (hasMeshes, hasTextures);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
+        {
+            return (false, false);
+        }
     }
 }

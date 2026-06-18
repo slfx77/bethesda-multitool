@@ -25,9 +25,10 @@ cbuffer PerCell : register(b1)
 
 cbuffer PerMode : register(b2)
 {
-    // x = 1.0 → VCLR-only debug mode
+    // x = 1.0 → show diffuse terrain textures (0 → flat white base)
     // y = uv scale (mirrors vertex shader so it stays in sync)
-    // zw = padding
+    // z = 1.0 → apply per-vertex (VCLR) tint
+    // (textures off + vclr on == the old "vertex colors only" debug look)
     float4 uDebugMode_UvScale_Pad;
 };
 
@@ -42,7 +43,24 @@ cbuffer Atmosphere : register(b3)
     float4 uSkyHorizon;         // rgb = sky-horizon color, w = spare
     float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
     float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = time
+    float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
 };
+
+// Engine distance fog (grounded in Sky::UpdateFog): a linear near→far ramp toward the resolved fog
+// color, raised to the weather's fog power. fogEnabled (uFogColorFogEnabled.w) gates it; OFF returns
+// the color unchanged. near/far/power are the daylight-blended WTHR FNAM values from AtmosphereState.
+float3 ApplyFog(float3 color, float3 worldPos)
+{
+    if (uFogColorFogEnabled.w < 0.5)
+    {
+        return color;
+    }
+
+    float dist = length(worldPos - uCameraPosFogPower.xyz);
+    float f = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
+    f = pow(f, max(uCameraPosFogPower.w, 0.01));
+    return lerp(color, uFogColorFogEnabled.rgb, f);
+}
 
 // Per-pixel light factor (rgb) for a world-space normal. When lighting is disabled
 // (uSunColorLighting.w == 0) this returns the EXACT legacy flat shade — scalar 0.4 + 0.6*lambert
@@ -72,6 +90,7 @@ struct PSInput
     float4 vLayerWeights1 : TEXCOORD4;
     float4 vLayerWeights2 : TEXCOORD5;
     float4 vLayerWeights3 : TEXCOORD6;
+    float3 vWorldPos     : TEXCOORD7;
 };
 
 float4 main(PSInput input) : SV_Target
@@ -81,48 +100,55 @@ float4 main(PSInput input) : SV_Target
     // legacy `0.4 + 0.6*lambert` scalar exactly, so the OFF state is pixel-identical to before.
     float3 shade = AtmosphereLight(normal);
 
+    float3 color;
     if (uDebugMode_UvScale_Pad.x > 0.5)
     {
-        return float4(input.vVertexColor.rgb * shade, 1.0);
-    }
+        // Engine-accurate weighted sum across the cell's blend slots (up to 16 — matches the 2D
+        // per-pixel blit's layer ceiling, so the 3D blend is non-lossy). Per-vertex weights were
+        // renormalized at table-build time to sum to ~1, but interpolation across the mesh may
+        // shift the sum slightly (especially near vertices with empty weight sets) — the
+        // totalWeight rescale below restores energy conservation per pixel.
+        float4 weights[4] = {
+            input.vLayerWeights0, input.vLayerWeights1, input.vLayerWeights2, input.vLayerWeights3
+        };
 
-    // Engine-accurate weighted sum across the cell's blend slots (up to 16 — matches the 2D
-    // per-pixel blit's layer ceiling, so the 3D blend is non-lossy). Per-vertex weights were
-    // renormalized at table-build time to sum to ~1, but interpolation across the mesh may
-    // shift the sum slightly (especially near vertices with empty weight sets) — the
-    // totalWeight rescale below restores energy conservation per pixel.
-    float4 weights[4] = {
-        input.vLayerWeights0, input.vLayerWeights1, input.vLayerWeights2, input.vLayerWeights3
-    };
-
-    float3 color = 0;
-    float totalWeight = 0;
-    [unroll] for (int g = 0; g < 4; g++)
-    {
-        [unroll] for (int c = 0; c < 4; c++)
+        color = 0;
+        float totalWeight = 0;
+        [unroll] for (int g = 0; g < 4; g++)
         {
-            float wt = weights[g][c];
-            if (wt > 0)
+            [unroll] for (int c = 0; c < 4; c++)
             {
-                uint ti = uTextureIndices[g][c];
-                color += wt * textures[NonUniformResourceIndex(ti)].Sample(sDiffuse, input.vWorldUv).rgb;
-                totalWeight += wt;
+                float wt = weights[g][c];
+                if (wt > 0)
+                {
+                    uint ti = uTextureIndices[g][c];
+                    color += wt * textures[NonUniformResourceIndex(ti)].Sample(sDiffuse, input.vWorldUv).rgb;
+                    totalWeight += wt;
+                }
             }
         }
-    }
 
-    if (totalWeight > 0.001)
-    {
-        color /= totalWeight;
+        if (totalWeight > 0.001)
+        {
+            color /= totalWeight;
+        }
+        else
+        {
+            // Vertex with no slot contributions — typically corner of a cell whose every
+            // neighbor was also empty. Render as engine-default to match the 2D fallback.
+            color = textures[NonUniformResourceIndex(uTextureIndices[0].x)].Sample(sDiffuse, input.vWorldUv).rgb;
+        }
     }
     else
     {
-        // Vertex with no slot contributions — typically corner of a cell whose every
-        // neighbor was also empty. Render as engine-default to match the 2D fallback.
-        color = textures[NonUniformResourceIndex(uTextureIndices[0].x)].Sample(sDiffuse, input.vWorldUv).rgb;
+        // Terrain textures off — flat white base so VCLR / shading still read.
+        color = float3(1.0, 1.0, 1.0);
     }
 
     // VCLR is per-vertex tint Bethesda uses for art direction (sun bleach, moist edges).
-    color *= input.vVertexColor.rgb;
-    return float4(color * shade, 1.0);
+    if (uDebugMode_UvScale_Pad.z > 0.5)
+    {
+        color *= input.vVertexColor.rgb;
+    }
+    return float4(ApplyFog(color * shade, input.vWorldPos), 1.0);
 }

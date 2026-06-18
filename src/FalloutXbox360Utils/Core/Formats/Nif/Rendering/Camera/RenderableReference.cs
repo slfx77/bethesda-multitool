@@ -33,7 +33,8 @@ internal readonly record struct RenderableReference(
     uint MeshId,
     bool IsInitiallyDisabled,
     bool IsMarker,
-    bool IsImposter)
+    bool IsImposter,
+    PlacedObjectCategory Category)
 {
     private static readonly char[] PathSeparators = ['/', '\\'];
 
@@ -103,8 +104,13 @@ internal readonly record struct RenderableReference(
     ///     Builds a <see cref="RenderableReference" /> from a <see cref="PlacedReference" />.
     ///     Returns <c>null</c> for ACHR/ACRE (skinned actors — deferred to v4), refs without a
     ///     resolved model path, or refs the renderer cannot place (e.g. NaN coordinates).
+    ///     <paramref name="category" /> is the base object's <see cref="PlacedObjectCategory" />
+    ///     (resolved by the caller from the category index) so the renderer can apply per-category
+    ///     visibility filtering — e.g. activators hidden by default.
     /// </summary>
-    public static RenderableReference? TryBuild(PlacedReference placement)
+    public static RenderableReference? TryBuild(
+        PlacedReference placement,
+        PlacedObjectCategory category = PlacedObjectCategory.Unknown)
     {
         // Skip skinned actors — v3 renders static meshes only.
         if (placement.RecordType is "ACHR" or "ACRE") return null;
@@ -131,7 +137,8 @@ internal readonly record struct RenderableReference(
             MeshId: ComputeMeshId(placement.ModelPath!),
             IsInitiallyDisabled: placement.IsInitiallyDisabled,
             IsMarker: IsMarkerModelPath(placement.ModelPath),
-            IsImposter: IsImposterModelPath(placement.ModelPath));
+            IsImposter: IsImposterModelPath(placement.ModelPath),
+            Category: category);
     }
 
     /// <summary>

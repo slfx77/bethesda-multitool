@@ -413,7 +413,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "WNAM" when sub.DataLength == 4:
                     parentWorldspace = RecordParserContext.ReadFormId(subData, record.IsBigEndian);

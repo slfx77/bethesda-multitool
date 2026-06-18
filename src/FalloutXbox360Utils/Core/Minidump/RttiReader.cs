@@ -108,13 +108,21 @@ public sealed class RttiReader
     ///     resolves RTTI for each, and flags TESForm-derived classes.
     /// </summary>
     /// <param name="progress">Optional callback: (regionsScanned, totalRegions, bytesScanned).</param>
-    public List<CensusEntry> RunCensus(Action<int, int, long>? progress = null)
+    public List<CensusEntry> RunCensus(Action<int, int, long>? progress = null, bool includeAllRegions = false)
     {
-        // Phase 1: Scan all heap regions and count module-range pointer occurrences
+        // Phase 1: Scan heap regions (or ALL regions when includeAllRegions) and count module-range
+        // pointer occurrences. The default heap window [HeapBase, HeapEnd) covers FNV's game-record
+        // allocations, but some object pools (e.g. SpeedTree BSTreeModel) live outside it, so callers
+        // that need every class instance pass includeAllRegions: true.
         var vtableCounts = new Dictionary<uint, int>();
         var heapRegions = _minidumpInfo.MemoryRegions
             .Where(r =>
             {
+                if (includeAllRegions)
+                {
+                    return true;
+                }
+
                 // Convert sign-extended VA back to uint32 for range check
                 var va32 = unchecked((uint)r.VirtualAddress);
                 return va32 >= Xbox360MemoryUtils.HeapBase && va32 < Xbox360MemoryUtils.HeapEnd;

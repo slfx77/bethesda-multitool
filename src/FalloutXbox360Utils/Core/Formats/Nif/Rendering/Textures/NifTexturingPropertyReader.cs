@@ -51,17 +51,45 @@ internal static class NifTexturingPropertyReader
         sourceRef = -1;
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
-        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian))
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.IsMorrowind))
         {
             return false;
         }
 
-        if (pos + 2 + 4 + 1 > end)
+        if (nif.IsMorrowind)
+        {
+            // Morrowind NiTexturingProperty: Flags (ushort) + Apply Mode (uint) + Texture Count (uint)
+            // + Has Base Texture (32-bit bool) + Base Texture (TexDesc). The TexDesc's first field is
+            // the NiSourceTexture ref, which is all we need.
+            if (pos + 2 + 4 + 4 + 4 + 4 > end)
+            {
+                return false;
+            }
+
+            pos += 2; // Flags
+            pos += 4; // Apply Mode
+            pos += 4; // Texture Count
+            var hasBase = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian) != 0;
+            pos += 4;
+            if (!hasBase)
+            {
+                return false;
+            }
+
+            sourceRef = BinaryUtils.ReadInt32(data, pos, nif.IsBigEndian);
+            return sourceRef >= 0 && sourceRef < nif.Blocks.Count;
+        }
+
+        // After NiObjectNET, NiTexturingProperty has either Apply Mode (uint, NIF < 20.1.0.1 — Oblivion)
+        // or TexturingFlags (ushort, NIF >= 20.1.0.2 — FO3/FNV), then Texture Count (uint) + Has Base
+        // Texture (bool). HasInlineStrings (< 20.1.0.1) selects the 4-byte Apply Mode form.
+        var applyModeOrFlagsSize = nif.HasInlineStrings ? 4 : 2;
+        if (pos + applyModeOrFlagsSize + 4 + 1 > end)
         {
             return false;
         }
 
-        pos += 2; // TexturingFlags
+        pos += applyModeOrFlagsSize;
         pos += 4; // Texture Count
         var hasBaseTexture = data[pos] != 0;
         pos += 1;
@@ -74,8 +102,9 @@ internal static class NifTexturingPropertyReader
         return sourceRef >= 0 && sourceRef < nif.Blocks.Count;
     }
 
-    // NiSourceTexture: NiObjectNET header + Use External(byte) + File Name. In these NIFs File Name
-    // is a string-table index (like every other string), resolved against NifInfo.Strings.
+    // NiSourceTexture: NiObjectNET header + Use External(byte) + File Name. In FO3/FNV+ NIFs File Name
+    // is a string-table index (resolved against NifInfo.Strings); in older ones (Oblivion/Morrowind)
+    // it is an inline SizedString immediately after Use External.
     private static bool TryReadSourceTextureFileName(byte[] data, NifInfo nif, int sourceRef, out string? path)
     {
         path = null;
@@ -87,17 +116,29 @@ internal static class NifTexturingPropertyReader
 
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
-        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian))
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.IsMorrowind))
         {
             return false;
         }
 
-        if (pos + 1 + 4 > end)
+        if (pos + 1 > end)
         {
             return false;
         }
 
-        pos += 1; // Use External
+        pos += 1; // Use External (external textures store the file name as the next inline SizedString)
+
+        if (nif.HasInlineStrings)
+        {
+            path = NifBinaryCursor.ReadSizedString(data, ref pos, end, nif.IsBigEndian);
+            return !string.IsNullOrWhiteSpace(path);
+        }
+
+        if (pos + 4 > end)
+        {
+            return false;
+        }
+
         var nameIndex = BinaryUtils.ReadInt32(data, pos, nif.IsBigEndian);
         if (nameIndex < 0 || nameIndex >= nif.Strings.Count)
         {

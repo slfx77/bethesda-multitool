@@ -81,7 +81,7 @@ internal sealed class MiscRecordHandler(RecordParserContext context) : RecordHan
 
                             break;
                         case "FULL":
-                            fullName = EsmStringUtils.ReadNullTermString(subData);
+                            fullName = Context.ReadFullName(subData);
                             break;
                         case "MODL":
                             modelPath = EsmStringUtils.ReadNullTermString(subData);

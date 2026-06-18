@@ -341,7 +341,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "DATA" when sub.DataLength >= 1:
                     flags = subData[0];

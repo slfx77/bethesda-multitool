@@ -7,10 +7,11 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 
 /// <summary>
 ///     Locks the public contract of <see cref="AtmosphereState.Resolve" /> — the shared atmosphere
-///     model the lighting / sky / water shaders read. The body is a placeholder sun curve + clear-day
-///     palette (atmosphere roadmap P2a); these invariants (noon sun high + bright, night sun down +
-///     dark, lighting-off zeroes the sun, FNAM drives fog, unit sun direction, hour wraps) must hold
-///     after P2b swaps in the decompiled curve and the WTHR NAM0 color blend.
+///     model the lighting / sky / water shaders read. Grounded in the engine decompile (atmosphere P2b):
+///     the sun intensity is the daylight fraction (0 below the horizon, flat across the day), and the
+///     WTHR NAM0 bands cross-fade only within the sunrise/sunset windows and are held steady between
+///     them. These invariants (noon sun high + bright, night sun down + dark, lighting-off zeroes the
+///     sun, FNAM drives fog, unit sun direction, hour wraps) must hold.
 /// </summary>
 public sealed class AtmosphereStateTests
 {
@@ -81,6 +82,25 @@ public sealed class AtmosphereStateTests
     }
 
     [Fact]
+    public void Resolve_FogDistances_BlendDayNightByDaylightFraction()
+    {
+        // Six-float FNAM: [0]=DayNear [1]=DayFar [2]=NightNear [3]=NightFar [4]=DayPower [5]=NightPower.
+        // The engine (Sky::UpdateFog) blends day↔night by the daylight fraction — full day at noon,
+        // full night at midnight (CleanTiming sunrise 5..7, sunset 17..19).
+        var w = new WeatherRecord { FogDistances = new[] { 1000f, 5000f, 200f, 2000f, 1f, 3f } };
+
+        var noon = AtmosphereState.Resolve(12f, w, CleanTiming);
+        Assert.Equal(1000f, noon.FogNear, 1);
+        Assert.Equal(5000f, noon.FogFar, 1);
+        Assert.Equal(1f, noon.FogPower, 2);
+
+        var midnight = AtmosphereState.Resolve(0f, w, CleanTiming);
+        Assert.Equal(200f, midnight.FogNear, 1);
+        Assert.Equal(2000f, midnight.FogFar, 1);
+        Assert.Equal(3f, midnight.FogPower, 2);
+    }
+
+    [Fact]
     public void Resolve_HourWrapsModulo24()
     {
         var noon = AtmosphereState.Resolve(12f);
@@ -93,10 +113,20 @@ public sealed class AtmosphereStateTests
     [Fact]
     public void Resolve_DawnIsDimmerThanNoon()
     {
-        var dawn = AtmosphereState.Resolve(7f);
+        // 06:00 is the midpoint of the default sunrise window, where the engine daylight fraction is
+        // half. The engine ramps directional intensity across that window, so dawn is dimmer than day.
+        var dawn = AtmosphereState.Resolve(6f);
         var noon = AtmosphereState.Resolve(12f);
 
         Assert.True(dawn.SunIntensity < noon.SunIntensity, "dawn sun should be lower/dimmer than noon");
+    }
+
+    [Fact]
+    public void Resolve_DaylightFraction_ZeroAtNight_FullMidday()
+    {
+        // Engine daylight fraction (Sun::Update): 0 below the horizon, 1 through the day.
+        Assert.Equal(0f, AtmosphereState.Resolve(2f).SunIntensity);
+        Assert.Equal(1f, AtmosphereState.Resolve(12f).SunIntensity, 3);
     }
 
     // --- P4: WTHR NAM0 time-band color blend ----------------------------------------------------
@@ -161,6 +191,39 @@ public sealed class AtmosphereStateTests
         Assert.Equal(18f, t.SunsetBeginHour, 3);
         Assert.Equal(19f, t.SunsetEndHour, 3);
         Assert.Equal(AtmosphereState.ClimateTiming.Default, AtmosphereState.ClimateTiming.FromClimateData(null));
+    }
+
+    // --- P2b: windowed band blend (grounded in Sky::FillColorBlend) -------------------------------
+    // The model cross-fades only within the sunrise/sunset windows and holds bands steady between them
+    // (Day held solid through midday is a deliberate simplification of the engine's noon-pivot daytime
+    // cross-fade — see AtmosphereState.SampleBand). These pin that contract: the earlier continuous-lerp
+    // model would instead return a partial sunrise→day blend at 10:00.
+
+    [Fact]
+    public void Resolve_MidMorning_HoldsSolidDayBand()
+    {
+        // 10:00 is past sunriseEnd (7) and before sunsetBegin (17) → solid Day, not a sunrise→day blend.
+        var w = WeatherWithAmbient(new(10, 12, 14, 255), new(200, 210, 220, 255), new(50, 40, 30, 255), new(5, 5, 8, 255));
+        var a = AtmosphereState.Resolve(10f, w, CleanTiming);
+        AssertColor(200, 210, 220, a.AmbientColor);
+    }
+
+    [Fact]
+    public void Resolve_LateEvening_HoldsSolidNightBand()
+    {
+        // 22:00 is past sunsetEnd (19) → solid Night.
+        var w = WeatherWithAmbient(new(10, 12, 14, 255), new(200, 210, 220, 255), new(50, 40, 30, 255), new(5, 5, 8, 255));
+        var a = AtmosphereState.Resolve(22f, w, CleanTiming);
+        AssertColor(5, 5, 8, a.AmbientColor);
+    }
+
+    [Fact]
+    public void Resolve_SunsetMidpoint_PicksWeatherSunsetBand()
+    {
+        // 18:00 is the sunset-window midpoint for CleanTiming → exactly the Sunset band.
+        var w = WeatherWithAmbient(new(10, 12, 14, 255), new(200, 210, 220, 255), new(50, 40, 30, 255), new(5, 5, 8, 255));
+        var a = AtmosphereState.Resolve(18f, w, CleanTiming);
+        AssertColor(50, 40, 30, a.AmbientColor);
     }
 
     private static WeatherRecord WeatherWithAmbient(WeatherRgba sunrise, WeatherRgba day, WeatherRgba sunset, WeatherRgba night)

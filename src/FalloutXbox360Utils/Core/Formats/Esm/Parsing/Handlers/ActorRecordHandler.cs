@@ -217,7 +217,7 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "DATA" when sub.DataLength >= 4:
                     // FACT DATA: TESFaction.flags is a 4-byte uint32 (see SubrecordActorSchemas
@@ -429,10 +429,10 @@ internal sealed class ActorRecordHandler(RecordParserContext context) : RecordHa
                     editorId = EsmStringUtils.ReadNullTermString(subData);
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "DESC":
-                    description = EsmStringUtils.ReadNullTermString(subData);
+                    description = Context.ReadDescription(subData);
                     break;
                 case "DATA" when sub.DataLength >= 36:
                 {

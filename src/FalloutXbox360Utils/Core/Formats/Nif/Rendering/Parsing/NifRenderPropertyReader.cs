@@ -30,7 +30,7 @@ internal static class NifRenderPropertyReader
 
             var pos = propBlock.DataOffset;
             var end = propBlock.DataOffset + propBlock.Size;
-            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian))
+            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings))
             {
                 return false;
             }
@@ -84,7 +84,7 @@ internal static class NifRenderPropertyReader
 
             var pos = propBlock.DataOffset;
             var end = propBlock.DataOffset + propBlock.Size;
-            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian))
+            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings))
             {
                 return defaultInfo;
             }
@@ -160,7 +160,7 @@ internal static class NifRenderPropertyReader
 
             var pos = propBlock.DataOffset;
             var end = pos + propBlock.Size;
-            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian))
+            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings))
             {
                 return defaultInfo;
             }
@@ -240,7 +240,8 @@ internal static class NifRenderPropertyReader
 
             // Read controller ref from NiObjectNET header
             var controllerRef = NifBinaryCursor.ReadNiObjectNETControllerRef(
-                data, propBlock.DataOffset, propBlock.DataOffset + propBlock.Size, nif.IsBigEndian);
+                data, propBlock.DataOffset, propBlock.DataOffset + propBlock.Size, nif.IsBigEndian,
+                nif.HasInlineStrings);
             if (controllerRef < 0 || controllerRef >= nif.Blocks.Count)
                 continue;
 

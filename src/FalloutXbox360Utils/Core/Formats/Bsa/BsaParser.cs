@@ -32,6 +32,14 @@ public static class BsaParser
     {
         using var reader = new BinaryReader(stream, Encoding.ASCII, true);
 
+        // The legacy Morrowind format has no "BSA\0" magic — its first dword is the version 0x100.
+        var firstWord = reader.ReadUInt32();
+        stream.Seek(0, SeekOrigin.Begin);
+        if (firstWord == MorrowindBsaParser.MorrowindVersion)
+        {
+            return MorrowindBsaParser.Parse(reader, filePath);
+        }
+
         var header = ReadHeaderCore(reader);
         var archiveFlags = header.ArchiveFlags;
         var folderCount = header.FolderCount;
@@ -174,6 +182,15 @@ public static class BsaParser
         {
             using var stream = File.OpenRead(filePath);
             using var reader = new BinaryReader(stream, Encoding.ASCII, true);
+            var firstWord = reader.ReadUInt32();
+            stream.Seek(0, SeekOrigin.Begin);
+            if (firstWord == MorrowindBsaParser.MorrowindVersion)
+            {
+                // Full parse is needed to populate the Morrowind header (folder/file counts come from
+                // the body, not a fixed header), but it's cheap relative to the rest of the pipeline.
+                return MorrowindBsaParser.Parse(reader, filePath).Header;
+            }
+
             return ReadHeaderCore(reader);
         }
         catch (Exception ex) when (
@@ -197,7 +214,7 @@ public static class BsaParser
                 return false;
             }
 
-            return magic.SequenceEqual(BsaMagic);
+            return IsBsaFile(magic);
         }
         catch
         {
@@ -206,7 +223,8 @@ public static class BsaParser
     }
 
     /// <summary>
-    ///     Check if a file is a valid BSA archive from data.
+    ///     Check if a file is a valid BSA archive from data. Accepts the "BSA\0" magic (v103-105) and the
+    ///     legacy Morrowind format (first dword = version 0x100, no magic string).
     /// </summary>
     public static bool IsBsaFile(ReadOnlySpan<byte> data)
     {
@@ -215,7 +233,12 @@ public static class BsaParser
             return false;
         }
 
-        return data[..4].SequenceEqual(BsaMagic);
+        if (data[..4].SequenceEqual(BsaMagic))
+        {
+            return true;
+        }
+
+        return System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(data) == MorrowindBsaParser.MorrowindVersion;
     }
 
     private static string ReadNullTerminatedString(BinaryReader reader)

@@ -1127,17 +1127,31 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
     }
 
     [Fact]
-    public void PreserveSentinelOrNormalize_keeps_sentinel_normalizes_others()
+    public void PreserveSentinelOrNormalize_collapses_nonreportable_water_to_sentinel()
     {
-        // The Bethesda "no water" marker survives untouched so renderers can detect it.
+        // The canonical Bethesda "no water" marker (FLT_MAX) survives so renderers detect it.
         Assert.Equal(float.MaxValue, WorldHeightNormalizer.PreserveSentinelOrNormalize(float.MaxValue));
-        // Other out-of-range values still get coerced to 0 (existing behavior).
-        Assert.Equal(0f, WorldHeightNormalizer.PreserveSentinelOrNormalize(150_000f));
-        Assert.Equal(0f, WorldHeightNormalizer.PreserveSentinelOrNormalize(float.NaN));
-        // In-range values pass through unchanged.
+
+        // Any OTHER non-reportable value — out-of-range, NaN, or Skyrim's additional
+        // "no explicit height" markers — collapses to the SAME canonical sentinel rather
+        // than clamping to 0, so the water resolver falls back to the worldspace default
+        // instead of flooding the cell at Z=0. Regression: Skyrim Tamriel coast cells
+        // (-20,6 etc.) store -2147483648; cell (-5,4) stores ~4.29e9 (bits 0x4F7FFFC9).
+        Assert.True(WorldHeightNormalizer.IsNoWaterSentinel(
+            WorldHeightNormalizer.PreserveSentinelOrNormalize(150_000f)));
+        Assert.True(WorldHeightNormalizer.IsNoWaterSentinel(
+            WorldHeightNormalizer.PreserveSentinelOrNormalize(float.NaN)));
+        Assert.True(WorldHeightNormalizer.IsNoWaterSentinel(
+            WorldHeightNormalizer.PreserveSentinelOrNormalize(-2147483648f)));
+        Assert.True(WorldHeightNormalizer.IsNoWaterSentinel(
+            WorldHeightNormalizer.PreserveSentinelOrNormalize(BitConverter.UInt32BitsToSingle(0x4F7FFFC9u))));
+
+        // In-range values pass through unchanged (including a genuine 0-height water plane).
         Assert.Equal(-4096f, WorldHeightNormalizer.PreserveSentinelOrNormalize(-4096f));
         Assert.Equal(42.5f, WorldHeightNormalizer.PreserveSentinelOrNormalize(42.5f));
-        // Nullable overload.
+        Assert.Equal(0f, WorldHeightNormalizer.PreserveSentinelOrNormalize(0f));
+
+        // Nullable overload: no XCLW present stays null (distinct from the sentinel).
         Assert.Null(WorldHeightNormalizer.PreserveSentinelOrNormalize(null));
         Assert.Equal(float.MaxValue, WorldHeightNormalizer.PreserveSentinelOrNormalize((float?)float.MaxValue));
     }

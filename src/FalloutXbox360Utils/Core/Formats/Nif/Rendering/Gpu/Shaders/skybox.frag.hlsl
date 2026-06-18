@@ -1,11 +1,26 @@
-// v3 Phase 5 skybox fragment shader. A vertical gradient from the horizon color up to the sky-top
-// color (both from the shared b3 atmosphere CB, so they track the time-of-day slider + weather) plus
-// a procedural sun disc + soft glare at the atmosphere sun direction. +Z is up (matches the
-// AtmosphereState sun frame). PLACEHOLDER gradient/disc model — P2b/P5b grounds it against the
-// decompiled Sky/Atmosphere shader.
+// v3 skybox fragment shader. A vertical gradient from the horizon color up to the sky-top color (both
+// from the shared b3 atmosphere CB, so they track the time-of-day slider + weather), then the real
+// in-game CLOUD and STAR textures projected onto the sky and composited over the gradient. +Z is up
+// (matches the AtmosphereState sun frame). The sun/moon are drawn separately as textured billboards
+// (SkyBillboardRenderer12) after this pass — the old procedural sun disc was removed to avoid a double
+// sun. The cloud/star textures stand in for the engine's sky-dome NIF layers (a faithful dome-NIF port
+// is a future upgrade); the projection here treats them as an overhead layer at infinity.
 
-// Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants (7×float4), bound
-// once per frame for the whole scene. Layout is byte-identical to the terrain/reference/water copies.
+Texture2D    textures[] : register(t0, space1);
+SamplerState sSky       : register(s0);
+
+// Cloud/star params (this renderer's own b0 CB; uInvViewProj is consumed by the vertex shader).
+cbuffer SkyParams : register(b0)
+{
+    float4x4 uInvViewProj;
+    float4 uCloudTintOpacity;  // rgb = cloud tint, a = cloud opacity
+    float4 uStarTintFade;      // rgb = star tint, a = star fade (night)
+    float4 uCloudScroll;       // xy = cloud scroll offset, z = cloud scale, w = star scale
+    uint4  uSkyTexIndices;     // x = cloud tex index, y = star tex index (0xFFFFFFFF = none)
+};
+
+// Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants. Layout is
+// byte-identical to the terrain/reference/water copies (the skybox reads only the first 7 float4).
 cbuffer Atmosphere : register(b3)
 {
     float4 uSunDirIntensity;    // xyz = sun world dir (toward sun), w = intensity
@@ -31,17 +46,30 @@ float4 main(PSInput input) : SV_Target
     // keeps the horizon color (no separate ground plane in this cut).
     float3 sky = lerp(uSkyHorizon.rgb, uSkyTopSkyEnabled.rgb, saturate(ray.z));
 
-    // Procedural sun disc + glare, only when the sun is above the horizon (sunDir.z > 0).
-    float3 sunDir = uSunDirIntensity.xyz;
-    if (sunDir.z > 0.0)
+    // Clouds + stars are projected onto an overhead plane via the view ray (sky-at-infinity, so they
+    // rotate with the camera but don't parallax with position). Faded out toward/below the horizon,
+    // where the planar projection would otherwise smear to infinity.
+    float horizon = saturate((ray.z - 0.02) / 0.20);
+    if (horizon > 0.0)
     {
-        float sunDot = saturate(dot(ray, normalize(sunDir)));
-        float disc = smoothstep(0.9995, 0.9999, sunDot); // sharp disc (~1° radius)
-        float glare = pow(sunDot, 256.0) * 0.35;         // soft halo
-        // Sun color from the atmosphere; floor it so the disc stays visible even with lighting off
-        // (the skybox toggle is independent of the lighting toggle).
-        float3 sunColor = max(uSunColorLighting.rgb, float3(0.08, 0.08, 0.08));
-        sky += (disc + glare) * sunColor;
+        float2 planar = ray.xy / max(ray.z, 0.08);
+
+        // Stars FIRST (behind clouds): additive, night-faded.
+        if (uSkyTexIndices.y != 0xFFFFFFFFu && uStarTintFade.a > 0.001)
+        {
+            float2 starUv = (planar * uCloudScroll.w) + 0.5;
+            float3 star = textures[NonUniformResourceIndex(uSkyTexIndices.y)].Sample(sSky, starUv).rgb;
+            sky += star * uStarTintFade.rgb * (uStarTintFade.a * horizon);
+        }
+
+        // Clouds OVER: alpha-blended, scrolled, tinted by the time-of-day cloud color.
+        if (uSkyTexIndices.x != 0xFFFFFFFFu && uCloudTintOpacity.a > 0.001)
+        {
+            float2 cloudUv = (planar * uCloudScroll.z) + uCloudScroll.xy;
+            float4 cloud = textures[NonUniformResourceIndex(uSkyTexIndices.x)].Sample(sSky, cloudUv);
+            float a = saturate(cloud.a * uCloudTintOpacity.a * horizon);
+            sky = lerp(sky, cloud.rgb * uCloudTintOpacity.rgb, a);
+        }
     }
 
     return float4(sky, 1.0);

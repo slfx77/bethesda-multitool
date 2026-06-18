@@ -68,6 +68,20 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainTextureResolver12? _textureResolver12;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12? _water;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyboxRenderer12? _sky;
+    // Textured sky billboards (sun disc + glare, moon). Textures resolved per-climate via the terrain
+    // texture cache; uint.MaxValue = SkyBillboardRenderer12.NoTexture (object skipped).
+    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyBillboardRenderer12? _skyBillboards;
+    private uint _sunDiscTexIndex = uint.MaxValue;
+    private uint _sunGlareTexIndex = uint.MaxValue;
+    private uint _moonTexIndex = uint.MaxValue;
+    private uint _cloudTexIndex = uint.MaxValue;
+    private uint _starTexIndex = uint.MaxValue;
+    private uint? _skyTexClimateKey; // climate FormId the sky textures were resolved for (null = unresolved)
+    private const string DefaultSunTexturePath = @"textures\sky\sun.dds";
+    private const string DefaultSunGlareTexturePath = @"textures\sky\sunglare.dds";
+    private const string DefaultMoonTexturePath = @"textures\sky\masser_full.dds";
+    private const string DefaultCloudTexturePath = @"textures\sky\nvskyclouds.dds";
+    private const string DefaultStarTexturePath = @"textures\sky\skystars.dds";
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.NavMeshRenderer12? _navMesh;
     // v3 Phase 3 placed-object pipeline. Parallel to the terrain pipeline; owns separate
     // CPU NIF texture metadata and D3D12 GPU texture payload resolvers.
@@ -96,6 +110,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // stack cycles to the next object behind the current one (GECK click-through).
     private PlacedReference? _selectedReference;
     private readonly List<PickHit> _pickHitScratch = new();
+    // Broadphase-sphere hits whose tight OBND test missed — used only when no OBND hit lies under the
+    // ray, so meshes that overspill a too-tight base-record OBND (SpeedTree canopies) stay clickable.
+    private readonly List<PickHit> _pickSphereFallbackScratch = new();
     private bool _renderLoopAttached;
     // v3 Pass 4 Step 3 — D3D12-only backend. The renderer interfaces (`I*Renderer`) plug
     // straight into the D3D12 concrete impls; no D3D11 fallback fields remain.
@@ -130,6 +147,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // combo. _selectedInterior is the interior currently loaded into the 3D scene (null = exterior
     // mode); _allInteriorItems is the unfiltered browser source the search/filter UI narrows.
     private CellRecord? _selectedInterior;
+    // Set by NavigateToCell when a cross-worldspace jump is requested: the async
+    // WorldspaceComboBox_SelectionChanged handler frames on this cell instead of the worldspace
+    // centroid once the grid rebuild completes (avoids a yield race that would clobber the camera).
+    private CellRecord? _pendingNavigateCell;
     private List<WorldMapControl.CellListItem> _allInteriorItems = new();
     private Dictionary<(int gx, int gy), CellRecord>? _cellGridLookup;
     private WorldSpatialIndex? _spatialIndex;
@@ -139,6 +160,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private long _profileFrameIndex;
     private long _lastHudUpdateTimestamp;
     private string? _lastHudText;
+    // User toggled the diagnostics overlay off (HudToggleButton). UpdateHud/HideStatus honor this
+    // so a HUD refresh or a status-overlay dismissal doesn't force the panel back on.
+    private bool _hudHidden;
     private int _lastGcGen0Collections = GC.CollectionCount(0);
     private int _lastGcGen1Collections = GC.CollectionCount(1);
     private int _lastGcGen2Collections = GC.CollectionCount(2);
@@ -146,24 +170,43 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // Layer visibility — toggled by D1/D2/D3 keys. D4 toggles textured-vs-VCLR-only.
     // D5 toggles placed-object (REFR) rendering (v3 Phase 3).
     // The cell-boundary grid is a debug overlay → default OFF (must match CellsCheckBox.IsChecked in XAML).
+    // True only during InitializeComponent. The toolbar toggles set IsChecked in XAML, which fires
+    // their Checked/Unchecked handlers DURING load (now that they live in flyouts that realize early);
+    // the handlers read x:Name fields / touch renderers that aren't ready yet, so they no-op until the
+    // constructor clears this. Backing _show* fields already default to the XAML-checked values.
+    private bool _initializing = true;
     private bool _showWireframe;
     private bool _showTerrain = true;
     private bool _showWater = true;
-    private bool _vclrOnlyMode;
+    private bool _showTerrainTextures = true;
+    private bool _showVertexColors = true;
     private bool _showReferences = true;
     private bool _showNavMesh;
     private bool _showDisabled;
+    // Engine/editor markers (XMarker, map/travel/teleport markers). Hidden by default to match the
+    // game; the env knob seeds the initial value, the toolbar toggle flips it at runtime (persists
+    // across ESM reloads like _showDisabled).
+    private bool _showMarkers = FalloutXbox360Utils.Core.EnvironmentVariables.IsEnabled(
+        FalloutXbox360Utils.Core.EnvironmentVariables.Viewer.ShowMarkers);
+    // Placed-object categories hidden in the 3D view. Activators are off by default (the engine shows
+    // them as invisible interaction volumes, not meshes); toggled via the Visibility submenu. Applied
+    // to the reference renderer on pipeline init and on every toggle.
+    private readonly HashSet<PlacedObjectCategory> _hiddenCategories = [PlacedObjectCategory.Activator];
     // Atmosphere lighting (P3) — directional sun + ambient via the shared b3 CB. On by default; when
     // off, the shaders fall back to the legacy flat shade (pixel-identical to the pre-atmosphere look).
     private bool _showLighting = true;
     // Skybox (P5) — horizon→top gradient + sun disc drawn first, depth off. On by default; off ⇒ the
     // flat dark-blue clear shows. Also gates whether water mirrors the atmosphere sky vs its DNAM color.
     private bool _showSky = true;
+    // Distance fog (weather-driven) — terrain/reference/water recede toward the WTHR fog color over the
+    // FNAM near→far range. On by default; off ⇒ no fog (so distant cells stay crisp for inspection).
+    private bool _showFog = true;
     private float _renderDistance = DefaultRenderDistance;
 
     public WorldView3DControl()
     {
         InitializeComponent();
+        _initializing = false; // XAML load done — toolbar toggle handlers may now run for real.
         _controller = new FlythroughCameraController(_camera);
         _camera.FarPlane = _renderDistance;
         Loaded += OnLoaded;
@@ -192,6 +235,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     internal void LoadData(WorldViewData data)
     {
         _data = data;
+        // Make the base-object category available to the placement bake before the renderer pulls
+        // its first cell — drives the per-category visibility filter (activators off by default).
+        data.RenderCache.CategoryIndex = data.CategoryIndex;
         _stressBookmarkApplied = false;
 
         // Tear down any prior pipelines (a second LoadData = switching ESMs) so the texture
@@ -202,6 +248,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         DisposeReferencePipeline();
         _terrain?.Dispose(); _terrain = null;
         _textureResolver12?.Dispose(); _textureResolver12 = null;
+        // The sky textures (sun/moon/cloud/star) are bindless indices INTO this resolver's heap region;
+        // recreating the resolver invalidates them, so force a re-resolve even if the climate key is
+        // unchanged, and blank the indices so nothing samples a stale slot until the re-resolve lands.
+        _skyTexClimateKey = null;
+        _sunDiscTexIndex = _sunGlareTexIndex = _moonTexIndex = _cloudTexIndex = _starTexIndex = uint.MaxValue;
 
         if (_gpu12 is not null)
         {
@@ -227,7 +278,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                     _gpu12, _commandRecorder12!, _ringBuffer12!, _rootSignature12!,
                     _cbvSrvUavHeap12!, _deletionQueue12!,
                     _textureResolver12);
-                terrain12.SetVclrOnlyMode(_vclrOnlyMode);
+                terrain12.SetDebugModes(_showTerrainTextures, _showVertexColors);
                 terrain12.DetailedProfilingEnabled = _profileLogging;
                 _terrain = terrain12;
             }
@@ -291,6 +342,61 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _selectedReference = obj;
         _pickHitScratch.Clear();
         UpdateHighlightFromSelection();
+    }
+
+    /// <summary>
+    ///     Navigates the 3D scene to a specific cell — the 3D counterpart of
+    ///     <see cref="WorldMapControl.NavigateToCell" />, used when a door-destination / linked-cell
+    ///     link is clicked while the 3D view is the active one. Interiors load as a single-cell scene;
+    ///     exteriors select the parent worldspace (when it isn't already shown) and frame the camera on
+    ///     the cell's grid position.
+    /// </summary>
+    internal void NavigateToCell(CellRecord cell)
+    {
+        if (_data is null) return;
+
+        // Interiors have no grid coords — same single-cell load path as a cell-browser pick.
+        if (cell.GridX is not int || cell.GridY is not int)
+        {
+            _pendingNavigateCell = null;
+            _selectedInterior = cell;
+            _suppressWorldspaceSelectionEvent = true;
+            WorldspaceComboBox.SelectedIndex = -1;
+            _suppressWorldspaceSelectionEvent = false;
+            HideInteriorBrowser();
+            TryBuildCellGrid();
+            ResetCameraToInteriorBounds(cell);
+            RefreshAtmosphereForCurrentWorldspace();
+            return;
+        }
+
+        // Exterior: switch to the parent worldspace if we're not already showing it (or we're in
+        // interior mode). The async SelectionChanged handler rebuilds the grid and would reset the
+        // camera to the worldspace centroid, so stash the target for it to re-frame on instead.
+        var wsIndex = cell.WorldspaceFormId is uint wsFormId
+            ? _data.Worldspaces.FindIndex(ws => ws.FormId == wsFormId)
+            : -1;
+        if (wsIndex >= 0 && (wsIndex != WorldspaceComboBox.SelectedIndex || _selectedInterior is not null))
+        {
+            _pendingNavigateCell = cell;
+            WorldspaceComboBox.SelectedIndex = wsIndex;
+            return;
+        }
+
+        // Already showing the right exterior worldspace — just move the camera.
+        CenterCameraOnCell(cell);
+    }
+
+    /// <summary>Frames the camera on a single exterior cell's grid position, reusing the same
+    /// pitched-down posture as <see cref="ResetCameraToDataCentroid" />.</summary>
+    private void CenterCameraOnCell(CellRecord cell)
+    {
+        if (cell.GridX is not int gx || cell.GridY is not int gy) return;
+        var worldX = (gx + 0.5f) * WorldGridConstants.CellSize;
+        var worldY = (gy + 0.5f) * WorldGridConstants.CellSize;
+        _camera.Position = new Vector3(worldX, worldY - 8192f, 32768f);
+        _camera.Yaw = 0f;
+        _camera.Pitch = -MathF.PI / 6f;
     }
 
     // Lifecycle -----------------------------------------------------------------------------
@@ -529,19 +635,22 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 // Auto-size the resident-mesh cap to each worldspace's working set UNLESS the capacity
                 // knob is explicitly set (then honor the pinned value — used by eviction stress gates).
                 autoSizeMeshCapacity: FalloutXbox360Utils.Core.EnvironmentVariables.Get(
-                    FalloutXbox360Utils.Core.EnvironmentVariables.Viewer.ReferenceMeshCapacity) is null);
+                    FalloutXbox360Utils.Core.EnvironmentVariables.Viewer.ReferenceMeshCapacity) is null,
+                // Data-driven SpeedTree sizing: each .spt tree is scaled to its TREE-record OBND height.
+                speedTreeHeights: _data?.SpeedTreeHeights);
             _references = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12,
                 _cbvSrvUavHeap12, _referenceMeshCache12)
             {
                 DetailedProfilingEnabled = _profileLogging,
                 ShowInitiallyDisabled = _showDisabled, // persist the toggle across ESM reloads
-                // Markers/imposters are hidden by default to match the game; opt back in via env knobs.
-                ShowMarkers = FalloutXbox360Utils.Core.EnvironmentVariables.IsEnabled(
-                    FalloutXbox360Utils.Core.EnvironmentVariables.Viewer.ShowMarkers),
+                // Markers/imposters are hidden by default to match the game; markers are also
+                // toggleable from the toolbar (_showMarkers persists across reloads).
+                ShowMarkers = _showMarkers,
                 ShowImposters = FalloutXbox360Utils.Core.EnvironmentVariables.IsEnabled(
                     FalloutXbox360Utils.Core.EnvironmentVariables.Viewer.ShowImposters),
             };
+            _references.SetHiddenCategories(_hiddenCategories);
             Log.Info("WorldView3DControl: reference pipeline initialised ({0} meshes BSA(s), {1} textures BSA(s)).",
                 meshBsas.Length, textureBsas.Length);
         }
@@ -606,7 +715,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     /// <inheritdoc />
     async Task<TopDownRender?> ITopDownSceneRenderer.RenderTopDownAsync(
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
-        int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId, CancellationToken ct)
+        int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId,
+        IReadOnlyCollection<PlacedObjectCategory> hiddenCategories, CancellationToken ct)
     {
         if (!CanRenderTopDownCore) return null;
         if (worldMaxX <= worldMinX || worldMaxY <= worldMinY) return null;
@@ -666,6 +776,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         try
         {
             _references.ShowInitiallyDisabled = showDisabled;
+            // Apply the 2D map's category filter for this overlay render so the rendered meshes match
+            // the map's legend toggles (restored to the 3D view's own set in the finally block).
+            _references.SetHiddenCategories(hiddenCategories);
             // The overlay is on-demand, not a 60fps loop, so lift the live renderers' per-frame
             // streaming budget: a single render starts every visible decode (CPU-saturating
             // concurrency) and uploads everything that has decoded. Combined with the caller's
@@ -688,8 +801,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 cmd.SetDescriptorHeaps(1, new[] { _cbvSrvUavHeap12.Heap });
                 cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
                 // Bind the atmosphere CB here too so the references the overlay draws are lit
-                // consistently with the live view (reference.frag reads b3 — P3).
-                BindAtmosphereConstants(cmd, recorder.FrameIndex);
+                // consistently with the live view (reference.frag reads b3 — P3). Fog OFF: the overlay
+                // is an orthographic top-down capture, where distance-from-camera fog is meaningless.
+                BindAtmosphereConstants(cmd, recorder.FrameIndex, enableFog: false);
 
                 target.Bind(cmd);
                 _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs
@@ -737,6 +851,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         finally
         {
             _references.ShowInitiallyDisabled = prevShowDisabled;
+            // Restore the 3D view's own category filter (the authoritative live-view set).
+            _references.SetHiddenCategories(_hiddenCategories);
             _references.StreamingThrottled = prevRefThrottled;
             _terrain.StreamingThrottled = prevTerrainThrottled;
         }
@@ -993,6 +1109,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _water = null;
         _sky?.Dispose();
         _sky = null;
+        _skyBillboards?.Dispose();
+        _skyBillboards = null;
         _terrain?.Dispose();
         _terrain = null;
         _textureResolver12?.Dispose();
@@ -1015,7 +1133,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // so guard with a "first press" set.
         if (e.Key is VirtualKey.Number1 or VirtualKey.Number2 or VirtualKey.Number3
             or VirtualKey.Number4 or VirtualKey.Number5 or VirtualKey.Number6 or VirtualKey.Number7
-            or VirtualKey.Number8 or VirtualKey.Number9
+            or VirtualKey.Number8 or VirtualKey.Number9 or VirtualKey.Number0
             or VirtualKey.F or VirtualKey.PageUp or VirtualKey.PageDown)
         {
             if (_toggleKeysDown.Add(e.Key))
@@ -1025,12 +1143,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 if (e.Key == VirtualKey.Number1) CellsCheckBox.IsChecked = !_showWireframe;
                 else if (e.Key == VirtualKey.Number2) TerrainToggle.IsChecked = !_showTerrain;
                 else if (e.Key == VirtualKey.Number3) WaterCheckBox.IsChecked = !_showWater;
-                else if (e.Key == VirtualKey.Number4) VclrToggle.IsChecked = !_vclrOnlyMode;
+                else if (e.Key == VirtualKey.Number4) VertexColorsToggle.IsChecked = !_showVertexColors;
                 else if (e.Key == VirtualKey.Number5) RefsToggle.IsChecked = !_showReferences;
                 else if (e.Key == VirtualKey.Number6) SetShowNavMesh(!_showNavMesh);
                 else if (e.Key == VirtualKey.Number7) SetShowDisabled(!_showDisabled);
-                else if (e.Key == VirtualKey.Number8) LightingToggle.IsChecked = !_showLighting;
+                else if (e.Key == VirtualKey.Number8) LightingToggle.IsOn = !_showLighting;
                 else if (e.Key == VirtualKey.Number9) SkyboxToggle.IsChecked = !_showSky;
+                else if (e.Key == VirtualKey.Number0) FogToggle.IsOn = !_showFog;
                 else if (e.Key == VirtualKey.F)
                     _controller.Mode = _controller.Mode == CameraMode.Walk ? CameraMode.Fly : CameraMode.Walk;
                 else if (e.Key == VirtualKey.PageUp)
@@ -1144,6 +1263,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // 3D-9 click-through: collect ALL hits along the ray (same filters as the renderer so the
         // pickable set matches the visible set), sorted nearest-first.
         _pickHitScratch.Clear();
+        _pickSphereFallbackScratch.Clear();
         foreach (var spatialCell in _pickCellScratch)
         {
             foreach (var placement in spatialCell.Cell.PlacedObjects)
@@ -1154,13 +1274,36 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 // Broadphase: cheap bounding-sphere reject. Narrowphase: ray vs the OBND-tight
                 // oriented box — the exact box the selection highlight draws — so the pick lands on
                 // the clicked mesh instead of the near edge of an oversized bounding sphere.
-                if (!RaySphereHit(nearWorld, rayDir, r.BoundsCenter, r.BoundsRadius, out var t)) continue;
-                if (placement.Bounds is { } b && !RayObbHit(nearWorld, rayDir, b, r.WorldMatrix, out t)) continue;
-                _pickHitScratch.Add(new PickHit(placement, placement.FormId, t));
+                if (!RaySphereHit(nearWorld, rayDir, r.BoundsCenter, r.BoundsRadius, out var sphereT)) continue;
+                if (placement.Bounds is { } b)
+                {
+                    if (RayObbHit(nearWorld, rayDir, b, r.WorldMatrix, out var obbT))
+                    {
+                        _pickHitScratch.Add(new PickHit(placement, placement.FormId, obbT));
+                    }
+                    else
+                    {
+                        // OBND missed but the broadphase sphere hit — some meshes' visible geometry
+                        // overspills a too-tight base-record OBND (notably SpeedTree canopies), making
+                        // them "impossible to click" under an OBB-only gate. Keep as a fallback.
+                        _pickSphereFallbackScratch.Add(new PickHit(placement, placement.FormId, sphereT));
+                    }
+                }
+                else
+                {
+                    // No OBND at all — the broadphase sphere is the only available signal.
+                    _pickHitScratch.Add(new PickHit(placement, placement.FormId, sphereT));
+                }
             }
         }
 
-        if (_pickHitScratch.Count == 0) return; // click on empty space → keep the current selection
+        // Prefer tight OBND hits; fall back to broadphase-sphere hits only when nothing tighter lies
+        // under the ray — everyday picking keeps its precision, but overspilling meshes still select.
+        if (_pickHitScratch.Count == 0)
+        {
+            if (_pickSphereFallbackScratch.Count == 0) return; // empty space → keep current selection
+            _pickHitScratch.AddRange(_pickSphereFallbackScratch);
+        }
         _pickHitScratch.Sort(static (a, b) => a.T.CompareTo(b.T));
 
         // If the current selection is still under this ray, advance to the next hit behind it (wrapping
@@ -1337,21 +1480,26 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // bound for the whole scene. A 112-byte once-per-frame upload off the per-frame ring (always the
     // first allocation after ResetFrame, so it can't overflow). Flags: lighting on by default (P3),
     // sky/fog off until their phases enable the shader paths.
-    private void BindAtmosphereConstants(Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex)
+    // enableFog is forced off for the orthographic top-down overlay capture: distance-from-camera fog
+    // is meaningless there (it would tint the 2D map by the overhead camera's height). The live
+    // perspective path leaves it true so the weather fog shows.
+    private void BindAtmosphereConstants(Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex, bool enableFog = true)
     {
         var resolved = AtmosphereState.Resolve(
             _gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: _showLighting);
         var constants = AtmosphereConstants.From(
-            resolved, _gameHour, lightingEnabled: _showLighting ? 1f : 0f,
-            skyEnabled: _showSky ? 1f : 0f, fogEnabled: 0f, time: 0f);
+            resolved, _gameHour, _camera.Position, lightingEnabled: _showLighting ? 1f : 0f,
+            skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f, time: 0f);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
     }
 
-    // CPU mirror of the b3 `cbuffer Atmosphere` the lighting/sky/water shaders declare in P3+. 7 float4
-    // = 112 bytes (CB-aligned by the ring buffer). When a flag is 0 the shader falls back to its
+    // CPU mirror of the b3 `cbuffer Atmosphere` the lighting/sky/water shaders declare in P3+. 8 float4
+    // = 128 bytes (CB-aligned by the ring buffer). When a flag is 0 the shader falls back to its
     // pre-atmosphere behavior, so the toggles default the scene to today's look until turned on.
+    // (CameraPosFogPower is the 8th float4; shaders that don't apply fog — e.g. skybox — declare only
+    // the first 7, which is layout-safe since the new field is appended at the end.)
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private struct AtmosphereConstants
     {
@@ -1362,12 +1510,14 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         public Vector4 SkyHorizon;         // rgb = sky-horizon color, w = spare
         public Vector4 FogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
         public Vector4 Params;             // x = gameHour, y = fogNear, z = fogFar, w = time
+        public Vector4 CameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
 
-        public const uint ByteSize = 7 * 16;
+        public const uint ByteSize = 8 * 16;
 
         public static AtmosphereConstants From(
             AtmosphereState.Resolved a,
             float gameHour,
+            Vector3 cameraPos,
             float lightingEnabled,
             float skyEnabled,
             float fogEnabled,
@@ -1380,6 +1530,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 SkyHorizon = new Vector4(a.SkyHorizonColor, 0f),
                 FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
                 Params = new Vector4(gameHour, a.FogNear, a.FogFar, time),
+                CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
             };
     }
 
@@ -1466,12 +1617,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // own PSO + slots, never the root signature, so this CBV survives every scene pass.
         BindAtmosphereConstants(cmd, recorder.FrameIndex);
 
-        // Skybox FIRST (P5) — gradient + sun disc into the cleared color target, depth test/write OFF,
-        // so terrain/references overwrite it via the normal depth pass (sidesteps reversed-Z at
-        // infinity). OFF ⇒ the flat dark-blue clear shows. Reads the b3 atmosphere CB bound just above.
+        // Sky FIRST — gradient + clouds + stars into the cleared color target (depth OFF, so terrain
+        // overwrites it via the normal depth pass; OFF ⇒ the flat dark-blue clear shows), then the
+        // sun/moon billboards over it. Reads the b3 atmosphere CB bound just above.
         if (_showSky)
         {
-            _sky?.Render(viewProj);
+            RenderSky(viewProj);
         }
 
         // Layer order matches D3D11: terrain → references → water → wireframe. Water is
@@ -1829,9 +1980,15 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 DetailedProfilingEnabled = _profileLogging,
             };
 
-            // Atmosphere skybox (P5) — no per-ESM data; reads the shared b3 CB + its own invViewProj.
+            // Atmosphere skybox (P5+) — gradient + cloud/star textures; reads the shared b3 CB + its own
+            // b0 (invViewProj + cloud/star params) and the shared bindless table for its textures.
             _sky = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyboxRenderer12(
-                _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12);
+                _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _cbvSrvUavHeap12);
+
+            // Textured sky billboards — sun (disc + glare) + moon, drawn after the gradient. Uses the
+            // shared bindless table (textures resolved per-climate from the terrain texture cache).
+            _skyBillboards = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyBillboardRenderer12(
+                _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _cbvSrvUavHeap12);
 
             // Navmesh overlay — like water/cellgrid, no per-ESM dependency at construction;
             // the navmesh-by-cell data + spatial index arrive in LoadData via TryBuildCellGrid.
@@ -2053,34 +2210,84 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // IsChecked="True" (Water only) before sibling fields are assigned, so each must be safe to
     // call before LoadData — they touch only their own control (assigned) and null-guarded state.
     private void CellsCheckBox_Changed(object sender, RoutedEventArgs e)
-        => _showWireframe = CellsCheckBox.IsChecked == true;
+    {
+        if (_initializing) return;
+        _showWireframe = CellsCheckBox.IsChecked == true;
+    }
 
     private void TerrainToggle_Changed(object sender, RoutedEventArgs e)
-        => _showTerrain = TerrainToggle.IsChecked == true;
+    {
+        if (_initializing) return;
+        _showTerrain = TerrainToggle.IsChecked == true;
+    }
 
     private void WaterCheckBox_Changed(object sender, RoutedEventArgs e)
-        => _showWater = WaterCheckBox.IsChecked == true;
-
-    private void VclrToggle_Changed(object sender, RoutedEventArgs e)
     {
-        _vclrOnlyMode = VclrToggle.IsChecked == true;
-        _terrain?.SetVclrOnlyMode(_vclrOnlyMode);
+        if (_initializing) return;
+        _showWater = WaterCheckBox.IsChecked == true;
+    }
+
+    private void TerrainTexturesToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        _showTerrainTextures = TerrainTexturesToggle.IsChecked == true;
+        _terrain?.SetDebugModes(_showTerrainTextures, _showVertexColors);
+    }
+
+    private void VertexColorsToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        _showVertexColors = VertexColorsToggle.IsChecked == true;
+        _terrain?.SetDebugModes(_showTerrainTextures, _showVertexColors);
     }
 
     private void RefsToggle_Changed(object sender, RoutedEventArgs e)
-        => _showReferences = RefsToggle.IsChecked == true;
+    {
+        if (_initializing) return;
+        _showReferences = RefsToggle.IsChecked == true;
+    }
 
     private void LightingToggle_Changed(object sender, RoutedEventArgs e)
-        => _showLighting = LightingToggle.IsChecked == true;
+    {
+        if (_initializing) return;
+        _showLighting = LightingToggle.IsOn;
+    }
 
     private void SkyboxToggle_Changed(object sender, RoutedEventArgs e)
-        => _showSky = SkyboxToggle.IsChecked == true;
+    {
+        if (_initializing) return;
+        _showSky = SkyboxToggle.IsChecked == true;
+    }
+
+    private void FogToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        _showFog = FogToggle.IsOn;
+    }
 
     private void NavMeshCheckBox_Changed(object sender, RoutedEventArgs e)
-        => SetShowNavMesh(NavMeshCheckBox.IsChecked == true);
+    {
+        if (_initializing) return;
+        SetShowNavMesh(NavMeshCheckBox.IsChecked == true);
+    }
 
     private void DisabledCheckBox_Changed(object sender, RoutedEventArgs e)
-        => SetShowDisabled(DisabledCheckBox.IsChecked == true);
+    {
+        if (_initializing) return;
+        SetShowDisabled(DisabledCheckBox.IsChecked == true);
+    }
+
+    private void EditorMarkersCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetShowMarkers(EditorMarkersCheckBox.IsChecked == true);
+    }
+
+    private void ActivatorsCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetShowActivators(ActivatorsCheckBox.IsChecked == true);
+    }
 
     private async void WorldspaceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -2099,7 +2306,15 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         {
             await System.Threading.Tasks.Task.Yield();
             TryBuildCellGrid();
-            ResetCameraToDataCentroid();
+            if (_pendingNavigateCell is { } target)
+            {
+                _pendingNavigateCell = null;
+                CenterCameraOnCell(target);
+            }
+            else
+            {
+                ResetCameraToDataCentroid();
+            }
             ApplyStressSceneBookmarkIfRequested();
         }
         finally
@@ -2341,7 +2556,95 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         var ws = CurrentExteriorWorldspace();
         _currentClimateTiming = AtmosphereState.ClimateTiming.FromClimateData(ResolveClimate(ws)?.Timing);
         _climateDefaultWeather = ResolveClimateDefaultWeather(ws);
+        _skyTexClimateKey = null; // force the sky billboards to re-resolve sun/moon textures next frame
         ApplyWeatherSelection();
+    }
+
+    // Resolves the sun / sun-glare / moon bindless texture indices for the current climate, once per
+    // climate change. Runs inside the render frame (a command list is open for the texture cache's first
+    // upload). Sun + glare come from the CLMT (FNAM/GNAM), falling back to the fixed FNV sky paths; the
+    // moon uses the fixed full-Masser texture (the viewer has no days-passed counter to phase it).
+    private void EnsureSkyTexturesResolved()
+    {
+        if (_textureResolver12 is null) return; // retry once a worldspace (and its resolver) has loaded
+        var climate = ResolveClimate(CurrentExteriorWorldspace());
+        var key = climate?.FormId ?? 0u;
+        if (_skyTexClimateKey == key) return;
+        _skyTexClimateKey = key;
+
+        const uint none = FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyBillboardRenderer12.NoTexture;
+        _sunDiscTexIndex = _textureResolver12.ResolveDiffuseBindlessIndex(climate?.SunTexture ?? DefaultSunTexturePath) ?? none;
+        _sunGlareTexIndex = _textureResolver12.ResolveDiffuseBindlessIndex(climate?.SunGlareTexture ?? DefaultSunGlareTexturePath) ?? none;
+        _moonTexIndex = _textureResolver12.ResolveDiffuseBindlessIndex(DefaultMoonTexturePath) ?? none;
+        // Cloud + star textures aren't in the ESM (the engine reads them from the sky-dome NIF), so the
+        // viewer uses fixed FNV sky textures as the stand-in for the dome layers.
+        _cloudTexIndex = _textureResolver12.ResolveDiffuseBindlessIndex(DefaultCloudTexturePath) ?? none;
+        _starTexIndex = _textureResolver12.ResolveDiffuseBindlessIndex(DefaultStarTexturePath) ?? none;
+    }
+
+    // Draws the whole sky for the frame: the gradient + cloud/star textures (skybox), then the sun/moon
+    // billboards over them. The atmosphere is resolved ONCE here with lighting forced on (the sky shows
+    // regardless of the lighting toggle) and shared by both. Clouds/stars are exterior-only (suppressed,
+    // not the gradient, in interiors); the sun/moon billboards are exterior-only too.
+    private void RenderSky(Matrix4x4 viewProj)
+    {
+        EnsureSkyTexturesResolved();
+        var atmo = AtmosphereState.Resolve(_gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: true);
+        var daylight = atmo.SunIntensity; // 0 night → 1 day
+        var exterior = _selectedInterior is null;
+
+        // Clouds: grey/blue at night → near-white by day. Stars: cool white, fading in as the sun sets.
+        var cloudTint = Vector3.Lerp(new Vector3(0.12f, 0.13f, 0.18f), new Vector3(1.0f, 0.98f, 0.95f), daylight);
+        var starTint = new Vector3(0.85f, 0.90f, 1.0f);
+        var starFade = Math.Clamp(1f - (daylight * 1.5f), 0f, 1f);
+        _sky?.Render(viewProj,
+            cloudTint, exterior ? 0.55f : 0f, _cloudTexIndex,
+            starTint, exterior ? starFade : 0f, _starTexIndex);
+
+        if (exterior)
+        {
+            RenderSkyBillboards(viewProj, atmo);
+        }
+    }
+
+    // Draws the textured sun (disc + glare, day) + moon (night) billboards after the sky gradient. Sun
+    // direction/intensity come from the decompile-grounded AtmosphereState (already resolved by the
+    // caller with lighting forced on); the moon uses a plausible night arc (the engine's independent
+    // orbit isn't tracked here — documented simplification).
+    private void RenderSkyBillboards(Matrix4x4 viewProj, AtmosphereState.Resolved atmo)
+    {
+        if (_skyBillboards is null)
+        {
+            return;
+        }
+
+        // Camera world basis from the inverse view matrix (System.Numerics row-vector: invView's rows are
+        // the camera's world-space right/up).
+        if (!Matrix4x4.Invert(_camera.GetViewMatrix(), out var invView))
+        {
+            return;
+        }
+
+        var camRight = Vector3.Normalize(new Vector3(invView.M11, invView.M12, invView.M13));
+        var camUp = Vector3.Normalize(new Vector3(invView.M21, invView.M22, invView.M23));
+        var camPos = _camera.Position;
+
+        var sunDir = atmo.SunWorldDirection;
+        var sunFade = Math.Clamp(sunDir.Z * 6f, 0f, 1f);                    // soft fade through the horizon
+        var sunTint = Vector3.Lerp(new Vector3(1.0f, 0.55f, 0.30f), new Vector3(1.0f, 0.97f, 0.92f),
+            Math.Clamp(sunDir.Z * 2f, 0f, 1f));                            // warm at the horizon → near-white high
+
+        // Moon arc: peaks at midnight, below the horizon by day; fades in as the sun sets.
+        var nightAng = (_gameHour / 24f) * MathF.Tau;                       // 0 at midnight
+        var moonElev = MathF.Cos(nightAng) * (MathF.PI / 2f * 0.7f);        // peak ≈ 63° up at midnight
+        var moonAz = (MathF.PI * 0.5f) + (nightAng * 0.5f);
+        var cosE = MathF.Cos(moonElev);
+        var moonDir = Vector3.Normalize(new Vector3(MathF.Cos(moonAz) * cosE, MathF.Sin(moonAz) * cosE, MathF.Sin(moonElev)));
+        var moonFade = Math.Clamp(1f - (atmo.SunIntensity * 1.4f), 0f, 1f);
+
+        _skyBillboards.Render(viewProj, camPos, camRight, camUp,
+            sunDir, sunFade, sunTint, _sunDiscTexIndex, _sunGlareTexIndex,
+            moonDir, moonFade, _moonTexIndex);
     }
 
     /// <summary>Maps the weather dropdown's current selection to <see cref="_selectedWeather" /> (the
@@ -2479,7 +2782,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
     private void UpdateHud(int visible, int total, int visibleWater, int visibleReferences, int visibleNavMesh)
     {
-        if (StatusOverlay.Visibility != Visibility.Visible && HudPanel.Visibility != Visibility.Visible)
+        if (!_hudHidden && StatusOverlay.Visibility != Visibility.Visible && HudPanel.Visibility != Visibility.Visible)
         {
             HudPanel.Visibility = Visibility.Visible;
         }
@@ -2552,10 +2855,18 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             _lastHudText = text;
             HudText.Text = text;
         }
-        if (StatusOverlay.Visibility != Visibility.Visible)
+        if (!_hudHidden && StatusOverlay.Visibility != Visibility.Visible)
         {
             HudPanel.Visibility = Visibility.Visible;
         }
+    }
+
+    private void HudToggleButton_Changed(object sender, RoutedEventArgs e)
+    {
+        _hudHidden = HudToggleButton.IsChecked != true;
+        HudPanel.Visibility = !_hudHidden && StatusOverlay.Visibility != Visibility.Visible
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private void MaybeLogProfile(
@@ -2643,6 +2954,34 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         }
     }
 
+    /// <summary>Editor/engine-marker visibility toggle. Default off = markers hidden (matches the
+    /// game). Applies straight to the live reference renderer (render-time filter, no rebuild).</summary>
+    private void SetShowMarkers(bool on)
+    {
+        _showMarkers = on;
+        if (_references is not null)
+        {
+            _references.ShowMarkers = on;
+        }
+        if (EditorMarkersCheckBox is not null && EditorMarkersCheckBox.IsChecked != on)
+        {
+            EditorMarkersCheckBox.IsChecked = on;
+        }
+    }
+
+    /// <summary>Activator-category visibility toggle. Default off = activators hidden. Updates the
+    /// per-category filter on the reference renderer (render-time, no cache rebuild).</summary>
+    private void SetShowActivators(bool on)
+    {
+        if (on) _hiddenCategories.Remove(PlacedObjectCategory.Activator);
+        else _hiddenCategories.Add(PlacedObjectCategory.Activator);
+        _references?.SetHiddenCategories(_hiddenCategories);
+        if (ActivatorsCheckBox is not null && ActivatorsCheckBox.IsChecked != on)
+        {
+            ActivatorsCheckBox.IsChecked = on;
+        }
+    }
+
     private void ShowStatus(string message)
     {
         StatusOverlay.Text = message;
@@ -2653,7 +2992,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private void HideStatus()
     {
         StatusOverlay.Visibility = Visibility.Collapsed;
-        HudPanel.Visibility = Visibility.Visible;
+        HudPanel.Visibility = _hudHidden ? Visibility.Collapsed : Visibility.Visible;
         _lastHudUpdateTimestamp = 0;
     }
 

@@ -68,10 +68,10 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "DESC":
-                    description = EsmStringUtils.ReadNullTermString(subData);
+                    description = Context.ReadDescription(subData);
                     break;
                 case "ICON":
                     icon = EsmStringUtils.ReadNullTermString(subData);
@@ -159,7 +159,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
 
                     break;
                 case "FULL":
-                    fullName = EsmStringUtils.ReadNullTermString(subData);
+                    fullName = Context.ReadFullName(subData);
                     break;
                 case "DATA" when sub.DataLength >= 8:
                 {
@@ -1047,7 +1047,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                     break;
                 case "FULL":
                     fullName =
-                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                        Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                     break;
                 case "MODL":
                     modelPath =
