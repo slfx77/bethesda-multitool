@@ -1,7 +1,7 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;

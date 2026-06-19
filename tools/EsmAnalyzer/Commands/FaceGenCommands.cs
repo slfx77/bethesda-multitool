@@ -1,10 +1,10 @@
 using System.CommandLine;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Export;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;

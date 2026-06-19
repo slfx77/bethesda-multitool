@@ -1,8 +1,8 @@
-# Fallout Xbox 360 Utils - AI Assistant Instructions
+# Bethesda Multitool - AI Assistant Instructions
 
 ## Project Overview
 
-.NET 10.0 application for Xbox 360 memory dump analysis, file carving, and format conversion. Features WinUI 3 GUI (Windows), cross-platform CLI, and companion apps (FalloutAudioTranscriber). Includes 8+ standalone tool projects (EsmAnalyzer, NifAnalyzer, PdbAnalyzer, RttiScanner, etc.).
+.NET 10.0 application for analyzing and converting Bethesda game data across The Elder Scrolls and Fallout titles (Morrowind through Starfield), on PC and console. Covers Xbox 360 memory dump analysis, file carving, and format conversion. Features WinUI 3 GUI (Windows), cross-platform CLI, and companion apps (BethesdaAudioTranscriber). Includes 8+ standalone tool projects (EsmAnalyzer, NifAnalyzer, PdbAnalyzer, RttiScanner, etc.).
 
 ## Critical Rules
 
@@ -22,11 +22,11 @@ These have been thoroughly investigated. Do not spend time re-researching them:
 - **PPC thunk detection**: `mfspr r12, LR` = bytes `7D 80 42 A6` (NOT `7C 6C 02 A6`). Use Ghidra instruction API (`mfspr` + `bl` mnemonic check).
 - **globals.txt module offsets** (`S_PROCREF: module, offset`) do NOT linearly map to VAs. Use `cvdump -s` output (`S_GPROC32: [section:offset]`) instead.
 
-## Main App CLI Commands (falloutu)
+## Main App CLI Commands (btool)
 
 ```bash
 # Run main app
-dotnet run --project src/FalloutXbox360Utils -f net10.0 -- <command> <args>
+dotnet run --project src/BethesdaMultitool -f net10.0 -- <command> <args>
 
 # Format-agnostic commands (auto-detect file type: ESM, DMP, ESP)
 search text <file-or-dir> <pattern>    # Text search in any binary file
@@ -159,13 +159,13 @@ orphan-refs <file>              # Find orphaned FormID references
 
 ```bash
 # Compare specific FormID between converted and PC reference
-dotnet run --project src/FalloutXbox360Utils -f net10.0 -- esm semdiff <converted.esm> <pc_reference.esm> -f 0x0017B37C
+dotnet run --project src/BethesdaMultitool -f net10.0 -- esm semdiff <converted.esm> <pc_reference.esm> -f 0x0017B37C
 
 # Compare all records of a type
-dotnet run --project src/FalloutXbox360Utils -f net10.0 -- esm semdiff <converted.esm> <pc_reference.esm> -t PROJ --limit 50
+dotnet run --project src/BethesdaMultitool -f net10.0 -- esm semdiff <converted.esm> <pc_reference.esm> -t PROJ --limit 50
 
 # Show all fields, not just differences
-dotnet run --project src/FalloutXbox360Utils -f net10.0 -- esm semdiff <file1> <file2> -f 0x12345678 --all
+dotnet run --project src/BethesdaMultitool -f net10.0 -- esm semdiff <file1> <file2> -f 0x12345678 --all
 ```
 
 ## Tool Projects
@@ -184,7 +184,7 @@ dotnet run --project src/FalloutXbox360Utils -f net10.0 -- esm semdiff <file1> <
 ## Key Source Directories
 
 ```
-src/FalloutXbox360Utils/
+src/BethesdaMultitool/
 ├── CLI/
 │   ├── Commands/
 │   │   ├── Analysis/       # search, stats, list, show, diff, compare, world, analyze
@@ -241,7 +241,7 @@ src/FalloutXbox360Utils/
 │   └── HexViewer/          # Virtual-scrolling hex editor
 └── Repack/                 # Memory region repacking
 
-src/FalloutXbox360Utils/Core/Formats/Esm/Conversion/
+src/BethesdaMultitool/Core/Formats/Esm/Conversion/
 ├── EsmConverter.cs                     # Main conversion orchestrator
 ├── EsmConverterConstants.cs            # Conversion constants
 ├── EsmEndianHelpers.cs                 # Endian swap utilities
@@ -341,14 +341,14 @@ Sample/
 
 ```bash
 # Compare all three files for a record type (via main app)
-dotnet run --project src/FalloutXbox360Utils -f net10.0 -- esm diff \
+dotnet run --project src/BethesdaMultitool -f net10.0 -- esm diff \
      --xbox "Sample/ESM/360_final/FalloutNV.esm" \
      --converted "TestOutput/FalloutNV.pc.esm" \
      --pc "Sample/ESM/pc_final/FalloutNV.esm" \
      -t ALCH --semantic -l 5
 
 # Compare specific FormID across all three
-dotnet run --project src/FalloutXbox360Utils -f net10.0 -- esm diff \
+dotnet run --project src/BethesdaMultitool -f net10.0 -- esm diff \
      --xbox ... --converted ... --pc ... -f 0x0017B37C --semantic
 ```
 
@@ -440,7 +440,7 @@ CI: `.github/workflows/build-and-test.yml` — builds Release + runs tests with 
 
 ## Accessibility
 
-The WinUI 3 GUI in `src/FalloutXbox360Utils/App/` has a strict accessibility regression gate. `XamlAccessibilityRatchetTests` (under `tests/FalloutXbox360Utils.Tests/App/Accessibility/`) scans every `*.xaml` file and asserts every interactive control (Button, TextBox, ComboBox, ListView, TreeView, Slider, NumberBox, CheckBox, ToggleButton, DropDownButton, etc.) has an accessible name via one of:
+The WinUI 3 GUI in `src/BethesdaMultitool/App/` has a strict accessibility regression gate. `XamlAccessibilityRatchetTests` (under `tests/BethesdaMultitool.Tests/App/Accessibility/`) scans every `*.xaml` file and asserts every interactive control (Button, TextBox, ComboBox, ListView, TreeView, Slider, NumberBox, CheckBox, ToggleButton, DropDownButton, etc.) has an accessible name via one of:
 
 - `AutomationProperties.Name` (literal or bound — `{x:Bind}` to a Name/Title/DisplayName/Label/Text-like property).
 - `AutomationProperties.LabeledBy` (pointing to a sibling `TextBlock` with `x:Name`).
@@ -451,7 +451,7 @@ The test runs in strict mode — there is no baseline of known gaps. Any new con
 
 When adding a new interactive control: either set `AutomationProperties.Name` inline, give the control an `x:Uid`, or link it to a visible label via `LabeledBy`. Icon-only buttons should have both a tooltip (visual) and `AutomationProperties.Name` (screen-reader). Headings (`<TextBlock Style="{StaticResource SubtitleTextBlockStyle}" />`) should also get `AutomationProperties.HeadingLevel="Level1"` (page) / `Level2` / `Level3`.
 
-Keyboard shortcuts are declared via XAML `<KeyboardAccelerator>` — WinUI auto-decorates tooltips with the shortcut hint. Add new shortcuts to `KeyboardShortcutsDialog.All` (under `src/FalloutXbox360Utils/App/Dialogs/`) so the F1 cheat-sheet lists them.
+Keyboard shortcuts are declared via XAML `<KeyboardAccelerator>` — WinUI auto-decorates tooltips with the shortcut hint. Add new shortcuts to `KeyboardShortcutsDialog.All` (under `src/BethesdaMultitool/App/Dialogs/`) so the F1 cheat-sheet lists them.
 
 ## Code Style
 

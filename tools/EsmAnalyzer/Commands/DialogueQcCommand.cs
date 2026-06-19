@@ -2,14 +2,14 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
 
 /// <summary>
-///     Quality-check a FalloutAudioTranscriber CSV (File,FormID,VoiceType,Speaker,Quest,Source,Text)
+///     Quality-check a BethesdaAudioTranscriber CSV (File,FormID,VoiceType,Speaker,Quest,Source,Text)
 ///     against an ESM proper-noun vocabulary. Fixes whisper-source rows:
 ///     - Collapses double spaces after punctuation
 ///     - Restores canonical capitalization for case-insensitive vocab matches

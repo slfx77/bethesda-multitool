@@ -1,9 +1,9 @@
 using System.Globalization;
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
+using BethesdaMultitool.Core.Formats.Esm.Conversion;
+using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
+using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;

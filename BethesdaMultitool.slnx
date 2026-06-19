@@ -1,0 +1,18 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/DDXConv/">
+    <Project Path="src/DDXConv/DDXConv/DDXConv.csproj" />
+  </Folder>
+  <Project Path="tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj" />
+  <Project Path="src/BethesdaAudioTranscriber/BethesdaAudioTranscriber.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="src/BethesdaRendererProfiler/BethesdaRendererProfiler.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="src/BethesdaMap2DProfiler/BethesdaMap2DProfiler.csproj">
+    <Platform Project="x64" />
+  </Project>
+</Solution>

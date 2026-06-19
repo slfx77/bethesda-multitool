@@ -1,7 +1,7 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;

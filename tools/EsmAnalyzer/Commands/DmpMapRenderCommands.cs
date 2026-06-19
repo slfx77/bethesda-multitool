@@ -1,11 +1,11 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Enums;
-using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Semantic;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Enums;
+using BethesdaMultitool.Core.Formats.Esm.Export;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Semantic;
 using ImageMagick;
 using ImageMagick.Drawing;
 using Spectre.Console;

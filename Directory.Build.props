@@ -36,8 +36,8 @@
     <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
 
-  <!-- Code analysis packages applied to FalloutXbox360Utils projects only (excludes submodules) -->
-  <ItemGroup Condition="$(MSBuildProjectName.StartsWith('FalloutXbox360Utils'))">
+  <!-- Code analysis packages applied to BethesdaMultitool projects only (excludes submodules) -->
+  <ItemGroup Condition="$(MSBuildProjectName.StartsWith('BethesdaMultitool'))">
     <PackageReference Include="SonarAnalyzer.CSharp">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

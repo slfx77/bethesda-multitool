@@ -1,0 +1,77 @@
+using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Geometry;
+
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+
+internal static class TriNifGeometryInspector
+{
+    public static TriNifGeometryInspection? Inspect(byte[] nifData, TriParser? tri = null)
+    {
+        var nif = NifParser.Parse(nifData);
+        if (nif == null)
+        {
+            return null;
+        }
+
+        var geometryBlocks = new List<NifGeometryBlockSummary>();
+        for (var blockIndex = 0; blockIndex < nif.Blocks.Count; blockIndex++)
+        {
+            var block = nif.Blocks[blockIndex];
+            if (block.TypeName is not ("NiTriShapeData" or "NiTriStripsData"))
+            {
+                continue;
+            }
+
+            var vertexCount = NifBlockParsers.ReadVertexCount(nifData, block, nif.IsBigEndian, nif.IsMorrowind);
+            var triStripInfo = block.TypeName == "NiTriStripsData"
+                ? NifTriStripExtractor.ReadStripSectionInfo(nifData, block, nif.IsBigEndian)
+                : null;
+            var submesh = block.TypeName == "NiTriShapeData"
+                ? NifBlockParsers.ExtractTriShapeData(
+                    nifData,
+                    block,
+                    nif.IsBigEndian,
+                    nif.BsVersion,
+                    Matrix4x4.Identity)
+                : NifBlockParsers.ExtractTriStripsData(
+                    nifData,
+                    block,
+                    nif.IsBigEndian,
+                    nif.BsVersion,
+                    Matrix4x4.Identity);
+            var triangleCount = submesh?.TriangleCount ?? -1;
+            var declaredTriangleCount = triStripInfo?.DeclaredTriangleCount ?? triangleCount;
+            var candidateTriangleWindowCount = triStripInfo?.CandidateTriangleWindowCount ?? triangleCount;
+            var degenerateTriangleCount = triStripInfo?.DegenerateTriangleCount ?? 0;
+
+            geometryBlocks.Add(new NifGeometryBlockSummary(
+                blockIndex,
+                block.TypeName,
+                vertexCount,
+                triangleCount,
+                declaredTriangleCount,
+                candidateTriangleWindowCount,
+                degenerateTriangleCount));
+        }
+
+        var exactMatchingGeometryBlockCount = tri == null
+            ? 0
+            : geometryBlocks.Count(block =>
+                block.VertexCount == tri.VertexCount &&
+                block.TriangleCount == tri.TriangleCount);
+        var declaredTriangleMatchingGeometryBlockCount = tri == null
+            ? 0
+            : geometryBlocks.Count(block =>
+                block.VertexCount == tri.VertexCount &&
+                block.DeclaredTriangleCount == tri.TriangleCount);
+        var vertexMatchingGeometryBlockCount = tri == null
+            ? 0
+            : geometryBlocks.Count(block => block.VertexCount == tri.VertexCount);
+
+        return TriNifGeometryInspection.Create(
+            [.. geometryBlocks],
+            exactMatchingGeometryBlockCount,
+            declaredTriangleMatchingGeometryBlockCount,
+            vertexMatchingGeometryBlockCount);
+    }
+}

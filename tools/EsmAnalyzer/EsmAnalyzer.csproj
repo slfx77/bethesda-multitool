@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\FalloutXbox360Utils\FalloutXbox360Utils.csproj" />
+    <ProjectReference Include="..\..\src\BethesdaMultitool\BethesdaMultitool.csproj" />
     <ProjectReference Include="..\Shared\Shared.csproj" />
   </ItemGroup>
 

@@ -1,9 +1,9 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core.Formats.Dds;
-using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Export;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assembly;
+using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Conversion;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assembly;
 using Spectre.Console;
 
 namespace NifAnalyzer.Commands;
@@ -59,7 +59,7 @@ internal static class MeshDiagCommands
         }
 
         var data = File.ReadAllBytes(path);
-        var nif = FalloutXbox360Utils.Core.Formats.Nif.NifParser.Parse(data);
+        var nif = BethesdaMultitool.Core.Formats.Nif.NifParser.Parse(data);
         if (nif == null)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] Failed to parse NIF header: {0}", Markup.Escape(path));
@@ -76,7 +76,7 @@ internal static class MeshDiagCommands
             }
 
             data = converted.OutputData;
-            nif = FalloutXbox360Utils.Core.Formats.Nif.NifParser.Parse(data);
+            nif = BethesdaMultitool.Core.Formats.Nif.NifParser.Parse(data);
             if (nif == null)
             {
                 AnsiConsole.MarkupLine("[red]Error:[/] Failed to parse converted NIF: {0}", Markup.Escape(path));
@@ -125,7 +125,7 @@ internal static class MeshDiagCommands
 
     private static void RenderSummary(
         string path,
-        FalloutXbox360Utils.Core.Formats.Nif.NifInfo nif,
+        BethesdaMultitool.Core.Formats.Nif.NifInfo nif,
         NifRenderableModel model,
         string? shapeFilter,
         int textureArchiveCount,

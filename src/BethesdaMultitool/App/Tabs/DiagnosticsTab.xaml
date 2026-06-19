@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+  x:Class="BethesdaMultitool.DiagnosticsTab"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:BethesdaMultitool">
+
+  <Grid Padding="16" VerticalAlignment="Stretch">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!--  Header row: title + refresh controls  -->
+    <Grid Grid.Row="0" Margin="0,0,0,8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
+        <TextBlock
+          x:Uid="Header_Diagnostics"
+          AutomationProperties.HeadingLevel="Level1"
+          Style="{StaticResource SubtitleTextBlockStyle}" />
+        <TextBlock
+          x:Uid="Subtitle_Diagnostics"
+          Style="{StaticResource TabSubtitleStyle}" />
+      </StackPanel>
+      <StackPanel
+        Grid.Column="1"
+        Orientation="Horizontal"
+        VerticalAlignment="Top"
+        Spacing="8">
+        <ToggleButton
+          x:Name="PauseRefreshToggle"
+          x:Uid="Button_DiagPause"
+          Checked="PauseRefresh_Changed"
+          Unchecked="PauseRefresh_Changed" />
+        <Button
+          x:Uid="Button_DiagCopy"
+          AutomationProperties.Name="Copy diagnostics snapshot to clipboard"
+          Click="CopySnapshot_Click" />
+      </StackPanel>
+    </Grid>
+
+    <!--  Process stats strip (non-interactive text — no a11y naming requirements)  -->
+    <Border Grid.Row="1" Margin="0,0,0,8" Style="{StaticResource CardBorderStyle}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0" Spacing="2">
+          <TextBlock x:Uid="Label_DiagWorkingSet" FontSize="12"
+                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <TextBlock x:Name="WorkingSetText" FontWeight="SemiBold" Text="—" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Spacing="2">
+          <TextBlock x:Uid="Label_DiagGcHeap" FontSize="12"
+                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <TextBlock x:Name="GcHeapText" FontWeight="SemiBold" Text="—" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Spacing="2">
+          <TextBlock x:Uid="Label_DiagGcCollections" FontSize="12"
+                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <TextBlock x:Name="GcCollectionsText" FontWeight="SemiBold" Text="—" />
+        </StackPanel>
+        <StackPanel Grid.Column="3" Spacing="2">
+          <TextBlock x:Uid="Label_DiagTrackedTotal" FontSize="12"
+                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <TextBlock x:Name="TrackedTotalText" FontWeight="SemiBold" Text="—" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!--  Resource list card  -->
+    <Border Grid.Row="2" VerticalAlignment="Stretch" Style="{StaticResource CardBorderStyle}">
+      <Grid VerticalAlignment="Stretch">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!--  Column headers (plain text, non-interactive)  -->
+        <Grid Grid.Row="0" Style="{StaticResource ColumnHeaderGridStyle}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="110" />
+            <ColumnDefinition Width="90" />
+            <ColumnDefinition Width="80" />
+            <ColumnDefinition Width="90" />
+            <ColumnDefinition Width="110" />
+            <ColumnDefinition Width="100" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0" x:Uid="Col_DiagResource" FontWeight="SemiBold" />
+          <TextBlock Grid.Column="1" x:Uid="Col_DiagBytes" FontWeight="SemiBold" HorizontalAlignment="Right" />
+          <TextBlock Grid.Column="2" x:Uid="Col_DiagEntries" FontWeight="SemiBold" HorizontalAlignment="Right" />
+          <TextBlock Grid.Column="3" x:Uid="Col_DiagHitRate" FontWeight="SemiBold" HorizontalAlignment="Right" />
+          <TextBlock Grid.Column="4" x:Uid="Col_DiagEvictions" FontWeight="SemiBold" HorizontalAlignment="Right" />
+          <TextBlock Grid.Column="5" x:Uid="Col_DiagQueue" FontWeight="SemiBold" HorizontalAlignment="Right" />
+          <TextBlock Grid.Column="6" x:Uid="Col_DiagProcessed" FontWeight="SemiBold" HorizontalAlignment="Right" />
+        </Grid>
+
+        <ListView
+          x:Name="ResourceListView"
+          Grid.Row="1"
+          AutomationProperties.Name="Registered resources and caches"
+          IsItemClickEnabled="False"
+          SelectionMode="None">
+          <ListView.GroupStyle>
+            <GroupStyle>
+              <GroupStyle.HeaderTemplate>
+                <DataTemplate>
+                  <TextBlock
+                    Margin="0,8,0,4"
+                    AutomationProperties.HeadingLevel="Level2"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="{Binding Key}" />
+                </DataTemplate>
+              </GroupStyle.HeaderTemplate>
+            </GroupStyle>
+          </ListView.GroupStyle>
+          <ListView.ItemTemplate>
+            <DataTemplate x:DataType="local:ResourceStatRow">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="110" />
+                  <ColumnDefinition Width="90" />
+                  <ColumnDefinition Width="80" />
+                  <ColumnDefinition Width="90" />
+                  <ColumnDefinition Width="110" />
+                  <ColumnDefinition Width="100" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="1" Text="{x:Bind BytesDisplay, Mode=OneWay}" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="2" Text="{x:Bind EntriesDisplay, Mode=OneWay}" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="3" Text="{x:Bind HitRateDisplay, Mode=OneWay}" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="4" Text="{x:Bind EvictionsDisplay, Mode=OneWay}" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="5" Text="{x:Bind QueueDisplay, Mode=OneWay}" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="6" Text="{x:Bind ProcessedDisplay, Mode=OneWay}" HorizontalAlignment="Right" />
+              </Grid>
+            </DataTemplate>
+          </ListView.ItemTemplate>
+        </ListView>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

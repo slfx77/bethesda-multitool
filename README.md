@@ -1,6 +1,6 @@
-# Fallout Xbox 360 Utils
+# Bethesda Multitool
 
-A .NET 10.0 toolkit for Xbox 360 memory dump analysis, ESM/NIF format conversion, file carving, and game data exploration. Features a **WinUI 3 GUI** on Windows, a **cross-platform CLI** for batch processing, and a standalone **Audio Transcriber** for voice file transcription.
+A .NET 10.0 toolkit for analyzing and converting Bethesda game data across The Elder Scrolls and Fallout titles (Morrowind through Starfield), on PC and console. It handles Xbox 360 memory dump analysis, ESM/NIF/BSA format conversion, file carving, and game data exploration, with a **WinUI 3 GUI** on Windows, a **cross-platform CLI** for batch processing, and a standalone **Audio Transcriber** for voice file transcription.
 
 ![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
@@ -62,10 +62,10 @@ Download from [Releases](https://github.com/slfx77/fallout-xbox-360-utils/releas
 
 | Platform | Download |
 | --- | --- |
-| Windows GUI | `FalloutXbox360Utils-Windows-GUI-x64.zip` |
-| Windows CLI | `FalloutXbox360Utils-Windows-CLI-x64.zip` |
-| Linux CLI | `FalloutXbox360Utils-Linux-CLI-x64.tar.gz` |
-| Audio Transcriber | `FalloutAudioTranscriber-Windows-x64.zip` |
+| Windows GUI | `BethesdaMultitool-Windows-GUI-x64.zip` |
+| Windows CLI | `BethesdaMultitool-Windows-CLI-x64.zip` |
+| Linux CLI | `BethesdaMultitool-Linux-CLI-x64.tar.gz` |
+| Audio Transcriber | `BethesdaAudioTranscriber-Windows-x64.zip` |
 
 ### Build from Source
 
@@ -80,10 +80,10 @@ cd fallout-xbox-360-utils
 dotnet build -c Release
 
 # Run GUI (Windows only)
-dotnet run --project src/FalloutXbox360Utils -f net10.0-windows10.0.19041.0
+dotnet run --project src/BethesdaMultitool -f net10.0-windows10.0.19041.0
 
 # Run CLI (cross-platform)
-dotnet run --project src/FalloutXbox360Utils -f net10.0 -- --help
+dotnet run --project src/BethesdaMultitool -f net10.0 -- --help
 
 # Run tests
 dotnet test -p:CollectCoverage=false
@@ -96,8 +96,8 @@ dotnet test -p:CollectCoverage=false
 Launch without arguments for the GUI, or auto-load a file:
 
 ```bash
-FalloutXbox360Utils.exe
-FalloutXbox360Utils.exe path/to/dump.dmp
+BethesdaMultitool.exe
+BethesdaMultitool.exe path/to/dump.dmp
 ```
 
 Tabs: **Single File** (ESM browser, dialogue, world map, hex viewer) | **BSA Extractor** | **NIF Tools** (Batch Convert + Viewer) | **DDX Converter** | **Repacker** | **Batch Mode**
@@ -106,33 +106,33 @@ Tabs: **Single File** (ESM browser, dialogue, world map, hex viewer) | **BSA Ext
 
 ```bash
 # Extract files from a memory dump
-FalloutXbox360Utils carve dump.dmp -o output -t ddx xma nif --convert-ddx
+BethesdaMultitool carve dump.dmp -o output -t ddx xma nif --convert-ddx
 
 # Analyze ESM from a memory dump (generates GECK-format reports)
-FalloutXbox360Utils analyze dump.dmp -o reports/
+BethesdaMultitool analyze dump.dmp -o reports/
 
 # Convert Xbox 360 ESM to PC format
-FalloutXbox360Utils esm convert Sample/ESM/360_final/FalloutNV.esm -o FalloutNV.pc.esm
+BethesdaMultitool esm convert Sample/ESM/360_final/FalloutNV.esm -o FalloutNV.pc.esm
 
 # Convert Xbox 360 NIF to PC format
-FalloutXbox360Utils nif mesh.nif -o mesh_pc.nif
+BethesdaMultitool nif mesh.nif -o mesh_pc.nif
 
 # Browse dialogue
-FalloutXbox360Utils dialogue dump.dmp --npc CraigBoone
+BethesdaMultitool dialogue dump.dmp --npc CraigBoone
 
 # Explore worldspace
-FalloutXbox360Utils world dump.dmp --worldspace WastelandNV
+BethesdaMultitool world dump.dmp --worldspace WastelandNV
 
 # Inspect a save game
-FalloutXbox360Utils save info savegame.fos
+BethesdaMultitool save info savegame.fos
 
 # Force CLI mode on Windows (otherwise defaults to GUI)
-FalloutXbox360Utils --no-gui dump.dmp -o output
+BethesdaMultitool --no-gui dump.dmp -o output
 ```
 
 ## Audio Transcriber
 
-The **Fallout Audio Transcriber** is a standalone WinUI 3 application for browsing and transcribing Fallout: New Vegas voice files. It is provided as a precompiled download in [Releases](https://github.com/slfx77/fallout-xbox-360-utils/releases).
+The **Bethesda Audio Transcriber** is a standalone WinUI 3 application for browsing and transcribing Fallout: New Vegas voice files. It is provided as a precompiled download in [Releases](https://github.com/slfx77/fallout-xbox-360-utils/releases).
 
 ### What it does
 
@@ -144,14 +144,14 @@ The **Fallout Audio Transcriber** is a standalone WinUI 3 application for browsi
 
 ### Getting started
 
-1. Download and extract `FalloutAudioTranscriber-Windows-x64.zip` from [Releases](https://github.com/slfx77/fallout-xbox-360-utils/releases)
-2. Launch `FalloutAudioTranscriber.exe`
+1. Download and extract `BethesdaAudioTranscriber-Windows-x64.zip` from [Releases](https://github.com/slfx77/fallout-xbox-360-utils/releases)
+2. Launch `BethesdaAudioTranscriber.exe`
 3. Point it at a Fallout: New Vegas `Data` directory containing voice BSA files (e.g., `Fallout - Voices1.bsa`)
 4. The app parses all voice BSAs, cross-references with `FalloutNV.esm` if present, and presents a browsable playlist
 
 ### Transcription
 
-- On first use, the Whisper model (`ggml-base.en`, ~148 MB) is automatically downloaded to `%LocalAppData%\FalloutAudioTranscriber\models\`
+- On first use, the Whisper model (`ggml-base.en`, ~148 MB) is automatically downloaded to `%LocalAppData%\BethesdaAudioTranscriber\models\`
 - Audio is resampled to 16kHz mono before transcription
 - Transcriptions are saved alongside the Data directory and persist across sessions
 - Voice files with existing ESM subtitles (NAM1) are shown alongside Whisper transcriptions for comparison
@@ -216,7 +216,7 @@ dotnet run --project tools/BsaAnalyzer -- find archive.bsa "*.nif"
 ## Project Structure
 
 ```
-src/FalloutXbox360Utils/
+src/BethesdaMultitool/
 ├── App/                     # WinUI 3 GUI (Windows only)
 │   ├── Controls/            #   WorldMapControl
 │   ├── Helpers/             #   Tree builders, display helpers
@@ -235,7 +235,7 @@ src/FalloutXbox360Utils/
 │   └── Utils/               #   Binary utilities
 └── Repack/                  # Memory region repacking
 
-src/FalloutAudioTranscriber/  # Whisper-based voice file transcriber (WinUI 3)
+src/BethesdaAudioTranscriber/  # Whisper-based voice file transcriber (WinUI 3)
 src/DDXConv/                  # DDX conversion library (submodule)
 
 tools/

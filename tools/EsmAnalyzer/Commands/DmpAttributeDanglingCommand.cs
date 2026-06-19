@@ -2,12 +2,12 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm.Enums;
-using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Semantic;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Formats.Esm.Enums;
+using BethesdaMultitool.Core.Formats.Esm.Export;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;

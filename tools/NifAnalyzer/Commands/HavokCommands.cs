@@ -58,7 +58,7 @@ internal static class HavokCommands
 
     /// <summary>
     ///     Decodes a NIF's Havok (bhk*) collision via the production
-    ///     <see cref="FalloutXbox360Utils.Core.Formats.Nif.Collision.HavokCollisionExtractor" /> and dumps
+    ///     <see cref="BethesdaMultitool.Core.Formats.Nif.Collision.HavokCollisionExtractor" /> and dumps
     ///     the merged triangle soup's vertex/triangle counts + AABB, plus a per-collision-object listing.
     ///     Compare the AABB to the visual mesh's AABB on a known bridge to confirm scale (a 7× mismatch =
     ///     wrong Havok scale) and frame (offset/rotation = wrong node transform).
@@ -66,7 +66,7 @@ internal static class HavokCommands
     private static void HavokDump(string path)
     {
         var data = File.ReadAllBytes(path);
-        var nif = FalloutXbox360Utils.Core.Formats.Nif.NifParser.Parse(data);
+        var nif = BethesdaMultitool.Core.Formats.Nif.NifParser.Parse(data);
         if (nif is null)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] failed to parse NIF.");
@@ -98,7 +98,7 @@ internal static class HavokCommands
         AnsiConsole.WriteLine($"Collision objects: {collisionObjects}");
         AnsiConsole.WriteLine();
 
-        var soup = FalloutXbox360Utils.Core.Formats.Nif.Collision.HavokCollisionExtractor.TryExtract(
+        var soup = BethesdaMultitool.Core.Formats.Nif.Collision.HavokCollisionExtractor.TryExtract(
             data, nif, nif.IsBigEndian);
         if (soup is not { } s)
         {

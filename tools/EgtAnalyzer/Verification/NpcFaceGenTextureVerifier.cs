@@ -1,11 +1,11 @@
 using System.Buffers.Binary;
 using System.Globalization;
-using FalloutXbox360Utils.CLI;
-using FalloutXbox360Utils.Core.Formats.Bsa;
-using FalloutXbox360Utils.Core.Formats.Dds;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.Assets;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using static EgtAnalyzer.Verification.CrossNpcRowAnalyzer;
 using static EgtAnalyzer.Verification.DeltaTextureHelpers;
 using static EgtAnalyzer.Verification.ExternalEgtDonorAnalyzer;

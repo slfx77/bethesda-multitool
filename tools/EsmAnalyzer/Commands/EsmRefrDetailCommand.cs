@@ -1,7 +1,7 @@
 using System.CommandLine;
 using System.Globalization;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Semantic;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
@@ -62,7 +62,7 @@ internal static class EsmRefrDetailCommand
         var resolver = loaded.Resolver;
         var found = 0;
 
-        void DumpRef(uint cellFid, FalloutXbox360Utils.Core.Formats.Esm.Models.World.PlacedReference r)
+        void DumpRef(uint cellFid, BethesdaMultitool.Core.Formats.Esm.Models.World.PlacedReference r)
         {
             found++;
             var baseName = resolver.GetDisplayName(r.BaseFormId)

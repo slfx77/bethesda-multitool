@@ -1,8 +1,8 @@
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using System.Text;
-using FalloutXbox360Utils.Core.Utils;
+using BethesdaMultitool.Core.Utils;
 
 namespace EsmAnalyzer.Commands;
 

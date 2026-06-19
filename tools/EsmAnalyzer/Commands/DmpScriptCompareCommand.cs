@@ -1,5 +1,5 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Script;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;

@@ -1,0 +1,14 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+
+internal sealed record DialogTopicProvenanceReport
+{
+    public DialogTopicRecord Topic { get; init; } = null!;
+    public byte[]? RuntimeStructBytes { get; init; }
+    public uint? StringPointer { get; init; }
+    public ushort? StringLength { get; init; }
+    public long? StringOffset { get; init; }
+    public byte[]? StringBytes { get; init; }
+    public string? DecodedText { get; init; }
+}

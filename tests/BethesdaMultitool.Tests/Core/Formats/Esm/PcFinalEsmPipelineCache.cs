@@ -1,0 +1,77 @@
+using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Records;
+
+namespace BethesdaMultitool.Tests.Core.Formats.Esm;
+
+/// <summary>
+///     Static cache that runs the full PC final ESM pipeline once and shares the results
+///     between all test classes that need them (e.g. EsmWorldspaceAchrIntegrationTests).
+///     Eliminates duplicate ~17s parsing + ~5s parsing per test class.
+/// </summary>
+internal static class PcFinalEsmPipelineCache
+{
+    private static PipelineResult? _cached;
+    private static readonly Lock CacheLock = new();
+
+    public static PipelineResult GetOrBuild(string filePath)
+    {
+        lock (CacheLock)
+        {
+            return _cached ??= Build(filePath);
+        }
+    }
+
+    private static PipelineResult Build(string filePath)
+    {
+        var fileData = File.ReadAllBytes(filePath);
+        var isBigEndian = EsmParser.IsBigEndian(fileData);
+        var (parsedRecords, grupHeaders) = EsmParser.EnumerateRecordsWithGrups(fileData);
+
+        var (cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell) =
+            EsmFileAnalyzer.BuildAllMaps(parsedRecords, grupHeaders);
+
+        var scanResult = EsmDataExtractor.ConvertToScanResult(
+            parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell);
+
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, parsedRecords, isBigEndian);
+
+        using var mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0,
+            MemoryMappedFileAccess.Read);
+        using var accessor = mmf.CreateViewAccessor(0, fileData.Length, MemoryMappedFileAccess.Read);
+
+        EsmWorldExtractor.ExtractLandRecords(accessor, fileData.Length, scanResult);
+
+        // Build FormID correlations from pre-parsed subrecords (same pattern as EsmFileAnalyzer.AnalyzeCore).
+        // Without this, RecordParserContext falls back to BuildFormIdToEditorIdMap which is slower.
+        var formIdMap = new Dictionary<uint, string>();
+        foreach (var record in parsedRecords)
+        {
+            if (record.Header.FormId == 0 || formIdMap.ContainsKey(record.Header.FormId))
+            {
+                continue;
+            }
+
+            var editorId = record.Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
+            if (!string.IsNullOrEmpty(editorId))
+            {
+                formIdMap[record.Header.FormId] = editorId;
+            }
+        }
+
+        var parser = new RecordParser(scanResult, formIdMap,
+            accessor, fileData.Length);
+        var collection = parser.ParseAll();
+
+        return new PipelineResult(parsedRecords, grupHeaders, scanResult, collection, isBigEndian);
+    }
+
+    internal sealed record PipelineResult(
+        List<ParsedMainRecord> ParsedRecords,
+        List<GrupHeaderInfo> GrupHeaders,
+        EsmRecordScanResult ScanResult,
+        RecordCollection Collection,
+        bool IsBigEndian);
+}

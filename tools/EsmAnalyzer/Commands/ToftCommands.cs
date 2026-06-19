@@ -1,9 +1,9 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
 using System.CommandLine;
 using System.Security.Cryptography;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 
 namespace EsmAnalyzer.Commands;
 

@@ -1,0 +1,316 @@
+using Windows.Graphics;
+using Windows.UI;
+using Microsoft.UI;
+using Microsoft.UI.Composition.SystemBackdrops;
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+
+namespace BethesdaMultitool;
+
+/// <summary>
+///     Main application window with NavigationView sidebar.
+/// </summary>
+public sealed partial class MainWindow : Window
+{
+    public MainWindow()
+    {
+        Instance = this;
+        try
+        {
+            // WinUI 3 apps have no attached console, so Spectre/Console output is invisible.
+            // Mirror the same log stream to a known file so diagnostic Log.Info/Log.Warn calls
+            // (e.g. BSA discovery, terrain palette resolution) are inspectable post-mortem.
+            // Honors FALLOUT_GUI_LOG so a debugging run can redirect to an explicit path — the same
+            // override GuiEntryPoint.ConfigureDiagnostics sets up earlier (re-setting the same path
+            // here is a harmless append-mode reopen), keeping one log file across both call sites.
+            try
+            {
+                var logOverride = BethesdaMultitool.Core.EnvironmentVariables.Get(
+                    BethesdaMultitool.Core.EnvironmentVariables.Diagnostics.GuiLogFile);
+                var logPath = string.IsNullOrWhiteSpace(logOverride)
+                    ? Path.Combine(Path.GetTempPath(), "BethesdaMultitool-gui.log")
+                    : Path.GetFullPath(logOverride);
+                BethesdaMultitool.Core.Logger.Instance.SetLogFile(logPath);
+            }
+            catch
+            {
+                // File-logging is a diagnostics-only convenience; never fail startup over it.
+            }
+
+            Console.WriteLine("[MainWindow] Constructor starting...");
+            InitializeComponent();
+            Console.WriteLine("[MainWindow] InitializeComponent complete");
+
+            // Memory budget hygiene: periodic CPU-cache budget checks (FALLOUT_MEMORY_BUDGET_MB,
+            // default 3 GB) + aggressive trims under real GC pressure. No-op when
+            // FALLOUT_MEMORY_DISABLE=1.
+            BethesdaMultitool.Core.Diagnostics.MemoryBudgetCoordinator.Instance.Start();
+
+            // Set minimum window size
+            var appWindow = AppWindow;
+            appWindow.Resize(new SizeInt32(1450, 900));
+
+            // Center the window
+            var displayArea = DisplayArea.GetFromWindowId(
+                appWindow.Id, DisplayAreaFallback.Nearest);
+            if (displayArea != null)
+            {
+                var centeredPosition = new PointInt32(
+                    (displayArea.WorkArea.Width - appWindow.Size.Width) / 2,
+                    (displayArea.WorkArea.Height - appWindow.Size.Height) / 2);
+                appWindow.Move(centeredPosition);
+            }
+
+            // Apply Mica backdrop
+            TrySetMicaBackdrop();
+
+            // Extend content into title bar and set up drag region
+            SetupTitleBar();
+
+            // Title bar lives in the same parent grid as the NavigationView so its
+            // children (the Back/Forward buttons) are hit-testable on top of the
+            // NavView's transparent header strip. When the pane expands the drawer
+            // needs to visually cover the title and arrows instead, so we drop the
+            // title bar below the NavView in z-order whenever the pane is open.
+            NavView.RegisterPropertyChangedCallback(
+                NavigationView.IsPaneOpenProperty, OnNavPaneOpenChanged);
+            ApplyAppTitleBarZIndex();
+
+            Console.WriteLine("[MainWindow] Constructor complete");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[CRASH] MainWindow constructor failed: {ex}");
+            FalloutApp.PrintInnerExceptions(ex);
+            throw;
+        }
+    }
+
+    public static MainWindow? Instance { get; private set; }
+
+    private void TrySetMicaBackdrop()
+    {
+        if (MicaController.IsSupported())
+        {
+            SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+            Console.WriteLine("[MainWindow] Mica backdrop applied");
+        }
+        else if (DesktopAcrylicController.IsSupported())
+        {
+            SystemBackdrop = new DesktopAcrylicBackdrop();
+            Console.WriteLine("[MainWindow] Acrylic backdrop applied (Mica not supported)");
+        }
+        else
+        {
+            Console.WriteLine("[MainWindow] No system backdrop supported");
+        }
+    }
+
+    private void SetupTitleBar()
+    {
+        // Extend content into the title bar
+        ExtendsContentIntoTitleBar = true;
+
+        // Set the custom title bar as the drag region
+        SetTitleBar(AppTitleBar);
+
+        // Hide the default system icon from the title bar
+        AppWindow.TitleBar.IconShowOptions = IconShowOptions.HideIconAndSystemMenu;
+
+        // Configure caption button colors based on theme
+        UpdateCaptionButtonColors();
+
+        // Listen for theme changes
+        if (Content is FrameworkElement rootElement)
+            rootElement.ActualThemeChanged += (s, e) => UpdateCaptionButtonColors();
+
+        Console.WriteLine("[MainWindow] Title bar extended with custom drag region");
+    }
+
+    private void UpdateCaptionButtonColors()
+    {
+        var titleBar = AppWindow.TitleBar;
+        if (titleBar == null) return;
+
+        // Detect current theme
+        var isDark = (Content as FrameworkElement)?.ActualTheme == ElementTheme.Dark
+                     || ((Content as FrameworkElement)?.ActualTheme == ElementTheme.Default
+                         && Application.Current.RequestedTheme == ApplicationTheme.Dark);
+
+        if (isDark)
+        {
+            // Dark theme - light buttons
+            titleBar.ButtonForegroundColor = Colors.White;
+            titleBar.ButtonHoverForegroundColor = Colors.White;
+            titleBar.ButtonHoverBackgroundColor = Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF);
+            titleBar.ButtonPressedForegroundColor = Color.FromArgb(0xC0, 0xFF, 0xFF, 0xFF);
+            titleBar.ButtonPressedBackgroundColor = Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF);
+            titleBar.ButtonInactiveForegroundColor = Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF);
+        }
+        else
+        {
+            // Light theme - dark buttons
+            titleBar.ButtonForegroundColor = Colors.Black;
+            titleBar.ButtonHoverForegroundColor = Colors.Black;
+            titleBar.ButtonHoverBackgroundColor = Color.FromArgb(0x20, 0x00, 0x00, 0x00);
+            titleBar.ButtonPressedForegroundColor = Color.FromArgb(0xC0, 0x00, 0x00, 0x00);
+            titleBar.ButtonPressedBackgroundColor = Color.FromArgb(0x10, 0x00, 0x00, 0x00);
+            titleBar.ButtonInactiveForegroundColor = Color.FromArgb(0x80, 0x00, 0x00, 0x00);
+        }
+
+        // Transparent backgrounds for both themes (Mica shows through)
+        titleBar.ButtonBackgroundColor = Colors.Transparent;
+        titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+    }
+
+    // ── Title bar / pane z-order coordination ──
+
+    private void OnNavPaneOpenChanged(DependencyObject sender, DependencyProperty dp)
+    {
+        ApplyAppTitleBarZIndex();
+    }
+
+    private void ApplyAppTitleBarZIndex()
+    {
+        // Pane closed → title bar above the NavView so the Back/Forward buttons are hit-testable.
+        // Pane open    → title bar below the NavView so the drawer covers the icon/title.
+        Canvas.SetZIndex(AppTitleBar, NavView.IsPaneOpen ? -1 : 1);
+    }
+
+    // ── Global keyboard shortcuts ──
+
+    private async void F1_ShortcutsDialog_Invoked(
+        Microsoft.UI.Xaml.Input.KeyboardAccelerator sender,
+        Microsoft.UI.Xaml.Input.KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        var dialog = new KeyboardShortcutsDialog { XamlRoot = Content.XamlRoot };
+        try
+        {
+            await dialog.ShowAsync();
+        }
+        catch
+        {
+            // ContentDialog.ShowAsync can throw if another dialog is already open
+            // (WinUI 3 enforces at most one ContentDialog per XamlRoot). Swallow so
+            // the F1 press doesn't crash the app — user can try again after closing.
+        }
+    }
+
+    // ── Title bar navigation buttons ──
+
+    private void NavBack_Click(object sender, RoutedEventArgs e)
+    {
+        SingleFileTabContent.UnifiedBack_Click(sender, e);
+    }
+
+    private void NavForward_Click(object sender, RoutedEventArgs e)
+    {
+        SingleFileTabContent.UnifiedForward_Click(sender, e);
+    }
+
+    internal void SetNavButtonStates(bool backEnabled, bool forwardEnabled)
+    {
+        NavBackButton.IsEnabled = backEnabled;
+        NavForwardButton.IsEnabled = forwardEnabled;
+    }
+
+    private void UpdateNavButtonVisibility(string? tag)
+    {
+        NavButtonPanel.Visibility = tag == "SingleFile" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void NavView_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
+    {
+        if (args.InvokedItemContainer is NavigationViewItem { Tag: "Settings" })
+        {
+            GetActiveSettingsDrawerTab()?.ToggleSettingsDrawer();
+        }
+    }
+
+    private IHasSettingsDrawer? GetActiveSettingsDrawerTab()
+    {
+        if (SingleFileTabContent.Visibility == Visibility.Visible) return SingleFileTabContent;
+        if (BatchModeTabContent.Visibility == Visibility.Visible) return BatchModeTabContent;
+        if (NifConverterTabContent.Visibility == Visibility.Visible) return NifConverterTabContent;
+        if (DdxConverterTabContent.Visibility == Visibility.Visible) return DdxConverterTabContent;
+        if (BsaExtractorTabContent.Visibility == Visibility.Visible) return BsaExtractorTabContent;
+        if (RepackerTabContent.Visibility == Visibility.Visible) return RepackerTabContent;
+        if (DmpToEspConverterTabContent.Visibility == Visibility.Visible) return DmpToEspConverterTabContent;
+        return null;
+    }
+
+    private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    {
+        if (args.SelectedItem is NavigationViewItem selectedItem)
+        {
+            var tag = selectedItem.Tag?.ToString();
+
+            // Close any open settings drawers before switching tabs
+            SingleFileTabContent.CloseSettingsDrawer();
+            BatchModeTabContent.CloseSettingsDrawer();
+            NifConverterTabContent.CloseSettingsDrawer();
+            DdxConverterTabContent.CloseSettingsDrawer();
+            BsaExtractorTabContent.CloseSettingsDrawer();
+            RepackerTabContent.CloseSettingsDrawer();
+            DmpToEspConverterTabContent.CloseSettingsDrawer();
+
+            // Hide all content
+            SingleFileTabContent.Visibility = Visibility.Collapsed;
+            BatchModeTabContent.Visibility = Visibility.Collapsed;
+            NifConverterTabContent.Visibility = Visibility.Collapsed;
+            DdxConverterTabContent.Visibility = Visibility.Collapsed;
+            BsaExtractorTabContent.Visibility = Visibility.Collapsed;
+            RepackerTabContent.Visibility = Visibility.Collapsed;
+            DmpToEspConverterTabContent.Visibility = Visibility.Collapsed;
+            DiagnosticsTabContent.Visibility = Visibility.Collapsed;
+
+            // Clear status bar when switching tabs
+            SetStatus("");
+
+            // Show/hide title bar nav buttons based on active tab
+            UpdateNavButtonVisibility(tag);
+
+            // Show selected content
+            switch (tag)
+            {
+                case "SingleFile":
+                    SingleFileTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "BatchMode":
+                    BatchModeTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "NifConverter":
+                    NifConverterTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "DdxConverter":
+                    DdxConverterTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "BsaExtractor":
+                    BsaExtractorTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "Repacker":
+                    RepackerTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "DmpToEspConverter":
+                    DmpToEspConverterTabContent.Visibility = Visibility.Visible;
+                    break;
+                case "Diagnostics":
+                    DiagnosticsTabContent.Visibility = Visibility.Visible;
+                    break;
+            }
+
+            Console.WriteLine($"[MainWindow] Navigated to: {tag}");
+        }
+    }
+
+    /// <summary>
+    ///     Updates the global status bar text.
+    /// </summary>
+    public void SetStatus(string message)
+    {
+        GlobalStatusTextBlock.Text = message;
+    }
+}

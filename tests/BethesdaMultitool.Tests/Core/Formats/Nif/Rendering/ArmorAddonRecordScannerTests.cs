@@ -1,0 +1,36 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
+using BethesdaMultitool.Tests.Helpers;
+using Xunit;
+
+namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
+
+public sealed class ArmorAddonRecordScannerTests
+{
+    [Fact]
+    public void Process_ReadsBipedFlagsFromBmdt_NotData()
+    {
+        var bmdt = new byte[8];
+        bmdt[0] = 0x10;
+
+        var data = new byte[12];
+        data[0] = 0x78;
+        data[1] = 0x56;
+        data[2] = 0x34;
+        data[3] = 0x12;
+
+        var (recordBytes, record) = EsmTestRecordBuilder.BuildAnalyzerRecord(
+            0x00044947,
+            "ARMA",
+            false,
+            ("EDID", EsmTestRecordBuilder.NullTermString("ARMAPowerfist")),
+            ("BMDT", bmdt),
+            ("MODL", EsmTestRecordBuilder.NullTermString(@"weapons\hand2hand\powerfist.nif")),
+            ("DATA", data));
+
+        var scanEntry = ArmorAddonRecordScanner.Process(recordBytes, false, record);
+
+        Assert.NotNull(scanEntry);
+        Assert.Equal(0x10u, scanEntry!.BipedFlags);
+        Assert.Equal(@"weapons\hand2hand\powerfist.nif", scanEntry.MaleModelPath);
+    }
+}

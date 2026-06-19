@@ -1,4 +1,4 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 
 namespace EsmAnalyzer.Commands;
 

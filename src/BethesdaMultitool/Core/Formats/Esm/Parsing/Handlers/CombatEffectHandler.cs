@@ -1,0 +1,381 @@
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Utils;
+
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+
+/// <summary>
+///     Handles parsing of combat-related effect records: Projectiles (PROJ) and Explosions (EXPL).
+///     Extracted from <see cref="EffectRecordHandler" /> to keep file sizes manageable.
+/// </summary>
+internal sealed class CombatEffectHandler(RecordParserContext context) : RecordHandlerBase(context)
+{
+    #region Explosions
+
+    /// <summary>
+    ///     Parse all Explosion (EXPL) records.
+    /// </summary>
+    internal List<ExplosionRecord> ParseExplosions()
+    {
+        var explosions = ParseAccessorOnly("EXPL", 2048, ParseExplosionFromAccessor);
+
+        Context.MergeRuntimeRecords(explosions, 0x51, e => e.FormId,
+            (reader, entry) => reader.ReadRuntimeExplosion(entry), "explosions");
+
+        return explosions;
+    }
+
+    private ExplosionRecord? ParseExplosionFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, fullName = null, modelPath = null;
+        float force = 0, damage = 0, radius = 0, isRadius = 0;
+        float radiationLevel = 0, radiationDissipationTime = 0, radiationRadius = 0;
+        uint light = 0, sound1 = 0, flags = 0, impactDataSet = 0, sound2 = 0, enchantment = 0;
+        uint soundLevel = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FULL":
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset,
+                        sub.DataLength));
+                    break;
+                case "EITM" when sub.DataLength >= 4:
+                    enchantment =
+                        RecordParserContext.ReadFormId(data.AsSpan(sub.DataOffset, 4), record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 36:
+                {
+                    if (SubrecordSchemaView.TryRead("DATA", "EXPL",
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
+                    {
+                        force = v.Float("Force");
+                        damage = v.Float("Damage");
+                        radius = v.Float("Radius");
+                        light = v.UInt32("Light");
+                        sound1 = v.UInt32("Sound1");
+                        flags = v.UInt32("Flags");
+                        isRadius = v.Float("IsRadius");
+                        impactDataSet = v.UInt32("ImpactDataSet");
+                        sound2 = v.UInt32("Sound2");
+                        radiationLevel = v.Float("RadiationLevel");
+                        radiationDissipationTime =
+                            v.Float("RadiationDissipationTime");
+                        radiationRadius = v.Float("RadiationRadius");
+                        soundLevel = v.UInt32("SoundLevel");
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return new ExplosionRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            FullName = fullName,
+            ModelPath = modelPath,
+            Force = force,
+            Damage = damage,
+            Radius = radius,
+            Light = light,
+            Sound1 = sound1,
+            Flags = flags,
+            IsRadius = isRadius,
+            ImpactDataSet = impactDataSet,
+            Sound2 = sound2,
+            Enchantment = enchantment,
+            RadiationLevel = radiationLevel,
+            RadiationDissipationTime = radiationDissipationTime,
+            RadiationRadius = radiationRadius,
+            SoundLevel = soundLevel,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
+    #region Projectiles
+
+    /// <summary>
+    ///     Parse all Projectile (PROJ) records.
+    /// </summary>
+    internal List<ProjectileRecord> ParseProjectiles()
+    {
+        var projectiles = ParseAccessorOnly("PROJ", 2048, ParseProjectileFromAccessor);
+
+        Context.MergeRuntimeRecords(projectiles, 0x33, p => p.FormId,
+            (reader, entry) => reader.ReadRuntimeProjectile(entry), "projectiles");
+
+        return projectiles;
+    }
+
+    private ProjectileRecord? ParseProjectileFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, fullName = null, modelPath = null;
+        ushort projFlags = 0, projType = 0;
+        float gravity = 0, speed = 0, range = 0;
+        float tracerChance = 0, explosionProximity = 0, explosionTimer = 0;
+        float muzzleFlashDuration = 0, fadeDuration = 0, impactForce = 0;
+        float rotationX = 0, rotationY = 0, rotationZ = 0, bounceMultiplier = 0;
+        uint light = 0, muzzleFlashLight = 0, explosion = 0, sound = 0;
+        uint countdownSound = 0, deactivateSound = 0, defaultWeaponSource = 0;
+        uint soundLevel = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "FULL":
+                    fullName = Context.ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    break;
+                case "MODL":
+                    modelPath = EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset,
+                        sub.DataLength));
+                    break;
+                case "VNAM" when sub.DataLength >= 4:
+                    soundLevel = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "DATA" when sub.DataLength >= 52:
+                {
+                    if (SubrecordSchemaView.TryRead("DATA", "PROJ",
+                            data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian) is { } v)
+                    {
+                        var flagsAndType = v.UInt32("FlagsAndType");
+                        projFlags = (ushort)(flagsAndType & 0xFFFF);
+                        projType = (ushort)((flagsAndType >> 16) & 0xFFFF);
+                        gravity = v.Float("Gravity");
+                        speed = v.Float("Speed");
+                        range = v.Float("Range");
+                        light = v.UInt32("Light");
+                        muzzleFlashLight = v.UInt32("MuzzleFlashLight");
+                        tracerChance = v.Float("TracerChance");
+                        explosionProximity =
+                            v.Float("ExplosionAltTriggerProximity");
+                        explosionTimer = v.Float("ExplosionAltTriggerTimer");
+                        explosion = v.UInt32("Explosion");
+                        sound = v.UInt32("Sound");
+                        muzzleFlashDuration = v.Float("MuzzleFlashDuration");
+                        fadeDuration = v.Float("FadeDuration");
+                        impactForce = v.Float("ImpactForce");
+                        countdownSound = v.UInt32("SoundCountdown");
+                        deactivateSound = v.UInt32("SoundDisable");
+                        defaultWeaponSource = v.UInt32("DefaultWeaponSource");
+                        rotationX = v.Float("RotationX");
+                        rotationY = v.Float("RotationY");
+                        rotationZ = v.Float("RotationZ");
+                        bounceMultiplier = v.Float("BouncyMult");
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return new ProjectileRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            FullName = fullName,
+            ModelPath = modelPath,
+            Flags = projFlags,
+            ProjectileType = projType,
+            Gravity = gravity,
+            Speed = speed,
+            Range = range,
+            Light = light,
+            MuzzleFlashLight = muzzleFlashLight,
+            TracerChance = tracerChance,
+            ExplosionProximity = explosionProximity,
+            ExplosionTimer = explosionTimer,
+            Explosion = explosion,
+            Sound = sound,
+            MuzzleFlashDuration = muzzleFlashDuration,
+            FadeDuration = fadeDuration,
+            ImpactForce = impactForce,
+            CountdownSound = countdownSound,
+            DeactivateSound = deactivateSound,
+            DefaultWeaponSource = defaultWeaponSource,
+            RotationX = rotationX,
+            RotationY = rotationY,
+            RotationZ = rotationZ,
+            BounceMultiplier = bounceMultiplier,
+            SoundLevel = soundLevel,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    /// <summary>
+    ///     Enrich parsed ProjectileRecords with runtime data from memory dump.
+    ///     Runtime fills gaps in ESM data (FullName, ModelPath) and provides cross-validation.
+    /// </summary>
+    internal void EnrichProjectilesWithRuntime(List<ProjectileRecord> projectiles)
+    {
+        if (Context.RuntimeReader == null)
+        {
+            return;
+        }
+
+        // Build FormID → RuntimeEditorIdEntry lookup for PROJ (FormType 0x33)
+        var projectileEntries = new Dictionary<uint, RuntimeEditorIdEntry>();
+        foreach (var entry in Context.ScanResult.RuntimeEditorIds)
+        {
+            if (entry.FormType == 0x33 && entry.TesFormOffset.HasValue)
+            {
+                projectileEntries.TryAdd(entry.FormId, entry);
+            }
+        }
+
+        if (projectileEntries.Count == 0)
+        {
+            return;
+        }
+
+        var enrichedCount = 0;
+        for (var i = 0; i < projectiles.Count; i++)
+        {
+            var proj = projectiles[i];
+            if (!projectileEntries.TryGetValue(proj.FormId, out var entry))
+            {
+                continue;
+            }
+
+            var runtimeData = Context.RuntimeReader.ReadProjectilePhysics(
+                entry.TesFormOffset!.Value, entry.FormId);
+            if (runtimeData == null)
+            {
+                continue;
+            }
+
+            // ESM wins for fields it has; runtime fills gaps
+            projectiles[i] = proj with
+            {
+                FullName = proj.FullName ?? runtimeData.FullName,
+                ModelPath = proj.ModelPath ?? runtimeData.ModelPath,
+                SoundLevel = proj.SoundLevel != 0 ? proj.SoundLevel : runtimeData.SoundLevel
+            };
+            enrichedCount++;
+        }
+
+        if (enrichedCount > 0)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] Enriched {enrichedCount}/{projectiles.Count} projectiles with runtime data " +
+                $"({projectileEntries.Count} PROJ entries in hash table)");
+        }
+    }
+
+    #endregion
+
+    #region Impact Data
+
+    /// <summary>
+    ///     Parse all Impact Data (IPCT) records.
+    /// </summary>
+    internal List<ImpactDataRecord> ParseImpactData()
+    {
+        var impactData = ParseAccessorOnly("IPCT", 512, ParseImpactDataFromAccessor);
+
+        Context.MergeRuntimeRecords(impactData, 0x5E, i => i.FormId,
+            (reader, entry) => reader.ReadRuntimeImpactData(entry), "impact data");
+
+        return impactData;
+    }
+
+    private ImpactDataRecord? ParseImpactDataFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return null;
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null, modelPath = null;
+        uint decalTextureSet = 0, sound1 = 0, sound2 = 0;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "MODL":
+                    modelPath =
+                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
+                    break;
+                case "DNAM" when sub.DataLength >= 4:
+                    decalTextureSet = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "SNAM" when sub.DataLength >= 4:
+                    sound1 = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "NAM1" when sub.DataLength >= 4:
+                    sound2 = BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new ImpactDataRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            ModelPath = modelPath,
+            DecalTextureSetFormId = decalTextureSet,
+            Sound1FormId = sound1,
+            Sound2FormId = sound2,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+}

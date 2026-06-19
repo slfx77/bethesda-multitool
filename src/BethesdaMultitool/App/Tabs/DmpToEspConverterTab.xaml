@@ -1,0 +1,526 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+  x:Class="BethesdaMultitool.DmpToEspConverterTab"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:BethesdaMultitool">
+  <UserControl.Resources>
+    <DataTemplate x:Key="SecondaryFolderRowTemplate" x:DataType="local:SecondaryFolderEntry">
+      <Grid Margin="0,2" ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock
+          Grid.Column="0"
+          VerticalAlignment="Center"
+          Opacity="0.6"
+          Text="&#x2261;"
+          FontSize="16" />
+        <TextBlock
+          Grid.Column="1"
+          VerticalAlignment="Center"
+          Text="{Binding Path}"
+          TextTrimming="CharacterEllipsis"
+          ToolTipService.ToolTip="{Binding Path}" />
+        <CheckBox
+          Grid.Column="2"
+          VerticalAlignment="Center"
+          Content="Xbox 360 format"
+          MinWidth="0"
+          IsChecked="{Binding IsXbox360Format, Mode=TwoWay}" />
+        <Button
+          Grid.Column="3"
+          Content="&#xE711;"
+          FontFamily="Segoe MDL2 Assets"
+          FontSize="10"
+          Padding="6,4"
+          Background="Transparent"
+          Tag="{Binding}"
+          AutomationProperties.Name="Remove folder" />
+      </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="DialogueCsvRowTemplate" x:DataType="local:DialogueCsvEntry">
+      <Grid Margin="0,2" ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock
+          Grid.Column="0"
+          VerticalAlignment="Center"
+          Opacity="0.6"
+          Text="&#x2261;"
+          FontSize="16" />
+        <TextBlock
+          Grid.Column="1"
+          VerticalAlignment="Center"
+          Text="{Binding Path}"
+          TextTrimming="CharacterEllipsis"
+          ToolTipService.ToolTip="{Binding Path}" />
+        <Button
+          Grid.Column="2"
+          Content="&#xE711;"
+          FontFamily="Segoe MDL2 Assets"
+          FontSize="10"
+          Padding="6,4"
+          Background="Transparent"
+          Tag="{Binding}"
+          AutomationProperties.Name="Remove dialogue CSV" />
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Grid VerticalAlignment="Stretch">
+    <!--  Settings drawer  -->
+    <Border
+      x:Name="SettingsDrawer"
+      Style="{StaticResource SettingsDrawerBorderStyle}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="16">
+          <TextBlock Text="Settings" Style="{StaticResource SubtitleTextBlockStyle}"
+                     AutomationProperties.HeadingLevel="Level2" />
+
+          <StackPanel Spacing="8">
+            <TextBlock Text="Plugin metadata" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="PluginAuthorLabel" Text="Author" />
+            <TextBox
+              x:Name="PluginAuthorTextBox"
+              AutomationProperties.LabeledBy="{Binding ElementName=PluginAuthorLabel}" />
+            <TextBlock x:Name="PluginDescriptionLabel" Text="Description" />
+            <TextBox
+              x:Name="PluginDescriptionTextBox"
+              AcceptsReturn="True"
+              MaxHeight="80"
+              TextWrapping="Wrap"
+              AutomationProperties.LabeledBy="{Binding ElementName=PluginDescriptionLabel}" />
+          </StackPanel>
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Record handling" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <CheckBox
+              x:Name="CompressRecordsCheckBox"
+              Content="Compress records"
+              MinWidth="0"
+              ToolTipService.ToolTip="zlib-compresses each record in the output ESP, typically shrinking the file by 30-60% with no loss of data. Fully compatible with Fallout: New Vegas. Turn off only if you need to inspect or diff the raw uncompressed record bytes." />
+            <CheckBox
+              x:Name="RecoverGapsCheckBox"
+              Content="Recover validated gap data (experimental)"
+              MinWidth="0"
+              ToolTipService.ToolTip="Opt-in DMP recovery pass: scans uncovered memory gaps for validated raw ESM records and runtime TESForm structs, then promotes only candidates the converter can safely parse. Off by default; browser/audit visibility is unaffected." />
+          </StackPanel>
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Validation" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <CheckBox
+              x:Name="ValidateOutputCheckBox"
+              Content="Validate output by re-parsing (recommended)"
+              IsChecked="True"
+              MinWidth="0"
+              ToolTipService.ToolTip="After writing the ESP, re-parses it to catch malformed records before the game ever loads them. Adds a few seconds on large conversions but surfaces encoder bugs as a build-time failure instead of an in-game crash." />
+            <CheckBox
+              x:Name="VerboseDecisionsCheckBox"
+              Content="Verbose per-record decisions"
+              MinWidth="0"
+              ToolTipService.ToolTip="Emits a progress event for every choice the converter makes per record — picked source vs. master, fields preserved or dropped, sanitization steps. Useful for debugging a specific record but produces tens of thousands of log entries on full conversions." />
+          </StackPanel>
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Asset packing" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <CheckBox
+              x:Name="WriteMissingListCheckBox"
+              Content="Write missing-assets report"
+              MinWidth="0"
+              ToolTipService.ToolTip="Writes a sidecar .missing.txt next to the output BSA listing every asset the packer couldn't find, fuzzy-matched, or failed to convert. Useful for tracking down which prototype assets you still need to source." />
+            <CheckBox
+              x:Name="OverrideVanillaCheckBox"
+              Content="Let secondary folders override vanilla assets"
+              MinWidth="0"
+              ToolTipService.ToolTip="When an asset exists both in your PC Data folder and in a secondary folder, prefer the secondary copy. Off by default — vanilla wins and secondary folders only fill gaps. Turn on when your secondary folders contain prototype versions you want to ship." />
+            <CheckBox
+              x:Name="RefrEditorIdRemapCheckBox"
+              Content="Remap dangling REFRs by EditorID stem (recommended)"
+              IsChecked="True"
+              MinWidth="0"
+              ToolTipService.ToolTip="When a placed reference in the dump points at a base record that no longer exists by FormID, try to bind it to a vanilla object whose EditorID shares the same stem (e.g. SCOLParkingLotChunk03 → SCOLParkingLotChunk03b). Recovers placements that would otherwise be silently dropped." />
+            <CheckBox
+              x:Name="ReplaceCellTemporariesCheckBox"
+              Content="Replace cell temporaries on shared cells (advanced)"
+              MinWidth="0"
+              ToolTipService.ToolTip="When a cell appears in both vanilla and the dump, drop every master temporary ref that isn't in the dump. Persistent refs (quest-bound objects, scripted NPCs) are always preserved. Off by default — turn on for clean cell-by-cell diffs at the cost of losing harmless vanilla clutter." />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <!--  Main content  -->
+    <Grid Padding="16"
+          VerticalAlignment="Stretch">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <!-- Header -->
+      <StackPanel Grid.Row="0" Style="{StaticResource TabHeaderStackPanelStyle}" Margin="0,0,0,8">
+        <TextBlock
+          x:Name="HeaderTextBlock"
+          Text="DMP to ESP Converter"
+          AutomationProperties.HeadingLevel="Level1"
+          Style="{StaticResource SubtitleTextBlockStyle}" />
+        <TextBlock
+          Text="Reverse-engineer Xbox 360 memory dump records into a PC plugin ESP, with optional asset packing from secondary data folders."
+          Style="{StaticResource TabSubtitleStyle}" />
+      </StackPanel>
+
+      <!-- Two-column body -->
+      <Grid Grid.Row="1" ColumnSpacing="16">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="420" MinWidth="360" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- LEFT: Inputs card -->
+        <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Padding="16">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="12">
+              <TextBlock
+                Text="Inputs"
+                FontWeight="SemiBold"
+                AutomationProperties.HeadingLevel="Level2"
+                Style="{StaticResource SubtitleTextBlockStyle}" />
+
+              <StackPanel Spacing="4">
+                <TextBlock x:Name="DmpFileLabel" Text="DMP file" />
+                <Grid ColumnSpacing="6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBox
+                    x:Name="DmpPathTextBox"
+                    Grid.Column="0"
+                    PlaceholderText="C:\path\to\dump.dmp"
+                    TextChanged="InputPathTextBox_TextChanged"
+                    AutomationProperties.LabeledBy="{Binding ElementName=DmpFileLabel}" />
+                  <Button
+                    Grid.Column="1"
+                    Content="Browse..."
+                    Click="BrowseDmpButton_Click"
+                    AutomationProperties.Name="Browse for DMP file" />
+                </Grid>
+              </StackPanel>
+
+              <StackPanel Spacing="4">
+                <TextBlock x:Name="PcDataDirLabel" Text="PC Data directory" />
+                <Grid ColumnSpacing="6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBox
+                    x:Name="PcDataDirTextBox"
+                    Grid.Column="0"
+                    PlaceholderText="C:\path\to\Fallout New Vegas\Data"
+                    TextChanged="InputPathTextBox_TextChanged"
+                    AutomationProperties.LabeledBy="{Binding ElementName=PcDataDirLabel}" />
+                  <Button
+                    Grid.Column="1"
+                    Content="Browse..."
+                    Click="BrowsePcDataButton_Click"
+                    AutomationProperties.Name="Browse for PC Data directory" />
+                </Grid>
+                <TextBlock
+                  x:Name="PcDataValidationText"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  Text="" />
+              </StackPanel>
+
+              <StackPanel Spacing="4">
+                <TextBlock x:Name="OutputEspLabel" Text="Output ESP path" />
+                <Grid ColumnSpacing="6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBox
+                    x:Name="OutputEspTextBox"
+                    Grid.Column="0"
+                    PlaceholderText="C:\path\to\output.esp"
+                    TextChanged="InputPathTextBox_TextChanged"
+                    AutomationProperties.LabeledBy="{Binding ElementName=OutputEspLabel}" />
+                  <Button
+                    Grid.Column="1"
+                    Content="Save..."
+                    Click="BrowseOutputButton_Click"
+                    AutomationProperties.Name="Browse for output ESP path" />
+                </Grid>
+              </StackPanel>
+
+              <StackPanel Spacing="6" Margin="0,8,0,0">
+                <TextBlock
+                  x:Name="SecondaryFoldersLabel"
+                  Text="Secondary data folders (drag to reorder; top = highest priority)"
+                  TextWrapping="Wrap"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <ListView
+                  x:Name="SecondariesListView"
+                  CanReorderItems="True"
+                  AllowDrop="True"
+                  ItemTemplate="{StaticResource SecondaryFolderRowTemplate}"
+                  SelectionMode="None"
+                  MinHeight="80"
+                  MaxHeight="180"
+                  BorderThickness="1"
+                  BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                  AutomationProperties.Name="Secondary data folders"
+                  AutomationProperties.LabeledBy="{Binding ElementName=SecondaryFoldersLabel}">
+                  <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                      <Setter Property="Padding" Value="6,4,6,4" />
+                      <Setter Property="MinHeight" Value="0" />
+                      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                  </ListView.ItemContainerStyle>
+                </ListView>
+                <TextBlock
+                  x:Name="SecondariesEmptyHint"
+                  Text="No secondary folders. Click &quot;Add folder…&quot; to add one."
+                  FontStyle="Italic"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Button
+                  x:Name="AddSecondaryFolderButton"
+                  Content="Add folder…"
+                  Click="AddSecondaryFolderButton_Click"
+                  HorizontalAlignment="Left"
+                  AutomationProperties.Name="Add secondary data folder" />
+                <TextBlock
+                  x:Name="DialogueCsvLabel"
+                  Text="Dialogue audio CSVs (Bethesda Audio Transcriber exports; supplies voice/lip requests for INFO records)"
+                  TextWrapping="Wrap"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  Margin="0,8,0,0" />
+                <ListView
+                  x:Name="DialogueCsvListView"
+                  CanReorderItems="True"
+                  AllowDrop="True"
+                  ItemTemplate="{StaticResource DialogueCsvRowTemplate}"
+                  SelectionMode="None"
+                  MinHeight="60"
+                  MaxHeight="140"
+                  BorderThickness="1"
+                  BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                  AutomationProperties.Name="Dialogue audio CSVs"
+                  AutomationProperties.LabeledBy="{Binding ElementName=DialogueCsvLabel}">
+                  <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                      <Setter Property="Padding" Value="6,4,6,4" />
+                      <Setter Property="MinHeight" Value="0" />
+                      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                  </ListView.ItemContainerStyle>
+                </ListView>
+                <TextBlock
+                  x:Name="DialogueCsvEmptyHint"
+                  Text="No dialogue CSVs. Click &quot;Add CSV…&quot; to add one."
+                  FontStyle="Italic"
+                  FontSize="11"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Button
+                  x:Name="AddDialogueCsvButton"
+                  Content="Add CSV…"
+                  Click="AddDialogueCsvButton_Click"
+                  HorizontalAlignment="Left"
+                  AutomationProperties.Name="Add dialogue audio CSV" />
+                <CheckBox
+                  x:Name="PackAssetsCheckBox"
+                  Content="Pack missing assets into a BSA"
+                  Checked="PackAssetsCheckBox_Toggled"
+                  Unchecked="PackAssetsCheckBox_Toggled"
+                  MinWidth="0"
+                  Margin="0,4,0,0"
+                  ToolTipService.ToolTip="After the ESP is written, scans it for asset paths that aren't in your PC Data folder, sources them from the secondary folders above, and packs them into a BSA next to the ESP. Required to play the converted plugin without copying loose files into Data." />
+                <TextBlock x:Name="OutputBsaLabel" Text="Output BSA path" />
+                <Grid ColumnSpacing="6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBox
+                    x:Name="OutputBsaTextBox"
+                    Grid.Column="0"
+                    PlaceholderText="C:\path\to\output.bsa"
+                    AutomationProperties.LabeledBy="{Binding ElementName=OutputBsaLabel}" />
+                  <Button
+                    Grid.Column="1"
+                    Content="Save..."
+                    Click="BrowseOutputBsaButton_Click"
+                    AutomationProperties.Name="Browse for output BSA path" />
+                </Grid>
+              </StackPanel>
+
+              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                <Button
+                  x:Name="ConvertButton"
+                  Content="Convert"
+                  Style="{ThemeResource AccentButtonStyle}"
+                  IsEnabled="False"
+                  Click="ConvertButton_Click"
+                  AutomationProperties.Name="Convert DMP to ESP">
+                  <Button.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="ConvertAccelerator_Invoked" />
+                  </Button.KeyboardAccelerators>
+                </Button>
+                <Button
+                  x:Name="CancelButton"
+                  Content="Cancel"
+                  IsEnabled="False"
+                  Click="CancelButton_Click"
+                  AutomationProperties.Name="Cancel conversion">
+                  <Button.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="Escape" Invoked="CancelAccelerator_Invoked" />
+                  </Button.KeyboardAccelerators>
+                </Button>
+              </StackPanel>
+
+              <ProgressBar
+                x:Name="ConversionProgressBar"
+                Visibility="Collapsed"
+                IsIndeterminate="True" />
+            </StackPanel>
+          </ScrollViewer>
+        </Border>
+
+        <!-- RIGHT: Progress card -->
+        <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Padding="16">
+          <Grid RowSpacing="8">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" ColumnSpacing="12">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock
+                Grid.Column="0"
+                Text="Progress"
+                FontWeight="SemiBold"
+                AutomationProperties.HeadingLevel="Level2"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+                VerticalAlignment="Center" />
+              <ComboBox
+                Grid.Column="1"
+                x:Name="FilterComboBox"
+                MinWidth="120"
+                SelectedIndex="0"
+                SelectionChanged="FilterComboBox_SelectionChanged"
+                AutomationProperties.Name="Severity filter">
+                <ComboBoxItem Content="All" />
+                <ComboBoxItem Content="Decisions+" />
+                <ComboBoxItem Content="Warnings+" />
+                <ComboBoxItem Content="Errors only" />
+              </ComboBox>
+              <Button
+                Grid.Column="2"
+                Content="Copy"
+                Click="CopyLogButton_Click"
+                AutomationProperties.Name="Copy filtered log to clipboard" />
+              <Button
+                Grid.Column="3"
+                x:Name="ClearLogButton"
+                Content="Clear"
+                Click="ClearLogButton_Click"
+                AutomationProperties.Name="Clear progress log" />
+            </Grid>
+
+            <TextBlock
+              Grid.Row="1"
+              x:Name="PhaseStatusTextBlock"
+              FontSize="12"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              Text="Idle." />
+
+            <ListView
+              Grid.Row="2"
+              x:Name="EventsListView"
+              SelectionMode="None"
+              AutomationProperties.Name="Conversion progress events"
+              ScrollViewer.HorizontalScrollMode="Auto"
+              ScrollViewer.HorizontalScrollBarVisibility="Auto">
+              <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                  <Setter Property="Padding" Value="6,2,6,2" />
+                  <Setter Property="MinHeight" Value="0" />
+                </Style>
+              </ListView.ItemContainerStyle>
+              <ListView.ItemTemplate>
+                <DataTemplate x:DataType="local:ConversionEventEntry">
+                  <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="90" />
+                      <ColumnDefinition Width="50" />
+                      <ColumnDefinition Width="120" />
+                      <ColumnDefinition Width="60" />
+                      <ColumnDefinition Width="100" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{x:Bind TimeDisplay}" FontFamily="Consolas" FontSize="12" />
+                    <TextBlock Grid.Column="1" Text="{x:Bind SeverityLabel}" FontWeight="SemiBold"
+                               Foreground="{x:Bind SeverityColor}" FontSize="12" />
+                    <TextBlock Grid.Column="2" Text="{x:Bind Phase}" FontSize="12" />
+                    <TextBlock Grid.Column="3" Text="{x:Bind FormTypeDisplay}" FontSize="12"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Grid.Column="4" Text="{x:Bind FormIdDisplay}" FontFamily="Consolas" FontSize="12"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Grid.Column="5" Text="{x:Bind Message}" TextWrapping="Wrap" FontSize="12" />
+                  </Grid>
+                </DataTemplate>
+              </ListView.ItemTemplate>
+            </ListView>
+
+            <TextBlock
+              Grid.Row="3"
+              x:Name="LogFooterTextBlock"
+              FontSize="11"
+              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+              Text="0 events" />
+          </Grid>
+        </Border>
+      </Grid>
+
+      <!-- Result summary (collapsed until completion) -->
+      <Border
+        Grid.Row="2"
+        x:Name="ResultSummaryBorder"
+        Style="{StaticResource CardBorderStyle}"
+        Padding="12"
+        Margin="0,8,0,0"
+        Visibility="Collapsed">
+        <TextBlock
+          x:Name="ResultSummaryTextBlock"
+          TextWrapping="Wrap"
+          FontSize="13" />
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -2,8 +2,8 @@ using System.CommandLine;
 using NifAnalyzer.Models;
 using NifAnalyzer.Parsers;
 using Spectre.Console;
-using static FalloutXbox360Utils.Core.Formats.Nif.Conversion.NifEndianUtils;
-using static FalloutXbox360Utils.Core.Utils.BinaryUtils;
+using static BethesdaMultitool.Core.Formats.Nif.Conversion.NifEndianUtils;
+using static BethesdaMultitool.Core.Utils.BinaryUtils;
 
 namespace NifAnalyzer.Commands;
 

@@ -1,6 +1,6 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core.Formats.Nif;
-using FalloutXbox360Utils.Core.Formats.Nif.Conversion;
+using BethesdaMultitool.Core.Formats.Nif;
+using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using Spectre.Console;
 
 namespace NifAnalyzer.Commands;

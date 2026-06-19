@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.RegularExpressions;
-using FalloutXbox360Utils.Core.Utils;
-using FalloutXbox360Utils.Core.Minidump;
+using BethesdaMultitool.Core.Utils;
+using BethesdaMultitool.Core.Minidump;
 
 var repoRoot = Directory.GetCurrentDirectory();
 var dumpPath = args.Length > 0

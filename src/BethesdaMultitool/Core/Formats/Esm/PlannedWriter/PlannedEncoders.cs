@@ -1,0 +1,161 @@
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.SimpleRef;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.Trivial;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.World;
+
+namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
+
+/// <summary>
+///     Central factory listing every <see cref="IPlannedRecordEncoder" /> the planner-side
+///     pipeline currently supports. Each tier adds rows here as encoders ship.
+/// </summary>
+/// <remarks>
+///     <c>PluginBuildOptions.PlannerEnabledRecordTypes</c> selects which subset of these
+///     encoders are actually exercised per build. An entry here doesn't enable the planner
+///     for that type — the build options do. This factory is the single source of truth for
+///     "what types CAN the planner emit," used by <c>PluginBuilder</c> to detect mis-configured
+///     option sets (planner-enabled type with no registered encoder).
+/// </remarks>
+public static class PlannedEncoders
+{
+    /// <summary>
+    ///     Build a fresh <see cref="PlannedEncoderRegistry" />. Cheap — encoders are stateless.
+    /// </summary>
+    public static PlannedEncoderRegistry BuildRegistry()
+    {
+        return new PlannedEncoderRegistry(BuildAll());
+    }
+
+    /// <summary>
+    ///     Distinct record-type signatures the planner pipeline can emit. Derived from
+    ///     <see cref="BuildAll" /> so newly-registered encoders are picked up automatically.
+    ///     Used by the CLI's <c>--planner-types all</c> resolution and by the aggregate
+    ///     parity harness to enumerate the encoder coverage.
+    /// </summary>
+    public static IEnumerable<string> KnownRecordTypes() =>
+        BuildAll().Select(e => e.RecordType).Distinct(StringComparer.Ordinal);
+
+    /// <summary>
+    ///     Enumerate every planned encoder. Tier 1+ extends this list.
+    /// </summary>
+    public static IEnumerable<IPlannedRecordEncoder> BuildAll()
+    {
+        // Tier 1 — trivial static-data encoders. No outgoing FormID resolution (or only
+        // verbatim FormID pass-through, matching legacy behavior byte-for-byte).
+        yield return new PlannedStatEncoder();
+        yield return new PlannedGlobEncoder();
+        yield return new PlannedGmstEncoder();
+        yield return new PlannedArmoEncoder();
+        yield return new PlannedAmmoEncoder();
+        yield return new PlannedBookEncoder();
+        yield return new PlannedAlchEncoder();
+
+        // Tier 2 — simple FormID-ref encoders. Most emit FormIDs verbatim without
+        // validation; WEAP threads the plan's emit set + remap table through to
+        // its legacy EncodeNew(weap, validFormIds, remapTable) overload.
+        yield return new PlannedWeapEncoder();
+        yield return new PlannedDoorEncoder();
+        yield return new PlannedMiscEncoder();
+        yield return new PlannedKeymEncoder();
+        yield return new PlannedNoteEncoder();
+        yield return new PlannedRcpeEncoder();
+        yield return new PlannedCobjEncoder();
+        yield return new PlannedArmaEncoder();
+        yield return new PlannedImodEncoder();
+        yield return new PlannedEnchEncoder();
+        yield return new PlannedSpelEncoder();
+        yield return new PlannedExplEncoder();
+        yield return new PlannedMgefEncoder();
+        yield return new PlannedProjEncoder();
+
+        // Tier 2 expansion — character/misc/world/AI trivials. Same delegate pattern as
+        // the simple-ref encoders above.
+        yield return new PlannedSounEncoder();
+        yield return new PlannedFactEncoder();
+        yield return new PlannedHairEncoder();
+        yield return new PlannedEyesEncoder();
+        yield return new PlannedHdptEncoder();
+        yield return new PlannedBptdEncoder();
+        yield return new PlannedAvifEncoder();
+        yield return new PlannedClasEncoder();
+        yield return new PlannedRaceEncoder();
+        yield return new PlannedRepuEncoder();
+        yield return new PlannedVtypEncoder();
+        yield return new PlannedChalEncoder();
+        yield return new PlannedIngrEncoder();
+        yield return new PlannedIpctEncoder();
+        yield return new PlannedLtexEncoder();
+        yield return new PlannedMicnEncoder();
+        yield return new PlannedMuscEncoder();
+        yield return new PlannedRcctEncoder();
+        yield return new PlannedTxstEncoder();
+        yield return new PlannedActiEncoder();
+        yield return new PlannedDebrEncoder();
+        yield return new PlannedCstyEncoder();
+
+        // Tier 3 — complex FormID-ref encoders. Transitional pass-through to legacy
+        // EncodeNew(model, validFormIds, remapTable); FormID resolution comes from the
+        // plan's emit set. End-to-end parity for records that reference engine-hardcoded
+        // FormIDs or master-child FormIDs (player ref, placed refs) needs additional plan
+        // plumbing — synthetic tests with no outgoing refs still pass byte-for-byte.
+        yield return new PlannedScptEncoder();
+        yield return new PlannedPerkEncoder();
+        yield return new PlannedContEncoder();
+        yield return new PlannedIdleEncoder();
+        yield return new PlannedTermEncoder();
+        yield return new PlannedLvliEncoder("LVLI");
+        yield return new PlannedLvliEncoder("LVLN");
+        yield return new PlannedLvliEncoder("LVLC");
+        yield return new PlannedNpcEncoder();
+        yield return new PlannedCreaEncoder();
+        yield return new PlannedQustEncoder();
+        yield return new PlannedInfoEncoder();
+
+        // Tier 4 — cross-record coordination encoders. PACK PLDT degradation still
+        // happens inside legacy EncodeNew transitionally; planner-side downgrade via
+        // ResolvedRefAction.DowngradeContainer is a Tier 4 follow-up. REFR/ACHR/ACRE
+        // (placed refs) emit under CELL Children GRUPs and ship in Tier 5.
+        yield return new PlannedPackEncoder();
+        yield return new PlannedCpthEncoder();
+        yield return new PlannedDialEncoder();
+        yield return new PlannedMesgEncoder();
+
+        // Tier 5a — remaining top-level world / misc encoders. Cell-children types
+        // (REFR/ACHR/ACRE/LAND/NAVM/PGRE) ship in Tier 5b once cell-pipeline integration
+        // routes their emission through the planner.
+        yield return new PlannedWrldEncoder();
+        yield return new PlannedLighEncoder();
+        yield return new PlannedFurnEncoder();
+        yield return new PlannedWatrEncoder();
+        yield return new PlannedWthrEncoder();
+        yield return new PlannedLgtmEncoder();
+        yield return new PlannedEczEncoder();
+        yield return new PlannedLsctEncoder();
+        yield return new PlannedRegnEncoder();
+        yield return new PlannedScolEncoder();
+        yield return new PlannedAlocEncoder();
+        yield return new PlannedCcrdEncoder();
+        yield return new PlannedCmnyEncoder();
+        yield return new PlannedCdckEncoder();
+        yield return new PlannedFlstEncoder();
+
+        // Tier 5b kickoff — CELL + placed-reference (REFR/ACHR/ACRE) encoders. These are
+        // registered but not yet invoked by any dispatch path: cell-children records
+        // (REFR/ACHR/ACRE) emit through CellGrupBuilder's persistent/temporary/VWD
+        // children GRUPs and CELL emits through the WRLD cell-block hierarchy. Routing
+        // those through the planner is the cell-pipeline integration that finishes Tier
+        // 5b. LAND/NAVM/NAVI are not yet ported — they lack standard IRecordEncoder
+        // paths and emit via specialized builders (LandOverrideBuilder, NavInfoMapBuilder,
+        // etc.) that need their own planner-aware abstractions.
+        yield return new PlannedCellEncoder();
+        yield return new PlannedPlacedReferenceEncoder("REFR");
+        yield return new PlannedPlacedReferenceEncoder("ACHR");
+        yield return new PlannedPlacedReferenceEncoder("ACRE");
+
+        // Tier 7a — PGRE (placed grenade). Structural mirror of the placed-reference
+        // encoders; cell-children dispatch routing is a follow-up that needs PGRE→parent
+        // cell mapping on the model. Registered now so the encoder ships with the
+        // primitive in place when routing lands.
+        yield return new PlannedPgreEncoder();
+    }
+}

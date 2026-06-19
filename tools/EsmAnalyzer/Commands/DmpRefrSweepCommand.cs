@@ -4,8 +4,8 @@ using System.CommandLine;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
-using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Core.Orchestration;
+using BethesdaMultitool.Core.Minidump;
+using BethesdaMultitool.Core.Orchestration;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;

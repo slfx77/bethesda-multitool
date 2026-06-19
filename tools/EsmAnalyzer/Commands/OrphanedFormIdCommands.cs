@@ -1,9 +1,9 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using Spectre.Console;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Conversion;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using static EsmAnalyzer.Commands.OrphanedRefAnalyzer;
 
 namespace EsmAnalyzer.Commands;

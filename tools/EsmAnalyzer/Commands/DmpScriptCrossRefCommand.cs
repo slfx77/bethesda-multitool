@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;

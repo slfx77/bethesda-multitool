@@ -1,6 +1,6 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Semantic;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;

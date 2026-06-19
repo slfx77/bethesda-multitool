@@ -1,8 +1,8 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
 using System.CommandLine;
 using System.Globalization;
-using FalloutXbox360Utils.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm;
 using static EsmAnalyzer.Commands.OfstDataLoader;
 using static EsmAnalyzer.Commands.OfstMathUtils;
 

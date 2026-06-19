@@ -1,0 +1,355 @@
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
+using BethesdaMultitool.Core.Utils;
+
+namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers;
+
+/// <summary>
+///     Reads TESObjectCELL runtime structs from Xbox 360 memory dumps.
+///     Extracts cell probe snapshots (FormID, flags, water height, worldspace, land,
+///     references, lighting, extra data) from PDB-derived struct layouts. Per-build
+///     cell-field offset shifts are applied via <see cref="PdbStructView.WithShift(int,int,int)" />
+///     using the <c>cellShift</c> registered at construction time.
+/// </summary>
+internal sealed class RuntimeCellObjectEnumerator
+{
+    private const int CellShiftStartOffset = 52;
+
+    private readonly int _cellShift;
+    private readonly RuntimeMemoryContext _context;
+    private readonly RuntimePdbFieldAccessor _fields;
+
+    internal RuntimeCellObjectEnumerator(
+        RuntimeMemoryContext context,
+        RuntimePdbFieldAccessor fields,
+        int cellShift)
+    {
+        _context = context;
+        _fields = fields;
+        _cellShift = cellShift;
+    }
+
+    private PdbStructView OpenCellView(byte[] buffer, long fileOffset, PdbTypeLayout layout)
+    {
+        return new PdbStructView(_fields, layout, buffer, fileOffset, entry: null)
+            .WithShift(CellShiftStartOffset, int.MaxValue, _cellShift);
+    }
+
+    internal RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshot(RuntimeEditorIdEntry entry,
+        Func<RuntimeEditorIdEntry, int, byte[]?> readStructBuffer)
+    {
+        if (entry.FormType != 0x39 || !entry.TesFormOffset.HasValue)
+        {
+            return null;
+        }
+
+        var layout = PdbStructLayouts.Get(0x39);
+        if (layout == null)
+        {
+            return null;
+        }
+
+        var buffer = readStructBuffer(entry, layout.StructSize);
+        if (buffer == null)
+        {
+            return null;
+        }
+
+        return ReadRuntimeCellProbeSnapshotFromBuffer(
+            buffer,
+            entry.TesFormOffset.Value,
+            entry.FormId,
+            entry.DisplayName,
+            layout);
+    }
+
+    internal RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshot(long fileOffset, uint? expectedFormId,
+        string? displayName)
+    {
+        var layout = PdbStructLayouts.Get(0x39);
+        if (layout == null)
+        {
+            return null;
+        }
+
+        var buffer = _context.ReadBytes(fileOffset, layout.StructSize);
+        if (buffer == null)
+        {
+            return null;
+        }
+
+        return ReadRuntimeCellProbeSnapshotFromBuffer(
+            buffer,
+            fileOffset,
+            expectedFormId,
+            displayName,
+            layout);
+    }
+
+    internal RuntimeCellProbeSnapshot? ReadRuntimeCellProbeSnapshotFromBuffer(
+        byte[] buffer,
+        long fileOffset,
+        uint? expectedFormId,
+        string? displayName,
+        PdbTypeLayout layout)
+    {
+        if (buffer.Length < 16 || buffer[4] != 0x39)
+        {
+            return null;
+        }
+
+        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
+        if (formId == 0 || formId == 0xFFFFFFFF)
+        {
+            return null;
+        }
+
+        if (expectedFormId.HasValue && formId != expectedFormId.Value)
+        {
+            return null;
+        }
+
+        var view = OpenCellView(buffer, fileOffset, layout);
+
+        var flagsOffset = view.Offset("cCellFlags", "TESObjectCELL");
+        var waterHeightOffset = view.Offset("fWaterHeight", "TESObjectCELL");
+        var referenceListOffset = view.Offset("listReferences", "TESObjectCELL");
+
+        var flags = flagsOffset.HasValue && flagsOffset.Value < buffer.Length
+            ? buffer[flagsOffset.Value]
+            : (byte)0;
+
+        // iLightingTemplateInheritanceFlags (uint32)
+        var inheritFlagsOffset = view.Offset("iLightingTemplateInheritanceFlags", "TESObjectCELL");
+        uint? lightingInheritanceFlags = inheritFlagsOffset.HasValue && inheritFlagsOffset.Value + 4 <= buffer.Length
+            ? RuntimePdbFieldAccessor.ReadUInt32(buffer, inheritFlagsOffset.Value)
+            : null;
+
+        // Walk the BSExtraData linked list for encounter zone, music, acoustic, image space
+        var cellExtras = ReadCellExtraData(view);
+
+        return new RuntimeCellProbeSnapshot(
+            formId,
+            NormalizeString(displayName) ?? view.BsString("cFullName", "TESFullName"),
+            flags,
+            ReadReportableHeight(buffer, waterHeightOffset),
+            view.FormIdPointer("pWorldSpace", "TESObjectCELL", 0x41),
+            view.FormIdPointer("pCellLand", "TESObjectCELL"),
+            referenceListOffset.HasValue
+                ? ReadCellReferenceFormIds(buffer, referenceListOffset.Value)
+                : [],
+            view.FormIdPointer("pLightingTemplate", "TESObjectCELL", 0x67),
+            lightingInheritanceFlags,
+            cellExtras.EncounterZoneFormId,
+            cellExtras.MusicTypeFormId,
+            cellExtras.AcousticSpaceFormId,
+            cellExtras.ImageSpaceFormId);
+    }
+
+    internal static CellRecord? BuildCellRecord(
+        RuntimeCellProbeSnapshot? snapshot,
+        long fileOffset,
+        string? editorId,
+        string? displayName)
+    {
+        if (snapshot == null)
+        {
+            return null;
+        }
+
+        return new CellRecord
+        {
+            FormId = snapshot.FormId,
+            EditorId = NormalizeString(editorId),
+            FullName = snapshot.FullName ?? NormalizeString(displayName),
+            Flags = snapshot.Flags,
+            WaterHeight = snapshot.WaterHeight,
+            WorldspaceFormId = snapshot.WorldspaceFormId,
+            LightingTemplateFormId = snapshot.LightingTemplateFormId,
+            LightingTemplateInheritanceFlags = snapshot.LightingTemplateInheritanceFlags,
+            EncounterZoneFormId = snapshot.EncounterZoneFormId,
+            MusicTypeFormId = snapshot.MusicTypeFormId,
+            AcousticSpaceFormId = snapshot.AcousticSpaceFormId,
+            ImageSpaceFormId = snapshot.ImageSpaceFormId,
+            Offset = fileOffset,
+            IsBigEndian = true
+        };
+    }
+
+    private List<uint> ReadCellReferenceFormIds(byte[] cellBuffer, int listHeadOffset)
+    {
+        if (listHeadOffset + 8 > cellBuffer.Length)
+        {
+            return [];
+        }
+
+        var formIds = _fields.ReadFormIdSimpleList(cellBuffer, listHeadOffset);
+        if (formIds.Count <= 1)
+        {
+            return formIds;
+        }
+
+        var seen = new HashSet<uint>();
+        var deduped = new List<uint>(formIds.Count);
+        foreach (var formId in formIds)
+        {
+            if (formId != 0 && seen.Add(formId))
+            {
+                deduped.Add(formId);
+            }
+        }
+
+        return deduped;
+    }
+
+    /// <summary>
+    ///     Walk the BSExtraData linked list from a CELL's ExtraDataList and extract
+    ///     encounter zone, music type, acoustic space, and image space FormIDs.
+    /// </summary>
+    private (uint? EncounterZoneFormId, uint? MusicTypeFormId, uint? AcousticSpaceFormId, uint? ImageSpaceFormId)
+        ReadCellExtraData(PdbStructView view)
+    {
+        var cellBuffer = view.Buffer;
+        // ExtraDataList is an embedded struct in TESObjectCELL; pHead is at +4 within it.
+        var extraDataOffset = view.Offset("ExtraData", "TESObjectCELL");
+        if (!extraDataOffset.HasValue || extraDataOffset.Value + 8 > cellBuffer.Length)
+        {
+            return (null, null, null, null);
+        }
+
+        // pHead is at ExtraDataList+4 (first 4 bytes are vfptr)
+        var pHead = BinaryUtils.ReadUInt32BE(cellBuffer, extraDataOffset.Value + 4);
+        if (pHead == 0 || !_context.IsValidPointer(pHead))
+        {
+            return (null, null, null, null);
+        }
+
+        uint? encounterZoneFormId = null;
+        uint? musicTypeFormId = null;
+        uint? acousticSpaceFormId = null;
+        uint? imageSpaceFormId = null;
+
+        var visited = new HashSet<uint>();
+        var currentVa = pHead;
+
+        for (var i = 0; i < MaxCellExtraListNodes; i++)
+        {
+            if (currentVa == 0 || !visited.Add(currentVa))
+            {
+                break;
+            }
+
+            var nodeFileOffset = _context.VaToFileOffset(currentVa);
+            if (nodeFileOffset == null)
+            {
+                break;
+            }
+
+            var nodeBuffer = _context.ReadBytes(nodeFileOffset.Value, CellExtraNodeReadSize);
+            if (nodeBuffer == null)
+            {
+                break;
+            }
+
+            var eType = nodeBuffer[CellExtraEtypeOffset];
+            var nextVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraNextOffset);
+
+            switch (eType)
+            {
+                case ExtraEncounterZoneCode:
+                {
+                    var zoneVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraPayloadOffset);
+                    encounterZoneFormId ??= _context.FollowPointerVaToFormId(zoneVa, 0x61);
+                    break;
+                }
+                case ExtraCellMusicTypeCode:
+                {
+                    var musicVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraPayloadOffset);
+                    musicTypeFormId ??= _context.FollowPointerVaToFormId(musicVa, 0x6B);
+                    break;
+                }
+                case ExtraCellAcousticSpaceCode:
+                {
+                    var acousticVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraPayloadOffset);
+                    acousticSpaceFormId ??= _context.FollowPointerVaToFormId(acousticVa);
+                    break;
+                }
+                case ExtraCellImageSpaceCode:
+                {
+                    var imageVa = BinaryUtils.ReadUInt32BE(nodeBuffer, CellExtraPayloadOffset);
+                    imageSpaceFormId ??= _context.FollowPointerVaToFormId(imageVa, 0x56);
+                    break;
+                }
+            }
+
+            // Early exit if all four found
+            if (encounterZoneFormId.HasValue && musicTypeFormId.HasValue &&
+                acousticSpaceFormId.HasValue && imageSpaceFormId.HasValue)
+            {
+                break;
+            }
+
+            currentVa = nextVa;
+        }
+
+        return (encounterZoneFormId, musicTypeFormId, acousticSpaceFormId, imageSpaceFormId);
+    }
+
+    internal static string? NormalizeString(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    internal static float? ReadNormalFloat(byte[] buffer, int? offset)
+    {
+        if (!offset.HasValue || offset.Value + 4 > buffer.Length)
+        {
+            return null;
+        }
+
+        var value = RuntimePdbFieldAccessor.ReadFloat(buffer, offset.Value);
+        return RuntimeMemoryContext.IsNormalFloat(value) ? value : null;
+    }
+
+    internal static float? ReadReportableHeight(byte[] buffer, int? offset)
+    {
+        if (!offset.HasValue || offset.Value + 4 > buffer.Length)
+        {
+            return null;
+        }
+
+        var value = RuntimePdbFieldAccessor.ReadFloat(buffer, offset.Value);
+        return WorldHeightNormalizer.NormalizeReportableHeight(value);
+    }
+
+    internal sealed record RuntimeCellProbeSnapshot(
+        uint FormId,
+        string? FullName,
+        byte Flags,
+        float? WaterHeight,
+        uint? WorldspaceFormId,
+        uint? LandFormId,
+        IReadOnlyList<uint> ReferenceFormIds,
+        uint? LightingTemplateFormId = null,
+        uint? LightingTemplateInheritanceFlags = null,
+        uint? EncounterZoneFormId = null,
+        uint? MusicTypeFormId = null,
+        uint? AcousticSpaceFormId = null,
+        uint? ImageSpaceFormId = null);
+
+    #region BSExtraData Linked List (Cell ExtraDataList)
+
+    private const int CellExtraEtypeOffset = 4;
+    private const int CellExtraNextOffset = 8;
+    private const int CellExtraPayloadOffset = 12;
+    private const int CellExtraNodeReadSize = 16;
+    private const int MaxCellExtraListNodes = 64;
+
+    private const byte ExtraCellMusicTypeCode = 0x07;
+    private const byte ExtraCellImageSpaceCode = 0x59;
+    private const byte ExtraEncounterZoneCode = 0x74;
+    private const byte ExtraCellAcousticSpaceCode = 0x81;
+
+    #endregion
+}

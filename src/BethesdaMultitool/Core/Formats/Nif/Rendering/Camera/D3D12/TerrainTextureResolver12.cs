@@ -1,0 +1,138 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
+
+/// <summary>
+///     v3 Pass 4 Step 2c — D3D12 analog of <c>TerrainTextureResolver</c>. Resolves
+///     LTEX FormIDs to texture entries via the same LTEX → TXST → DiffuseTexture chain;
+///     uploads through <see cref="GpuTextureCache12" /> instead of the old <c>GpuTextureCache</c>.
+///     <para>
+///         Owns both the <see cref="NifTextureResolver" /> (backend-agnostic decode) and
+///         the <see cref="GpuTextureCache12" /> (D3D12 upload). The renderer borrows the
+///         resolver for the lifetime of a worldspace load.
+///     </para>
+/// </summary>
+internal sealed class TerrainTextureResolver12 : IDisposable
+{
+    private readonly IReadOnlyDictionary<uint, LandscapeTextureRecord> _ltexByFormId;
+    private readonly IReadOnlyDictionary<uint, TextureSetRecord> _txstByFormId;
+    private readonly NifGpuTextureResolver _textureResolver;
+    private readonly GpuTextureCache12 _textureCache;
+    private readonly Dictionary<uint, GpuTextureCache12.Entry> _byLtex = new();
+    private readonly BethesdaMultitool.Core.Formats.Esm.BethesdaGame _game;
+
+    public TerrainTextureResolver12(
+        GpuDevice12 gpu,
+        GpuCommandRecorder12 recorder,
+        GpuDescriptorHeapAllocator12 heap,
+        GpuDeletionQueue12 deletionQueue,
+        IReadOnlyDictionary<uint, LandscapeTextureRecord> ltexByFormId,
+        IReadOnlyDictionary<uint, TextureSetRecord> txstByFormId,
+        string[] texturesBsaPaths,
+        BethesdaMultitool.Core.Formats.Esm.BethesdaGame game = BethesdaMultitool.Core.Formats.Esm.BethesdaGame.Unknown)
+    {
+        _ltexByFormId = ltexByFormId;
+        _txstByFormId = txstByFormId;
+        _game = game;
+        _textureResolver = new NifGpuTextureResolver(texturesBsaPaths);
+        _textureCache = new GpuTextureCache12(gpu, recorder, heap, _textureResolver, deletionQueue)
+            .RegisterWith(Diagnostics.ResourceRegistry.Instance, "terrain");
+    }
+
+    /// <summary>1×1 white texture returned only when even the engine-default fails.</summary>
+    public GpuTextureCache12.Entry WhiteFallback => _textureCache.WhitePixel;
+
+    /// <summary>Engine-default landscape diffuse for the active game (FNV DirtWasteland01, FO4
+    /// CommonwealthDefault01, …). Lazy — first access uploads it via the texture cache (which records
+    /// onto the current frame's command list). Game-keyed so a non-FNV worldspace's no-BTXT quadrants
+    /// don't bind FNV's texture (absent in their archives → white base).</summary>
+    public GpuTextureCache12.Entry EngineDefault =>
+        _textureCache.GetOrUpload(EngineDefaultLandscapeTexture.DiffuseFor(_game));
+
+    public int FrameCacheMisses { get; private set; }
+
+    public int FrameCompressedTextureUploads => _textureCache.FrameCompressedUploads;
+
+    public int FrameRgbaTextureUploads => _textureCache.FrameRgbaFallbackUploads;
+
+    public int FrameQueuedTextureResolves => _textureCache.FrameQueuedResolves;
+
+    public int FrameActiveTextureResolves => _textureCache.FrameActiveResolves;
+
+    public int PendingTextureResolves => _textureCache.PendingResolveCount;
+
+    public int PendingTextureUploads => _textureCache.PendingUploadCount;
+
+    public void ResetFrameStats()
+    {
+        FrameCacheMisses = 0;
+        _textureCache.ResetFrameStats();
+    }
+
+    /// <summary>
+    ///     Resolves an LTEX FormID to its diffuse texture entry. Never returns null; falls
+    ///     back to <see cref="EngineDefault" /> when the chain breaks. Result is cached
+    ///     per <paramref name="ltexFormId" />.
+    /// </summary>
+    public GpuTextureCache12.Entry Resolve(uint ltexFormId)
+    {
+        if (_byLtex.TryGetValue(ltexFormId, out var cached)) return cached;
+        FrameCacheMisses++;
+
+        var path = LandscapeTexturePathResolver.ResolveDiffuse(ltexFormId, _ltexByFormId, _txstByFormId);
+        if (path is null)
+        {
+            var fallback = EngineDefault;
+            _byLtex[ltexFormId] = fallback;
+            return fallback;
+        }
+
+        var entry = _textureCache.GetOrUpload(path);
+        _byLtex[ltexFormId] = entry;
+        return entry;
+    }
+
+    /// <summary>
+    ///     Resolves an arbitrary texture path (e.g. a WATR NNAM noise/normal map) as a normal map
+    ///     and returns its stable bindless SRV index, or <c>null</c> when no path is given. The
+    ///     upload streams asynchronously through the same <see cref="GpuTextureCache12" /> as
+    ///     terrain — the index is valid in the slot-4 bindless table immediately (pointing at the
+    ///     flat-normal placeholder until the real texture lands). Used by the water renderer so it
+    ///     samples the engine's actual NNAM perturbation instead of a procedural stand-in.
+    /// </summary>
+    public uint? ResolveNormalMapBindlessIndex(string? texturePath)
+    {
+        if (string.IsNullOrWhiteSpace(texturePath)) return null;
+        return _textureCache.GetOrUpload(texturePath, isNormalMap: true).BindlessIndex;
+    }
+
+    /// <summary>
+    ///     Resolves an arbitrary diffuse texture path (e.g. the CLMT sun texture or a fixed sky texture
+    ///     like <c>textures\sky\sun.dds</c>) to its stable bindless SRV index, or <c>null</c> when no
+    ///     path is given. Streams through the same <see cref="GpuTextureCache12" /> as terrain (the
+    ///     index is valid in the slot-4 bindless table immediately, pointing at a placeholder until the
+    ///     real texture lands). Used by the sky-billboard renderer for the sun / moon textures.
+    /// </summary>
+    public uint? ResolveDiffuseBindlessIndex(string? texturePath)
+    {
+        if (string.IsNullOrWhiteSpace(texturePath)) return null;
+        return _textureCache.GetOrUpload(texturePath).BindlessIndex;
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="texturePath" /> exists in the loaded texture archives / loose files,
+    ///     without uploading it. Lets the sky resolver probe the loaded game's own assets (e.g. its moon
+    ///     texture) so nothing is shown that the game doesn't actually ship — no per-game path table.
+    /// </summary>
+    public bool TextureExists(string? texturePath)
+        => !string.IsNullOrWhiteSpace(texturePath) && _textureResolver.Exists(texturePath);
+
+    public void Dispose()
+    {
+        _byLtex.Clear();
+        _textureCache.Dispose();
+        _textureResolver.Dispose();
+    }
+}

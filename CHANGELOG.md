@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`runtime-parity-matrix.json` moved** from `docs/` to `tests/FalloutXbox360Utils.Tests/Resources/`. It's a load-bearing test fixture (consumed by `RuntimeParityMatrixTests`), not documentation.
+- **`runtime-parity-matrix.json` moved** from `docs/` to `tests/BethesdaMultitool.Tests/Resources/`. It's a load-bearing test fixture (consumed by `RuntimeParityMatrixTests`), not documentation.
 
 ## [3.0.0-alpha.1] - 2026-06-02
 

@@ -1,17 +1,17 @@
 using System.CommandLine;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.Bsa;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Scanning;
-using FalloutXbox360Utils.Core.Formats.Esm.Runtime.Readers.Specialized;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-using FalloutXbox360Utils.Core.Formats.SpeedTree;
-using FalloutXbox360Utils.Core.Minidump;
-using FalloutXbox360Utils.Core.Utils;
+using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
+using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Scanning;
+using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Core.Minidump;
+using BethesdaMultitool.Core.Utils;
 
 namespace EsmAnalyzer.Commands;
 
@@ -288,7 +288,7 @@ public static class SpeedTreeCommands
         return map;
     }
 
-    private static float? ExtractObjectBoundsHeight(FalloutXbox360Utils.Core.Formats.Esm.Models.ObjectBounds? bounds)
+    private static float? ExtractObjectBoundsHeight(BethesdaMultitool.Core.Formats.Esm.Models.ObjectBounds? bounds)
     {
         if (bounds is null)
         {
@@ -992,7 +992,7 @@ public static class SpeedTreeCommands
         return bytes is null || bytes.Length < 2 ? (ushort)0 : BinaryUtils.ReadUInt16BE(bytes, 0);
     }
 
-    private static void PrintTreeClassDiagnostic(IEnumerable<FalloutXbox360Utils.Core.Minidump.CensusEntry> census)
+    private static void PrintTreeClassDiagnostic(IEnumerable<BethesdaMultitool.Core.Minidump.CensusEntry> census)
     {
         string[] keys = ["Tree", "Speed", "Billboard", "NiTriShape", "NiNode"];
         foreach (var e in census

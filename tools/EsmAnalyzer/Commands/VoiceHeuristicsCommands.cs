@@ -1,5 +1,5 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm;
 using Spectre.Console;
 using static EsmAnalyzer.Commands.VoiceFileMatcher;
 

@@ -1,11 +1,11 @@
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing;
-using FalloutXbox360Utils.Core.Formats.Esm.Records;
-using FalloutXbox360Utils.Core.Minidump;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Records;
+using BethesdaMultitool.Core.Minidump;
 using Spectre.Console;
 
 namespace TerrainAnalyzer;

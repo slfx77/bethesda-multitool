@@ -1,7 +1,7 @@
-using FalloutXbox360Utils.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm;
 using Spectre.Console;
 using System.Globalization;
-using static FalloutXbox360Utils.Core.Utils.BinaryUtils;
+using static BethesdaMultitool.Core.Utils.BinaryUtils;
 
 namespace EsmAnalyzer.Commands;
 

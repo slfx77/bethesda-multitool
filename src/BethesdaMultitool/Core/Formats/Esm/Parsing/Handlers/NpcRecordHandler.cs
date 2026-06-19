@@ -1,0 +1,339 @@
+using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
+using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using BethesdaMultitool.Core.Utils;
+
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+
+internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
+{
+    /// <summary>
+    ///     Parse all NPC records from the scan result.
+    ///     Uses two-track approach: ESM records for subrecord detail + runtime C++ structs
+    ///     for records not found as raw ESM data (typically thousands of NPCs vs ~7 ESM records).
+    /// </summary>
+    internal List<NpcRecord> ParseNpcs()
+    {
+        var npcs = ParseRecordList("NPC_", 16384, ParseNpcFromAccessor, ParseNpcFromScanResult);
+
+        // v22: the memory carver finds the same NPC signature at multiple offsets when the
+        // runtime keeps mirror copies (template instances, runtime spawns, etc.). Keeping
+        // them all would emit duplicate NPC records in the output plugin. Dedup by FormID
+        // first-wins — accessor-found records are richer than scan-only fallbacks anyway.
+        if (npcs.Count > 1)
+        {
+            npcs = npcs.GroupBy(n => n.FormId).Select(g => g.First()).ToList();
+        }
+
+        Context.MergeRuntimeRecords(npcs, 0x2A, n => n.FormId,
+            (reader, entry) => reader.ReadRuntimeNpc(entry), "NPCs");
+
+        return npcs;
+    }
+
+    private NpcRecord? ParseNpcFromScanResult(DetectedMainRecord record)
+    {
+        // Find matching subrecords from scan result
+        var editorId = Context.GetEditorId(record.FormId);
+        var fullName = Context.FindFullNameNear(record.Offset);
+        var stats = Context.FindActorBaseNear(record.Offset);
+
+        return new NpcRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId,
+            FullName = fullName,
+            Stats = stats,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private NpcRecord? ParseNpcFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return ParseNpcFromScanResult(record);
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? fullName = null;
+        ActorBaseSubrecord? stats = null;
+        byte[]? specialStats = null;
+        int? baseHealth = null;
+        byte[]? skills = null;
+        uint? race = null;
+        uint? script = null;
+        uint? classFormId = null;
+        uint? deathItem = null;
+        uint? voiceType = null;
+        uint? template = null;
+        NpcAiData? aiData = null;
+        uint? hairFormId = null;
+        float? hairLength = null;
+        uint? eyesFormId = null;
+        uint? hairColor = null;
+        uint? combatStyle = null;
+        float? height = null;
+        float? weight = null;
+        float[]? fggs = null;
+        float[]? fgga = null;
+        float[]? fgts = null;
+        var factions = new List<FactionMembership>();
+        var spells = new List<uint>();
+        var inventory = new List<InventoryItem>();
+        var packages = new List<uint>();
+        var headPartFormIds = new List<uint>();
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "FULL":
+                    fullName = Context.ReadFullName(subData);
+                    break;
+                case "ACBS" when sub.DataLength >= 24:
+                    // Proto-build ACBS may include trailing bytes beyond the standard 24
+                    // (extra fields the engine ignores). Slice to 24 so length-variant
+                    // subrecords still populate Stats instead of silently dropping the NPC.
+                    stats = ActorRecordHandler.ParseActorBase(subData[..24],
+                        record.Offset + 24 + sub.DataOffset,
+                        record.IsBigEndian);
+                    break;
+                case "RNAM" when sub.DataLength == 4:
+                    race = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "SCRI" when sub.DataLength == 4:
+                    script = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "CNAM" when sub.DataLength == 4:
+                    classFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "INAM" when sub.DataLength == 4:
+                    deathItem = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "VTCK" when sub.DataLength == 4:
+                    voiceType = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "TPLT" when sub.DataLength == 4:
+                    template = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "ZNAM" when sub.DataLength == 4:
+                    combatStyle = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "HNAM" when sub.DataLength == 4:
+                    hairFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "LNAM" when sub.DataLength == 4:
+                {
+                    if (SubrecordSchemaView.TryRead("LNAM", "NPC_", subData, record.IsBigEndian) is { } v)
+                    {
+                        hairLength = v.Float("HairLength");
+                    }
+
+                    break;
+                }
+                case "ENAM" when sub.DataLength == 4:
+                    eyesFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "HCLR" when sub.DataLength >= 3:
+                    hairColor = ReadHairColor(subData, record.IsBigEndian);
+                    break;
+                case "NAM6" when sub.DataLength == 4:
+                    height = ReadNpcHeight(subData, record.IsBigEndian);
+                    break;
+                case "NAM7" when sub.DataLength == 4:
+                    weight = ReadNpcWeight(subData, record.IsBigEndian);
+                    break;
+                case "AIDT" when sub.DataLength >= 12:
+                    aiData = ActorRecordHandler.ParseAiData(subData, record.IsBigEndian);
+                    break;
+                case "SNAM" when sub.DataLength >= 5:
+                    var factionFormId = RecordParserContext.ReadFormId(subData[..4], record.IsBigEndian);
+                    var rank = (sbyte)subData[4];
+                    factions.Add(new FactionMembership(factionFormId, rank));
+                    break;
+                case "SPLO" when sub.DataLength == 4:
+                    spells.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
+                    break;
+                case "CNTO" when sub.DataLength >= 8:
+                {
+                    if (SubrecordSchemaView.TryRead("CNTO", null, subData, record.IsBigEndian) is { } v)
+                    {
+                        var itemFormId = v.UInt32("Item");
+                        var count = v.Int32("Count");
+                        inventory.Add(new InventoryItem(itemFormId, count));
+                    }
+
+                    break;
+                }
+                case "COED" when sub.DataLength >= 12 && inventory.Count > 0:
+                {
+                    var owner = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    var globalOrRank = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                    var condition = record.IsBigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(subData[8..])
+                        : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
+                    var last = inventory[^1];
+                    inventory[^1] = last with
+                    {
+                        OwnerFormId = owner != 0 ? owner : null,
+                        GlobalOrRank = globalOrRank,
+                        ItemCondition = condition
+                    };
+                    break;
+                }
+                case "DATA" when sub.DataLength == 11:
+                {
+                    // NPC_ DATA: Int32 BaseHealth + 7 UInt8 SPECIAL (ST, PE, EN, CH, IN, AG, LK)
+                    var rawHealth = record.IsBigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(subData)
+                        : BinaryPrimitives.ReadInt32LittleEndian(subData);
+                    if (rawHealth > 0)
+                    {
+                        baseHealth = rawHealth;
+                    }
+
+                    specialStats =
+                        [subData[4], subData[5], subData[6], subData[7], subData[8], subData[9], subData[10]];
+                    break;
+                }
+                case "DNAM" when sub.DataLength == 28:
+                {
+                    // FNV NPC_ DNAM: 14 skill base values (bytes 0..13)
+                    // followed by 14 skill offset values (bytes 14..27).
+                    skills = subData.Slice(0, 14).ToArray();
+                    break;
+                }
+                case "PKID" when sub.DataLength == 4:
+                    packages.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
+                    break;
+                case "PNAM" when sub.DataLength == 4:
+                    headPartFormIds.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
+                    break;
+                case "FGGS" when sub.DataLength >= 4:
+                    fggs = ActorRecordHandler.ReadFloatArray(subData, record.IsBigEndian);
+                    break;
+                case "FGGA" when sub.DataLength >= 4:
+                    fgga = ActorRecordHandler.ReadFloatArray(subData, record.IsBigEndian);
+                    break;
+                case "FGTS" when sub.DataLength >= 4:
+                    fgts = ActorRecordHandler.ReadFloatArray(subData, record.IsBigEndian);
+                    break;
+            }
+        }
+
+        return new NpcRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            FullName = fullName,
+            Stats = stats,
+            SpecialStats = specialStats,
+            BaseHealth = baseHealth,
+            Skills = skills,
+            AiData = aiData,
+            Race = race,
+            Script = script,
+            Class = classFormId,
+            DeathItem = deathItem,
+            VoiceType = voiceType,
+            Template = template,
+            CombatStyleFormId = combatStyle,
+            HairFormId = hairFormId,
+            HairLength = hairLength,
+            HairColor = hairColor,
+            EyesFormId = eyesFormId,
+            Height = height,
+            Weight = weight,
+            FaceGenGeometrySymmetric = fggs,
+            FaceGenGeometryAsymmetric = fgga,
+            FaceGenTextureSymmetric = fgts,
+            Factions = factions,
+            Spells = spells,
+            Inventory = inventory,
+            Packages = packages,
+            HeadPartFormIds = headPartFormIds.Count > 0 ? headPartFormIds : null,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    private static float ReadFloat(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return bigEndian
+            ? BinaryPrimitives.ReadSingleBigEndian(data)
+            : BinaryPrimitives.ReadSingleLittleEndian(data);
+    }
+
+    private static float? ReadNpcHeight(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        var value = ReadFloat(data, bigEndian);
+        if (!IsUsableNpcFloat(value))
+        {
+            return null;
+        }
+
+        if (MathF.Abs(value) <= 0.0001f)
+        {
+            return 1.0f;
+        }
+
+        return value is >= 0.1f and <= 10.0f ? value : null;
+    }
+
+    private static float? ReadNpcWeight(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        var value = ReadFloat(data, bigEndian);
+        if (!IsUsableNpcFloat(value))
+        {
+            return null;
+        }
+
+        if (MathF.Abs(value) <= 0.0001f)
+        {
+            return 1.0f;
+        }
+
+        return value is >= 0.0f and <= 1000.0f ? value : null;
+    }
+
+    private static bool IsUsableNpcFloat(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value);
+    }
+
+    private static uint ReadHairColor(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        // HCLR is the uint32 0x00BBGGRR (R = low byte, padding = top byte).
+        // PC little-endian stores it on disk as [R, G, B, 0]; Xbox 360 big-endian stores it
+        // as [0, B, G, R]. Reading raw bytes [0..2] as [R,G,B] on a big-endian record drops
+        // R and shifts the channels (silver #C0C0C0 reads as teal #00C0C0).
+        byte r, g, b;
+        if (isBigEndian && data.Length >= 4)
+        {
+            r = data[3];
+            g = data[2];
+            b = data[1];
+        }
+        else
+        {
+            r = data[0];
+            g = data[1];
+            b = data[2];
+        }
+
+        return (uint)(r | (g << 8) | (b << 16));
+    }
+}

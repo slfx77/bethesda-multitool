@@ -1,8 +1,8 @@
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Schema;
-using FalloutXbox360Utils.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Script;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
@@ -152,7 +152,7 @@ internal static class OrphanedRefAnalyzer
 
             try
             {
-                var analyzer = new FalloutXbox360Utils.Core.Minidump.MinidumpAnalyzer();
+                var analyzer = new BethesdaMultitool.Core.Minidump.MinidumpAnalyzer();
                 var analysisResult = await analyzer.AnalyzeAsync(dumpFile, includeMetadata: true);
 
                 if (analysisResult.EsmRecords == null)
@@ -176,7 +176,7 @@ internal static class OrphanedRefAnalyzer
                     dumpFile, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
                 using var accessor = mmf.CreateViewAccessor(0, fileInfo.Length, MemoryMappedFileAccess.Read);
 
-                var reconstructor = new FalloutXbox360Utils.Core.Formats.Esm.Parsing.RecordParser(
+                var reconstructor = new BethesdaMultitool.Core.Formats.Esm.Parsing.RecordParser(
                     analysisResult.EsmRecords,
                     analysisResult.FormIdMap,
                     accessor,

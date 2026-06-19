@@ -1,7 +1,7 @@
 using System.CommandLine;
 using NifAnalyzer.Parsers;
 using Spectre.Console;
-using static FalloutXbox360Utils.Core.Formats.Nif.Conversion.NifEndianUtils;
+using static BethesdaMultitool.Core.Formats.Nif.Conversion.NifEndianUtils;
 
 namespace NifAnalyzer.Commands;
 

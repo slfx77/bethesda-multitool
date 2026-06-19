@@ -1,6 +1,6 @@
 using System.CommandLine;
 using Spectre.Console;
-using FalloutXbox360Utils.Core.Minidump;
+using BethesdaMultitool.Core.Minidump;
 
 namespace EsmAnalyzer.Commands;
 

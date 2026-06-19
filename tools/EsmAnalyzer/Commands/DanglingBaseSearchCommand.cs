@@ -2,9 +2,9 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Semantic;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Formats.Esm.Export;
+using BethesdaMultitool.Core.Semantic;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;

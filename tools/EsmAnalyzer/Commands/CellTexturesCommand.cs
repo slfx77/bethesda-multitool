@@ -1,11 +1,11 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
-using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
-using FalloutXbox360Utils.Core.Formats.Esm.Parsing.Subrecords;
-using FalloutXbox360Utils.Core.Utils;
+using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Formats.Esm.Conversion;
+using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
+using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
+using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Subrecords;
+using BethesdaMultitool.Core.Utils;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
@@ -350,10 +350,10 @@ internal static class CellTexturesCommand
 
         // Texture resolution chain: LTEX → TXST → DiffuseTexture path.
         // Also try loading from BSAs adjacent to the ESM.
-        var bsaPaths = FalloutXbox360Utils.Core.Formats.Nif.Rendering.Npc.BsaDiscovery.Discover(filePath).TexturesBsaPaths;
+        var bsaPaths = BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.BsaDiscovery.Discover(filePath).TexturesBsaPaths;
         var sources = bsaPaths.Length > 0
-            ? FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures.NifTextureArchiveSourceFactory.Create(bsaPaths)
-            : new List<FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures.INifTextureSource>();
+            ? BethesdaMultitool.Core.Formats.Nif.Rendering.Textures.NifTextureArchiveSourceFactory.Create(bsaPaths)
+            : new List<BethesdaMultitool.Core.Formats.Nif.Rendering.Textures.INifTextureSource>();
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[cyan]Texture BSAs discovered:[/] {bsaPaths.Length}");
@@ -387,12 +387,12 @@ internal static class CellTexturesCommand
             }
             // Try loading the texture via the same pipeline the rendered layer uses.
             var rawPath = txst.DiffuseTexture ?? "";
-            var normPath = FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures.NifTexturePathUtility.Normalize(rawPath);
-            var tex = FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures.NifTextureLoader.TryLoadFromSources(normPath, sources);
+            var normPath = BethesdaMultitool.Core.Formats.Nif.Rendering.Textures.NifTexturePathUtility.Normalize(rawPath);
+            var tex = BethesdaMultitool.Core.Formats.Nif.Rendering.Textures.NifTextureLoader.TryLoadFromSources(normPath, sources);
             if (tex is null && normPath.EndsWith(".dds", StringComparison.Ordinal))
             {
                 var ddxPath = string.Concat(normPath.AsSpan(0, normPath.Length - 4), ".ddx");
-                tex = FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures.NifTextureLoader.TryLoadFromSources(ddxPath, sources);
+                tex = BethesdaMultitool.Core.Formats.Nif.Rendering.Textures.NifTextureLoader.TryLoadFromSources(ddxPath, sources);
             }
             var loadStatus = tex is null
                 ? "LOAD FAILED"

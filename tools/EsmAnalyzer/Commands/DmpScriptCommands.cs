@@ -1,7 +1,7 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
@@ -118,7 +118,7 @@ public static class DmpScriptCommands
                 await Task.Yield(); // Ensure async context
             });
 
-        var analyzer = new FalloutXbox360Utils.Core.Minidump.MinidumpAnalyzer();
+        var analyzer = new BethesdaMultitool.Core.Minidump.MinidumpAnalyzer();
         var analysisResult = await analyzer.AnalyzeAsync(path, includeMetadata: true);
 
         if (analysisResult.EsmRecords == null)

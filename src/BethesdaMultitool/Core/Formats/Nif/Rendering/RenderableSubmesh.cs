@@ -1,0 +1,173 @@
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
+
+/// <summary>
+///     One geometry block's renderable data with transforms already applied.
+/// </summary>
+internal sealed class RenderableSubmesh
+{
+    /// <summary>
+    ///     Sentinel <see cref="DiffuseTexturePath" /> marking placed water-shader geometry
+    ///     (WaterShaderProperty NIFs carry no diffuse). The D3D12 mesh cache maps it to
+    ///     <c>GpuTextureCache12.WaterSurface</c> so cave/pool water renders as translucent blue water
+    ///     rather than the opaque-white fallback. Reuses the diffuse-path string so no new field has
+    ///     to be threaded through the decode + persistent-cache pipeline.
+    /// </summary>
+    public const string WaterSurfaceTexturePath = "fallout:water-surface";
+
+    /// <summary>Name of the source NiTriShape/NiTriStrips block, if available.</summary>
+    public string? ShapeName { get; init; }
+
+    /// <summary>X, Y, Z per vertex (length = numVertices * 3).</summary>
+    public required float[] Positions { get; init; }
+
+    /// <summary>3 indices per triangle (length = numTriangles * 3).</summary>
+    public required ushort[] Triangles { get; init; }
+
+    /// <summary>X, Y, Z per vertex (optional, for shading). Same length as Positions.</summary>
+    public float[]? Normals { get; init; }
+
+    /// <summary>U, V per vertex (optional, for texture mapping). Length = numVertices * 2.</summary>
+    public float[]? UVs { get; init; }
+
+    /// <summary>R, G, B, A per vertex (optional). Length = numVertices * 4.</summary>
+    public byte[]? VertexColors { get; init; }
+
+    /// <summary>Tangent X, Y, Z per vertex (optional, for bump mapping). Same length as Positions.</summary>
+    public float[]? Tangents { get; set; }
+
+    /// <summary>Bitangent X, Y, Z per vertex (optional, for bump mapping). Same length as Positions.</summary>
+    public float[]? Bitangents { get; set; }
+
+    /// <summary>Diffuse texture path resolved from shader properties (e.g., "textures\architecture\foo.dds").</summary>
+    public string? DiffuseTexturePath { get; set; }
+
+    /// <summary>Normal map texture path resolved from shader properties (slot 1).</summary>
+    public string? NormalMapTexturePath { get; set; }
+
+    /// <summary>Shader property metadata resolved from the source NIF.</summary>
+    public NifShaderTextureMetadata? ShaderMetadata { get; init; }
+
+    /// <summary>True if this submesh uses BSShaderNoLightingProperty (self-illuminated, e.g., neon signs).</summary>
+    public bool IsEmissive { get; set; }
+
+    /// <summary>True if BSShaderFlags2 bit 5 (Vertex_Colors) is set, meaning vertex colors should modulate the texture.</summary>
+    public bool UseVertexColors { get; init; }
+
+    /// <summary>True if NiStencilProperty DrawMode is DRAW_BOTH (3), meaning both sides should be rendered.</summary>
+    public bool IsDoubleSided { get; set; }
+
+    /// <summary>True if NiAlphaProperty flags bit 0 is set (alpha blending enabled).</summary>
+    public bool HasAlphaBlend { get; set; }
+
+    /// <summary>True if NiAlphaProperty flags bit 9 is set (alpha testing enabled).</summary>
+    public bool HasAlphaTest { get; set; }
+
+    /// <summary>Alpha test threshold (0-255). Pixels with alpha &lt;= this value are discarded. Default 128 per NIF spec.</summary>
+    public byte AlphaTestThreshold { get; set; } = 128;
+
+    /// <summary>
+    ///     Alpha test comparison function from NiAlphaProperty bits 10-12.
+    ///     0=ALWAYS, 1=LESS, 2=EQUAL, 3=LEQUAL, 4=GREATER, 5=NOTEQUAL, 6=GEQUAL, 7=NEVER.
+    ///     Default 4 (GREATER) matches the standard renderer semantics (pass if a &gt; threshold).
+    /// </summary>
+    public byte AlphaTestFunction { get; set; } = 4;
+
+    /// <summary>Source blend factor from NiAlphaProperty bits 1-4 (default 6 = SRC_ALPHA).</summary>
+    public byte SrcBlendMode { get; set; } = 6;
+
+    /// <summary>Dest blend factor from NiAlphaProperty bits 5-8 (default 7 = INV_SRC_ALPHA).</summary>
+    public byte DstBlendMode { get; set; } = 7;
+
+    /// <summary>Material alpha from NiMaterialProperty (0.0-1.0). Values &lt; 1.0 trigger alpha blending.</summary>
+    public float MaterialAlpha { get; set; } = 1f;
+
+    /// <summary>Material glossiness from NiMaterialProperty. Fallout 3 / New Vegas commonly default this to 10.</summary>
+    public float MaterialGlossiness { get; init; } = 10f;
+
+    /// <summary>Material specular color from NiMaterialProperty (RGB, 0-1). Controls specular highlight tint and intensity.</summary>
+    public (float R, float G, float B) SpecularColor { get; init; } = (0, 0, 0);
+
+    /// <summary>True if BSShaderFlags bit 17 (Eye_Environment_Mapping = 0x20000) is set.</summary>
+    public bool IsEyeEnvmap { get; init; }
+
+    /// <summary>BSShaderProperty EnvMapScale — controls eye cubemap reflection strength. Typical 0.5-1.0.</summary>
+    public float EnvMapScale { get; init; }
+
+    /// <summary>
+    ///     Render order for layer-based compositing (engine renders head parts in scene graph order).
+    ///     0 = head (default), 1 = hair, 2 = eyes. Higher layers render after lower layers.
+    /// </summary>
+    public int RenderOrder { get; set; }
+
+    /// <summary>
+    ///     Multiplicative tint color (R, G, B in 0-1 range). Applied to texture color during rasterization.
+    ///     Used for hair color tinting (engine applies HCLR as shader uniform on hair/eyebrow/beard submeshes).
+    ///     Null = no tint (1.0 multiplier).
+    /// </summary>
+    public (float R, float G, float B)? TintColor { get; set; }
+
+    /// <summary>
+    ///     True if this submesh uses the FaceGen skin shader (shader type 14, flag bit 10).
+    ///     When set, the renderer applies a subsurface scattering approximation using
+    ///     <see cref="SubsurfaceColor" /> to simulate light transmission through skin.
+    /// </summary>
+    public bool IsFaceGen { get; set; }
+
+    /// <summary>
+    ///     Subsurface scattering color for FaceGen skin shader (normalized 0-1 RGB).
+    ///     Derived from the BSShaderTextureSet slot 2 face tint texture (_sk).
+    ///     The engine multiplies this by a scatter intensity to add warm red backlighting
+    ///     that counteracts green casts from EGT texture morphs.
+    ///     Only used when <see cref="IsFaceGen" /> is true. Default = (0, 0, 0) = no scatter.
+    /// </summary>
+    public (float R, float G, float B) SubsurfaceColor { get; set; }
+
+    /// <summary>
+    ///     Animated emissive color from NiMaterialColorController (TC_SELF_ILLUM or TC_DIFFUSE).
+    ///     When set, the submesh is treated as self-illuminated with this color applied additively.
+    ///     Extracted from the first keyframe of the controller's NiPosData.
+    /// </summary>
+    public (float R, float G, float B)? AnimatedEmissiveColor { get; set; }
+
+    /// <summary>
+    ///     Pre-skinning vertex positions in world space (same layout as <see cref="Positions" />).
+    ///     Populated only for skinned submeshes; used by boundary vertex stitching to identify
+    ///     coincident vertices across different source NIFs, then cleared after stitching.
+    /// </summary>
+    public float[]? BindPosePositions { get; set; }
+
+    /// <summary>
+    ///     Path of the source NIF file this submesh was extracted from.
+    ///     Used by boundary vertex stitching to distinguish cross-NIF seams from within-NIF geometry.
+    /// </summary>
+    public string? SourceNifPath { get; set; }
+
+    /// <summary>
+    ///     Block index of the source NiTriShape/NiTriStrips in the NIF file.
+    ///     Used to partition submeshes by attachment group without re-extracting.
+    /// </summary>
+    public int SourceBlockIndex { get; set; } = -1;
+
+    /// <summary>
+    ///     True if this submesh's geometry sat under a <c>NiBillboardNode</c> in the source NIF
+    ///     (e.g. the smoke glow under "billboardUp" in effects\NVashpile01.NIF). The billboard node's
+    ///     own rotation is dropped during the bake (only its translation is kept) so the renderer can
+    ///     re-aim the quad at the camera per frame instead of using the baked-in orientation. Only set
+    ///     when the caller opts in via <c>NifGeometryExtractor.Extract(collectBillboards: true)</c>.
+    /// </summary>
+    public bool IsBillboard { get; set; }
+
+    /// <summary>
+    ///     True for SpeedTree leaf cards: each quad is a camera-facing billboard (SpeedTree RT builds
+    ///     leaf cards CPU-side as flat 2D corner offsets around a center — <c>CLeafGeometry::Update</c> —
+    ///     and re-faces them to the camera per frame). The GPU does the equivalent in the vertex shader:
+    ///     the per-vertex <see cref="Tangents" /> carry the card CENTER (mesh-local) and
+    ///     <see cref="Bitangents" /> the signed 2D card-space corner offset <c>(±halfW, ±halfH, 0)</c>, so
+    ///     the VS reconstructs <c>worldCenter + camRight·off.x + camUp·off.y</c>. Distinct from
+    ///     <see cref="IsBillboard" />, which re-aims a WHOLE submesh as one rigid quad.
+    /// </summary>
+    public bool IsLeafBillboard { get; set; }
+
+    public int VertexCount => Positions.Length / 3;
+    public int TriangleCount => Triangles.Length / 3;
+}

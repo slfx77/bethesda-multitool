@@ -1,7 +1,7 @@
 using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
-using FalloutXbox360Utils.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Bsa;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;

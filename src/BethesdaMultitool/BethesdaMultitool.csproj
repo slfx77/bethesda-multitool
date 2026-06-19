@@ -1,0 +1,179 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Multi-target: cross-platform CLI + Windows GUI -->
+    <!-- Use -p:BuildTestsOnly=true to skip the Windows GUI TFM for fast test builds -->
+    <TargetFrameworks Condition="'$(BuildTestsOnly)' != 'true'">net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(BuildTestsOnly)' == 'true'">net10.0</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>BethesdaMultitool</RootNamespace>
+    <AssemblyName>BethesdaMultitool</AssemblyName>
+    <Platforms>x64;AnyCPU</Platforms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+    <!-- Large-dump analysis routinely builds multi-GB heaps: a ~900 MB Xbox 360 memory
+         dump fully extracts to ~12 GB / 100M+ live objects. Workstation GC (the default)
+         collects gen2 single-threaded, so a collection over that graph is a multi-hundred-
+         ms-to-second stop-the-world UI freeze (dump-confirmed: 0.11 cores, all threads idle,
+         frozen mid-pump). Server GC parallelizes gen2 across cores; Background/concurrent GC
+         keeps most of that work off the UI thread. Both CLI and GUI benefit. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <!-- Required for the renderer's Map/Unmap helpers that write to D3D11 mapped memory via
+         raw pointers. Marshal.StructureToPtr<T> boxes the value type per call — unacceptable
+         at ~1500 draws/frame. Limited to the renderer helpers; not for general use. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Application icon for both CLI and GUI executables -->
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!-- Ensure multi-target restore materializes RID-specific assets for both CLI and GUI builds. -->
+  <PropertyGroup Condition="'$(BuildTestsOnly)' != 'true' and '$(TargetFramework)' == ''">
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'x64'">win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <!-- Single-file and trimming options for CLI builds -->
+  <PropertyGroup Condition="!$(TargetFramework.Contains('windows'))">
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
+    <!-- Single-file bundles runtime into one exe -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <!-- Compress the single-file bundle -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Enable trimming for smaller builds -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <!-- Suppress trim warnings from third-party packages (Spectre.Console) -->
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Core\Models\**" />
+    <EmbeddedResource Remove="Core\Models\**" />
+    <None Remove="Core\Models\**" />
+  </ItemGroup>
+
+  <!-- Expose internals to test project and EsmAnalyzer tool -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="BethesdaMultitool.Tests" />
+    <InternalsVisibleTo Include="EsmAnalyzer" />
+    <InternalsVisibleTo Include="NifAnalyzer" />
+    <InternalsVisibleTo Include="MinidumpAnalyzer" />
+    <InternalsVisibleTo Include="BethesdaAudioTranscriber" />
+    <InternalsVisibleTo Include="BethesdaRendererProfiler" />
+    <InternalsVisibleTo Include="BethesdaMap2DProfiler" />
+    <InternalsVisibleTo Include="EgtAnalyzer" />
+  </ItemGroup>
+
+  <!-- Windows GUI settings -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('windows'))">
+    <OutputType>WinExe</OutputType>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+    <!-- DDXConv is an Exe project used as a library; suppress NETSDK1150 -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN;WINDOWS_GUI</DefineConstants>
+    <!-- Single-file for GUI (bundles into one exe, ~66 MB compressed) -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Note: WinUI 3 does not support IL trimming -->
+  </PropertyGroup>
+
+  <!-- Shared packages -->
+  <ItemGroup>
+    <PackageReference Include="Magick.NET-Q16-AnyCPU" />
+    <PackageReference Include="BCnEncoder.Net" />
+    <PackageReference Include="SharpGLTF.Toolkit" />
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="Vortice.Direct3D11" />
+    <PackageReference Include="Vortice.Direct3D12" />
+    <PackageReference Include="Vortice.DXGI" />
+    <PackageReference Include="Vortice.D3DCompiler" />
+  </ItemGroup>
+
+  <!-- Windows GUI packages -->
+  <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.Primitives" />
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.Sizers" />
+    <PackageReference Include="Microsoft.Graphics.Win2D" />
+    <PackageReference Include="Microsoft.Web.WebView2" />
+    <!-- Vortice.WinUI is GUI-only: ISwapChainPanelNative for the v3 3D worldspace view. -->
+    <PackageReference Include="Vortice.WinUI" />
+  </ItemGroup>
+
+  <!-- DDXConv library (compiled-in, no subprocess needed) -->
+  <ItemGroup>
+    <ProjectReference Include="..\DDXConv\DDXConv\DDXConv.csproj" />
+  </ItemGroup>
+
+  <!-- Embedded resources -->
+  <ItemGroup>
+    <EmbeddedResource Include="Core\Formats\Nif\nif.xml" LogicalName="BethesdaMultitool.nif.xml" />
+    <EmbeddedResource Include="Core\Formats\Esm\Runtime\pdb_layouts.json"
+                      LogicalName="BethesdaMultitool.pdb_layouts.json" />
+    <EmbeddedResource Include="Core\Formats\Esm\Export\Resources\comparison-renderer.js"
+                      LogicalName="BethesdaMultitool.comparison-renderer.js" />
+    <EmbeddedResource Include="Core\Formats\Nif\Rendering\Gpu\Shaders\*.hlsl" />
+    <EmbeddedResource Include="Assets\MapMarkers\*.png" />
+  </ItemGroup>
+
+  <!-- Runtime data files used by both CLI and GUI builds. -->
+  <ItemGroup>
+    <Content Include="..\..\data\cell_worldspace_authority.json"
+             Link="data\cell_worldspace_authority.json"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Condition="Exists('..\..\data\cell_worldspace_authority.json')" />
+  </ItemGroup>
+
+  <!-- App icon for title bar (unpackaged apps need explicit Content inclusion).
+       App.xaml is included as <ApplicationDefinition> by the SDK default so the XAML
+       markup compiler injects IXamlMetadataProvider into the matching x:Class. Treating
+       App.xaml as a plain <Page> suppresses that injection and breaks XAML type resolution
+       at startup. -->
+  <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
+    <Content Include="Assets\AppIcon.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="App\Assets\npc-viewer.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="App\Assets\model-viewer.min.js" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Exclude GUI code from cross-platform build -->
+  <ItemGroup Condition="!$(TargetFramework.Contains('windows'))">
+    <!-- All GUI code is in App/ folder -->
+    <Compile Remove="App\**\*.cs" />
+    <!-- Keep non-UI helpers that are shared with tests and analysis code -->
+    <Compile Include="App\Helpers\DialogueConditionDisplayFormatter.cs" />
+    <Compile Include="App\Helpers\DanglingRefAttributions.cs" />
+    <Compile Include="App\Helpers\FormUsageIndex.cs" />
+    <Compile Include="App\Helpers\FormUsageReference.cs" />
+    <Compile Include="App\Helpers\LayerCellBitmapCapPolicy.cs" />
+    <Compile Include="App\Helpers\RecordDetailPropertyAdapter.cs" />
+    <Compile Include="App\Helpers\SpawnResolutionIndex.cs" />
+    <Compile Include="App\Helpers\WorldGridConstants.cs" />
+    <Compile Include="App\Helpers\WorldRenderCache.cs" />
+    <Compile Include="App\Helpers\WorldRenderStats.cs" />
+    <Compile Include="App\Helpers\WaterColorPalette.cs" />
+    <Compile Include="App\Helpers\WorldSpatialIndex.cs" />
+    <Compile Include="App\Helpers\WorldViewStressBookmarkFinder.cs" />
+    <Compile Include="App\Models\EsmPropertyEntry.cs" />
+    <Compile Include="App\Models\WorldViewData.cs" />
+    <!-- XAML files in App/ -->
+    <Page Remove="App\**\*.xaml" />
+    <!-- Root XAML files -->
+    <Page Remove="App.xaml" />
+    <Compile Remove="App.xaml.cs" />
+    <None Remove="app.manifest" />
+  </ItemGroup>
+
+</Project>

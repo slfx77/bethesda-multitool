@@ -37,7 +37,7 @@ internal sealed class Program
         var rootCommand = new RootCommand("ESM Analyzer - Analyze and compare Xbox 360 and PC ESM files");
 
         // ===== Top-level commands =====
-        // Note: stats, dump, trace, convert, diff, semdiff, cell objects/npc-trace migrated to main app (falloutu esm ...)
+        // Note: stats, dump, trace, convert, diff, semdiff, cell objects/npc-trace migrated to main app (btool esm ...)
         rootCommand.Subcommands.Add(GrupCommands.CreateGrupsCommand());
         rootCommand.Subcommands.Add(ToftCommands.CreateToftCommand());
         rootCommand.Subcommands.Add(LandCommands.CreateLandSummaryCommand());

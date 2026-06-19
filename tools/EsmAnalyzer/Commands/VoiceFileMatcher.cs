@@ -1,6 +1,6 @@
 using System.Globalization;
-using FalloutXbox360Utils.Core.Formats.Bsa;
-using FalloutXbox360Utils.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Esm;
 
 namespace EsmAnalyzer.Commands;
 
@@ -45,7 +45,7 @@ internal static class VoiceFileMatcher
 
     /// <summary>
     ///     Parse voice filename: {topicEditorId}_{formId:8hex}_{index}.{ext}
-    ///     Inlined from FalloutAudioTranscriber.Models.VoiceFileNameParser (can't reference WinUI project).
+    ///     Inlined from BethesdaAudioTranscriber.Models.VoiceFileNameParser (can't reference WinUI project).
     /// </summary>
     internal static bool TryParseVoiceFileName(string fileName, out uint formId, out int responseIndex,
         out string topicEditorId)

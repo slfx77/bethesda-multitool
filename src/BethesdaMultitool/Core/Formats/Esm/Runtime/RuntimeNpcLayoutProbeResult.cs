@@ -1,0 +1,11 @@
+namespace BethesdaMultitool.Core.Formats.Esm.Runtime;
+
+internal sealed record RuntimeNpcLayoutProbeResult(
+    RuntimeNpcLayout Layout,
+    bool IsHighConfidence,
+    int WinnerScore,
+    int RunnerUpScore,
+    int SampleCount)
+{
+    public int Margin => WinnerScore - RunnerUpScore;
+}

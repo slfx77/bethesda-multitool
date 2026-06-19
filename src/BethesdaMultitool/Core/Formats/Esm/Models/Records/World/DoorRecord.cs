@@ -1,0 +1,47 @@
+namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+
+/// <summary>
+///     Door (DOOR) record.
+///     Defines a door with open/close sounds and flags.
+/// </summary>
+public record DoorRecord
+{
+    /// <summary>FormID of the door record.</summary>
+    public uint FormId { get; init; }
+
+    /// <summary>Editor ID.</summary>
+    public string? EditorId { get; init; }
+
+    /// <summary>Display name.</summary>
+    public string? FullName { get; init; }
+
+    /// <summary>Model file path (MODL subrecord).</summary>
+    public string? ModelPath { get; init; }
+
+    /// <summary>Object bounds (OBND subrecord).</summary>
+    public ObjectBounds? Bounds { get; init; }
+
+    /// <summary>Script FormID (SCRI subrecord).</summary>
+    public uint? Script { get; init; }
+
+    /// <summary>Open sound FormID (SNAM subrecord).</summary>
+    public uint? OpenSoundFormId { get; init; }
+
+    /// <summary>Close sound FormID (ANAM subrecord).</summary>
+    public uint? CloseSoundFormId { get; init; }
+
+    /// <summary>Looping sound FormID (BNAM subrecord).</summary>
+    public uint? LoopSoundFormId { get; init; }
+
+    /// <summary>Door flags (FNAM subrecord).</summary>
+    public byte Flags { get; init; }
+
+    /// <summary>Texture hash data from MODT subrecord (opaque bytes — engine validates).</summary>
+    public byte[]? TextureHashData { get; init; }
+
+    /// <summary>Offset in the dump where this record was found.</summary>
+    public long Offset { get; init; }
+
+    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
+    public bool IsBigEndian { get; init; }
+}

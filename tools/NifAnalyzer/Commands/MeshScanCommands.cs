@@ -1,6 +1,6 @@
 using System.CommandLine;
-using FalloutXbox360Utils.Core.Formats.Nif;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Spectre.Console;
 
 namespace NifAnalyzer.Commands;
@@ -67,7 +67,7 @@ internal static class MeshScanCommands
 
         if (verbose)
         {
-            FalloutXbox360Utils.Core.Logger.Instance.SetVerbose(true);
+            BethesdaMultitool.Core.Logger.Instance.SetVerbose(true);
         }
 
         var files = Directory.EnumerateFiles(dir, "*.nif", SearchOption.AllDirectories).ToList();

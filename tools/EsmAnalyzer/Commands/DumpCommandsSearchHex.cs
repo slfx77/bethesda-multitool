@@ -1,13 +1,13 @@
-using FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers;
+using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
 using System.Text;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
-using FalloutXbox360Utils.Core.Formats.Esm.Subrecords;
-using FalloutXbox360Utils.Core.Formats.Esm.Enums;
-using FalloutXbox360Utils.Core.Formats.Esm.Export;
-using FalloutXbox360Utils.Core.Formats.Esm.Schema;
-using static FalloutXbox360Utils.Core.Formats.Esm.Analysis.Helpers.RecordTraversalHelpers;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using BethesdaMultitool.Core.Formats.Esm.Enums;
+using BethesdaMultitool.Core.Formats.Esm.Export;
+using BethesdaMultitool.Core.Formats.Esm.Schema;
+using static BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers.RecordTraversalHelpers;
 
 namespace EsmAnalyzer.Commands;
 

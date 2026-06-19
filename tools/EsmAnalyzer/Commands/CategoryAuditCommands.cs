@@ -1,9 +1,9 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using System.Text;
-using FalloutXbox360Utils;
-using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Models;
+using BethesdaMultitool;
+using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands;
