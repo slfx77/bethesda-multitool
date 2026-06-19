@@ -1,4 +1,5 @@
 using System.Numerics;
+using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.SpeedTree;
 using Xunit;
 
@@ -58,12 +59,12 @@ public class SptGeometryBuilderTests
                     Material = @"C:\x\OakFoliage01.dds",
                     Corner0 = new Vector3(0.5f, 0.25f, 0),
                     Corner1 = new Vector3(0.1f, 0.1f, 0),
-                    Corner2 = new Vector3(6f, 6f, 0),
-                },
-            ],
+                    Corner2 = new Vector3(6f, 6f, 0)
+                }
+            ]
         };
 
-        var result = SptGeometryBuilder.Build(model, seed: 12345);
+        var result = SptGeometryBuilder.Build(model, 12345);
 
         Assert.True(result.HasGeometry);
 
@@ -94,10 +95,10 @@ public class SptGeometryBuilderTests
         {
             General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga" },
             Branches = [MakeLeafyBranch()],
-            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner2 = new Vector3(6, 6, 0) }],
+            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner2 = new Vector3(6, 6, 0) }]
         };
 
-        var result = SptGeometryBuilder.Build(model, seed: 7, new SptGeometryOptions { TargetHeight = 175f });
+        var result = SptGeometryBuilder.Build(model, 7, new SptGeometryOptions { TargetHeight = 175f });
 
         // The tree grows along +Z (FNV world-up); NifRenderableModel labels the Z-extent "Depth".
         // The whole tree (branches + leaves) is resized so its vertical extent matches the OBND value.
@@ -111,11 +112,11 @@ public class SptGeometryBuilderTests
         {
             General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga" },
             Branches = [MakeLeafyBranch()],
-            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner2 = new Vector3(5, 5, 0) }],
+            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner2 = new Vector3(5, 5, 0) }]
         };
 
-        var a = SptGeometryBuilder.Build(model, seed: 999);
-        var b = SptGeometryBuilder.Build(model, seed: 999);
+        var a = SptGeometryBuilder.Build(model, 999);
+        var b = SptGeometryBuilder.Build(model, 999);
 
         Assert.Equal(a.Submeshes.Count, b.Submeshes.Count);
         for (var i = 0; i < a.Submeshes.Count; i++)
@@ -133,7 +134,7 @@ public class SptGeometryBuilderTests
         Assert.SkipWhen(path is null, "Missing sample: wastelandshrub01.spt");
 
         var model = SptFile.Parse(File.ReadAllBytes(path!));
-        var result = SptGeometryBuilder.Build(model, seed: 0x1234);
+        var result = SptGeometryBuilder.Build(model, 0x1234);
 
         Assert.True(result.HasGeometry);
         Assert.Contains(result.Submeshes, s => s.ShapeName == "spt:bark");
@@ -149,7 +150,7 @@ public class SptGeometryBuilderTests
     {
         var model = MakeSingleLevelLeafModel(leafFrequency: 2.6f);
 
-        var result = SptGeometryBuilder.Build(model, seed: 1, BillboardOptions());
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
         Assert.Equal(2, CountLeafQuads(result));
     }
@@ -162,15 +163,15 @@ public class SptGeometryBuilderTests
             General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
             Branches =
             [
-                MakeBranch(length: 1f, radius: 0.02f, frequency: 2.6f, u6008: 3, u6009: 1),
-                MakeBranch(length: 0.5f, radius: 0.01f, frequency: 0f, u6008: 3, u6009: 1),
-                MakeBranch(length: 0.05f, radius: 0.005f, frequency: 0f, u6008: 3, u6009: 1),
+                MakeBranch(1f, 0.02f, 2.6f, 3, 1),
+                MakeBranch(0.5f, 0.01f, 0f, 3, 1),
+                MakeBranch(0.05f, 0.005f, 0f, 3, 1)
             ],
             Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.01f) }],
-            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 },
+            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 }
         };
 
-        var result = SptGeometryBuilder.Build(model, seed: 1, BillboardOptions());
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
         var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
         Assert.Equal(30, bark.Positions.Length / 3); // root + two children, 10 vertices each
@@ -179,11 +180,42 @@ public class SptGeometryBuilderTests
     [Fact]
     public void Build_ChildSpawn_SamplesByCumulativeBranchDistance()
     {
-        var root = MakeBranch(length: 1f, radius: 0.001f, frequency: 1f, u6008: 3, u6009: 2,
-            pathExponent: 5f) with
+        var root = MakeBranch(1f, 0.001f, 1f, 3, 2,
+                5f) with
+            {
+                Float6010 = 0.5f,
+                Float6011 = 0.5f
+            };
+        var model = new SptModel
         {
-            Float6010 = 0.5f,
-            Float6011 = 0.5f,
+            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
+            Branches =
+            [
+                root,
+                MakeBranch(0.1f, 0.001f, 0f, 3, 1),
+                MakeBranch(0f, 0.001f, 0f, 3, 1)
+            ],
+            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.01f) }],
+            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 }
+        };
+
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
+
+        var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
+        var childBase = AveragePosition(bark.Positions, BranchVertexCount(3, 2), RingVertexCount(3));
+        Assert.InRange(childBase.X, 45f, 55f);
+    }
+
+    [Fact]
+    public void Build_ChildSpawn_RestartsRngFromBranchSeedPlusThree()
+    {
+        const uint seed = 100u;
+        const float start = 0.2f;
+        const float end = 0.8f;
+        var root = MakeBranch(1f, 0.0001f, 1f, 3, 4) with
+        {
+            Float6010 = start,
+            Float6011 = end
         };
         var model = new SptModel
         {
@@ -191,26 +223,32 @@ public class SptGeometryBuilderTests
             Branches =
             [
                 root,
-                MakeBranch(length: 0.1f, radius: 0.001f, frequency: 0f, u6008: 3, u6009: 1),
-                MakeBranch(length: 0f, radius: 0.001f, frequency: 0f, u6008: 3, u6009: 1),
+                MakeBranch(0.1f, 0.0001f, 0f, 3, 1),
+                MakeBranch(0f, 0.0001f, 0f, 3, 1)
             ],
             Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.01f) }],
-            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 },
+            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 }
         };
 
-        var result = SptGeometryBuilder.Build(model, seed: 1, BillboardOptions());
+        var result = SptGeometryBuilder.Build(model, seed, BillboardOptions());
 
+        // CIdvBranch::Compute increments the branch-local seed by 3, reseeds, then uses the first child
+        // range's 85%-95% window for child 0. A continuous parent RNG stream produces a different X.
+        var firstChildMin = start + (end - start) * 0.85f;
+        var firstChildMax = start + (end - start) * 0.95f;
+        var expectedFrac = SpeedTreeRangeAfterReseed(seed + 3u, firstChildMin, firstChildMax);
         var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
-        var childBase = AveragePosition(bark.Positions, BranchVertexCount(u6008: 3, u6009: 2), RingVertexCount(3));
-        Assert.InRange(childBase.X, 45f, 55f);
+        var childBase = AveragePosition(bark.Positions, BranchVertexCount(3, 4), RingVertexCount(3));
+
+        Assert.Equal(expectedFrac * 100f, childBase.X, 2);
     }
 
     [Fact]
     public void Build_BudReach_DividesTerminalLengthByTerminalUInt6009()
     {
-        var model = MakeSingleLevelLeafModel(length: 0.4f, leafFrequency: 2.5f, terminalUInt6009: 4);
+        var model = MakeSingleLevelLeafModel(0.4f, 2.5f, 4);
 
-        var result = SptGeometryBuilder.Build(model, seed: 1, BillboardOptions());
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
         var center = ReadVector3(result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Tangents!, 0);
         Assert.Equal(10f, center.Length(), 4);
@@ -224,7 +262,7 @@ public class SptGeometryBuilderTests
             corner0: new Vector3(0.25f, 0.75f, 0f),
             corner1: new Vector3(0.2f, 0.4f, 0f));
 
-        var result = SptGeometryBuilder.Build(model, seed: 1, BillboardOptions());
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
         var offsets = result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Bitangents!;
         AssertVector3(new Vector3(-5f, -30f, 0f), ReadVector3(offsets, 0));
@@ -247,7 +285,7 @@ public class SptGeometryBuilderTests
             corner0: new Vector3(0.5f, 0.5f, 0f),
             corner1: new Vector3(0.1f, 0.2f, 0f));
 
-        var result = SptGeometryBuilder.Build(model, seed: 1, BillboardOptions());
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
         var uvs = result.Submeshes.Single(s => s.ShapeName == "spt:leaves").UVs!;
         Assert.Equal(0.75f, uvs[0], 4);
@@ -268,7 +306,7 @@ public class SptGeometryBuilderTests
     {
         var model = MakePlacementModeModel(placementMode);
 
-        var result = SptGeometryBuilder.Build(model, seed: 1, BillboardOptions());
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
         Assert.Equal(expectedLeaves, CountLeafQuads(result));
     }
@@ -280,16 +318,19 @@ public class SptGeometryBuilderTests
     ///     Float6012·length/treeSize — so a default <c>SptBranch()</c> (Float6012 = 0, no length spline)
     ///     correctly produces no leaves. These tests need real values to exercise the leaf path.
     /// </summary>
-    private static SptBranch MakeLeafyBranch(float leafFrequency = 40f) => new()
+    private static SptBranch MakeLeafyBranch(float leafFrequency = 40f)
     {
-        Splines = BuildSlots(length: 1f, radius: 0.04f),
-        UInt6008 = 5,
-        UInt6009 = 5,
-        Float6010 = 0f,
-        Float6011 = 1f,
-        Float6012 = leafFrequency,
-        Float6014 = 1f,
-    };
+        return new SptBranch
+        {
+            Splines = BuildSlots(1f, 0.04f),
+            UInt6008 = 5,
+            UInt6009 = 5,
+            Float6010 = 0f,
+            Float6011 = 1f,
+            Float6012 = leafFrequency,
+            Float6014 = 1f
+        };
+    }
 
     private static SptModel MakeSingleLevelLeafModel(
         float length = 1f,
@@ -298,58 +339,70 @@ public class SptGeometryBuilderTests
         string material = @"C:\x\OakFoliage.dds",
         IReadOnlyList<SptLeafTextureCoords>? leafTextureCoords = null,
         Vector3? corner0 = null,
-        Vector3? corner1 = null) => new()
+        Vector3? corner1 = null)
     {
-        General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
-        Branches =
-        [
-            MakeBranch(length, radius: 0.02f, frequency: leafFrequency, u6008: 3, u6009: terminalUInt6009),
-        ],
-        Leaves =
-        [
-            new SptLeaf
-            {
-                Material = material,
-                Corner0 = corner0 ?? new Vector3(0.5f, 0.5f, 0f),
-                Corner1 = corner1 ?? new Vector3(0.01f, 0.01f, 0f),
-            },
-        ],
-        LeafTextureCoords = leafTextureCoords ?? [],
-        LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 },
-    };
+        return new SptModel
+        {
+            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
+            Branches =
+            [
+                MakeBranch(length, 0.02f, leafFrequency, 3, terminalUInt6009)
+            ],
+            Leaves =
+            [
+                new SptLeaf
+                {
+                    Material = material,
+                    Corner0 = corner0 ?? new Vector3(0.5f, 0.5f, 0f),
+                    Corner1 = corner1 ?? new Vector3(0.01f, 0.01f, 0f)
+                }
+            ],
+            LeafTextureCoords = leafTextureCoords ?? [],
+            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 }
+        };
+    }
 
-    private static SptModel MakePlacementModeModel(uint placementMode) => new()
+    private static SptModel MakePlacementModeModel(uint placementMode)
     {
-        General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
-        Branches =
-        [
-            MakeBranch(length: 1f, radius: 0.02f, frequency: 2f, u6008: 3, u6009: 1),
-            MakeBranch(length: 1f, radius: 0.01f, frequency: 2f, u6008: 3, u6009: 1),
-            MakeBranch(length: 0f, radius: 0.005f, frequency: 0f, u6008: 3, u6009: 1),
-        ],
-        Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.5f, 0.5f, 0f) }],
-        LeafTable = new SptLeafTable { Float3007 = 1f, UInt3008 = placementMode },
-    };
+        return new SptModel
+        {
+            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
+            Branches =
+            [
+                MakeBranch(1f, 0.02f, 2f, 3, 1),
+                MakeBranch(1f, 0.01f, 2f, 3, 1),
+                MakeBranch(0f, 0.005f, 0f, 3, 1)
+            ],
+            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.5f, 0.5f, 0f) }],
+            LeafTable = new SptLeafTable { Float3007 = 1f, UInt3008 = placementMode }
+        };
+    }
 
     private static SptBranch MakeBranch(float length, float radius, float frequency, uint u6008, uint u6009,
-        float pathExponent = 1f) => new()
+        float pathExponent = 1f)
     {
-        Splines = BuildSlots(length, radius),
-        UInt6008 = u6008,
-        UInt6009 = u6009,
-        Float6010 = 0f,
-        Float6011 = 0f,
-        Float6012 = frequency,
-        Float6014 = pathExponent,
-    };
+        return new SptBranch
+        {
+            Splines = BuildSlots(length, radius),
+            UInt6008 = u6008,
+            UInt6009 = u6009,
+            Float6010 = 0f,
+            Float6011 = 0f,
+            Float6012 = frequency,
+            Float6014 = pathExponent
+        };
+    }
 
-    private static SptGeometryOptions BillboardOptions() => new()
+    private static SptGeometryOptions BillboardOptions()
     {
-        LeafBillboard = true,
-        CrossedLeafCards = false,
-    };
+        return new SptGeometryOptions
+        {
+            LeafBillboard = true,
+            CrossedLeafCards = false
+        };
+    }
 
-    private static int CountLeafQuads(FalloutXbox360Utils.Core.Formats.Nif.Rendering.NifRenderableModel model)
+    private static int CountLeafQuads(NifRenderableModel model)
     {
         var leaf = model.Submeshes.Single(s => s.ShapeName == "spt:leaves");
         return leaf.Positions.Length / 12;
@@ -361,9 +414,15 @@ public class SptGeometryBuilderTests
         return new Vector3(values[i], values[i + 1], values[i + 2]);
     }
 
-    private static int RingVertexCount(uint u6008) => (int)u6008 + 2;
+    private static int RingVertexCount(uint u6008)
+    {
+        return (int)u6008 + 2;
+    }
 
-    private static int BranchVertexCount(uint u6008, uint u6009) => ((int)u6009 + 1) * RingVertexCount(u6008);
+    private static int BranchVertexCount(uint u6008, uint u6009)
+    {
+        return ((int)u6009 + 1) * RingVertexCount(u6008);
+    }
 
     private static Vector3 AveragePosition(float[] positions, int startVertex, int count)
     {
@@ -383,6 +442,33 @@ public class SptGeometryBuilderTests
         Assert.Equal(expected.Z, actual.Z, precision);
     }
 
+    private static float SpeedTreeRangeAfterReseed(uint seed, float min, float max)
+    {
+        var state = seed <= 1 ? 1 : (int)seed;
+        var shuffle = new float[128];
+        for (var i = 0; i < shuffle.Length; i++)
+        {
+            shuffle[i] = Raw(ref state);
+        }
+
+        var index = (int)(Raw(ref state) * 128f);
+        var value = shuffle[index];
+        return min + (max - min) * value;
+
+        static float Raw(ref int state)
+        {
+            var hi = state / 127773;
+            var lo = state - hi * 127773;
+            state = 16807 * lo - 2836 * hi;
+            if (state < 1)
+            {
+                state += 2147483647;
+            }
+
+            return state * 4.656613e-10f;
+        }
+    }
+
     private static SptBezierSpline?[] BuildSlots(float length, float radius)
     {
         var slots = new SptBezierSpline?[9];
@@ -392,7 +478,7 @@ public class SptGeometryBuilderTests
         return slots;
     }
 
-    private static void AssertValidMesh(FalloutXbox360Utils.Core.Formats.Nif.Rendering.RenderableSubmesh sub)
+    private static void AssertValidMesh(RenderableSubmesh sub)
     {
         Assert.True(sub.Positions.Length > 0 && sub.Positions.Length % 3 == 0);
         Assert.True(sub.Triangles.Length > 0 && sub.Triangles.Length % 3 == 0);

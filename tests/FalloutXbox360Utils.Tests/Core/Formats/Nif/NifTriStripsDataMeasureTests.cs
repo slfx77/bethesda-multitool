@@ -19,8 +19,8 @@ public sealed class NifTriStripsDataMeasureTests
     private const uint OblivionVersion = 0x14000004;
 
     [Theory]
-    [InlineData(50)]   // <= 100 strips: always measured correctly
-    [InlineData(150)]  // > 100 strips: the regressing case (Points were skipped before the cap was raised)
+    [InlineData(50)] // <= 100 strips: always measured correctly
+    [InlineData(150)] // > 100 strips: the regressing case (Points were skipped before the cap was raised)
     [InlineData(2000)] // far above any heuristic cap
     public void MeasureBlock_NiTriStripsData_MeasuresPointsRegardlessOfStripCount(int numStrips)
     {
@@ -28,7 +28,7 @@ public sealed class NifTriStripsDataMeasureTests
         var block = BuildNiTriStripsData(numStrips, stripLen);
 
         var converter = new NifSchemaConverter(
-            NifSchema.LoadEmbedded(), OblivionVersion, userVersion: 11, bsVersion: 11, measure: true);
+            NifSchema.LoadEmbedded(), OblivionVersion, 11, 11, true);
         var (size, _) = converter.MeasureBlock(block, 0, block.Length, "NiTriStripsData");
 
         // The block is built to be exactly one NiTriStripsData (header + strips + points), so a correct
@@ -40,7 +40,7 @@ public sealed class NifTriStripsDataMeasureTests
     public void MeasureBlock_StripPointBytes_ScaleWithStripCount()
     {
         var converter = new NifSchemaConverter(
-            NifSchema.LoadEmbedded(), OblivionVersion, userVersion: 11, bsVersion: 11, measure: true);
+            NifSchema.LoadEmbedded(), OblivionVersion, 11, 11, true);
 
         var (size50, _) = converter.MeasureBlock(BuildNiTriStripsData(50, 4), 0, int.MaxValue, "NiTriStripsData");
         var (size150, _) = converter.MeasureBlock(BuildNiTriStripsData(150, 4), 0, int.MaxValue, "NiTriStripsData");
@@ -58,24 +58,36 @@ public sealed class NifTriStripsDataMeasureTests
     private static byte[] BuildNiTriStripsData(int numStrips, int stripLen)
     {
         var b = new List<byte>();
-        void U8(byte v) => b.Add(v);
-        void U16(ushort v) => b.AddRange(BitConverter.GetBytes(v));
-        void U32(uint v) => b.AddRange(BitConverter.GetBytes(v));
+
+        void U8(byte v)
+        {
+            b.Add(v);
+        }
+
+        void U16(ushort v)
+        {
+            b.AddRange(BitConverter.GetBytes(v));
+        }
+
+        void U32(uint v)
+        {
+            b.AddRange(BitConverter.GetBytes(v));
+        }
 
         // --- NiGeometryData ---
-        U32(0);             // Group ID (int, since 10.1.0.114) — always zero
-        U16(0);             // Num Vertices = 0 (so Vertices/Normals/Colors/UV arrays are all empty)
-        U8(0);              // Keep Flags
-        U8(0);              // Compress Flags
-        U8(1);              // Has Vertices (no vertices follow since Num Vertices = 0)
-        U16(0);             // Data Flags (0 UV sets, no tangents)
-        U8(0);              // Has Normals = 0
+        U32(0); // Group ID (int, since 10.1.0.114) — always zero
+        U16(0); // Num Vertices = 0 (so Vertices/Normals/Colors/UV arrays are all empty)
+        U8(0); // Keep Flags
+        U8(0); // Compress Flags
+        U8(1); // Has Vertices (no vertices follow since Num Vertices = 0)
+        U16(0); // Data Flags (0 UV sets, no tangents)
+        U8(0); // Has Normals = 0
         b.AddRange(new byte[16]); // Bounding Sphere (NiBound: Center vec3 + Radius float)
-        U8(0);              // Has Vertex Colors = 0
-        U16(0);             // Consistency Flags
-        U32(0);             // Additional Data (Ref, since 20.0.0.4)
+        U8(0); // Has Vertex Colors = 0
+        U16(0); // Consistency Flags
+        U32(0); // Additional Data (Ref, since 20.0.0.4)
         // --- NiTriBasedGeomData ---
-        U16(0);             // Num Triangles
+        U16(0); // Num Triangles
         // --- NiTriStripsData ---
         U16((ushort)numStrips);
         for (var i = 0; i < numStrips; i++)
@@ -83,10 +95,10 @@ public sealed class NifTriStripsDataMeasureTests
             U16((ushort)stripLen); // Strip Lengths
         }
 
-        U8(1);              // Has Points
+        U8(1); // Has Points
         for (var i = 0; i < numStrips * stripLen; i++)
         {
-            U16(0);         // Points (jagged: Num Strips × Strip Lengths)
+            U16(0); // Points (jagged: Num Strips × Strip Lengths)
         }
 
         return b.ToArray();

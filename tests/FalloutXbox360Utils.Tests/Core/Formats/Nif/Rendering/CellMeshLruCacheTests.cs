@@ -12,10 +12,12 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 /// </summary>
 public sealed class CellMeshLruCacheTests
 {
-    private static LruCache<(int gx, int gy), TestEntry> CreateCache(int capacity) =>
-        new("CellMeshLru", ResourceCategory.GpuResident,
-            maxEntries: capacity,
+    private static LruCache<(int gx, int gy), TestEntry> CreateCache(int capacity)
+    {
+        return new LruCache<(int gx, int gy), TestEntry>("CellMeshLru", ResourceCategory.GpuResident,
+            capacity,
             onEvicted: static (_, entry) => entry.Dispose());
+    }
 
     [Fact]
     public void TryGet_OnEmptyCache_ReturnsFalseAndDefault()

@@ -16,26 +16,14 @@ public sealed class DiskBlobCacheTests : IDisposable
         Logger.Instance.Reset();
         if (Directory.Exists(_directory))
         {
-            Directory.Delete(_directory, recursive: true);
+            Directory.Delete(_directory, true);
         }
-    }
-
-    private sealed class TestBlobCache(string directory, long maxBytes, int decoderVersion = 1)
-        : DiskBlobCache(
-            "TestBlobCache", directory, maxBytes,
-            Encoding.ASCII.GetBytes("TESTBLB\0"), formatVersion: 1, decoderVersion, ".tblob")
-    {
-        public bool TryLoad(string key, out string? payload, out bool isNegative) =>
-            TryLoadCore(key, static reader => ReadString(reader, 1024), out payload, out isNegative);
-
-        public void Store(string key, string? payload) =>
-            StoreCore(key, payload, static (writer, value) => WriteString(writer, value, 1024));
     }
 
     [Fact]
     public void Round_trips_a_payload_and_counts_hits_and_misses()
     {
-        var cache = new TestBlobCache(_directory, maxBytes: 1024 * 1024);
+        var cache = new TestBlobCache(_directory, 1024 * 1024);
 
         Assert.False(cache.TryLoad("key", out _, out _));
         cache.Store("key", "payload");
@@ -51,7 +39,7 @@ public sealed class DiskBlobCacheTests : IDisposable
     [Fact]
     public void Round_trips_a_negative_entry()
     {
-        var cache = new TestBlobCache(_directory, maxBytes: 1024 * 1024);
+        var cache = new TestBlobCache(_directory, 1024 * 1024);
         cache.Store("missing-asset", null);
 
         Assert.True(cache.TryLoad("missing-asset", out var payload, out var isNegative));
@@ -62,10 +50,10 @@ public sealed class DiskBlobCacheTests : IDisposable
     [Fact]
     public void Decoder_version_mismatch_invalidates_and_deletes_the_file()
     {
-        var writerCache = new TestBlobCache(_directory, maxBytes: 1024 * 1024, decoderVersion: 1);
+        var writerCache = new TestBlobCache(_directory, 1024 * 1024, 1);
         writerCache.Store("key", "payload");
 
-        var readerCache = new TestBlobCache(_directory, maxBytes: 1024 * 1024, decoderVersion: 2);
+        var readerCache = new TestBlobCache(_directory, 1024 * 1024, 2);
         Assert.False(readerCache.TryLoad("key", out _, out _));
 
         // The stale file must be gone so the writer can re-store cleanly.
@@ -75,7 +63,7 @@ public sealed class DiskBlobCacheTests : IDisposable
     [Fact]
     public void Corrupt_files_are_deleted_and_reported_as_misses()
     {
-        var cache = new TestBlobCache(_directory, maxBytes: 1024 * 1024);
+        var cache = new TestBlobCache(_directory, 1024 * 1024);
         cache.Store("key", "payload");
 
         var file = Directory.EnumerateFiles(_directory, "*.tblob", SearchOption.AllDirectories).Single();
@@ -88,7 +76,7 @@ public sealed class DiskBlobCacheTests : IDisposable
     [Fact]
     public async Task Prune_measures_and_enforces_the_byte_cap()
     {
-        var cache = new TestBlobCache(_directory, maxBytes: 600);
+        var cache = new TestBlobCache(_directory, 600);
         for (var i = 0; i < 10; i++)
         {
             cache.Store($"key{i}", new string('x', 64));
@@ -116,5 +104,21 @@ public sealed class DiskBlobCacheTests : IDisposable
         }
 
         Assert.True(condition());
+    }
+
+    private sealed class TestBlobCache(string directory, long maxBytes, int decoderVersion = 1)
+        : DiskBlobCache(
+            "TestBlobCache", directory, maxBytes,
+            Encoding.ASCII.GetBytes("TESTBLB\0"), 1, decoderVersion, ".tblob")
+    {
+        public bool TryLoad(string key, out string? payload, out bool isNegative)
+        {
+            return TryLoadCore(key, static reader => ReadString(reader, 1024), out payload, out isNegative);
+        }
+
+        public void Store(string key, string? payload)
+        {
+            StoreCore(key, payload, static (writer, value) => WriteString(writer, value, 1024));
+        }
     }
 }

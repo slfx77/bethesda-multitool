@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 using System.Globalization;
 
 namespace FalloutRendererProfiler;
@@ -57,6 +56,7 @@ internal sealed record RendererProfilerOptions
     ///     camera pose or worldspace centroid.
     /// </summary>
     internal float? CaptureCenterX { get; init; }
+
     internal float? CaptureCenterY { get; init; }
 
     internal static string Usage =>

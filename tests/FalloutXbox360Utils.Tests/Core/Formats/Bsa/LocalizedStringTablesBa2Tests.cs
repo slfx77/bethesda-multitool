@@ -37,7 +37,7 @@ public class LocalizedStringTablesBa2Tests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            Directory.Delete(dir, true);
         }
     }
 
@@ -64,7 +64,7 @@ public class LocalizedStringTablesBa2Tests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            Directory.Delete(dir, true);
         }
     }
 
@@ -73,8 +73,8 @@ public class LocalizedStringTablesBa2Tests
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
         bw.Write("TES4"u8.ToArray());
-        bw.Write(0u);        // dataSize (unused by the localized-flag check)
-        bw.Write(0x80u);     // flags: Localized
+        bw.Write(0u); // dataSize (unused by the localized-flag check)
+        bw.Write(0x80u); // flags: Localized
         bw.Flush();
         return ms.ToArray();
     }
@@ -88,12 +88,12 @@ public class LocalizedStringTablesBa2Tests
         var textBytes = Encoding.UTF8.GetBytes(text);
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
-        bw.Write(1u);                          // count
+        bw.Write(1u); // count
         bw.Write((uint)(textBytes.Length + 1)); // dataSize (informational)
-        bw.Write(id);                          // entry id
-        bw.Write(0u);                          // entry relative offset
-        bw.Write(textBytes);                   // string data
-        bw.Write((byte)0);                     // null terminator
+        bw.Write(id); // entry id
+        bw.Write(0u); // entry relative offset
+        bw.Write(textBytes); // string data
+        bw.Write((byte)0); // null terminator
         bw.Flush();
         return ms.ToArray();
     }
@@ -113,16 +113,16 @@ public class LocalizedStringTablesBa2Tests
         bw.Write(1u);
         bw.Write(nameTableOffset);
 
-        bw.Write(0x1234u);                     // nameHash
+        bw.Write(0x1234u); // nameHash
         var ext = new byte[4];
         Encoding.ASCII.GetBytes("STR").CopyTo(ext, 0);
         bw.Write(ext);
-        bw.Write(0x5678u);                     // dirHash
-        bw.Write(0u);                          // flags
+        bw.Write(0x5678u); // dirHash
+        bw.Write(0u); // flags
         bw.Write(dataOffset);
-        bw.Write(0u);                          // packedSize 0 == uncompressed
-        bw.Write((uint)data.Length);           // realSize
-        bw.Write(0u);                          // align
+        bw.Write(0u); // packedSize 0 == uncompressed
+        bw.Write((uint)data.Length); // realSize
+        bw.Write(0u); // align
 
         bw.Write(data);
 

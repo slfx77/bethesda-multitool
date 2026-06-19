@@ -1,5 +1,3 @@
-using FalloutXbox360Utils;
-using FalloutXbox360Utils.Core;
 using System.Numerics;
 using Microsoft.UI.Dispatching;
 

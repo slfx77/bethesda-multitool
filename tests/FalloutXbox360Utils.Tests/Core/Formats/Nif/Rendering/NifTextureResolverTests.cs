@@ -122,6 +122,35 @@ public sealed class NifTextureResolverTests
     }
 
     [Fact]
+    public void ReadShaderMetadata_FromEffectShaderProperty_ReadsSourceTextureAsDiffuse()
+    {
+        // Skyrim/SE/FO4 BSEffectShaderProperty (fire, magic, glow, some ice): the effect texture is the
+        // inline "Source Texture" after NiObjectNET + Shader Flags 1(4) + Shader Flags 2(4) + UV Offset(8)
+        // + UV Scale(8) = +24 — NOT a BSShaderTextureSet. Regression guard for effect shapes resolving no
+        // diffuse and rendering untextured (the "fire shows a floating normal map" look).
+        const string sourceTexture = @"textures\effects\FXFireScrollTile02.dds";
+
+        var data = new byte[128];
+        WriteNiObjectNetHeader(data, 0); // 0..11
+        WriteUInt32(data, 12, 0); // Shader Flags 1
+        WriteUInt32(data, 16, 0); // Shader Flags 2
+        WriteFloat(data, 20, 0f); // UV Offset.u
+        WriteFloat(data, 24, 0f); // UV Offset.v
+        WriteFloat(data, 28, 1f); // UV Scale.u
+        WriteFloat(data, 32, 1f); // UV Scale.v
+        var pos = 36;
+        WriteSizedString(data, ref pos, sourceTexture);
+
+        var nif = CreateNifInfo(("BSEffectShaderProperty", 0, pos));
+        var metadata = NifTextureResolver.ReadShaderMetadata(data, nif, [0]);
+
+        Assert.NotNull(metadata);
+        Assert.Equal("BSEffectShaderProperty", metadata.PropertyType);
+        Assert.Equal(sourceTexture, metadata.DiffusePath);
+        Assert.Equal(sourceTexture, NifTextureResolver.ResolveDiffusePath(data, nif, [0]));
+    }
+
+    [Fact]
     public void NifTexturingProperty_ResolvesBaseTextureFromSourceTexture()
     {
         // Legacy NiTexturingProperty (block 0) → base map TexDesc.Source → NiSourceTexture (block 1)
@@ -131,15 +160,15 @@ public sealed class NifTextureResolverTests
 
         var data = new byte[64];
         // Block 0: NiTexturingProperty @ 0
-        WriteNiObjectNetHeader(data, 0);  // 0..11
-        WriteUInt16(data, 12, 0);         // Flags (TexturingFlags)
-        WriteUInt32(data, 14, 1);         // Texture Count
-        data[18] = 1;                     // Has Base Texture
-        WriteInt32(data, 19, 1);          // Base Texture TexDesc.Source = block 1
+        WriteNiObjectNetHeader(data, 0); // 0..11
+        WriteUInt16(data, 12, 0); // Flags (TexturingFlags)
+        WriteUInt32(data, 14, 1); // Texture Count
+        data[18] = 1; // Has Base Texture
+        WriteInt32(data, 19, 1); // Base Texture TexDesc.Source = block 1
         // Block 1: NiSourceTexture @ 32
         WriteNiObjectNetHeader(data, 32); // 32..43
-        data[44] = 1;                     // Use External
-        WriteInt32(data, 45, 0);          // File Name = string index 0
+        data[44] = 1; // Use External
+        WriteInt32(data, 45, 0); // File Name = string index 0
 
         var nif = CreateNifInfo(
             ("NiTexturingProperty", 0, 23),

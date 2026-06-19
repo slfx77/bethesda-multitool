@@ -8,7 +8,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void Allocate_AdvancesOffset_AndRoundsSizeUpToAlignment()
     {
-        var arena = new GeometryArenaAllocator(256, 16);
+        var arena = new GeometryArenaAllocator(256);
 
         var a = arena.Allocate(10);
         var b = arena.Allocate(20);
@@ -28,7 +28,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void AllocatedOffsets_AreAlignmentAligned()
     {
-        var arena = new GeometryArenaAllocator(1024, 16);
+        var arena = new GeometryArenaAllocator(1024);
 
         for (var i = 0; i < 20; i++)
         {
@@ -40,7 +40,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void Free_ThenAllocate_ReusesTheFreedRange()
     {
-        var arena = new GeometryArenaAllocator(256, 16);
+        var arena = new GeometryArenaAllocator(256);
         var a = arena.Allocate(16); // [0,16)
         var b = arena.Allocate(16); // [16,32)
 
@@ -54,7 +54,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void AdjacentFrees_Coalesce_IntoOneReusableSpan()
     {
-        var arena = new GeometryArenaAllocator(256, 16);
+        var arena = new GeometryArenaAllocator(256);
         var a = arena.Allocate(16); // [0,16)
         var b = arena.Allocate(16); // [16,32)
         arena.Allocate(16); // [32,48) — kept allocated
@@ -71,7 +71,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void Allocate_AddsNewBlock_WhenCurrentBlocksAreFull()
     {
-        var arena = new GeometryArenaAllocator(64, 16);
+        var arena = new GeometryArenaAllocator(64);
 
         var a = arena.Allocate(64); // fills block 0
         Assert.Equal(0, a.BlockIndex);
@@ -86,7 +86,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void FreeBytesInBlock_TracksUsageAndAllocatedBytes()
     {
-        var arena = new GeometryArenaAllocator(256, 16);
+        var arena = new GeometryArenaAllocator(256);
         var a = arena.Allocate(10); // aligned 16
 
         Assert.Equal(240L, arena.FreeBytesInBlock(0));
@@ -100,7 +100,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void AllocationLargerThanBlock_Throws()
     {
-        var arena = new GeometryArenaAllocator(64, 16);
+        var arena = new GeometryArenaAllocator(64);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => arena.Allocate(65)); // 65 → 80 > 64
     }
@@ -108,7 +108,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void Allocate_NonPositiveSize_Throws()
     {
-        var arena = new GeometryArenaAllocator(64, 16);
+        var arena = new GeometryArenaAllocator(64);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => arena.Allocate(0));
     }
@@ -124,7 +124,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void InterleavedAllocateAndFree_KeepsLiveRangesNonOverlapping()
     {
-        var arena = new GeometryArenaAllocator(1024, 16);
+        var arena = new GeometryArenaAllocator(1024);
         var live = new List<ArenaAllocation>();
 
         for (var i = 0; i < 12; i++)

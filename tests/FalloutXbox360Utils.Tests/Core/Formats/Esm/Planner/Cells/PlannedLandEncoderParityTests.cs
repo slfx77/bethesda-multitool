@@ -20,7 +20,7 @@ public sealed class PlannedLandEncoderParityTests
         };
         var options = new PluginBuildOptions { CompressRecords = false };
 
-        var legacy = LandEncoder.Encode(heightmap, null);
+        var legacy = LandEncoder.Encode(heightmap);
         var planner = PlannedLandEncoder.EncodeRecord(heightmap, null, 0x01000800, options);
 
         if (legacy is null || legacy.Count == 0)

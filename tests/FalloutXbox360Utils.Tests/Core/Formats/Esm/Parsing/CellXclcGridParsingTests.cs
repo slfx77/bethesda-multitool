@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 using static FalloutXbox360Utils.Tests.Helpers.EsmTestFileBuilder;
 
@@ -12,11 +13,11 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Esm.Parsing;
 public class CellXclcGridParsingTests
 {
     [Theory]
-    [InlineData(8)]   // Fallout 3
-    [InlineData(12)]  // Fallout NV
+    [InlineData(8)] // Fallout 3
+    [InlineData(12)] // Fallout NV
     public void ExteriorCell_ReadsGridFromXclc_RegardlessOfTrailingFlagsField(int xclcByteCount)
     {
-        var result = new Helpers.EsmTestFileBuilder()
+        var result = new EsmTestFileBuilder()
             .AddWorldspace(new WorldspaceData
             {
                 FormId = 0x100,

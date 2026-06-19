@@ -5,7 +5,10 @@ namespace FalloutXbox360Utils.Tests.Core.Orchestration;
 
 public sealed class ConcurrencyPolicyTests
 {
-    private static string UniqueVariable() => "FALLOUT_TEST_CONCURRENCY_" + Guid.NewGuid().ToString("N");
+    private static string UniqueVariable()
+    {
+        return "FALLOUT_TEST_CONCURRENCY_" + Guid.NewGuid().ToString("N");
+    }
 
     [Fact]
     public void Presets_resolve_from_processor_count()

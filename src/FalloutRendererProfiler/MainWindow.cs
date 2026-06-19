@@ -1,6 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
-using FalloutXbox360Utils;
-using FalloutXbox360Utils.Core;
 using System.Globalization;
 using Windows.Graphics;
 using Windows.UI;
@@ -261,7 +258,7 @@ internal sealed class MainWindow : Window, IDisposable
                     minX, maxX, minY, maxY, px, px, showDisabled: true,
                     showWater: true,
                     worldspaceFormId: targetFormId,
-                    hiddenCategories: System.Array.Empty<FalloutXbox360Utils.Core.Formats.Esm.Models.PlacedObjectCategory>(),
+                    hiddenCategories: Array.Empty<FalloutXbox360Utils.Core.Formats.Esm.Models.PlacedObjectCategory>(),
                     CancellationToken.None);
                 if (render is null)
                 {

@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
+using FalloutXbox360Utils.Core.Resources;
 using Xunit;
 
 namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
@@ -126,9 +128,9 @@ public sealed class TerrainPerfProfileTests
         var entries = new TestEntry[N];
         for (var i = 0; i < N; i++) entries[i] = new TestEntry();
 
-        var cache = new FalloutXbox360Utils.Core.Resources.LruCache<(int gx, int gy), TestEntry>(
-            "CellMeshLru", FalloutXbox360Utils.Core.Diagnostics.ResourceCategory.GpuResident,
-            maxEntries: N + 256,
+        var cache = new LruCache<(int gx, int gy), TestEntry>(
+            "CellMeshLru", ResourceCategory.GpuResident,
+            N + 256,
             onEvicted: static (_, entry) => entry.Dispose());
 
         // Warmup

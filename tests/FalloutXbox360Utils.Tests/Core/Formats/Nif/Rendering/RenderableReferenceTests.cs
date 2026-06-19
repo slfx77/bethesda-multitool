@@ -275,7 +275,9 @@ public sealed class RenderableReferenceTests
     [InlineData("meshes\\markers\\marker_encant.nif")]
     [InlineData("meshes\\MARKERS\\idle.nif")] // case-insensitive segment
     public void IsMarkerModelPath_MarkerObjects_ReturnTrue(string path)
-        => Assert.True(RenderableReference.IsMarkerModelPath(path));
+    {
+        Assert.True(RenderableReference.IsMarkerModelPath(path));
+    }
 
     [Theory]
     [InlineData("meshes\\architecture\\market.nif")] // "market" != "marker" prefix
@@ -285,7 +287,9 @@ public sealed class RenderableReferenceTests
     [InlineData(null)]
     [InlineData("")]
     public void IsMarkerModelPath_NonMarkers_ReturnFalse(string? path)
-        => Assert.False(RenderableReference.IsMarkerModelPath(path));
+    {
+        Assert.False(RenderableReference.IsMarkerModelPath(path));
+    }
 
     [Fact]
     public void TryBuild_MarkerModelPath_SetsIsMarker()
@@ -306,7 +310,9 @@ public sealed class RenderableReferenceTests
     [InlineData("meshes\\foo\\bar_imposter.nif")] // suffix only
     [InlineData("meshes\\architecture\\IMPOSTER\\thing.nif")] // segment, case-insensitive
     public void IsImposterModelPath_Imposters_ReturnTrue(string path)
-        => Assert.True(RenderableReference.IsImposterModelPath(path));
+    {
+        Assert.True(RenderableReference.IsImposterModelPath(path));
+    }
 
     [Theory]
     [InlineData("meshes\\clutter\\composter.nif")] // ends "composter.nif", not "_imposter.nif"
@@ -315,7 +321,9 @@ public sealed class RenderableReferenceTests
     [InlineData(null)]
     [InlineData("")]
     public void IsImposterModelPath_NonImposters_ReturnFalse(string? path)
-        => Assert.False(RenderableReference.IsImposterModelPath(path));
+    {
+        Assert.False(RenderableReference.IsImposterModelPath(path));
+    }
 
     [Fact]
     public void TryBuild_ImposterModelPath_SetsIsImposter()

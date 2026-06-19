@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutAudioTranscriber.Models;
 
 namespace FalloutAudioTranscriber.Services;

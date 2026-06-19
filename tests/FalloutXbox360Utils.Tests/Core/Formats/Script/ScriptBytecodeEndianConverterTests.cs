@@ -186,7 +186,7 @@ public class ScriptBytecodeEndianConverterTests
     {
         var reader = new BytecodeReader(leBytecode, false);
         reader.StartTrackingMultiByteReads();
-        var decompiler = new ScriptDecompiler([], [], _ => null, false);
+        var decompiler = new ScriptDecompiler([], [], _ => null);
         decompiler.Decompile(leBytecode, reader);
         var regions = reader.StopTrackingMultiByteReads();
 

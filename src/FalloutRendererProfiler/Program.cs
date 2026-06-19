@@ -1,6 +1,3 @@
-using FalloutXbox360Utils;
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;

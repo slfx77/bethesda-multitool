@@ -23,9 +23,9 @@ public sealed class LayerCellBitmapCapPolicyTests
     {
         var policy = new LayerCellBitmapCapPolicy();
 
-        Assert.Equal(300, policy.Update(100, nowMs: 0));
+        Assert.Equal(300, policy.Update(100, 0));
         // Zoom-out to ~6000 visible cells must take effect in the SAME update — no hold delay.
-        Assert.Equal(18_000, policy.Update(6_000, nowMs: 0));
+        Assert.Equal(18_000, policy.Update(6_000, 0));
     }
 
     [Fact]
@@ -33,11 +33,11 @@ public sealed class LayerCellBitmapCapPolicyTests
     {
         var policy = new LayerCellBitmapCapPolicy(holdMs: 3000);
 
-        Assert.Equal(2_640, policy.Update(880, nowMs: 0));
+        Assert.Equal(2_640, policy.Update(880, 0));
         // Off-region excursion: request collapses, but the window hasn't elapsed.
-        Assert.Equal(2_640, policy.Update(1, nowMs: 500));
-        Assert.Equal(2_640, policy.Update(0, nowMs: 1_000));
-        Assert.Equal(2_640, policy.Update(0, nowMs: 2_999));
+        Assert.Equal(2_640, policy.Update(1, 500));
+        Assert.Equal(2_640, policy.Update(0, 1_000));
+        Assert.Equal(2_640, policy.Update(0, 2_999));
     }
 
     [Fact]
@@ -45,13 +45,13 @@ public sealed class LayerCellBitmapCapPolicyTests
     {
         var policy = new LayerCellBitmapCapPolicy(holdMs: 3000);
 
-        Assert.Equal(2_640, policy.Update(880, nowMs: 0));
+        Assert.Equal(2_640, policy.Update(880, 0));
         // Persistently small viewport: one halving per elapsed hold window.
-        Assert.Equal(1_320, policy.Update(12, nowMs: 3_000));
-        Assert.Equal(660, policy.Update(12, nowMs: 6_000));
-        Assert.Equal(330, policy.Update(12, nowMs: 9_000));
+        Assert.Equal(1_320, policy.Update(12, 3_000));
+        Assert.Equal(660, policy.Update(12, 6_000));
+        Assert.Equal(330, policy.Update(12, 9_000));
         // Floor of the decay is the small viewport's own wanted cap, then minCap.
-        Assert.Equal(256, policy.Update(12, nowMs: 12_000));
+        Assert.Equal(256, policy.Update(12, 12_000));
     }
 
     [Fact]
@@ -59,9 +59,9 @@ public sealed class LayerCellBitmapCapPolicyTests
     {
         var policy = new LayerCellBitmapCapPolicy(holdMs: 0);
 
-        Assert.Equal(256, policy.Update(0, nowMs: 0));
-        Assert.Equal(256, policy.Update(1, nowMs: 1));
-        Assert.Equal(256, policy.Update(85, nowMs: 2));
+        Assert.Equal(256, policy.Update(0, 0));
+        Assert.Equal(256, policy.Update(1, 1));
+        Assert.Equal(256, policy.Update(85, 2));
     }
 
     [Fact]
@@ -69,13 +69,13 @@ public sealed class LayerCellBitmapCapPolicyTests
     {
         var policy = new LayerCellBitmapCapPolicy(holdMs: 3000);
 
-        Assert.Equal(2_640, policy.Update(880, nowMs: 0));
-        Assert.Equal(1_320, policy.Update(12, nowMs: 3_000));
+        Assert.Equal(2_640, policy.Update(880, 0));
+        Assert.Equal(1_320, policy.Update(12, 3_000));
         // Viewport recovers mid-decay: instant grow + fresh stamp...
-        Assert.Equal(2_640, policy.Update(880, nowMs: 3_500));
+        Assert.Equal(2_640, policy.Update(880, 3_500));
         // ...so a collapse right after is held for a full window from 3_500, not from 3_000.
-        Assert.Equal(2_640, policy.Update(0, nowMs: 6_400));
-        Assert.Equal(1_320, policy.Update(0, nowMs: 6_500));
+        Assert.Equal(2_640, policy.Update(0, 6_400));
+        Assert.Equal(1_320, policy.Update(0, 6_500));
     }
 
     [Fact]
@@ -87,15 +87,15 @@ public sealed class LayerCellBitmapCapPolicyTests
         // pan-back history. The empty path calls Touch instead: off-region time doesn't count.
         var policy = new LayerCellBitmapCapPolicy(holdMs: 3000);
 
-        Assert.Equal(2_640, policy.Update(880, nowMs: 0));
+        Assert.Equal(2_640, policy.Update(880, 0));
         for (long t = 100; t <= 10_000; t += 100)
         {
             policy.Touch(t); // empty rebuilds while the pan lingers off the populated region
         }
 
         // Partial re-entry 10s later must still see the held cap, not the decay branch.
-        Assert.Equal(2_640, policy.Update(68, nowMs: 10_050));
-        Assert.Equal(2_640, policy.Update(880, nowMs: 10_110));
+        Assert.Equal(2_640, policy.Update(68, 10_050));
+        Assert.Equal(2_640, policy.Update(880, 10_110));
     }
 
     [Fact]
@@ -105,8 +105,8 @@ public sealed class LayerCellBitmapCapPolicyTests
         // partial frame after the frozen-stamp window lands in the decay branch.
         var policy = new LayerCellBitmapCapPolicy(holdMs: 3000);
 
-        Assert.Equal(2_640, policy.Update(880, nowMs: 0));
-        Assert.Equal(1_320, policy.Update(68, nowMs: 10_050));
+        Assert.Equal(2_640, policy.Update(880, 0));
+        Assert.Equal(1_320, policy.Update(68, 10_050));
     }
 
     [Fact]
@@ -114,10 +114,10 @@ public sealed class LayerCellBitmapCapPolicyTests
     {
         var policy = new LayerCellBitmapCapPolicy(holdMs: 3000);
 
-        Assert.Equal(18_000, policy.Update(6_000, nowMs: 0));
+        Assert.Equal(18_000, policy.Update(6_000, 0));
         policy.Reset();
         // No held high-water mark survives a cache replacement: the next request sizes fresh.
-        Assert.Equal(300, policy.Update(100, nowMs: 1));
+        Assert.Equal(300, policy.Update(100, 1));
     }
 
     [Fact]

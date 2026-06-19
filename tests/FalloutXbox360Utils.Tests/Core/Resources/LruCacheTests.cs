@@ -10,19 +10,22 @@ public sealed class LruCacheTests
         int? maxEntries = null,
         long? maxBytes = null,
         Func<string, string, long>? sizeOf = null,
-        Action<string, string>? onEvicted = null) =>
-        new("TestLru", ResourceCategory.CpuCache, maxEntries, maxBytes, sizeOf, onEvicted);
+        Action<string, string>? onEvicted = null)
+    {
+        return new LruCache<string, string>("TestLru", ResourceCategory.CpuCache, maxEntries, maxBytes, sizeOf,
+            onEvicted);
+    }
 
     [Fact]
     public void Evicts_least_recently_used_when_over_entry_cap()
     {
         var evicted = new List<string>();
-        var cache = CreateCache(maxEntries: 2, onEvicted: (key, _) => evicted.Add(key));
+        var cache = CreateCache(2, onEvicted: (key, _) => evicted.Add(key));
 
         cache.Set("a", "1");
         cache.Set("b", "2");
         Assert.True(cache.TryGet("a", out _)); // bump "a" to MRU
-        cache.Set("c", "3");                   // evicts "b", the LRU
+        cache.Set("c", "3"); // evicts "b", the LRU
 
         Assert.Equal(["b"], evicted);
         Assert.True(cache.ContainsKey("a"));
@@ -32,7 +35,7 @@ public sealed class LruCacheTests
     [Fact]
     public void ContainsKey_does_not_bump_recency()
     {
-        var cache = CreateCache(maxEntries: 2);
+        var cache = CreateCache(2);
         cache.Set("a", "1");
         cache.Set("b", "2");
         Assert.True(cache.ContainsKey("a")); // no bump — "a" stays LRU
@@ -45,7 +48,7 @@ public sealed class LruCacheTests
     [Fact]
     public void TryPeek_returns_value_without_bumping_recency_or_counting()
     {
-        var cache = CreateCache(maxEntries: 2);
+        var cache = CreateCache(2);
         cache.Set("a", "1");
         cache.Set("b", "2");
 
@@ -66,7 +69,7 @@ public sealed class LruCacheTests
     public void Replacing_a_key_evicts_the_old_value_through_the_hook()
     {
         var evicted = new List<string>();
-        var cache = CreateCache(maxEntries: 4, onEvicted: (_, value) => evicted.Add(value));
+        var cache = CreateCache(4, onEvicted: (_, value) => evicted.Add(value));
 
         cache.Set("a", "old");
         cache.Set("a", "new");
@@ -81,7 +84,7 @@ public sealed class LruCacheTests
     public void Remove_hands_ownership_back_without_invoking_the_eviction_hook()
     {
         var evicted = new List<string>();
-        var cache = CreateCache(maxEntries: 4, onEvicted: (_, value) => evicted.Add(value));
+        var cache = CreateCache(4, onEvicted: (_, value) => evicted.Add(value));
 
         cache.Set("a", "1");
         Assert.True(cache.Remove("a"));
@@ -95,7 +98,7 @@ public sealed class LruCacheTests
     {
         // Pins the invariant behind the 2026-06-05 disappearing-cells bug: a removed key must be
         // fully detached from the recency list so its re-add cannot corrupt eviction order.
-        var cache = CreateCache(maxEntries: 2);
+        var cache = CreateCache(2);
         cache.Set("a", "1");
         cache.Set("b", "2");
         Assert.True(cache.Remove("a"));
@@ -150,7 +153,7 @@ public sealed class LruCacheTests
 
         Assert.Equal(10, cache.TrimToBytes(50)); // evicts "a" (LRU, 10 bytes)
         Assert.Equal(2, cache.Count);
-        Assert.Equal(1, cache.TrimToCount(1));   // evicts "b"
+        Assert.Equal(1, cache.TrimToCount(1)); // evicts "b"
         Assert.True(cache.ContainsKey("c"));
     }
 
@@ -171,7 +174,7 @@ public sealed class LruCacheTests
     [Fact]
     public void Stats_report_hits_misses_and_evictions()
     {
-        var cache = CreateCache(maxEntries: 1);
+        var cache = CreateCache(1);
         cache.Set("a", "1");
         Assert.True(cache.TryGet("a", out _));
         Assert.False(cache.TryGet("missing", out _));
@@ -203,7 +206,7 @@ public sealed class LruCacheTests
         var disposed = new List<(int gx, int gy)>();
         var cache = new LruCache<(int gx, int gy), FakeMesh>(
             "CellMeshes", ResourceCategory.GpuResident,
-            maxEntries: 1,
+            1,
             onEvicted: (key, mesh) =>
             {
                 disposed.Add(key);
@@ -222,7 +225,7 @@ public sealed class LruCacheTests
     public void SetMaxEntries_raising_evicts_nothing()
     {
         var evicted = new List<string>();
-        var cache = CreateCache(maxEntries: 2, onEvicted: (key, _) => evicted.Add(key));
+        var cache = CreateCache(2, onEvicted: (key, _) => evicted.Add(key));
         cache.Set("a", "1");
         cache.Set("b", "2");
 
@@ -237,7 +240,7 @@ public sealed class LruCacheTests
     public void SetMaxEntries_lowering_evicts_lru_first_through_the_hook()
     {
         var evicted = new List<string>();
-        var cache = CreateCache(maxEntries: 4, onEvicted: (key, _) => evicted.Add(key));
+        var cache = CreateCache(4, onEvicted: (key, _) => evicted.Add(key));
         cache.Set("a", "1");
         cache.Set("b", "2");
         cache.Set("c", "3");
@@ -254,7 +257,7 @@ public sealed class LruCacheTests
     public void SetMaxEntries_lowering_below_count_evicts_each_excess_keeping_mru()
     {
         var evicted = new List<string>();
-        var cache = CreateCache(maxEntries: 5, onEvicted: (key, _) => evicted.Add(key));
+        var cache = CreateCache(5, onEvicted: (key, _) => evicted.Add(key));
         foreach (var k in new[] { "a", "b", "c", "d", "e" })
         {
             cache.Set(k, k);
@@ -271,7 +274,7 @@ public sealed class LruCacheTests
     public void SetMaxEntries_uses_lru_order_bumped_by_TryGet()
     {
         var evicted = new List<string>();
-        var cache = CreateCache(maxEntries: 3, onEvicted: (key, _) => evicted.Add(key));
+        var cache = CreateCache(3, onEvicted: (key, _) => evicted.Add(key));
         cache.Set("a", "1");
         cache.Set("b", "2");
         cache.Set("c", "3");
@@ -286,7 +289,7 @@ public sealed class LruCacheTests
     [Fact]
     public void SetMaxEntries_rejects_non_positive()
     {
-        var cache = CreateCache(maxEntries: 2);
+        var cache = CreateCache(2);
         Assert.Throws<ArgumentOutOfRangeException>(() => cache.SetMaxEntries(0));
         Assert.Throws<ArgumentOutOfRangeException>(() => cache.SetMaxEntries(-5));
     }
@@ -295,6 +298,9 @@ public sealed class LruCacheTests
     {
         public bool IsDisposed { get; private set; }
 
-        public void Dispose() => IsDisposed = true;
+        public void Dispose()
+        {
+            IsDisposed = true;
+        }
     }
 }

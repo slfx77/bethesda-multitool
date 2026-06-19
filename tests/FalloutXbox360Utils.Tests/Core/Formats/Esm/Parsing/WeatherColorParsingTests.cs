@@ -29,7 +29,7 @@ public class WeatherColorParsingTests
     [Fact]
     public void ReadWeatherColors_Uses24ByteStride_SixBandsPerCategory()
     {
-        var colors = MiscEnvironmentHandler.ReadWeatherColors(BuildTwoCategoryBuffer(), isBigEndian: false);
+        var colors = MiscEnvironmentHandler.ReadWeatherColors(BuildTwoCategoryBuffer(), false);
 
         Assert.Equal(2, colors.Count);
 
@@ -51,7 +51,7 @@ public class WeatherColorParsingTests
     public void ReadWeatherColors_FullFnvNam0_DecodesTenCategories()
     {
         // FNV NAM0 is 240 bytes = 10 categories × 24 bytes (NOT 15 × 16).
-        var colors = MiscEnvironmentHandler.ReadWeatherColors(new byte[240], isBigEndian: false);
+        var colors = MiscEnvironmentHandler.ReadWeatherColors(new byte[240], false);
         Assert.Equal(10, colors.Count);
     }
 
@@ -59,7 +59,7 @@ public class WeatherColorParsingTests
     public void ReadWeatherColors_TrailingPartialCategory_Ignored()
     {
         // 24 full bytes + 10 trailing bytes → only the one complete category is produced.
-        var colors = MiscEnvironmentHandler.ReadWeatherColors(new byte[34], isBigEndian: false);
+        var colors = MiscEnvironmentHandler.ReadWeatherColors(new byte[34], false);
         Assert.Single(colors);
     }
 }

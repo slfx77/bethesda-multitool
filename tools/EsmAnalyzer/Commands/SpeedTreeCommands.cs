@@ -102,9 +102,11 @@ public static class SpeedTreeCommands
         }
         else if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
         {
+            var root = Path.GetFullPath(dir);
             foreach (var f in Directory.EnumerateFiles(dir, "*.spt", SearchOption.AllDirectories))
             {
-                items.Add((SpeedTreeModelPath.ToArchivePath(Path.GetFileName(f)),
+                var relativePath = Path.GetRelativePath(root, f);
+                items.Add((SpeedTreeModelPath.ToArchivePath(relativePath),
                     Path.GetFileNameWithoutExtension(f), File.ReadAllBytes(f)));
             }
         }
@@ -123,8 +125,10 @@ public static class SpeedTreeCommands
         {
             var seedCount = treeByPath.Values.Count(t => t.Seed.HasValue);
             var leafCount = treeByPath.Values.Count(t => t.LeafTexture is not null);
+            var heightCount = treeByPath.Values.Count(t => t.TargetHeight.HasValue);
             Console.WriteLine($"ESM TREE metadata resolved for {treeByPath.Count} tree(s) " +
-                              $"({leafCount} ICON leaf atlases, {seedCount} SNAM seeds).");
+                              $"({leafCount} ICON leaf atlases, {seedCount} SNAM seeds, " +
+                              $"{heightCount} OBND/BNAM heights).");
         }
 
         Console.WriteLine($"Found {items.Count} .spt files. Rendering to {outDir} ...");
@@ -151,7 +155,11 @@ public static class SpeedTreeCommands
             {
                 var model = SptFile.Parse(bytes);
                 treeByPath.TryGetValue(archivePath, out var treeMeta);
-                var opt = baseOpt with { LeafTextureOverride = treeMeta?.LeafTexture };
+                var opt = baseOpt with
+                {
+                    LeafTextureOverride = treeMeta?.LeafTexture,
+                    TargetHeight = treeMeta?.TargetHeight,
+                };
                 var seed = treeMeta?.Seed ?? model.General.Token2005;
                 var renderable = SptGeometryBuilder.Build(model, seed, opt);
                 var sprite = NifSpriteRenderer.Render(renderable, resolver, 1f, size, size, azimuth, elevation, size);
@@ -217,7 +225,21 @@ public static class SpeedTreeCommands
         }
     }
 
-    private sealed record TreeMetadata(string? LeafTexture, uint? Seed);
+    private sealed record TreeMetadata(
+        string ArchivePath,
+        string? EditorId,
+        string? LeafTexture,
+        uint? Seed,
+        float? ObndHeight,
+        float? BillboardWidth,
+        float? BillboardHeight)
+    {
+        public float? TargetHeight => Positive(ObndHeight) ?? Positive(BillboardHeight);
+
+        public string DisplayName => string.IsNullOrWhiteSpace(EditorId) ? ArchivePath : EditorId!;
+
+        private static float? Positive(float? value) => value is > 0f ? value : null;
+    }
 
     /// <summary>Load an ESM and map each SpeedTree <c>.spt</c> archive path → its TREE metadata.</summary>
     private static Dictionary<string, TreeMetadata> BuildTreeMetadataMap(string esmPath)
@@ -251,39 +273,195 @@ public static class SpeedTreeCommands
                 leaf = SpeedTreeTexturePath.IconToLeafPath(icon);
             }
 
-            map[SpeedTreeModelPath.ToArchivePath(mp)] = new TreeMetadata(leaf, ExtractTreeSeed(rec.Fields));
+            var archivePath = SpeedTreeModelPath.ToArchivePath(mp);
+            var (billboardWidth, billboardHeight) = ExtractTreeBillboardSize(rec.Fields, rec.IsBigEndian);
+            map[archivePath] = new TreeMetadata(
+                archivePath,
+                rec.EditorId,
+                leaf,
+                ExtractTreeSeed(rec.Fields, rec.IsBigEndian),
+                ExtractObjectBoundsHeight(rec.Bounds),
+                billboardWidth,
+                billboardHeight);
         }
 
         return map;
     }
 
-    private static uint? ExtractTreeSeed(Dictionary<string, object?> fields)
+    private static float? ExtractObjectBoundsHeight(FalloutXbox360Utils.Core.Formats.Esm.Models.ObjectBounds? bounds)
+    {
+        if (bounds is null)
+        {
+            return null;
+        }
+
+        var height = bounds.Z2 - bounds.Z1;
+        return height > 0 ? height : null;
+    }
+
+    private static uint? ExtractTreeSeed(Dictionary<string, object?> fields, bool bigEndian)
     {
         if (!fields.TryGetValue("SNAM", out var snam))
         {
             return null;
         }
 
-        if (snam is uint direct)
+        if (TryGetUInt32(snam, out var direct))
         {
             return direct;
         }
 
         if (snam is Dictionary<string, object?> dict)
         {
-            if (dict.TryGetValue("Seed", out var seed) && seed is uint seedValue)
+            if (dict.TryGetValue("Seed", out var seed) && TryGetUInt32(seed, out var seedValue))
             {
                 return seedValue;
             }
 
             // TREE/SNAM with a single 4-byte payload currently resolves through the generic 4-byte schema.
-            if (dict.TryGetValue("Sound FormID", out var legacy) && legacy is uint legacyValue)
+            if (dict.TryGetValue("Sound FormID", out var legacy) && TryGetUInt32(legacy, out var legacyValue))
             {
                 return legacyValue;
             }
         }
 
+        if (snam is byte[] { Length: >= 4 } raw)
+        {
+            return BinaryUtils.ReadUInt32(raw, 0, bigEndian);
+        }
+
         return null;
+    }
+
+    private static (float? Width, float? Height) ExtractTreeBillboardSize(
+        Dictionary<string, object?> fields,
+        bool bigEndian)
+    {
+        if (!fields.TryGetValue("BNAM", out var bnam))
+        {
+            return (null, null);
+        }
+
+        if (TryGetNamedFloat(bnam, "Width", out var width) &&
+            TryGetNamedFloat(bnam, "Height", out var height))
+        {
+            return (width, height);
+        }
+
+        if (bnam is byte[] { Length: >= 8 } raw)
+        {
+            return (BinaryUtils.ReadFloat(raw, 0, bigEndian), BinaryUtils.ReadFloat(raw, 4, bigEndian));
+        }
+
+        return (null, null);
+    }
+
+    private static bool TryGetNamedFloat(object? container, string name, out float value)
+    {
+        if (container is Dictionary<string, object?> dict && dict.TryGetValue(name, out var raw))
+        {
+            return TryGetFloat(raw, out value);
+        }
+
+        if (container is System.Collections.IDictionary idict && idict.Contains(name))
+        {
+            return TryGetFloat(idict[name], out value);
+        }
+
+        value = 0f;
+        return false;
+    }
+
+    private static bool TryGetFloat(object? raw, out float value)
+    {
+        switch (raw)
+        {
+            case float f:
+                value = f;
+                return true;
+            case double d:
+                value = (float)d;
+                return true;
+            case int i:
+                value = i;
+                return true;
+            case uint u:
+                value = u;
+                return true;
+            default:
+                value = 0f;
+                return false;
+        }
+    }
+
+    private static bool TryGetUInt32(object? raw, out uint value)
+    {
+        switch (raw)
+        {
+            case uint u:
+                value = u;
+                return true;
+            case int i when i >= 0:
+                value = (uint)i;
+                return true;
+            case ushort us:
+                value = us;
+                return true;
+            case byte b:
+                value = b;
+                return true;
+            default:
+                value = 0;
+                return false;
+        }
+    }
+
+    private static TreeMetadata? ResolveTreeMetadata(
+        IReadOnlyDictionary<string, TreeMetadata> treeByPath,
+        string sptPath)
+    {
+        foreach (var candidate in BuildArchivePathCandidates(sptPath))
+        {
+            if (treeByPath.TryGetValue(candidate, out var metadata))
+            {
+                return metadata;
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<string> BuildArchivePathCandidates(string sptPath)
+    {
+        var candidates = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(string? candidate)
+        {
+            if (string.IsNullOrWhiteSpace(candidate) || !SpeedTreeModelPath.IsSpt(candidate))
+            {
+                return;
+            }
+
+            var archivePath = SpeedTreeModelPath.ToArchivePath(candidate);
+            if (seen.Add(archivePath))
+            {
+                candidates.Add(archivePath);
+            }
+        }
+
+        var normalized = sptPath.Replace('/', '\\').Trim();
+        Add(normalized);
+
+        const string treeMarker = "\\trees\\";
+        var treeIndex = normalized.LastIndexOf(treeMarker, StringComparison.OrdinalIgnoreCase);
+        if (treeIndex >= 0)
+        {
+            Add(normalized[(treeIndex + 1)..]);
+        }
+
+        Add(Path.GetFileName(normalized));
+        return candidates;
     }
 
     private static Command CreateRenderCommand()
@@ -313,6 +491,18 @@ public static class SpeedTreeCommands
             Description = "Override the leaf atlas (the engine uses TREE.ICON, not the .spt material). " +
                           "Bare name like 'WhiteOakLeaves01.dds' → textures\\trees\\leaves\\..., or a full path.",
         };
+        var esmOption = new Option<string?>("--esm")
+        {
+            Description = "ESM to source TREE.ICON, TREE.SNAM seed, and TREE OBND/BNAM height for this .spt.",
+        };
+        var seedOption = new Option<uint?>("--seed")
+        {
+            Description = "Override the SpeedTree seed (TREE.SNAM / GECK SpeedTree Seed).",
+        };
+        var targetHeightOption = new Option<float?>("--target-height")
+        {
+            Description = "Override final tree height in model units (TREE billboard/BNAM/OBND-derived height).",
+        };
         command.Arguments.Add(fileArg);
         command.Options.Add(outOption);
         command.Options.Add(dataOption);
@@ -322,6 +512,9 @@ public static class SpeedTreeCommands
         command.Options.Add(dumpTexOption);
         command.Options.Add(bsaOption);
         command.Options.Add(leafTexOption);
+        command.Options.Add(esmOption);
+        command.Options.Add(seedOption);
+        command.Options.Add(targetHeightOption);
         command.SetAction(parseResult => RenderSpt(
             parseResult.GetValue(fileArg)!,
             parseResult.GetValue(outOption)!,
@@ -331,12 +524,16 @@ public static class SpeedTreeCommands
             parseResult.GetValue(sizeOption),
             parseResult.GetValue(dumpTexOption),
             parseResult.GetValue(bsaOption),
-            parseResult.GetValue(leafTexOption)));
+            parseResult.GetValue(leafTexOption),
+            parseResult.GetValue(esmOption),
+            parseResult.GetValue(seedOption),
+            parseResult.GetValue(targetHeightOption)));
         return command;
     }
 
     private static int RenderSpt(string sptPath, string outPng, string dataSource, float azimuth, float elevation,
-        int size, bool dumpTextures, string? bsa, string? leafTexture)
+        int size, bool dumpTextures, string? bsa, string? leafTexture, string? esmPath, uint? seedOverride,
+        float? targetHeight)
     {
         var bytes = LoadSptBytes(sptPath, bsa);
         if (bytes is null)
@@ -364,6 +561,31 @@ public static class SpeedTreeCommands
             (float)(Math.Cos(azR) * Math.Cos(elR)),
             (float)(Math.Sin(azR) * Math.Cos(elR)),
             (float)Math.Sin(elR));
+        TreeMetadata? treeMeta = null;
+        if (!string.IsNullOrWhiteSpace(esmPath))
+        {
+            var treeByPath = BuildTreeMetadataMap(esmPath);
+            treeMeta = ResolveTreeMetadata(treeByPath, sptPath);
+            if (treeMeta is null)
+            {
+                Console.Error.WriteLine(
+                    $"No TREE metadata in {esmPath} matched {string.Join(", ", BuildArchivePathCandidates(sptPath))}.");
+            }
+            else
+            {
+                Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                    $"ESM TREE metadata: {treeMeta.DisplayName} path={treeMeta.ArchivePath} " +
+                    $"seed={(treeMeta.Seed?.ToString(CultureInfo.InvariantCulture) ?? "(none)")} " +
+                    $"OBNDh={(treeMeta.ObndHeight?.ToString(CultureInfo.InvariantCulture) ?? "(none)")} " +
+                    $"BNAM={(treeMeta.BillboardWidth?.ToString(CultureInfo.InvariantCulture) ?? "?")}x{(treeMeta.BillboardHeight?.ToString(CultureInfo.InvariantCulture) ?? "?")} " +
+                    $"leaf={treeMeta.LeafTexture ?? "(none)"}"));
+            }
+        }
+
+        var resolvedLeafTexture = leafTexture is not null
+            ? SpeedTreeTexturePath.IconToLeafPath(leafTexture)
+            : treeMeta?.LeafTexture;
+        var resolvedTargetHeight = targetHeight ?? treeMeta?.TargetHeight;
         // FALLOUT_SPT_CROSSED=1 renders the crossed-card path the GUI viewer uses (no per-card
         // camera-facing billboard) instead of the still-friendly camera-facing cards — for diagnosing
         // what the live viewer actually shows.
@@ -376,16 +598,18 @@ public static class SpeedTreeCommands
         {
             LeafFaceDirection = crossed || billboard ? null : camDir,
             LeafBillboard = billboard,
-            LeafTextureOverride = SpeedTreeTexturePath.IconToLeafPath(leafTexture),
+            LeafTextureOverride = resolvedLeafTexture,
+            TargetHeight = resolvedTargetHeight,
         };
 
-        var renderable = SptGeometryBuilder.Build(model, model.General.Token2005, opt);
+        var seed = seedOverride ?? treeMeta?.Seed ?? model.General.Token2005;
+        var renderable = SptGeometryBuilder.Build(model, seed, opt);
         if (billboard)
         {
             ExpandLeafBillboards(renderable, camDir);
         }
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"Built geometry: {renderable.Submeshes.Count} submeshes, bounds W={renderable.Width:F1} H={renderable.Height:F1} D={renderable.Depth:F1}"));
+            $"Built geometry: seed={seed} targetH={(resolvedTargetHeight?.ToString(CultureInfo.InvariantCulture) ?? "(raw)")} {renderable.Submeshes.Count} submeshes, bounds W={renderable.Width:F1} H={renderable.Height:F1} D={renderable.Depth:F1}"));
         foreach (var sub in renderable.Submeshes)
         {
             Console.WriteLine(
@@ -523,16 +747,249 @@ public static class SpeedTreeCommands
         var trees = new RuntimeTreeGeometryExtractor(context).Extract(instanceVas);
         Console.WriteLine($"Extracted geometry from {trees.Count} tree(s):");
         var ci = CultureInfo.InvariantCulture;
-        foreach (var tree in trees.OrderByDescending(t => t.TotalVertices))
+        if (trees.Count == 0)
         {
-            var branch = tree.Submeshes.Count(s => s.Kind == TreeGeometryKind.Branch);
-            var leaf = tree.Submeshes.Count(s => s.Kind == TreeGeometryKind.Leaf);
-            var bb = tree.Submeshes.Count(s => s.Kind == TreeGeometryKind.Billboard);
+            PrintBstreeModelFieldDiagnostic(context, instanceVas.Take(8), ci);
+        }
+
+        var groups = trees
+            .GroupBy(t => new
+            {
+                Seed = ReadUInt32(context, t.BSTreeModelVa + 0x40),
+                RuntimeHeight = ReadFloat(context, t.BSTreeModelVa + 0x4C),
+                Branches = t.Submeshes.Count(s => s.Kind == TreeGeometryKind.Branch),
+                Leaves = t.Submeshes.Count(s => s.Kind == TreeGeometryKind.Leaf),
+                Billboards = t.Submeshes.Count(s => s.Kind == TreeGeometryKind.Billboard),
+                Vertices = t.TotalVertices,
+                Triangles = t.TotalTriangles,
+            })
+            .OrderByDescending(g => g.Count())
+            .ThenByDescending(g => g.Key.Vertices)
+            .ToList();
+
+        Console.WriteLine($"Unique extracted geometry groups: {groups.Count}");
+        foreach (var group in groups.Take(24))
+        {
+            var tree = group.First();
+            var bounds = ComputeBounds(tree.Submeshes);
             Console.WriteLine(string.Create(ci,
-                $"  BSTreeModel @ 0x{tree.BSTreeModelVa:X8}: {tree.Submeshes.Count} submeshes (branch {branch}, leaf {leaf}, billboard {bb}), {tree.TotalVertices} verts, {tree.TotalTriangles} tris"));
+                $"  x{group.Count(),3} seed={group.Key.Seed} runtimeH={group.Key.RuntimeHeight:F2} @0x{tree.BSTreeModelVa:X8}: {tree.Submeshes.Count} submeshes (branch {group.Key.Branches}, leaf {group.Key.Leaves}, billboard {group.Key.Billboards}), {group.Key.Vertices} verts, {group.Key.Triangles} tris, bounds size=({bounds.SizeX:F2},{bounds.SizeY:F2},{bounds.SizeZ:F2}) min=({bounds.MinX:F2},{bounds.MinY:F2},{bounds.MinZ:F2}) max=({bounds.MaxX:F2},{bounds.MaxY:F2},{bounds.MaxZ:F2})"));
+        }
+
+        if (groups.Count > 24)
+        {
+            Console.WriteLine($"  ... {groups.Count - 24} more group(s) omitted");
+        }
+
+        if (trees.Count > 0 && trees.All(t => t.Submeshes.All(s => s.Kind != TreeGeometryKind.Branch)))
+        {
+            Console.WriteLine("No branch meshes extracted; branch field diagnostic for first 3 instances:");
+            PrintBstreeModelFieldDiagnostic(context, instanceVas.Take(3), ci);
         }
 
         return 0;
+    }
+
+    private static RuntimeBounds ComputeBounds(IEnumerable<ExtractedTreeSubmesh> submeshes)
+    {
+        var minX = float.MaxValue;
+        var minY = float.MaxValue;
+        var minZ = float.MaxValue;
+        var maxX = float.MinValue;
+        var maxY = float.MinValue;
+        var maxZ = float.MinValue;
+
+        foreach (var submesh in submeshes)
+        {
+            var vertices = submesh.Mesh.Vertices;
+            for (var i = 0; i + 2 < vertices.Length; i += 3)
+            {
+                var x = vertices[i];
+                var y = vertices[i + 1];
+                var z = vertices[i + 2];
+                if (!RuntimeMemoryContext.IsNormalFloat(x) || !RuntimeMemoryContext.IsNormalFloat(y) ||
+                    !RuntimeMemoryContext.IsNormalFloat(z))
+                {
+                    continue;
+                }
+
+                minX = MathF.Min(minX, x);
+                minY = MathF.Min(minY, y);
+                minZ = MathF.Min(minZ, z);
+                maxX = MathF.Max(maxX, x);
+                maxY = MathF.Max(maxY, y);
+                maxZ = MathF.Max(maxZ, z);
+            }
+        }
+
+        return minX == float.MaxValue
+            ? new RuntimeBounds()
+            : new RuntimeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    private static void PrintBstreeModelFieldDiagnostic(RuntimeMemoryContext context, IEnumerable<uint> modelVas,
+        CultureInfo ci)
+    {
+        Console.WriteLine("BSTreeModel field diagnostic (first 8 instances; offsets from PDB/decompile):");
+        foreach (var va in modelVas)
+        {
+            var speedTree = ReadPointer(context, va + 0x0C);
+            var branchData = ReadPointer(context, va + 0x14);
+            var leafData = ReadPointer(context, va + 0x18);
+            var billboard = ReadPointer(context, va + 0x1C);
+            var branchProps = ReadPointer(context, va + 0x24);
+            var leafProps = ReadPointer(context, va + 0x28);
+            var branchCount = ReadArrayCount(context, branchData);
+            var leafCount = ReadArrayCount(context, leafData);
+            var firstBranch = ReadFirstArrayPointer(context, branchData);
+            var firstLeaf = ReadFirstArrayPointer(context, leafData);
+            var seed = ReadUInt32(context, va + 0x40);
+            var initialized = ReadByte(context, va + 0x44);
+            var width = ReadFloat(context, va + 0x48);
+            var height = ReadFloat(context, va + 0x4C);
+
+            Console.WriteLine(string.Create(ci,
+                $"  @0x{va:X8}: pSpeedTree=0x{speedTree:X8} branchData=0x{branchData:X8}[{branchCount}] first=0x{firstBranch:X8} leafData=0x{leafData:X8}[{leafCount}] first=0x{firstLeaf:X8} billboard=0x{billboard:X8} branchProps=0x{branchProps:X8} leafProps=0x{leafProps:X8} seed={seed} init={initialized} width={width:F2} height={height:F2}"));
+            PrintGeometryDataDiagnostic(context, "branch0", firstBranch, ci);
+            PrintGeometryDataDiagnostic(context, "leaf0", firstLeaf, ci);
+        }
+    }
+
+    private static void PrintGeometryDataDiagnostic(RuntimeMemoryContext context, string label, uint dataVa,
+        CultureInfo ci)
+    {
+        if (dataVa == 0 || !context.IsValidPointer(dataVa))
+        {
+            return;
+        }
+
+        var refCount = ReadUInt32(context, dataVa + 0x04);
+        var vertices = ReadUInt16(context, dataVa + 0x08);
+        var triangles = ReadUInt16(context, dataVa + 0x40);
+        var radius = ReadFloat(context, dataVa + 0x1C);
+        var vertexPtr = ReadPointer(context, dataVa + 0x20);
+        var normalPtr = ReadPointer(context, dataVa + 0x24);
+        var uvPtr = ReadPointer(context, dataVa + 0x2C);
+        var buffDataPtr = ReadPointer(context, dataVa + 0x34);
+        var indexCount = ReadUInt32(context, dataVa + 0x44);
+        var indexPtr = ReadPointer(context, dataVa + 0x48);
+        var stripCount = ReadUInt16(context, dataVa + 0x44);
+        var stripLengthsPtr = ReadPointer(context, dataVa + 0x48);
+        var stripListsPtr = ReadPointer(context, dataVa + 0x4C);
+        var derivedStripListsPtr = ResolvePackedStripListsPointer(context, buffDataPtr);
+        var firstStripLength = ReadUInt16(context, stripLengthsPtr);
+        var validPointers =
+            $"{context.IsValidPointer(vertexPtr)}/{context.IsValidPointer(normalPtr)}/{context.IsValidPointer(uvPtr)}/{context.IsValidPointer(indexPtr)}";
+        var validStripPointers =
+            $"{context.IsValidPointer(stripLengthsPtr)}/{context.IsValidPointer(stripListsPtr)}/{context.IsValidPointer(derivedStripListsPtr)}";
+        var vertexBounds = ReadPointArrayBounds(context, vertexPtr, vertices);
+
+        Console.WriteLine(string.Create(ci,
+            $"      {label} @0x{dataVa:X8}: ref={refCount} verts={vertices} tris={triangles} radius={radius:F2} v/n/uv/i=0x{vertexPtr:X8}/0x{normalPtr:X8}/0x{uvPtr:X8}/0x{indexPtr:X8} valid={validPointers} idxCount={indexCount} buff=0x{buffDataPtr:X8} stripCount={stripCount} stripLen/list/derived=0x{stripLengthsPtr:X8}/0x{stripListsPtr:X8}/0x{derivedStripListsPtr:X8} validStrip={validStripPointers} firstStripLen={firstStripLength} vertexSize=({vertexBounds.SizeX:F2},{vertexBounds.SizeY:F2},{vertexBounds.SizeZ:F2})"));
+    }
+
+    private static uint ResolvePackedStripListsPointer(RuntimeMemoryContext context, uint buffDataPtr)
+    {
+        if (buffDataPtr == 0 || !context.IsValidPointer(buffDataPtr))
+        {
+            return 0;
+        }
+
+        var nestedPtr = ReadPointer(context, buffDataPtr + 0x34);
+        if (nestedPtr == 0 || !context.IsValidPointer(nestedPtr))
+        {
+            return 0;
+        }
+
+        var packedAddress = ReadUInt32(context, nestedPtr + 0x18);
+        return unchecked((packedAddress & 0x1FFF_FFFFu) +
+                         (((packedAddress >> 20) + 0x200u) & 0x1000u) -
+                         0x4000_0000u);
+    }
+
+    private static RuntimeBounds ReadPointArrayBounds(RuntimeMemoryContext context, uint pointPtr, int pointCount)
+    {
+        if (pointPtr == 0 || pointCount <= 0 || !context.IsValidPointer(pointPtr))
+        {
+            return new RuntimeBounds();
+        }
+
+        var data = context.ReadBytesAtVa(pointPtr, pointCount * 12);
+        if (data is null || data.Length < pointCount * 12)
+        {
+            return new RuntimeBounds();
+        }
+
+        var minX = float.MaxValue;
+        var minY = float.MaxValue;
+        var minZ = float.MaxValue;
+        var maxX = float.MinValue;
+        var maxY = float.MinValue;
+        var maxZ = float.MinValue;
+        for (var i = 0; i < pointCount; i++)
+        {
+            var offset = i * 12;
+            var x = BinaryUtils.ReadFloatBE(data, offset);
+            var y = BinaryUtils.ReadFloatBE(data, offset + 4);
+            var z = BinaryUtils.ReadFloatBE(data, offset + 8);
+            if (!RuntimeMemoryContext.IsNormalFloat(x) || !RuntimeMemoryContext.IsNormalFloat(y) ||
+                !RuntimeMemoryContext.IsNormalFloat(z))
+            {
+                continue;
+            }
+
+            minX = MathF.Min(minX, x);
+            minY = MathF.Min(minY, y);
+            minZ = MathF.Min(minZ, z);
+            maxX = MathF.Max(maxX, x);
+            maxY = MathF.Max(maxY, y);
+            maxZ = MathF.Max(maxZ, z);
+        }
+
+        return minX == float.MaxValue
+            ? new RuntimeBounds()
+            : new RuntimeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    private static uint ReadArrayCount(RuntimeMemoryContext context, uint arrayVa)
+    {
+        return arrayVa != 0 && context.IsValidPointer(arrayVa) && arrayVa >= 4
+            ? ReadUInt32(context, arrayVa - 4)
+            : 0;
+    }
+
+    private static uint ReadFirstArrayPointer(RuntimeMemoryContext context, uint arrayVa)
+    {
+        return arrayVa != 0 && context.IsValidPointer(arrayVa) ? ReadPointer(context, arrayVa) : 0;
+    }
+
+    private static byte ReadByte(RuntimeMemoryContext context, long va)
+    {
+        var bytes = context.ReadBytesAtVa(va, 1);
+        return bytes is null || bytes.Length == 0 ? (byte)0 : bytes[0];
+    }
+
+    private static float ReadFloat(RuntimeMemoryContext context, long va)
+    {
+        var bytes = context.ReadBytesAtVa(va, 4);
+        return bytes is null || bytes.Length < 4 ? 0 : BinaryUtils.ReadFloatBE(bytes, 0);
+    }
+
+    private static uint ReadPointer(RuntimeMemoryContext context, long va)
+    {
+        return ReadUInt32(context, va);
+    }
+
+    private static uint ReadUInt32(RuntimeMemoryContext context, long va)
+    {
+        var bytes = context.ReadBytesAtVa(va, 4);
+        return bytes is null || bytes.Length < 4 ? 0 : BinaryUtils.ReadUInt32BE(bytes, 0);
+    }
+
+    private static ushort ReadUInt16(RuntimeMemoryContext context, long va)
+    {
+        var bytes = context.ReadBytesAtVa(va, 2);
+        return bytes is null || bytes.Length < 2 ? (ushort)0 : BinaryUtils.ReadUInt16BE(bytes, 0);
     }
 
     private static void PrintTreeClassDiagnostic(IEnumerable<FalloutXbox360Utils.Core.Minidump.CensusEntry> census)
@@ -561,6 +1018,19 @@ public static class SpeedTreeCommands
         }
 
         return 0;
+    }
+
+    private readonly record struct RuntimeBounds(
+        float MinX,
+        float MinY,
+        float MinZ,
+        float MaxX,
+        float MaxY,
+        float MaxZ)
+    {
+        public float SizeX => MaxX - MinX;
+        public float SizeY => MaxY - MinY;
+        public float SizeZ => MaxZ - MinZ;
     }
 
     private static Command CreateDumpCommand()

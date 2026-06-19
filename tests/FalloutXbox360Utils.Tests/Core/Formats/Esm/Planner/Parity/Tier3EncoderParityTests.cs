@@ -30,7 +30,7 @@ public sealed class Tier3EncoderParityTests
             EditorId = "TestScript"
         };
 
-        var legacy = ScptEncoder.EncodeNew(scpt, null, null);
+        var legacy = ScptEncoder.EncodeNew(scpt);
         PlannerTier1ParityHelper.AssertNewRecordParity("SCPT", scpt.FormId, scpt, legacy);
     }
 
@@ -43,7 +43,7 @@ public sealed class Tier3EncoderParityTests
             EditorId = "TestPerk"
         };
 
-        var legacy = PerkEncoder.EncodeNew(perk, null, null);
+        var legacy = PerkEncoder.EncodeNew(perk);
         PlannerTier1ParityHelper.AssertNewRecordParity("PERK", perk.FormId, perk, legacy);
     }
 
@@ -56,7 +56,7 @@ public sealed class Tier3EncoderParityTests
             EditorId = "TestCont"
         };
 
-        var legacy = ContEncoder.EncodeNew(cont, null, null);
+        var legacy = ContEncoder.EncodeNew(cont);
         PlannerTier1ParityHelper.AssertNewRecordParity("CONT", cont.FormId, cont, legacy);
     }
 
@@ -69,7 +69,7 @@ public sealed class Tier3EncoderParityTests
             EditorId = "TestIdle"
         };
 
-        var legacy = IdleEncoder.EncodeNew(idle, null, null);
+        var legacy = IdleEncoder.EncodeNew(idle);
         PlannerTier1ParityHelper.AssertNewRecordParity("IDLE", idle.FormId, idle, legacy);
     }
 
@@ -82,7 +82,7 @@ public sealed class Tier3EncoderParityTests
             EditorId = "TestTerm"
         };
 
-        var legacy = TermEncoder.EncodeNew(term, null, null);
+        var legacy = TermEncoder.EncodeNew(term);
         PlannerTier1ParityHelper.AssertNewRecordParity("TERM", term.FormId, term, legacy);
     }
 
@@ -96,7 +96,7 @@ public sealed class Tier3EncoderParityTests
             ListType = "LVLI"
         };
 
-        var legacy = LvliEncoder.EncodeNew(lvli, null, null);
+        var legacy = LvliEncoder.EncodeNew(lvli);
         PlannerTier1ParityHelper.AssertNewRecordParity("LVLI", lvli.FormId, lvli, legacy);
     }
 
@@ -110,12 +110,7 @@ public sealed class Tier3EncoderParityTests
         };
 
         var legacy = NpcEncoder.EncodeNew(
-            npc,
-            null,
-            null,
-            null,
-            null,
-            null);
+            npc);
         PlannerTier1ParityHelper.AssertNewRecordParity("NPC_", npc.FormId, npc, legacy);
     }
 
@@ -128,7 +123,7 @@ public sealed class Tier3EncoderParityTests
             EditorId = "TestCrea"
         };
 
-        var legacy = CreaEncoder.EncodeNew(crea, null, null);
+        var legacy = CreaEncoder.EncodeNew(crea);
         PlannerTier1ParityHelper.AssertNewRecordParity("CREA", crea.FormId, crea, legacy);
     }
 
@@ -141,7 +136,7 @@ public sealed class Tier3EncoderParityTests
             EditorId = "TestQuest"
         };
 
-        var legacy = QustEncoder.EncodeNew(quest, null, null);
+        var legacy = QustEncoder.EncodeNew(quest);
         PlannerTier1ParityHelper.AssertNewRecordParity("QUST", quest.FormId, quest, legacy);
     }
 
@@ -153,7 +148,7 @@ public sealed class Tier3EncoderParityTests
             FormId = 0x01000800
         };
 
-        var legacy = InfoEncoder.EncodeNew(info, null, null);
+        var legacy = InfoEncoder.EncodeNew(info);
         PlannerTier1ParityHelper.AssertNewRecordParity("INFO", info.FormId, info, legacy);
     }
 }

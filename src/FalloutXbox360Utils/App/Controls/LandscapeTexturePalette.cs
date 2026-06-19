@@ -347,7 +347,10 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
         lock (_tileLoadLock)
         {
             if (_engineDefaultLoaded != 0) return _engineDefaultTile;
-            _engineDefaultTile = LoadTileFromPath(EngineDefaultLandscapeTexture.DiffusePath);
+            // Game-keyed engine default (FNV DirtWasteland01, FO4 CommonwealthDefault01, …) — FNV's
+            // texture is absent in other games' archives, so a hardcoded path renders their no-BTXT
+            // quadrants white. _data.Game carries the detected engine.
+            _engineDefaultTile = LoadTileFromPath(EngineDefaultLandscapeTexture.DiffuseFor(_data.Game));
             // Volatile.Write publishes the tile reference BEFORE the flag — readers using
             // Volatile.Read on the flag see both writes in order.
             Volatile.Write(ref _engineDefaultLoaded, 1);

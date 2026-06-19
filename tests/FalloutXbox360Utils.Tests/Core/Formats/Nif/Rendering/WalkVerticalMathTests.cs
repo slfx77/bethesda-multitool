@@ -12,13 +12,19 @@ public sealed class WalkVerticalMathTests
 {
     [Fact]
     public void ClampToCeiling_NoCeiling_ReturnsUnchanged()
-        => Assert.Equal(200f, WalkVerticalMath.ClampToCeiling(200f, ceiling: null, headroom: 8f));
+    {
+        Assert.Equal(200f, WalkVerticalMath.ClampToCeiling(200f, null, 8f));
+    }
 
     [Fact]
     public void ClampToCeiling_EyeBelowCeiling_ReturnsUnchanged()
-        => Assert.Equal(100f, WalkVerticalMath.ClampToCeiling(100f, ceiling: 150f, headroom: 8f));
+    {
+        Assert.Equal(100f, WalkVerticalMath.ClampToCeiling(100f, 150f, 8f));
+    }
 
     [Fact]
     public void ClampToCeiling_EyeAboveCeiling_CapsAtCeilingMinusHeadroom()
-        => Assert.Equal(142f, WalkVerticalMath.ClampToCeiling(200f, ceiling: 150f, headroom: 8f));
+    {
+        Assert.Equal(142f, WalkVerticalMath.ClampToCeiling(200f, 150f, 8f));
+    }
 }

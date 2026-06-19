@@ -20,7 +20,7 @@ public sealed class ObjectIndexBuilderTests
         {
             FormId = scolFormId,
             EditorId = "SSHQExterior03",
-            ModelPath = "SCOL\\SSHQExterior03.NIF",
+            ModelPath = "SCOL\\SSHQExterior03.NIF"
         };
         var cells = new List<CellRecord>
         {
@@ -33,19 +33,19 @@ public sealed class ObjectIndexBuilderTests
                 [
                     new PlacedReference
                     {
-                        FormId = 0x200, BaseFormId = scolFormId, RecordType = "REFR", X = 0, Y = 0, Z = 0,
-                    },
-                ],
-            },
+                        FormId = 0x200, BaseFormId = scolFormId, RecordType = "REFR", X = 0, Y = 0, Z = 0
+                    }
+                ]
+            }
         };
 
         ObjectIndexBuilder.BuildAndEnrich(
-            statics: [], activators: [], doors: [], lights: [], furniture: [],
-            staticCollections: [scol],
-            weapons: [], armor: [], ammo: [], consumables: [], miscItems: [], books: [],
-            containers: [], keys: [], notes: [], weaponMods: [], sounds: [], genericRecords: [],
-            cells: cells, worldspaces: [], modelIndex: new Dictionary<uint, string>(),
-            phaseSw: new Stopwatch());
+            [], [], [], [], [],
+            [scol],
+            [], [], [], [], [], [],
+            [], [], [], [], [], [],
+            cells, [], new Dictionary<uint, string>(),
+            new Stopwatch());
 
         Assert.Equal("SCOL\\SSHQExterior03.NIF", cells[0].PlacedObjects[0].ModelPath);
     }

@@ -1,5 +1,3 @@
-using FalloutXbox360Utils;
-using FalloutXbox360Utils.Core;
 using Microsoft.UI.Dispatching;
 
 namespace FalloutMap2DProfiler;
@@ -38,6 +36,7 @@ internal sealed class ZoomInOutScenario : Map2DScenario
                 await UiAsync(queue, () => control.Profiler_CenterOnActiveCells(zoom));
                 await Task.Delay(90);
             }
+
             log.Info("Scenario(zoom-in-out): cycle {0} IN done zoom={1:F5} pxPerCell={2:F0} cacheSize={3} cap={4}",
                 cycle,
                 await UiAsync(queue, () => control.Profiler_Zoom),
@@ -55,6 +54,7 @@ internal sealed class ZoomInOutScenario : Map2DScenario
                 await UiAsync(queue, () => control.Profiler_CenterOnActiveCells(zoom));
                 await Task.Delay(90);
             }
+
             log.Info("Scenario(zoom-in-out): cycle {0} OUT done zoom={1:F5} cacheSize={2} cap={3}",
                 cycle,
                 await UiAsync(queue, () => control.Profiler_Zoom),

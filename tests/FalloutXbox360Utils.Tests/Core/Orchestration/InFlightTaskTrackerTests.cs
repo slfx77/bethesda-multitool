@@ -7,7 +7,10 @@ namespace FalloutXbox360Utils.Tests.Core.Orchestration;
 [Collection("Logger")]
 public sealed class InFlightTaskTrackerTests : IDisposable
 {
-    public void Dispose() => Logger.Instance.Reset();
+    public void Dispose()
+    {
+        Logger.Instance.Reset();
+    }
 
     [Fact]
     public void Tracks_pending_and_prunes_completed()

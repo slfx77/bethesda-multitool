@@ -1,5 +1,3 @@
-using FalloutXbox360Utils;
-using FalloutXbox360Utils.Core;
 using System.Globalization;
 using Windows.Graphics;
 using Windows.UI;
@@ -188,6 +186,7 @@ internal sealed class MainWindow : Window, IDisposable
                     Log.Warn("Profiler: 3D control init failed: {0}", ex);
                 }
             }
+
             _progressBar.IsIndeterminate = false;
             _progressBar.Visibility = Visibility.Collapsed;
 
@@ -280,7 +279,9 @@ internal sealed class MainWindow : Window, IDisposable
             else if (attempts >= 120)
             {
                 timer.Stop();
-                Log.Warn("Profiler: 3D provider never became ready after {0} polls; rendered-models overlay NOT enabled.", attempts);
+                Log.Warn(
+                    "Profiler: 3D provider never became ready after {0} polls; rendered-models overlay NOT enabled.",
+                    attempts);
             }
         };
         timer.Start();

@@ -1,5 +1,4 @@
 using System.Numerics;
-using FalloutXbox360Utils;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
@@ -24,7 +23,7 @@ public sealed class WorldSpatialIndexCellSizeTests
     [InlineData(Morrowind)]
     public void Index_AdoptsWorldspaceCellSize(float cellSize)
     {
-        var (index, _, _) = BuildSingleCellIndex(cellSize, gx: 5, gy: 5);
+        var (index, _, _) = BuildSingleCellIndex(cellSize, 5, 5);
         Assert.Equal(cellSize, index.CellSize);
     }
 
@@ -32,7 +31,7 @@ public sealed class WorldSpatialIndexCellSizeTests
     public void RefAtNativeCoords_ResolvesToItsCell_At8192()
     {
         // Cell (5,5) at Morrowind scale spans world X/Y [40960, 49152]; place a ref inside it.
-        var (index, cell, placedRef) = BuildSingleCellIndex(Morrowind, gx: 5, gy: 5);
+        var (index, cell, placedRef) = BuildSingleCellIndex(Morrowind, 5, 5);
 
         // The cell is found by a radius query at its canvas center.
         var center = new Vector2((5 + 0.5f) * Morrowind, -(5 + 0.5f) * Morrowind);
@@ -54,16 +53,18 @@ public sealed class WorldSpatialIndexCellSizeTests
     {
         // Identical 8192-based ref coords: at 8192 the ref is in cell (5,5)'s footprint; at 4096 the
         // same world point falls in grid (10,10), so a 4096 index would never pair it with cell (5,5).
-        var (idx8192, _, ref8192) = BuildSingleCellIndex(Morrowind, gx: 5, gy: 5);
-        var (idx4096, _, _) = BuildSingleCellIndex(Fallout, gx: 5, gy: 5);
+        var (idx8192, _, ref8192) = BuildSingleCellIndex(Morrowind, 5, 5);
+        var (idx4096, _, _) = BuildSingleCellIndex(Fallout, 5, 5);
 
         var refs = new List<PlacedReference>();
-        idx8192.QueryRefsInViewport(new Vector2(5 * Morrowind, -6 * Morrowind), new Vector2(6 * Morrowind, -5 * Morrowind), refs);
+        idx8192.QueryRefsInViewport(new Vector2(5 * Morrowind, -6 * Morrowind),
+            new Vector2(6 * Morrowind, -5 * Morrowind), refs);
         Assert.Contains(ref8192, refs);
 
         // At 4096 the cell (5,5) footprint is [20480, 24576] — the 41060-coord ref is nowhere near it.
         refs.Clear();
-        idx4096.QueryRefsInViewport(new Vector2(5 * Fallout, -6 * Fallout), new Vector2(6 * Fallout, -5 * Fallout), refs);
+        idx4096.QueryRefsInViewport(new Vector2(5 * Fallout, -6 * Fallout), new Vector2(6 * Fallout, -5 * Fallout),
+            refs);
         Assert.DoesNotContain(ref8192, refs);
     }
 

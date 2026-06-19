@@ -8,8 +8,11 @@ public sealed class ConcurrentLazyCacheTests
 {
     private static ConcurrentLazyCache<string, string> CreateCache(
         Func<string, string?> factory,
-        Func<string, long>? sizeOf = null) =>
-        new("TestLazy", ResourceCategory.CpuCache, factory, sizeOf, StringComparer.OrdinalIgnoreCase);
+        Func<string, long>? sizeOf = null)
+    {
+        return new ConcurrentLazyCache<string, string>("TestLazy", ResourceCategory.CpuCache, factory, sizeOf,
+            StringComparer.OrdinalIgnoreCase);
+    }
 
     [Fact]
     public void Factory_runs_once_per_key_under_concurrency()
@@ -104,7 +107,7 @@ public sealed class ConcurrentLazyCacheTests
         cache.GetOrCreate("missing");
 
         Assert.True(cache.Release("k"));
-        Assert.False(cache.Release("missing", keepNegative: true));
+        Assert.False(cache.Release("missing", true));
         Assert.Equal(1, cache.Count); // the negative survives
     }
 
@@ -113,10 +116,10 @@ public sealed class ConcurrentLazyCacheTests
     {
         var cache = CreateCache(
             static key => key == "missing" ? null : key,
-            sizeOf: static value => value.Length);
-        cache.GetOrCreate("abcd");      // 4 bytes
-        cache.GetOrCreate("xy");        // 2 bytes
-        cache.GetOrCreate("missing");   // negative
+            static value => value.Length);
+        cache.GetOrCreate("abcd"); // 4 bytes
+        cache.GetOrCreate("xy"); // 2 bytes
+        cache.GetOrCreate("missing"); // negative
 
         Assert.Equal(0, cache.Trim(TrimLevel.Gentle));
         Assert.Equal(3, cache.Count);
@@ -131,13 +134,13 @@ public sealed class ConcurrentLazyCacheTests
     {
         var cache = CreateCache(
             static key => key,
-            sizeOf: static value => value.Length);
-        cache.GetOrCreate("factory");                 // factory-backed, trimmable
-        cache.Inject("synthetic", "injected-value");  // no rebuild path, must be pinned
+            static value => value.Length);
+        cache.GetOrCreate("factory"); // factory-backed, trimmable
+        cache.Inject("synthetic", "injected-value"); // no rebuild path, must be pinned
 
         var released = cache.Trim(TrimLevel.Aggressive);
 
-        Assert.Equal("factory".Length, released);     // only the factory entry was shed
+        Assert.Equal("factory".Length, released); // only the factory entry was shed
         // The injected value survives unchanged — proving it was kept, not rebuilt from the factory
         // (the factory would have returned the key "synthetic", not "injected-value").
         Assert.Equal("injected-value", cache.GetOrCreate("synthetic"));
@@ -160,7 +163,7 @@ public sealed class ConcurrentLazyCacheTests
     [Fact]
     public void Release_clears_the_injected_pin()
     {
-        var cache = CreateCache(static key => key + "-rebuilt", sizeOf: static value => value.Length);
+        var cache = CreateCache(static key => key + "-rebuilt", static value => value.Length);
         cache.Inject("k", "injected");
         Assert.True(cache.Release("k"));
         Assert.Equal(0, cache.Count);
@@ -174,7 +177,7 @@ public sealed class ConcurrentLazyCacheTests
     [Fact]
     public void Byte_accounting_follows_creation_and_release()
     {
-        var cache = CreateCache(static key => key, sizeOf: static value => value.Length);
+        var cache = CreateCache(static key => key, static value => value.Length);
         cache.GetOrCreate("abcd");
         Assert.Equal(4, cache.GetStats().EstimatedBytes);
 

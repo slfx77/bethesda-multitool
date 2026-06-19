@@ -38,6 +38,28 @@ internal static class NifShaderTexturePropertyReader
                 };
             }
 
+            // Skyrim / SE / FO4 effect shaders (fire, magic, glow, some glass/ice) use
+            // BSEffectShaderProperty, whose texture is the inline "Source Texture" — NOT a
+            // BSShaderTextureSet. Without this branch every effect shape resolved no diffuse and rendered
+            // untextured (the "fire shows a floating normal map" look). FO76 (bsVer >= 155) instead names
+            // a .bgem material file, handled by the same material-slot path as lighting shaders.
+            if (propBlock.TypeName == "BSEffectShaderProperty")
+            {
+                var slots = nif.BsVersion >= 155
+                    ? ReadFallout76MaterialSlot(data, nif, propBlock)
+                    : ReadBsEffectShaderSourceTexture(data, nif, propBlock);
+                if (slots.Count == 0)
+                {
+                    continue;
+                }
+
+                return new NifShaderTextureMetadata
+                {
+                    PropertyType = propBlock.TypeName,
+                    TextureSlots = slots
+                };
+            }
+
             if (!IsShaderProperty(propBlock))
             {
                 continue;
@@ -322,6 +344,33 @@ internal static class NifShaderTexturePropertyReader
         }
 
         return CreateFixedTextureSlots(name);
+    }
+
+    /// <summary>
+    ///     Reads the inline "Source Texture" of a Skyrim / SE / Fallout 4 BSEffectShaderProperty (the
+    ///     effect's main texture — fire, magic, glow). After the NiObjectNET base come Shader Flags 1(4) +
+    ///     Shader Flags 2(4) + UV Offset(8) + UV Scale(8) = +24, then the Source Texture SizedString.
+    ///     Returned as the diffuse slot. Unlike BSLightingShaderProperty there is NO leading "Shader Type"
+    ///     field (that's BSLightingShaderProperty-only per nif.xml), so the walk starts at NiObjectNET.
+    /// </summary>
+    private static List<string?> ReadBsEffectShaderSourceTexture(byte[] data, NifInfo nif, BlockInfo propBlock)
+    {
+        var pos = propBlock.DataOffset;
+        var end = propBlock.DataOffset + propBlock.Size;
+
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian))
+        {
+            return [];
+        }
+
+        pos += 24; // Shader Flags 1 + Shader Flags 2 + UV Offset + UV Scale
+        if (pos + 4 > end)
+        {
+            return [];
+        }
+
+        var source = NifBinaryCursor.ReadSizedString(data, ref pos, end, nif.IsBigEndian);
+        return string.IsNullOrEmpty(source) ? [] : CreateFixedTextureSlots(source);
     }
 
     private static List<string?> ReadTextureSetSlots(

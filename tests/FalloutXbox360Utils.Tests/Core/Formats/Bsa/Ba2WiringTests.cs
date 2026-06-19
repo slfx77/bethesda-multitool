@@ -31,7 +31,7 @@ public class Ba2WiringTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            Directory.Delete(dir, true);
         }
     }
 
@@ -73,24 +73,24 @@ public class Ba2WiringTests
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms, Encoding.ASCII, true);
         bw.Write("BTDX"u8.ToArray());
-        bw.Write(1u);                         // version
+        bw.Write(1u); // version
         bw.Write("DX10"u8.ToArray());
-        bw.Write(1u);                         // file count
-        bw.Write(0ul);                        // no name table
+        bw.Write(1u); // file count
+        bw.Write(0ul); // no name table
 
         // DX10 record header (24 bytes), 0 chunks
-        bw.Write(0x1111u);                    // nameHash
+        bw.Write(0x1111u); // nameHash
         bw.Write(Ext("dds"));
-        bw.Write(0x2222u);                    // dirHash
-        bw.Write((byte)0);                    // unk1
-        bw.Write((byte)0);                    // numChunks
-        bw.Write((ushort)24);                 // chunkHdrLen
-        bw.Write((ushort)64);                 // height
-        bw.Write((ushort)64);                 // width
-        bw.Write((byte)1);                    // numMips
-        bw.Write((byte)71);                   // format (BC1_UNORM)
-        bw.Write((byte)0);                    // isCubemap
-        bw.Write((byte)8);                    // tileMode (PC)
+        bw.Write(0x2222u); // dirHash
+        bw.Write((byte)0); // unk1
+        bw.Write((byte)0); // numChunks
+        bw.Write((ushort)24); // chunkHdrLen
+        bw.Write((ushort)64); // height
+        bw.Write((ushort)64); // width
+        bw.Write((byte)1); // numMips
+        bw.Write((byte)71); // format (BC1_UNORM)
+        bw.Write((byte)0); // isCubemap
+        bw.Write((byte)8); // tileMode (PC)
         bw.Flush();
         return ms.ToArray();
     }
@@ -111,14 +111,14 @@ public class Ba2WiringTests
         bw.Write(1u);
         bw.Write(nameTableOffset);
 
-        bw.Write(0x1111u);                    // nameHash
+        bw.Write(0x1111u); // nameHash
         bw.Write(Ext("dds"));
-        bw.Write(0x2222u);                    // dirHash
-        bw.Write(0u);                         // flags
+        bw.Write(0x2222u); // dirHash
+        bw.Write(0u); // flags
         bw.Write(offset);
-        bw.Write(0u);                         // packedSize 0 == uncompressed
-        bw.Write((uint)data.Length);          // realSize
-        bw.Write(0u);                         // align
+        bw.Write(0u); // packedSize 0 == uncompressed
+        bw.Write((uint)data.Length); // realSize
+        bw.Write(0u); // align
 
         bw.Write(data);
 

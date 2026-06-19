@@ -61,12 +61,12 @@ public class ArchiveReaderTests
         var ext = new byte[4];
         Encoding.ASCII.GetBytes("nif").CopyTo(ext, 0);
         bw.Write(ext);
-        bw.Write(0x9999u);           // dirHash
-        bw.Write(0u);                // flags
+        bw.Write(0x9999u); // dirHash
+        bw.Write(0u); // flags
         bw.Write((ulong)dataOffset);
-        bw.Write(0u);                // packedSize 0 == uncompressed
+        bw.Write(0u); // packedSize 0 == uncompressed
         bw.Write((uint)data.Length); // realSize
-        bw.Write(0u);                // align
+        bw.Write(0u); // align
 
         bw.Write(data);
 

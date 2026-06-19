@@ -21,18 +21,18 @@ public sealed class HavokCollisionExtractorTests
     public void TryExtract_UncompressedPackedTriStrips_ScalesBySevenAndPreservesIndices()
     {
         var (data, nif) = BuildNif(
-            bigEndian: false,
-            CollisionObject(target: 99, body: 1, be: false), // target out of range → identity transform
-            RigidBody(shape: 2, be: false),
-            Mopp(childShape: 3, scale: 1f, be: false),
-            PackedShape(dataRef: 4, scale: Vector3.One, be: false),
+            false,
+            CollisionObject(99, 1, false), // target out of range → identity transform
+            RigidBody(2, false),
+            Mopp(3, 1f, false),
+            PackedShape(4, Vector3.One, false),
             PackedData(
                 [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)],
                 [(0, 1, 2)],
-                compressed: false,
-                be: false));
+                false,
+                false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, bigEndian: false);
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
 
         Assert.True(soup.HasValue);
         Assert.Equal(new[] { 0, 1, 2 }, soup!.Value.Triangles);
@@ -45,13 +45,13 @@ public sealed class HavokCollisionExtractorTests
     public void TryExtract_ShapeScale_MultipliesOnTopOfHavokScale()
     {
         var (data, nif) = BuildNif(
-            bigEndian: false,
-            CollisionObject(target: 99, body: 1, be: false),
-            RigidBody(shape: 2, be: false),
-            PackedShape(dataRef: 3, scale: new Vector3(2, 2, 2), be: false), // ×2 on top of ×7 = ×14
-            PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], compressed: false, be: false));
+            false,
+            CollisionObject(99, 1, false),
+            RigidBody(2, false),
+            PackedShape(3, new Vector3(2, 2, 2), false), // ×2 on top of ×7 = ×14
+            PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], false, false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, bigEndian: false);
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
 
         Assert.True(soup.HasValue);
         AssertVec(new Vector3(14, 0, 0), soup!.Value.Positions[0]);
@@ -61,17 +61,17 @@ public sealed class HavokCollisionExtractorTests
     public void TryExtract_BigEndianCompressedVertices_DecodesHalfFloats()
     {
         var (data, nif) = BuildNif(
-            bigEndian: true,
-            CollisionObject(target: 99, body: 1, be: true),
-            RigidBody(shape: 2, be: true),
-            PackedShape(dataRef: 3, scale: Vector3.One, be: true),
+            true,
+            CollisionObject(99, 1, true),
+            RigidBody(2, true),
+            PackedShape(3, Vector3.One, true),
             PackedData(
                 [new Vector3(1, 0, 0), new Vector3(0, 2, 0)],
                 [(0, 1, 0)],
-                compressed: true,
-                be: true));
+                true,
+                true));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, bigEndian: true);
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, true);
 
         Assert.True(soup.HasValue);
         // Half-float precision → looser tolerance.
@@ -83,18 +83,18 @@ public sealed class HavokCollisionExtractorTests
     public void TryExtract_ListShape_ConcatenatesSubShapesWithRebasedIndices()
     {
         var (data, nif) = BuildNif(
-            bigEndian: false,
-            CollisionObject(target: 99, body: 1, be: false),
-            RigidBody(shape: 2, be: false),
-            ListShape([3, 5], be: false),
-            PackedShape(dataRef: 4, scale: Vector3.One, be: false),
+            false,
+            CollisionObject(99, 1, false),
+            RigidBody(2, false),
+            ListShape([3, 5], false),
+            PackedShape(4, Vector3.One, false),
             PackedData([new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)], [(0, 1, 2)],
-                compressed: false, be: false),
-            PackedShape(dataRef: 6, scale: Vector3.One, be: false),
+                false, false),
+            PackedShape(6, Vector3.One, false),
             PackedData([new Vector3(2, 0, 0), new Vector3(0, 2, 0), new Vector3(0, 0, 2)], [(0, 1, 2)],
-                compressed: false, be: false));
+                false, false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, bigEndian: false);
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
 
         Assert.True(soup.HasValue);
         Assert.Equal(6, soup!.Value.Positions.Length);
@@ -107,13 +107,13 @@ public sealed class HavokCollisionExtractorTests
     public void TryExtract_RigidBodyT_AppliesTranslation()
     {
         var (data, nif) = BuildNif(
-            bigEndian: false,
-            CollisionObject(target: 99, body: 1, be: false),
-            RigidBodyT(shape: 2, translation: new Vector3(10, 0, 0), rotation: Quaternion.Identity, be: false),
-            PackedShape(dataRef: 3, scale: Vector3.One, be: false),
-            PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], compressed: false, be: false));
+            false,
+            CollisionObject(99, 1, false),
+            RigidBodyT(2, new Vector3(10, 0, 0), Quaternion.Identity, false),
+            PackedShape(3, Vector3.One, false),
+            PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], false, false));
 
-        var soup = HavokCollisionExtractor.TryExtract(data, nif, bigEndian: false);
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
 
         Assert.True(soup.HasValue);
         // Vertex ×7 = (7,0,0); translation ×7 = (70,0,0); rotate-then-translate → (77,0,0).
@@ -123,22 +123,22 @@ public sealed class HavokCollisionExtractorTests
     [Fact]
     public void TryExtract_NoCollisionObject_ReturnsNull()
     {
-        var (data, nif) = BuildNif(bigEndian: false, ("NiAlphaProperty", new byte[16]));
-        Assert.Null(HavokCollisionExtractor.TryExtract(data, nif, bigEndian: false));
+        var (data, nif) = BuildNif(false, ("NiAlphaProperty", new byte[16]));
+        Assert.Null(HavokCollisionExtractor.TryExtract(data, nif, false));
     }
 
     [Fact]
     public void TryExtract_TruncatedPackedData_ReturnsNullWithoutThrowing()
     {
         var (data, nif) = BuildNif(
-            bigEndian: false,
-            CollisionObject(target: 99, body: 1, be: false),
-            RigidBody(shape: 2, be: false),
-            PackedShape(dataRef: 3, scale: Vector3.One, be: false),
+            false,
+            CollisionObject(99, 1, false),
+            RigidBody(2, false),
+            PackedShape(3, Vector3.One, false),
             // Claims one triangle but the block ends right after the count.
-            ("hkPackedNiTriStripsData", TruncatedPackedDataPayload(be: false)));
+            ("hkPackedNiTriStripsData", TruncatedPackedDataPayload(false)));
 
-        Assert.Null(HavokCollisionExtractor.TryExtract(data, nif, bigEndian: false));
+        Assert.Null(HavokCollisionExtractor.TryExtract(data, nif, false));
     }
 
     // ---- buffer builders --------------------------------------------------------------------
@@ -301,8 +301,12 @@ public sealed class HavokCollisionExtractorTests
     }
 
     private static void WriteF(byte[] b, int o, float v, bool be)
-        => WriteU32(b, o, BitConverter.SingleToUInt32Bits(v), be);
+    {
+        WriteU32(b, o, BitConverter.SingleToUInt32Bits(v), be);
+    }
 
     private static void WriteHalf(byte[] b, int o, float v, bool be)
-        => WriteU16(b, o, BitConverter.HalfToUInt16Bits((Half)v), be);
+    {
+        WriteU16(b, o, BitConverter.HalfToUInt16Bits((Half)v), be);
+    }
 }

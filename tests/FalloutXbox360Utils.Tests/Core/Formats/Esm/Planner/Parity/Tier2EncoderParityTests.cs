@@ -33,7 +33,7 @@ public sealed class Tier2EncoderParityTests
             ClipSize = 12
         };
 
-        var legacy = WeapEncoder.EncodeNew(weap, null, null);
+        var legacy = WeapEncoder.EncodeNew(weap);
         PlannerTier1ParityHelper.AssertNewRecordParity("WEAP", weap.FormId, weap, legacy);
     }
 

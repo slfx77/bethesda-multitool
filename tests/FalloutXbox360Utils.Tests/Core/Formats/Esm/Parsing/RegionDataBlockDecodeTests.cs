@@ -39,11 +39,11 @@ public class RegionDataBlockDecodeTests
         // 12 valid bytes + 5 trailing bytes (not a whole entry) — the loop stops at the last
         // complete 12-byte stride and never reads past the buffer.
         var bytes = Concat(
-            WeatherEntry(0x00010203, 100, 0x00040506, bigEndian: false),
+            WeatherEntry(0x00010203, 100, 0x00040506, false),
             [0xDE, 0xAD, 0xBE, 0xEF, 0x00]);
 
         var into = new List<RegionWeatherType>();
-        WorldRecordHandler.DecodeRegionWeatherTypes(bytes, isBigEndian: false, into);
+        WorldRecordHandler.DecodeRegionWeatherTypes(bytes, false, into);
 
         Assert.Single(into);
         Assert.Equal(new RegionWeatherType(0x00010203, 100, 0x00040506), into[0]);
@@ -53,7 +53,7 @@ public class RegionDataBlockDecodeTests
     public void DecodeRegionWeatherTypes_Empty_ProducesNothing()
     {
         var into = new List<RegionWeatherType>();
-        WorldRecordHandler.DecodeRegionWeatherTypes([], isBigEndian: false, into);
+        WorldRecordHandler.DecodeRegionWeatherTypes([], false, into);
         Assert.Empty(into);
     }
 
@@ -80,7 +80,7 @@ public class RegionDataBlockDecodeTests
         // 20 bytes is not a whole number of 8-byte entries (20 % 8 == 4). The guard refuses to
         // decode rather than misinterpret a possibly-different stride as garbage FormIDs.
         var into = new List<uint>();
-        WorldRecordHandler.DecodeRegionGrasses(new byte[20], isBigEndian: false, into);
+        WorldRecordHandler.DecodeRegionGrasses(new byte[20], false, into);
         Assert.Empty(into);
     }
 
@@ -88,7 +88,7 @@ public class RegionDataBlockDecodeTests
     public void DecodeRegionGrasses_Empty_ProducesNothing()
     {
         var into = new List<uint>();
-        WorldRecordHandler.DecodeRegionGrasses([], isBigEndian: false, into);
+        WorldRecordHandler.DecodeRegionGrasses([], false, into);
         Assert.Empty(into);
     }
 

@@ -16,7 +16,7 @@ public class DdsTextureDecoderDx10Tests
     private const uint DxgiBc7UnormSrgb = 99;
 
     [Theory]
-    [InlineData(DxgiBc1UnormSrgb, 8)]  // BC1: 8 bytes / 4x4 block
+    [InlineData(DxgiBc1UnormSrgb, 8)] // BC1: 8 bytes / 4x4 block
     [InlineData(DxgiBc3UnormSrgb, 16)] // BC3: 16 bytes / 4x4 block
     public void Decode_Dx10BlockCompressed_Succeeds(uint dxgiFormat, int blockBytes)
     {
@@ -36,7 +36,7 @@ public class DdsTextureDecoderDx10Tests
     {
         // BC7 (DXGI 98/99) now decodes via BCnEncoder.Net. Use a well-formed single-block bitstream:
         // byte 0 = 0x40 selects BC7 mode 6 (single subset), the rest of the block is zero.
-        var dds = BuildDx10Dds(DxgiBc7UnormSrgb, blockBytes: 16, firstBlockByte: 0x40);
+        var dds = BuildDx10Dds(DxgiBc7UnormSrgb, 16, 0x40);
 
         var result = DdsTextureDecoder.Decode(dds);
 
@@ -58,11 +58,11 @@ public class DdsTextureDecoderDx10Tests
         dds[3] = (byte)' ';
         WriteU32(dds, 4, 124);
         WriteU32(dds, 8, 0x1007); // CAPS | HEIGHT | WIDTH | PIXELFORMAT
-        WriteU32(dds, 12, 4);     // height
-        WriteU32(dds, 16, 4);     // width
-        WriteU32(dds, 28, 1);     // mip count
-        WriteU32(dds, 76, 32);    // pixel-format size
-        WriteU32(dds, 80, 0x4);   // DDPF_FOURCC
+        WriteU32(dds, 12, 4); // height
+        WriteU32(dds, 16, 4); // width
+        WriteU32(dds, 28, 1); // mip count
+        WriteU32(dds, 76, 32); // pixel-format size
+        WriteU32(dds, 80, 0x4); // DDPF_FOURCC
         dds[84] = (byte)'D';
         dds[85] = (byte)'X';
         dds[86] = (byte)'1';
@@ -89,7 +89,7 @@ public class DdsTextureDecoderDx10Tests
         // BC5S (signed) is the Fallout 4/76 tangent-space normal map format. An all-zero block means
         // both endpoints/indices are 0 → signed value 0 → mid-gray X/Y; the reconstructed Z points up.
         // (Decoding it as UNSIGNED would put the zero point at 0/black, which is the bug being fixed.)
-        var result = DdsTextureDecoder.Decode(BuildClassicDds("BC5S", new byte[16], blockBytes: 16));
+        var result = DdsTextureDecoder.Decode(BuildClassicDds("BC5S", new byte[16], 16));
 
         Assert.NotNull(result);
         var px = result!.Pixels; // RGBA of pixel 0
@@ -106,7 +106,7 @@ public class DdsTextureDecoderDx10Tests
         var block = new byte[16];
         block[0] = 127;
         block[1] = 127;
-        var result = DdsTextureDecoder.Decode(BuildClassicDds("BC5S", block, blockBytes: 16));
+        var result = DdsTextureDecoder.Decode(BuildClassicDds("BC5S", block, 16));
 
         Assert.NotNull(result);
         Assert.InRange(result!.Pixels[0], 253, 255); // X = +1 → ~255

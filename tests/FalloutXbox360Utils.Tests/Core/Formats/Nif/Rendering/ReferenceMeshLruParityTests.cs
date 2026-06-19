@@ -13,24 +13,13 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 /// </summary>
 public sealed class ReferenceMeshLruParityTests
 {
-    /// <summary>Stand-in for CachedNifMesh12: disposal is the observable eviction cascade.</summary>
-    private sealed class FakeMesh
+    private static LruCache<string, FakeNode> CreateMeshLru(int capacity)
     {
-        public bool Disposed { get; private set; }
-        public void Dispose() => Disposed = true;
-    }
-
-    /// <summary>Stand-in for the cache's Node: a mutable holder whose Mesh is assigned AFTER insertion.</summary>
-    private sealed class FakeNode
-    {
-        public FakeMesh? Mesh { get; set; }
-    }
-
-    private static LruCache<string, FakeNode> CreateMeshLru(int capacity) =>
-        new("ReferenceMeshLruParity", ResourceCategory.GpuResident,
-            maxEntries: capacity,
+        return new LruCache<string, FakeNode>("ReferenceMeshLruParity", ResourceCategory.GpuResident,
+            capacity,
             onEvicted: static (_, node) => node.Mesh?.Dispose(),
             comparer: StringComparer.OrdinalIgnoreCase);
+    }
 
     [Fact]
     public void Eviction_cascade_disposes_mesh_assigned_after_insertion()
@@ -38,7 +27,7 @@ public sealed class ReferenceMeshLruParityTests
         // The production pattern: a Node is inserted with Mesh = null (decode pending) and the
         // mesh is assigned IN PLACE later, without a re-Set. The eviction hook must see the
         // post-insertion state — the cache stores the reference, not a snapshot.
-        var cache = CreateMeshLru(capacity: 2);
+        var cache = CreateMeshLru(2);
         var node = new FakeNode();
         cache.Set("meshes\\a.nif", node);
 
@@ -57,12 +46,12 @@ public sealed class ReferenceMeshLruParityTests
     {
         // A node whose decode is still in flight (Mesh null) can be evicted; the cascade must
         // be a no-op, and a later re-insert of the same key must dispose only the new lineage.
-        var cache = CreateMeshLru(capacity: 1);
+        var cache = CreateMeshLru(1);
         cache.Set("meshes\\a.nif", new FakeNode()); // Mesh stays null
         cache.Set("meshes\\b.nif", new FakeNode()); // evicts pending "a" — must not throw
 
         var reinserted = new FakeNode();
-        cache.Set("meshes\\a.nif", reinserted);     // evicts "b"
+        cache.Set("meshes\\a.nif", reinserted); // evicts "b"
         var mesh = new FakeMesh();
         reinserted.Mesh = mesh;
 
@@ -74,7 +63,7 @@ public sealed class ReferenceMeshLruParityTests
     [Fact]
     public void Keys_are_case_insensitive_like_normalized_model_paths()
     {
-        var cache = CreateMeshLru(capacity: 4);
+        var cache = CreateMeshLru(4);
         var node = new FakeNode();
         cache.Set("meshes\\architecture\\A.NIF", node);
 
@@ -82,8 +71,6 @@ public sealed class ReferenceMeshLruParityTests
         Assert.Same(node, hit);
         Assert.True(cache.TryPeek("Meshes\\Architecture\\A.nif", out _));
     }
-
-    private readonly record struct FakeDecodedValue(bool IsNegative, long ByteSize);
 
     [Fact]
     public void Decoded_cache_config_byte_budget_negatives_and_oversized_survivor()
@@ -110,9 +97,28 @@ public sealed class ReferenceMeshLruParityTests
         Assert.Equal(50, cache.EstimatedBytes);
 
         cache.Set("huge", new FakeDecodedValue(false, 500)); // larger than the whole budget
-        Assert.True(cache.ContainsKey("huge"));              // survives alone, over budget
+        Assert.True(cache.ContainsKey("huge")); // survives alone, over budget
         Assert.Equal(1, cache.Count);
         Assert.True(cache.TryGet("huge", out var value));
         Assert.Equal(500, value.ByteSize);
     }
+
+    /// <summary>Stand-in for CachedNifMesh12: disposal is the observable eviction cascade.</summary>
+    private sealed class FakeMesh
+    {
+        public bool Disposed { get; private set; }
+
+        public void Dispose()
+        {
+            Disposed = true;
+        }
+    }
+
+    /// <summary>Stand-in for the cache's Node: a mutable holder whose Mesh is assigned AFTER insertion.</summary>
+    private sealed class FakeNode
+    {
+        public FakeMesh? Mesh { get; set; }
+    }
+
+    private readonly record struct FakeDecodedValue(bool IsNegative, long ByteSize);
 }

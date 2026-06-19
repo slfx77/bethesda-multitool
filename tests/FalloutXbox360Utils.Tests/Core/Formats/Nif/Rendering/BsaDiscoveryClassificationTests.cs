@@ -42,7 +42,7 @@ public class BsaDiscoveryClassificationTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            Directory.Delete(dir, true);
         }
     }
 
@@ -64,7 +64,7 @@ public class BsaDiscoveryClassificationTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            Directory.Delete(dir, true);
         }
     }
 
@@ -87,7 +87,7 @@ public class BsaDiscoveryClassificationTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            Directory.Delete(dir, true);
         }
     }
 }

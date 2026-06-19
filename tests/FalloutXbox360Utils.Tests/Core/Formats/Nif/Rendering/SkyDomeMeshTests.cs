@@ -30,7 +30,8 @@ public sealed class SkyDomeMeshTests
 
         foreach (var v in mesh.Vertices)
         {
-            Assert.True(float.IsFinite(v.Direction.X) && float.IsFinite(v.Direction.Y) && float.IsFinite(v.Direction.Z));
+            Assert.True(float.IsFinite(v.Direction.X) && float.IsFinite(v.Direction.Y) &&
+                        float.IsFinite(v.Direction.Z));
             Assert.Equal(1f, v.Direction.Length(), 3);
             Assert.InRange(v.Uv.X, 0f, 1f);
             Assert.InRange(v.Uv.Y, 0f, 1f);
@@ -62,7 +63,7 @@ public sealed class SkyDomeMeshTests
         var mesh = SkyDomeMesh.Generate(10, 16);
         foreach (var idx in mesh.Indices)
         {
-            Assert.InRange((int)idx, 0, mesh.Vertices.Length - 1);
+            Assert.InRange(idx, 0, mesh.Vertices.Length - 1);
         }
     }
 

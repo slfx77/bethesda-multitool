@@ -1,5 +1,3 @@
-using FalloutXbox360Utils;
-using FalloutXbox360Utils.Core;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;

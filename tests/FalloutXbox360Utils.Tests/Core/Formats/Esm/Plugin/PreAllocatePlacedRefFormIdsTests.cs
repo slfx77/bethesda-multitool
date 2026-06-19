@@ -116,7 +116,7 @@ public class PreAllocatePlacedRefFormIdsTests
         builder.PreAllocateNewPlacedRefFormIds(dmp, new Dictionary<uint, ParsedMainRecord>(), allocator, stats);
 
         Assert.Single(builder.PreAllocatedRefFormIdsForTest);
-        Assert.Equal(0x01000801u, allocator.NextLocalId | FormIdAllocator.PluginIndex << 24);
+        Assert.Equal(0x01000801u, allocator.NextLocalId | (FormIdAllocator.PluginIndex << 24));
     }
 
     [Fact]

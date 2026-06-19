@@ -1,5 +1,3 @@
-using FalloutXbox360Utils.Core;
-using FalloutXbox360Utils;
 using Microsoft.UI.Dispatching;
 
 namespace FalloutMap2DProfiler;

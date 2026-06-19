@@ -16,8 +16,8 @@ public class LocalizedStringTablesTests
     public void ParseTable_NullTerminatedStrings_ResolvesById()
     {
         var table = LocalizedStringTables.ParseTable(
-            BuildTable(lengthPrefixed: false, (1u, "Skyrim"), (2u, "Whiterun")),
-            lengthPrefixed: false);
+            BuildTable(false, (1u, "Skyrim"), (2u, "Whiterun")),
+            false);
 
         Assert.Equal("Skyrim", table[1]);
         Assert.Equal("Whiterun", table[2]);
@@ -28,8 +28,8 @@ public class LocalizedStringTablesTests
     public void ParseTable_LengthPrefixedStrings_ResolvesById()
     {
         var table = LocalizedStringTables.ParseTable(
-            BuildTable(lengthPrefixed: true, (10u, "A short description."), (11u, "Another one.")),
-            lengthPrefixed: true);
+            BuildTable(true, (10u, "A short description."), (11u, "Another one.")),
+            true);
 
         Assert.Equal("A short description.", table[10]);
         Assert.Equal("Another one.", table[11]);
@@ -38,7 +38,7 @@ public class LocalizedStringTablesTests
     [Fact]
     public void ParseTable_TruncatedBuffer_ReturnsEmptyWithoutThrowing()
     {
-        Assert.Empty(LocalizedStringTables.ParseTable([0x01, 0x02], lengthPrefixed: false));
+        Assert.Empty(LocalizedStringTables.ParseTable([0x01, 0x02], false));
     }
 
     private static byte[] BuildTable(bool lengthPrefixed, params (uint Id, string Text)[] entries)
@@ -60,7 +60,7 @@ public class LocalizedStringTablesTests
 
         var result = new List<byte>();
         result.AddRange(BitConverter.GetBytes((uint)entries.Length)); // count
-        result.AddRange(BitConverter.GetBytes((uint)data.Count));     // dataSize
+        result.AddRange(BitConverter.GetBytes((uint)data.Count)); // dataSize
         foreach (var (id, offset) in directory)
         {
             result.AddRange(BitConverter.GetBytes(id));

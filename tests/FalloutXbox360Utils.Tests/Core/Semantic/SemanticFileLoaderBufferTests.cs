@@ -1,3 +1,4 @@
+using System.Text;
 using FalloutXbox360Utils.Core;
 using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Runtime;
@@ -75,7 +76,7 @@ public sealed class SemanticFileLoaderBufferTests
     private static byte[] NullTerm(string value)
     {
         var bytes = new byte[value.Length + 1];
-        System.Text.Encoding.ASCII.GetBytes(value, bytes);
+        Encoding.ASCII.GetBytes(value, bytes);
         return bytes;
     }
 }

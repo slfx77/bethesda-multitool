@@ -449,9 +449,9 @@ public class DialogueViewerLogicTests
     [Fact]
     public void CollectLoopbackTopicList_WithQuestFilter_UsesQuestTopicList()
     {
-        var current = MakeTopic(1, "Current", MakeInfo(100, questId: 10));
-        var sameQuest = MakeTopic(2, "SameQuest", MakeInfo(101, questId: 10));
-        var otherQuest = MakeTopic(3, "OtherQuest", MakeInfo(102, questId: 20));
+        var current = MakeTopic(1, "Current", MakeInfo(100, 10));
+        var sameQuest = MakeTopic(2, "SameQuest", MakeInfo(101, 10));
+        var otherQuest = MakeTopic(3, "OtherQuest", MakeInfo(102, 20));
         var tree = new DialogueTreeResult
         {
             QuestTrees = new Dictionary<uint, QuestDialogueNode>

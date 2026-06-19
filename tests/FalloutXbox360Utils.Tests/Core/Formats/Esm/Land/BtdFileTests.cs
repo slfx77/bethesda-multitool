@@ -16,7 +16,7 @@ public class BtdFileTests
     [Fact]
     public void Header_ParsesFallout76Fields()
     {
-        var path = WriteTemp(BuildFallout76Header(ltexCnt: 3, gcvrCnt: 2));
+        var path = WriteTemp(BuildFallout76Header(3, 2));
         try
         {
             using var btd = new BtdFile(path);
@@ -47,14 +47,14 @@ public class BtdFileTests
     public void Header_DetectsStarfieldAndDerivesBounds()
     {
         // All-zero cell bounds with a 256x256-sample (2x2 cell) resolution => Starfield variant.
-        var path = WriteTemp(BuildStarfieldBtd(resX: 256, resY: 256, heights: null));
+        var path = WriteTemp(BuildStarfieldBtd(256, 256, null));
         try
         {
             using var btd = new BtdFile(path);
 
             Assert.True(btd.IsStarfield);
             Assert.Equal(-1, btd.CellMinX); // -(256 >> 8)
-            Assert.Equal(0, btd.CellMaxX);  // -1 + (256 >> 7) - 1
+            Assert.Equal(0, btd.CellMaxX); // -1 + (256 >> 7) - 1
             Assert.Equal(2, btd.NCellsX);
             Assert.Equal(2, btd.NCellsY);
             Assert.Equal(0, btd.GroundCoverCount); // Starfield has no ground cover
@@ -71,12 +71,12 @@ public class BtdFileTests
         // 1x1 Starfield grid (128x128 samples). Encode a unique height per vertex and read it back,
         // exercising the header, offset chain, zlib decompression, tile cache and the SF block load.
         var heights = new ushort[128 * 128];
-        for (int i = 0; i < heights.Length; i++)
+        for (var i = 0; i < heights.Length; i++)
         {
             heights[i] = (ushort)i;
         }
 
-        var path = WriteTemp(BuildStarfieldBtd(resX: 128, resY: 128, heights));
+        var path = WriteTemp(BuildStarfieldBtd(128, 128, heights));
         try
         {
             using var btd = new BtdFile(path);
@@ -87,7 +87,7 @@ public class BtdFileTests
             var buf = new ushort[128 * 128];
             btd.GetCellHeightMap(buf, btd.CellMinX, btd.CellMinY);
 
-            for (int i = 0; i < buf.Length; i++)
+            for (var i = 0; i < buf.Length; i++)
             {
                 Assert.Equal(heights[i], buf[i]);
             }
@@ -140,17 +140,17 @@ public class BtdFileTests
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
         bw.Write("BTDB"u8.ToArray());
-        bw.Write(6u);          // version
-        bw.Write(-700.0f);     // min height
-        bw.Write(38210.0f);    // max height
-        bw.Write(256);         // resX (unused for bounds in FO76)
-        bw.Write(256);         // resY
-        bw.Write(-1);          // cellMinX  (non-zero bounds => Fallout 76, not Starfield)
-        bw.Write(-1);          // cellMinY
-        bw.Write(0);           // cellMaxX
-        bw.Write(0);           // cellMaxY
+        bw.Write(6u); // version
+        bw.Write(-700.0f); // min height
+        bw.Write(38210.0f); // max height
+        bw.Write(256); // resX (unused for bounds in FO76)
+        bw.Write(256); // resY
+        bw.Write(-1); // cellMinX  (non-zero bounds => Fallout 76, not Starfield)
+        bw.Write(-1); // cellMinY
+        bw.Write(0); // cellMaxX
+        bw.Write(0); // cellMaxY
         bw.Write((uint)ltexCnt);
-        for (int i = 0; i < ltexCnt; i++)
+        for (var i = 0; i < ltexCnt; i++)
         {
             bw.Write((uint)(0x1000 + i));
         }
@@ -158,10 +158,10 @@ public class BtdFileTests
         // In the real layout the per-cell min/max map (nCells*8) and the LTEX quadrant map (nCells*32)
         // sit BETWEEN the LTEX form-ID table and the GCVR count, so the GCVR count is read after them.
         const long nCells = 2 * 2;
-        bw.Write(new byte[(nCells * 8) + (nCells * 32)]);
+        bw.Write(new byte[nCells * 8 + nCells * 32]);
 
         bw.Write((uint)gcvrCnt);
-        for (int i = 0; i < gcvrCnt; i++)
+        for (var i = 0; i < gcvrCnt; i++)
         {
             bw.Write((uint)(0x2000 + i));
         }
@@ -181,31 +181,31 @@ public class BtdFileTests
     {
         long nCellsX = resX >> 7;
         long nCellsY = resY >> 7;
-        long nCells = nCellsX * nCellsY;
+        var nCells = nCellsX * nCellsY;
 
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
         bw.Write("BTDB"u8.ToArray());
-        bw.Write(6u);          // version
-        bw.Write(0.0f);        // min height (Starfield scales by 8 => MinHeight 0)
-        bw.Write(100.0f);      // max height (=> MaxHeight 800)
+        bw.Write(6u); // version
+        bw.Write(0.0f); // min height (Starfield scales by 8 => MinHeight 0)
+        bw.Write(100.0f); // max height (=> MaxHeight 800)
         bw.Write(resX);
         bw.Write(resY);
-        bw.Write(0);           // all-zero cell bounds => Starfield
+        bw.Write(0); // all-zero cell bounds => Starfield
         bw.Write(0);
         bw.Write(0);
         bw.Write(0);
-        bw.Write(0u);          // ltexCnt
+        bw.Write(0u); // ltexCnt
 
         // cellHeightMinMax (nCells*8) + ltexMap (nCells*32) + heightMapLOD4 (nCells*128)
         // + landTexturesLOD4 (nCells*128) — all zero (overwritten by the LOD0 block for the SF path).
-        bw.Write(new byte[(nCells * 8) + (nCells * 32) + (nCells * 128) + (nCells * 128)]);
+        bw.Write(new byte[nCells * 8 + nCells * 32 + nCells * 128 + nCells * 128]);
 
         // Block offset tables (Starfield: one set, no terrain-color pairs).
-        long lod3 = ((nCellsY + 7) >> 3) * ((nCellsX + 7) >> 3) * 8;
-        long lod2 = ((nCellsY + 3) >> 2) * ((nCellsX + 3) >> 2) * 8;
-        long lod1 = ((nCellsY + 1) >> 1) * ((nCellsX + 1) >> 1) * 8;
-        long lod0 = nCells * 8;
+        var lod3 = ((nCellsY + 7) >> 3) * ((nCellsX + 7) >> 3) * 8;
+        var lod2 = ((nCellsY + 3) >> 2) * ((nCellsX + 3) >> 2) * 8;
+        var lod1 = ((nCellsY + 1) >> 1) * ((nCellsX + 1) >> 1) * 8;
+        var lod0 = nCells * 8;
         bw.Write(new byte[lod3 + lod2 + lod1]); // LOD3/LOD2/LOD1 tables (unused for LOD0 reads)
 
         if (heights == null)
@@ -217,10 +217,10 @@ public class BtdFileTests
 
         // Single 1x1-grid LOD0 block: 65536 bytes = 128x128 height (u16 LE) + 128x128 land texture.
         var payload = new byte[65536];
-        for (int i = 0; i < 16384; i++)
+        for (var i = 0; i < 16384; i++)
         {
             payload[i * 2] = (byte)(heights[i] & 0xFF);
-            payload[(i * 2) + 1] = (byte)(heights[i] >> 8);
+            payload[i * 2 + 1] = (byte)(heights[i] >> 8);
         }
 
         byte[] block;

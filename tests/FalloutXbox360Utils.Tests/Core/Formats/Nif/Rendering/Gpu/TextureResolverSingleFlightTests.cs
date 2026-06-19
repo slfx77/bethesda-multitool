@@ -1,4 +1,3 @@
-using FalloutXbox360Utils.Core.Formats.Dds;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using FalloutXbox360Utils.Tests.Helpers;
@@ -50,10 +49,10 @@ public sealed class TextureResolverSingleFlightTests
     {
         var positiveCalls = 0;
         using (var resolver = new NifGpuTextureResolver(_ =>
-        {
-            var call = Interlocked.Increment(ref positiveCalls);
-            return CreateGpuPayload((byte)call);
-        }))
+               {
+                   var call = Interlocked.Increment(ref positiveCalls);
+                   return CreateGpuPayload((byte)call);
+               }))
         {
             var first = resolver.GetTexture(@"textures\foo.dds");
             resolver.Release(@"textures\foo.dds");
@@ -65,10 +64,10 @@ public sealed class TextureResolverSingleFlightTests
 
         var negativeCalls = 0;
         using (var resolver = new NifGpuTextureResolver(_ =>
-        {
-            Interlocked.Increment(ref negativeCalls);
-            return null;
-        }))
+               {
+                   Interlocked.Increment(ref negativeCalls);
+                   return null;
+               }))
         {
             Assert.Null(resolver.GetTexture(@"textures\missing.dds"));
             resolver.Release(@"textures\missing.dds");
@@ -135,10 +134,12 @@ public sealed class TextureResolverSingleFlightTests
         Assert.Equal(2, loadCalls);
     }
 
-    private static GpuTexturePayload CreateGpuPayload(byte marker) =>
-        new(
+    private static GpuTexturePayload CreateGpuPayload(byte marker)
+    {
+        return new GpuTexturePayload(
             GpuTexturePayloadFormat.Rgba8,
             1,
             1,
             [new GpuTextureMipPayload(1, 1, [marker, marker, marker, 255])]);
+    }
 }

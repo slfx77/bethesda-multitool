@@ -62,7 +62,7 @@ public sealed class RefrOffsetReaderTests
             .WithPointerTarget(BaseObjVa, BuildTesForm(ActiFormType, baseFormId))
             .WithPointerTarget(CellVa, BuildTesCell(cellFormId, false));
 
-        var reader = new RuntimeRefrReader(fixture.BuildContext(), false);
+        var reader = new RuntimeRefrReader(fixture.BuildContext());
         var refr = reader.ReadRuntimeRefr(fixture.MakeEntry(refrFormId, formType, RefrVa));
 
         Assert.NotNull(refr);

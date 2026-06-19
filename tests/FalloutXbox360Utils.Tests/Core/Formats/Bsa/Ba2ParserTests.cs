@@ -13,6 +13,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Bsa;
 public class Ba2ParserTests
 {
     private static readonly byte[] PlainData = "Hello, BA2! (uncompressed)"u8.ToArray();
+
     private static readonly byte[] CompressibleData =
         Encoding.ASCII.GetBytes(new string('A', 4096) + "tail");
 
@@ -100,7 +101,7 @@ public class Ba2ParserTests
             ]
         };
 
-        var header = Ba2DdsHeaderWriter.BuildHeader(tex, version: 1);
+        var header = Ba2DdsHeaderWriter.BuildHeader(tex, 1);
 
         // magic "DDS " + 124-byte DDS_HEADER == 128 bytes (BC1_UNORM needs no DX10 header)
         Assert.Equal(128, header.Length);
@@ -124,10 +125,13 @@ public class Ba2ParserTests
             Height = 32, Width = 32, MipCount = 1,
             Format = (byte)Ba2DxgiFormat.BC7_UNORM,
             IsCubemap = 0, TileMode = 8,
-            Chunks = [new Ba2TextureChunk { Offset = 0, PackedSize = 0, FullSize = 1024, StartMip = 0, EndMip = 0, Align = 0 }]
+            Chunks =
+            [
+                new Ba2TextureChunk { Offset = 0, PackedSize = 0, FullSize = 1024, StartMip = 0, EndMip = 0, Align = 0 }
+            ]
         };
 
-        var header = Ba2DdsHeaderWriter.BuildHeader(tex, version: 1);
+        var header = Ba2DdsHeaderWriter.BuildHeader(tex, 1);
 
         // BC7 requires the DX10 extension header: 4 (magic) + 124 (DDS_HEADER) + 20 (DXT10) = 148.
         Assert.Equal(148, header.Length);
@@ -155,17 +159,17 @@ public class Ba2ParserTests
         {
             // Header
             bw.Write("BTDX"u8.ToArray());
-            bw.Write(1u);                       // version
+            bw.Write(1u); // version
             bw.Write("GNRL"u8.ToArray());
-            bw.Write(2u);                       // file count
-            bw.Write(nameTableOffset);          // name table offset
+            bw.Write(2u); // file count
+            bw.Write(nameTableOffset); // name table offset
 
             // Record 0 — uncompressed
-            WriteGnrlRecord(bw, nameHash: 0x1111, ext: "txt", dirHash: 0x2222,
-                offset: offsetPlain, packedSize: 0, realSize: (uint)PlainData.Length);
+            WriteGnrlRecord(bw, 0x1111, "txt", 0x2222,
+                offsetPlain, 0, (uint)PlainData.Length);
             // Record 1 — zlib compressed
-            WriteGnrlRecord(bw, nameHash: 0x3333, ext: "txt", dirHash: 0x2222,
-                offset: offsetPacked, packedSize: (uint)packed.Length, realSize: (uint)CompressibleData.Length);
+            WriteGnrlRecord(bw, 0x3333, "txt", 0x2222,
+                offsetPacked, (uint)packed.Length, (uint)CompressibleData.Length);
 
             // Data
             bw.Write(PlainData);
@@ -189,11 +193,11 @@ public class Ba2ParserTests
         Encoding.ASCII.GetBytes(ext).CopyTo(extBytes, 0);
         bw.Write(extBytes);
         bw.Write(dirHash);
-        bw.Write(0u);            // flags
+        bw.Write(0u); // flags
         bw.Write(offset);
         bw.Write(packedSize);
         bw.Write(realSize);
-        bw.Write(0u);            // align
+        bw.Write(0u); // align
     }
 
     private static void WriteName(BinaryWriter bw, string name)

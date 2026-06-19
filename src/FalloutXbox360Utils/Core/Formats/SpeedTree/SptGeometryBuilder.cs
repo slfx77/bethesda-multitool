@@ -59,7 +59,8 @@ internal static class SptGeometryBuilder
             // slot-7 two-angle rotation; shipped trees use slot7=-90 so the local +X growth vector maps
             // to FNV world-up (+Z). parentRadius starts large so the trunk's own radius is not clamped.
             GenerateBranch(model, 0, levels, 0f, Vector3.Zero, BranchFrame.Identity,
-                parentRadius: float.MaxValue, treeSize, opt, rng, rand, bark, leafAnchors, ref nextLeafPlacementScope);
+                parentRadius: float.MaxValue, treeSize, opt, rng, rand, bark, leafAnchors, seed,
+                ref nextLeafPlacementScope);
         }
 
         // Leaf cards are sized relative to the BUILT skeleton's height (the SDK's absolute units are
@@ -116,7 +117,7 @@ internal static class SptGeometryBuilder
         SptModel model, int level, int levels, float parentT, Vector3 basePos, BranchFrame parentFrame,
         float parentRadius, float treeSize, SptGeometryOptions opt, SptRandom rng,
         Func<float, float, float> rand, MeshBuffer bark, List<LeafAnchor> leafAnchors,
-        ref int nextLeafPlacementScope)
+        uint branchSeed, ref int nextLeafPlacementScope)
     {
         if (level >= levels || level >= model.Branches.Count)
         {
@@ -207,7 +208,7 @@ internal static class SptGeometryBuilder
         if (level + 1 < terminalRecord && level + 1 < levels)
         {
             SpawnChildren(model, level, levels, branch, rings, length, radius, treeSize, opt, rng, rand, bark,
-                leafAnchors, ref nextLeafPlacementScope);
+                leafAnchors, branchSeed, ref nextLeafPlacementScope);
         }
         else
         {
@@ -219,7 +220,7 @@ internal static class SptGeometryBuilder
         SptModel model, int level, int levels, SptBranch branch, List<BranchRing> rings,
         float length, float radius, float treeSize, SptGeometryOptions opt, SptRandom rng,
         Func<float, float, float> rand, MeshBuffer bark, List<LeafAnchor> leafAnchors,
-        ref int nextLeafPlacementScope)
+        uint branchSeed, ref int nextLeafPlacementScope)
     {
         // Child count = (Float6012 / treeSize) · length  (CIdvBranch::Compute L1305; = Float6012·Eval(slot4)).
         // No density multiplier — the engine has none. The cap only bounds the vertex budget (the engine's
@@ -233,8 +234,15 @@ internal static class SptGeometryBuilder
             (start, end) = (end, start);
         }
 
+        var childSeed = branchSeed;
         for (var c = 0; c < childCount; c++)
         {
+            // CIdvBranch::Compute does not run one global RNG stream through all descendants. For each
+            // non-terminal child it increments the branch-local seed by 3, reseeds to pick the attachment
+            // point, then reseeds to the same child seed and burns one uniform before recursive Compute.
+            childSeed = unchecked(childSeed + 3u);
+            rng.Reseed(childSeed);
+
             var min = start;
             var max = end;
             if (c == 0)
@@ -246,8 +254,11 @@ internal static class SptGeometryBuilder
             var frac = Math.Clamp(rng.Range(min, max), 0f, 1f);
             var spawnT = SpawnTemplateParam(frac, start, end);
             var (cpos, cframe) = SampleAlong(rings, frac);
+            rng.Reseed(childSeed);
+            _ = rng.Range(0f, 100f);
+
             GenerateBranch(model, level + 1, levels, spawnT, cpos, cframe, radius, treeSize, opt, rng, rand,
-                bark, leafAnchors, ref nextLeafPlacementScope);
+                bark, leafAnchors, childSeed, ref nextLeafPlacementScope);
         }
     }
 

@@ -1,5 +1,5 @@
-using System.Text;
 using System.Numerics;
+using System.Text;
 using FalloutXbox360Utils.Core.Formats.SpeedTree;
 using Xunit;
 
@@ -10,7 +10,7 @@ public class SptFileTests
     private static readonly string?[] ShrubCandidates =
     [
         @"Sample\Meshes\meshes_360_final\trees\wastelandshrub01.spt",
-        @"Sample\Meshes\meshes_360_proto\trees\wastelandshrub01.spt",
+        @"Sample\Meshes\meshes_360_proto\trees\wastelandshrub01.spt"
     ];
 
     // ---- Pure-unit: BezierSpline text parsing ----
@@ -49,11 +49,11 @@ public class SptFileTests
     public void Cursor_ReadsTokensFloatsAndStrings()
     {
         var buf = new List<byte>();
-        buf.AddRange(BitConverter.GetBytes(1000u));        // token
-        buf.AddRange(BitConverter.GetBytes(12u));          // string length
+        buf.AddRange(BitConverter.GetBytes(1000u)); // token
+        buf.AddRange(BitConverter.GetBytes(12u)); // string length
         buf.AddRange(Encoding.ASCII.GetBytes("__IdvSpt_02_"));
-        buf.AddRange(BitConverter.GetBytes(3.5f));         // float
-        buf.Add(0x01);                                     // bool byte
+        buf.AddRange(BitConverter.GetBytes(3.5f)); // float
+        buf.Add(0x01); // bool byte
 
         var c = new SptCursor(buf.ToArray());
         Assert.Equal(1000u, c.ReadToken());
@@ -172,7 +172,7 @@ public class SptFileTests
     private static byte[] BuildLeafTableOnlySpt(params (uint Token, object Value)[] entries)
     {
         using var ms = new MemoryStream();
-        using var writer = new BinaryWriter(ms, Encoding.ASCII, leaveOpen: true);
+        using var writer = new BinaryWriter(ms, Encoding.ASCII, true);
         WriteToken(1000);
         WriteString("__IdvSpt_02_");
         WriteToken(1004);
@@ -204,7 +204,10 @@ public class SptFileTests
         WriteToken(1001);
         return ms.ToArray();
 
-        void WriteToken(uint token) => writer.Write(token);
+        void WriteToken(uint token)
+        {
+            writer.Write(token);
+        }
 
         void WriteString(string value)
         {

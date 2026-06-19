@@ -1,7 +1,6 @@
 using FalloutXbox360Utils.Core.Formats.Bsa;
 using FalloutXbox360Utils.Core.Formats.Nif;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering;
-using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Parsing;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
 using Xunit;
 

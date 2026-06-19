@@ -5,39 +5,6 @@ namespace FalloutXbox360Utils.Tests.Core.Diagnostics;
 
 public sealed class ResourceRegistryTests
 {
-    private sealed class FakeResource(string name, ResourceCategory category = ResourceCategory.CpuCache)
-        : ITrackableResource
-    {
-        private long _bytes;
-        private long _hits;
-
-        public string ResourceName { get; } = name;
-
-        public ResourceCategory Category { get; } = category;
-
-        public bool ThrowOnGetStats { get; set; }
-
-        public void Mutate(long bytes)
-        {
-            Interlocked.Add(ref _bytes, bytes);
-            Interlocked.Increment(ref _hits);
-        }
-
-        public ResourceStats GetStats()
-        {
-            if (ThrowOnGetStats)
-            {
-                throw new InvalidOperationException("boom");
-            }
-
-            // Hits read before bytes: Mutate writes bytes before hits, so bytes >= 128 * hits is
-            // an invariant any coherent snapshot must observe.
-            var hits = Interlocked.Read(ref _hits);
-            var bytes = Interlocked.Read(ref _bytes);
-            return new ResourceStats { EstimatedBytes = bytes, Hits = hits };
-        }
-    }
-
     [Fact]
     public void Register_includes_instance_tag_in_display_name()
     {
@@ -210,5 +177,38 @@ public sealed class ResourceRegistryTests
     {
         Assert.Null(new ResourceStats().HitRate);
         Assert.Equal(0.75, new ResourceStats { Hits = 3, Misses = 1 }.HitRate);
+    }
+
+    private sealed class FakeResource(string name, ResourceCategory category = ResourceCategory.CpuCache)
+        : ITrackableResource
+    {
+        private long _bytes;
+        private long _hits;
+
+        public bool ThrowOnGetStats { get; set; }
+
+        public string ResourceName { get; } = name;
+
+        public ResourceCategory Category { get; } = category;
+
+        public ResourceStats GetStats()
+        {
+            if (ThrowOnGetStats)
+            {
+                throw new InvalidOperationException("boom");
+            }
+
+            // Hits read before bytes: Mutate writes bytes before hits, so bytes >= 128 * hits is
+            // an invariant any coherent snapshot must observe.
+            var hits = Interlocked.Read(ref _hits);
+            var bytes = Interlocked.Read(ref _bytes);
+            return new ResourceStats { EstimatedBytes = bytes, Hits = hits };
+        }
+
+        public void Mutate(long bytes)
+        {
+            Interlocked.Add(ref _bytes, bytes);
+            Interlocked.Increment(ref _hits);
+        }
     }
 }

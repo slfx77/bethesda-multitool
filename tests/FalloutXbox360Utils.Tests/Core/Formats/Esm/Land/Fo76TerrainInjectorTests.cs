@@ -62,7 +62,7 @@ public class Fo76TerrainInjectorTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            Directory.Delete(dir, true);
         }
     }
 
@@ -79,8 +79,8 @@ public class Fo76TerrainInjectorTests
         {
             for (var sx = 0; sx < 128; sx++)
             {
-                west[(sy * 128) + sx] = (ushort)(1000 + sx + sy);   // ~14 game-units
-                east[(sy * 128) + sx] = (ushort)(40000 + sx + sy);  // ~489 game-units (far from west)
+                west[sy * 128 + sx] = (ushort)(1000 + sx + sy); // ~14 game-units
+                east[sy * 128 + sx] = (ushort)(40000 + sx + sy); // ~489 game-units (far from west)
             }
         }
 
@@ -130,7 +130,7 @@ public class Fo76TerrainInjectorTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            Directory.Delete(dir, true);
         }
     }
 
@@ -146,16 +146,19 @@ public class Fo76TerrainInjectorTests
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
         bw.Write("BTDB"u8.ToArray());
-        bw.Write(6u);       // version
-        bw.Write(0.0f);     // min height (Starfield scales by 8 => 0)
-        bw.Write(100.0f);   // max height (=> 800)
-        bw.Write(256);      // resX
-        bw.Write(128);      // resY
-        bw.Write(0); bw.Write(0); bw.Write(0); bw.Write(0); // all-zero bounds => Starfield variant
-        bw.Write(0u);       // ltexCnt
+        bw.Write(6u); // version
+        bw.Write(0.0f); // min height (Starfield scales by 8 => 0)
+        bw.Write(100.0f); // max height (=> 800)
+        bw.Write(256); // resX
+        bw.Write(128); // resY
+        bw.Write(0);
+        bw.Write(0);
+        bw.Write(0);
+        bw.Write(0); // all-zero bounds => Starfield variant
+        bw.Write(0u); // ltexCnt
 
         // cellHeightMinMax + ltexMap + heightMapLOD4 + landTexturesLOD4 (all zero; overwritten by LOD0).
-        bw.Write(new byte[(nCells * 8) + (nCells * 32) + (nCells * 128) + (nCells * 128)]);
+        bw.Write(new byte[nCells * 8 + nCells * 32 + nCells * 128 + nCells * 128]);
 
         // LOD3/LOD2/LOD1 block tables (unused for LOD0 reads).
         long lod3 = ((nCellsY + 7) >> 3) * ((nCellsX + 7) >> 3) * 8;
@@ -183,7 +186,7 @@ public class Fo76TerrainInjectorTests
         for (var i = 0; i < 16384; i++)
         {
             payload[i * 2] = (byte)(heights[i] & 0xFF);
-            payload[(i * 2) + 1] = (byte)(heights[i] >> 8);
+            payload[i * 2 + 1] = (byte)(heights[i] >> 8);
         }
 
         return payload;
@@ -213,17 +216,17 @@ public class Fo76TerrainInjectorTests
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms, Encoding.ASCII, true);
         bw.Write("TES4"u8.ToArray()); // 0
-        bw.Write(0u);                 // 4  data size
-        bw.Write(0u);                 // 8  flags
-        bw.Write(0u);                 // 12 form ID
-        bw.Write(0u);                 // 16 VCS info
-        bw.Write((ushort)0);          // 20 form version
-        bw.Write((ushort)0);          // 22 unknown -> record header ends at 24
+        bw.Write(0u); // 4  data size
+        bw.Write(0u); // 8  flags
+        bw.Write(0u); // 12 form ID
+        bw.Write(0u); // 16 VCS info
+        bw.Write((ushort)0); // 20 form version
+        bw.Write((ushort)0); // 22 unknown -> record header ends at 24
         bw.Write("HEDR"u8.ToArray()); // 24 first subrecord signature
-        bw.Write((ushort)12);         // 28 HEDR data length
-        bw.Write(version);            // 30 version float
-        bw.Write(0u);                 // 34 record count
-        bw.Write(0u);                 // 38 next object ID
+        bw.Write((ushort)12); // 28 HEDR data length
+        bw.Write(version); // 30 version float
+        bw.Write(0u); // 34 record count
+        bw.Write(0u); // 38 next object ID
         bw.Flush();
         return ms.ToArray();
     }

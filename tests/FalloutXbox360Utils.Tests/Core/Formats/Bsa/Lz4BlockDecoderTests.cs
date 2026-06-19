@@ -27,7 +27,7 @@ public class Lz4BlockDecoderTests
         byte[] block2 = [0x0C, 0x08, 0x00];
 
         var frame = BuildFrame(block1, block2);
-        var result = Lz4BlockDecoder.DecodeFrame(frame, decompressedSize: 24);
+        var result = Lz4BlockDecoder.DecodeFrame(frame, 24);
 
         Assert.Equal("ABCDEFGHABCDEFGHABCDEFGH", Encoding.ASCII.GetString(result));
     }
@@ -39,7 +39,7 @@ public class Lz4BlockDecoderTests
         byte[] block = [0x40, .. "ABCD"u8, 0x04, 0x00];
 
         var frame = BuildFrame(block);
-        var result = Lz4BlockDecoder.DecodeFrame(frame, decompressedSize: 8);
+        var result = Lz4BlockDecoder.DecodeFrame(frame, 8);
 
         Assert.Equal("ABCDABCD", Encoding.ASCII.GetString(result));
     }
@@ -49,7 +49,8 @@ public class Lz4BlockDecoderTests
         var ms = new List<byte>(FrameHeader);
         foreach (var block in compressedBlocks)
         {
-            ms.AddRange(BitConverter.GetBytes((uint)block.Length)); // little-endian block size, high bit clear = compressed
+            ms.AddRange(
+                BitConverter.GetBytes((uint)block.Length)); // little-endian block size, high bit clear = compressed
             ms.AddRange(block);
         }
 

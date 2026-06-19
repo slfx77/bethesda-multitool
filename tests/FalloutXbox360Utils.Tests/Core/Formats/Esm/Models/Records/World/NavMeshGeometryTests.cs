@@ -49,7 +49,7 @@ public sealed class NavMeshGeometryTests
     {
         // Skyrim interior NVNM: parentWorld == 0, union = parent cell FormID. The geometry offsets
         // (vertex count at 16, vertex array at 20) are independent of the union content.
-        var nvnm = Nvnm(parentWorld: 0u, unionValue: 0x00027D1Cu,
+        var nvnm = Nvnm(0u, 0x00027D1Cu,
             [(1f, 2f, 3f), (4f, 5f, 6f), (7f, 8f, 9f)], [(0, 1, 2)]);
 
         var geom = NavMeshGeometry.TryParse(NavmNvnm(nvnm));
@@ -66,7 +66,7 @@ public sealed class NavMeshGeometryTests
         // Exterior NVNM: parentWorld != 0, union = packed {GridY, GridX} (4 bytes). The geometry must
         // decode identically — this guards against the union being misread as sequential fields (which
         // would shift every exterior navmesh's vertices by 4 bytes).
-        var nvnm = Nvnm(parentWorld: 0x0000003Cu, unionValue: 0xFFFE0001u,
+        var nvnm = Nvnm(0x0000003Cu, 0xFFFE0001u,
             [(0f, 0f, 0f), (1f, 1f, 1f), (2f, 2f, 2f), (3f, 3f, 3f)], [(0, 1, 2), (1, 2, 3)]);
 
         var geom = NavMeshGeometry.TryParse(NavmNvnm(nvnm));
@@ -96,15 +96,17 @@ public sealed class NavMeshGeometryTests
         return new NavMeshRecord { FormId = 0x1234, RawSubrecords = subs };
     }
 
-    private static NavMeshRecord NavmNvnm(byte[] nvnm) =>
-        new() { FormId = 0x5678, RawSubrecords = [new NavMeshSubrecord("NVNM", nvnm)] };
+    private static NavMeshRecord NavmNvnm(byte[] nvnm)
+    {
+        return new NavMeshRecord { FormId = 0x5678, RawSubrecords = [new NavMeshSubrecord("NVNM", nvnm)] };
+    }
 
     private static byte[] Nvnm(
         uint parentWorld, uint unionValue, (float X, float Y, float Z)[] verts, (ushort A, ushort B, ushort C)[] tris)
     {
-        var b = new byte[20 + (verts.Length * 12) + 4 + (tris.Length * 16)];
-        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(0, 4), 12u);         // version
-        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(4, 4), 0xABCDu);     // CRC hash
+        var b = new byte[20 + verts.Length * 12 + 4 + tris.Length * 16];
+        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(0, 4), 12u); // version
+        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(4, 4), 0xABCDu); // CRC hash
         BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(8, 4), parentWorld); // parent world (0 = interior)
         BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(12, 4), unionValue); // union: cell formid OR packed grid
         BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(16, 4), (uint)verts.Length);

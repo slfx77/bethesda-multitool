@@ -20,7 +20,9 @@ public sealed class ReferenceMeshCapacityPlannerTests
     // Negative treated as zero → floor.
     [InlineData(-5, 2048)]
     public void Plan_clamps_count_plus_headroom_between_floor_and_ceiling(int uniqueMeshCount, int expected)
-        => Assert.Equal(expected, ReferenceMeshCapacityPlanner.Plan(uniqueMeshCount));
+    {
+        Assert.Equal(expected, ReferenceMeshCapacityPlanner.Plan(uniqueMeshCount));
+    }
 
     [Fact]
     public void Constants_are_ordered_floor_below_ceiling()

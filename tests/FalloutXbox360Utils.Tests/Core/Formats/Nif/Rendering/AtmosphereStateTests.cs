@@ -15,13 +15,19 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 /// </summary>
 public sealed class AtmosphereStateTests
 {
+    // --- P4: WTHR NAM0 time-band color blend ----------------------------------------------------
+
+    // Timing with clean keyframe hours: sunriseMid = 6, noon = 12, sunsetMid = 18.
+    private static readonly AtmosphereState.ClimateTiming CleanTiming = new(5f, 7f, 17f, 19f);
+
     [Fact]
     public void Resolve_Noon_SunHighAndBright()
     {
         var a = AtmosphereState.Resolve(12f);
 
         Assert.True(a.SunIntensity > 0.9f, $"noon sun should be near peak intensity, got {a.SunIntensity}");
-        Assert.True(a.SunWorldDirection.Z > 0.9f, $"noon sun should point nearly straight up, got {a.SunWorldDirection}");
+        Assert.True(a.SunWorldDirection.Z > 0.9f,
+            $"noon sun should point nearly straight up, got {a.SunWorldDirection}");
         Assert.True(a.SunColor.X > 0.5f, "noon sun should be bright");
     }
 
@@ -129,15 +135,11 @@ public sealed class AtmosphereStateTests
         Assert.Equal(1f, AtmosphereState.Resolve(12f).SunIntensity, 3);
     }
 
-    // --- P4: WTHR NAM0 time-band color blend ----------------------------------------------------
-
-    // Timing with clean keyframe hours: sunriseMid = 6, noon = 12, sunsetMid = 18.
-    private static readonly AtmosphereState.ClimateTiming CleanTiming = new(5f, 7f, 17f, 19f);
-
     [Fact]
     public void Resolve_Noon_PicksWeatherDayBand()
     {
-        var w = WeatherWithAmbient(new(10, 12, 14, 255), new(200, 210, 220, 255), new(50, 40, 30, 255), new(5, 5, 8, 255));
+        var w = WeatherWithAmbient(new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255));
         var a = AtmosphereState.Resolve(12f, w, CleanTiming);
         AssertColor(200, 210, 220, a.AmbientColor);
     }
@@ -145,7 +147,8 @@ public sealed class AtmosphereStateTests
     [Fact]
     public void Resolve_Midnight_PicksWeatherNightBand()
     {
-        var w = WeatherWithAmbient(new(10, 12, 14, 255), new(200, 210, 220, 255), new(50, 40, 30, 255), new(5, 5, 8, 255));
+        var w = WeatherWithAmbient(new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255));
         var a = AtmosphereState.Resolve(0f, w, CleanTiming);
         AssertColor(5, 5, 8, a.AmbientColor);
     }
@@ -153,7 +156,8 @@ public sealed class AtmosphereStateTests
     [Fact]
     public void Resolve_SunriseMidpoint_PicksWeatherSunriseBand()
     {
-        var w = WeatherWithAmbient(new(10, 12, 14, 255), new(200, 210, 220, 255), new(50, 40, 30, 255), new(5, 5, 8, 255));
+        var w = WeatherWithAmbient(new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255));
         var a = AtmosphereState.Resolve(6f, w, CleanTiming); // sunriseMid for CleanTiming
         AssertColor(10, 12, 14, a.AmbientColor);
     }
@@ -174,7 +178,8 @@ public sealed class AtmosphereStateTests
     [Fact]
     public void Resolve_Nam0BandBlend_IsContinuousAcrossMidnight()
     {
-        var w = WeatherWithAmbient(new(10, 12, 14, 255), new(200, 210, 220, 255), new(50, 40, 30, 255), new(5, 5, 8, 255));
+        var w = WeatherWithAmbient(new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255));
         var justBefore = AtmosphereState.Resolve(23.99f, w, CleanTiming).AmbientColor;
         var justAfter = AtmosphereState.Resolve(0.01f, w, CleanTiming).AmbientColor;
         Assert.True((justBefore - justAfter).Length() < 0.02f, "Night↔Night wrap must be continuous at midnight");
@@ -203,7 +208,8 @@ public sealed class AtmosphereStateTests
     public void Resolve_MidMorning_HoldsSolidDayBand()
     {
         // 10:00 is past sunriseEnd (7) and before sunsetBegin (17) → solid Day, not a sunrise→day blend.
-        var w = WeatherWithAmbient(new(10, 12, 14, 255), new(200, 210, 220, 255), new(50, 40, 30, 255), new(5, 5, 8, 255));
+        var w = WeatherWithAmbient(new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255));
         var a = AtmosphereState.Resolve(10f, w, CleanTiming);
         AssertColor(200, 210, 220, a.AmbientColor);
     }
@@ -212,7 +218,8 @@ public sealed class AtmosphereStateTests
     public void Resolve_LateEvening_HoldsSolidNightBand()
     {
         // 22:00 is past sunsetEnd (19) → solid Night.
-        var w = WeatherWithAmbient(new(10, 12, 14, 255), new(200, 210, 220, 255), new(50, 40, 30, 255), new(5, 5, 8, 255));
+        var w = WeatherWithAmbient(new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255));
         var a = AtmosphereState.Resolve(22f, w, CleanTiming);
         AssertColor(5, 5, 8, a.AmbientColor);
     }
@@ -221,12 +228,14 @@ public sealed class AtmosphereStateTests
     public void Resolve_SunsetMidpoint_PicksWeatherSunsetBand()
     {
         // 18:00 is the sunset-window midpoint for CleanTiming → exactly the Sunset band.
-        var w = WeatherWithAmbient(new(10, 12, 14, 255), new(200, 210, 220, 255), new(50, 40, 30, 255), new(5, 5, 8, 255));
+        var w = WeatherWithAmbient(new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255));
         var a = AtmosphereState.Resolve(18f, w, CleanTiming);
         AssertColor(50, 40, 30, a.AmbientColor);
     }
 
-    private static WeatherRecord WeatherWithAmbient(WeatherRgba sunrise, WeatherRgba day, WeatherRgba sunset, WeatherRgba night)
+    private static WeatherRecord WeatherWithAmbient(WeatherRgba sunrise, WeatherRgba day, WeatherRgba sunset,
+        WeatherRgba night)
     {
         var zero = new WeatherRgba(0, 0, 0, 0);
         var colors = new WeatherColor[15];

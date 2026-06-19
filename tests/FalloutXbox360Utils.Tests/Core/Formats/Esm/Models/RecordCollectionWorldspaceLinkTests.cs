@@ -35,8 +35,8 @@ public class RecordCollectionWorldspaceLinkTests
     [Fact]
     public void MergeWith_OverlayWins_ForSharedCellFormId()
     {
-        var baseCell = ExteriorCell(0x10, Worldspace1, 0, 0, objectCount: 2);
-        var overlayCell = ExteriorCell(0x10, Worldspace1, 0, 0, objectCount: 5);
+        var baseCell = ExteriorCell(0x10, Worldspace1, 0, 0, 2);
+        var overlayCell = ExteriorCell(0x10, Worldspace1, 0, 0, 5);
 
         var baseRc = new RecordCollection { Cells = [baseCell] };
         var overlayRc = new RecordCollection { Cells = [overlayCell] };
@@ -52,11 +52,11 @@ public class RecordCollectionWorldspaceLinkTests
     {
         // Primary worldspace links the pre-merge cell (2 objects); the overlay overrides that cell
         // FormID with 5 objects. Without re-link, ws.Cells still points at the stale 2-object cell.
-        var staleCell = ExteriorCell(0x10, Worldspace1, 0, 0, objectCount: 2);
+        var staleCell = ExteriorCell(0x10, Worldspace1, 0, 0, 2);
         var ws = new WorldspaceRecord { FormId = Worldspace1, Cells = [staleCell] };
         var baseRc = new RecordCollection { Worldspaces = [ws], Cells = [staleCell] };
 
-        var overlayCell = ExteriorCell(0x10, Worldspace1, 0, 0, objectCount: 5);
+        var overlayCell = ExteriorCell(0x10, Worldspace1, 0, 0, 5);
         var overlayRc = new RecordCollection { Cells = [overlayCell] };
 
         var merged = baseRc.MergeWith(overlayRc).RelinkWorldspaceCells();
@@ -68,11 +68,11 @@ public class RecordCollectionWorldspaceLinkTests
     [Fact]
     public void RelinkWorldspaceCells_AddsNewCellToExistingWorldspace()
     {
-        var existing = ExteriorCell(0x10, Worldspace1, 0, 0, objectCount: 1);
+        var existing = ExteriorCell(0x10, Worldspace1, 0, 0, 1);
         var ws = new WorldspaceRecord { FormId = Worldspace1, Cells = [existing] };
         var baseRc = new RecordCollection { Worldspaces = [ws], Cells = [existing] };
 
-        var added = ExteriorCell(0x11, Worldspace1, 1, 0, objectCount: 1);
+        var added = ExteriorCell(0x11, Worldspace1, 1, 0, 1);
         var overlayRc = new RecordCollection { Cells = [added] };
 
         var merged = baseRc.MergeWith(overlayRc).RelinkWorldspaceCells();
@@ -85,7 +85,7 @@ public class RecordCollectionWorldspaceLinkTests
     public void RelinkWorldspaceCells_DropsStaleCellWhenNoLongerInWorldspace()
     {
         // A worldspace whose only cell is removed from the merged set must not keep the stale link.
-        var stale = ExteriorCell(0x10, Worldspace1, 0, 0, objectCount: 1);
+        var stale = ExteriorCell(0x10, Worldspace1, 0, 0, 1);
         var ws = new WorldspaceRecord { FormId = Worldspace1, Cells = [stale] };
         var rc = new RecordCollection { Worldspaces = [ws], Cells = [] };
 
@@ -99,7 +99,7 @@ public class RecordCollectionWorldspaceLinkTests
     {
         var ws1 = new WorldspaceRecord { FormId = Worldspace1 };
         var ws2 = new WorldspaceRecord { FormId = Worldspace2 };
-        var cell = ExteriorCell(0x10, Worldspace2, 0, 0, objectCount: 1);
+        var cell = ExteriorCell(0x10, Worldspace2, 0, 0, 1);
         var rc = new RecordCollection { Worldspaces = [ws1, ws2], Cells = [cell] };
 
         var filtered = rc.WithWorldspacesFilteredTo(new HashSet<uint> { Worldspace1 });

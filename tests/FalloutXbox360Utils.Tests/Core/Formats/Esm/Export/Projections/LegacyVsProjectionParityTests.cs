@@ -30,9 +30,7 @@ public class LegacyVsProjectionParityTests
         // during Project(); using fresh copies keeps the two paths isolated.
         var legacyInputs = BuildTwoSourceFixture();
         var legacyIndex = CrossDumpAggregator.Aggregate(
-            legacyInputs.Select(s => (s.FilePath, s.Records, s.Resolver, s.MinidumpInfo)).ToList(),
-            null,
-            false);
+            legacyInputs.Select(s => (s.FilePath, s.Records, s.Resolver, s.MinidumpInfo)).ToList());
 
         var projectionInputs = BuildTwoSourceFixture();
         var projections = projectionInputs.Select(CrossDumpSourceProjector.Project).ToList();
@@ -46,7 +44,7 @@ public class LegacyVsProjectionParityTests
         CrossDumpProjectionAggregator.BuildLatePassReports(
             projections, npcPlacements, npcScriptRefs, keyDoors, containerPlacements);
         var newIndex = CrossDumpProjectionAggregator.AggregateFromProjections(
-            projections, virtualCanon, null);
+            projections, virtualCanon);
 
         AssertIndexesMatch(legacyIndex, newIndex);
     }

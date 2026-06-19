@@ -71,7 +71,7 @@ public sealed class DmpGapRecoveryScannerTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(8, 4), 0);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(12, 4), 0x01001234);
 
-        var result = Scan(data, gaps: []);
+        var result = Scan(data, []);
 
         Assert.Empty(result.Candidates);
     }
@@ -162,23 +162,23 @@ public sealed class DmpGapRecoveryScannerTests
             TotalMemoryRegions = 1,
             TotalRegionBytes = data.Length,
             Gaps = gaps?.ToList() ??
-                   [
-                       new CoverageGap
-                       {
-                           FileOffset = 0,
-                           Size = data.Length,
-                           VirtualAddress = 0x40000000,
-                           Classification = GapClassification.BinaryData,
-                           Context = "Synthetic gap"
-                       }
-                   ]
+            [
+                new CoverageGap
+                {
+                    FileOffset = 0,
+                    Size = data.Length,
+                    VirtualAddress = 0x40000000,
+                    Classification = GapClassification.BinaryData,
+                    Context = "Synthetic gap"
+                }
+            ]
         };
 
         return DmpGapRecoveryScanner.Scan(
             analysis,
             coverage,
             new ByteArrayMemoryAccessor(data),
-            rttiReader: null,
+            null,
             DmpGapRecoveryOptions.DiscoverOnly with
             {
                 MinGapSize = 1,

@@ -7,7 +7,10 @@ namespace FalloutXbox360Utils.Tests.Core.Orchestration;
 [Collection("Logger")]
 public sealed class DedicatedWorkerThreadTests : IDisposable
 {
-    public void Dispose() => Logger.Instance.Reset();
+    public void Dispose()
+    {
+        Logger.Instance.Reset();
+    }
 
     [Fact]
     public void Work_runs_on_the_dedicated_thread_not_the_caller()
@@ -56,7 +59,7 @@ public sealed class DedicatedWorkerThreadTests : IDisposable
     public void TryEnqueue_returns_false_when_full_without_blocking()
     {
         using var blockFirstItem = new ManualResetEventSlim(false);
-        using var worker = new DedicatedWorkerThread("TestWorker", capacity: 1);
+        using var worker = new DedicatedWorkerThread("TestWorker", 1);
 
         // First item occupies the worker; second fills the queue; third must be refused.
         Assert.True(worker.TryEnqueue(blockFirstItem.Wait));

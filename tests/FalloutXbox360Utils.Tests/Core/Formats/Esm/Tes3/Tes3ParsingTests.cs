@@ -34,7 +34,7 @@ public class Tes3ParsingTests
     {
         var wpdt = new byte[32];
         var s = wpdt.AsSpan();
-        BinaryPrimitives.WriteSingleLittleEndian(s[0..], 12.0f); // Weight
+        BinaryPrimitives.WriteSingleLittleEndian(s[..], 12.0f); // Weight
         BinaryPrimitives.WriteInt32LittleEndian(s[4..], 60); // Value
         BinaryPrimitives.WriteInt16LittleEndian(s[8..], 1); // Type
         BinaryPrimitives.WriteUInt16LittleEndian(s[10..], 900); // Health
@@ -59,7 +59,7 @@ public class Tes3ParsingTests
     {
         var npdt = new byte[12];
         var s = npdt.AsSpan();
-        BinaryPrimitives.WriteInt16LittleEndian(s[0..], 5); // Level
+        BinaryPrimitives.WriteInt16LittleEndian(s[..], 5); // Level
         s[2] = 50; // Disposition
         s[3] = 0; // Reputation
         s[4] = 2; // Rank
@@ -78,7 +78,7 @@ public class Tes3ParsingTests
     {
         var enam = new byte[24];
         var s = enam.AsSpan();
-        BinaryPrimitives.WriteInt16LittleEndian(s[0..], 53); // Effect
+        BinaryPrimitives.WriteInt16LittleEndian(s[..], 53); // Effect
         s[2] = unchecked((byte)-1); // Skill
         s[3] = unchecked((byte)-1); // Attribute
         BinaryPrimitives.WriteInt32LittleEndian(s[4..], 2); // Range

@@ -15,12 +15,12 @@ public sealed class SptBezierSplineTests
             ControlPoints =
             [
                 new SptSplineControlPoint(0f, 0f, 0f, 2f, 0.5f),
-                new SptSplineControlPoint(1f, 0f, 0f, -2f, 0.5f),
-            ],
+                new SptSplineControlPoint(1f, 0f, 0f, -2f, 0.5f)
+            ]
         };
 
-        Assert.Equal(ExpectedCurve(spline.ControlPoints, 0.5f, 500, normalizeTangents: true), spline.Curve(0.5f), 6);
-        Assert.NotEqual(ExpectedCurve(spline.ControlPoints, 0.5f, 500, normalizeTangents: false), spline.Curve(0.5f), 4);
+        Assert.Equal(ExpectedCurve(spline.ControlPoints, 0.5f, 500, true), spline.Curve(0.5f), 6);
+        Assert.NotEqual(ExpectedCurve(spline.ControlPoints, 0.5f, 500, false), spline.Curve(0.5f), 4);
     }
 
     [Fact]
@@ -33,12 +33,12 @@ public sealed class SptBezierSplineTests
             [
                 new SptSplineControlPoint(0f, 0f, 0.2f, 1.4f, 0.25f),
                 new SptSplineControlPoint(0.37f, 0.91f, 1.2f, -0.4f, 0.33f),
-                new SptSplineControlPoint(1f, 0.2f, 0.7f, -0.9f, 0.21f),
-            ],
+                new SptSplineControlPoint(1f, 0.2f, 0.7f, -0.9f, 0.21f)
+            ]
         };
 
-        var expected500 = ExpectedCurve(spline.ControlPoints, 0.43f, 500, normalizeTangents: true);
-        var expected64 = ExpectedCurve(spline.ControlPoints, 0.43f, 64, normalizeTangents: true);
+        var expected500 = ExpectedCurve(spline.ControlPoints, 0.43f, 500, true);
+        var expected64 = ExpectedCurve(spline.ControlPoints, 0.43f, 64, true);
 
         Assert.Equal(expected500, spline.Curve(0.43f), 6);
         Assert.True(MathF.Abs(expected500 - expected64) > 0.00001f);

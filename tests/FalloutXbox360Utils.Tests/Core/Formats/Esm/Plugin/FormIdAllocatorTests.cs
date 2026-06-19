@@ -8,7 +8,7 @@ public class FormIdAllocatorTests
     [Fact]
     public void Allocate_FirstCall_ReturnsBaseLocalIdWithPluginIndex()
     {
-        var allocator = new FormIdAllocator(0x800);
+        var allocator = new FormIdAllocator();
 
         var formId = allocator.Allocate();
 
@@ -18,7 +18,7 @@ public class FormIdAllocatorTests
     [Fact]
     public void Allocate_IncrementsLocalId()
     {
-        var allocator = new FormIdAllocator(0x800);
+        var allocator = new FormIdAllocator();
 
         var first = allocator.Allocate();
         var second = allocator.Allocate();
@@ -42,7 +42,7 @@ public class FormIdAllocatorTests
     [Fact]
     public void NextObjectId_TracksHighWaterMark()
     {
-        var allocator = new FormIdAllocator(0x800);
+        var allocator = new FormIdAllocator();
         Assert.Equal(0x800u, allocator.NextObjectId);
 
         allocator.Allocate(); // 0x800

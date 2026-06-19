@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 using FalloutXbox360Utils.Core.Formats.Esm;
-using FalloutXbox360Utils.Core.Formats.Esm.Records;
 using FalloutXbox360Utils.Tests.Helpers;
 using Xunit;
 
@@ -40,7 +39,8 @@ public sealed class EsmDescriptorScannerTests
         Assert.Equal(parsedGrups.Count, descriptorScan.GrupHeaders.Count);
         Assert.Equal(
             parsedGrups.Select(g => (g.Offset, g.GroupSize, g.GroupType, Label: Convert.ToHexString(g.Label))),
-            descriptorScan.GrupHeaders.Select(g => (g.Offset, g.GroupSize, g.GroupType, Label: Convert.ToHexString(g.Label))));
+            descriptorScan.GrupHeaders.Select(g =>
+                (g.Offset, g.GroupSize, g.GroupType, Label: Convert.ToHexString(g.Label))));
 
         Assert.Equal(
             parsedScan.EditorIds.Select(e => e.Name).Order(StringComparer.Ordinal),

@@ -78,7 +78,7 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
             FastFilter,
             (chunk, offset, fileOffset) =>
             {
-                var mesh = ValidateAndExtract(chunk, offset, fileOffset);
+                var mesh = ValidateAndExtract(chunk, offset, fileOffset, ExtractionOptions.Default);
                 if (mesh != null && vertexHashes.TryAdd(mesh.VertexHash, 0))
                 {
                     meshes.Add(mesh);
@@ -106,6 +106,23 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
     /// </summary>
     public ExtractedMesh? ExtractMeshAtVa(uint niGeometryDataVa)
     {
+        return ExtractMeshAtVa(niGeometryDataVa, ExtractionOptions.Default);
+    }
+
+    /// <summary>
+    ///     Read a known SpeedTree runtime mesh. SpeedTree leaves are built by
+    ///     <c>BSTreeModel::CreateLeafGeometry</c> as four vertices per card with a generated
+    ///     six-index order; the resulting <c>NiTriShapeData</c> can have <c>m_pusTriList == 0</c>
+    ///     even though <c>m_uiTriListLength</c> and <c>m_usTriangles</c> are populated.
+    /// </summary>
+    public ExtractedMesh? ExtractSpeedTreeMeshAtVa(uint niGeometryDataVa, bool allowImplicitLeafCardIndices)
+    {
+        return ExtractMeshAtVa(niGeometryDataVa,
+            allowImplicitLeafCardIndices ? ExtractionOptions.SpeedTreeLeafCards : ExtractionOptions.Default);
+    }
+
+    private ExtractedMesh? ExtractMeshAtVa(uint niGeometryDataVa, ExtractionOptions options)
+    {
         var fileOffset = _context.VaToFileOffset(niGeometryDataVa);
         if (fileOffset is null)
         {
@@ -115,7 +132,7 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
         var buffer = _context.ReadBytesAtVa(niGeometryDataVa, TriShapeStructSize);
         return buffer is null || buffer.Length < TriShapeStructSize
             ? null
-            : ValidateAndExtract(buffer, 0, fileOffset.Value);
+            : ValidateAndExtract(buffer, 0, fileOffset.Value, options);
     }
 
     /// <summary>
@@ -197,7 +214,7 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
     ///     Follows pointers to read vertex data, validates spatial extent,
     ///     then attempts to identify as NiTriShapeData or NiTriStripsData.
     /// </summary>
-    private ExtractedMesh? ValidateAndExtract(byte[] chunk, int offset, long fileOffset)
+    private ExtractedMesh? ValidateAndExtract(byte[] chunk, int offset, long fileOffset, ExtractionOptions options)
     {
         var vertexCount = BinaryUtils.ReadUInt16BE(chunk, offset + VertexCountOffset);
 
@@ -265,12 +282,23 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
                     indexDataSize = (int)triListLength * 2;
                 }
             }
+
+            if (triangleIndices == null &&
+                options.AllowImplicitLeafCardIndices &&
+                triListPtr == 0 &&
+                triListLength > 0 &&
+                triListLength == expectedIndexCount &&
+                vertexCount % LeafVerticesPerCard == 0 &&
+                triListLength == (uint)(vertexCount / LeafVerticesPerCard * LeafIndicesPerCard))
+            {
+                triangleIndices = BuildImplicitSpeedTreeLeafCardIndices(vertexCount);
+            }
         }
 
         // If not NiTriShapeData, try NiTriStripsData
         if (triangleIndices == null && offset + TriStripsStructSize <= chunk.Length)
         {
-            var stripListsPtr = BinaryUtils.ReadUInt32BE(chunk, offset + StripListsPtrOffset);
+            var stripListsPtr = ResolveStripListsPointer(chunk, offset);
             triangleIndices = TryReadTriStrips(chunk, offset, vertexCount);
             if (triangleIndices != null)
             {
@@ -400,7 +428,7 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
         }
 
         var stripLengthsPtr = BinaryUtils.ReadUInt32BE(chunk, offset + StripLengthsPtrOffset);
-        var stripListsPtr = BinaryUtils.ReadUInt32BE(chunk, offset + StripListsPtrOffset);
+        var stripListsPtr = ResolveStripListsPointer(chunk, offset);
 
         if (!_context.IsValidPointer(stripLengthsPtr) || !_context.IsValidPointer(stripListsPtr))
         {
@@ -482,6 +510,72 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
         }
 
         return triangles.Count >= 3 ? triangles.ToArray() : null;
+    }
+
+    /// <summary>
+    ///     Mirror <c>NiTriStripsData::GetStripLists</c>. If <c>m_pusStripLists</c> is null,
+    ///     Gamebryo derives a CPU-visible pointer from the packed buffer object stored in
+    ///     <c>NiGeometryData::m_pkBuffData</c>.
+    /// </summary>
+    private uint ResolveStripListsPointer(byte[] chunk, int offset)
+    {
+        var stripListsPtr = BinaryUtils.ReadUInt32BE(chunk, offset + StripListsPtrOffset);
+        if (stripListsPtr != 0)
+        {
+            return stripListsPtr;
+        }
+
+        var buffDataPtr = BinaryUtils.ReadUInt32BE(chunk, offset + BuffDataPtrOffset);
+        if (!_context.IsValidPointer(buffDataPtr))
+        {
+            return 0;
+        }
+
+        var nestedPtrBytes = _context.ReadBytesAtVa(buffDataPtr + 0x34, 4);
+        if (nestedPtrBytes is null || nestedPtrBytes.Length < 4)
+        {
+            return 0;
+        }
+
+        var nestedPtr = BinaryUtils.ReadUInt32BE(nestedPtrBytes, 0);
+        if (!_context.IsValidPointer(nestedPtr))
+        {
+            return 0;
+        }
+
+        var packedAddressBytes = _context.ReadBytesAtVa(nestedPtr + 0x18, 4);
+        if (packedAddressBytes is null || packedAddressBytes.Length < 4)
+        {
+            return 0;
+        }
+
+        var packedAddress = BinaryUtils.ReadUInt32BE(packedAddressBytes, 0);
+        return unchecked((packedAddress & 0x1FFF_FFFFu) +
+                         (((packedAddress >> 20) + 0x200u) & 0x1000u) -
+                         0x4000_0000u);
+    }
+
+    /// <summary>
+    ///     Mirror the exact per-card index order written in <c>BSTreeModel::CreateLeafGeometry</c>:
+    ///     [base+3, base+1, base+2, base+0, base+1, base+3].
+    /// </summary>
+    private static ushort[] BuildImplicitSpeedTreeLeafCardIndices(int vertexCount)
+    {
+        var cardCount = vertexCount / LeafVerticesPerCard;
+        var indices = new ushort[cardCount * LeafIndicesPerCard];
+        for (var card = 0; card < cardCount; card++)
+        {
+            var vertexBase = card * LeafVerticesPerCard;
+            var indexBase = card * LeafIndicesPerCard;
+            indices[indexBase] = (ushort)(vertexBase + 3);
+            indices[indexBase + 1] = (ushort)(vertexBase + 1);
+            indices[indexBase + 2] = (ushort)(vertexBase + 2);
+            indices[indexBase + 3] = (ushort)vertexBase;
+            indices[indexBase + 4] = (ushort)(vertexBase + 1);
+            indices[indexBase + 5] = (ushort)(vertexBase + 3);
+        }
+
+        return indices;
     }
 
     /// <summary>
@@ -589,6 +683,7 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
     private const int NormalPtrOffset = 36; // m_pkNormal: NiPoint3*
     private const int ColorPtrOffset = 40; // m_pkColor: NiColorA*
     private const int UVPtrOffset = 44; // m_pkTexture: NiPoint2*
+    private const int BuffDataPtrOffset = 52; // m_pkBuffData
 
     #endregion
 
@@ -609,6 +704,12 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
 
     #endregion
 
+    private readonly record struct ExtractionOptions(bool AllowImplicitLeafCardIndices)
+    {
+        public static readonly ExtractionOptions Default = new(false);
+        public static readonly ExtractionOptions SpeedTreeLeafCards = new(true);
+    }
+
     #region Validation Thresholds
 
     private const int MinVertices = 3;
@@ -618,6 +719,8 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
     private const float MinSpatialExtent = 0.1f;
     private const float MaxSpatialExtent = 200_000f;
     private const float ValidFloatThreshold = 0.5f;
+    private const int LeafVerticesPerCard = 4;
+    private const int LeafIndicesPerCard = 6;
 
     #endregion
 }

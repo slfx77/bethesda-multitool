@@ -83,7 +83,7 @@ public sealed class GroundRaycastTests
     [Fact]
     public void CollisionMesh_DownRayOntoQuad_HitsTop()
     {
-        var mesh = BuildHorizontalQuad(z: 100f, halfSize: 50f);
+        var mesh = BuildHorizontalQuad(100f, 50f);
         var hit = mesh.RaycastNearest(new Vector3(0, 0, 300), new Vector3(0, 0, -1), out var t);
 
         Assert.True(hit);
@@ -96,8 +96,8 @@ public sealed class GroundRaycastTests
         // Two floors; a down-ray from above should hit the HIGHER one first (smallest t).
         var positions = new List<Vector3>();
         var triangles = new List<int>();
-        AppendQuad(positions, triangles, z: 100f, halfSize: 50f);
-        AppendQuad(positions, triangles, z: 200f, halfSize: 50f);
+        AppendQuad(positions, triangles, 100f, 50f);
+        AppendQuad(positions, triangles, 200f, 50f);
         var mesh = new CollisionMesh(positions.ToArray(), triangles.ToArray());
 
         Assert.True(mesh.RaycastNearest(new Vector3(0, 0, 500), new Vector3(0, 0, -1), out var t));
@@ -107,7 +107,7 @@ public sealed class GroundRaycastTests
     [Fact]
     public void CollisionMesh_RayOutsideFootprint_MissesViaAabb()
     {
-        var mesh = BuildHorizontalQuad(z: 100f, halfSize: 50f);
+        var mesh = BuildHorizontalQuad(100f, 50f);
         // X=500 is well outside the ±50 footprint → AABB slab rejects before any triangle test.
         Assert.False(mesh.RaycastNearest(new Vector3(500, 0, 300), new Vector3(0, 0, -1), out _));
     }
@@ -117,9 +117,9 @@ public sealed class GroundRaycastTests
     {
         // A quad authored at local z=0, placed by a 45°-about-X tilt + translation (a ramp). A naive
         // axis-aligned box top would be wrong; the local-ray path must recover the true world hit.
-        var mesh = BuildHorizontalQuad(z: 0f, halfSize: 100f);
+        var mesh = BuildHorizontalQuad(0f, 100f);
         var world = PlacedReferenceTransform.ComposeWorldMatrix(
-            x: 1000f, y: 2000f, z: 300f, rotX: MathF.PI / 4f, rotY: 0f, rotZ: 0f, scale: 1f);
+            1000f, 2000f, 300f, MathF.PI / 4f, 0f, 0f, 1f);
         Assert.True(Matrix4x4.Invert(world, out var inv));
 
         // World down-ray straight above the placed origin.
@@ -146,15 +146,15 @@ public sealed class GroundRaycastTests
         // Two "planks" with a gap across x∈[-5,5]; a down-ray at x=0 misses the visual soup …
         var visual = new List<Vector3>();
         var visualTris = new List<int>();
-        AppendQuadXSpan(visual, visualTris, x0: -50f, x1: -5f, z: 100f);
-        AppendQuadXSpan(visual, visualTris, x0: 5f, x1: 50f, z: 100f);
+        AppendQuadXSpan(visual, visualTris, -50f, -5f, 100f);
+        AppendQuadXSpan(visual, visualTris, 5f, 50f, 100f);
         var visualMesh = new CollisionMesh(visual.ToArray(), visualTris.ToArray());
         Assert.False(visualMesh.RaycastNearest(new Vector3(0, 0, 300), new Vector3(0, 0, -1), out _));
 
         // … but the gapless Havok quad spanning the whole bridge is hit at the expected Z.
         var havok = new List<Vector3>();
         var havokTris = new List<int>();
-        AppendQuadXSpan(havok, havokTris, x0: -50f, x1: 50f, z: 100f);
+        AppendQuadXSpan(havok, havokTris, -50f, 50f, 100f);
         var havokMesh = new CollisionMesh(havok.ToArray(), havokTris.ToArray());
         Assert.True(havokMesh.RaycastNearest(new Vector3(0, 0, 300), new Vector3(0, 0, -1), out var t));
         Assert.Equal(200f, t, Tol); // 300 - 100

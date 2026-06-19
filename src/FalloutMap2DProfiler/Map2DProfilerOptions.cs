@@ -26,6 +26,7 @@ internal sealed record Map2DProfilerOptions
     ///     TerrainTextures layer where the overlay + mip/perf work live.
     /// </summary>
     internal bool RenderedModels { get; init; }
+
     internal int WindowWidth { get; init; } = 1450;
     internal int WindowHeight { get; init; } = 900;
 

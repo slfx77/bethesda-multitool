@@ -33,7 +33,7 @@ public sealed class SessionTaskRunnerTests : IDisposable
     public void Synchronous_head_runs_on_the_calling_thread()
     {
         var callingThreadId = Environment.CurrentManagedThreadId;
-        int observedThreadId = -1;
+        var observedThreadId = -1;
         _ = _runner.RunExclusiveAsync("k", _ =>
         {
             observedThreadId = Environment.CurrentManagedThreadId;
@@ -92,10 +92,7 @@ public sealed class SessionTaskRunnerTests : IDisposable
     [Fact]
     public async Task Cancellation_is_swallowed_as_normal_teardown()
     {
-        var task = _runner.RunExclusiveAsync("k", static async ct =>
-        {
-            await Task.Delay(Timeout.Infinite, ct);
-        });
+        var task = _runner.RunExclusiveAsync("k", static async ct => { await Task.Delay(Timeout.Infinite, ct); });
 
         _runner.CancelAll();
         await task; // must not throw

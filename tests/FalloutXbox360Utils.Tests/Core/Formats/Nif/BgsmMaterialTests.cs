@@ -18,7 +18,7 @@ public class BgsmMaterialTests
         const string diffuse = "SetDressing/Test/thing_d.dds";
         const string normal = "Shared/flat_n.dds";
 
-        var mat = BgsmMaterial.Parse(BuildBgsm(version: 22, isEffect: false, headerLength: 60, diffuse, normal));
+        var mat = BgsmMaterial.Parse(BuildBgsm(22, false, 60, diffuse, normal));
 
         Assert.NotNull(mat);
         Assert.False(mat!.IsEffect);
@@ -34,7 +34,7 @@ public class BgsmMaterialTests
         const string normal = "Ammo/10mm/10mmCartridge_n.dds";
 
         // Fallout 4 (version 2): the gradient flag is at offset 62 and texture paths start at 63.
-        var mat = BgsmMaterial.Parse(BuildBgsm(version: 2, isEffect: false, headerLength: 63, diffuse, normal));
+        var mat = BgsmMaterial.Parse(BuildBgsm(2, false, 63, diffuse, normal));
 
         Assert.NotNull(mat);
         Assert.Equal(2, mat!.Version);

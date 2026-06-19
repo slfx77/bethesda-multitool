@@ -41,11 +41,11 @@ public sealed class NifPipBoyShapeTests
     }
 
     [Theory]
-    [InlineData("PipBoyOff", true, true)]   // worn → full sleeve suppressed
+    [InlineData("PipBoyOff", true, true)] // worn → full sleeve suppressed
     [InlineData("PipBoyOff", false, false)] // not worn → full sleeve kept
-    [InlineData("PipBoyOn", true, false)]   // worn → cut sleeve kept
-    [InlineData("PipBoyOn", false, true)]   // not worn → cut sleeve suppressed
-    [InlineData("PipboyOn", false, true)]   // vault suit f/outfit.nif mixed casing
+    [InlineData("PipBoyOn", true, false)] // worn → cut sleeve kept
+    [InlineData("PipBoyOn", false, true)] // not worn → cut sleeve suppressed
+    [InlineData("PipboyOn", false, true)] // vault suit f/outfit.nif mixed casing
     [InlineData("pipboyoff:0", true, true)] // engine prefix-matches, suffix tolerated
     [InlineData("UpperBody", true, false)]
     [InlineData("UpperBody", false, false)]

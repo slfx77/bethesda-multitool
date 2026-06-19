@@ -20,9 +20,11 @@ public sealed class NifSceneGraphWalkerSkinBoneTests
         // Skin instance at block 1: data=2, skinPartition=3, skeletonRoot=4, bones=[5,6,7]. Bone/root
         // refs must be valid block indices (production filters out-of-range refs), so pad to 12 blocks.
         var (data, nif) = BuildNif(
-            [("NiNode", new byte[4]),                         // 0 = scene root (unused here)
-             SkinInstance(dataRef: 2, skinPartition: 3, skeletonRoot: 4, bones: [5, 6, 7]), // 1
-             .. PadNodes(10)]);                               // 2..11
+        [
+            ("NiNode", new byte[4]), // 0 = scene root (unused here)
+            SkinInstance(2, 3, 4, [5, 6, 7]), // 1
+            .. PadNodes(10)
+        ]); // 2..11
 
         var bones = NifSceneGraphWalker.CollectSkinBoneNodeIndices(
             data, nif, new Dictionary<int, int> { [99] = 1 }); // shape 99 → skin instance block 1
@@ -35,9 +37,11 @@ public sealed class NifSceneGraphWalkerSkinBoneTests
     {
         // skeletonRoot = 0 (the Scene Root) must NOT be collected — static geometry hangs there.
         var (data, nif) = BuildNif(
-            [("NiNode", new byte[4]),
-             SkinInstance(dataRef: 2, skinPartition: 3, skeletonRoot: 0, bones: [5, 6]),
-             .. PadNodes(10)]);
+        [
+            ("NiNode", new byte[4]),
+            SkinInstance(2, 3, 0, [5, 6]),
+            .. PadNodes(10)
+        ]);
 
         var bones = NifSceneGraphWalker.CollectSkinBoneNodeIndices(
             data, nif, new Dictionary<int, int> { [99] = 1 });
@@ -58,10 +62,12 @@ public sealed class NifSceneGraphWalkerSkinBoneTests
     {
         // Two skinned shapes reference two skin instances with overlapping bones — bone set is a union.
         var (data, nif) = BuildNif(
-            [("NiNode", new byte[4]),                                         // 0
-             SkinInstance(dataRef: 4, skinPartition: 5, skeletonRoot: 6, bones: [7, 8]),  // 1
-             SkinInstance(dataRef: 4, skinPartition: 5, skeletonRoot: 6, bones: [8, 9]),  // 2
-             .. PadNodes(10)]);                                              // 3..12
+        [
+            ("NiNode", new byte[4]), // 0
+            SkinInstance(4, 5, 6, [7, 8]), // 1
+            SkinInstance(4, 5, 6, [8, 9]), // 2
+            .. PadNodes(10)
+        ]); // 3..12
 
         var bones = NifSceneGraphWalker.CollectSkinBoneNodeIndices(
             data, nif, new Dictionary<int, int> { [40] = 1, [41] = 2 });
@@ -97,8 +103,10 @@ public sealed class NifSceneGraphWalkerSkinBoneTests
         return (data, nif);
     }
 
-    private static (string type, byte[] payload)[] PadNodes(int count) =>
-        Enumerable.Range(0, count).Select(_ => ("NiNode", new byte[4])).ToArray();
+    private static (string type, byte[] payload)[] PadNodes(int count)
+    {
+        return Enumerable.Range(0, count).Select(_ => ("NiNode", new byte[4])).ToArray();
+    }
 
     private static (string, byte[]) SkinInstance(int dataRef, int skinPartition, int skeletonRoot, int[] bones)
     {

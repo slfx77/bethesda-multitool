@@ -15,7 +15,7 @@ namespace FalloutXbox360Utils.Tests.Core.Formats.Nif.Rendering;
 /// </summary>
 public sealed class TerrainNativeGridSizeTests
 {
-    private const int N = 65;          // Morrowind LAND grid edge
+    private const int N = 65; // Morrowind LAND grid edge
     private const float CellSize = 8192f;
 
     private static CellRecord MorrowindCell(int gx, int gy, float flatHeight)
@@ -60,7 +60,7 @@ public sealed class TerrainNativeGridSizeTests
         var mesh = TerrainMeshBuilder.Build(MorrowindCell(3, 4, 500f));
 
         Assert.NotNull(mesh);
-        Assert.Equal(N * N, mesh.Value.Vertices.Length);             // 4225, not 1089
+        Assert.Equal(N * N, mesh.Value.Vertices.Length); // 4225, not 1089
         Assert.Equal((N - 1) * (N - 1) * 6, mesh.Value.Indices.Length); // 24576
 
         var verts = mesh.Value.Vertices;
@@ -100,6 +100,7 @@ public sealed class TerrainNativeGridSizeTests
             Assert.True(i < N * N);
             if (i > max) max = i;
         }
+
         Assert.Equal(N * N - 1, max); // NE corner vertex is referenced
     }
 
@@ -125,7 +126,7 @@ public sealed class TerrainNativeGridSizeTests
             new() { Kind = LandTextureLayerKind.Base, TextureFormId = 0x10, Quadrant = 0 },
             new() { Kind = LandTextureLayerKind.Base, TextureFormId = 0x11, Quadrant = 1 },
             new() { Kind = LandTextureLayerKind.Base, TextureFormId = 0x12, Quadrant = 2 },
-            new() { Kind = LandTextureLayerKind.Base, TextureFormId = 0x13, Quadrant = 3 },
+            new() { Kind = LandTextureLayerKind.Base, TextureFormId = 0x13, Quadrant = 3 }
         };
 
         var table = CellLayerWeightTable.Build(N, layers);

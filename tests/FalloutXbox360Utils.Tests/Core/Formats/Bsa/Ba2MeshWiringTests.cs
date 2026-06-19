@@ -21,7 +21,7 @@ public class Ba2MeshWiringTests
         File.WriteAllBytes(ba2, BuildGnrlBa2(0x1111, "meshes\\test.nif", NifPayload, out var dataOffset));
         try
         {
-            using var set = NpcMeshArchiveSet.Open(ba2, extraMeshesBsaPaths: null);
+            using var set = NpcMeshArchiveSet.Open(ba2, null);
 
             Assert.True(set.TryExtractFile("meshes\\test.nif", out var data, out var archivePath));
             Assert.Equal(NifPayload, data);
@@ -60,7 +60,7 @@ public class Ba2MeshWiringTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            Directory.Delete(dir, true);
         }
     }
 
@@ -85,7 +85,7 @@ public class Ba2MeshWiringTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            Directory.Delete(dir, true);
         }
     }
 
@@ -109,12 +109,12 @@ public class Ba2MeshWiringTests
         var ext = new byte[4];
         Encoding.ASCII.GetBytes("nif").CopyTo(ext, 0);
         bw.Write(ext);
-        bw.Write(0x9999u);                 // dirHash
-        bw.Write(0u);                      // flags
+        bw.Write(0x9999u); // dirHash
+        bw.Write(0u); // flags
         bw.Write((ulong)dataOffset);
-        bw.Write(0u);                      // packedSize 0 == uncompressed
-        bw.Write((uint)data.Length);       // realSize
-        bw.Write(0u);                      // align
+        bw.Write(0u); // packedSize 0 == uncompressed
+        bw.Write((uint)data.Length); // realSize
+        bw.Write(0u); // align
 
         bw.Write(data);
 

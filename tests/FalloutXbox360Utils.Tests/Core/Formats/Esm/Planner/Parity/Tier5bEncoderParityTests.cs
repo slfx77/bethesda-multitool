@@ -94,7 +94,7 @@ public sealed class Tier5bEncoderParityTests
         var plannerBytes = writer.BuildGrupForType(recordType, plan, options);
 
         var legacyEncoded = RefrEncoder.EncodeNewPlacedReference(
-            placed, null, null);
+            placed);
         if (legacyEncoded.Subrecords.Count == 0)
         {
             Assert.Empty(plannerBytes);

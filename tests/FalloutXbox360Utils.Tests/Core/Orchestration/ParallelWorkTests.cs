@@ -7,7 +7,10 @@ namespace FalloutXbox360Utils.Tests.Core.Orchestration;
 [Collection("Logger")]
 public sealed class ParallelWorkTests : IDisposable
 {
-    public void Dispose() => Logger.Instance.Reset();
+    public void Dispose()
+    {
+        Logger.Instance.Reset();
+    }
 
     [Fact]
     public void ForEach_processes_every_item()
@@ -26,7 +29,7 @@ public sealed class ParallelWorkTests : IDisposable
         var seen = new List<WorkProgress>();
         var progress = new SynchronousProgress(seen);
         ParallelWork.ForEach("test-progress", Enumerable.Range(0, 10).ToArray(), ConcurrencyPolicy.Serial,
-            static _ => { }, progress: progress);
+            static _ => { }, progress);
 
         Assert.Equal(10, seen.Count);
         Assert.Equal(new WorkProgress(10, 10), seen[^1]);
