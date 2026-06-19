@@ -343,7 +343,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
-        // 4a — bindless: bind the unbounded SRV table once per frame to heap slot 0
+        // Bindless: bind the unbounded SRV table once per frame to heap slot 0
         // (the persistent region's start). All bindless `textures[index]` accesses by the
         // PS resolve through this single binding for the rest of the frame.
         cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
@@ -919,7 +919,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             AlphaState = draw.AlphaState,
             RenderState = draw.RenderState,
             TextureState = draw.TextureState,
-            // 4a — bindless TexIndices on the blended draw path. Same convention as the
+            // Bindless TexIndices on the blended draw path. Same convention as the
             // instanced path: .x = diffuse slot, .y = normal slot.
             TexIndices = new TexIndexQuad(
                 draw.Submesh.Diffuse.BindlessIndex,
@@ -1177,10 +1177,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         public Vector4 AlphaState;
         public Vector4 RenderState;
         public Vector4 TextureState;
-        // 4a — bindless TexIndices for the (non-instanced) blended draw path. Kept here so the
+        // Bindless TexIndices for the (non-instanced) blended draw path. Kept here so the
         // PS interface stays uniform (it expects vTexIndices regardless of which VS produced it).
         public TexIndexQuad TexIndices;
-        // 1A — sun specular term: xyz = tint, w = Phong exponent (0 = no specular). Appended last to
+        // Sun specular term: xyz = tint, w = Phong exponent (0 = no specular). Appended last to
         // match the trailing uSpecular field in reference.vert.hlsl; brings this to 144 bytes total.
         public Vector4 Specular;
     }

@@ -29,10 +29,10 @@ internal sealed class WorldRenderStats
     internal double DrawCallMilliseconds { get; set; }
     internal double ResourceResizeMilliseconds { get; set; }
 
-    // v3 Phase 3 — ReferenceRenderer per-stage profiling. Counters answer "what is the
+    // ReferenceRenderer per-stage profiling. Counters answer "what is the
     // visible workload?" Times answer "where is the CPU going?" The split between
     // ReferenceCbUpdate / ReferenceSrvBind / ReferenceDrawCall identifies whether
-    // Pass 3 (instancing) is the right next move or whether the bottleneck is elsewhere
+    // GPU instancing would help or whether the bottleneck is elsewhere
     // (mesh cache thrash on motion, texture upload, GC pressure, etc.).
     internal int ReferenceCellsVisited { get; set; }
     internal int ReferenceCandidates { get; set; }       // sum of PlacedObjects across visited cells

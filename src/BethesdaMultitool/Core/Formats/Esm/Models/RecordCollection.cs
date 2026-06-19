@@ -237,7 +237,7 @@ public record RecordCollection
     /// <summary>Generic ESM records for types without specialized models (MSTT, TACT, CAMS, ANIO, etc.).</summary>
     public List<GenericEsmRecord> GenericRecords { get; init; } = [];
 
-    // Specialized Phase 2 records
+    // Specialized record models
     /// <summary>Parsed Sound (SOUN) records.</summary>
     public List<SoundRecord> Sounds { get; init; } = [];
 

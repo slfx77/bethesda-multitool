@@ -92,7 +92,8 @@ internal sealed partial class PdbGlobalResolver(
     {
         var result = new PdbAnalysisResult();
 
-        // Filter to data section globals only (section 7 = index 6 in PE)
+        // Keep only globals whose PDB section index maps to a real PE section
+        // (PDB sections are 1-based; valid range is 1.._peSections.Count).
         var dataGlobals = globals
             .Where(g => g.Section >= 1 && g.Section <= _peSections.Count)
             .ToList();

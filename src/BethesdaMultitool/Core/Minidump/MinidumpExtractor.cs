@@ -40,7 +40,9 @@ public static class MinidumpExtractor
         // Extract modules from minidump first
         var (moduleCount, moduleOffsets) = await ExtractModulesAsync(filePath, options, progress);
 
-        // Always skip inline DDX conversion - batch conversion after carving is much faster
+        // When DDX conversion is requested, skip the carver's per-file inline conversion and let
+        // the faster batch pass (below) handle it instead. When ConvertDdx is off nothing converts,
+        // so this flag has no effect either way.
         var skipDdxConversion = options.ConvertDdx;
 
         // Create carver with options for signature-based extraction

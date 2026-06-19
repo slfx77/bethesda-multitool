@@ -1241,8 +1241,7 @@ public sealed class PluginBuilder
             "PACK",
             BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
         // PACK PLDT/PLD2 union dangles reshape the location subrecord to Type 2 instead of
-        // dropping it, matching the v51 fix's behavior. The reshape constants are documented
-        // on ContainerDowngrade.
+        // dropping it. The reshape constants are documented on ContainerDowngrade.
         var pldtDowngrade = new BethesdaMultitool.Core.Formats.Esm.Planner.ContainerDowngrade
         {
             ContainerSignature = "PLDT",

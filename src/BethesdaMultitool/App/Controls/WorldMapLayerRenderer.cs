@@ -344,7 +344,7 @@ internal static class WorldMapLayerRenderer
                             // the rest of the viewport.
                             // Terrain WITHOUT water (showWater:false) + a standalone water tile. The
                             // water tile is built UNCONDITIONALLY (regardless of the incoming showWater)
-                            // so toggling water on later is a pure redraw — no re-stream (2D-6). The
+                            // so toggling water on later is a pure redraw — no re-stream. The
                             // draw-time toggle decides whether the cached water layer is painted.
                             var bytes = RenderTerrainTextureCellOverview(
                                 cell, palette, defaultWaterHeight, showWater: false, cache, pixelsPerCell, cellByGrid, waterPalette);

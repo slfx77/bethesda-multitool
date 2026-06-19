@@ -246,7 +246,7 @@ internal static class RuntimeNpcLayoutProbe
             details.Append("FaceGenAll, ");
         }
 
-        // Appearance + late-appearance region (Phase 5.1): build a per-candidate
+        // Appearance + late-appearance region: build a per-candidate
         // PdbStructView, register the candidate's TESNPC owner shift (+16 padding
         // delta + probed AppearanceShift), and route reads through view.* against
         // the PDB-named TESNPC fields. Mirrors what RuntimeActorReader does in

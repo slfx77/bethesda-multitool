@@ -420,7 +420,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
         // +1 shift at 0x46). Identity (null) when no drift was detected.
         var driftRemap = BuildDriftRemap(Context.ScanResult.RuntimeEditorIds);
 
-        // Multi-source cell enumeration (Phase 2c). Falls back to editor-id-only enumeration
+        // Multi-source cell enumeration. Falls back to editor-id-only enumeration
         // (Path 0 inline) when the upstream pointer-triple scan didn't expose pAllForms.
         var enumerator = Context.RuntimeReader.CreateRuntimeCellEnumerator(
             Context.ScanResult.PAllFormsVa,

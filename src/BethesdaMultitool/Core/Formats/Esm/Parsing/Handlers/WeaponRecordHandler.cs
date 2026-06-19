@@ -99,10 +99,10 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
         // Mod slot data (DNAM)
         var modSlots = new List<WeaponModSlot>();
 
-        // Phase 4: VATS Attack data
+        // VATS Attack data
         VatsAttackData? vatsAttack = null;
 
-        // Phase 5: Art assets
+        // Art assets
         string? inventoryIconPath = null;
         string? messageIconPath = null;
         byte[]? textureHashData = null;
@@ -110,7 +110,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
         uint? repairItemListFormId = null;
         uint? impactDataSetFormIdEsm = null;
 
-        // Phase 6: Modified model variants.
+        // Modified model variants.
         // Subrecord roles — INAM is the impact data set, WNAM is the base first-person STAT,
         // WNM1..WNM7 are modded first-person STATs, MWD1..MWD7 are modded third-person world model paths.
         // Combination order is 1, 2, 3, 1+2, 1+3, 2+3, 1+2+3.
@@ -118,7 +118,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
         var firstPersonModObjects = new uint?[7];
         var modWorldMeshes = new string?[7];
 
-        // Phase 3: Additional DNAM fields previously dropped by the parser
+        // Additional DNAM fields previously dropped by the parser
         var damageToWeaponMult = 1.0f;
         uint resistance = 0;
         var ironSightUseMult = 1.0f;
@@ -256,7 +256,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
                         strengthRequirement = v.UInt32("StrengthRequirement");
                         skillRequirement = v.UInt32("SkillRequirement");
 
-                        // Phase 3: Additional DNAM fields
+                        // Additional DNAM fields
                         damageToWeaponMult = v.Float("DamageToWeaponMult");
                         resistance = v.UInt32("Resistance");
                         ironSightUseMult = v.Float("IronSightUseMult");

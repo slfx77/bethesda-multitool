@@ -332,7 +332,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
                 return;
             }
 
-            // Phase 1: Run analysis if report generation is enabled
+            // First: run analysis if report generation is enabled
             AnalysisResult? analysisResult = null;
             if (options.GenerateEsmReports)
             {
@@ -345,7 +345,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
                 }, token);
             }
 
-            // Phase 2: Extract files (and generate reports if analysis was run)
+            // Then: extract files (and generate reports if analysis was run)
             DispatcherQueue.TryEnqueue(() => entry.Status = "Extracting...");
             await Task.Run(
                 async () => await MinidumpExtractor.Extract(

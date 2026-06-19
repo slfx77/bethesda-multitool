@@ -41,10 +41,10 @@ internal sealed class CellGridDebugRenderer12
     private readonly GpuRingBuffer12 _ringBuffer;
     private readonly ID3D12PipelineState _pso;
 
-    // Spike A — Pass 4 Step 4 probe. CommandSignature for one DrawInstanced indirect entry
+    // CommandSignature for one DrawInstanced indirect entry
     // (D3D12_DRAW_ARGUMENTS = 16 bytes: VertexCountPerInstance, InstanceCount,
     // StartVertexLocation, StartInstanceLocation). Validates that Vortice 3.8.2 exposes
-    // CreateCommandSignature + ExecuteIndirect end-to-end before 4b/4c invest in the
+    // CreateCommandSignature + ExecuteIndirect end-to-end before building out the
     // CommandSignature factory + indirect-args plumbing for the reference renderer.
     private readonly ID3D12CommandSignature _drawIndirectSignature;
 
@@ -249,9 +249,9 @@ internal sealed class CellGridDebugRenderer12
         };
         unsafe { *(CellGridUniforms*)cbAlloc.CpuPtr = uniforms; }
 
-        // Spike A — write a D3D12_DRAW_ARGUMENTS into the ring buffer, dispatch via
-        // ExecuteIndirect instead of the direct DrawInstanced. Same exact draw shape;
-        // visual A/B with the prior frame should be pixel-identical.
+        // Write a D3D12_DRAW_ARGUMENTS into the ring buffer, dispatch via
+        // ExecuteIndirect instead of the direct DrawInstanced. Same exact draw shape,
+        // so the result should be pixel-identical to the direct-draw path.
         // Args alignment: D3D12 requires 4-byte alignment for indirect arg buffers; the
         // struct's natural alignment of 4 suffices.
         var argAlloc = _ringBuffer.Allocate(frameIndex, 16, alignment: 4);

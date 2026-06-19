@@ -134,7 +134,7 @@ internal sealed class GpuRootSignature12 : IDisposable
         // Slot 6: root CBV b3 (scene atmosphere — sun dir + sky/ambient/fog colors). Uploaded once
         // per frame by the host and bound for the whole scene; the lighting/sky/water shaders read it.
         // Additive: shaders that don't declare the b3 cbuffer are unaffected, and binding a CBV no
-        // shader reads is legal — so this lands as an invisible no-op until P3 wires the shaders.
+        // shader reads is legal — so it is a no-op for shaders that do not read the atmosphere buffer.
         var atmosphere = new RootParameter1(
             RootParameterType.ConstantBufferView,
             new RootDescriptor1(shaderRegister: 3, registerSpace: 0),
@@ -175,7 +175,7 @@ internal sealed class GpuRootSignature12 : IDisposable
         // Vortice convenience: CreateRootSignature(RootSignatureDescription1) does the
         // D3D12SerializeVersionedRootSignature + CreateRootSignature pair internally — no
         // manual blob marshaling.
-        // 4a — CbvSrvUavHeapDirectlyIndexed enables the bindless access pattern: shaders
+        // CbvSrvUavHeapDirectlyIndexed enables the bindless access pattern: shaders
         // declare `Texture2D textures[] : register(t0, space1)` and sample via
         // `textures[NonUniformResourceIndex(idx)]`, with the heap bound once per frame at
         // the table head. Without this flag the runtime rejects unbounded resource arrays.

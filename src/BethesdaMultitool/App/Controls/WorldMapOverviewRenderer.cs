@@ -135,7 +135,7 @@ internal static class WorldMapOverviewRenderer
                 overlayWorldMinX, overlayWorldMaxX, overlayWorldMinY, overlayWorldMaxY);
         }
 
-        // 2c. Water layer — a standalone translucent layer over the terrain (2D-5/2D-6). SKIPPED when the
+        // 2c. Water layer — a standalone translucent layer over the terrain. SKIPPED when the
         //     rendered-models overlay is active: that overlay already renders water THROUGH the 3D depth
         //     buffer (height-correct — docks above water show, submerged geometry is covered), which a
         //     flat 2D layer can't reproduce. Without the overlay there are no model heights to respect,
@@ -930,7 +930,7 @@ internal static class WorldMapOverviewRenderer
 
         if (!preferQuality)
         {
-            // Perf-sensitive per-cell tiles — the proven 2D-3 policy, UNCHANGED: HighQualityCubic only for
+            // Perf-sensitive per-cell tiles: HighQualityCubic only for
             // the heavy-minify transient (a stale higher-res tier standing in just after a zoom/pan), cheap
             // bilinear for the near-screen steady state. Anisotropic is deliberately NOT used here: the
             // per-cell view is the zoomed-IN regime (tiles near screen res, with their own mip-tier chain),

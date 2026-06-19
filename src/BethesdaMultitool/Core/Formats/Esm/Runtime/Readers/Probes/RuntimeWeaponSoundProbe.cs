@@ -113,8 +113,8 @@ internal static class RuntimeWeaponSoundProbe
     ];
 
     // FineShiftOptions = [0] forces the probe to only evaluate the canonical offsets.
-    // The previous ±4 sweep was deleted in Phase 1B.6 — every observed dump (32/32) had
-    // fineShift=0, so the extra candidates were dead work.
+    // The previous ±4 sweep was removed — every observed dump (32/32) had fineShift=0,
+    // so the extra candidates were dead work.
     private static readonly int[] FineShiftOptions = [0];
 
     public static RuntimeWeaponSoundProbeResult? Probe(

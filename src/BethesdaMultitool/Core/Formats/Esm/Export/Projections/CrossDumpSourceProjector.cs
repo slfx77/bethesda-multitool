@@ -86,7 +86,7 @@ internal static class CrossDumpSourceProjector
             virtualCanon);
 
         // Pass A: build reports for every type whose report does NOT depend on cross-source
-        // enrichment. NPC/Key/Container reports are filled in by pass B (Phase 5).
+        // enrichment. NPC/Key/Container reports are filled in by pass B.
         var reportsByType = BuildPassAReports(
             records,
             resolver,

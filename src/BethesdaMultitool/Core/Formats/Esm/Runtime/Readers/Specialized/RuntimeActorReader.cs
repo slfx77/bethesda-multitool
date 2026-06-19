@@ -78,10 +78,9 @@ internal sealed class RuntimeActorReader
             return null;
         }
 
-        // Open a PdbStructView over the already-read buffer. Core-region reads were
-        // migrated in Phase 1B.20; appearance + late-appearance reads were migrated
-        // in Phase 5.1 with the +32-byte FR2MatrixVTC padding delta absorbed by a
-        // single per-owner WithShift on TESNPC. Late-appearance gets an additive band
+        // Open a PdbStructView over the already-read buffer. The +32-byte FR2MatrixVTC
+        // padding delta in the appearance region is absorbed by a single per-owner
+        // WithShift on TESNPC. Late-appearance gets an additive band
         // shift on top only when the probe discovered a distinct LateAppearanceShift
         // (rare — defaults to AppearanceShift). pdb_layouts.json is an embedded
         // resource so view==null means the resource is broken — treat as hard fail.
@@ -283,7 +282,7 @@ internal sealed class RuntimeActorReader
 
         // Open a PdbStructView over the CREA buffer. TESCreature is fully PDB-aligned
         // (no FR2MatrixVTC padding drift like TESNPC has), so every field below comes
-        // from view.* lookups instead of hardcoded offset constants — Phase 1B.21.
+        // from view.* lookups instead of hardcoded offset constants.
         var creaView = WrapActorBufferInView(buffer, offset, entry, pdbFormType: 0x2B);
         if (creaView is null)
         {

@@ -216,7 +216,7 @@ public sealed partial class SingleFileTab
         ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
         ViewCellInDetailButton.Visibility = Visibility.Visible;
 
-        // Mirror the 2D-1 guard in WorldMap_InspectObject: a cell inspected from the 3D viewer must
+        // Mirror the guard in WorldMap_InspectObject: a cell inspected from the 3D viewer must
         // not clear the hidden 2D map's selection (the 3D viewer owns its own highlight).
         if (!ReferenceEquals(sender, WorldView3DControl))
         {
@@ -265,7 +265,7 @@ public sealed partial class SingleFileTab
             ? "View the base record in Records"
             : "Base record not available in Records (record type not reconstructed)");
 
-        // 2D-1: a pick in the 3D viewer must NOT drive the 2D map's selection — the 3D viewer owns its
+        // A pick in the 3D viewer must NOT drive the 2D map's selection — the 3D viewer owns its
         // own highlight, and the picked object may belong to a different worldspace than the 2D map is
         // showing (the leak this guards against). Only sync the 2D-map selection when the inspect came
         // from the 2D map or a 2D-map navigation (sender == null), not from WorldView3DControl.

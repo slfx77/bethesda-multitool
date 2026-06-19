@@ -654,7 +654,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // Every view now renders terrain water-FREE and draws water as a separate, toggle-able layer —
         // per-cell tiles (zoomed-in TerrainTextures), the shared world water bitmap (aggregate + secondary
         // layers), or the cell-detail water bitmap. So toggling water is a pure REDRAW: no bitmap rebuild,
-        // no cache discard, no re-stream (2D-6) on any layer/zoom.
+        // no cache discard, no re-stream on any layer/zoom.
         // The rendered-models overlay bakes height-correct water into its readback, so a water toggle must
         // re-render it; clearing the bounds key makes the next MaybeScheduleTopDownRequest re-request.
         if (_showRenderedObjects)
@@ -2090,7 +2090,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // Incremental rebuild for the TerrainTextures live view: keep already-built cell
         // bitmaps inside the new viewport, evict cells that scrolled off, and dispatch a
         // build only for the cells we don't have at the target resolution yet. With the
-        // multi-resolution cache (P2), old-resolution bitmaps remain as visual stand-ins
+        // multi-resolution cache, old-resolution bitmaps remain as visual stand-ins
         // while target-resolution ones build — no blank during zoom transitions.
         var canReuseCache = _layerCellBitmaps is not null
             && _layerCellBitmapsLayer == _currentLayer;
@@ -2161,7 +2161,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var version = ++_worldHeightmapBuildVersion;
         ShowLayerBuildStatus($"Building {_currentLayer.DisplayName()}...", busy: true);
 
-        // Urgent-first ordering (P3): sort by squared distance from viewport center so
+        // Urgent-first ordering: sort by squared distance from viewport center so
         // the parallel worker pool picks central cells before margin/preload cells.
         // Cesium's Preload priority tier — Urgent (visible) drains before Normal/Preload.
         var (vpTl, vpBr) = WorldMapViewportHelper.GetVisibleWorldBounds(canvasW, canvasH, _zoom, _panOffset);
@@ -2720,7 +2720,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
             canvasW, canvasH, _zoom, _panOffset);
 
-        // P3 — Preload-direction bias. Cesium "Preload" priority tier: extend the viewport
+        // Preload-direction bias. Cesium "Preload" priority tier: extend the viewport
         // margin in the direction of pan motion so cells about to scroll into view are
         // already decoded by the time they arrive. Screen-space pan velocity is positive
         // when the user drags the map content right/down, which means new content is
@@ -3051,7 +3051,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // Incremental merge for per-cell results: when the cached dict was already populated
         // for the current layer, dispatch only built new cells (the EnsureHeightmapBitmap
         // diff). Merge them in instead of disposing the rest. The key now includes
-        // pixelsPerCell so multiple resolutions of the same cell can coexist (P2).
+        // pixelsPerCell so multiple resolutions of the same cell can coexist.
         var isIncrementalMerge = result.CellPixels is not null
             && _layerCellBitmaps is not null
             && _layerCellBitmapsLayer == _currentLayer;

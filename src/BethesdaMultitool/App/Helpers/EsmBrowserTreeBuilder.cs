@@ -136,7 +136,7 @@ internal static class EsmBrowserTreeBuilder
             ("Explosions", result.Explosions)
         ]);
 
-        // Graphics + specialized Phase 2 records (byType built at the top; Pick() above has already
+        // Graphics + other specialized records (byType built at the top; Pick() above has already
         // consumed the types it routed into named categories).
         var graphicsSubs = new List<(string Name, IList Records)>();
         if (result.TextureSets.Count > 0) graphicsSubs.Add(("Texture Sets", result.TextureSets));

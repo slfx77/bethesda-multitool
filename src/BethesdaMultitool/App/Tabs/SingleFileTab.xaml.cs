@@ -348,11 +348,11 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             }
         }
 
-        // Phase 1 — at the landing zoom (zoomed way out → aggregate LOD path), fast switch-back to race
+        // First, at the landing zoom (zoomed way out → aggregate LOD path), fast switch-back to race
         // the in-flight build.
         await Toggle("zoomed-out", heightmapDwellMs: 800);
 
-        // Phase 2 — zoomed in so the per-cell streaming path is active; fast switch-back here too.
+        // Then, zoomed in so the per-cell streaming path is active; fast switch-back here too.
         log.Info("[Repro] zooming in to per-cell (~245 px/cell)…");
         WorldMapControl.Profiler_CenterOnActiveCells(0.06f);
         await Task.Delay(5000);

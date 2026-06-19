@@ -47,7 +47,7 @@ public sealed class CellSectionPlanner
             return Empty();
         }
 
-        // Phase A.5 — coord-based pairing. Catches proto cells at master coords that carry
+        // Coord-based pairing. Catches proto cells at master coords that carry
         // different FormIDs than master's (xex22.v61 produced 522 such collisions in
         // WastelandNV alone). Without this, both the master cell and the proto cell survive
         // to emission and the engine destroys one of them with a "Cell will be destroyed"

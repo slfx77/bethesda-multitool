@@ -330,8 +330,7 @@ public sealed class BsaWriter : IDisposable
         // totalFileNameLength ADDED to it. The runtime engine subtracts that back when
         // looking up files, so storing the raw offset (delta 0) leaves the engine reading
         // garbage memory in place of the file record block and silently failing every
-        // lookup — which surfaced as Ulysses's BSA-packed outfit textures rendering with
-        // stale GPU memory even after the EmbedFileNames flag was set correctly.
+        // file lookup (the engine then renders stale GPU memory for the missing textures).
         var currentFileRecordOffset = fileRecordsOffset + totalFileNameLength;
         foreach (var folder in folderRecords)
         {

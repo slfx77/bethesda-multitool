@@ -76,7 +76,7 @@ internal static class GeckWeaponReportWriter
             new ReportField("Hit Chance", ReportValue.Int(weapon.VatsToHitChance))
         ]));
 
-        // VATS Attack (special VATS effect — Phase 4)
+        // VATS Attack (special VATS effect)
         AddVatsAttackSection(sections, weapon, resolver);
 
         // Requirements (conditional)
@@ -114,7 +114,7 @@ internal static class GeckWeaponReportWriter
             new ReportField("Health", ReportValue.Int(weapon.Health))
         ]));
 
-        // Phase 3 optional sections
+        // Override / fire-delay / animation / misc / rumble (optional sections)
         AddOverrideSection(sections, weapon);
         AddSemiAutoFireDelaySection(sections, weapon);
         AddAnimationOverridesSection(sections, weapon);
@@ -133,10 +133,10 @@ internal static class GeckWeaponReportWriter
         // Weapon Mods (conditional)
         AddWeaponModsSection(sections, weapon, resolver);
 
-        // Art Assets (Phase 5)
+        // Art Assets
         AddArtAssetsSection(sections, weapon);
 
-        // Repair Item List (Phase 5)
+        // Repair Item List
         if (weapon.RepairItemListFormId is { } repairFormId && repairFormId != 0)
         {
             sections.Add(new ReportSection("Repair",
@@ -146,7 +146,7 @@ internal static class GeckWeaponReportWriter
             ]));
         }
 
-        // Modded Model Variants (Phase 6)
+        // Modded Model Variants
         AddModelVariantsSection(sections, weapon, resolver);
 
         return new RecordReport("Weapon", weapon.FormId, weapon.EditorId, weapon.FullName, sections);

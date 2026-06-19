@@ -17,7 +17,7 @@ internal sealed class NpcRecordHandler(RecordParserContext context) : RecordHand
     {
         var npcs = ParseRecordList("NPC_", 16384, ParseNpcFromAccessor, ParseNpcFromScanResult);
 
-        // v22: the memory carver finds the same NPC signature at multiple offsets when the
+        // The memory carver finds the same NPC signature at multiple offsets when the
         // runtime keeps mirror copies (template instances, runtime spawns, etc.). Keeping
         // them all would emit duplicate NPC records in the output plugin. Dedup by FormID
         // first-wins — accessor-found records are richer than scan-only fallbacks anyway.

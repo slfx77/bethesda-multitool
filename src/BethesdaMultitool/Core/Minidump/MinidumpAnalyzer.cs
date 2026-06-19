@@ -98,7 +98,7 @@ public sealed class MinidumpAnalyzer
             MinidumpFileScanner.SortCarvedFilesByOffset(result);
         }
 
-        // Phase 1B.22: apply FormType drift correction in-place so every consumer of
+        // Apply FormType drift correction in-place so every consumer of
         // result.EsmRecords sees canonical (final-build) FormType bytes. Previously this
         // ran inside RecordParserContext, which meant any consumer that read
         // result.EsmRecords.RuntimeEditorIds directly (snippet extraction, NPC browser,

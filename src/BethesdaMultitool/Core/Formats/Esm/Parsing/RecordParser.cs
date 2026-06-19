@@ -386,7 +386,7 @@ public sealed class RecordParser
             "IDLM", "PWAT",
             // SCOL is parsed via the typed _miscStaticObjects.ParseStaticCollections() path.
             // CLMT is parsed via the typed _miscEnvironment.ParseClimate() path (atmosphere data).
-            // Phase 10: small PDB-defined types with no parity-relevant fields beyond identity
+            // Small PDB-defined types with no parity-relevant fields beyond identity.
             "IMGS", "GRAS", "AMEF",
             // FLOR (Flora): harvestable plants. ESM-side coverage so flora carries through
             // (EDID/FULL/MODL/OBND + PFIG ingredient, SNAM sound, SCRI script via schema/fallback)
@@ -555,7 +555,7 @@ public sealed class RecordParser
             // Generic
             GenericRecords = genericRecords,
 
-            // Specialized Phase 2
+            // Specialized record models
             Sounds = sounds,
             MusicTypes = musicTypes,
             TextureSets = textureSets,

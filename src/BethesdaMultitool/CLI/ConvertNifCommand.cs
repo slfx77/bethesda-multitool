@@ -6,7 +6,8 @@ using Spectre.Console;
 namespace BethesdaMultitool.CLI;
 
 /// <summary>
-///     CLI command for converting Xbox 360 NIF files (big-endian) to PC format (little-endian).
+///     CLI command for converting NIF models from big-endian (console) to little-endian (PC),
+///     unpacking packed geometry in the process.
 /// </summary>
 public static class ConvertNifCommand
 {

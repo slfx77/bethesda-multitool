@@ -788,7 +788,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
 
         // Derive typed weather/grass projections from the captured (opaque) RDAT payloads.
         // The DataBlocks bytes are still round-tripped verbatim by RegnEncoder; these lists are
-        // read-only viewer/UI data (per-region weather → P4, grass → P6).
+        // read-only viewer/UI data (per-region weather types and grass FormIDs).
         var weatherTypes = new List<RegionWeatherType>();
         var grassFormIds = new List<uint>();
         foreach (var block in dataBlocks)

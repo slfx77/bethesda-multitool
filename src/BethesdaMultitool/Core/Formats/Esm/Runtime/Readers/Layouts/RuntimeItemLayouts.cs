@@ -72,7 +72,7 @@ internal sealed class RuntimeItemLayouts
     internal const int DnamShotsPerSecRelOffset = 64; // PDB OBJ_WEAP.fShotsPerSec
     internal const int DnamSkillRelOffset = 104;
 
-    // Phase 3 — additional OBJ_WEAP fields verified against PDB OBJ_WEAP type definition.
+    // Additional OBJ_WEAP fields verified against the PDB OBJ_WEAP type definition.
     internal const int DnamRumbleLeftMotorRelOffset = 72;
     internal const int DnamRumbleRightMotorRelOffset = 76;
     internal const int DnamRumbleDurationRelOffset = 80;
@@ -112,9 +112,9 @@ internal sealed class RuntimeItemLayouts
     internal int WeapModObjectThreeOffset => 872 + _s;
 
     // OBJ_WEAP_CRITICAL block: PDB reports +464/+468/+476 but every observed runtime
-    // dump (32/32 in the Phase 1B.5 probe sweep) reads 8 bytes earlier — the previous
-    // RuntimeWeaponCritProbe always produced -8 with high confidence. That -8 is now
-    // baked into these constants (Phase 1B.6); the probe was deleted.
+    // dump (32/32 sampled) reads 8 bytes earlier — the previous RuntimeWeaponCritProbe
+    // always produced -8 with high confidence. That -8 is now baked into these constants
+    // and the probe was deleted.
     internal int WeapCritDamageOffset => 440 + _s;     // PDB 464 OBJ_WEAP_CRITICAL.sDamage      (-8 baked)
     internal int WeapCritChanceOffset => 444 + _s;     // PDB 468 OBJ_WEAP_CRITICAL.fMultiplier  (-8 baked)
     internal int WeapCritEffectPtrOffset => 452 + _s;  // PDB 476 OBJ_WEAP_CRITICAL.pEffect      (-8 baked)

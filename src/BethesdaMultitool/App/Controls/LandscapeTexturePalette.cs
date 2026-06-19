@@ -67,9 +67,9 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
     /// <summary>Sentinel used to memoize "tried to load but failed" so we don't retry every pixel.</summary>
     private static readonly byte[][] s_missSentinel = [];
 
-    // Engine-default landscape texture path lives in EngineDefaultLandscapeTexture.DiffusePath
-    // (sibling helper under Core/Formats/Nif/Rendering/Textures/). Shared with the 3D viewer's
-    // TerrainTextureResolver so both views fall back to the same DirtWasteland01 asset.
+    // The engine-default landscape texture is game-keyed: EngineDefaultLandscapeTexture.DiffuseFor(game)
+    // reads it from the game's GameProfile (Core/Games/). Shared with the 3D viewer's
+    // TerrainTextureResolver so both views fall back to the same per-game asset.
 
     private readonly WorldViewData _data;
     private readonly List<INifTextureSource> _sources;

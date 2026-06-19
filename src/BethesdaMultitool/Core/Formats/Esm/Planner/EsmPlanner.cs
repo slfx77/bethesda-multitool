@@ -105,9 +105,9 @@ public sealed class EsmPlanner
         // for EVERY DmpNew regardless of whether the source FormID happens to be in master
         // (e.g. DMP-duplicate captures where the second one falls through to DmpNew). Each
         // gets a fresh plugin-range FormID, so emission is safe by construction. The
-        // phantom-master risk was the CellChildAllocator's per-type skip conditions, fixed
-        // by the v60 cell-Pass-0 patch and the gap-#1 placed-ref-allowlist tightening.
-        // The post-write PhantomMasterFormIdRegressionTests guard catches any future leak.
+        // phantom-master risk lived in the CellChildAllocator's per-type skip conditions
+        // (now fixed there). The post-write PhantomMasterFormIdRegressionTests guard
+        // catches any future leak.
 
         // Merge cell-child allocations into the plan's source→emitted map so reference
         // resolution sees them as live FormIDs. New worldspaces likewise contribute their

@@ -75,7 +75,8 @@ internal static class PgreEncoder
         SubrecordEncoder.WriteFloat(data, 0, placed.PositionX);
         SubrecordEncoder.WriteFloat(data, 4, placed.PositionY);
         SubrecordEncoder.WriteFloat(data, 8, placed.PositionZ);
-        // bytes 12-23: rotation X/Y/Z = 0 (physics state intentionally skipped per Phase 10 scope).
+        // bytes 12-23: rotation X/Y/Z = 0 (physics state intentionally skipped; we capture
+        // identity, base object, and position only).
         return data;
     }
 }
