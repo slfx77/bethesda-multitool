@@ -18,6 +18,36 @@ public static class Program
     /// </summary>
     public static string? AutoLoadFile { get; internal set; }
 
+    /// <summary>
+    ///     Sub-view to auto-open after the auto-loaded file finishes analyzing (set via --view).
+    ///     E.g. <c>--view worldmap</c> boots straight into the 2D world map, so an automated /
+    ///     instrumented run reaches the map without manual tab navigation. Null = stay on the
+    ///     default tab.
+    /// </summary>
+    public static string? AutoOpenView { get; internal set; }
+
+    /// <summary>
+    ///     Worldspace name substring to auto-select on the world map (set via --worldspace, e.g.
+    ///     <c>--worldspace WastelandNV</c>). When unset, the auto-open picks the densest worldspace
+    ///     (most cells) so it never lands on an empty test worldspace.
+    /// </summary>
+    public static string? AutoOpenWorldspace { get; internal set; }
+
+    /// <summary>
+    ///     World-map layer to auto-select (set via --layer, e.g. <c>--layer textures</c>). Names:
+    ///     textures, heightmap, vertexcolors, regions, slope. Null = leave the default layer.
+    /// </summary>
+    public static string? AutoOpenLayer { get; internal set; }
+
+    /// <summary>When <c>--rendered-models</c> is passed, turns on the top-down "Rendered models" overlay
+    /// once the world map is up (drives the top-down render path for repro/perf testing).</summary>
+    public static bool AutoRenderedModels { get; internal set; }
+
+    /// <summary>When <c>--repro-layer-toggle</c> is passed, after the world map is set up the auto-open
+    /// switches to Heightmap then back to the requested layer (with state logging) — the repro for the
+    /// "textures work until you toggle layers and back" bug.</summary>
+    public static bool AutoReproLayerToggle { get; internal set; }
+
     [STAThread]
     public static int Main(string[] args)
     {
@@ -27,6 +57,11 @@ public static class Program
         if (!IsCliMode(args))
         {
             AutoLoadFile = GetAutoLoadFile(args);
+            AutoOpenView = GetFlagValue(args, "--view");
+            AutoOpenWorldspace = GetFlagValue(args, "--worldspace");
+            AutoOpenLayer = GetFlagValue(args, "--layer");
+            AutoRenderedModels = args.Any(a => a.Equals("--rendered-models", StringComparison.OrdinalIgnoreCase));
+            AutoReproLayerToggle = args.Any(a => a.Equals("--repro-layer-toggle", StringComparison.OrdinalIgnoreCase));
             return GuiEntryPoint.Run(args);
         }
 #endif

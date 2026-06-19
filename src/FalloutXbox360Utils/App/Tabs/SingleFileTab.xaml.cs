@@ -212,8 +212,240 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         MinidumpPathTextBox.Text = autoLoadFile;
         UpdateOutputPathFromInput(autoLoadFile);
         UpdateButtonStates();
-        await Task.Delay(500);
+
+        // Pre-select the requested sub-tab BEFORE analysis. AnalyzeButton_Click captures the selected
+        // tab at the START and auto-populates THAT tab at the END (after the semantic parse), so this is
+        // what makes the world map populate as part of the analyze pass — instead of a second, race-prone
+        // populate afterward (HasEsmRecords flips true mid-analysis, well before the parse finishes).
+        var targetTab = ResolveAutoOpenTab();
+        if (targetTab is not null) SubTabView.SelectedItem = targetTab;
+
+        // Wait for the Analyze button to enable (the dependency check + file setup can lag well past a
+        // fixed delay) before kicking analysis — the auto-open below depends on it actually running.
+        for (var i = 0; i < 200 && !AnalyzeButton.IsEnabled; i++) await Task.Delay(50);
         if (AnalyzeButton.IsEnabled) AnalyzeButton_Click(this, new RoutedEventArgs());
+
+        if (targetTab is not null) await AutoOpenRequestedViewAsync(targetTab);
+    }
+
+    private Microsoft.UI.Xaml.Controls.TabViewItem? ResolveAutoOpenTab() =>
+        Program.AutoOpenView?.Trim().ToLowerInvariant() switch
+        {
+            "worldmap" or "world" or "map" or "2d" or "3d" => WorldMapTab,
+            "dialogue" => DialogueViewerTab,
+            "data" or "databrowser" => DataBrowserTab,
+            "actors" or "npcs" => NpcBrowserTab,
+            "reports" => ReportsTab,
+            _ => null
+        };
+
+    /// <summary>
+    ///     Finishes driving the GUI to the screen requested via the startup flags (<c>--view</c> /
+    ///     <c>--worldspace</c> / <c>--layer</c> / <c>--rendered-models</c>) with NO manual clicks — the
+    ///     tab was pre-selected before analysis, so the app's own pipeline populates it; this waits for
+    ///     that (the populate runs fire-and-forget inside AnalyzeButton_Click) then sets worldspace
+    ///     (densest by default), layer, and overlay so an instrumented run lands on the exact failing view.
+    /// </summary>
+    private async Task AutoOpenRequestedViewAsync(Microsoft.UI.Xaml.Controls.TabViewItem targetTab)
+    {
+        var view = Program.AutoOpenView?.Trim().ToLowerInvariant() ?? "";
+        var log = FalloutXbox360Utils.Core.Logger.Instance;
+        log.Info("[AutoOpen] view={0} ws={1} layer={2} — waiting for analysis + map populate…",
+            view, Program.AutoOpenWorldspace ?? "(densest)", Program.AutoOpenLayer ?? "(default)");
+
+        if (!ReferenceEquals(targetTab, WorldMapTab))
+        {
+            return; // non-map tabs: AnalyzeButton_Click's own end-of-run auto-populate is enough.
+        }
+
+        // AnalyzeButton_Click populates the world map at the end of its run (it captured this tab at
+        // start); wait for that to finish + the worldspace picker to fill.
+        var mapReady = await WaitForAsync(
+            () => _session.WorldMapPopulated && WorldMapControl.Profiler_WorldspaceCount > 0,
+            timeoutMs: 120_000);
+        log.Info("[AutoOpen] worldmap populated={0} worldspaces={1}",
+            mapReady, WorldMapControl.Profiler_WorldspaceCount);
+        if (!mapReady) return;
+
+        // Re-assert the tab selection (analysis resets sub-tab content) so the map is actually shown.
+        SubTabView.SelectedItem = targetTab;
+
+        // 2D vs 3D viewer.
+        if (view == "3d" && WorldViewModeComboBox is not null) WorldViewModeComboBox.SelectedIndex = 1;
+
+        // Worldspace: match --worldspace by name; else the densest (most cells), so it never sits on an
+        // empty test worldspace (the default the picker lands on).
+        SelectAutoWorldspace(Program.AutoOpenWorldspace);
+
+        // Layer (e.g. --layer textures).
+        if (TryParseWorldMapLayer(Program.AutoOpenLayer, out var layer))
+        {
+            WorldMapControl.Profiler_Layer = layer;
+        }
+
+        // Rendered-models overlay — routed through the real checkbox, which only enables once the 3D
+        // provider reports ready, so retry briefly.
+        if (Program.AutoRenderedModels)
+        {
+            for (var i = 0; i < 120 && !WorldMapControl.Profiler_ShowRenderedObjects; i++)
+            {
+                WorldMapControl.Profiler_ShowRenderedObjects = true;
+                if (WorldMapControl.Profiler_ShowRenderedObjects) break;
+                await Task.Delay(250);
+            }
+        }
+
+        log.Info("[AutoOpen] done: worldspace='{0}' layer={1} renderedModels={2}",
+            WorldMapControl.Profiler_WorldspaceSelectedIndex >= 0
+                ? WorldMapControl.Profiler_WorldspaceLabels[WorldMapControl.Profiler_WorldspaceSelectedIndex]
+                : "(none)",
+            WorldMapControl.Profiler_Layer,
+            WorldMapControl.Profiler_ShowRenderedObjects);
+
+        if (Program.AutoReproLayerToggle)
+        {
+            await ReproLayerToggleAsync();
+        }
+    }
+
+    /// <summary>
+    ///     Repro harness for the "terrain textures render until you switch layers and back" bug: logs
+    ///     cache/aggregate state, switches to Heightmap, then back to the original layer, logging again at
+    ///     each step so the broken post-switch state is visible in the trace.
+    /// </summary>
+    private async Task ReproLayerToggleAsync()
+    {
+        var log = FalloutXbox360Utils.Core.Logger.Instance;
+        var original = WorldMapControl.Profiler_Layer;
+
+        void LogState(string tag) => log.Info(
+            "[Repro] {0}: layer={1} zoom={2:F5} aggActive={3} aggBmp={4} aggUnavail={5} hmBmp={6} cacheSize={7} cellLayer={8} buildVer={9} cacheGen={10}",
+            tag, WorldMapControl.Profiler_Layer, WorldMapControl.Profiler_Zoom,
+            WorldMapControl.Profiler_TerrainAggregateActive, WorldMapControl.Profiler_AggregateBitmapPresent,
+            WorldMapControl.Profiler_AggregateUnavailable, WorldMapControl.Profiler_HeightmapBitmapPresent,
+            WorldMapControl.Profiler_CacheCount, WorldMapControl.Profiler_CellBitmapsLayer,
+            WorldMapControl.Profiler_BuildVersion, WorldMapControl.Profiler_CacheGen);
+
+        async Task Toggle(string phase, int heightmapDwellMs)
+        {
+            log.Info("[Repro] === {0} (heightmap dwell {1}ms) ===", phase, heightmapDwellMs);
+            await Task.Delay(3000);
+            LogState(phase + " initial");
+
+            WorldMapControl.Profiler_Layer = WorldMapLayer.Heightmap;
+            await Task.Delay(heightmapDwellMs);
+            LogState(phase + " after-heightmap");
+
+            WorldMapControl.Profiler_Layer = original;
+            // Observe the post-switchback state OVER TIME — the heightmap-wins bug surfaces a beat later
+            // when a late async build lands, not in the first frame after the switch.
+            var elapsed = 0;
+            foreach (var step in new[] { 1500, 1500, 3000, 5000 })
+            {
+                await Task.Delay(step);
+                elapsed += step;
+                LogState($"{phase} switchback+{elapsed}ms");
+            }
+        }
+
+        // Phase 1 — at the landing zoom (zoomed way out → aggregate LOD path), fast switch-back to race
+        // the in-flight build.
+        await Toggle("zoomed-out", heightmapDwellMs: 800);
+
+        // Phase 2 — zoomed in so the per-cell streaming path is active; fast switch-back here too.
+        log.Info("[Repro] zooming in to per-cell (~245 px/cell)…");
+        WorldMapControl.Profiler_CenterOnActiveCells(0.06f);
+        await Task.Delay(5000);
+        await Toggle("zoomed-in", heightmapDwellMs: 800);
+
+        log.Info("[Repro] scenario complete — exiting in 3s.");
+        await Task.Delay(3000);
+        Microsoft.UI.Xaml.Application.Current.Exit();
+    }
+
+    /// <summary>Polls <paramref name="condition" /> every 100 ms up to <paramref name="timeoutMs" />.</summary>
+    private static async Task<bool> WaitForAsync(Func<bool> condition, int timeoutMs)
+    {
+        for (var elapsed = 0; elapsed < timeoutMs; elapsed += 100)
+        {
+            if (condition()) return true;
+            await Task.Delay(100);
+        }
+        return condition();
+    }
+
+    /// <summary>
+    ///     Selects the world map worldspace: by <paramref name="nameSubstring" /> when given, else the
+    ///     densest (highest cell count parsed from the "Name — N cells" picker labels).
+    /// </summary>
+    private void SelectAutoWorldspace(string? nameSubstring)
+    {
+        var labels = WorldMapControl.Profiler_WorldspaceLabels;
+        if (labels.Count == 0) return;
+
+        if (!string.IsNullOrWhiteSpace(nameSubstring))
+        {
+            for (var i = 0; i < labels.Count; i++)
+            {
+                if (labels[i].Contains(nameSubstring, StringComparison.OrdinalIgnoreCase))
+                {
+                    WorldMapControl.Profiler_WorldspaceSelectedIndex = i;
+                    return;
+                }
+            }
+        }
+
+        var bestIndex = -1;
+        var bestCells = -1;
+        for (var i = 0; i < labels.Count; i++)
+        {
+            var cells = ParseCellCount(labels[i]);
+            if (cells > bestCells)
+            {
+                bestCells = cells;
+                bestIndex = i;
+            }
+        }
+
+        if (bestIndex >= 0) WorldMapControl.Profiler_WorldspaceSelectedIndex = bestIndex;
+    }
+
+    /// <summary>Pulls the integer that precedes "cells" in a "Name — N cells" picker label (0 if none).</summary>
+    private static int ParseCellCount(string label)
+    {
+        var idx = label.IndexOf("cells", StringComparison.OrdinalIgnoreCase);
+        if (idx <= 0) return 0;
+        var end = idx;
+        while (end > 0 && !char.IsDigit(label[end - 1])) end--;
+        var start = end;
+        while (start > 0 && char.IsDigit(label[start - 1])) start--;
+        return start < end && int.TryParse(label.AsSpan(start, end - start), out var n) ? n : 0;
+    }
+
+    private static bool TryParseWorldMapLayer(string? name, out WorldMapLayer layer)
+    {
+        layer = WorldMapLayer.Heightmap;
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        switch (name.Trim().ToLowerInvariant())
+        {
+            case "textures" or "texture" or "textured" or "terraintextures":
+                layer = WorldMapLayer.TerrainTextures;
+                return true;
+            case "heightmap" or "height":
+                layer = WorldMapLayer.Heightmap;
+                return true;
+            case "vertexcolors" or "vertex":
+                layer = WorldMapLayer.VertexColors;
+                return true;
+            case "regions" or "terrainregions":
+                layer = WorldMapLayer.TerrainRegions;
+                return true;
+            case "slope":
+                layer = WorldMapLayer.Slope;
+                return true;
+            default:
+                return false;
+        }
     }
 
     private async void SingleFileTab_Unloaded(object sender, RoutedEventArgs e)
