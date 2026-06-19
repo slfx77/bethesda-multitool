@@ -1,8 +1,10 @@
 #if WINDOWS_GUI
+using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using WinRT;
+using FalloutXbox360Utils.Core;
 using UnhandledExceptionEventArgs = System.UnhandledExceptionEventArgs;
 
 namespace FalloutXbox360Utils;
@@ -21,6 +23,11 @@ public static class GuiEntryPoint
 
         // Attach to console early for crash logging
         AttachConsole(ATTACH_PARENT_PROCESS);
+
+        // Route the whole app's logging to a file when FALLOUT_GUI_LOG is set, so the real GUI is
+        // traceable (the windowed app has no visible console). Runs BEFORE anything reads the
+        // Map2DProfilerTrace static gate so its auto-enable below takes effect.
+        ConfigureDiagnostics();
 
         // Set up global exception handlers
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
@@ -45,6 +52,61 @@ public static class GuiEntryPoint
         {
             CrashLog("Application crashed (startup/main)", ex, isTerminating: true);
             return 1;
+        }
+    }
+
+    /// <summary>
+    ///     When <c>FALLOUT_GUI_LOG</c> names a path, routes every <see cref="Logger" /> line (the whole
+    ///     GUI: 2D map, 3D viewer, loaders, …) to that file in append mode, mirroring the
+    ///     FalloutMap2DProfiler's logger setup. Also auto-enables the 2D-map cache/viewport/stream trace
+    ///     (<c>FALLOUT_MAP2D_TRACE</c>) unless the caller set it explicitly, so a single env var captures
+    ///     the full trace from the real app — used to debug issues the profiler can't reproduce. No-op
+    ///     (and never throws) when the var is unset.
+    /// </summary>
+    private static void ConfigureDiagnostics()
+    {
+        var logPath = EnvironmentVariables.Get(EnvironmentVariables.Diagnostics.GuiLogFile);
+        if (string.IsNullOrWhiteSpace(logPath))
+        {
+            return;
+        }
+
+        try
+        {
+            // Default the 2D-map trace ON when a log is requested; an explicit value (incl. "0") wins.
+            // Must precede any WorldMapControl code that reads Map2DProfilerTrace's one-shot static gate.
+            if (EnvironmentVariables.Get(EnvironmentVariables.Map2D.Trace) is null)
+            {
+                EnvironmentVariables.Set(EnvironmentVariables.Map2D.Trace, EnvironmentVariables.Enabled);
+            }
+
+            var fullPath = Path.GetFullPath(logPath);
+            var dir = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            var logger = Logger.Instance;
+            logger.UseSpectre = false;       // plain text — no Spectre/console in a windowed app
+            logger.IncludeTimestamp = true;
+            logger.IncludeLevel = true;
+            if (EnvironmentVariables.IsEnabled(EnvironmentVariables.Diagnostics.GuiLogVerbose))
+            {
+                logger.SetVerbose(true);
+            }
+
+            logger.SetLogFile(fullPath);
+            logger.Info(
+                "[GuiEntryPoint] Diagnostics log started (map2d-trace={0}, verbose={1}).",
+                EnvironmentVariables.IsEnabled(EnvironmentVariables.Map2D.Trace) ? "on" : "off",
+                EnvironmentVariables.IsEnabled(EnvironmentVariables.Diagnostics.GuiLogVerbose) ? "on" : "off");
+            Console.WriteLine($"[FalloutXbox360Utils] GUI diagnostics log: {fullPath}");
+        }
+        catch (Exception ex)
+        {
+            // Never let diagnostics setup break startup; the console fallback above is best-effort.
+            Console.Error.WriteLine($"[FalloutXbox360Utils] Failed to open GUI diagnostics log: {ex.Message}");
         }
     }
 

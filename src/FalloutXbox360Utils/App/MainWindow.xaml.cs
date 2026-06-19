@@ -22,9 +22,16 @@ public sealed partial class MainWindow : Window
             // WinUI 3 apps have no attached console, so Spectre/Console output is invisible.
             // Mirror the same log stream to a known file so diagnostic Log.Info/Log.Warn calls
             // (e.g. BSA discovery, terrain palette resolution) are inspectable post-mortem.
+            // Honors FALLOUT_GUI_LOG so a debugging run can redirect to an explicit path — the same
+            // override GuiEntryPoint.ConfigureDiagnostics sets up earlier (re-setting the same path
+            // here is a harmless append-mode reopen), keeping one log file across both call sites.
             try
             {
-                var logPath = Path.Combine(Path.GetTempPath(), "FalloutXbox360Utils-gui.log");
+                var logOverride = FalloutXbox360Utils.Core.EnvironmentVariables.Get(
+                    FalloutXbox360Utils.Core.EnvironmentVariables.Diagnostics.GuiLogFile);
+                var logPath = string.IsNullOrWhiteSpace(logOverride)
+                    ? Path.Combine(Path.GetTempPath(), "FalloutXbox360Utils-gui.log")
+                    : Path.GetFullPath(logOverride);
                 FalloutXbox360Utils.Core.Logger.Instance.SetLogFile(logPath);
             }
             catch
