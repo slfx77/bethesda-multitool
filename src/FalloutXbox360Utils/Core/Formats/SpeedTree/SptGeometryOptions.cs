@@ -4,13 +4,14 @@ using FalloutXbox360Utils.Core;
 namespace FalloutXbox360Utils.Core.Formats.SpeedTree;
 
 /// <summary>
-///     Tunable parameters for <see cref="SptGeometryBuilder" />, which reimplements the SpeedTree RT
-///     SDK's <c>CIdvBranch::Compute</c> loft (recovered from the Xbox MemDebug decompile — see the
-///     <c>speedtree-compute-algorithm</c> memory). The branch shape, lengths, radii, angles, child
-///     counts and ring counts are DATA-DRIVEN from the <c>.spt</c> splines/scalars; these knobs only
-///     cover the bits the decompile left as inference (curl strength, child density, leaf sizing/spacing,
-///     bud angle) plus final rescale to the TREE OBND height. Tune against the in-game look via the
-///     <c>EsmAnalyzer spt render</c> harness.
+///     Parameters for <see cref="SptGeometryBuilder" />, which reimplements the SpeedTree RT SDK's
+///     <c>CIdvBranch::Compute</c> loft (recovered from the Xbox MemDebug decompile — see the
+///     <c>speedtree-compute-algorithm</c> memory). Branch shape, lengths, radii, angles, child/leaf
+///     counts, ring counts, the per-ring gravity bend, and leaf card size are all DATA-DRIVEN from the
+///     <c>.spt</c> splines/scalars and the decompiled formulas — there are deliberately NO geometry
+///     tuning knobs here. What remains is only what the SDK math genuinely leaves to the host: the
+///     final rescale to the TREE OBND/BNAM height, the recursion cap, the leaf atlas override (TREE.ICON),
+///     and how a static (non-camera) mesh stands in for the engine's per-frame leaf billboards.
 /// </summary>
 public sealed record SptGeometryOptions
 {
@@ -24,65 +25,32 @@ public sealed record SptGeometryOptions
     /// </summary>
     public float TrunkHeight { get; init; } = 100f;
 
-    /// <summary>Authoritative final tree height (model units) from the TREE OBND Z-extent. Null → keep
-    /// the generated height.</summary>
+    /// <summary>Authoritative final tree height (model units) from the TREE OBND Z-extent / Oblivion BNAM
+    /// height. Null → keep the generated height.</summary>
     public float? TargetHeight { get; init; }
 
-    /// <summary>Final-height tuning multiplier (env <c>FALLOUT_VIEWER_SPT_HEIGHT_SCALE</c>).</summary>
+    /// <summary>Final-height tuning multiplier (env <c>FALLOUT_VIEWER_SPT_HEIGHT_SCALE</c>) — a host-side
+    /// nudge for the viewer, not a shape parameter.</summary>
     public float HeightScale { get; init; } = 1.0f;
 
-    /// <summary>A child branch's length is clamped to this fraction of its parent's length.</summary>
-    public float ChildLengthClamp { get; init; } = 0.85f;
+    /// <summary>
+    ///     Compatibility-only legacy option. Child spawn counts are binary-derived and are no longer capped
+    ///     here; mesh-buffer capacity remains the only vertex-budget guard.
+    /// </summary>
+    public int MaxChildrenPerBranch { get; init; } = 64;
 
-    /// <summary>Small random lean applied to the trunk (degrees) for natural variation.</summary>
-    public float TrunkLeanDeg { get; init; } = 4f;
-
-    /// <summary>Scales the per-ring curvature bend (radians) driven by spline slot 1.</summary>
-    public float CurlStrengthRad { get; init; } = 0.13f;
-
-    /// <summary>Scales the per-ring angular noise (spline slot 0, in degrees).</summary>
-    public float NoiseScale { get; init; } = 0.4f;
-
-    /// <summary>Per-segment downward (−Z) pull that arches branches into a mound (SDK declination-weight
-    /// gravity). 0 = straight branches; higher = lower, wider, droopier crown.</summary>
-    public float GravityStrength { get; init; } = 1.2f;
-
-    /// <summary>Minimum ring radius as a fraction of the branch's base radius (keeps tips from collapsing).</summary>
-    public float MinRingRadiusFraction { get; init; } = 0.06f;
-
-    /// <summary>Child-branch count = round(Float6012 · this · <see cref="ChildDensity" />).</summary>
-    public float ChildFreqScale { get; init; } = 0.015f;
-
-    /// <summary>User multiplier on the child-branch count.</summary>
-    public float ChildDensity { get; init; } = 1.0f;
-
-    /// <summary>Minimum children a non-terminal branch spawns (guarantees the tree reaches the leaf level).</summary>
-    public int MinChildrenPerBranch { get; init; } = 2;
-
-    /// <summary>Hard cap on children spawned per branch.</summary>
-    public int MaxChildrenPerBranch { get; init; } = 10;
-
-    /// <summary>Leaf cards emitted per ring on terminal (leaf-bearing) branches.</summary>
-    public int LeavesPerRing { get; init; } = 4;
-
-    /// <summary>Leaves only start past this fraction along a terminal branch (foliage toward the tips).</summary>
-    public float LeafStartFraction { get; init; }
-
-    /// <summary>Leaf card half-size as a fraction of the tree's master scale (treeSize); per-template c2
-    /// aspect kept. Master-scale-relative so short shrubs get big foliage and tall pines get small clusters.</summary>
-    public float LeafSizeFraction { get; init; } = 0.05f;
-
-    /// <summary>Extra leaf-size multiplier (env <c>FALLOUT_VIEWER_SPT_LEAF_SCALE</c>).</summary>
-    public float LeafSizeScale { get; init; } = 1.0f;
-
-    /// <summary>Bud declination off the branch direction (degrees) before a leaf card is placed.</summary>
-    public float BudAngleDeg { get; init; } = 35f;
-
-    /// <summary>How far the bud steps out from the branch, in leaf-half-size units.</summary>
-    public float BudReach { get; init; } = 0.5f;
-
-    /// <summary>Emit each leaf as a crossed pair of perpendicular cards (volume from any angle).</summary>
+    /// <summary>Emit each leaf as a crossed pair of perpendicular cards (volume from any angle) when not
+    /// camera-facing.</summary>
     public bool CrossedLeafCards { get; init; } = true;
+
+    /// <summary>
+    ///     Emit leaves as GPU billboard cards: one quad per leaf with the card CENTER in the tangent slot
+    ///     and the signed 2D corner offset in the bitangent slot, so the D3D12 leaf-billboard vertex
+    ///     shader re-faces each card to the camera per frame (the efficient equivalent of SpeedTree's
+    ///     CPU-side per-frame leaf billboard). Set by the live viewer; the still/GLB paths leave it false
+    ///     and use <see cref="LeafFaceDirection" /> / crossed cards.
+    /// </summary>
+    public bool LeafBillboard { get; init; }
 
     /// <summary>
     ///     When set, every leaf card is oriented to FACE this world direction (a single quad whose normal
@@ -96,12 +64,21 @@ public sealed record SptGeometryOptions
     /// <summary>Alpha-test threshold (0-255) for leaf cards.</summary>
     public byte LeafAlphaThreshold { get; init; } = 96;
 
+    /// <summary>
+    ///     Game-relative leaf-atlas path that OVERRIDES the <c>.spt</c>'s dev-era leaf material for every
+    ///     leaf card. The engine sources the leaf texture from the <c>TREE</c> record's <c>ICON</c> field
+    ///     (e.g. WhiteOak's ICON = <c>WhiteOakLeaves01.dds</c> → <c>textures\trees\leaves\whiteoakleaves01.dds</c>),
+    ///     NOT the `.spt`'s baked path (`treewoakleaves01b`, a dev leftover that never shipped) — confirmed
+    ///     by dumping the TREE record + decompiling the engine. Null → fall back to the `.spt` material.
+    /// </summary>
+    public string? LeafTextureOverride { get; init; }
+
     public static SptGeometryOptions Default { get; } = new();
 
     /// <summary>
-    ///     Build options from the defaults, applying any <c>FALLOUT_VIEWER_SPT_*</c> env-var overrides so
-    ///     tree height / leaf size / leaf density / child density / curl can be tuned live without a
-    ///     rebuild (<c>.spt</c> geometry is intentionally not disk-cached).
+    ///     Build options from the defaults, applying the <c>FALLOUT_VIEWER_SPT_HEIGHT*</c> env-var
+    ///     overrides. Only the final-height rescale is exposed — branch/leaf geometry is fully derived
+    ///     from the <c>.spt</c> data and the decompiled formulas, so there is nothing else to tune.
     /// </summary>
     public static SptGeometryOptions FromEnvironment()
     {
@@ -109,14 +86,6 @@ public sealed record SptGeometryOptions
         {
             TrunkHeight = ReadFloat(EnvironmentVariables.Viewer.SpeedTreeHeight, Default.TrunkHeight, 1f, 100000f),
             HeightScale = ReadFloat(EnvironmentVariables.Viewer.SpeedTreeHeightScale, Default.HeightScale, 0.05f, 20f),
-            LeafSizeScale = ReadFloat(EnvironmentVariables.Viewer.SpeedTreeLeafScale, Default.LeafSizeScale, 0.05f, 20f),
-            LeavesPerRing =
-                (int)ReadFloat(EnvironmentVariables.Viewer.SpeedTreeLeafCount, Default.LeavesPerRing, 0f, 32f),
-            ChildDensity = ReadFloat(EnvironmentVariables.Viewer.SpeedTreeChildDensity, Default.ChildDensity, 0f, 10f),
-            CurlStrengthRad =
-                ReadFloat(EnvironmentVariables.Viewer.SpeedTreeCurl, Default.CurlStrengthRad, 0f, 2f),
-            GravityStrength =
-                ReadFloat(EnvironmentVariables.Viewer.SpeedTreeGravity, Default.GravityStrength, 0f, 5f),
         };
     }
 
