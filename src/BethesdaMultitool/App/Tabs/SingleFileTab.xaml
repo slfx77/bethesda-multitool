@@ -677,7 +677,7 @@
                            Width="300" Visibility="Collapsed"
                            IsIndeterminate="True" />
               <StackPanel x:Name="NpcBsaPathPanel" Visibility="Collapsed" Spacing="8">
-                <TextBlock Text="Game Data directory (folder containing BSA files):"
+                <TextBlock Text="Game Data directory (folder containing game archives):"
                            FontSize="12"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Grid>

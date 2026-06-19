@@ -280,10 +280,10 @@
               </Grid.ColumnDefinitions>
               <TextBox
                 x:Name="NifViewerPathTextBox"
-                PlaceholderText="Directory or BSA path..."
+                PlaceholderText="Directory or archive path..."
                 Grid.Column="0"
                 AutomationProperties.Name="NIF source path"
-                AutomationProperties.HelpText="Path to a folder containing NIF files, or a BSA archive"
+                AutomationProperties.HelpText="Path to a folder containing NIF files, or an archive"
                 FontSize="12" />
               <DropDownButton
                 Grid.Column="1"
@@ -301,7 +301,7 @@
                         <FontIcon Glyph="&#xE8B7;" />
                       </MenuFlyoutItem.Icon>
                     </MenuFlyoutItem>
-                    <MenuFlyoutItem Text="Open BSA..." Click="NifViewerBrowseBsa_Click">
+                    <MenuFlyoutItem Text="Open Archive..." Click="NifViewerBrowseBsa_Click">
                       <MenuFlyoutItem.Icon>
                         <FontIcon Glyph="&#xE8E5;" />
                       </MenuFlyoutItem.Icon>
@@ -319,10 +319,10 @@
               </Grid.ColumnDefinitions>
               <TextBox
                 x:Name="NifViewerTextureBsaTextBox"
-                PlaceholderText="Textures BSA (auto-detected)..."
+                PlaceholderText="Textures archive (auto-detected)..."
                 Grid.Column="0"
                 AutomationProperties.Name="Textures BSA path"
-                AutomationProperties.HelpText="Overrides the auto-detected textures BSA used when rendering NIFs"
+                AutomationProperties.HelpText="Overrides the auto-detected textures archive used when rendering NIFs"
                 FontSize="12" />
               <Button
                 Grid.Column="1"

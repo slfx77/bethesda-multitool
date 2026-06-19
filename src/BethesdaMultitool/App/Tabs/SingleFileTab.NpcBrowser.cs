@@ -96,7 +96,7 @@ public sealed partial class SingleFileTab
         }
 
         NpcBrowserProgressBar.Visibility = Visibility.Visible;
-        NpcBrowserStatusText.Text = "Detecting BSA files...";
+        NpcBrowserStatusText.Text = "Detecting archives...";
 
         try
         {
@@ -668,7 +668,7 @@ public sealed partial class SingleFileTab
 
         if (!bsaPaths.HasMeshes)
         {
-            NpcBrowserStatusText.Text = "No meshes BSA found in selected directory.";
+            NpcBrowserStatusText.Text = "No meshes archive found in selected directory.";
             return;
         }
 

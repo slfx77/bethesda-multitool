@@ -158,7 +158,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
         {
             var dialog = new ContentDialog
             {
-                Title = "Error Loading BSA",
+                Title = "Error Loading Archive",
                 Content = $"Failed to load BSA archive:\n{ex.Message}",
                 CloseButtonText = "OK",
                 XamlRoot = XamlRoot

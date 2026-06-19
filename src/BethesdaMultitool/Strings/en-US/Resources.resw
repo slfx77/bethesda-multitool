@@ -109,7 +109,7 @@
     <value>Convert Selected</value>
   </data>
   <data name="Button_OpenBsa.Content" xml:space="preserve">
-    <value>Open BSA...</value>
+    <value>Open Archive...</value>
   </data>
   <data name="Button_StartScan.Content" xml:space="preserve">
     <value>Start Scan</value>
@@ -148,10 +148,10 @@
 
   <!-- ===== Empty State Messages (code-behind usage) ===== -->
   <data name="Empty_NoBsaLoaded" xml:space="preserve">
-    <value>No BSA Archive Loaded</value>
+    <value>No archive loaded</value>
   </data>
   <data name="Empty_NoBsaLoaded_Subtitle" xml:space="preserve">
-    <value>Click 'Open BSA...' to select an archive</value>
+    <value>Click 'Open Archive...' to select an archive</value>
   </data>
   <data name="Empty_RunAnalysisForEsm" xml:space="preserve">
     <value>Run analysis to view ESM records</value>
@@ -185,13 +185,13 @@
     <value>Conversion complete.</value>
   </data>
   <data name="Status_ConversionCancelled" xml:space="preserve">
-    <value>Conversion cancelled.</value>
+    <value>Conversion canceled.</value>
   </data>
   <data name="Status_ExtractionComplete" xml:space="preserve">
     <value>Extraction complete.</value>
   </data>
   <data name="Status_ScanCancelled" xml:space="preserve">
-    <value>Scan cancelled.</value>
+    <value>Scan canceled.</value>
   </data>
   <data name="Status_Scanning" xml:space="preserve">
     <value>Scanning...</value>
@@ -396,7 +396,7 @@
     <value>DDXConv Not Found</value>
   </data>
   <data name="Dialog_ErrorLoadingBsa_Title" xml:space="preserve">
-    <value>Error Loading BSA</value>
+    <value>Error Loading Archive</value>
   </data>
   <data name="Dialog_ExtractionError_Title" xml:space="preserve">
     <value>Extraction Error</value>
@@ -437,7 +437,7 @@
 
   <!-- ===== File Types ===== -->
   <data name="FileType_MinidumpHeader" xml:space="preserve">
-    <value>Minidump header</value>
+    <value>Memory dump header</value>
   </data>
   <data name="FileType_Modules" xml:space="preserve">
     <value>Modules</value>
@@ -682,16 +682,16 @@
     <value>Archive Browser</value>
   </data>
   <data name="Subtitle_BsaExtractor.Text" xml:space="preserve">
-    <value>Extract files from Bethesda BSA archives (PC and Xbox 360).</value>
+    <value>Extract files from Bethesda archives — BSA and BA2 (PC and Xbox 360).</value>
   </data>
   <data name="EmptyBsa_Title.Text" xml:space="preserve">
-    <value>No BSA Archive Loaded</value>
+    <value>No archive loaded</value>
   </data>
   <data name="EmptyBsa_Subtitle.Text" xml:space="preserve">
-    <value>Click 'Open BSA...' to select an archive</value>
+    <value>Click 'Open Archive...' to select an archive</value>
   </data>
   <data name="EmptyBsa_SubtitleAlt.Text" xml:space="preserve">
-    <value>Click 'Open BSA...' to select a Bethesda archive file</value>
+    <value>Click 'Open Archive...' to select a Bethesda archive file</value>
   </data>
   <data name="Label_Archive.Text" xml:space="preserve">
     <value>Archive:</value>
