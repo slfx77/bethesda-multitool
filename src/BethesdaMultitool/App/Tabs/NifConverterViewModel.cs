@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering;
 
 namespace BethesdaMultitool;
 
+/// <summary>Backing state for the NIF converter/viewer tab: the loaded file tree, current source, and selection.</summary>
 internal sealed class NifConverterViewModel
 {
     private List<NifTreeViewItem> _allItems = [];
@@ -11,6 +12,7 @@ internal sealed class NifConverterViewModel
     public bool IsBsa { get; private set; }
     public string? SelectedNifPath { get; private set; }
 
+    /// <summary>Adopts a newly loaded folder/BSA source and returns the view state (tree, texture paths, file count).</summary>
     public NifViewerSourceState ApplySource(
         string path,
         bool isBsa,
@@ -28,16 +30,19 @@ internal sealed class NifConverterViewModel
             $"{CountFiles(_allItems)} NIF files");
     }
 
+    /// <summary>Filters the loaded NIF tree by a search term.</summary>
     public List<NifTreeViewItem> FilterTree(string? search)
     {
         return NifConverterWorkflowService.FilterTreeItems(_allItems, search?.Trim());
     }
 
+    /// <summary>Marks the given tree item as the selected NIF.</summary>
     public void SelectNif(NifTreeViewItem item)
     {
         SelectedNifPath = item.FullPath;
     }
 
+    /// <summary>Formats a multi-line summary (name, size, format, block count, versions) for a loaded NIF.</summary>
     public static string FormatModelInfo(NifViewerInfo info)
     {
         return $"File: {info.FileName}\n" +
@@ -48,16 +53,19 @@ internal sealed class NifConverterViewModel
                $"User Version: {info.UserVersion}";
     }
 
+    /// <summary>Returns the NIF's block type names as a comma-separated string.</summary>
     public static string FormatBlockTypes(NifViewerInfo info)
     {
         return string.Join(", ", info.BlockTypeNames);
     }
 
+    /// <summary>Clamps a requested sprite render size to the supported 64-4096 px range.</summary>
     public static int ClampSpriteSize(double value)
     {
         return Math.Clamp((int)value, 64, 4096);
     }
 
+    /// <summary>Builds a camera configuration from the chosen perspective preset and elevation angle.</summary>
     public static CameraConfig BuildCameraConfig(string? perspective, double elevationValue)
     {
         var elevation = (float)elevationValue;
@@ -79,6 +87,7 @@ internal sealed class NifConverterViewModel
         };
     }
 
+    /// <summary>Formats the render status line ("N views" or the file name).</summary>
     public static string FormatRenderStatus(int viewCount, string fileName)
     {
         return $"Rendered: {(viewCount > 1 ? $"{viewCount} views" : fileName)}";
@@ -90,6 +99,7 @@ internal sealed class NifConverterViewModel
     }
 }
 
+/// <summary>View state after loading a NIF source: the file tree, texture-path display text, and file count label.</summary>
 internal sealed record NifViewerSourceState(
     List<NifTreeViewItem> Items,
     string? TexturePathsDisplay,

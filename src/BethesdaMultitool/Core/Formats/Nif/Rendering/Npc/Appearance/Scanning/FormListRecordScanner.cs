@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses a form-list (FLST) record into its ordered list of member FormIDs.</summary>
 internal static class FormListRecordScanner
 {
     internal static List<uint>? Process(

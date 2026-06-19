@@ -15,6 +15,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 
 internal static class CsvSupplementalWriter
 {
+    /// <summary>Builds a CSV of Globals.</summary>
     public static string GenerateGlobalsCsv(List<GlobalRecord> globals)
     {
         var sb = new StringBuilder();
@@ -35,6 +36,7 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Leveled Lists.</summary>
     public static string GenerateLeveledListsCsv(List<LeveledListRecord> lists, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -77,6 +79,7 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Map Markers.</summary>
     public static string GenerateMapMarkersCsv(List<PlacedReference> markers, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -104,6 +107,7 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Persistent Objects.</summary>
     public static string GeneratePersistentObjectsCsv(List<CellRecord> cells, FormIdResolver resolver)
     {
         return GeneratePlacedObjectsCsv(cells, resolver, static o => o.IsPersistent);
@@ -168,6 +172,7 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Messages.</summary>
     public static string GenerateMessagesCsv(List<MessageRecord> messages, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -196,6 +201,7 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Notes.</summary>
     public static string GenerateNotesCsv(List<NoteRecord> notes)
     {
         var sb = new StringBuilder();
@@ -219,6 +225,7 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Projectiles.</summary>
     public static string GenerateProjectilesCsv(List<ProjectileRecord> projectiles)
     {
         var sb = new StringBuilder();
@@ -245,6 +252,7 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Sounds.</summary>
     public static string GenerateSoundsCsv(List<SoundRecord> sounds)
     {
         var sb = new StringBuilder();
@@ -273,6 +281,7 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Reputations.</summary>
     public static string GenerateReputationsCsv(List<ReputationRecord> reputations)
     {
         var sb = new StringBuilder();
@@ -294,6 +303,7 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a set of named CSVs describing which runtime structures own each detected runtime string.</summary>
     public static Dictionary<string, string> GenerateStringOwnershipCsvs(RuntimeStringOwnershipAnalysis analysis)
     {
         var files = new Dictionary<string, string>();
@@ -404,6 +414,7 @@ internal static class CsvSupplementalWriter
         }
     }
 
+    /// <summary>Builds a CSV of Terminals.</summary>
     public static string GenerateTerminalsCsv(List<TerminalRecord> terminals, FormIdResolver _resolver)
     {
         var sb = new StringBuilder();

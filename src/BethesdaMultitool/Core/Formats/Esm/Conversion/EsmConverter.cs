@@ -18,6 +18,7 @@ public sealed class EsmConverter : IDisposable
     private readonly BinaryWriter _writer;
     private bool _disposed;
 
+    /// <summary>Creates a converter over the raw Xbox 360 ESM bytes, with optional verbose logging.</summary>
     public EsmConverter(byte[] input, bool verbose)
     {
         _input = input;

@@ -148,6 +148,7 @@ internal static class NifGeometryCalculator
         return sizeIncrease;
     }
 
+    /// <summary>Parsed presence flags and vertex count from a geometry block header, used to size its expansion.</summary>
     internal readonly record struct GeometryBlockFields(
         ushort NumVertices,
         ushort BsDataFlags,

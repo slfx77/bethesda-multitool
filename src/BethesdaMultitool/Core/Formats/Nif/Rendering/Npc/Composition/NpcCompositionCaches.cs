@@ -2,6 +2,7 @@ using System.Numerics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
+/// <summary>Reusable caches shared across NPC composition passes: parsed EGM/EGT morph files and resolved skeleton plans, keyed by path.</summary>
 internal sealed class NpcCompositionCaches
 {
     public NpcCompositionCaches()
@@ -28,6 +29,7 @@ internal sealed class NpcCompositionCaches
 
     public Dictionary<string, CachedNpcSkeletonPlan?> SkeletonPlans { get; }
 
+    /// <summary>A cached resolved skeleton for an NPC: its skeleton NIF path, body skinning bones, pose deltas, and animation overrides.</summary>
     internal sealed record CachedNpcSkeletonPlan(
         string SkeletonNifPath,
         Dictionary<string, Matrix4x4> BodySkinningBones,

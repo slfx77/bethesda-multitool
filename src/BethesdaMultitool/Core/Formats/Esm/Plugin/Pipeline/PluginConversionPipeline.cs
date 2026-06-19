@@ -14,6 +14,7 @@ public sealed class PluginConversionPipeline
     private readonly PluginBuilder _builder;
 #pragma warning restore CS0618
 
+    /// <summary>Creates the pipeline with the record-encoder registry and an optional progress sink.</summary>
     public PluginConversionPipeline(RecordEncoderRegistry registry, IConversionProgressSink? sink = null)
     {
 #pragma warning disable CS0618
@@ -21,6 +22,7 @@ public sealed class PluginConversionPipeline
 #pragma warning restore CS0618
     }
 
+    /// <summary>Runs the full DMP-to-ESP conversion, writing the plugin to the path in <paramref name="inputs" />.</summary>
     public Task<PluginBuildResult> BuildAsync(DmpToEspInputs inputs, CancellationToken ct = default)
     {
         return _builder.BuildAsync(inputs, ct);

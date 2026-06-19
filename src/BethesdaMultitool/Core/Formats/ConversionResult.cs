@@ -12,6 +12,9 @@ public class ConversionResult
     public string? Notes { get; init; }
     public string? ConsoleOutput { get; init; }
 
+    /// <summary>
+    ///     Creates a failed conversion result carrying the given explanatory notes.
+    /// </summary>
     public static ConversionResult Failure(string notes)
     {
         return new ConversionResult { Success = false, Notes = notes };

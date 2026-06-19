@@ -8,6 +8,7 @@ namespace BethesdaMultitool.Core.Recovery;
 /// </summary>
 internal static class DmpGapRecoveryPromoter
 {
+    /// <summary>Merges the opt-in-enabled gap candidates into <paramref name="scanResult" /> as raw records, runtime dialogue, or placed refs, skipping duplicates, and returns promotion counts.</summary>
     public static DmpGapRecoveryPromotionResult Apply(
         EsmRecordScanResult scanResult,
         IReadOnlyList<DmpGapRecoveryCandidate> candidates,

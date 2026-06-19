@@ -5,6 +5,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 
 internal static class CsvActorWriter
 {
+    /// <summary>Builds a CSV of NPC records.</summary>
     public static string GenerateNpcsCsv(List<NpcRecord> npcs, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -137,6 +138,7 @@ internal static class CsvActorWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Creatures.</summary>
     public static string GenerateCreaturesCsv(List<CreatureRecord> creatures, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -194,6 +196,7 @@ internal static class CsvActorWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Races.</summary>
     public static string GenerateRacesCsv(List<RaceRecord> races, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -238,6 +241,7 @@ internal static class CsvActorWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Factions.</summary>
     public static string GenerateFactionsCsv(List<FactionRecord> factions, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -289,6 +293,7 @@ internal static class CsvActorWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Classes.</summary>
     public static string GenerateClassesCsv(List<ClassRecord> classes)
     {
         var sb = new StringBuilder();

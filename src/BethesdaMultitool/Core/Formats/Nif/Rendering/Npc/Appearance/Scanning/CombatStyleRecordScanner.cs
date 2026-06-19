@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses a combat-style (CSTY) record's weapon-restriction field into a <see cref="CstyEntry" />.</summary>
 internal static class CombatStyleRecordScanner
 {
     // CSSD layout: 64 bytes total. Weapon Restrictions is uint32 at offset 40.

@@ -5,6 +5,7 @@ namespace BethesdaMultitool.Core.Semantic;
 /// </summary>
 internal static class SemanticSourceSetBuilder
 {
+    /// <summary>Loads a single request into a <see cref="SemanticSource" /> detached from its memory-mapped session.</summary>
     internal static async Task<SemanticSource> LoadSourceAsync(
         SemanticSourceRequest request,
         IProgress<AnalysisProgress>? analysisProgress = null,
@@ -35,6 +36,7 @@ internal static class SemanticSourceSetBuilder
         };
     }
 
+    /// <summary>Loads every request in order into a <see cref="SemanticSourceSet" /> for load-order-aware merging.</summary>
     internal static async Task<SemanticSourceSet> LoadSourcesAsync(
         IEnumerable<SemanticSourceRequest> requests,
         Func<int, int, SemanticSourceRequest, IProgress<AnalysisProgress>?>? analysisProgressFactory = null,

@@ -21,6 +21,7 @@ public sealed class FormIdResolver
     {
     }
 
+    /// <summary>Creates a resolver from EditorID, DisplayName, Ref→Base, and optional ActorValue-name tables.</summary>
     public FormIdResolver(
         Dictionary<uint, string> editorIds,
         Dictionary<uint, string> displayNames,

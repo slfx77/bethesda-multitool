@@ -67,6 +67,7 @@ internal sealed class CameraState
     /// <summary>Up direction (unit), derived so the basis stays orthonormal.</summary>
     public Vector3 Up => Vector3.Cross(Right, Forward);
 
+    /// <summary>Builds the world-to-view matrix looking from <see cref="Position" /> along <c>Forward</c>.</summary>
     public Matrix4x4 GetViewMatrix() =>
         // Use the camera's derived Up rather than world Z. Forward approaches ±UnitZ at vertical
         // pitch, which makes CreateLookAt's `cross(up, forward)` degenerate and the resulting
@@ -88,6 +89,7 @@ internal sealed class CameraState
     public Matrix4x4 GetViewMatrixCameraRelative() =>
         Matrix4x4.CreateLookAt(Vector3.Zero, Forward, Up);
 
+    /// <summary>Builds the perspective projection for the given aspect ratio (reversed-Z applied).</summary>
     public Matrix4x4 GetProjectionMatrix(float aspectRatio) =>
         Matrix4x4.CreatePerspectiveFieldOfView(FovYRadians, aspectRatio, NearPlane, FarPlane) * ReverseZ;
 

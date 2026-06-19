@@ -13,6 +13,7 @@ internal sealed class RuntimeCaravanMoneyReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime caravan-money record for the given DMP entry, or null if it can't be read.</summary>
     public CaravanMoneyRecord? ReadRuntimeCaravanMoney(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != CmnyFormType)

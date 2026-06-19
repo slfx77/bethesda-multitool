@@ -10,6 +10,7 @@ internal sealed class ScriptStatementDecoder
 {
     private readonly ScriptVariableReader _varReader;
 
+    /// <summary>Creates the statement/parameter decoder using the given variable-name reader.</summary>
     public ScriptStatementDecoder(ScriptVariableReader varReader)
     {
         _varReader = varReader;

@@ -55,6 +55,7 @@ internal sealed class NpcBrowserService : IDisposable
         _textureResolver.Dispose();
     }
 
+    /// <summary>Creates a browser service for an ESM and its discovered mesh/texture archives, or <c>null</c> if assets can't be opened.</summary>
     public static NpcBrowserService? TryCreate(
         byte[] esmData,
         bool bigEndian,
@@ -178,6 +179,7 @@ internal sealed class NpcBrowserService : IDisposable
         return false;
     }
 
+    /// <summary>Returns the browsable list of NPCs (from ESM or DMP), optionally limited to named actors.</summary>
     public List<NpcListItem> GetNpcList(bool namedOnly = false)
     {
         if (_dmpAppearances != null)
@@ -216,6 +218,7 @@ internal sealed class NpcBrowserService : IDisposable
         return list;
     }
 
+    /// <summary>Composes and exports an NPC to GLB bytes, or <c>null</c> if the NPC can't be resolved.</summary>
     public byte[]? BuildGlb(uint npcFormId, bool headOnly, bool noEquip, bool noWeapon,
         bool bindPose = false)
     {
@@ -256,6 +259,7 @@ internal sealed class NpcBrowserService : IDisposable
         return GlbWriter.WriteToBytes(scene, _textureResolver);
     }
 
+    /// <summary>Composes and exports a creature to GLB bytes, or <c>null</c> if the creature can't be resolved.</summary>
     public byte[]? BuildCreatureGlb(uint creatureFormId, bool bindPose = false)
     {
         var creatures = _resolver.GetAllCreatures();
@@ -288,6 +292,7 @@ internal sealed class NpcBrowserService : IDisposable
         return GlbWriter.WriteToBytes(scene, _textureResolver);
     }
 
+    /// <summary>Composes and renders an NPC to PNG bytes, or <c>null</c> if the NPC can't be resolved or rendered.</summary>
     public byte[]? RenderPng(
         uint npcFormId,
         bool headOnly,
@@ -343,6 +348,7 @@ internal sealed class NpcBrowserService : IDisposable
         return PngWriter.EncodeRgba(result.Pixels, result.Width, result.Height);
     }
 
+    /// <summary>Exports a batch of NPCs to GLB files, reporting progress and honoring cancellation.</summary>
     public async Task BatchExportGlbAsync(
         string outputDir,
         bool headOnly,
@@ -406,6 +412,7 @@ internal sealed class NpcBrowserService : IDisposable
         }, ct);
     }
 
+    /// <summary>Renders a batch of NPCs to PNG files, reporting progress and honoring cancellation.</summary>
     public async Task BatchRenderPngAsync(
         string outputDir,
         bool headOnly,

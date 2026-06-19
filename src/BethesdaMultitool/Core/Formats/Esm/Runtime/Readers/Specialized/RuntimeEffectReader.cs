@@ -56,6 +56,7 @@ internal sealed class RuntimeEffectReader
     private readonly RuntimePdbFieldAccessor _fields;
     private readonly int _shift; // delta vs PDB baseline (negative = read earlier than PDB)
 
+    /// <summary>Creates the reader bound to the runtime memory context, using an optional probed struct layout.</summary>
     public RuntimeEffectReader(RuntimeMemoryContext context, RuntimeLayoutProbeResult<int[]>? probeResult = null)
     {
         _context = context;

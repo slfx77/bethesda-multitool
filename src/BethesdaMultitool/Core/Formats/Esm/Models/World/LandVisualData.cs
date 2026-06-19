@@ -71,6 +71,7 @@ public record LandVisualData
 
     public int VtxtByteCount => TextureLayers.Sum(l => l.BlendEntries.Count * 8) + UnattachedVtxtByteCount;
 
+    /// <summary>Merges two visual-data sources field by field, preferring valid primary fields and falling back per field.</summary>
     public static LandVisualData? MergeCategories(
         LandVisualData? primary,
         LandVisualData? fallback)
@@ -110,6 +111,7 @@ public record LandVisualData
         };
     }
 
+    /// <summary>Merges visual data for emission, allowing runtime-captured vertex colors to take precedence over parsed ones.</summary>
     public static LandVisualData? MergeForEmission(
         LandVisualData? primary,
         byte[]? runtimeVertexColors,

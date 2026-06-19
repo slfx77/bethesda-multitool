@@ -34,6 +34,7 @@ public sealed class FactEncoder : IRecordEncoder
     public string RecordType => "FACT";
     public Type ModelType => typeof(FactionRecord);
 
+    /// <summary>Produces override subrecords for an existing FACT (a faction) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var fact = (FactionRecord)model;

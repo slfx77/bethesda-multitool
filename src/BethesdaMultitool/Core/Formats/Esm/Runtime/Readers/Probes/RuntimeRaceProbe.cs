@@ -30,6 +30,7 @@ internal static class RuntimeRaceProbe
 
     private static readonly int[] ShiftOptions = [-8, -4, 0, 4, 8];
 
+    /// <summary>Auto-detects the TESRace struct field-offset shift from sampled runtime entries, or null if it can't be determined.</summary>
     public static RuntimeLayoutProbeResult<int[]>? Probe(
         RuntimeMemoryContext context,
         IReadOnlyList<RuntimeEditorIdEntry> entries,

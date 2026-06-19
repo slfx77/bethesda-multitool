@@ -2,10 +2,12 @@ using System.Text;
 
 namespace BethesdaMultitool.Core.Utils;
 
+/// <summary>Byte-pattern search over buffers and large files, with optional ASCII case-insensitive matching and streaming for big inputs.</summary>
 internal static class BinaryPatternSearcher
 {
     public const int DefaultStreamBufferSize = 8 * 1024 * 1024;
 
+    /// <summary>Builds a search pattern from ASCII text, precomputing a lowercased copy when <paramref name="ignoreCase" /> is set.</summary>
     public static BinarySearchPattern CreateTextPattern(
         string pattern,
         bool ignoreCase = false)
@@ -18,6 +20,7 @@ internal static class BinaryPatternSearcher
         return new BinarySearchPattern(patternBytes, patternLower);
     }
 
+    /// <summary>Counts occurrences of an ASCII text pattern in a file via streaming search.</summary>
     public static int CountTextMatchesInFile(
         string filePath,
         string pattern,
@@ -28,6 +31,7 @@ internal static class BinaryPatternSearcher
             CreateTextPattern(pattern, ignoreCase));
     }
 
+    /// <summary>Returns the offsets of every occurrence of an ASCII text pattern in a buffer.</summary>
     public static List<long> FindTextMatches(
         byte[] data,
         string pattern,
@@ -36,6 +40,7 @@ internal static class BinaryPatternSearcher
         return FindMatches(data, CreateTextPattern(pattern, ignoreCase));
     }
 
+    /// <summary>Counts occurrences of <paramref name="pattern" /> in a file, reading in overlapping buffers so matches spanning buffer boundaries are not missed.</summary>
     public static int CountMatchesStreaming(
         string filePath,
         BinarySearchPattern pattern,
@@ -135,6 +140,7 @@ internal static class BinaryPatternSearcher
         return count;
     }
 
+    /// <summary>Returns the offsets of every occurrence of <paramref name="pattern" /> in a buffer.</summary>
     public static List<long> FindMatches(
         byte[] data,
         BinarySearchPattern pattern)

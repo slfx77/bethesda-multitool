@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses a creature (CREA) record into a <see cref="CreatureScanEntry" /> (skeleton, body models, animations, inventory, stats).</summary>
 internal static class CreatureRecordScanner
 {
     internal static CreatureScanEntry? Process(

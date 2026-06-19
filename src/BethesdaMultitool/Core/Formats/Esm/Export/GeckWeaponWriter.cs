@@ -443,6 +443,7 @@ internal static class GeckWeaponWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Weapon Mods.</summary>
     public static string GenerateWeaponModsReport(List<WeaponModRecord> mods)
     {
         var sb = new StringBuilder();

@@ -37,6 +37,7 @@ public sealed class QustEncoder : IRecordEncoder
     public string RecordType => "QUST";
     public Type ModelType => typeof(QuestRecord);
 
+    /// <summary>Produces override subrecords for an existing QUST (a quest) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var quest = (QuestRecord)model;

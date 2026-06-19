@@ -8,6 +8,7 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class DialogueConditionDisplayFormatter
 {
+    /// <summary>Renders a CTDA condition as a readable function-call expression with operator, value, and qualifiers.</summary>
     public static string FormatCondition(
         DialogueCondition condition,
         Func<uint, string> resolveFormName,
@@ -107,6 +108,7 @@ internal static class DialogueConditionDisplayFormatter
         };
     }
 
+    /// <summary>Formats a result script's referenced objects as a comma-separated "name (0xFormID)" list.</summary>
     public static string FormatResultScriptReferences(
         DialogueResultScript resultScript,
         Func<uint, string> resolveFormName)

@@ -18,6 +18,7 @@ internal sealed class RuntimeExplosionReader(RuntimeMemoryContext context)
     private readonly RuntimePdbFieldAccessor _fields = new(context);
     private readonly RuntimeMemoryContext _context = context;
 
+    /// <summary>Reads the runtime explosion record for the given DMP entry, or null if it can't be read.</summary>
     public ExplosionRecord? ReadRuntimeExplosion(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != ExplFormType)

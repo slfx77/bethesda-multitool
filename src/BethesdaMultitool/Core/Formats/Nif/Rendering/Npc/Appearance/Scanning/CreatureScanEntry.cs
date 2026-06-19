@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>A scanned creature (CREA) record: its skeleton, body models, animations, inventory, type, and combat stats, with helpers to resolve mesh/idle paths.</summary>
 internal sealed record CreatureScanEntry(
     string? EditorId,
     string? FullName,

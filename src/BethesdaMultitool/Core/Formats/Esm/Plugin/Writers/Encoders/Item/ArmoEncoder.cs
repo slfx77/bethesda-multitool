@@ -30,6 +30,7 @@ public sealed class ArmoEncoder : IRecordEncoder
     public string RecordType => "ARMO";
     public Type ModelType => typeof(ArmorRecord);
 
+    /// <summary>Produces override subrecords for an existing ARMO (an armor record) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var armo = (ArmorRecord)model;

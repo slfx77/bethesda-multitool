@@ -3,10 +3,12 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
 namespace BethesdaMultitool;
 
+/// <summary>Builds the 2D world map's per-layer bitmap (heightmap, vertex colors, terrain, slope) off the UI thread.</summary>
 internal static class WorldLayerBuildService
 {
     private const int MaxSingleBitmapDimension = 8192;
 
+    /// <summary>Renders the requested map layer to a bitmap (or coarse tile set) on a background thread.</summary>
     internal static Task<LayerBuildResult> BuildAsync(LayerBuildRequest request)
     {
         return Task.Run(async () =>
@@ -185,6 +187,7 @@ internal static class WorldLayerBuildService
     }
 }
 
+/// <summary>Inputs for a world map layer build: which cells/worldspace/layer to render plus caches and palettes.</summary>
 internal sealed record LayerBuildRequest(
     int Version,
     List<CellRecord> ActiveCells,
@@ -204,6 +207,7 @@ internal sealed record LayerBuildRequest(
     bool PreferAggregate = false,
     WaterColorPalette? WaterPalette = null);
 
+/// <summary>Output of a world map layer build: the composed bitmap and/or per-cell and coarse-tile pixel data.</summary>
 internal sealed record LayerBuildResult(
     int Version,
     WorldMapLayerRenderer.LayerBitmap? Bitmap,

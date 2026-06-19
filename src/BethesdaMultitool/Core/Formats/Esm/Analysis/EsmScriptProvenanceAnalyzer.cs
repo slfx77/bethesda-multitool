@@ -11,12 +11,14 @@ using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
+/// <summary>Provenance report tracing how a generated ESP's scripts/dialogue relate to their source and master records.</summary>
 public sealed record EsmScriptProvenanceReport(
     IReadOnlyList<EsmScriptSourceVsEmittedRefRow> SourceVsEmittedRefs,
     IReadOnlyList<EsmResultScriptProvenanceRow> ResultScripts,
     IReadOnlyList<EsmBytecodeEndianProbeRow> BytecodeEndianProbes,
     IReadOnlyList<EsmTargetStateTraceRow> StateTrace);
 
+/// <summary>Compares a script reference slot in the emitted ESP against its matched source-record counterpart.</summary>
 public sealed record EsmScriptSourceVsEmittedRefRow(
     string Target,
     string RecordType,
@@ -35,6 +37,7 @@ public sealed record EsmScriptSourceVsEmittedRefRow(
     string EmittedLabel,
     string Classification);
 
+/// <summary>Compares an emitted INFO result-script against its matched source INFO (block counts, SCDA hashes, SCTX).</summary>
 public sealed record EsmResultScriptProvenanceRow(
     string Target,
     uint EmittedInfoFormId,
@@ -50,6 +53,7 @@ public sealed record EsmResultScriptProvenanceRow(
     string EmittedReferenceCounts,
     string Classification);
 
+/// <summary>Walks one SCDA block as both little- and big-endian to diagnose byte-order of the compiled bytecode.</summary>
 public sealed record EsmBytecodeEndianProbeRow(
     string Target,
     string Origin,
@@ -69,6 +73,7 @@ public sealed record EsmBytecodeEndianProbeRow(
     string BigEndianDiagnostics,
     string Classification);
 
+/// <summary>One traced link from a target record to a related record, categorized for state-flow analysis.</summary>
 public sealed record EsmTargetStateTraceRow(
     string Target,
     string Category,
@@ -80,6 +85,7 @@ public sealed record EsmTargetStateTraceRow(
     string LinkedLabel,
     string Detail);
 
+/// <summary>Traces how a generated ESP's scripts, dialogue, and references originate from source/master records.</summary>
 public static class EsmScriptProvenanceAnalyzer
 {
     private static readonly HashSet<string> ScriptBoundarySubrecords = new(StringComparer.Ordinal)
@@ -87,6 +93,7 @@ public static class EsmScriptProvenanceAnalyzer
         "NEXT", "SCHR", "POBA", "POEA", "POCA"
     };
 
+    /// <summary>Parses the generated ESP at the given path and builds its script-provenance report.</summary>
     public static EsmScriptProvenanceReport AnalyzeFile(
         string generatedPath,
         EsmScriptDiagnosticsResult diagnostics,
@@ -98,6 +105,7 @@ public static class EsmScriptProvenanceAnalyzer
         return AnalyzeRecords(generatedRecords, diagnostics, sourceRecords, masterRecords);
     }
 
+    /// <summary>Builds the script-provenance report from already-parsed generated records and the source/master collections.</summary>
     public static EsmScriptProvenanceReport AnalyzeRecords(
         IReadOnlyList<ParsedMainRecord> generatedRecords,
         EsmScriptDiagnosticsResult diagnostics,
@@ -135,6 +143,7 @@ public static class EsmScriptProvenanceAnalyzer
         return new EsmScriptProvenanceReport(sourceRefRows, resultRows, endianRows, stateRows);
     }
 
+    /// <summary>Writes the provenance report as a set of CSV files into the given output directory.</summary>
     public static void WriteReport(EsmScriptProvenanceReport report, string outputDirectory)
     {
         Directory.CreateDirectory(outputDirectory);

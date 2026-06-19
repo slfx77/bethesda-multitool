@@ -56,6 +56,11 @@ internal static class AssetPathRules
         "data\\meshes\\", "data\\textures\\", "data\\sound\\", "data\\music\\", "data\\video\\"
     ];
 
+    /// <summary>
+    ///     Normalizes a raw asset path to a Data-relative, lowercased path rooted at its
+    ///     expected category prefix (meshes\, textures\, …), or returns null if the path
+    ///     has no recognized asset extension.
+    /// </summary>
     public static string? TryNormalizeRequestPath(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -103,6 +108,10 @@ internal static class AssetPathRules
         return lower;
     }
 
+    /// <summary>
+    ///     Lowercases a path and strips any leading separators and a leading "data\" prefix,
+    ///     yielding a plain Data-relative path without re-rooting it to a category prefix.
+    /// </summary>
     public static string NormalizeDataRelativePath(string raw)
     {
         var trimmed = raw.Trim().Replace('/', '\\');
@@ -126,6 +135,10 @@ internal static class AssetPathRules
         return trimmed.ToLowerInvariant();
     }
 
+    /// <summary>
+    ///     True for engine-global character assets shared across all actors (any .kf under
+    ///     meshes\characters\, or a skeleton*.nif under the _male/_female/_1stperson folders).
+    /// </summary>
     public static bool IsEngineGlobalCharacterAsset(string normalizedPath)
     {
         if (!normalizedPath.StartsWith("meshes\\characters\\", StringComparison.OrdinalIgnoreCase))
@@ -198,6 +211,10 @@ internal static class AssetPathRules
         return false;
     }
 
+    /// <summary>
+    ///     Computes a loose match key for a filename: the extension-less name lowercased with
+    ///     spaces, underscores, hyphens, and apostrophes removed.
+    /// </summary>
     public static string ComputeLooseBasename(string fileNameWithExtension)
     {
         var withoutExt = Path.GetFileNameWithoutExtension(fileNameWithExtension);
@@ -221,6 +238,10 @@ internal static class AssetPathRules
         return write == 0 ? string.Empty : new string(buffer[..write]);
     }
 
+    /// <summary>
+    ///     Like <see cref="ComputeLooseBasename" /> but also strips a leading or trailing "nv"
+    ///     affix; returns empty if no affix was present so it can't false-match an un-affixed name.
+    /// </summary>
     public static string ComputeLooseBasenameWithoutNvAffix(string fileNameWithExtension)
     {
         var loose = ComputeLooseBasename(fileNameWithExtension);
@@ -251,11 +272,19 @@ internal static class AssetPathRules
         return stripped ? loose[start..end] : string.Empty;
     }
 
+    /// <summary>
+    ///     Gets the expected Data-folder category prefix (e.g. "meshes\", "textures\") for a
+    ///     file extension, returning false for unrecognized extensions.
+    /// </summary>
     public static bool TryGetExtensionPrefix(string extension, out string prefix)
     {
         return ExtensionToPrefix.TryGetValue(extension, out prefix!);
     }
 
+    /// <summary>
+    ///     Yields the same path with each interchangeable-format extension substituted
+    ///     (e.g. .wav to .ogg/.xwm, .ddx to .dds), for fallback asset lookups.
+    /// </summary>
     public static IEnumerable<string> EnumerateExtensionSwaps(string normalizedPath)
     {
         var ext = Path.GetExtension(normalizedPath);
@@ -271,6 +300,10 @@ internal static class AssetPathRules
         }
     }
 
+    /// <summary>
+    ///     True if the candidate path's extension matches the requested extension or is one of
+    ///     its interchangeable-format swaps.
+    /// </summary>
     public static bool ExtensionsAreCompatible(string requestedExt, string candidatePath)
     {
         var candidateExt = Path.GetExtension(candidatePath);
@@ -293,6 +326,10 @@ internal static class AssetPathRules
         return false;
     }
 
+    /// <summary>
+    ///     Converts a normalized asset path back into the shape expected by a record field,
+    ///     restoring the "data\" prefix and category-prefix presence to match the original raw value.
+    /// </summary>
     public static string DenormalizeForField(string normalizedNewPath, string originalRawPath)
     {
         if (string.IsNullOrEmpty(normalizedNewPath))

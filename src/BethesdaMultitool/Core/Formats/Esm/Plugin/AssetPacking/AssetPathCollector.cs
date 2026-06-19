@@ -526,6 +526,7 @@ internal static class AssetPathCollector
     {
         private static readonly Dictionary<Type, (PropertyInfo Prop, bool IsPathLike)[]> Cache = new();
 
+        /// <summary>Returns the cached path-like property accessors for a record type, computing them once on first use.</summary>
         public static (PropertyInfo Prop, bool IsPathLike)[] GetOrAdd(Type type)
         {
             lock (Cache)

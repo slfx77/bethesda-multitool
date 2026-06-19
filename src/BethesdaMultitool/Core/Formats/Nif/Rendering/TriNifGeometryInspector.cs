@@ -3,8 +3,13 @@ using BethesdaMultitool.Core.Formats.Nif.Geometry;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
+/// <summary>
+///     Cross-checks a head NIF's geometry against an optional FaceGen TRI file, surfacing vertex-count and
+///     layout mismatches for reverse-engineering diagnostics.
+/// </summary>
 internal static class TriNifGeometryInspector
 {
+    /// <summary>Inspects the NIF (and optional TRI) and returns a geometry report, or <c>null</c> when the NIF can't be parsed.</summary>
     public static TriNifGeometryInspection? Inspect(byte[] nifData, TriParser? tri = null)
     {
         var nif = NifParser.Parse(nifData);

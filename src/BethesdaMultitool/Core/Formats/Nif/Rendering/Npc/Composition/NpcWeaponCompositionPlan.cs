@@ -3,6 +3,7 @@ using BethesdaMultitool.CLI;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
+/// <summary>The weapon portion of an NPC composition plan: the resolved weapon visual and how/where it attaches to the skeleton.</summary>
 internal sealed class NpcWeaponCompositionPlan
 {
     public required WeaponVisual WeaponVisual { get; init; }

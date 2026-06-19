@@ -22,6 +22,10 @@ internal sealed record CellCaptureUnionDiagnostic(
 /// </summary>
 internal static class CellCaptureUnioner
 {
+    /// <summary>
+    ///     Merges repeated captures of the same logical cell into a single record with a unioned
+    ///     placement list, returning the unioned cells plus merge diagnostics.
+    /// </summary>
     public static CellCaptureUnionResult Union(IReadOnlyList<CellRecord> cells)
     {
         var groups = new Dictionary<string, List<CellRecord>>(StringComparer.Ordinal);

@@ -17,6 +17,7 @@ internal sealed class RuntimeChallengeReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime challenge record for the given DMP entry, or null if it can't be read.</summary>
     public ChallengeRecord? ReadRuntimeChallenge(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != ChalFormType)

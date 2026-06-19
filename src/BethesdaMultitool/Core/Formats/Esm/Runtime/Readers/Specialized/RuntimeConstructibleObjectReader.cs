@@ -16,6 +16,7 @@ internal sealed class RuntimeConstructibleObjectReader(RuntimeMemoryContext cont
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime constructible-object (recipe) record for the given DMP entry, or null if it can't be read.</summary>
     public ConstructibleObjectRecord? ReadRuntimeConstructibleObject(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != CobjFormType)

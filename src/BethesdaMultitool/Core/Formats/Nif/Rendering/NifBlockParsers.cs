@@ -332,6 +332,7 @@ internal static class NifBlockParsers
         return NifGeometryTransformUtils.TransformNormals(normals, transform);
     }
 
+    /// <summary>Recomputes per-vertex smooth (area-weighted) normals from positions and triangle indices.</summary>
     public static float[] RecomputeSmoothNormals(float[] positions, ushort[] triangles)
     {
         return NifGeometryTransformUtils.RecomputeSmoothNormals(positions, triangles);

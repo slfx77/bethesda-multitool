@@ -11,56 +11,67 @@ internal abstract record ReportValue
 
     // --- Factory helpers for concise construction ---
 
+    /// <summary>Creates an integer report value.</summary>
     public static IntVal Int(int value)
     {
         return new IntVal(value);
     }
 
+    /// <summary>Creates an integer report value with an explicit display string.</summary>
     public static IntVal Int(int value, string display)
     {
         return new IntVal(value, display);
     }
 
+    /// <summary>Creates a floating-point report value, formatting the display string with the given numeric format.</summary>
     public static FloatVal Float(double value, string format = "F1")
     {
         return new FloatVal(value, value.ToString(format));
     }
 
+    /// <summary>Creates a floating-point report value with an explicit display string.</summary>
     public static FloatVal FloatDisplay(double value, string display)
     {
         return new FloatVal(value, display);
     }
 
+    /// <summary>Creates a plain string report value.</summary>
     public static StringVal String(string value)
     {
         return new StringVal(value);
     }
 
+    /// <summary>Creates a boolean report value (displays as Yes/No).</summary>
     public static BoolVal Bool(bool value)
     {
         return new BoolVal(value);
     }
 
+    /// <summary>Creates a boolean report value with an explicit display string.</summary>
     public static BoolVal Bool(bool value, string display)
     {
         return new BoolVal(value, display);
     }
 
+    /// <summary>Creates a FormID report value with an explicit display string.</summary>
     public static FormIdVal FormId(uint raw, string display)
     {
         return new FormIdVal(raw, display);
     }
 
+    /// <summary>Creates a FormID report value, resolving its display name via the given resolver.</summary>
     public static FormIdVal FormId(uint raw, FormIdResolver resolver)
     {
         return new FormIdVal(raw, resolver.FormatFull(raw));
     }
 
+    /// <summary>Creates a list report value wrapping the given sub-values.</summary>
     public static ListVal List(List<ReportValue> items)
     {
         return new ListVal(items);
     }
 
+    /// <summary>Creates a list report value with an explicit display string.</summary>
     public static ListVal List(List<ReportValue> items, string display)
     {
         return new ListVal(items, display);

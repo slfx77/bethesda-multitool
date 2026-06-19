@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
+/// <summary>Resolves an NPC's inventory items, expanding leveled-list references into concrete item FormIDs.</summary>
 internal sealed class NpcInventoryResolver
 {
     private readonly IReadOnlyDictionary<uint, List<uint>> _leveledNpcs;

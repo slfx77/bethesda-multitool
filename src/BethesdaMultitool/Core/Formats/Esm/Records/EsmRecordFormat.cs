@@ -19,11 +19,13 @@ public sealed class EsmRecordFormat : FileFormatBase, IDumpScanner
     public override bool ShowInFilterUI => false;
     public override IReadOnlyList<FormatSignature> Signatures { get; } = [];
 
+    /// <summary>Scans a memory-mapped dump for ESM records and returns the scan result.</summary>
     public object ScanDump(MemoryMappedViewAccessor accessor, long fileSize)
     {
         return EsmRecordScanner.ScanForRecordsMemoryMapped(accessor, fileSize);
     }
 
+    /// <summary>Not supported for this format (records are scanned, not signature-parsed); always returns null.</summary>
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
         return null;

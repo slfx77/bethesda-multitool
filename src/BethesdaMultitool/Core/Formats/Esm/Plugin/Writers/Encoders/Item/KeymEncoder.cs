@@ -18,6 +18,7 @@ public sealed class KeymEncoder : IRecordEncoder
     public string RecordType => "KEYM";
     public Type ModelType => typeof(KeyRecord);
 
+    /// <summary>Produces override subrecords for an existing KEYM (a key) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var key = (KeyRecord)model;

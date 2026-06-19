@@ -3,8 +3,10 @@ using BethesdaMultitool.Core.VersionTracking.Models;
 
 namespace BethesdaMultitool.Core.VersionTracking.Extraction;
 
+/// <summary>Shared extraction pipeline that loads an ESM/DMP semantically and maps it to a <see cref="VersionSnapshot" />.</summary>
 internal static class VersionSnapshotPipeline
 {
+    /// <summary>Loads <paramref name="filePath" /> per the options, then maps its records into a version snapshot, forwarding weighted progress.</summary>
     internal static async Task<VersionSnapshot> ExtractAsync(
         string filePath,
         BuildInfo buildInfo,

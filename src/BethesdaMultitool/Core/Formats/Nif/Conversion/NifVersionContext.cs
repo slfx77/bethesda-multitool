@@ -1,11 +1,9 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Conversion;
 
 /// <summary>
-///     Context for evaluating NIF version expressions. Per-game NIF stream identities (the expected
-///     Version / UserVersion / BsVersion) are the single source of truth on
-///     <c>GameProfile.ExpectedNif</c> (Core.Games) — construct a context from a profile when targeting
-///     a specific game's NIF output. A NIF parse always self-detects the real version from the file
-///     header (Oblivion in particular ships mixed versions on disk).
+///     Context for evaluating NIF version expressions. The Version / UserVersion / BsVersion are read
+///     from the NIF file's own header during parsing (Oblivion in particular ships mixed versions on
+///     disk), not assumed per game.
 /// </summary>
 public sealed record NifVersionContext
 {

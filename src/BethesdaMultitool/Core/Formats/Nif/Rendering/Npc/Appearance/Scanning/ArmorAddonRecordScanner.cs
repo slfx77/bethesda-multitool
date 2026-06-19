@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses an armor add-on (ARMA) record into a scan entry of its biped-slot meshes for NPC assembly.</summary>
 internal static class ArmorAddonRecordScanner
 {
     internal static ArmaAddonScanEntry? Process(

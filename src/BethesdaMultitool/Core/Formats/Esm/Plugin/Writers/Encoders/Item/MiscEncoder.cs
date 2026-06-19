@@ -18,6 +18,7 @@ public sealed class MiscEncoder : IRecordEncoder
     public string RecordType => "MISC";
     public Type ModelType => typeof(MiscItemRecord);
 
+    /// <summary>Produces override subrecords for an existing MISC (a miscellaneous item) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var misc = (MiscItemRecord)model;

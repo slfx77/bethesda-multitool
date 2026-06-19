@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 
+/// <summary>Which package event a <see cref="PackageEventAction" /> responds to (begin / end / on-change).</summary>
 public enum PackageEventActionKind
 {
     OnBegin,

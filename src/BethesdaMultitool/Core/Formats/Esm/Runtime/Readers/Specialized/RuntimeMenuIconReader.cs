@@ -14,6 +14,7 @@ internal sealed class RuntimeMenuIconReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime menu-icon record for the given DMP entry, or null if it can't be read.</summary>
     public MenuIconRecord? ReadRuntimeMenuIcon(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != MicnFormType)

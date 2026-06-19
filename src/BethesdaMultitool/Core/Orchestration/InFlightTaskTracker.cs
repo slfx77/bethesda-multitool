@@ -29,6 +29,7 @@ internal sealed class InFlightTaskTracker
         }
     }
 
+    /// <summary>Starts tracking a background task so it can be drained later.</summary>
     public void Add(Task task)
     {
         ArgumentNullException.ThrowIfNull(task);
@@ -38,6 +39,7 @@ internal sealed class InFlightTaskTracker
         }
     }
 
+    /// <summary>Drops already-completed tasks from the tracked set.</summary>
     public void PruneCompleted()
     {
         lock (_gate)

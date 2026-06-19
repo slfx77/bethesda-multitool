@@ -15,6 +15,7 @@ internal sealed class RuntimeNavMeshInfoMapReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime navmesh-info-map record for the given DMP entry, or null if it can't be read.</summary>
     public NavMeshInfoMapRecord? ReadRuntimeNavMeshInfoMap(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != NaviFormType)

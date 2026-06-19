@@ -843,6 +843,7 @@ public sealed class AssetPackingService
         private readonly HashSet<string> _folders = new(StringComparer.Ordinal);
         private long _total = 36;
 
+        /// <summary>Returns the projected total BSA size if the given file were added, without adding it.</summary>
         public long EstimateWith((string Path, byte[] Data) file)
         {
             var key = Normalize(file.Path);
@@ -860,6 +861,7 @@ public sealed class AssetPackingService
             return estimate;
         }
 
+        /// <summary>Adds a file to the running BSA size estimate (ignores duplicates by path).</summary>
         public void Add((string Path, byte[] Data) file)
         {
             var key = Normalize(file.Path);

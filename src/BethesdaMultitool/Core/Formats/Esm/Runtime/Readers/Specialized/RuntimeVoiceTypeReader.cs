@@ -14,6 +14,7 @@ internal sealed class RuntimeVoiceTypeReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime voice-type record for the given DMP entry, or null if it can't be read.</summary>
     public VoiceTypeRecord? ReadRuntimeVoiceType(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != VtypFormType)

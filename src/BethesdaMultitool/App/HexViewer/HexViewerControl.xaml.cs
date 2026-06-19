@@ -126,6 +126,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         VirtualScrollBar.StepFrequency = 1;
     }
 
+    /// <summary>Unloads the current file and resets the view to an empty state.</summary>
     public void Clear()
     {
         _dataManager.Clear();
@@ -137,6 +138,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         VirtualScrollBar.Maximum = VirtualScrollBar.Value = 0;
     }
 
+    /// <summary>Scrolls the view so the row containing the given file offset is visible.</summary>
     public void NavigateToOffset(long offset)
     {
         if (_dataManager.FileSize == 0 || _totalRows == 0) return;
@@ -147,6 +149,7 @@ public sealed partial class HexViewerControl : UserControl, IDisposable
         UpdateMinimapViewport();
     }
 
+    /// <summary>Loads a file (opening its own accessor) and renders it in the hex view.</summary>
     public void LoadData(string filePath, AnalysisResult analysisResult)
     {
         _dataManager.Load(filePath, analysisResult);

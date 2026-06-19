@@ -35,6 +35,10 @@ public static class FaceGenControls
         return results;
     }
 
+    /// <summary>
+    ///     Compute asymmetric-geometry control projection values from FGGA basis coefficients
+    ///     (30-element), optionally merged with the race base before projection.
+    /// </summary>
     public static (string Name, float Value)[] ComputeGeometryAsymmetric(float[] fgga, float[]? raceBase = null)
     {
         if (fgga.Length != 30) return [];
@@ -54,6 +58,10 @@ public static class FaceGenControls
         return results;
     }
 
+    /// <summary>
+    ///     Compute symmetric-texture control projection values from FGTS basis coefficients
+    ///     (50-element), optionally merged with the race base before projection.
+    /// </summary>
     public static (string Name, float Value)[] ComputeTextureSymmetric(float[] fgts, float[]? raceBase = null)
     {
         if (fgts.Length != 50) return [];

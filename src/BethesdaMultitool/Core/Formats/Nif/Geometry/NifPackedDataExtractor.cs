@@ -667,6 +667,7 @@ internal static class NifPackedDataExtractor
         return result;
     }
 
+    /// <summary>Packed data streams grouped by component layout: half4 (vec3+w), half2 (UV), and ubyte4.</summary>
     private sealed record CategorizedStreams(
         List<DataStreamInfo> Half4Streams,
         List<DataStreamInfo> Half2Streams,

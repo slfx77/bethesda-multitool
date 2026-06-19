@@ -8,6 +8,10 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Conversion;
 
+/// <summary>
+///     Discovery phase of NIF conversion: scans blocks to find packed geometry, Havok, skin, and node-name
+///     data, populating <see cref="NifConversionState" /> before the output-writing phase runs.
+/// </summary>
 internal sealed class NifDiscovery(NifConversionState state)
 {
     private static readonly Logger Log = Logger.Instance;

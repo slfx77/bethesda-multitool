@@ -7,6 +7,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime;
 /// </summary>
 internal static class RuntimeLayoutProbeEngine
 {
+    /// <summary>
+    ///     Scores every candidate layout against the sampled inputs and returns the winning
+    ///     layout along with per-candidate scores and the runner-up margin.
+    /// </summary>
     public static RuntimeLayoutProbeResult<TLayout> Probe<TSample, TLayout>(
         IReadOnlyList<TSample> samples,
         IReadOnlyList<RuntimeLayoutProbeCandidate<TLayout>> candidates,

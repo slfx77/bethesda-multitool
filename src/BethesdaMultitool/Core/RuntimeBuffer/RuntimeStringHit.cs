@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Strings;
 
 namespace BethesdaMultitool.Core.RuntimeBuffer;
 
+/// <summary>A string found in a memory dump along with its ownership status and the record/struct resolved as its owner.</summary>
 public sealed class RuntimeStringHit
 {
     public required string Text { get; init; }

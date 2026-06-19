@@ -37,6 +37,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed class GpuRootSignature12 : IDisposable
 {
+    /// <summary>Root-parameter slot indices, in the order they are declared in the root signature.</summary>
     public static class Slots
     {
         public const int PerFrameCbv = 0;

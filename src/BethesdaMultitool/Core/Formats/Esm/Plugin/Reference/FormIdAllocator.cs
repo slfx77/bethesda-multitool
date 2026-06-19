@@ -16,6 +16,10 @@ public sealed class FormIdAllocator
     /// <summary>Default first local ID (0x800) — matches GECK convention.</summary>
     public const uint DefaultBaseLocalId = 0x800;
 
+    /// <summary>
+    ///     Creates the allocator starting at the given 24-bit local ID (default 0x800); throws if
+    ///     the base exceeds the 24-bit FormID index range.
+    /// </summary>
     public FormIdAllocator(uint baseLocalId = DefaultBaseLocalId)
     {
         if (baseLocalId > 0x00FFFFFF)

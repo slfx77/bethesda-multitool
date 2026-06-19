@@ -8,6 +8,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 
 internal static class StandaloneHeightmapResolver
 {
+    /// <summary>Returns the detected heightmaps that could not be matched to any LAND record.</summary>
     public static List<DetectedVhgtHeightmap> GetUnresolvedHeightmaps(
         IReadOnlyList<DetectedVhgtHeightmap> heightmaps,
         IReadOnlyList<ExtractedLandRecord> landRecords)
@@ -20,6 +21,7 @@ internal static class StandaloneHeightmapResolver
             .ToList();
     }
 
+    /// <summary>Matches each detected standalone heightmap against LAND records, returning per-heightmap match status.</summary>
     public static List<StandaloneHeightmapMatch> Resolve(
         IReadOnlyList<DetectedVhgtHeightmap> heightmaps,
         IReadOnlyList<ExtractedLandRecord> landRecords)
@@ -90,6 +92,7 @@ internal static class StandaloneHeightmapResolver
         return rows;
     }
 
+    /// <summary>Writes the heightmap-to-LAND match results as a CSV file.</summary>
     public static void WriteCsv(
         string path,
         IReadOnlyList<StandaloneHeightmapMatch> matches,

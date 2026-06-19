@@ -13,6 +13,7 @@ namespace BethesdaMultitool.Core.Formats.SpeedTree;
 /// </summary>
 public sealed record SptBezierSpline
 {
+    /// <summary>The three header floats <c>(MIN, MAX, VARIANCE)</c> that scale the normalized control-point curve.</summary>
     public Vector3 Header { get; init; }
 
     public IReadOnlyList<SptSplineControlPoint> ControlPoints { get; init; } = [];

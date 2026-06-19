@@ -9,6 +9,7 @@ public sealed class ConvertibleFileSorter<TEntry>
 {
     protected override ConvertibleSortColumn NoneColumn => ConvertibleSortColumn.None;
 
+    /// <summary>Orders the convertible-file entries by the active column and direction.</summary>
     public override IEnumerable<TEntry> Sort(IList<TEntry> items)
     {
         return CurrentColumn switch
@@ -34,6 +35,7 @@ public sealed class ConvertibleFileSorter<TEntry>
     }
 }
 
+/// <summary>Sortable columns shared by the DDX/NIF convertible-file lists.</summary>
 public enum ConvertibleSortColumn
 {
     None,

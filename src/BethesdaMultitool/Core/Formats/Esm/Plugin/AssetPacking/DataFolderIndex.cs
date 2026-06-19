@@ -15,6 +15,7 @@ internal abstract record AssetSource
     /// <summary>True if this source is part of an Xbox 360 BSA and needs PC conversion.</summary>
     public required bool IsXbox360 { get; init; }
 
+    /// <summary>Reads the asset's bytes from the backing source (loose file or BSA entry).</summary>
     public abstract byte[] Read();
 }
 
@@ -89,6 +90,10 @@ internal sealed class DataFolderIndex : IDisposable
 
     private bool _disposed;
 
+    /// <summary>
+    ///     Creates an index for a data folder; <paramref name="xbox360FormatHint" /> selects the
+    ///     Xbox 360 disc layout over the standard PC <c>Data\</c> layout.
+    /// </summary>
     public DataFolderIndex(string dataFolderPath, bool xbox360FormatHint)
     {
         DataFolderPath = dataFolderPath;

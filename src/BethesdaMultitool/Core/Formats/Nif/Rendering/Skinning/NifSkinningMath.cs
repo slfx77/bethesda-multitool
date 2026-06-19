@@ -308,6 +308,7 @@ internal static class NifSkinningMath
         destination[vertexIndex * 3 + 2] = value.Z;
     }
 
+    /// <summary>Whether a bone matrix is compatible with dual-quaternion skinning (rigid + uniform scale), plus the measured scale/determinant used to decide.</summary>
     internal readonly record struct DualQuaternionCompatibility(
         bool CanUse,
         int MatrixIndex,

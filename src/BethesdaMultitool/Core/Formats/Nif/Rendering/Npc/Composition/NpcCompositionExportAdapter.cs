@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assembly;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
+/// <summary>Turns an <see cref="NpcCompositionPlan" /> into a GLB scene for export.</summary>
 internal static class NpcCompositionExportAdapter
 {
     internal static GlbScene? BuildNpc(

@@ -258,6 +258,7 @@ public sealed class PluginBuilder
     private BethesdaMultitool.Core.Formats.Esm.Planner.EmitPlan? _emitPlan;
     private BethesdaMultitool.Core.Formats.Esm.PlannedWriter.PlanWriter? _planWriter;
 
+    /// <summary>Creates the builder with the record-encoder registry and an optional progress sink.</summary>
     public PluginBuilder(RecordEncoderRegistry registry, IConversionProgressSink? sink = null)
     {
         _encoderRegistry = registry;

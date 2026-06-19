@@ -11,5 +11,6 @@ public record ParsedMainRecord
     public long Offset { get; init; }
     public List<ParsedSubrecord> Subrecords { get; init; } = [];
 
+    /// <summary>The record's editor ID, read from its EDID subrecord (null if absent).</summary>
     public string? EditorId => Subrecords.FirstOrDefault(s => s.Signature == "EDID")?.DataAsString;
 }

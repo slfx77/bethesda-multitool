@@ -15,6 +15,10 @@ internal sealed class ScriptVariableReader
     private readonly Func<uint, string?> _resolveFormName;
     private readonly List<ScriptVariableInfo> _variables;
 
+    /// <summary>
+    ///     Creates the variable reader with the script's local variables, referenced objects,
+    ///     endianness, and callbacks for resolving form names and external (cross-script) variables.
+    /// </summary>
     public ScriptVariableReader(
         List<ScriptVariableInfo> variables,
         List<uint> referencedObjects,

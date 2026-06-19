@@ -17,6 +17,10 @@ internal static class CellReplacementPreservationPolicy
 
     internal const float PositionMatchToleranceSquared = PositionMatchTolerance * PositionMatchTolerance;
 
+    /// <summary>
+    ///     Indexes DMP placements by base FormID (under both source and newly allocated IDs)
+    ///     so master refs can be matched against same-base captures.
+    /// </summary>
     public static Dictionary<uint, List<PlacedReference>> BuildPlacementsByBase(
         IEnumerable<PlacedReference> placements,
         IReadOnlyDictionary<uint, uint> sourceToAllocated)
@@ -42,12 +46,17 @@ internal static class CellReplacementPreservationPolicy
         return placementsByBase;
     }
 
+    /// <summary>Builds a predicate that decides whether each master ref should be preserved (not deleted).</summary>
     public static Func<ParsedMainRecord, bool> CreatePreserveFilter(
         IReadOnlyDictionary<uint, List<PlacedReference>> placementsByBase)
     {
         return masterRef => ShouldPreserveMasterRef(masterRef, placementsByBase);
     }
 
+    /// <summary>
+    ///     Returns true unless the DMP carries a same-base placement at the master ref's world
+    ///     position (within tolerance); persistent master refs are always preserved.
+    /// </summary>
     public static bool ShouldPreserveMasterRef(
         ParsedMainRecord masterRef,
         IReadOnlyDictionary<uint, List<PlacedReference>> placementsByBase)

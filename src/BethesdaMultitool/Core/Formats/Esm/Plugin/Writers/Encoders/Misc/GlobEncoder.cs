@@ -12,6 +12,7 @@ public sealed class GlobEncoder : IRecordEncoder
     public string RecordType => "GLOB";
     public Type ModelType => typeof(GlobalRecord);
 
+    /// <summary>Produces override subrecords for an existing GLOB (a global variable) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var glob = (GlobalRecord)model;

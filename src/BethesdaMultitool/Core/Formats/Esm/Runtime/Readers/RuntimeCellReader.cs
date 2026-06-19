@@ -88,6 +88,7 @@ internal sealed class RuntimeCellReader
         return probe.Layout;
     }
 
+    /// <summary>Reads the runtime worldspace (WRLD) for the given DMP entry, merging in its cell-map grid data.</summary>
     public WorldspaceRecord? ReadRuntimeWorldspace(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != 0x41 || !entry.TesFormOffset.HasValue)
@@ -112,6 +113,7 @@ internal sealed class RuntimeCellReader
         return ToWorldspaceRecord(cellMapData);
     }
 
+    /// <summary>Reads the runtime cell (CELL) for the given DMP entry, including its placed objects.</summary>
     public CellRecord? ReadRuntimeCell(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != 0x39 || !entry.TesFormOffset.HasValue)
@@ -126,6 +128,7 @@ internal sealed class RuntimeCellReader
             entry.DisplayName);
     }
 
+    /// <summary>Reads the runtime cell (CELL) referenced by a worldspace cell-map entry, with optional editor ID and display name.</summary>
     public CellRecord? ReadRuntimeCell(RuntimeCellMapEntry entry, string? editorId = null, string? displayName = null)
     {
         CellRecord? cell = null;

@@ -72,6 +72,10 @@ internal static unsafe class GpuMeshBufferFactory12
         return resource;
     }
 
+    /// <summary>
+    ///     Creates a DEFAULT-heap buffer, uploads <paramref name="data" /> through a staging buffer on the
+    ///     command list, and transitions it to <paramref name="finalState" />. Caller owns the returned resource.
+    /// </summary>
     public static ID3D12Resource CreateDefaultBuffer<T>(
         GpuDevice12 gpu,
         ID3D12GraphicsCommandList cmd,

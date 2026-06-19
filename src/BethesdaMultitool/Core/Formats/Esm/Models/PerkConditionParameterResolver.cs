@@ -2,13 +2,16 @@ using BethesdaMultitool.Core.Formats.Esm.Script;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
+/// <summary>Maps CTDA condition-function indices to script function names and resolves their parameter values.</summary>
 internal static class PerkConditionParameterResolver
 {
+    /// <summary>Returns the script function name for a CTDA condition-function index.</summary>
     public static string ResolveScriptFunctionName(ushort conditionFunctionIndex)
     {
         return ScriptFunctionTable.GetName(ToScriptOpcode(conditionFunctionIndex));
     }
 
+    /// <summary>Returns the declared parameter type for a condition function's nth parameter, or null if unknown.</summary>
     public static ScriptParamType? GetParameterType(ushort conditionFunctionIndex, int parameterIndex)
     {
         var function = ScriptFunctionTable.Get(ToScriptOpcode(conditionFunctionIndex));
@@ -17,6 +20,7 @@ internal static class PerkConditionParameterResolver
             : null;
     }
 
+    /// <summary>Resolves a raw CTDA parameter value into a display string and/or a FormID, based on its declared type.</summary>
     public static (string? Display, uint? FormId) ResolveParameter(
         ushort conditionFunctionIndex,
         int parameterIndex,
@@ -42,6 +46,7 @@ internal static class PerkConditionParameterResolver
         };
     }
 
+    /// <summary>True when the named condition-function parameter is an ActorValue code.</summary>
     public static bool IsActorValueParameter(ushort conditionFunctionIndex, int parameterIndex)
     {
         return GetParameterType(conditionFunctionIndex, parameterIndex) == ScriptParamType.ActorValue;

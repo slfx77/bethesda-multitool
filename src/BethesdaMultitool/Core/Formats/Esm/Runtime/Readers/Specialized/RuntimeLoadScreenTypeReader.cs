@@ -16,6 +16,7 @@ internal sealed class RuntimeLoadScreenTypeReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime load-screen-type record for the given DMP entry, or null if it can't be read.</summary>
     public LoadScreenTypeRecord? ReadRuntimeLoadScreenType(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != LsctFormType)

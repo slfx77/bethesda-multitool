@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
+/// <summary>Scans an ESM once and builds the <see cref="NpcAppearanceIndex" /> of all appearance-relevant record types.</summary>
 internal static class NpcAppearanceIndexBuilder
 {
     internal static NpcAppearanceIndex Build(byte[] esmData, bool bigEndian)

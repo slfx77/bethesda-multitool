@@ -31,8 +31,10 @@ internal interface ITerrainRenderer : IWorldRenderer
     /// </summary>
     int RenderDepthOnly(System.Numerics.Matrix4x4 viewProj, VisibilityCylinder cylinder);
 
+    /// <summary>Loads the exterior cells to render, replacing any previously loaded set.</summary>
     void LoadData(Dictionary<(int gx, int gy), CellRecord> cells);
 
+    /// <summary>Loads the exterior cells along with a spatial index and shared render cache for streaming.</summary>
     void LoadData(
         Dictionary<(int gx, int gy), CellRecord> cells,
         global::BethesdaMultitool.WorldSpatialIndex? spatialIndex,

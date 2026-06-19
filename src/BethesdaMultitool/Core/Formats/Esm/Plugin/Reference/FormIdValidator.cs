@@ -17,6 +17,7 @@ internal sealed class FormIdValidator
     private readonly HashSet<uint> _knownFormIds;
     private readonly Dictionary<string, int> _substitutionsByContext = new(StringComparer.Ordinal);
 
+    /// <summary>Creates the validator with the set of known-good FormIDs (master records plus newly allocated ones).</summary>
     public FormIdValidator(IEnumerable<uint> masterFormIds, IEnumerable<uint> newFormIds)
     {
         _knownFormIds = [.. masterFormIds];
@@ -28,6 +29,10 @@ internal sealed class FormIdValidator
 
     public int TotalSubstitutions { get; private set; }
 
+    /// <summary>
+    ///     Returns the FormID unchanged if it's known or a sentinel (0 / 0xFFFFFFFF), otherwise
+    ///     substitutes 0 (null) and records the substitution under the given context.
+    /// </summary>
     public uint Validate(uint formId, string context)
     {
         if (formId == 0 || formId == 0xFFFFFFFFu || _knownFormIds.Contains(formId))
@@ -41,6 +46,10 @@ internal sealed class FormIdValidator
         return 0;
     }
 
+    /// <summary>
+    ///     Nullable overload: returns null for a dangling or 0xFFFFFFFF reference (recording the
+    ///     substitution), otherwise the original value.
+    /// </summary>
     public uint? Validate(uint? formId, string context)
     {
         if (!formId.HasValue)
@@ -94,6 +103,7 @@ internal sealed class FormIdValidator
         return result;
     }
 
+    /// <summary>Emits a single summary warning of all dangling-reference substitutions for a conversion phase.</summary>
     public void EmitSummary(IConversionProgressSink sink, string phase)
     {
         if (TotalSubstitutions == 0)

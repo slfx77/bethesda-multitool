@@ -74,6 +74,10 @@ public sealed class RuntimeStructReader
     private readonly RuntimeWorldReader _world;
     private readonly RuntimeWorldObjectReader _worldObjects;
 
+    /// <summary>
+    ///     Creates a runtime reader over a memory-mapped DMP view, using the struct offsets for
+    ///     the detected build (pass <paramref name="useProtoOffsets" /> for prototype-build layouts).
+    /// </summary>
     public RuntimeStructReader(
         MemoryMappedViewAccessor accessor,
         long fileSize,
@@ -185,6 +189,10 @@ public sealed class RuntimeStructReader
             refrEntries, npcEntries, worldEntries, cellEntries, allEntries, landEntries);
     }
 
+    /// <summary>
+    ///     Creates a reader that auto-detects the build's struct layout by probing the supplied
+    ///     runtime entries (REFR/NPC/world/cell/LAND) before reading.
+    /// </summary>
     public static RuntimeStructReader CreateWithAutoDetect(
         IMemoryAccessor accessor,
         long fileSize,
@@ -267,6 +275,7 @@ public sealed class RuntimeStructReader
 
     #region Scripts
 
+    /// <summary>Reads the runtime script for the given DMP entry, or null if it can't be read.</summary>
     public RuntimeScriptData? ReadRuntimeScript(RuntimeEditorIdEntry entry)
     {
         return _scripts.ReadRuntimeScript(entry);
@@ -276,6 +285,7 @@ public sealed class RuntimeStructReader
 
     #region AI Packages
 
+    /// <summary>Reads the runtime AI-package record for the given DMP entry, or null if it can't be read.</summary>
     public PackageRecord? ReadRuntimePackage(RuntimeEditorIdEntry entry)
     {
         return _packages.ReadRuntimePackage(entry);
@@ -285,6 +295,10 @@ public sealed class RuntimeStructReader
 
     #region Strings (shared utility)
 
+    /// <summary>
+    ///     Reads a BSString&lt;T&gt; (length-prefixed engine string) at a field offset within a
+    ///     TESForm struct located at the given file offset.
+    /// </summary>
     public string? ReadBsStringT(long tesFormFileOffset, int fieldOffset)
     {
         return _context.ReadBsStringT(tesFormFileOffset, fieldOffset);
@@ -294,6 +308,10 @@ public sealed class RuntimeStructReader
 
     #region Generic (PDB-derived)
 
+    /// <summary>
+    ///     Reads a record with no specialized reader as a generic, PDB-layout-driven record
+    ///     (identity and schema fields only) for the given DMP entry.
+    /// </summary>
     public GenericEsmRecord? ReadGenericRecord(RuntimeEditorIdEntry entry)
     {
         return _generic.ReadGenericRecord(entry);
@@ -321,6 +339,7 @@ public sealed class RuntimeStructReader
 
     #region Globals
 
+    /// <summary>Reads the runtime global-variable record for the given DMP entry, or null if it can't be read.</summary>
     public GlobalRecord? ReadRuntimeGlobal(RuntimeEditorIdEntry entry)
     {
         return _globals.ReadRuntimeGlobal(entry);
@@ -330,6 +349,7 @@ public sealed class RuntimeStructReader
 
     #region Classes
 
+    /// <summary>Reads the runtime class record for the given DMP entry, or null if it can't be read.</summary>
     public ClassRecord? ReadRuntimeClass(RuntimeEditorIdEntry entry)
     {
         return _classes.ReadRuntimeClass(entry);
@@ -339,6 +359,7 @@ public sealed class RuntimeStructReader
 
     #region Reputations
 
+    /// <summary>Reads the runtime reputation record for the given DMP entry, or null if it can't be read.</summary>
     public ReputationRecord? ReadRuntimeReputation(RuntimeEditorIdEntry entry)
     {
         return _reputations.ReadRuntimeReputation(entry);
@@ -348,6 +369,7 @@ public sealed class RuntimeStructReader
 
     #region Encounter Zones
 
+    /// <summary>Reads the runtime encounter-zone record for the given DMP entry, or null if it can't be read.</summary>
     public EncounterZoneRecord? ReadRuntimeEncounterZone(RuntimeEditorIdEntry entry)
     {
         return _encounterZones.ReadRuntimeEncounterZone(entry);
@@ -357,6 +379,7 @@ public sealed class RuntimeStructReader
 
     #region Navmeshes
 
+    /// <summary>Reads the runtime navmesh record for the given DMP entry, or null if it can't be read.</summary>
     public NavMeshRecord? ReadRuntimeNavMesh(RuntimeEditorIdEntry entry)
     {
         return _navMeshes.ReadRuntimeNavMesh(entry);
@@ -366,6 +389,7 @@ public sealed class RuntimeStructReader
 
     #region Lighting Templates
 
+    /// <summary>Reads the runtime lighting-template record for the given DMP entry, or null if it can't be read.</summary>
     public LightingTemplateRecord? ReadRuntimeLightingTemplate(RuntimeEditorIdEntry entry)
     {
         return _lightingTemplates.ReadRuntimeLightingTemplate(entry);
@@ -375,6 +399,7 @@ public sealed class RuntimeStructReader
 
     #region Recipe Categories
 
+    /// <summary>Reads the runtime recipe-category record for the given DMP entry, or null if it can't be read.</summary>
     public RecipeCategoryRecord? ReadRuntimeRecipeCategory(RuntimeEditorIdEntry entry)
     {
         return _recipeCategories.ReadRuntimeRecipeCategory(entry);
@@ -384,6 +409,7 @@ public sealed class RuntimeStructReader
 
     #region Constructible Objects
 
+    /// <summary>Reads the runtime constructible-object (recipe) record for the given DMP entry, or null if it can't be read.</summary>
     public ConstructibleObjectRecord? ReadRuntimeConstructibleObject(RuntimeEditorIdEntry entry)
     {
         return _constructibleObjects.ReadRuntimeConstructibleObject(entry);
@@ -393,6 +419,7 @@ public sealed class RuntimeStructReader
 
     #region Water
 
+    /// <summary>Reads the runtime water-type record for the given DMP entry, or null if it can't be read.</summary>
     public WaterRecord? ReadRuntimeWater(RuntimeEditorIdEntry entry)
     {
         return _water.ReadRuntimeWater(entry);
@@ -402,11 +429,13 @@ public sealed class RuntimeStructReader
 
     #region Effects
 
+    /// <summary>Reads a runtime projectile's physics block at the given file offset, validating its FormID.</summary>
     public ProjectilePhysicsData? ReadProjectilePhysics(long fileOffset, uint expectedFormId)
     {
         return _effects.ReadProjectilePhysics(fileOffset, expectedFormId);
     }
 
+    /// <summary>Reads the runtime projectile record for the given DMP entry, or null if it can't be read.</summary>
     public ProjectileRecord? ReadRuntimeProjectile(RuntimeEditorIdEntry entry)
     {
         return _effects.ReadRuntimeProjectile(entry);
@@ -416,11 +445,13 @@ public sealed class RuntimeStructReader
 
     #region Sounds
 
+    /// <summary>Reads the runtime music-type record for the given DMP entry, or null if it can't be read.</summary>
     public MusicTypeRecord? ReadRuntimeMusicType(RuntimeEditorIdEntry entry)
     {
         return _musicTypes.ReadRuntimeMusicType(entry);
     }
 
+    /// <summary>Reads the runtime sound record for the given DMP entry, or null if it can't be read.</summary>
     public SoundRecord? ReadRuntimeSound(RuntimeEditorIdEntry entry)
     {
         return _sounds.ReadRuntimeSound(entry);
@@ -430,6 +461,7 @@ public sealed class RuntimeStructReader
 
     #region Actors
 
+    /// <summary>Reads the runtime NPC record for the given DMP entry, or null if it can't be read.</summary>
     public NpcRecord? ReadRuntimeNpc(RuntimeEditorIdEntry entry)
     {
         return _actors.ReadRuntimeNpc(entry);
@@ -445,21 +477,25 @@ public sealed class RuntimeStructReader
         return _actorWeapons.ReadRuntimeActorWornArmor(entry);
     }
 
+    /// <summary>Reads the runtime creature record for the given DMP entry, or null if it can't be read.</summary>
     public CreatureRecord? ReadRuntimeCreature(RuntimeEditorIdEntry entry)
     {
         return _actors.ReadRuntimeCreature(entry);
     }
 
+    /// <summary>Reads the runtime faction record for the given DMP entry, or null if it can't be read.</summary>
     public FactionRecord? ReadRuntimeFaction(RuntimeEditorIdEntry entry)
     {
         return _actors.ReadRuntimeFaction(entry);
     }
 
+    /// <summary>Reads the runtime actor-value-info record for the given DMP entry, or null if it can't be read.</summary>
     public ActorValueInfoRecord? ReadRuntimeAvif(RuntimeEditorIdEntry entry)
     {
         return _actors.ReadRuntimeAvif(entry);
     }
 
+    /// <summary>Reads the runtime race record for the given DMP entry, or null if it can't be read.</summary>
     public RaceRecord? ReadRuntimeRace(RuntimeEditorIdEntry entry)
     {
         return _races.ReadRuntimeRace(entry);
@@ -469,21 +505,25 @@ public sealed class RuntimeStructReader
 
     #region Magic / Effects
 
+    /// <summary>Reads the runtime base magic-effect record for the given DMP entry, or null if it can't be read.</summary>
     public BaseEffectRecord? ReadRuntimeBaseEffect(RuntimeEditorIdEntry entry)
     {
         return _magic.ReadRuntimeBaseEffect(entry);
     }
 
+    /// <summary>Reads the runtime spell record for the given DMP entry, or null if it can't be read.</summary>
     public SpellRecord? ReadRuntimeSpell(RuntimeEditorIdEntry entry)
     {
         return _magic.ReadRuntimeSpell(entry);
     }
 
+    /// <summary>Reads the runtime enchantment record for the given DMP entry, or null if it can't be read.</summary>
     public EnchantmentRecord? ReadRuntimeEnchantment(RuntimeEditorIdEntry entry)
     {
         return _magic.ReadRuntimeEnchantment(entry);
     }
 
+    /// <summary>Reads the runtime perk record for the given DMP entry, or null if it can't be read.</summary>
     public PerkRecord? ReadRuntimePerk(RuntimeEditorIdEntry entry)
     {
         return _magic.ReadRuntimePerk(entry);
@@ -493,11 +533,13 @@ public sealed class RuntimeStructReader
 
     #region Character Appearance
 
+    /// <summary>Reads the runtime eyes record for the given DMP entry, or null if it can't be read.</summary>
     public EyesRecord? ReadRuntimeEyes(RuntimeEditorIdEntry entry)
     {
         return _appearance.ReadRuntimeEyes(entry);
     }
 
+    /// <summary>Reads the runtime hair record for the given DMP entry, or null if it can't be read.</summary>
     public HairRecord? ReadRuntimeHair(RuntimeEditorIdEntry entry)
     {
         return _appearance.ReadRuntimeHair(entry);
@@ -507,66 +549,79 @@ public sealed class RuntimeStructReader
 
     #region Items
 
+    /// <summary>Reads the runtime weapon record for the given DMP entry, or null if it can't be read.</summary>
     public WeaponRecord? ReadRuntimeWeapon(RuntimeEditorIdEntry entry)
     {
         return _items.ReadRuntimeWeapon(entry);
     }
 
+    /// <summary>Reads the runtime armor record for the given DMP entry, or null if it can't be read.</summary>
     public ArmorRecord? ReadRuntimeArmor(RuntimeEditorIdEntry entry)
     {
         return _items.ReadRuntimeArmor(entry);
     }
 
+    /// <summary>Reads the runtime ammunition record for the given DMP entry, or null if it can't be read.</summary>
     public AmmoRecord? ReadRuntimeAmmo(RuntimeEditorIdEntry entry)
     {
         return _items.ReadRuntimeAmmo(entry);
     }
 
+    /// <summary>Reads the runtime consumable (ALCH) record for the given DMP entry, or null if it can't be read.</summary>
     public ConsumableRecord? ReadRuntimeConsumable(RuntimeEditorIdEntry entry)
     {
         return _items.ReadRuntimeConsumable(entry);
     }
 
+    /// <summary>Reads the runtime miscellaneous-item record for the given DMP entry, or null if it can't be read.</summary>
     public MiscItemRecord? ReadRuntimeMiscItem(RuntimeEditorIdEntry entry)
     {
         return _items.ReadRuntimeMiscItem(entry);
     }
 
+    /// <summary>Reads the runtime key record for the given DMP entry, or null if it can't be read.</summary>
     public KeyRecord? ReadRuntimeKey(RuntimeEditorIdEntry entry)
     {
         return _items.ReadRuntimeKey(entry);
     }
 
+    /// <summary>Reads the runtime container record for the given DMP entry, or null if it can't be read.</summary>
     public ContainerRecord? ReadRuntimeContainer(RuntimeEditorIdEntry entry)
     {
         return _items.ReadRuntimeContainer(entry);
     }
 
+    /// <summary>Reads the runtime book record for the given DMP entry, or null if it can't be read.</summary>
     public BookRecord? ReadRuntimeBook(RuntimeEditorIdEntry entry)
     {
         return _books.ReadRuntimeBook(entry);
     }
 
+    /// <summary>Reads the runtime weapon-mod record for the given DMP entry, or null if it can't be read.</summary>
     public WeaponModRecord? ReadRuntimeWeaponMod(RuntimeEditorIdEntry entry)
     {
         return _weaponMods.ReadRuntimeWeaponMod(entry);
     }
 
+    /// <summary>Reads the runtime recipe record for the given DMP entry, or null if it can't be read.</summary>
     public RecipeRecord? ReadRuntimeRecipe(RuntimeEditorIdEntry entry)
     {
         return _recipes.ReadRuntimeRecipe(entry);
     }
 
+    /// <summary>Reads the runtime challenge record for the given DMP entry, or null if it can't be read.</summary>
     public ChallengeRecord? ReadRuntimeChallenge(RuntimeEditorIdEntry entry)
     {
         return _challenges.ReadRuntimeChallenge(entry);
     }
 
+    /// <summary>Reads the runtime explosion record for the given DMP entry, or null if it can't be read.</summary>
     public ExplosionRecord? ReadRuntimeExplosion(RuntimeEditorIdEntry entry)
     {
         return _explosions.ReadRuntimeExplosion(entry);
     }
 
+    /// <summary>Reads the runtime message record for the given DMP entry, or null if it can't be read.</summary>
     public MessageRecord? ReadRuntimeMessage(RuntimeEditorIdEntry entry)
     {
         return _messages.ReadRuntimeMessage(entry);
@@ -576,36 +631,43 @@ public sealed class RuntimeStructReader
 
     #region Dialogue & Text
 
+    /// <summary>Reads the runtime dialogue-topic (DIAL) info for the given DMP entry.</summary>
     public RuntimeDialogTopicInfo? ReadRuntimeDialogTopic(RuntimeEditorIdEntry entry)
     {
         return _dialogue.ReadRuntimeDialogTopic(entry);
     }
 
+    /// <summary>Reads the runtime dialogue-response (INFO) data for the given DMP entry.</summary>
     public RuntimeDialogueInfo? ReadRuntimeDialogueInfo(RuntimeEditorIdEntry entry)
     {
         return _dialogue.ReadRuntimeDialogueInfo(entry);
     }
 
+    /// <summary>Reads the runtime dialogue-response (INFO) data at the given virtual address.</summary>
     public RuntimeDialogueInfo? ReadRuntimeDialogueInfoFromVA(uint va)
     {
         return _dialogue.ReadRuntimeDialogueInfoFromVA(va);
     }
 
+    /// <summary>Reads the runtime quest record for the given DMP entry, or null if it can't be read.</summary>
     public QuestRecord? ReadRuntimeQuest(RuntimeEditorIdEntry entry)
     {
         return _dialogue.ReadRuntimeQuest(entry);
     }
 
+    /// <summary>Reads the runtime terminal record for the given DMP entry, or null if it can't be read.</summary>
     public TerminalRecord? ReadRuntimeTerminal(RuntimeEditorIdEntry entry)
     {
         return _dialogue.ReadRuntimeTerminal(entry);
     }
 
+    /// <summary>Reads the runtime note record for the given DMP entry, or null if it can't be read.</summary>
     public NoteRecord? ReadRuntimeNote(RuntimeEditorIdEntry entry)
     {
         return _dialogue.ReadRuntimeNote(entry);
     }
 
+    /// <summary>Walks a dialogue topic's runtime quest/info list, returning the topic-to-quest links.</summary>
     public List<TopicQuestLink> WalkTopicQuestInfoList(RuntimeEditorIdEntry entry)
     {
         return _dialogue.WalkTopicQuestInfoList(entry);
@@ -619,71 +681,85 @@ public sealed class RuntimeStructReader
 
     #region Head Parts / Voice Types
 
+    /// <summary>Reads the runtime head-part record for the given DMP entry, or null if it can't be read.</summary>
     public HeadPartRecord? ReadRuntimeHeadPart(RuntimeEditorIdEntry entry)
     {
         return _headParts.ReadRuntimeHeadPart(entry);
     }
 
+    /// <summary>Reads the runtime voice-type record for the given DMP entry, or null if it can't be read.</summary>
     public VoiceTypeRecord? ReadRuntimeVoiceType(RuntimeEditorIdEntry entry)
     {
         return _voiceTypes.ReadRuntimeVoiceType(entry);
     }
 
+    /// <summary>Reads the runtime menu-icon record for the given DMP entry, or null if it can't be read.</summary>
     public MenuIconRecord? ReadRuntimeMenuIcon(RuntimeEditorIdEntry entry)
     {
         return _menuIcons.ReadRuntimeMenuIcon(entry);
     }
 
+    /// <summary>Reads the runtime load-screen-type record for the given DMP entry, or null if it can't be read.</summary>
     public LoadScreenTypeRecord? ReadRuntimeLoadScreenType(RuntimeEditorIdEntry entry)
     {
         return _loadScreenTypes.ReadRuntimeLoadScreenType(entry);
     }
 
+    /// <summary>Reads the runtime idle-animation record for the given DMP entry, or null if it can't be read.</summary>
     public IdleAnimationRecord? ReadRuntimeIdleAnimation(RuntimeEditorIdEntry entry)
     {
         return _idleAnimations.ReadRuntimeIdleAnimation(entry);
     }
 
+    /// <summary>Reads the runtime camera-path record for the given DMP entry, or null if it can't be read.</summary>
     public CameraPathRecord? ReadRuntimeCameraPath(RuntimeEditorIdEntry entry)
     {
         return _cameraPaths.ReadRuntimeCameraPath(entry);
     }
 
+    /// <summary>Reads the runtime impact-data record for the given DMP entry, or null if it can't be read.</summary>
     public ImpactDataRecord? ReadRuntimeImpactData(RuntimeEditorIdEntry entry)
     {
         return _impactData.ReadRuntimeImpactData(entry);
     }
 
+    /// <summary>Reads the runtime audio-location-controller record for the given DMP entry, or null if it can't be read.</summary>
     public AudioLocationControllerRecord? ReadRuntimeAudioLocationController(RuntimeEditorIdEntry entry)
     {
         return _audioLocationControllers.ReadRuntimeAudioLocationController(entry);
     }
 
+    /// <summary>Reads the runtime region record for the given DMP entry, or null if it can't be read.</summary>
     public RegionRecord? ReadRuntimeRegion(RuntimeEditorIdEntry entry)
     {
         return _regions.ReadRuntimeRegion(entry);
     }
 
+    /// <summary>Reads the runtime caravan-card record for the given DMP entry, or null if it can't be read.</summary>
     public CaravanCardRecord? ReadRuntimeCaravanCard(RuntimeEditorIdEntry entry)
     {
         return _caravanCards.ReadRuntimeCaravanCard(entry);
     }
 
+    /// <summary>Reads the runtime caravan-money record for the given DMP entry, or null if it can't be read.</summary>
     public CaravanMoneyRecord? ReadRuntimeCaravanMoney(RuntimeEditorIdEntry entry)
     {
         return _caravanMoney.ReadRuntimeCaravanMoney(entry);
     }
 
+    /// <summary>Reads the runtime debris record for the given DMP entry, or null if it can't be read.</summary>
     public DebrisRecord? ReadRuntimeDebris(RuntimeEditorIdEntry entry)
     {
         return _debris.ReadRuntimeDebris(entry);
     }
 
+    /// <summary>Reads the runtime ingredient record for the given DMP entry, or null if it can't be read.</summary>
     public IngredientRecord? ReadRuntimeIngredient(RuntimeEditorIdEntry entry)
     {
         return _ingredients.ReadRuntimeIngredient(entry);
     }
 
+    /// <summary>Reads the runtime navmesh-info-map record for the given DMP entry, or null if it can't be read.</summary>
     public NavMeshInfoMapRecord? ReadRuntimeNavMeshInfoMap(RuntimeEditorIdEntry entry)
     {
         return _navMeshInfoMaps.ReadRuntimeNavMeshInfoMap(entry);
@@ -767,11 +843,13 @@ public sealed class RuntimeStructReader
         return new BsNavMeshStructuralValidator(_context, knownCellVas, mode);
     }
 
+    /// <summary>Reads the runtime caravan-deck record for the given DMP entry, or null if it can't be read.</summary>
     public CaravanDeckRecord? ReadRuntimeCaravanDeck(RuntimeEditorIdEntry entry)
     {
         return _caravanDecks.ReadRuntimeCaravanDeck(entry);
     }
 
+    /// <summary>Reads the runtime survival-stage record for the given DMP entry, or null if it can't be read.</summary>
     public SurvivalStageRecord? ReadRuntimeSurvivalStage(RuntimeEditorIdEntry entry, byte expectedFormType)
     {
         return _survivalStages.ReadRuntimeSurvivalStage(entry, expectedFormType);
@@ -781,27 +859,32 @@ public sealed class RuntimeStructReader
 
     #region World
 
+    /// <summary>Reads the runtime loaded landscape (LAND) terrain data for the given cell entry.</summary>
     public RuntimeLoadedLandData? ReadRuntimeLandData(RuntimeEditorIdEntry entry)
     {
         return _world.ReadRuntimeLandData(entry);
     }
 
+    /// <summary>Reads runtime landscape data for many entries, keyed by FormID.</summary>
     public Dictionary<uint, RuntimeLoadedLandData> ReadAllRuntimeLandData(
         IEnumerable<RuntimeEditorIdEntry> entries)
     {
         return _world.ReadAllRuntimeLandData(entries);
     }
 
+    /// <summary>Probes the runtime dialogue-topic struct layout, returning the detected variant.</summary>
     public int ProbeDialTopicLayout(RuntimeEditorIdEntry entry)
     {
         return _world.ProbeDialTopicLayout(entry);
     }
 
+    /// <summary>Reads the runtime placed-object reference (REFR) for the given DMP entry.</summary>
     public ExtractedRefrRecord? ReadRuntimeRefr(RuntimeEditorIdEntry entry)
     {
         return _refrs.ReadRuntimeRefr(entry);
     }
 
+    /// <summary>Reads runtime placed-object references for many entries, keyed by FormID.</summary>
     public Dictionary<uint, ExtractedRefrRecord> ReadAllRuntimeRefrs(
         IEnumerable<RuntimeEditorIdEntry> entries)
     {
@@ -815,22 +898,26 @@ public sealed class RuntimeStructReader
         return _refrs.BuildExtraDataCensus(entries, maxEntries);
     }
 
+    /// <summary>Reads each worldspace's runtime cell map (grid coordinate to cell), keyed by worldspace FormID.</summary>
     public Dictionary<uint, RuntimeWorldspaceData> ReadAllWorldspaceCellMaps(
         IEnumerable<RuntimeEditorIdEntry> entries)
     {
         return _cells.ReadAllWorldspaceCellMaps(entries);
     }
 
+    /// <summary>Reads the runtime worldspace (WRLD) record for the given DMP entry.</summary>
     public WorldspaceRecord? ReadRuntimeWorldspace(RuntimeEditorIdEntry entry)
     {
         return _cells.ReadRuntimeWorldspace(entry);
     }
 
+    /// <summary>Reads the runtime cell (CELL) record for the given DMP entry.</summary>
     public CellRecord? ReadRuntimeCell(RuntimeEditorIdEntry entry)
     {
         return _cells.ReadRuntimeCell(entry);
     }
 
+    /// <summary>Reads the runtime cell (CELL) record for a cell-map entry, with optional editor ID and display name.</summary>
     public CellRecord? ReadRuntimeCell(RuntimeCellMapEntry entry, string? editorId = null, string? displayName = null)
     {
         return _cells.ReadRuntimeCell(entry, editorId, displayName);
@@ -840,11 +927,13 @@ public sealed class RuntimeStructReader
 
     #region Collections
 
+    /// <summary>Reads the runtime form-list record for the given DMP entry, or null if it can't be read.</summary>
     public FormListRecord? ReadRuntimeFormList(RuntimeEditorIdEntry entry)
     {
         return _collections.ReadRuntimeFormList(entry);
     }
 
+    /// <summary>Reads the runtime leveled-list record for the given DMP entry, or null if it can't be read.</summary>
     public LeveledListRecord? ReadRuntimeLeveledList(RuntimeEditorIdEntry entry)
     {
         return _collections.ReadRuntimeLeveledList(entry);
@@ -854,26 +943,31 @@ public sealed class RuntimeStructReader
 
     #region World Objects
 
+    /// <summary>Reads the runtime activator record for the given DMP entry, or null if it can't be read.</summary>
     public ActivatorRecord? ReadRuntimeActivator(RuntimeEditorIdEntry entry)
     {
         return _worldObjects.ReadRuntimeActivator(entry);
     }
 
+    /// <summary>Reads the runtime light record for the given DMP entry, or null if it can't be read.</summary>
     public LightRecord? ReadRuntimeLight(RuntimeEditorIdEntry entry)
     {
         return _worldObjects.ReadRuntimeLight(entry);
     }
 
+    /// <summary>Reads the runtime door record for the given DMP entry, or null if it can't be read.</summary>
     public DoorRecord? ReadRuntimeDoor(RuntimeEditorIdEntry entry)
     {
         return _worldObjects.ReadRuntimeDoor(entry);
     }
 
+    /// <summary>Reads the runtime static-object record for the given DMP entry, or null if it can't be read.</summary>
     public StaticRecord? ReadRuntimeStatic(RuntimeEditorIdEntry entry)
     {
         return _worldObjects.ReadRuntimeStatic(entry);
     }
 
+    /// <summary>Reads the runtime furniture record for the given DMP entry, or null if it can't be read.</summary>
     public FurnitureRecord? ReadRuntimeFurniture(RuntimeEditorIdEntry entry)
     {
         return _worldObjects.ReadRuntimeFurniture(entry);

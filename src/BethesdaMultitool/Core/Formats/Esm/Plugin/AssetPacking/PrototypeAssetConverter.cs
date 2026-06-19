@@ -35,6 +35,10 @@ internal sealed class PrototypeAssetConverter
     private readonly DdxConverter _ddx = new();
     private readonly Func<string, byte[]?>? _companionFetcher;
 
+    /// <summary>
+    ///     Creates the converter with an optional companion-asset fetcher (used to pull sidecar
+    ///     files such as a paired DDS header when converting a texture).
+    /// </summary>
     public PrototypeAssetConverter(Func<string, byte[]?>? companionFetcher = null)
     {
         _companionFetcher = companionFetcher;
@@ -258,6 +262,7 @@ internal sealed record ConvertedAsset
 
     public bool Success => FailureReason is null;
 
+    /// <summary>Creates a result for an asset that was successfully converted to PC format.</summary>
     public static ConvertedAsset Converted(byte[] data, string outputPath)
     {
         return new ConvertedAsset
@@ -268,6 +273,7 @@ internal sealed record ConvertedAsset
         };
     }
 
+    /// <summary>Creates a result for an asset that needed no conversion and is passed through unchanged.</summary>
     public static ConvertedAsset PassThrough(byte[] data, string outputPath)
     {
         return new ConvertedAsset
@@ -278,6 +284,7 @@ internal sealed record ConvertedAsset
         };
     }
 
+    /// <summary>Creates a result for an asset whose conversion failed, carrying the original bytes and a reason.</summary>
     public static ConvertedAsset Failure(byte[] data, string outputPath, string reason)
     {
         return new ConvertedAsset

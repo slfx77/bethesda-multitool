@@ -24,6 +24,7 @@ internal sealed class RuntimeActorWeaponReader(RuntimeMemoryContext context, int
     private readonly int _bipedPtrOffset = BipedPtrOffset + bipedPtrShift;
     private readonly int _characterReadSize = Math.Max(CharacterStructSize, BipedPtrOffset + bipedPtrShift + 4);
 
+    /// <summary>Reads an actor's runtime weapon state (equipped/drawn weapon) for the given DMP entry.</summary>
     public RuntimeActorWeaponState? ReadRuntimeActorWeaponState(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != 0x3B)

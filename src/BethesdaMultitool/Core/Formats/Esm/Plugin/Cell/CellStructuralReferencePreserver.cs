@@ -63,6 +63,10 @@ internal static class CellStructuralReferencePreserver
     private static readonly HashSet<string> EsmUnsafePreservedSubrecords =
         new(StringComparer.Ordinal) { "XEMI" };
 
+    /// <summary>
+    ///     Re-emits master structural cell refs (room/portal/occlusion markers) that the DMP
+    ///     didn't capture; returns how many were preserved.
+    /// </summary>
     public static int PreserveMissing(
         IReadOnlyList<ParsedMainRecord> masterRefs,
         ISet<uint> dmpFormIdsInCell,
@@ -97,6 +101,10 @@ internal static class CellStructuralReferencePreserver
         return preserved;
     }
 
+    /// <summary>
+    ///     Re-emits every master cell ref the DMP didn't capture (not just structural ones),
+    ///     placing each into its original child GRUP bucket; returns how many were preserved.
+    /// </summary>
     public static int PreserveAllMissing(
         IReadOnlyList<ParsedMainRecord> masterRefs,
         ISet<uint> dmpFormIdsInCell,
@@ -124,6 +132,11 @@ internal static class CellStructuralReferencePreserver
         return preserved;
     }
 
+    /// <summary>
+    ///     Re-emits master cell refs missing from an authoritatively-replaced cell, but only the
+    ///     ones worth keeping (actors, persistent, scripted, or base types the DMP didn't capture);
+    ///     optionally drops render-culling markers.
+    /// </summary>
     public static int PreserveLoadedReplacementMissing(
         IReadOnlyList<ParsedMainRecord> masterRefs,
         ISet<uint> coveredMasterFormIdsInCell,
@@ -158,6 +171,10 @@ internal static class CellStructuralReferencePreserver
         return preserved;
     }
 
+    /// <summary>
+    ///     Decides whether a master ref should survive a loaded-cell replacement: true for actors,
+    ///     persistent or scripted refs, and refs whose base type the DMP capture didn't include.
+    /// </summary>
     public static bool ShouldPreserveInLoadedReplacement(
         ParsedMainRecord masterRef,
         IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
@@ -208,6 +225,10 @@ internal static class CellStructuralReferencePreserver
         return false;
     }
 
+    /// <summary>
+    ///     True if the REFR is a structural cell marker — it carries room/portal/occlusion
+    ///     subrecords or its base record's editor ID names such a marker.
+    /// </summary>
     public static bool IsStructuralCellRef(
         ParsedMainRecord masterRef,
         IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
@@ -233,6 +254,7 @@ internal static class CellStructuralReferencePreserver
         return IsStructuralMarkerBase(baseRecord);
     }
 
+    /// <summary>True if the base record's editor ID names a structural marker (room/portal/occlusion/multibound/culling).</summary>
     public static bool IsStructuralMarkerBase(ParsedMainRecord baseRecord)
     {
         if (string.IsNullOrEmpty(baseRecord.EditorId))
@@ -282,6 +304,7 @@ internal static class CellStructuralReferencePreserver
                    baseRecord.EditorId!.Contains(needle, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>Reads the base-object FormID from a placed ref's NAME subrecord, or null if absent.</summary>
     public static uint? ReadNameFormId(ParsedMainRecord record)
     {
         var name = record.Subrecords.FirstOrDefault(sub => sub.Signature == "NAME" && sub.Data.Length >= 4);

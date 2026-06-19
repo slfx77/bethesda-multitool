@@ -10,6 +10,7 @@ public sealed class CmnyEncoder : IRecordEncoder
     public string RecordType => "CMNY";
     public Type ModelType => typeof(CaravanMoneyRecord);
 
+    /// <summary>Produces override subrecords for an existing CMNY (a caravan-money record) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         return EncodeNew((CaravanMoneyRecord)model);

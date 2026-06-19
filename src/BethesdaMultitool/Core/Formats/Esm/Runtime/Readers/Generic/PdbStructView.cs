@@ -235,6 +235,7 @@ internal sealed class PdbStructView
             : [];
     }
 
+    /// <summary>Walks the named BSSimpleList field and maps each item pointer through <paramref name="itemReader" />.</summary>
     public List<T> SimpleList<T>(string field, string? owner, Func<uint, T?> itemReader)
         where T : class
     {

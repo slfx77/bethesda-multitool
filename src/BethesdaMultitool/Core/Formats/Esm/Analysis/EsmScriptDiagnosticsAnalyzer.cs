@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
+/// <summary>Aggregated script/dialogue diagnostics gathered for a set of target records in an ESM/ESP.</summary>
 public sealed record EsmScriptDiagnosticsResult(
     string SourcePath,
     IReadOnlyList<string> Targets,
@@ -20,6 +21,7 @@ public sealed record EsmScriptDiagnosticsResult(
     IReadOnlyList<EsmScriptDiagnosticBlockRow> ScriptBlocks,
     IReadOnlyList<EsmScriptDiagnosticReferenceRow> ScriptReferences);
 
+/// <summary>A record that matched one of the requested diagnostic targets, with the reason it matched.</summary>
 public sealed record EsmScriptDiagnosticTargetMatchRow(
     string Target,
     string RecordType,
@@ -28,6 +30,7 @@ public sealed record EsmScriptDiagnosticTargetMatchRow(
     string FullName,
     string MatchReason);
 
+/// <summary>A record related to a target (and how), summarizing its interesting subrecords.</summary>
 public sealed record EsmScriptDiagnosticRecordRow(
     string Target,
     string Relation,
@@ -37,6 +40,7 @@ public sealed record EsmScriptDiagnosticRecordRow(
     string FullName,
     string InterestingSubrecords);
 
+/// <summary>A dialogue INFO line associated with a target, with its topic/quest/speaker links and response info.</summary>
 public sealed record EsmScriptDiagnosticDialogueRow(
     string Target,
     uint InfoFormId,
@@ -55,6 +59,7 @@ public sealed record EsmScriptDiagnosticDialogueRow(
     bool HasResultScript,
     string ResponsePreview);
 
+/// <summary>Audit row diagnosing whether a dialogue INFO is reachable (root/terminal/goodbye classification and topic edges).</summary>
 public sealed record EsmScriptDialogueAuditRow(
     string Target,
     uint InfoFormId,
@@ -72,6 +77,7 @@ public sealed record EsmScriptDialogueAuditRow(
     string FollowUpInfos,
     string ResponsePreview);
 
+/// <summary>One decoded CTDA condition on a target-related record (function, operands, run-on, raw bytes).</summary>
 public sealed record EsmScriptConditionAuditRow(
     string Target,
     string Relation,
@@ -92,6 +98,7 @@ public sealed record EsmScriptConditionAuditRow(
     string ReferenceLabel,
     string RawBytes);
 
+/// <summary>One compiled-script (SCDA) block on a target-related record, comparing SCHR-declared sizes against the walk.</summary>
 public sealed record EsmScriptDiagnosticBlockRow(
     string Target,
     string Relation,
@@ -112,6 +119,7 @@ public sealed record EsmScriptDiagnosticBlockRow(
     string Diagnostics,
     string SourceTextPreview);
 
+/// <summary>One reference slot inside a compiled-script block, with its raw value and FormID-resolution status.</summary>
 public sealed record EsmScriptDiagnosticReferenceRow(
     string Target,
     string ParentRecordType,
@@ -126,6 +134,7 @@ public sealed record EsmScriptDiagnosticReferenceRow(
     string ResolvedEditorId,
     string ResolvedFullName);
 
+/// <summary>Gathers script, dialogue, condition, and reference diagnostics for a set of target records in an ESM/ESP.</summary>
 public static class EsmScriptDiagnosticsAnalyzer
 {
     private static readonly HashSet<string> ActorRecordTypes = new(StringComparer.Ordinal)
@@ -138,6 +147,7 @@ public static class EsmScriptDiagnosticsAnalyzer
         "ACHR", "ACRE"
     };
 
+    /// <summary>Parses the file at the given path and runs script diagnostics for the requested targets.</summary>
     public static EsmScriptDiagnosticsResult AnalyzeFile(
         string path,
         IReadOnlyList<string> targets,
@@ -148,6 +158,7 @@ public static class EsmScriptDiagnosticsAnalyzer
         return AnalyzeRecords(path, records, targets, explicitRecordFormIds);
     }
 
+    /// <summary>Runs script diagnostics for the requested targets against an already-parsed record set.</summary>
     public static EsmScriptDiagnosticsResult AnalyzeRecords(
         string sourcePath,
         IReadOnlyList<ParsedMainRecord> records,
@@ -361,6 +372,7 @@ public static class EsmScriptDiagnosticsAnalyzer
                 .ToList());
     }
 
+    /// <summary>Writes the diagnostics result as a set of CSV reports into the given output directory.</summary>
     public static void WriteReport(EsmScriptDiagnosticsResult result, string outputDirectory)
     {
         Directory.CreateDirectory(outputDirectory);

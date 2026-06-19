@@ -152,11 +152,13 @@ internal static class NewTopLevelRecordEncoderDispatcher
             ["SLPD"] = (model, _) => SurvivalStageEncoder.EncodeNew((SurvivalStageRecord)model)
         };
 
+    /// <summary>Returns the set of record-type signatures this dispatcher can encode as new records.</summary>
     public static IReadOnlyCollection<string> GetSupportedRecordTypes()
     {
         return Encoders.Keys.ToArray();
     }
 
+    /// <summary>Encodes a new top-level record of the given type, or null if no encoder is registered for it.</summary>
     public static EncodedRecord? TryEncode(
         string recordType,
         object model,

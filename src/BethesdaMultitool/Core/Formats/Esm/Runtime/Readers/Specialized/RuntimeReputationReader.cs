@@ -14,6 +14,7 @@ internal sealed class RuntimeReputationReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime reputation record for the given DMP entry, or null if it can't be read.</summary>
     public ReputationRecord? ReadRuntimeReputation(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != RepuFormType)

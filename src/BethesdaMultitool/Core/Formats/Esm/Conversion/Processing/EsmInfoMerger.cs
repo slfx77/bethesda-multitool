@@ -39,6 +39,10 @@ internal sealed class EsmInfoMerger(byte[] input, EsmConversionStats stats)
     private Dictionary<int, InfoMergeEntry>? _mergeIndex;
     private IReadOnlyDictionary<uint, int>? _toftInfoOffsetsByFormId;
 
+    /// <summary>
+    ///     Supplies the TOFT INFO index (FormID to file offset) used to locate the split INFO
+    ///     fragments that get merged; invalidates the cached merge index.
+    /// </summary>
     public void SetToftInfoIndex(IReadOnlyDictionary<uint, int> toftInfoOffsetsByFormId)
     {
         _toftInfoOffsetsByFormId = toftInfoOffsetsByFormId;
@@ -82,6 +86,10 @@ internal sealed class EsmInfoMerger(byte[] input, EsmConversionStats stats)
         return null;
     }
 
+    /// <summary>
+    ///     Tries to merge an Xbox 360 split INFO record at the given base offset into a single
+    ///     PC INFO record; sets <paramref name="skip" /> when the record is a fragment to drop.
+    /// </summary>
     public bool TryMergeInfoRecord(int baseOffset, uint baseFlags, out byte[]? mergedData, out uint mergedFlags,
         out bool skip)
     {

@@ -3,8 +3,10 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export;
 
+/// <summary>Compact fingerprint (base-height bits + hashed deltas) used to match VHGT heightmaps to LAND records.</summary>
 internal readonly record struct VhgtHeightmapFingerprint(uint HeightOffsetBits, int DeltaHash)
 {
+    /// <summary>Computes a fingerprint from a detected standalone VHGT heightmap.</summary>
     public static VhgtHeightmapFingerprint From(DetectedVhgtHeightmap heightmap)
     {
         return new VhgtHeightmapFingerprint(
@@ -12,6 +14,7 @@ internal readonly record struct VhgtHeightmapFingerprint(uint HeightOffsetBits, 
             HashDeltas(heightmap.HeightDeltas));
     }
 
+    /// <summary>Computes a fingerprint from a LAND record's parsed heightmap.</summary>
     public static VhgtHeightmapFingerprint From(LandHeightmap heightmap)
     {
         return new VhgtHeightmapFingerprint(

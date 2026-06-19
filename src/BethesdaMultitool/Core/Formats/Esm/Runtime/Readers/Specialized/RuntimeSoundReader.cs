@@ -17,6 +17,7 @@ internal sealed class RuntimeSoundReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime sound record for the given DMP entry, or null if it can't be read.</summary>
     public SoundRecord? ReadRuntimeSound(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != SounFormType)

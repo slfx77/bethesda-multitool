@@ -39,6 +39,7 @@ internal sealed class RuntimeNpcFieldReader
     private readonly int _coreShift;
     private readonly RuntimeNpcLayout _layout;
 
+    /// <summary>Creates the NPC field reader bound to the runtime memory context and a resolved NPC struct layout.</summary>
     public RuntimeNpcFieldReader(RuntimeMemoryContext context, RuntimeNpcLayout layout)
     {
         _context = context;

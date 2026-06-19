@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
+/// <summary>Picks which weapon an NPC visibly carries (from AI package, best-weapon heuristic, or live DMP state) and how it attaches.</summary>
 internal sealed class NpcWeaponResolver
 {
     private const uint PackageWeaponsUnequippedFlag = 0x00200000;
@@ -636,6 +637,7 @@ internal sealed class NpcWeaponResolver
         };
     }
 
+    /// <summary>A weapon selection read from a DMP's live actor state: the target actor reference and its equipped weapon FormID.</summary>
     internal readonly record struct RuntimeWeaponSelection(
         bool HasRuntimeTarget,
         uint? ActorRefFormId,

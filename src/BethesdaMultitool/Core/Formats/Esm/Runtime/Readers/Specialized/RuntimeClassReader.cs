@@ -17,6 +17,7 @@ internal sealed class RuntimeClassReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime class record for the given DMP entry, or null if it can't be read.</summary>
     public ClassRecord? ReadRuntimeClass(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != ClasFormType)

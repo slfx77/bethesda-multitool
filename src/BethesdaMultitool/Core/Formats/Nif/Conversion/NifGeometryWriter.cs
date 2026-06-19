@@ -4,6 +4,10 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Conversion;
 
+/// <summary>
+///     Writes expanded NIF geometry and Havok collision blocks during conversion, unpacking packed vertex
+///     data into the standard little-endian layout (positions, normals/tangents, vertex colors, UVs, triangles).
+/// </summary>
 internal static class NifGeometryWriter
 {
     /// <summary>

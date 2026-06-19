@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses a weapon (WEAP) record into a <see cref="WeapScanEntry" /> (mesh path, weapon type, flags).</summary>
 internal static class WeaponRecordScanner
 {
     internal static WeapScanEntry? Process(

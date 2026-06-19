@@ -10,12 +10,16 @@ namespace BethesdaMultitool;
 
 // ── Unified Navigation Location Types ──
 #pragma warning disable S2094 // Abstract base for sealed record hierarchy (pattern matching)
+/// <summary>Base type for an entry in the tab's unified back/forward navigation history.</summary>
 internal abstract record UnifiedNavLocation;
 #pragma warning restore S2094
+/// <summary>A navigation history entry pointing at a node in the data browser tree.</summary>
 internal sealed record DataBrowserNavLocation(EsmBrowserNode Node) : UnifiedNavLocation;
 
+/// <summary>A navigation history entry capturing a world map view state.</summary>
 internal sealed record WorldMapNavLocation(WorldMapControl.WorldNavState State) : UnifiedNavLocation;
 
+/// <summary>A navigation history entry for the dialogue viewer: the topic, scroll position, and active filters.</summary>
 internal sealed record DialogueNavLocation(
     uint TopicFormId,
     double ScrollPosition,

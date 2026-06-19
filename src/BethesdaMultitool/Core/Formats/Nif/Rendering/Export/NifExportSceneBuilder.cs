@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>Builds a <see cref="GlbScene" /> from a single NIF model for export to GLB.</summary>
 internal static class NifExportSceneBuilder
 {
     internal static GlbScene? Build(byte[] data, NifInfo nif, string sourceLabel)

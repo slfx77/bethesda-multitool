@@ -51,6 +51,7 @@ public static class EsmRecordExporter
         Log.Debug($"  [ESM] Exported {gameSettings.Count} game settings to game_settings.txt");
     }
 
+    /// <summary>Writes each SCTX script source record to a text file in the output directory.</summary>
     public static async Task ExportScriptSourcesAsync(List<SctxRecord> scriptSources, string outputDir)
     {
         if (scriptSources.Count == 0)

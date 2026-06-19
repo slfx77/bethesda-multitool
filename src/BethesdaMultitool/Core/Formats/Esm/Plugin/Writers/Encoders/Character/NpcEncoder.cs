@@ -51,6 +51,7 @@ public sealed class NpcEncoder : IRecordEncoder
     public string RecordType => "NPC_";
     public Type ModelType => typeof(NpcRecord);
 
+    /// <summary>Produces override subrecords for an existing NPC_ (an NPC) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var npc = (NpcRecord)model;

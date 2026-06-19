@@ -19,6 +19,7 @@ internal static class BSStringDiagnostics
     private static readonly ConcurrentDictionary<(string FieldName, BSStringFailure Reason), ConcurrentBag<DiagSample>>
         _samples = new();
 
+    /// <summary>Records one BSStringT read outcome (success or a specific failure) for a field.</summary>
     public static void Record(string fieldName, BSStringFailure failure)
     {
         _counts.AddOrUpdate((fieldName, failure), 1, (_, c) => c + 1);
@@ -40,6 +41,7 @@ internal static class BSStringDiagnostics
         }
     }
 
+    /// <summary>Clears all collected counts and samples; call before starting a scan.</summary>
     public static void Reset()
     {
         _counts.Clear();

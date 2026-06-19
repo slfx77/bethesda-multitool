@@ -8,6 +8,7 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed class BulkObservableCollection<T> : ObservableCollection<T>
 {
+    /// <summary>Clears the collection and adds all the given items, raising a single reset notification.</summary>
     public void ReplaceAll(IEnumerable<T> items)
     {
         ArgumentNullException.ThrowIfNull(items);

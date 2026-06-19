@@ -47,6 +47,10 @@ public sealed class RecordParser
     private readonly WeaponRecordHandler _weapons;
     private readonly WorldRecordHandler _world;
 
+    /// <summary>
+    ///     Creates a parser over an ESM scan result, optionally backed by a memory-mapped
+    ///     view for resolving subrecord data and runtime DMP structures.
+    /// </summary>
     public RecordParser(
         EsmRecordScanResult scanResult,
         Dictionary<uint, string>? formIdCorrelations = null,
@@ -57,6 +61,10 @@ public sealed class RecordParser
     {
     }
 
+    /// <summary>
+    ///     Creates a parser backed by an arbitrary <see cref="IMemoryAccessor" /> (e.g. a raw
+    ///     byte buffer rather than a memory-mapped file).
+    /// </summary>
     public RecordParser(
         EsmRecordScanResult scanResult,
         Dictionary<uint, string>? formIdCorrelations,
@@ -656,99 +664,120 @@ public sealed class RecordParser
         }
     }
 
+    /// <summary>Looks up the editor ID for a FormID, or null if unknown.</summary>
     public string? GetEditorId(uint formId)
     {
         return _context.GetEditorId(formId);
     }
 
+    /// <summary>Looks up the FormID for an editor ID, or null if unknown.</summary>
     public uint? GetFormId(string editorId)
     {
         return _context.GetFormId(editorId);
     }
 
+    /// <summary>Gets the detected main record for a FormID, or null if not present.</summary>
     public DetectedMainRecord? GetRecord(uint formId)
     {
         return _context.GetRecord(formId);
     }
 
+    /// <summary>Enumerates all detected main records of the given 4-character type.</summary>
     public IEnumerable<DetectedMainRecord> GetRecordsByType(string recordType)
     {
         return _context.GetRecordsByType(recordType);
     }
 
     // Actors
+    /// <summary>Parses all NPC (actor) records.</summary>
     public List<NpcRecord> ParseNpcs()
     {
         return _actors.ParseNpcs();
     }
 
+    /// <summary>Parses all creature records.</summary>
     public List<CreatureRecord> ParseCreatures()
     {
         return _actors.ParseCreatures();
     }
 
+    /// <summary>Parses all faction records.</summary>
     public List<FactionRecord> ParseFactions()
     {
         return _actors.ParseFactions();
     }
 
+    /// <summary>Parses all race records.</summary>
     public List<RaceRecord> ParseRaces()
     {
         return _actors.ParseRaces();
     }
 
     // Items
+    /// <summary>Parses all weapon records.</summary>
     public List<WeaponRecord> ParseWeapons()
     {
         return _weapons.ParseWeapons();
     }
 
+    /// <summary>Parses all armor records.</summary>
     public List<ArmorRecord> ParseArmor()
     {
         return _items.ParseArmor();
     }
 
+    /// <summary>Parses all ammunition records.</summary>
     public List<AmmoRecord> ParseAmmo()
     {
         return _consumables.ParseAmmo();
     }
 
+    /// <summary>Parses all consumable (ALCH) records.</summary>
     public List<ConsumableRecord> ParseConsumables()
     {
         return _consumables.ParseConsumables();
     }
 
+    /// <summary>Parses all miscellaneous-item records.</summary>
     public List<MiscItemRecord> ParseMiscItems()
     {
         return _items.ParseMiscItems();
     }
 
+    /// <summary>Parses all key records.</summary>
     public List<KeyRecord> ParseKeys()
     {
         return _items.ParseKeys();
     }
 
+    /// <summary>Parses all container records.</summary>
     public List<ContainerRecord> ParseContainers()
     {
         return _items.ParseContainers();
     }
 
     // Dialogue
+    /// <summary>Parses all quest records.</summary>
     public List<QuestRecord> ParseQuests()
     {
         return _dialogue.ParseQuests();
     }
 
+    /// <summary>Parses all dialogue-topic (DIAL) records.</summary>
     public List<DialogTopicRecord> ParseDialogTopics()
     {
         return _dialogue.ParseDialogTopics();
     }
 
+    /// <summary>Parses all dialogue-response (INFO) records.</summary>
     public List<DialogueRecord> ParseDialogue()
     {
         return _dialogue.ParseDialogue();
     }
 
+    /// <summary>
+    ///     Builds the hierarchical dialogue tree linking topics, responses, and quests.
+    /// </summary>
     public DialogueTreeResult BuildDialogueTrees(
         List<DialogueRecord> dialogues,
         List<DialogTopicRecord> topics,
@@ -758,150 +787,179 @@ public sealed class RecordParser
     }
 
     // Text
+    /// <summary>Parses all note records.</summary>
     public List<NoteRecord> ParseNotes()
     {
         return _text.ParseNotes();
     }
 
+    /// <summary>Parses all book records.</summary>
     public List<BookRecord> ParseBooks()
     {
         return _text.ParseBooks();
     }
 
+    /// <summary>Parses all terminal records.</summary>
     public List<TerminalRecord> ParseTerminals()
     {
         return _text.ParseTerminals();
     }
 
+    /// <summary>Parses all message records.</summary>
     public List<MessageRecord> ParseMessages()
     {
         return _text.ParseMessages();
     }
 
     // Scripts
+    /// <summary>Parses all script records.</summary>
     public List<ScriptRecord> ParseScripts()
     {
         return _scripts.ParseScripts();
     }
 
     // Effects
+    /// <summary>Parses all perk records.</summary>
     public List<PerkRecord> ParsePerks()
     {
         return _effects.ParsePerks();
     }
 
+    /// <summary>Parses all spell records.</summary>
     public List<SpellRecord> ParseSpells()
     {
         return _effects.ParseSpells();
     }
 
+    /// <summary>Parses all enchantment records.</summary>
     public List<EnchantmentRecord> ParseEnchantments()
     {
         return _effects.ParseEnchantments();
     }
 
+    /// <summary>Parses all base magic-effect records.</summary>
     public List<BaseEffectRecord> ParseBaseEffects()
     {
         return _effects.ParseBaseEffects();
     }
 
+    /// <summary>Parses all projectile records.</summary>
     public List<ProjectileRecord> ParseProjectiles()
     {
         return _combatEffects.ParseProjectiles();
     }
 
+    /// <summary>Parses all explosion records.</summary>
     public List<ExplosionRecord> ParseExplosions()
     {
         return _combatEffects.ParseExplosions();
     }
 
     // World
+    /// <summary>Parses all cell records.</summary>
     public List<CellRecord> ParseCells()
     {
         return _world.ParseCells();
     }
 
+    /// <summary>Parses all worldspace records.</summary>
     public List<WorldspaceRecord> ParseWorldspaces()
     {
         return _world.ParseWorldspaces();
     }
 
+    /// <summary>Extracts placed map-marker references from the world records.</summary>
     public List<PlacedReference> ExtractMapMarkers()
     {
         return _world.ExtractMapMarkers();
     }
 
     // Misc
+    /// <summary>Parses all game-setting (GMST) records.</summary>
     public List<GameSettingRecord> ParseGameSettings()
     {
         return _misc.ParseGameSettings();
     }
 
+    /// <summary>Parses all global-variable records.</summary>
     public List<GlobalRecord> ParseGlobals()
     {
         return _miscBasicTypes.ParseGlobals();
     }
 
+    /// <summary>Parses all weapon-mod records.</summary>
     public List<WeaponModRecord> ParseWeaponMods()
     {
         return _miscItems.ParseWeaponMods();
     }
 
+    /// <summary>Parses all recipe records.</summary>
     public List<RecipeRecord> ParseRecipes()
     {
         return _miscItems.ParseRecipes();
     }
 
+    /// <summary>Parses all challenge records.</summary>
     public List<ChallengeRecord> ParseChallenges()
     {
         return _miscBasicTypes.ParseChallenges();
     }
 
+    /// <summary>Parses all reputation records.</summary>
     public List<ReputationRecord> ParseReputations()
     {
         return _miscBasicTypes.ParseReputations();
     }
 
+    /// <summary>Parses all class records.</summary>
     public List<ClassRecord> ParseClasses()
     {
         return _miscBasicTypes.ParseClasses();
     }
 
+    /// <summary>Parses all leveled-list records.</summary>
     public List<LeveledListRecord> ParseLeveledLists()
     {
         return _miscCollections.ParseLeveledLists();
     }
 
+    /// <summary>Parses all form-list records.</summary>
     public List<FormListRecord> ParseFormLists()
     {
         return _miscCollections.ParseFormLists();
     }
 
+    /// <summary>Parses all activator records.</summary>
     public List<ActivatorRecord> ParseActivators()
     {
         return _miscWorldObjects.ParseActivators();
     }
 
+    /// <summary>Parses all light records.</summary>
     public List<LightRecord> ParseLights()
     {
         return _miscWorldObjects.ParseLights();
     }
 
+    /// <summary>Parses all door records.</summary>
     public List<DoorRecord> ParseDoors()
     {
         return _miscWorldObjects.ParseDoors();
     }
 
+    /// <summary>Parses all static-object records.</summary>
     public List<StaticRecord> ParseStatics()
     {
         return _miscStaticObjects.ParseStatics();
     }
 
+    /// <summary>Parses all static-collection (SCOL) records.</summary>
     public List<StaticCollectionRecord> ParseStaticCollections()
     {
         return _miscStaticObjects.ParseStaticCollections();
     }
 
+    /// <summary>Parses all furniture records.</summary>
     public List<FurnitureRecord> ParseFurniture()
     {
         return _miscStaticObjects.ParseFurniture();
@@ -918,6 +976,7 @@ public sealed class RecordParser
     }
 
     // AI
+    /// <summary>Parses all AI-package records.</summary>
     public List<PackageRecord> ParsePackages()
     {
         return _ai.ParsePackages();

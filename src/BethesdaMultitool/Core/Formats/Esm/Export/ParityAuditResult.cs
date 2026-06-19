@@ -13,6 +13,7 @@ public sealed record ParityAuditResult
     public DateTime GeneratedAtUtc { get; init; } = DateTime.UtcNow;
 }
 
+/// <summary>Per-record-type parity counts (matched/ESM-only/DMP-only records) plus per-field parity for that type.</summary>
 public sealed record RecordTypeParity
 {
     public required string TypeName { get; init; }
@@ -24,6 +25,7 @@ public sealed record RecordTypeParity
     public required IReadOnlyList<FieldParity> Fields { get; init; }
 }
 
+/// <summary>Per-field parity counts between ESM and DMP loads (ESM-only / DMP-only / agree / disagree) with examples.</summary>
 public sealed record FieldParity
 {
     public required string FieldName { get; init; }
@@ -34,12 +36,14 @@ public sealed record FieldParity
     public IReadOnlyList<FieldExample> Examples { get; init; } = [];
 }
 
+/// <summary>One sample FormID illustrating a field-parity discrepancy, with the ESM and DMP values and their status.</summary>
 public sealed record FieldExample(
     uint FormId,
     string EsmValue,
     string DmpValue,
     FieldStatus Status);
 
+/// <summary>How a single field value compared between an ESM and a DMP load.</summary>
 public enum FieldStatus
 {
     EsmOnly,

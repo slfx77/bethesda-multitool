@@ -89,6 +89,7 @@ public record RuntimeLoadedLandDiagnostics
     public IReadOnlyList<uint> GrassMapWords { get; init; } = [];
 }
 
+/// <summary>Diagnostic state of a runtime pointer read from a DMP: its value plus whether it (and its target) map to a file offset.</summary>
 public record RuntimePointerDiagnostic
 {
     public static RuntimePointerDiagnostic Empty { get; } = new();
@@ -108,6 +109,7 @@ public record RuntimePointerDiagnostic
     public bool DereferencedIsMapped => DereferencedFileOffset.HasValue;
 }
 
+/// <summary>Diagnostic for one runtime per-quadrant landscape-texture pointer and its resolved LTEX FormID.</summary>
 public record RuntimeLandTexturePointerDiagnostic
 {
     public int Quadrant { get; init; }
@@ -117,6 +119,7 @@ public record RuntimeLandTexturePointerDiagnostic
     public uint? TextureFormId { get; init; }
 }
 
+/// <summary>Diagnostic for a runtime per-quadrant array of landscape-texture pointers (sampled vs. resolved counts).</summary>
 public record RuntimeLandTextureArrayDiagnostic
 {
     public int Quadrant { get; init; }
@@ -130,6 +133,7 @@ public record RuntimeLandTextureArrayDiagnostic
     public IReadOnlyList<uint> TextureFormIds { get; init; } = [];
 }
 
+/// <summary>Diagnostic for a runtime per-quadrant texture-blend percentage array (how many samples fall in normal/unit range).</summary>
 public record RuntimePercentArrayDiagnostic
 {
     public int Quadrant { get; init; }

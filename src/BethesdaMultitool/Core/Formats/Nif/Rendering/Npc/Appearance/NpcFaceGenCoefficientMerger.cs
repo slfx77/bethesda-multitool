@@ -1,5 +1,6 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
+/// <summary>Merges race-default and per-NPC FaceGen coefficient arrays, replicating the engine's BSFaceGenManager combine + RMS clamp.</summary>
 internal static class NpcFaceGenCoefficientMerger
 {
     /// <summary>

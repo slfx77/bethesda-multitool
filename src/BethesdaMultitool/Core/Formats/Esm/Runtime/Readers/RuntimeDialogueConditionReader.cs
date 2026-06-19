@@ -13,6 +13,7 @@ internal sealed class RuntimeDialogueConditionReader
 {
     private readonly RuntimeMemoryContext _context;
 
+    /// <summary>Creates the condition reader bound to the given runtime memory context.</summary>
     public RuntimeDialogueConditionReader(RuntimeMemoryContext context)
     {
         _context = context;

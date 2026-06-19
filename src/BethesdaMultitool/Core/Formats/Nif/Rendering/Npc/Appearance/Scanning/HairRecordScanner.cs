@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses a hair (HAIR) record into a scan entry of its mesh and texture paths.</summary>
 internal static class HairRecordScanner
 {
     internal static HairScanEntry? Process(

@@ -18,12 +18,14 @@ internal sealed class HexSearcher(Func<MemoryMappedViewAccessor?> getAccessor, F
 
     public byte[]? LastSearchPattern { get; private set; }
 
+    /// <summary>Discards the previous search's results and resets the current-match index.</summary>
     public void Clear()
     {
         _searchResults.Clear();
         CurrentSearchIndex = -1;
     }
 
+    /// <summary>Searches the file for a hex pattern or ASCII text and returns the first match.</summary>
     public SearchResult Search(string searchText, bool isHexMode, bool isCaseSensitive)
     {
         var accessor = _getAccessor();
@@ -61,6 +63,7 @@ internal sealed class HexSearcher(Func<MemoryMappedViewAccessor?> getAccessor, F
             : SearchResult.NoResults;
     }
 
+    /// <summary>Advances to the next match (wrapping around) and returns its offset.</summary>
     public long? FindNext()
     {
         if (_searchResults.Count == 0) return null;
@@ -69,6 +72,7 @@ internal sealed class HexSearcher(Func<MemoryMappedViewAccessor?> getAccessor, F
         return _searchResults[CurrentSearchIndex];
     }
 
+    /// <summary>Moves to the previous match (wrapping around) and returns its offset.</summary>
     public long? FindPrevious()
     {
         if (_searchResults.Count == 0) return null;
@@ -77,6 +81,7 @@ internal sealed class HexSearcher(Func<MemoryMappedViewAccessor?> getAccessor, F
         return _searchResults[CurrentSearchIndex];
     }
 
+    /// <summary>Returns a "current of total" results summary string for the status bar.</summary>
     public string GetResultsText()
     {
         if (_searchResults.Count == 0) return "No results";

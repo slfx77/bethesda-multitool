@@ -1,5 +1,6 @@
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
+/// <summary>Metadata describing an exported worldspace heightmap image (grid bounds, dimensions, scale, source).</summary>
 public sealed class WorldmapMetadata
 {
     public string Worldspace { get; set; } = "";

@@ -136,6 +136,7 @@ internal static class WorldMapHeightmapBuilder
         return result;
     }
 
+    /// <summary>A built heightmap bitmap plus the world-space origin (min cell X, max cell Y) and pixel dimensions it covers.</summary>
     internal readonly struct HeightmapInfo(
         CanvasBitmap bitmap,
         int minX,

@@ -101,6 +101,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
         return builder.ToString();
     }
 
+    /// <summary>Resolves a texture path to a GPU payload, normalizing the path and caching the decoded result.</summary>
     public GpuTexturePayload? GetTexture(string texturePath)
     {
         return _cache.GetOrCreate(NifTexturePathUtility.Normalize(texturePath));

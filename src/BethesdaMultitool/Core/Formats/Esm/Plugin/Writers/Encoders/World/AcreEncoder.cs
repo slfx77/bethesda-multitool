@@ -10,6 +10,7 @@ public sealed class AcreEncoder : IRecordEncoder
     public string RecordType => "ACRE";
     public Type ModelType => typeof(PlacedReference);
 
+    /// <summary>Produces override subrecords for an existing ACRE (a placed creature) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         return RefrEncoder.EncodePlacedReference((PlacedReference)model);

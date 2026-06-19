@@ -47,6 +47,7 @@ internal readonly record struct Frustum(
             && TestPlane(Far, min, max);
     }
 
+    /// <summary>Tests whether a sphere intersects (or lies inside) the frustum.</summary>
     public bool IntersectsSphere(Vector3 center, float radius)
     {
         return TestSpherePlane(Left, center, radius)

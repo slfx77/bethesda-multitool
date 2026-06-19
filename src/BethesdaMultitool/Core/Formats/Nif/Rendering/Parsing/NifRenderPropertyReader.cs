@@ -329,6 +329,7 @@ internal static class NifRenderPropertyReader
         return null;
     }
 
+    /// <summary>Parsed NiAlphaProperty fields: blend/test enables, test threshold/function, and source/destination blend modes.</summary>
     internal readonly record struct AlphaPropertyInfo(
         bool HasAlphaBlend,
         bool HasAlphaTest,
@@ -337,6 +338,7 @@ internal static class NifRenderPropertyReader
         byte SrcBlendMode,
         byte DstBlendMode);
 
+    /// <summary>Parsed NiMaterialProperty fields: overall alpha, glossiness, and specular color.</summary>
     internal readonly record struct MaterialPropertyInfo(
         float Alpha,
         float Glossiness,

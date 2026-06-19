@@ -28,6 +28,7 @@ internal sealed class RuntimeFlorReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads a runtime FLOR (flora) base form for the given DMP entry as a generic record.</summary>
     public GenericEsmRecord? ReadRuntimeFlor(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != FlorFormType)

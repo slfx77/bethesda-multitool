@@ -345,6 +345,7 @@ internal static class GeckItemDetailWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Recipes.</summary>
     public static string GenerateRecipesReport(List<RecipeRecord> recipes,
         FormIdResolver? resolver = null)
     {
@@ -391,6 +392,7 @@ internal static class GeckItemDetailWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Weapon Mods.</summary>
     public static string GenerateWeaponModsReport(List<WeaponModRecord> mods)
     {
         var sb = new StringBuilder();

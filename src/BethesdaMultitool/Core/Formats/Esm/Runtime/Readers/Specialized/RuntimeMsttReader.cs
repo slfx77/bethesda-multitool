@@ -28,6 +28,7 @@ internal sealed class RuntimeMsttReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads a runtime MSTT (movable static) base form for the given DMP entry as a generic record.</summary>
     public GenericEsmRecord? ReadRuntimeMstt(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != MsttFormType)

@@ -21,6 +21,7 @@ internal readonly record struct WorkProgress(int Completed, int Total);
 /// </summary>
 internal static class ParallelWork
 {
+    /// <summary>Runs <paramref name="body" /> over <paramref name="source" /> in parallel at the policy's degree, with named timing logs and a transient diagnostics row.</summary>
     public static void ForEach<T>(
         string name,
         IEnumerable<T> source,
@@ -48,6 +49,7 @@ internal static class ParallelWork
             });
     }
 
+    /// <summary>Async counterpart to <see cref="ForEach" />: awaits <paramref name="body" /> over <paramref name="source" /> in parallel at the policy's degree.</summary>
     public static async Task ForEachAsync<T>(
         string name,
         IEnumerable<T> source,
@@ -75,6 +77,7 @@ internal static class ParallelWork
             }).ConfigureAwait(false);
     }
 
+    /// <summary>Runs <paramref name="body" /> over the integer range [<paramref name="fromInclusive" />, <paramref name="toExclusive" />) in parallel at the policy's degree.</summary>
     public static void For(
         string name,
         int fromInclusive,

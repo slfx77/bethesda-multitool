@@ -24,6 +24,7 @@ internal sealed class RuntimeActorReader
     // Delegate NPC field reading to the extracted helper class.
     private RuntimeNpcFieldReader? _npcFieldReader;
 
+    /// <summary>Creates the reader bound to the runtime memory context, using an optional probed struct layout.</summary>
     public RuntimeActorReader(RuntimeMemoryContext context, RuntimeNpcLayoutProbeResult? npcLayoutProbe = null)
     {
         _context = context;

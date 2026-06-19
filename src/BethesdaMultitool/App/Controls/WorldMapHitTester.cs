@@ -473,6 +473,7 @@ internal static class WorldMapHitTester
         return new HoverResult($"Cell [{cellX}, {cellY}]", null, false);
     }
 
+    /// <summary>Result of a hover hit-test: status text, the object under the cursor (if any), and whether it is clickable.</summary>
     internal readonly struct HoverResult(string statusText, PlacedReference? hoveredObject, bool isInteractive)
     {
         internal string StatusText { get; } = statusText;
@@ -482,8 +483,10 @@ internal static class WorldMapHitTester
 
     [ThreadStatic] private static List<PlacedReference>? s_refHitScratch;
 
+    /// <summary>Result of a click hit-test: the action the caller should take plus the object or cell it targets.</summary>
     internal readonly struct ClickResult
     {
+        /// <summary>What the world map should do in response to a click.</summary>
         internal enum ClickAction
         {
             Nothing,

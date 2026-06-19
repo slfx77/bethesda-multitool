@@ -12,6 +12,7 @@ internal static class EsmFormIdCorrelator
 {
     #region FormID Correlation
 
+    /// <summary>Builds a FormID to Editor ID map by associating each EDID with its enclosing record header.</summary>
     public static Dictionary<uint, string> CorrelateFormIdsToNames(byte[] data,
         EsmRecordScanResult? existingScan = null)
     {

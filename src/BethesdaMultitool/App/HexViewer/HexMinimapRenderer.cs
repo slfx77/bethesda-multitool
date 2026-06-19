@@ -32,6 +32,7 @@ internal sealed class HexMinimapRenderer(
     /// </summary>
     public bool IsDraggingFromIndicator { get; private set; }
 
+    /// <summary>Draws the full-file color strip onto the minimap canvas, one band per contiguous region color.</summary>
     public void Render(long fileSize, double containerWidth, double containerHeight)
     {
         _canvas.Children.Clear();
@@ -102,6 +103,7 @@ internal sealed class HexMinimapRenderer(
         _canvas.Children.Insert(_canvas.Children.Count - 1, rect);
     }
 
+    /// <summary>Repositions and resizes the viewport indicator to reflect the currently visible row range.</summary>
     public void UpdateViewport(
         long fileSize,
         long totalRows,
@@ -150,6 +152,7 @@ internal sealed class HexMinimapRenderer(
         }
     }
 
+    /// <summary>Maps a vertical minimap position to the top row that centers the viewport there.</summary>
     public long? GetRowFromPosition(double y, long totalRows, int visibleRows)
     {
         var canvasHeight = _canvas.Height;
@@ -196,6 +199,7 @@ internal sealed class HexMinimapRenderer(
         }
     }
 
+    /// <summary>Ends a minimap drag and releases the pointer capture.</summary>
     public void HandlePointerReleased(PointerRoutedEventArgs e)
     {
         IsDragging = false;

@@ -18,11 +18,13 @@ internal sealed class RuntimeBookReader
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeBookLayout _layout = RuntimeBookLayout.CreateDefault();
 
+    /// <summary>Creates the reader bound to the given runtime memory context.</summary>
     public RuntimeBookReader(RuntimeMemoryContext context)
     {
         _context = context;
     }
 
+    /// <summary>Reads the runtime book record for the given DMP entry, or null if it can't be read.</summary>
     public BookRecord? ReadRuntimeBook(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != BookFormType)

@@ -21,6 +21,7 @@ internal sealed class RuntimeMagicReader
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimePdbFieldAccessor _fields;
 
+    /// <summary>Creates the reader bound to the given runtime memory context.</summary>
     public RuntimeMagicReader(RuntimeMemoryContext context)
     {
         _context = context;
@@ -29,6 +30,7 @@ internal sealed class RuntimeMagicReader
 
     #region MGEF — EffectSetting (192 bytes, FormType 0x10)
 
+    /// <summary>Reads the runtime base magic-effect record for the given DMP entry, or null if it can't be read.</summary>
     public BaseEffectRecord? ReadRuntimeBaseEffect(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != MgefFormType)
@@ -116,6 +118,7 @@ internal sealed class RuntimeMagicReader
 
     #region SPEL — SpellItem (84 bytes, FormType 0x14)
 
+    /// <summary>Reads the runtime spell record for the given DMP entry, or null if it can't be read.</summary>
     public SpellRecord? ReadRuntimeSpell(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != SpelFormType)
@@ -168,6 +171,7 @@ internal sealed class RuntimeMagicReader
 
     #region ENCH — EnchantmentItem (84 bytes, FormType 0x13)
 
+    /// <summary>Reads the runtime enchantment record for the given DMP entry, or null if it can't be read.</summary>
     public EnchantmentRecord? ReadRuntimeEnchantment(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != EnchFormType)
@@ -243,6 +247,7 @@ internal sealed class RuntimeMagicReader
 
     #region PERK — BGSPerk (96 bytes, FormType 0x56)
 
+    /// <summary>Reads the runtime perk record for the given DMP entry, or null if it can't be read.</summary>
     public PerkRecord? ReadRuntimePerk(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != PerkFormType)

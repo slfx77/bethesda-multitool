@@ -46,6 +46,7 @@ internal static class GeckMapMarkerReportBuilder
         sb.AppendLine();
     }
 
+    /// <summary>Builds a GECK-style report of Map Markers.</summary>
     public static string GenerateMapMarkersReport(List<PlacedReference> markers,
         FormIdResolver? resolver = null)
     {

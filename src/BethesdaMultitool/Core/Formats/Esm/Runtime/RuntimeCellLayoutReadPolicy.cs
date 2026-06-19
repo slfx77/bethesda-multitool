@@ -7,6 +7,10 @@ internal static class RuntimeCellLayoutReadPolicy
 {
     internal const int HighAbsoluteScoreThreshold = 100;
 
+    /// <summary>
+    ///     Returns true if structural world/cell reads are safe for the selected layout —
+    ///     always for proto offsets, otherwise only when the probe is high-confidence or scores high enough.
+    /// </summary>
     public static bool ShouldAllowStructuralReads(
         bool useProtoOffsets,
         RuntimeWorldCellLayoutProbeResult? probe)

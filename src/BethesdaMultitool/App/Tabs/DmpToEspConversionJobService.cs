@@ -8,11 +8,13 @@ using BethesdaMultitool.Core.Formats.Esm.Reporting;
 
 namespace BethesdaMultitool;
 
+/// <summary>Inputs for a DMP-to-ESP conversion run plus whether (and how) to pack assets into a BSA.</summary>
 internal sealed record DmpToEspConversionJob(
     DmpToEspInputs Inputs,
     bool PackAssets,
     AssetPackingOptions? AssetPackingOptions);
 
+/// <summary>Output of a conversion job: the plugin build result and the optional asset-packing result.</summary>
 internal sealed record DmpToEspConversionJobResult(
     PluginBuildResult ConversionResult,
     AssetPackingResult? AssetPackingResult);

@@ -24,6 +24,7 @@ internal readonly record struct RuntimeBookLayout(
     int BookDataOffset,
     int StructSize)
 {
+    /// <summary>Creates the default TESObjectBOOK runtime layout (field offsets verified across all builds in scope).</summary>
     public static RuntimeBookLayout CreateDefault()
     {
         return new RuntimeBookLayout(

@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Dds;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>Chooses glTF PBR factors (metallic, roughness, specular) for an exported NPC material based on its NIF type (skin, eye, hair, etc.).</summary>
 internal static class NpcGlbMaterialTuning
 {
     private const float DefaultRoughness = 0.92f;
@@ -171,6 +172,7 @@ internal static class NpcGlbMaterialTuning
         }
     }
 
+    /// <summary>The PBR factors chosen for an exported material: metallic, roughness, gloss strength, and specular.</summary>
     internal readonly record struct NpcGlbMaterialProfile(
         float MetallicFactor,
         float RoughnessFactor,

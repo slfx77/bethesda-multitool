@@ -2,6 +2,7 @@ using System.Numerics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
+/// <summary>The skeleton portion of an NPC composition plan: the skeleton NIF, its bone transforms, and any animation pose overrides.</summary>
 internal sealed class NpcSkeletonComposition
 {
     public required string SkeletonNifPath { get; init; }

@@ -60,6 +60,10 @@ internal static class NifGeometryExtractor
         return bones.Count > 0 ? new SkeletonHierarchy(bones, links) : null;
     }
 
+    /// <summary>
+    ///     Walks the NIF scene graph and returns each named node's world transform, optionally applying
+    ///     animation pose overrides.
+    /// </summary>
     public static Dictionary<string, Matrix4x4> ExtractNamedBoneTransforms(byte[] data, NifInfo nif,
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null)
     {

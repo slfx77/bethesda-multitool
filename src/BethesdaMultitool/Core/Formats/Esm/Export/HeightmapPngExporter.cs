@@ -9,6 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 /// </summary>
 public static class HeightmapPngExporter
 {
+    /// <summary>Exports all detected standalone VHGT heightmaps to PNG files.</summary>
     public static Task ExportAsync(
         List<DetectedVhgtHeightmap> heightmaps,
         List<CellGridSubrecord>? cellGrids,
@@ -18,6 +19,7 @@ public static class HeightmapPngExporter
         return StandaloneHeightmapFileExporter.ExportAsync(heightmaps, cellGrids, outputDir, useColorGradient);
     }
 
+    /// <summary>Exports a single detected VHGT heightmap to a PNG file.</summary>
     public static Task ExportSingleHeightmapAsync(
         DetectedVhgtHeightmap heightmap,
         int index,
@@ -35,6 +37,7 @@ public static class HeightmapPngExporter
             grayscaleScale);
     }
 
+    /// <summary>Exports each LAND record's heightmap to a PNG file.</summary>
     public static Task ExportLandRecordsAsync(
         List<ExtractedLandRecord> landRecords,
         string outputDir,
@@ -48,6 +51,7 @@ public static class HeightmapPngExporter
             worldspaceNames);
     }
 
+    /// <summary>Exports LAND visual data (vertex colors / texture layers) as preview images.</summary>
     public static Task ExportLandVisualsAsync(
         List<ExtractedLandRecord> landRecords,
         string outputDir,
@@ -56,6 +60,7 @@ public static class HeightmapPngExporter
         return LandVisualPreviewRenderer.ExportAsync(landRecords, outputDir, worldspaceNames);
     }
 
+    /// <summary>Exports a single LAND record's heightmap to a PNG file.</summary>
     public static Task ExportLandRecordAsync(
         ExtractedLandRecord land,
         int index,
@@ -73,6 +78,7 @@ public static class HeightmapPngExporter
             grayscaleScale);
     }
 
+    /// <summary>Stitches the given heightmaps and cell grids into one composite worldmap PNG.</summary>
     public static Task ExportCompositeWorldmapAsync(
         List<DetectedVhgtHeightmap> heightmaps,
         List<CellGridSubrecord> cellGrids,
@@ -86,6 +92,7 @@ public static class HeightmapPngExporter
             useColorGradient);
     }
 
+    /// <summary>Stitches heightmaps, cell grids, and LAND records into one composite worldmap PNG.</summary>
     public static Task ExportCompositeWorldmapAsync(
         List<DetectedVhgtHeightmap> heightmaps,
         List<CellGridSubrecord> cellGrids,
@@ -101,6 +108,7 @@ public static class HeightmapPngExporter
             useColorGradient);
     }
 
+    /// <summary>Like <see cref="ExportCompositeWorldmapAsync(List{DetectedVhgtHeightmap}, List{CellGridSubrecord}, List{ExtractedLandRecord}, string, bool)" />, but overlays a cell-grid coordinate grid.</summary>
     public static Task ExportCompositeWorldmapWithGridAsync(
         List<DetectedVhgtHeightmap> heightmaps,
         List<CellGridSubrecord> cellGrids,
@@ -116,6 +124,7 @@ public static class HeightmapPngExporter
             useColorGradient);
     }
 
+    /// <summary>Produces one composite worldmap PNG per worldspace and returns the written file paths.</summary>
     public static Task<IReadOnlyList<string>> ExportWorldspaceCompositeWorldmapsAsync(
         List<DetectedVhgtHeightmap> heightmaps,
         List<CellGridSubrecord> cellGrids,

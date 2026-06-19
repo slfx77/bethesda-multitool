@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>Walks a NIF and extracts its node hierarchy, mesh parts, and skin bindings into a basis-neutral scene for export.</summary>
 internal static class NifExportExtractor
 {
     internal static ExtractedScene Extract(
@@ -396,6 +397,7 @@ internal static class NifExportExtractor
         return result;
     }
 
+    /// <summary>A single extracted scene-graph node: its NIF block index, name, parent, and local/world transforms.</summary>
     internal sealed record ExtractedNode(
         int BlockIndex,
         string Name,
@@ -404,6 +406,7 @@ internal static class NifExportExtractor
         Matrix4x4 LocalTransform,
         Matrix4x4 WorldTransform);
 
+    /// <summary>The result of extracting a NIF: its nodes, mesh parts, and a lookup of named node world transforms.</summary>
     internal sealed class ExtractedScene
     {
         public required List<ExtractedNode> Nodes { get; init; }
@@ -413,6 +416,7 @@ internal static class NifExportExtractor
         public required Dictionary<string, Matrix4x4> NamedNodeWorldTransforms { get; init; }
     }
 
+    /// <summary>An extracted mesh shape: its submesh geometry, world transform, and optional skin binding.</summary>
     internal sealed class ExtractedMeshPart
     {
         public required string Name { get; init; }
@@ -424,6 +428,7 @@ internal static class NifExportExtractor
         public ExtractedSkinBinding? Skin { get; init; }
     }
 
+    /// <summary>Extracted skinning for a mesh part: its bone names, inverse bind matrices, and per-vertex influences.</summary>
     internal sealed class ExtractedSkinBinding
     {
         public required string[] BoneNames { get; init; }

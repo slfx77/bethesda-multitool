@@ -39,6 +39,9 @@ internal static class NifSpriteRenderer
     /// </summary>
     internal static float BumpStrength { get; set; } = 0.35f;
 
+    /// <summary>
+    ///     Rasterizes the model to a transparent RGBA sprite, returning <c>null</c> when it has no geometry.
+    /// </summary>
     public static SpriteResult? Render(NifRenderableModel model,
         NifTextureResolver? textureResolver = null,
         float pixelsPerUnit = 1.0f, int minSize = 32, int maxSize = 1024,

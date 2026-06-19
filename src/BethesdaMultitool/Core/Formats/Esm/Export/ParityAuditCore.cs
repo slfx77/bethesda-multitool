@@ -13,6 +13,7 @@ internal static class ParityAuditCore
     /// <summary>Up to N example tuples retained per (type, field, status) bucket.</summary>
     public const int DefaultExamplesPerField = 5;
 
+    /// <summary>Compares an ESM-loaded and a DMP-loaded record collection from the same build, reporting per-field parity.</summary>
     public static ParityAuditResult Compare(
         string esmLabel,
         RecordCollection esmRecords,

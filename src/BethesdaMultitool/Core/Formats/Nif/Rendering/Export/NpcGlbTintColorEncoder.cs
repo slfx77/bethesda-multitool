@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Dds;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>Bakes a submesh's tint color (hair/skin) into its diffuse texture for export, since glTF has no separate tint channel.</summary>
 internal static class NpcGlbTintColorEncoder
 {
     internal static bool HasTintColor(RenderableSubmesh submesh)

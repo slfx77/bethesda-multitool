@@ -25,6 +25,10 @@ public sealed class RecordParserContext
     private readonly Dictionary<string, List<DetectedMainRecord>> _recordsByType;
     private Dictionary<uint, uint>? _refToBase;
 
+    /// <summary>
+    ///     Creates the parser context over a scan result, optionally backed by a memory-mapped
+    ///     view and a DMP for runtime struct reads and localized-string resolution.
+    /// </summary>
     public RecordParserContext(
         EsmRecordScanResult scanResult,
         Dictionary<uint, string>? formIdCorrelations = null,
@@ -38,6 +42,10 @@ public sealed class RecordParserContext
     {
     }
 
+    /// <summary>
+    ///     Creates the parser context backed by an arbitrary <see cref="IMemoryAccessor" />,
+    ///     wiring up the runtime struct reader when a DMP and accessor are both present.
+    /// </summary>
     public RecordParserContext(
         EsmRecordScanResult scanResult,
         Dictionary<uint, string>? formIdCorrelations,
@@ -382,26 +390,31 @@ public sealed class RecordParserContext
 
     #region Lookup Methods
 
+    /// <summary>Looks up the editor ID for a FormID, or null if unknown.</summary>
     public string? GetEditorId(uint formId)
     {
         return FormIdToEditorId.GetValueOrDefault(formId);
     }
 
+    /// <summary>Looks up the FormID for an editor ID, or null if unknown.</summary>
     public uint? GetFormId(string editorId)
     {
         return EditorIdToFormId.TryGetValue(editorId, out var formId) ? formId : null;
     }
 
+    /// <summary>Gets the detected main record for a FormID, or null if not present.</summary>
     public DetectedMainRecord? GetRecord(uint formId)
     {
         return RecordsByFormId.GetValueOrDefault(formId);
     }
 
+    /// <summary>Enumerates all detected main records of the given 4-character type.</summary>
     public IEnumerable<DetectedMainRecord> GetRecordsByType(string recordType)
     {
         return _recordsByType.TryGetValue(recordType, out var list) ? list : [];
     }
 
+    /// <summary>Returns the detected main records of the given type as a read-only list.</summary>
     public IReadOnlyList<DetectedMainRecord> GetRecordListByType(string recordType)
     {
         return _recordsByType.TryGetValue(recordType, out var list) ? list : Array.Empty<DetectedMainRecord>();
@@ -411,6 +424,7 @@ public sealed class RecordParserContext
 
     #region Name/Subrecord Lookups
 
+    /// <summary>Finds the FULL (display) name nearest the given record offset (within ~500 bytes).</summary>
     public string? FindFullNameNear(long recordOffset)
     {
         return ScanResult.FullNames
@@ -419,6 +433,7 @@ public sealed class RecordParserContext
             .FirstOrDefault()?.Text;
     }
 
+    /// <summary>Finds the first FULL (display) name that falls within the record's data bounds.</summary>
     public string? FindFullNameInRecordBounds(DetectedMainRecord record)
     {
         var dataStart = record.Offset + record.HeaderSize;
@@ -430,6 +445,7 @@ public sealed class RecordParserContext
             .FirstOrDefault()?.Text;
     }
 
+    /// <summary>Finds the scanned actor-base subrecord nearest the given record offset (within ~500 bytes).</summary>
     public ActorBaseSubrecord? FindActorBaseNear(long recordOffset)
     {
         return ScanResult.ActorBases
@@ -603,6 +619,7 @@ public sealed class RecordParserContext
 
     #region Static Helpers
 
+    /// <summary>Reads a 4-byte FormID from the start of the span in the given byte order.</summary>
     public static uint ReadFormId(ReadOnlySpan<byte> data, bool bigEndian)
     {
         if (data.Length < 4)
@@ -615,6 +632,7 @@ public sealed class RecordParserContext
             : BinaryPrimitives.ReadUInt32LittleEndian(data);
     }
 
+    /// <summary>Reads an OBND object-bounds block (six int16 min/max coordinates) from the span.</summary>
     public static ObjectBounds ReadObjectBounds(ReadOnlySpan<byte> data, bool bigEndian)
     {
         if (data.Length < 12)

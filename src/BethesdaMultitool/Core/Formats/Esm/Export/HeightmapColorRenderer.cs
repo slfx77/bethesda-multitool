@@ -334,6 +334,7 @@ internal static class HeightmapColorRenderer
     #endregion
 }
 
+/// <summary>Linear height-to-grayscale mapping (base height + world units per gray level) used when exporting heightmaps.</summary>
 public readonly record struct HeightmapGrayscaleScale(
     float BaseHeight,
     float UnitsPerGray,
@@ -345,6 +346,7 @@ public readonly record struct HeightmapGrayscaleScale(
 {
     public float MaxEncodedHeight => BaseHeight + UnitsPerGray * 255f;
 
+    /// <summary>Maps a world-space height to a clamped 0-255 grayscale value.</summary>
     public byte ToByte(float height)
     {
         if (float.IsNaN(height) || float.IsInfinity(height))

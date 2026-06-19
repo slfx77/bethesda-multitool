@@ -150,6 +150,7 @@ internal static class GeckFactionWriter
         sb.AppendLine();
     }
 
+    /// <summary>Builds a GECK-style report of Reputations.</summary>
     public static string GenerateReputationsReport(List<ReputationRecord> reputations)
     {
         var sb = new StringBuilder();
@@ -219,6 +220,7 @@ internal static class GeckFactionWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Challenges.</summary>
     public static string GenerateChallengesReport(List<ChallengeRecord> challenges,
         FormIdResolver? resolver = null)
     {

@@ -18,12 +18,17 @@ internal readonly record struct RuntimeNpcLayout(
     RuntimeNpcFaceGenFieldLayout Fgga,
     RuntimeNpcFaceGenFieldLayout Fgts)
 {
+    /// <summary>Creates the default NPC layout for the build detected from the minidump info.</summary>
     public static RuntimeNpcLayout CreateDefault(MinidumpInfo minidumpInfo)
     {
         var shift = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(minidumpInfo));
         return CreateDirect(shift, shift, 640);
     }
 
+    /// <summary>
+    ///     Creates an NPC layout using the DirectPointerCount FaceGen array mode (the captured
+    ///     Nov 2009 to Apr 2010 dumps), with explicit core/appearance shifts.
+    /// </summary>
     public static RuntimeNpcLayout CreateDirect(
         int coreShift,
         int appearanceShift,
@@ -51,6 +56,10 @@ internal readonly record struct RuntimeNpcLayout(
             new RuntimeNpcFaceGenFieldLayout(384 + appearanceShift, 396 + appearanceShift));
     }
 
+    /// <summary>
+    ///     Creates an NPC layout using the PrimitiveArray FaceGen array mode (inline float
+    ///     arrays rather than pointer+count), for debug builds with that struct shape.
+    /// </summary>
     public static RuntimeNpcLayout CreatePrimitiveArrayDebug(
         int coreShift,
         int appearanceShift,

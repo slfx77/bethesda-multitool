@@ -14,11 +14,13 @@ internal sealed class FormUsageIndex
 {
     private readonly Dictionary<uint, List<FormUsageReference>> _usageByTargetFormId = [];
 
+    /// <summary>Returns how many records reference the given target FormID.</summary>
     public int GetUseCount(uint targetFormId)
     {
         return _usageByTargetFormId.TryGetValue(targetFormId, out var usages) ? usages.Count : 0;
     }
 
+    /// <summary>Returns the records that reference the given target FormID, or an empty list if none.</summary>
     public IReadOnlyList<FormUsageReference> GetUsages(uint targetFormId)
     {
         return _usageByTargetFormId.TryGetValue(targetFormId, out var usages)
@@ -26,6 +28,7 @@ internal sealed class FormUsageIndex
             : [];
     }
 
+    /// <summary>Builds the reverse usage index by scanning all referencing record types in the collection.</summary>
     public static FormUsageIndex Build(RecordCollection records)
     {
         var index = new FormUsageIndex();

@@ -19,6 +19,7 @@ internal sealed class EsmFormIdLoadOrderMapper
         _flattenToBase = flattenToBase;
     }
 
+    /// <summary>Rewrites a file-local FormID's load-order byte to the merged load order (or flattens it to the base index).</summary>
     public uint Map(uint formId)
     {
         if (formId == 0)

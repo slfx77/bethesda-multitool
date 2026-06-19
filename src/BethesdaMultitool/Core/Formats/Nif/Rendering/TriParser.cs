@@ -129,6 +129,7 @@ internal sealed class TriParser
         return deltas;
     }
 
+    /// <summary>Parses a FaceGen TRI (FRTRI003) file, returning <c>null</c> when the data is too short or the magic is wrong.</summary>
     public static TriParser? Parse(byte[] data)
     {
         if (data.Length < HeaderSize)

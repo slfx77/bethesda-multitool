@@ -15,11 +15,13 @@ internal sealed class RuntimeWeaponModReader
 
     private readonly RuntimePdbFieldAccessor _fields;
 
+    /// <summary>Creates the reader bound to the given runtime memory context.</summary>
     public RuntimeWeaponModReader(RuntimeMemoryContext context)
     {
         _fields = new RuntimePdbFieldAccessor(context);
     }
 
+    /// <summary>Reads the runtime weapon-mod record for the given DMP entry, or null if it can't be read.</summary>
     public WeaponModRecord? ReadRuntimeWeaponMod(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != ImodFormType)

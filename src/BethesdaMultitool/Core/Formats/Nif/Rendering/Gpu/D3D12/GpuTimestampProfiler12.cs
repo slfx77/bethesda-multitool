@@ -2,6 +2,7 @@ using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
+/// <summary>Named GPU timestamp query slots marking the start/end of each render pass within a frame.</summary>
 internal enum GpuTimestampRegion
 {
     FrameStart = 0,
@@ -16,6 +17,7 @@ internal enum GpuTimestampRegion
     FrameEnd = 9
 }
 
+/// <summary>Resolved per-pass GPU timings (in milliseconds) for a completed frame.</summary>
 internal readonly record struct GpuFrameTimings(
     long FrameNumber,
     double FrameMilliseconds,
@@ -24,6 +26,7 @@ internal readonly record struct GpuFrameTimings(
     double WaterMilliseconds,
     double WireframeMilliseconds);
 
+/// <summary>Converts raw GPU timestamp ticks into elapsed milliseconds using the queue's tick frequency.</summary>
 internal static class GpuTimestampMath
 {
     internal static double TicksToMilliseconds(ulong start, ulong end, ulong frequency)
@@ -37,6 +40,10 @@ internal static class GpuTimestampMath
     }
 }
 
+/// <summary>
+///     Records GPU timestamp queries around each render pass and resolves them into per-frame timings once
+///     the frame's fence completes. Backs the renderer's on-screen GPU profiler.
+/// </summary>
 internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
 {
     internal const int QueryCountPerFrame = 10;
@@ -73,6 +80,7 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
 
     public bool IsEnabled => !_disposed;
 
+    /// <summary>Selects the query slot set for the frame about to be recorded.</summary>
     public void BeginFrame(int frameIndex)
     {
         ThrowIfDisposed();
@@ -84,6 +92,7 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
         _activeFrameIndex = frameIndex;
     }
 
+    /// <summary>Returns timings for the oldest frame whose fence has completed, if any are ready.</summary>
     public bool TryCollectCompleted(out GpuFrameTimings timings)
     {
         ThrowIfDisposed();
@@ -104,6 +113,7 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
         return false;
     }
 
+    /// <summary>Records a timestamp query for the given region into the active frame's command list.</summary>
     public void Write(ID3D12GraphicsCommandList commandList, GpuTimestampRegion region)
     {
         ThrowIfDisposed();
@@ -115,6 +125,7 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
         commandList.EndQuery(_queryHeap, QueryType.Timestamp, QueryIndex(_activeFrameIndex, region));
     }
 
+    /// <summary>Copies the active frame's resolved timestamp queries into the readback buffer.</summary>
     public void ResolveActiveFrame(ID3D12GraphicsCommandList commandList)
     {
         ThrowIfDisposed();
@@ -134,6 +145,7 @@ internal sealed unsafe class GpuTimestampProfiler12 : IDisposable
             destinationOffset);
     }
 
+    /// <summary>Records the frame number and fence value for the active frame so its timings can be collected once the fence signals.</summary>
     public void MarkActiveFrameSubmitted(long frameNumber, ulong fenceValue)
     {
         ThrowIfDisposed();

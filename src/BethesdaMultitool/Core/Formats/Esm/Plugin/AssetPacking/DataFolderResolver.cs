@@ -60,6 +60,10 @@ internal sealed class DataFolderResolver
     private readonly bool _overrideBaseline;
     private readonly IReadOnlyList<DataFolderIndex> _secondaries;
 
+    /// <summary>
+    ///     Creates a resolver over a baseline data folder and ordered secondary folders;
+    ///     <paramref name="overrideBaseline" /> lets secondaries replace baseline matches.
+    /// </summary>
     public DataFolderResolver(
         DataFolderIndex baseline,
         IReadOnlyList<DataFolderIndex> secondaries,
@@ -592,11 +596,13 @@ internal sealed class DataFolderResolver
 
     private interface IAssetResolutionStrategy
     {
+        /// <summary>Tries to resolve the normalized path, returning null if this strategy doesn't match it.</summary>
         DataFolderResolution? Resolve(string normalizedPath);
     }
 
     private sealed class BaselineExactResolutionStrategy(DataFolderIndex baseline) : IAssetResolutionStrategy
     {
+        /// <summary>Resolves by exact-path match in the baseline folder (asset already present).</summary>
         public DataFolderResolution? Resolve(string normalizedPath)
         {
             return baseline.TryResolveExact(normalizedPath, out _)
@@ -611,6 +617,7 @@ internal sealed class DataFolderResolver
 
     private sealed class BaselineExtensionSwapResolutionStrategy(DataFolderIndex baseline) : IAssetResolutionStrategy
     {
+        /// <summary>Resolves by matching an interchangeable-extension variant of the path in the baseline folder.</summary>
         public DataFolderResolution? Resolve(string normalizedPath)
         {
             foreach (var swapped in AssetPathRules.EnumerateExtensionSwaps(normalizedPath))
@@ -632,6 +639,7 @@ internal sealed class DataFolderResolver
     private sealed class SecondaryExactResolutionStrategy(IReadOnlyList<DataFolderIndex> secondaries)
         : IAssetResolutionStrategy
     {
+        /// <summary>Resolves by exact-path match in the ordered secondary (fallback) folders.</summary>
         public DataFolderResolution? Resolve(string normalizedPath)
         {
             for (var i = 0; i < secondaries.Count; i++)
@@ -655,6 +663,7 @@ internal sealed class DataFolderResolver
     private sealed class SecondaryExtensionSwapResolutionStrategy(IReadOnlyList<DataFolderIndex> secondaries)
         : IAssetResolutionStrategy
     {
+        /// <summary>Resolves by matching an interchangeable-extension variant of the path in the secondary folders.</summary>
         public DataFolderResolution? Resolve(string normalizedPath)
         {
             for (var i = 0; i < secondaries.Count; i++)

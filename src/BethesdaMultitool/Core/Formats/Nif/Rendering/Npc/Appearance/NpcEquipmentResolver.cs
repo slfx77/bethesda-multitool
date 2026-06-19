@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
+/// <summary>Resolves the armor/clothing an NPC wears, from ESM inventory or runtime BipedAnim slots captured in a DMP.</summary>
 internal sealed class NpcEquipmentResolver
 {
     /// <summary>

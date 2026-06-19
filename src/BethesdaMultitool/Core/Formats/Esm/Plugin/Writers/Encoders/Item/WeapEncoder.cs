@@ -104,6 +104,7 @@ public sealed class WeapEncoder : IRecordEncoder
     public string RecordType => "WEAP";
     public Type ModelType => typeof(WeaponRecord);
 
+    /// <summary>Produces override subrecords for an existing WEAP (a weapon) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var weap = (WeaponRecord)model;

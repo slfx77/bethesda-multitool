@@ -1311,6 +1311,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         bool IsLeafBillboard = false);
 }
 
+/// <summary>A reference NIF uploaded to GPU geometry/texture caches: its submeshes, bounds, and water planes, drawn each frame and disposed when evicted.</summary>
 internal sealed class CachedNifMesh12 : IDisposable
 {
     private readonly GeometryAllocation12 _geometry;
@@ -1404,6 +1405,7 @@ internal sealed class CachedNifMesh12 : IDisposable
     }
 }
 
+/// <summary>One submesh of a cached reference mesh: its GPU vertex/index buffer views, diffuse/normal texture entries, and packed alpha/render state.</summary>
 internal sealed class CachedSubmesh12
 {
     private Vector4 _textureState;

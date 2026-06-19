@@ -6,6 +6,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 
 internal static class WorldspaceCompositeRenderer
 {
+    /// <summary>Exports one composite worldmap PNG per worldspace and returns the written file paths.</summary>
     public static Task<IReadOnlyList<string>> ExportAsync(
         List<DetectedVhgtHeightmap> heightmaps,
         List<CellGridSubrecord> cellGrids,

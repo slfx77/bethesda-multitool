@@ -1,5 +1,6 @@
 namespace BethesdaMultitool;
 
+/// <summary>Configuration for the load-order picker dialog (title, allowed file types, optional subtitle CSV).</summary>
 internal sealed record LoadOrderDialogOptions
 {
     public required string Title { get; init; }

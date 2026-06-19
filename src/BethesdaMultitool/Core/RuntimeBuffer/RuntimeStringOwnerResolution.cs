@@ -1,5 +1,6 @@
 namespace BethesdaMultitool.Core.RuntimeBuffer;
 
+/// <summary>The resolved owner of a runtime string: owning record kind/name/FormID, the referrer that points to it, and how the claim was made.</summary>
 public sealed class RuntimeStringOwnerResolution
 {
     public string? OwnerKind { get; init; }

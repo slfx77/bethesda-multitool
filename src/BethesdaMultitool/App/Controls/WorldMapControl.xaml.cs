@@ -21,6 +21,7 @@ using WinRT.Interop;
 
 namespace BethesdaMultitool;
 
+/// <summary>Win2D-based 2D world map: renders terrain layers, placed-object markers, and overlays with zoom/pan navigation.</summary>
 public sealed partial class WorldMapControl : UserControl, IDisposable
 {
     private const int ExportLongEdge = 4096;
@@ -421,7 +422,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     internal event Action? BeforeNavigate;
 
     // --- Events ---
+    /// <summary>Raised when the user requests inspection of a placed object (opens its detail panel).</summary>
     public event EventHandler<PlacedReference>? InspectObject;
+
+    /// <summary>Raised when the user requests inspection of a cell.</summary>
     public event EventHandler<CellRecord>? InspectCell;
 
     internal void LoadData(WorldViewData data)
@@ -707,12 +711,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         MapCanvas.Invalidate();
     }
 
+    /// <summary>Selects the given placed object and redraws the map to highlight it.</summary>
     public void SelectObject(PlacedReference? obj)
     {
         _state.SelectObject(obj);
         MapCanvas.Invalidate();
     }
 
+    /// <summary>Clears the loaded world, all layer toggles, and cached bitmaps back to defaults.</summary>
     public void Reset()
     {
         _data = null;
@@ -1709,6 +1715,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // Navigation
     // ========================================================================
 
+    /// <summary>Switches to cell-detail view for the given cell and zooms to fit it.</summary>
     public void NavigateToCell(CellRecord cell)
     {
         NotifyBeforeNavigate();
@@ -1731,12 +1738,14 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     internal void NavigateToCellPublic(CellRecord cell) => NavigateToCell(cell);
 
+    /// <summary>Selects the given worldspace, then centers the overview on the given cell.</summary>
     public void NavigateToWorldspaceAndCell(int worldspaceIndex, CellRecord cell)
     {
         WorldspaceComboBox.SelectedIndex = worldspaceIndex;
         NavigateToCellInOverview(cell);
     }
 
+    /// <summary>Centers the worldspace overview on the given exterior cell without entering cell-detail mode.</summary>
     public void NavigateToCellInOverview(CellRecord cell)
     {
         EnsureOverviewMode();
@@ -1751,6 +1760,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         MapCanvas.Invalidate();
     }
 
+    /// <summary>Selects the worldspace at the given combo index.</summary>
     public void NavigateToWorldspace(int worldspaceIndex)
     {
         if (worldspaceIndex >= 0 && worldspaceIndex < WorldspaceComboBox.Items.Count)
@@ -1834,6 +1844,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
     }
 
+    /// <summary>Centers and zooms the overview on a placed object, sizing the view to its object bounds.</summary>
     public void NavigateToObjectInOverview(PlacedReference obj)
     {
         EnsureOverviewMode();
@@ -3250,6 +3261,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // Inner Types
     // ========================================================================
 
+    /// <summary>Top-level display mode of the world map (whole worldspace, a single cell, or a cell list).</summary>
     internal enum ViewMode
     {
         WorldOverview,
@@ -3257,6 +3269,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         CellBrowser
     }
 
+    /// <summary>Which set of cells the cell-browser lists.</summary>
     internal enum BrowserMode
     {
         None,
@@ -3264,6 +3277,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         AllCells
     }
 
+    /// <summary>A captured world map navigation state used for back/forward history.</summary>
     internal record WorldNavState(ViewMode Mode, BrowserMode Browser, int WorldspaceComboIndex, uint? CellFormId);
 
     private readonly record struct TerrainTextureViewportKey(
@@ -3278,6 +3292,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         List<CellRecord> Cells,
         int PixelsPerCell);
 
+    /// <summary>One row in the cell-browser list: a cell plus its precomputed display strings.</summary>
     internal sealed class CellListItem
     {
         public string Group { get; init; } = "";
@@ -3287,6 +3302,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         public required CellRecord Cell { get; init; }
     }
 
+    /// <summary>A named group of cell-list rows for the grouped ListView.</summary>
     internal sealed class CellListGroup(string key, List<CellListItem> items) : List<CellListItem>(items)
     {
         public string Key { get; } = key;

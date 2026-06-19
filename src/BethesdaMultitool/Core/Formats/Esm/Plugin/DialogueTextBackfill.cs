@@ -23,6 +23,7 @@ internal static class DialogueTextBackfill
         @"_(?<formid>[0-9A-Fa-f]{8})_(?<resp>\d+)\.(xma|ogg|lip|wav|mp3)$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    /// <summary>Counts from a text-backfill pass: CSV rows read/parsed and INFO responses filled or appended.</summary>
     public sealed record BackfillResult(
         int RowsRead,
         int RowsParsed,

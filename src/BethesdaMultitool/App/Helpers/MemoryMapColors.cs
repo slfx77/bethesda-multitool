@@ -111,6 +111,7 @@ public static class MemoryMapColors
         (byte)(argb >> 8),
         (byte)argb);
 
+    /// <summary>A named color swatch shown in the memory map legend.</summary>
     public readonly struct LegendCategory(string name, Color color)
     {
         public string Name { get; } = name;

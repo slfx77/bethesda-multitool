@@ -63,6 +63,7 @@ public sealed class CarvedFileEntry : INotifyPropertyChanged
     }
 
     // Legacy property for compatibility
+    /// <summary>Legacy boolean view of <see cref="Status"/>: true only when fully extracted.</summary>
     public bool IsExtracted
     {
         get => _status == ExtractionStatus.Extracted;
@@ -83,6 +84,7 @@ public sealed class CarvedFileEntry : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Segoe MDL2 icon glyph reflecting the current extraction status.</summary>
     public string ExtractedGlyph => _status switch
     {
         ExtractionStatus.Extracted => "\uE73E", // Checkmark
@@ -91,6 +93,7 @@ public sealed class CarvedFileEntry : INotifyPropertyChanged
         _ => "\uE8FB" // More (horizontal dots) - pending/not extracted
     };
 
+    /// <summary>Status indicator color (green extracted, red failed, gray pending/skipped).</summary>
     public Brush ExtractedColor => _status switch
     {
         ExtractionStatus.Extracted => new SolidColorBrush(Colors.Green),

@@ -1,5 +1,6 @@
 namespace BethesdaMultitool.Core.VersionTracking.Extraction;
 
+/// <summary>Options that tune the version-snapshot extraction pipeline per source type (file type, progress labels/weights, metadata depth).</summary>
 internal sealed record VersionSnapshotPipelineOptions
 {
     public required AnalysisFileType FileType { get; init; }

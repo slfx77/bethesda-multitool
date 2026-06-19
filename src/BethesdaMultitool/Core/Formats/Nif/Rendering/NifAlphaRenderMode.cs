@@ -1,5 +1,6 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
+/// <summary>How a NIF shape's transparency is rasterized, derived from its NiAlphaProperty.</summary>
 internal enum NifAlphaRenderMode
 {
     Opaque,

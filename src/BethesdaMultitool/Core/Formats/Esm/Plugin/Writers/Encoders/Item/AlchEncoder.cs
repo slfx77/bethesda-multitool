@@ -35,6 +35,7 @@ public sealed class AlchEncoder : IRecordEncoder
     public string RecordType => "ALCH";
     public Type ModelType => typeof(ConsumableRecord);
 
+    /// <summary>Produces override subrecords for an existing ALCH (a consumable) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var alch = (ConsumableRecord)model;

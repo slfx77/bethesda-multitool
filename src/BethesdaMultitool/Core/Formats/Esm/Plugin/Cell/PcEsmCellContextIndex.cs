@@ -43,6 +43,7 @@ public sealed record PcEsmCellContext
 /// </summary>
 public static class PcEsmCellContextIndex
 {
+    /// <summary>Builds the master CELL FormID to GRUP-context map by parsing the PC ESM bytes.</summary>
     public static Dictionary<uint, PcEsmCellContext> Build(byte[] pcEsmBytes)
     {
         var (records, grupHeaders) = EsmParser.EnumerateRecordsWithGrups(pcEsmBytes);

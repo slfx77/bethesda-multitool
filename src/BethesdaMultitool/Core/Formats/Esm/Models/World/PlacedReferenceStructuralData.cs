@@ -11,4 +11,5 @@ public record PlacedReferenceStructuralData
     public bool HasAny => Subrecords.Count > 0;
 }
 
+/// <summary>One raw structural/culling subrecord (signature + PC little-endian bytes) on a placed reference.</summary>
 public record PlacedReferenceStructuralSubrecord(string Signature, byte[] Data);

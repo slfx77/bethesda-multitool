@@ -170,6 +170,7 @@ internal static class GeckWorldObjectWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Explosions.</summary>
     public static string GenerateExplosionsReport(List<ExplosionRecord> explosions,
         FormIdResolver? resolver = null)
     {
@@ -264,6 +265,7 @@ internal static class GeckWorldObjectWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Projectiles.</summary>
     public static string GenerateProjectilesReport(List<ProjectileRecord> projectiles,
         FormIdResolver? resolver = null)
     {
@@ -323,6 +325,7 @@ internal static class GeckWorldObjectWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Sounds.</summary>
     public static string GenerateSoundsReport(List<SoundRecord> sounds)
     {
         var sb = new StringBuilder();
@@ -377,6 +380,7 @@ internal static class GeckWorldObjectWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Doors.</summary>
     public static string GenerateDoorsReport(List<DoorRecord> doors, FormIdResolver? resolver = null)
     {
         var sb = new StringBuilder();
@@ -431,6 +435,7 @@ internal static class GeckWorldObjectWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Lights.</summary>
     public static string GenerateLightsReport(List<LightRecord> lights)
     {
         var sb = new StringBuilder();
@@ -468,6 +473,7 @@ internal static class GeckWorldObjectWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Furniture.</summary>
     public static string GenerateFurnitureReport(List<FurnitureRecord> furniture,
         FormIdResolver? resolver = null)
     {
@@ -516,6 +522,7 @@ internal static class GeckWorldObjectWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Activators.</summary>
     public static string GenerateActivatorsReport(List<ActivatorRecord> activators,
         FormIdResolver? resolver = null)
     {
@@ -543,6 +550,7 @@ internal static class GeckWorldObjectWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Statics.</summary>
     public static string GenerateStaticsReport(List<StaticRecord> statics)
     {
         var sb = new StringBuilder();

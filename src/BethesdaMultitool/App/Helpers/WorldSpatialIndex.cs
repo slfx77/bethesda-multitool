@@ -673,11 +673,13 @@ internal sealed class WorldSpatialIndex
     }
 }
 
+/// <summary>A cell positioned at a grid key, with its precomputed canvas-space center.</summary>
 internal readonly record struct WorldSpatialCell(
     (int gx, int gy) Key,
     CellRecord Cell,
     Vector2 CenterCanvas);
 
+/// <summary>A cell's water plane: surface height plus the XY origin and side length of its footprint quad.</summary>
 internal readonly record struct WorldWaterCell(
     (int gx, int gy) Key,
     CellRecord Cell,
@@ -685,10 +687,12 @@ internal readonly record struct WorldWaterCell(
     Vector2 OriginXY,
     float FootprintSize);
 
+/// <summary>A cell paired with the navmeshes that belong to it.</summary>
 internal readonly record struct NavMeshCellEntry(
     CellRecord Cell,
     IReadOnlyList<NavMeshRecord> NavMeshes);
 
+/// <summary>A fixed-size block of grid cells (and their water cells) used as a coarse broadphase tier.</summary>
 internal sealed class WorldGridChunk
 {
     internal WorldGridChunk((int cx, int cy) key, int minGridX, int minGridY)
@@ -710,6 +714,7 @@ internal sealed class WorldGridChunk
     internal Vector2 MinCanvas { get; private set; }
     internal Vector2 MaxCanvas { get; private set; }
 
+    /// <summary>Finalizes the chunk by computing its canvas-space bounding box from the cell-grid extent.</summary>
     internal void Seal(float cellSize)
     {
         MinCanvas = new Vector2(MinGridX * cellSize, -(MaxGridY + 1) * cellSize);

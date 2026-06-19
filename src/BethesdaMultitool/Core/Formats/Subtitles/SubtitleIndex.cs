@@ -12,6 +12,7 @@ public sealed class SubtitleIndex
 {
     private readonly Dictionary<uint, SubtitleEntry> _entries;
 
+    /// <summary>Wraps a prebuilt FormID-to-subtitle map; use <see cref="LoadFromCsv" /> to build one from a CSV export.</summary>
     public SubtitleIndex(Dictionary<uint, SubtitleEntry> entries)
     {
         _entries = entries;

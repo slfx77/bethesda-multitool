@@ -7,6 +7,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 /// </summary>
 internal static class WorldspaceNameIndex
 {
+    /// <summary>Builds a worldspace-FormID to name map from WRLD editor IDs, supplemented by the given FormID map.</summary>
     public static IReadOnlyDictionary<uint, string> Build(
         RecordCollection records,
         IReadOnlyDictionary<uint, string>? formIdMap)

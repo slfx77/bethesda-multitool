@@ -17,6 +17,7 @@ internal sealed class RuntimeAudioLocationControllerReader(RuntimeMemoryContext 
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime audio-location-controller record for the given DMP entry, or null if it can't be read.</summary>
     public AudioLocationControllerRecord? ReadRuntimeAudioLocationController(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != AlocFormType)

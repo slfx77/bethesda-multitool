@@ -392,11 +392,14 @@ internal static class ReportFieldDomain
         ];
     }
 
+    /// <summary>A validation rule that decides whether a report field value lies within its declared domain.</summary>
     internal interface IDomainRule
     {
+        /// <summary>Returns true if the value satisfies this rule; otherwise sets <paramref name="failReason" />.</summary>
         bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason);
     }
 
+    /// <summary>Accepts an IntVal within the inclusive [Min, Max] range.</summary>
     internal sealed record IntRange(long Min, long Max) : IDomainRule
     {
         public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
@@ -416,6 +419,7 @@ internal static class ReportFieldDomain
         }
     }
 
+    /// <summary>Accepts a FloatVal/IntVal within [Min, Max]; rejects infinity and (unless allowed) NaN.</summary>
     internal sealed record FloatRange(double Min, double Max, bool AllowNan = false) : IDomainRule
     {
         public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
@@ -453,6 +457,7 @@ internal static class ReportFieldDomain
         }
     }
 
+    /// <summary>Accepts an IntVal whose value is one of the allowed enum codes.</summary>
     internal sealed record EnumSet(HashSet<int> ValidValues) : IDomainRule
     {
         public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
@@ -474,6 +479,7 @@ internal static class ReportFieldDomain
         }
     }
 
+    /// <summary>Accepts a FormIDVal that resolves via the resolver (zero allowed only when AllowZero is set).</summary>
     internal sealed record FormIdMustResolve(bool AllowZero = true) : IDomainRule
     {
         public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
@@ -523,6 +529,7 @@ internal static class ReportFieldDomain
         }
     }
 
+    /// <summary>Accepts a non-empty StringVal no longer than MaxLen characters.</summary>
     internal sealed record StringNonEmpty(int MaxLen = 4096) : IDomainRule
     {
         public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)
@@ -550,6 +557,7 @@ internal static class ReportFieldDomain
         }
     }
 
+    /// <summary>Accepts any BoolVal.</summary>
     internal sealed record BoolAny : IDomainRule
     {
         public bool Matches(ReportValue value, FormIdResolver? resolver, out string? failReason)

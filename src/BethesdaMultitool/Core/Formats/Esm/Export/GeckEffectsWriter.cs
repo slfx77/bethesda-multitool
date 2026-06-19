@@ -451,6 +451,7 @@ internal static class GeckEffectsWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Enchantments.</summary>
     public static string GenerateEnchantmentsReport(List<EnchantmentRecord> enchantments,
         FormIdResolver? resolver = null)
     {
@@ -541,6 +542,7 @@ internal static class GeckEffectsWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Base Effects.</summary>
     public static string GenerateBaseEffectsReport(List<BaseEffectRecord> effects,
         FormIdResolver? resolver = null)
     {

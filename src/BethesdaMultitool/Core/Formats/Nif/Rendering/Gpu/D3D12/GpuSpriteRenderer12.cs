@@ -657,6 +657,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 
     // ---- Per-render structures ----------------------------------------------------------
 
+    /// <summary>State for an in-flight async sprite render: target dimensions, model bounds, and texture flags, completed later by <c>CompleteRender</c>.</summary>
     internal sealed class PendingRender
     {
         public required int Width { get; init; }

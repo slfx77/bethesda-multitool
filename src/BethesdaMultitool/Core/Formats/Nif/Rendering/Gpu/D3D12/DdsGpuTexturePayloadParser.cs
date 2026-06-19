@@ -3,10 +3,12 @@ using System.Text;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
+/// <summary>Parses a DDS file's header and mip chain directly into a <see cref="GpuTexturePayload" /> for upload.</summary>
 internal static class DdsGpuTexturePayloadParser
 {
     private const int DdsHeaderSize = 128;
 
+    /// <summary>Parses DDS bytes into a GPU texture payload, returning <c>null</c> for unrecognized or truncated data.</summary>
     public static GpuTexturePayload? Parse(byte[] ddsData)
     {
         if (ddsData.Length < DdsHeaderSize ||

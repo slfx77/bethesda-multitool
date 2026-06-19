@@ -166,6 +166,7 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
         MemoryBudgetCoordinator.Instance.CheckNow("session-open");
     }
 
+    /// <summary>Adopts the file, accessor, and parsed records from a completed unified analysis session.</summary>
     public void AdoptSemanticSession(UnifiedAnalysisResult session)
     {
         FilePath = session.FilePath;

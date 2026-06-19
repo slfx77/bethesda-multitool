@@ -7,6 +7,7 @@ namespace BethesdaMultitool.Core.Semantic;
 /// </summary>
 internal static class EsmLoadOrderResolver
 {
+    /// <summary>Reads every .esm in a directory and topologically sorts them into load order from their MAST master dependencies.</summary>
     internal static async Task<IReadOnlyList<EsmLoadOrderFile>> ResolveDirectoryAsync(
         string baseDirPath,
         CancellationToken cancellationToken = default)

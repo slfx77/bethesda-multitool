@@ -5,6 +5,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 
 internal static class CsvItemWriter
 {
+    /// <summary>Builds a CSV of Weapons.</summary>
     public static string GenerateWeaponsCsv(List<WeaponRecord> weapons, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -97,6 +98,7 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Weapon Mods.</summary>
     public static string GenerateWeaponModsCsv(List<WeaponModRecord> mods)
     {
         var sb = new StringBuilder();
@@ -120,6 +122,7 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Armor.</summary>
     public static string GenerateArmorCsv(List<ArmorRecord> armor)
     {
         var sb = new StringBuilder();
@@ -145,6 +148,7 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Ammo.</summary>
     public static string GenerateAmmoCsv(List<AmmoRecord> ammo, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -175,6 +179,7 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Consumables.</summary>
     public static string GenerateConsumablesCsv(List<ConsumableRecord> consumables,
         FormIdResolver resolver)
     {
@@ -216,6 +221,7 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Misc Items.</summary>
     public static string GenerateMiscItemsCsv(List<MiscItemRecord> items)
     {
         var sb = new StringBuilder();
@@ -238,6 +244,7 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Keys.</summary>
     public static string GenerateKeysCsv(List<KeyRecord> keys)
     {
         var sb = new StringBuilder();
@@ -260,6 +267,7 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Containers.</summary>
     public static string GenerateContainersCsv(List<ContainerRecord> containers, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -297,6 +305,7 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Books.</summary>
     public static string GenerateBooksCsv(List<BookRecord> books, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -327,6 +336,7 @@ internal static class CsvItemWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Recipes.</summary>
     public static string GenerateRecipesCsv(List<RecipeRecord> recipes,
         FormIdResolver resolver)
     {

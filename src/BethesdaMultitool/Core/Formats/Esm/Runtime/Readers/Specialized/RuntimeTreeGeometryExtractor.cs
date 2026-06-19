@@ -170,6 +170,7 @@ public sealed record ExtractedTree
     public int TotalTriangles => Submeshes.Sum(s => s.Mesh.TriangleCount);
 }
 
+/// <summary>One submesh of an extracted tree (its mesh, geometry kind, and resolved texture).</summary>
 public sealed record ExtractedTreeSubmesh
 {
     public required ExtractedMesh Mesh { get; init; }
@@ -180,6 +181,7 @@ public sealed record ExtractedTreeSubmesh
     public string? TexturePath { get; set; }
 }
 
+/// <summary>The kind of geometry a tree submesh represents (branch, leaf, or billboard).</summary>
 public enum TreeGeometryKind
 {
     Branch,

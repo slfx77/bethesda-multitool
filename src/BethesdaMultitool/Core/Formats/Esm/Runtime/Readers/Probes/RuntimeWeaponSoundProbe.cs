@@ -117,6 +117,7 @@ internal static class RuntimeWeaponSoundProbe
     // so the extra candidates were dead work.
     private static readonly int[] FineShiftOptions = [0];
 
+    /// <summary>Auto-detects the runtime weapon sound-block layout variant from sampled weapon entries, or null if undetected.</summary>
     public static RuntimeWeaponSoundProbeResult? Probe(
         RuntimeMemoryContext context,
         IReadOnlyList<RuntimeEditorIdEntry> entries,

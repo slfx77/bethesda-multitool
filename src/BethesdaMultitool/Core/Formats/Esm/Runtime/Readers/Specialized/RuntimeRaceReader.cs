@@ -35,6 +35,7 @@ internal sealed class RuntimeRaceReader
     private readonly int _g1Shift;
     private readonly int _g2Shift;
 
+    /// <summary>Creates the reader bound to the runtime memory context, using an optional probed struct layout.</summary>
     public RuntimeRaceReader(RuntimeMemoryContext context, RuntimeLayoutProbeResult<int[]>? probeResult = null)
     {
         _context = context;
@@ -59,6 +60,7 @@ internal sealed class RuntimeRaceReader
         // as the conservative default for inconclusive-probe cases.
     }
 
+    /// <summary>Reads the runtime race record for the given DMP entry, or null if it can't be read.</summary>
     public RaceRecord? ReadRuntimeRace(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != RaceFormType)

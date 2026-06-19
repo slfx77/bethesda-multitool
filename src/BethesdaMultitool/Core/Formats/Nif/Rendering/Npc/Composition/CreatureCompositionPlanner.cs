@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
+/// <summary>Builds a <see cref="CreatureCompositionPlan" /> from a scanned creature and options, resolving its body meshes, skeleton, and animation.</summary>
 internal static class CreatureCompositionPlanner
 {
     internal static CreatureCompositionPlan? CreatePlan(

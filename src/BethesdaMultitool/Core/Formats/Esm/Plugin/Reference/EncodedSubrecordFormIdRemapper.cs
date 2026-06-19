@@ -10,6 +10,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 /// </summary>
 internal static class EncodedSubrecordFormIdRemapper
 {
+    /// <summary>
+    ///     Rewrites every FormID-bearing field in the encoded subrecords through the alias map,
+    ///     returning the originals unchanged when no aliases apply.
+    /// </summary>
     public static IReadOnlyList<EncodedSubrecord> Remap(
         string recordType,
         IReadOnlyList<EncodedSubrecord> subrecords,

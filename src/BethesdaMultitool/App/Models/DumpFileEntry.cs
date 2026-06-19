@@ -51,6 +51,7 @@ public sealed class DumpFileEntry : INotifyPropertyChanged
         _ => $"{Size} B"
     };
 
+    /// <summary>Color reflecting the textual processing status (green complete, blue processing, red error).</summary>
     public Brush StatusColor => Status switch
     {
         "Complete" => new SolidColorBrush(Colors.Green),

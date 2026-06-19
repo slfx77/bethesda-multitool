@@ -9,6 +9,7 @@ using WinRT.Interop;
 
 namespace BethesdaMultitool;
 
+/// <summary>Builds and shows the load-order picker dialog and applies its result, loading each entry's records.</summary>
 internal static class LoadOrderDialogService
 {
     internal static ObservableCollection<LoadOrderEntry> CreateWorkingEntries(IEnumerable<LoadOrderEntry> entries)

@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Reads a record's raw subrecord bytes from the ESM (decompressing if needed) for the record scanners to parse.</summary>
 internal static class NpcRecordDataReader
 {
     internal static byte[]? ReadRecordData(

@@ -14,6 +14,7 @@ internal sealed class RuntimeMusicTypeReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime music-type record for the given DMP entry, or null if it can't be read.</summary>
     public MusicTypeRecord? ReadRuntimeMusicType(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != MuscFormType)

@@ -57,8 +57,13 @@ internal sealed record DialogSectionResult(
     }
 }
 
+/// <summary>Builds the plugin's top-level DIAL GRUP (dialogue topics and their nested INFO responses).</summary>
 internal static class DialogGrupBuilder
 {
+    /// <summary>
+    ///     Builds the top-level DIAL GRUP section: emits new topics with fresh FormIDs, nests
+    ///     INFOs under their topic, and validates/drops dangling cross-record references.
+    /// </summary>
     public static DialogSectionResult BuildDialogSection(
         IReadOnlyList<DialogTopicRecord> topics,
         IReadOnlyList<DialogueRecord> infos,

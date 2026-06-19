@@ -7,6 +7,7 @@ namespace BethesdaMultitool.Core.VersionTracking.Processing;
 /// </summary>
 public static class RecordFieldComparer
 {
+    /// <summary>Returns the field-level changes between two tracked quest snapshots.</summary>
     public static List<FieldChange> CompareQuests(TrackedQuest a, TrackedQuest b)
     {
         var changes = new List<FieldChange>();
@@ -20,6 +21,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked NPC snapshots.</summary>
     public static List<FieldChange> CompareNpcs(TrackedNpc a, TrackedNpc b)
     {
         var changes = new List<FieldChange>();
@@ -34,6 +36,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked dialogue (INFO) snapshots.</summary>
     public static List<FieldChange> CompareDialogues(TrackedDialogue a, TrackedDialogue b)
     {
         var changes = new List<FieldChange>();
@@ -46,6 +49,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked weapon snapshots.</summary>
     public static List<FieldChange> CompareWeapons(TrackedWeapon a, TrackedWeapon b)
     {
         var changes = new List<FieldChange>();
@@ -62,6 +66,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked armor snapshots.</summary>
     public static List<FieldChange> CompareArmor(TrackedArmor a, TrackedArmor b)
     {
         var changes = new List<FieldChange>();
@@ -74,6 +79,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked item snapshots.</summary>
     public static List<FieldChange> CompareItems(TrackedItem a, TrackedItem b)
     {
         var changes = new List<FieldChange>();
@@ -89,6 +95,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked script snapshots.</summary>
     public static List<FieldChange> CompareScripts(TrackedScript a, TrackedScript b)
     {
         var changes = new List<FieldChange>();
@@ -110,6 +117,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked location (CELL/WRLD) snapshots.</summary>
     public static List<FieldChange> CompareLocations(TrackedLocation a, TrackedLocation b)
     {
         var changes = new List<FieldChange>();
@@ -121,6 +129,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked placed-reference snapshots.</summary>
     public static List<FieldChange> ComparePlacements(TrackedPlacement a, TrackedPlacement b)
     {
         var changes = new List<FieldChange>();
@@ -132,6 +141,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked creature snapshots.</summary>
     public static List<FieldChange> CompareCreatures(TrackedCreature a, TrackedCreature b)
     {
         var changes = new List<FieldChange>();
@@ -149,6 +159,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked perk snapshots.</summary>
     public static List<FieldChange> ComparePerks(TrackedPerk a, TrackedPerk b)
     {
         var changes = new List<FieldChange>();
@@ -162,6 +173,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked ammo snapshots.</summary>
     public static List<FieldChange> CompareAmmo(TrackedAmmo a, TrackedAmmo b)
     {
         var changes = new List<FieldChange>();
@@ -174,6 +186,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked leveled-list snapshots.</summary>
     public static List<FieldChange> CompareLeveledLists(TrackedLeveledList a, TrackedLeveledList b)
     {
         var changes = new List<FieldChange>();
@@ -184,6 +197,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked note snapshots.</summary>
     public static List<FieldChange> CompareNotes(TrackedNote a, TrackedNote b)
     {
         var changes = new List<FieldChange>();
@@ -201,6 +215,7 @@ public static class RecordFieldComparer
         return changes;
     }
 
+    /// <summary>Returns the field-level changes between two tracked terminal snapshots.</summary>
     public static List<FieldChange> CompareTerminals(TrackedTerminal a, TrackedTerminal b)
     {
         var changes = new List<FieldChange>();

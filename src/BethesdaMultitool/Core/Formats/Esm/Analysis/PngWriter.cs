@@ -58,6 +58,7 @@ public static class PngWriter
         image.Write(stream, MagickFormat.Png);
     }
 
+    /// <summary>Encodes raw RGBA pixel data to PNG bytes.</summary>
     public static byte[] EncodeRgba(byte[] pixels, int width, int height)
     {
         var settings = new MagickReadSettings

@@ -2,11 +2,13 @@ using System.Diagnostics;
 
 namespace BethesdaMultitool;
 
+/// <summary>Accumulates per-stage timings for an ESM load and writes a breakdown to the debug log.</summary>
 internal sealed class EsmLoadProfile
 {
     private readonly List<(string Stage, TimeSpan Elapsed)> _stages = [];
     private readonly Stopwatch _total = Stopwatch.StartNew();
 
+    /// <summary>Times an async stage that returns a result, recording its elapsed duration.</summary>
     public async Task<T> TimeAsync<T>(string stage, Func<Task<T>> action)
     {
         var sw = Stopwatch.StartNew();
@@ -21,6 +23,7 @@ internal sealed class EsmLoadProfile
         }
     }
 
+    /// <summary>Times an async stage, recording its elapsed duration.</summary>
     public async Task TimeAsync(string stage, Func<Task> action)
     {
         var sw = Stopwatch.StartNew();
@@ -35,6 +38,7 @@ internal sealed class EsmLoadProfile
         }
     }
 
+    /// <summary>Times a synchronous stage that returns a result, recording its elapsed duration.</summary>
     public T Time<T>(string stage, Func<T> action)
     {
         var sw = Stopwatch.StartNew();
@@ -49,6 +53,7 @@ internal sealed class EsmLoadProfile
         }
     }
 
+    /// <summary>Times a synchronous stage, recording its elapsed duration.</summary>
     public void Time(string stage, Action action)
     {
         var sw = Stopwatch.StartNew();
@@ -63,6 +68,7 @@ internal sealed class EsmLoadProfile
         }
     }
 
+    /// <summary>Stops the total timer and writes the full per-stage breakdown to the debug output.</summary>
     public void Log(string filePath)
     {
         _total.Stop();
@@ -80,6 +86,7 @@ internal sealed class EsmLoadProfile
     }
 }
 
+/// <summary>Disposable scope that records its lifetime as a stage on an <see cref="EsmLoadProfile"/>.</summary>
 internal readonly struct EsmLoadStageTimer(EsmLoadProfile profile, string stage) : IDisposable
 {
     private readonly Stopwatch _sw = Stopwatch.StartNew();

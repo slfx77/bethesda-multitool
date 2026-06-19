@@ -60,6 +60,7 @@ public sealed class ConversionEventEntry
 
     public string FormTypeDisplay => FormType ?? "";
 
+    /// <summary>Builds a display row from a domain conversion-progress event.</summary>
     public static ConversionEventEntry FromDomain(ConversionProgressEvent evt)
     {
         return new ConversionEventEntry

@@ -2,6 +2,7 @@ using System.Numerics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>One node in a GLB scene graph: its name, parent, local/world transforms, and role.</summary>
 internal sealed class GlbNode
 {
     public required string Name { get; init; }

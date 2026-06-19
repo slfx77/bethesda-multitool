@@ -9,6 +9,7 @@ internal sealed record DialogueTesFileMappingSegment
     public uint ExampleFormId { get; init; }
     public long ExampleRawRecordOffset { get; init; }
 
+    /// <summary>True if the given TES-file offset falls within this segment's min/max range.</summary>
     public bool Contains(uint tesFileOffset)
     {
         return tesFileOffset >= MinTesFileOffset && tesFileOffset <= MaxTesFileOffset;

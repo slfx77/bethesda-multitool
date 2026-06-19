@@ -2,6 +2,7 @@ using System.Text.Json;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
+/// <summary>Writes per-frame renderer profiling samples to a JSON trace file (thread-safe).</summary>
 internal static class RendererProfilerTrace
 {
     private static readonly Lock Sync = new();

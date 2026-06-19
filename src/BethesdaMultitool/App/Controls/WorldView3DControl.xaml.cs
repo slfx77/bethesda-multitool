@@ -258,7 +258,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
     // Public surface mirroring WorldMapControl ----------------------------------------------
 
+    /// <summary>Raised when the user requests inspection of a placed object (opens its detail panel).</summary>
     public event EventHandler<PlacedReference>? InspectObject;
+
+    /// <summary>Raised when the user requests inspection of a cell.</summary>
     public event EventHandler<CellRecord>? InspectCell;
 
     internal void LoadData(WorldViewData data)

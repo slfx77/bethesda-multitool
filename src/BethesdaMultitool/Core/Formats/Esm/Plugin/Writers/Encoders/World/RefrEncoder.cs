@@ -57,6 +57,7 @@ public sealed class RefrEncoder : IRecordEncoder
     public string RecordType => "REFR";
     public Type ModelType => typeof(PlacedReference);
 
+    /// <summary>Produces override subrecords for an existing REFR (a placed-object reference) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var refr = (PlacedReference)model;

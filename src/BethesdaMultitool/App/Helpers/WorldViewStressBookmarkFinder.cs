@@ -3,10 +3,13 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 namespace BethesdaMultitool;
 
+/// <summary>A candidate camera-focus point for stress profiling, scored by nearby placed-object count.</summary>
 internal readonly record struct WorldViewStressBookmark(Vector2 CanvasCenter, int Score);
 
+/// <summary>Finds the densest area of a worldspace to use as a render stress-test camera bookmark.</summary>
 internal static class WorldViewStressBookmarkFinder
 {
+    /// <summary>Scans every cell and returns the center whose render radius contains the most placed objects.</summary>
     internal static WorldViewStressBookmark? FindWastelandNvHeavyBookmark(
         WorldSpatialIndex index,
         WorldRenderCache renderCache,

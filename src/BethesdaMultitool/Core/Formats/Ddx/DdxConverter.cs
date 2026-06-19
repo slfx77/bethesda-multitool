@@ -24,6 +24,9 @@ public class DdxConverter(bool verbose = false, bool saveAtlas = false)
     public int Failed { get; private set; }
 
 
+    /// <summary>
+    ///     Converts a single DDX file on disk to a DDS file and updates the running counters.
+    /// </summary>
     public bool ConvertFile(string inputPath, string outputPath)
     {
         Processed++;
@@ -47,6 +50,9 @@ public class DdxConverter(bool verbose = false, bool saveAtlas = false)
         }
     }
 
+    /// <summary>
+    ///     Converts in-memory DDX bytes to DDS, returning the result and decoded bytes rather than writing a file.
+    /// </summary>
     public ConversionResult ConvertFromMemoryWithResult(byte[] ddxData)
     {
         Processed++;
@@ -157,6 +163,9 @@ public class DdxConverter(bool verbose = false, bool saveAtlas = false)
         }, cancellationToken);
     }
 
+    /// <summary>
+    ///     Asynchronous wrapper over <see cref="ConvertFromMemoryWithResult" /> that runs the conversion on a thread-pool thread.
+    /// </summary>
     public Task<ConversionResult> ConvertFromMemoryWithResultAsync(byte[] ddxData)
     {
         return Task.Run(() => ConvertFromMemoryWithResult(ddxData));

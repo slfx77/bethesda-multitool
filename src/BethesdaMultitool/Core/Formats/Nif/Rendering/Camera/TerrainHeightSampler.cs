@@ -18,6 +18,10 @@ internal static class TerrainHeightSampler
 {
     private const int CacheGrid = 33; // WorldRenderCache.DecodedTerrainCell is always a flat 33×33 grid.
 
+    /// <summary>
+    ///     Returns the bilinearly-interpolated ground height at the given world XY, or <c>null</c> when
+    ///     the position is over a cell with no usable heightmap.
+    /// </summary>
     public static float? Sample(
         IReadOnlyDictionary<(int gx, int gy), CellRecord> cells,
         float worldX,

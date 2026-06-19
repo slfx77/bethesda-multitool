@@ -52,6 +52,7 @@ public sealed class InfoEncoder : IRecordEncoder
     public string RecordType => "INFO";
     public Type ModelType => typeof(DialogueRecord);
 
+    /// <summary>Produces override subrecords for an existing INFO (a dialogue response) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var info = (DialogueRecord)model;

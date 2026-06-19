@@ -324,6 +324,7 @@ internal static class GeckCreatureWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Classes.</summary>
     public static string GenerateClassesReport(List<ClassRecord> classes)
     {
         var sb = new StringBuilder();
@@ -372,6 +373,7 @@ internal static class GeckCreatureWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Hair.</summary>
     public static string GenerateHairReport(List<HairRecord> hair)
     {
         var sb = new StringBuilder();
@@ -413,6 +415,7 @@ internal static class GeckCreatureWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Eyes.</summary>
     public static string GenerateEyesReport(List<EyesRecord> eyes)
     {
         var sb = new StringBuilder();

@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Dds;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
+/// <summary>Classifies a NIF shape's transparency into a <see cref="NifAlphaRenderMode" /> from its alpha and shader flags.</summary>
 internal static class NifAlphaClassifier
 {
     // BSShaderFlags2 bit 0 = ZBuffer_Write (see nif.xml "BSShaderFlags2"). When set, the engine

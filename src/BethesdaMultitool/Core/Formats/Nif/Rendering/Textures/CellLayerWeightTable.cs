@@ -27,6 +27,7 @@ public struct VertexWeights
     public LayerWeight[]? Overflow;
 #pragma warning restore S1104
 
+    /// <summary>Adds a layer weight, merging into the existing entry for the same FormID and spilling to the overflow array past four entries.</summary>
     public void Add(uint formId, float weight)
     {
         if (weight <= 0f) return;

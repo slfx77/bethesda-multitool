@@ -2,6 +2,7 @@ using BethesdaMultitool.CLI.Rendering.Npc;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
+/// <summary>The options that drive how a creature is composed for render/export (weapon, pose, morphs, animation override); used as a cache key.</summary>
 internal sealed class CreatureCompositionOptions : IEquatable<CreatureCompositionOptions>
 {
     public bool IncludeWeapon { get; init; } = true;
@@ -44,6 +45,7 @@ internal sealed class CreatureCompositionOptions : IEquatable<CreatureCompositio
             AnimOverride?.ToUpperInvariant());
     }
 
+    /// <summary>Derives composition options from the render-command settings.</summary>
     public static CreatureCompositionOptions From(NpcRenderSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -58,6 +60,7 @@ internal sealed class CreatureCompositionOptions : IEquatable<CreatureCompositio
         };
     }
 
+    /// <summary>Derives composition options from the export-command settings.</summary>
     public static CreatureCompositionOptions From(NpcExportSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);

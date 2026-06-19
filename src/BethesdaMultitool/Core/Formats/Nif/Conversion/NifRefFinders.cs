@@ -3,6 +3,10 @@ using BethesdaMultitool.Core.Formats.Nif.Geometry;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Conversion;
 
+/// <summary>
+///     Walks NIF block fields to locate inter-block references (skin instance, data, Havok) needed by the
+///     conversion discovery phase to wire up geometry, skinning, and collision expansions.
+/// </summary>
 internal static class NifRefFinders
 {
     /// <summary>

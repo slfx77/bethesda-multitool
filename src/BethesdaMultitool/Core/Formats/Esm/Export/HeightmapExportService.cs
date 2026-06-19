@@ -11,6 +11,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 /// </summary>
 public sealed class HeightmapExportService
 {
+    /// <summary>Exports detected standalone VHGT heightmaps to PNG files.</summary>
     public Task ExportStandaloneHeightmapsAsync(
         List<DetectedVhgtHeightmap> heightmaps,
         List<CellGridSubrecord>? cellGrids,
@@ -20,6 +21,7 @@ public sealed class HeightmapExportService
         return HeightmapPngExporter.ExportAsync(heightmaps, cellGrids, outputDir, useColorGradient);
     }
 
+    /// <summary>Exports each LAND record's heightmap to a PNG file.</summary>
     public Task ExportLandRecordsAsync(
         List<ExtractedLandRecord> landRecords,
         string outputDir,
@@ -33,6 +35,7 @@ public sealed class HeightmapExportService
             worldspaceNames);
     }
 
+    /// <summary>Exports LAND visual data (vertex colors / texture layers) as preview images.</summary>
     public Task ExportLandVisualsAsync(
         List<ExtractedLandRecord> landRecords,
         string outputDir,
@@ -41,6 +44,7 @@ public sealed class HeightmapExportService
         return LandVisualPreviewRenderer.ExportAsync(landRecords, outputDir, worldspaceNames);
     }
 
+    /// <summary>Stitches per-cell heightmaps and LAND records into one composite worldmap PNG per worldspace.</summary>
     public Task<IReadOnlyList<string>> ExportWorldspaceCompositeWorldmapsAsync(
         List<DetectedVhgtHeightmap> heightmaps,
         List<CellGridSubrecord> cellGrids,

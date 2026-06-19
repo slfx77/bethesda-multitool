@@ -16,6 +16,7 @@ public abstract class FileSorterBase<TItem, TColumn> where TColumn : struct, Enu
     /// </summary>
     protected abstract TColumn NoneColumn { get; }
 
+    /// <summary>Clears the active sort column and returns to the default ascending state.</summary>
     public void Reset()
     {
         CurrentColumn = NoneColumn;

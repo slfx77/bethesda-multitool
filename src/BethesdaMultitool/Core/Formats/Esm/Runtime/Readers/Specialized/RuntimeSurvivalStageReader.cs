@@ -18,6 +18,7 @@ internal sealed class RuntimeSurvivalStageReader(RuntimeMemoryContext context)
 {
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime survival-stage record for the given DMP entry, or null if it can't be read.</summary>
     public SurvivalStageRecord? ReadRuntimeSurvivalStage(RuntimeEditorIdEntry entry, byte expectedFormType)
     {
         if (entry.FormType != expectedFormType)

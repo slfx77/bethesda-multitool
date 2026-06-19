@@ -1,5 +1,6 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>Derives a safe output file name for an exported NPC from its editor ID and FormID.</summary>
 internal static class NpcExportFileNaming
 {
     internal static string BuildFileName(NpcAppearance appearance)

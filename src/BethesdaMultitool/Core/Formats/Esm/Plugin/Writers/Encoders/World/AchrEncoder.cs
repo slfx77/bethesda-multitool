@@ -10,6 +10,7 @@ public sealed class AchrEncoder : IRecordEncoder
     public string RecordType => "ACHR";
     public Type ModelType => typeof(PlacedReference);
 
+    /// <summary>Produces override subrecords for an existing ACHR (a placed actor) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         return RefrEncoder.EncodePlacedReference((PlacedReference)model);

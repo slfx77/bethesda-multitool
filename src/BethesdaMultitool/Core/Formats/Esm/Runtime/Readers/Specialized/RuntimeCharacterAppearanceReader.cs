@@ -11,6 +11,7 @@ internal sealed class RuntimeCharacterAppearanceReader
 {
     private readonly RuntimeMemoryContext _context;
 
+    /// <summary>Creates the reader bound to the given runtime memory context.</summary>
     public RuntimeCharacterAppearanceReader(RuntimeMemoryContext context)
     {
         _context = context;
@@ -18,6 +19,7 @@ internal sealed class RuntimeCharacterAppearanceReader
 
     #region EYES — TESEyes (68 bytes, FormType 0x0B)
 
+    /// <summary>Reads the runtime eyes record for the given DMP entry, or null if it can't be read.</summary>
     public EyesRecord? ReadRuntimeEyes(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != EyesFormType)
@@ -67,6 +69,7 @@ internal sealed class RuntimeCharacterAppearanceReader
 
     #region HAIR — TESHair (92 bytes, FormType 0x0A)
 
+    /// <summary>Reads the runtime hair record for the given DMP entry, or null if it can't be read.</summary>
     public HairRecord? ReadRuntimeHair(RuntimeEditorIdEntry entry)
     {
         if (entry.TesFormOffset == null || entry.FormType != HairFormType)

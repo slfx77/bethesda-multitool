@@ -16,6 +16,7 @@ internal sealed class RuntimeRegionReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime region record for the given DMP entry, or null if it can't be read.</summary>
     public RegionRecord? ReadRuntimeRegion(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != RegnFormType)

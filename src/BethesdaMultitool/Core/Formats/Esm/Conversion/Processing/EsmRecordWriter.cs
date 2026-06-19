@@ -13,6 +13,7 @@ public sealed class EsmRecordWriter(byte[] input, EsmConversionStats stats)
     private readonly byte[] _input = input;
     private readonly EsmConversionStats _stats = stats;
 
+    /// <summary>Supplies the TOFT INFO index used by the INFO merger to locate split INFO fragments.</summary>
     public void SetToftInfoIndex(IReadOnlyDictionary<uint, int> toftInfoOffsetsByFormId)
     {
         _infoMerger.SetToftInfoIndex(toftInfoOffsetsByFormId);

@@ -21,6 +21,7 @@ public sealed class BookEncoder : IRecordEncoder
     public string RecordType => "BOOK";
     public Type ModelType => typeof(BookRecord);
 
+    /// <summary>Produces override subrecords for an existing BOOK (a book) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var book = (BookRecord)model;

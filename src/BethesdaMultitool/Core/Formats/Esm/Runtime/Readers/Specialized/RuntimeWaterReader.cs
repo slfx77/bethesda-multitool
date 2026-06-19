@@ -18,6 +18,7 @@ internal sealed class RuntimeWaterReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime water-type record for the given DMP entry, or null if it can't be read.</summary>
     public WaterRecord? ReadRuntimeWater(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != WatrFormType)

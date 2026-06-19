@@ -8,6 +8,7 @@ internal sealed class ScriptExpressionDecoder
 {
     private readonly ScriptVariableReader _varReader;
 
+    /// <summary>Creates the expression decoder using the given variable-name reader.</summary>
     public ScriptExpressionDecoder(ScriptVariableReader varReader)
     {
         _varReader = varReader;

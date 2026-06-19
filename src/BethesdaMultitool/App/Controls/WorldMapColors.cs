@@ -8,6 +8,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
 namespace BethesdaMultitool;
 
+/// <summary>Color, glyph, and name helpers for placed-object categories and map markers in the world map.</summary>
 internal static class WorldMapColors
 {
     internal static readonly FrozenDictionary<PlacedObjectCategory, Color> CategoryColors =

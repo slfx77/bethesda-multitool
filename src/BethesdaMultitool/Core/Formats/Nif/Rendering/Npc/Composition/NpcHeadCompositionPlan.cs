@@ -2,6 +2,7 @@ using System.Numerics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
+/// <summary>The head portion of an NPC composition plan: the base head NIF, its head parts, FaceGen morph data, and tint colors.</summary>
 internal sealed class NpcHeadCompositionPlan
 {
     public string? BaseHeadNifPath { get; init; }

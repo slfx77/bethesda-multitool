@@ -503,6 +503,7 @@ internal static class NifTextureAnimationEvaluator
                MathF.Abs(value) < SentinelMagnitude;
     }
 
+    /// <summary>A UV-transform state (translation, scale, rotation, center, method) sampled from a texture-transform controller at one animation time.</summary>
     internal readonly record struct NifTextureTransformSnapshot(
         float TranslationU,
         float TranslationV,

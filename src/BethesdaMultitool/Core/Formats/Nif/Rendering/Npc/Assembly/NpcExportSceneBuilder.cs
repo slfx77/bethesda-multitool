@@ -216,6 +216,7 @@ internal static class NpcExportSceneBuilder
         };
     }
 
+    /// <summary>Working state while building an NPC's GLB skeleton: the scene, bone transforms, optional pose deltas, and bone-name-to-node-index map.</summary>
     internal sealed record SkeletonContext(
         GlbScene Scene,
         Dictionary<string, Matrix4x4> BoneTransforms,

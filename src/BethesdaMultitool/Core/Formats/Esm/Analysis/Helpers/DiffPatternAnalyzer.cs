@@ -371,6 +371,7 @@ public static class DiffPatternAnalyzer
     {
         public int EndExclusive => Start + Length;
 
+        /// <summary>True if the given byte index falls within this swap range.</summary>
         public bool Contains(int index)
         {
             return index >= Start && index < EndExclusive;

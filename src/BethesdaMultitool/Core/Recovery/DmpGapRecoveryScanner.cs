@@ -29,6 +29,7 @@ internal static class DmpGapRecoveryScanner
         "NAM1"
     ];
 
+    /// <summary>Scans the coverage report's unrecognized gaps for validated raw ESM records and RTTI-backed runtime structs, returning the recoverable candidates and summary counts.</summary>
     public static DmpGapRecoveryResult Scan(
         AnalysisResult result,
         CoverageResult coverage,

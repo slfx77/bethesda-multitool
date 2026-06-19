@@ -8,6 +8,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 /// </summary>
 internal static class FaceGenPackedHeadMorpher
 {
+    /// <summary>
+    ///     Morphs <paramref name="packedPositions" /> in place by applying the EGM symmetric/asymmetric
+    ///     coefficient deltas to every packed vertex the topology's vertex map references.
+    /// </summary>
     public static void Apply(
         float[] packedPositions,
         PackedTopologyData topology,

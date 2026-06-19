@@ -7,6 +7,7 @@ internal sealed class CarvedFilesSorter : FileSorterBase<CarvedFileEntry, Carved
 {
     protected override SortColumn NoneColumn => SortColumn.None;
 
+    /// <summary>Orders the carved-file entries by the active column and direction.</summary>
     public override IEnumerable<CarvedFileEntry> Sort(IList<CarvedFileEntry> files)
     {
         return CurrentColumn switch
@@ -29,6 +30,7 @@ internal sealed class CarvedFilesSorter : FileSorterBase<CarvedFileEntry, Carved
         };
     }
 
+    /// <summary>Sortable columns for the carved files list.</summary>
     public enum SortColumn
     {
         None,

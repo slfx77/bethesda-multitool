@@ -2,6 +2,7 @@ using BethesdaMultitool.CLI;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
+/// <summary>Turns an <see cref="NpcCompositionPlan" /> into a renderable model for the sprite/PNG render path.</summary>
 internal static class NpcCompositionRenderAdapter
 {
     internal static NifRenderableModel? BuildNpc(

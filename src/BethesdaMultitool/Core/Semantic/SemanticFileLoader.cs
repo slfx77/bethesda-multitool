@@ -14,6 +14,7 @@ namespace BethesdaMultitool.Core.Semantic;
 /// </summary>
 internal static class SemanticFileLoader
 {
+    /// <summary>Detects (or validates the override of) the semantic file type, rejecting unknown and save-file formats.</summary>
     internal static AnalysisFileType ResolveSemanticFileType(
         string filePath,
         AnalysisFileType? fileTypeOverride = null)
@@ -35,6 +36,7 @@ internal static class SemanticFileLoader
         return fileType;
     }
 
+    /// <summary>Analyzes the file and parses it into a disposable <see cref="UnifiedAnalysisResult" /> with records and a FormID resolver.</summary>
     internal static async Task<UnifiedAnalysisResult> LoadAsync(
         string filePath,
         SemanticFileLoadOptions? options = null,
@@ -47,6 +49,7 @@ internal static class SemanticFileLoader
         return LoadFromAnalysisResult(filePath, analysisResult, fileType, options);
     }
 
+    /// <summary>Runs only the format-specific analysis phase (no semantic parse), returning the raw <see cref="AnalysisResult" />.</summary>
     internal static async Task<AnalysisResult> AnalyzeOnlyAsync(
         string filePath,
         SemanticFileLoadOptions? options = null,
@@ -58,6 +61,7 @@ internal static class SemanticFileLoader
         return await AnalyzeAsync(filePath, fileType, options, cancellationToken);
     }
 
+    /// <summary>Parses an already-computed <see cref="AnalysisResult" /> into a <see cref="UnifiedAnalysisResult" />.</summary>
     internal static UnifiedAnalysisResult LoadFromAnalysisResult(
         string filePath,
         AnalysisResult analysisResult,
@@ -75,6 +79,7 @@ internal static class SemanticFileLoader
             });
     }
 
+    /// <summary>Parses an already-computed <see cref="AnalysisResult" /> into a <see cref="UnifiedAnalysisResult" /> using the given options.</summary>
     internal static UnifiedAnalysisResult LoadFromAnalysisResult(
         string filePath,
         AnalysisResult analysisResult,

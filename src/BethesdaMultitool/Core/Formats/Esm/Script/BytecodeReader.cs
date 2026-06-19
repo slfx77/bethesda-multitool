@@ -47,6 +47,7 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
         return _data[Position++];
     }
 
+    /// <summary>Reads the byte at the current position without advancing.</summary>
     public byte PeekByte()
     {
         if (Position >= _data.Length)
@@ -170,6 +171,7 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
         return BitConverter.ToDouble(bytes, 0);
     }
 
+    /// <summary>Advances the position by <paramref name="count" /> bytes without reading.</summary>
     public void Skip(int count)
     {
         Position += count;

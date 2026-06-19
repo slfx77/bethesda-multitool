@@ -207,6 +207,7 @@ internal static class NpcBrowserWorkflowService
     }
 }
 
+/// <summary>NPC render/export options: head-only vs full body, and whether to omit equipment, weapon, and idle pose.</summary>
 internal sealed record NpcRenderOptions(
     bool HeadOnly,
     bool NoEquip,

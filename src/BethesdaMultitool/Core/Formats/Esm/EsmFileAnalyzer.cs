@@ -27,6 +27,10 @@ public static class EsmFileAnalyzer
         return await AnalyzeAsync(filePath, progress, false, cancellationToken);
     }
 
+    /// <summary>
+    ///     Analyzes an ESM/ESP file with an explicit verbose-logging flag. All heavy work runs
+    ///     on a thread-pool thread.
+    /// </summary>
     public static async Task<AnalysisResult> AnalyzeAsync(
         string filePath,
         IProgress<AnalysisProgress>? progress,

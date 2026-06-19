@@ -1,5 +1,6 @@
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
+/// <summary>One magic effect on an enchantment or spell, parsed from its EFID/EFIT subrecords.</summary>
 public record EnchantmentEffect
 {
     /// <summary>Base effect FormID (MGEF) from EFID subrecord.</summary>

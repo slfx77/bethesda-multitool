@@ -2,8 +2,10 @@ using BethesdaMultitool.Core.Formats.Esm.Presentation;
 
 namespace BethesdaMultitool;
 
+/// <summary>Flattens a Core <see cref="RecordDetailModel"/> into the GUI's <see cref="EsmPropertyEntry"/> rows.</summary>
 internal static class RecordDetailPropertyAdapter
 {
+    /// <summary>Converts a record-detail model's sections and entries into a flat property-entry list.</summary>
     internal static List<EsmPropertyEntry> Convert(RecordDetailModel model)
     {
         var properties = new List<EsmPropertyEntry>();

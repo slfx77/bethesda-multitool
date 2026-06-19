@@ -14,6 +14,7 @@ internal sealed class RuntimeRecipeCategoryReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime recipe-category record for the given DMP entry, or null if it can't be read.</summary>
     public RecipeCategoryRecord? ReadRuntimeRecipeCategory(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != RcctFormType)

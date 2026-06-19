@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses a leveled-list (LVLI/LVLN) record into the list of FormIDs it can produce.</summary>
 internal static class LeveledListRecordScanner
 {
     internal static List<uint>? Process(

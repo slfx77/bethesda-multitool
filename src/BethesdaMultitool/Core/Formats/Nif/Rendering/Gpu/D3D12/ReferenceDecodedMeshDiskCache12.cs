@@ -338,15 +338,18 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
 }
 
+/// <summary>A disk-cache entry for a decoded reference mesh: the payload, or a negative (known-empty) marker.</summary>
 internal readonly record struct ReferenceDecodedMeshDiskCacheEntry12(
     ReferenceDecodedMeshPayload12? Mesh,
     bool IsNegative);
 
+/// <summary>A decoded reference mesh ready to cache/upload: its submeshes plus optional collision geometry.</summary>
 internal sealed record ReferenceDecodedMeshPayload12(
     IReadOnlyList<ReferenceDecodedSubmeshPayload12> Submeshes,
     Vector3[]? CollisionPositions = null,
     int[]? CollisionTriangles = null);
 
+/// <summary>One decoded submesh: its vertices/indices, texture paths, and resolved alpha/specular/billboard render state.</summary>
 internal sealed record ReferenceDecodedSubmeshPayload12(
     GpuMeshUploader.GpuVertex[] Vertices,
     ushort[] Indices,

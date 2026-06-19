@@ -2,6 +2,10 @@ using System.Numerics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>
+///     An in-progress glTF/GLB scene graph: the node hierarchy and mesh parts being assembled for export,
+///     plus a name index for resolving bone/node references.
+/// </summary>
 internal sealed class GlbScene
 {
     private readonly Dictionary<string, int> _namedNodes =
@@ -25,6 +29,7 @@ internal sealed class GlbScene
 
     public static int RootNodeIndex => 0;
 
+    /// <summary>Appends a node to the scene graph and returns its index; registers <paramref name="lookupName" /> for later resolution.</summary>
     public int AddNode(
         string name,
         int? parentIndex,
@@ -52,6 +57,7 @@ internal sealed class GlbScene
         return nodeIndex;
     }
 
+    /// <summary>Looks up a previously registered node by its lookup name.</summary>
     public bool TryGetNodeIndex(string nodeName, out int nodeIndex)
     {
         return _namedNodes.TryGetValue(nodeName, out nodeIndex);

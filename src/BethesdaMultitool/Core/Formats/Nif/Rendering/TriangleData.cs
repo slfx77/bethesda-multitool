@@ -2,6 +2,10 @@ using BethesdaMultitool.Core.Formats.Dds;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
+/// <summary>
+///     A fully-resolved triangle ready for the software rasterizer: per-vertex positions, normals, tangents,
+///     colors, and UVs, plus the material/shading state (textures, alpha, specular, emissive, tint) for the face.
+/// </summary>
 internal struct TriangleData
 {
     // Vertex positions

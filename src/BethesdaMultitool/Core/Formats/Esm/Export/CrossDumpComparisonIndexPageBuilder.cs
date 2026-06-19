@@ -4,6 +4,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 
 internal static class CrossDumpComparisonIndexPageBuilder
 {
+    /// <summary>Generates the HTML index page summarizing every record type across all dumps in the index.</summary>
     public static string Generate(CrossDumpRecordIndex index)
     {
         var summaries = index.StructuredRecords
@@ -14,6 +15,7 @@ internal static class CrossDumpComparisonIndexPageBuilder
         return Generate(index.Dumps, summaries);
     }
 
+    /// <summary>Generates the HTML index page from explicit dump snapshots and per-record-type summaries.</summary>
     public static string Generate(
         IReadOnlyList<DumpSnapshot> dumps,
         IReadOnlyList<CrossDumpRecordTypeSummary> recordTypes)
@@ -34,6 +36,7 @@ internal static class CrossDumpComparisonIndexPageBuilder
         return sb.ToString();
     }
 
+    /// <summary>Counts per-dump record presence for one record type and packages it as a summary row.</summary>
     public static CrossDumpRecordTypeSummary BuildRecordTypeSummary(
         string recordType,
         Dictionary<uint, Dictionary<int, RecordReport>> formIdMap,

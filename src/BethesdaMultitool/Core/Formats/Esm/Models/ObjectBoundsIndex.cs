@@ -6,6 +6,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models;
 /// </summary>
 internal static class ObjectBoundsIndex
 {
+    /// <summary>Builds a FormID to <see cref="ObjectBounds" /> lookup from every record type that carries an OBND.</summary>
     public static Dictionary<uint, ObjectBounds> Build(RecordCollection records)
     {
         var (bounds, _) = BuildCombined(records);

@@ -19,6 +19,7 @@ internal sealed class RuntimeLightingTemplateReader(RuntimeMemoryContext context
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime lighting-template record for the given DMP entry, or null if it can't be read.</summary>
     public LightingTemplateRecord? ReadRuntimeLightingTemplate(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != LgtmFormType)

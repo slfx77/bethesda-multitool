@@ -24,12 +24,14 @@ internal sealed class NpcAppearanceResolver
 
     public int RaceCount => _index.Races.Count;
 
+    /// <summary>Scans an ESM and builds a resolver over its NPC/creature/race/weapon records.</summary>
     public static NpcAppearanceResolver Build(byte[] esmData, bool bigEndian)
     {
         var index = NpcAppearanceIndexBuilder.Build(esmData, bigEndian);
         return new NpcAppearanceResolver(index);
     }
 
+    /// <summary>Resolves the head-only appearance of a single NPC by FormID, or <c>null</c> if not found.</summary>
     public NpcAppearance? ResolveHeadOnly(uint formId, string pluginName)
     {
         if (!_index.Npcs.TryGetValue(formId, out var npc))
@@ -40,6 +42,7 @@ internal sealed class NpcAppearanceResolver
         return _appearanceFactory.Build(formId, npc, pluginName);
     }
 
+    /// <summary>Resolves the head-only appearance of every NPC, optionally skipping unnamed ones.</summary>
     public List<NpcAppearance> ResolveAllHeadOnly(
         string pluginName,
         bool filterNamed = false)
@@ -58,6 +61,7 @@ internal sealed class NpcAppearanceResolver
         return results;
     }
 
+    /// <summary>Builds an appearance from a runtime NPC record captured in a DMP, layering in any live weapon/equipment selection.</summary>
     public NpcAppearance ResolveFromDmpRecord(
         NpcRecord npcRecord,
         string pluginName,
@@ -91,11 +95,13 @@ internal sealed class NpcAppearanceResolver
         return _index.Npcs.TryGetValue(formId, out npc!);
     }
 
+    /// <summary>Resolves the mesh path of a weapon by its item FormID, or <c>null</c> if unknown.</summary>
     public string? ResolveWeaponMeshPath(uint itemFormId)
     {
         return ResolveWeaponEntry(itemFormId)?.ModelPath;
     }
 
+    /// <summary>Returns the weapon restriction imposed by the given combat-style FormID (or <c>None</c> if absent).</summary>
     public WeaponRestriction GetWeaponRestriction(uint? combatStyleFormId)
     {
         if (combatStyleFormId is { } id &&
@@ -107,6 +113,7 @@ internal sealed class NpcAppearanceResolver
         return WeaponRestriction.None;
     }
 
+    /// <summary>Resolves the scanned weapon entry for an item FormID, or <c>null</c> if it is not a known weapon.</summary>
     public WeapScanEntry? ResolveWeaponEntry(uint itemFormId)
     {
         if (_index.Weapons.TryGetValue(itemFormId, out var weapon))

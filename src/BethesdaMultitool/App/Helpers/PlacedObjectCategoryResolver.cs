@@ -396,11 +396,13 @@ internal static class PlacedObjectCategoryResolver
         return $"{lvlPrefix}: [Leveled] {name}";
     }
 
+    /// <summary>Returns the reference's own EditorId, falling back to the resolver's EditorId for its FormID.</summary>
     public static string? GetReferenceEditorId(PlacedReference obj, FormIdResolver? resolver)
     {
         return !string.IsNullOrEmpty(obj.EditorId) ? obj.EditorId : resolver?.GetEditorId(obj.FormId);
     }
 
+    /// <summary>Returns the best display name for a placed reference, preferring marker name then EditorId then base record name.</summary>
     public static string GetReferenceAwareName(PlacedReference obj, FormIdResolver? resolver)
     {
         if (obj.IsMapMarker && !string.IsNullOrEmpty(obj.MarkerName))

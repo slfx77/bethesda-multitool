@@ -3,8 +3,10 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
+/// <summary>Where a master child record lives: its parent cell FormID, child-GRUP type, and record type.</summary>
 internal sealed record MasterChildLocation(uint CellFormId, int GroupType, string RecordType);
 
+/// <summary>Prebuilt lookup tables over the master ESM's records (by FormID, type, editor ID, cell, etc.) for fast conversion-time queries.</summary>
 internal sealed record MasterRecordIndex
 {
     public required IReadOnlyList<ParsedMainRecord> Records { get; init; }
@@ -19,6 +21,7 @@ internal sealed record MasterRecordIndex
     public required Dictionary<uint, List<uint>> LandsByCell { get; init; }
     public required Dictionary<uint, PcEsmCellContext> CellContexts { get; init; }
 
+    /// <summary>Builds all master lookup tables from the parsed master records and their GRUP headers.</summary>
     public static MasterRecordIndex Build(
         IReadOnlyList<ParsedMainRecord> records,
         IReadOnlyList<GrupHeaderInfo> grupHeaders)

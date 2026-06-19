@@ -2,6 +2,7 @@ using System.Numerics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
+/// <summary>The scripted camera path a renderer profiling run drives the camera along.</summary>
 internal enum RendererCameraMotionKind
 {
     Static,
@@ -10,12 +11,14 @@ internal enum RendererCameraMotionKind
     Sweep
 }
 
+/// <summary>A camera pose sampled during a profiler run: position, orientation, and render distance.</summary>
 internal readonly record struct RendererProfilerCameraPose(
     Vector3 Position,
     float Yaw,
     float Pitch,
     float RenderDistance);
 
+/// <summary>Computes the camera pose at a given time for each scripted profiler motion path.</summary>
 internal static class RendererCameraMotion
 {
     // Each sweep leg travels 8 cells before turning, so the camera actually traverses new terrain

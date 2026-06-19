@@ -15,6 +15,7 @@ internal sealed class SemanticSourceSet
 
     public IReadOnlyList<SemanticSource> Sources { get; }
 
+    /// <summary>Merges every source's FormID resolver into one, later sources overriding earlier ones.</summary>
     public FormIdResolver? BuildMergedResolver()
     {
         FormIdResolver? merged = null;
@@ -28,6 +29,7 @@ internal sealed class SemanticSourceSet
         return merged;
     }
 
+    /// <summary>Merges every source's records into one collection in load order.</summary>
     public RecordCollection? BuildMergedRecords()
     {
         RecordCollection? merged = null;
@@ -41,6 +43,7 @@ internal sealed class SemanticSourceSet
         return merged;
     }
 
+    /// <summary>Returns the last (highest-priority) source's records, which own terrain in the merged set.</summary>
     public RecordCollection? GetTerrainRecords()
     {
         return Sources.Count > 0
@@ -48,6 +51,7 @@ internal sealed class SemanticSourceSet
             : null;
     }
 
+    /// <summary>Returns the last (highest-priority) source's file path, which owns terrain in the merged set.</summary>
     public string? GetTerrainFilePath()
     {
         return Sources.Count > 0
@@ -55,6 +59,7 @@ internal sealed class SemanticSourceSet
             : null;
     }
 
+    /// <summary>Collapses the whole set into a single merged <see cref="SemanticSource" /> under the given path and type.</summary>
     public SemanticSource? BuildMergedSource(string filePath, AnalysisFileType fileType)
     {
         var records = BuildMergedRecords();

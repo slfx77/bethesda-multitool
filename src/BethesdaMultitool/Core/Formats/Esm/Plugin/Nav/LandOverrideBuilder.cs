@@ -10,10 +10,15 @@ using BethesdaMultitool.Core.Formats.Esm.Terrain;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 
+/// <summary>Builds a LAND (landscape) override record for a cell from captured DMP heightmap and texture data.</summary>
 internal sealed class LandOverrideBuilder(
     IConversionProgressSink sink,
     Func<LandVisualData?, LandVisualData?> rewriteTextureFormIds)
 {
+    /// <summary>
+    ///     Tries to encode a LAND override for the cell from its captured heightmap and visual
+    ///     data; returns false (with empty <paramref name="landBytes" />) when there's nothing to emit.
+    /// </summary>
     public bool TryEncodeForCell(
         CellRecord dmpCell,
         FormIdAllocator allocator,

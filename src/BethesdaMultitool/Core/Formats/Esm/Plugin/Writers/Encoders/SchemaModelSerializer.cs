@@ -15,6 +15,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
 /// </summary>
 internal static class SchemaModelSerializer
 {
+    /// <summary>
+    ///     Serializes a typed model to PC little-endian subrecord bytes using the registered schema
+    ///     and the supplied per-field value extractors; throws if no schema is registered.
+    /// </summary>
     public static byte[] Serialize<TModel>(
         string signature,
         string recordType,
@@ -44,6 +48,7 @@ internal static class SchemaModelSerializer
         return SchemaDictionarySerializer.Serialize(schema, values);
     }
 
+    /// <summary>Serializes a typed model and wraps the bytes in an <see cref="EncodedSubrecord" /> with the given signature.</summary>
     public static EncodedSubrecord SerializeSubrecord<TModel>(
         string signature,
         string recordType,

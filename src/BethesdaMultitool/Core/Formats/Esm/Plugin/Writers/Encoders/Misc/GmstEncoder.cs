@@ -14,6 +14,7 @@ public sealed class GmstEncoder : IRecordEncoder
     public string RecordType => "GMST";
     public Type ModelType => typeof(GameSettingRecord);
 
+    /// <summary>Produces override subrecords for an existing GMST (a game setting) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var gmst = (GameSettingRecord)model;

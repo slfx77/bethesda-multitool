@@ -28,6 +28,7 @@ public sealed class AmmoEncoder : IRecordEncoder
     public string RecordType => "AMMO";
     public Type ModelType => typeof(AmmoRecord);
 
+    /// <summary>Produces override subrecords for an existing AMMO (an ammunition record) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var ammo = (AmmoRecord)model;

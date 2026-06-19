@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
+/// <summary>Assembles an <see cref="NpcAppearance" /> from a scanned NPC record by resolving its head parts, equipment, and FaceGen coefficients.</summary>
 internal sealed class NpcAppearanceFactory
 {
     /// <summary>The player's base NPC_ record ("PlayerBase", engine-reserved FormID).</summary>

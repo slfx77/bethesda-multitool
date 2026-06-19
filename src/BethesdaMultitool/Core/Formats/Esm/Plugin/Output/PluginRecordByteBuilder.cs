@@ -6,11 +6,16 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 
+/// <summary>Assembles complete on-disk record bytes (header + body, with optional zlib compression) for the plugin writer.</summary>
 internal static class PluginRecordByteBuilder
 {
     /// <summary>Record header flag bit indicating the body is zlib-compressed.</summary>
     private const uint CompressedFlag = 0x00040000u;
 
+    /// <summary>
+    ///     Builds the full bytes of a new record (header plus encoded subrecords), zlib-compressing
+    ///     the body when the compressed flag is set.
+    /// </summary>
     public static byte[] BuildNewRecordBytes(
         string signature,
         uint formId,
@@ -53,6 +58,10 @@ internal static class PluginRecordByteBuilder
         return stream.ToArray();
     }
 
+    /// <summary>
+    ///     Builds the full bytes of an override record, reusing the master record's header and
+    ///     applying the build's compression preference.
+    /// </summary>
     public static byte[] BuildOverrideRecordBytes(
         ParsedMainRecord esmRecord,
         byte[] subrecordBytes,

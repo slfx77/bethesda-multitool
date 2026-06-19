@@ -35,6 +35,7 @@ internal static class WorldMapLayerRenderer
     /// </summary>
     private const byte DefaultTerrainR = 145, DefaultTerrainG = 122, DefaultTerrainB = 90;
 
+    /// <summary>A rendered layer's RGBA pixel buffer plus the world-space origin (min cell X, max cell Y) it covers.</summary>
     internal readonly record struct LayerBitmap(
         byte[] Pixels,
         int Width,

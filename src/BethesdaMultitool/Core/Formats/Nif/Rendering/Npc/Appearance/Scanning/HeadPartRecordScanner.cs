@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses a head-part (HDPT) record into a scan entry of its mesh and extra-parts references.</summary>
 internal static class HeadPartRecordScanner
 {
     internal static HdptScanEntry? Process(

@@ -158,6 +158,7 @@ internal static class GeckContainerWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Recipes.</summary>
     public static string GenerateRecipesReport(List<RecipeRecord> recipes,
         FormIdResolver? resolver = null)
     {

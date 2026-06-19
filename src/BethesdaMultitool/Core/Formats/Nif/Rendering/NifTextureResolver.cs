@@ -44,11 +44,13 @@ internal sealed class NifTextureResolver : IDisposable
         }
     }
 
+    /// <summary>Resolves the diffuse texture path from a shape's shader property blocks.</summary>
     public static string? ResolveDiffusePath(byte[] data, NifInfo nif, List<int> propertyRefs)
     {
         return NifShaderTexturePropertyReader.ResolveDiffusePath(data, nif, propertyRefs);
     }
 
+    /// <summary>Reads the full shader/texture-slot metadata from a shape's shader property blocks.</summary>
     public static NifShaderTextureMetadata? ReadShaderMetadata(
         byte[] data,
         NifInfo nif,
@@ -57,11 +59,13 @@ internal sealed class NifTextureResolver : IDisposable
         return NifShaderTexturePropertyReader.ReadShaderMetadata(data, nif, propertyRefs);
     }
 
+    /// <summary>Reads the BSShaderFlags2 bitfield from a shape's shader property blocks.</summary>
     public static uint? ReadShaderFlags2(byte[] data, NifInfo nif, List<int> propertyRefs)
     {
         return NifShaderTexturePropertyReader.ReadShaderFlags2(data, nif, propertyRefs);
     }
 
+    /// <summary>Reads both BSShaderFlags1 and BSShaderFlags2 bitfields from a shape's shader property blocks.</summary>
     public static (uint ShaderFlags, uint ShaderFlags2)? ReadShaderFlagsBoth(
         byte[] data,
         NifInfo nif,
@@ -70,6 +74,7 @@ internal sealed class NifTextureResolver : IDisposable
         return NifShaderTexturePropertyReader.ReadShaderFlagsBoth(data, nif, propertyRefs);
     }
 
+    /// <summary>Reads the shader flags and environment-map scale used for reflection rendering.</summary>
     public static (uint ShaderFlags, float EnvMapScale)? ReadEnvMapInfo(
         byte[] data,
         NifInfo nif,
@@ -78,6 +83,7 @@ internal sealed class NifTextureResolver : IDisposable
         return NifShaderTexturePropertyReader.ReadEnvMapInfo(data, nif, propertyRefs);
     }
 
+    /// <summary>Resolves the normal-map texture path from a shape's shader property blocks.</summary>
     public static string? ResolveNormalMapPath(byte[] data, NifInfo nif, List<int> propertyRefs)
     {
         return NifShaderTexturePropertyReader.ResolveNormalMapPath(data, nif, propertyRefs);

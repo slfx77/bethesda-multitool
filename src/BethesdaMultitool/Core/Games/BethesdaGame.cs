@@ -1,11 +1,11 @@
 namespace BethesdaMultitool.Core.Games;
 
 /// <summary>
-///     The single game/engine identity used across the whole application. Every game-specific
-///     decision — plugin framing, record-parsing semantics, expected asset versions, and rendering
-///     defaults — resolves from this value via <see cref="GameProfile" /> / <see cref="GameProfiles" />.
-///     Detected once (see <see cref="GameDetector" />) and threaded through the pipeline rather than
-///     re-derived at each layer.
+///     The single game/engine identity used across the whole application. Game-specific decisions —
+///     plugin framing, the TES3/TES4 parser fork, the armor Damage-Threshold field, and the default
+///     landscape texture — resolve from this value via <see cref="GameProfile" /> /
+///     <see cref="GameProfiles" />. Detected once (see <see cref="GameDetector" />) and threaded
+///     through the pipeline rather than re-derived at each layer.
 /// </summary>
 public enum BethesdaGame
 {

@@ -33,11 +33,13 @@ internal static class GeckWorldWriter
         GeckCellReportBuilder.AppendCellsSection(sb, cells, resolver);
     }
 
+    /// <summary>Builds a GECK-style report of Cells.</summary>
     public static string GenerateCellsReport(List<CellRecord> cells, FormIdResolver? resolver = null)
     {
         return GeckCellReportBuilder.GenerateCellsReport(cells, resolver);
     }
 
+    /// <summary>Builds a GECK-style cells report keyed by worldspace name (one report string per worldspace).</summary>
     public static Dictionary<string, string> GenerateCellsReportsByWorldspace(
         List<CellRecord> cells,
         FormIdResolver? resolver = null)
@@ -53,6 +55,7 @@ internal static class GeckWorldWriter
         GeckWorldspaceReportBuilder.AppendWorldspacesSection(sb, worldspaces, resolver);
     }
 
+    /// <summary>Builds a GECK-style report of Worldspaces.</summary>
     public static string GenerateWorldspacesReport(
         List<WorldspaceRecord> worldspaces,
         FormIdResolver? resolver = null)
@@ -68,6 +71,7 @@ internal static class GeckWorldWriter
         GeckMapMarkerReportBuilder.AppendMapMarkersSection(sb, markers, resolver);
     }
 
+    /// <summary>Builds a GECK-style report of Map Markers.</summary>
     public static string GenerateMapMarkersReport(List<PlacedReference> markers, FormIdResolver? resolver = null)
     {
         return GeckMapMarkerReportBuilder.GenerateMapMarkersReport(markers, resolver);
@@ -81,11 +85,13 @@ internal static class GeckWorldWriter
         return GeckMapMarkerReportBuilder.BuildMapMarkerReport(marker, resolver, placedReferenceLocations);
     }
 
+    /// <summary>Builds a GECK-style report of Persistent Objects.</summary>
     public static string GeneratePersistentObjectsReport(List<CellRecord> cells, FormIdResolver? resolver = null)
     {
         return GeckCellReportBuilder.GeneratePersistentObjectsReport(cells, resolver);
     }
 
+    /// <summary>Builds a GECK-style report of Non Persistent Objects.</summary>
     public static string GenerateNonPersistentObjectsReport(List<CellRecord> cells, FormIdResolver? resolver = null)
     {
         return GeckCellReportBuilder.GenerateNonPersistentObjectsReport(cells, resolver);

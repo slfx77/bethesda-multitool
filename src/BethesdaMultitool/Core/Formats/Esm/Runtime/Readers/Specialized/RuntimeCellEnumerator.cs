@@ -63,6 +63,7 @@ internal sealed class RuntimeCellEnumerator
     /// </summary>
     private readonly IReadOnlyDictionary<byte, byte> _driftRemap;
 
+    /// <summary>Creates the enumerator over the runtime all-forms table at the given virtual address.</summary>
     public RuntimeCellEnumerator(
         RuntimeMemoryContext context,
         MinidumpInfo minidumpInfo,
@@ -71,6 +72,10 @@ internal sealed class RuntimeCellEnumerator
     {
     }
 
+    /// <summary>
+    ///     Creates the enumerator with an explicit FormType drift-remap table to canonicalize
+    ///     early-build form-type codes (e.g. the Nov 2009 +1 shift).
+    /// </summary>
     public RuntimeCellEnumerator(
         RuntimeMemoryContext context,
         MinidumpInfo minidumpInfo,

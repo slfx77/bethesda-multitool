@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses an eyes (EYES) record into a scan entry of its texture path.</summary>
 internal static class EyesRecordScanner
 {
     internal static EyesScanEntry? Process(

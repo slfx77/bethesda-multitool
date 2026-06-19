@@ -56,6 +56,10 @@ internal sealed class BsNavMeshStructuralValidator
     private readonly IReadOnlySet<uint> _knownCellVas;
     private readonly BsNavMeshValidationMode _mode;
 
+    /// <summary>
+    ///     Creates the validator bound to a runtime context, the set of known cell virtual
+    ///     addresses, and a validation strictness mode.
+    /// </summary>
     public BsNavMeshStructuralValidator(
         RuntimeMemoryContext context,
         IReadOnlySet<uint> knownCellVas,
@@ -66,6 +70,7 @@ internal sealed class BsNavMeshStructuralValidator
         _mode = mode;
     }
 
+    /// <summary>Heuristically checks whether the struct at the given virtual address looks like a BSNavMesh.</summary>
     public bool LooksLikeBsNavMesh(uint navMeshVa)
     {
         if (!_context.IsValidPointer(navMeshVa))

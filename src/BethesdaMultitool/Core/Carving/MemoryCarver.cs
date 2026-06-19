@@ -72,6 +72,7 @@ public sealed class MemoryCarver : IDisposable
         _disposed = true;
     }
 
+    /// <summary>Scans a memory dump for known file signatures, extracts and converts each match into the output directory, and returns the carve manifest.</summary>
     public async Task<List<CarveEntry>> CarveDumpAsync(
         string dumpPath,
         IProgress<double>? progress = null,

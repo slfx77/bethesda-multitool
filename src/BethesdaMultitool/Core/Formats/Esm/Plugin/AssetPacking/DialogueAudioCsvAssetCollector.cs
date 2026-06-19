@@ -26,6 +26,10 @@ internal sealed record DialogueAudioCsvCollectionResult(
 /// </summary>
 internal static class DialogueAudioCsvAssetCollector
 {
+    /// <summary>
+    ///     Reads the transcriber CSV rows and collects the voice-file asset paths they reference,
+    ///     rewriting prototype INFO paths to the converted ESP's newly allocated FormIDs where needed.
+    /// </summary>
     public static async Task<DialogueAudioCsvCollectionResult> CollectAsync(
         RecordCollection convertedRecords,
         string? dmpPath,

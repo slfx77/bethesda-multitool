@@ -21,6 +21,7 @@ internal static class RuntimeNpcLayoutProbe
     private const int MinConfidenceMargin = ExactFaceGenScore;
     private const int MaxScore = 44;
 
+    /// <summary>Auto-detects the runtime NPC struct layout (FaceGen array mode and field offsets) from sampled entries.</summary>
     public static RuntimeNpcLayoutProbeResult Probe(
         RuntimeMemoryContext context,
         IReadOnlyList<RuntimeEditorIdEntry> npcEntries)

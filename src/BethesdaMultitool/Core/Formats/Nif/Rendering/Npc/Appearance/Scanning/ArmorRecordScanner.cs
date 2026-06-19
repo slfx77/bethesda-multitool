@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses an armor (ARMO) record into a scan entry of its add-on references and biped slots.</summary>
 internal static class ArmorRecordScanner
 {
     internal static ArmoScanEntry? Process(

@@ -19,6 +19,7 @@ internal static class RuntimeStateRecordPolicy
         0x000001F4 // Hand-to-Hand WEAP (engine default unarmed fallback)
     ];
 
+    /// <summary>True if the FormID is an engine-owned runtime-state record (player, game clock globals, unarmed weapon) that must not be overridden.</summary>
     public static bool IsRuntimeStateFormId(uint formId)
     {
         return FormIds.Contains(formId);

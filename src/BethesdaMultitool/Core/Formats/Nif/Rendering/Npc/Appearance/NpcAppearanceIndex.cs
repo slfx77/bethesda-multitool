@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
+/// <summary>The scanned ESM record tables (NPCs, creatures, races, head parts, etc.) keyed by FormID that the appearance resolver looks up.</summary>
 internal sealed class NpcAppearanceIndex
 {
     public Dictionary<uint, NpcScanEntry> Npcs { get; } =

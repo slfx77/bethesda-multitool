@@ -50,6 +50,7 @@ internal sealed class RuntimeWorldReader
     // good vs bad VAs cluster in different regions.
     private readonly int[] _goodVertexVaHighBytes = new int[256];
 
+    /// <summary>Creates the reader bound to the given runtime memory context.</summary>
     public RuntimeWorldReader(RuntimeMemoryContext context)
     {
         _context = context;

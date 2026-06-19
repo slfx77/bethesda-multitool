@@ -3,6 +3,7 @@ using D12 = Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 
+/// <summary>Maps NiAlphaProperty (OpenGL-order) blend-mode bytes to their Direct3D 12 <c>Blend</c> equivalents.</summary>
 internal static class NifD3D12BlendMapper
 {
     internal static D12.Blend ResolveBlendFactor(byte mode)

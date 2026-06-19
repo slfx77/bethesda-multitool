@@ -10,6 +10,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Script;
 /// </summary>
 public static class ScriptBytecodeAnalyzer
 {
+    /// <summary>
+    ///     Walks the SCDA bytecode (without rewriting it) and reports how much of the stream
+    ///     was parsed, how many multi-byte fields it found, and any decode diagnostics.
+    /// </summary>
     public static ScriptBytecodeAnalysis Analyze(
         byte[] bytecode,
         bool isBigEndian,
@@ -72,6 +76,7 @@ public static class ScriptBytecodeAnalyzer
     }
 }
 
+/// <summary>Result of analyzing SCDA bytecode: stream coverage, multi-byte field counts, and diagnostics.</summary>
 public sealed record ScriptBytecodeAnalysis(
     int ByteLength,
     bool IsBigEndian,

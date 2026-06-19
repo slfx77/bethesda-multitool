@@ -10,6 +10,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 
 internal static class CsvMiscWriter
 {
+    /// <summary>Builds a CSV of Quests.</summary>
     public static string GenerateQuestsCsv(List<QuestRecord> quests, FormIdResolver _resolver)
     {
         var sb = new StringBuilder();
@@ -60,6 +61,7 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Dialogue.</summary>
     public static string GenerateDialogueCsv(List<DialogueRecord> dialogues, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -134,6 +136,7 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Dialog Topics.</summary>
     public static string GenerateDialogTopicsCsv(List<DialogTopicRecord> topics, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -166,6 +169,7 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Cells.</summary>
     public static string GenerateCellsCsv(List<CellRecord> cells, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -230,6 +234,7 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Worldspaces.</summary>
     public static string GenerateWorldspacesCsv(List<WorldspaceRecord> worldspaces,
         FormIdResolver _resolver)
     {
@@ -267,6 +272,7 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Runtime Worldspace Cells.</summary>
     public static string GenerateRuntimeWorldspaceCellsCsv(
         Dictionary<uint, RuntimeWorldspaceData> runtimeWorldspaceMaps,
         FormIdResolver resolver)
@@ -320,6 +326,7 @@ internal static class CsvMiscWriter
             : string.Join(";", formIds.Select(resolver.ResolveCsv));
     }
 
+    /// <summary>Builds a CSV of Perks.</summary>
     public static string GeneratePerksCsv(List<PerkRecord> perks, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -363,6 +370,7 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Spells.</summary>
     public static string GenerateSpellsCsv(List<SpellRecord> spells, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -401,6 +409,7 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Enchantments.</summary>
     public static string GenerateEnchantmentsCsv(List<EnchantmentRecord> enchantments,
         FormIdResolver _resolver)
     {
@@ -425,6 +434,7 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Base Effects.</summary>
     public static string GenerateBaseEffectsCsv(List<BaseEffectRecord> effects)
     {
         var sb = new StringBuilder();
@@ -448,6 +458,7 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Challenges.</summary>
     public static string GenerateChallengesCsv(List<ChallengeRecord> challenges, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -480,6 +491,7 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Explosions.</summary>
     public static string GenerateExplosionsCsv(List<ExplosionRecord> explosions, FormIdResolver resolver)
     {
         var sb = new StringBuilder();
@@ -517,6 +529,7 @@ internal static class CsvMiscWriter
         return sb.ToString();
     }
 
+    /// <summary>Builds a CSV of Game Settings.</summary>
     public static string GenerateGameSettingsCsv(List<GameSettingRecord> settings)
     {
         var sb = new StringBuilder();

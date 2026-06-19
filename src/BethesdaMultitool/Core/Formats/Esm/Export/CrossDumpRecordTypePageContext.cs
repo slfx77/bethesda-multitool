@@ -11,6 +11,7 @@ internal sealed record CrossDumpRecordTypePageContext(
 {
     public string OutputFilename => $"compare_{RecordType.ToLowerInvariant()}.html";
 
+    /// <summary>Yields one page context per record type present in the cross-dump index, ordered by type.</summary>
     public static IEnumerable<CrossDumpRecordTypePageContext> Enumerate(CrossDumpRecordIndex index)
     {
         foreach (var (recordType, formIdMap) in index.StructuredRecords.OrderBy(r => r.Key))
@@ -19,6 +20,7 @@ internal sealed record CrossDumpRecordTypePageContext(
         }
     }
 
+    /// <summary>Builds a page context for one record type, or null if the index has no records of that type.</summary>
     public static CrossDumpRecordTypePageContext? TryCreate(CrossDumpRecordIndex index, string recordType)
     {
         return index.StructuredRecords.TryGetValue(recordType, out var formIdMap) && formIdMap.Count > 0

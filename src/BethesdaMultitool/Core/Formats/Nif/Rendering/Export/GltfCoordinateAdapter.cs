@@ -2,6 +2,7 @@ using System.Numerics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>Converts transforms/vectors between Bethesda's Z-up NIF basis and glTF's Y-up basis during export.</summary>
 internal static class GltfCoordinateAdapter
 {
     // Bethesda NIF data is authored in a Z-up, Y-forward basis.

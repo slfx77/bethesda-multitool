@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Dds;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>Packs Bethesda specular/gloss/environment data into a glTF metallic-roughness texture for export.</summary>
 internal static class NpcGlbMaterialTexturePacker
 {
     internal static DecodedTexture? BuildMetallicRoughnessTexture(

@@ -1,5 +1,6 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
+/// <summary>Decides whether and how a submesh's vertex colors should be applied during rendering.</summary>
 internal static class NifVertexColorPolicy
 {
     internal static bool HasVertexColorData(RenderableSubmesh submesh)

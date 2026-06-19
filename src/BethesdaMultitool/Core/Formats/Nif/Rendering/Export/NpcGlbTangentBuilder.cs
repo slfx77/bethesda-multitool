@@ -2,6 +2,7 @@ using System.Numerics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>Builds glTF-format per-vertex tangents (xyz + handedness w) for an exported submesh.</summary>
 internal static class NpcGlbTangentBuilder
 {
     internal static Vector4[]? BuildTangents(RenderableSubmesh submesh)

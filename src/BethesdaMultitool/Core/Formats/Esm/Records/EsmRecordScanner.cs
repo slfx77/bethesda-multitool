@@ -30,6 +30,7 @@ internal static class EsmRecordScanner
 
     #region Record Scanning
 
+    /// <summary>Scans an in-memory buffer for ESM main records, EDIDs, and FormIDs, returning the deduplicated scan result.</summary>
     public static EsmRecordScanResult ScanForRecords(byte[] data)
     {
         var result = new EsmRecordScanResult();

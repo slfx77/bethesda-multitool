@@ -5,6 +5,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 
 internal static class HeightmapExportPathBuilder
 {
+    /// <summary>Builds an output file name for a LAND artifact, encoding its FormID, worldspace, and cell grid.</summary>
     public static string BuildCellArtifactName(
         ExtractedLandRecord land,
         string suffix,
@@ -20,6 +21,7 @@ internal static class HeightmapExportPathBuilder
         return $"land_{land.Header.FormId:X8}{worldspaceSuffix}{gridSuffix}_{suffix}{extension}";
     }
 
+    /// <summary>Builds a sanitized output directory name for a worldspace (FormID plus editor ID when available).</summary>
     public static string BuildWorldspaceDirName(
         uint worldspaceFormId,
         IReadOnlyDictionary<uint, string>? worldspaceNames = null)
@@ -34,6 +36,7 @@ internal static class HeightmapExportPathBuilder
         return editorId is { Length: > 0 } ? $"{baseName}_{editorId}" : baseName;
     }
 
+    /// <summary>Builds a sanitized file-name suffix for a worldspace (FormID plus editor ID when available).</summary>
     public static string BuildWorldspaceFileSuffix(
         uint worldspaceFormId,
         IReadOnlyDictionary<uint, string>? worldspaceNames)

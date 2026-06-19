@@ -14,6 +14,7 @@ public record GroupHeader
     public uint Stamp { get; init; }
     public uint Unknown { get; init; }
 
+    /// <summary>The 4-byte Label interpreted as a record-type signature string (e.g. "CELL").</summary>
     public string LabelAsSignature => EsmRecordTypes.SignatureToString(Label);
     public int LabelAsInt => Label.Length >= 4 ? BitConverter.ToInt32(Label, 0) : 0;
     public uint LabelAsUInt => Label.Length >= 4 ? BitConverter.ToUInt32(Label, 0) : 0;

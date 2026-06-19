@@ -11,6 +11,7 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
     private readonly Dictionary<uint, RuntimeLandTextureRead?> _runtimeLandTextureByPointer = new();
     private readonly Dictionary<uint, TextureSetRecord?> _runtimeTextureSetByPointer = new();
 
+    /// <summary>Extracts landscape visual data (texture layers, vertex colors) from a loaded LAND data buffer.</summary>
     public RuntimeLandVisualExtraction Read(byte[] loadedDataBuffer)
     {
         var layers = new List<LandTextureLayer>();

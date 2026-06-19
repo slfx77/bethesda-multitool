@@ -18,6 +18,7 @@ public sealed class RecordEncoderRegistry
 
     public IReadOnlyCollection<string> SupportedRecordTypes => _byType.Keys;
 
+    /// <summary>Registers an encoder under its own declared <see cref="IRecordEncoder.RecordType" />.</summary>
     public void Register(IRecordEncoder encoder)
     {
         _byType[encoder.RecordType] = encoder;
@@ -41,11 +42,13 @@ public sealed class RecordEncoderRegistry
         }
     }
 
+    /// <summary>Tries to get the encoder registered for a record type.</summary>
     public bool TryGet(string recordType, out IRecordEncoder? encoder)
     {
         return _byType.TryGetValue(recordType, out encoder);
     }
 
+    /// <summary>Gets the encoder registered for a record type, or null if none is registered.</summary>
     public IRecordEncoder? Get(string recordType)
     {
         return _byType.GetValueOrDefault(recordType);

@@ -7,6 +7,7 @@ namespace BethesdaMultitool.Core.Minidump;
 /// </summary>
 public static class RttiCensusAggregator
 {
+    /// <summary>Merges per-dump census results into one report keyed by demangled class name, summing instance counts across builds.</summary>
     public static AggregatedCensusReport Aggregate(List<DumpCensusResult> dumpResults)
     {
         var byClassName = new Dictionary<string, AggregatedCensusEntry>();

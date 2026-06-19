@@ -15,6 +15,7 @@ internal sealed class RuntimeIngredientReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime ingredient record for the given DMP entry, or null if it can't be read.</summary>
     public IngredientRecord? ReadRuntimeIngredient(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != IngrFormType)

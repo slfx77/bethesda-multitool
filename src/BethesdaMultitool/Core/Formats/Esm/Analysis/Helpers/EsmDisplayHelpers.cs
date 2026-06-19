@@ -226,6 +226,7 @@ public static class EsmDisplayHelpers
         return string.Join(" ", data.Skip(offset).Take(count).Select(b => b.ToString("X2")));
     }
 
+    /// <summary>Formats a human-readable detail string for known subrecord signatures; returns false if unrecognized.</summary>
     public static bool TryFormatSubrecordDetails(string signature, byte[] data, bool bigEndian, out string details)
     {
         details = string.Empty;

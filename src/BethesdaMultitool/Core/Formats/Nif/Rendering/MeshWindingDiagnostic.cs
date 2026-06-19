@@ -2,6 +2,7 @@ using System.Numerics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
+/// <summary>Analyzes a submesh's triangle winding, counting back-facing and zero-normal faces for diagnostics.</summary>
 internal static class MeshWindingDiagnostic
 {
     internal static SubmeshWindingAnalysis Analyze(RenderableSubmesh submesh)

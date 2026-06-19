@@ -8,6 +8,7 @@ namespace BethesdaMultitool.Core.Formats.SpeedTree;
 /// </summary>
 public static class SpeedTreeModelPath
 {
+    /// <summary>Returns true when the path has a <c>.spt</c> SpeedTree extension (case-insensitive).</summary>
     public static bool IsSpt(string path) =>
         path.EndsWith(".spt", StringComparison.OrdinalIgnoreCase);
 

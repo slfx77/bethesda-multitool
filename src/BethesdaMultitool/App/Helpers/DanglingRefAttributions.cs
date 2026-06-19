@@ -57,6 +57,7 @@ public sealed class DanglingRefAttributions
         return PassesThreshold(attribution.Confidence, threshold) ? attribution : null;
     }
 
+    /// <summary>True when an attribution of the given confidence string should be shown at the requested threshold.</summary>
     public static bool PassesThreshold(string confidence, DanglingRefThreshold threshold)
     {
         return threshold switch
@@ -83,6 +84,7 @@ public sealed class DanglingRefAttributions
         return path is null ? new DanglingRefAttributions() : LoadFromFile(path);
     }
 
+    /// <summary>Loads the <c>dangling_refs</c> grid attributions and positions from the given authority JSON file.</summary>
     public static DanglingRefAttributions LoadFromFile(string path)
     {
         var result = new DanglingRefAttributions();
@@ -412,6 +414,7 @@ public sealed class DanglingRefAttributions
     }
 }
 
+/// <summary>Heuristic attribution of a worldspace grid cell to its owning worldspace/cell, with confidence and evidence counts.</summary>
 public sealed class GridAttribution
 {
     public required int GridX { get; init; }

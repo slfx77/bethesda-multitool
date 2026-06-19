@@ -639,6 +639,7 @@ internal static class GeckCellReportBuilder
         return results;
     }
 
+    /// <summary>Builds a GECK-style report of Persistent Objects.</summary>
     public static string GeneratePersistentObjectsReport(List<CellRecord> cells,
         FormIdResolver? resolver = null)
     {

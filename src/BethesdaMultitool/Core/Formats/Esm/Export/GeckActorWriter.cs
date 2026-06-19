@@ -607,6 +607,7 @@ internal static class GeckActorWriter
         }
     }
 
+    /// <summary>Builds a GECK-style report of Classes.</summary>
     public static string GenerateClassesReport(List<ClassRecord> classes)
     {
         var sb = new StringBuilder();

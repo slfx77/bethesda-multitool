@@ -37,6 +37,7 @@ internal sealed record PlacedObjectSkeleton
     /// </summary>
     public required PlacedReference Ref { get; init; }
 
+    /// <summary>Projects the fields needed by the streaming pipeline from a full placed reference.</summary>
     public static PlacedObjectSkeleton From(PlacedReference reference)
     {
         return new PlacedObjectSkeleton

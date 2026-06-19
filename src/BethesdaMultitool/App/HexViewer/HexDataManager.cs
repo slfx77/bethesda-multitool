@@ -43,6 +43,7 @@ internal sealed class HexDataManager : IDisposable
         Cleanup();
     }
 
+    /// <summary>Releases the memory-mapped file and accessor (only if this manager owns them).</summary>
     public void Cleanup()
     {
         if (_ownsAccessor)
@@ -56,6 +57,7 @@ internal sealed class HexDataManager : IDisposable
         _ownsAccessor = true;
     }
 
+    /// <summary>Unloads the current file and discards all cached regions and records.</summary>
     public void Clear()
     {
         Cleanup();
@@ -65,6 +67,7 @@ internal sealed class HexDataManager : IDisposable
         _mainRecords = null;
     }
 
+    /// <summary>Opens the file with a self-owned memory-mapped accessor and builds its region map.</summary>
     public bool Load(string filePath, AnalysisResult analysisResult)
     {
         Cleanup();
@@ -214,6 +217,7 @@ internal sealed class HexDataManager : IDisposable
         };
     }
 
+    /// <summary>Reads <c>buffer.Length</c> bytes at the given file offset into the buffer.</summary>
     public void ReadBytes(long offset, byte[] buffer)
     {
         if (Accessor != null)
@@ -228,6 +232,7 @@ internal sealed class HexDataManager : IDisposable
         }
     }
 
+    /// <summary>Binary-searches the region map for the region containing the given offset, with an ESM-record fallback.</summary>
     public FileRegion? FindRegionForOffset(long offset)
     {
         // Snapshot the field once — a background build may publish a new list mid-call.

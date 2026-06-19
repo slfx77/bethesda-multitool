@@ -26,6 +26,7 @@ public sealed class CellEncoder : IRecordEncoder
     public string RecordType => "CELL";
     public Type ModelType => typeof(CellRecord);
 
+    /// <summary>Produces override subrecords for an existing CELL (a cell) from its runtime-mutable fields.</summary>
     public EncodedRecord Encode(object model)
     {
         var cell = (CellRecord)model;

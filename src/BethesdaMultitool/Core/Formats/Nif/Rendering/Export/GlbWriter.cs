@@ -12,6 +12,7 @@ using TextureWrapMode = SharpGLTF.Schema2.TextureWrapMode;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>Serializes an assembled <see cref="GlbScene" /> (nodes, meshes, skins, materials) to a GLB file via SharpGLTF.</summary>
 internal static class GlbWriter
 {
     internal static void Write(

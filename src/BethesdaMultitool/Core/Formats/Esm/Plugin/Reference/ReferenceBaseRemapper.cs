@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
+/// <summary>Resolves the base record type/FormID a placed reference (REFR/ACHR/ACRE) points at, and re-pairs prototype bases to master records.</summary>
 internal static class ReferenceBaseRemapper
 {
     public static readonly HashSet<string> RefrBaseEligibleTypes = new(StringComparer.Ordinal)
@@ -11,6 +12,10 @@ internal static class ReferenceBaseRemapper
         "NOTE", "BOOK", "TERM", "TXST"
     };
 
+    /// <summary>
+    ///     True if a placed record of <paramref name="placedRecordType" /> may reference a base of
+    ///     <paramref name="baseRecordType" /> (ACHR to NPC_, ACRE to CREA, REFR to anything else).
+    /// </summary>
     public static bool CanPlacedRecordUseBaseType(string placedRecordType, string baseRecordType)
     {
         return placedRecordType switch
@@ -22,6 +27,7 @@ internal static class ReferenceBaseRemapper
         };
     }
 
+    /// <summary>Builds a map from every base record's FormID to its 4-character type across the DMP record collection.</summary>
     public static Dictionary<uint, string> BuildDmpBaseFormIdToRecordType(RecordCollection dmpRecords)
     {
         var index = new Dictionary<uint, string>();
@@ -56,6 +62,10 @@ internal static class ReferenceBaseRemapper
         return index;
     }
 
+    /// <summary>
+    ///     Tries to map a prototype base editor ID to a master record's FormID by normalized editor-ID
+    ///     stem within the expected type; sets <paramref name="ambiguous" /> when multiple master bases match.
+    /// </summary>
     public static uint? TryFindMasterBaseByEditorIdStem(
         Dictionary<string, Dictionary<string, List<uint>>> stemLookup,
         string? prototypeBaseEditorId,

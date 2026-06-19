@@ -32,6 +32,7 @@ internal sealed class HexRowRenderer(
     public long HighlightStart { get; set; } = -1;
     public long HighlightEnd { get; set; } = -1;
 
+    /// <summary>Empties the offset, hex, and ASCII text columns.</summary>
     public void Clear()
     {
         _offsetTextBlock.Text = "";
@@ -39,6 +40,7 @@ internal sealed class HexRowRenderer(
         _asciiTextBlock.Text = "";
     }
 
+    /// <summary>Renders the offset, region-colored hex bytes, and ASCII columns for the given row range.</summary>
     public void RenderRows(byte[] buffer, long startRow, long endRow, long startOffset, long fileSize)
     {
         Clear();

@@ -59,6 +59,7 @@ internal static class TerrainMeshBuilder
     /// <summary>Spacing between adjacent grid vertices in world units for the default grid (4096 / 32 = 128).</summary>
     private const float VertexSpacing = TerrainConstants.LandVertexSpacing;
 
+    /// <summary>A built terrain cell mesh: its GPU vertices and triangle index buffer.</summary>
     public readonly record struct TerrainMesh(GpuMeshUploader.GpuVertex[] Vertices, ushort[] Indices);
 
     /// <summary>Vertex count for an <paramref name="gridSize" />×<paramref name="gridSize" /> cell mesh.</summary>
@@ -127,6 +128,10 @@ internal static class TerrainMeshBuilder
     public static bool TryBuildVertices(CellRecord cell, Span<GpuMeshUploader.GpuVertex> vertices)
         => TryBuildVertices(cell, vertices, cache: null);
 
+    /// <summary>
+    ///     Builds the per-cell terrain vertices into <paramref name="vertices" />, optionally pulling decoded
+    ///     heightmap/blend data from <paramref name="cache" />. Returns false when the cell has no grid coordinates.
+    /// </summary>
     public static bool TryBuildVertices(
         CellRecord cell,
         Span<GpuMeshUploader.GpuVertex> vertices,

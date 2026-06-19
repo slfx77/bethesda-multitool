@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Pdb;
 
 namespace BethesdaMultitool.Core.Coverage;
 
+/// <summary>Summary of a memory dump's coverage: recognized bytes per category and the classified unknown gaps.</summary>
 public sealed class CoverageResult
 {
     public string? Error { get; init; }

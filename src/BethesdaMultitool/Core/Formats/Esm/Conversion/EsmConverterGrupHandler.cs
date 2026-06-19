@@ -17,6 +17,7 @@ internal sealed class EsmConverterGrupHandler
     private readonly EsmConversionStats _stats;
     private readonly bool _verbose;
 
+    /// <summary>Creates the GRUP handler over the input bytes, GRUP writer, and shared conversion stats.</summary>
     public EsmConverterGrupHandler(byte[] input, EsmGrupWriter grupWriter, EsmConversionStats stats, bool verbose)
     {
         _input = input;

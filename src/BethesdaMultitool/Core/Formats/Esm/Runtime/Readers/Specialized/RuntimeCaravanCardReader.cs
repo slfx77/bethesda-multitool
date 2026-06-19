@@ -15,6 +15,7 @@ internal sealed class RuntimeCaravanCardReader(RuntimeMemoryContext context)
 
     private readonly RuntimePdbFieldAccessor _fields = new(context);
 
+    /// <summary>Reads the runtime caravan-card record for the given DMP entry, or null if it can't be read.</summary>
     public CaravanCardRecord? ReadRuntimeCaravanCard(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != CcrdFormType)

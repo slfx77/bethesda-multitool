@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses a race (RACE) record into a <see cref="RaceScanEntry" /> (head parts, default FaceGen coefficients, body data).</summary>
 internal static class RaceRecordScanner
 {
     internal static RaceScanEntry? Process(

@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Dds;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
+/// <summary>Resolves and converts a Bethesda normal map into glTF-ready form for export, reporting whether its alpha holds gloss data.</summary>
 internal static class NpcGlbNormalMapPacker
 {
     internal static NpcGlbPackedNormal ResolvePacked(
@@ -139,6 +140,7 @@ internal static class NpcGlbNormalMapPacker
         return false;
     }
 
+    /// <summary>A normal map prepared for GLB export and whether its alpha channel carries gloss data.</summary>
     internal readonly record struct NpcGlbPackedNormal(
         DecodedTexture? Texture,
         bool HasGlossAlpha);

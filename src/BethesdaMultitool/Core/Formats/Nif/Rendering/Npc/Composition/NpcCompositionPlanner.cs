@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
+/// <summary>Builds an <see cref="NpcCompositionPlan" /> from a resolved appearance and options, resolving head parts, body meshes, skeleton, and weapon.</summary>
 internal static class NpcCompositionPlanner
 {
     private static readonly Logger Log = Logger.Instance;

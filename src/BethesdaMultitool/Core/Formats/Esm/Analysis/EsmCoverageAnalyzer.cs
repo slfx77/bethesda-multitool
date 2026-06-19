@@ -10,6 +10,7 @@ using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
+/// <summary>How completely a record/subrecord type is modeled by the parser/encoder pipeline.</summary>
 public enum EsmCoverageClassification
 {
     Typed,
@@ -19,6 +20,7 @@ public enum EsmCoverageClassification
     Unparsed
 }
 
+/// <summary>Aggregated record/subrecord/script-bytecode modeling coverage for a single ESM/ESP file.</summary>
 public sealed record EsmCoverageResult(
     string SourcePath,
     IReadOnlyList<EsmRecordCoverageRow> Records,
@@ -30,6 +32,7 @@ public sealed record EsmCoverageResult(
     public int TotalSubrecordKinds => Subrecords.Count;
 }
 
+/// <summary>One row of per-record-type coverage (count, classification, owning parser/encoder).</summary>
 public sealed record EsmRecordCoverageRow(
     string RecordType,
     int Count,
@@ -38,6 +41,7 @@ public sealed record EsmRecordCoverageRow(
     string EncoderOwner,
     string ExampleFormIds);
 
+/// <summary>One compiled-script (SCDA) bytecode block, comparing SCHR-declared sizes/counts against the actual walk.</summary>
 public sealed record EsmScriptBytecodeCoverageRow(
     string RecordType,
     uint FormId,
@@ -57,6 +61,7 @@ public sealed record EsmScriptBytecodeCoverageRow(
     bool HasDiagnostics,
     string Diagnostics);
 
+/// <summary>One row of per-(record,subrecord) coverage (length, classification, raw-byte usage, owning parser/encoder).</summary>
 public sealed record EsmSubrecordCoverageRow(
     string RecordType,
     string Subrecord,
@@ -130,6 +135,7 @@ public static class EsmCoverageAnalyzer
             [("*", "SCDA")] = "Compiled script bytecode modeled by ScriptBytecodeAnalyzer/decompiler walk."
         };
 
+    /// <summary>Parses the file at the given path and computes its modeling coverage.</summary>
     public static EsmCoverageResult AnalyzeFile(string path)
     {
         var data = File.ReadAllBytes(path);
@@ -137,6 +143,7 @@ public static class EsmCoverageAnalyzer
         return AnalyzeRecords(path, records);
     }
 
+    /// <summary>Computes modeling coverage for an already-parsed set of records.</summary>
     public static EsmCoverageResult AnalyzeRecords(
         string sourcePath,
         IReadOnlyList<ParsedMainRecord> records)
@@ -420,6 +427,7 @@ public static class EsmCoverageAnalyzer
         return Encoding.Latin1.GetString(data, 0, length);
     }
 
+    /// <summary>Writes the coverage result as CSV reports into the given output directory.</summary>
     public static void WriteReport(EsmCoverageResult result, string outputDirectory)
     {
         Directory.CreateDirectory(outputDirectory);

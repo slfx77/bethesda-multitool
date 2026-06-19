@@ -39,6 +39,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
     private readonly RuntimePdbFieldAccessor _fields = new(context);
     private readonly RuntimeMemoryContext _context = context;
 
+    /// <summary>Reads the runtime script for the given DMP entry, or null if it can't be read.</summary>
     public RuntimeScriptData? ReadRuntimeScript(RuntimeEditorIdEntry entry)
     {
         if (entry.FormType != ScptFormType)

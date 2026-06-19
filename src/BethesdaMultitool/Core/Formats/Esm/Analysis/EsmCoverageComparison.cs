@@ -3,6 +3,7 @@ using System.Text;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
+/// <summary>Result of comparing script-bytecode coverage between a baseline and a candidate ESM/ESP.</summary>
 public sealed record EsmCoverageComparisonResult(
     string BaselineSource,
     string CandidateSource,
@@ -13,6 +14,7 @@ public sealed record EsmCoverageComparisonResult(
     public bool HasCandidateStructuralFailures => CandidateIssues.Count > 0;
 }
 
+/// <summary>One script-bytecode block whose candidate structural issues differ from (or are absent in) the baseline.</summary>
 public sealed record EsmScriptBytecodeComparisonRow(
     string RecordType,
     uint FormId,
@@ -23,8 +25,10 @@ public sealed record EsmScriptBytecodeComparisonRow(
     bool IsGeneratedOnlyFailure,
     string Diagnostics);
 
+/// <summary>Compares script-bytecode coverage between two ESM/ESP files or two coverage report directories.</summary>
 public static class EsmCoverageComparison
 {
+    /// <summary>Compares the script-bytecode coverage of a baseline result against a candidate result.</summary>
     public static EsmCoverageComparisonResult Compare(
         EsmCoverageResult baseline,
         EsmCoverageResult candidate)
@@ -36,6 +40,7 @@ public static class EsmCoverageComparison
             candidate.ScriptBytecode);
     }
 
+    /// <summary>Loads the script_bytecode_coverage.csv from each directory and compares them.</summary>
     public static EsmCoverageComparisonResult CompareCoverageDirectories(
         string baselineDirectory,
         string candidateDirectory)
@@ -48,6 +53,7 @@ public static class EsmCoverageComparison
         return CompareScriptRows(baselineDirectory, baselineRows, candidateDirectory, candidateRows);
     }
 
+    /// <summary>Diffs two sets of script-bytecode coverage rows, flagging blocks that fail structurally only in the candidate.</summary>
     public static EsmCoverageComparisonResult CompareScriptRows(
         string baselineSource,
         IReadOnlyList<EsmScriptBytecodeCoverageRow> baselineRows,
@@ -90,6 +96,7 @@ public static class EsmCoverageComparison
             candidateIssues);
     }
 
+    /// <summary>Writes the comparison as a CSV plus a Markdown summary into the given output directory.</summary>
     public static void WriteReport(EsmCoverageComparisonResult result, string outputDirectory)
     {
         Directory.CreateDirectory(outputDirectory);

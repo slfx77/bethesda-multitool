@@ -334,28 +334,35 @@ internal static class NifConverterWorkflowService
     }
 }
 
+/// <summary>Settings for a batch NIF conversion: input/output directories, whether to mirror structure, and overwrite.</summary>
 internal sealed record NifConversionOptions(
     string InputDirectory,
     string OutputDirectory,
     bool PreserveStructure,
     bool Overwrite);
 
+/// <summary>Progress of the directory scan phase (files seen of total).</summary>
 internal sealed record NifScanProgress(int Current, int Total);
 
+/// <summary>Progress of the conversion phase (current of total, plus the file being converted).</summary>
 internal sealed record NifConversionProgress(int Current, int Total, string RelativePath);
 
+/// <summary>Tally of a batch NIF conversion: converted, skipped, and failed file counts.</summary>
 internal sealed record NifConversionSummary(int Converted, int Skipped, int Failed);
 
+/// <summary>Result of loading a NIF source (folder or BSA): the browser service, file tree, and texture-path display.</summary>
 internal sealed record NifViewerSourceLoadResult(
     NifBrowserService Service,
     List<NifTreeViewItem> Items,
     string TexturePathsDisplay);
 
+/// <summary>Result of loading a single NIF for the viewer: raw data, parsed info, GLB bytes, or an error message.</summary>
 internal sealed record NifViewerModelLoadResult(
     byte[]? NifData,
     NifViewerInfo? Info,
     byte[]? GlbBytes,
     string? ErrorMessage)
 {
+    /// <summary>Creates a failed load result carrying only the error message.</summary>
     public static NifViewerModelLoadResult Failed(string errorMessage) => new(null, null, null, errorMessage);
 }

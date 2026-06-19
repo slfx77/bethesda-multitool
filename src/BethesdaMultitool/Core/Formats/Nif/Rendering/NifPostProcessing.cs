@@ -1,5 +1,6 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
+/// <summary>Software post-processing passes applied to a rendered sprite buffer (e.g. emissive bloom).</summary>
 internal static class NifPostProcessing
 {
     internal static void ApplyBloom(byte[] pixels, bool[] emissiveMask, int width, int height)

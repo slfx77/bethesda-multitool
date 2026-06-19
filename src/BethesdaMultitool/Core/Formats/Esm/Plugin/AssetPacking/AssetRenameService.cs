@@ -19,6 +19,10 @@ internal sealed record AssetRenameResult(
 /// </summary>
 internal sealed class AssetRenameService(IConversionProgressSink sink)
 {
+    /// <summary>
+    ///     Runs the pre-encode asset rename pass over the records, returning how many path
+    ///     fields were considered and rewritten (or why it was skipped).
+    /// </summary>
     public AssetRenameResult Apply(RecordCollection records, PluginBuildOptions options, CancellationToken ct)
     {
         if (options.AssetRenameBaselineFolder is null

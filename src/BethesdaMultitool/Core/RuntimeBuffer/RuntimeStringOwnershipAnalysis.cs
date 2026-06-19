@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Strings;
 
 namespace BethesdaMultitool.Core.RuntimeBuffer;
 
+/// <summary>Buckets all runtime string hits by ownership status (owned / referenced-but-unknown / unreferenced) with category and claim-source tallies.</summary>
 public sealed class RuntimeStringOwnershipAnalysis
 {
     public List<RuntimeStringHit> AllHits { get; } = [];

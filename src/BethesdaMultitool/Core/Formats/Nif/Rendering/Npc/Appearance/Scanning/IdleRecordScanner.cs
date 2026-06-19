@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
+/// <summary>Parses an idle-animation (IDLE) record into a scan entry of its animation path.</summary>
 internal static class IdleRecordScanner
 {
     internal static IdleScanEntry? Process(

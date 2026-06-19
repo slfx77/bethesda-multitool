@@ -46,6 +46,7 @@ internal static class EnvironmentVariables
         return Math.Clamp(value, min, max);
     }
 
+    /// <summary>Environment-variable names for the 3D viewer's profiling, debug, concurrency, and cache knobs.</summary>
     public static class Viewer
     {
         public const string FrameStats = "FALLOUT_VIEWER_FRAME_STATS";
@@ -112,6 +113,7 @@ internal static class EnvironmentVariables
         public const string MeshCacheMaxMegabytes = "FALLOUT_VIEWER_MESH_CACHE_MAX_MB";
     }
 
+    /// <summary>Environment-variable names for the 2D world-map renderer's tracing and terrain-draw knobs.</summary>
     public static class Map2D
     {
         public const string Trace = "FALLOUT_MAP2D_TRACE";
@@ -127,17 +129,20 @@ internal static class EnvironmentVariables
         public const string LegacyTerrainDraw = "FALLOUT_MAP2D_LEGACY_TERRAIN_DRAW";
     }
 
+    /// <summary>Environment-variable names for the standalone profiler harnesses.</summary>
     public static class Profiler
     {
         public const string With3D = "FALLOUT_PROFILER_WITH_3D";
     }
 
+    /// <summary>Environment-variable names that override CLI output paths and external tool locations.</summary>
     public static class Cli
     {
         public const string EsmOutputPath = "ESM_OUTPUT_PATH";
         public const string GltfValidatorExecutable = "GLTF_VALIDATOR_EXE";
     }
 
+    /// <summary>Environment-variable names for the memory budget coordinator's cache-budget knobs.</summary>
     public static class Memory
     {
         /// <summary>Opt-in CPU-cache byte budget in MB for the MemoryBudgetCoordinator. UNSET = no cap (default): caches are tracked but never trimmed. Set a positive value to enable trimming when CpuCache bytes exceed it.</summary>
@@ -153,6 +158,7 @@ internal static class EnvironmentVariables
         public const string Disable = "FALLOUT_MEMORY_DISABLE";
     }
 
+    /// <summary>Environment-variable names for resource-stats reporting and the WinUI GUI log sink.</summary>
     public static class Diagnostics
     {
         /// <summary>When 1, CLI commands print the end-of-run resource statistics table (same as --resource-stats).</summary>

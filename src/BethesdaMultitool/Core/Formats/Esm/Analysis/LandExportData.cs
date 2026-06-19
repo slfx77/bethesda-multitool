@@ -1,6 +1,7 @@
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
 // Export data structures
+/// <summary>Serializable summary of a single LAND record's heightmap/texture/normal data for export.</summary>
 public sealed class LandExportData
 {
     public string FormId { get; set; } = "";

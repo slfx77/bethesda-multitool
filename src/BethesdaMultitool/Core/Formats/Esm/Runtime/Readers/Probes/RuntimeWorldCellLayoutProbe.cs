@@ -13,6 +13,7 @@ internal static class RuntimeWorldCellLayoutProbe
     private const int MaxCellSamples = 10;
     private const int MinConfidenceMargin = 5;
 
+    /// <summary>Auto-detects the runtime worldspace/cell struct layout from sampled world and cell entries.</summary>
     public static RuntimeWorldCellLayoutProbeResult Probe(
         RuntimeMemoryContext context,
         IReadOnlyList<RuntimeEditorIdEntry>? worldEntries,

@@ -65,6 +65,7 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
     /// </summary>
     public int MeshesFound => _meshesFound;
 
+    /// <summary>Scans the DMP memory for renderable mesh geometry, reporting progress as it goes.</summary>
     public List<ExtractedMesh> ScanForMeshes(IProgress<(long Scanned, long Total)>? progress = null)
     {
         var meshes = new ConcurrentBag<ExtractedMesh>();
