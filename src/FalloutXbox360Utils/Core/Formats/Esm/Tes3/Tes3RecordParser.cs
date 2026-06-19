@@ -249,17 +249,18 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
 
             var interior = draft.IsInterior;
 
-            // Attach terrain to exterior cells from the matching LAND record (by grid coords).
+            // Attach terrain to exterior cells from the matching LAND record (by grid coords). The
+            // heights are kept at Morrowind's native 65×65 resolution (no downsample) so the 3D viewer
+            // renders the terrain as-is; the 2D map downsamples internally in WorldRenderCache.
             LandHeightmap? heightmap = null;
             LandVisualData? visual = null;
             if (!interior && landByGrid.TryGetValue((draft.GridX, draft.GridY), out var land))
             {
-                var heights = land.DownsampleHeights();
-                if (heights != null)
+                if (land.Heights is { } heights)
                 {
                     heightmap = new LandHeightmap
                     {
-                        HeightDeltas = new sbyte[33 * 33], // unused: ExactHeights drives CalculateHeights()
+                        HeightDeltas = [], // unused: ExactHeights drives CalculateHeights()
                         ExactHeights = heights
                     };
                 }
@@ -289,15 +290,32 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
     }
 
     // Morrowind's land texturing is a flat 16×16 grid of land-texture indices (no TES4-style alpha
-    // blending). The 3D terrain renderer consumes per-quadrant BTXT base layers, so collapse each of
-    // the four 8×8 VTEX quadrants to its dominant land texture and emit one base layer per quadrant.
+    // blending). The 3D terrain renderer samples the resolved 16×16 FormId grid (VtexTextureFormIds)
+    // per vertex. The four per-quadrant dominant Base layers are still emitted for the 2D map (which
+    // consumes BTXT layers); they are a coarse fallback, not the 3D path.
     private static LandVisualData? BuildLandVisualData(Tes3LandDraft land, Dictionary<int, uint> ltexIndexToFormId)
     {
-        var colors = land.DownsampleColors();
+        // Native 65×65×3 vertex colors (no downsample) so they line up 1:1 with the native heightmap
+        // grid the 3D viewer builds; the per-vertex VertexColor read indexes j*65+i.
+        var colors = land.VertexColors is { Length: Tes3LandDraft.Size * Tes3LandDraft.Size * 3 }
+            ? land.VertexColors
+            : null;
         var layers = new List<LandTextureLayer>(4);
+        uint[]? vtexFormIds = null;
 
         if (land.TextureIndices is { Length: Tes3LandDraft.VtexSize * Tes3LandDraft.VtexSize } vtex)
         {
+            // Resolve the full 16×16 grid to LTEX FormIds (0 = engine-default land texture) for the 3D
+            // per-vertex path.
+            vtexFormIds = new uint[Tes3LandDraft.VtexSize * Tes3LandDraft.VtexSize];
+            for (var k = 0; k < vtex.Length; k++)
+            {
+                var v = vtex[k];
+                vtexFormIds[k] = v != 0 && ltexIndexToFormId.TryGetValue(v - 1, out var ltexFormId)
+                    ? ltexFormId
+                    : 0u;
+            }
+
             for (byte quadrant = 0; quadrant < 4; quadrant++)
             {
                 var rowStart = (quadrant & 2) != 0 ? 8 : 0; // bits: 2 = north half, 1 = east half
@@ -307,13 +325,13 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
                 {
                     for (var c = colStart; c < colStart + 8; c++)
                     {
-                        var v = vtex[r * Tes3LandDraft.VtexSize + c];
-                        if (v == 0 || !ltexIndexToFormId.TryGetValue(v - 1, out var ltexFormId))
+                        var formId = vtexFormIds[r * Tes3LandDraft.VtexSize + c];
+                        if (formId == 0)
                         {
                             continue; // 0 = engine default land texture
                         }
 
-                        counts[ltexFormId] = counts.GetValueOrDefault(ltexFormId) + 1;
+                        counts[formId] = counts.GetValueOrDefault(formId) + 1;
                     }
                 }
 
@@ -332,7 +350,7 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
             }
         }
 
-        if (colors == null && layers.Count == 0)
+        if (colors == null && layers.Count == 0 && vtexFormIds == null)
         {
             return null;
         }
@@ -341,7 +359,8 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
         {
             VertexColors = colors,
             TextureLayers = layers,
-            TextureIndices = land.TextureIndices?.Select(v => (uint)v).ToArray()
+            TextureIndices = land.TextureIndices?.Select(v => (uint)v).ToArray(),
+            VtexTextureFormIds = vtexFormIds
         };
     }
 

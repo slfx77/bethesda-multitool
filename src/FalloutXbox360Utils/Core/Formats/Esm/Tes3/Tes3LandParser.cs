@@ -5,8 +5,8 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Tes3;
 /// <summary>
 ///     Decoded Morrowind LAND record: a 65×65 heightmap + a 16×16 land-texture index grid + optional
 ///     65×65 vertex colors, keyed by exterior cell grid coordinates. Heights are absolute world units
-///     (the VHGT delta chain already resolved and ×8-scaled). The viewer's terrain pipeline is 33×33,
-///     so <see cref="DownsampleHeights" /> / <see cref="DownsampleColors" /> reduce to that grid.
+///     (the VHGT delta chain already resolved and ×8-scaled). The terrain pipeline is grid-size-aware,
+///     so these are consumed at native 65×65 resolution (the 2D map downsamples internally).
 /// </summary>
 internal sealed class Tes3LandDraft
 {
@@ -19,50 +19,6 @@ internal sealed class Tes3LandDraft
     public float[,]? Heights { get; set; } // [Size, Size], absolute world Z
     public ushort[]? TextureIndices { get; set; } // 16×16 = 256 land-texture indices (0 = default)
     public byte[]? VertexColors { get; set; } // 65×65×3 RGB
-
-    /// <summary>Reduce the native 65×65 heights to the viewer's 33×33 grid (every other vertex).</summary>
-    public float[,]? DownsampleHeights()
-    {
-        if (Heights is null)
-        {
-            return null;
-        }
-
-        var outGrid = new float[33, 33];
-        for (var j = 0; j < 33; j++)
-        {
-            for (var i = 0; i < 33; i++)
-            {
-                outGrid[j, i] = Heights[j * 2, i * 2];
-            }
-        }
-
-        return outGrid;
-    }
-
-    /// <summary>Reduce the native 65×65×3 vertex colors to 33×33×3 (3267 bytes, the viewer's shape).</summary>
-    public byte[]? DownsampleColors()
-    {
-        if (VertexColors is not { Length: Size * Size * 3 })
-        {
-            return null;
-        }
-
-        var outColors = new byte[33 * 33 * 3];
-        for (var j = 0; j < 33; j++)
-        {
-            for (var i = 0; i < 33; i++)
-            {
-                var src = (j * 2 * Size + i * 2) * 3;
-                var dst = (j * 33 + i) * 3;
-                outColors[dst] = VertexColors[src];
-                outColors[dst + 1] = VertexColors[src + 1];
-                outColors[dst + 2] = VertexColors[src + 2];
-            }
-        }
-
-        return outColors;
-    }
 }
 
 /// <summary>

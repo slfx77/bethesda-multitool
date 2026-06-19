@@ -20,6 +20,15 @@ public record LandVisualData
     /// <summary>VTEX texture FormID/index values, decoded to host-endian integers.</summary>
     public uint[]? TextureIndices { get; init; }
 
+    /// <summary>
+    ///     Morrowind only: the cell's 16×16 land-texture grid resolved to LTEX FormIds (row-major,
+    ///     256 entries; <c>0</c> = engine-default land texture). Unlike Fallout's per-quadrant
+    ///     BTXT/ATXT layers, Morrowind paints a flat 16×16 texture grid with no alpha blending, so the
+    ///     3D terrain renderer samples this grid per vertex (the shader's bilinear interpolation then
+    ///     produces the shaped transitions) instead of collapsing the cell to four quadrant textures.
+    /// </summary>
+    public uint[]? VtexTextureFormIds { get; init; }
+
     /// <summary>Ordered BTXT/ATXT layers. VTXT entries are attached to their preceding ATXT.</summary>
     public List<LandTextureLayer> TextureLayers { get; init; } = [];
 
