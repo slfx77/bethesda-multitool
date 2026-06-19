@@ -14,7 +14,7 @@ internal static class DialogueDebugCommand
 {
     internal static Command CreateDebugCommand()
     {
-        var command = new Command("debug", "Hex-dump TESTopicInfo struct bytes for offset debugging");
+        var command = new Command("debug", "Show raw dialogue topic-info (TESTopicInfo) bytes from a memory dump (developer offset debugging)");
 
         var inputArg = new Argument<string>("input") { Description = "Path to memory dump (.dmp) file" };
         var countOpt = new Option<int?>("--count") { Description = "Number of records to dump (default 20)" };

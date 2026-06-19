@@ -17,7 +17,7 @@ internal static class DialogueTreeCommand
     {
         var command = new Command("tree", "Show dialogue tree hierarchy");
 
-        var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
+        var inputArg = new Argument<string>("input") { Description = "Path to ESM or DMP file" };
         var limitOpt = new Option<int?>("-l", "--limit") { Description = "Limit number of quests shown" };
         var questOpt = new Option<string?>("-q", "--quest")
             { Description = "Filter by quest FormID (hex, e.g. 0x12345)" };
@@ -44,7 +44,7 @@ internal static class DialogueTreeCommand
     {
         var command = new Command("npc", "Browse dialogue by NPC");
 
-        var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
+        var inputArg = new Argument<string>("input") { Description = "Path to ESM or DMP file" };
         var npcArg = new Argument<string?>("npc")
             { Description = "NPC FormID (hex) or partial name. Omit for --list.", Arity = ArgumentArity.ZeroOrOne };
         var listOpt = new Option<bool>("--list") { Description = "List all NPCs with dialogue" };

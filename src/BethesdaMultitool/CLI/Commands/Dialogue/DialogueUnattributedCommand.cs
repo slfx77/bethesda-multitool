@@ -13,7 +13,7 @@ internal static class DialogueUnattributedCommand
     {
         var command = new Command("unattributed", "Analyze dialogue lines with no speaker attribution");
 
-        var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
+        var inputArg = new Argument<string>("input") { Description = "Path to ESM or DMP file" };
         var limitOpt = new Option<int?>("--limit") { Description = "Max sample lines to show" };
         var verboseOpt = new Option<bool>("--verbose") { Description = "Show per-line detail" };
 

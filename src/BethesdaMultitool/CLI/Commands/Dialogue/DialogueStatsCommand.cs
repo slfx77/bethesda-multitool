@@ -12,7 +12,7 @@ internal static class DialogueStatsCommand
     {
         var command = new Command("stats", "Show dialogue parse statistics");
 
-        var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
+        var inputArg = new Argument<string>("input") { Description = "Path to ESM or DMP file" };
 
         command.Arguments.Add(inputArg);
 

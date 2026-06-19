@@ -23,7 +23,8 @@ public static class EsmGameplayAuditCommand
 
     public static Command CreateGameplayAuditCommand()
     {
-        var command = new Command("audit-gameplay", "Compare generated ESP gameplay-sensitive world/NPC data");
+        var command = new Command("audit-gameplay",
+            "Audit a generated ESP against its source DMP and master ESM (cell merges, terrain, map markers, NPC appearance)");
         var generatedArg = new Argument<string>("generated-esp") { Description = "Generated ESP to audit" };
         var sourceDmpOpt = new Option<string>("--source-dmp")
         {

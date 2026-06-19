@@ -34,7 +34,8 @@ internal sealed class Program
                             && !a.Equals("--no-ansi", StringComparison.OrdinalIgnoreCase))
                    .ToArray();
 
-        var rootCommand = new RootCommand("ESM Analyzer - Analyze and compare Xbox 360 and PC ESM files");
+        var rootCommand = new RootCommand(
+            "Bethesda Multitool — niche ESM and memory-dump (DMP) analysis commands (GRUP/LAND/OFST inspection, comparison, map rendering, script and SpeedTree tooling)");
 
         // ===== Top-level commands =====
         // Note: stats, dump, trace, convert, diff, semdiff, cell objects/npc-trace migrated to main app (btool esm ...)
@@ -136,11 +137,11 @@ internal sealed class Program
         // Default action: show help
         rootCommand.SetAction(parseResult =>
         {
-            AnsiConsole.Write(new FigletText("ESM Analyzer")
+            AnsiConsole.Write(new FigletText("Bethesda Multitool")
                 .LeftJustified()
                 .Color(Color.Cyan1));
 
-            AnsiConsole.MarkupLine("[bold]Xbox 360 / PC ESM File Analysis Tool[/]");
+            AnsiConsole.MarkupLine("[bold]Niche ESM and memory-dump (DMP) analysis tool[/]");
             AnsiConsole.WriteLine();
 
             var table = new Table()

@@ -16,7 +16,7 @@ public static class DmpScriptCommands
     /// </summary>
     public static Command CreateScriptsCommand()
     {
-        var command = new Command("scripts", "Script analysis commands");
+        var command = new Command("scripts", "Inspect and compare scripts recovered from a memory dump (list, show, compare, crossrefs)");
         command.Subcommands.Add(CreateListCommand());
         command.Subcommands.Add(CreateShowCommand());
         command.Subcommands.Add(CreateCompareCommand());

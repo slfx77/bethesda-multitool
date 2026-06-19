@@ -22,7 +22,7 @@ internal static class NpcInventoryCommand
             DefaultValueFactory = _ => "text"
         };
 
-        var command = new Command("npcs", "List unique NPC FormIDs present in a DMP runtime hash table");
+        var command = new Command("npcs", "List unique NPC FormIDs found in the runtime objects of a memory dump (DMP)");
         command.Arguments.Add(inputArg);
         command.Options.Add(formatOpt);
         command.SetAction(parseResult =>

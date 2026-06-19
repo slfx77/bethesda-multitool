@@ -13,7 +13,7 @@ public static class ConvertNifCommand
     public static Command Create()
     {
         var command = new Command("convert-nif",
-            "Convert Xbox 360 NIF files (big-endian) to PC format (little-endian)");
+            "Convert NIF models from big-endian (console) to little-endian (PC), unpacking geometry");
 
         var inputArgument = new Argument<string>("input")
         {
@@ -285,7 +285,7 @@ public static class ConvertNifCommand
         }
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Xbox 360 NIFs have been converted with geometry unpacking.[/]");
+        AnsiConsole.MarkupLine("[dim]Big-endian (console) NIFs have been converted with geometry unpacking.[/]");
         AnsiConsole.MarkupLine("[dim]For best results, verify output with NifSkope.[/]");
     }
 

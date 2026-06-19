@@ -160,9 +160,9 @@ public static class DialogueCommand
 
     private static Command CreateTopicCommand()
     {
-        var command = new Command("topic", "Show details for a specific topic");
+        var command = new Command("topic", "Show details for a specific dialogue topic and its INFO lines");
 
-        var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
+        var inputArg = new Argument<string>("input") { Description = "Path to ESM or DMP file" };
         var formIdArg = new Argument<string>("formid") { Description = "Topic FormID (hex, e.g. 0x12345)" };
 
         command.Arguments.Add(inputArg);

@@ -369,7 +369,7 @@ internal static class SkinPartitionCommands
         var block1Arg = new Argument<int>("block1") { Description = "Block index in first file" };
         var block2Arg = new Argument<int>("block2") { Description = "Block index in second file" };
         var countOpt = new Option<int>("-c", "--count")
-        { Description = "Max partitions to compare", DefaultValueFactory = _ => 50 };
+        { Description = "Max vertices per partition to compare (weights/bone indices)", DefaultValueFactory = _ => 50 };
         command.Arguments.Add(file1Arg);
         command.Arguments.Add(file2Arg);
         command.Arguments.Add(block1Arg);

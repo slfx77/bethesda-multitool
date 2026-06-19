@@ -169,7 +169,7 @@ public static class RenderNpcCommand
         };
         var trimetricOption = new Option<bool>("--trimetric")
         {
-            Description = "Render 4 trimetric axonometric views (Fallout 1/2 camera)",
+            Description = "Render 4 trimetric axonometric views (unequal axis foreshortening)",
             DefaultValueFactory = _ => false
         };
 

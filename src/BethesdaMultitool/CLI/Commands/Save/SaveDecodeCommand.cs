@@ -14,7 +14,8 @@ internal static class SaveDecodeCommand
 
     public static Command CreateDecodeCommand()
     {
-        var decodeCommand = new Command("decode", "Test decode all changed forms and show statistics");
+        var decodeCommand = new Command("decode",
+            "Decode every changed form and report decode coverage statistics");
         decodeCommand.Arguments.Add(new Argument<string>(InputArgName) { Description = "Path to save file" });
         decodeCommand.SetAction((parseResult, _) =>
         {

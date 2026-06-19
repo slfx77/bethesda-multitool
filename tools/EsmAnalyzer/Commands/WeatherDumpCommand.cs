@@ -18,7 +18,7 @@ internal static class WeatherDumpCommand
     internal static Command Create()
     {
         var command = new Command("weather-dump",
-            "Dump WTHR NAM0 color bands per category + the resolved atmosphere across the clock (3F)");
+            "Dump WTHR NAM0 color bands per category plus the resolved sky/ambient/sun atmosphere at each hour of the day");
 
         var fileArg = new Argument<string>("file") { Description = "Path to the ESM file" };
         var filterOpt = new Option<string?>("--filter", "-f")

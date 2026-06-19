@@ -8,7 +8,7 @@ public static class EsmCoverageCommand
 {
     public static Command CreateCoverageCommand()
     {
-        var command = new Command("coverage", "Generate ESM semantic modeling coverage reports");
+        var command = new Command("coverage", "Report how completely the parser models each record/subrecord type (CSV + Markdown)");
         var inputArg = new Argument<string>("esm-input") { Description = "Path to ESM/ESP file" };
         var outputOpt = new Option<string>("--output")
         {
@@ -32,7 +32,7 @@ public static class EsmCoverageCommand
 
     private static Command CreateCompareCommand()
     {
-        var command = new Command("compare", "Compare two esm coverage report directories");
+        var command = new Command("compare", "Compare two ESM coverage report directories (baseline vs candidate)");
         var baselineArg = new Argument<string>("baseline-dir")
             { Description = "Baseline coverage directory, usually vanilla FalloutNV.esm" };
         var candidateArg = new Argument<string>("candidate-dir")
