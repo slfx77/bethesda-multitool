@@ -6,7 +6,7 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Bsa;
 
 /// <summary>
-///     Round-trips a synthesized BA2 (Fallout 4 / Fallout 76) archive through the ported parser +
+///     Round-trips a synthesized BA2 (Fallout 4 / Fallout 76) archive through the parser +
 ///     extractor: a GNRL archive with one uncompressed and one zlib-compressed entry plus a name
 ///     table, and a DX10 DDS-header synthesis check. No real game assets required.
 /// </summary>

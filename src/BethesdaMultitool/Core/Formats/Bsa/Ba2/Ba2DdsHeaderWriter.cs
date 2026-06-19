@@ -1,9 +1,16 @@
 // Copyright (c) 2026 BethesdaMultitool Contributors
 // Licensed under the MIT License.
+//
+// The DDS header this emits is the Microsoft DDS file format: the DDS_HEADER, DDS_PIXELFORMAT and
+// DDS_HEADER_DXT10 layouts, the legacy D3DFMT/FourCC codes (DXT1/3/5, BC4U/BC5U, A16B16G16R16F),
+// and the DXGI_FORMAT enum are all from Microsoft's DDS programming guide and DirectXTex. The
+// optional Xbox surface trailer follows DirectXTex's "XBOX" DDS variant (DirectXTexXbox). BA2
+// stores only raw surface bytes; this header is reconstructed from the DX10 entry metadata. Not
+// derived from any copyleft source.
 
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 
-/// <summary>Subset of DXGI_FORMAT values BA2 DX10 textures use.</summary>
+/// <summary>The subset of DXGI_FORMAT values that BA2 DX10 texture entries use.</summary>
 public enum Ba2DxgiFormat
 {
     R32G32B32A32_FLOAT = 2,
@@ -35,241 +42,253 @@ public enum Ba2DxgiFormat
 public sealed class Ba2UnsupportedDdsFormatException(string message) : Exception(message);
 
 /// <summary>
-///     Synthesizes the DDS file header (magic + DDS_HEADER + optional DX10 header + optional Xbox
-///     trailer) that prefixes a DX10 texture's surface data on extraction. BA2 stores only the raw
-///     surface bytes; the header is reconstructed from the entry metadata. Ported faithfully from the
-///     community Sharp.BSA.BA2 reference (BA2TextureEntry.WriteHeader + DDS.cs).
+///     Synthesizes the DDS file header (magic + DDS_HEADER, plus a DDS_HEADER_DXT10 and/or Xbox
+///     surface trailer where required) that prefixes a DX10 texture's surface data on extraction.
 /// </summary>
 public static class Ba2DdsHeaderWriter
 {
-    private const int DDS_MAGIC = 0x20534444; // "DDS "
-    private const int DDS_HEADER_SIZE = 124;
-    private const int DDS_PIXELFORMAT_SIZE = 32;
+    // DDS magic and DDS_HEADER / DDS_PIXELFORMAT sizes (Microsoft DDS programming guide).
+    private const int DdsMagic = 0x20534444; // "DDS "
+    private const int DdsHeaderSize = 124;
+    private const int DdsPixelFormatSize = 32;
 
-    private const uint DDS_FOURCC = 0x00000004;
-    private const uint DDS_RGB = 0x00000040;
-    private const uint DDS_RGBA = 0x00000041;
+    // DDS_PIXELFORMAT.dwFlags bits.
+    private const uint DdpfFourCc = 0x00000004;
+    private const uint DdpfRgb = 0x00000040;
+    private const uint DdpfRgba = 0x00000041; // RGB | ALPHAPIXELS
 
-    private const uint DDS_HEADER_FLAGS_TEXTURE = 0x00001007;
-    private const uint DDS_HEADER_FLAGS_MIPMAP = 0x00020000;
-    private const uint DDS_HEADER_FLAGS_LINEARSIZE = 0x00080000;
+    // DDS_HEADER.dwFlags presets. Block/linear formats advertise a linear surface size; the
+    // uncompressed RGB(A) formats advertise a pitch instead.
+    private const uint HeaderFlagsLinear = 0x000A1007; // CAPS|HEIGHT|WIDTH|PIXELFORMAT|MIPMAPCOUNT|LINEARSIZE
+    private const uint HeaderFlagsPitch = 0x0002100F; // CAPS|HEIGHT|WIDTH|PITCH|PIXELFORMAT|MIPMAPCOUNT
 
-    private const uint DDS_SURFACE_FLAGS_TEXTURE = 0x1000;
-    private const uint DDS_SURFACE_FLAGS_COMPLEX = 0x8;
-    private const uint DDS_SURFACE_FLAGS_MIPMAP = 0x400000;
+    // DDS_HEADER.dwCaps / dwCaps2 bits.
+    private const uint CapsTexture = 0x00001000;
+    private const uint CapsComplex = 0x00000008;
+    private const uint CapsMipMap = 0x00400000;
+    private const uint Caps2CubemapAllFaces = 0x0000FE00; // CUBEMAP | the six face bits
 
-    private const uint DDS_ALPHA_MODE_UNKNOWN = 0x0;
-    private const uint DDS_RESOURCE_MISC_TEXTURECUBE = 0x4;
+    // DDS_HEADER_DXT10 fields.
+    private const uint DimensionTexture2D = 3;
+    private const uint ResourceMiscTextureCube = 0x4;
+    private const uint AlphaModeUnknown = 0x0;
 
-    private const uint DDSCAPS2_CUBEMAP_ALLFACES = 0xFE00; // CUBEMAP | all six faces
-
-    private const uint TILE_MODE_DEFAULT = 0x08;
-    private const uint XBOX_BASE_ALIGNMENT = 256;
-    private const uint XBOX_XDK_VERSION = 13202;
-
-    private const uint DIMENSION_TEXTURE2D = 3;
+    // DirectXTex "XBOX" DDS variant trailer (tile mode 8 == linear == standard PC layout).
+    private const uint TileModeLinear = 0x08;
+    private const uint XboxBaseAlignment = 256;
+    private const uint XboxXdkVersion = 13202;
 
     private static uint MakeFourCc(char c0, char c1, char c2, char c3)
         => (uint)(byte)c0 | ((uint)(byte)c1 << 8) | ((uint)(byte)c2 << 16) | ((uint)(byte)c3 << 24);
 
     /// <summary>
-    ///     Builds the DDS header bytes for <paramref name="tex" /> (a DX10 entry of archive
-    ///     <paramref name="version" />). Throws <see cref="Ba2UnsupportedDdsFormatException" /> for an
-    ///     unhandled DXGI format.
+    ///     Builds the DDS header bytes for <paramref name="tex" /> (a DX10 entry from an archive of the
+    ///     given <paramref name="version" />). Throws <see cref="Ba2UnsupportedDdsFormatException" />
+    ///     for a DXGI format with no mapping here.
     /// </summary>
     public static byte[] BuildHeader(Ba2TextureInfo tex, uint version)
     {
+        var format = (Ba2DxgiFormat)tex.Format;
+        var xbox = tex.TileMode != TileModeLinear;
+
+        var pf = ResolvePixelFormat(format, tex.Width, tex.Height, out var headerFlags);
+
+        // Xbox-tiled block-compressed surfaces carry the "XBOX" FourCC instead of the PC code.
+        if (xbox && pf.Flags == DdpfFourCc && IsBlockCompressed(format))
+        {
+            pf = pf with { FourCc = MakeFourCc('X', 'B', 'O', 'X') };
+        }
+
+        var caps = ComputeCaps(tex, version, out var caps2);
+
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
 
-        var format = (Ba2DxgiFormat)tex.Format;
-        var xbox = tex.TileMode != TILE_MODE_DEFAULT;
-
-        // --- DDS_HEADER fields ---
-        uint headerFlags = DDS_HEADER_FLAGS_TEXTURE | DDS_HEADER_FLAGS_LINEARSIZE | DDS_HEADER_FLAGS_MIPMAP;
-        uint depth = 1;
-        uint cubemapFlags = tex.IsCubemap == 1 ? DDSCAPS2_CUBEMAP_ALLFACES : 0u;
-
-        uint pfFlags = 0, pfFourCc = 0, pfRgbBits = 0, pfR = 0, pfG = 0, pfB = 0, pfA = 0;
-        uint pitchOrLinearSize;
-        uint width = tex.Width;
-        uint height = tex.Height;
-
-        switch (format)
-        {
-            case Ba2DxgiFormat.BC1_UNORM:
-                pfFlags = DDS_FOURCC; pfFourCc = MakeFourCc('D', 'X', 'T', '1');
-                pitchOrLinearSize = width * height / 2; // 4bpp
-                break;
-            case Ba2DxgiFormat.BC2_UNORM:
-                pfFlags = DDS_FOURCC; pfFourCc = MakeFourCc('D', 'X', 'T', '3');
-                pitchOrLinearSize = width * height; // 8bpp
-                break;
-            case Ba2DxgiFormat.BC3_UNORM:
-                pfFlags = DDS_FOURCC; pfFourCc = MakeFourCc('D', 'X', 'T', '5');
-                pitchOrLinearSize = width * height; // 8bpp
-                break;
-            case Ba2DxgiFormat.BC5_UNORM:
-                pfFlags = DDS_FOURCC; pfFourCc = MakeFourCc('B', 'C', '5', 'U');
-                pitchOrLinearSize = width * height; // 8bpp
-                break;
-            case Ba2DxgiFormat.BC5_SNORM:
-                pfFlags = DDS_FOURCC; pfFourCc = MakeFourCc('B', 'C', '5', 'S');
-                pitchOrLinearSize = width * height; // 8bpp
-                break;
-            case Ba2DxgiFormat.BC4_UNORM:
-                headerFlags = 0xA1007;
-                pfFlags = DDS_FOURCC; pfFourCc = MakeFourCc('B', 'C', '4', 'U');
-                pitchOrLinearSize = (width / 4) * (height / 4) * 8;
-                break;
-            case Ba2DxgiFormat.BC1_UNORM_SRGB:
-                pfFlags = DDS_FOURCC; pfFourCc = MakeFourCc('D', 'X', '1', '0');
-                pitchOrLinearSize = width * height / 2; // 4bpp
-                break;
-            case Ba2DxgiFormat.BC3_UNORM_SRGB:
-            case Ba2DxgiFormat.BC7_UNORM_SRGB:
-            case Ba2DxgiFormat.R32G32B32A32_FLOAT:
-                pfFlags = DDS_FOURCC; pfFourCc = MakeFourCc('D', 'X', '1', '0');
-                pitchOrLinearSize = width * height; // 8bpp
-                break;
-            case Ba2DxgiFormat.BC6H_UF16:
-                pfFlags = DDS_FOURCC; pfFourCc = MakeFourCc('D', 'X', '1', '0');
-                pitchOrLinearSize = (uint)(Math.Ceiling(width / 4m) * Math.Ceiling(height / 4m) * 16);
-                break;
-            case Ba2DxgiFormat.BC7_UNORM:
-                pfFlags = DDS_FOURCC; pfFourCc = MakeFourCc('D', 'X', '1', '0');
-                pitchOrLinearSize = (uint)(Math.Ceiling(width / 4m) * Math.Ceiling(height / 4m) * 16);
-                break;
-            case Ba2DxgiFormat.R8G8B8A8_UNORM:
-                headerFlags = 0x2100F;
-                pfFlags = DDS_RGBA; pfRgbBits = 32;
-                pfR = 0x000000FF; pfG = 0x0000FF00; pfB = 0x00FF0000; pfA = 0xFF000000;
-                pitchOrLinearSize = width * 4;
-                break;
-            case Ba2DxgiFormat.R8G8B8A8_UNORM_SRGB:
-                headerFlags = 0x2100F;
-                pfFlags = DDS_FOURCC; pfFourCc = MakeFourCc('D', 'X', '1', '0');
-                pitchOrLinearSize = width * 4;
-                break;
-            case Ba2DxgiFormat.R8G8B8A8_SNORM:
-                headerFlags = 0x2100F;
-                pfFlags = 0x00080000; pfRgbBits = 32;
-                pfR = 0x000000FF; pfG = 0x0000FF00; pfB = 0x00FF0000; pfA = 0xFF000000;
-                pitchOrLinearSize = width * 4;
-                break;
-            case Ba2DxgiFormat.B8G8R8A8_UNORM:
-                headerFlags = 0x2100F;
-                pfFlags = DDS_RGBA; pfRgbBits = 32;
-                pfR = 0x00FF0000; pfG = 0x0000FF00; pfB = 0x000000FF; pfA = 0xFF000000;
-                pitchOrLinearSize = width * 4;
-                break;
-            case Ba2DxgiFormat.B8G8R8X8_UNORM:
-                pfFlags = DDS_RGBA; pfRgbBits = 32;
-                pfR = 0x00FF0000; pfG = 0x0000FF00; pfB = 0x000000FF; pfA = 0xFF000000;
-                pitchOrLinearSize = width * height * 4; // 32bpp
-                break;
-            case Ba2DxgiFormat.B5G6R5_UNORM:
-                pfFlags = DDS_RGB; pfRgbBits = 16;
-                pfR = 0x0000F800; pfG = 0x000007E0; pfB = 0x0000001F;
-                pitchOrLinearSize = width * height * 2; // 16bpp
-                break;
-            case Ba2DxgiFormat.R16G16B16A16_FLOAT:
-                headerFlags = 0x2100F; depth = 1;
-                pfFlags = DDS_FOURCC; pfFourCc = 0x71;
-                pitchOrLinearSize = width * 8;
-                break;
-            case Ba2DxgiFormat.R16G16B16A16_UNORM:
-                headerFlags = 0x2100F; depth = 1;
-                pfFlags = DDS_FOURCC; pfFourCc = 0x24;
-                pitchOrLinearSize = width * 8;
-                break;
-            case Ba2DxgiFormat.R8_UNORM:
-                headerFlags = 0x2100F;
-                pfFlags = 0x20000; pfRgbBits = 8; pfR = 0xFF;
-                pitchOrLinearSize = width;
-                break;
-            default:
-                throw new Ba2UnsupportedDdsFormatException(
-                    $"Unsupported BA2 DDS format: {tex.Format} ({format}).");
-        }
-
-        // Xbox-tiled surfaces use the XBOX FourCC for the block-compressed formats.
-        if (xbox && pfFlags == DDS_FOURCC && IsBlockCompressed(format))
-        {
-            pfFourCc = MakeFourCc('X', 'B', 'O', 'X');
-        }
-
-        uint surfaceFlags = DDS_SURFACE_FLAGS_TEXTURE;
-        if (tex.MipCount > 1)
-        {
-            surfaceFlags |= DDS_SURFACE_FLAGS_COMPLEX | DDS_SURFACE_FLAGS_MIPMAP;
-        }
-        else if (tex.IsCubemap == 1)
-        {
-            surfaceFlags |= DDS_SURFACE_FLAGS_COMPLEX;
-        }
-
-        // Version 7 adds 0xFE00 to surface flags for cubemaps with mips, and clears cubemap flags.
-        if (version == 7 && tex.MipCount > 1 && tex.IsCubemap == 1)
-        {
-            surfaceFlags |= 0xFE00;
-            cubemapFlags = 0u;
-        }
-
-        // --- write magic + DDS_HEADER (124 bytes) ---
-        bw.Write(DDS_MAGIC);
-        bw.Write((uint)DDS_HEADER_SIZE);
+        // magic + DDS_HEADER (124 bytes)
+        bw.Write(DdsMagic);
+        bw.Write((uint)DdsHeaderSize);
         bw.Write(headerFlags);
-        bw.Write(height);
-        bw.Write(width);
-        bw.Write(pitchOrLinearSize);
-        bw.Write(depth);
+        bw.Write((uint)tex.Height);
+        bw.Write((uint)tex.Width);
+        bw.Write(pf.PitchOrLinearSize);
+        bw.Write(1u); // depth
         bw.Write((uint)tex.MipCount);
-        for (var i = 0; i < 11; i++) bw.Write(0u); // dwReserved1[11]
-        // DDS_PIXELFORMAT
-        bw.Write((uint)DDS_PIXELFORMAT_SIZE);
-        bw.Write(pfFlags);
-        bw.Write(pfFourCc);
-        bw.Write(pfRgbBits);
-        bw.Write(pfR);
-        bw.Write(pfG);
-        bw.Write(pfB);
-        bw.Write(pfA);
-        bw.Write(surfaceFlags);
-        bw.Write(cubemapFlags);
-        for (var i = 0; i < 3; i++) bw.Write(0u); // dwReserved2[3]
+        WriteZeros(bw, 11); // dwReserved1[11]
 
-        // --- DX10 header (20 bytes) for the formats that require it, or any Xbox-tiled surface ---
-        var needsDxt10 = format is Ba2DxgiFormat.BC1_UNORM_SRGB or Ba2DxgiFormat.BC3_UNORM_SRGB
-            or Ba2DxgiFormat.BC6H_UF16 or Ba2DxgiFormat.BC7_UNORM or Ba2DxgiFormat.BC7_UNORM_SRGB
-            or Ba2DxgiFormat.R32G32B32A32_FLOAT or Ba2DxgiFormat.R8G8B8A8_UNORM_SRGB;
-        if (needsDxt10 || xbox)
-        {
-            bw.Write((uint)tex.Format);                 // dxgiFormat
-            bw.Write(DIMENSION_TEXTURE2D);              // resourceDimension
-            bw.Write(tex.IsCubemap == 1 ? DDS_RESOURCE_MISC_TEXTURECUBE : 0u); // miscFlag
-            bw.Write(1u);                               // arraySize
-            bw.Write(DDS_ALPHA_MODE_UNKNOWN);          // miscFlags2
-        }
+        // DDS_PIXELFORMAT (32 bytes)
+        bw.Write((uint)DdsPixelFormatSize);
+        bw.Write(pf.Flags);
+        bw.Write(pf.FourCc);
+        bw.Write(pf.RgbBitCount);
+        bw.Write(pf.RBitMask);
+        bw.Write(pf.GBitMask);
+        bw.Write(pf.BBitMask);
+        bw.Write(pf.ABitMask);
 
-        // --- Xbox trailer (16 bytes): tile mode, base alignment, surface data size, XDK version ---
-        if (xbox)
-        {
-            uint surfaceDataSize = 0;
-            foreach (var chunk in tex.Chunks)
-            {
-                surfaceDataSize += chunk.FullSize;
-            }
+        bw.Write(caps);
+        bw.Write(caps2);
+        WriteZeros(bw, 3); // dwReserved2[3]
 
-            bw.Write((uint)tex.TileMode);
-            bw.Write(XBOX_BASE_ALIGNMENT);
-            bw.Write(surfaceDataSize);
-            bw.Write(XBOX_XDK_VERSION);
-        }
+        WriteOptionalTrailers(bw, tex, format, xbox);
 
         bw.Flush();
         return ms.ToArray();
     }
+
+    // DDS_HEADER dwCaps / dwCaps2 for the surface's mip + cubemap layout.
+    private static uint ComputeCaps(Ba2TextureInfo tex, uint version, out uint caps2)
+    {
+        var caps = CapsTexture;
+        caps2 = tex.IsCubemap == 1 ? Caps2CubemapAllFaces : 0u;
+        if (tex.MipCount > 1)
+        {
+            caps |= CapsComplex | CapsMipMap;
+        }
+        else if (tex.IsCubemap == 1)
+        {
+            caps |= CapsComplex;
+        }
+
+        // Version 7 folds the cubemap face bits into dwCaps for mipped cubemaps and clears dwCaps2.
+        if (version == 7 && tex.MipCount > 1 && tex.IsCubemap == 1)
+        {
+            caps |= Caps2CubemapAllFaces;
+            caps2 = 0u;
+        }
+
+        return caps;
+    }
+
+    // The optional DDS_HEADER_DXT10 block and DirectXTex XBOX surface trailer.
+    private static void WriteOptionalTrailers(
+        BinaryWriter bw, Ba2TextureInfo tex, Ba2DxgiFormat format, bool xbox)
+    {
+        // DDS_HEADER_DXT10 (20 bytes) — for formats with no legacy FourCC, and any Xbox-tiled surface.
+        if (NeedsDxt10Header(format) || xbox)
+        {
+            bw.Write((uint)tex.Format);                                  // dxgiFormat
+            bw.Write(DimensionTexture2D);                               // resourceDimension
+            bw.Write(tex.IsCubemap == 1 ? ResourceMiscTextureCube : 0u); // miscFlag
+            bw.Write(1u);                                               // arraySize
+            bw.Write(AlphaModeUnknown);                                 // miscFlags2
+        }
+
+        if (!xbox)
+        {
+            return;
+        }
+
+        // XBOX surface trailer (16 bytes): tile mode, base alignment, total surface size, XDK version.
+        uint surfaceDataSize = 0;
+        foreach (var chunk in tex.Chunks)
+        {
+            surfaceDataSize += chunk.FullSize;
+        }
+
+        bw.Write((uint)tex.TileMode);
+        bw.Write(XboxBaseAlignment);
+        bw.Write(surfaceDataSize);
+        bw.Write(XboxXdkVersion);
+    }
+
+    private static void WriteZeros(BinaryWriter bw, int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            bw.Write(0u);
+        }
+    }
+
+    /// <summary>The DDS_PIXELFORMAT fields plus the dwPitchOrLinearSize for one DXGI format.</summary>
+    private readonly record struct PixelFormat(
+        uint Flags, uint FourCc, uint RgbBitCount, uint RBitMask, uint GBitMask, uint BBitMask, uint ABitMask,
+        uint PitchOrLinearSize);
+
+    private static PixelFormat ResolvePixelFormat(
+        Ba2DxgiFormat format, uint width, uint height, out uint headerFlags)
+    {
+        // Block-compressed formats default to the linear-size header flags; the uncompressed RGB(A)
+        // formats override to the pitch flags below.
+        headerFlags = HeaderFlagsLinear;
+
+        uint Block16(uint w, uint h) => (uint)(Math.Ceiling(w / 4m) * Math.Ceiling(h / 4m) * 16);
+
+        switch (format)
+        {
+            case Ba2DxgiFormat.BC1_UNORM:
+                return FourCc('D', 'X', 'T', '1', width * height / 2);
+            case Ba2DxgiFormat.BC2_UNORM:
+                return FourCc('D', 'X', 'T', '3', width * height);
+            case Ba2DxgiFormat.BC3_UNORM:
+                return FourCc('D', 'X', 'T', '5', width * height);
+            case Ba2DxgiFormat.BC5_UNORM:
+                return FourCc('B', 'C', '5', 'U', width * height);
+            case Ba2DxgiFormat.BC5_SNORM:
+                return FourCc('B', 'C', '5', 'S', width * height);
+            case Ba2DxgiFormat.BC4_UNORM:
+                return FourCc('B', 'C', '4', 'U', (width / 4) * (height / 4) * 8);
+
+            // Formats with no legacy FourCC use the DX10 marker; the real DXGI format goes in the
+            // DDS_HEADER_DXT10 block.
+            case Ba2DxgiFormat.BC1_UNORM_SRGB:
+                return Dx10(width * height / 2);
+            case Ba2DxgiFormat.BC3_UNORM_SRGB:
+            case Ba2DxgiFormat.BC7_UNORM_SRGB:
+            case Ba2DxgiFormat.R32G32B32A32_FLOAT:
+                return Dx10(width * height);
+            case Ba2DxgiFormat.BC6H_UF16:
+            case Ba2DxgiFormat.BC7_UNORM:
+                return Dx10(Block16(width, height));
+
+            case Ba2DxgiFormat.R8G8B8A8_UNORM:
+                headerFlags = HeaderFlagsPitch;
+                return Rgba(0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000, width * 4);
+            case Ba2DxgiFormat.R8G8B8A8_UNORM_SRGB:
+                headerFlags = HeaderFlagsPitch;
+                return Dx10(width * 4);
+            case Ba2DxgiFormat.R8G8B8A8_SNORM:
+                headerFlags = HeaderFlagsPitch;
+                // Signed-normalised RGBA has no DDPF flag; emit the masks with a bumpdU/V-style flag.
+                return new PixelFormat(0x00080000, 0, 32, 0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000, width * 4);
+            case Ba2DxgiFormat.B8G8R8A8_UNORM:
+                headerFlags = HeaderFlagsPitch;
+                return Rgba(0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000, width * 4);
+            case Ba2DxgiFormat.B8G8R8X8_UNORM:
+                return Rgba(0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000, width * height * 4);
+            case Ba2DxgiFormat.B5G6R5_UNORM:
+                return new PixelFormat(DdpfRgb, 0, 16, 0x0000F800, 0x000007E0, 0x0000001F, 0, width * height * 2);
+
+            // 64-bit-per-texel formats use the legacy D3DFMT codes as FourCC.
+            case Ba2DxgiFormat.R16G16B16A16_FLOAT:
+                headerFlags = HeaderFlagsPitch;
+                return new PixelFormat(DdpfFourCc, 0x71, 0, 0, 0, 0, 0, width * 8);
+            case Ba2DxgiFormat.R16G16B16A16_UNORM:
+                headerFlags = HeaderFlagsPitch;
+                return new PixelFormat(DdpfFourCc, 0x24, 0, 0, 0, 0, 0, width * 8);
+
+            case Ba2DxgiFormat.R8_UNORM:
+                headerFlags = HeaderFlagsPitch;
+                return new PixelFormat(0x00020000, 0, 8, 0xFF, 0, 0, 0, width);
+
+            default:
+                throw new Ba2UnsupportedDdsFormatException(
+                    $"Unsupported BA2 DDS format: {(int)format} ({format}).");
+        }
+
+        static PixelFormat FourCc(char a, char b, char c, char d, uint linear)
+            => new(DdpfFourCc, MakeFourCc(a, b, c, d), 0, 0, 0, 0, 0, linear);
+
+        static PixelFormat Dx10(uint linear)
+            => new(DdpfFourCc, MakeFourCc('D', 'X', '1', '0'), 0, 0, 0, 0, 0, linear);
+
+        static PixelFormat Rgba(uint r, uint g, uint b, uint a, uint pitch)
+            => new(DdpfRgba, 0, 32, r, g, b, a, pitch);
+    }
+
+    private static bool NeedsDxt10Header(Ba2DxgiFormat format) => format is
+        Ba2DxgiFormat.BC1_UNORM_SRGB or Ba2DxgiFormat.BC3_UNORM_SRGB or Ba2DxgiFormat.BC6H_UF16
+        or Ba2DxgiFormat.BC7_UNORM or Ba2DxgiFormat.BC7_UNORM_SRGB or Ba2DxgiFormat.R32G32B32A32_FLOAT
+        or Ba2DxgiFormat.R8G8B8A8_UNORM_SRGB;
 
     private static bool IsBlockCompressed(Ba2DxgiFormat format) => format is
         Ba2DxgiFormat.BC1_UNORM or Ba2DxgiFormat.BC1_UNORM_SRGB or Ba2DxgiFormat.BC2_UNORM

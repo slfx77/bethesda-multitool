@@ -4,8 +4,8 @@
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 
 /// <summary>
-///     Result of parsing a BA2 (Fallout 4 / Fallout 76) archive. Unlike BSA, BA2 has no folder
-///     tree — <see cref="Files" /> is a flat list.
+///     The result of parsing a BA2 (Fallout 4 / Fallout 76) archive. Unlike a classic BSA, a BA2
+///     has no folder hierarchy, so <see cref="Files" /> is a single flat list in archive order.
 /// </summary>
 public sealed record Ba2Archive
 {
@@ -15,16 +15,16 @@ public sealed record Ba2Archive
     /// <summary>All file entries, in archive order.</summary>
     public required List<Ba2FileRecord> Files { get; init; }
 
-    /// <summary>Path to the BA2 file.</summary>
+    /// <summary>Path to the BA2 file on disk.</summary>
     public required string FilePath { get; init; }
 
-    /// <summary>Total number of files.</summary>
+    /// <summary>Total number of files in the archive.</summary>
     public int TotalFiles => Files.Count;
 
-    /// <summary>Get all files as a flat list (parity with <c>BsaArchive.AllFiles</c>).</summary>
+    /// <summary>The flat file list (named for parity with <c>BsaArchive.AllFiles</c>).</summary>
     public IEnumerable<Ba2FileRecord> AllFiles => Files;
 
-    /// <summary>Find a file by its full virtual path (case-insensitive, accepts / or \).</summary>
+    /// <summary>Find an entry by its full virtual path (case-insensitive; accepts / or \).</summary>
     public Ba2FileRecord? FindFile(string path)
     {
         var normalized = path.Replace('/', '\\');

@@ -1,5 +1,9 @@
 // Copyright (c) 2026 BethesdaMultitool Contributors
 // Licensed under the MIT License.
+//
+// Extraction follows the public BA2 format and fo76utils (extractBA2Texture / extractBlock in
+// libfo76utils/src/ba2file.cpp). Decompression uses the framework's zlib and this repo's own
+// LZ4 block decoder. Not derived from any copyleft source.
 
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
@@ -7,11 +11,11 @@ using System.IO.MemoryMappedFiles;
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 
 /// <summary>
-///     Extracts files from BA2 (Fallout 4 / Fallout 76) archives. BA2 is always little-endian.
-///     Thread-safe: uses a memory-mapped file for lock-free concurrent reads, mirroring
-///     <see cref="BsaExtractor" />. GNRL entries decompress to their stored data; DX10 entries get a
-///     synthesized DDS header (<see cref="Ba2DdsHeaderWriter" />) followed by their decompressed mip
-///     chunks, producing a standard .dds file.
+///     Extracts files from BA2 (Fallout 4 / Fallout 76) archives. Thread-safe: a memory-mapped file
+///     backs lock-free concurrent reads, mirroring <see cref="BsaExtractor" />. GNRL entries
+///     decompress to their stored bytes; DX10 entries are prefixed with a synthesized DDS header
+///     (<see cref="Ba2DdsHeaderWriter" />) and followed by their decompressed mip chunks to form a
+///     standard .dds file.
 /// </summary>
 public sealed class Ba2Extractor : IDisposable
 {
@@ -20,7 +24,7 @@ public sealed class Ba2Extractor : IDisposable
     private readonly uint _version;
     private bool _disposed;
 
-    /// <summary>Create an extractor for a BA2 archive file.</summary>
+    /// <summary>Open an extractor for a BA2 archive file.</summary>
     public Ba2Extractor(string filePath)
     {
         Archive = Ba2Parser.Parse(filePath);
@@ -29,7 +33,7 @@ public sealed class Ba2Extractor : IDisposable
         _mappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
     }
 
-    /// <summary>Create an extractor from an already-parsed archive backed by a <see cref="FileStream" />.</summary>
+    /// <summary>Open an extractor over an already-parsed archive backed by a <see cref="FileStream" />.</summary>
     public Ba2Extractor(Ba2Archive archive, FileStream stream)
     {
         Archive = archive;
@@ -44,16 +48,18 @@ public sealed class Ba2Extractor : IDisposable
 
     public void Dispose()
     {
-        if (!_disposed)
+        if (_disposed)
         {
-            _mappedFile.Dispose();
-            _disposed = true;
+            return;
         }
+
+        _mappedFile.Dispose();
+        _disposed = true;
     }
 
     /// <summary>
-    ///     Extract a single file to a byte array. For DX10 textures this includes a synthesized DDS
-    ///     header so the result is a valid .dds. Thread-safe: each call creates its own view accessors.
+    ///     Extract a single entry to a byte array. DX10 textures get a synthesized DDS header so the
+    ///     result is a valid .dds. Thread-safe: each call opens its own view accessors.
     /// </summary>
     public byte[] ExtractFile(Ba2FileRecord file)
     {
@@ -66,13 +72,13 @@ public sealed class Ba2Extractor : IDisposable
 
     private byte[] ExtractGeneral(Ba2FileRecord file)
     {
-        if (file.Compressed)
+        if (!file.Compressed)
         {
-            var packed = ReadRegion((long)file.Offset, (int)file.PackedSize);
-            return Decompress(packed, (int)file.RealSize);
+            return ReadRegion((long)file.Offset, (int)file.RealSize);
         }
 
-        return ReadRegion((long)file.Offset, (int)file.RealSize);
+        var packed = ReadRegion((long)file.Offset, (int)file.PackedSize);
+        return Decompress(packed, (int)file.RealSize);
     }
 
     private byte[] ExtractTexture(Ba2FileRecord file)
@@ -81,23 +87,16 @@ public sealed class Ba2Extractor : IDisposable
                   ?? throw new InvalidDataException($"DX10 entry '{file.FullPath}' has no texture metadata.");
 
         var header = Ba2DdsHeaderWriter.BuildHeader(tex, _version);
+        var surfaceBytes = tex.Chunks.Sum(c => (long)c.FullSize);
 
-        using var ms = new MemoryStream(header.Length + (int)tex.Chunks.Sum(c => (long)c.FullSize));
+        using var ms = new MemoryStream(header.Length + (int)surfaceBytes);
         ms.Write(header, 0, header.Length);
 
         foreach (var chunk in tex.Chunks)
         {
-            if (chunk.Compressed)
-            {
-                var packed = ReadRegion((long)chunk.Offset, (int)chunk.PackedSize);
-                var data = Decompress(packed, (int)chunk.FullSize);
-                ms.Write(data, 0, data.Length);
-            }
-            else
-            {
-                var data = ReadRegion((long)chunk.Offset, (int)chunk.FullSize);
-                ms.Write(data, 0, data.Length);
-            }
+            var raw = ReadRegion((long)chunk.Offset, (int)(chunk.Compressed ? chunk.PackedSize : chunk.FullSize));
+            var surface = chunk.Compressed ? Decompress(raw, (int)chunk.FullSize) : raw;
+            ms.Write(surface, 0, surface.Length);
         }
 
         return ms.ToArray();
@@ -118,9 +117,9 @@ public sealed class Ba2Extractor : IDisposable
     }
 
     /// <summary>
-    ///     Decompresses one packed region to <paramref name="realSize" /> bytes using the archive's
-    ///     codec: a raw LZ4 block (FO76 v3) via the shared <see cref="Lz4BlockDecoder" />, otherwise
-    ///     zlib with a raw-deflate fallback (FO4 + most FO76).
+    ///     Decompress one packed region to exactly <paramref name="realSize" /> bytes using the
+    ///     archive's codec: the shared <see cref="Lz4BlockDecoder" /> for raw-LZ4 (v3) archives,
+    ///     otherwise zlib with a raw-deflate fallback (FO4 and most FO76).
     /// </summary>
     private byte[] Decompress(byte[] packed, int realSize)
     {
@@ -129,14 +128,14 @@ public sealed class Ba2Extractor : IDisposable
             return [];
         }
 
+        var result = new byte[realSize];
+
         if (_compression == Ba2CompressionFormat.Lz4)
         {
-            var dst = new byte[realSize];
-            Lz4BlockDecoder.DecodeBlock(packed, dst);
-            return dst;
+            Lz4BlockDecoder.DecodeBlock(packed, result);
+            return result;
         }
 
-        var result = new byte[realSize];
         using var compressedStream = new MemoryStream(packed);
         try
         {
@@ -153,7 +152,7 @@ public sealed class Ba2Extractor : IDisposable
         return result;
     }
 
-    /// <summary>Extract a single file to disk under <paramref name="outputDir" /> at its virtual path.</summary>
+    /// <summary>Extract one entry to disk under <paramref name="outputDir" /> at its virtual path.</summary>
     public async Task<bool> ExtractFileToDiskAsync(Ba2FileRecord file, string outputDir, bool overwrite = false)
     {
         var outputPath = Path.Combine(outputDir, file.FullPath);
@@ -173,7 +172,7 @@ public sealed class Ba2Extractor : IDisposable
         return true;
     }
 
-    /// <summary>Extract all files to <paramref name="outputDir" />, reporting progress per file.</summary>
+    /// <summary>Extract every entry to <paramref name="outputDir" />, reporting progress per file.</summary>
     public async Task<int> ExtractAllAsync(
         string outputDir,
         bool overwrite = false,
@@ -196,7 +195,7 @@ public sealed class Ba2Extractor : IDisposable
         return extracted;
     }
 
-    /// <summary>File-extension distribution (parity with <c>BsaExtractor.GetExtensionStats</c>).</summary>
+    /// <summary>File-extension histogram (parity with <c>BsaExtractor.GetExtensionStats</c>).</summary>
     public Dictionary<string, int> GetExtensionStats()
     {
         var stats = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);

@@ -1,16 +1,20 @@
 // Copyright (c) 2026 BethesdaMultitool Contributors
 // Licensed under the MIT License.
+//
+// Chunk record layout from the public BA2 DX10 format and fo76utils (loadBA2Textures in
+// libfo76utils/src/ba2file.cpp). Not derived from any copyleft source.
 
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 
 /// <summary>
-///     One mip-chunk of a DX10 texture entry. A texture's surface data is split into chunks (each
-///     covering a contiguous mip range), every chunk independently compressed. Ported from
-///     Sharp.BSA.BA2's BA2TextureChunk.
+///     One chunk of a DX10 texture entry. A texture's surface is split into chunks, each covering a
+///     contiguous range of mip levels and compressed independently. The on-disk record is 24 bytes:
+///     data offset (u64), packed size (u32), full size (u32), start mip (u16), end mip (u16), then a
+///     trailing alignment dword (the 0xBAADF00D sentinel).
 /// </summary>
 public sealed record Ba2TextureChunk
 {
-    /// <summary>Absolute offset of the chunk's data in the archive.</summary>
+    /// <summary>Absolute offset of the chunk's data within the archive.</summary>
     public required ulong Offset { get; init; }
 
     /// <summary>Compressed (packed) size, or 0 when the chunk is stored uncompressed.</summary>
@@ -25,13 +29,13 @@ public sealed record Ba2TextureChunk
     /// <summary>Last mip level covered by this chunk.</summary>
     public required ushort EndMip { get; init; }
 
-    /// <summary>Alignment padding field (unused for extraction).</summary>
+    /// <summary>Trailing alignment/sentinel dword (unused for extraction).</summary>
     public required uint Align { get; init; }
 
-    /// <summary>Whether the chunk is compressed (packed size present).</summary>
+    /// <summary>True when the chunk carries a packed size (i.e. is compressed).</summary>
     public bool Compressed => PackedSize != 0;
 
-    /// <summary>Reads one chunk record from the current reader position.</summary>
+    /// <summary>Reads one 24-byte chunk record from the current reader position.</summary>
     public static Ba2TextureChunk Read(BinaryReader reader) => new()
     {
         Offset = reader.ReadUInt64(),

@@ -1,27 +1,29 @@
 // Copyright (c) 2026 BethesdaMultitool Contributors
 // Licensed under the MIT License.
+//
+// Entry layouts from the public BA2 format and fo76utils (loadBA2General / loadBA2Textures in
+// libfo76utils/src/ba2file.cpp). Not derived from any copyleft source.
 
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 
 /// <summary>
-///     A single BA2 entry. BA2 has no folder tree — entries are a flat list keyed by hashed
-///     directory/name plus an extension, with the human-readable path supplied by an optional name
-///     table. A record is either a GNRL (general) file or a DX10 (texture) file; the
-///     <see cref="Texture" /> payload is populated only for textures. Ported from Sharp.BSA.BA2's
-///     BA2FileEntry / BA2TextureEntry.
+///     A single BA2 entry. BA2 has no folder tree: entries form a flat list keyed by hashed
+///     directory and name plus a 4-char extension, with the human-readable path supplied by the
+///     optional name table. An entry is either a GNRL (general) file or a DX10 (texture) file; the
+///     <see cref="Texture" /> payload is present only for textures.
 /// </summary>
 public sealed record Ba2FileRecord
 {
     /// <summary>General vs texture entry.</summary>
     public required Ba2HeaderType Kind { get; init; }
 
-    /// <summary>Zero-based index in the archive's file list (matches the name-table order).</summary>
+    /// <summary>Zero-based index in the archive's file list (matches name-table order).</summary>
     public required int Index { get; init; }
 
-    /// <summary>Hash of the file name (without directory/extension).</summary>
+    /// <summary>Hash of the base file name (no directory, no extension).</summary>
     public required uint NameHash { get; init; }
 
-    /// <summary>Four-char extension tag (trailing NULs trimmed).</summary>
+    /// <summary>Four-char extension tag, trailing NULs trimmed.</summary>
     public required string Extension { get; init; }
 
     /// <summary>Hash of the directory portion of the path.</summary>
@@ -44,20 +46,21 @@ public sealed record Ba2FileRecord
     /// <summary>Decompressed size (GNRL only).</summary>
     public uint RealSize { get; init; }
 
-    /// <summary>Alignment padding field (GNRL only; unused for extraction).</summary>
+    /// <summary>Trailing alignment/sentinel dword (GNRL only; unused for extraction).</summary>
     public uint Align { get; init; }
 
     // --- DX10 payload (Kind == Texture) ---
 
-    /// <summary>Texture surface metadata + chunks, populated only for DX10 entries.</summary>
+    /// <summary>Texture surface metadata + chunks, present only for DX10 entries.</summary>
     public Ba2TextureInfo? Texture { get; init; }
 
     /// <summary>Whether a GNRL entry's data is compressed (textures decide per-chunk).</summary>
     public bool Compressed => PackedSize != 0;
 
     /// <summary>
-    ///     Best-effort virtual path: the name-table entry when present, otherwise the
-    ///     hash-derived placeholder Sharp.BSA.BA2 uses (<c>{dirHash:X}_{nameHash:X}.{ext}</c>).
+    ///     Best-effort virtual path: the name-table entry when present, otherwise a deterministic
+    ///     placeholder built from the entry's hashes (<c>{dirHash:X}_{nameHash:X}.{ext}</c>) so that
+    ///     name-less archives still yield stable, unique paths.
     /// </summary>
     public string FullPath
     {
@@ -74,16 +77,16 @@ public sealed record Ba2FileRecord
     }
 }
 
-/// <summary>DX10 texture surface metadata + its mip chunks.</summary>
+/// <summary>DX10 texture surface metadata plus its mip chunks.</summary>
 public sealed record Ba2TextureInfo
 {
-    /// <summary>Unknown leading byte.</summary>
+    /// <summary>Leading reserved byte (usually 0).</summary>
     public required byte Unknown { get; init; }
 
-    /// <summary>Number of mip chunks.</summary>
+    /// <summary>Number of mip chunks that follow the entry.</summary>
     public required byte ChunkCount { get; init; }
 
-    /// <summary>Per-chunk header length (informational).</summary>
+    /// <summary>Per-chunk header length (informational; always 24).</summary>
     public required ushort ChunkHeaderLength { get; init; }
 
     /// <summary>Texture height in pixels.</summary>
@@ -95,7 +98,7 @@ public sealed record Ba2TextureInfo
     /// <summary>Total mip count.</summary>
     public required byte MipCount { get; init; }
 
-    /// <summary>DXGI format value (see <see cref="Ba2DxgiFormat" />).</summary>
+    /// <summary>DXGI format code (see <see cref="Ba2DxgiFormat" />).</summary>
     public required byte Format { get; init; }
 
     /// <summary>Non-zero when the texture is a cubemap.</summary>
@@ -104,6 +107,6 @@ public sealed record Ba2TextureInfo
     /// <summary>Tile mode; values other than 8 indicate an Xbox-tiled surface.</summary>
     public required byte TileMode { get; init; }
 
-    /// <summary>The texture's mip chunks.</summary>
+    /// <summary>The texture's mip chunks, in archive order.</summary>
     public required List<Ba2TextureChunk> Chunks { get; init; }
 }

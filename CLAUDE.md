@@ -465,7 +465,7 @@ Keyboard shortcuts are declared via XAML `<KeyboardAccelerator>` — WinUI auto-
 
 | Package | Purpose |
 |---|---|
-| `Veldrid` + `Veldrid.SPIRV` | GPU rendering (headless sprite generation) |
+| `Vortice.Direct3D11` / `Vortice.Direct3D12` / `Vortice.DXGI` | GPU rendering (Direct3D 11/12, headless sprite generation + 3D viewer) |
 | `SharpGLTF.Toolkit` | GLB/glTF model export |
 | `Magick.NET-Q16-AnyCPU` | Image processing (textures, sprites) |
 | `System.CommandLine` | CLI argument parsing |

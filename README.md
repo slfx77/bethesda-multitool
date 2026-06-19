@@ -24,17 +24,19 @@ A .NET 10.0 toolkit for analyzing and converting Bethesda game data across The E
 
 | Command | Description |
 | --- | --- |
-| `carve` | Extract files from memory dumps with type filtering |
-| `analyze` | Full ESM semantic reconstruction with GECK-format CSV/text reports |
-| `esm` | Convert Xbox 360 ESM to PC format (GECK compatible) |
-| `nif` | Convert Xbox 360 NIF meshes to PC format |
-| `bsa` | Extract BSA archives |
+| *(default)* | Carve files from a memory dump or DDX by type (`-t dds ddx xma nif`), with optional conversion |
+| `analyze` | Analyze a memory dump's structure; optionally extract ESM records and GECK-style reports |
+| `esm` | Analyze ESM/ESP plugins and convert Xbox 360 → PC (GECK compatible) |
+| `convert-nif` | Convert Xbox 360 NIF meshes to PC format |
+| `convert-ddx` | Convert DDX textures to DDS |
+| `bsa` / `ba2` | Inspect and extract BSA / BA2 archives |
 | `dialogue` | Browse and export NPC dialogue trees |
 | `world` | Explore worldspace data, heightmaps, and placed objects |
-| `save` | Inspect Xbox 360 Fallout NV save game files |
-| `compare` | Compare ESM files (converted vs. PC reference) |
-| `modules` | List loaded modules from memory dumps |
-| `coverage` | Analyze memory region coverage |
+| `render` / `export` | Render NIF/NPC models to PNG, or export to GLB |
+| `save` | Inspect Fallout 3/NV save game files |
+| `dmp` | Memory dump analysis (modules, regions, coverage, cross-build compare, …) |
+| `search` / `stats` / `list` / `show` / `diff` | Format-agnostic inspection of any ESM/ESP/DMP file |
+| `version-track` | Track game data changes across development builds |
 
 ### Audio Transcriber (Windows)
 
@@ -105,23 +107,23 @@ Tabs: **Single File** (ESM browser, dialogue, world map, hex viewer) | **BSA Ext
 ### CLI Mode
 
 ```bash
-# Extract files from a memory dump
-BethesdaMultitool carve dump.dmp -o output -t ddx xma nif --convert-ddx
+# Carve files from a memory dump (the default command — no subcommand)
+BethesdaMultitool dump.dmp -o output -t ddx xma nif --convert-ddx
 
-# Analyze ESM from a memory dump (generates GECK-format reports)
-BethesdaMultitool analyze dump.dmp -o reports/
+# Analyze a memory dump's structure (add -s to emit a GECK-style report)
+BethesdaMultitool analyze dump.dmp -o report.txt
 
 # Convert Xbox 360 ESM to PC format
 BethesdaMultitool esm convert Sample/ESM/360_final/FalloutNV.esm -o FalloutNV.pc.esm
 
 # Convert Xbox 360 NIF to PC format
-BethesdaMultitool nif mesh.nif -o mesh_pc.nif
+BethesdaMultitool convert-nif mesh.nif -o output/
 
-# Browse dialogue
-BethesdaMultitool dialogue dump.dmp --npc CraigBoone
+# Browse dialogue by NPC
+BethesdaMultitool dialogue npc dump.dmp CraigBoone
 
-# Explore worldspace
-BethesdaMultitool world dump.dmp --worldspace WastelandNV
+# Render a worldspace heightmap
+BethesdaMultitool world heightmap FalloutNV.esm -o map.png -w WastelandNV
 
 # Inspect a save game
 BethesdaMultitool save info savegame.fos
@@ -185,12 +187,12 @@ Standalone CLI tools for format analysis and debugging. These are not included i
 
 | Tool | Description |
 | --- | --- |
-| `tools/EsmAnalyzer` | ESM analysis, comparison, semantic diff, format conversion, WRLD OFST streaming analysis, worldmap visualization |
+| `tools/EsmAnalyzer` | ESM/DMP debugging: comparison, semantic diff, conversion, WRLD OFST streaming, worldmap visualization, dump script analysis |
 | `tools/NifAnalyzer` | NIF mesh structure inspection, vertex/geometry comparison, skin partition and Havok physics debugging |
 | `tools/TextureAnalyzer` | DDX/DDS texture analysis, decompression, block map visualization, format conversion |
-| `tools/MinidumpAnalyzer` | Xbox 360 minidump memory region analysis, module enumeration, FaceGen extraction, script analysis |
-| `tools/BsaAnalyzer` | BSA archive inspection, file search by pattern, entry comparison, file type statistics |
-| `tools/PdbAnalyzer` | PDB symbol analysis and function extraction |
+| `tools/EgtAnalyzer` | FaceGen EGT texture analysis |
+| `tools/PdbAnalyzer` | PDB symbol analysis, struct layout generation, function extraction |
+| `tools/RttiScanner` | RTTI and operator-new extraction from raw binaries |
 | `tools/TerrainAnalyzer` | Terrain and heightmap analysis and visualization |
 | `tools/SignatureScanner` | File signature scanning utilities |
 | `tools/LzxVerify` | LZX compression verification |
@@ -201,16 +203,16 @@ dotnet run --project tools/EsmAnalyzer -c Release -- stats FalloutNV.esm
 dotnet run --project tools/EsmAnalyzer -c Release -- semdiff converted.esm pc_reference.esm -t NPC_
 
 # Memory dump script analysis
-dotnet run --project tools/MinidumpAnalyzer -- scripts dump.dmp
+dotnet run --project tools/EsmAnalyzer -c Release -- dmp scripts list dump.dmp
 
 # NIF structure analysis
-dotnet run --project tools/NifAnalyzer -- info mesh.nif
+dotnet run --project tools/NifAnalyzer -f net10.0 -- info mesh.nif
 
 # Texture analysis
 dotnet run --project tools/TextureAnalyzer -- info texture.ddx
 
-# BSA file search
-dotnet run --project tools/BsaAnalyzer -- find archive.bsa "*.nif"
+# BSA file search (main app)
+dotnet run --project src/BethesdaMultitool -f net10.0 -- bsa find archive.bsa "*.nif"
 ```
 
 ## Project Structure
@@ -239,12 +241,12 @@ src/BethesdaAudioTranscriber/  # Whisper-based voice file transcriber (WinUI 3)
 src/DDXConv/                  # DDX conversion library (submodule)
 
 tools/
-├── EsmAnalyzer/             # ESM comparison, semantic diff, conversion
+├── EsmAnalyzer/             # ESM comparison, semantic diff, conversion, dump script analysis
 ├── NifAnalyzer/             # NIF structure inspection and comparison
 ├── TextureAnalyzer/         # DDX/DDS texture analysis
-├── MinidumpAnalyzer/        # Runtime memory analysis, script extraction
-├── BsaAnalyzer/             # BSA archive inspection
-├── PdbAnalyzer/             # PDB symbol analysis
+├── EgtAnalyzer/             # FaceGen EGT texture analysis
+├── PdbAnalyzer/             # PDB symbol analysis and struct layout generation
+├── RttiScanner/             # RTTI / operator-new extraction
 ├── TerrainAnalyzer/         # Terrain/heightmap analysis
 ├── SignatureScanner/        # File signature scanning
 ├── LzxVerify/               # LZX compression verification
@@ -277,12 +279,15 @@ MIT License - See [LICENSE](LICENSE) for details.
 | [DDXConv](https://github.com/GamesPastOrg/DDXConv) | [MIT](https://github.com/GamesPastOrg/DDXConv/blob/master/LICENSE) | DDX to DDS texture conversion (forked, built-in) |
 | [NifSkope nif.xml](https://github.com/fo76utils/nifskope) | [BSD-3-Clause](https://github.com/fo76utils/nifskope/blob/develop/LICENSE.md) | NIF format schema (embedded) |
 | [Xenia](https://github.com/xenia-project/xenia) | [BSD-3-Clause](https://github.com/xenia-project/xenia/blob/master/LICENSE) | Xbox 360 texture tiling code (in DDXConv) |
+| [fo76utils](https://github.com/fo76utils/fo76utils) | [MIT](https://github.com/fo76utils/fo76utils/blob/master/LICENSE) | BA2 archive parser + BTD terrain reader (re-implemented) |
+| [@google/model-viewer](https://github.com/google/model-viewer) | [BSD-3-Clause](https://github.com/google/model-viewer/blob/master/LICENSE) | 3D NPC model viewer (bundled in GUI) |
 
 ## Acknowledgments
 
 ### Tools & Libraries
 
-- [Veldrid](https://github.com/veldrid/veldrid) - GPU rendering abstraction (MIT)
+- [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) - Direct3D 11/12 + DXGI bindings for GPU rendering (MIT)
+- [SharpGLTF](https://github.com/vpenades/SharpGLTF) - glTF/GLB model export (MIT)
 - [Spectre.Console](https://github.com/spectreconsole/spectre.console) - CLI output formatting (MIT)
 - [System.CommandLine](https://github.com/dotnet/command-line-api) - CLI argument parsing (MIT)
 - [Magick.NET](https://github.com/dlemstra/Magick.NET) - Image processing (Apache-2.0)
@@ -298,6 +303,5 @@ MIT License - See [LICENSE](LICENSE) for details.
 ### Format References
 
 - [xEdit / TES5Edit](https://github.com/TES5Edit) - ESM format documentation
-- [AlexxEG/BSA_Browser](https://github.com/AlexxEG/BSA_Browser) - BSA format reference
 - [fo76utils/NifSkope](https://github.com/fo76utils/nifskope) - NIF format documentation (BSD-3-Clause)
 - [GamesPastOrg/DDXConv](https://github.com/GamesPastOrg/DDXConv) - DDX texture conversion (MIT, Copyright 2026 Kran)
