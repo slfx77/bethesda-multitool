@@ -13,6 +13,35 @@ namespace FalloutXbox360Utils.Core.Formats.SpeedTree;
 /// </summary>
 public static class SpeedTreeTexturePath
 {
+    /// <summary>
+    ///     Map a <c>TREE</c> record's <c>ICON</c> value (the AUTHORITATIVE leaf atlas the engine applies,
+    ///     overriding the <c>.spt</c>'s dev-era material) to a game-relative path. FNV stores a bare name
+    ///     (e.g. <c>WhiteOakLeaves01.dds</c>) → <c>textures\trees\leaves\whiteoakleaves01.dds</c>; a value
+    ///     that already carries folders is normalized under <c>textures\</c>. Returns null when empty.
+    /// </summary>
+    public static string? IconToLeafPath(string? icon)
+    {
+        if (string.IsNullOrWhiteSpace(icon))
+        {
+            return null;
+        }
+
+        var v = icon.Replace('/', '\\').Trim().ToLowerInvariant();
+        if (v.StartsWith(@"textures\", StringComparison.Ordinal))
+        {
+            return v;
+        }
+
+        if (v.Contains('\\'))
+        {
+            return @"textures\" + v;
+        }
+
+        var dot = v.LastIndexOf('.');
+        var stem = dot >= 0 ? v[..dot] : v;
+        return $@"textures\trees\leaves\{stem}.dds";
+    }
+
     /// <summary>Convert a <c>.spt</c>-embedded texture path to a game-relative <c>textures\trees\...</c> path.</summary>
     public static string? ToGamePath(string? devPath)
     {

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Numerics;
 using FalloutXbox360Utils.Core.Formats.SpeedTree;
 using Xunit;
 
@@ -90,6 +91,62 @@ public class SptFileTests
         // 4 leaf cards, each with a position and a material/texture path.
         Assert.Equal(4, model.Leaves.Count);
         Assert.All(model.Leaves, leaf => Assert.NotNull(leaf.Material));
+
+        // Post-EndFile token 10000/10002 supplies the exact CLeafGeometry::SetTextureCoords blocks.
+        Assert.Equal(4, model.LeafTextureCoords.Count);
+        Assert.Equal(0.5f, model.LeafTextureCoords[0][0].X, 5);
+        Assert.Equal(1f, model.LeafTextureCoords[0][0].Y, 5);
+        Assert.Equal(0f, model.LeafTextureCoords[0][1].X, 5);
+        Assert.Equal(1f, model.LeafTextureCoords[0][1].Y, 5);
+        Assert.Equal(1f, model.LeafTextureCoords[2][0].X, 5);
+        Assert.Equal(0.5f, model.LeafTextureCoords[2][1].X, 5);
+    }
+
+    [Theory]
+    [InlineData(@"Sample\Meshes\meshes_360_final\trees\pine01.spt", 3, 2, 0.35f, 2u, 90f, 0.14f)]
+    [InlineData(@"Sample\Meshes\meshes_360_final\trees\whiteoak01.spt", 4, 3, 0.45f, 2u, 50f, 0.099999994f)]
+    [InlineData(@"Sample\Meshes\meshes_360_final\trees\wastelandshrub01.spt", 4, 4, 0.31f, 2u, 400f, 0.11f)]
+    public void Parse_RealSamples_CarryTokensUsedByGeometryBuilder(
+        string relativePath,
+        int branchCount,
+        int leafCount,
+        float spacing3007,
+        uint mode3008,
+        float firstBranch6012,
+        float firstLeafCorner1X)
+    {
+        var path = SampleFileFixture.FindSamplePath(relativePath);
+        Assert.SkipWhen(path is null, "Missing sample: " + relativePath);
+
+        var model = SptFile.Parse(File.ReadAllBytes(path!));
+
+        Assert.Equal(branchCount, model.Branches.Count);
+        Assert.Equal(leafCount, model.Leaves.Count);
+        Assert.NotNull(model.LeafTable);
+        Assert.Equal(spacing3007, model.LeafTable!.Float3007, 5);
+        Assert.Equal(mode3008, model.LeafTable.UInt3008);
+        Assert.Equal(firstBranch6012, model.Branches[0].Float6012, 5);
+        Assert.Equal(firstLeafCorner1X, model.Leaves[0].Corner1.X, 5);
+    }
+
+    [Fact]
+    public void Parse_LeafTableDefaults_MatchRuntimeConstructorWhenTokensAreOmitted()
+    {
+        var model = SptFile.Parse(BuildLeafTableOnlySpt((3001u, 1u)));
+
+        Assert.NotNull(model.LeafTable);
+        Assert.Equal(0.5f, model.LeafTable!.Float3007);
+        Assert.Equal(2u, model.LeafTable.UInt3008);
+    }
+
+    [Fact]
+    public void Parse_LeafTable_ExplicitZeroSpacingStaysZero()
+    {
+        var model = SptFile.Parse(BuildLeafTableOnlySpt((3007u, 0f)));
+
+        Assert.NotNull(model.LeafTable);
+        Assert.Equal(0f, model.LeafTable!.Float3007);
+        Assert.Equal(2u, model.LeafTable.UInt3008);
     }
 
     [Fact]
@@ -110,5 +167,49 @@ public class SptFileTests
         }
 
         return null;
+    }
+
+    private static byte[] BuildLeafTableOnlySpt(params (uint Token, object Value)[] entries)
+    {
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms, Encoding.ASCII, leaveOpen: true);
+        WriteToken(1000);
+        WriteString("__IdvSpt_02_");
+        WriteToken(1004);
+        foreach (var (token, value) in entries)
+        {
+            WriteToken(token);
+            switch (value)
+            {
+                case uint u:
+                    WriteToken(u);
+                    break;
+                case float f:
+                    writer.Write(f);
+                    break;
+                case byte b:
+                    writer.Write(b);
+                    break;
+                case Vector3 v:
+                    writer.Write(v.X);
+                    writer.Write(v.Y);
+                    writer.Write(v.Z);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(entries), value, "Unsupported test SPT value.");
+            }
+        }
+
+        WriteToken(1005);
+        WriteToken(1001);
+        return ms.ToArray();
+
+        void WriteToken(uint token) => writer.Write(token);
+
+        void WriteString(string value)
+        {
+            writer.Write((uint)value.Length);
+            writer.Write(Encoding.ASCII.GetBytes(value));
+        }
     }
 }

@@ -1,3 +1,5 @@
+using System.Numerics;
+using FalloutXbox360Utils.Core.Utils;
 using static FalloutXbox360Utils.Core.Formats.SpeedTree.SpeedTreeTokens;
 
 namespace FalloutXbox360Utils.Core.Formats.SpeedTree;
@@ -69,16 +71,104 @@ public static class SptFile
             token = c.ReadToken();
         }
 
+        var leafTextureCoords = ParseTrailingTextureCoordInfo(data, c.Position);
+
         return new SptModel
         {
             General = general ?? new SptGeneralParams(),
             Branches = branches,
             Leaves = leaves,
+            LeafTextureCoords = leafTextureCoords,
             LeafSize = leafSize,
             LeafTable = leafTable,
             Wind = wind,
         };
     }
+
+    /// <summary>
+    ///     <c>CSpeedTreeRT::LoadTree</c> continues after <c>CTreeEngine::Parse</c> consumes token 1001.
+    ///     The post-tree token 10000 is <c>ParseTextureCoordInfo</c>; its 10002 child is the leaf UV
+    ///     block array later passed to <c>CLeafGeometry::SetTextureCoords</c>.
+    /// </summary>
+    private static IReadOnlyList<SptLeafTextureCoords> ParseTrailingTextureCoordInfo(byte[] data, int startOffset)
+    {
+        for (var offset = startOffset; offset <= data.Length - 4; offset++)
+        {
+            if (BinaryUtils.ReadUInt32LE(data, offset) != BeginTextureCoordInfo)
+            {
+                continue;
+            }
+
+            var leafTextureCoords = new List<SptLeafTextureCoords>();
+            try
+            {
+                var c = new SptCursor(data, offset + 4);
+                ParseTextureCoordInfo(c, leafTextureCoords);
+                return leafTextureCoords;
+            }
+            catch (InvalidDataException)
+            {
+                // A matching uint inside another payload is possible when scanning optional post-tree
+                // sections. Keep scanning until a complete 10000/10001 section is found.
+            }
+        }
+
+        return [];
+    }
+
+    private static void ParseTextureCoordInfo(SptCursor c, List<SptLeafTextureCoords> leafTextureCoords)
+    {
+        var token = c.ReadToken();
+        while (token != EndTextureCoordInfo)
+        {
+            switch (token)
+            {
+                case LeafTextureCoords:
+                    var count = ReadTextureCoordBlockCount(c, "leaf");
+                    leafTextureCoords.Clear();
+                    for (var i = 0; i < count; i++)
+                    {
+                        leafTextureCoords.Add(ReadLeafTextureCoords(c));
+                    }
+
+                    break;
+                case FrondTextureCoords:
+                case BillboardTextureCoords:
+                    c.Skip(ReadTextureCoordBlockCount(c, "non-leaf") * 8 * sizeof(float));
+                    break;
+                case TextureCoordString:
+                    c.ReadString();
+                    break;
+                case TextureCoordBool0:
+                case TextureCoordBool1:
+                    c.ReadByte();
+                    break;
+                default:
+                    throw new InvalidDataException(
+                        $"SPT: malformed texture-coordinate section, token 0x{token:X} at offset {c.Position - 4}.");
+            }
+
+            token = c.ReadToken();
+        }
+    }
+
+    private static int ReadTextureCoordBlockCount(SptCursor c, string section)
+    {
+        var count = c.ReadToken();
+        var maxCount = c.HasBytes(0) ? (uint)((c.Length - c.Position) / (8 * sizeof(float))) : 0u;
+        if (count > maxCount)
+        {
+            throw new InvalidDataException(
+                $"SPT: {section} texture-coordinate block count {count} exceeds remaining data at offset {c.Position - 4}.");
+        }
+
+        return (int)count;
+    }
+
+    private static SptLeafTextureCoords ReadLeafTextureCoords(SptCursor c) =>
+        new(ReadUv(c), ReadUv(c), ReadUv(c), ReadUv(c));
+
+    private static Vector2 ReadUv(SptCursor c) => new(c.ReadFloat(), c.ReadFloat());
 
     private static SptGeneralParams ParseGeneral(SptCursor c, List<SptBranch> branches)
     {
@@ -231,8 +321,8 @@ public static class SptFile
 
     private static void ParseLeaves(SptCursor c, List<SptLeaf> leaves, ref float leafSize, ref SptLeafTable? leafTable)
     {
-        uint u3001 = 0, u3008 = 0;
-        float f3002 = 0, f3004 = 0, f3005 = 0, f3007 = 0, f3010 = 0;
+        uint u3001 = 0, u3008 = 2;
+        float f3002 = 0, f3004 = 0, f3005 = 0, f3007 = 0.5f, f3010 = 0;
         byte b3003 = 0, b3006 = 0, b3009 = 0;
         var sawTable = false;
 
@@ -271,7 +361,7 @@ public static class SptFile
                     b3006 = c.ReadByte();
                     sawTable = true;
                     break;
-                case 3007: // case 6 — float @ +0x28
+                case 3007: // case 6 — float @ SIdvLeafInfo+0x20
                     f3007 = c.ReadFloat();
                     sawTable = true;
                     break;

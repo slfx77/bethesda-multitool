@@ -27,7 +27,10 @@ public sealed record SptBezierSpline
     /// </summary>
     public float Evaluate(float param, Func<float, float, float>? random = null)
     {
-        var value = Header.X + Curve(param) * (Header.Y - Header.X);
+        // When MIN == MAX the curve term is multiplied by zero, so skip the (relatively expensive)
+        // curve evaluation entirely — the common case for length/radius/most profile splines.
+        var span = Header.Y - Header.X;
+        var value = MathF.Abs(span) > 1e-9f ? Header.X + Curve(param) * span : Header.X;
         if (random is not null && MathF.Abs(Header.Z) > 1e-9f)
         {
             value += random(-Header.Z, Header.Z);
@@ -53,9 +56,12 @@ public sealed record SptBezierSpline
     }
 
     /// <summary>
-    ///     The normalized control-point curve: the value (control-point <c>A</c>=f2) as a function of
-    ///     the parameter (control-point <c>Param</c>=f1), with the control points treated as on-curve
-    ///     anchors and smoothstep interpolation between them. Identity when there are no control points.
+    ///     The control-point curve <c>y(param)</c>, evaluated exactly as the SDK's
+    ///     <c>CIdvBezierSpline</c> 500-sample LUT does (decompiled <c>CreateEvenlySpacedPoints</c> →
+    ///     <c>EvaluateRawPoint</c> → <c>SplineInterpolate</c>): a cubic Bézier through the control
+    ///     points — on-curve point <c>(Param, A)</c>, handle <c>(B, C)</c> — reparameterized so
+    ///     <paramref name="param" /> indexes the curve's x (parameter) axis, then the stored y is read
+    ///     back with linear interpolation. Identity when there are no control points; constant for one.
     /// </summary>
     public float Curve(float param)
     {
@@ -70,47 +76,79 @@ public sealed record SptBezierSpline
             return cps[0].A;
         }
 
-        // Anchors are on-curve points (x = Param/f1, y = A/f2), stored in arbitrary x-order. Bracket p
-        // between the nearest anchor at-or-below it (lo) and at-or-above it (hi), then smoothstep.
         var p = Math.Clamp(param, 0f, 1f);
-        float loX = float.NegativeInfinity, hiX = float.PositiveInfinity, loY = 0f, hiY = 0f;
-        bool haveLo = false, haveHi = false;
-        foreach (var cp in cps)
+        var n = cps.Count;
+
+        // 1) Sample the cubic Bézier polyline at evenly-spaced parameter t (CreateEvenlySpacedPoints'
+        //    first pass / EvaluateRawPoint+SplineInterpolate). Each sample is (x, y): x = the spline's
+        //    parameter axis (control-point Param), y = its value (A).
+        const int samples = 500;
+        Span<float> sx = stackalloc float[samples];
+        Span<float> sy = stackalloc float[samples];
+        for (var i = 0; i < samples; i++)
         {
-            if (cp.Param <= p && cp.Param > loX)
+            var (x, y) = RawPoint(cps, n, i / (float)(samples - 1));
+            sx[i] = x;
+            sy[i] = y;
+        }
+
+        // 2) Read y back at x = p (the SDK reparameterizes so the LUT index maps to the param axis;
+        //    decompiled L566-586 brackets by x and lerps the stored value). The samples advance
+        //    monotonically in x for the well-behaved control polygons SpeedTree authors use.
+        if (p <= sx[0])
+        {
+            return sy[0];
+        }
+
+        for (var i = 1; i < samples; i++)
+        {
+            if (p <= sx[i])
             {
-                loX = cp.Param;
-                loY = cp.A;
-                haveLo = true;
-            }
-
-            if (cp.Param >= p && cp.Param < hiX)
-            {
-                hiX = cp.Param;
-                hiY = cp.A;
-                haveHi = true;
+                var dx = sx[i] - sx[i - 1];
+                var t = dx > 1e-9f ? (p - sx[i - 1]) / dx : 0f;
+                return sy[i - 1] + (sy[i] - sy[i - 1]) * t;
             }
         }
 
-        if (!haveLo)
-        {
-            return hiY; // p is below every anchor → clamp to the lowest
-        }
+        return sy[samples - 1];
+    }
 
-        if (!haveHi)
-        {
-            return loY; // p is above every anchor → clamp to the highest
-        }
+    /// <summary>
+    ///     One raw cubic-Bézier point at parameter <paramref name="t" /> (0..1) over the control
+    ///     polygon, mirroring <c>EvaluateRawPoint</c>+<c>SplineInterpolate</c> (cubic de Casteljau).
+    ///     The control point is a Hermite node: anchor <c>(Param, A)</c>, UNIT tangent direction
+    ///     <c>(B, C)</c>, and handle length <c>D</c>. <c>CIdvBezierSpline::AddControlPoint</c> (L661-668)
+    ///     derives the Bézier handles as <c>anchor ± tangent·D</c> — the outgoing handle of point k is
+    ///     <c>anchor_k + tangent_k·D_k</c>, the incoming handle of k+1 is <c>anchor_{k+1} −
+    ///     tangent_{k+1}·D_{k+1}</c>. (B,C) is a direction, NOT a handle position — using it raw flattens
+    ///     every shaped curve, e.g. collapsing the pine's tapering length curve into a uniform column.
+    /// </summary>
+    private static (float X, float Y) RawPoint(IReadOnlyList<SptSplineControlPoint> cps, int n, float t)
+    {
+        var ft = t * (n - 1);
+        var k = Math.Clamp((int)ft, 0, n - 2);
+        var lt = ft - k;
 
-        var dx = hiX - loX;
-        if (dx <= 1e-6f)
-        {
-            return loY;
-        }
+        var c0 = cps[k];
+        var c1 = cps[k + 1];
+        var p0 = new Vector2(c0.Param, c0.A);
+        var p3 = new Vector2(c1.Param, c1.A);
+        var p1 = p0 + NormalizeOrZero(new Vector2(c0.B, c0.C)) * c0.D; // outgoing handle of k
+        var p2 = p3 - NormalizeOrZero(new Vector2(c1.B, c1.C)) * c1.D; // incoming handle of k+1
 
-        var t = (p - loX) / dx;
-        t = t * t * (3f - 2f * t); // smoothstep
-        return loY + (hiY - loY) * t;
+        var a = Vector2.Lerp(p0, p1, lt);
+        var b = Vector2.Lerp(p1, p2, lt);
+        var c = Vector2.Lerp(p2, p3, lt);
+        var d = Vector2.Lerp(a, b, lt);
+        var e = Vector2.Lerp(b, c, lt);
+        var r = Vector2.Lerp(d, e, lt);
+        return (r.X, r.Y);
+    }
+
+    private static Vector2 NormalizeOrZero(Vector2 v)
+    {
+        var lenSq = v.LengthSquared();
+        return lenSq > 1e-12f ? v / MathF.Sqrt(lenSq) : Vector2.Zero;
     }
 
     /// <summary>

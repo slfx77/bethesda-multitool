@@ -22,6 +22,14 @@ internal static class SpeedTreeTokens
     public const uint LodLevel = 7002;     // 0x1B5A
     public const uint EndLodLevel = 7003;  // 0x1B5B
     public const uint LodLeafData = 7004;  // 0x1B5C
+    public const uint BeginTextureCoordInfo = 10000; // 0x2710 — parsed after EndFile by CSpeedTreeRT::LoadTree
+    public const uint EndTextureCoordInfo = 10001;   // 0x2711
+    public const uint LeafTextureCoords = 10002;     // 0x2712 — count + 8 floats per leaf texture
+    public const uint FrondTextureCoords = 10003;    // 0x2713 — count + 8 floats per frond texture
+    public const uint BillboardTextureCoords = 10004; // 0x2714 — count + 8 floats per billboard texture
+    public const uint TextureCoordString = 10005;    // 0x2715
+    public const uint TextureCoordBool0 = 10006;     // 0x2716
+    public const uint TextureCoordBool1 = 10007;     // 0x2717
 
     // Section 1002 (general) sub-tokens.
     public const uint GenBarkTexture = 2000; // 0x7D0 — ReadString (bark texture path)

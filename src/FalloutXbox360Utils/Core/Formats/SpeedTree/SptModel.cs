@@ -15,6 +15,8 @@ public sealed record SptModel
 
     public IReadOnlyList<SptLeaf> Leaves { get; init; } = [];
 
+    public IReadOnlyList<SptLeafTextureCoords> LeafTextureCoords { get; init; } = [];
+
     /// <summary>Leaf-table float (token 3000, struct offset +0x2C) — typically a global leaf size.</summary>
     public float LeafSize { get; init; }
 
@@ -70,6 +72,25 @@ public sealed record SptLeaf
     public float Float4007 { get; init; }    // 4007
 }
 
+/// <summary>
+///     One 8-float leaf UV block from token 10000/10002. The runtime passes this exact order to
+///     <c>CLeafGeometry::SetTextureCoords</c>: four consecutive (u,v) pairs for the leaf card vertices.
+/// </summary>
+public readonly record struct SptLeafTextureCoords(Vector2 Corner0, Vector2 Corner1, Vector2 Corner2, Vector2 Corner3)
+{
+    public static SptLeafTextureCoords FullAtlas { get; } =
+        new(new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(1f, 0f), new Vector2(0f, 0f));
+
+    public Vector2 this[int index] => index switch
+    {
+        0 => Corner0,
+        1 => Corner1,
+        2 => Corner2,
+        3 => Corner3,
+        _ => throw new ArgumentOutOfRangeException(nameof(index)),
+    };
+}
+
 /// <summary>General leaf-table parameters (tokens 3001..3010). Captured for completeness.</summary>
 public sealed record SptLeafTable
 {
@@ -79,7 +100,7 @@ public sealed record SptLeafTable
     public float Float3004 { get; init; }
     public float Float3005 { get; init; }
     public byte Byte3006 { get; init; }
-    public float Float3007 { get; init; } // +0x28
+    public float Float3007 { get; init; } // SIdvLeafInfo+0x20
     public uint UInt3008 { get; init; }   // +0x0C
     public byte Byte3009 { get; init; }   // +0
     public float Float3010 { get; init; } // +4
