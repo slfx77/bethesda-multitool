@@ -15,38 +15,37 @@ internal static class RenderNifHelpers
 {
     private static readonly JsonSerializerOptions JsonOptions = RenderIndexJsonContext.Default.Options;
 
-    internal static List<BsaFileRecord> CollectNifFiles(BsaArchive archive, string? filter)
+    internal static List<ArchiveReader.ArchiveEntry> CollectNifFiles(
+        IReadOnlyList<ArchiveReader.ArchiveEntry> files, string? filter)
     {
-        var nifFiles = new List<BsaFileRecord>();
+        var nifFiles = new List<ArchiveReader.ArchiveEntry>();
 
-        foreach (var folder in archive.Folders)
+        foreach (var file in files)
         {
-            foreach (var file in folder.Files)
+            var fullPath = file.FullPath;
+            if (!fullPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
             {
-                var fullPath = file.FullPath;
-                if (!fullPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                // Skip LOD and marker meshes
-                var fileName = Path.GetFileName(fullPath);
-                if (fileName.StartsWith("marker", StringComparison.OrdinalIgnoreCase) ||
-                    fileName.EndsWith("_far.nif", StringComparison.OrdinalIgnoreCase) ||
-                    fileName.EndsWith("_lod.nif", StringComparison.OrdinalIgnoreCase) ||
-                    fullPath.Contains("\\lod\\", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                // Apply folder filter
-                if (filter != null && !fullPath.StartsWith(filter, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                nifFiles.Add(file);
+                continue;
             }
+
+            // Skip LOD and marker meshes (BA2 paths may use forward slashes).
+            var fileName = Path.GetFileName(fullPath);
+            if (fileName.StartsWith("marker", StringComparison.OrdinalIgnoreCase) ||
+                fileName.EndsWith("_far.nif", StringComparison.OrdinalIgnoreCase) ||
+                fileName.EndsWith("_lod.nif", StringComparison.OrdinalIgnoreCase) ||
+                fullPath.Contains("\\lod\\", StringComparison.OrdinalIgnoreCase) ||
+                fullPath.Contains("/lod/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // Apply folder filter
+            if (filter != null && !fullPath.StartsWith(filter, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            nifFiles.Add(file);
         }
 
         return nifFiles;

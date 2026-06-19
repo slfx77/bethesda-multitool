@@ -34,8 +34,8 @@ internal static class RenderNifProcessor
     {
         if (string.IsNullOrWhiteSpace(s.BsaPath) || !File.Exists(s.BsaPath))
         {
-            var bsaPath = s.BsaPath ?? "(null)";
-            AnsiConsole.MarkupLine("[red]Error:[/] BSA file not found: {0}", bsaPath);
+            var archivePath = s.BsaPath ?? "(null)";
+            AnsiConsole.MarkupLine("[red]Error:[/] Archive file not found: {0}", archivePath);
             return;
         }
 
@@ -46,10 +46,10 @@ internal static class RenderNifProcessor
 
         Directory.CreateDirectory(s.OutputDir);
 
-        // Parse BSA and collect NIF files
-        AnsiConsole.MarkupLine("Parsing BSA: [cyan]{0}[/]", Path.GetFileName(s.BsaPath));
-        var archive = BsaParser.Parse(s.BsaPath);
-        var nifFiles = RenderNifHelpers.CollectNifFiles(archive, s.Path);
+        // Parse the archive (BSA or BA2, dispatched by magic) and collect NIF files.
+        AnsiConsole.MarkupLine("Parsing archive: [cyan]{0}[/]", Path.GetFileName(s.BsaPath));
+        using var reader = ArchiveReader.Open(s.BsaPath);
+        var nifFiles = RenderNifHelpers.CollectNifFiles(reader.ListFiles(), s.Path);
 
         AnsiConsole.MarkupLine("Found [green]{0}[/] NIF files to process", nifFiles.Count);
 
@@ -80,8 +80,6 @@ internal static class RenderNifProcessor
             var index = new ConcurrentDictionary<string, SpriteIndexEntry>();
             var stats = new ProcessingStats();
 
-            using var extractor = new BsaExtractor(s.BsaPath);
-
             await AnsiConsole.Progress()
                 .AutoRefresh(true)
                 .AutoClear(false)
@@ -102,7 +100,7 @@ internal static class RenderNifProcessor
                         {
                             try
                             {
-                                var nifData = extractor.ExtractFile(file);
+                                var nifData = reader.Extract(file);
                                 if (nifData.Length == 0)
                                 {
                                     Interlocked.Increment(ref stats.Skipped);

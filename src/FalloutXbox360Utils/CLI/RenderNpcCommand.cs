@@ -20,13 +20,13 @@ public static class RenderNpcCommand
             "npc",
             "Render NPC sprites from BSA + ESM data");
 
-        var inputArg = new Argument<string>("meshes-bsa")
+        var inputArg = new Argument<string>("meshes-archive")
         {
-            Description = "Path to meshes BSA file"
+            Description = "Path to a meshes archive (BSA or BA2)"
         };
-        var extraMeshesBsaOption = new Option<string[]?>("--extra-meshes-bsa")
+        var extraMeshesBsaOption = new Option<string[]?>("--extra-meshes-archive", "--extra-meshes-bsa")
         {
-            Description = "Additional meshes BSA file(s) searched as fallback for NIF/EGM/EGT assets",
+            Description = "Additional meshes archive(s) — BSA or BA2 — searched as fallback for NIF/EGM/EGT assets",
             AllowMultipleArgumentsPerToken = true
         };
         var esmOption = new Option<string>("--esm")
@@ -34,10 +34,10 @@ public static class RenderNpcCommand
             Description = "Path to ESM file",
             Required = true
         };
-        var texturesBsaOption = new Option<string[]?>("--textures-bsa")
+        var texturesBsaOption = new Option<string[]?>("--textures-archive", "--textures-bsa")
         {
             Description =
-                "Path to textures BSA file(s) (auto-detected from meshes BSA directory if omitted)",
+                "Path to textures archive(s) — BSA or BA2 (auto-detected from the meshes archive directory if omitted)",
             AllowMultipleArgumentsPerToken = true
         };
         var outputOption = new Option<string>("-o", "--output")

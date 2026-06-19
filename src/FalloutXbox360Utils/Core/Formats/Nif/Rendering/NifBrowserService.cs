@@ -11,26 +11,23 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering;
 /// </summary>
 internal sealed class NifBrowserService : IDisposable
 {
-    private readonly BsaArchive? _bsaArchive;
-    private readonly BsaExtractor? _bsaExtractor;
+    private readonly ArchiveReader? _archive;
     private readonly string? _rootDirectory;
     private readonly NifTextureResolver _textureResolver;
 
     private NifBrowserService(
         string? rootDirectory,
-        BsaExtractor? bsaExtractor,
-        BsaArchive? bsaArchive,
+        ArchiveReader? archive,
         NifTextureResolver textureResolver,
         string[] texturePaths)
     {
         _rootDirectory = rootDirectory;
-        _bsaExtractor = bsaExtractor;
-        _bsaArchive = bsaArchive;
+        _archive = archive;
         _textureResolver = textureResolver;
         TexturePaths = texturePaths;
     }
 
-    public bool IsBsaMode => _bsaExtractor != null;
+    public bool IsBsaMode => _archive != null;
 
     /// <summary>
     ///     Texture sources actually in use (either caller-supplied or auto-detected).
@@ -39,7 +36,7 @@ internal sealed class NifBrowserService : IDisposable
 
     public void Dispose()
     {
-        _bsaExtractor?.Dispose();
+        _archive?.Dispose();
         _textureResolver.Dispose();
     }
 
@@ -52,20 +49,21 @@ internal sealed class NifBrowserService : IDisposable
         var resolver = texturePaths.Length > 0
             ? new NifTextureResolver(texturePaths)
             : new NifTextureResolver();
-        return new NifBrowserService(rootDir, null, null, resolver, texturePaths);
+        return new NifBrowserService(rootDir, null, resolver, texturePaths);
     }
 
     /// <summary>
-    ///     Create from a BSA archive containing NIF files.
+    ///     Create from a mesh archive containing NIF files — a classic BSA or a Bethesda Archive 2
+    ///     (<c>.ba2</c>), dispatched by magic.
     /// </summary>
-    internal static NifBrowserService CreateFromBsa(string bsaPath, string[]? texturePaths = null)
+    internal static NifBrowserService CreateFromBsa(string archivePath, string[]? texturePaths = null)
     {
-        var extractor = new BsaExtractor(bsaPath);
-        texturePaths ??= DiscoverTextureBsas(bsaPath);
+        var archive = ArchiveReader.Open(archivePath);
+        texturePaths ??= DiscoverTextureBsas(archivePath);
         var resolver = texturePaths.Length > 0
             ? new NifTextureResolver(texturePaths)
             : new NifTextureResolver();
-        return new NifBrowserService(null, extractor, extractor.Archive, resolver, texturePaths);
+        return new NifBrowserService(null, archive, resolver, texturePaths);
     }
 
     /// <summary>
@@ -73,9 +71,9 @@ internal sealed class NifBrowserService : IDisposable
     /// </summary>
     internal List<NifTreeEntry> ListNifFiles()
     {
-        if (_bsaArchive != null)
+        if (_archive != null)
         {
-            return ListNifFilesFromBsa(_bsaArchive);
+            return ListNifFilesFromArchive(_archive.ListFiles());
         }
 
         if (_rootDirectory != null)
@@ -87,14 +85,13 @@ internal sealed class NifBrowserService : IDisposable
     }
 
     /// <summary>
-    ///     Read NIF file data from the source (filesystem or BSA).
+    ///     Read NIF file data from the source (filesystem or archive).
     /// </summary>
     internal byte[]? ReadNifData(string path)
     {
-        if (_bsaExtractor != null && _bsaArchive != null)
+        if (_archive != null)
         {
-            var file = _bsaArchive.FindFile(path);
-            return file != null ? _bsaExtractor.ExtractFile(file) : null;
+            return _archive.ReadFile(path);
         }
 
         if (_rootDirectory != null)
@@ -169,7 +166,7 @@ internal sealed class NifBrowserService : IDisposable
     #region Private Helpers
 
     /// <summary>
-    ///     Auto-discover *Texture*.bsa files in the same directory as a meshes BSA.
+    ///     Auto-discover <c>*Texture*</c> archives (BSA or BA2) in the same directory as a meshes archive.
     /// </summary>
     private static string[] DiscoverTextureBsas(string bsaPath)
     {
@@ -177,6 +174,7 @@ internal sealed class NifBrowserService : IDisposable
         if (dir == null || !Directory.Exists(dir)) return [];
 
         return Directory.GetFiles(dir, "*Texture*.bsa")
+            .Concat(Directory.GetFiles(dir, "*Texture*.ba2"))
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
@@ -275,40 +273,46 @@ internal sealed class NifBrowserService : IDisposable
         return entries.OrderBy(e => !e.IsDirectory).ThenBy(e => e.DisplayName).ToList();
     }
 
-    private static List<NifTreeEntry> ListNifFilesFromBsa(BsaArchive archive)
+    private static List<NifTreeEntry> ListNifFilesFromArchive(IReadOnlyList<ArchiveReader.ArchiveEntry> files)
     {
+        // BSA has a folder tree; BA2 is a flat list — group both by the directory portion of the path
+        // so the browser shows the same folder grouping regardless of container.
         var entries = new List<NifTreeEntry>();
+        var dirGroups = new Dictionary<string, NifTreeEntry>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var folder in archive.Folders.OrderBy(f => f.Name))
+        foreach (var file in files)
         {
-            var nifFiles = folder.Files
-                .Where(f => f.FullPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
-                .OrderBy(f => f.Name)
-                .ToList();
-
-            if (nifFiles.Count == 0) continue;
-
-            var dirEntry = new NifTreeEntry
+            var fullPath = file.FullPath;
+            if (!fullPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
             {
-                DisplayName = folder.Name ?? $"folder_{folder.NameHash:X16}",
-                FullPath = folder.Name ?? $"folder_{folder.NameHash:X16}",
-                IsDirectory = true
-            };
-
-            foreach (var file in nifFiles)
-            {
-                dirEntry.Children.Add(new NifTreeEntry
-                {
-                    DisplayName = file.Name ?? file.FullPath,
-                    FullPath = file.FullPath,
-                    IsDirectory = false
-                });
+                continue;
             }
 
-            entries.Add(dirEntry);
+            var dirPart = Path.GetDirectoryName(fullPath) ?? "";
+            var name = Path.GetFileName(fullPath);
+
+            if (string.IsNullOrEmpty(dirPart))
+            {
+                entries.Add(new NifTreeEntry { DisplayName = name, FullPath = fullPath, IsDirectory = false });
+                continue;
+            }
+
+            if (!dirGroups.TryGetValue(dirPart, out var dirEntry))
+            {
+                dirEntry = new NifTreeEntry { DisplayName = dirPart, FullPath = dirPart, IsDirectory = true };
+                dirGroups[dirPart] = dirEntry;
+                entries.Add(dirEntry);
+            }
+
+            dirEntry.Children.Add(new NifTreeEntry { DisplayName = name, FullPath = fullPath, IsDirectory = false });
         }
 
-        return entries;
+        foreach (var dir in dirGroups.Values)
+        {
+            dir.Children.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return entries.OrderBy(e => !e.IsDirectory).ThenBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     #endregion

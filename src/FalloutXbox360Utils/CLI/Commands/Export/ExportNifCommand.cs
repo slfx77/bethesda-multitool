@@ -27,9 +27,9 @@ internal static class ExportNifCommand
             Description = "Game Data root(s) used to resolve loose textures (contains textures\\...)",
             AllowMultipleArgumentsPerToken = true
         };
-        var texturesBsaOption = new Option<string[]?>("--textures-bsa")
+        var texturesBsaOption = new Option<string[]?>("--textures-archive", "--textures-bsa")
         {
-            Description = "Texture BSA file(s) used to resolve embedded material textures",
+            Description = "Texture archive(s) — BSA or BA2 — used to resolve embedded material textures",
             AllowMultipleArgumentsPerToken = true
         };
         var verboseOption = new Option<bool>("-v", "--verbose")

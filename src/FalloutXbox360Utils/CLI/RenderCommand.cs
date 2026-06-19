@@ -5,7 +5,7 @@ namespace FalloutXbox360Utils.CLI;
 
 /// <summary>
 ///     Render command: renders NIF models to PNG sprites.
-///     Supports single local file, local directory batch, or BSA batch (via --bsa).
+///     Supports single local file, local directory batch, or archive batch (BSA or BA2, via --archive).
 ///     Also hosts the 'npc' subcommand for NPC head rendering.
 /// </summary>
 public static class RenderCommand
@@ -15,9 +15,11 @@ public static class RenderCommand
         var command = new Command("render", "Render NIF models to PNG sprites");
 
         var pathArg = new Argument<string>("path")
-            { Description = "NIF file, directory of NIFs, or BSA-relative path (when --bsa is provided)" };
-        var bsaOption = new Option<string?>("--bsa")
-            { Description = "Path to meshes BSA file (path argument becomes BSA-relative prefix)" };
+            { Description = "NIF file, directory of NIFs, or archive-relative path (when --archive is provided)" };
+        var bsaOption = new Option<string?>("--archive", "--bsa")
+        {
+            Description = "Path to a meshes archive — BSA or BA2 (path argument becomes an archive-relative prefix)"
+        };
         var outputOption = new Option<string>("-o", "--output")
             { Description = "Output directory for sprites", Required = true };
         var ppuOption = new Option<float>("--ppu")
@@ -31,9 +33,9 @@ public static class RenderCommand
             Description = "Max parallel tasks (default: processor count)",
             DefaultValueFactory = _ => Environment.ProcessorCount
         };
-        var texturesBsaOption = new Option<string[]>("--textures-bsa")
+        var texturesBsaOption = new Option<string[]>("--textures-archive", "--textures-bsa")
         {
-            Description = "Path to textures BSA file(s) for texture-mapped rendering (can specify multiple)",
+            Description = "Path to textures archive(s) — BSA or BA2 — for texture-mapped rendering (can specify multiple)",
             AllowMultipleArgumentsPerToken = true
         };
         var esmOption = new Option<string?>("--esm")
@@ -126,7 +128,7 @@ public static class RenderCommand
 
             if (settings.BsaPath != null)
             {
-                // BSA mode: path is a BSA-relative prefix
+                // Archive mode (BSA or BA2): path is an archive-relative prefix
                 await RenderNifProcessor.RunBsaBatchAsync(settings, ct);
             }
             else if (Directory.Exists(settings.Path))
