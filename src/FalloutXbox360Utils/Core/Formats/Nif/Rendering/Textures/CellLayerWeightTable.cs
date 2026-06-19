@@ -120,18 +120,21 @@ public struct VertexWeights
 ///     Streaming workers reuse a single thread-local instance across cells via
 ///     <see cref="BuildInto" />, so the ATXT dense grids and the alpha scratch list are
 ///     pooled on the table itself (zero per-cell GC pressure on the hot path). The static
-///     <see cref="Build" /> entry point is preserved as a one-shot allocating wrapper for
+///     <c>Build</c> entry point is preserved as a one-shot allocating wrapper for
 ///     single-cell callers (tests, cell-detail render).
 /// </summary>
 public sealed class CellLayerWeightTable
 {
-    /// <summary>33 — one vertex per LAND grid sample (16 quads per quadrant axis × 2 quadrants + 1 shared edge).</summary>
+    /// <summary>
+    ///     33 — the default LAND grid edge (one vertex per sample) for Fallout/Oblivion/Skyrim
+    ///     (16 quads per quadrant axis × 2 quadrants + 1 shared edge). Morrowind is 65; the actual
+    ///     grid size of a given table instance is <see cref="GridSize" />. This const is retained as
+    ///     the default-grid constant (single-cell callers, the 2D map, tests).
+    /// </summary>
     public const int CellVertexCount = 33;
 
-    /// <summary>Quadrant-local vertex grid edge length (17×17 per quadrant).</summary>
+    /// <summary>Quadrant-local vertex grid edge length for the default 33×33 grid (17×17 per quadrant).</summary>
     public const int QuadSize = 17;
-
-    private const int QuadVertCount = QuadSize * QuadSize;
 
     /// <summary>
     ///     FormID sentinel used to mark "quadrant has no BTXT — fill the residual with the
@@ -141,7 +144,33 @@ public sealed class CellLayerWeightTable
     /// </summary>
     public const uint EngineDefaultSentinelFormId = 0u;
 
-    public VertexWeights[] Vertices { get; } = new VertexWeights[CellVertexCount * CellVertexCount];
+    /// <summary>This table's LAND grid edge length (33 for Fallout-family, 65 for Morrowind).</summary>
+    public int GridSize { get; }
+
+    /// <summary>Quadrant-local vertex grid edge length: <c>(GridSize + 1) / 2</c> (17 for 33, 33 for 65).</summary>
+    public int QuadEdge { get; }
+
+    private readonly int _mid;             // center cross index: (GridSize - 1) / 2  (16 for 33, 32 for 65)
+    private readonly int _last;            // last vertex index:  GridSize - 1        (32 for 33, 64 for 65)
+    private readonly int _quadVertCount;   // QuadEdge * QuadEdge (289 for 33, 1089 for 65)
+
+    /// <summary>
+    ///     Construct a weight table for an <paramref name="gridSize" />×<paramref name="gridSize" />
+    ///     LAND grid. Defaults to the Fallout-family 33×33 grid; pass 65 for Morrowind so the terrain
+    ///     blends at native resolution. <paramref name="gridSize" /> must be odd (so a shared center
+    ///     cross exists); 33 and 65 both satisfy this.
+    /// </summary>
+    public CellLayerWeightTable(int gridSize = CellVertexCount)
+    {
+        GridSize = gridSize;
+        QuadEdge = (gridSize + 1) / 2;
+        _mid = (gridSize - 1) / 2;
+        _last = gridSize - 1;
+        _quadVertCount = QuadEdge * QuadEdge;
+        Vertices = new VertexWeights[gridSize * gridSize];
+    }
+
+    public VertexWeights[] Vertices { get; }
 
     /// <summary>
     ///     Pooled dense 17×17 opacity grids, one per ATXT. Grown lazily; rebuilt from
@@ -156,7 +185,7 @@ public sealed class CellLayerWeightTable
     /// </summary>
     private readonly List<LandTextureLayer> _alphaScratch = new(4);
 
-    public ref VertexWeights At(int vx, int vy) => ref Vertices[vy * CellVertexCount + vx];
+    public ref VertexWeights At(int vx, int vy) => ref Vertices[vy * GridSize + vx];
 
     /// <summary>
     ///     Clear the vertex grid so this instance can be reused by <see cref="BuildInto" />.
@@ -186,11 +215,11 @@ public sealed class CellLayerWeightTable
         }
         for (var i = 0; i < alphas.Count; i++)
         {
-            var grid = _atxtDenseGridsPool[i] ??= new float[QuadVertCount];
+            var grid = _atxtDenseGridsPool[i] ??= new float[_quadVertCount];
             Array.Clear(grid, 0, grid.Length);
             foreach (var entry in alphas[i].BlendEntries)
             {
-                if (entry.Position < QuadVertCount)
+                if (entry.Position < _quadVertCount)
                 {
                     grid[entry.Position] = entry.Opacity;
                 }
@@ -230,18 +259,69 @@ public sealed class CellLayerWeightTable
         IReadOnlyList<LandTextureLayer>? westNeighborLayers = null,
         IReadOnlyList<LandTextureLayer>? northNeighborLayers = null,
         IReadOnlyList<LandTextureLayer>? southNeighborLayers = null)
+        => Build(CellVertexCount, layers, eastNeighborLayers, westNeighborLayers, northNeighborLayers,
+            southNeighborLayers);
+
+    /// <summary>
+    ///     Grid-size-aware overload: builds the weight table at <paramref name="gridSize" />×
+    ///     <paramref name="gridSize" /> resolution (33 for Fallout-family, 65 for Morrowind) so the
+    ///     blend buffer length matches the same-resolution terrain vertex buffer.
+    /// </summary>
+    public static CellLayerWeightTable? Build(
+        int gridSize,
+        IReadOnlyList<LandTextureLayer> layers,
+        IReadOnlyList<LandTextureLayer>? eastNeighborLayers = null,
+        IReadOnlyList<LandTextureLayer>? westNeighborLayers = null,
+        IReadOnlyList<LandTextureLayer>? northNeighborLayers = null,
+        IReadOnlyList<LandTextureLayer>? southNeighborLayers = null)
     {
-        var table = new CellLayerWeightTable();
+        var table = new CellLayerWeightTable(gridSize);
         return BuildInto(table, layers, eastNeighborLayers, westNeighborLayers, northNeighborLayers, southNeighborLayers)
             ? table
             : null;
     }
 
     /// <summary>
+    ///     Build a weight table from Morrowind's flat <paramref name="vtexSize" />×<paramref name="vtexSize" />
+    ///     land-texture grid (resolved to LTEX FormIds; 0 = engine-default). Each of the
+    ///     <paramref name="gridSize" />² vertices is assigned its grid cell's texture at weight 1; the
+    ///     per-pixel bilinear sampling in the terrain shader then produces the shaped transitions —
+    ///     unlike the 4-quadrant collapse, which paints whole quadrant blocks. Morrowind has no ATXT
+    ///     alpha layers, so each vertex carries exactly one texture before normalization.
+    ///     <para>
+    ///         Row orientation: table vy=0 is the cell's north edge (<c>PopulateBlendWeights</c> flips it
+    ///         to the mesh's south-origin rows), so the VTEX row is taken south-origin to track world Y.
+    ///         If Morrowind terrain textures render north/south-mirrored, flip the <c>row</c> mapping.
+    ///     </para>
+    /// </summary>
+    public static CellLayerWeightTable BuildFromVtexGrid(int gridSize, uint[] vtexFormIds, int vtexSize = 16)
+    {
+        var table = new CellLayerWeightTable(gridSize);
+        var last = gridSize - 1;
+        if (last <= 0 || vtexFormIds.Length < vtexSize * vtexSize)
+        {
+            return table;
+        }
+
+        for (var vy = 0; vy < gridSize; vy++)
+        {
+            var meshRow = last - vy; // table north edge → mesh south-origin row
+            var row = Math.Min(vtexSize - 1, meshRow * vtexSize / last);
+            for (var vx = 0; vx < gridSize; vx++)
+            {
+                var col = Math.Min(vtexSize - 1, vx * vtexSize / last);
+                table.At(vx, vy).Add(vtexFormIds[row * vtexSize + col], 1f);
+            }
+        }
+
+        return table;
+    }
+
+    /// <summary>
     ///     Pooled entry point. Resets <paramref name="table" /> and refills it from the same
-    ///     inputs as <see cref="Build" />. Returns <c>true</c> when at least one vertex
+    ///     inputs as <c>Build</c>. Returns <c>true</c> when at least one vertex
     ///     received a contribution; <c>false</c> when the inputs produced an empty table
-    ///     (mirrors <see cref="Build" />'s null-return semantics).
+    ///     (mirrors <c>Build</c>'s null-return semantics).
     /// </summary>
     public static bool BuildInto(
         CellLayerWeightTable table,
@@ -255,6 +335,9 @@ public sealed class CellLayerWeightTable
         if (layers.Count == 0) return false;
 
         var alphaScratch = table._alphaScratch;
+        var quadEdge = table.QuadEdge;
+        var mid = table._mid;
+        var last = table._last;
         var any = false;
 
         for (var quadrant = 0; quadrant < 4; quadrant++)
@@ -263,30 +346,30 @@ public sealed class CellLayerWeightTable
             table.PopulateAtxtGrids(alphaScratch);
             var atxtGrids = table._atxtDenseGridsPool;
 
-            for (var qy = 0; qy < QuadSize; qy++)
+            for (var qy = 0; qy < quadEdge; qy++)
             {
                 // Cell-wide vy (vy=0 is the cell's north edge). North quadrants (NW=2, NE=3)
-                // cover rows 0..16; south quadrants (SW=0, SE=1) cover rows 16..32. Quadrant-
+                // cover rows 0..mid; south quadrants (SW=0, SE=1) cover rows mid..last. Quadrant-
                 // local qy=0 is the SW corner of the quadrant (per VTXT Position convention),
                 // so within a quadrant qy grows northward.
                 var cellVy = quadrant switch
                 {
-                    2 or 3 => 16 - qy,
-                    _ => 32 - qy
+                    2 or 3 => mid - qy,
+                    _ => last - qy
                 };
-                for (var qx = 0; qx < QuadSize; qx++)
+                for (var qx = 0; qx < quadEdge; qx++)
                 {
-                    // Cell-wide vx. East quadrants (SE=1, NE=3) cover columns 16..32.
+                    // Cell-wide vx. East quadrants (SE=1, NE=3) cover columns mid..last.
                     var cellVx = quadrant switch
                     {
-                        1 or 3 => 16 + qx,
+                        1 or 3 => mid + qx,
                         _ => qx
                     };
 
                     var atxtSum = 0f;
                     for (var i = 0; i < alphaScratch.Count; i++)
                     {
-                        var op = atxtGrids[i][qy * QuadSize + qx];
+                        var op = atxtGrids[i][qy * quadEdge + qx];
                         if (op <= 0f) continue;
                         if (op > 1f) op = 1f;
                         atxtSum += op;
@@ -360,7 +443,7 @@ public sealed class CellLayerWeightTable
         var atxtSum = 0f;
         for (var i = 0; i < alphas.Count; i++)
         {
-            var op = atxtGrids[i][qy * QuadSize + qx];
+            var op = atxtGrids[i][qy * table.QuadEdge + qx];
             if (op <= 0f) continue;
             if (op > 1f) op = 1f;
             atxtSum += op;
@@ -394,10 +477,10 @@ public sealed class CellLayerWeightTable
             var baseLayer = QuadrantLayerSelector.SelectBaseAndAlphas(neighborLayers, quadrant, alphaScratch);
             table.PopulateAtxtGrids(alphaScratch);
             var atxtGrids = table._atxtDenseGridsPool;
-            for (var qy = 0; qy < QuadSize; qy++)
+            for (var qy = 0; qy < table.QuadEdge; qy++)
             {
-                var cellVy = quadrant == 0 ? 32 - qy : 16 - qy;
-                AccumulateOneVertex(table, cellVx: 32, cellVy: cellVy,
+                var cellVy = quadrant == 0 ? table._last - qy : table._mid - qy;
+                AccumulateOneVertex(table, cellVx: table._last, cellVy: cellVy,
                     qx: 0, qy: qy, baseLayer, alphaScratch, atxtGrids);
             }
         }
@@ -417,11 +500,11 @@ public sealed class CellLayerWeightTable
             var baseLayer = QuadrantLayerSelector.SelectBaseAndAlphas(neighborLayers, quadrant, alphaScratch);
             table.PopulateAtxtGrids(alphaScratch);
             var atxtGrids = table._atxtDenseGridsPool;
-            for (var qy = 0; qy < QuadSize; qy++)
+            for (var qy = 0; qy < table.QuadEdge; qy++)
             {
-                var cellVy = quadrant == 1 ? 32 - qy : 16 - qy;
+                var cellVy = quadrant == 1 ? table._last - qy : table._mid - qy;
                 AccumulateOneVertex(table, cellVx: 0, cellVy: cellVy,
-                    qx: 16, qy: qy, baseLayer, alphaScratch, atxtGrids);
+                    qx: table._mid, qy: qy, baseLayer, alphaScratch, atxtGrids);
             }
         }
     }
@@ -440,9 +523,9 @@ public sealed class CellLayerWeightTable
             var baseLayer = QuadrantLayerSelector.SelectBaseAndAlphas(neighborLayers, quadrant, alphaScratch);
             table.PopulateAtxtGrids(alphaScratch);
             var atxtGrids = table._atxtDenseGridsPool;
-            for (var qx = 0; qx < QuadSize; qx++)
+            for (var qx = 0; qx < table.QuadEdge; qx++)
             {
-                var cellVx = quadrant == 0 ? qx : 16 + qx;
+                var cellVx = quadrant == 0 ? qx : table._mid + qx;
                 AccumulateOneVertex(table, cellVx: cellVx, cellVy: 0,
                     qx: qx, qy: 0, baseLayer, alphaScratch, atxtGrids);
             }
@@ -463,11 +546,11 @@ public sealed class CellLayerWeightTable
             var baseLayer = QuadrantLayerSelector.SelectBaseAndAlphas(neighborLayers, quadrant, alphaScratch);
             table.PopulateAtxtGrids(alphaScratch);
             var atxtGrids = table._atxtDenseGridsPool;
-            for (var qx = 0; qx < QuadSize; qx++)
+            for (var qx = 0; qx < table.QuadEdge; qx++)
             {
-                var cellVx = quadrant == 2 ? qx : 16 + qx;
-                AccumulateOneVertex(table, cellVx: cellVx, cellVy: 32,
-                    qx: qx, qy: 16, baseLayer, alphaScratch, atxtGrids);
+                var cellVx = quadrant == 2 ? qx : table._mid + qx;
+                AccumulateOneVertex(table, cellVx: cellVx, cellVy: table._last,
+                    qx: qx, qy: table._mid, baseLayer, alphaScratch, atxtGrids);
             }
         }
     }

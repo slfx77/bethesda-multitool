@@ -27,7 +27,14 @@ public sealed class CellTerrainTextureSet
     /// float4s wide.</summary>
     public const int SlotVectors = MaxSlots / 4;
 
+    /// <summary>Per-cell vertex count for the default 33×33 grid (Morrowind cells are 65×65 = 4225).</summary>
     public const int VertexCount = CellLayerWeightTable.CellVertexCount * CellLayerWeightTable.CellVertexCount;
+
+    /// <summary>
+    ///     Per-cell vertex count of <b>this</b> set (the source <see cref="CellLayerWeightTable" />'s
+    ///     vertex count — 33×33 for Fallout-family, 65×65 for Morrowind).
+    /// </summary>
+    public int CellVertexCount { get; }
 
     /// <summary>
     ///     LTEX FormID bound to slot index 0..<see cref="MaxSlots" />-1. <c>0</c> is the
@@ -42,11 +49,23 @@ public sealed class CellTerrainTextureSet
 
     /// <summary>
     ///     Per-vertex blend weights into the <see cref="MaxSlots" /> slots, packed as
-    ///     <see cref="SlotVectors" /> Vector4s per vertex. Layout: index = (vy * 33 + vx) *
+    ///     <see cref="SlotVectors" /> Vector4s per vertex. Layout: index = (vy * gridSize + vx) *
     ///     SlotVectors + k, where k selects the 4-slot group (slots 4k..4k+3). Weights sum to ~1
     ///     at vertices with any contribution; 0 at empty vertices.
     /// </summary>
-    public Vector4[] VertexWeights { get; } = new Vector4[VertexCount * SlotVectors];
+    public Vector4[] VertexWeights { get; }
+
+    /// <summary>Default-grid (33×33) set. Retained for single-cell callers and tests; the renderer's
+    /// <see cref="Project" /> sizes the set to the source table's actual grid (33×33 or 65×65).</summary>
+    public CellTerrainTextureSet() : this(VertexCount)
+    {
+    }
+
+    private CellTerrainTextureSet(int cellVertexCount)
+    {
+        CellVertexCount = cellVertexCount;
+        VertexWeights = new Vector4[cellVertexCount * SlotVectors];
+    }
 
     /// <summary>
     ///     Project a <see cref="CellLayerWeightTable" /> onto the fixed-slot representation.
@@ -80,7 +99,7 @@ public sealed class CellTerrainTextureSet
         var sorted = new List<KeyValuePair<uint, float>>(totals);
         sorted.Sort(static (a, b) => b.Value.CompareTo(a.Value));
 
-        var set = new CellTerrainTextureSet();
+        var set = new CellTerrainTextureSet(table.Vertices.Length);
         var slotCount = Math.Min(MaxSlots, sorted.Count);
         set.ActiveSlotCount = slotCount;
         var formIdToSlot = new Dictionary<uint, int>(slotCount);

@@ -64,6 +64,52 @@ public sealed class LandscapeTexturePathResolverTests
         Assert.Null(LandscapeTexturePathResolver.ResolveDiffuse(LtexFormId, ltex, txst));
     }
 
+    [Fact]
+    public void ResolveDiffuse_OblivionIconNoTxst_ReturnsLandscapePrefixedIcon()
+    {
+        // Oblivion LTEX carries no TNAM/TXST — the texture is the ICON, relative to textures\landscape\.
+        var ltex = new Dictionary<uint, LandscapeTextureRecord>
+        {
+            [LtexFormId] = new() { FormId = LtexFormId, TextureSetFormId = null, IconPath = "TerrainHDDirt01.dds" }
+        };
+        var txst = new Dictionary<uint, TextureSetRecord>();
+
+        var result = LandscapeTexturePathResolver.ResolveDiffuse(LtexFormId, ltex, txst);
+        Assert.Equal("landscape\\TerrainHDDirt01.dds", result); // Normalize() later prepends textures\
+    }
+
+    [Theory]
+    [InlineData("landscape\\Dementia\\DementiaMoss01.dds", "landscape\\Dementia\\DementiaMoss01.dds")]
+    [InlineData("textures\\landscape\\rock.dds", "textures\\landscape\\rock.dds")]
+    [InlineData("Ordered/OrderedRock01.dds", "landscape\\Ordered\\OrderedRock01.dds")]
+    public void ResolveDiffuse_OblivionIcon_NormalizesAndAvoidsDoublePrefix(string icon, string expected)
+    {
+        var ltex = new Dictionary<uint, LandscapeTextureRecord>
+        {
+            [LtexFormId] = new() { FormId = LtexFormId, IconPath = icon }
+        };
+
+        var result = LandscapeTexturePathResolver.ResolveDiffuse(
+            LtexFormId, ltex, new Dictionary<uint, TextureSetRecord>());
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void ResolveDiffuse_TxstTakesPrecedenceOverIcon()
+    {
+        // When both are present (FO3/FNV with a legacy ICON), the TNAM→TXST diffuse wins.
+        var ltex = new Dictionary<uint, LandscapeTextureRecord>
+        {
+            [LtexFormId] = new() { FormId = LtexFormId, TextureSetFormId = TxstFormId, IconPath = "legacy\\old.dds" }
+        };
+        var txst = new Dictionary<uint, TextureSetRecord>
+        {
+            [TxstFormId] = new() { FormId = TxstFormId, DiffuseTexture = DiffusePath }
+        };
+
+        Assert.Equal(DiffusePath, LandscapeTexturePathResolver.ResolveDiffuse(LtexFormId, ltex, txst));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
