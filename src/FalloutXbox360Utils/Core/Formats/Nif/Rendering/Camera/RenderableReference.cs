@@ -227,10 +227,13 @@ internal readonly record struct RenderableReference(
         var bounds = p.Bounds;
         if (bounds is null)
         {
-            // No OBND — use a generic 256-unit sphere centred at the REFR position. 256 ≈ a
-            // human-scale prop; large props without OBND will get over-culled (acceptable for
-            // v3 first pass; tighten in v4 if visible artifacts).
-            return (new Vector3(p.X, p.Y, p.Z), 256f);
+            // No OBND (some MSTT / runtime-only refs) — use a generous fallback sphere centred at the
+            // REFR position. This radius is TRANSIENT: it only gates the cull until the mesh resolves,
+            // after which _meshLocalRadius supplies the true local bounds. 256 (a human-scale prop) was
+            // too small for OBND-less walls/buildings — they edge-popped for the frame or two before
+            // resolving — so use 1024 to keep large props in view; the cost is a few extra candidate
+            // loads that self-correct on resolve.
+            return (new Vector3(p.X, p.Y, p.Z), 1024f);
         }
 
         // OBND is in mesh-local space. The conservative sphere = (centerLocal · world) for the

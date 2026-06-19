@@ -31,12 +31,12 @@ internal readonly record struct VisibilityCylinder(Vector3 Position, float Radiu
     ///     footprint so any cell whose footprint partially clips the square counts as inside
     ///     (Chebyshev: within <see cref="Radius" /> of <see cref="Position" /> along both axes).
     /// </summary>
-    public bool ContainsCell(int gridX, int gridY)
+    public bool ContainsCell(int gridX, int gridY, float cellSize = global::FalloutXbox360Utils.WorldGridConstants.CellSize)
     {
-        var minX = gridX * global::FalloutXbox360Utils.WorldGridConstants.CellSize;
-        var minY = gridY * global::FalloutXbox360Utils.WorldGridConstants.CellSize;
-        var maxX = minX + global::FalloutXbox360Utils.WorldGridConstants.CellSize;
-        var maxY = minY + global::FalloutXbox360Utils.WorldGridConstants.CellSize;
+        var minX = gridX * cellSize;
+        var minY = gridY * cellSize;
+        var maxX = minX + cellSize;
+        var maxY = minY + cellSize;
 
         var closestX = Math.Clamp(Position.X, minX, maxX);
         var closestY = Math.Clamp(Position.Y, minY, maxY);

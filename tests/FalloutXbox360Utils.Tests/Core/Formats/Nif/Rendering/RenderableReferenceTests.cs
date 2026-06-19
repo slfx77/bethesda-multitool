@@ -231,7 +231,9 @@ public sealed class RenderableReferenceTests
 
         var built = RenderableReference.TryBuild(placement)!.Value;
         Assert.Equal(new Vector3(100f, 200f, 50f), built.BoundsCenter);
-        Assert.Equal(256f, built.BoundsRadius, 1);
+        // Generous transient fallback (raised from 256) so large OBND-less props (walls/buildings) are not
+        // edge-culled for the frame or two before their true mesh radius resolves. See ComposeWorldBounds.
+        Assert.Equal(1024f, built.BoundsRadius, 1);
     }
 
     [Fact]
