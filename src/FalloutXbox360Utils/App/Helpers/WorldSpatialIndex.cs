@@ -26,9 +26,15 @@ internal sealed class WorldSpatialIndex
     private readonly List<PlacedReference> _mapMarkers = [];
     private readonly List<WorldWaterCell> _waterCells = [];
 
-    private WorldSpatialIndex()
+    private WorldSpatialIndex(float cellSize)
     {
+        CellSize = cellSize;
     }
+
+    /// <summary>World units per exterior-cell edge for this worldspace (4096 Fallout-family, 8192
+    /// Morrowind). All bucketing / canvas mapping keys off this so the index matches the geometry's
+    /// absolute coordinates.</summary>
+    internal float CellSize { get; }
 
     internal IReadOnlyDictionary<(int gx, int gy), CellRecord> CellsByGrid => _cellsByGrid;
     internal IReadOnlyList<CellRecord> PersistentCells => _persistentCells;
@@ -45,7 +51,7 @@ internal sealed class WorldSpatialIndex
         uint? activeWorldspaceFormId,
         float? defaultWaterHeight)
     {
-        var index = new WorldSpatialIndex();
+        var index = new WorldSpatialIndex(data.CellWorldSize);
 
         foreach (var cell in activeCells)
         {
@@ -78,10 +84,10 @@ internal sealed class WorldSpatialIndex
                     continue;
                 }
 
-                AddBucketed(index._refsByBucket, obj);
+                index.AddBucketed(index._refsByBucket, obj);
                 if (obj.RecordType is "ACHR" or "ACRE")
                 {
-                    AddBucketed(index._actorsByBucket, obj);
+                    index.AddBucketed(index._actorsByBucket, obj);
                 }
             }
         }
@@ -89,14 +95,14 @@ internal sealed class WorldSpatialIndex
         foreach (var marker in filteredMarkers)
         {
             index._mapMarkers.Add(marker);
-            AddBucketed(index._markersByBucket, marker);
+            index.AddBucketed(index._markersByBucket, marker);
         }
 
         if (data.SaveOverlayMarkers is { Count: > 0 } saveRefs)
         {
             foreach (var saveRef in saveRefs)
             {
-                AddBucketed(index._saveRefsByBucket, saveRef);
+                index.AddBucketed(index._saveRefsByBucket, saveRef);
             }
         }
 
@@ -107,13 +113,13 @@ internal sealed class WorldSpatialIndex
                 continue;
             }
 
-            AddBucketed(index._danglingByBucket, dangling);
+            index.AddBucketed(index._danglingByBucket, dangling);
         }
 
         foreach (var (key, cell) in index._cellsByGrid)
         {
             var chunk = index.GetOrCreateChunk(key.gx, key.gy);
-            chunk.Cells.Add(new WorldSpatialCell(key, cell, CellCenterCanvas(key.gx, key.gy)));
+            chunk.Cells.Add(new WorldSpatialCell(key, cell, index.CellCenterCanvas(key.gx, key.gy)));
 
             var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(cell, defaultWaterHeight);
             if (waterHeight is (> -1e6f and < 1e6f))
@@ -125,8 +131,8 @@ internal sealed class WorldSpatialIndex
                     key,
                     cell,
                     waterHeight.Value,
-                    new Vector2(key.gx * WorldGridConstants.CellSize, key.gy * WorldGridConstants.CellSize),
-                    WorldGridConstants.CellSize);
+                    new Vector2(key.gx * index.CellSize, key.gy * index.CellSize),
+                    index.CellSize);
                 index._waterCells.Add(water);
                 chunk.WaterCells.Add(water);
             }
@@ -134,7 +140,7 @@ internal sealed class WorldSpatialIndex
 
         foreach (var chunk in index._chunksByGrid.Values)
         {
-            chunk.Seal();
+            chunk.Seal(index.CellSize);
         }
 
         return index;
@@ -146,7 +152,7 @@ internal sealed class WorldSpatialIndex
     ///     <see cref="CellRecord.GridY" /> and the ref buckets — so the cylinder cell enumeration
     ///     (<see cref="QueryCellsInRadius" />) yields it once the camera is framed on the cell.
     /// </summary>
-    internal static (int gx, int gy) SyntheticInteriorKey(CellRecord interior)
+    internal static (int gx, int gy) SyntheticInteriorKey(CellRecord interior, float cellSize = WorldGridConstants.CellSize)
     {
         double sumX = 0, sumY = 0;
         var count = 0;
@@ -160,7 +166,7 @@ internal sealed class WorldSpatialIndex
         if (count == 0) return (0, 0);
         var cx = (float)(sumX / count);
         var cy = (float)(sumY / count);
-        return ((int)MathF.Floor(cx / WorldGridConstants.CellSize), (int)MathF.Floor(cy / WorldGridConstants.CellSize));
+        return ((int)MathF.Floor(cx / cellSize), (int)MathF.Floor(cy / cellSize));
     }
 
     /// <summary>
@@ -173,16 +179,16 @@ internal sealed class WorldSpatialIndex
     /// </summary>
     internal static WorldSpatialIndex BuildInterior(WorldViewData data, CellRecord interior)
     {
-        var index = new WorldSpatialIndex();
-        var key = SyntheticInteriorKey(interior);
+        var index = new WorldSpatialIndex(data.CellWorldSize);
+        var key = SyntheticInteriorKey(interior, index.CellSize);
         index._cellsByGrid[key] = interior;
 
         foreach (var obj in interior.PlacedObjects)
         {
-            AddBucketed(index._refsByBucket, obj);
+            index.AddBucketed(index._refsByBucket, obj);
             if (obj.RecordType is "ACHR" or "ACRE")
             {
-                AddBucketed(index._actorsByBucket, obj);
+                index.AddBucketed(index._actorsByBucket, obj);
             }
         }
 
@@ -192,13 +198,13 @@ internal sealed class WorldSpatialIndex
         }
 
         var chunk = index.GetOrCreateChunk(key.gx, key.gy);
-        chunk.Cells.Add(new WorldSpatialCell(key, interior, CellCenterCanvas(key.gx, key.gy)));
+        chunk.Cells.Add(new WorldSpatialCell(key, interior, index.CellCenterCanvas(key.gx, key.gy)));
 
         // Interior water height comes from XCLW directly (no worldspace DNAM fallback).
         var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(interior, defaultWaterHeight: null);
         if (waterHeight is (> -1e6f and < 1e6f))
         {
-            var (originXY, footprint) = ComputeInteriorWaterFootprint(interior);
+            var (originXY, footprint) = index.ComputeInteriorWaterFootprint(interior);
             var water = new WorldWaterCell(key, interior, waterHeight.Value, originXY, footprint);
             index._waterCells.Add(water);
             chunk.WaterCells.Add(water);
@@ -206,7 +212,7 @@ internal sealed class WorldSpatialIndex
 
         foreach (var c in index._chunksByGrid.Values)
         {
-            c.Seal();
+            c.Seal(index.CellSize);
         }
 
         return index;
@@ -217,7 +223,7 @@ internal sealed class WorldSpatialIndex
     ///     water plane reaches the room walls instead of the exterior cell-sized quad. Floors at
     ///     one cell so tiny rooms still get a visible plane.
     /// </summary>
-    private static (Vector2 OriginXY, float FootprintSize) ComputeInteriorWaterFootprint(CellRecord interior)
+    private (Vector2 OriginXY, float FootprintSize) ComputeInteriorWaterFootprint(CellRecord interior)
     {
         var minX = float.MaxValue;
         var minY = float.MaxValue;
@@ -233,10 +239,10 @@ internal sealed class WorldSpatialIndex
             maxY = MathF.Max(maxY, obj.Y);
             any = true;
         }
-        if (!any) return (Vector2.Zero, WorldGridConstants.CellSize);
+        if (!any) return (Vector2.Zero, CellSize);
 
         var side = MathF.Max(maxX - minX, maxY - minY) * 1.2f;
-        if (side < WorldGridConstants.CellSize) side = WorldGridConstants.CellSize;
+        if (side < CellSize) side = CellSize;
         var centerX = (minX + maxX) * 0.5f;
         var centerY = (minY + maxY) * 0.5f;
         return (new Vector2(centerX - side * 0.5f, centerY - side * 0.5f), side);
@@ -307,12 +313,12 @@ internal sealed class WorldSpatialIndex
     internal void QueryWaterCellsInRadius(float canvasX, float canvasY, float radius, List<WorldWaterCell> destination)
     {
         destination.Clear();
-        var chunkStartX = FloorDiv((int)MathF.Floor((canvasX - radius) / WorldGridConstants.CellSize), ChunkCellSize);
-        var chunkEndX = FloorDiv((int)MathF.Floor((canvasX + radius) / WorldGridConstants.CellSize), ChunkCellSize);
+        var chunkStartX = FloorDiv((int)MathF.Floor((canvasX - radius) / CellSize), ChunkCellSize);
+        var chunkEndX = FloorDiv((int)MathF.Floor((canvasX + radius) / CellSize), ChunkCellSize);
         var gameYMin = -(canvasY + radius);
         var gameYMax = -(canvasY - radius);
-        var chunkStartY = FloorDiv((int)MathF.Floor(gameYMin / WorldGridConstants.CellSize), ChunkCellSize);
-        var chunkEndY = FloorDiv((int)MathF.Floor(gameYMax / WorldGridConstants.CellSize), ChunkCellSize);
+        var chunkStartY = FloorDiv((int)MathF.Floor(gameYMin / CellSize), ChunkCellSize);
+        var chunkEndY = FloorDiv((int)MathF.Floor(gameYMax / CellSize), ChunkCellSize);
 
         for (var cy = chunkStartY; cy <= chunkEndY; cy++)
         {
@@ -451,14 +457,14 @@ internal sealed class WorldSpatialIndex
         return dx * dx + dy * dy;
     }
 
-    internal static (int gx, int gy) BucketFromCanvasPoint(float x, float canvasY)
+    internal (int gx, int gy) BucketFromCanvasPoint(float x, float canvasY)
     {
-        var gx = (int)MathF.Floor(x / WorldGridConstants.CellSize);
-        var gy = (int)MathF.Floor(-canvasY / WorldGridConstants.CellSize);
+        var gx = (int)MathF.Floor(x / CellSize);
+        var gy = (int)MathF.Floor(-canvasY / CellSize);
         return (gx, gy);
     }
 
-    private static void QueryPlacedBucket(
+    private void QueryPlacedBucket(
         Dictionary<(int bx, int by), List<PlacedReference>> buckets,
         Vector2 tlWorld,
         Vector2 brWorld,
@@ -492,7 +498,7 @@ internal sealed class WorldSpatialIndex
         }
     }
 
-    private static void QueryPlacedBucketNear(
+    private void QueryPlacedBucketNear(
         Dictionary<(int bx, int by), List<PlacedReference>> buckets,
         Vector2 canvasWorldPos,
         float radius,
@@ -515,7 +521,7 @@ internal sealed class WorldSpatialIndex
         }
     }
 
-    private static (int startX, int endX, int startY, int endY) BucketRangeForCanvasRect(
+    private (int startX, int endX, int startY, int endY) BucketRangeForCanvasRect(
         Vector2 a,
         Vector2 b,
         float margin)
@@ -528,13 +534,13 @@ internal sealed class WorldSpatialIndex
         var maxGameY = -minCanvasY;
 
         return (
-            (int)MathF.Floor(minX / WorldGridConstants.CellSize),
-            (int)MathF.Floor(maxX / WorldGridConstants.CellSize),
-            (int)MathF.Floor(minGameY / WorldGridConstants.CellSize),
-            (int)MathF.Floor(maxGameY / WorldGridConstants.CellSize));
+            (int)MathF.Floor(minX / CellSize),
+            (int)MathF.Floor(maxX / CellSize),
+            (int)MathF.Floor(minGameY / CellSize),
+            (int)MathF.Floor(maxGameY / CellSize));
     }
 
-    private static void AddBucketed(Dictionary<(int bx, int by), List<PlacedReference>> buckets, PlacedReference obj)
+    private void AddBucketed(Dictionary<(int bx, int by), List<PlacedReference>> buckets, PlacedReference obj)
     {
         var key = BucketFromCanvasPoint(obj.X, -obj.Y);
         if (!buckets.TryGetValue(key, out var list))
@@ -546,7 +552,7 @@ internal sealed class WorldSpatialIndex
         list.Add(obj);
     }
 
-    private static void AddBucketed(Dictionary<(int bx, int by), List<DanglingRefPosition>> buckets, DanglingRefPosition obj)
+    private void AddBucketed(Dictionary<(int bx, int by), List<DanglingRefPosition>> buckets, DanglingRefPosition obj)
     {
         var key = BucketFromCanvasPoint(obj.X, -obj.Y);
         if (!buckets.TryGetValue(key, out var list))
@@ -612,15 +618,15 @@ internal sealed class WorldSpatialIndex
         return chunk;
     }
 
-    private static Vector2 CellCenterCanvas(int gx, int gy) =>
-        new((gx + 0.5f) * WorldGridConstants.CellSize, -(gy + 0.5f) * WorldGridConstants.CellSize);
+    private Vector2 CellCenterCanvas(int gx, int gy) =>
+        new((gx + 0.5f) * CellSize, -(gy + 0.5f) * CellSize);
 
-    private static (float minX, float minY, float maxX, float maxY) CellCanvasBounds(int gx, int gy)
+    private (float minX, float minY, float maxX, float maxY) CellCanvasBounds(int gx, int gy)
     {
-        var minX = gx * WorldGridConstants.CellSize;
-        var maxX = minX + WorldGridConstants.CellSize;
-        var minY = -(gy + 1) * WorldGridConstants.CellSize;
-        var maxY = -gy * WorldGridConstants.CellSize;
+        var minX = gx * CellSize;
+        var maxX = minX + CellSize;
+        var minY = -(gy + 1) * CellSize;
+        var maxY = -gy * CellSize;
         return (minX, minY, maxX, maxY);
     }
 
@@ -704,9 +710,9 @@ internal sealed class WorldGridChunk
     internal Vector2 MinCanvas { get; private set; }
     internal Vector2 MaxCanvas { get; private set; }
 
-    internal void Seal()
+    internal void Seal(float cellSize)
     {
-        MinCanvas = new Vector2(MinGridX * WorldGridConstants.CellSize, -(MaxGridY + 1) * WorldGridConstants.CellSize);
-        MaxCanvas = new Vector2((MaxGridX + 1) * WorldGridConstants.CellSize, -MinGridY * WorldGridConstants.CellSize);
+        MinCanvas = new Vector2(MinGridX * cellSize, -(MaxGridY + 1) * cellSize);
+        MaxCanvas = new Vector2((MaxGridX + 1) * cellSize, -MinGridY * cellSize);
     }
 }
