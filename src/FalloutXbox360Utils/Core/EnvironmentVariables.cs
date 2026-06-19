@@ -79,6 +79,13 @@ internal static class EnvironmentVariables
         public const string DisableReferenceFrustum = "FALLOUT_VIEWER_DISABLE_REFERENCE_FRUSTUM";
         public const string ReferenceDistanceLod = "FALLOUT_VIEWER_REFERENCE_DISTANCE_LOD";
 
+        /// <summary>Camera-relative rendering for the scene (terrain/references/water). DEFAULT ON;
+        /// set to "0" to disable and render in absolute world space (the pre-fix behavior, for A/B
+        /// comparison). Eliminates the float-precision "wobble" at worldspace edges by shifting scene
+        /// vertices by -cameraPos before projection. Sky + debug overlays render in absolute space and
+        /// stay clip-aligned either way.</summary>
+        public const string CameraRelative = "FALLOUT_VIEWER_CAMERA_RELATIVE";
+
         /// <summary>Per-frame upload-heap ring-buffer size in MEGABYTES (default 64). Shared by every D3D12 renderer's per-draw CBs; raise if a very dense top-down render reports "frame slot exhausted".</summary>
         public const string RingBufferMegabytes = "FALLOUT_VIEWER_RING_BUFFER_MB";
 
@@ -91,26 +98,9 @@ internal static class EnvironmentVariables
         /// <summary>SpeedTree fallback trunk height in native units (default 90) — used only when the TREE record has no OBND. Live-tunable; .spt geometry is not disk-cached.</summary>
         public const string SpeedTreeHeight = "FALLOUT_VIEWER_SPT_HEIGHT";
 
-        /// <summary>SpeedTree final-height tuning multiplier on the data-driven (OBND) tree height (default 1.0).</summary>
+        /// <summary>SpeedTree final-height tuning multiplier on the data-driven (OBND) tree height (default 1.0).
+        /// The only host-side tree knob — branch/leaf geometry is fully derived from the .spt + decompile.</summary>
         public const string SpeedTreeHeightScale = "FALLOUT_VIEWER_SPT_HEIGHT_SCALE";
-
-        /// <summary>SpeedTree leaf-card size multiplier (default 1.0).</summary>
-        public const string SpeedTreeLeafScale = "FALLOUT_VIEWER_SPT_LEAF_SCALE";
-
-        /// <summary>SpeedTree leaf cards per terminal-branch ring (default 2).</summary>
-        public const string SpeedTreeLeafCount = "FALLOUT_VIEWER_SPT_LEAF_COUNT";
-
-        /// <summary>SpeedTree child-branch declination in degrees, higher = bushier/wider (default 62).</summary>
-        public const string SpeedTreeBranchAngle = "FALLOUT_VIEWER_SPT_BRANCH_ANGLE";
-
-        /// <summary>SpeedTree child-branch count multiplier (default 1.0).</summary>
-        public const string SpeedTreeChildDensity = "FALLOUT_VIEWER_SPT_CHILD_DENSITY";
-
-        /// <summary>SpeedTree per-ring curl/bend strength in radians (default 0.13).</summary>
-        public const string SpeedTreeCurl = "FALLOUT_VIEWER_SPT_CURL";
-
-        /// <summary>SpeedTree gravity/droop strength — higher = lower, wider, droopier crown (default 0.6).</summary>
-        public const string SpeedTreeGravity = "FALLOUT_VIEWER_SPT_GRAVITY";
 
         public const string TextureResolveConcurrency = "FALLOUT_VIEWER_TEXTURE_RESOLVE_CONCURRENCY";
         public const string RetainTexturePayloads = "FALLOUT_VIEWER_RETAIN_TEXTURE_PAYLOADS";
@@ -167,5 +157,18 @@ internal static class EnvironmentVariables
     {
         /// <summary>When 1, CLI commands print the end-of-run resource statistics table (same as --resource-stats).</summary>
         public const string ResourceStats = "FALLOUT_RESOURCE_STATS";
+
+        /// <summary>
+        ///     Path to a file the WinUI GUI appends ALL <see cref="Logger" /> output to. A windowed app
+        ///     has no visible console, so without this every log line (and every env-gated trace such as
+        ///     <see cref="Map2D.Trace" />) is lost. When set, <c>GuiEntryPoint</c> also auto-enables
+        ///     <see cref="Map2D.Trace" /> (unless the caller set it explicitly) so a single env var
+        ///     captures the 2D-map cache/viewport/stream trace from the real app — the same
+        ///     instrumentation the FalloutMap2DProfiler gets. Unset = no file sink.
+        /// </summary>
+        public const string GuiLogFile = "FALLOUT_GUI_LOG";
+
+        /// <summary>When <c>1</c>, the GUI log captures Debug-level output too (default: Info+).</summary>
+        public const string GuiLogVerbose = "FALLOUT_GUI_LOG_VERBOSE";
     }
 }
