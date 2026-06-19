@@ -30,7 +30,7 @@ public sealed record PlannedNavmEntry
     /// <summary>
     ///     Raw NVVX subrecord bytes — vertex array used to compute the NVMI centroid the
     ///     engine reads when triangulating navmesh queries. May be empty; the writer falls
-    ///     back to the grid centre when so.
+    ///     back to the grid center when so.
     /// </summary>
     public required byte[] NvvxBytes { get; init; }
 }

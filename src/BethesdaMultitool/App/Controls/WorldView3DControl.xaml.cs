@@ -615,7 +615,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     ///     Casts a ray straight down from just above the eye and returns the world Z of the highest
     ///     placed-object surface at/below the eye under (<paramref name="worldX" />,
     ///     <paramref name="worldY" />), or <c>null</c> when nothing is hit. Scans the camera's cell and
-    ///     its 8 neighbours (a ref whose origin sits in an adjacent cell can still overlap the camera
+    ///     its 8 neighbors (a ref whose origin sits in an adjacent cell can still overlap the camera
     ///     footprint). Warm meshes raycast against real triangles; cold meshes fall back to the OBND box
     ///     for that frame. Only called once per frame in walk mode (<c>SnapToGround</c>).
     /// </summary>
@@ -861,7 +861,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                     BethesdaMultitool.Core.EnvironmentVariables.Viewer.ShowImposters),
             };
             _references.SetHiddenCategories(_hiddenCategories);
-            Log.Info("WorldView3DControl: reference pipeline initialised ({0} meshes BSA(s), {1} textures BSA(s)).",
+            Log.Info("WorldView3DControl: reference pipeline initialized ({0} meshes BSA(s), {1} textures BSA(s)).",
                 meshBsas.Length, textureBsas.Length);
         }
         catch (Exception ex)
@@ -2195,7 +2195,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     }
 
     /// <summary>
-    ///     Initialises the D3D12 backend stack: device + direct queue + per-frame command
+    ///     Initializes the D3D12 backend stack: device + direct queue + per-frame command
     ///     recorder + upload-heap ring + shader-visible descriptor heaps + shared root
     ///     signature. Called from <see cref="OnLoaded" /> when <c>FALLOUT_VIEWER_D3D12=1</c>.
     /// </summary>

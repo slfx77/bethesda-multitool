@@ -360,7 +360,7 @@ internal static class NifGeometryExtractor
                 // WaterShaderProperty: placeable water (waterp*, cave/pool/reflecting-pool water) ships
                 // NO diffuse texture — the engine renders it through its dedicated water system. Tag it
                 // with the water-surface sentinel + force alpha-blend so it reads as a see-through water
-                // surface. In the D3D12 worldspace viewer, ReferenceMeshCache12 recognises this sentinel
+                // surface. In the D3D12 worldspace viewer, ReferenceMeshCache12 recognizes this sentinel
                 // and DIVERTS the submesh to the dedicated WaterRenderer12 (real Fresnel/ripple/depth-
                 // fade shader, same as cell water) — it never draws as a reference slab. Other paths
                 // (standalone NIF render/export) have no water renderer, so the sentinel maps to the

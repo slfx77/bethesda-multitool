@@ -91,5 +91,5 @@ component instead.
   planner, RedLucy evidence), but the synthetic-builder infrastructure
   costs (~200-400 LOC per format) exceeded the smoke / cross-platform-
   comparison value of the tests. Tier 8 chose to gate them instead.
-  Future work could revisit individual files if a specific behaviour
+  Future work could revisit individual files if a specific behavior
   needs stronger CI coverage.

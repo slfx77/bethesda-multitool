@@ -33,7 +33,7 @@ internal enum BsNavMeshValidationMode
 ///     <see cref="RuntimeCellEnumerator" />'s NAVM-byte calibration falls back to canonical
 ///     (no anchor + no drift remap), it emits a speculative candidate list at raw bytes
 ///     <c>[NavmFormType-2..NavmFormType+2]</c>; this validator filters out the false positives
-///     (DIAL / INFO / PROJ / etc. at neighbouring bytes) before
+///     (DIAL / INFO / PROJ / etc. at neighboring bytes) before
 ///     <see cref="RuntimeNavMeshDiscovery.DiscoverForNavMeshVa" /> projects the survivors.
 /// </summary>
 internal sealed class BsNavMeshStructuralValidator

@@ -58,7 +58,7 @@ public record GrassData
     /// <summary>Random Z height variation.</summary>
     public float HeightRange { get; init; }
 
-    /// <summary>Random colour tint variation.</summary>
+    /// <summary>Random color tint variation.</summary>
     public float ColorRange { get; init; }
 
     /// <summary>Wind wave period (seconds).</summary>

@@ -475,7 +475,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
         //   * Strict over NavMeshVaCandidates — uncalibrated build (no anchor, no drift);
         //     the enumerator emitted a speculative byte-window net and the validator
         //     cross-references each candidate's pParentCell against KnownCellVas to reject
-        //     non-BSNavMesh structs (DIAL / INFO / etc. at neighbouring FormType bytes).
+        //     non-BSNavMesh structs (DIAL / INFO / etc. at neighboring FormType bytes).
         var knownCellVas = new HashSet<uint>(cells.Cells.Count);
         foreach (var hit in cells.Cells)
         {

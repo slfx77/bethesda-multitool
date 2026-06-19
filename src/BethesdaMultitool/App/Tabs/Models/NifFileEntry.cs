@@ -71,7 +71,7 @@ public sealed class NifFileEntry : INotifyPropertyChanged, IConvertibleFileEntry
     {
         "Converted" => GreenBrush,
         "Converting..." => YellowBrush,
-        "Cancelled" => OrangeBrush,
+        "Canceled" => OrangeBrush,
         "Skipped (exists)" or "Pending" => GrayBrush,
         _ when _status.StartsWith("Error", StringComparison.Ordinal) => RedBrush,
         _ when _status.StartsWith("Failed", StringComparison.Ordinal) => RedBrush,

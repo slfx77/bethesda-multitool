@@ -93,7 +93,7 @@ public sealed class DataFolderIndexAutoDetectTests : IDisposable
         // Manual asset folders (e.g. "Manually recovered textures BSA") may be flat with
         // assets directly at the top level. Auto-descent must NOT kick in when there are
         // no BSAs anywhere — staying at the user-supplied root preserves the existing
-        // behaviour for loose-only secondary data folders.
+        // behavior for loose-only secondary data folders.
         var flatDir = Path.Combine(_scratchRoot, "loose-textures");
         WriteLooseAsset(flatDir, @"textures\flat\thing.dds");
 

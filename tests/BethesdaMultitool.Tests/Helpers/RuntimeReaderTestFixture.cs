@@ -44,7 +44,7 @@ internal sealed class RuntimeReaderTestFixture
 
     /// <summary>
     ///     Creates a fixture with an empty heap. Subsequent <c>.With*</c> calls
-    ///     populate the sparse accessor; <see cref="BuildContext" /> finalises
+    ///     populate the sparse accessor; <see cref="BuildContext" /> finalizes
     ///     it into a usable <see cref="RuntimeMemoryContext" />.
     /// </summary>
     public static RuntimeReaderTestFixture Default()

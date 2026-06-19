@@ -155,7 +155,7 @@ public sealed partial class LoadingView : UserControl
         }
         catch (OperationCanceledException)
         {
-            MainWindow.Instance?.SetStatus("Cancelled.");
+            MainWindow.Instance?.SetStatus("Canceled.");
         }
         catch (Exception ex)
         {

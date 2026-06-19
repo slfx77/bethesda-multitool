@@ -176,7 +176,7 @@ internal sealed class GpuDevice12 : IDisposable
                         lastCompleted.HasValue ? lastCompleted.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "?",
                         node.BreadcrumbCount);
 
-                    // The GPU stopped at the last completed breadcrumb — log the op there + neighbours.
+                    // The GPU stopped at the last completed breadcrumb — log the op there + neighbors.
                     var history = node.CommandHistory;
                     if (history is { Length: > 0 } && lastCompleted is { } idx && idx < history.Length)
                     {

@@ -483,7 +483,7 @@ internal static class GlbWriter
                 break;
             case NifAlphaRenderMode.AlphaToCoverage:
                 // glTF has no native A2C; map to pure BLEND. The earlier two-primitive
-                // MASK depth-prepass + BLEND colour pass approximation gave correct
+                // MASK depth-prepass + BLEND color pass approximation gave correct
                 // depth-write occlusion at hair-card intersections but produced a hard
                 // visible boundary between the MASK opaque core and the BLEND soft halo.
                 // Pure BLEND is the cleaner trade-off — soft strand-aligned silhouettes

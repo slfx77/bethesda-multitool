@@ -120,7 +120,7 @@ internal static class EnvironmentVariables
 
         /// <summary>
         ///     Profiling A/B knob: when set, <c>WorldMapOverviewRenderer.DrawTextureCellBitmaps</c>
-        ///     reverts to the pre-mip behaviour (draw the highest-res cached tier per cell, always
+        ///     reverts to the pre-mip behavior (draw the highest-res cached tier per cell, always
         ///     HighQualityCubic). Lets the profiler measure the mip-selection + bilinear perf change
         ///     without a code revert. Unset = the current mip-aware path.
         /// </summary>

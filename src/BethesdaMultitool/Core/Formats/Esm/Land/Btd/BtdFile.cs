@@ -318,7 +318,7 @@ public sealed class BtdFile : IDisposable
     /// <summary>
     ///     Reads a single height sample (world units) at intra-cell sample coordinates
     ///     (<paramref name="sampleX" />, <paramref name="sampleY" />), each in 0..(128&gt;&gt;<paramref name="lod" />)-1,
-    ///     where (0,0) is the cell's south-west corner. Used to pull a neighbouring cell's shared edge
+    ///     where (0,0) is the cell's south-west corner. Used to pull a neighboring cell's shared edge
     ///     row/column without decoding its whole grid (Fallout 76 stores 128 disjoint samples per cell,
     ///     so a watertight per-cell mesh needs its east/north edge taken from the next cell's sample 0).
     /// </summary>

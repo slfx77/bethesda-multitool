@@ -28,7 +28,7 @@ internal static class WorldMapLayerRenderer
     private const byte MissingR = 40, MissingG = 40, MissingB = 45;
 
     /// <summary>
-    ///     Last-ditch terrain colour for the Terrain Textures layer when even the engine-default
+    ///     Last-ditch terrain color for the Terrain Textures layer when even the engine-default
     ///     DirtWasteland01 texture can't be loaded (no Textures BSA next to the ESM). Tuned to
     ///     roughly match the averaged DirtWasteland01 diffuse so the fallback transition isn't
     ///     jarring. With a normal install the engine-default sample is used instead.
@@ -338,7 +338,7 @@ internal static class WorldMapLayerRenderer
                             // Per-cell try/catch so a single bad cell (corrupt LAND data,
                             // unexpected thread-safety issue in a downstream helper, etc.)
                             // doesn't abort the whole Parallel.ForEachAsync — Parallel's
-                            // default behaviour is to cancel sibling workers on first
+                            // default behavior is to cancel sibling workers on first
                             // throw, which would manifest as "rendering stops at a radius"
                             // from the user's POV. Log + skip the offender, continue with
                             // the rest of the viewport.
@@ -380,7 +380,7 @@ internal static class WorldMapLayerRenderer
             yield return result;
         }
 
-        // Surface any exception from the worker task. If ct cancelled, this throws
+        // Surface any exception from the worker task. If ct canceled, this throws
         // OperationCanceledException which the caller's await-foreach catches.
         await renderTask.ConfigureAwait(false);
     }
@@ -1409,9 +1409,9 @@ internal static class WorldMapLayerRenderer
     }
 
     /// <summary>
-    ///     Renders a cell's water as a STANDALONE premultiplied-alpha RGBA tile (RGB = water colour ×
+    ///     Renders a cell's water as a STANDALONE premultiplied-alpha RGBA tile (RGB = water color ×
     ///     coverage, A = coverage). Drawn source-over onto the water-free terrain tile it reproduces the
-    ///     old baked overlay byte-for-byte (<c>dst + (colour − dst)·coverage</c>), but as its own layer
+    ///     old baked overlay byte-for-byte (<c>dst + (color − dst)·coverage</c>), but as its own layer
     ///     it can be drawn AFTER the placed-object overlay (so models are occluded by water — 2D-5) and
     ///     toggled without rebuilding the terrain cache (2D-6). Returns <c>null</c> for a dry cell.
     ///     Premultiplied so it matches how the terrain tiles are uploaded (<c>CanvasBitmap.CreateFromBytes</c>
@@ -1431,10 +1431,10 @@ internal static class WorldMapLayerRenderer
     }
 
     /// <summary>
-    ///     Writes a premultiplied-alpha water layer (RGB = water colour × coverage, A = mask) from a
+    ///     Writes a premultiplied-alpha water layer (RGB = water color × coverage, A = mask) from a
     ///     coverage <paramref name="mask" /> into a transparent <paramref name="tile" /> buffer. Source
     ///     of truth for the standalone-water look, shared by the per-cell <see cref="BuildCellWaterTile" />
-    ///     and the whole-worldspace <see cref="RenderWorldWaterAggregate" />. Colour matches the old bake:
+    ///     and the whole-worldspace <see cref="RenderWorldWaterAggregate" />. Color matches the old bake:
     ///     DNAM Shallow→Deep lerp by depth (mask/180) when a palette is given, else solid blue; coverage
     ///     is always mask/255 (same shoreline AA as <see cref="OverlayWater" />). Returns whether any
     ///     non-dry pixel was written.
@@ -1603,7 +1603,7 @@ internal static class WorldMapLayerRenderer
             var waterB = shallowB + (deepB - shallowB) * depthT;
 
             // Coverage: same /255 mask-to-alpha as the solid-tint fallback, so shoreline AA
-            // looks identical to the pre-DNAM path — only the in-water tint colour changed.
+            // looks identical to the pre-DNAM path — only the in-water tint color changed.
             var coverage = maskValue / 255f;
             var dst = i * 4;
             rgba[dst] = (byte)(rgba[dst] + (waterR - rgba[dst]) * coverage);

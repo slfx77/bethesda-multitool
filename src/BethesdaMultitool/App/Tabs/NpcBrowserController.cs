@@ -133,7 +133,7 @@ internal sealed class NpcBrowserController
 
     public static string FormatBatchCancelled(string operationName)
     {
-        return $"{operationName} cancelled.";
+        return $"{operationName} canceled.";
     }
 
     public static string FormatBatchFailed(string operationName, Exception ex)

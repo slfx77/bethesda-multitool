@@ -44,7 +44,7 @@ public sealed class IntenseTrainingPerkRankRegressionTests
     [Fact]
     public void ReadRuntimePerk_ReadsEntryRankFromOffsetPlus4_NotGarbage()
     {
-        // The IntenseTraining captured behaviour: at least one entry with rank=0.
+        // The IntenseTraining captured behavior: at least one entry with rank=0.
         // Synthetic equivalent: build a PERK with a single-entry list where the
         // entry has rank=0 at offset +4 within its struct. If the reader
         // regresses to reading the wrong offset, it'll surface either 0

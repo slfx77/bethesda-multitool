@@ -20,10 +20,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Land;
 ///     <c>TerrainMeshBuilder</c> renders the native grid directly).
 ///     <para>
 ///         Cells are decoded at full native fidelity (LOD0 = 128×128 samples) into a 129×129 grid:
-///         the extra row/column is the <b>shared edge</b> pulled from the east/north neighbour's
+///         the extra row/column is the <b>shared edge</b> pulled from the east/north neighbor's
 ///         sample 0. Fallout 76 packs 128 <i>disjoint</i> samples per cell (a BTD tile is exactly
 ///         8×128 = 1024 wide, with no shared border), so without that +1 the cell mesh's east/north
-///         edge would take its own sample 127 instead of the neighbour's sample 0 at the same world
+///         edge would take its own sample 127 instead of the neighbor's sample 0 at the same world
 ///         position — a height mismatch that renders as a crack between cells.
 ///     </para>
 /// </summary>
@@ -34,7 +34,7 @@ public static class Fo76TerrainInjector
     // by an exact step of 4). 40k-cell worldspaces (APPALACHIA) cost ~2.7 GB resident at this size.
     private const int SourceLod = 0;
     private const int CellSamples = 128 >> SourceLod; // 128
-    private const int GridSize = CellSamples + 1;      // 129: own 128 samples + the neighbour's shared edge
+    private const int GridSize = CellSamples + 1;      // 129: own 128 samples + the neighbor's shared edge
 
     // LandHeightmap requires HeightDeltas, but ExactHeights takes precedence in CalculateHeights(),
     // so the deltas are never read — share one empty array (matching the Morrowind importer).
@@ -83,7 +83,7 @@ public static class Fo76TerrainInjector
             {
                 using var btd = new BtdFile(btdPath);
                 // Hold several 8×8-cell tiles resident: a cell's own tile plus the east/north/NE
-                // neighbour tiles its shared edge reads from, so a tile-ordered sweep decompresses
+                // neighbor tiles its shared edge reads from, so a tile-ordered sweep decompresses
                 // each tile's LOD pyramid once instead of thrashing.
                 btd.SetTileCacheSize(16);
                 populated += InjectWorldspace(worldspace, btd);
@@ -121,7 +121,7 @@ public static class Fo76TerrainInjector
         }
 
         // Decode in BTD tile order (8×8-cell tiles). Arbitrary cell order would reload — and
-        // re-decompress — the same tile repeatedly as the sweep and its neighbour-edge reads jump
+        // re-decompress — the same tile repeatedly as the sweep and its neighbor-edge reads jump
         // around the grid; tile-grouping keeps each tile's decompressed LOD pyramid hot in the cache.
         targets.Sort(CompareByTile);
 
@@ -151,7 +151,7 @@ public static class Fo76TerrainInjector
     /// <summary>
     ///     Decodes one BTD cell at full native resolution into a 129×129 grid of world heights (game
     ///     units). Row/column 0 is the south/west edge (VHGT / ExactHeights convention); the last
-    ///     row/column (index 128) is the shared edge taken from the north/east neighbour's sample 0,
+    ///     row/column (index 128) is the shared edge taken from the north/east neighbor's sample 0,
     ///     clamped to this cell's own outermost sample at the worldspace boundary.
     /// </summary>
     private static float[,] BuildExactHeights(BtdFile btd, int cellX, int cellY)
@@ -174,8 +174,8 @@ public static class Fo76TerrainInjector
 
     /// <summary>
     ///     Fills the 129×129 grid's east column and north row (and the NE corner) from the adjacent
-    ///     cells' sample 0, so neighbouring cell meshes meet without a crack. At the worldspace edge
-    ///     (no neighbour) the cell's own outermost sample is repeated.
+    ///     cells' sample 0, so neighboring cell meshes meet without a crack. At the worldspace edge
+    ///     (no neighbor) the cell's own outermost sample is repeated.
     /// </summary>
     private static void FillSharedEdges(BtdFile btd, float[,] exact, float[] self, int cellX, int cellY)
     {
@@ -197,7 +197,7 @@ public static class Fo76TerrainInjector
                 : self[(last * CellSamples) + i];
         }
 
-        // North-east corner: the NE neighbour's (0,0), else extend whichever edge exists inward.
+        // North-east corner: the NE neighbor's (0,0), else extend whichever edge exists inward.
         if (hasEast && hasNorth)
         {
             exact[CellSamples, CellSamples] = btd.GetCellHeightSample(cellX + 1, cellY + 1, 0, 0, SourceLod);

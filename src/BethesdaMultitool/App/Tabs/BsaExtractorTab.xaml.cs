@@ -400,14 +400,14 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
         }
         catch (OperationCanceledException)
         {
-            FilterStatusText.Text = "Extraction cancelled";
+            FilterStatusText.Text = "Extraction canceled";
 
             // Mark remaining as skipped
             foreach (var entry in selectedEntries.Where(e =>
                          e.Status == BsaExtractionStatus.Pending || e.Status == BsaExtractionStatus.Extracting))
             {
                 entry.Status = BsaExtractionStatus.Skipped;
-                entry.StatusMessage = "Cancelled";
+                entry.StatusMessage = "Canceled";
             }
         }
         catch (Exception ex)

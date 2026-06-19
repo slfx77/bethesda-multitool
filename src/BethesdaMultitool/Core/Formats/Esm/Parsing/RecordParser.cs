@@ -162,7 +162,7 @@ public sealed class RecordParser
             $"  [Semantic] Display names: {phaseSw.Elapsed} ({_context.FormIdToFullName.Count} names captured)");
 
         // Build weapons and ammo first, then cross-reference for projectile data
-        progress?.Report((5, "Parseing characters..."));
+        progress?.Report((5, "Parsing characters..."));
         phaseSw.Restart();
         var npcs = _actors.ParseNpcs();
         var creatures = _actors.ParseCreatures();
@@ -171,7 +171,7 @@ public sealed class RecordParser
         Logger.Instance.Debug(
             $"  [Semantic] Characters: {phaseSw.Elapsed} (NPCs: {npcs.Count}, Creatures: {creatures.Count}, Races: {races.Count}, Factions: {factions.Count})");
 
-        progress?.Report((15, "Parseing items..."));
+        progress?.Report((15, "Parsing items..."));
         phaseSw.Restart();
         var weapons = _weapons.ParseWeapons();
         var ammo = _consumables.ParseAmmo();
@@ -187,7 +187,7 @@ public sealed class RecordParser
             $"  [Semantic] Items: {phaseSw.Elapsed} (Weapons: {weapons.Count}, Armor: {armor.Count}, Ammo: {ammo.Count}, Consumables: {consumables.Count}, Misc: {miscItems.Count}, Keys: {keys.Count}, Containers: {containers.Count})");
 
         // Build dialogue data, then construct the tree hierarchy
-        progress?.Report((30, "Parseing dialogue..."));
+        progress?.Report((30, "Parsing dialogue..."));
         phaseSw.Restart();
         var quests = _dialogue.ParseQuests();
         var dialogTopics = _dialogue.ParseDialogTopics();
@@ -254,14 +254,14 @@ public sealed class RecordParser
         // === Quest enrichment: PathwayD backfill, variables cross-reference, related NPCs ===
         QuestScriptEnricher.EnrichQuests(_context, quests, scripts, dialogues, phaseSw);
 
-        progress?.Report((55, "Parseing abilities..."));
+        progress?.Report((55, "Parsing abilities..."));
         phaseSw.Restart();
         var perks = _effects.ParsePerks();
         var spells = _effects.ParseSpells();
         Logger.Instance.Debug(
             $"  [Semantic] Abilities: {phaseSw.Elapsed} (Perks: {perks.Count}, Spells: {spells.Count})");
 
-        progress?.Report((60, "Parseing world data..."));
+        progress?.Report((60, "Parsing world data..."));
         phaseSw.Restart();
         var cells = _world.ParseCells();
         var cellTime = phaseSw.Elapsed;
@@ -348,7 +348,7 @@ public sealed class RecordParser
         Logger.Instance.Debug(
             $"  [Semantic] World: {phaseSw.Elapsed} (Cells: {cells.Count} in {cellTime}, Worldspaces: {worldspaces.Count}, Packages: {packages.Count}, SpawnResolved: {resolvedCount}, MapMarkers: {mapMarkers.Count}, LeveledLists: {leveledLists.Count})");
 
-        progress?.Report((80, "Parseing game data..."));
+        progress?.Report((80, "Parsing game data..."));
         phaseSw.Restart();
         var gameSettings = _misc.ParseGameSettings();
         var globals = _miscBasicTypes.ParseGlobals();
@@ -377,7 +377,7 @@ public sealed class RecordParser
         var staticCollections = _miscStaticObjects.ParseStaticCollections();
         Logger.Instance.Debug($"  [Semantic] Game data: {phaseSw.Elapsed} (16 types)");
 
-        progress?.Report((85, "Parseing generic records..."));
+        progress?.Report((85, "Parsing generic records..."));
         phaseSw.Restart();
         var genericTypes = new[]
         {
@@ -413,7 +413,7 @@ public sealed class RecordParser
         _context.MergeRuntimeGenericRecords(genericRecords, allEsmFormIds);
         Logger.Instance.Debug($"  [Semantic] PDB generic runtime merge: {phaseSw.Elapsed}");
 
-        progress?.Report((88, "Parseing specialized records..."));
+        progress?.Report((88, "Parsing specialized records..."));
         phaseSw.Restart();
         var sounds = _miscEnvironment.ParseSounds();
         var musicTypes = _miscEnvironment.ParseMusicTypes();

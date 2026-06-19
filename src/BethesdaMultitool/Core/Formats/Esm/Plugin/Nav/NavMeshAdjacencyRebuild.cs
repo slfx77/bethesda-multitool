@@ -3,11 +3,11 @@ using System.Buffers.Binary;
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 
 /// <summary>
-///     Rebuilds the per-triangle neighbour (edge) links of an NVTR array from the triangle
+///     Rebuilds the per-triangle neighbor (edge) links of an NVTR array from the triangle
 ///     geometry itself, replacing whatever adjacency the runtime capture serialized.
 ///
 ///     <para>
-///     Why: a runtime-captured navmesh records the engine's live neighbour indices, which are
+///     Why: a runtime-captured navmesh records the engine's live neighbor indices, which are
 ///     mutated mid-flight (<c>NavMesh::FlipTriangle</c>, obstacle insert/remove splitting and
 ///     re-linking triangles, door-portal disabling). The serialized indices end up inconsistent
 ///     with the actual triangle mesh — links to triangles that no longer share an edge, and
@@ -15,7 +15,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     <c>PATHFINDING: … Triangle X and Y have opposite normals but are linked</c>,
 ///     <c>… should have a link to Triangle Z, but doesn't</c>, and
 ///     <c>… Triangles X and Y are linked, but their vertices do not match</c>, then dereferences
-///     a bad neighbour inside <c>NavMeshSearchClosePoint</c> when an NPC paths across the seam
+///     a bad neighbor inside <c>NavMeshSearchClosePoint</c> when an NPC paths across the seam
 ///     (the Gomorrah01 entry crash).
 ///     </para>
 ///
@@ -25,15 +25,15 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     triangles can share a physical edge while using different indices for its endpoints. The
 ///     engine matches by position (hence "their vertices do not match"), so we weld vertices at
 ///     the same position to a canonical id first, then match edges on canonical ids. Two
-///     triangles are neighbours across an edge iff they share that edge's two canonical vertices;
+///     triangles are neighbors across an edge iff they share that edge's two canonical vertices;
 ///     manifold edge (exactly two owners) → reciprocal link, everything else (boundary edges,
-///     non-manifold edges shared by 3+) → "no neighbour" (-1). Output is always reciprocal and
+///     non-manifold edges shared by 3+) → "no neighbor" (-1). Output is always reciprocal and
 ///     matches the geometry, so the engine's validator finds nothing to complain about.
 ///     </para>
 ///
 ///     <para>NVTR entry (16 bytes): Vertex0/1/2 (uint16, +0/+2/+4), Edge01/12/20 (int16,
 ///     +6/+8/+10), Flags (uint32, +12). NVVX vertex = NiPoint3 = 3 little-endian floats (12
-///     bytes). Edge01 is the neighbour across edge V0-V1, Edge12 across V1-V2, Edge20 across
+///     bytes). Edge01 is the neighbor across edge V0-V1, Edge12 across V1-V2, Edge20 across
 ///     V2-V0.</para>
 /// </summary>
 internal static class NavMeshAdjacencyRebuild
@@ -46,7 +46,7 @@ internal static class NavMeshAdjacencyRebuild
     private static readonly int[] EdgeSlotOffset = [6, 8, 10];
 
     /// <summary>
-    ///     Rebuilds the three neighbour slots of every triangle in place using vertex positions
+    ///     Rebuilds the three neighbor slots of every triangle in place using vertex positions
     ///     from <paramref name="nvvxBytes" /> to weld duplicate vertices. Falls back to raw-index
     ///     matching when NVVX is missing/mis-sized. Returns the number of edge slots whose value
     ///     changed. No-op (returns 0) when NVTR is empty, mis-sized, or exceeds the int16
@@ -62,7 +62,7 @@ internal static class NavMeshAdjacencyRebuild
         var triangleCount = nvtrBytes.Length / NvtrEntrySize;
         if (triangleCount > short.MaxValue)
         {
-            // Neighbour indices are int16; a mesh past 32767 triangles can't be represented.
+            // Neighbor indices are int16; a mesh past 32767 triangles can't be represented.
             // The engine has the same limit — refuse rather than emit overflowed indices.
             return 0;
         }
@@ -72,7 +72,7 @@ internal static class NavMeshAdjacencyRebuild
         // NVVX is unavailable (the raw index is its own canonical id).
         var canonical = BuildCanonicalVertexMap(nvvxBytes);
 
-        // Snapshot the original neighbour values so we can count actual changes.
+        // Snapshot the original neighbor values so we can count actual changes.
         var original = new short[triangleCount * 3];
         for (var t = 0; t < triangleCount; t++)
         {
@@ -98,7 +98,7 @@ internal static class NavMeshAdjacencyRebuild
             AddEdge(edgeOwners, c2, c0, t, 2);
         }
 
-        // Default every slot to "no neighbour"; fill in the manifold (exactly-two-owner) edges.
+        // Default every slot to "no neighbor"; fill in the manifold (exactly-two-owner) edges.
         var rebuilt = new short[triangleCount * 3];
         Array.Fill(rebuilt, (short)NoNeighbor);
         foreach (var owners in edgeOwners.Values)
@@ -106,7 +106,7 @@ internal static class NavMeshAdjacencyRebuild
             if (owners.Count != 2)
             {
                 // Boundary edge (1 owner) or non-manifold edge (3+). Both stay -1: a triangle
-                // border with no single well-defined neighbour is exactly "no link".
+                // border with no single well-defined neighbor is exactly "no link".
                 continue;
             }
 
@@ -183,7 +183,7 @@ internal static class NavMeshAdjacencyRebuild
         int triangle,
         int edgeOrdinal)
     {
-        // Degenerate edge (repeated vertex) can't have a neighbour — skip so it stays -1.
+        // Degenerate edge (repeated vertex) can't have a neighbor — skip so it stays -1.
         if (va == vb)
         {
             return;

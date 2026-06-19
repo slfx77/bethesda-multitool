@@ -8,7 +8,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 ///     the renderers treat the view-projection as an opaque matrix.
 ///     <para>
 ///         Convention: WORLD space is X = east, Y = north, Z = up. The camera sits high above the
-///         rectangle centre looking straight down −Z with up = +Y. With up = +Y and an ortho frustum
+///         rectangle center looking straight down −Z with up = +Y. With up = +Y and an ortho frustum
 ///         where top &gt; bottom, world +X maps to clip +X (east → right) and world +Y maps to clip
 ///         +Y (north → top row). A row-major GPU readback is therefore north→south, matching the 2D
 ///         map's canvas convention (X right, north up) with no flip. This is locked by
@@ -25,7 +25,7 @@ internal static class TopDownViewProjBuilder
     public static Matrix4x4 BuildViewProj(float worldMinX, float worldMaxX, float worldMinY, float worldMaxY)
     {
         // View is a pure −Z translation (camera lifted by EyeHeight looking straight down), NOT a
-        // look-at: a look-at would recentre X/Y on the camera, which wouldn't match an ortho frustum
+        // look-at: a look-at would recenter X/Y on the camera, which wouldn't match an ortho frustum
         // expressed in world coordinates. Keeping X/Y untouched lets the off-center ortho map the
         // world rect directly — worldMinX→clip −1 (west/left), worldMaxX→+1 (east/right),
         // worldMinY→−1 (south/bottom), worldMaxY→+1 (north/top). Reversed-Z (CameraState.ReverseZ,
@@ -39,7 +39,7 @@ internal static class TopDownViewProjBuilder
     }
 
     /// <summary>
-    ///     A visibility cylinder centred on the rectangle, with radius covering its corners plus
+    ///     A visibility cylinder centered on the rectangle, with radius covering its corners plus
     ///     <paramref name="slack" />. <see cref="VisibilityCylinder" /> is an XY-circle cull
     ///     (camera-orientation-independent), so a generous radius simply admits every cell that could
     ///     be visible in the top-down view.

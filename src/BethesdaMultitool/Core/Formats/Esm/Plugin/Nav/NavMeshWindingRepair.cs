@@ -9,7 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     (<c>NavMesh::FlipTriangle</c>, obstacle insertion/removal). The result is a mesh where
 ///     adjacent triangles can wind in opposite directions; FNV's load-time validator logs
 ///     <c>PATHFINDING: Navmesh … Triangle X and Y have opposite normals but are linked</c> and
-///     then dereferences a flipped neighbour inside <c>NavMeshSearchClosePoint</c> → AV when an
+///     then dereferences a flipped neighbor inside <c>NavMeshSearchClosePoint</c> → AV when an
 ///     NPC paths across the seam (the Gomorrah01 entry crash).
 ///
 ///     <para>
@@ -25,10 +25,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     Flipping a triangle = reverse its winding by swapping Vertex1/Vertex2. Because the edge
 ///     slots are defined relative to the vertex order (Edge01 = edge V0-V1, Edge12 = V1-V2,
 ///     Edge20 = V2-V0), swapping V1/V2 turns edge V2-V0 into the new V0-V1 slot and edge V0-V1
-///     into the new V2-V0 slot, so Edge01 and Edge20 are swapped to keep each neighbour pointing
+///     into the new V2-V0 slot, so Edge01 and Edge20 are swapped to keep each neighbor pointing
 ///     across the same geometric edge. Edge12 (V1-V2 ⇒ V2-V1, same edge) is unchanged. The
 ///     adjacency graph (which triangle borders which) is preserved; only this triangle's internal
-///     vertex/edge order changes, so neighbours' back-references (which store triangle indices,
+///     vertex/edge order changes, so neighbors' back-references (which store triangle indices,
 ///     not edge slots) stay valid.
 ///     </para>
 ///
@@ -140,7 +140,7 @@ internal static class NavMeshWindingRepair
         BinaryPrimitives.WriteUInt16LittleEndian(nvtr.AsSpan(baseOff + 2, 2), v2);
         BinaryPrimitives.WriteUInt16LittleEndian(nvtr.AsSpan(baseOff + 4, 2), v1);
 
-        // Swap Edge01 (+6) and Edge20 (+10) to keep each neighbour across the same geometric edge.
+        // Swap Edge01 (+6) and Edge20 (+10) to keep each neighbor across the same geometric edge.
         var e01 = BinaryPrimitives.ReadInt16LittleEndian(nvtr.AsSpan(baseOff + 6, 2));
         var e20 = BinaryPrimitives.ReadInt16LittleEndian(nvtr.AsSpan(baseOff + 10, 2));
         BinaryPrimitives.WriteInt16LittleEndian(nvtr.AsSpan(baseOff + 6, 2), e20);

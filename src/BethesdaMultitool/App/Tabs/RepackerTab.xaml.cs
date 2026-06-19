@@ -392,7 +392,7 @@ public sealed partial class RepackerTab : UserControl, IDisposable, IHasSettings
         }
         catch (OperationCanceledException)
         {
-            StatusText.Text = "Conversion cancelled";
+            StatusText.Text = "Conversion canceled";
         }
         catch (Exception ex)
         {

@@ -16,7 +16,7 @@ public sealed class SounEncoder : IRecordEncoder
     // The model widens MinAttenuationDistance / MaxAttenuationDistance to ushort but the
     // wire format is uint8 per PDB; downstream serializer truncates via cast. Schema fields
     // we don't populate (Attenuation1..5, ReverbAttenuation, Priority, LoopBegin, LoopEnd)
-    // are zero-filled — matches the prior encoder's behaviour of leaving those bytes at 0.
+    // are zero-filled — matches the prior encoder's behavior of leaving those bytes at 0.
     private static readonly Dictionary<string, Func<SoundRecord, object?>> SnddExtractors = new(StringComparer.Ordinal)
     {
         ["MinAttenuationDistance"] = m => (byte)m.MinAttenuationDistance,

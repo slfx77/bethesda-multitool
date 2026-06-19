@@ -447,7 +447,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         }
         catch (OperationCanceledException)
         {
-            PhaseStatusTextBlock.Text = "Cancelled.";
+            PhaseStatusTextBlock.Text = "Canceled.";
         }
         catch (Exception ex)
         {
@@ -470,7 +470,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         _cts?.Cancel();
-        PhaseStatusTextBlock.Text = "Cancelling...";
+        PhaseStatusTextBlock.Text = "Canceling...";
     }
 
     private void ConvertAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)

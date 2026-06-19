@@ -269,7 +269,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
         }
         catch (OperationCanceledException)
         {
-            StatusTextBlock.Text = "Processing cancelled";
+            StatusTextBlock.Text = "Processing canceled";
         }
         catch (Exception ex)
         {
@@ -407,7 +407,7 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         _cts?.Cancel();
-        StatusTextBlock.Text = "Cancelling...";
+        StatusTextBlock.Text = "Canceling...";
     }
 
     #region Load Order

@@ -12,7 +12,7 @@ namespace BethesdaMultitool;
 internal interface ITopDownSceneRenderer
 {
     /// <summary>
-    ///     True when the D3D12 backend + terrain + reference renderers are initialised, so
+    ///     True when the D3D12 backend + terrain + reference renderers are initialized, so
     ///     <see cref="RenderTopDownAsync" /> can run. Drives whether the 2D map's toggle is enabled.
     /// </summary>
     bool CanRenderTopDown { get; }

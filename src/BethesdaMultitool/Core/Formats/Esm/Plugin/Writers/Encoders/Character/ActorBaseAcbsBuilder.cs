@@ -7,7 +7,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 /// <summary>
 ///     Builds ACBS (24 bytes: ACTOR_BASE_DATA) subrecord bytes for NPC and CREA encoders.
 ///     Both record types share the same ACBS schema and the same flag-policy fixups —
-///     consolidated here so both encoders get the same behaviour, fixing a latent
+///     consolidated here so both encoders get the same behavior, fixing a latent
 ///     CREA bug where templated creatures were emitted without the UseTemplate (0x40)
 ///     bit and showed up in-game with per-spawn numeric suffixes (mirror of the
 ///     Ulysses-suffix bug previously fixed on NPC placements).

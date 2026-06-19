@@ -198,7 +198,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
             // Scan and create entries on background thread
             var entries = await ScanAndCreateDdxEntriesAsync(directory, token);
 
-            // Check if cancelled before updating UI
+            // Check if canceled before updating UI
             if (token.IsCancellationRequested) return;
 
             // Only the ItemsSource assignment happens on UI thread
@@ -218,8 +218,8 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
         }
         catch (OperationCanceledException)
         {
-            // Scan was cancelled, another scan is starting
-            StatusTextBlock.Text = "Scan cancelled.";
+            // Scan was canceled, another scan is starting
+            StatusTextBlock.Text = "Scan canceled.";
         }
         finally
         {
@@ -488,11 +488,11 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
         }
         catch (OperationCanceledException)
         {
-            // Mark remaining files as cancelled
+            // Mark remaining files as canceled
             foreach (var file in filesToConvert.Where(f => f.Status is "Converting..." or "Queued"))
-                file.Status = "Cancelled";
+                file.Status = "Canceled";
 
-            StatusTextBlock.Text = "Conversion cancelled.";
+            StatusTextBlock.Text = "Conversion canceled.";
         }
         finally
         {
@@ -506,7 +506,7 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         _cts?.Cancel();
-        StatusTextBlock.Text = "Cancelling...";
+        StatusTextBlock.Text = "Canceling...";
     }
 
     #region Sorting

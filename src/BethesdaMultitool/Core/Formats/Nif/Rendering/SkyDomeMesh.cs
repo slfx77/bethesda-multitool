@@ -10,7 +10,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 ///     fixed sky, not a screen overlay) instead of a fullscreen-triangle stereographic projection.
 ///     <para>
 ///         A full sphere (nadir → zenith) rather than a hemisphere guarantees the dome always covers the
-///         whole view — the camera sits at the centre — so there is never an uncovered band when looking
+///         whole view — the camera sits at the center — so there is never an uncovered band when looking
 ///         toward or below the horizon. UVs are lat-long (u = azimuth, v = elevation), the layout the
 ///         engine's cloud/star sky textures are authored for, so the texture wraps around the horizon and
 ///         stacks toward the zenith the way the source art intends.
@@ -33,7 +33,7 @@ internal static class SkyDomeMesh
     ///     <paramref name="segments" /> longitude slices. Vertex count is
     ///     <c>(rings + 1) · (segments + 1)</c> (the seam longitude is duplicated so the U coordinate runs
     ///     0→1 without a wrap discontinuity); index count is <c>rings · segments · 6</c>. Winding is
-    ///     inward (triangle normals point toward the centre) so the inside of the sphere — the side the
+    ///     inward (triangle normals point toward the center) so the inside of the sphere — the side the
     ///     camera sees — faces front; the renderer draws with culling off regardless.
     /// </summary>
     internal static Mesh Generate(int rings = 24, int segments = 48)
@@ -71,7 +71,7 @@ internal static class SkyDomeMesh
                 var i1 = (ushort)(r * stride + s + 1);
                 var i2 = (ushort)((r + 1) * stride + s);
                 var i3 = (ushort)((r + 1) * stride + s + 1);
-                // Inward-facing winding (toward the sphere centre / camera).
+                // Inward-facing winding (toward the sphere center / camera).
                 indices[ii++] = i0;
                 indices[ii++] = i2;
                 indices[ii++] = i1;

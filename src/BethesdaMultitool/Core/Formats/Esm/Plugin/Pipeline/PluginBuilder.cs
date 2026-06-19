@@ -125,7 +125,7 @@ public sealed class PluginBuilder
     ///     instead of calling <see cref="FormIdAllocator.Allocate" /> directly.
     ///     Reset to empty at each Build entry. Orphans (refs Phase 0 pre-allocates but Phase 4
     ///     later drops) are tolerated — FormIDs are cheap, the allocator already permits gaps,
-    ///     and the worst-case engine behaviour (PACK PLDT pointing at an allocated-but-unwritten
+    ///     and the worst-case engine behavior (PACK PLDT pointing at an allocated-but-unwritten
     ///     FormID) is a load-time warning, strictly better than today's silent Type-2 degradation.
     /// </summary>
     private readonly Dictionary<uint, uint> _preAllocatedRefFormIds = new();
@@ -768,7 +768,7 @@ public sealed class PluginBuilder
             {
                 Success = false,
                 Stats = stats,
-                ErrorMessage = "Cancelled."
+                ErrorMessage = "Canceled."
             };
         }
         catch (Exception ex)
@@ -5581,7 +5581,7 @@ public sealed class PluginBuilder
 
     /// <summary>
     ///     Read the editor ID from an encoded record's EDID subrecord (the first one), or null
-    ///     when absent. Used to recognise engine default-object markers
+    ///     when absent. Used to recognize engine default-object markers
     ///     (<see cref="EngineDefaultObjectMarkers" />) on the new-record path.
     /// </summary>
     private static string? ReadEncodedEditorId(IReadOnlyList<EncodedSubrecord> subrecords)

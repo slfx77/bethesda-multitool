@@ -8,7 +8,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 ///     Typed runtime reader for TESObjectBOOK (BOOK, ~212 bytes, FormType 0x19).
 ///     Reads full name, model, value, weight, book flags/skill, and enchantment pointer.
 ///     Phase 1B.5 confirmed the Group 2 shift is constant across all observed builds —
-///     the previous probe-driven layout selection was deleted in Phase 1B.6 in favour
+///     the previous probe-driven layout selection was deleted in Phase 1B.6 in favor
 ///     of the baked-in constants in <see cref="RuntimeBookLayout.CreateDefault" />.
 /// </summary>
 internal sealed class RuntimeBookReader

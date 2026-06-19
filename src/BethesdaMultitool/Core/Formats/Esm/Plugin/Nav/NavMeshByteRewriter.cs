@@ -77,12 +77,12 @@ internal static class NavMeshByteRewriter
                     //    serialize mid-flight flipped triangles; uniform winding keeps the engine's
                     //    seam normal check happy. (No-op when winding is already uniform.)
                     NavMeshWindingRepair.Repair(bytes, nvvxBytes);
-                    // 2) Rebuild the triangle neighbour links from the geometry, replacing the
+                    // 2) Rebuild the triangle neighbor links from the geometry, replacing the
                     //    runtime capture's mutated/inconsistent adjacency. This is the load-bearing
                     //    fix for the Gomorrah01 entry crash: the captured links pointed at triangles
                     //    that no longer share an edge ("opposite normals but are linked") and dropped
                     //    links between triangles that do ("should have a link, but doesn't"), feeding
-                    //    NavMeshSearchClosePoint a bad neighbour → AV. Geometry-derived adjacency is
+                    //    NavMeshSearchClosePoint a bad neighbor → AV. Geometry-derived adjacency is
                     //    always reciprocal and matches the mesh exactly. NVVX is passed so vertices
                     //    at the same position (runtime obstacle-split duplicates) weld before edge
                     //    matching — otherwise shared edges with different indices stay unlinked.

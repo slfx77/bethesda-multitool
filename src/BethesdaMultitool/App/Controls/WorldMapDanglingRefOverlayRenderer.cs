@@ -13,7 +13,7 @@ namespace BethesdaMultitool;
 ///     clusters that the cell-traversal pipeline never reached. Cells are tinted by
 ///     confidence; ref counts are drawn as small badges at sufficient zoom.
 ///
-///     Confidence colour key:
+///     Confidence color key:
 ///       HIGH/STRONG (named cell wins) -> vivid magenta
 ///       MEDIUM      (sole unnamed cand.) -> orange
 ///       LOW         (multiple unnamed cands.) -> yellow

@@ -121,7 +121,7 @@ internal sealed class BoundedResolveQueue<TKey, TResult> : ITrackableResource, I
                     }
                     else
                     {
-                        // Observe a faulted/cancelled antecedent so it never surfaces as an
+                        // Observe a faulted/canceled antecedent so it never surfaces as an
                         // UnobservedTaskException; the key simply resolves to "no payload".
                         _ = t.Exception;
                     }

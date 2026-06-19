@@ -12,7 +12,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin;
 ///     master record for it, treats it as a brand-new prototype record, and emits a
 ///     <i>duplicate</i> STAT under a fresh plugin FormID. Any structural REFR that referenced
 ///     the marker (portal <c>XPOD</c>, occlusion <c>XOCP</c>) then gets re-based onto the
-///     non-functional duplicate, so the engine no longer recognises it as a portal/occlusion
+///     non-functional duplicate, so the engine no longer recognizes it as a portal/occlusion
 ///     volume — the room/portal/occlusion graph desyncs and rooms cull to black (observed in
 ///     Gomorrah01: five portal REFRs re-based onto a duplicate "PortalMarker" STAT).
 ///     </para>

@@ -106,7 +106,7 @@ public sealed partial class SingleFileTab
                 await EnsureSemanticParseAsync();
             }
 
-            // A new-file load may have cancelled this populate while the parse ran; stop before
+            // A new-file load may have canceled this populate while the parse ran; stop before
             // writing into the (possibly reopened) session.
             cancellationToken.ThrowIfCancellationRequested();
 

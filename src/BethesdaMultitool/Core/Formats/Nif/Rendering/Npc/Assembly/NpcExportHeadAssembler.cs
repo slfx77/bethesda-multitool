@@ -55,7 +55,7 @@ internal static class NpcExportHeadAssembler
                         // splotches / triangular holes that the rasterizer's per-pixel shader
                         // smooths over. WeldSeamNormals is hemisphere-split so opposing-normal
                         // seam partners (mouth interior vs face exterior) stay in distinct weld
-                        // groups instead of cancelling to a zero direction.
+                        // groups instead of canceling to a zero direction.
                         FaceGenMeshMorpher.WeldSeamNormals(
                             part.Submesh.Positions,
                             part.Submesh.Normals);

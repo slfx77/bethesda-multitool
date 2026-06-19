@@ -458,7 +458,7 @@ public sealed class PackEncoder : IRecordEncoder
     }
 
     /// <summary>
-    ///     Map of PLDT Type byte → whether <c>Union</c> is a FormID. FNV recognises additional
+    ///     Map of PLDT Type byte → whether <c>Union</c> is a FormID. FNV recognizes additional
     ///     types (NearCurrent=2, ObjectType=5) where Union is an enum/no-op and needs no
     ///     validation. Conservative: only sanitize types we know carry FormIDs.
     /// </summary>

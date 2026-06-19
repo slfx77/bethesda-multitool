@@ -77,10 +77,10 @@ internal static class NpcGlbTintColorEncoder
         }
 
         // Mirror the rasterizer's rule (NifScanlineRasterizer.cs:307-331): when a submesh
-        // carries a tint colour, the tinted texture is the sole colour source and vertex
-        // colours are ignored — engine shader paths bound to tint-receiving geometry
+        // carries a tint color, the tinted texture is the sole color source and vertex
+        // colors are ignored — engine shader paths bound to tint-receiving geometry
         // (NPC hair / brow / lash, skin / armour HCLR overrides) substitute tint × texture
-        // for vertex-colour modulation. Without this we'd multiply the auburn baked
+        // for vertex-color modulation. Without this we'd multiply the auburn baked
         // diffuse (R≈0.18, G≈0.09, B≈0.02) by hair-card AO masks (R≈0.08, G/B=1.0),
         // killing the red channel and rendering hair green. The previous extra
         // `!submesh.UseVertexColors` guard was a misread: BSShaderFlags2 bit 5 is forced

@@ -251,7 +251,7 @@ internal static class TerrainMeshBuilder
         var lastIndex = n - 1;
         // Central differences in cell-local units, falling back to forward/backward at edges.
         // dz/dx ≈ (h[i+1] - h[i-1]) / (2 * spacing); same for dz/dy. The surface normal of
-        // z = f(x,y) is (-dz/dx, -dz/dy, 1) normalised — for a flat heightmap this is exactly +Z.
+        // z = f(x,y) is (-dz/dx, -dz/dy, 1) normalized — for a flat heightmap this is exactly +Z.
         float hxMinus = i > 0 ? heights[j, i - 1] : heights[j, i];
         float hxPlus = i < lastIndex ? heights[j, i + 1] : heights[j, i];
         float hyMinus = j > 0 ? heights[j - 1, i] : heights[j, i];

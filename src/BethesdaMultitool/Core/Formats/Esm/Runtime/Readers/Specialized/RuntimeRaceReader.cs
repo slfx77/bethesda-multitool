@@ -24,7 +24,7 @@ internal sealed class RuntimeRaceReader
     //   G2: pDefaultVoiceType(1228) .. pYoungRace(1240) — late TESRace-specific
     // Observed probe shifts across 32 sampled DMPs: G1 always 0, G2 = -8 (Debug)
     // or +8 (Release). The middle range (192..1227) holds head/body model arrays
-    // we don't read, so its shift behaviour is irrelevant.
+    // we don't read, so its shift behavior is irrelevant.
     private const int G1MinOffset = 0;
     private const int G1MaxOffset = 1000;
     private const int G2MinOffset = 1200;

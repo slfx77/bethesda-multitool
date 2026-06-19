@@ -13,7 +13,7 @@ namespace BethesdaMultitool.Core.Orchestration;
 ///         adds no thread hops. What it adds:
 ///     </para>
 ///     <list type="bullet">
-///         <item>a session <see cref="Token" />, cancelled by <see cref="CancelAll" /> (work checks
+///         <item>a session <see cref="Token" />, canceled by <see cref="CancelAll" /> (work checks
 ///             it after awaits and before touching session state),</item>
 ///         <item>single-flight de-duplication per key — concurrent triggers of the same populate
 ///             share one task instead of racing,</item>
@@ -59,8 +59,8 @@ internal sealed class SessionTaskRunner : ITrackableResource, IDisposable
     public ResourceCategory Category => ResourceCategory.Queue;
 
     /// <summary>
-    ///     The current session token. Replaced (with the old one cancelled) by
-    ///     <see cref="CancelAll" />; work received it at start time, so cancelled work observes the
+    ///     The current session token. Replaced (with the old one canceled) by
+    ///     <see cref="CancelAll" />; work received it at start time, so canceled work observes the
     ///     old token while new work gets the fresh one.
     /// </summary>
     public CancellationToken Token
@@ -222,7 +222,7 @@ internal sealed class SessionTaskRunner : ITrackableResource, IDisposable
         }
         catch (OperationCanceledException)
         {
-            // Session cancelled — expected during teardown or a new-file load.
+            // Session canceled — expected during teardown or a new-file load.
         }
         catch (Exception ex)
         {

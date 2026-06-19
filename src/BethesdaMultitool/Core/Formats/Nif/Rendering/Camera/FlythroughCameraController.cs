@@ -240,7 +240,7 @@ internal sealed class FlythroughCameraController
     ///     Airborne: integrates <see cref="Gravity" /> against <see cref="JumpSpeed" /> and lands back
     ///     on the terrain under the camera. Without a <see cref="GroundHeightSampler" /> there is no
     ///     ground to jump from (and nothing to land on), so jumping is disabled and any in-progress
-    ///     hop is cancelled — the camera Z is left wherever it is.
+    ///     hop is canceled — the camera Z is left wherever it is.
     /// </summary>
     private void UpdateWalkVertical(float deltaSeconds)
     {

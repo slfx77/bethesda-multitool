@@ -164,7 +164,7 @@ internal static class BatchOperationHelper
     /// </summary>
     internal static string FormatCancellationMessage(int processed)
     {
-        return $"Cancelled after {processed:N0} entries";
+        return $"Canceled after {processed:N0} entries";
     }
 
     /// <summary>

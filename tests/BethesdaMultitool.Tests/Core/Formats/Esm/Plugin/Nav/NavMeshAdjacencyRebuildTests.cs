@@ -5,7 +5,7 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.Nav;
 
 /// <summary>
-///     Pins <see cref="NavMeshAdjacencyRebuild" />: triangle neighbour links must be derived
+///     Pins <see cref="NavMeshAdjacencyRebuild" />: triangle neighbor links must be derived
 ///     purely from the geometry (shared-vertex edges), be reciprocal, and overwrite whatever
 ///     adjacency the runtime capture serialized — the load-bearing fix for the Gomorrah01
 ///     navmesh-pathfinding crash.
@@ -97,7 +97,7 @@ public class NavMeshAdjacencyRebuildTests
     [Fact]
     public void Non_manifold_edge_shared_by_three_triangles_links_none()
     {
-        // Three triangles all sharing edge {1,2}: ambiguous, so the slot is left "no neighbour".
+        // Three triangles all sharing edge {1,2}: ambiguous, so the slot is left "no neighbor".
         var nvtr = BuildNvtr(
             (0, 1, 2, 9, 9, 9),
             (2, 1, 3, 9, 9, 9),
@@ -113,7 +113,7 @@ public class NavMeshAdjacencyRebuildTests
     [Fact]
     public void Output_is_always_reciprocal()
     {
-        // A small fan; after rebuild every stored neighbour must store the source back.
+        // A small fan; after rebuild every stored neighbor must store the source back.
         var nvtr = BuildNvtr(
             (0, 1, 2, 0, 0, 0),
             (0, 2, 3, 0, 0, 0),

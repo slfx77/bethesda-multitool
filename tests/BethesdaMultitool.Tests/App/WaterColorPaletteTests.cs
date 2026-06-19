@@ -49,8 +49,8 @@ public sealed class WaterColorPaletteTests
     public void FromVisualProperties_MirrorsMissingEndpointSoLerpDegeneratesToSingleColor()
     {
         // Only ShallowColor present — DeepColor mirrors it. This means the overlay's
-        // Shallow→Deep lerp produces the same colour everywhere instead of fading toward
-        // an uninitialised/black Deep endpoint.
+        // Shallow→Deep lerp produces the same color everywhere instead of fading toward
+        // an uninitialized/black Deep endpoint.
         var palette = WaterColorPalette.FromVisualProperties(
             new Dictionary<string, object?> { ["ShallowColor"] = 0x00_80_60_40u });
 

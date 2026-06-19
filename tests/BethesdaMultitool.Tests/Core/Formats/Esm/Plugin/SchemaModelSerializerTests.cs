@@ -52,7 +52,7 @@ public class SchemaModelSerializerTests
     public void Serialize_MissingExtractorsZeroFill()
     {
         // ALCH/ENIT, but the extractor map omits AddictionFormId / WithdrawalEffectFormId.
-        // Missing fields should zero-fill — matches SchemaDictionarySerializer's dict-payload behaviour.
+        // Missing fields should zero-fill — matches SchemaDictionarySerializer's dict-payload behavior.
         var alch = new ConsumableRecord { FormId = 1, Value = 99u, AddictionChance = 1.5f };
 
         var partial = new Dictionary<string, Func<ConsumableRecord, object?>>(StringComparer.Ordinal)

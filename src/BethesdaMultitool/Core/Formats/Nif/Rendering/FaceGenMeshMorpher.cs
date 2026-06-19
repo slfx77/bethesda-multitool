@@ -200,13 +200,13 @@ internal static class FaceGenMeshMorpher
             }
             else
             {
-                // Accumulated face cross products cancelled to ~zero (concave inflection,
+                // Accumulated face cross products canceled to ~zero (concave inflection,
                 // spiky vertex with opposing triangle clusters, or a rim where surrounding
                 // triangles point in many directions). Falling back to the authored normal
                 // keeps the vertex shadable — leaving it at zero makes the lighting equation
                 // produce black pixels, which read as holes (eyelid rim, brow seam) and
                 // sometimes as bright spots after the seam weld averages a near-zero with
-                // its neighbours.
+                // its neighbors.
                 normals[v] = originalNormals[v];
                 normals[v + 1] = originalNormals[v + 1];
                 normals[v + 2] = originalNormals[v + 2];

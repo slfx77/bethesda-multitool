@@ -231,7 +231,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         }
         catch (OperationCanceledException)
         {
-            StatusTextBlock.Text = "Conversion cancelled.";
+            StatusTextBlock.Text = "Conversion canceled.";
         }
         finally
         {
@@ -245,7 +245,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         ConversionCts?.Cancel();
-        StatusTextBlock.Text = "Cancelling...";
+        StatusTextBlock.Text = "Canceling...";
     }
 
     #endregion

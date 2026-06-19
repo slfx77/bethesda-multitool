@@ -227,7 +227,7 @@ internal readonly record struct RenderableReference(
         var bounds = p.Bounds;
         if (bounds is null)
         {
-            // No OBND (some MSTT / runtime-only refs) — use a generous fallback sphere centred at the
+            // No OBND (some MSTT / runtime-only refs) — use a generous fallback sphere centered at the
             // REFR position. This radius is TRANSIENT: it only gates the cull until the mesh resolves,
             // after which _meshLocalRadius supplies the true local bounds. 256 (a human-scale prop) was
             // too small for OBND-less walls/buildings — they edge-popped for the frame or two before

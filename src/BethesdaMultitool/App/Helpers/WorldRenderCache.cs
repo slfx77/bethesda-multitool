@@ -639,7 +639,7 @@ internal sealed class DecodedTerrainCell
         extMask[(E - 1) * E] = extMask[(E - 1) * E + 1];      // SW
         extMask[(E - 1) * E + (E - 1)] = extMask[(E - 1) * E + (E - 2)]; // SE
 
-        // Blur the extended 35×35; crop the centre 33×33.
+        // Blur the extended 35×35; crop the center 33×33.
         BlurWaterMask(extMask, E, E);
         var mask = new byte[N * N];
         for (var py = 0; py < N; py++)

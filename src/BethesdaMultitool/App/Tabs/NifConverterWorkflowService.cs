@@ -109,7 +109,7 @@ internal static class NifConverterWorkflowService
             }
             catch (OperationCanceledException)
             {
-                file.Status = "Cancelled";
+                file.Status = "Canceled";
                 throw;
             }
             catch (Exception ex)

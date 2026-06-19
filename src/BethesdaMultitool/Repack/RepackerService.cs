@@ -150,15 +150,15 @@ public static class RepackerService
         catch (OperationCanceledException)
         {
             result.Success = false;
-            result.Error = "Operation cancelled";
+            result.Error = "Operation canceled";
 
             progress.Report(new RepackerProgress
             {
                 Phase = RepackPhase.Complete,
-                Message = "Operation cancelled",
+                Message = "Operation canceled",
                 IsComplete = true,
                 Success = false,
-                Error = "Cancelled"
+                Error = "Canceled"
             });
         }
         catch (Exception ex)

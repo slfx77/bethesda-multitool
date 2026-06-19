@@ -357,7 +357,7 @@ public sealed class RuntimeCellEnumeratorTests
         var enumerator = heap.BuildEnumerator(hashTableVa);
         // Provide a byte-stream anchor (one of the NAVM FormIDs) so calibration succeeds
         // and the canonical-byte entries route to NavMeshVas. Without an anchor the new
-        // Phase 2d behaviour would send them to NavMeshVaCandidates instead — that path
+        // Phase 2d behavior would send them to NavMeshVaCandidates instead — that path
         // is exercised by Uncalibrated_EmitsNavMeshVaCandidatesAcrossByteWindow.
         var result = enumerator.Enumerate(
             [],

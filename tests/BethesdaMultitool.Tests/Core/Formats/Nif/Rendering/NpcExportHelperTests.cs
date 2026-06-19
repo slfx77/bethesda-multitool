@@ -300,10 +300,10 @@ public sealed class NpcExportHelperTests
     [Fact]
     public void BuildVertexColor_TintedSubmeshIgnoresVertexColorsEvenWhenFlagSet()
     {
-        // When a submesh carries a tint colour, the tinted texture is the sole colour
-        // source and vertex colours are ignored (NpcGlbTintColorEncoder.BuildVertexColor)
+        // When a submesh carries a tint color, the tinted texture is the sole color
+        // source and vertex colors are ignored (NpcGlbTintColorEncoder.BuildVertexColor)
         // — even though UseVertexColors is set, because that flag is forced true upstream
-        // and is not a reliable gate. Returning white keeps vertex-colour modulation neutral
+        // and is not a reliable gate. Returning white keeps vertex-color modulation neutral
         // so hair-card AO masks can't wash out the baked tint (auburn-hair-renders-green
         // regression).
         var submesh = new RenderableSubmesh

@@ -52,7 +52,7 @@ public sealed class SkyDomeMeshTests
         }
 
         // Full sphere: a vertex straight down (nadir, Z ≈ -1) and straight up (zenith, Z ≈ +1) so the
-        // dome always covers the whole view from the camera at the centre.
+        // dome always covers the whole view from the camera at the center.
         Assert.True(minZ < -0.99f, $"expected a nadir vertex (Z≈-1), got minZ={minZ}");
         Assert.True(maxZ > 0.99f, $"expected a zenith vertex (Z≈+1), got maxZ={maxZ}");
     }
@@ -70,8 +70,8 @@ public sealed class SkyDomeMeshTests
     [Fact]
     public void Generate_InwardWinding_TrianglesFaceCentre()
     {
-        // The camera sits at the sphere centre, so each triangle's geometric normal should point roughly
-        // TOWARD the centre (opposite its outward position) — i.e. the dot of the face normal with the
+        // The camera sits at the sphere center, so each triangle's geometric normal should point roughly
+        // TOWARD the center (opposite its outward position) — i.e. the dot of the face normal with the
         // outward direction at the face centroid is negative for inward winding.
         var mesh = SkyDomeMesh.Generate(12, 24);
         var inwardCount = 0;

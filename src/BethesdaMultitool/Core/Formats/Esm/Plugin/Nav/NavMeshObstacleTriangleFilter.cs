@@ -24,7 +24,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///     and remaps the triangle indices that <c>NVCA</c> (cover triangles) and <c>NVDP</c> (door
 ///     portals, owning-triangle at +4) reference, dropping any that pointed at a removed triangle.
 ///     Vertices (NVVX) are left untouched — orphaned ones are harmless and dropping them would
-///     force a full vertex-index remap. Triangle neighbour links are NOT remapped here: the
+///     force a full vertex-index remap. Triangle neighbor links are NOT remapped here: the
 ///     downstream <see cref="NavMeshAdjacencyRebuild" /> regenerates them from geometry on the
 ///     filtered index space.
 ///     </para>

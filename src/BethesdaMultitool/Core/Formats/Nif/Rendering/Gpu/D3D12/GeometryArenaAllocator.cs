@@ -78,7 +78,7 @@ internal sealed class GeometryArenaAllocator
         return new ArenaAllocation(blockIndex, newOffset, size, alignedSize);
     }
 
-    /// <summary>Returns an allocation's range to its block's free-list, coalescing with neighbours.</summary>
+    /// <summary>Returns an allocation's range to its block's free-list, coalescing with neighbors.</summary>
     public void Free(ArenaAllocation allocation)
     {
         if ((uint)allocation.BlockIndex >= (uint)_blocks.Count)

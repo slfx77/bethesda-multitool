@@ -38,7 +38,7 @@ internal static class SchemaModelSerializer
             {
                 values[field.Name] = extractor(model);
             }
-            // Missing extractors zero-fill via SchemaDictionarySerializer — matches its dict-path behaviour.
+            // Missing extractors zero-fill via SchemaDictionarySerializer — matches its dict-path behavior.
         }
 
         return SchemaDictionarySerializer.Serialize(schema, values);

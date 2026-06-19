@@ -71,7 +71,7 @@ public class Fo76TerrainInjectorTests
     {
         // Two adjacent BTD cells with deliberately distinct height ranges. Fallout 76 packs 128
         // *disjoint* samples per cell, so a watertight mesh needs each cell's east/north edge taken
-        // from the next cell's sample 0 — this verifies the injector pulls the neighbour's edge
+        // from the next cell's sample 0 — this verifies the injector pulls the neighbor's edge
         // (closing the seam) instead of reusing its own sample 127, and decodes at full 129×129.
         var west = new ushort[128 * 128];
         var east = new ushort[128 * 128];
@@ -114,18 +114,18 @@ public class Fo76TerrainInjectorTests
             Assert.Equal(btd.GetCellHeightSample(-1, 0, 5, 7), wh[7, 5], 0.5f);
             Assert.Equal(btd.GetCellHeightSample(-1, 0, 127, 100), wh[100, 127], 0.5f);
 
-            // Seam: west's east edge (col 128) == east neighbour's west column == east's own col 0,
-            // and is far from west's own sample 127 (proving the neighbour edge was pulled, not reused).
+            // Seam: west's east edge (col 128) == east neighbor's west column == east's own col 0,
+            // and is far from west's own sample 127 (proving the neighbor edge was pulled, not reused).
             var ownSample = btd.GetCellHeightSample(-1, 0, 127, 50);
             Assert.Equal(btd.GetCellHeightSample(0, 0, 0, 50), wh[50, 128], 0.5f);
             Assert.Equal(eh[50, 0], wh[50, 128], 0.5f);
             Assert.True(Math.Abs(wh[50, 128] - ownSample) > 100f,
-                "east edge must come from the neighbour, not this cell's sample 127");
+                "east edge must come from the neighbor, not this cell's sample 127");
 
             // East cell is the easternmost -> east edge clamps to its own sample 127.
             Assert.Equal(btd.GetCellHeightSample(0, 0, 127, 50), eh[50, 128], 0.5f);
 
-            // No north neighbour anywhere -> north edge clamps to own sample 127.
+            // No north neighbor anywhere -> north edge clamps to own sample 127.
             Assert.Equal(btd.GetCellHeightSample(-1, 0, 60, 127), wh[128, 60], 0.5f);
         }
         finally

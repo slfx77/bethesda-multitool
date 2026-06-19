@@ -281,7 +281,7 @@ internal static class BsaConvertCommand
         }
         catch (OperationCanceledException)
         {
-            AnsiConsole.MarkupLine("[yellow]Conversion cancelled.[/]");
+            AnsiConsole.MarkupLine("[yellow]Conversion canceled.[/]");
         }
         catch (Exception ex)
         {

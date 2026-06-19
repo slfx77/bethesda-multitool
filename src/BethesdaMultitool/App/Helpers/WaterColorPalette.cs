@@ -35,7 +35,7 @@ internal sealed record WaterColorPalette(
     ///     Direct factory off a WATR DNAM properties dictionary. Returns null when both
     ///     ShallowColor and DeepColor are absent (or both zero) — caller falls back to a
     ///     solid tint. When only one is present, the missing endpoint mirrors the other so
-    ///     the overlay's Shallow→Deep lerp degenerates to a single colour cleanly.
+    ///     the overlay's Shallow→Deep lerp degenerates to a single color cleanly.
     /// </summary>
     internal static WaterColorPalette? FromVisualProperties(IReadOnlyDictionary<string, object?>? props)
     {

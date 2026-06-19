@@ -163,7 +163,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     /// <summary>
     ///     Cancellation source for the in-flight TerrainTextures streaming build. Replaced
-    ///     and cancelled on every viewport change so abandoned cells don't keep decoding on
+    ///     and canceled on every viewport change so abandoned cells don't keep decoding on
     ///     background workers — mirrors Mapbox GL Native's "abandon outdated tile work" policy.
     /// </summary>
     private CancellationTokenSource? _terrainStreamCts;
@@ -305,7 +305,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     /// <summary>
     ///     Bumped only when <see cref="_layerCellBitmaps" /> is actually replaced (set to null,
-    ///     reinitialised in a non-incremental rebuild, or its <see cref="_layerCellBitmapsLayer" />
+    ///     reinitialized in a non-incremental rebuild, or its <see cref="_layerCellBitmapsLayer" />
     ///     identity changes). Used by <see cref="ApplyOneTerrainTextureCell" /> as the drop check
     ///     instead of <see cref="_worldHeightmapBuildVersion" />. The per-stream version is too
     ///     aggressive: during a fast pan, every viewport rebuild bumps it, and tile applies
@@ -1090,7 +1090,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
         catch (OperationCanceledException)
         {
-            // User cancelled — leave whatever tiles were already written.
+            // User canceled — leave whatever tiles were already written.
         }
         catch (Exception ex)
         {
@@ -1172,7 +1172,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                     Dictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? tileBitmaps = null;
                     if (palette is not null)
                     {
-                        // +1-cell margin so edge cells see their cross-tile neighbours when blending.
+                        // +1-cell margin so edge cells see their cross-tile neighbors when blending.
                         var marginCells = activeCells.Where(c =>
                             c.GridX is int gx && c.GridY is int gy &&
                             gx >= tgx0 - 1 && gx <= tgx1 + 1 && gy >= tgy0 - 1 && gy <= tgy1 + 1).ToList();
@@ -2785,7 +2785,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // An empty result is a valid signal (viewport entirely off the populated region);
         // RebuildTerrainTextureViewport treats it as "no viewport" and keeps cap/cache/stream
         // untouched. The old Take(1) fallback here dispatched a junk 1-cell off-screen build
-        // and cancelled the live stream at every pan-stress sweep boundary.
+        // and canceled the live stream at every pan-stress sweep boundary.
         return new TerrainTextureViewportRequest(key, visibleCells, pixelsPerCell);
     }
 
@@ -2956,7 +2956,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _worldWaterWorldspaceFormId = worldspaceFormId;
         var version = ++_worldWaterVersion;
         var defaultWaterHeight = _currentDefaultWaterHeight;
-        var palette = _currentWaterPalette; // toggle-independent: the bitmap is built coloured, drawn only when _showWater
+        var palette = _currentWaterPalette; // toggle-independent: the bitmap is built colored, drawn only when _showWater
         var cache = _data.RenderCache;
         // Snapshot the cell list for the background pass (mirrors the terrain-aggregate build).
         _ = BuildWorldWaterBitmapAsync(cells.ToList(), defaultWaterHeight, palette, cache, version, worldspaceFormId);

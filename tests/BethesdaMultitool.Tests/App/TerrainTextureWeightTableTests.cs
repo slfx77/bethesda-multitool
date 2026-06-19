@@ -381,7 +381,7 @@ public sealed class TerrainTextureWeightTableTests
     public void BuildInto_ProducesIdenticalTableToAllocatingBuild()
     {
         // The streaming workers call BuildInto on a thread-local pooled CellLayerWeightTable
-        // to avoid allocating a fresh 33×33 vertex grid + ATXT dense grids per cell. Behaviour
+        // to avoid allocating a fresh 33×33 vertex grid + ATXT dense grids per cell. Behavior
         // must be byte-identical to the allocating Build path so the visual output is
         // unchanged. Construct a representative input (4 distinct BTXTs + ATXT on SW's east
         // edge + east + north neighbors) so the test exercises the main quadrant loop AND all

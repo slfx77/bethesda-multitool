@@ -201,7 +201,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     ///     <para>
     ///     If a newer PDB is sourced in the future, revisit this method; until
     ///     then any naive "read pPassword" attempts will reproduce the Tier 3.2
-    ///     wrong-offset behaviour (reading <c>0x00</c> or <c>0xFF</c> garbage from
+    ///     wrong-offset behavior (reading <c>0x00</c> or <c>0xFF</c> garbage from
     ///     +180 that downstream clamps mask as VeryEasy).
     ///     </para>
     /// </summary>
