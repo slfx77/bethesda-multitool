@@ -458,8 +458,11 @@ internal static class NifParser
         {
             // FO3 / FNV / Skyrim / Fallout 4 / Starfield (NIF 20.2.0.7).
             0x14020007 => userVersion is 11 or 12,
-            // Oblivion (NIF 20.0.0.4 / 20.0.0.5).
-            0x14000004 or 0x14000005 => userVersion == 11,
+            // Oblivion (NIF 20.0.0.4 / 20.0.0.5). Stock meshes ship with BOTH User Version 11 (most)
+            // and User Version 10 (a large minority — e.g. clutter authored on an older exporter). The
+            // header/legacy-block layout is identical for both, so rejecting 10 dropped ~a third of
+            // Oblivion meshes to "no geometry".
+            0x14000004 or 0x14000005 => userVersion is 10 or 11,
             _ => false
         };
     }

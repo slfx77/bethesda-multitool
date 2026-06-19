@@ -550,11 +550,16 @@ internal sealed class NifSchemaConverter
 
     private void ConvertArrayElements(ConversionContext ctx, NifFieldDef field, int count, int depth)
     {
-        // For arrays that might be used as widths (like "Strip Lengths"),
-        // store individual values so jagged arrays can reference them
+        // For arrays that might be used as widths (like "Strip Lengths"), store individual values so a
+        // following jagged array (NiTriStripsData "Points", length="Num Strips" width="Strip Lengths")
+        // can reference them. The cap must cover real strip counts — a single architecture/fort mesh
+        // can have many hundreds of strips (e.g. 149+). When it doesn't, the jagged Points array resolves
+        // to width 0, so the strip-point data is never measured/converted: the NiTriStripsData block
+        // under-measures, desyncing every block after it (Oblivion's no-block-size legacy path) → whole
+        // mesh pieces drop. The bound matches ConvertArrayField's overall array guard.
         var shouldStoreArrayValues = field.Name.EndsWith(" Lengths", StringComparison.Ordinal) &&
                                      field.Type == "ushort" &&
-                                     count is > 0 and <= 100;
+                                     count is > 0 and <= 100000;
         var arrayValues = shouldStoreArrayValues ? new int[count] : null;
 
         for (var i = 0; i < count && ctx.Position < ctx.End; i++)
