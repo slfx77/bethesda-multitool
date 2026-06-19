@@ -28,19 +28,33 @@ internal static class NifAlphaClassifier
 
         var isHair = IsHairLikeSubmesh(submesh);
 
-        // Depth-writing "blend": a shape that is alpha-blend + alpha-TEST and has ZBuffer_Write set is
-        // an authored occluder with cutouts (e.g. the MobileHomeASNV cabin shell — an opaque hull with
-        // window holes), not see-through transparency. Our renderer only writes depth in the
-        // opaque/cutout pass, so drop the blend and let the switch route it to Cutout (it alpha-tests)
-        // — otherwise its interior faces render in the depth-write-off blend pass and show through the
-        // roof. The alpha-test requirement is load-bearing: pure-blend decals/glass/smoke (alpha-blend,
-        // NO alpha-test) sometimes ALSO set ZBuffer_Write, and stripping their blend made them render
-        // fully opaque. Hair keeps its A2C path (it sets the bit too, but A2C already writes depth).
-        if (hasAlphaBlend && hasAlphaTest && !isHair &&
+        // Depth-writing "blend": a shape whose shader sets ZBuffer_Write is an authored OCCLUDER — the
+        // engine writes depth for it — not see-through transparency. Our renderer only writes depth in
+        // the opaque/cutout pass, so an occluder wrongly left in the depth-write-OFF blend pass renders
+        // see-through: its interior faces and anything behind it show through. Two real cases:
+        //   • MobileHomeASNV cabin shell — alpha-blend + alpha-TEST on an opaque hull with window cutouts
+        //     (interior showed through the roof).
+        //   • McCarran NV_McCarran-Wall03 tower body — alpha-blend + ZBuffer_Write, NO alpha-test (a solid
+        //     stone tower); leaving it in the blend pass let the railing/interior render through the
+        //     metal ring on the pillar.
+        // So drop the blend whenever ZBuffer_Write is set, routing the shape to a depth-writing pass —
+        // EXCEPT for genuine FX (smoke / glass / decals / light cones in effects\ or so named): some of
+        // those quirkily set ZBuffer_Write yet are real transparency, and forcing them opaque (or hard
+        // alpha-test, which gives the reported "sharp edges" on smoke/sandstorms) is worse than the
+        // occlusion artifact. When a non-FX occluder has no alpha-test but its diffuse carries see-through
+        // texels (window glass), enable an alpha-test cutout so those holes survive instead of filling in
+        // solid. Hair keeps its A2C path (it sets the bit too, but A2C already writes depth).
+        if (hasAlphaBlend && !isHair && !IsEffectsLikeSubmesh(submesh) &&
             submesh.ShaderMetadata?.ShaderFlags2 is { } shaderFlags2 &&
             (shaderFlags2 & ZBufferWriteFlag) != 0)
         {
             hasAlphaBlend = false;
+            if (!hasAlphaTest && diffuseTexture is not null && diffuseTexture.HasSignificantAlpha())
+            {
+                hasAlphaTest = true;
+                alphaTestThreshold = 128;
+                alphaTestFunction = 4; // GREATER — discard see-through texels, keep the solid body
+            }
         }
 
         // Hair / brow / lash submeshes use alpha-to-coverage instead of plain blend.
@@ -106,6 +120,45 @@ internal static class NifAlphaClassifier
             return value.Contains("hair", StringComparison.OrdinalIgnoreCase) ||
                    value.Contains("brow", StringComparison.OrdinalIgnoreCase) ||
                    value.Contains("lash", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    ///     True when the submesh is a genuine transparency effect — smoke, dust/sandstorm, cloud, steam,
+    ///     fog, glass/ice, a decal, a light cone/shaft, or a lens flare/halo — identified by its diffuse
+    ///     texture path (notably an <c>effects\</c> / <c>fx\</c> folder) or shape name. Such shapes are
+    ///     left in the alpha-blend pass even when they set ZBuffer_Write, so they keep their soft gradient
+    ///     edges (forcing them to a depth-writing opaque/alpha-test pass gives the reported "sharp edges"
+    ///     on smoke/sandstorms and makes glass/ice render solid). Architecture occluders never match.
+    /// </summary>
+    internal static bool IsEffectsLikeSubmesh(RenderableSubmesh submesh)
+    {
+        return ContainsFxHint(submesh.DiffuseTexturePath) || ContainsFxHint(submesh.ShapeName);
+
+        static bool ContainsFxHint(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var v = value.Replace('/', '\\');
+            return v.Contains("\\effects\\", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("\\fx\\", StringComparison.OrdinalIgnoreCase) ||
+                   v.StartsWith("effects\\", StringComparison.OrdinalIgnoreCase) ||
+                   v.StartsWith("fx\\", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("smoke", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("sandstorm", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("dust", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("cloud", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("steam", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("fog", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("glass", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("decal", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("lightcone", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("lightshaft", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("flare", StringComparison.OrdinalIgnoreCase) ||
+                   v.Contains("halo", StringComparison.OrdinalIgnoreCase);
         }
     }
 }
