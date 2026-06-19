@@ -32,6 +32,8 @@ internal sealed class NifTextureArchiveSource(
         }
     }
 
+    public bool Exists(string path) => FileIndex.ContainsKey(path);
+
     public byte[]? TryLoadRaw(string path)
     {
         if (!FileIndex.TryGetValue(path, out var fileRecord))

@@ -107,6 +107,42 @@ internal sealed class NifGpuTextureResolver : IDisposable
     }
 
     /// <summary>
+    ///     Whether <paramref name="texturePath" /> is present in any backing source (archive index or
+    ///     loose file), WITHOUT decoding it. A cheap load-time probe of the loaded game's own assets —
+    ///     e.g. to decide whether to show a moon and which moon texture the game ships — so a texture is
+    ///     never applied unless it actually exists. Mirrors the load path's .dds extension fallback.
+    /// </summary>
+    public bool Exists(string texturePath)
+    {
+        if (string.IsNullOrWhiteSpace(texturePath))
+        {
+            return false;
+        }
+
+        var normalized = NifTexturePathUtility.Normalize(texturePath);
+        if (ExistsInAnySource(normalized))
+        {
+            return true;
+        }
+
+        return NifTexturePathUtility.TrySwapToDdsExtension(normalized, out var ddsSwapped) &&
+               ExistsInAnySource(ddsSwapped);
+    }
+
+    private bool ExistsInAnySource(string normalizedPath)
+    {
+        foreach (var source in _sources)
+        {
+            if (source.Exists(normalizedPath))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     ///     Drops the cached decoded payload for <paramref name="texturePath" /> once it has been
     ///     uploaded to the GPU. The CPU-side mip <c>byte[]</c>s are dead weight after upload — the
     ///     texture lives on the GPU and the consumer (<see cref="GpuTextureCache12" />) caches the
