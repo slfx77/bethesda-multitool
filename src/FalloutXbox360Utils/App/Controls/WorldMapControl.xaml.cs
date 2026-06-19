@@ -54,6 +54,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     // --- Layer selection ---
     private WorldMapLayer _currentLayer = WorldMapLayer.Heightmap;
+    private string? _lastTerrainDrawLog; // change-detection for the gated TerrainTextures draw-decision trace
 
     // --- Overlay toggles ---
     private bool _showNavMesh;
@@ -289,6 +290,15 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     /// <summary>Px/cell each coarse tile was rendered at (drives the draw interpolation choice).</summary>
     private int _coarseTilePixelsPerCell;
+
+    /// <summary>
+    ///     The layer <see cref="_coarseTileBitmaps" /> was built for. Coarse tiles are a heightmap-family
+    ///     representation (oversized worldspaces); a layer switch keeps them around for a smooth
+    ///     transition (<see cref="InvalidateWorldBitmap" /> with keepCurrentBitmap), so the draw must skip
+    ///     them when the current layer differs — otherwise the stale heightmap coarse tiles win the
+    ///     exclusive background draw and hide the TerrainTextures tiles. Mirrors <c>_layerCellBitmapsLayer</c>.
+    /// </summary>
+    private WorldMapLayer? _coarseTileBitmapsLayer;
 
     /// <summary>Which layer the cached cell bitmaps belong to. Used to detect layer switches.</summary>
     private WorldMapLayer? _layerCellBitmapsLayer;
@@ -839,6 +849,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         }
         _coarseTileCellSpan = 0;
         _coarseTilePixelsPerCell = 0;
+        _coarseTileBitmapsLayer = null;
     }
 
     // ========================================================================
@@ -1394,6 +1405,28 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 ? _terrainAggPixelsPerCell
                 : WorldMapLayerRenderer.HeightmapPixelsPerCell;
 
+            // Coarse tiles are a heightmap-family artifact (oversized worldspace). A layer switch keeps
+            // them resident for a smooth transition (InvalidateWorldBitmap keepCurrentBitmap), but
+            // DrawWorldOverview draws them as an EXCLUSIVE background that wins over the TerrainTextures
+            // tiles — so only hand them over when they were built for the CURRENT layer. Otherwise stale
+            // heightmap coarse tiles hide the terrain textures (the "toggle layers → heightmap sticks" bug).
+            var coarseForLayer = _coarseTileBitmapsLayer == _currentLayer ? _coarseTileBitmaps : null;
+            var coarseSpanForLayer = coarseForLayer is not null ? _coarseTileCellSpan : 0;
+            var coarsePpcForLayer = coarseForLayer is not null ? _coarseTilePixelsPerCell : 0;
+
+            // Draw-decision trace (gated): on the TerrainTextures layer, what is actually composited —
+            // the aggregate, the per-cell tiles, leftover coarse tiles, or just the heightmap base. Logged
+            // only when the decision changes so it pinpoints the frame the heightmap starts winning.
+            if (Map2DProfilerTrace.IsEnabled && _currentLayer == WorldMapLayer.TerrainTextures)
+            {
+                var drawKey = $"agg={aggActive}/{overviewBitmap is not null} cells={overviewCells?.Count ?? -1} coarse={coarseForLayer?.Count ?? -1} staleCoarse={(_coarseTileBitmaps is not null && _coarseTileBitmapsLayer != _currentLayer)} hmBmp={_worldHeightmapBitmap is not null} aggBmp={_terrainAggregateBitmap is not null}";
+                if (drawKey != _lastTerrainDrawLog)
+                {
+                    _lastTerrainDrawLog = drawKey;
+                    Map2DProfilerTrace.Event("tt-draw", drawKey);
+                }
+            }
+
             WorldMapOverviewRenderer.DrawWorldOverview(
                 ds, _data, GetActiveCells(), _state.FilteredMarkers, _cellGridLookup, _spatialIndex,
                 overviewBitmap,
@@ -1410,7 +1443,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
                 worldWaterBmp, _worldWaterMinX, _worldWaterMaxY,
                 _worldWaterPixelWidth, _worldWaterPixelHeight,
                 WorldMapLayerRenderer.HeightmapPixelsPerCell,
-                _coarseTileBitmaps, _coarseTileCellSpan, _coarseTilePixelsPerCell);
+                coarseForLayer, coarseSpanForLayer, coarsePpcForLayer);
 
             if (_showNavMesh)
             {
@@ -1722,6 +1755,83 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         if (worldspaceIndex >= 0 && worldspaceIndex < WorldspaceComboBox.Items.Count)
             WorldspaceComboBox.SelectedIndex = worldspaceIndex;
+    }
+
+    // View-focus sharing with the 3D viewer ------------------------------------------------------
+
+    /// <summary>
+    ///     Captures the current location + selection as a <see cref="WorldViewFocus" /> so the 3D viewer
+    ///     can resume in the same area when the user switches views. Exterior: the world XY at the map's
+    ///     view center (the 2D map negates Y, so it's stored back in the shared frame). Interior: the
+    ///     selected interior cell.
+    /// </summary>
+    internal WorldViewFocus CaptureViewFocus()
+    {
+        var selected = _state.SelectedObject;
+        if (_state.SelectedCell is { IsInterior: true } interior)
+        {
+            return new WorldViewFocus(-1, true, interior, 0f, 0f, selected, _cellSortMode);
+        }
+
+        var canvasW = Math.Max((float)MapCanvas.ActualWidth, 800f);
+        var canvasH = Math.Max((float)MapCanvas.ActualHeight, 600f);
+        var center2D = WorldMapViewportHelper.ScreenToWorld(
+            new Vector2(canvasW / 2f, canvasH / 2f), _zoom, _panOffset);
+        // 2D-map Y is the negative of the shared (3D / PlacedReference) Y.
+        return new WorldViewFocus(
+            WorldspaceComboBox.SelectedIndex, false, null, center2D.X, -center2D.Y, selected, _cellSortMode);
+    }
+
+    /// <summary>
+    ///     Resumes the view at a <see cref="WorldViewFocus" /> captured from the 3D viewer: switches to
+    ///     the same worldspace, centers the overview on the shared world XY (re-flipping Y), and restores
+    ///     the selection + cell-list sort. Interiors load the captured cell.
+    /// </summary>
+    internal void ApplyViewFocus(WorldViewFocus focus)
+    {
+        if (_data is null) return;
+        ApplyCellSortMode(focus.SortMode);
+
+        if (focus.IsInterior && focus.InteriorCell is { } interior)
+        {
+            NavigateToCell(interior);
+            SelectObject(focus.Selected);
+            return;
+        }
+
+        // Switching the worldspace combo resets to overview + clears the selection synchronously, so
+        // select AFTER. No-op when already on the right worldspace.
+        if (focus.WorldspaceComboIndex >= 0 &&
+            focus.WorldspaceComboIndex < WorldspaceComboBox.Items.Count &&
+            focus.WorldspaceComboIndex != WorldspaceComboBox.SelectedIndex)
+        {
+            WorldspaceComboBox.SelectedIndex = focus.WorldspaceComboIndex;
+        }
+
+        // Shared world XY → 2D-map frame (negate Y), center the overview there (keeping the user's zoom).
+        CenterOverviewOnWorld(focus.WorldX, -focus.WorldY);
+        SelectObject(focus.Selected);
+    }
+
+    /// <summary>Centers the overview on a 2D-map world point, preserving the current zoom.</summary>
+    private void CenterOverviewOnWorld(float worldX, float worldY)
+    {
+        EnsureOverviewMode();
+        var canvasW = Math.Max((float)MapCanvas.ActualWidth, 800f);
+        var canvasH = Math.Max((float)MapCanvas.ActualHeight, 600f);
+        if (_zoom <= 0f) _zoom = 0.05f;
+        _panOffset = new Vector2(canvasW / 2f - worldX * _zoom, canvasH / 2f - worldY * _zoom);
+        MapCanvas.Invalidate();
+    }
+
+    private void ApplyCellSortMode(CellSortMode mode)
+    {
+        _cellSortMode = mode;
+        if (CellSortCombo is not null)
+        {
+            var index = mode == CellSortMode.ObjectCount ? 1 : 0;
+            if (CellSortCombo.SelectedIndex != index) CellSortCombo.SelectedIndex = index;
+        }
     }
 
     public void NavigateToObjectInOverview(PlacedReference obj)
@@ -2992,6 +3102,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             _coarseTileBitmaps = new Dictionary<(int tileGx, int tileGy), CanvasBitmap>(result.CoarseTiles.Count);
             _coarseTileCellSpan = result.CoarseTileCellSpan;
             _coarseTilePixelsPerCell = result.CoarseTilePixelsPerCell;
+            _coarseTileBitmapsLayer = _currentLayer;
             var tileSidePx = result.CoarseTileCellSpan * result.CoarseTilePixelsPerCell;
             foreach (var ((tileGx, tileGy), pixels) in result.CoarseTiles)
             {
@@ -3231,6 +3342,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     internal int Profiler_CacheCap => _layerCellBitmapCap;
     internal int Profiler_BuildVersion => _worldHeightmapBuildVersion;
     internal int Profiler_CacheGen => _layerCellBitmapsCacheGen;
+
+    /// <summary>Diagnostics: which overview bitmaps are currently resident (for the layer-toggle repro).</summary>
+    internal bool Profiler_AggregateBitmapPresent => _terrainAggregateBitmap is not null;
+    internal bool Profiler_HeightmapBitmapPresent => _worldHeightmapBitmap is not null;
+    internal bool Profiler_AggregateUnavailable => _terrainAggregateUnavailable;
+    internal WorldMapLayer? Profiler_CellBitmapsLayer => _layerCellBitmapsLayer;
 
     /// <summary>
     ///     Coverage of the CURRENT viewport by the per-cell bitmap cache at the target

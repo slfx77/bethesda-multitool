@@ -724,6 +724,17 @@ public sealed partial class SingleFileTab
         if (WorldMapControl is null || WorldView3DControl is null) return;
 
         var show3D = WorldViewModeComboBox.SelectedIndex == 1;
+
+        // Carry the outgoing view's location + selection into the incoming view so the user stays in the
+        // same area (and keeps their selection) across the switch. Capture from the still-visible source
+        // BEFORE toggling visibility. Only once the world data is loaded (the combo also fires this
+        // handler during XAML init).
+        if (_session.WorldMapPopulated)
+        {
+            if (show3D) WorldView3DControl.ApplyViewFocus(WorldMapControl.CaptureViewFocus());
+            else WorldMapControl.ApplyViewFocus(WorldView3DControl.CaptureViewFocus());
+        }
+
         WorldMapControl.Visibility = show3D ? Visibility.Collapsed : Visibility.Visible;
         WorldView3DControl.Visibility = show3D ? Visibility.Visible : Visibility.Collapsed;
     }

@@ -70,7 +70,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainRenderer12? _terrain;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainTextureResolver12? _textureResolver12;
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12? _water;
-    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyboxRenderer12? _sky;
+    // Geometry-based sky dome (SkyDomeMesh on real hemisphere geometry) — the exterior sky: horizon→top
+    // gradient + stars on the dome, clouds on a flat overhead plane (gnomonic projection in skydome.frag).
+    private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyDomeRenderer12? _skyDome;
     // Textured sky billboards (sun disc + glare, moon). Textures resolved per-climate via the terrain
     // texture cache; uint.MaxValue = SkyBillboardRenderer12.NoTexture (object skipped).
     private FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyBillboardRenderer12? _skyBillboards;
@@ -304,7 +306,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
                 _textureResolver12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainTextureResolver12(
                     _gpu12, _commandRecorder12!, _cbvSrvUavHeap12!, _deletionQueue12!,
-                    _data.LandTexturesByFormId, _data.TextureSetsByFormId, bsas);
+                    _data.LandTexturesByFormId, _data.TextureSetsByFormId, bsas, _data.Game);
                 var terrain12 = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainRenderer12(
                     _gpu12, _commandRecorder12!, _ringBuffer12!, _rootSignature12!,
                     _cbvSrvUavHeap12!, _deletionQueue12!,
@@ -373,6 +375,69 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _selectedReference = obj;
         _pickHitScratch.Clear();
         UpdateHighlightFromSelection();
+    }
+
+    // View-focus sharing with the 2D map ---------------------------------------------------------
+
+    /// <summary>
+    ///     Captures the current location + selection as a <see cref="WorldViewFocus" /> so the 2D map can
+    ///     resume in the same area when the user switches views. Exterior: the camera's ground XY (the
+    ///     shared world frame that <c>PlacedReference.X/Y</c> uses). Interior: the loaded interior cell.
+    /// </summary>
+    internal WorldViewFocus CaptureViewFocus()
+    {
+        if (_selectedInterior is { } interior)
+        {
+            return new WorldViewFocus(-1, true, interior, 0f, 0f, _selectedReference, _interiorSortMode);
+        }
+
+        var pos = _camera.Position;
+        return new WorldViewFocus(
+            WorldspaceComboBox.SelectedIndex, false, null, pos.X, pos.Y, _selectedReference, _interiorSortMode);
+    }
+
+    /// <summary>
+    ///     Resumes the view at a <see cref="WorldViewFocus" /> captured from the 2D map: switches to the
+    ///     same worldspace synchronously (no camera reset), moves the camera to the shared world XY
+    ///     (preserving its height + look angle), and restores the selection + cell-list sort. Interiors
+    ///     load the captured cell.
+    /// </summary>
+    internal void ApplyViewFocus(WorldViewFocus focus)
+    {
+        if (_data is null) return;
+        ApplyInteriorSortMode(focus.SortMode);
+
+        if (focus.IsInterior && focus.InteriorCell is { } interior)
+        {
+            NavigateToCell(interior);
+            SelectObject(focus.Selected);
+            return;
+        }
+
+        if (focus.WorldspaceComboIndex >= 0 && focus.WorldspaceComboIndex <= _data.Worldspaces.Count)
+        {
+            // index < Count → a worldspace; index == Count → the unlinked-exterior tail (FormId null).
+            var worldspaceFormId = focus.WorldspaceComboIndex < _data.Worldspaces.Count
+                ? (uint?)_data.Worldspaces[focus.WorldspaceComboIndex].FormId
+                : null;
+            if (EnsureActiveExteriorWorldspace(worldspaceFormId))
+            {
+                var pos = _camera.Position;
+                _camera.Position = new Vector3(focus.WorldX, focus.WorldY, pos.Z);
+            }
+        }
+
+        SelectObject(focus.Selected);
+    }
+
+    private void ApplyInteriorSortMode(CellSortMode mode)
+    {
+        _interiorSortMode = mode;
+        if (CellSortCombo is not null)
+        {
+            var index = mode == CellSortMode.ObjectCount ? 1 : 0;
+            if (CellSortCombo.SelectedIndex != index) CellSortCombo.SelectedIndex = index;
+        }
     }
 
     /// <summary>
@@ -1255,8 +1320,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _collisionDebug = null;
         _water?.Dispose();
         _water = null;
-        _sky?.Dispose();
-        _sky = null;
+        _skyDome?.Dispose();
+        _skyDome = null;
         _skyBillboards?.Dispose();
         _skyBillboards = null;
         _terrain?.Dispose();
@@ -1660,14 +1725,22 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // composite. Off ⇒ the shader's flat legacy shade. The live perspective path leaves it true so
     // the Key-8 lighting toggle still drives the 3D view.
     private void BindAtmosphereConstants(
-        Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex, bool enableFog = true, bool enableLighting = true)
+        Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex, bool enableFog = true,
+        bool enableLighting = true, bool cameraRelative = false)
     {
         var lightingOn = enableLighting && _showLighting;
         var resolved = AtmosphereState.Resolve(
             _gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: lightingOn);
+        // Camera-relative (1G): the scene VS subtract CameraOrigin from each world vertex and the camera
+        // sits at the origin, so the shader's "camera position" (used by fog distance + specular view dir)
+        // is 0 and CameraOrigin carries the real camera pos. Absolute mode (top-down capture / flag off)
+        // keeps the camera position in CameraPosFogPower and a zero origin.
+        var cameraOrigin = cameraRelative ? _camera.Position : Vector3.Zero;
+        var shadingCameraPos = cameraRelative ? Vector3.Zero : _camera.Position;
         var constants = AtmosphereConstants.From(
-            resolved, _gameHour, _camera.Position, lightingEnabled: lightingOn ? 1f : 0f,
-            skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f, time: 0f);
+            resolved, _gameHour, shadingCameraPos, lightingEnabled: lightingOn ? 1f : 0f,
+            skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f, time: 0f,
+            cameraOrigin: cameraOrigin);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
@@ -1688,9 +1761,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         public Vector4 SkyHorizon;         // rgb = sky-horizon color, w = spare
         public Vector4 FogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
         public Vector4 Params;             // x = gameHour, y = fogNear, z = fogFar, w = time
-        public Vector4 CameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
+        public Vector4 CameraPosFogPower;  // xyz = camera world pos (0 in camera-relative mode), w = fog power
+        // 1G — camera-relative render origin the scene VS subtract from each world vertex before
+        // projection (0 when camera-relative is off). Appended last; the PS shaders that read this CB
+        // declare only the prefix they use, so this 9th float4 is layout-safe for them.
+        public Vector4 CameraOrigin;       // xyz = render origin (= camera world pos), w unused
 
-        public const uint ByteSize = 8 * 16;
+        public const uint ByteSize = 9 * 16;
 
         public static AtmosphereConstants From(
             AtmosphereState.Resolved a,
@@ -1699,7 +1776,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             float lightingEnabled,
             float skyEnabled,
             float fogEnabled,
-            float time) => new()
+            float time,
+            Vector3 cameraOrigin) => new()
             {
                 SunDirIntensity = new Vector4(a.SunWorldDirection, a.SunIntensity),
                 SunColorLighting = new Vector4(a.SunColor, lightingEnabled),
@@ -1709,6 +1787,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
                 Params = new Vector4(gameHour, a.FogNear, a.FogFar, time),
                 CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
+                CameraOrigin = new Vector4(cameraOrigin, 0f),
             };
     }
 
@@ -1783,24 +1862,44 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // camera, so cover that plus a couple cells of slack. Reversed-Z keeps precision at range.
         _camera.FarPlane = _renderDistance * 2f + MathF.Abs(_camera.Position.Z)
                            + 2f * _cellSize;
-        var view = _camera.GetViewMatrix();
         var proj = _camera.GetProjectionMatrix(aspect);
-        var viewProj = view * proj;
+        // 1G — camera-relative rendering (default on; FALLOUT_VIEWER_CAMERA_RELATIVE=0 disables). The
+        // ABSOLUTE viewProj drives sky + debug overlays (their geometry stays in world space and they
+        // read no CameraOrigin); the SCENE viewProj is translation-free, and terrain/reference/water VS
+        // subtract CameraOrigin from each world vertex before projection. Both map to the SAME clip
+        // position (lookAt's translation just moves into the subtraction), so the layers stay aligned —
+        // only the scene's float precision improves, killing the worldspace-edge wobble. When disabled
+        // the scene viewProj == the absolute one and CameraOrigin == 0, i.e. bit-identical to before.
+        var cameraRelative = !string.Equals(
+            EnvironmentVariables.Get(EnvironmentVariables.Viewer.CameraRelative), "0", StringComparison.Ordinal);
+        var viewProjAbsolute = _camera.GetViewMatrix() * proj;
+        var viewProjScene = cameraRelative ? _camera.GetViewMatrixCameraRelative() * proj : viewProjAbsolute;
         var cylinder = new VisibilityCylinder(_camera.Position, _renderDistance);
         var cameraMs = ElapsedMilliseconds(segmentStarted);
+
+        // Per-card SpeedTree leaf billboards: hand the reference renderer the camera world right/up (from
+        // the inverse view matrix, same source as the sky billboards) so the leaf-billboard VS re-faces
+        // each leaf card to the camera this frame.
+        if (Matrix4x4.Invert(_camera.GetViewMatrix(), out var invViewForLeaves))
+        {
+            _references?.SetLeafBillboardBasis(
+                Vector3.Normalize(new Vector3(invViewForLeaves.M11, invViewForLeaves.M12, invViewForLeaves.M13)),
+                Vector3.Normalize(new Vector3(invViewForLeaves.M21, invViewForLeaves.M22, invViewForLeaves.M23)));
+        }
 
         // Resolve + upload the shared atmosphere CB (b3) once per frame, bound for the whole scene.
         // terrain/reference/water read it for directional + ambient lighting (P3); sky/fog flags stay
         // off until their phases enable those shader paths. Bound once — the renderers only set their
         // own PSO + slots, never the root signature, so this CBV survives every scene pass.
-        BindAtmosphereConstants(cmd, recorder.FrameIndex);
+        BindAtmosphereConstants(cmd, recorder.FrameIndex, cameraRelative: cameraRelative);
 
         // Sky FIRST — gradient + clouds + stars into the cleared color target (depth OFF, so terrain
         // overwrites it via the normal depth pass; OFF ⇒ the flat dark-blue clear shows), then the
-        // sun/moon billboards over it. Reads the b3 atmosphere CB bound just above.
+        // sun/moon billboards over it. Reads the b3 atmosphere CB bound just above. Sky renders in
+        // absolute space (camera-centered geometry / direction-based skybox) — the absolute viewProj.
         if (_showSky)
         {
-            RenderSky(viewProj);
+            RenderSky(viewProjAbsolute);
         }
 
         // Layer order matches D3D11: terrain → references → water → wireframe. Water is
@@ -1808,14 +1907,22 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // the depth that water samples). Wireframe last so it stays on top (depth-disabled).
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.TerrainStart);
-        var visibleTerrain = _showTerrain ? _terrain?.Render(viewProj, cylinder) ?? 0 : 0;
+        var visibleTerrain = _showTerrain ? _terrain?.Render(viewProjScene, cylinder) ?? 0 : 0;
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.TerrainEnd);
         var terrainMs = ElapsedMilliseconds(segmentStarted);
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesStart);
         // 3D-8: opaque references draw now (write depth) but blended/transparent submeshes are deferred
         // until AFTER the water pass via RenderBlendedDeferred(), so water never paints over them.
-        var visibleReferences = _showReferences ? _references?.Render(viewProj, cylinder, deferBlended: true) ?? 0 : 0;
+        // Pass the ABSOLUTE viewProj for the cull frustum: the GPU CB gets the camera-relative
+        // viewProjScene (the VS subtracts CameraOrigin), but the CPU frustum culls world-space
+        // reference coordinates, so its apex must sit at the camera, not the world origin. Without
+        // this, camera-relative rendering culls everything except a narrow cone from the origin
+        // (objects only visible facing one direction). When camera-relative is off the two matrices
+        // are equal, so this is a no-op then.
+        var visibleReferences = _showReferences
+            ? _references?.Render(viewProjScene, cylinder, deferBlended: true, cullViewProj: viewProjAbsolute) ?? 0
+            : 0;
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesEnd);
         var referencesMs = ElapsedMilliseconds(segmentStarted);
         // Hand the water renderer the placed-NIF water planes the reference pass accumulated (cave/
@@ -1846,7 +1953,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 Vortice.Direct3D12.ResourceStates.DepthWrite,
                 Vortice.Direct3D12.ResourceStates.PixelShaderResource);
         }
-        var visibleWater = _showWater ? _water?.Render(viewProj, cylinder) ?? 0 : 0;
+        // Water renders in ABSOLUTE space (viewProjAbsolute): its ripple UVs need world-anchored XY and
+        // it carries its own absolute camera (uCamPosTime). It still clip-aligns with the camera-relative
+        // terrain/references (same clip position), so layers match; only water keeps its prior precision.
+        var visibleWater = _showWater ? _water?.Render(viewProjAbsolute, cylinder) ?? 0 : 0;
         if (waterUsesDepth)
         {
             cmd.ResourceBarrierTransition(depthRes!,
@@ -1862,19 +1972,19 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         if (_showReferences) _references?.RenderBlendedDeferred();
         // Navmesh overlay — translucent, drawn after water (depth-read) and before the
         // depth-disabled wireframe so the grid still stays on top.
-        var visibleNavMesh = _showNavMesh ? _navMesh?.Render(viewProj, cylinder) ?? 0 : 0;
+        var visibleNavMesh = _showNavMesh ? _navMesh?.Render(viewProjAbsolute, cylinder) ?? 0 : 0;
         // Collision-cage debug overlay — depth-disabled green wireframe of each ref's walk-mode collision
         // mesh, for comparing Havok collision against the rendered meshes. Off by default.
-        if (_showCollision) _collisionDebug?.Render(viewProj, cylinder);
+        if (_showCollision) _collisionDebug?.Render(viewProjAbsolute, cylinder);
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WireframeStart);
-        var visibleWireframe = _showWireframe ? _cellGrid?.Render(viewProj, cylinder) ?? 0 : 0;
+        var visibleWireframe = _showWireframe ? _cellGrid?.Render(viewProjAbsolute, cylinder) ?? 0 : 0;
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WireframeEnd);
         var wireframeMs = ElapsedMilliseconds(segmentStarted);
 
         // 3D-5 — selection outline, drawn last + depth-disabled so it stays visible on top of everything
         // (no-op when nothing is selected).
-        _selectionHighlight?.Render(viewProj);
+        _selectionHighlight?.Render(viewProjAbsolute);
 
         segmentStarted = StartProfileTimestamp();
         var visible = Math.Max(visibleTerrain, visibleWireframe);
@@ -2161,9 +2271,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 DetailedProfilingEnabled = _profileLogging,
             };
 
-            // Atmosphere skybox (P5+) — gradient + cloud/star textures; reads the shared b3 CB + its own
-            // b0 (invViewProj + cloud/star params) and the shared bindless table for its textures.
-            _sky = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyboxRenderer12(
+            // Geometry-based sky DOME — the exterior sky: horizon→top gradient (shared b3 CB) + stars on
+            // the dome (lat-long UVs) + clouds on a flat overhead plane (gnomonic projection), sampling the
+            // shared bindless table. Its own b0 carries the cloud/star params.
+            _skyDome = new FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12.SkyDomeRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _cbvSrvUavHeap12);
 
             // Textured sky billboards — sun (disc + glare) + moon, drawn after the gradient. Uses the
@@ -2934,11 +3045,18 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
         // Clouds: grey/blue at night → near-white by day. Stars: cool white, fading in as the sun sets.
         var cloudTint = Vector3.Lerp(new Vector3(0.12f, 0.13f, 0.18f), new Vector3(1.0f, 0.98f, 0.95f), daylight);
-        var starTint = new Vector3(0.85f, 0.90f, 1.0f);
+        // Night-brightness fix: stars are additive, so a near-white peak blew the night sky out. Cap the
+        // star tint well below white, and dim the cloud layer at night (its opacity scaled by daylight)
+        // so a night sky reads as dark with faint stars rather than a bright grey sheet.
+        var starTint = new Vector3(0.45f, 0.50f, 0.62f);
         var starFade = Math.Clamp(1f - (daylight * 1.5f), 0f, 1f);
-        _sky?.Render(viewProj,
-            cloudTint, exterior ? 0.55f : 0f, _cloudTexIndex,
-            starTint, exterior ? starFade : 0f, _starTexIndex);
+        var nightDim = MathF.Min(1f, 0.25f + (0.75f * daylight)); // clouds 0.25× at night → 1× by day
+        var cloudOpacity = exterior ? 0.55f * nightDim : 0f;
+        var domeStarFade = exterior ? starFade : 0f;
+        // Sky dome centered on the camera at the sky-billboard radius: gradient + stars on the dome,
+        // clouds on a flat overhead plane.
+        _skyDome?.Render(viewProj, _camera.Position, 30000f,
+            cloudTint, cloudOpacity, _cloudTexIndex, starTint, domeStarFade, _starTexIndex);
 
         if (exterior)
         {
