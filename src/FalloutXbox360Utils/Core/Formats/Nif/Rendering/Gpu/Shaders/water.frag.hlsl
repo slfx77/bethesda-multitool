@@ -60,7 +60,10 @@ float3 ApplyFog(float3 color, float3 worldPos)
         return color;
     }
 
-    float dist = length(worldPos - uCameraPosFogPower.xyz);
+    // Water renders in absolute world space (its ripple UVs are world-anchored), so the fog distance
+    // uses water's OWN absolute camera (uCamPosTime.xyz) rather than the shared atmosphere camera, which
+    // is zeroed in camera-relative mode (1G). The fog power (uCameraPosFogPower.w) is position-free.
+    float dist = length(worldPos - uCamPosTime.xyz);
     float f = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
     f = pow(f, max(uCameraPosFogPower.w, 0.01));
     return lerp(color, uFogColorFogEnabled.rgb, f);

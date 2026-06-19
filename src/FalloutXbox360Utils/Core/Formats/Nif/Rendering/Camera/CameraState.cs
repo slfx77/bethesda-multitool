@@ -75,6 +75,19 @@ internal sealed class CameraState
         // Forward at every pitch, so the view basis is stable everywhere.
         Matrix4x4.CreateLookAt(Position, Position + Forward, Up);
 
+    /// <summary>
+    ///     Translation-free view matrix — the camera sits at the world origin (only its rotation is
+    ///     applied). Pairs with camera-relative rendering: each scene vertex is shifted by
+    ///     <c>-Position</c> in its vertex shader before projection, so the large world coordinates
+    ///     (worldspace edges reach ±200k units) never enter the <c>viewProj × worldPos</c> product,
+    ///     where float32 cancellation produces the visible "wobble" as the camera moves. Mathematically
+    ///     <c>GetViewMatrixCameraRelative() × (worldPos − Position)</c> equals
+    ///     <c>GetViewMatrix() × worldPos</c>, so the projected result is identical — only the float
+    ///     precision improves, and layers rendered either way stay pixel-aligned in clip space.
+    /// </summary>
+    public Matrix4x4 GetViewMatrixCameraRelative() =>
+        Matrix4x4.CreateLookAt(Vector3.Zero, Forward, Up);
+
     public Matrix4x4 GetProjectionMatrix(float aspectRatio) =>
         Matrix4x4.CreatePerspectiveFieldOfView(FovYRadians, aspectRatio, NearPlane, FarPlane) * ReverseZ;
 
