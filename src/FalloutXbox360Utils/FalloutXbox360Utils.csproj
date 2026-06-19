@@ -12,6 +12,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
+    <!-- Large-dump analysis routinely builds multi-GB heaps: a ~900 MB Xbox 360 memory
+         dump fully extracts to ~12 GB / 100M+ live objects. Workstation GC (the default)
+         collects gen2 single-threaded, so a collection over that graph is a multi-hundred-
+         ms-to-second stop-the-world UI freeze (dump-confirmed: 0.11 cores, all threads idle,
+         frozen mid-pump). Server GC parallelizes gen2 across cores; Background/concurrent GC
+         keeps most of that work off the UI thread. Both CLI and GUI benefit. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <!-- Required for the renderer's Map/Unmap helpers that write to D3D11 mapped memory via
          raw pointers. Marshal.StructureToPtr<T> boxes the value type per call — unacceptable
          at ~1500 draws/frame. Limited to the renderer helpers; not for general use. -->
