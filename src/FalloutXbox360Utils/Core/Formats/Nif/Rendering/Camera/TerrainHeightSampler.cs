@@ -16,17 +16,17 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera;
 /// </summary>
 internal static class TerrainHeightSampler
 {
-    private const int Grid = 33;
-    private const int LastIndex = Grid - 1;
+    private const int CacheGrid = 33; // WorldRenderCache.DecodedTerrainCell is always a flat 33×33 grid.
 
     public static float? Sample(
         IReadOnlyDictionary<(int gx, int gy), CellRecord> cells,
         float worldX,
         float worldY,
-        global::FalloutXbox360Utils.WorldRenderCache? cache = null)
+        global::FalloutXbox360Utils.WorldRenderCache? cache = null,
+        float cellSize = global::FalloutXbox360Utils.WorldGridConstants.CellSize)
     {
-        var gx = (int)MathF.Floor(worldX / global::FalloutXbox360Utils.WorldGridConstants.CellSize);
-        var gy = (int)MathF.Floor(worldY / global::FalloutXbox360Utils.WorldGridConstants.CellSize);
+        var gx = (int)MathF.Floor(worldX / cellSize);
+        var gy = (int)MathF.Floor(worldY / cellSize);
 
         if (!cells.TryGetValue((gx, gy), out var cell)) return null;
         var terrain = cache?.GetTerrain(cell);
@@ -42,14 +42,18 @@ internal static class TerrainHeightSampler
             return null;
         }
 
-        // Local position within the cell, in vertex units [0..32].
-        var localXVerts = (worldX - gx * global::FalloutXbox360Utils.WorldGridConstants.CellSize) / global::FalloutXbox360Utils.WorldGridConstants.CellSize * LastIndex;
-        var localYVerts = (worldY - gy * global::FalloutXbox360Utils.WorldGridConstants.CellSize) / global::FalloutXbox360Utils.WorldGridConstants.CellSize * LastIndex;
+        // Grid resolution: the cache path is 33×33; the native heightmap is 33×33 (Fallout) or 65×65
+        // (Morrowind). Derive the last index from whichever source we're sampling.
+        var lastIndex = (heights is not null ? heights.GetLength(0) : CacheGrid) - 1;
 
-        var i0 = Math.Clamp((int)MathF.Floor(localXVerts), 0, LastIndex);
-        var j0 = Math.Clamp((int)MathF.Floor(localYVerts), 0, LastIndex);
-        var i1 = Math.Min(i0 + 1, LastIndex);
-        var j1 = Math.Min(j0 + 1, LastIndex);
+        // Local position within the cell, in vertex units [0..lastIndex].
+        var localXVerts = (worldX - gx * cellSize) / cellSize * lastIndex;
+        var localYVerts = (worldY - gy * cellSize) / cellSize * lastIndex;
+
+        var i0 = Math.Clamp((int)MathF.Floor(localXVerts), 0, lastIndex);
+        var j0 = Math.Clamp((int)MathF.Floor(localYVerts), 0, lastIndex);
+        var i1 = Math.Min(i0 + 1, lastIndex);
+        var j1 = Math.Min(j0 + 1, lastIndex);
 
         var fx = Math.Clamp(localXVerts - i0, 0f, 1f);
         var fy = Math.Clamp(localYVerts - j0, 0f, 1f);

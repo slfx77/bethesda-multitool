@@ -27,6 +27,15 @@ cbuffer PerMode : register(b2)
     float4 uDebugMode_UvScale_Pad;
 };
 
+// 1G — camera-relative render origin (xyz) from the shared atmosphere CB (b3). Subtracted from each
+// world vertex before projection (kills the worldspace-edge wobble). Zero when camera-relative is off;
+// the leading 8 float4 are the sun/sky/fog/camera fields this VS does not use.
+cbuffer Atmosphere : register(b3)
+{
+    float4 uAtmospherePad[8];
+    float4 uCameraOrigin;
+};
+
 struct VSInput
 {
     // Slot 0
@@ -59,7 +68,11 @@ struct VSOutput
 VSOutput main(VSInput input)
 {
     VSOutput o;
-    o.Position = mul(uViewProj, float4(input.aPosition, 1.0));
+    // Camera-relative: shift the vertex by -origin before projection. UVs keep ABSOLUTE world XY so the
+    // terrain texture tiling is unchanged. vWorldPos becomes camera-relative to match the shader's
+    // camera (= 0 in this mode) for distance fog.
+    float3 worldPosRel = input.aPosition - uCameraOrigin.xyz;
+    o.Position = mul(uViewProj, float4(worldPosRel, 1.0));
     o.vWorldNormal = input.aNormal;
     o.vVertexColor = input.aVertexColor;
     o.vWorldUv = input.aPosition.xy * uDebugMode_UvScale_Pad.y;
@@ -67,6 +80,6 @@ VSOutput main(VSInput input)
     o.vLayerWeights1 = input.aLayerWeights1;
     o.vLayerWeights2 = input.aLayerWeights2;
     o.vLayerWeights3 = input.aLayerWeights3;
-    o.vWorldPos = input.aPosition; // terrain verts are already world-space (no model matrix)
+    o.vWorldPos = worldPosRel; // camera-relative world pos (matches the shader camera = 0 for fog)
     return o;
 }

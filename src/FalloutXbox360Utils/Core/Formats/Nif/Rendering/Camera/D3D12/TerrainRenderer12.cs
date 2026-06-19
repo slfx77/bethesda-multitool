@@ -9,6 +9,7 @@ using System.Threading;
 using FalloutXbox360Utils.Core.Diagnostics;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.World;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.World;
+using FalloutXbox360Utils.Core.Formats.Esm.Terrain;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using FalloutXbox360Utils.Core.Formats.Nif.Rendering.Textures;
@@ -110,7 +111,12 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     // by the 2D map's top-down overlay to lay down terrain depth so placed references are occluded
     // by the ground without painting terrain color over the 2D map's own terrain layer.
     private readonly ID3D12PipelineState _depthOnlyPso;
-    private readonly ushort[] _sharedIndexData;
+    // Per-worldspace LAND grid resolution. Defaults to 33×33 (Fallout/Oblivion/Skyrim + runtime DMP);
+    // a Morrowind worldspace load bumps this to 65×65. The shared index buffer + scratch arrays are
+    // rebuilt in LoadData when the grid size changes, and DrawCell issues _indexCount per cell.
+    private int _gridSize = TerrainConstants.LandGridSize;
+    private int _indexCount = TerrainMeshBuilder.IndexCount;
+    private ushort[] _sharedIndexData;
     private ID3D12Resource? _sharedIndexBuffer;
     private IndexBufferView _sharedIbv;
 
@@ -120,9 +126,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private readonly List<VisibleCell> _missingVisibleScratch = new();
     private readonly HashSet<(int gx, int gy)> _missingVisibleKeys = new();
     private readonly List<global::FalloutXbox360Utils.WorldSpatialCell> _candidateScratch = new();
-    private readonly GpuMeshUploader.GpuVertex[] _vertexScratch =
+    private GpuMeshUploader.GpuVertex[] _vertexScratch =
         new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
-    private readonly Vector4[] _blendWeightScratch =
+    private Vector4[] _blendWeightScratch =
         new Vector4[TerrainMeshBuilder.VertexCount * CellTerrainTextureSet.SlotVectors];
 
     // Async cell-build bookkeeping. _buildQueue / _queuedOrBuilding / _frameBuildStarts and the
@@ -320,6 +326,11 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         _spatialIndex = spatialIndex;
         _renderCache = renderCache;
 
+        // Adopt this worldspace's LAND grid resolution (33×33 Fallout-family, 65×65 Morrowind). When
+        // it changes, rebuild the shared index buffer + per-cell scratch so the index/vertex/blend
+        // stream lengths all match the new grid. All cells of one worldspace share a single grid size.
+        EnsureGridSize(cells);
+
         // Bump the build generation so any in-flight task started against the previous worldspace
         // drops its result instead of inserting a cell built from the old _cells/_meshCache. Clear
         // the render-thread queue state too; in-flight tasks keep running but become no-ops.
@@ -339,12 +350,13 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             if (cells.Count >= 512)
             {
+                var gridSize = _gridSize;
                 Parallel.ForEach(cells, pair =>
                 {
                     var captured = pair;
                     _renderCache.GetOrBuildTerrainTextureSet(
                         captured.Value,
-                        () => BuildCellTextureSet(captured.Key, captured.Value, cells));
+                        () => BuildCellTextureSet(captured.Key, captured.Value, cells, gridSize));
                 });
             }
             else
@@ -354,10 +366,50 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                     var captured = pair;
                     _renderCache.GetOrBuildTerrainTextureSet(
                         captured.Value,
-                        () => BuildCellTextureSet(captured.Key, captured.Value, cells));
+                        () => BuildCellTextureSet(captured.Key, captured.Value, cells, _gridSize));
                 }
             }
         }
+    }
+
+    /// <summary>
+    ///     Determine the worldspace's LAND grid resolution from its cells and, when it differs from
+    ///     the current one, rebuild the grid-size-dependent state: the shared index buffer (recreated
+    ///     lazily next frame from the new CPU data) and the per-cell build scratch arrays. No-op when
+    ///     the grid size is unchanged (the common case — same game reloaded, or a 33×33 worldspace).
+    /// </summary>
+    private void EnsureGridSize(Dictionary<(int gx, int gy), CellRecord> cells)
+    {
+        var gridSize = TerrainConstants.LandGridSize;
+        foreach (var cell in cells.Values)
+        {
+            if (cell.Heightmap?.ExactHeights is { } exact)
+            {
+                gridSize = exact.GetLength(0);
+                break;
+            }
+        }
+
+        if (gridSize == _gridSize)
+        {
+            return;
+        }
+
+        _gridSize = gridSize;
+        _indexCount = TerrainMeshBuilder.IndexCountFor(gridSize);
+        _sharedIndexData = TerrainMeshBuilder.BuildSharedIndexBufferData(gridSize);
+
+        // Drop the GPU index buffer so EnsureSharedIndexBuffer recreates it from the new data on the
+        // next render (we have no command list here). Route the old one through the deletion queue.
+        if (_sharedIndexBuffer is not null)
+        {
+            _deletionQueue.EnqueueDispose(_sharedIndexBuffer);
+            _sharedIndexBuffer = null;
+        }
+
+        var vertexCount = TerrainMeshBuilder.VertexCountFor(gridSize);
+        _vertexScratch = new GpuMeshUploader.GpuVertex[vertexCount];
+        _blendWeightScratch = new Vector4[vertexCount * CellTerrainTextureSet.SlotVectors];
     }
 
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
@@ -594,7 +646,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, perDrawAlloc.GpuAddress);
 
         cmd.DrawIndexedInstanced(
-            indexCountPerInstance: (uint)TerrainMeshBuilder.IndexCount,
+            indexCountPerInstance: (uint)_indexCount,
             instanceCount: 1,
             startIndexLocation: 0,
             baseVertexLocation: 0,
@@ -693,6 +745,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         // from under a running task; the generation tag makes the result a no-op if it does.
         var cells = _cells;
         var renderCache = _renderCache;
+        var gridSize = _gridSize;
         int generation;
         lock (_buildResultsLock)
         {
@@ -704,7 +757,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             try
             {
-                StoreBuildResult(key, BuildCellCpu(key, cell, cells, renderCache, generation));
+                StoreBuildResult(key, BuildCellCpu(key, cell, cells, renderCache, gridSize, generation));
             }
             catch (Exception ex)
             {
@@ -732,20 +785,21 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         CellRecord cell,
         Dictionary<(int gx, int gy), CellRecord>? cells,
         global::FalloutXbox360Utils.WorldRenderCache? renderCache,
+        int gridSize,
         int generation)
     {
-        var vertices = new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCount];
+        var vertices = new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCountFor(gridSize)];
         if (!TerrainMeshBuilder.TryBuildVertices(cell, vertices, renderCache))
         {
             return BuiltCellCpuData.Failed(generation);
         }
 
         var textureSet = renderCache is not null
-            ? renderCache.GetOrBuildTerrainTextureSet(cell, () => BuildCellTextureSet(key, cell, cells))
-            : BuildCellTextureSet(key, cell, cells);
+            ? renderCache.GetOrBuildTerrainTextureSet(cell, () => BuildCellTextureSet(key, cell, cells, gridSize))
+            : BuildCellTextureSet(key, cell, cells, gridSize);
 
-        var blendWeights = new Vector4[TerrainMeshBuilder.VertexCount * CellTerrainTextureSet.SlotVectors];
-        PopulateBlendWeights(textureSet, blendWeights);
+        var blendWeights = new Vector4[TerrainMeshBuilder.VertexCountFor(gridSize) * CellTerrainTextureSet.SlotVectors];
+        PopulateBlendWeights(textureSet, blendWeights, gridSize);
         return new BuiltCellCpuData(vertices, blendWeights, textureSet, Unusable: false, generation);
     }
 
@@ -886,9 +940,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 ResourceStates.VertexAndConstantBuffer);
 
             var textureSet = _renderCache is not null
-                ? _renderCache.GetOrBuildTerrainTextureSet(cell, () => BuildCellTextureSet(key, cell, _cells))
-                : BuildCellTextureSet(key, cell, _cells);
-            PopulateBlendWeights(textureSet, _blendWeightScratch);
+                ? _renderCache.GetOrBuildTerrainTextureSet(cell, () => BuildCellTextureSet(key, cell, _cells, _gridSize))
+                : BuildCellTextureSet(key, cell, _cells, _gridSize);
+            PopulateBlendWeights(textureSet, _blendWeightScratch, _gridSize);
             var blendBuffer = GpuMeshBufferFactory12.CreateDefaultBuffer(
                 _gpu,
                 _recorder.CommandList,
@@ -938,8 +992,17 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private static CellTerrainTextureSet? BuildCellTextureSet(
         (int gx, int gy) key,
         CellRecord cell,
-        Dictionary<(int gx, int gy), CellRecord>? cells)
+        Dictionary<(int gx, int gy), CellRecord>? cells,
+        int gridSize)
     {
+        // Morrowind: paint the flat 16×16 land-texture grid per vertex (shaped via shader bilinear
+        // interp), not the lossy 4-quadrant collapse. No ATXT alpha layers, so neighbor edge blending
+        // doesn't apply here.
+        if (cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtexGrid)
+        {
+            return CellTerrainTextureSet.Project(CellLayerWeightTable.BuildFromVtexGrid(gridSize, vtexGrid));
+        }
+
         var layers = cell.LandVisualData?.TextureLayers;
 
         IReadOnlyList<LandTextureLayer>? eastN = null, westN = null, northN = null, southN = null;
@@ -958,12 +1021,12 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         CellLayerWeightTable? table = null;
         if (hasOwnLayers)
         {
-            table = CellLayerWeightTable.Build(layers!, eastN, westN, northN, southN);
+            table = CellLayerWeightTable.Build(gridSize, layers!, eastN, westN, northN, southN);
         }
         else if (hasRealNeighbor)
         {
             table = CellLayerWeightTable.Build(
-                s_engineDefaultSyntheticLayers, eastN, westN, northN, southN);
+                gridSize, s_engineDefaultSyntheticLayers, eastN, westN, northN, southN);
         }
 
         return CellTerrainTextureSet.Project(table);
@@ -994,7 +1057,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     ///     remapping from the weight-table row order (vy=0 north) to the mesh-builder row
     ///     order (j=0 south, since the mesh emits world-Y growing northward from originY).
     /// </summary>
-    private static void PopulateBlendWeights(CellTerrainTextureSet? set, Vector4[] dest)
+    private static void PopulateBlendWeights(CellTerrainTextureSet? set, Vector4[] dest, int gridSize)
     {
         if (set is null)
         {
@@ -1002,13 +1065,13 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             return;
         }
         const int vectors = CellTerrainTextureSet.SlotVectors;
-        for (var j = 0; j < CellLayerWeightTable.CellVertexCount; j++)
+        for (var j = 0; j < gridSize; j++)
         {
-            var cellVy = CellLayerWeightTable.CellVertexCount - 1 - j;
-            for (var i = 0; i < CellLayerWeightTable.CellVertexCount; i++)
+            var cellVy = gridSize - 1 - j;
+            for (var i = 0; i < gridSize; i++)
             {
-                var meshIdx = j * CellLayerWeightTable.CellVertexCount + i;
-                var tableIdx = cellVy * CellLayerWeightTable.CellVertexCount + i;
+                var meshIdx = j * gridSize + i;
+                var tableIdx = cellVy * gridSize + i;
                 for (var k = 0; k < vectors; k++)
                 {
                     dest[meshIdx * vectors + k] = set.VertexWeights[tableIdx * vectors + k];

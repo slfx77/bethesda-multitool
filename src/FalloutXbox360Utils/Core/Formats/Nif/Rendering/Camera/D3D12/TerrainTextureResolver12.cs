@@ -21,6 +21,7 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     private readonly NifGpuTextureResolver _textureResolver;
     private readonly GpuTextureCache12 _textureCache;
     private readonly Dictionary<uint, GpuTextureCache12.Entry> _byLtex = new();
+    private readonly FalloutXbox360Utils.Core.Formats.Esm.BethesdaGame _game;
 
     public TerrainTextureResolver12(
         GpuDevice12 gpu,
@@ -29,10 +30,12 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         GpuDeletionQueue12 deletionQueue,
         IReadOnlyDictionary<uint, LandscapeTextureRecord> ltexByFormId,
         IReadOnlyDictionary<uint, TextureSetRecord> txstByFormId,
-        string[] texturesBsaPaths)
+        string[] texturesBsaPaths,
+        FalloutXbox360Utils.Core.Formats.Esm.BethesdaGame game = FalloutXbox360Utils.Core.Formats.Esm.BethesdaGame.Unknown)
     {
         _ltexByFormId = ltexByFormId;
         _txstByFormId = txstByFormId;
+        _game = game;
         _textureResolver = new NifGpuTextureResolver(texturesBsaPaths);
         _textureCache = new GpuTextureCache12(gpu, recorder, heap, _textureResolver, deletionQueue)
             .RegisterWith(Diagnostics.ResourceRegistry.Instance, "terrain");
@@ -41,10 +44,12 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     /// <summary>1×1 white texture returned only when even the engine-default fails.</summary>
     public GpuTextureCache12.Entry WhiteFallback => _textureCache.WhitePixel;
 
-    /// <summary>Engine-default landscape diffuse (DirtWasteland01). Lazy — first access
-    /// uploads it via the texture cache (which records onto the current frame's command list).</summary>
+    /// <summary>Engine-default landscape diffuse for the active game (FNV DirtWasteland01, FO4
+    /// CommonwealthDefault01, …). Lazy — first access uploads it via the texture cache (which records
+    /// onto the current frame's command list). Game-keyed so a non-FNV worldspace's no-BTXT quadrants
+    /// don't bind FNV's texture (absent in their archives → white base).</summary>
     public GpuTextureCache12.Entry EngineDefault =>
-        _textureCache.GetOrUpload(EngineDefaultLandscapeTexture.DiffusePath);
+        _textureCache.GetOrUpload(EngineDefaultLandscapeTexture.DiffuseFor(_game));
 
     public int FrameCacheMisses { get; private set; }
 
@@ -115,6 +120,14 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         if (string.IsNullOrWhiteSpace(texturePath)) return null;
         return _textureCache.GetOrUpload(texturePath).BindlessIndex;
     }
+
+    /// <summary>
+    ///     Whether <paramref name="texturePath" /> exists in the loaded texture archives / loose files,
+    ///     without uploading it. Lets the sky resolver probe the loaded game's own assets (e.g. its moon
+    ///     texture) so nothing is shown that the game doesn't actually ship — no per-game path table.
+    /// </summary>
+    public bool TextureExists(string? texturePath)
+        => !string.IsNullOrWhiteSpace(texturePath) && _textureResolver.Exists(texturePath);
 
     public void Dispose()
     {

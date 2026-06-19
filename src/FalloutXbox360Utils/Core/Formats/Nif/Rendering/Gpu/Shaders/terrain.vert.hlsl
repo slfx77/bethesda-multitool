@@ -13,6 +13,16 @@ cbuffer Uniforms : register(b0)
     float4x4 uViewProj;
 };
 
+// 1G — camera-relative render origin (xyz), read from the shared atmosphere CB (b3). Subtracted from
+// each world vertex before projection so the large worldspace coordinates never enter the viewProj
+// product (the float-precision wobble). Zero when camera-relative is off; the leading 8 float4 are the
+// sun/sky/fog/camera fields this VS does not use.
+cbuffer Atmosphere : register(b3)
+{
+    float4 uAtmospherePad[8];
+    float4 uCameraOrigin;
+};
+
 struct VSInput
 {
     float3 aPosition    : TEXCOORD0;
@@ -33,7 +43,7 @@ struct VSOutput
 VSOutput main(VSInput input)
 {
     VSOutput o;
-    o.Position = mul(uViewProj, float4(input.aPosition, 1.0));
+    o.Position = mul(uViewProj, float4(input.aPosition - uCameraOrigin.xyz, 1.0));
     o.vWorldNormal = input.aNormal;
     o.vVertexColor = input.aVertexColor;
     return o;
