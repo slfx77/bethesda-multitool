@@ -16,18 +16,29 @@ namespace FalloutXbox360Utils.Core.Formats.Esm.Land;
 ///     <see cref="LandHeightmap.ExactHeights" /> (the same float-grid path the runtime-mesh and
 ///     Morrowind importers use), so both the 2D world map and the 3D terrain renderer light up with
 ///     zero changes to either renderer — they read heights through the shared
-///     <c>DecodedTerrainCell.Decode</c> abstraction.
+///     <c>DecodedTerrainCell.Decode</c> abstraction (the 2D map downsamples; the 3D
+///     <c>TerrainMeshBuilder</c> renders the native grid directly).
+///     <para>
+///         Cells are decoded at full native fidelity (LOD0 = 128×128 samples) into a 129×129 grid:
+///         the extra row/column is the <b>shared edge</b> pulled from the east/north neighbour's
+///         sample 0. Fallout 76 packs 128 <i>disjoint</i> samples per cell (a BTD tile is exactly
+///         8×128 = 1024 wide, with no shared border), so without that +1 the cell mesh's east/north
+///         edge would take its own sample 127 instead of the neighbour's sample 0 at the same world
+///         position — a height mismatch that renders as a crack between cells.
+///     </para>
 /// </summary>
 public static class Fo76TerrainInjector
 {
-    // BTD LOD to decode for each cell: LOD2 = 32x32 samples/cell — fast (skips the huge LOD0/LOD1
-    // block layers) and already at the pipeline's 33x33 target resolution. Full 128x128 fidelity
-    // would need a variable-resolution terrain mesh (a separate follow-up shared with Morrowind).
-    private const int SourceLod = 2;
+    // Native BTD resolution: LOD0 = 128 samples per cell edge. Full fidelity (the 3D viewer renders
+    // the native grid via the variable-resolution TerrainMeshBuilder; the 2D map downsamples 129->33
+    // by an exact step of 4). 40k-cell worldspaces (APPALACHIA) cost ~2.7 GB resident at this size.
+    private const int SourceLod = 0;
+    private const int CellSamples = 128 >> SourceLod; // 128
+    private const int GridSize = CellSamples + 1;      // 129: own 128 samples + the neighbour's shared edge
 
     // LandHeightmap requires HeightDeltas, but ExactHeights takes precedence in CalculateHeights(),
-    // so a single shared all-zero delta grid is never read.
-    private static readonly sbyte[] UnusedDeltas = new sbyte[33 * 33];
+    // so the deltas are never read — share one empty array (matching the Morrowind importer).
+    private static readonly sbyte[] UnusedDeltas = [];
 
     /// <summary>
     ///     Populates exterior-cell heightmaps for every Fallout 76 worldspace that has a matching
@@ -71,7 +82,10 @@ public static class Fo76TerrainInjector
             try
             {
                 using var btd = new BtdFile(btdPath);
-                btd.SetTileCacheSize(8);
+                // Hold several 8×8-cell tiles resident: a cell's own tile plus the east/north/NE
+                // neighbour tiles its shared edge reads from, so a tile-ordered sweep decompresses
+                // each tile's LOD pyramid once instead of thrashing.
+                btd.SetTileCacheSize(16);
                 populated += InjectWorldspace(worldspace, btd);
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
@@ -85,7 +99,7 @@ public static class Fo76TerrainInjector
 
     private static int InjectWorldspace(WorldspaceRecord worldspace, BtdFile btd)
     {
-        var count = 0;
+        var targets = new List<CellRecord>();
         foreach (var cell in worldspace.Cells)
         {
             if (cell.IsInterior || cell.Heightmap is not null)
@@ -103,37 +117,103 @@ public static class Fo76TerrainInjector
                 continue;
             }
 
+            targets.Add(cell);
+        }
+
+        // Decode in BTD tile order (8×8-cell tiles). Arbitrary cell order would reload — and
+        // re-decompress — the same tile repeatedly as the sweep and its neighbour-edge reads jump
+        // around the grid; tile-grouping keeps each tile's decompressed LOD pyramid hot in the cache.
+        targets.Sort(CompareByTile);
+
+        foreach (var cell in targets)
+        {
             cell.Heightmap = new LandHeightmap
             {
                 HeightDeltas = UnusedDeltas,
-                ExactHeights = BuildExactHeights(btd, gx, gy)
+                ExactHeights = BuildExactHeights(btd, cell.GridX!.Value, cell.GridY!.Value)
             };
-            count++;
         }
 
-        return count;
+        return targets.Count;
+    }
+
+    /// <summary>Orders cells by their 8×8-cell BTD tile, then by cell within the tile.</summary>
+    private static int CompareByTile(CellRecord a, CellRecord b)
+    {
+        int ay = a.GridY!.Value >> 3, by = b.GridY!.Value >> 3;
+        if (ay != by) return ay.CompareTo(by);
+        int ax = a.GridX!.Value >> 3, bx = b.GridX!.Value >> 3;
+        if (ax != bx) return ax.CompareTo(bx);
+        if (a.GridY!.Value != b.GridY!.Value) return a.GridY!.Value.CompareTo(b.GridY!.Value);
+        return a.GridX!.Value.CompareTo(b.GridX!.Value);
     }
 
     /// <summary>
-    ///     Decodes one BTD cell and resamples it to the pipeline's 33×33 grid of world heights
-    ///     (game units). Row 0 is the south edge, matching the VHGT / ExactHeights convention.
+    ///     Decodes one BTD cell at full native resolution into a 129×129 grid of world heights (game
+    ///     units). Row/column 0 is the south/west edge (VHGT / ExactHeights convention); the last
+    ///     row/column (index 128) is the shared edge taken from the north/east neighbour's sample 0,
+    ///     clamped to this cell's own outermost sample at the worldspace boundary.
     /// </summary>
     private static float[,] BuildExactHeights(BtdFile btd, int cellX, int cellY)
     {
-        var srcN = 128 >> SourceLod; // 32 at LOD2
-        var src = btd.GetCellHeightGrid(cellX, cellY, SourceLod); // float[srcN*srcN], south-to-north
-        var exact = new float[33, 33];
-        for (var y = 0; y < 33; y++)
+        var self = btd.GetCellHeightGrid(cellX, cellY, SourceLod); // float[CellSamples²], south-to-north
+        var exact = new float[GridSize, GridSize];
+
+        // Interior: this cell's own samples.
+        for (var j = 0; j < CellSamples; j++)
         {
-            var sy = (int)Math.Round(y * (double)(srcN - 1) / 32.0);
-            for (var x = 0; x < 33; x++)
+            for (var i = 0; i < CellSamples; i++)
             {
-                var sx = (int)Math.Round(x * (double)(srcN - 1) / 32.0);
-                exact[y, x] = src[(sy * srcN) + sx];
+                exact[j, i] = self[(j * CellSamples) + i];
             }
         }
 
+        FillSharedEdges(btd, exact, self, cellX, cellY);
         return exact;
+    }
+
+    /// <summary>
+    ///     Fills the 129×129 grid's east column and north row (and the NE corner) from the adjacent
+    ///     cells' sample 0, so neighbouring cell meshes meet without a crack. At the worldspace edge
+    ///     (no neighbour) the cell's own outermost sample is repeated.
+    /// </summary>
+    private static void FillSharedEdges(BtdFile btd, float[,] exact, float[] self, int cellX, int cellY)
+    {
+        var hasEast = cellX < btd.CellMaxX;
+        var hasNorth = cellY < btd.CellMaxY;
+        const int last = CellSamples - 1;
+
+        for (var j = 0; j < CellSamples; j++)
+        {
+            exact[j, CellSamples] = hasEast
+                ? btd.GetCellHeightSample(cellX + 1, cellY, 0, j, SourceLod)
+                : self[(j * CellSamples) + last];
+        }
+
+        for (var i = 0; i < CellSamples; i++)
+        {
+            exact[CellSamples, i] = hasNorth
+                ? btd.GetCellHeightSample(cellX, cellY + 1, i, 0, SourceLod)
+                : self[(last * CellSamples) + i];
+        }
+
+        // North-east corner: the NE neighbour's (0,0), else extend whichever edge exists inward.
+        if (hasEast && hasNorth)
+        {
+            exact[CellSamples, CellSamples] = btd.GetCellHeightSample(cellX + 1, cellY + 1, 0, 0, SourceLod);
+        }
+        else if (hasNorth)
+        {
+            exact[CellSamples, CellSamples] = exact[CellSamples, last];
+        }
+        else if (hasEast)
+        {
+            exact[CellSamples, CellSamples] = exact[last, CellSamples];
+        }
+        else
+        {
+            exact[CellSamples, CellSamples] = self[(last * CellSamples) + last];
+        }
     }
 
     private static bool IsFallout76(string esmPath)

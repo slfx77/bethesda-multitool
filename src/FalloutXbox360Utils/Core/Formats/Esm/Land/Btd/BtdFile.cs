@@ -315,6 +315,21 @@ public sealed class BtdFile : IDisposable
         return heights;
     }
 
+    /// <summary>
+    ///     Reads a single height sample (world units) at intra-cell sample coordinates
+    ///     (<paramref name="sampleX" />, <paramref name="sampleY" />), each in 0..(128&gt;&gt;<paramref name="lod" />)-1,
+    ///     where (0,0) is the cell's south-west corner. Used to pull a neighbouring cell's shared edge
+    ///     row/column without decoding its whole grid (Fallout 76 stores 128 disjoint samples per cell,
+    ///     so a watertight per-cell mesh needs its east/north edge taken from the next cell's sample 0).
+    /// </summary>
+    public float GetCellHeightSample(int cellX, int cellY, int sampleX, int sampleY, int lod = 0)
+    {
+        var tile = LoadTile(cellX, cellY, (~0u << (lod + lod)) & 0x0155u);
+        int x0 = ((cellX - CellMinX) & 7) << 7;
+        int y0 = ((cellY - CellMinY) & 7) << 7;
+        return SampleToHeight(tile.HmapData![((y0 + (sampleY << lod)) << 10) + x0 + (sampleX << lod)]);
+    }
+
     /// <summary>Decodes one cell's land-texture alpha map (pixelFormatA16 layout).</summary>
     public void GetCellLandTexture(ushort[] buf, int cellX, int cellY, int lod = 0)
     {
