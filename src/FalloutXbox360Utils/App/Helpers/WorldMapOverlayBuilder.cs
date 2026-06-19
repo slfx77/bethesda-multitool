@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
@@ -72,10 +73,12 @@ internal static class WorldMapOverlayBuilder
             UnlinkedExteriorCells = unlinkedExterior,
             UnlinkedMapMarkers = unlinkedMarkers,
             AllCells = semantic.Cells,
+            CellWorldSize = ResolveCellWorldSize(semantic.Cells),
             CellByFormId = cellByFormId,
             RefrToCellIndex = refrToCellIndex,
             BoundsIndex = boundsIndex,
             SpeedTreeHeights = BuildSpeedTreeHeights(semantic),
+            SpeedTreeLeafTextures = BuildSpeedTreeLeafTextures(semantic),
             CategoryIndex = categoryIndex,
             Resolver = semantic.CreateResolver(),
             MapMarkers = semantic.MapMarkers,
@@ -88,11 +91,12 @@ internal static class WorldMapOverlayBuilder
             HeightmapMinCellX = hmMinX,
             HeightmapMaxCellY = hmMaxY,
             SourceFilePath = sourceFilePath,
+            Game = DetectGame(sourceFilePath),
             SpawnIndex = spawnIndex,
             UsageIndex = usageIndex,
             RefPositionIndex = refPositionIndex,
             DanglingRefs = DanglingRefAttributions.LoadDefault(),
-            NavMeshesByCell = BuildNavMeshIndex(semantic.NavMeshes),
+            NavMeshesByCell = BuildNavMeshIndex(semantic.NavMeshes, semantic.Cells),
             LandTexturesByFormId = BuildLandTextureIndex(semantic.LandTextures),
             TextureSetsByFormId = BuildTextureSetIndex(semantic.TextureSets),
             WatersByFormId = BuildWaterIndex(semantic.Water),
@@ -100,6 +104,68 @@ internal static class WorldMapOverlayBuilder
             ClimatesByFormId = BuildClimateIndex(semantic.Climate),
             AllWeathers = BuildAllWeathers(semantic.Weather)
         };
+    }
+
+    /// <summary>
+    ///     Detects which Bethesda game a source file belongs to, for game-specific rendering (sky
+    ///     textures, moon count). Covers the whole Gamebryo/Creation lineage: Morrowind, Oblivion,
+    ///     Fallout 3, Fallout: New Vegas, Skyrim, Fallout 4, Fallout 76, Starfield. Uses the structural
+    ///     plugin probe (unambiguous for Morrowind / Oblivion), then — since the 24-byte TES4 framing is
+    ///     shared by FO3 / FNV / Skyrim / FO4 / FO76 / Starfield and the HEDR version float overlaps
+    ///     between them — refines via the master list + source filename. Reads only the file's leading
+    ///     bytes (the header sits at the start). Returns Unknown on any failure.
+    /// </summary>
+    private static BethesdaGame DetectGame(string? sourceFilePath)
+    {
+        if (string.IsNullOrEmpty(sourceFilePath) || !File.Exists(sourceFilePath))
+        {
+            return BethesdaGame.Unknown;
+        }
+
+        try
+        {
+            byte[] head;
+            using (var fs = File.OpenRead(sourceFilePath))
+            {
+                var len = (int)Math.Min(64 * 1024, fs.Length);
+                head = new byte[len];
+                fs.ReadExactly(head, 0, len);
+            }
+
+            var format = PluginFormat.Detect(head);
+            if (format.Game is BethesdaGame.Morrowind or BethesdaGame.Oblivion)
+            {
+                return format.Game; // structurally unambiguous
+            }
+
+            // 24-byte TES4 family — refine by the master names + the source filename.
+            var names = (EsmParser.ParseFileHeader(head)?.Masters ?? [])
+                .Append(Path.GetFileName(sourceFilePath));
+            foreach (var name in names)
+            {
+                if (string.IsNullOrEmpty(name))
+                {
+                    continue;
+                }
+
+                // Newest / most-specific first. FO76's main master is SeventySix.esm (some packs name it
+                // Fallout76); Starfield's is Starfield.esm.
+                if (name.Contains("Starfield", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Starfield;
+                if (name.Contains("SeventySix", StringComparison.OrdinalIgnoreCase) ||
+                    name.Contains("Fallout76", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Fallout76;
+                if (name.Contains("Skyrim", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Skyrim;
+                if (name.Contains("Fallout4", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Fallout4;
+                if (name.Contains("Oblivion", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Oblivion;
+                if (name.Contains("Fallout3", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Fallout3;
+                if (name.Contains("FalloutNV", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.FalloutNewVegas;
+            }
+
+            return format.Game; // structural default (FNV for the 24-byte family)
+        }
+        catch
+        {
+            return BethesdaGame.Unknown;
+        }
     }
 
     /// <summary>
@@ -198,10 +264,12 @@ internal static class WorldMapOverlayBuilder
             UnlinkedExteriorCells = unlinkedExterior,
             UnlinkedMapMarkers = unlinkedMarkers,
             AllCells = suppRecords.Cells,
+            CellWorldSize = ResolveCellWorldSize(suppRecords.Cells),
             CellByFormId = cellByFormId,
             RefrToCellIndex = refrToCellIndex,
             BoundsIndex = boundsIndex,
             SpeedTreeHeights = BuildSpeedTreeHeights(suppRecords),
+            SpeedTreeLeafTextures = BuildSpeedTreeLeafTextures(suppRecords),
             CategoryIndex = categoryIndex,
             Resolver = resolver,
             MapMarkers = suppRecords.MapMarkers,
@@ -220,7 +288,7 @@ internal static class WorldMapOverlayBuilder
             SaveOverlayMarkers = overlayMarkers,
             PlayerPosition = playerPos,
             DanglingRefs = DanglingRefAttributions.LoadDefault(),
-            NavMeshesByCell = BuildNavMeshIndex(suppRecords.NavMeshes),
+            NavMeshesByCell = BuildNavMeshIndex(suppRecords.NavMeshes, suppRecords.Cells),
             LandTexturesByFormId = BuildLandTextureIndex(suppRecords.LandTextures),
             TextureSetsByFormId = BuildTextureSetIndex(suppRecords.TextureSets),
             WatersByFormId = BuildWaterIndex(suppRecords.Water),
@@ -239,14 +307,29 @@ internal static class WorldMapOverlayBuilder
         var map = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
         foreach (var record in semantic.GenericRecords)
         {
-            if (record.Bounds is not { } bounds || record.ModelPath is not { } modelPath ||
-                !SpeedTreeModelPath.IsSpt(modelPath))
+            if (record.ModelPath is not { } modelPath || !SpeedTreeModelPath.IsSpt(modelPath))
             {
                 continue;
             }
 
-            var height = bounds.Z2 - bounds.Z1;
-            if (height > 0)
+            // FO3/FNV: the TREE record's OBND Z-extent. Oblivion (TES4) records predate OBND, so fall
+            // back to the BNAM billboard Height (the tree's rendered height), then the MODB bound radius.
+            // Without this, Oblivion trees keep their tiny built scale and render far too small.
+            var height = record.Bounds is { } bounds ? bounds.Z2 - bounds.Z1 : 0f;
+
+            if (height <= 0f && record.Fields.TryGetValue("BNAM", out var bnam) &&
+                bnam is System.Collections.IDictionary bd && bd["Height"] is float bh)
+            {
+                height = bh;
+            }
+
+            if (height <= 0f && record.Fields.TryGetValue("MODB", out var modb) &&
+                modb is byte[] { Length: >= 4 } mb)
+            {
+                height = BitConverter.ToSingle(mb, 0);
+            }
+
+            if (height > 0f)
             {
                 map[SpeedTreeModelPath.ToArchivePath(modelPath)] = height;
             }
@@ -255,16 +338,62 @@ internal static class WorldMapOverlayBuilder
         return map;
     }
 
-    private static Dictionary<uint, List<NavMeshRecord>> BuildNavMeshIndex(List<NavMeshRecord> navMeshes)
+    /// <summary>
+    ///     Map each SpeedTree <c>.spt</c> archive path → the leaf atlas the engine actually applies: the
+    ///     <c>TREE</c> record's <c>ICON</c> field (the `.spt`'s own leaf material is a dev-era path that
+    ///     often never shipped — e.g. WhiteOak's `treewoakleaves01b` vs the shipped `WhiteOakLeaves01.dds`).
+    /// </summary>
+    private static Dictionary<string, string> BuildSpeedTreeLeafTextures(RecordCollection semantic)
     {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var record in semantic.GenericRecords)
+        {
+            if (record.ModelPath is not { } modelPath || !SpeedTreeModelPath.IsSpt(modelPath) ||
+                !record.Fields.TryGetValue("ICON", out var iconObj) || iconObj is not string icon)
+            {
+                continue;
+            }
+
+            if (SpeedTreeTexturePath.IconToLeafPath(icon) is { } leaf)
+            {
+                map[SpeedTreeModelPath.ToArchivePath(modelPath)] = leaf;
+            }
+        }
+
+        return map;
+    }
+
+    private static Dictionary<uint, List<NavMeshRecord>> BuildNavMeshIndex(
+        List<NavMeshRecord> navMeshes, List<CellRecord> cells)
+    {
+        // Skyrim EXTERIOR navmeshes (NVNM) identify their cell by worldspace + grid, not a direct cell
+        // FormID. Build a (worldspace, gridX, gridY) → cell FormID lookup so they can be keyed by cell
+        // like every other game; interior navmeshes already carry a CellFormID.
+        Dictionary<(uint Worldspace, int X, int Y), uint>? exteriorCells = null;
+        foreach (var c in cells)
+        {
+            if (c.WorldspaceFormId is { } ws and not 0 && c.GridX is { } gx && c.GridY is { } gy)
+            {
+                (exteriorCells ??= new Dictionary<(uint, int, int), uint>()).TryAdd((ws, gx, gy), c.FormId);
+            }
+        }
+
         var dict = new Dictionary<uint, List<NavMeshRecord>>();
         foreach (var nm in navMeshes)
         {
-            if (nm.CellFormId == 0) continue;
-            if (!dict.TryGetValue(nm.CellFormId, out var list))
+            var cellFormId = nm.CellFormId;
+            if (cellFormId == 0 && nm.WorldspaceFormId != 0 && nm.GridX is { } ngx && nm.GridY is { } ngy &&
+                exteriorCells is not null &&
+                exteriorCells.TryGetValue((nm.WorldspaceFormId, ngx, ngy), out var resolved))
+            {
+                cellFormId = resolved;
+            }
+
+            if (cellFormId == 0) continue;
+            if (!dict.TryGetValue(cellFormId, out var list))
             {
                 list = new List<NavMeshRecord>();
-                dict[nm.CellFormId] = list;
+                dict[cellFormId] = list;
             }
             list.Add(nm);
         }
@@ -397,6 +526,24 @@ internal static class WorldMapOverlayBuilder
         }
 
         return linkedCellFormIds;
+    }
+
+    /// <summary>
+    ///     The worldspace's exterior cell-edge size in world units. All cells of one worldspace share
+    ///     it, so the first cell that declares a non-default <see cref="CellRecord.CellWorldSize" />
+    ///     (8192 for Morrowind) wins; everything else falls back to the Fallout-family 4096.
+    /// </summary>
+    private static float ResolveCellWorldSize(IEnumerable<CellRecord> cells)
+    {
+        foreach (var cell in cells)
+        {
+            if (cell.CellWorldSize > 0f)
+            {
+                return cell.CellWorldSize;
+            }
+        }
+
+        return WorldGridConstants.CellSize;
     }
 
     private static Dictionary<uint, CellRecord> BuildCellByFormId(List<CellRecord> cells)

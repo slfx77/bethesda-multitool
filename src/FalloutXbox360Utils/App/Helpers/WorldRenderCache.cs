@@ -403,12 +403,19 @@ internal sealed class DecodedTerrainCell
         }
 
         var calculated = source.CalculateHeights();
+
+        // This cache is fixed at 33×33 (it also feeds the 2D map + water mask). Most games are 33×33
+        // already; Morrowind's native 65×65 LAND is downsampled here by an integer step so the 2D map
+        // keeps its existing look. The 3D viewer renders Morrowind from the native float[,] directly
+        // (TerrainMeshBuilder bypasses this cache for grids larger than 33×33).
+        var nativeEdge = calculated.GetLength(0);
+        var step = nativeEdge > GridSize ? (nativeEdge - 1) / (GridSize - 1) : 1;
         var flat = new float[HeightCount];
         for (var y = 0; y < GridSize; y++)
         {
             for (var x = 0; x < GridSize; x++)
             {
-                flat[y * GridSize + x] = calculated[y, x];
+                flat[y * GridSize + x] = calculated[y * step, x * step];
             }
         }
 

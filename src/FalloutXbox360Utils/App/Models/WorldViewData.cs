@@ -1,3 +1,4 @@
+using FalloutXbox360Utils.Core.Formats.Esm;
 using FalloutXbox360Utils.Core.Formats.Esm.Export;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.Misc;
@@ -24,9 +25,25 @@ internal sealed class WorldViewData
     /// </summary>
     public Dictionary<string, float> SpeedTreeHeights { get; init; } = [];
 
+    /// <summary>
+    ///     SpeedTree archive path (<c>trees\&lt;name&gt;.spt</c>) → the leaf-atlas texture the engine
+    ///     applies, taken from the TREE record's <c>ICON</c> field (NOT the `.spt`'s dev-era material,
+    ///     which often never shipped). Case-insensitive keys.
+    /// </summary>
+    public Dictionary<string, string> SpeedTreeLeafTextures { get; init; } = [];
+
     public required Dictionary<uint, PlacedObjectCategory> CategoryIndex { get; init; }
     public required FormIdResolver Resolver { get; init; }
     public required List<PlacedReference> MapMarkers { get; init; }
+
+    /// <summary>
+    ///     World units per exterior-cell edge for this worldspace: 4096 for Fallout/Oblivion/Skyrim,
+    ///     8192 for Morrowind. The spatial index, 3D camera/picking/render-distance, the 2D map's
+    ///     canvas mapping, and the top-down overlay all key off this single value so 2D and 3D share
+    ///     one coordinate system (otherwise Morrowind's 8192-unit geometry mis-aligns with a 4096-based
+    ///     camera/index). Defaults to the Fallout-family <see cref="WorldGridConstants.CellSize" />.
+    /// </summary>
+    public float CellWorldSize { get; init; } = WorldGridConstants.CellSize;
 
     /// <summary>Map markers grouped by worldspace FormID for per-worldspace filtering.</summary>
     public required Dictionary<uint, List<PlacedReference>> MarkersByWorldspace { get; init; }
@@ -69,6 +86,13 @@ internal sealed class WorldViewData
 
     /// <summary>Source file path, used for default color scheme selection.</summary>
     public string? SourceFilePath { get; init; }
+
+    /// <summary>
+    ///     Which Bethesda game this data was loaded from (detected from the source file's structural
+    ///     plugin format + master list). Drives game-specific rendering choices — currently the 3D
+    ///     viewer's sky textures (FNV vs Skyrim cloud/star/sun/moon sets) and moon count (Skyrim has two).
+    /// </summary>
+    public BethesdaGame Game { get; init; } = BethesdaGame.Unknown;
 
     /// <summary>Spawn resolution index for leveled list and AI package lookups.</summary>
     public SpawnResolutionIndex? SpawnIndex { get; init; }
