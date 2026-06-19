@@ -171,6 +171,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         string? editorId = null;
         uint? imageSpaceMod = null;
         var sounds = new List<WeatherSound>();
+        var cloudLayers = new List<string>(4);
         IReadOnlyList<WeatherColor>? colors = null;
         IReadOnlyList<float>? fogDistances = null;
         WeatherData? weatherData = null;
@@ -205,10 +206,24 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
                     break;
                 }
-                // NAM0 "Weather Colors": 15 categories × 4 time-bands × RGBA (240 bytes). Drives the
-                // atmosphere renderer's sky/sun/ambient/fog palette (see WeatherColorType for the index
-                // meaning — provisional until the engine decompile confirms it).
-                case "NAM0" when sub.DataLength >= 16:
+                // Cloud-layer texture paths (null-terminated strings, big-endian-safe — the converter
+                // leaves these unswapped). DNAM/CNAM/ANAM/BNAM = cloud layers 0–3, in file order, so
+                // appending preserves the layer index. The active weather's clouds derive from these.
+                case "DNAM" or "CNAM" or "ANAM" or "BNAM":
+                {
+                    var cloud = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrWhiteSpace(cloud))
+                    {
+                        cloudLayers.Add(cloud);
+                    }
+
+                    break;
+                }
+                // NAM0 "Weather Colors": 10 categories × 24 bytes (FNV), each category being SIX RGBA
+                // time bands (Sunrise/Day/Sunset/Night/HighNoon/Midnight) per the fopdoc FalloutNV WTHR
+                // definition. Drives the atmosphere renderer's sky/sun/ambient/fog palette (see
+                // WeatherColorType for the index meaning).
+                case "NAM0" when sub.DataLength >= 24:
                     colors = ReadWeatherColors(subData, record.IsBigEndian);
                     break;
                 // FNAM "Fog Distances": 6 floats (24 bytes).
@@ -228,6 +243,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             ImageSpaceModifier = imageSpaceMod != 0 ? imageSpaceMod : null,
             Sounds = sounds,
+            CloudLayerTextures = cloudLayers,
             Colors = colors ?? [],
             FogDistances = fogDistances ?? [],
             Data = weatherData,
@@ -236,13 +252,17 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         };
     }
 
-    // NAM0 weather colors. Each 4-byte band is read with the record's endianness as one uint and the
-    // RGBA bytes extracted from fixed bit positions, so Xbox (the converter byte-swaps each group) and
-    // PC produce the same RGBA — no per-platform branch beyond the integer read.
-    private static List<WeatherColor> ReadWeatherColors(ReadOnlySpan<byte> data, bool isBigEndian)
+    // NAM0 weather colors. Each FNV category is a 24-byte "Time of Day Colors" struct of SIX RGBA bands
+    // (Sunrise/Day/Sunset/Night/HighNoon/Midnight) — fopdoc FalloutNV WTHR. The earlier 16-byte (4-band)
+    // stride mis-read everything after the first category (it drifted 8 bytes per category), which is why
+    // the sky horizon read black at noon / white at night while the sky-top (category 0) looked right.
+    // Each 4-byte band is read with the record's endianness as one uint and the RGBA bytes extracted from
+    // fixed bit positions, so Xbox (the converter byte-swaps each group) and PC produce the same RGBA.
+    internal static List<WeatherColor> ReadWeatherColors(ReadOnlySpan<byte> data, bool isBigEndian)
     {
         const int bandBytes = 4;
-        const int entryBytes = bandBytes * 4; // sunrise/day/sunset/night
+        const int bandsPerEntry = 6; // sunrise/day/sunset/night/high-noon/midnight
+        const int entryBytes = bandBytes * bandsPerEntry;
         var count = data.Length / entryBytes;
         var colors = new List<WeatherColor>(count);
         for (var i = 0; i < count; i++)
@@ -252,7 +272,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 ReadRgba(data.Slice(b, bandBytes), isBigEndian),
                 ReadRgba(data.Slice(b + bandBytes, bandBytes), isBigEndian),
                 ReadRgba(data.Slice(b + 2 * bandBytes, bandBytes), isBigEndian),
-                ReadRgba(data.Slice(b + 3 * bandBytes, bandBytes), isBigEndian)));
+                ReadRgba(data.Slice(b + 3 * bandBytes, bandBytes), isBigEndian),
+                ReadRgba(data.Slice(b + 4 * bandBytes, bandBytes), isBigEndian),
+                ReadRgba(data.Slice(b + 5 * bandBytes, bandBytes), isBigEndian)));
         }
 
         return colors;

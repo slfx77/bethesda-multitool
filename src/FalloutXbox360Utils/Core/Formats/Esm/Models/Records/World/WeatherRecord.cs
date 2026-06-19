@@ -19,9 +19,10 @@ public record WeatherRecord
     public List<WeatherSound> Sounds { get; init; } = [];
 
     /// <summary>
-    ///     NAM0 "Weather Colors": one <see cref="WeatherColor" /> per color category (FNV ships 15 —
-    ///     240 bytes = 15 × 4 time-bands × RGBA). Index meaning is <see cref="WeatherColorType" />.
-    ///     Empty when the record carries no NAM0.
+    ///     NAM0 "Weather Colors": one <see cref="WeatherColor" /> per color category. FNV ships 10
+    ///     categories (240 bytes = 10 × 24-byte categories; each category is SIX RGBA time bands —
+    ///     Sunrise/Day/Sunset/Night/HighNoon/Midnight — per the fopdoc FalloutNV WTHR definition, NOT the
+    ///     four FO3 carries). Index meaning is <see cref="WeatherColorType" />. Empty when no NAM0.
     /// </summary>
     public IReadOnlyList<WeatherColor> Colors { get; init; } = [];
 
@@ -32,6 +33,15 @@ public record WeatherRecord
     ///     "power" field — so the atmosphere renderer treats them as the fog power. Empty when absent.
     /// </summary>
     public IReadOnlyList<float> FogDistances { get; init; } = [];
+
+    /// <summary>
+    ///     Cloud-layer texture paths in layer order: DNAM = layer 0, CNAM = 1, ANAM = 2, BNAM = 3. The
+    ///     engine swaps these onto the sky-dome cloud nodes for the active weather, so they are the
+    ///     grounded source of a worldspace's clouds (vs. a hardcoded per-game cloud path). An unused
+    ///     layer is authored as the transparent placeholder <c>sky\alpha.dds</c>. Empty when the record
+    ///     carries no cloud subrecords.
+    /// </summary>
+    public IReadOnlyList<string> CloudLayerTextures { get; init; } = [];
 
     /// <summary>DATA block (wind speed, sun glare, precipitation timing, flags, lightning color).</summary>
     public WeatherData? Data { get; init; }
@@ -47,37 +57,37 @@ public record WeatherRecord
 public readonly record struct WeatherRgba(byte R, byte G, byte B, byte A);
 
 /// <summary>
-///     One NAM0 color category sampled at the four times of day. Band order is Sunrise / Day / Sunset /
-///     Night — CONFIRMED by the engine decompile (<c>TESWeather::GetCloudColor</c> keys its default
-///     colors as band 0=sunrise, 1=day, 2=sunset, 3=night). The atmosphere renderer holds each band
-///     steady between the climate's sunrise/sunset windows and cross-fades only within them.
+///     One NAM0 color category sampled at the times of day. Band order is Sunrise / Day / Sunset /
+///     Night / HighNoon / Midnight — CONFIRMED by the fopdoc FalloutNV WTHR definition (each category is
+///     a 24-byte "Time of Day Colors" struct of SIX RGBA colors). FO3 carried only the first four;
+///     FNV added the solar-noon (<see cref="HighNoon" />) and solar-midnight (<see cref="Midnight" />)
+///     peaks. <see cref="HighNoon" /> / <see cref="Midnight" /> are frequently authored as zero (the
+///     engine then falls back to Day / Night), so the atmosphere renderer blends only the four primary
+///     bands — holding each steady between the climate's sunrise/sunset windows and cross-fading within
+///     them — and keeps the two peaks available for callers that want them.
 /// </summary>
-public sealed record WeatherColor(WeatherRgba Sunrise, WeatherRgba Day, WeatherRgba Sunset, WeatherRgba Night);
+public sealed record WeatherColor(
+    WeatherRgba Sunrise, WeatherRgba Day, WeatherRgba Sunset, WeatherRgba Night,
+    WeatherRgba HighNoon = default, WeatherRgba Midnight = default);
 
 /// <summary>
-///     Index meaning of the <see cref="WeatherRecord.Colors" /> array (FNV WTHR NAM0), per xEdit's
-///     <c>wbWTHR</c> definition. <see cref="Ambient" /> (3) and <see cref="Sunlight" /> (4) are CONFIRMED
-///     by the engine decompile — <c>Sky::UpdateColors</c> special-cases exactly those two category
-///     indices for the directional-light intensity scale; the remaining indices (incl. SkyUpper=0,
-///     Fog=1, SkyLower=7) are corroborated by the same 10-category upload loop.
+///     Index meaning of the <see cref="WeatherRecord.Colors" /> array (FNV WTHR NAM0). The FNV NAM0 holds
+///     exactly TEN categories (per the fopdoc FalloutNV WTHR definition), in this order. <see cref="Ambient" />
+///     (3) and <see cref="Sunlight" /> (4) are also CONFIRMED by the engine decompile —
+///     <c>Sky::UpdateColors</c> special-cases those two indices for the directional-light intensity scale.
 /// </summary>
 public enum WeatherColorType
 {
     SkyUpper = 0,
     Fog = 1,
-    Unknown2 = 2,
+    Unused2 = 2,
     Ambient = 3,
     Sunlight = 4,
     Sun = 5,
     Stars = 6,
     SkyLower = 7,
     Horizon = 8,
-    EffectLighting = 9,
-    CloudLodDiffuse = 10,
-    CloudLodAmbient = 11,
-    FogFar = 12,
-    SkyStatics = 13,
-    WaterMultiplier = 14,
+    Unused9 = 9,
 }
 
 /// <summary>WTHR DATA block (15 bytes) — see the converter's DATA/WTHR schema for the byte layout.</summary>
