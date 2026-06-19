@@ -14,7 +14,7 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12;
 ///     v3 textured-sky billboards — the sun (disc + glare) and moon, drawn as camera-facing textured
 ///     quads at their sky directions. Mirrors the engine, which draws each celestial object as a
 ///     4-vertex billboard quad with a NiBillboard controller (decompiled Sun::Initialize /
-///     Moon::Initialize). Drawn right AFTER the <see cref="SkyboxRenderer12" /> gradient and BEFORE
+///     Moon::Initialize). Drawn right AFTER the <see cref="SkyDomeRenderer12" /> gradient and BEFORE
 ///     terrain, depth test/write OFF (DSV stays bound) — so depth-written geometry overwrites it and
 ///     mountains correctly hide the sun.
 ///     <para>
@@ -37,7 +37,8 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
     private const float Radius = 30000f;
     private const float SunDiscHalfSize = Radius * 0.040f;
     private const float SunGlareHalfSize = Radius * 0.160f;
-    private const float MoonHalfSize = Radius * 0.060f;
+    private const float MoonHalfSize = Radius * 0.060f;   // Masser (or the single Fallout moon)
+    private const float SecundaHalfSize = Radius * 0.042f; // Skyrim's smaller second moon
     private const float GlareAlpha = 0.5f; // the glare halo is fainter than the disc
 
     private readonly GpuCommandRecorder12 _recorder;
@@ -130,7 +131,8 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
     public void Render(
         Matrix4x4 viewProj, Vector3 camPos, Vector3 camRight, Vector3 camUp,
         Vector3 sunDir, float sunFade, Vector3 sunColor, uint sunDiscTex, uint sunGlareTex,
-        Vector3 moonDir, float moonFade, uint moonTex)
+        Vector3 moonDir, float moonFade, uint moonTex,
+        Vector3 moon2Dir, float moon2Fade, uint moon2Tex)
     {
         if (_disposed) return;
 
@@ -150,11 +152,17 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
             }
         }
 
-        // Moon (night): alpha-blended lit disc.
+        // Moon(s) (night): alpha-blended lit discs. Masser, plus Skyrim's smaller Secunda when supplied.
         if (moonFade > 0.001f && moonDir.Z > -0.05f && moonTex != NoTexture)
         {
             Draw(_psoAlpha, viewProj, camPos, camRight, camUp, moonDir,
                 MoonHalfSize, moonFade, moonTex, Vector3.One, 1f);
+        }
+
+        if (moon2Fade > 0.001f && moon2Dir.Z > -0.05f && moon2Tex != NoTexture)
+        {
+            Draw(_psoAlpha, viewProj, camPos, camRight, camUp, moon2Dir,
+                SecundaHalfSize, moon2Fade, moon2Tex, Vector3.One, 1f);
         }
     }
 

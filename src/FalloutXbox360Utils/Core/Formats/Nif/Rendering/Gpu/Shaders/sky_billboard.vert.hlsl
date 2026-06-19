@@ -1,4 +1,4 @@
-// v3 textured-sky billboard vertex shader. Expands a camera-facing quad (4 verts, triangle strip)
+// v3 textured-sky billboard vertex shader. Expands a DOME-ANCHORED quad (4 verts, triangle strip)
 // from SV_VertexID, centered on a world direction at a fixed sky-sphere radius. Used for the sun disc,
 // the sun glare halo, and the moon — the engine draws each celestial object as a billboard quad with a
 // NiBillboard camera-facing controller (decompiled Sun::Initialize / Moon::Initialize, both build a
@@ -35,8 +35,20 @@ static const float2 kCorners[4] =
 VSOutput main(uint vid : SV_VertexID)
 {
     float2 c = kCorners[vid];
-    float3 center = uCamPos.xyz + uCenterDirRadius.xyz * uCenterDirRadius.w;
-    float3 world = center + ((uRightHalfSize.xyz * c.x) + (uUpFade.xyz * c.y)) * uRightHalfSize.w;
+    float3 dir = uCenterDirRadius.xyz;
+    float3 center = uCamPos.xyz + dir * uCenterDirRadius.w;
+
+    // Dome-anchored basis: the quad faces ALONG its own world direction (the line of sight from the
+    // camera at the dome centre to the body), so the disc stays a true circle from any view angle —
+    // unlike the camera-facing basis (uRightHalfSize.xyz / uUpFade.xyz, now unused), which tilts a body
+    // toward the screen plane when it sits at the periphery of the view. uRightHalfSize.w is the quad
+    // half-size; uUpFade.w (fade) is still consumed by the fragment shader.
+    float3 worldUp = float3(0.0, 0.0, 1.0);
+    float3 right = cross(worldUp, dir);
+    float rl = length(right);
+    right = rl > 1e-4 ? (right / rl) : float3(1.0, 0.0, 0.0); // body straight up/down → arbitrary right
+    float3 up = cross(dir, right);
+    float3 world = center + ((right * c.x) + (up * c.y)) * uRightHalfSize.w;
 
     VSOutput o;
     o.Position = mul(uViewProj, float4(world, 1.0));
