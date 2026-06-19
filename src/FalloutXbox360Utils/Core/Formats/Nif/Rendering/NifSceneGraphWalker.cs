@@ -32,12 +32,24 @@ internal static class NifSceneGraphWalker
     ///     Classify all blocks: identify nodes (with children), shapes (with data refs),
     ///     and build the scene graph structure.
     /// </summary>
+    /// <summary>
+    ///     Collision-geometry container nodes whose descendant shapes are physics hulls, not renderable
+    ///     geometry. Morrowind/older NIFs put a simplified collision mesh under a <c>RootCollisionNode</c>
+    ///     (NiNode layout); the engine never draws it. We must skip those shapes — otherwise the
+    ///     untextured collision hull renders as white panels / a dark blob over the real mesh.
+    /// </summary>
+    internal static readonly HashSet<string> CollisionNodeTypes = ["RootCollisionNode"];
+
     internal static void ClassifyBlocks(byte[] data, NifInfo nif,
         Dictionary<int, List<int>> nodeChildren, Dictionary<int, int> shapeDataMap,
         Dictionary<int, List<int>>? shapePropertyMap = null,
         Dictionary<int, int>? shapeSkinInstanceMap = null)
     {
         var be = nif.IsBigEndian;
+
+        // Pre-pass: collect every shape that lives under a RootCollisionNode so it is excluded from
+        // rendering (it is a physics hull, untextured, that would otherwise draw over the real mesh).
+        var collisionShapes = CollectCollisionShapes(data, nif);
 
         for (var i = 0; i < nif.Blocks.Count; i++)
         {
@@ -53,6 +65,12 @@ internal static class NifSceneGraphWalker
             }
             else if (ShapeTypes.Contains(block.TypeName))
             {
+                // Collision-hull geometry under a RootCollisionNode is never rendered.
+                if (collisionShapes.Contains(i))
+                {
+                    continue;
+                }
+
                 // Skip gore/dismembered shape variants and editor helper shapes by name
                 var shapeName = NifBlockParsers.ReadBlockName(data, block, nif);
                 if (NifBlockParsers.IsGoreShape(shapeName) || NifBlockParsers.IsEditorHelperShape(shapeName))
@@ -138,6 +156,107 @@ internal static class NifSceneGraphWalker
                 }
             }
         }
+    }
+
+    /// <summary>
+    ///     Collect all shape block indices that are descendants of a <see cref="CollisionNodeTypes" />
+    ///     container (e.g. <c>RootCollisionNode</c>). These are physics collision hulls the engine never
+    ///     renders; the geometry extractor must skip them. <c>RootCollisionNode</c> uses the NiNode
+    ///     layout, so its children parse with <see cref="NifBlockParsers.ParseNodeChildren" />.
+    /// </summary>
+    private static HashSet<int> CollectCollisionShapes(byte[] data, NifInfo nif)
+    {
+        var collisionShapes = new HashSet<int>();
+        var visited = new HashSet<int>();
+        for (var i = 0; i < nif.Blocks.Count; i++)
+        {
+            if (CollisionNodeTypes.Contains(nif.Blocks[i].TypeName))
+            {
+                CollectShapesUnderCollisionNode(data, nif, i, collisionShapes, visited);
+            }
+        }
+
+        return collisionShapes;
+    }
+
+    private static void CollectShapesUnderCollisionNode(byte[] data, NifInfo nif, int nodeIndex,
+        HashSet<int> collisionShapes, HashSet<int> visited)
+    {
+        if (!visited.Add(nodeIndex))
+        {
+            return;
+        }
+
+        var children = NifBlockParsers.ParseNodeChildren(data, nif.Blocks[nodeIndex], nif.BsVersion,
+            nif.IsBigEndian, nif.HasInlineStrings);
+        if (children is null)
+        {
+            return;
+        }
+
+        foreach (var child in children)
+        {
+            if (child < 0 || child >= nif.Blocks.Count)
+            {
+                continue;
+            }
+
+            var childType = nif.Blocks[child].TypeName;
+            if (ShapeTypes.Contains(childType))
+            {
+                collisionShapes.Add(child);
+            }
+            else if (NodeTypes.Contains(childType) || CollisionNodeTypes.Contains(childType))
+            {
+                CollectShapesUnderCollisionNode(data, nif, child, collisionShapes, visited);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Collect the node indices that serve as skinning bones for any skinned shape in the NIF.
+    ///     Geometry hung directly off such a node is a rig helper / physics proxy — e.g. the per-bone
+    ///     boxes on FNV animated flags (<c>clutter\flags\NV_NCR_Flag.NIF</c>, the <c>TTail*/MTail*/Root</c>
+    ///     boxes) — not part of the visible mesh. The engine deforms the skinned mesh by these bones and
+    ///     never draws geometry parented to them; the worldspace reference path bakes bind pose, so
+    ///     without filtering these the untextured bone boxes render as stray blocks beside the flag.
+    /// </summary>
+    internal static HashSet<int> CollectSkinBoneNodeIndices(byte[] data, NifInfo nif,
+        IReadOnlyDictionary<int, int> shapeSkinInstanceMap)
+    {
+        var bones = new HashSet<int>();
+        var parsedSkins = new HashSet<int>();
+        foreach (var skinRef in shapeSkinInstanceMap.Values)
+        {
+            if (skinRef < 0 || skinRef >= nif.Blocks.Count || !parsedSkins.Add(skinRef))
+            {
+                continue;
+            }
+
+            var skin = NifSkinningExtractor.ParseNiSkinInstance(data, nif.Blocks[skinRef], nif.IsBigEndian);
+            if (skin is null)
+            {
+                continue;
+            }
+
+            foreach (var boneIdx in skin.BoneRefs)
+            {
+                if (boneIdx >= 0 && boneIdx < nif.Blocks.Count)
+                {
+                    bones.Add(boneIdx);
+                }
+            }
+
+            // The cloth's skeleton-root node (a separate field from the weighted bone list) also carries
+            // a proxy box (e.g. the flag's "Root:0"). Treat it as a bone node too — but never block 0,
+            // the file's Scene Root, where legitimate static worldspace geometry hangs.
+            if (skin.SkeletonRootRef > 0 && skin.SkeletonRootRef < nif.Blocks.Count)
+            {
+                bones.Add(skin.SkeletonRootRef);
+            }
+        }
+
+        return bones;
     }
 
     /// <summary>

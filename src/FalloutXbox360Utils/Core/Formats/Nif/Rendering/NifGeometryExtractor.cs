@@ -123,7 +123,8 @@ internal static class NifGeometryExtractor
         HashSet<int>? excludeBlockIndices = null,
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null,
         bool treatRootsAsIdentity = false,
-        bool collectBillboards = false)
+        bool collectBillboards = false,
+        bool dropBoneAttachedShapes = false)
     {
         if (nif.Blocks.Count == 0)
         {
@@ -200,6 +201,53 @@ internal static class NifGeometryExtractor
             if (lodShapeNames.Any(s => IsLodShape(s.name)) && lodShapeNames.Any(s => !IsLodShape(s.name)))
             {
                 foreach (var (idx, _) in lodShapeNames.Where(s => IsLodShape(s.name)))
+                {
+                    shapeDataMap.Remove(idx);
+                    shapePropertyMap.Remove(idx);
+                    shapeSkinInstanceMap.Remove(idx);
+                }
+            }
+        }
+
+        // Drop rig-helper / physics-proxy geometry hung directly off skinning bones (e.g. the per-bone
+        // boxes on FNV animated flags — clutter\flags\NV_NCR_Flag.NIF's TTail*/MTail*/Root boxes). The
+        // engine deforms the skinned mesh by these bones and never renders geometry parented to them; the
+        // worldspace reference path bakes bind pose, so without this the untextured bone boxes render as
+        // stray "physics" blocks beside the flag. Only the worldspace path opts in — the NPC/weapon paths
+        // legitimately attach geometry to bones. An UNSKINNED shape whose direct parent node is a skin
+        // bone is the proxy; the skinned mesh itself carries its own skin instance and is never dropped.
+        if (dropBoneAttachedShapes && shapeSkinInstanceMap.Count > 0)
+        {
+            var boneNodes = NifSceneGraphWalker.CollectSkinBoneNodeIndices(data, nif, shapeSkinInstanceMap);
+            if (boneNodes.Count > 0)
+            {
+                var parentOf = new Dictionary<int, int>();
+                foreach (var (parentIdx, kids) in nodeChildren)
+                {
+                    foreach (var kid in kids)
+                    {
+                        parentOf[kid] = parentIdx;
+                    }
+                }
+
+                // Expand to the skeleton-ancestor nodes between each weighted bone and the Scene Root: a
+                // cloth rig hangs a proxy box off the NonAccum "Root" too, which is an ancestor of the tail
+                // bones rather than a weighted bone itself. Walk up to — but never including — block 0 (the
+                // Scene Root), where the real static geometry lives.
+                foreach (var bone in boneNodes.ToList())
+                {
+                    var cur = bone;
+                    while (parentOf.TryGetValue(cur, out var parent) && parent != 0 && boneNodes.Add(parent))
+                    {
+                        cur = parent;
+                    }
+                }
+
+                var boneAttached = shapeDataMap.Keys
+                    .Where(shapeIdx => !shapeSkinInstanceMap.ContainsKey(shapeIdx) &&
+                                       parentOf.TryGetValue(shapeIdx, out var parent) && boneNodes.Contains(parent))
+                    .ToList();
+                foreach (var idx in boneAttached)
                 {
                     shapeDataMap.Remove(idx);
                     shapePropertyMap.Remove(idx);
