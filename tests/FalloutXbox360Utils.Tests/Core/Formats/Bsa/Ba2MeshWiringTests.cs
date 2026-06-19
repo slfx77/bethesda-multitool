@@ -64,6 +64,31 @@ public class Ba2MeshWiringTests
         }
     }
 
+    [Fact]
+    public void Discover_GnrlBa2WithMaterials_ClassifiedAsTextureArchive()
+    {
+        // A FO4/FO76 "… - Materials.ba2" holds materials\*.bgsm — neither meshes\ nor textures\. The
+        // texture resolver follows a NIF's .bgsm material to its real textures, so the materials archive
+        // must land in the TEXTURE source set; otherwise every FO76 shape resolves no diffuse (the
+        // "no textures on anything" bug). It must NOT be treated as a mesh archive.
+        var dir = Path.Combine(Path.GetTempPath(), $"ba2matdisc_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var ba2 = Path.Combine(dir, "SeventySix - Materials.ba2");
+            File.WriteAllBytes(ba2, BuildGnrlBa2(0x3333, "materials\\architecture\\wall.bgsm", NifPayload, out _));
+
+            var result = BsaDiscovery.Discover(Path.Combine(dir, "Game.esm"));
+
+            Assert.Contains(ba2, result.TexturesBsaPaths);
+            Assert.DoesNotContain(ba2, result.MeshesBsaPaths);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     /// <summary>Minimal version-1 GNRL BA2 with one uncompressed entry at <paramref name="name" />.</summary>
     private static byte[] BuildGnrlBa2(uint nameHash, string name, byte[] data, out long dataOffset)
     {

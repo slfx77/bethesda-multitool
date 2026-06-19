@@ -143,9 +143,14 @@ internal static class BsaDiscovery
 
     /// <summary>
     ///     Classifies a GNRL (general) BA2 by scanning its name-table paths for <c>meshes\</c> /
-    ///     <c>textures\</c> prefixes. BA2 has no BSA-style content-flag bits, so this is the only signal.
-    ///     A GNRL BA2 with no usable name table (hash-only paths) classifies as neither — it can't be
-    ///     path-resolved anyway, so it's correctly skipped.
+    ///     <c>textures\</c> / <c>materials\</c> prefixes. BA2 has no BSA-style content-flag bits, so this
+    ///     is the only signal. A <c>materials\</c> archive (Fallout 4 / 76 ship a <c>… - Materials.ba2</c>
+    ///     full of <c>.bgsm</c>/<c>.bgem</c>) counts as a TEXTURE source: a FO4/76 NIF's
+    ///     BSLightingShaderProperty Name is a <c>.bgsm</c> path, and the texture resolver follows it
+    ///     through the material file to the real textures (<c>NifTextureResolver.LoadFromMaterial</c>), so
+    ///     the materials archive must reach the resolver's source set — without it every FO76 shape
+    ///     resolves no diffuse and the whole world renders untextured. A GNRL BA2 with no usable name
+    ///     table (hash-only paths) classifies as neither — it can't be path-resolved anyway.
     /// </summary>
     private static (bool Meshes, bool Textures) ClassifyBa2GeneralContent(string ba2Path)
     {
@@ -161,7 +166,8 @@ internal static class BsaDiscovery
                 {
                     hasMeshes = true;
                 }
-                else if (path.StartsWith("textures\\", StringComparison.OrdinalIgnoreCase))
+                else if (path.StartsWith("textures\\", StringComparison.OrdinalIgnoreCase) ||
+                         path.StartsWith("materials\\", StringComparison.OrdinalIgnoreCase))
                 {
                     hasTextures = true;
                 }
