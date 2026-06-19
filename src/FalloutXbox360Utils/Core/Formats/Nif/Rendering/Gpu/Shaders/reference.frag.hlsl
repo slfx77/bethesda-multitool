@@ -77,6 +77,7 @@ struct PSInput
     nointerpolation float4 vTextureState : TEXCOORD7;
     nointerpolation uint4  vTexIndices  : TEXCOORD8;
     float3 vWorldPos    : TEXCOORD9;
+    nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent (0 = none)
     bool   IsFrontFace  : SV_IsFrontFace;
 };
 
@@ -144,8 +145,24 @@ float4 main(PSInput input) : SV_Target
 
     // Vertex color modulates the diffuse — NIFs use it for art-direction tints (e.g. dusty
     // rocks, painted billboards). Default-white VCLR leaves the texture untouched.
+    float3 lit = sample.rgb * input.vVertexColor.rgb * shade;
+
+    // Blinn-Phong sun specular (1A). Gated: only when scene lighting is on, the material enables it
+    // (vSpecular.w > 0 — set CPU-side from BSShaderFlags' Specular bit + a non-black NiMaterialProperty
+    // specular tint), and the shape is not emissive. Half-vector from the view dir (camera pos in the
+    // atmosphere CB) and the sun dir; N·L gates out the shadowed side; sun intensity scales it with the
+    // daylight fraction so it fades at dusk. Additive on top of the lit diffuse, then fogged.
+    if (uSunColorLighting.w >= 0.5 && input.vSpecular.w > 0.0 && input.vRenderState.w <= 0.5)
+    {
+        float3 V = normalize(uCameraPosFogPower.xyz - input.vWorldPos);
+        float3 H = normalize(uSunDirIntensity.xyz + V);
+        float ndotl = saturate(dot(normal, uSunDirIntensity.xyz));
+        float specTerm = pow(saturate(dot(normal, H)), max(input.vSpecular.w, 1.0));
+        lit += uSunColorLighting.rgb * input.vSpecular.rgb * (specTerm * ndotl * uSunDirIntensity.w);
+    }
+
     float outAlpha = input.vAlphaState.w > 0.5
         ? saturate(sampleAlpha * input.vAlphaState.z)
         : 1.0;
-    return float4(ApplyFog(sample.rgb * input.vVertexColor.rgb * shade, input.vWorldPos), outAlpha);
+    return float4(ApplyFog(lit, input.vWorldPos), outAlpha);
 }

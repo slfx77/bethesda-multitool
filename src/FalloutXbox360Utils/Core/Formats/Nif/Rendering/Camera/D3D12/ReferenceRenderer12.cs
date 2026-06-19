@@ -24,9 +24,10 @@ namespace FalloutXbox360Utils.Core.Formats.Nif.Rendering.Camera.D3D12;
 internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 {
     private const uint PerFrameByteSize = 64;
-    private const uint PerDrawByteSize = 128;
-    // 3 float4 (material) + uint4 (tex indices) + uint base + uint3 pad = 80 bytes.
-    private const uint InstanceDrawByteSize = 80;
+    private const uint PerDrawByteSize = 144;
+    // 3 float4 (material) + uint4 (tex indices) + uint base + uint3 pad + float4 specular
+    // + float4 camRight + float4 camUp (leaf billboard basis) = 128 bytes.
+    private const uint InstanceDrawByteSize = 128;
     private const float FrustumCullMargin = 512f;
 
     // Cold mesh realization is render-thread work. By DEFAULT there is no per-frame COUNT cap: the
@@ -80,6 +81,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private readonly List<OpaqueBatchState> _activeOpaqueBatches = new(256);
     private readonly List<CachedSubmesh12> _staleOpaqueBatchKeys = new(64);
     private readonly List<BlendedReferenceDraw> _blendedDraws = new(256);
+
+    // Camera world-space right/up for per-card SpeedTree leaf billboards, set each frame by the host
+    // (WorldView3DControl) from the inverse view matrix — same source as the sky billboards. Defaults to
+    // the world basis so leaves still render sanely if the host never sets it.
+    private Vector4 _leafBillboardRight = new(1f, 0f, 0f, 0f);
+    private Vector4 _leafBillboardUp = new(0f, 0f, 1f, 0f);
     private readonly List<global::FalloutXbox360Utils.WorldSpatialCell> _candidateCells = new();
 
     // Candidates returned by the per-cell spatial broadphase before exact sphere/frustum cull.
@@ -95,6 +102,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private readonly List<RenderableReference> _cachedCullSurvivors = new(2048);
     private bool _cullCacheValid;
     private Matrix4x4 _cullCacheViewProj;
+    // The camera cylinder (position + radius) is part of the cache key because the camera-relative scene
+    // viewProj (1G) is translation-INVARIANT — it changes only with rotation — so viewProj alone would not
+    // detect the camera moving. The cylinder captures translation; together they cover the full pose.
+    private VisibilityCylinder _cullCacheCylinder;
     private int _cullCacheMeshRadiusCount;
     private bool _cullCacheShowMarkers;
     private bool _cullCacheShowImposters;
@@ -225,7 +236,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     /// <summary>
     ///     When <c>false</c>, the per-frame mesh-streaming budget (upload count + time + bytes, decode
-    ///     starts + concurrency) is lifted so a single <see cref="Render"/> loads everything visible
+    ///     starts + concurrency) is lifted so a single <see cref="Render(Matrix4x4, VisibilityCylinder)"/> loads everything visible
     ///     instead of the live loop's smoothness-preserving trickle. Used by the on-demand top-down
     ///     overlay, which has no framerate target; the live 60fps loop leaves it <c>true</c>.
     ///     Forwards to the shared <see cref="ReferenceMeshCache12.StreamingThrottled"/>.
@@ -281,6 +292,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         return seen.Count;
     }
 
+    /// <summary>
+    ///     Sets the camera world-space right/up basis used to re-face SpeedTree leaf cards to the camera
+    ///     in the leaf-billboard vertex shader. The host computes it from the inverse view matrix (the
+    ///     same source as <c>SkyBillboardRenderer12</c>) and calls this each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?)" />.
+    /// </summary>
+    public void SetLeafBillboardBasis(Vector3 cameraRight, Vector3 cameraUp)
+    {
+        _leafBillboardRight = new Vector4(cameraRight, 0f);
+        _leafBillboardUp = new Vector4(cameraUp, 0f);
+    }
+
     // IWorldRenderer entry point — draws opaque + blended inline (no deferral). Used by the 2D
     // top-down overlay, which has no water pass.
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
@@ -291,7 +313,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     caller must invoke <see cref="RenderBlendedDeferred" /> after the water pass so water does
     ///     not paint over them (3D-8). False draws opaque + blended inline.
     /// </param>
-    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder, bool deferBlended)
+    /// <param name="cullViewProj">
+    ///     The <b>world-space (absolute)</b> view·projection used to derive the CPU culling frustum.
+    ///     When camera-relative rendering is on, <paramref name="viewProj" /> is translation-free (its
+    ///     frustum apex sits at the world origin), but the cull geometry — <c>WorldMatrix.Translation</c>,
+    ///     bounds centers, bucket AABBs — is in absolute world space. Building the frustum from the
+    ///     translation-free matrix would only keep objects roughly along the camera's forward ray from
+    ///     the origin, culling everything else (the "only visible facing one direction" bug). Pass the
+    ///     absolute viewProj so the frustum matches the cull geometry's space. Null ⇒ use
+    ///     <paramref name="viewProj" /> (correct when it is already absolute, e.g. the top-down overlay).
+    /// </param>
+    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder, bool deferBlended, Matrix4x4? cullViewProj = null)
     {
         ReferencesDrawnLastFrame = 0;
         LastFrameDrawsTruncated = 0;
@@ -325,7 +357,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var cylinderX = cylinder.Position.X;
         var cylinderY = cylinder.Position.Y;
         var hasFrustum = !_disableReferenceFrustum;
-        var frustum = hasFrustum ? Frustum.FromViewProjection(viewProj) : default;
+        // Cull in WORLD space: the frustum must come from the absolute viewProj (apex at the camera,
+        // not the origin) because every cull test below is against absolute coordinates. The
+        // camera-relative `viewProj` is uploaded to the GPU CB above (the VS subtracts CameraOrigin),
+        // but it must NOT drive the frustum — see the cullViewProj parameter docs.
+        var cullFrustumSource = cullViewProj ?? viewProj;
+        var frustum = hasFrustum ? Frustum.FromViewProjection(cullFrustumSource) : default;
         Frustum? broadphaseFrustum = hasFrustum ? frustum : null;
 
         double cullMs = 0;
@@ -355,7 +392,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // active streaming keeps re-culling (cheap relative to decode) until the working set settles.
         var cullCacheValid =
             _cullCacheValid
-            && _cullCacheViewProj == viewProj
+            && _cullCacheViewProj == cullFrustumSource
+            && _cullCacheCylinder == cylinder
             && _cullCacheMeshRadiusCount == _meshLocalRadius.Count
             && _cullCacheShowMarkers == ShowMarkers
             && _cullCacheShowImposters == ShowImposters
@@ -444,7 +482,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     var dx = cullCenter.X - cylinderX;
                     var dy = cullCenter.Y - cylinderY;
                     var distSq = dx * dx + dy * dy; // retained for the small-prop distance LOD below
-                    var maxDist = cylinderRadius + cullRadius;
+                    // Include the same FrustumCullMargin the frustum test uses, so a reference whose OBND
+                    // bounds underestimate its real extent (or whose center sits just outside the square)
+                    // is not dropped at the cylinder edge a frame before its true mesh radius resolves.
+                    var maxDist = cylinderRadius + cullRadius + FrustumCullMargin;
                     // Square ("Dist") footprint: reject iff the object falls outside the half-extent box
                     // along either axis (Chebyshev), so references load as a square matching the terrain/
                     // grid footprint instead of a circle.
@@ -471,7 +512,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // Snapshot the cache key. MeshRadiusCount is captured BEFORE the resolve pass (below) adds
             // this frame's newly-resolved radii, so the next frame re-culls iff a new mesh resolved.
             _cullCacheValid = true;
-            _cullCacheViewProj = viewProj;
+            _cullCacheViewProj = cullFrustumSource;
+            _cullCacheCylinder = cylinder;
             _cullCacheMeshRadiusCount = _meshLocalRadius.Count;
             _cullCacheShowMarkers = ShowMarkers;
             _cullCacheShowImposters = ShowImposters;
@@ -549,7 +591,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         Vector3.DistanceSquared(worldCenter, cylinder.Position),
                         sub.AlphaState,
                         sub.RenderState,
-                        sub.TextureState));
+                        sub.TextureState,
+                        sub.Specular));
                     anySubmeshDrawn = true;
                     continue;
                 }
@@ -618,7 +661,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     /// <summary>
     ///     3D-8: draws the blended (transparent) reference submeshes accumulated by the most recent
-    ///     <see cref="Render" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
+    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?)" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
     ///     never paints over transparent meshes. The water pass rebinds <c>PerFrameCbv</c> to its own
     ///     uniforms (and may change topology), so this re-establishes the reference per-frame state
     ///     before issuing the blended draws. The DSV is bound by the frame loop, so blended draws stay
@@ -795,7 +838,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 sub.RenderState,
                 sub.TextureState,
                 new TexIndexQuad(sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex, 0, 0),
-                startInstance);
+                startInstance,
+                Specular: sub.Specular,
+                CameraRight: _leafBillboardRight,
+                CameraUp: _leafBillboardUp);
             if (!_ringBuffer.TryAllocate(frameIndex, InstanceDrawByteSize, out var instanceDrawAlloc, GpuRingBuffer12.CbAlignment))
             {
                 LastFrameDrawsTruncated += batch.Count;
@@ -880,6 +926,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 draw.Submesh.Normal.BindlessIndex,
                 0,
                 0),
+            Specular = draw.Specular,
         };
         // Allocate before mutating PSO state so a soft-fail leaves the command list consistent.
         if (!_ringBuffer.TryAllocate(frameIndex, PerDrawByteSize, out var perDrawAlloc, GpuRingBuffer12.CbAlignment))
@@ -1132,8 +1179,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         public Vector4 TextureState;
         // 4a — bindless TexIndices for the (non-instanced) blended draw path. Kept here so the
         // PS interface stays uniform (it expects vTexIndices regardless of which VS produced it).
-        // TextureState + TexIndices bring this to 128 bytes total.
         public TexIndexQuad TexIndices;
+        // 1A — sun specular term: xyz = tint, w = Phong exponent (0 = no specular). Appended last to
+        // match the trailing uSpecular field in reference.vert.hlsl; brings this to 144 bytes total.
+        public Vector4 Specular;
     }
 
     /// <summary>
@@ -1153,7 +1202,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         uint InstanceBase,
         uint Padding0 = 0,
         uint Padding1 = 0,
-        uint Padding2 = 0);
+        uint Padding2 = 0,
+        // 1A — sun specular term (xyz = tint, w = Phong exponent; 0 = none). Matches the uSpecular field
+        // in reference_instanced.vert.hlsl.
+        Vector4 Specular = default,
+        // Camera world-space right/up for per-card leaf billboards (uCameraRight/uCameraUp); brings this
+        // to 128 bytes. Identical across every batch in a frame; only read by leaf submeshes.
+        Vector4 CameraRight = default,
+        Vector4 CameraUp = default);
 
     /// <summary>
     ///     Packed 4-uint TexIndices field. C# has no <c>uint4</c> primitive, so we lay out
@@ -1213,6 +1269,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         float DistanceSquared,
         Vector4 AlphaState,
         Vector4 RenderState,
-        Vector4 TextureState);
+        Vector4 TextureState,
+        Vector4 Specular);
 }
 #endif

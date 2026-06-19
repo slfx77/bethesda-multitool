@@ -36,7 +36,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Bumped 4→5: the payload now carries the NIF's decoded Havok (bhk*) collision soup (used by
     // walk-mode ground/ceiling sampling). Old caches lack those trailing fields, so a warm read would
     // both deserialize wrong AND silently lose collision — invalidate them.
-    internal const int DecoderVersion = 5;
+    // Bumped 5→6: the per-submesh payload now carries NiMaterialProperty specular (color + glossiness +
+    // enable gate) for the GPU specular term (1A). Old caches lack those trailing fields.
+    // Bumped 6→7: the per-submesh payload now carries IsLeafBillboard, the SpeedTree leaf-billboard
+    // shader route bit. Old caches lack the trailing flag and would silently route as static geometry.
+    internal const int DecoderVersion = 7;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -243,6 +247,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(submesh.IsEmissive);
         WriteVector3(writer, submesh.LocalBoundsCenter);
         writer.Write(submesh.IsBillboard);
+        WriteVector3(writer, submesh.SpecularColor);
+        writer.Write(submesh.Glossiness);
+        writer.Write(submesh.SpecularEnabled);
+        writer.Write(submesh.IsLeafBillboard);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -292,6 +300,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadBoolean(),
             reader.ReadBoolean(),
             ReadVector3(reader),
+            reader.ReadBoolean(),
+            ReadVector3(reader),
+            reader.ReadSingle(),
+            reader.ReadBoolean(),
             reader.ReadBoolean());
     }
 
@@ -352,4 +364,8 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     bool DoubleSided,
     bool IsEmissive,
     Vector3 LocalBoundsCenter,
-    bool IsBillboard);
+    bool IsBillboard,
+    Vector3 SpecularColor = default,
+    float Glossiness = 0f,
+    bool SpecularEnabled = false,
+    bool IsLeafBillboard = false);

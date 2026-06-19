@@ -612,7 +612,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 sub.DoubleSided,
                 sub.IsEmissive,
                 sub.LocalBoundsCenter,
-                sub.IsBillboard));
+                sub.IsBillboard,
+                sub.SpecularColor,
+                sub.Glossiness,
+                sub.SpecularEnabled,
+                sub.IsLeafBillboard));
         }
 
         return new ReferenceDecodedMeshPayload12(submeshes, decoded.CollisionPositions, decoded.CollisionTriangles);
@@ -640,7 +644,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 sub.DoubleSided,
                 sub.IsEmissive,
                 sub.LocalBoundsCenter,
-                sub.IsBillboard));
+                sub.IsBillboard,
+                sub.SpecularColor,
+                sub.Glossiness,
+                sub.SpecularEnabled,
+                sub.IsLeafBillboard));
         }
 
         return new DecodedNifMesh12(submeshes, payload.CollisionPositions, payload.CollisionTriangles);
@@ -719,6 +727,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 {
                     TargetHeight = targetHeight,
                     LeafTextureOverride = leafTexture,
+                    // The live D3D12 viewer re-faces each leaf card to the camera per frame in the
+                    // leaf-billboard vertex shader, so emit GPU billboard cards (center + offset).
+                    LeafBillboard = true,
                 };
                 model = SptGeometryBuilder.Build(spt, seed, sptOptions);
             }
@@ -835,6 +846,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                               sub.Bitangents != null &&
                               !string.IsNullOrEmpty(sub.NormalMapTexturePath);
 
+                var specularColor = new Vector3(sub.SpecularColor.R, sub.SpecularColor.G, sub.SpecularColor.B);
+                var specularEnabled = ComputeSpecularEnabled(sub);
+
                 submeshes.Add(new DecodedSubmesh12(
                     GpuMeshUploader.BuildVertices(sub),
                     sub.Triangles,
@@ -852,7 +866,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     sub.IsDoubleSided,
                     sub.IsEmissive,
                     ComputeLocalBoundsCenter(sub.Positions),
-                    sub.IsBillboard));
+                    sub.IsBillboard,
+                    specularColor,
+                    sub.MaterialGlossiness,
+                    specularEnabled,
+                    sub.IsLeafBillboard));
             }
 
             if (submeshes.Count == 0)
@@ -1014,6 +1032,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     Normal = normal,
                     AlphaState = BuildAlphaState(sub),
                     RenderState = BuildRenderState(sub),
+                    Specular = BuildSpecular(sub),
                     HasBump = sub.HasBump,
                     AlphaRenderMode = sub.AlphaRenderMode,
                     AlphaBlend = sub.AlphaBlend,
@@ -1026,7 +1045,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     DoubleSided = sub.DoubleSided,
                     IsEmissive = sub.IsEmissive,
                     LocalBoundsCenter = sub.LocalBoundsCenter,
-                    IsBillboard = sub.IsBillboard
+                    IsBillboard = sub.IsBillboard,
+                    IsLeafBillboard = sub.IsLeafBillboard
                 });
             }
             catch (Exception ex)
@@ -1127,6 +1147,37 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             sub.HasBump ? 1f : 0f,
             ReferenceBumpStrength,
             sub.IsEmissive ? 1f : 0f);
+
+    // GPU specular term (1A): xyz = specular tint, w = Phong exponent (glossiness). w == 0 is the
+    // shader's "no specular" sentinel, so a disabled material uploads Vector4.Zero. Glossiness is floored
+    // at 1 to avoid pow(_, 0) flattening the highlight across the whole surface.
+    private static Vector4 BuildSpecular(DecodedSubmesh12 sub) =>
+        sub.SpecularEnabled
+            ? new Vector4(sub.SpecularColor, MathF.Max(sub.Glossiness, 1f))
+            : Vector4.Zero;
+
+    // Whether a submesh should get a sun specular highlight. Gated conservatively so it only lights up
+    // where the source material asks for it — never on emissive shapes, never with a black/near-black
+    // specular tint or zero gloss. FO3/FNV expose BSShaderFlags; honor their Specular bit (0x1). When no
+    // shader flags are present (Morrowind NiMaterialProperty, or Skyrim+ BSLightingShaderProperty which
+    // doesn't surface them), fall back to the tint/gloss gate — Skyrim shapes carry no NiMaterialProperty
+    // specular so they stay matte (no regression), while Morrowind's matte materials are filtered by tint.
+    private static bool ComputeSpecularEnabled(RenderableSubmesh sub)
+    {
+        if (sub.IsEmissive)
+        {
+            return false;
+        }
+
+        var (r, g, b) = sub.SpecularColor;
+        if (MathF.Max(r, MathF.Max(g, b)) < 0.04f || sub.MaterialGlossiness <= 0f)
+        {
+            return false;
+        }
+
+        const uint specularFlag = 0x1u; // BSShaderFlags bit 0 = Specular (nif.xml)
+        return sub.ShaderMetadata?.ShaderFlags is not uint flags || (flags & specularFlag) != 0;
+    }
 
     private static uint CheckedByteSize(int elementCount, uint elementSize) =>
         checked((uint)((long)elementCount * elementSize));
@@ -1249,7 +1300,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         bool DoubleSided,
         bool IsEmissive,
         Vector3 LocalBoundsCenter,
-        bool IsBillboard);
+        bool IsBillboard,
+        // NiMaterialProperty specular: highlight tint + Phong exponent, gated to where the shader enables
+        // it (1A). Carried through the decode + persistent cache so it can drive a GPU specular term.
+        Vector3 SpecularColor = default,
+        float Glossiness = 0f,
+        bool SpecularEnabled = false,
+        // SpeedTree leaf cards: GPU re-faces each quad to the camera (tangent = card center, bitangent =
+        // signed 2D offset). Persisted in ReferenceDecodedMeshDiskCache12 v7+.
+        bool IsLeafBillboard = false);
 }
 
 internal sealed class CachedNifMesh12 : IDisposable
@@ -1357,6 +1416,9 @@ internal sealed class CachedSubmesh12
     public required GpuTextureCache12.Entry Normal { get; init; }
     public required Vector4 AlphaState { get; init; }
     public required Vector4 RenderState { get; init; }
+    // Sun specular term (1A): xyz = tint, w = Phong exponent (0 = no specular). Mirrors the
+    // uSpecular cbuffer field in reference(_instanced).vert.hlsl / reference.frag.hlsl.
+    public required Vector4 Specular { get; init; }
     public Vector4 TextureState
     {
         get
@@ -1368,7 +1430,7 @@ internal sealed class CachedSubmesh12
 
             var state = new Vector4(
                 Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
-                0f,
+                IsLeafBillboard ? 1f : 0f, // .y > 0.5 routes the instanced VS to the leaf-billboard branch
                 0f,
                 0f);
             if (TexturesReady)
@@ -1400,5 +1462,6 @@ internal sealed class CachedSubmesh12
     ///     cylindrical camera-facing matrix so the quad re-aims at the camera every frame.
     /// </summary>
     public required bool IsBillboard { get; init; }
+    public bool IsLeafBillboard { get; init; }
 }
 #endif

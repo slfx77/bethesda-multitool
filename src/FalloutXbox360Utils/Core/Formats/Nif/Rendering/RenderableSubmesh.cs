@@ -157,6 +157,17 @@ internal sealed class RenderableSubmesh
     /// </summary>
     public bool IsBillboard { get; set; }
 
+    /// <summary>
+    ///     True for SpeedTree leaf cards: each quad is a camera-facing billboard (SpeedTree RT builds
+    ///     leaf cards CPU-side as flat 2D corner offsets around a center — <c>CLeafGeometry::Update</c> —
+    ///     and re-faces them to the camera per frame). The GPU does the equivalent in the vertex shader:
+    ///     the per-vertex <see cref="Tangents" /> carry the card CENTER (mesh-local) and
+    ///     <see cref="Bitangents" /> the signed 2D card-space corner offset <c>(±halfW, ±halfH, 0)</c>, so
+    ///     the VS reconstructs <c>worldCenter + camRight·off.x + camUp·off.y</c>. Distinct from
+    ///     <see cref="IsBillboard" />, which re-aims a WHOLE submesh as one rigid quad.
+    /// </summary>
+    public bool IsLeafBillboard { get; set; }
+
     public int VertexCount => Positions.Length / 3;
     public int TriangleCount => Triangles.Length / 3;
 }

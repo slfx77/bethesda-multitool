@@ -34,6 +34,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Equal(8, loaded.DstBlendMode);
         Assert.Equal(new Vector3(1, 2, 3), loaded.LocalBoundsCenter);
         Assert.True(loaded.IsBillboard);
+        Assert.True(loaded.IsLeafBillboard);
         Assert.Equal(new ushort[] { 0, 1, 2 }, loaded.Indices);
         Assert.Equal(new Vector3(10, 20, 30), loaded.Vertices[0].Position);
         Assert.Equal(new Vector4(0.1f, 0.2f, 0.3f, 0.4f), loaded.Vertices[0].VertexColor);
@@ -129,7 +130,8 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                 true,
                 false,
                 new Vector3(1, 2, 3),
-                true)
+                true,
+                IsLeafBillboard: true)
         ]);
     }
 

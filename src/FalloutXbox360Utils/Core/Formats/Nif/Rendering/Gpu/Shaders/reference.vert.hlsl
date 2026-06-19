@@ -13,6 +13,15 @@ cbuffer PerFrame : register(b0)
     float4x4 uViewProj;
 };
 
+// 1G — camera-relative render origin (xyz) from the shared atmosphere CB (b3). Subtracted from each
+// world vertex before projection (kills the worldspace-edge wobble). Zero when camera-relative is off;
+// the leading 8 float4 are the sun/sky/fog/camera fields this VS does not use.
+cbuffer Atmosphere : register(b3)
+{
+    float4 uAtmospherePad[8];
+    float4 uCameraOrigin;
+};
+
 cbuffer PerDraw : register(b1)
 {
     float4x4 uWorld;
@@ -27,6 +36,8 @@ cbuffer PerDraw : register(b1)
     // 4a — bindless TexIndices: .x diffuse slot, .y normal slot, .zw reserved. Mirrors
     // the instanced VS's per-instance struct; the PS reads vTexIndices regardless of path.
     uint4  uTexIndices;
+    // 1A — specular: xyz = tint, w = Phong exponent (0 = no specular). Matches PerDrawConstants.
+    float4 uSpecular;
 };
 
 struct VSInput
@@ -52,14 +63,16 @@ struct VSOutput
     nointerpolation float4 vTextureState : TEXCOORD7;
     nointerpolation uint4  vTexIndices  : TEXCOORD8;
     float3 vWorldPos    : TEXCOORD9;  // world-space position for per-pixel distance fog
+    nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent
 };
 
 VSOutput main(VSInput input)
 {
     VSOutput o;
     float4 worldPos = mul(uWorld, float4(input.aPosition, 1.0));
+    worldPos.xyz -= uCameraOrigin.xyz; // camera-relative shift before projection (1G); 0 when off
     o.Position = mul(uViewProj, worldPos);
-    o.vWorldPos = worldPos.xyz;
+    o.vWorldPos = worldPos.xyz; // camera-relative world pos (matches the shader camera = 0 for fog/spec)
     // Uniform scale only — pass the normal through the world rotation (3x3 sub-matrix). For
     // non-uniform scale we'd want the inverse-transpose, but Bethesda REFR.Scale is uniform.
     o.vWorldNormal = mul((float3x3)uWorld, input.aNormal);
@@ -71,5 +84,6 @@ VSOutput main(VSInput input)
     o.vRenderState = uRenderState;
     o.vTextureState = uTextureState;
     o.vTexIndices = uTexIndices;
+    o.vSpecular = uSpecular;
     return o;
 }
