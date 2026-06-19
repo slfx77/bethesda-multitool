@@ -23,18 +23,25 @@ internal static class MeshDiagCommands
             Description = "Texture BSA paths used for alpha inspection",
             AllowMultipleArgumentsPerToken = true
         };
+        var referenceOption = new Option<bool>("-r", "--reference")
+        {
+            Description = "Use the worldspace reference extraction config (skipSkinning + treatRootsAsIdentity " +
+                          "+ drop bone-attached proxy boxes) to mirror what the 3D viewer renders"
+        };
 
         command.Arguments.Add(fileArg);
         command.Options.Add(shapeOption);
         command.Options.Add(texturesBsaOption);
+        command.Options.Add(referenceOption);
         command.SetAction(parseResult => MeshDiag(
             parseResult.GetValue(fileArg)!,
             parseResult.GetValue(shapeOption),
-            parseResult.GetValue(texturesBsaOption) ?? []));
+            parseResult.GetValue(texturesBsaOption) ?? [],
+            parseResult.GetValue(referenceOption)));
         return command;
     }
 
-    private static void MeshDiag(string path, string? shapeFilter, string[] texturesBsaPaths)
+    private static void MeshDiag(string path, string? shapeFilter, string[] texturesBsaPaths, bool referenceConfig = false)
     {
         if (!File.Exists(path))
         {
@@ -81,7 +88,10 @@ internal static class MeshDiagCommands
             ? new NifTextureResolver(texturesBsaPaths)
             : null;
 
-        var model = NifGeometryExtractor.Extract(data, nif, textureResolver, filterShapeName: shapeFilter);
+        var model = referenceConfig
+            ? NifGeometryExtractor.Extract(data, nif, textureResolver, filterShapeName: shapeFilter,
+                skipSkinning: true, treatRootsAsIdentity: true, collectBillboards: true, dropBoneAttachedShapes: true)
+            : NifGeometryExtractor.Extract(data, nif, textureResolver, filterShapeName: shapeFilter);
         if (model == null || !model.HasGeometry)
         {
             AnsiConsole.MarkupLine("[yellow]No renderable geometry found.[/]");

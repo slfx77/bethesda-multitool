@@ -45,33 +45,34 @@ internal static class LtexAuditCommand
             : new List<INifTextureSource>();
 
         var ltexes = result.Records.LandTextures;
+        var ltexById = ltexes
+            .GroupBy(l => l.FormId)
+            .ToDictionary(g => g.Key, g => g.First());
         var txstById = result.Records.TextureSets.ToDictionary(t => t.FormId);
 
-        var noTxstLink = 0;
-        var noTxstRecord = 0;
-        var noDiffusePath = 0;
+        var noPath = 0;
         var loadFailures = new List<(uint FormId, string? EditorId, string Path)>();
-        var loaded = 0;
+        var loadedFormIds = new HashSet<uint>();
+        var sampledPaths = new List<string>();
 
         foreach (var ltex in ltexes)
         {
-            if (!ltex.TextureSetFormId.HasValue || ltex.TextureSetFormId.Value == 0)
+            // Use the SHARED production resolver, which prefers TNAM->TXST (FO3/FNV/Skyrim) and falls
+            // back to the Oblivion direct-ICON path. This audit previously only walked the TXST chain,
+            // so it reported every Oblivion LTEX as "TXST link missing" and never tested the ICON load.
+            var diffusePath = LandscapeTexturePathResolver.ResolveDiffuse(ltex.FormId, ltexById, txstById);
+            if (string.IsNullOrWhiteSpace(diffusePath))
             {
-                noTxstLink++;
-                continue;
-            }
-            if (!txstById.TryGetValue(ltex.TextureSetFormId.Value, out var txst))
-            {
-                noTxstRecord++;
-                continue;
-            }
-            if (string.IsNullOrEmpty(txst.DiffuseTexture))
-            {
-                noDiffusePath++;
+                noPath++;
                 continue;
             }
 
-            var normPath = NifTexturePathUtility.Normalize(txst.DiffuseTexture);
+            if (sampledPaths.Count < 8)
+            {
+                sampledPaths.Add($"0x{ltex.FormId:X8} ({ltex.EditorId ?? "?"}) -> {diffusePath}");
+            }
+
+            var normPath = NifTexturePathUtility.Normalize(diffusePath);
             var tex = NifTextureLoader.TryLoadFromSources(normPath, sources);
             if (tex is null && normPath.EndsWith(".dds", StringComparison.Ordinal))
             {
@@ -80,21 +81,25 @@ internal static class LtexAuditCommand
             }
             if (tex is null)
             {
-                loadFailures.Add((ltex.FormId, ltex.EditorId, txst.DiffuseTexture));
+                loadFailures.Add((ltex.FormId, ltex.EditorId, diffusePath));
             }
             else
             {
-                loaded++;
+                loadedFormIds.Add(ltex.FormId);
             }
         }
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[cyan]LTEX total:[/] {ltexes.Count}");
-        AnsiConsole.MarkupLine($"  Loaded OK: {loaded}");
-        AnsiConsole.MarkupLine($"  TXST link missing: {noTxstLink}");
-        AnsiConsole.MarkupLine($"  TXST record not found: {noTxstRecord}");
-        AnsiConsole.MarkupLine($"  No DiffuseTexture path: {noDiffusePath}");
+        AnsiConsole.MarkupLine($"[cyan]LTEX total:[/] {ltexes.Count}  [grey](resolver: TNAM->TXST or Oblivion ICON)[/]");
+        AnsiConsole.MarkupLine($"  Loaded OK: {loadedFormIds.Count}");
+        AnsiConsole.MarkupLine($"  No diffuse path (neither TXST nor ICON): {noPath}");
         AnsiConsole.MarkupLine($"  Load failures (path not found in any BSA): {loadFailures.Count}");
+
+        if (sampledPaths.Count > 0)
+        {
+            AnsiConsole.MarkupLine("[grey]Sample resolved diffuse paths:[/]");
+            foreach (var s in sampledPaths) AnsiConsole.WriteLine($"    {s}");
+        }
 
         if (loadFailures.Count > 0)
         {
@@ -133,8 +138,9 @@ internal static class LtexAuditCommand
         foreach (var (formId, count) in refByFormId.OrderByDescending(kvp => kvp.Value).Take(15))
         {
             var ltexInfo = ltexes.FirstOrDefault(l => l.FormId == formId);
-            var failed = loadFailures.Any(f => f.FormId == formId);
-            var status = failed ? "LOAD FAILED" : "loaded";
+            var status = loadedFormIds.Contains(formId) ? "loaded"
+                : loadFailures.Any(f => f.FormId == formId) ? "LOAD FAILED"
+                : "no LTEX/no path";
             AnsiConsole.WriteLine(
                 $"  0x{formId:X8} ({ltexInfo?.EditorId ?? "?"}): {count} refs [{status}]");
         }
