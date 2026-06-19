@@ -61,10 +61,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private readonly string? _stressScene =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.StressScene);
     private readonly FrameProfileAccumulator _profileAccumulator = new();
-    // v3 Pass 4 Step 3 cleanup — D3D11 stack deleted. The post-cutover backend is D3D12-only;
-    // the `_useD3D12` flag, `FALLOUT_VIEWER_D3D11` rollback, and dual-stack field set are all
-    // gone. With a single backend the renderer fields are the concrete D3D12 types directly; the
-    // I*Renderer interfaces remain (the renderers implement them) but add no indirection here.
+    // The rendering backend is D3D12-only — the former D3D11 stack has been deleted. There is no
+    // `_useD3D12` flag, `FALLOUT_VIEWER_D3D11` rollback, or dual-stack field set. With a single
+    // backend the renderer fields are the concrete D3D12 types directly; the I*Renderer interfaces
+    // remain (the renderers implement them) but add no indirection here.
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.CellGridDebugRenderer12? _cellGrid;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SelectionHighlightRenderer12? _selectionHighlight;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainRenderer12? _terrain;
@@ -99,7 +99,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // Debug overlay: per-ref walk-mode collision mesh (Havok bhk* where present, else visual fallback)
     // drawn as a green wireframe so the user can compare collision against the rendered meshes.
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.CollisionDebugRenderer12? _collisionDebug;
-    // v3 Phase 3 placed-object pipeline. Parallel to the terrain pipeline; owns separate
+    // Placed-object (REFR) rendering pipeline. Parallel to the terrain pipeline; owns separate
     // CPU NIF texture metadata and D3D12 GPU texture payload resolvers.
     private NpcMeshArchiveSet? _meshArchives;
     private NifTextureResolver? _referenceTextureResolver;
@@ -109,9 +109,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12? _references;
     private WorldViewData? _data;
     private DateTime _lastFrameTime;
-    // Atmosphere: current game hour (0..24) feeding the shared b3 atmosphere CB. Defaults to noon; the
-    // P4 time-of-day slider will drive it. The lighting/sky/water shaders read the resolved atmosphere
-    // (wired in P3+); until then the CB is uploaded but unread (an invisible no-op).
+    // Atmosphere: current game hour (0..24) feeding the shared b3 atmosphere CB. Defaults to noon and
+    // driven by the time-of-day slider (TimeSlider_ValueChanged). The lighting/sky/water shaders read
+    // the resolved atmosphere from this CB each frame.
     private float _gameHour = 12f;
     private bool _mouseDragActive;
     private Vector2 _previousPointerPosition;
@@ -121,7 +121,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private bool _pointerDragMoved;
     private const float ClickMoveThresholdPixels = 4f;
     private readonly List<global::BethesdaMultitool.WorldSpatialCell> _pickCellScratch = new();
-    // 3D-5/3D-9 selection state. _selectedReference is the current selection (null = none); the pick
+    // Object-selection state. _selectedReference is the current selection (null = none); the pick
     // collects all ray hits into _pickHitScratch (sorted by distance) so a repeat click on the same
     // stack cycles to the next object behind the current one (GECK click-through).
     private PlacedReference? _selectedReference;
@@ -130,7 +130,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // ray, so meshes that overspill a too-tight base-record OBND (SpeedTree canopies) stay clickable.
     private readonly List<PickHit> _pickSphereFallbackScratch = new();
     private bool _renderLoopAttached;
-    // v3 Pass 4 Step 3 — D3D12-only backend. The renderer interfaces (`I*Renderer`) plug
+    // D3D12-only backend. The renderer interfaces (`I*Renderer`) plug
     // straight into the D3D12 concrete impls; no D3D11 fallback fields remain.
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDevice12? _gpu12;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuSwapChainSurface12? _surface12;
@@ -139,7 +139,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12? _cbvSrvUavHeap12;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuRootSignature12? _rootSignature12;
     private GpuTimestampProfiler12? _gpuTimestampProfiler12;
-    // Step 2c — deferred-release queue for D3D12 resources evicted from LRU caches. D3D12
+    // Deferred-release queue for D3D12 resources evicted from LRU caches. D3D12
     // doesn't auto-track GPU vs CPU lifetime; disposing a vertex/texture while the GPU is
     // still reading it crashes the process. Resources go here instead of being disposed
     // immediately, and are released N frames later.
@@ -151,7 +151,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private const uint NoDepthSrv = 0xFFFFFFFF;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation? _depthSrv;
     private bool _suppressWorldspaceSelectionEvent;
-    // Atmosphere weather/time (P4). _selectedWeather null = the placeholder palette (no NAM0 colors);
+    // Atmosphere weather/time. _selectedWeather null = the placeholder palette (no NAM0 colors);
     // _climateDefaultWeather is the current worldspace climate's default (the "(Climate default)"
     // dropdown item); _currentClimateTiming drives the sun curve + the NAM0 time-band blend.
     private WeatherRecord? _selectedWeather;
@@ -190,7 +190,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private int _lastGcGen2Collections = GC.CollectionCount(2);
 
     // Layer visibility — toggled by D1/D2/D3 keys. D4 toggles textured-vs-VCLR-only.
-    // D5 toggles placed-object (REFR) rendering (v3 Phase 3).
+    // D5 toggles placed-object (REFR) rendering.
     // The cell-boundary grid is a debug overlay → default OFF (must match CellsCheckBox.IsChecked in XAML).
     // True only during InitializeComponent. The toolbar toggles set IsChecked in XAML, which fires
     // their Checked/Unchecked handlers DURING load (now that they live in flyouts that realize early);
@@ -216,10 +216,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // Applied to the reference renderer on pipeline init and on every toggle. Also drives the 2D
     // top-down overlay, which shares this set via _references.SetHiddenCategories.
     private readonly HashSet<PlacedObjectCategory> _hiddenCategories = [];
-    // Atmosphere lighting (P3) — directional sun + ambient via the shared b3 CB. On by default; when
+    // Atmosphere lighting — directional sun + ambient via the shared b3 CB. On by default; when
     // off, the shaders fall back to the legacy flat shade (pixel-identical to the pre-atmosphere look).
     private bool _showLighting = true;
-    // Skybox (P5) — horizon→top gradient + sun disc drawn first, depth off. On by default; off ⇒ the
+    // Skybox — horizon→top gradient + sun disc drawn first, depth off. On by default; off ⇒ the
     // flat dark-blue clear shows. Also gates whether water mirrors the atmosphere sky vs its DNAM color.
     private bool _showSky = true;
     // Distance fog (weather-driven) — terrain/reference/water recede toward the WTHR fog color over the
@@ -348,7 +348,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             : "Interiors";
         InteriorsButton.IsEnabled = data.InteriorCells.Count > 0;
 
-        // Weather dropdown: "(Climate default)" + all weathers (P4). Built once here; the worldspace
+        // Weather dropdown: "(Climate default)" + all weathers. Built once here; the worldspace
         // selection below refreshes the climate default + timing it resolves against.
         PopulateWeatherDropdown();
 
@@ -365,7 +365,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             ApplyStressSceneBookmarkIfRequested();
         }
 
-        _ = InspectObject; // suppress unused-event warning until Phase 5 picking
+        _ = InspectObject; // referenced so the event isn't flagged unused on paths that never raise it
         _ = InspectCell;
     }
 
@@ -1011,7 +1011,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 cmd.SetDescriptorHeaps(1, new[] { _cbvSrvUavHeap12.Heap });
                 cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
                 // Bind the atmosphere CB here too so the references the overlay draws read b3
-                // (reference.frag — P3). Fog AND lighting OFF: the overlay is an orthographic top-down
+                // (reference.frag). Fog AND lighting OFF: the overlay is an orthographic top-down
                 // capture with no fog/lighting controls on the 2D map, so directional shading and
                 // distance fog would bake an uncontrollable look into the composite. Flat shade only.
                 BindAtmosphereConstants(cmd, recorder.FrameIndex, enableFog: false, enableLighting: false);
@@ -1340,7 +1340,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private void OnRenderPanelKeyDown(object sender, KeyRoutedEventArgs e)
     {
         // D1/D2/D3 toggle the wireframe / terrain / water layers; D4 toggles the
-        // textured-terrain (Phase 2b) vs. VCLR-only (Phase 2a) debug mode; F toggles between
+        // textured-terrain vs. VCLR-only (vertex-color) debug mode; F toggles between
         // fly (free cam) and walk (ground-locked) camera modes. PageUp/PageDown adjust the
         // streaming render distance. WinUI emits auto-repeat KeyDown events while a key is held,
         // so guard with a "first press" set.
@@ -1352,7 +1352,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             if (_toggleKeysDown.Add(e.Key))
             {
                 // Each toggle key flips its toolbar ToggleButton, whose Changed handler updates the
-                // backing field — so keyboard and toolbar stay in sync (3D-6).
+                // backing field — so keyboard and toolbar stay in sync.
                 if (e.Key == VirtualKey.Number1) CellsCheckBox.IsChecked = !_showWireframe;
                 else if (e.Key == VirtualKey.Number2) TerrainToggle.IsChecked = !_showTerrain;
                 else if (e.Key == VirtualKey.Number3) WaterCheckBox.IsChecked = !_showWater;
@@ -1374,7 +1374,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             return;
         }
 
-        // 3D-5 — Esc clears the current selection (no InspectObject fired; nothing to inspect).
+        // Esc clears the current selection (no InspectObject fired; nothing to inspect).
         if (e.Key == VirtualKey.Escape)
         {
             ClearSelection3D();
@@ -1497,7 +1497,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _pickCellScratch.Clear();
         _spatialIndex.QueryCellsInRadius(_camera.Position.X, -_camera.Position.Y, _renderDistance, _pickCellScratch);
 
-        // 3D-9 click-through: collect ALL hits along the ray (same filters as the renderer so the
+        // Click-through: collect ALL hits along the ray (same filters as the renderer so the
         // pickable set matches the visible set), sorted nearest-first.
         _pickHitScratch.Clear();
         _pickSphereFallbackScratch.Clear();
@@ -1714,16 +1714,16 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     ///     own terrain/reference/wireframe draws into the same command list.
     /// </summary>
     // Builds the shared atmosphere from the current game hour and uploads it to the b3 root CBV,
-    // bound for the whole scene. A 112-byte once-per-frame upload off the per-frame ring (always the
-    // first allocation after ResetFrame, so it can't overflow). Flags: lighting on by default (P3),
-    // sky/fog off until their phases enable the shader paths.
+    // bound for the whole scene. A once-per-frame upload off the per-frame ring (always the
+    // first allocation after ResetFrame, so it can't overflow). Lighting, sky, and fog are each
+    // on by default and gated by their own _show* toggles.
     // enableFog is forced off for the orthographic top-down overlay capture: distance-from-camera fog
     // is meaningless there (it would tint the 2D map by the overhead camera's height). The live
     // perspective path leaves it true so the weather fog shows.
     // enableLighting is likewise forced off for the top-down overlay: the 2D map has no lighting/
     // time-of-day controls, so directional sun shading would bake an uncontrollable look into the
     // composite. Off ⇒ the shader's flat legacy shade. The live perspective path leaves it true so
-    // the Key-8 lighting toggle still drives the 3D view.
+    // the lighting toggle (the 8 key) still drives the 3D view.
     private void BindAtmosphereConstants(
         Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex, bool enableFog = true,
         bool enableLighting = true, bool cameraRelative = false)
@@ -1731,7 +1731,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         var lightingOn = enableLighting && _showLighting;
         var resolved = AtmosphereState.Resolve(
             _gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: lightingOn);
-        // Camera-relative (1G): the scene VS subtract CameraOrigin from each world vertex and the camera
+        // Camera-relative: the scene VS subtract CameraOrigin from each world vertex and the camera
         // sits at the origin, so the shader's "camera position" (used by fog distance + specular view dir)
         // is 0 and CameraOrigin carries the real camera pos. Absolute mode (top-down capture / flag off)
         // keeps the camera position in CameraPosFogPower and a zero origin.
@@ -1746,11 +1746,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
     }
 
-    // CPU mirror of the b3 `cbuffer Atmosphere` the lighting/sky/water shaders declare in P3+. 8 float4
-    // = 128 bytes (CB-aligned by the ring buffer). When a flag is 0 the shader falls back to its
-    // pre-atmosphere behavior, so the toggles default the scene to today's look until turned on.
-    // (CameraPosFogPower is the 8th float4; shaders that don't apply fog — e.g. skybox — declare only
-    // the first 7, which is layout-safe since the new field is appended at the end.)
+    // CPU mirror of the b3 `cbuffer Atmosphere` the lighting/sky/water shaders declare. 9 float4
+    // = 144 bytes (CB-aligned by the ring buffer). When a flag is 0 the shader falls back to its
+    // pre-atmosphere behavior, so a disabled toggle keeps that aspect of the scene looking flat.
+    // (Shaders that don't apply fog — e.g. skybox — declare only the leading float4s they use, which
+    // is layout-safe since later fields are appended at the end.)
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private struct AtmosphereConstants
     {
@@ -1762,7 +1762,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         public Vector4 FogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
         public Vector4 Params;             // x = gameHour, y = fogNear, z = fogFar, w = time
         public Vector4 CameraPosFogPower;  // xyz = camera world pos (0 in camera-relative mode), w = fog power
-        // 1G — camera-relative render origin the scene VS subtract from each world vertex before
+        // Camera-relative render origin the scene VS subtract from each world vertex before
         // projection (0 when camera-relative is off). Appended last; the PS shaders that read this CB
         // declare only the prefix they use, so this 9th float4 is layout-safe for them.
         public Vector4 CameraOrigin;       // xyz = render origin (= camera world pos), w unused
@@ -1863,7 +1863,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _camera.FarPlane = _renderDistance * 2f + MathF.Abs(_camera.Position.Z)
                            + 2f * _cellSize;
         var proj = _camera.GetProjectionMatrix(aspect);
-        // 1G — camera-relative rendering (default on; FALLOUT_VIEWER_CAMERA_RELATIVE=0 disables). The
+        // Camera-relative rendering (default on; FALLOUT_VIEWER_CAMERA_RELATIVE=0 disables). The
         // ABSOLUTE viewProj drives sky + debug overlays (their geometry stays in world space and they
         // read no CameraOrigin); the SCENE viewProj is translation-free, and terrain/reference/water VS
         // subtract CameraOrigin from each world vertex before projection. Both map to the SAME clip
@@ -1888,8 +1888,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         }
 
         // Resolve + upload the shared atmosphere CB (b3) once per frame, bound for the whole scene.
-        // terrain/reference/water read it for directional + ambient lighting (P3); sky/fog flags stay
-        // off until their phases enable those shader paths. Bound once — the renderers only set their
+        // Terrain/reference/water read it for directional + ambient lighting; the sky/fog flags drive
+        // those shader paths and are each on by default. Bound once — the renderers only set their
         // own PSO + slots, never the root signature, so this CBV survives every scene pass.
         BindAtmosphereConstants(cmd, recorder.FrameIndex, cameraRelative: cameraRelative);
 
@@ -1912,7 +1912,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         var terrainMs = ElapsedMilliseconds(segmentStarted);
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesStart);
-        // 3D-8: opaque references draw now (write depth) but blended/transparent submeshes are deferred
+        // Opaque references draw now (write depth) but blended/transparent submeshes are deferred
         // until AFTER the water pass via RenderBlendedDeferred(), so water never paints over them.
         // Pass the ABSOLUTE viewProj for the cull frustum: the GPU CB gets the camera-relative
         // viewProjScene (the VS subtracts CameraOrigin), but the CPU frustum culls world-space
@@ -1966,7 +1966,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         }
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterEnd);
         var waterMs = ElapsedMilliseconds(segmentStarted);
-        // 3D-8: blended (transparent) reference submeshes draw AFTER water so water never paints over
+        // Blended (transparent) reference submeshes draw AFTER water so water never paints over
         // them. Water wrote no depth, so they depth-test against the opaque scene depth (terrain +
         // opaque refs); the DSV was restored above, so this stays depth-correct.
         if (_showReferences) _references?.RenderBlendedDeferred();
@@ -1982,7 +1982,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WireframeEnd);
         var wireframeMs = ElapsedMilliseconds(segmentStarted);
 
-        // 3D-5 — selection outline, drawn last + depth-disabled so it stays visible on top of everything
+        // Selection outline, drawn last + depth-disabled so it stays visible on top of everything
         // (no-op when nothing is selected).
         _selectionHighlight?.Render(viewProjAbsolute);
 
@@ -2248,22 +2248,22 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 EnableGpuTimestamps("forced");
             }
 
-            // Step 2b — instantiate the simplest D3D12 renderer end-to-end. This proves
-            // PSO creation + ring-buffer-backed CB/VB + root signature + command list draws
-            // all hang together before the heavier renderers (terrain/reference/water) port.
+            // The cell-grid overlay is the simplest D3D12 renderer: PSO creation +
+            // ring-buffer-backed CB/VB + root signature + command list draws, exercising the
+            // whole lightweight backend path the heavier renderers (terrain/reference/water) share.
             _cellGrid = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.CellGridDebugRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12)
             {
                 DetailedProfilingEnabled = _profileLogging,
             };
 
-            // 3D-5 — selection outline overlay. Same lightweight backend handles as the cell grid;
+            // Selection outline overlay. Same lightweight backend handles as the cell grid;
             // created once and reused across worldspace/cell switches (selection state lives on the
             // control and is cleared on those switches).
             _selectionHighlight = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SelectionHighlightRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12);
 
-            // Step 2e — WaterRenderer12 doesn't depend on per-ESM data (water height is
+            // WaterRenderer12 doesn't depend on per-ESM data (water height is
             // discovered at LoadData), so we can instantiate up front alongside CellGrid.
             _water = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _cbvSrvUavHeap12, _deletionQueue12)
@@ -2300,8 +2300,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 ShowDisabled = _showDisabled,
             };
 
-            // Step 2c — TerrainRenderer12 is instantiated lazily in LoadData (needs the per-ESM
-            // LTEX/TXST dictionaries + BSA paths), mirroring the D3D11 deferred construction.
+            // TerrainRenderer12 is instantiated lazily in LoadData (needs the per-ESM
+            // LTEX/TXST dictionaries + BSA paths) rather than here.
 
             return true;
         }
@@ -2345,8 +2345,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             return;
         }
 
-        // Centroid of the currently selected worldspace's exterior cells. With the v3 Phase 2a
-        // worldspace picker we always scope to one worldspace, so the camera frames the chosen
+        // Centroid of the currently selected worldspace's exterior cells. The worldspace picker
+        // always scopes to one worldspace, so the camera frames the chosen
         // one rather than the union of every worldspace in the file.
         double sumX = 0, sumY = 0;
         var count = 0;
@@ -2649,7 +2649,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             SetRenderDistance(DefaultRenderDistanceCells * _cellSize);
         }
 
-        // 3D-5 — the prior selection belongs to the set we're replacing (different worldspace/cell, and
+        // The prior selection belongs to the set we're replacing (different worldspace/cell, and
         // FormIDs can be reused), so drop it on every rebuild.
         ClearSelection3D();
 
@@ -2852,7 +2852,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             : null;
     }
 
-    // --- Atmosphere weather/time (P4) ----------------------------------------------------------------
+    // --- Atmosphere weather/time ----------------------------------------------------------------
 
     /// <summary>The WorldspaceRecord currently shown in the 3D scene, or null for an interior /
     /// unlinked-exterior / nothing selected (those have no climate → placeholder atmosphere).</summary>
@@ -3262,15 +3262,15 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _lastHudUpdateTimestamp = now;
 
         var mode = _controller.Mode == CameraMode.Walk ? "walk" : "fly";
-        // Time-of-day readout (P4) — the slider drives _gameHour; show it as HH:MM.
+        // Time-of-day readout — the slider drives _gameHour; show it as HH:MM.
         var hour = (int)_gameHour;
         var minute = (int)((_gameHour - hour) * 60f);
         // Backend chip — D3D12 shows the feature level for at-a-glance diagnostics.
         var backend = _gpu12 is not null
             ? $"D3D12 {_gpu12.FeatureLevel}"
             : "D3D11";
-        // Layer on/off state now lives in the toolbar toggle buttons (3D-6), so the HUD spends the
-        // freed space spelling out the movement controls (3D-10).
+        // Layer on/off state now lives in the toolbar toggle buttons, so the HUD spends the
+        // freed space spelling out the movement controls.
         var text =
             $"[{backend}]   " +
             $"Cells: {visible} / {total}   refs: {visibleReferences}   nav: {visibleNavMesh}   " +

@@ -1,7 +1,11 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Conversion;
 
 /// <summary>
-///     Context for evaluating version expressions.
+///     Context for evaluating NIF version expressions. Per-game NIF stream identities (the expected
+///     Version / UserVersion / BsVersion) are the single source of truth on
+///     <c>GameProfile.ExpectedNif</c> (Core.Games) — construct a context from a profile when targeting
+///     a specific game's NIF output. A NIF parse always self-detects the real version from the file
+///     header (Oblivion in particular ships mixed versions on disk).
 /// </summary>
 public sealed record NifVersionContext
 {
@@ -13,26 +17,4 @@ public sealed record NifVersionContext
 
     /// <summary>Bethesda stream version (e.g., 34 for FO3/NV)</summary>
     public int BsVersion { get; init; }
-
-    // Common presets
-    public static NifVersionContext FalloutNV => new()
-    {
-        Version = 0x14020007, // 20.2.0.7
-        UserVersion = 0,
-        BsVersion = 34
-    };
-
-    public static NifVersionContext Fallout4 => new()
-    {
-        Version = 0x14020007,
-        UserVersion = 12,
-        BsVersion = 130
-    };
-
-    public static NifVersionContext Skyrim => new()
-    {
-        Version = 0x14020007,
-        UserVersion = 12,
-        BsVersion = 83
-    };
 }

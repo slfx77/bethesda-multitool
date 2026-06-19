@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Land.Btd;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Land;
 
@@ -216,18 +217,6 @@ public static class Fo76TerrainInjector
         }
     }
 
-    private static bool IsFallout76(string esmPath)
-    {
-        try
-        {
-            Span<byte> header = stackalloc byte[64];
-            using var fs = new FileStream(esmPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var read = fs.Read(header);
-            return read >= 6 && PluginFormat.Detect(header[..read]).Game == BethesdaGame.Fallout76;
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-    }
+    private static bool IsFallout76(string esmPath) =>
+        GameDetector.DetectFromFile(esmPath).Game == BethesdaGame.Fallout76;
 }

@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.SaveGame;
 using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
 
@@ -107,66 +108,12 @@ internal static class WorldMapOverlayBuilder
     }
 
     /// <summary>
-    ///     Detects which Bethesda game a source file belongs to, for game-specific rendering (sky
-    ///     textures, moon count). Covers the whole Gamebryo/Creation lineage: Morrowind, Oblivion,
-    ///     Fallout 3, Fallout: New Vegas, Skyrim, Fallout 4, Fallout 76, Starfield. Uses the structural
-    ///     plugin probe (unambiguous for Morrowind / Oblivion), then — since the 24-byte TES4 framing is
-    ///     shared by FO3 / FNV / Skyrim / FO4 / FO76 / Starfield and the HEDR version float overlaps
-    ///     between them — refines via the master list + source filename. Reads only the file's leading
-    ///     bytes (the header sits at the start). Returns Unknown on any failure.
+    ///     Detects which Bethesda game a source file belongs to, for game-specific rendering (e.g. the
+    ///     engine-default landscape texture). Delegates to the shared <see cref="GameDetector" />, which
+    ///     does the structural plugin probe plus master-list/filename refinement.
     /// </summary>
     private static BethesdaGame DetectGame(string? sourceFilePath)
-    {
-        if (string.IsNullOrEmpty(sourceFilePath) || !File.Exists(sourceFilePath))
-        {
-            return BethesdaGame.Unknown;
-        }
-
-        try
-        {
-            byte[] head;
-            using (var fs = File.OpenRead(sourceFilePath))
-            {
-                var len = (int)Math.Min(64 * 1024, fs.Length);
-                head = new byte[len];
-                fs.ReadExactly(head, 0, len);
-            }
-
-            var format = PluginFormat.Detect(head);
-            if (format.Game is BethesdaGame.Morrowind or BethesdaGame.Oblivion)
-            {
-                return format.Game; // structurally unambiguous
-            }
-
-            // 24-byte TES4 family — refine by the master names + the source filename.
-            var names = (EsmParser.ParseFileHeader(head)?.Masters ?? [])
-                .Append(Path.GetFileName(sourceFilePath));
-            foreach (var name in names)
-            {
-                if (string.IsNullOrEmpty(name))
-                {
-                    continue;
-                }
-
-                // Newest / most-specific first. FO76's main master is SeventySix.esm (some packs name it
-                // Fallout76); Starfield's is Starfield.esm.
-                if (name.Contains("Starfield", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Starfield;
-                if (name.Contains("SeventySix", StringComparison.OrdinalIgnoreCase) ||
-                    name.Contains("Fallout76", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Fallout76;
-                if (name.Contains("Skyrim", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Skyrim;
-                if (name.Contains("Fallout4", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Fallout4;
-                if (name.Contains("Oblivion", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Oblivion;
-                if (name.Contains("Fallout3", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.Fallout3;
-                if (name.Contains("FalloutNV", StringComparison.OrdinalIgnoreCase)) return BethesdaGame.FalloutNewVegas;
-            }
-
-            return format.Game; // structural default (FNV for the 24-byte family)
-        }
-        catch
-        {
-            return BethesdaGame.Unknown;
-        }
-    }
+        => GameDetector.DetectFromFile(sourceFilePath).Game;
 
     /// <summary>
     ///     Build <see cref="WorldViewData" /> from a save file, optionally enriched with a supplementary ESM.

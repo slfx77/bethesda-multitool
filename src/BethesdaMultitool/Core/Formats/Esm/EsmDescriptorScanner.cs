@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm;

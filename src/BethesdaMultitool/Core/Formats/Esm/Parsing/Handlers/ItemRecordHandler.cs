@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
@@ -288,7 +289,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
     private static (int DamageResistance, float DamageThreshold) ParseArmorDefenseData(
         ReadOnlySpan<byte> data,
         bool bigEndian,
-        FalloutGame game)
+        BethesdaGame game)
     {
         var damageResistance = bigEndian
             ? BinaryPrimitives.ReadInt16BigEndian(data)
@@ -296,15 +297,16 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         var damageThreshold = 0f;
 
         // Fallout 3 stores DR at +0. New Vegas extends DNAM with DT at +4
-        // while leaving DR at +0 for compatibility. Some inputs do not carry
-        // reliable game metadata, so a plausible DT at +4 is accepted as FNV.
-        if ((game == FalloutGame.FalloutNewVegas || data.Length >= 8) && data.Length >= 8)
+        // while leaving DR at +0 for compatibility (the HasArmorDamageThreshold capability).
+        // Some inputs do not carry reliable game metadata, so a plausible DT at +4 is accepted too.
+        var hasDamageThreshold = GameProfiles.For(game).HasArmorDamageThreshold;
+        if ((hasDamageThreshold || data.Length >= 8) && data.Length >= 8)
         {
             var possibleThreshold = bigEndian
                 ? BinaryPrimitives.ReadSingleBigEndian(data[4..])
                 : BinaryPrimitives.ReadSingleLittleEndian(data[4..]);
             if (GameStatNormalizer.ArmorDamageThreshold(possibleThreshold) > 0 ||
-                game == FalloutGame.FalloutNewVegas)
+                hasDamageThreshold)
             {
                 damageThreshold = possibleThreshold;
             }

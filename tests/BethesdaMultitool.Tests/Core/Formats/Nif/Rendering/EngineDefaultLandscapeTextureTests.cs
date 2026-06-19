@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -20,8 +21,9 @@ public class EngineDefaultLandscapeTextureTests
     [InlineData(BethesdaGame.Unknown)]
     public void DiffuseFor_UnmappedOrFnvFamily_UsesFnvDefault(BethesdaGame game)
     {
-        Assert.Equal(EngineDefaultLandscapeTexture.DiffusePath, EngineDefaultLandscapeTexture.DiffuseFor(game));
-        Assert.Equal(EngineDefaultLandscapeTexture.NormalPath, EngineDefaultLandscapeTexture.NormalFor(game));
+        var fnv = GameProfiles.For(BethesdaGame.FalloutNewVegas);
+        Assert.Equal(fnv.DefaultLandscapeDiffuse, EngineDefaultLandscapeTexture.DiffuseFor(game));
+        Assert.Equal(fnv.DefaultLandscapeNormal, EngineDefaultLandscapeTexture.NormalFor(game));
     }
 
     [Theory]
@@ -37,6 +39,7 @@ public class EngineDefaultLandscapeTextureTests
         Assert.Equal(diffuse, EngineDefaultLandscapeTexture.DiffuseFor(game));
         Assert.Equal(normal, EngineDefaultLandscapeTexture.NormalFor(game));
         // Crucially NOT the FNV path (which is absent in these games' archives → white base).
-        Assert.NotEqual(EngineDefaultLandscapeTexture.DiffusePath, EngineDefaultLandscapeTexture.DiffuseFor(game));
+        Assert.NotEqual(GameProfiles.For(BethesdaGame.FalloutNewVegas).DefaultLandscapeDiffuse,
+            EngineDefaultLandscapeTexture.DiffuseFor(game));
     }
 }

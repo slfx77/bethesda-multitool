@@ -3,6 +3,7 @@ using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm;
 
@@ -160,7 +161,9 @@ public static class EsmFileAnalyzer
 
             result.EsmRecords = descriptorScan.ScanResult with
             {
-                Game = header?.DetectedGame ?? FalloutGame.Unknown,
+                Game = header != null
+                    ? GameDetector.DetectFromBytes(fileData, fileInfo.Name).Game
+                    : BethesdaGame.Unknown,
                 CellToWorldspaceMap = cellToWorldspace,
                 LandToWorldspaceMap = landToWorldspace,
                 CellToRefrMap = cellToRefrMap,

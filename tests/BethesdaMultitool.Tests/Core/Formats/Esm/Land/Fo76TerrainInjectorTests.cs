@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Land;
 using BethesdaMultitool.Core.Formats.Esm.Land.Btd;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Land;

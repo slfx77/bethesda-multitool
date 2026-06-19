@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 
@@ -56,7 +57,7 @@ public sealed class RecordParserContext
         if (accessor != null && minidumpInfo != null && fileSize > 0)
         {
             // FormType drift correction is now applied centrally in
-            // MinidumpAnalyzer.AnalyzeAsync (Phase 1B.22), so by the time this
+            // MinidumpAnalyzer.AnalyzeAsync, so by the time this
             // context is constructed the entries already carry canonical
             // FormType bytes. ApplyDriftCorrection is idempotent — this call
             // is defense-in-depth for callers that construct a RecordParser
@@ -137,10 +138,10 @@ public sealed class RecordParserContext
         }
 
         // Auto-detect game version from TES4/HEDR if present
-        Game = scanResult.Game != FalloutGame.Unknown
+        Game = scanResult.Game != BethesdaGame.Unknown
             ? scanResult.Game
             : DetectGameFromTes4();
-        if (Game != FalloutGame.Unknown)
+        if (Game != BethesdaGame.Unknown)
         {
             Logger.Instance.Debug("  [Context] Detected game: {0}", Game);
         }
@@ -153,8 +154,8 @@ public sealed class RecordParserContext
     public MinidumpInfo? MinidumpInfo { get; }
     public Dictionary<uint, DetectedMainRecord> RecordsByFormId { get; }
 
-    /// <summary>Detected game version (FO3 vs FNV), auto-detected from TES4/HEDR.</summary>
-    public FalloutGame Game { get; }
+    /// <summary>Detected game/engine, auto-detected from the scan result or TES4/HEDR.</summary>
+    public BethesdaGame Game { get; }
 
     /// <summary>
     ///     External string tables for a localized plugin (Skyrim/FO4/Starfield with the TES4 0x80
@@ -741,11 +742,11 @@ public sealed class RecordParserContext
     ///     Detect game version by finding TES4 record in scan results and reading the HEDR
     ///     version float. Returns Unknown if TES4/HEDR is not found or not readable.
     /// </summary>
-    private FalloutGame DetectGameFromTes4()
+    private BethesdaGame DetectGameFromTes4()
     {
         if (Accessor == null)
         {
-            return FalloutGame.Unknown;
+            return BethesdaGame.Unknown;
         }
 
         // Find TES4 main record (always the first record in an ESM file)
@@ -761,7 +762,7 @@ public sealed class RecordParserContext
 
         if (tes4 == null)
         {
-            return FalloutGame.Unknown;
+            return BethesdaGame.Unknown;
         }
 
         // Read TES4 record data and look for HEDR subrecord. Header size varies (Oblivion = 20).
@@ -770,7 +771,7 @@ public sealed class RecordParserContext
         var readSize = Math.Min(buffer.Length, (int)(FileSize - tes4.Offset));
         if (readSize < headerSize + 12) // record header + 6-byte HEDR header + 4-byte version + 2 padding
         {
-            return FalloutGame.Unknown;
+            return BethesdaGame.Unknown;
         }
 
         try
@@ -779,7 +780,7 @@ public sealed class RecordParserContext
         }
         catch
         {
-            return FalloutGame.Unknown;
+            return BethesdaGame.Unknown;
         }
 
         // Iterate subrecords within TES4 to find HEDR
@@ -793,15 +794,10 @@ public sealed class RecordParserContext
             var versionBytes = buffer.AsSpan(sub.DataOffset, 4);
             var version = BinaryUtils.ReadFloat(versionBytes, 0, tes4.IsBigEndian);
 
-            return version switch
-            {
-                >= 0.93f and <= 0.95f => FalloutGame.Fallout3,
-                >= 1.0f => FalloutGame.FalloutNewVegas,
-                _ => FalloutGame.Unknown
-            };
+            return GameProfiles.ResolveByHedrVersion(version);
         }
 
-        return FalloutGame.Unknown;
+        return BethesdaGame.Unknown;
     }
 
     #endregion

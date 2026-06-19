@@ -21,7 +21,7 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     private readonly NifGpuTextureResolver _textureResolver;
     private readonly GpuTextureCache12 _textureCache;
     private readonly Dictionary<uint, GpuTextureCache12.Entry> _byLtex = new();
-    private readonly BethesdaMultitool.Core.Formats.Esm.BethesdaGame _game;
+    private readonly BethesdaMultitool.Core.Games.BethesdaGame _game;
 
     public TerrainTextureResolver12(
         GpuDevice12 gpu,
@@ -31,7 +31,7 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         IReadOnlyDictionary<uint, LandscapeTextureRecord> ltexByFormId,
         IReadOnlyDictionary<uint, TextureSetRecord> txstByFormId,
         string[] texturesBsaPaths,
-        BethesdaMultitool.Core.Formats.Esm.BethesdaGame game = BethesdaMultitool.Core.Formats.Esm.BethesdaGame.Unknown)
+        BethesdaMultitool.Core.Games.BethesdaGame game = BethesdaMultitool.Core.Games.BethesdaGame.Unknown)
     {
         _ltexByFormId = ltexByFormId;
         _txstByFormId = txstByFormId;

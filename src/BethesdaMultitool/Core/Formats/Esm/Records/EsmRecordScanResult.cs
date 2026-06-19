@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Records;
 
@@ -10,8 +11,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Records;
 /// </summary>
 public record EsmRecordScanResult
 {
-    /// <summary>Detected game version (FO3 vs FNV), auto-detected from TES4/HEDR if available.</summary>
-    public FalloutGame Game { get; set; } = FalloutGame.Unknown;
+    /// <summary>Detected game/engine, resolved from the plugin header (and master list) when available.</summary>
+    public BethesdaGame Game { get; set; } = BethesdaGame.Unknown;
 
     /// <summary>
     ///     True when the source is a Morrowind (TES3) plugin. TES3 uses a flat record stream with
