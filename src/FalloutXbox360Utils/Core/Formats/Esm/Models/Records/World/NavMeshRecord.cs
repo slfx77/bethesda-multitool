@@ -12,8 +12,22 @@ public record NavMeshRecord
     /// <summary>Editor ID.</summary>
     public string? EditorId { get; init; }
 
-    /// <summary>Parent cell FormID.</summary>
+    /// <summary>
+    ///     Parent cell FormID. For FO3/FNV (DATA) this is set directly; for Skyrim interior navmeshes
+    ///     it comes from the NVNM "Parent Cell" union. Skyrim EXTERIOR navmeshes carry no direct cell
+    ///     FormID — they identify their cell by <see cref="WorldspaceFormId" /> + grid (resolved to a
+    ///     cell downstream), so this stays 0 for them until that resolution runs.
+    /// </summary>
     public uint CellFormId { get; init; }
+
+    /// <summary>Parent worldspace FormID for a Skyrim EXTERIOR navmesh (NVNM); 0 otherwise.</summary>
+    public uint WorldspaceFormId { get; init; }
+
+    /// <summary>Exterior-cell grid X for a Skyrim exterior navmesh (NVNM); null otherwise.</summary>
+    public int? GridX { get; init; }
+
+    /// <summary>Exterior-cell grid Y for a Skyrim exterior navmesh (NVNM); null otherwise.</summary>
+    public int? GridY { get; init; }
 
     /// <summary>Number of vertices in this navmesh.</summary>
     public uint VertexCount { get; init; }

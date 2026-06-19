@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using FalloutXbox360Utils.Core.Formats.Esm.Conversion.Processing;
 using FalloutXbox360Utils.Core.Formats.Esm.Models;
 using FalloutXbox360Utils.Core.Formats.Esm.Models.Records.AI;
@@ -649,6 +650,8 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
 
         string? editorId = null;
         uint cellFormId = 0, vertexCount = 0, triangleCount = 0;
+        uint worldspaceFormId = 0;
+        int? gridX = null, gridY = null;
         var doorPortalCount = 0;
         var rawSubrecords = new List<NavMeshSubrecord>();
 
@@ -685,6 +688,23 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                     }
 
                     break;
+                case "NVNM" when sub.DataLength >= 20:
+                {
+                    // Skyrim packs the whole navmesh into one NVNM blob (no DATA/NVVX/NVTR). The header
+                    // carries the cell linkage + vertex/triangle counts; geometry is decoded by
+                    // NavMeshGeometry.TryParse from the same subrecord.
+                    if (ParseNvnmHeader(subData, record.IsBigEndian) is { } h)
+                    {
+                        cellFormId = h.CellFormId;
+                        worldspaceFormId = h.WorldspaceFormId;
+                        gridX = h.GridX;
+                        gridY = h.GridY;
+                        vertexCount = h.VertexCount;
+                        triangleCount = h.TriangleCount;
+                    }
+
+                    break;
+                }
             }
 
             // Capture subrecord bytes verbatim (or post-endian-conversion for Xbox 360 source)
@@ -697,6 +717,9 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
             FormId = record.FormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             CellFormId = cellFormId,
+            WorldspaceFormId = worldspaceFormId,
+            GridX = gridX,
+            GridY = gridY,
             VertexCount = vertexCount,
             TriangleCount = triangleCount,
             DoorPortalCount = doorPortalCount,
@@ -705,6 +728,50 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
             IsBigEndian = record.IsBigEndian
         };
     }
+
+    /// <summary>
+    ///     Parses the Skyrim NVNM "Geometry" header (per xEdit <c>wbNVNM</c>): u32 Version, u32 CRC Hash,
+    ///     formid Parent World, then a 4-byte union — interior (Parent World == 0) is the Parent Cell
+    ///     formid; exterior is {int16 Grid Y, int16 Grid X} — then the u32 vertex count, the vertex array,
+    ///     and the u32 triangle count. Returns null when the blob is too short.
+    /// </summary>
+    private static (uint CellFormId, uint WorldspaceFormId, int? GridX, int? GridY, uint VertexCount, uint TriangleCount)?
+        ParseNvnmHeader(ReadOnlySpan<byte> nvnm, bool bigEndian)
+    {
+        if (nvnm.Length < 20)
+        {
+            return null;
+        }
+
+        var parentWorld = ReadU32(nvnm, 8, bigEndian);
+        uint cellFormId = 0, worldspaceFormId = 0;
+        int? gridX = null, gridY = null;
+        if (parentWorld != 0)
+        {
+            worldspaceFormId = parentWorld;
+            gridY = ReadI16(nvnm, 12, bigEndian);
+            gridX = ReadI16(nvnm, 14, bigEndian);
+        }
+        else
+        {
+            cellFormId = ReadU32(nvnm, 12, bigEndian); // interior: union holds the Parent Cell formid
+        }
+
+        var vertexCount = ReadU32(nvnm, 16, bigEndian);
+        // The triangle count sits right after the vertex array (12 bytes per vertex).
+        var triOffset = 20L + ((long)vertexCount * 12);
+        var triangleCount = triOffset + 4 <= nvnm.Length ? ReadU32(nvnm, (int)triOffset, bigEndian) : 0u;
+
+        return (cellFormId, worldspaceFormId, gridX, gridY, vertexCount, triangleCount);
+    }
+
+    private static uint ReadU32(ReadOnlySpan<byte> s, int offset, bool bigEndian) => bigEndian
+        ? BinaryPrimitives.ReadUInt32BigEndian(s.Slice(offset, 4))
+        : BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(offset, 4));
+
+    private static short ReadI16(ReadOnlySpan<byte> s, int offset, bool bigEndian) => bigEndian
+        ? BinaryPrimitives.ReadInt16BigEndian(s.Slice(offset, 2))
+        : BinaryPrimitives.ReadInt16LittleEndian(s.Slice(offset, 2));
 
     /// <summary>
     ///     Capture one subrecord into the NavMeshSubrecord list, applying the existing

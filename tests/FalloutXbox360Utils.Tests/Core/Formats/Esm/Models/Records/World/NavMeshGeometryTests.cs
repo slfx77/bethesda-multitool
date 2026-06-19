@@ -44,12 +44,91 @@ public sealed class NavMeshGeometryTests
         Assert.Null(NavMeshGeometry.TryParse(Navm([], [])));
     }
 
+    [Fact]
+    public void TryParse_DecodesSkyrimNvnmInteriorGeometry()
+    {
+        // Skyrim interior NVNM: parentWorld == 0, union = parent cell FormID. The geometry offsets
+        // (vertex count at 16, vertex array at 20) are independent of the union content.
+        var nvnm = Nvnm(parentWorld: 0u, unionValue: 0x00027D1Cu,
+            [(1f, 2f, 3f), (4f, 5f, 6f), (7f, 8f, 9f)], [(0, 1, 2)]);
+
+        var geom = NavMeshGeometry.TryParse(NavmNvnm(nvnm));
+
+        Assert.NotNull(geom);
+        Assert.Equal(3, geom!.Vertices.Length);
+        Assert.Equal(new Vector3(7f, 8f, 9f), geom.Vertices[2]);
+        Assert.Equal(((ushort)0, (ushort)1, (ushort)2), Assert.Single(geom.Triangles));
+    }
+
+    [Fact]
+    public void TryParse_SkyrimNvnmExterior_DecodesSameGeometryDespiteGridUnion()
+    {
+        // Exterior NVNM: parentWorld != 0, union = packed {GridY, GridX} (4 bytes). The geometry must
+        // decode identically — this guards against the union being misread as sequential fields (which
+        // would shift every exterior navmesh's vertices by 4 bytes).
+        var nvnm = Nvnm(parentWorld: 0x0000003Cu, unionValue: 0xFFFE0001u,
+            [(0f, 0f, 0f), (1f, 1f, 1f), (2f, 2f, 2f), (3f, 3f, 3f)], [(0, 1, 2), (1, 2, 3)]);
+
+        var geom = NavMeshGeometry.TryParse(NavmNvnm(nvnm));
+
+        Assert.NotNull(geom);
+        Assert.Equal(4, geom!.Vertices.Length);
+        Assert.Equal(2, geom.Triangles.Length);
+        Assert.Equal(((ushort)1, (ushort)2, (ushort)3), geom.Triangles[1]);
+    }
+
+    [Fact]
+    public void TryParse_NvnmTruncatedOrEmpty_ReturnsNull()
+    {
+        Assert.Null(NavMeshGeometry.TryParse(NavmNvnm(new byte[19]))); // shorter than the 20-byte header
+
+        // Declares 5 vertices but carries none → the triangle-count offset runs past the blob.
+        var truncated = new byte[20];
+        BinaryPrimitives.WriteUInt32LittleEndian(truncated.AsSpan(16, 4), 5u);
+        Assert.Null(NavMeshGeometry.TryParse(NavmNvnm(truncated)));
+    }
+
     private static NavMeshRecord Navm(byte[]? nvvx, byte[]? nvtr)
     {
         var subs = new List<NavMeshSubrecord>();
         if (nvvx is not null) subs.Add(new NavMeshSubrecord("NVVX", nvvx));
         if (nvtr is not null) subs.Add(new NavMeshSubrecord("NVTR", nvtr));
         return new NavMeshRecord { FormId = 0x1234, RawSubrecords = subs };
+    }
+
+    private static NavMeshRecord NavmNvnm(byte[] nvnm) =>
+        new() { FormId = 0x5678, RawSubrecords = [new NavMeshSubrecord("NVNM", nvnm)] };
+
+    private static byte[] Nvnm(
+        uint parentWorld, uint unionValue, (float X, float Y, float Z)[] verts, (ushort A, ushort B, ushort C)[] tris)
+    {
+        var b = new byte[20 + (verts.Length * 12) + 4 + (tris.Length * 16)];
+        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(0, 4), 12u);         // version
+        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(4, 4), 0xABCDu);     // CRC hash
+        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(8, 4), parentWorld); // parent world (0 = interior)
+        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(12, 4), unionValue); // union: cell formid OR packed grid
+        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(16, 4), (uint)verts.Length);
+
+        var p = 20;
+        foreach (var v in verts)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(b.AsSpan(p, 4), v.X);
+            BinaryPrimitives.WriteSingleLittleEndian(b.AsSpan(p + 4, 4), v.Y);
+            BinaryPrimitives.WriteSingleLittleEndian(b.AsSpan(p + 8, 4), v.Z);
+            p += 12;
+        }
+
+        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(p, 4), (uint)tris.Length);
+        p += 4;
+        foreach (var t in tris)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(p, 2), t.A);
+            BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(p + 2, 2), t.B);
+            BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(p + 4, 2), t.C);
+            p += 16; // remaining 10 bytes (edge/cover flags) left zero
+        }
+
+        return b;
     }
 
     private static byte[] Vvx(params (float X, float Y, float Z)[] verts)
