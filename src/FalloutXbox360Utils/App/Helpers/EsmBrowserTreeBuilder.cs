@@ -435,8 +435,11 @@ internal static class EsmBrowserTreeBuilder
                 ParentIconGlyph = typeNode.IconGlyph,
                 FileOffset = offset,
                 DataObject = record,
-                Properties = BuildProperties(record, allRecords, resolver, placementIndex, usageIndex, raceLookup,
-                    factionMembersIndex)
+                // Defer the property build to first selection — see EsmBrowserNode.PropertyFactory.
+                // Expanding a large type node (e.g. a DMP's tens-of-thousands of records) otherwise
+                // builds ~80 EsmPropertyEntry per record up front for nodes the user never selects.
+                PropertyFactory = () => BuildProperties(record, allRecords, resolver, placementIndex, usageIndex,
+                    raceLookup, factionMembersIndex)
             };
 
             recordNodes.Add(recordNode);

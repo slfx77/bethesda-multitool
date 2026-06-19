@@ -348,6 +348,10 @@ public sealed partial class SingleFileTab
             // Emit BSStringT read diagnostics (visible in VS Output window)
             var bsReport = BSStringDiagnostics.GetReport();
             System.Diagnostics.Debug.WriteLine("[BSStringT Diagnostics]\n" + bsReport);
+
+            // The semantic model + cell PlacedReferences are now built; drop the parse-only scan
+            // intermediates the parser already consumed (see ReleaseEsmScanIntermediates).
+            ReleaseEsmScanIntermediates();
         }
     }
 
@@ -400,6 +404,10 @@ public sealed partial class SingleFileTab
             {
                 StatusTextBlock.Text =
                     Strings.Status_ParsedRecords(_session.SemanticResult.TotalRecordsParsed);
+
+                // Lazy-parse path (tab opened before the load pipeline finished adopting): same
+                // intermediate release as RunSemanticParsePipelineAsync. Idempotent.
+                ReleaseEsmScanIntermediates();
             }
         }
         catch (Exception ex)
@@ -527,6 +535,31 @@ public sealed partial class SingleFileTab
         _allCarvedFiles.AddRange(SingleFileAnalysisHelper.BuildCarvedFileList(
             _analysisResult, isEsmFile: _session.IsEsmFile));
         _carvedFiles.ReplaceAll(_allCarvedFiles);
+    }
+
+    /// <summary>
+    ///     Releases ESM scan-time intermediates that the record parser has already consumed to build
+    ///     the semantic <c>RecordCollection</c> and cell PlacedReferences.
+    ///     <c>RefrRecords</c> (ExtractedRefrRecord + the PositionSubrecords they uniquely hold) and
+    ///     <c>NameReferences</c> have NO reader in any GUI / render / report path after the semantic
+    ///     model exists — every reference to them lives inside the scan/parse pipeline. For a 922 MB
+    ///     ESM (Fallout 76's SeventySix.esm) this frees ~2 GB / ~10M objects, which also shortens every
+    ///     later GC pause (pause time scales with live-object count). Idempotent — safe to call from
+    ///     both the load path and the lazy-parse path. ESM-only: DMP runtime extraction has different
+    ///     post-parse consumers. KEPT alive: MainRecords (hex-viewer record overlay), LandRecords
+    ///     (heightmap viewer), the GRUP maps, Positions (dangling-ref attribution), and runtime lists.
+    /// </summary>
+    private void ReleaseEsmScanIntermediates()
+    {
+        if (!_session.IsEsmFile || _analysisResult?.EsmRecords is not { } scan)
+        {
+            return;
+        }
+
+        scan.RefrRecords.Clear();
+        scan.RefrRecords.TrimExcess();
+        scan.NameReferences.Clear();
+        scan.NameReferences.TrimExcess();
     }
 
     private async Task AutoPopulateCurrentTabAsync(object? selectedTab)

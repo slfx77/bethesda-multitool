@@ -28,5 +28,25 @@ public sealed class EsmBrowserNode
     public bool HasUnrealizedChildren { get; set; }
     public string IconGlyph { get; init; } = "\uE7C3";
 
-    public List<EsmPropertyEntry> Properties { get; init; } = [];
+    private List<EsmPropertyEntry>? _properties;
+
+    /// <summary>
+    ///     Optional deferred builder for <see cref="Properties" />. Record nodes set THIS instead of
+    ///     eagerly assigning <see cref="Properties" />: expanding one large record-type node would
+    ///     otherwise materialize ~80 <see cref="EsmPropertyEntry" /> objects PER sibling record up
+    ///     front, even though only the SELECTED node's properties are ever displayed. (A 922 MB memory
+    ///     dump expanded ~14M EsmPropertyEntry / ~1.9 GB this way \u2014 dump-confirmed.) The factory runs
+    ///     once on first <see cref="Properties" /> read (UI-thread selection) and the result is cached.
+    /// </summary>
+    public Func<List<EsmPropertyEntry>>? PropertyFactory { get; init; }
+
+    /// <summary>
+    ///     Detail-panel properties. When <see cref="PropertyFactory" /> is set, built on demand and
+    ///     cached on first read; otherwise holds the eagerly-assigned list (small/bounded node kinds).
+    /// </summary>
+    public List<EsmPropertyEntry> Properties
+    {
+        get => _properties ??= PropertyFactory?.Invoke() ?? [];
+        init => _properties = value;
+    }
 }

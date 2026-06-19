@@ -36,6 +36,11 @@ public sealed partial class SingleFileTab
     /// </summary>
     private bool _treeLoadScheduled;
 
+    /// <summary>RecordType nodes whose (expensive) data-model children are being built on a background
+    /// thread right now. Guards against starting a second build if the user re-expands mid-load.
+    /// UI-thread-only access (expand handlers + the post-await continuation), so no lock needed.</summary>
+    private readonly HashSet<EsmBrowserNode> _recordTypeLoadsInFlight = [];
+
     /// <summary>Remaining look-ahead batches for the current scroll settle (see
     /// <see cref="MaxBatchesPerScroll" />). Decremented per loaded batch; a fresh settle refills it.</summary>
     private int _treeLoadBudget;
@@ -47,21 +52,20 @@ public sealed partial class SingleFileTab
         if (args.Node.Content is not EsmBrowserNode browserNode) return;
         if (args.Node.Children.Count > 0) return; // Already has TreeViewNode children
 
-        // Load data children if needed
+        // RecordType nodes can hold tens of thousands of records; building their data-model children +
+        // sort on the UI thread froze the tree on expand. Realize them WITHOUT blocking (synchronously
+        // when a background pre-load already built them, otherwise on a worker thread). See
+        // RealizeRecordTypeChildren.
+        if (browserNode.NodeType == "RecordType")
+        {
+            RealizeRecordTypeChildren(args.Node, browserNode);
+            return;
+        }
+
+        // Categories are cheap (a handful of type sub-nodes) — build inline.
         if (browserNode.NodeType == "Category" && browserNode.Children.Count == 0)
         {
             EsmBrowserTreeBuilder.LoadCategoryChildren(browserNode);
-        }
-        else if (browserNode.NodeType == "RecordType" && browserNode.Children.Count == 0)
-        {
-            EsmBrowserTreeBuilder.LoadRecordTypeChildren(
-                browserNode,
-                _session.SemanticResult,
-                _session.EffectiveResolver,
-                _placementIndex,
-                _usageIndex,
-                _raceLookup,
-                _factionMembersIndex);
         }
 
         // Add child TreeViewNodes with progressive loading for large sets
@@ -83,19 +87,18 @@ public sealed partial class SingleFileTab
                 // Load children if not yet loaded
                 if (treeNode.Children.Count == 0)
                 {
-                    if (browserNode.NodeType == "Category" && browserNode.Children.Count == 0)
-                        EsmBrowserTreeBuilder.LoadCategoryChildren(browserNode);
-                    else if (browserNode.NodeType == "RecordType" && browserNode.Children.Count == 0)
-                        EsmBrowserTreeBuilder.LoadRecordTypeChildren(
-                            browserNode,
-                            _session.SemanticResult,
-                            _session.EffectiveResolver,
-                            _placementIndex,
-                            _usageIndex,
-                            _raceLookup,
-                            _factionMembersIndex);
-                    AddChildNodesProgressively(treeNode, browserNode.Children);
-                    EnsureTreeScrollViewerHooked();
+                    if (browserNode.NodeType == "RecordType")
+                    {
+                        // Off-thread build (or sync realize if already built) — never freezes the UI.
+                        RealizeRecordTypeChildren(treeNode, browserNode);
+                    }
+                    else
+                    {
+                        if (browserNode.NodeType == "Category" && browserNode.Children.Count == 0)
+                            EsmBrowserTreeBuilder.LoadCategoryChildren(browserNode);
+                        AddChildNodesProgressively(treeNode, browserNode.Children);
+                        EnsureTreeScrollViewerHooked();
+                    }
                 }
 
                 treeNode.IsExpanded = true;
@@ -107,6 +110,76 @@ public sealed partial class SingleFileTab
         }
 
         SelectBrowserNode(browserNode);
+    }
+
+    /// <summary>
+    ///     Realizes a RecordType node's child records into the tree WITHOUT freezing the UI. The
+    ///     data-model build (<see cref="EsmBrowserTreeBuilder.LoadRecordTypeChildren" />) walks every
+    ///     record — tens of thousands for a large DMP — extracting identity/name and sorting, which froze
+    ///     the UI thread when run inline from the expand handlers. Here: if the background pre-load
+    ///     (<c>BuildFormIdNodeIndex → EnsureAllChildrenLoaded</c>) already built the children, the first
+    ///     batch realizes synchronously (cheap); otherwise a "Loading…" placeholder shows while the build
+    ///     runs on a worker thread, then the real children realize on completion. Re-entry is guarded so a
+    ///     collapse/re-expand mid-load can't start a second build.
+    /// </summary>
+    private async void RealizeRecordTypeChildren(TreeViewNode treeNode, EsmBrowserNode browserNode)
+    {
+        if (treeNode.Children.Count > 0) return; // already realized (real children or a placeholder)
+
+        // Fast path: the background pre-load already built the data-model children — realizing the first
+        // batch of TreeViewNodes is cheap, so do it inline (no worker hop, no placeholder flicker).
+        bool alreadyBuilt;
+        lock (browserNode.Children)
+        {
+            alreadyBuilt = browserNode.Children.Count > 0;
+        }
+
+        if (alreadyBuilt)
+        {
+            AddChildNodesProgressively(treeNode, browserNode.Children);
+            EnsureTreeScrollViewerHooked();
+            return;
+        }
+
+        // Slow path: build off the UI thread. Guard against a second concurrent build for this node.
+        if (!_recordTypeLoadsInFlight.Add(browserNode)) return;
+
+        var placeholder = new TreeViewNode
+        {
+            Content = new EsmBrowserNode { DisplayName = "Loading…", NodeType = "Loading", IconGlyph = "" }
+        };
+        treeNode.Children.Add(placeholder);
+
+        // Capture UI-thread state for the worker (instance fields can change on reload/load-order edits).
+        var semanticResult = _session.SemanticResult;
+        var resolver = _session.EffectiveResolver;
+        var placementIndex = _placementIndex;
+        var usageIndex = _usageIndex;
+        var raceLookup = _raceLookup;
+        var factionMembersIndex = _factionMembersIndex;
+
+        try
+        {
+            await Task.Run(() => EsmBrowserTreeBuilder.LoadRecordTypeChildren(
+                browserNode, semanticResult, resolver, placementIndex, usageIndex, raceLookup, factionMembersIndex));
+        }
+        catch
+        {
+            // Build failed — leave the node empty rather than crash the async-void handler.
+        }
+        finally
+        {
+            _recordTypeLoadsInFlight.Remove(browserNode);
+        }
+
+        // Back on the UI thread (await captured the WinUI dispatcher context). Swap the placeholder for
+        // the real children, unless another path already realized them.
+        treeNode.Children.Remove(placeholder);
+        if (treeNode.Children.Count == 0)
+        {
+            AddChildNodesProgressively(treeNode, browserNode.Children);
+            EnsureTreeScrollViewerHooked();
+        }
     }
 
     #endregion
