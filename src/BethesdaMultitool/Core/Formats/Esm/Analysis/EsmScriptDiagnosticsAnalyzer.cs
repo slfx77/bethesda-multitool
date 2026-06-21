@@ -1,138 +1,9 @@
-using System.Buffers.Binary;
-using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
-using BethesdaMultitool.Core.Formats.Esm.Script;
-using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using static BethesdaMultitool.Core.Formats.Esm.Analysis.EsmScriptDiagnosticsResolvers;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
-
-/// <summary>Aggregated script/dialogue diagnostics gathered for a set of target records in an ESM/ESP.</summary>
-public sealed record EsmScriptDiagnosticsResult(
-    string SourcePath,
-    IReadOnlyList<string> Targets,
-    IReadOnlyList<EsmScriptDiagnosticTargetMatchRow> TargetMatches,
-    IReadOnlyList<EsmScriptDiagnosticRecordRow> Records,
-    IReadOnlyList<EsmScriptDiagnosticDialogueRow> Dialogue,
-    IReadOnlyList<EsmScriptDialogueAuditRow> DialogueAudit,
-    IReadOnlyList<EsmScriptConditionAuditRow> Conditions,
-    IReadOnlyList<EsmScriptDiagnosticBlockRow> ScriptBlocks,
-    IReadOnlyList<EsmScriptDiagnosticReferenceRow> ScriptReferences);
-
-/// <summary>A record that matched one of the requested diagnostic targets, with the reason it matched.</summary>
-public sealed record EsmScriptDiagnosticTargetMatchRow(
-    string Target,
-    string RecordType,
-    uint FormId,
-    string EditorId,
-    string FullName,
-    string MatchReason);
-
-/// <summary>A record related to a target (and how), summarizing its interesting subrecords.</summary>
-public sealed record EsmScriptDiagnosticRecordRow(
-    string Target,
-    string Relation,
-    string RecordType,
-    uint FormId,
-    string EditorId,
-    string FullName,
-    string InterestingSubrecords);
-
-/// <summary>A dialogue INFO line associated with a target, with its topic/quest/speaker links and response info.</summary>
-public sealed record EsmScriptDiagnosticDialogueRow(
-    string Target,
-    uint InfoFormId,
-    string InfoEditorId,
-    uint TopicFormId,
-    string TopicLabel,
-    uint QuestFormId,
-    uint SpeakerFormId,
-    uint PreviousInfo,
-    string LinkToTopics,
-    string LinkFromTopics,
-    string AddTopics,
-    string FollowUpInfos,
-    string InfoFlags,
-    int ResponseCount,
-    bool HasResultScript,
-    string ResponsePreview);
-
-/// <summary>Audit row diagnosing whether a dialogue INFO is reachable (root/terminal/goodbye classification and topic edges).</summary>
-public sealed record EsmScriptDialogueAuditRow(
-    string Target,
-    uint InfoFormId,
-    uint TopicFormId,
-    string TopicLabel,
-    uint QuestFormId,
-    uint SpeakerFormId,
-    string RootClassification,
-    bool HasIncomingTopicEdge,
-    bool HasExplicitRootLink,
-    bool IsTerminalReturnCandidate,
-    bool HasGoodbyeForSpeakerQuest,
-    string RawTcltBytes,
-    string LinkToTopics,
-    string FollowUpInfos,
-    string ResponsePreview);
-
-/// <summary>One decoded CTDA condition on a target-related record (function, operands, run-on, raw bytes).</summary>
-public sealed record EsmScriptConditionAuditRow(
-    string Target,
-    string Relation,
-    string RecordType,
-    uint FormId,
-    string EditorId,
-    int ConditionIndex,
-    string FunctionName,
-    ushort FunctionIndex,
-    byte Type,
-    float ComparisonValue,
-    uint Parameter1,
-    string Parameter1Label,
-    uint Parameter2,
-    string Parameter2Label,
-    uint RunOn,
-    uint Reference,
-    string ReferenceLabel,
-    string RawBytes);
-
-/// <summary>One compiled-script (SCDA) block on a target-related record, comparing SCHR-declared sizes against the walk.</summary>
-public sealed record EsmScriptDiagnosticBlockRow(
-    string Target,
-    string Relation,
-    string RecordType,
-    uint FormId,
-    string EditorId,
-    int BlockIndex,
-    string SubrecordOrder,
-    string OrderStatus,
-    int ScdaLength,
-    uint? SchrCompiledSize,
-    uint? SchrReferenceCount,
-    int ActualReferenceSlots,
-    bool CompiledSizeMatches,
-    bool RefCountMatches,
-    bool WalkedToEnd,
-    bool HasDiagnostics,
-    string Diagnostics,
-    string SourceTextPreview);
-
-/// <summary>One reference slot inside a compiled-script block, with its raw value and FormID-resolution status.</summary>
-public sealed record EsmScriptDiagnosticReferenceRow(
-    string Target,
-    string ParentRecordType,
-    uint ParentFormId,
-    int BlockIndex,
-    int SlotIndex,
-    string ReferenceKind,
-    uint RawValue,
-    uint ResolvedFormId,
-    string Status,
-    string ResolvedRecordType,
-    string ResolvedEditorId,
-    string ResolvedFullName);
 
 /// <summary>Gathers script, dialogue, condition, and reference diagnostics for a set of target records in an ESM/ESP.</summary>
 public static class EsmScriptDiagnosticsAnalyzer
@@ -342,7 +213,8 @@ public static class EsmScriptDiagnosticsAnalyzer
                 continue;
             }
 
-            ExtractScriptBlocks(recordRow, record, index, validFormIds, scriptBlocks, scriptRefs);
+            EsmScriptBlockRowBuilder.ExtractScriptBlocks(recordRow, record, index, validFormIds, scriptBlocks,
+                scriptRefs);
         }
 
         return new EsmScriptDiagnosticsResult(
@@ -376,24 +248,25 @@ public static class EsmScriptDiagnosticsAnalyzer
     public static void WriteReport(EsmScriptDiagnosticsResult result, string outputDirectory)
     {
         Directory.CreateDirectory(outputDirectory);
-        File.WriteAllText(Path.Combine(outputDirectory, "target_matches.csv"), BuildTargetMatchesCsv(result),
-            Encoding.UTF8);
-        File.WriteAllText(Path.Combine(outputDirectory, "target_records.csv"), BuildRecordsCsv(result),
-            Encoding.UTF8);
-        File.WriteAllText(Path.Combine(outputDirectory, "target_dialogue.csv"), BuildDialogueCsv(result),
-            Encoding.UTF8);
+        File.WriteAllText(Path.Combine(outputDirectory, "target_matches.csv"),
+            EsmScriptDiagnosticsCsvWriter.BuildTargetMatchesCsv(result), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(outputDirectory, "target_records.csv"),
+            EsmScriptDiagnosticsCsvWriter.BuildRecordsCsv(result), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(outputDirectory, "target_dialogue.csv"),
+            EsmScriptDiagnosticsCsvWriter.BuildDialogueCsv(result), Encoding.UTF8);
         File.WriteAllText(Path.Combine(outputDirectory, "target_dialogue_audit.csv"),
-            BuildDialogueAuditCsv(result), Encoding.UTF8);
+            EsmScriptDiagnosticsCsvWriter.BuildDialogueAuditCsv(result), Encoding.UTF8);
         File.WriteAllText(Path.Combine(outputDirectory, "target_conditions.csv"),
-            BuildConditionsCsv(result), Encoding.UTF8);
-        File.WriteAllText(Path.Combine(outputDirectory, "target_result_scripts.csv"), BuildScriptBlocksCsv(result),
-            Encoding.UTF8);
-        File.WriteAllText(Path.Combine(outputDirectory, "target_scro_refs.csv"), BuildScriptReferencesCsv(result),
-            Encoding.UTF8);
-        File.WriteAllText(Path.Combine(outputDirectory, "summary.md"), BuildSummary(result), Encoding.UTF8);
+            EsmScriptDiagnosticsCsvWriter.BuildConditionsCsv(result), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(outputDirectory, "target_result_scripts.csv"),
+            EsmScriptDiagnosticsCsvWriter.BuildScriptBlocksCsv(result), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(outputDirectory, "target_scro_refs.csv"),
+            EsmScriptDiagnosticsCsvWriter.BuildScriptReferencesCsv(result), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(outputDirectory, "summary.md"),
+            EsmScriptDiagnosticsCsvWriter.BuildSummary(result), Encoding.UTF8);
     }
 
-    private static Dictionary<uint, FormIdInfo> BuildFormIdIndex(IReadOnlyList<ParsedMainRecord> records)
+    private static Dictionary<uint, EsmScriptFormIdInfo> BuildFormIdIndex(IReadOnlyList<ParsedMainRecord> records)
     {
         return records
             .GroupBy(r => r.Header.FormId)
@@ -402,7 +275,7 @@ public static class EsmScriptDiagnosticsAnalyzer
                 g =>
                 {
                     var record = g.First();
-                    return new FormIdInfo(
+                    return new EsmScriptFormIdInfo(
                         record.Header.FormId,
                         record.Header.Signature,
                         ReadFirstStringSubrecord(record, "EDID") ?? string.Empty,
@@ -413,7 +286,7 @@ public static class EsmScriptDiagnosticsAnalyzer
     private static List<TargetRecordMatch> FindTargetRecords(
         string target,
         IReadOnlyList<ParsedMainRecord> records,
-        IReadOnlyDictionary<uint, FormIdInfo> index)
+        Dictionary<uint, EsmScriptFormIdInfo> index)
     {
         if (TryParseFormId(target, out var targetFormId) &&
             index.TryGetValue(targetFormId, out var directInfo))
@@ -443,7 +316,7 @@ public static class EsmScriptDiagnosticsAnalyzer
     private static List<EsmScriptDiagnosticRecordRow> BuildRecordRows(
         Dictionary<(string Target, string RecordType, uint FormId), HashSet<string>> relations,
         Dictionary<uint, ParsedMainRecord> byFormId,
-        IReadOnlyDictionary<uint, FormIdInfo> index)
+        Dictionary<uint, EsmScriptFormIdInfo> index)
     {
         return relations
             .Select(kvp =>
@@ -468,7 +341,7 @@ public static class EsmScriptDiagnosticsAnalyzer
     private static List<EsmScriptDiagnosticDialogueRow> BuildDialogueRows(
         Dictionary<(string Target, string RecordType, uint FormId), HashSet<string>> relations,
         Dictionary<uint, ParsedMainRecord> byFormId,
-        IReadOnlyDictionary<uint, FormIdInfo> index)
+        IReadOnlyDictionary<uint, EsmScriptFormIdInfo> index)
     {
         var rows = new List<EsmScriptDiagnosticDialogueRow>();
         foreach (var ((target, recordType, formId), _) in relations)
@@ -624,7 +497,7 @@ public static class EsmScriptDiagnosticsAnalyzer
     private static List<EsmScriptConditionAuditRow> BuildConditionRows(
         IReadOnlyList<EsmScriptDiagnosticRecordRow> recordRows,
         Dictionary<uint, ParsedMainRecord> byFormId,
-        IReadOnlyDictionary<uint, FormIdInfo> index)
+        IReadOnlyDictionary<uint, EsmScriptFormIdInfo> index)
     {
         var results = new List<EsmScriptConditionAuditRow>();
         foreach (var recordRow in recordRows)
@@ -667,120 +540,6 @@ public static class EsmScriptDiagnosticsAnalyzer
             .ThenBy(r => r.FormId)
             .ThenBy(r => r.ConditionIndex)
             .ToList();
-    }
-
-    private static void ExtractScriptBlocks(
-        EsmScriptDiagnosticRecordRow recordRow,
-        ParsedMainRecord record,
-        IReadOnlyDictionary<uint, FormIdInfo> index,
-        IReadOnlySet<uint> validFormIds,
-        List<EsmScriptDiagnosticBlockRow> scriptBlocks,
-        List<EsmScriptDiagnosticReferenceRow> scriptReferences)
-    {
-        var blockIndex = 0;
-        var scdaSeen = new HashSet<int>();
-        var subs = record.Subrecords;
-
-        for (var i = 0; i < subs.Count; i++)
-        {
-            if (subs[i].Signature != "SCHR")
-            {
-                continue;
-            }
-
-            var end = FindScriptBlockEnd(subs, i + 1);
-            var scdaIndex = FindFirstSubrecord(subs, "SCDA", i + 1, end);
-            blockIndex++;
-            if (scdaIndex >= 0)
-            {
-                scdaSeen.Add(scdaIndex);
-            }
-
-            AddScriptBlockRows(recordRow, record, blockIndex, i, end, scdaIndex, index, validFormIds,
-                scriptBlocks, scriptReferences);
-        }
-
-        foreach (var (sub, indexInRecord) in subs.Select((sub, indexInRecord) => (sub, indexInRecord)))
-        {
-            if (sub.Signature != "SCDA" || scdaSeen.Contains(indexInRecord))
-            {
-                continue;
-            }
-
-            blockIndex++;
-            var end = FindScriptBlockEnd(subs, indexInRecord + 1);
-            AddScriptBlockRows(recordRow, record, blockIndex, -1, end, indexInRecord, index, validFormIds,
-                scriptBlocks, scriptReferences);
-        }
-    }
-
-    private static void AddScriptBlockRows(
-        EsmScriptDiagnosticRecordRow recordRow,
-        ParsedMainRecord record,
-        int blockIndex,
-        int schrIndex,
-        int blockEnd,
-        int scdaIndex,
-        IReadOnlyDictionary<uint, FormIdInfo> index,
-        IReadOnlySet<uint> validFormIds,
-        List<EsmScriptDiagnosticBlockRow> scriptBlocks,
-        List<EsmScriptDiagnosticReferenceRow> scriptReferences)
-    {
-        var subs = record.Subrecords;
-        var blockStart = schrIndex >= 0 ? schrIndex + 1 : scdaIndex + 1;
-        var header = schrIndex >= 0 ? TryReadScriptHeader(subs[schrIndex].Data) : default;
-        var variables = ReadScriptVariables(subs, blockStart, blockEnd);
-        var refs = ReadScriptReferences(subs, blockStart, blockEnd);
-        var scda = scdaIndex >= 0 ? subs[scdaIndex].Data : [];
-        var analysis = scda.Length > 0
-            ? ScriptBytecodeAnalyzer.Analyze(scda, false, variables,
-                refs.Select(r => r.Kind == "SCRV" ? 0x80000000u | r.RawValue : r.RawValue).ToList())
-            : new ScriptBytecodeAnalysis(0, false, true, 0, 0, false, string.Empty);
-
-        var compiledSizeMatches = !header.CompiledSize.HasValue || header.CompiledSize.Value == scda.Length;
-        var refCountMatches = !header.RefObjectCount.HasValue || header.RefObjectCount.Value == refs.Count;
-
-        scriptBlocks.Add(new EsmScriptDiagnosticBlockRow(
-            recordRow.Target,
-            recordRow.Relation,
-            record.Header.Signature,
-            record.Header.FormId,
-            recordRow.EditorId,
-            blockIndex,
-            BuildSubrecordOrder(subs, schrIndex, blockEnd),
-            ValidateScriptBlockOrder(subs, schrIndex, blockEnd, scdaIndex),
-            scda.Length,
-            header.CompiledSize,
-            header.RefObjectCount,
-            refs.Count,
-            compiledSizeMatches,
-            refCountMatches,
-            analysis.WalkedToEnd,
-            analysis.HasDiagnostics,
-            analysis.Diagnostics,
-            Truncate(ReadFirstStringSubrecord(subs, "SCTX", blockStart, blockEnd), 180)));
-
-        var slotIndex = 0;
-        foreach (var reference in refs)
-        {
-            slotIndex++;
-            var resolvedFormId = reference.Kind == "SCRV" ? 0 : reference.RawValue;
-            var status = ResolveReferenceStatus(reference, validFormIds);
-            index.TryGetValue(resolvedFormId, out var resolved);
-            scriptReferences.Add(new EsmScriptDiagnosticReferenceRow(
-                recordRow.Target,
-                record.Header.Signature,
-                record.Header.FormId,
-                blockIndex,
-                slotIndex,
-                reference.Kind,
-                reference.RawValue,
-                resolvedFormId,
-                status,
-                resolved?.RecordType ?? string.Empty,
-                resolved?.EditorId ?? string.Empty,
-                resolved?.FullName ?? string.Empty));
-        }
     }
 
     private static bool IsInfoRelatedToActor(ParsedMainRecord record, HashSet<uint> actorIds)
@@ -908,26 +667,9 @@ public static class EsmScriptDiagnosticsAnalyzer
         return record.Subrecords.FirstOrDefault(s => s.Signature == signature)?.DataAsString;
     }
 
-    private static string ReadFirstStringSubrecord(
-        List<ParsedSubrecord> subrecords,
-        string signature,
-        int start,
-        int end)
-    {
-        for (var i = start; i < end; i++)
-        {
-            if (subrecords[i].Signature == signature)
-            {
-                return subrecords[i].DataAsString;
-            }
-        }
-
-        return string.Empty;
-    }
-
     private static string BuildInterestingSubrecordSummary(
         ParsedMainRecord record,
-        IReadOnlyDictionary<uint, FormIdInfo> index)
+        IReadOnlyDictionary<uint, EsmScriptFormIdInfo> index)
     {
         var parts = new List<string>();
         foreach (var sub in record.Subrecords)
@@ -963,566 +705,11 @@ public static class EsmScriptDiagnosticsAnalyzer
         return string.Join("; ", parts.Take(24));
     }
 
-    private static List<ScriptVariableInfo> ReadScriptVariables(
-        List<ParsedSubrecord> subrecords,
-        int start,
-        int end)
-    {
-        var variables = new List<ScriptVariableInfo>();
-        uint? pendingIndex = null;
-        byte pendingType = 0;
-        for (var i = start; i < end; i++)
-        {
-            var sub = subrecords[i];
-            if (sub.Signature == "SLSD" && sub.Data.Length >= 4)
-            {
-                pendingIndex = BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(0, 4));
-                pendingType = sub.Data.Length > 16 && sub.Data[16] != 0 ? (byte)1 : (byte)0;
-            }
-            else if (sub.Signature == "SCVR" && pendingIndex.HasValue)
-            {
-                variables.Add(new ScriptVariableInfo(
-                    pendingIndex.Value,
-                    sub.DataAsString,
-                    pendingType));
-                pendingIndex = null;
-                pendingType = 0;
-            }
-        }
-
-        if (pendingIndex.HasValue)
-        {
-            variables.Add(new ScriptVariableInfo(pendingIndex.Value, null, pendingType));
-        }
-
-        return variables;
-    }
-
-    private static List<ScriptReferenceSlot> ReadScriptReferences(
-        List<ParsedSubrecord> subrecords,
-        int start,
-        int end)
-    {
-        var references = new List<ScriptReferenceSlot>();
-        for (var i = start; i < end; i++)
-        {
-            var sub = subrecords[i];
-            if (sub.Data.Length < 4)
-            {
-                continue;
-            }
-
-            if (sub.Signature == "SCRO")
-            {
-                references.Add(new ScriptReferenceSlot("SCRO", BinaryPrimitives.ReadUInt32LittleEndian(sub.Data)));
-            }
-            else if (sub.Signature == "SCRV")
-            {
-                references.Add(new ScriptReferenceSlot("SCRV", BinaryPrimitives.ReadUInt32LittleEndian(sub.Data)));
-            }
-        }
-
-        return references;
-    }
-
-    private static (uint? VariableCount, uint? RefObjectCount, uint? CompiledSize) TryReadScriptHeader(byte[]? data)
-    {
-        if (data is not { Length: >= 20 })
-        {
-            return (null, null, null);
-        }
-
-        return (
-            BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0, 4)),
-            BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4, 4)),
-            BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8, 4)));
-    }
-
-    private static int FindScriptBlockEnd(List<ParsedSubrecord> subrecords, int start)
-    {
-        for (var i = start; i < subrecords.Count; i++)
-        {
-            if (subrecords[i].Signature is "NEXT" or "SCHR" or "POBA" or "POEA" or "POCA")
-            {
-                return i;
-            }
-        }
-
-        return subrecords.Count;
-    }
-
-    private static int FindFirstSubrecord(
-        IReadOnlyList<ParsedSubrecord> subrecords,
-        string signature,
-        int start,
-        int end)
-    {
-        for (var i = start; i < end; i++)
-        {
-            if (subrecords[i].Signature == signature)
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private static string BuildSubrecordOrder(List<ParsedSubrecord> subrecords, int schrIndex, int end)
-    {
-        var start = schrIndex >= 0 ? schrIndex : Math.Max(0, end - 1);
-        var signatures = subrecords
-            .Skip(start)
-            .Take(Math.Max(0, end - start))
-            .Select(s => s.Signature)
-            .ToList();
-        if (end < subrecords.Count && subrecords[end].Signature == "NEXT")
-        {
-            signatures.Add("NEXT");
-        }
-
-        return string.Join('>', signatures);
-    }
-
-    private static string ValidateScriptBlockOrder(
-        IReadOnlyList<ParsedSubrecord> subrecords,
-        int schrIndex,
-        int blockEnd,
-        int scdaIndex)
-    {
-        if (schrIndex < 0)
-        {
-            return "implicit-scda-without-schr";
-        }
-
-        var sctxIndex = FindFirstSubrecord(subrecords, "SCTX", schrIndex + 1, blockEnd);
-        var firstRefIndex = FindFirstReferenceSubrecord(subrecords, schrIndex + 1, blockEnd);
-
-        if (scdaIndex >= 0 && sctxIndex >= 0 && sctxIndex < scdaIndex)
-        {
-            return "sctx-before-scda";
-        }
-
-        if (firstRefIndex >= 0 && scdaIndex >= 0 && firstRefIndex < scdaIndex)
-        {
-            return "reference-before-scda";
-        }
-
-        if (firstRefIndex >= 0 && sctxIndex >= 0 && firstRefIndex < sctxIndex)
-        {
-            return "reference-before-sctx";
-        }
-
-        return "canonical";
-    }
-
-    private static int FindFirstReferenceSubrecord(IReadOnlyList<ParsedSubrecord> subrecords, int start, int end)
-    {
-        for (var i = start; i < end; i++)
-        {
-            if (subrecords[i].Signature is "SCRO" or "SCRV")
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private static string ResolveReferenceStatus(ScriptReferenceSlot reference, IReadOnlySet<uint> validFormIds)
-    {
-        if (reference.Kind == "SCRV")
-        {
-            return "Variable";
-        }
-
-        if (reference.RawValue == 0)
-        {
-            return "Null";
-        }
-
-        return validFormIds.Contains(reference.RawValue) ? "Resolved" : "Missing";
-    }
-
     private static string FormatInfoFlags(ParsedMainRecord info)
     {
         var data = info.Subrecords.FirstOrDefault(s => s.Signature == "DATA" && s.Data.Length >= 4)?.Data;
         return data is null ? string.Empty : $"0x{data[2]:X2}/0x{data[3]:X2}";
     }
 
-    private static string ResolveLabel(IReadOnlyDictionary<uint, FormIdInfo> index, uint formId)
-    {
-        if (formId == 0 || !index.TryGetValue(formId, out var info))
-        {
-            return string.Empty;
-        }
-
-        if (!string.IsNullOrWhiteSpace(info.EditorId))
-        {
-            return info.EditorId;
-        }
-
-        return !string.IsNullOrWhiteSpace(info.FullName) ? info.FullName : info.RecordType;
-    }
-
-    private static string ResolveLabelSuffix(IReadOnlyDictionary<uint, FormIdInfo> index, uint formId)
-    {
-        var label = ResolveLabel(index, formId);
-        return string.IsNullOrWhiteSpace(label) ? string.Empty : $" ({label})";
-    }
-
-    private static bool LabelMatches(FormIdInfo? info, string target)
-    {
-        if (info is null)
-        {
-            return false;
-        }
-
-        if (ContainsIgnoreCase(info.EditorId, target) || ContainsIgnoreCase(info.FullName, target))
-        {
-            return true;
-        }
-
-        var normalizedTarget = NormalizeSearchText(target);
-        return normalizedTarget.Length > 0 &&
-               (NormalizeSearchText(info.EditorId).Contains(normalizedTarget, StringComparison.OrdinalIgnoreCase) ||
-                NormalizeSearchText(info.FullName).Contains(normalizedTarget, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool ContainsIgnoreCase(string? value, string target)
-    {
-        return !string.IsNullOrWhiteSpace(value) &&
-               value.Contains(target, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeSearchText(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        Span<char> buffer = value.Length <= 256 ? stackalloc char[value.Length] : new char[value.Length];
-        var index = 0;
-        foreach (var ch in value)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                buffer[index++] = char.ToLowerInvariant(ch);
-            }
-        }
-
-        return new string(buffer[..index]);
-    }
-
-    private static bool TryParseFormId(string value, out uint formId)
-    {
-        var text = value.Trim();
-        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text[2..];
-        }
-
-        return uint.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out formId);
-    }
-
-    private static string FormatFormIds(IEnumerable<uint> formIds)
-    {
-        return string.Join(' ', formIds.Where(id => id != 0).Select(id => $"0x{id:X8}"));
-    }
-
-    private static List<uint> ParseFormIds(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return [];
-        }
-
-        var result = new List<uint>();
-        foreach (var token in text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var value = token.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                ? token[2..]
-                : token;
-            if (uint.TryParse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var formId))
-            {
-                result.Add(formId);
-            }
-        }
-
-        return result;
-    }
-
-    private static string FormatRawSubrecordBytes(ParsedMainRecord record, string signature)
-    {
-        return string.Join(' ', record.Subrecords
-            .Where(s => s.Signature == signature)
-            .Select(s => Convert.ToHexString(s.Data)));
-    }
-
-    private static string ResolveConditionFunctionName(ushort conditionFunctionIndex)
-    {
-        var name = PerkConditionParameterResolver.ResolveScriptFunctionName(conditionFunctionIndex);
-        return string.IsNullOrWhiteSpace(name)
-            ? $"Func0x{conditionFunctionIndex:X4}"
-            : name;
-    }
-
-    private static string ResolveParameterLabel(
-        IReadOnlyDictionary<uint, FormIdInfo> index,
-        ushort functionIndex,
-        int parameterIndex,
-        uint rawValue)
-    {
-        var resolved = PerkConditionParameterResolver.ResolveParameter(functionIndex, parameterIndex, rawValue);
-        if (!string.IsNullOrWhiteSpace(resolved.Display))
-        {
-            return resolved.Display;
-        }
-
-        if (resolved.FormId.HasValue)
-        {
-            return ResolveLabel(index, resolved.FormId.Value);
-        }
-
-        return ResolveLabel(index, rawValue);
-    }
-
-    private static string Truncate(string? value, int maxLength)
-    {
-        if (string.IsNullOrEmpty(value) || value.Length <= maxLength)
-        {
-            return value ?? string.Empty;
-        }
-
-        return value[..Math.Max(0, maxLength - 3)] + "...";
-    }
-
-    private static string BuildTargetMatchesCsv(EsmScriptDiagnosticsResult result)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("target,record_type,form_id,editor_id,full_name,match_reason");
-        foreach (var row in result.TargetMatches)
-        {
-            sb.AppendLine(string.Join(',',
-                Csv(row.Target),
-                Csv(row.RecordType),
-                Csv($"0x{row.FormId:X8}"),
-                Csv(row.EditorId),
-                Csv(row.FullName),
-                Csv(row.MatchReason)));
-        }
-
-        return sb.ToString();
-    }
-
-    private static string BuildRecordsCsv(EsmScriptDiagnosticsResult result)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("target,relation,record_type,form_id,editor_id,full_name,interesting_subrecords");
-        foreach (var row in result.Records)
-        {
-            sb.AppendLine(string.Join(',',
-                Csv(row.Target),
-                Csv(row.Relation),
-                Csv(row.RecordType),
-                Csv($"0x{row.FormId:X8}"),
-                Csv(row.EditorId),
-                Csv(row.FullName),
-                Csv(row.InterestingSubrecords)));
-        }
-
-        return sb.ToString();
-    }
-
-    private static string BuildDialogueCsv(EsmScriptDiagnosticsResult result)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine(
-            "target,info_form_id,info_editor_id,topic_form_id,topic_label,quest_form_id,speaker_form_id,previous_info,link_to_topics,link_from_topics,add_topics,follow_up_infos,info_flags,response_count,has_result_script,response_preview");
-        foreach (var row in result.Dialogue)
-        {
-            sb.AppendLine(string.Join(',',
-                Csv(row.Target),
-                Csv($"0x{row.InfoFormId:X8}"),
-                Csv(row.InfoEditorId),
-                Csv(row.TopicFormId == 0 ? string.Empty : $"0x{row.TopicFormId:X8}"),
-                Csv(row.TopicLabel),
-                Csv(row.QuestFormId == 0 ? string.Empty : $"0x{row.QuestFormId:X8}"),
-                Csv(row.SpeakerFormId == 0 ? string.Empty : $"0x{row.SpeakerFormId:X8}"),
-                Csv(row.PreviousInfo == 0 ? string.Empty : $"0x{row.PreviousInfo:X8}"),
-                Csv(row.LinkToTopics),
-                Csv(row.LinkFromTopics),
-                Csv(row.AddTopics),
-                Csv(row.FollowUpInfos),
-                Csv(row.InfoFlags),
-                row.ResponseCount,
-                row.HasResultScript,
-                Csv(row.ResponsePreview)));
-        }
-
-        return sb.ToString();
-    }
-
-    private static string BuildDialogueAuditCsv(EsmScriptDiagnosticsResult result)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine(
-            "target,info_form_id,topic_form_id,topic_label,quest_form_id,speaker_form_id,root_classification,has_incoming_topic_edge,has_explicit_root_link,is_terminal_return_candidate,has_goodbye_for_speaker_quest,raw_tclt_bytes,link_to_topics,follow_up_infos,response_preview");
-        foreach (var row in result.DialogueAudit)
-        {
-            sb.AppendLine(string.Join(',',
-                Csv(row.Target),
-                Csv($"0x{row.InfoFormId:X8}"),
-                Csv(row.TopicFormId == 0 ? string.Empty : $"0x{row.TopicFormId:X8}"),
-                Csv(row.TopicLabel),
-                Csv(row.QuestFormId == 0 ? string.Empty : $"0x{row.QuestFormId:X8}"),
-                Csv(row.SpeakerFormId == 0 ? string.Empty : $"0x{row.SpeakerFormId:X8}"),
-                Csv(row.RootClassification),
-                row.HasIncomingTopicEdge,
-                row.HasExplicitRootLink,
-                row.IsTerminalReturnCandidate,
-                row.HasGoodbyeForSpeakerQuest,
-                Csv(row.RawTcltBytes),
-                Csv(row.LinkToTopics),
-                Csv(row.FollowUpInfos),
-                Csv(row.ResponsePreview)));
-        }
-
-        return sb.ToString();
-    }
-
-    private static string BuildConditionsCsv(EsmScriptDiagnosticsResult result)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine(
-            "target,relation,record_type,form_id,editor_id,condition_index,function_name,function_index,type,comparison_value,parameter1,parameter1_label,parameter2,parameter2_label,run_on,reference,reference_label,raw_bytes");
-        foreach (var row in result.Conditions)
-        {
-            sb.AppendLine(string.Join(',',
-                Csv(row.Target),
-                Csv(row.Relation),
-                Csv(row.RecordType),
-                Csv($"0x{row.FormId:X8}"),
-                Csv(row.EditorId),
-                row.ConditionIndex,
-                Csv(row.FunctionName),
-                Csv($"0x{row.FunctionIndex:X4}"),
-                row.Type,
-                row.ComparisonValue.ToString(CultureInfo.InvariantCulture),
-                Csv($"0x{row.Parameter1:X8}"),
-                Csv(row.Parameter1Label),
-                Csv($"0x{row.Parameter2:X8}"),
-                Csv(row.Parameter2Label),
-                row.RunOn,
-                Csv(row.Reference == 0 ? string.Empty : $"0x{row.Reference:X8}"),
-                Csv(row.ReferenceLabel),
-                Csv(row.RawBytes)));
-        }
-
-        return sb.ToString();
-    }
-
-    private static string BuildScriptBlocksCsv(EsmScriptDiagnosticsResult result)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine(
-            "target,relation,record_type,form_id,editor_id,block_index,subrecord_order,order_status,scda_length,schr_compiled_size,schr_reference_count,actual_reference_slots,compiled_size_matches,ref_count_matches,walked_to_end,has_diagnostics,diagnostics,source_text_preview");
-        foreach (var row in result.ScriptBlocks)
-        {
-            sb.AppendLine(string.Join(',',
-                Csv(row.Target),
-                Csv(row.Relation),
-                Csv(row.RecordType),
-                Csv($"0x{row.FormId:X8}"),
-                Csv(row.EditorId),
-                row.BlockIndex,
-                Csv(row.SubrecordOrder),
-                Csv(row.OrderStatus),
-                row.ScdaLength,
-                row.SchrCompiledSize?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-                row.SchrReferenceCount?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-                row.ActualReferenceSlots,
-                row.CompiledSizeMatches,
-                row.RefCountMatches,
-                row.WalkedToEnd,
-                row.HasDiagnostics,
-                Csv(row.Diagnostics),
-                Csv(row.SourceTextPreview)));
-        }
-
-        return sb.ToString();
-    }
-
-    private static string BuildScriptReferencesCsv(EsmScriptDiagnosticsResult result)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine(
-            "target,parent_record_type,parent_form_id,block_index,slot_index,reference_kind,raw_value,resolved_form_id,status,resolved_record_type,resolved_editor_id,resolved_full_name");
-        foreach (var row in result.ScriptReferences)
-        {
-            sb.AppendLine(string.Join(',',
-                Csv(row.Target),
-                Csv(row.ParentRecordType),
-                Csv($"0x{row.ParentFormId:X8}"),
-                row.BlockIndex,
-                row.SlotIndex,
-                Csv(row.ReferenceKind),
-                Csv($"0x{row.RawValue:X8}"),
-                Csv(row.ResolvedFormId == 0 ? string.Empty : $"0x{row.ResolvedFormId:X8}"),
-                Csv(row.Status),
-                Csv(row.ResolvedRecordType),
-                Csv(row.ResolvedEditorId),
-                Csv(row.ResolvedFullName)));
-        }
-
-        return sb.ToString();
-    }
-
-    private static string BuildSummary(EsmScriptDiagnosticsResult result)
-    {
-        var missingRefs = result.ScriptReferences.Count(r => r.Status is "Null" or "Missing");
-        var structuralFailures = result.ScriptBlocks.Count(r =>
-            !r.CompiledSizeMatches || !r.RefCountMatches || !r.WalkedToEnd || r.HasDiagnostics);
-        var nonCanonical = result.ScriptBlocks.Count(r => r.OrderStatus != "canonical");
-
-        var sb = new StringBuilder();
-        sb.AppendLine($"# Script Diagnostics: {Path.GetFileName(result.SourcePath)}");
-        sb.AppendLine();
-        sb.AppendLine($"- Targets: {string.Join(", ", result.Targets)}");
-        sb.AppendLine($"- Target matches: {result.TargetMatches.Count:N0}");
-        sb.AppendLine($"- Related records: {result.Records.Count:N0}");
-        sb.AppendLine($"- Related INFO rows: {result.Dialogue.Count:N0}");
-        sb.AppendLine($"- Script blocks: {result.ScriptBlocks.Count:N0}");
-        sb.AppendLine($"- Script structural failures: {structuralFailures:N0}");
-        sb.AppendLine($"- Non-canonical script block order: {nonCanonical:N0}");
-        sb.AppendLine($"- Null/missing SCRO refs: {missingRefs:N0}");
-
-        if (result.ScriptBlocks.Count > 0 && structuralFailures == 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine(
-                "Target SCDA bytecode walks cleanly; prioritize SCRO remap/content, package state, and result-script attachment/order.");
-        }
-
-        return sb.ToString();
-    }
-
-    private static string Csv(object? value)
-    {
-        var text = value?.ToString() ?? string.Empty;
-        return text.Contains('"') || text.Contains(',') || text.Contains('\n') || text.Contains('\r')
-            ? $"\"{text.Replace("\"", "\"\"")}\""
-            : text;
-    }
-
-    private sealed record FormIdInfo(
-        uint FormId,
-        string RecordType,
-        string EditorId,
-        string FullName);
-
-    private sealed record TargetRecordMatch(FormIdInfo Info, string Reason);
-
-    private sealed record ScriptReferenceSlot(string Kind, uint RawValue);
+    private sealed record TargetRecordMatch(EsmScriptFormIdInfo Info, string Reason);
 }
