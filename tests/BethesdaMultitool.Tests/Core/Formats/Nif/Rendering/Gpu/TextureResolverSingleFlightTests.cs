@@ -33,8 +33,8 @@ public sealed class TextureResolverSingleFlightTests
             .ToArray();
 
         start.Set();
-        Assert.True(loadStarted.Wait(TimeSpan.FromSeconds(5)));
-        await Task.Delay(100);
+        Assert.True(loadStarted.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        await Task.Delay(100, TestContext.Current.CancellationToken);
         releaseLoad.Set();
 
         var results = await Task.WhenAll(tasks);
@@ -103,8 +103,8 @@ public sealed class TextureResolverSingleFlightTests
             .ToArray();
 
         start.Set();
-        Assert.True(loadStarted.Wait(TimeSpan.FromSeconds(5)));
-        await Task.Delay(100);
+        Assert.True(loadStarted.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        await Task.Delay(100, TestContext.Current.CancellationToken);
         releaseLoad.Set();
 
         var results = await Task.WhenAll(tasks);

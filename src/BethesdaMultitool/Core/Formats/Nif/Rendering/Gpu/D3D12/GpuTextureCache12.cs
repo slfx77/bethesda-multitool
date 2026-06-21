@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using Vortice.Direct3D12;
-using Vortice.DXGI;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Orchestration;
@@ -58,6 +57,9 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     private readonly NifGpuTextureResolver? _resolver;
     private readonly GpuDeletionQueue12? _deletionQueue;
     private readonly GpuDescriptorHeapAllocator12 _heap;
+    // Frame-independent fallback/placeholder texture creation (1×1 solids + cold-miss placeholders).
+    // Deliberately kept OUT of the async copy-queue upload pipeline — it only needs the device + heap.
+    private readonly GpuSolidTextureFactory12 _solidTextureFactory;
     private readonly Dictionary<string, TextureUploadNode> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<TextureUploadNode> _pendingDispatch = new();
     private readonly BoundedResolveQueue<string, GpuTexturePayload> _resolveQueue;
@@ -94,6 +96,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         _heap = heap;
         _resolver = resolver;
         _deletionQueue = deletionQueue;
+        _solidTextureFactory = new GpuSolidTextureFactory12(gpu, heap);
         // Resolve DDS/DDX payloads off the render thread. Keep the default conservative because
         // DDX conversion and DDS parsing allocate enough to cause visible UI/render pauses when
         // too many complete in the same window.
@@ -133,10 +136,10 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     }
 
     /// <summary>1x1 opaque white texture used as the fallback diffuse.</summary>
-    public Entry WhitePixel => _whitePixel ??= CreateSolid(255, 255, 255, 255);
+    public Entry WhitePixel => _whitePixel ??= _solidTextureFactory.CreateSolid(255, 255, 255, 255);
 
     /// <summary>1x1 flat normal map used as the fallback normal.</summary>
-    public Entry FlatNormal => _flatNormal ??= CreateSolid(128, 128, 255, 255);
+    public Entry FlatNormal => _flatNormal ??= _solidTextureFactory.CreateSolid(128, 128, 255, 255);
 
     /// <summary>
     ///     1×1 translucent water-blue tile used as the diffuse for placed water-shader geometry
@@ -145,7 +148,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     ///     the opaque-white fallback. RGB ≈ (0.15, 0.32, 0.42); combined with forced alpha-blend it
     ///     reads as a translucent water plane.
     /// </summary>
-    public Entry WaterSurface => _waterSurface ??= CreateSolid(38, 82, 107, 255);
+    public Entry WaterSurface => _waterSurface ??= _solidTextureFactory.CreateSolid(38, 82, 107, 255);
 
     public int MaxUploadsPerFrame { get; init; } = DefaultMaxUploadsPerFrame;
 
@@ -224,7 +227,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         // on a background thread. The streamed GPU upload later overwrites this Entry's persistent
         // descriptor slot in place, so callers that cached the Entry upgrade from placeholder →
         // textured transparently (BindlessIndex is stable).
-        var entry = CreatePlaceholderEntry(fallback, cacheKey);
+        var entry = _solidTextureFactory.CreatePlaceholder(fallback, cacheKey);
         entry.RefCount = 1; // acquire (first reference).
         node = new TextureUploadNode(cacheKey, entry);
         _cache[cacheKey] = node;
@@ -569,7 +572,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                 throw new InvalidOperationException("Degenerate texture payload.");
             }
 
-            var dxgiFormat = ToDxgiFormat(payload.Format);
+            var dxgiFormat = GpuTextureFormatHelpers12.ToDxgiFormat(payload.Format);
             var desc = ResourceDescription.Texture2D(
                 dxgiFormat, width, height,
                 arraySize: 1, mipLevels: mipCount,
@@ -613,8 +616,8 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                         continue;
                     }
 
-                    var srcRowPitch = GetSourceRowPitch(payload, level);
-                    var sourceRows = GetSourceRowCount(payload, level);
+                    var srcRowPitch = GpuTextureFormatHelpers12.GetSourceRowPitch(payload, level);
+                    var sourceRows = GpuTextureFormatHelpers12.GetSourceRowCount(payload, level);
                     var dstRowPitch = footprints[mip].Footprint.RowPitch;
                     var dstBase = (byte*)cpuPtr + (long)footprints[mip].Offset;
                     fixed (byte* src = level.Bytes)
@@ -652,7 +655,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                 },
                 new IDisposable[] { stagingResource });
 
-            var srvDesc = MakeSrvDesc(mipCount, dxgiFormat);
+            var srvDesc = GpuTextureFormatHelpers12.MakeSrvDesc(mipCount, dxgiFormat);
             _completedUploads.Enqueue(new CompletedUpload(
                 cacheKey, texture, srvDesc, payload.Format, payload.NormalDecodeMode,
                 payload.ByteSize, payload.IsCompressed, copyFenceValue));
@@ -702,145 +705,6 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         }
     }
 
-    private Entry CreateSolid(byte r, byte g, byte b, byte a)
-    {
-        var desc = ResourceDescription.Texture2D(
-            Format.R8G8B8A8_UNorm, 1, 1,
-            arraySize: 1, mipLevels: 1,
-            sampleCount: 1, sampleQuality: 0,
-            ResourceFlags.None);
-
-        ID3D12Resource? texture = null;
-        ID3D12Resource? staging = null;
-        try
-        {
-            texture = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
-                HeapProperties.DefaultHeapProperties,
-                HeapFlags.None,
-                desc,
-                ResourceStates.CopyDest,
-                optimizedClearValue: null);
-
-            var footprints = new PlacedSubresourceFootPrint[1];
-            var numRows = new uint[1];
-            var rowSize = new ulong[1];
-            _gpu.Device.GetCopyableFootprints(
-                desc, 0, 1, 0,
-                footprints, numRows, rowSize, out var totalBytes);
-
-            staging = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
-                HeapProperties.UploadHeapProperties,
-                HeapFlags.None,
-                ResourceDescription.Buffer(totalBytes),
-                ResourceStates.GenericRead,
-                optimizedClearValue: null);
-
-            void* cpuPtr = null;
-            staging.Map(0, &cpuPtr).CheckError();
-            try
-            {
-                var p = (byte*)cpuPtr + (long)footprints[0].Offset;
-                p[0] = r;
-                p[1] = g;
-                p[2] = b;
-                p[3] = a;
-            }
-            finally
-            {
-                staging.Unmap(0, null);
-            }
-
-            // The two 1×1 fallback textures (WhitePixel/FlatNormal) are created lazily — the first
-            // time any resolve needs a placeholder, which happens during pipeline init / LoadData,
-            // BEFORE the first GpuCommandRecorder12.BeginFrame. The shared per-frame command list is
-            // CLOSED outside BeginFrame/EndFrame, and recording into a closed D3D12 list is undefined
-            // behavior (the "CommandListClosed" validation error → command-allocator corruption →
-            // process-wide heap corruption / silent ExecutionEngineException). So submit this one-time
-            // copy on a self-contained one-shot direct list that does not depend on a frame being open.
-            var textureResource = texture;
-            var stagingResource = staging;
-            ExecuteOneShotDirect(cmd =>
-            {
-                cmd.CopyTextureRegion(
-                    new TextureCopyLocation(textureResource, 0), 0, 0, 0,
-                    new TextureCopyLocation(stagingResource, footprints[0]));
-                cmd.ResourceBarrierTransition(
-                    textureResource, ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
-            });
-            // ExecuteOneShotDirect blocks until the GPU finishes the copy, so the staging buffer is
-            // safe to free immediately (no frame-deferred disposal needed).
-            staging.Dispose();
-            staging = null;
-
-            var entry = CreateEntry(
-                texture,
-                MakeSrvDesc(1, Format.R8G8B8A8_UNorm),
-                GpuTexturePayloadFormat.Rgba8,
-                GpuNormalDecodeMode.None,
-                isResident: true,
-                cacheKey: null); // shared fallback singleton — pinned, never refcounted/evicted.
-            texture = null;
-            return entry;
-        }
-        finally
-        {
-            // On the success path both are already null (ownership transferred). On a failure path the
-            // one-shot submit either never ran or was awaited to completion, so direct disposal is safe.
-            staging?.Dispose();
-            texture?.Dispose();
-        }
-    }
-
-    /// <summary>
-    ///     Records + submits a one-shot <see cref="CommandListType.Direct" /> command list and blocks
-    ///     until the GPU completes it. Used only for the two rare, frame-independent fallback-texture
-    ///     uploads (<see cref="WhitePixel" /> / <see cref="FlatNormal" />), which are created lazily the
-    ///     first time a resolve needs a placeholder — typically during pipeline init, BEFORE the first
-    ///     <see cref="GpuCommandRecorder12.BeginFrame" />. They must NOT record into the shared per-frame
-    ///     recorder list: that list is closed outside BeginFrame/EndFrame, and recording into a closed
-    ///     list is undefined behavior. A self-contained allocator/list/fence is frame-independent, and
-    ///     <see cref="ID3D12CommandQueue" /> submit + signal are free-threaded, so this is safe from any
-    ///     thread at any time. Called at most twice per cache (once per fallback), so the per-call
-    ///     allocation + blocking wait is negligible.
-    /// </summary>
-    private void ExecuteOneShotDirect(Action<ID3D12GraphicsCommandList> record)
-    {
-        using var allocator = _gpu.Device.CreateCommandAllocator<ID3D12CommandAllocator>(CommandListType.Direct);
-        using var list = _gpu.Device.CreateCommandList<ID3D12GraphicsCommandList>(
-            nodeMask: 0, CommandListType.Direct, allocator, initialState: null);
-        record(list);
-        list.Close();
-
-        _gpu.DirectQueue.ExecuteCommandList(list);
-
-        using var fence = _gpu.Device.CreateFence(0, FenceFlags.None);
-        using var fenceEvent = new AutoResetEvent(false);
-        _gpu.DirectQueue.Signal(fence, 1).CheckError();
-        D3D12FenceWaiter.WaitForFence(fence, 1, fenceEvent);
-    }
-
-    private Entry CreatePlaceholderEntry(Entry fallback, string cacheKey) =>
-        CreateEntry(
-            fallback.Texture,
-            fallback.SrvDesc,
-            fallback.Format,
-            fallback.NormalDecodeMode,
-            isResident: false,
-            cacheKey: cacheKey);
-
-    private Entry CreateEntry(
-        ID3D12Resource texture,
-        ShaderResourceViewDescription srvDesc,
-        GpuTexturePayloadFormat format,
-        GpuNormalDecodeMode normalDecodeMode,
-        bool isResident,
-        string? cacheKey)
-    {
-        var alloc = _heap.AllocatePersistent();
-        _gpu.Device.CreateShaderResourceView(texture, srvDesc, alloc.Cpu);
-        return new Entry(texture, srvDesc, alloc.Cpu, alloc.BindlessIndex, format, normalDecodeMode, isResident, cacheKey);
-    }
-
     private void DisposeResource(ID3D12Resource resource)
     {
         if (_deletionQueue is not null)
@@ -851,53 +715,6 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         {
             resource.Dispose();
         }
-    }
-
-    private static ShaderResourceViewDescription MakeSrvDesc(ushort mipCount, Format format)
-    {
-        return new ShaderResourceViewDescription
-        {
-            Format = format,
-            ViewDimension = ShaderResourceViewDimension.Texture2D,
-            Shader4ComponentMapping = ShaderComponentMapping.Default,
-            Texture2D = new Texture2DShaderResourceView
-            {
-                MipLevels = mipCount,
-                MostDetailedMip = 0,
-            }
-        };
-    }
-
-    private static Format ToDxgiFormat(GpuTexturePayloadFormat format) => format switch
-    {
-        GpuTexturePayloadFormat.Rgba8 => Format.R8G8B8A8_UNorm,
-        GpuTexturePayloadFormat.BC1 => Format.BC1_UNorm,
-        GpuTexturePayloadFormat.BC2 => Format.BC2_UNorm,
-        GpuTexturePayloadFormat.BC3 => Format.BC3_UNorm,
-        GpuTexturePayloadFormat.BC4 => Format.BC4_UNorm,
-        GpuTexturePayloadFormat.BC5 => Format.BC5_UNorm,
-        _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
-    };
-
-    private static uint GetSourceRowPitch(GpuTexturePayload payload, GpuTextureMipPayload level)
-    {
-        if (!payload.IsCompressed)
-        {
-            return (uint)level.Width * 4u;
-        }
-
-        var blocksWide = Math.Max(1, (level.Width + 3) / 4);
-        return (uint)(blocksWide * payload.BytesPerBlock);
-    }
-
-    private static uint GetSourceRowCount(GpuTexturePayload payload, GpuTextureMipPayload level)
-    {
-        if (!payload.IsCompressed)
-        {
-            return (uint)level.Height;
-        }
-
-        return (uint)Math.Max(1, (level.Height + 3) / 4);
     }
 
     private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)

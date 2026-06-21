@@ -32,7 +32,6 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     internal const Format DepthFormat = Format.D32_Float;
 
     private readonly GpuDevice12 _gpu;
-    private readonly int _sampleCount;
     private readonly ID3D12Resource _colorTex;
     private readonly ID3D12Resource _depthTex;
     // Single-sample resolve target (null when not MSAA): the MSAA color is resolved into this, which
@@ -57,16 +56,16 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     public GpuOffscreenSceneTarget12(GpuDevice12 gpu, int width, int height)
     {
         _gpu = gpu;
-        _sampleCount = gpu.SceneSampleCount;
+        var sampleCount = gpu.SceneSampleCount;
         Width = width;
         Height = height;
         var device = gpu.Device;
-        var msaa = _sampleCount > 1;
+        var msaa = sampleCount > 1;
 
         _colorTex = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None,
             ResourceDescription.Texture2D(ColorFormat, (uint)width, (uint)height,
-                arraySize: 1, mipLevels: 1, sampleCount: (uint)_sampleCount, sampleQuality: 0,
+                arraySize: 1, mipLevels: 1, sampleCount: (uint)sampleCount, sampleQuality: 0,
                 ResourceFlags.AllowRenderTarget),
             ResourceStates.RenderTarget,
             new ClearValue(ColorFormat, new Color4(0f, 0f, 0f, 0f)));
@@ -74,7 +73,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         _depthTex = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None,
             ResourceDescription.Texture2D(DepthFormat, (uint)width, (uint)height,
-                arraySize: 1, mipLevels: 1, sampleCount: (uint)_sampleCount, sampleQuality: 0,
+                arraySize: 1, mipLevels: 1, sampleCount: (uint)sampleCount, sampleQuality: 0,
                 ResourceFlags.AllowDepthStencil),
             ResourceStates.DepthWrite,
             new ClearValue(DepthFormat, new DepthStencilValue(0.0f, 0))); // reversed-Z: far value = 0
