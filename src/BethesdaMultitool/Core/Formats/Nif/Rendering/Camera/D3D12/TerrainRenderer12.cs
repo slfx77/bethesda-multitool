@@ -3,23 +3,19 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Numerics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.Core.Resources;
-using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
-using D12 = Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 
@@ -39,7 +35,6 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private const uint PerFrameByteSize = 64;     // float4x4 viewProj
     private const uint PerDrawByteSize = 64;      // uint4[4] = 16 terrain texture bindless indices
     private const uint PerModeByteSize = 16;      // float4 (debugMode.x, uvScale, pad, pad)
-    private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
     // No per-frame COUNT cap by default — the wall-clock time budget below is the pacer, so the
     // per-frame build cost is bounded by frame-TIME rather than a fixed cell count (a count cap
     // couples terrain load rate to FPS; time-budgeting keeps the per-frame cost FPS-independent).
@@ -168,73 +163,11 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         _deletionQueue = deletionQueue;
         _textureResolver = textureResolver;
 
-        var vsBytecode = CompileEmbeddedShader("terrain_textured.vert.hlsl", "main", "vs_5_1");
-        var psBytecode = CompileEmbeddedShader("terrain_textured.frag.hlsl", "main", "ps_5_1");
+        var vsBytecode = TerrainPipelineFactory12.CompileEmbeddedShader("terrain_textured.vert.hlsl", "main", "vs_5_1");
+        var psBytecode = TerrainPipelineFactory12.CompileEmbeddedShader("terrain_textured.frag.hlsl", "main", "ps_5_1");
 
-        var rasterizer = new D12.RasterizerDescription
-        {
-            FillMode = D12.FillMode.Solid,
-            CullMode = D12.CullMode.Back,
-            FrontCounterClockwise = true,
-            DepthClipEnable = true,
-            // Required for triangle edges to be antialiased on a multisampled RT: with this FALSE,
-            // primitives render aliased even into an MSAA target. No-op when the scene isn't MSAA.
-            MultisampleEnable = gpu.SceneSampleCount > 1,
-        };
-
-        var depth = new D12.DepthStencilDescription
-        {
-            DepthEnable = true,
-            DepthWriteMask = D12.DepthWriteMask.All,
-            DepthFunc = ComparisonFunction.GreaterEqual, // reversed-Z (near→1, far→0); depth clear = 0
-            StencilEnable = false,
-        };
-
-        var blend = new D12.BlendDescription
-        {
-            AlphaToCoverageEnable = false,
-            IndependentBlendEnable = false,
-        };
-        blend.RenderTarget[0] = new D12.RenderTargetBlendDescription
-        {
-            BlendEnable = false,
-            RenderTargetWriteMask = D12.ColorWriteEnable.All,
-        };
-
-        var psoDesc = new GraphicsPipelineStateDescription
-        {
-            RootSignature = rootSignature.RootSignature,
-            VertexShader = vsBytecode,
-            PixelShader = psBytecode,
-            BlendState = blend,
-            RasterizerState = rasterizer,
-            DepthStencilState = depth,
-            InputLayout = new InputLayoutDescription(TerrainInputElements),
-            PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
-            RenderTargetFormats = new[] { Format.B8G8R8A8_UNorm },
-            DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
-            SampleMask = uint.MaxValue,
-        };
-        _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
-
-        // Depth-only PSO: same vertex path + depth state, but no pixel shader and no render
-        // targets, so it writes only the depth buffer. Used by the top-down overlay pre-pass.
-        var depthOnlyPsoDesc = new GraphicsPipelineStateDescription
-        {
-            RootSignature = rootSignature.RootSignature,
-            VertexShader = vsBytecode,
-            BlendState = blend,
-            RasterizerState = rasterizer,
-            DepthStencilState = depth,
-            InputLayout = new InputLayoutDescription(TerrainInputElements),
-            PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
-            RenderTargetFormats = Array.Empty<Format>(),
-            DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
-            SampleMask = uint.MaxValue,
-        };
-        _depthOnlyPso = gpu.Device.CreateGraphicsPipelineState(depthOnlyPsoDesc);
+        (_pso, _depthOnlyPso) = TerrainPipelineFactory12.BuildPipelineStates(
+            gpu, rootSignature, vsBytecode, psBytecode, TerrainInputElements);
 
         _sharedIndexData = TerrainMeshBuilder.BuildSharedIndexBufferData();
     }
@@ -356,7 +289,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                     var captured = pair;
                     _renderCache.GetOrBuildTerrainTextureSet(
                         captured.Value,
-                        () => BuildCellTextureSet(captured.Key, captured.Value, cells, gridSize));
+                        () => TerrainCellCpuBuilder.BuildCellTextureSet(captured.Key, captured.Value, cells, gridSize));
                 });
             }
             else
@@ -366,7 +299,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                     var captured = pair;
                     _renderCache.GetOrBuildTerrainTextureSet(
                         captured.Value,
-                        () => BuildCellTextureSet(captured.Key, captured.Value, cells, _gridSize));
+                        () => TerrainCellCpuBuilder.BuildCellTextureSet(captured.Key, captured.Value, cells, _gridSize));
                 }
             }
         }
@@ -757,7 +690,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             try
             {
-                StoreBuildResult(key, BuildCellCpu(key, cell, cells, renderCache, gridSize, generation));
+                StoreBuildResult(key, TerrainCellCpuBuilder.BuildCellCpu(key, cell, cells, renderCache, gridSize, generation));
             }
             catch (Exception ex)
             {
@@ -771,36 +704,6 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         });
 
         _buildTasks.Add(task);
-    }
-
-    /// <summary>
-    ///     Background-thread CPU build: heightmap → vertices, neighbor-aware texture set, and the
-    ///     remapped blend weights. Allocates its OWN vertex + blend-weight arrays (never the shared
-    ///     scratch) so concurrent builds can't corrupt each other — the load-bearing correctness
-    ///     constraint. Touches only the captured <paramref name="cells" /> snapshot, the immutable
-    ///     <see cref="CellRecord" />, and the thread-safe <see cref="WorldRenderCache" />.
-    /// </summary>
-    private static BuiltCellCpuData BuildCellCpu(
-        (int gx, int gy) key,
-        CellRecord cell,
-        Dictionary<(int gx, int gy), CellRecord>? cells,
-        global::BethesdaMultitool.WorldRenderCache? renderCache,
-        int gridSize,
-        int generation)
-    {
-        var vertices = new GpuMeshUploader.GpuVertex[TerrainMeshBuilder.VertexCountFor(gridSize)];
-        if (!TerrainMeshBuilder.TryBuildVertices(cell, vertices, renderCache))
-        {
-            return BuiltCellCpuData.Failed(generation);
-        }
-
-        var textureSet = renderCache is not null
-            ? renderCache.GetOrBuildTerrainTextureSet(cell, () => BuildCellTextureSet(key, cell, cells, gridSize))
-            : BuildCellTextureSet(key, cell, cells, gridSize);
-
-        var blendWeights = new Vector4[TerrainMeshBuilder.VertexCountFor(gridSize) * CellTerrainTextureSet.SlotVectors];
-        PopulateBlendWeights(textureSet, blendWeights, gridSize);
-        return new BuiltCellCpuData(vertices, blendWeights, textureSet, Unusable: false, generation);
     }
 
     private void StoreBuildResult((int gx, int gy) key, BuiltCellCpuData data)
@@ -940,9 +843,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 ResourceStates.VertexAndConstantBuffer);
 
             var textureSet = _renderCache is not null
-                ? _renderCache.GetOrBuildTerrainTextureSet(cell, () => BuildCellTextureSet(key, cell, _cells, _gridSize))
-                : BuildCellTextureSet(key, cell, _cells, _gridSize);
-            PopulateBlendWeights(textureSet, _blendWeightScratch, _gridSize);
+                ? _renderCache.GetOrBuildTerrainTextureSet(cell, () => TerrainCellCpuBuilder.BuildCellTextureSet(key, cell, _cells, _gridSize))
+                : TerrainCellCpuBuilder.BuildCellTextureSet(key, cell, _cells, _gridSize);
+            TerrainCellCpuBuilder.PopulateBlendWeights(textureSet, _blendWeightScratch, _gridSize);
             var blendBuffer = GpuMeshBufferFactory12.CreateDefaultBuffer(
                 _gpu,
                 _recorder.CommandList,
@@ -979,103 +882,6 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                     ["elapsedMs"] = elapsed,
                     ["success"] = success
                 });
-            }
-        }
-    }
-
-    /// <summary>
-    ///     Build a <see cref="CellTerrainTextureSet" /> for this cell, including the cardinal
-    ///     neighbor edges so the cross-cell blend extends into this cell's edge vertices.
-    ///     Returns null when neither this cell nor any neighbor has LAND texture data — the
-    ///     downstream code paints the cell as engine-default in that case.
-    /// </summary>
-    private static CellTerrainTextureSet? BuildCellTextureSet(
-        (int gx, int gy) key,
-        CellRecord cell,
-        Dictionary<(int gx, int gy), CellRecord>? cells,
-        int gridSize)
-    {
-        // Morrowind: paint the flat 16×16 land-texture grid per vertex (shaped via shader bilinear
-        // interp), not the lossy 4-quadrant collapse. No ATXT alpha layers, so neighbor edge blending
-        // doesn't apply here.
-        if (cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtexGrid)
-        {
-            return CellTerrainTextureSet.Project(CellLayerWeightTable.BuildFromVtexGrid(gridSize, vtexGrid));
-        }
-
-        var layers = cell.LandVisualData?.TextureLayers;
-
-        IReadOnlyList<LandTextureLayer>? eastN = null, westN = null, northN = null, southN = null;
-        if (cells is not null)
-        {
-            eastN = NeighborLayers(cells, key.gx + 1, key.gy);
-            westN = NeighborLayers(cells, key.gx - 1, key.gy);
-            northN = NeighborLayers(cells, key.gx, key.gy + 1);
-            southN = NeighborLayers(cells, key.gx, key.gy - 1);
-        }
-
-        var hasOwnLayers = layers is { Count: > 0 };
-        var hasRealNeighbor = IsRealLayerList(eastN) || IsRealLayerList(westN)
-                           || IsRealLayerList(northN) || IsRealLayerList(southN);
-
-        CellLayerWeightTable? table = null;
-        if (hasOwnLayers)
-        {
-            table = CellLayerWeightTable.Build(gridSize, layers!, eastN, westN, northN, southN);
-        }
-        else if (hasRealNeighbor)
-        {
-            table = CellLayerWeightTable.Build(
-                gridSize, s_engineDefaultSyntheticLayers, eastN, westN, northN, southN);
-        }
-
-        return CellTerrainTextureSet.Project(table);
-    }
-
-    private static IReadOnlyList<LandTextureLayer>? NeighborLayers(
-        Dictionary<(int gx, int gy), CellRecord> cells, int gx, int gy)
-    {
-        if (!cells.TryGetValue((gx, gy), out var neighbor)) return null;
-        var layers = neighbor.LandVisualData?.TextureLayers;
-        if (layers is not { Count: > 0 }) return s_engineDefaultSyntheticLayers;
-        return layers;
-    }
-
-    private static bool IsRealLayerList(IReadOnlyList<LandTextureLayer>? layers)
-        => layers is { Count: > 0 } && !ReferenceEquals(layers, s_engineDefaultSyntheticLayers);
-
-    private static readonly IReadOnlyList<LandTextureLayer> s_engineDefaultSyntheticLayers =
-    [
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 0 },
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 1 },
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 2 },
-        new LandTextureLayer { Kind = LandTextureLayerKind.Base, TextureFormId = CellLayerWeightTable.EngineDefaultSentinelFormId, Quadrant = 3 },
-    ];
-
-    /// <summary>
-    ///     Pack <paramref name="set" />'s per-vertex Vector4 weights into the scratch array,
-    ///     remapping from the weight-table row order (vy=0 north) to the mesh-builder row
-    ///     order (j=0 south, since the mesh emits world-Y growing northward from originY).
-    /// </summary>
-    private static void PopulateBlendWeights(CellTerrainTextureSet? set, Vector4[] dest, int gridSize)
-    {
-        if (set is null)
-        {
-            Array.Clear(dest);
-            return;
-        }
-        const int vectors = CellTerrainTextureSet.SlotVectors;
-        for (var j = 0; j < gridSize; j++)
-        {
-            var cellVy = gridSize - 1 - j;
-            for (var i = 0; i < gridSize; i++)
-            {
-                var meshIdx = j * gridSize + i;
-                var tableIdx = cellVy * gridSize + i;
-                for (var k = 0; k < vectors; k++)
-                {
-                    dest[meshIdx * vectors + k] = set.VertexWeights[tableIdx * vectors + k];
-                }
             }
         }
     }
@@ -1118,90 +924,6 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         return Math.Clamp(value, min, max);
     }
 
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new FileNotFoundException($"Embedded shader resource not found: {name}");
-
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        var source = reader.ReadToEnd();
-
-        var shaderFlags = source.Contains("textures[]", StringComparison.Ordinal)
-            ? EnableUnboundedDescriptorTables
-            : ShaderFlags.None;
-
-        var result = Compiler.Compile(
-            source,
-            Array.Empty<ShaderMacro>(),
-            include: null!,
-            entryPoint,
-            sourceName: name,
-            profile,
-            shaderFlags,
-            EffectFlags.None,
-            out Blob? bytecode,
-            out Blob? errors);
-
-        if (result.Failure || bytecode is null)
-        {
-            var errorText = errors?.AsString() ?? "(no error blob)";
-            errors?.Dispose();
-            bytecode?.Dispose();
-            throw new InvalidOperationException($"HLSL compile failed for {name} ({profile}): {errorText}");
-        }
-
-        errors?.Dispose();
-        try { return bytecode.AsBytes().ToArray(); }
-        finally { bytecode.Dispose(); }
-    }
-
     private readonly record struct VisibleCell((int gx, int gy) Key, CellRecord Cell, float DistSq);
-
-    /// <summary>
-    ///     Per-cell bindless diffuse texture indices for the 16 blend slots, laid out as
-    ///     <c>uint4[4]</c> to match the terrain fragment shader's <c>uTextureIndices[4]</c>.
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential)]
-    private unsafe struct TerrainTextureIndices
-    {
-        public fixed uint Index[CellTerrainTextureSet.MaxSlots];
-    }
-
-    /// <summary>
-    ///     CPU-only product of a background cell build. Holds freshly-allocated per-task arrays (so
-    ///     concurrent builds never share scratch) and the resolved texture set — but NO
-    ///     <see cref="ID3D12Resource" />; GPU buffers are created on the render thread in
-    ///     <see cref="UploadBuiltCell" />. <see cref="Generation" /> tags the worldspace the build
-    ///     ran against so <see cref="StoreBuildResult" /> can drop results from a stale LoadData.
-    /// </summary>
-    private sealed record BuiltCellCpuData(
-        GpuMeshUploader.GpuVertex[]? Vertices,
-        Vector4[]? BlendWeights,
-        CellTerrainTextureSet? TextureSet,
-        bool Unusable,
-        int Generation)
-    {
-        public static BuiltCellCpuData Failed(int generation) => new(null, null, null, true, generation);
-    }
-
-    private sealed class CachedCellMesh12 : IDisposable
-    {
-        public required ID3D12Resource VertexBuffer { get; init; }
-        public required ID3D12Resource BlendWeightBuffer { get; init; }
-        public required TerrainTextureIndices TextureIndices { get; init; }
-        public required GpuDeletionQueue12 DeletionQueue { get; init; }
-
-        // Route through the deletion queue so LRU eviction can't release a buffer that the
-        // GPU is still consuming from the previous frame's command list. Textures are owned by
-        // TerrainTextureResolver12 and referenced through stable bindless indices.
-        public void Dispose()
-        {
-            DeletionQueue.EnqueueDispose(VertexBuffer);
-            DeletionQueue.EnqueueDispose(BlendWeightBuffer);
-        }
-    }
 }
 #endif

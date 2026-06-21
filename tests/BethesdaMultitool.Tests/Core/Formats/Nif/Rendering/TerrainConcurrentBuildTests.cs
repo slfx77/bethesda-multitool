@@ -8,7 +8,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
 /// <summary>
 ///     Guards the load-bearing A3 (terrain async build) correctness constraint: the per-cell vertex
-///     build <see cref="TerrainMeshBuilder.TryBuildVertices" /> is pure and safe to run concurrently
+///     build <see cref="TerrainMeshBuilder.TryBuildVertices(CellRecord, System.Span{GpuMeshUploader.GpuVertex})" />
+///     is pure and safe to run concurrently
 ///     as long as each task owns its OWN vertex array. The async build path in TerrainRenderer12
 ///     depends on this — sharing one scratch array across background tasks would corrupt meshes
 ///     non-deterministically. We build a batch of distinct cells single-threaded (reference), then

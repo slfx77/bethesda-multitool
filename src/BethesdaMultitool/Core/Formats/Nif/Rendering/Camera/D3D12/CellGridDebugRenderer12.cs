@@ -363,7 +363,7 @@ internal sealed class CellGridDebugRenderer12
         _vertexScratch[idx++] = new Vector3(x1, y1, _zMin);
         _vertexScratch[idx++] = new Vector3(x1, y1, _zMax);
         _vertexScratch[idx++] = new Vector3(x0, y1, _zMin);
-        _vertexScratch[idx++] = new Vector3(x0, y1, _zMax);
+        _vertexScratch[idx] = new Vector3(x0, y1, _zMax);
     }
 
     /// <summary>

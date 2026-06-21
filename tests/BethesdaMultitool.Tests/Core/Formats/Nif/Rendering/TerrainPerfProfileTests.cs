@@ -69,6 +69,10 @@ public sealed class TerrainPerfProfileTests
         _output.WriteLine($"  total verts: {totalVertices:N0}");
         _output.WriteLine(
             $"  at 60 Hz frame budget (16.67 ms), can fit ~{perFrameAt60Hz:F0} CPU mesh-builds per frame");
+
+        // The builder must have produced a mesh (with vertices) for every synthetic cell.
+        Assert.Equal(cells.Count, built);
+        Assert.True(totalVertices > 0);
     }
 
     [Fact]
@@ -113,6 +117,11 @@ public sealed class TerrainPerfProfileTests
         _output.WriteLine("  At 16 builds/frame × 60 Hz:");
         _output.WriteLine($"    Build:    {buildBytes / (double)cells.Count * 16 * 60 / (1024 * 1024):F1} MB/sec");
         _output.WriteLine($"    TryBuild: {tryBytes / (double)cells.Count * 16 * 60 / (1024 * 1024):F1} MB/sec");
+
+        // Build allocates a fresh mesh per cell; the scratch-reusing TryBuild path must never
+        // allocate more than Build — that allocation win is the whole point of the overload.
+        Assert.True(buildBytes > 0);
+        Assert.True(tryBytes <= buildBytes);
     }
 
     [Fact]
@@ -162,6 +171,9 @@ public sealed class TerrainPerfProfileTests
         _output.WriteLine(
             $"  get:    {swGet.Elapsed.TotalMilliseconds:F1} ms ({swGet.Elapsed.TotalMilliseconds * 1000 / N:F2} µs/op)");
         _output.WriteLine($"  hits:   {hits}/{N}");
+
+        // Capacity is N + 256, so every inserted entry survives and must be retrievable.
+        Assert.Equal(N, hits);
 
         cache.Dispose();
     }
