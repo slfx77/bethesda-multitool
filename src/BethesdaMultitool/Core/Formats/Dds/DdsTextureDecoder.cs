@@ -612,7 +612,31 @@ internal static class DdsTextureDecoder
         return pixels;
     }
 
-    private static byte[]? DecodeBc5Level(byte[] data, int offset, int width, int height, bool signedFmt = false)
+    // BC5 normal-map Z reconstruction depends only on the two input bytes (nx, ny), so there are just
+    // 256*256 distinct results. Precompute them once instead of running 2 divides + 1 sqrt per pixel
+    // (~16M float ops on a 4K texture). The table is built with the identical float expression, so the
+    // per-pixel output is byte-for-byte the same as the previous inline math.
+    private static readonly byte[] Bc5NormalZLut = BuildBc5NormalZLut();
+
+    private static byte[] BuildBc5NormalZLut()
+    {
+        var lut = new byte[256 * 256];
+        for (var x = 0; x < 256; x++)
+        {
+            var nx = x / 127.5f - 1f;
+            for (var y = 0; y < 256; y++)
+            {
+                var ny = y / 127.5f - 1f;
+                var nz2 = 1f - nx * nx - ny * ny;
+                var nz = nz2 > 0f ? MathF.Sqrt(nz2) : 0f;
+                lut[(x << 8) | y] = (byte)((nz + 1f) * 127.5f);
+            }
+        }
+
+        return lut;
+    }
+
+    internal static byte[]? DecodeBc5Level(byte[] data, int offset, int width, int height, bool signedFmt = false)
     {
         var requiredSize = offset + GetCompressedLevelSize(width, height, 16);
         if (data.Length < requiredSize)
@@ -637,15 +661,11 @@ internal static class DdsTextureDecoder
             }
         }
 
-        // Reconstruct Blue (Z) from Red (X) and Green (Y): z = sqrt(1 - x² - y²)
+        // Reconstruct Blue (Z) from Red (X) and Green (Y): z = sqrt(1 - x² - y²), via the precomputed LUT.
         for (var i = 0; i < width * height; i++)
         {
             var pIdx = i * 4;
-            var nx = pixels[pIdx + 0] / 127.5f - 1f;
-            var ny = pixels[pIdx + 1] / 127.5f - 1f;
-            var nz2 = 1f - nx * nx - ny * ny;
-            var nz = nz2 > 0f ? MathF.Sqrt(nz2) : 0f;
-            pixels[pIdx + 2] = (byte)((nz + 1f) * 127.5f);
+            pixels[pIdx + 2] = Bc5NormalZLut[(pixels[pIdx + 0] << 8) | pixels[pIdx + 1]];
             pixels[pIdx + 3] = 255;
         }
 

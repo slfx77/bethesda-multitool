@@ -22,7 +22,6 @@ internal static class Tes3SubrecordDecoder
 
     public static IReadOnlyList<Field> Decode(string recordType, string sig, ReadOnlySpan<byte> data)
     {
-        var fields = new List<Field>();
         var c = new Tes3Cursor(data);
 
         switch (sig)
@@ -43,7 +42,7 @@ internal static class Tes3SubrecordDecoder
             case "RNAM" when recordType == "FACT":
                 return One("RankName", c.ReadRemainingString());
             case "RNAM":
-                return One(recordType == "INFO" ? "Race" : "Race", c.ReadRemainingString());
+                return One("Race", c.ReadRemainingString());
             case "CNAM" when recordType is "NPC_" or "INFO":
                 return One("Class", c.ReadRemainingString());
             case "CNAM" when recordType == "CELL":
@@ -165,7 +164,7 @@ internal static class Tes3SubrecordDecoder
                 return One("Creature", c.ReadFixedString(32));
         }
 
-        return DecodeGeneric(sig, data);
+        return DecodeGeneric(data);
     }
 
     // ===================================================================================
@@ -335,7 +334,7 @@ internal static class Tes3SubrecordDecoder
     // Generic fallback + helpers
     // ===================================================================================
 
-    private static IReadOnlyList<Field> DecodeGeneric(string sig, ReadOnlySpan<byte> data)
+    private static List<Field> DecodeGeneric(ReadOnlySpan<byte> data)
     {
         if (data.Length == 0)
         {

@@ -8,9 +8,14 @@
 // stores only raw surface bytes; this header is reconstructed from the DX10 entry metadata. Not
 // derived from any copyleft source.
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 
 /// <summary>The subset of DXGI_FORMAT values that BA2 DX10 texture entries use.</summary>
+[SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores",
+    Justification = "These are the canonical Microsoft DXGI_FORMAT enum names (e.g. R8G8B8A8_UNORM); " +
+                    "renaming them away from the documented DirectX spelling would obscure their meaning.")]
 public enum Ba2DxgiFormat
 {
     R32G32B32A32_FLOAT = 2,
@@ -39,7 +44,21 @@ public enum Ba2DxgiFormat
 /// <summary>
 ///     Thrown when a DX10 texture entry uses a DXGI format this writer can't emit a DDS header for.
 /// </summary>
-public sealed class Ba2UnsupportedDdsFormatException(string message) : Exception(message);
+public sealed class Ba2UnsupportedDdsFormatException : Exception
+{
+    public Ba2UnsupportedDdsFormatException()
+    {
+    }
+
+    public Ba2UnsupportedDdsFormatException(string message) : base(message)
+    {
+    }
+
+    public Ba2UnsupportedDdsFormatException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
 
 /// <summary>
 ///     Synthesizes the DDS file header (magic + DDS_HEADER, plus a DDS_HEADER_DXT10 and/or Xbox

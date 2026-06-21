@@ -372,7 +372,7 @@ public sealed class BtdFile : IDisposable
                     long inner = (((long)(y << 1) | (uint)(yc >> (m - 1))) * (NCellsX << 1))
                                  + ((x << 1) | (xc >> (m - 1)));
                     long offs = (inner << 3) + _gcvrMapOffs;
-                    for (int i = 8; i-- > 0; offs++)
+                    for (int i = 7; i >= 0; i--, offs++)
                     {
                         gcvrMask |= (uint)(ReadU8(offs) < GroundCoverCount ? 1 : 0) << i;
                     }
@@ -551,7 +551,7 @@ public sealed class BtdFile : IDisposable
                         break;
                     }
 
-                    long offs = ((long)(yy + (y0 << 3)) * (NCellsX << 3)) + (xx + (x0 << 3));
+                    long offs = ((yy + (y0 << 3)) * (NCellsX << 3)) + (xx + (x0 << 3));
                     if ((blockMask & 0x0155) != 0)
                     {
                         tileData.HmapData![((yy << 10) + xx) << 4] = ReadU16(_heightMapLod4 + (offs << 1));
@@ -694,7 +694,20 @@ public sealed class BtdFile : IDisposable
             throw new InvalidDataException("BTD: compressed block extends past end of file.");
         }
 
-        int expected = l == 0 && b != 0 ? 16384 : (l >= 2 && b != 0 ? 32768 : 49152);
+        int expected;
+        if (l == 0 && b != 0)
+        {
+            expected = 16384;
+        }
+        else if (l >= 2 && b != 0)
+        {
+            expected = 32768;
+        }
+        else
+        {
+            expected = 49152;
+        }
+
         DecompressBlock(offs, compressedSize, zlibBuf, expected);
 
         int xd = 1 << (b == 0 || l == 0 ? l : l - 2);

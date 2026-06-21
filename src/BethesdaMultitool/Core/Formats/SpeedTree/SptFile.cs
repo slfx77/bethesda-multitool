@@ -90,7 +90,7 @@ public static class SptFile
     ///     The post-tree token 10000 is <c>ParseTextureCoordInfo</c>; its 10002 child is the leaf UV
     ///     block array later passed to <c>CLeafGeometry::SetTextureCoords</c>.
     /// </summary>
-    private static IReadOnlyList<SptLeafTextureCoords> ParseTrailingTextureCoordInfo(byte[] data, int startOffset)
+    private static List<SptLeafTextureCoords> ParseTrailingTextureCoordInfo(byte[] data, int startOffset)
     {
         for (var offset = startOffset; offset <= data.Length - 4; offset++)
         {

@@ -121,8 +121,8 @@ public sealed class LocalizedStringTables
     ///     full word (<c>Skyrim_English.STRINGS</c>); Fallout 4 / Fallout 76 use the 2-letter code
     ///     (<c>Fallout4_en.STRINGS</c>, <c>seventysix_en.strings</c>). The loader tries both.
     /// </summary>
-    private static readonly IReadOnlyDictionary<string, string> TwoLetterLanguageCodes =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> TwoLetterLanguageCodes =
+        new(StringComparer.OrdinalIgnoreCase)
         {
             ["English"] = "en",
             ["German"] = "de",
