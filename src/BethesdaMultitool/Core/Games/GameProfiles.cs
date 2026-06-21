@@ -19,14 +19,9 @@ public static class GameProfiles
     private const string OblivionDiffuse = @"textures\landscape\TerrainHDDirt01.dds";
     private const string OblivionNormal = @"textures\landscape\TerrainHDDirt01_n.dds";
 
-    // NIF stream identities are 20.2.0.7 for the whole FO3→Starfield run; only UserVersion/BsVersion
-    // distinguish games. Morrowind is 4.0.0.2; Oblivion ~20.0.0.5 (mixed on disk — expectation only).
-    private const uint Nif202 = 0x14020007;
-
     private static readonly GameProfile UnknownProfile = new()
     {
         Game = BethesdaGame.Unknown,
-        DisplayName = "Unknown",
         Engine = EngineFamily.Tes4,
         RecordHeaderSize = 24,
         GroupHeaderSize = 24,
@@ -41,117 +36,89 @@ public static class GameProfiles
             [BethesdaGame.Morrowind] = new()
             {
                 Game = BethesdaGame.Morrowind,
-                DisplayName = "Morrowind",
                 Engine = EngineFamily.Tes3,
                 RecordHeaderSize = 16,
                 GroupHeaderSize = 0,
                 HasRecordVersionTrailer = false,
                 MasterFileHints = ["Morrowind"],
-                ExpectedNif = new NifExpectation(0x04000002, 0, 0),
-                ArchiveFormat = ArchiveFormat.MorrowindBsa,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             },
             [BethesdaGame.Oblivion] = new()
             {
                 Game = BethesdaGame.Oblivion,
-                DisplayName = "Oblivion",
                 Engine = EngineFamily.Tes4,
                 RecordHeaderSize = 20,
                 GroupHeaderSize = 20,
                 HasRecordVersionTrailer = false,
                 MasterFileHints = ["Oblivion"],
-                ExpectedNif = new NifExpectation(0x14000005, 11, 0),
-                ArchiveFormat = ArchiveFormat.Bsa103,
                 DefaultLandscapeDiffuse = OblivionDiffuse,
                 DefaultLandscapeNormal = OblivionNormal
             },
             [BethesdaGame.Fallout3] = new()
             {
                 Game = BethesdaGame.Fallout3,
-                DisplayName = "Fallout 3",
                 Engine = EngineFamily.Tes4,
                 RecordHeaderSize = 24,
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Fallout3"],
-                ExpectedNif = new NifExpectation(Nif202, 0, 34),
-                ArchiveFormat = ArchiveFormat.Bsa104,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             },
             [BethesdaGame.FalloutNewVegas] = new()
             {
                 Game = BethesdaGame.FalloutNewVegas,
-                DisplayName = "Fallout: New Vegas",
                 Engine = EngineFamily.Tes4,
                 RecordHeaderSize = 24,
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["FalloutNV"],
                 HasArmorDamageThreshold = true,
-                ExpectedNif = new NifExpectation(Nif202, 0, 34),
-                ArchiveFormat = ArchiveFormat.Bsa104,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             },
             [BethesdaGame.Skyrim] = new()
             {
                 Game = BethesdaGame.Skyrim,
-                DisplayName = "Skyrim",
                 Engine = EngineFamily.Tes4,
                 RecordHeaderSize = 24,
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Skyrim"],
-                UsesLocalizedStrings = true,
-                ExpectedNif = new NifExpectation(Nif202, 12, 83),
-                ArchiveFormat = ArchiveFormat.Bsa105,
                 DefaultLandscapeDiffuse = SkyrimDiffuse,
                 DefaultLandscapeNormal = SkyrimNormal
             },
             [BethesdaGame.Fallout4] = new()
             {
                 Game = BethesdaGame.Fallout4,
-                DisplayName = "Fallout 4",
                 Engine = EngineFamily.Tes4,
                 RecordHeaderSize = 24,
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Fallout4"],
-                UsesLocalizedStrings = true,
-                ExpectedNif = new NifExpectation(Nif202, 12, 130),
-                ArchiveFormat = ArchiveFormat.Ba2,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal
             },
             [BethesdaGame.Fallout76] = new()
             {
                 Game = BethesdaGame.Fallout76,
-                DisplayName = "Fallout 76",
                 Engine = EngineFamily.Tes4,
                 RecordHeaderSize = 24,
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["SeventySix", "Fallout76"],
-                UsesLocalizedStrings = true,
-                ExpectedNif = new NifExpectation(Nif202, 12, 155),
-                ArchiveFormat = ArchiveFormat.Ba2,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal
             },
             [BethesdaGame.Starfield] = new()
             {
                 Game = BethesdaGame.Starfield,
-                DisplayName = "Starfield",
                 Engine = EngineFamily.Tes4,
                 RecordHeaderSize = 24,
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Starfield"],
-                UsesLocalizedStrings = true,
-                ExpectedNif = new NifExpectation(Nif202, 12, 170),
-                ArchiveFormat = ArchiveFormat.Ba2,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             }

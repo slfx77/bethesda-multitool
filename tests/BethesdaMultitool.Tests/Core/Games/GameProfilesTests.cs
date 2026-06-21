@@ -24,7 +24,6 @@ public class GameProfilesTests
     {
         var profile = GameProfiles.For(game);
         Assert.Equal(game, profile.Game);
-        Assert.False(string.IsNullOrWhiteSpace(profile.DisplayName));
     }
 
     [Fact]

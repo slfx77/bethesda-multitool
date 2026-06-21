@@ -257,18 +257,33 @@ public static class CoverageAnalyzer
         return merged;
     }
 
-    private static List<CoverageGap> FindGaps(
+    internal static List<CoverageGap> FindGaps(
         List<CoverageInterval> regionIntervals,
         List<CoverageInterval> mergedRecognized)
     {
         var gaps = new List<CoverageGap>();
 
+        // Both lists are sorted by Start. Keep a forward-only cursor into mergedRecognized so each
+        // region resumes where the previous one left off instead of re-scanning the consumed prefix
+        // every time (the old code restarted at index 0 for every region -> O(regions * recognized)).
+        var recStart = 0;
+
         foreach (var region in regionIntervals)
         {
             var cursor = region.Start;
 
-            foreach (var recognized in mergedRecognized)
+            // Skip recognized intervals that end at/before this region begins. Regions are sorted by
+            // ascending Start, so such intervals cannot be relevant to any later region either.
+            while (recStart < mergedRecognized.Count && mergedRecognized[recStart].End <= cursor)
             {
+                recStart++;
+            }
+
+            // Walk intervals overlapping this region with a local index. An interval extending past
+            // region.End may also overlap the next region, so we must not advance recStart past it.
+            for (var i = recStart; i < mergedRecognized.Count; i++)
+            {
+                var recognized = mergedRecognized[i];
                 if (recognized.End <= cursor)
                 {
                     continue;

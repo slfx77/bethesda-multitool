@@ -127,7 +127,7 @@ public sealed class Logger
     /// <summary>
     ///     Log an error message with format args.
     /// </summary>
-    public void Error(string format, params object[] args)
+    public void Error(string format, params object?[] args)
     {
         Log(LogLevel.Error, string.Format(CultureInfo.InvariantCulture, format, args));
     }
@@ -143,7 +143,7 @@ public sealed class Logger
     /// <summary>
     ///     Log a warning message with format args.
     /// </summary>
-    public void Warn(string format, params object[] args)
+    public void Warn(string format, params object?[] args)
     {
         Log(LogLevel.Warn, string.Format(CultureInfo.InvariantCulture, format, args));
     }
@@ -159,7 +159,7 @@ public sealed class Logger
     /// <summary>
     ///     Log an informational message with format args.
     /// </summary>
-    public void Info(string format, params object[] args)
+    public void Info(string format, params object?[] args)
     {
         Log(LogLevel.Info, string.Format(CultureInfo.InvariantCulture, format, args));
     }
@@ -175,7 +175,7 @@ public sealed class Logger
     /// <summary>
     ///     Log a debug/verbose message with format args.
     /// </summary>
-    public void Debug(string format, params object[] args)
+    public void Debug(string format, params object?[] args)
     {
         Log(LogLevel.Debug, string.Format(CultureInfo.InvariantCulture, format, args));
     }
@@ -191,7 +191,7 @@ public sealed class Logger
     /// <summary>
     ///     Log a trace message with format args.
     /// </summary>
-    public void Trace(string format, params object[] args)
+    public void Trace(string format, params object?[] args)
     {
         Log(LogLevel.Trace, string.Format(CultureInfo.InvariantCulture, format, args));
     }
