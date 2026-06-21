@@ -58,7 +58,7 @@ public sealed partial class SingleFileTab
         // RealizeRecordTypeChildren.
         if (browserNode.NodeType == "RecordType")
         {
-            RealizeRecordTypeChildren(args.Node, browserNode);
+            _ = RealizeRecordTypeChildren(args.Node, browserNode);
             return;
         }
 
@@ -90,7 +90,7 @@ public sealed partial class SingleFileTab
                     if (browserNode.NodeType == "RecordType")
                     {
                         // Off-thread build (or sync realize if already built) — never freezes the UI.
-                        RealizeRecordTypeChildren(treeNode, browserNode);
+                        _ = RealizeRecordTypeChildren(treeNode, browserNode);
                     }
                     else
                     {
@@ -122,7 +122,7 @@ public sealed partial class SingleFileTab
     ///     runs on a worker thread, then the real children realize on completion. Re-entry is guarded so a
     ///     collapse/re-expand mid-load can't start a second build.
     /// </summary>
-    private async void RealizeRecordTypeChildren(TreeViewNode treeNode, EsmBrowserNode browserNode)
+    private async Task RealizeRecordTypeChildren(TreeViewNode treeNode, EsmBrowserNode browserNode)
     {
         if (treeNode.Children.Count > 0) return; // already realized (real children or a placeholder)
 
@@ -165,7 +165,7 @@ public sealed partial class SingleFileTab
         }
         catch
         {
-            // Build failed — leave the node empty rather than crash the async-void handler.
+            // Build failed — leave the node empty rather than fault the background load.
         }
         finally
         {

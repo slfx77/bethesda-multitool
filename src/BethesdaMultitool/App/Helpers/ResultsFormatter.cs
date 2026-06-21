@@ -107,7 +107,7 @@ internal static class ResultsFormatter
         return entries;
     }
 
-    private static string FormatRecoverableSummary(IReadOnlyList<DmpGapRecoveryCandidate>? candidates)
+    private static string FormatRecoverableSummary(List<DmpGapRecoveryCandidate>? candidates)
     {
         if (candidates is not { Count: > 0 })
         {

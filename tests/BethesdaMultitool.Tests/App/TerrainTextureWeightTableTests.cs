@@ -6,7 +6,8 @@ namespace BethesdaMultitool.Tests.App;
 
 /// <summary>
 ///     Asserts the engine-accurate cross-quadrant blend behavior of
-///     <see cref="CellLayerWeightTable.Build" />. The seam fix relies on shared-edge vertices
+///     <see cref="CellLayerWeightTable.Build(System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer}, System.Collections.Generic.IReadOnlyList{LandTextureLayer})" />.
+///     The seam fix relies on shared-edge vertices
 ///     (cell column 16 / row 16) and the cell center (16, 16) carrying contributions from all
 ///     touching quadrants; bilinear interp during per-pixel sampling then produces a smooth
 ///     blend instead of the prior hard quadrant boundary.
@@ -530,7 +531,7 @@ public sealed class TerrainTextureWeightTableTests
     }
 
     private static void AssertSingleEntry(
-        in VertexWeights v, uint formId, float expectedWeight)
+        VertexWeights v, uint formId, float expectedWeight)
     {
         Assert.Equal(1, v.Count);
         Assert.Equal(formId, v.E0.FormId);
@@ -538,7 +539,7 @@ public sealed class TerrainTextureWeightTableTests
     }
 
     private static void AssertTwoEntries(
-        in VertexWeights v,
+        VertexWeights v,
         (uint FormId, float Weight) a,
         (uint FormId, float Weight) b)
     {
