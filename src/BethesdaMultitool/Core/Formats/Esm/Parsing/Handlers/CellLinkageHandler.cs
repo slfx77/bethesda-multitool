@@ -16,10 +16,6 @@ internal static class CellLinkageHandler
     private const string SourceAmbiguousBounds = "AmbiguousBounds";
     private const string SourceFragmentRun = "FragmentRun";
     private const string SourceRuntimeCellMap = "RuntimeCellMap";
-    private const string SourceOffsetCluster = "OffsetCluster";
-    private const int OffsetClusterGapBytes = 0x1000;
-    private const int OffsetClusterWindowBytes = 0x20000;
-    private const int OffsetClusterGridExpansion = 2;
 
     /// <summary>
     ///     DMP fallback: infer worldspace membership for exterior cells by testing grid coordinates
@@ -33,7 +29,7 @@ internal static class CellLinkageHandler
             return;
         }
 
-        var worldspaceBounds = BuildWorldspaceBounds(worldspaces);
+        var worldspaceBounds = CellWorldspaceBoundsResolver.BuildWorldspaceBounds(worldspaces);
 
         if (worldspaceBounds.Count == 0)
         {
@@ -71,7 +67,7 @@ internal static class CellLinkageHandler
 
             var gx = cell.GridX.Value;
             var gy = cell.GridY!.Value;
-            var candidates = FindCandidateWorldspaces(worldspaceBounds, gx, gy);
+            var candidates = CellWorldspaceBoundsResolver.FindCandidateWorldspaces(worldspaceBounds, gx, gy);
             if (candidates.Count == 0)
             {
                 continue;
@@ -115,7 +111,7 @@ internal static class CellLinkageHandler
             return 0;
         }
 
-        var bounds = BuildWorldspaceBounds(worldspaces);
+        var bounds = CellWorldspaceBoundsResolver.BuildWorldspaceBounds(worldspaces);
         var runtimeOwnerByCell = new Dictionary<uint, uint>();
         foreach (var (worldspaceFormId, worldspaceData) in runtimeWorldspaceMaps)
         {
@@ -152,7 +148,8 @@ internal static class CellLinkageHandler
                 continue;
             }
 
-            var component = BuildAdjacentFormIdComponent(startFormId, cells, indexByFormId, visited);
+            var component = CellWorldspaceBoundsResolver.BuildAdjacentFormIdComponent(
+                startFormId, cells, indexByFormId, visited);
             var anchorWorldspaces = component
                 .Select(index => cells[index].FormId)
                 .Where(runtimeOwnerByCell.ContainsKey)
@@ -174,14 +171,15 @@ internal static class CellLinkageHandler
                     continue;
                 }
 
-                if (!CanAssignToAnchoredWorldspace(candidate, anchorWorldspace, bounds))
+                if (!CellWorldspaceBoundsResolver.CanAssignToAnchoredWorldspace(candidate, anchorWorldspace, bounds))
                 {
                     continue;
                 }
 
                 var candidates = candidate.CandidateWorldspaceFormIds.Count > 0
                     ? candidate.CandidateWorldspaceFormIds
-                    : FindCandidateWorldspaces(bounds, candidate.GridX!.Value, candidate.GridY!.Value);
+                    : CellWorldspaceBoundsResolver.FindCandidateWorldspaces(
+                        bounds, candidate.GridX!.Value, candidate.GridY!.Value);
                 cells[index] = candidate with
                 {
                     WorldspaceFormId = anchorWorldspace,
@@ -411,109 +409,6 @@ internal static class CellLinkageHandler
         return mergedRefs;
     }
 
-    private static List<int> BuildAdjacentFormIdComponent(
-        uint startFormId,
-        List<CellRecord> cells,
-        Dictionary<uint, int> indexByFormId,
-        HashSet<uint> visited)
-    {
-        var component = new List<int>();
-        var queue = new Queue<uint>();
-        queue.Enqueue(startFormId);
-
-        while (queue.Count > 0)
-        {
-            var formId = queue.Dequeue();
-            if (!indexByFormId.TryGetValue(formId, out var index))
-            {
-                continue;
-            }
-
-            component.Add(index);
-            foreach (var neighborFormId in new[] { formId - 1, formId + 1 })
-            {
-                if (!indexByFormId.TryGetValue(neighborFormId, out var neighborIndex))
-                {
-                    continue;
-                }
-
-                var cell = cells[index];
-                var neighbor = cells[neighborIndex];
-                var manhattan = Math.Abs(cell.GridX!.Value - neighbor.GridX!.Value) +
-                                Math.Abs(cell.GridY!.Value - neighbor.GridY!.Value);
-                if (manhattan == 1 && visited.Add(neighborFormId))
-                {
-                    queue.Enqueue(neighborFormId);
-                }
-            }
-        }
-
-        return component;
-    }
-
-    private static bool CanAssignToAnchoredWorldspace(
-        CellRecord cell,
-        uint anchorWorldspace,
-        IReadOnlyList<WorldspaceBounds> bounds)
-    {
-        if (!cell.GridX.HasValue || !cell.GridY.HasValue)
-        {
-            return false;
-        }
-
-        if (cell.CandidateWorldspaceFormIds.Count > 0)
-        {
-            return cell.CandidateWorldspaceFormIds.Contains(anchorWorldspace);
-        }
-
-        var candidates = FindCandidateWorldspaces(bounds, cell.GridX.Value, cell.GridY.Value);
-        return candidates.Count == 0 || candidates.Contains(anchorWorldspace);
-    }
-
-    private static List<WorldspaceBounds> BuildWorldspaceBounds(IEnumerable<WorldspaceRecord> worldspaces)
-    {
-        var bounds = new List<WorldspaceBounds>();
-        foreach (var ws in worldspaces)
-        {
-            int minCellX, minCellY, maxCellX, maxCellY;
-
-            if (ws.MapNWCellX.HasValue && ws.MapSECellX.HasValue)
-            {
-                minCellX = Math.Min(ws.MapNWCellX.Value, ws.MapSECellX.Value);
-                maxCellX = Math.Max(ws.MapNWCellX.Value, ws.MapSECellX.Value);
-                minCellY = Math.Min(ws.MapNWCellY!.Value, ws.MapSECellY!.Value);
-                maxCellY = Math.Max(ws.MapNWCellY.Value, ws.MapSECellY.Value);
-            }
-            else if (ws.BoundsMinX.HasValue && ws.BoundsMaxX.HasValue)
-            {
-                (minCellX, minCellY) = CellUtils.WorldToCellCoordinates(ws.BoundsMinX.Value, ws.BoundsMinY!.Value);
-                (maxCellX, maxCellY) = CellUtils.WorldToCellCoordinates(ws.BoundsMaxX.Value, ws.BoundsMaxY!.Value);
-            }
-            else
-            {
-                continue;
-            }
-
-            bounds.Add(new WorldspaceBounds(ws.FormId, minCellX, minCellY, maxCellX, maxCellY));
-        }
-
-        return bounds;
-    }
-
-    private static List<uint> FindCandidateWorldspaces(
-        IReadOnlyList<WorldspaceBounds> bounds,
-        int gridX,
-        int gridY)
-    {
-        return bounds
-            .Where(b => gridX >= b.MinCellX && gridX <= b.MaxCellX &&
-                        gridY >= b.MinCellY && gridY <= b.MaxCellY)
-            .Select(b => b.FormId)
-            .Distinct()
-            .Order()
-            .ToList();
-    }
-
     /// <summary>
     ///     Links parsed cells to their parent worldspace's Cells list
     ///     based on CellRecord.WorldspaceFormId.
@@ -686,7 +581,7 @@ internal static class CellLinkageHandler
         // record is missing from the dump. When a whole orphan offset cluster sits next to
         // exactly one worldspace's parsed cells, create a worldspace-scoped virtual tile at
         // the refs' actual grid instead of leaving them in the global unresolved bucket.
-        var offsetClusterResolved = ResolveOffsetClusteredExteriorOrphans(
+        var offsetClusterResolved = OffsetClusterOrphanResolver.ResolveOffsetClusteredExteriorOrphans(
             trueOrphans,
             existingCells,
             context,
@@ -885,157 +780,6 @@ internal static class CellLinkageHandler
         return virtualCells;
     }
 
-    private static int ResolveOffsetClusteredExteriorOrphans(
-        List<ExtractedRefrRecord> trueOrphans,
-        List<CellRecord> existingCells,
-        RecordParserContext context,
-        out List<CellRecord> virtualCells)
-    {
-        virtualCells = [];
-        if (trueOrphans.Count == 0)
-        {
-            return 0;
-        }
-
-        var offsetAnchors = existingCells
-            .Where(cell => !cell.IsInterior &&
-                           !cell.IsVirtual &&
-                           !cell.IsUnresolvedBucket &&
-                           cell.WorldspaceFormId is > 0 &&
-                           cell.GridX.HasValue &&
-                           cell.GridY.HasValue &&
-                           cell.Offset > 0)
-            .OrderBy(cell => cell.Offset)
-            .ToList();
-
-        if (offsetAnchors.Count == 0)
-        {
-            return 0;
-        }
-
-        var virtualByKey = new Dictionary<(uint WorldspaceFormId, int GridX, int GridY), CellRecord>();
-        var nextVirtualFormId = 0xFE900001u;
-        var resolved = 0;
-
-        foreach (var cluster in BuildOffsetClusters(trueOrphans))
-        {
-            if (!TryInferOffsetClusterWorldspace(cluster, offsetAnchors, out var worldspaceFormId))
-            {
-                continue;
-            }
-
-            foreach (var orphan in cluster)
-            {
-                var pos = orphan.Position;
-                if (pos == null)
-                {
-                    continue;
-                }
-
-                var (gx, gy) = CellUtils.WorldToCellCoordinates(pos.X, pos.Y);
-                var key = (worldspaceFormId, gx, gy);
-                if (!virtualByKey.TryGetValue(key, out var vcell))
-                {
-                    var wsName = context.GetEditorId(worldspaceFormId) ?? $"0x{worldspaceFormId:X8}";
-                    vcell = new CellRecord
-                    {
-                        FormId = nextVirtualFormId++,
-                        EditorId = $"[Virtual {gx},{gy} {wsName}]",
-                        GridX = gx,
-                        GridY = gy,
-                        WorldspaceFormId = worldspaceFormId,
-                        WorldspaceAssignmentSource = SourceOffsetCluster,
-                        PlacedObjects = [],
-                        IsVirtual = true,
-                        IsBigEndian = orphan.Header.IsBigEndian
-                    };
-                    virtualByKey[key] = vcell;
-                    virtualCells.Add(vcell);
-                }
-
-                vcell.PlacedObjects.Add(ToPlacedReference(orphan, context, SourceOffsetCluster));
-                resolved++;
-            }
-        }
-
-        return resolved;
-    }
-
-    private static IEnumerable<List<ExtractedRefrRecord>> BuildOffsetClusters(
-        List<ExtractedRefrRecord> orphans)
-    {
-        List<ExtractedRefrRecord>? cluster = null;
-        long lastOffset = 0;
-        foreach (var orphan in orphans
-                     .Where(orphan => orphan.Position != null && orphan.Header.Offset > 0)
-                     .OrderBy(orphan => orphan.Header.Offset))
-        {
-            if (cluster == null || orphan.Header.Offset - lastOffset > OffsetClusterGapBytes)
-            {
-                if (cluster is { Count: > 0 })
-                {
-                    yield return cluster;
-                }
-
-                cluster = [];
-            }
-
-            cluster.Add(orphan);
-            lastOffset = orphan.Header.Offset;
-        }
-
-        if (cluster is { Count: > 0 })
-        {
-            yield return cluster;
-        }
-    }
-
-    private static bool TryInferOffsetClusterWorldspace(
-        List<ExtractedRefrRecord> cluster,
-        List<CellRecord> offsetAnchors,
-        out uint worldspaceFormId)
-    {
-        worldspaceFormId = 0;
-        var minOffset = cluster.Min(orphan => orphan.Header.Offset);
-        var maxOffset = cluster.Max(orphan => orphan.Header.Offset);
-        var nearbyAnchors = offsetAnchors
-            .Where(cell => cell.Offset >= minOffset - OffsetClusterWindowBytes &&
-                           cell.Offset <= maxOffset + OffsetClusterWindowBytes)
-            .ToList();
-
-        var worldspaces = nearbyAnchors
-            .Select(cell => cell.WorldspaceFormId!.Value)
-            .Distinct()
-            .ToList();
-        if (worldspaces.Count != 1)
-        {
-            return false;
-        }
-
-        var anchorMinX = nearbyAnchors.Min(cell => cell.GridX!.Value) - OffsetClusterGridExpansion;
-        var anchorMaxX = nearbyAnchors.Max(cell => cell.GridX!.Value) + OffsetClusterGridExpansion;
-        var anchorMinY = nearbyAnchors.Min(cell => cell.GridY!.Value) - OffsetClusterGridExpansion;
-        var anchorMaxY = nearbyAnchors.Max(cell => cell.GridY!.Value) + OffsetClusterGridExpansion;
-
-        foreach (var orphan in cluster)
-        {
-            var pos = orphan.Position;
-            if (pos == null)
-            {
-                return false;
-            }
-
-            var (gx, gy) = CellUtils.WorldToCellCoordinates(pos.X, pos.Y);
-            if (gx < anchorMinX || gx > anchorMaxX || gy < anchorMinY || gy > anchorMaxY)
-            {
-                return false;
-            }
-        }
-
-        worldspaceFormId = worldspaces[0];
-        return true;
-    }
-
     /// <summary>
     ///     Top-level pass invoked from RecordParser after CreateVirtualCells. Delegates to
     ///     <see cref="PersistentRefRedistributor" />.
@@ -1099,11 +843,4 @@ internal static class CellLinkageHandler
             AssignmentSource = assignmentSource
         };
     }
-
-    private readonly record struct WorldspaceBounds(
-        uint FormId,
-        int MinCellX,
-        int MinCellY,
-        int MaxCellX,
-        int MaxCellY);
 }

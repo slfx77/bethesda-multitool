@@ -16,9 +16,8 @@ internal static class PersistentRefRedistributor
 {
     /// <summary>
     ///     Top-level pass invoked from RecordParser after CreateVirtualCells. Moves persistent
-    ///     refs with valid world positions into the real exterior tile they belong to. See
-    ///     <see cref="RedistributePersistentRefs(List{CellRecord}, Dictionary{uint, CellRecord}, RecordParserContext)" />
-    ///     for the full algorithm.
+    ///     refs with valid world positions into the real exterior tile they belong to. The full
+    ///     three-source algorithm lives in <see cref="PersistentRefRedistributionPass.Run" />.
     /// </summary>
     internal static int RedistributePersistentRefs(
         List<CellRecord> existingCells,
@@ -30,181 +29,7 @@ internal static class PersistentRefRedistributor
             cellByFormId.TryAdd(cell.FormId, cell);
         }
 
-        return RedistributePersistentRefs(existingCells, cellByFormId, context);
-    }
-
-    /// <summary>
-    ///     Phase 0.75: Move persistent refs with valid world positions into the real exterior
-    ///     tile they belong to. Refs keep IsPersistent=true and gain
-    ///     OriginCellFormId pointing back at the persistent container, so reports can still
-    ///     reconstruct a "persistent only" view.
-    ///     Destination grid lookup uses three sources, in order:
-    ///     1. Runtime worldspace cell maps (TESWorldSpace pCellMap hash tables) when populated.
-    ///     2. Parsed CellRecords carved from ESM fragments — these carry WorldspaceFormId
-    ///     and grid coords from XCLC subrecords.
-    ///     3. Synthetic per-worldspace virtual exterior tiles created on the fly when neither
-    ///     source covers the destination grid. This handles dumps where the streaming cache
-    ///     is empty (main menu, interior cell, loading screen) so persistent refs still
-    ///     appear in their owning exterior tiles instead of pooling in the persistent
-    ///     container.
-    /// </summary>
-    private static int RedistributePersistentRefs(
-        List<CellRecord> existingCells,
-        Dictionary<uint, CellRecord> cellByFormId,
-        RecordParserContext context)
-    {
-        // Source 1: runtime cell maps.
-        var gridToCellByWorldspace = new Dictionary<uint, Dictionary<(int, int), uint>>();
-        if (context.RuntimeWorldspaceCellMaps is { Count: > 0 })
-        {
-            foreach (var (wsFormId, wsData) in context.RuntimeWorldspaceCellMaps)
-            {
-                var gridMap = new Dictionary<(int, int), uint>();
-                foreach (var cellEntry in wsData.Cells)
-                {
-                    gridMap.TryAdd((cellEntry.GridX, cellEntry.GridY), cellEntry.CellFormId);
-                }
-
-                if (gridMap.Count > 0)
-                {
-                    gridToCellByWorldspace[wsFormId] = gridMap;
-                }
-            }
-        }
-
-        // Source 2: parsed CellRecords with worldspace + grid coords. Fold them into the
-        // same per-worldspace grid map so a single TryGetValue covers both sources.
-        foreach (var cell in existingCells)
-        {
-            if (cell.IsInterior || cell.IsPersistentCell || cell.IsUnresolvedBucket)
-            {
-                continue;
-            }
-
-            if (cell.WorldspaceFormId is not uint wsId || !cell.GridX.HasValue || !cell.GridY.HasValue)
-            {
-                continue;
-            }
-
-            if (!gridToCellByWorldspace.TryGetValue(wsId, out var gridMap))
-            {
-                gridMap = new Dictionary<(int, int), uint>();
-                gridToCellByWorldspace[wsId] = gridMap;
-            }
-
-            gridMap.TryAdd((cell.GridX.Value, cell.GridY.Value), cell.FormId);
-        }
-
-        // Source 3: synthetic virtual tiles allocated on demand below.
-        // Use a private FormID range to avoid colliding with Phase 2 (0xFF000001u) and
-        // Unresolved buckets (0xFE100001u).
-        var syntheticFormId = 0xFE800001u;
-        var syntheticCellsAdded = 0;
-        var moved = 0;
-        var syntheticUsed = 0;
-
-        for (var i = 0; i < existingCells.Count; i++)
-        {
-            var pcell = existingCells[i];
-            if (pcell.PlacedObjects.Count == 0)
-            {
-                continue;
-            }
-
-            var wsId = pcell.WorldspaceFormId;
-            if (wsId is null)
-            {
-                continue;
-            }
-
-            if (!gridToCellByWorldspace.TryGetValue(wsId.Value, out var gridMap))
-            {
-                gridMap = new Dictionary<(int, int), uint>();
-                gridToCellByWorldspace[wsId.Value] = gridMap;
-            }
-
-            var keep = new List<PlacedReference>(pcell.PlacedObjects.Count);
-            foreach (var pref in pcell.PlacedObjects)
-            {
-                if (!ShouldRedistributePersistentRef(pcell, pref))
-                {
-                    keep.Add(pref);
-                    continue;
-                }
-
-                // Refs with essentially-zero coordinates are either container refs with no
-                // exterior position or uninitialized; leave them on the persistent cell.
-                var hasPosition = MathF.Abs(pref.X) > 1f || MathF.Abs(pref.Y) > 1f;
-                if (!hasPosition)
-                {
-                    keep.Add(pref);
-                    continue;
-                }
-
-                var (gx, gy) = CellUtils.WorldToCellCoordinates(pref.X, pref.Y);
-
-                CellRecord? destCell = null;
-                if (gridMap.TryGetValue((gx, gy), out var destCellFormId) &&
-                    cellByFormId.TryGetValue(destCellFormId, out var existing))
-                {
-                    if (existing.FormId == pcell.FormId)
-                    {
-                        keep.Add(pref);
-                        continue;
-                    }
-
-                    destCell = existing;
-                }
-                else
-                {
-                    // Source 3: synthesize a virtual exterior tile for this worldspace.
-                    var wsName = context.GetEditorId(wsId.Value) ?? $"0x{wsId.Value:X8}";
-                    var synthetic = new CellRecord
-                    {
-                        FormId = syntheticFormId++,
-                        EditorId = $"[Virtual {gx},{gy} {wsName}]",
-                        GridX = gx,
-                        GridY = gy,
-                        WorldspaceFormId = wsId.Value,
-                        PlacedObjects = [],
-                        IsVirtual = true,
-                        IsBigEndian = pref.IsBigEndian
-                    };
-                    cellByFormId[synthetic.FormId] = synthetic;
-                    existingCells.Add(synthetic);
-                    gridMap[(gx, gy)] = synthetic.FormId;
-                    destCell = synthetic;
-                    syntheticCellsAdded++;
-                }
-
-                destCell.PlacedObjects.Add(pref with
-                {
-                    OriginCellFormId = pcell.FormId,
-                    AssignmentSource =
-                    destCell.IsVirtual ? "PersistentRedistributedSynthetic" : "PersistentRedistributed"
-                });
-                moved++;
-                if (destCell.IsVirtual)
-                {
-                    syntheticUsed++;
-                }
-            }
-
-            if (keep.Count != pcell.PlacedObjects.Count)
-            {
-                existingCells[i] = pcell with { PlacedObjects = keep };
-                cellByFormId[pcell.FormId] = existingCells[i];
-            }
-        }
-
-        if (syntheticCellsAdded > 0)
-        {
-            Logger.Instance.Debug(
-                $"  [Semantic] CreateVirtualCells: synthesized {syntheticCellsAdded} virtual exterior tile(s) " +
-                $"for persistent ref redistribution ({syntheticUsed} refs placed via synthesis)");
-        }
-
-        return moved;
+        return PersistentRefRedistributionPass.Run(existingCells, cellByFormId, context);
     }
 
     /// <summary>
@@ -505,7 +330,7 @@ internal static class PersistentRefRedistributor
             }
 
             var best = occurrences
-                .OrderByDescending(o => ScoreRefOccurrence(o.Cell, o.Ref))
+                .OrderByDescending(o => PlacedRefScoring.ScoreRefOccurrence(o.Cell, o.Ref))
                 .ThenBy(o => o.CellIndex)
                 .ThenBy(o => o.ObjectIndex)
                 .First();
@@ -552,97 +377,6 @@ internal static class PersistentRefRedistributor
         }
 
         return removed;
-    }
-
-    private static int ScoreRefOccurrence(CellRecord cell, PlacedReference pref)
-    {
-        var score = 0;
-
-        if (CellContainsRefGrid(cell, pref))
-        {
-            score += 1000;
-        }
-
-        if (!cell.IsVirtual && !cell.IsUnresolvedBucket && !cell.IsPersistentCell)
-        {
-            score += 500;
-        }
-
-        if (!cell.IsVirtual)
-        {
-            score += 120;
-        }
-
-        if (!cell.IsUnresolvedBucket)
-        {
-            score += 80;
-        }
-
-        if (!cell.IsPersistentCell)
-        {
-            score += 40;
-        }
-
-        if (cell.WorldspaceFormId.HasValue)
-        {
-            score += 20;
-        }
-
-        score += pref.AssignmentSource switch
-        {
-            "ParentCell" or "CellGrup" => 90,
-            "PersistentRedistributed" => 80,
-            "GridMap" or "RuntimeCellList" => 70,
-            "PersistentRedistributedSynthetic" => 25,
-            "Proximity" => 10,
-            _ => 0
-        };
-
-        return score;
-    }
-
-    private static bool CellContainsRefGrid(CellRecord cell, PlacedReference pref)
-    {
-        if (cell.IsInterior || !cell.GridX.HasValue || !cell.GridY.HasValue)
-        {
-            return false;
-        }
-
-        if (MathF.Abs(pref.X) <= 1f && MathF.Abs(pref.Y) <= 1f)
-        {
-            return false;
-        }
-
-        var (gridX, gridY) = CellUtils.WorldToCellCoordinates(pref.X, pref.Y);
-        return cell.GridX.Value == gridX && cell.GridY.Value == gridY;
-    }
-
-    private static bool ShouldRedistributePersistentRef(CellRecord cell, PlacedReference pref)
-    {
-        // Refs placed via runtime cell lists or runtime grid lookup are explicit engine
-        // placements and must stay where the dump put them, even if their world position
-        // would fall in another tile.
-        if (pref.AssignmentSource is not ("ParentCell" or "CellGrup"))
-        {
-            return false;
-        }
-
-        if (cell.IsPersistentCell)
-        {
-            return true;
-        }
-
-        // Xbox/converted ESMs can carry persistent REFR/ACHR/ACRE records under a normal
-        // exterior cell's persistent child group. Those refs still need the same coordinate
-        // rebucketing as worldspace persistent-cell refs so DMP and ESM reports compare the
-        // door/object in the visible exterior cell row.
-        return pref.IsPersistent &&
-               !cell.IsInterior &&
-               !cell.IsVirtual &&
-               !cell.IsUnresolvedBucket &&
-               cell.WorldspaceFormId.HasValue &&
-               cell.GridX.HasValue &&
-               cell.GridY.HasValue;
     }
 
     /// <summary>
@@ -1014,10 +748,4 @@ internal static class PersistentRefRedistributor
         result.Sort((a, b) => a.CellCount.CompareTo(b.CellCount));
         return result;
     }
-
-    private readonly record struct RefOccurrence(
-        int CellIndex,
-        int ObjectIndex,
-        CellRecord Cell,
-        PlacedReference Ref);
 }
