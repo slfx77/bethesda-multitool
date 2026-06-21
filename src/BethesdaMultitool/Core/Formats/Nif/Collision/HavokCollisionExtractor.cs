@@ -256,6 +256,11 @@ internal static class HavokCollisionExtractor
         }
     }
 
+    // Substitutes 1 for an exact zero to guard a subsequent division; a non-zero (even tiny)
+    // scale divides fine, so only the exact-0f case needs replacing — hence the equality test.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell",
+        "S1244:Floating point numbers should not be tested for equality",
+        Justification = "Only an exact 0f divisor must be replaced; near-zero scales are acceptable divisors.")]
     private static float NonZero(float v) => v == 0f ? 1f : v;
 
     private static bool TryReadInt32(byte[] data, BlockInfo block, int rel, bool be, out int value)

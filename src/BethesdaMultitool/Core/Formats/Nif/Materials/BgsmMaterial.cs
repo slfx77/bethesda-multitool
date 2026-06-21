@@ -86,9 +86,15 @@ public sealed class BgsmMaterial
         if (isFallout4)
         {
             var gradient = data[62] != 0;
-            texturePathMap = isEffect
-                ? (gradient ? 0x00051430UL : 0x000514F0UL)
-                : (gradient ? 0x0000000F7F243610UL : 0x0000000F7F244610UL);
+            if (isEffect)
+            {
+                texturePathMap = gradient ? 0x00051430UL : 0x000514F0UL;
+            }
+            else
+            {
+                texturePathMap = gradient ? 0x0000000F7F243610UL : 0x0000000F7F244610UL;
+            }
+
             pos = 63;
         }
         else

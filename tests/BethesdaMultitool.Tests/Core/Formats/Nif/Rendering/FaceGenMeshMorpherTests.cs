@@ -5,8 +5,6 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
 public sealed class FaceGenMeshMorpherTests
 {
-    private const float SamePosEps = 1e-4f;
-
     [Fact]
     public void WeldSeamNormals_TwoColocatedVerticesSameHemisphere_AveragesNormals()
     {

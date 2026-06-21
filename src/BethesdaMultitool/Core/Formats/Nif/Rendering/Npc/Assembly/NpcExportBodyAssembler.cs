@@ -73,17 +73,6 @@ internal static class NpcExportBodyAssembler
         }
     }
 
-    /// <summary>
-    ///     Pip-Boy shapes that must not appear in a static render/export: the dynamic
-    ///     screen/glare shapes (always), and the PipBoyOn/PipBoyOff sleeve variant that
-    ///     does not match the current Pip-Boy state.
-    /// </summary>
-    private static bool IsExcludedPipBoyShape(string? shapeName, bool pipBoyVisible)
-    {
-        return NifBlockParsers.IsPipBoyScreenShape(shapeName) ||
-               NifBlockParsers.IsSuppressedPipBoyVariantShape(shapeName, pipBoyVisible);
-    }
-
     internal static void AddBodyEquipment(
         GlbScene scene,
         NpcAppearance npc,
@@ -158,6 +147,17 @@ internal static class NpcExportBodyAssembler
                     ? effectiveHandTex ?? effectiveBodyTex
                     : effectiveBodyTex;
         }
+    }
+
+    /// <summary>
+    ///     Pip-Boy shapes that must not appear in a static render/export: the dynamic
+    ///     screen/glare shapes (always), and the PipBoyOn/PipBoyOff sleeve variant that
+    ///     does not match the current Pip-Boy state.
+    /// </summary>
+    private static bool IsExcludedPipBoyShape(string? shapeName, bool pipBoyVisible)
+    {
+        return NifBlockParsers.IsPipBoyScreenShape(shapeName) ||
+               NifBlockParsers.IsSuppressedPipBoyVariantShape(shapeName, pipBoyVisible);
     }
 
     internal static void AddWeapon(

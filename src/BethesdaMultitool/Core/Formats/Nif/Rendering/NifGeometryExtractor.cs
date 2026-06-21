@@ -197,19 +197,17 @@ internal static class NifGeometryExtractor
         // viewer always wants full detail, so when BOTH a "_lod" shape and a non-"_lod" shape are
         // present we drop the "_lod" ones (otherwise the low- and high-detail meshes render on top of
         // each other). Standalone "*_lod.nif" files have only "_lod" shapes and are kept intact.
+        var lodShapeNames = shapeDataMap.Keys
+            .Select(idx => (idx, name: NifBlockParsers.ReadBlockName(data, nif.Blocks[idx], nif) ?? ""))
+            .ToList();
+        static bool IsLodShape(string name) => name.Contains("_lod", StringComparison.OrdinalIgnoreCase);
+        if (lodShapeNames.Any(s => IsLodShape(s.name)) && lodShapeNames.Any(s => !IsLodShape(s.name)))
         {
-            var lodShapeNames = shapeDataMap.Keys
-                .Select(idx => (idx, name: NifBlockParsers.ReadBlockName(data, nif.Blocks[idx], nif) ?? ""))
-                .ToList();
-            static bool IsLodShape(string name) => name.Contains("_lod", StringComparison.OrdinalIgnoreCase);
-            if (lodShapeNames.Any(s => IsLodShape(s.name)) && lodShapeNames.Any(s => !IsLodShape(s.name)))
+            foreach (var (idx, _) in lodShapeNames.Where(s => IsLodShape(s.name)))
             {
-                foreach (var (idx, _) in lodShapeNames.Where(s => IsLodShape(s.name)))
-                {
-                    shapeDataMap.Remove(idx);
-                    shapePropertyMap.Remove(idx);
-                    shapeSkinInstanceMap.Remove(idx);
-                }
+                shapeDataMap.Remove(idx);
+                shapePropertyMap.Remove(idx);
+                shapeSkinInstanceMap.Remove(idx);
             }
         }
 

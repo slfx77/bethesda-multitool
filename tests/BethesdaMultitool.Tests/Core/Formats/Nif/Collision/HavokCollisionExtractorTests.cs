@@ -17,6 +17,9 @@ public sealed class HavokCollisionExtractorTests
 {
     private const float Tol = 1e-2f;
 
+    private static readonly int[] SingleTriangleIndices = [0, 1, 2];
+    private static readonly int[] RebasedTriangleIndices = [0, 1, 2, 3, 4, 5];
+
     [Fact]
     public void TryExtract_UncompressedPackedTriStrips_ScalesBySevenAndPreservesIndices()
     {
@@ -35,7 +38,7 @@ public sealed class HavokCollisionExtractorTests
         var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
 
         Assert.True(soup.HasValue);
-        Assert.Equal(new[] { 0, 1, 2 }, soup!.Value.Triangles);
+        Assert.Equal(SingleTriangleIndices, soup!.Value.Triangles);
         AssertVec(new Vector3(7, 0, 0), soup.Value.Positions[0]);
         AssertVec(new Vector3(0, 7, 0), soup.Value.Positions[1]);
         AssertVec(new Vector3(0, 0, 7), soup.Value.Positions[2]);
@@ -99,7 +102,7 @@ public sealed class HavokCollisionExtractorTests
         Assert.True(soup.HasValue);
         Assert.Equal(6, soup!.Value.Positions.Length);
         // Second sub-shape's indices must be re-based by the first's vertex count (3).
-        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, soup.Value.Triangles);
+        Assert.Equal(RebasedTriangleIndices, soup.Value.Triangles);
         AssertVec(new Vector3(14, 0, 0), soup.Value.Positions[3]);
     }
 

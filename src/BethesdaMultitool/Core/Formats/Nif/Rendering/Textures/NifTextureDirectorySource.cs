@@ -59,11 +59,20 @@ internal sealed class NifTextureDirectorySource(string rootPath) : INifTextureSo
         }
 
         // Mirror TryLoad's .dds<->.ddx fallback so a probe matches what a load would actually find.
-        var alt = path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase)
-            ? Path.ChangeExtension(ResolveLocalPath(path), ".ddx")
-            : path.EndsWith(".ddx", StringComparison.OrdinalIgnoreCase)
-                ? Path.ChangeExtension(ResolveLocalPath(path), ".dds")
-                : null;
+        string? alt;
+        if (path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+        {
+            alt = Path.ChangeExtension(ResolveLocalPath(path), ".ddx");
+        }
+        else if (path.EndsWith(".ddx", StringComparison.OrdinalIgnoreCase))
+        {
+            alt = Path.ChangeExtension(ResolveLocalPath(path), ".dds");
+        }
+        else
+        {
+            alt = null;
+        }
+
         return alt is not null && File.Exists(alt);
     }
 

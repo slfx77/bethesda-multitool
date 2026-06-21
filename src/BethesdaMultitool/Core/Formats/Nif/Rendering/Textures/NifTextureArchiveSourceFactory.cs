@@ -21,15 +21,20 @@ internal static class NifTextureArchiveSourceFactory
                 continue;
             }
 
-            sources.Add(Ba2Parser.IsBa2File(sourcePath)
-                ? CreateBa2Source(sourcePath)
-                : CreateBsaSource(sourcePath));
+            if (Ba2Parser.IsBa2File(sourcePath))
+            {
+                sources.Add(CreateBa2Source(sourcePath));
+            }
+            else
+            {
+                sources.Add(CreateBsaSource(sourcePath));
+            }
         }
 
         return sources;
     }
 
-    private static INifTextureSource CreateBsaSource(string sourcePath)
+    private static NifTextureArchiveSource CreateBsaSource(string sourcePath)
     {
         var archive = BsaParser.Parse(sourcePath);
         var extractor = new BsaExtractor(sourcePath);
@@ -49,7 +54,7 @@ internal static class NifTextureArchiveSourceFactory
         return new NifTextureArchiveSource(extractor, fileIndex);
     }
 
-    private static INifTextureSource CreateBa2Source(string sourcePath)
+    private static Ba2TextureArchiveSource CreateBa2Source(string sourcePath)
     {
         // The Ba2Extractor ctor parses the archive once; reuse its Archive for the path index.
         var extractor = new Ba2Extractor(sourcePath);

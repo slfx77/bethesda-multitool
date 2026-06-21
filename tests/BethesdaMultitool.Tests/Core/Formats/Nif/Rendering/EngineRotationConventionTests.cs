@@ -6,7 +6,7 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
 /// <summary>
-///     Ground-truth guard for <see cref="RenderableReference.ComposeWorldMatrix" />, derived from
+///     Ground-truth guard for <see cref="PlacedReferenceTransform.ComposeWorldMatrix" />, derived from
 ///     the ENGINE itself (not NifSkope). The Xbox 360 MemDebug XEX was decompiled (see
 ///     tools/GhidraProject/DecompileRefrRotation.java + refr_rotation_decompiled.txt) to read the
 ///     engine's per-axis rotation builders:
@@ -32,7 +32,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     inverted; the full transpose <c>Mᵀ</c> reverses the factor order and mangled pitch/roll. These
 ///     tests assert <c>Vector3.Transform(v, WorldMatrix) == W·v</c>; if a future edit drops an angle
 ///     negation or re-introduces the transpose in
-///     <see cref="RenderableReference.ComposeWorldMatrix" />, they fail.
+///     <see cref="PlacedReferenceTransform.ComposeWorldMatrix" />, they fail.
 /// </summary>
 public sealed class EngineRotationConventionTests
 {
