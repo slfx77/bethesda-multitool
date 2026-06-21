@@ -18,7 +18,7 @@ public sealed class ParallelWorkTests : IDisposable
         var items = Enumerable.Range(0, 100).ToArray();
         var sum = 0;
         ParallelWork.ForEach("test-sum", items, ConcurrencyPolicy.FullCores,
-            item => Interlocked.Add(ref sum, item));
+            item => Interlocked.Add(ref sum, item), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(items.Sum(), sum);
     }
@@ -29,7 +29,7 @@ public sealed class ParallelWorkTests : IDisposable
         var seen = new List<WorkProgress>();
         var progress = new SynchronousProgress(seen);
         ParallelWork.ForEach("test-progress", Enumerable.Range(0, 10).ToArray(), ConcurrencyPolicy.Serial,
-            static _ => { }, progress);
+            static _ => { }, progress, TestContext.Current.CancellationToken);
 
         Assert.Equal(10, seen.Count);
         Assert.Equal(new WorkProgress(10, 10), seen[^1]);
@@ -55,7 +55,7 @@ public sealed class ParallelWorkTests : IDisposable
             {
                 await Task.Yield();
                 Interlocked.Add(ref sum, item);
-            });
+            }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(Enumerable.Range(0, 50).Sum(), sum);
     }
@@ -64,7 +64,8 @@ public sealed class ParallelWorkTests : IDisposable
     public void For_covers_the_range()
     {
         var flags = new bool[64];
-        ParallelWork.For("test-for", 0, flags.Length, ConcurrencyPolicy.FullCores, i => flags[i] = true);
+        ParallelWork.For("test-for", 0, flags.Length, ConcurrencyPolicy.FullCores, i => flags[i] = true,
+            TestContext.Current.CancellationToken);
         Assert.All(flags, Assert.True);
     }
 
@@ -72,11 +73,14 @@ public sealed class ParallelWorkTests : IDisposable
     public async Task RunNamedAsync_runs_the_work_and_propagates_exceptions()
     {
         var ran = false;
-        await ParallelWork.RunNamedAsync("test-run", () => ran = true);
+        await ParallelWork.RunNamedAsync("test-run", () => ran = true, TestContext.Current.CancellationToken);
         Assert.True(ran);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            ParallelWork.RunNamedAsync("test-run-throw", static () => throw new InvalidOperationException()));
+            ParallelWork.RunNamedAsync(
+                "test-run-throw",
+                static () => throw new InvalidOperationException(),
+                TestContext.Current.CancellationToken));
     }
 
     /// <summary>IProgress that records synchronously (the default Progress&lt;T&gt; posts to a sync context).</summary>

@@ -10,6 +10,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Records;
 
 public class EsmWorldExtractorLandDiagnosticsTests
 {
+    private static readonly uint[] ExpectedTextureIndices = [0x10u, 0x20u, 0x30u];
+
     [Fact]
     public void ExtractLandFromBuffer_ReportsTerrainVisualSubrecords()
     {
@@ -36,7 +38,7 @@ public class EsmWorldExtractorLandDiagnosticsTests
         Assert.NotNull(land.VisualData);
         Assert.Equal(9, land.VisualData.VertexColors!.Length);
         Assert.NotNull(land.VisualData.TextureIndices);
-        Assert.Equal(new[] { 0x10u, 0x20u, 0x30u }, land.VisualData.TextureIndices);
+        Assert.Equal(ExpectedTextureIndices, land.VisualData.TextureIndices);
         Assert.Equal(2, land.VisualData.TextureLayers.Count);
         Assert.Equal(LandTextureLayerKind.Base, land.VisualData.TextureLayers[0].Kind);
         Assert.Equal(7, land.VisualData.TextureLayers[0].PlatformFlag);

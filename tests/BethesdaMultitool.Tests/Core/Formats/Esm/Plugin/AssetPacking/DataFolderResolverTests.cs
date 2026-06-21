@@ -3,12 +3,14 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 
-public class DataFolderResolverTests : IDisposable
+public sealed class DataFolderResolverTests : IDisposable
 {
     // One scratch tree shared by every test in this class; deleted on Dispose.
     private readonly string _scratchRoot = Path.Combine(
         Path.GetTempPath(),
         $"assetpack-resolver-{Guid.NewGuid():N}");
+
+    private bool _disposed;
 
     public DataFolderResolverTests()
     {
@@ -17,6 +19,12 @@ public class DataFolderResolverTests : IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         try
         {
             if (Directory.Exists(_scratchRoot))
@@ -28,6 +36,8 @@ public class DataFolderResolverTests : IDisposable
         {
             // Best-effort cleanup
         }
+
+        GC.SuppressFinalize(this);
     }
 
     private string MakeDataFolder(string label)
@@ -35,7 +45,7 @@ public class DataFolderResolverTests : IDisposable
         return Path.Combine(_scratchRoot, label);
     }
 
-    private void WriteLooseFile(string dataFolder, string relativePath, ReadOnlySpan<byte> bytes)
+    private static void WriteLooseFile(string dataFolder, string relativePath, ReadOnlySpan<byte> bytes)
     {
         var absolutePath = Path.Combine(dataFolder, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);

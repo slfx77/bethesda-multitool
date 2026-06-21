@@ -22,7 +22,7 @@ public class PlacedRefSanitizerTests
 
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed, valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "XLKR"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "XLKR");
         Assert.Contains(encoded.Warnings, w => w.Contains("XLKR") && w.Contains("dangles"));
     }
 
@@ -76,7 +76,7 @@ public class PlacedRefSanitizerTests
 
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed, valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "XESP"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "XESP");
         Assert.Contains(encoded.Warnings, w => w.Contains("XESP"));
     }
 
@@ -88,7 +88,7 @@ public class PlacedRefSanitizerTests
 
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed, valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "XOWN"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "XOWN");
         Assert.Contains(encoded.Warnings, w => w.Contains("XOWN"));
     }
 
@@ -100,7 +100,7 @@ public class PlacedRefSanitizerTests
 
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed, valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "XEZN"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "XEZN");
         Assert.Contains(encoded.Warnings, w => w.Contains("XEZN"));
     }
 
@@ -112,7 +112,7 @@ public class PlacedRefSanitizerTests
 
         var encoded = RefrEncoder.EncodeNewPlacedReference(placed, valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "XTEL"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "XTEL");
         Assert.Contains(encoded.Warnings, w => w.Contains("XTEL"));
     }
 

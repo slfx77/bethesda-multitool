@@ -3,11 +3,13 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 
-public class Xbox360FolderDetectorTests : IDisposable
+public sealed class Xbox360FolderDetectorTests : IDisposable
 {
     private readonly string _scratchRoot = Path.Combine(
         Path.GetTempPath(),
         $"x360-detect-{Guid.NewGuid():N}");
+
+    private bool _disposed;
 
     public Xbox360FolderDetectorTests()
     {
@@ -16,6 +18,12 @@ public class Xbox360FolderDetectorTests : IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         try
         {
             if (Directory.Exists(_scratchRoot))
@@ -27,6 +35,8 @@ public class Xbox360FolderDetectorTests : IDisposable
         {
             // Best-effort cleanup
         }
+
+        GC.SuppressFinalize(this);
     }
 
     [Fact]

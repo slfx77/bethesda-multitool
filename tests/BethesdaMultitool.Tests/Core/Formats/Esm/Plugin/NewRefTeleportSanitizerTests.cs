@@ -280,7 +280,7 @@ public class NewRefTeleportSanitizerTests
     private static ParsedMainRecord SingleRecordFromGrup(byte[] grupBytes)
     {
         var (records, _) = EsmParser.EnumerateRecordsWithGrups(BuildPluginBytes(grupBytes));
-        return Assert.Single(records.Where(r => r.Header.Signature != "TES4"));
+        return Assert.Single(records, r => r.Header.Signature != "TES4");
     }
 
     private static ParsedMainRecord SingleRecordFromBytes(byte[] recordBytes)
@@ -306,7 +306,7 @@ public class NewRefTeleportSanitizerTests
 
     private static uint ReadFormIdSubrecord(ParsedMainRecord record, string signature)
     {
-        var subrecord = Assert.Single(record.Subrecords.Where(s => s.Signature == signature));
+        var subrecord = Assert.Single(record.Subrecords, s => s.Signature == signature);
         return BinaryPrimitives.ReadUInt32LittleEndian(subrecord.Data);
     }
 }

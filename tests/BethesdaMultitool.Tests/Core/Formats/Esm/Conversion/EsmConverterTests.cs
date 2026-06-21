@@ -88,14 +88,28 @@ public class EsmConverterTests(ITestOutputHelper output)
         var input = new byte[4];
         using var converter = new EsmConverter(input, false);
 
-        // Should not throw, though output may be minimal/empty
-        var exception = Record.Exception(() => converter.ConvertToLittleEndian());
+        byte[]? result = null;
 
-        // We just verify it doesn't crash with an unhandled exception
-        // The converter may throw ArgumentOutOfRange for truly invalid data, which is fine
+        // Should not throw, though output may be minimal/empty. The converter may throw
+        // ArgumentOutOfRange for truly invalid data, which is an acceptable, defined outcome.
+        var exception = Record.Exception(() => result = converter.ConvertToLittleEndian());
+
         _output.WriteLine(exception != null
             ? $"Expected exception for invalid input: {exception.GetType().Name}"
             : "Converter handled empty input gracefully");
+
+        // The degenerate input must resolve to a defined terminal state: either a graceful
+        // (non-null) byte[] result, or a thrown ArgumentException (the converter validates
+        // input size). Both are acceptable; an unhandled NullReference/IndexOutOfRange would
+        // indicate a real crash and is excluded.
+        if (exception is null)
+        {
+            Assert.NotNull(result);
+        }
+        else
+        {
+            Assert.IsAssignableFrom<ArgumentException>(exception);
+        }
     }
 
     [Fact]

@@ -29,7 +29,6 @@ public sealed class IntenseTrainingPerkRankRegressionTests
     private const int PerkStructSize = 96;
 
     // PDB offsets for BGSPerk class (per pdb_layouts.json key 0x56).
-    private const int PerkDataOffset = 72; // 5-byte PerkData
     private const int PerkEntriesListOffset = 88; // BSSimpleList head (8 bytes)
 
     // BGSPerkEntry inner offsets — read in RuntimeMagicReader.ReadPerkEntry.
@@ -62,7 +61,7 @@ public sealed class IntenseTrainingPerkRankRegressionTests
         var reader = new RuntimeMagicReader(fixture.BuildContext());
 
         var perk = reader.ReadRuntimePerk(
-            fixture.MakeEntry(perkFormId, PerkFormType, PerkVa));
+            RuntimeReaderTestFixture.MakeEntry(perkFormId, PerkFormType, PerkVa));
 
         Assert.NotNull(perk);
         Assert.NotEmpty(perk.Entries);
@@ -90,7 +89,7 @@ public sealed class IntenseTrainingPerkRankRegressionTests
         var reader = new RuntimeMagicReader(fixture.BuildContext());
 
         var perk = reader.ReadRuntimePerk(
-            fixture.MakeEntry(perkFormId, PerkFormType, PerkVa));
+            RuntimeReaderTestFixture.MakeEntry(perkFormId, PerkFormType, PerkVa));
 
         Assert.NotNull(perk);
         Assert.Single(perk.Entries);
@@ -111,7 +110,7 @@ public sealed class IntenseTrainingPerkRankRegressionTests
         var reader = new RuntimeMagicReader(fixture.BuildContext());
 
         var perk = reader.ReadRuntimePerk(
-            fixture.MakeEntry(perkFormId, PerkFormType, PerkVa));
+            RuntimeReaderTestFixture.MakeEntry(perkFormId, PerkFormType, PerkVa));
 
         Assert.NotNull(perk);
         Assert.Empty(perk.Entries);

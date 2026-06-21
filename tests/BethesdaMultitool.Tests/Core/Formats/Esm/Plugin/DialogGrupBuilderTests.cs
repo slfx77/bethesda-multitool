@@ -92,7 +92,7 @@ public sealed class DialogGrupBuilderTests
         };
         var stats = new ConversionPipelineStats();
 
-        var result = DialogGrupBuilder.BuildDialogSection(
+        _ = DialogGrupBuilder.BuildDialogSection(
             [],
             [infoNoQsti],
             new NewVsOverrideClassifier(masters.Keys),

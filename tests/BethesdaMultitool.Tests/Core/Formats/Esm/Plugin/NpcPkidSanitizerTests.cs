@@ -36,7 +36,7 @@ public class NpcPkidSanitizerTests
 
         var encoded = NpcEncoder.EncodeNew(npc, validPackageFormIds: valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "PKID"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "PKID");
         Assert.Contains(encoded.Warnings, w => w.Contains("PKID") && w.Contains("dropped"));
     }
 
@@ -158,7 +158,7 @@ public class NpcPkidSanitizerTests
 
         var encoded = NpcEncoder.EncodeNew(npc, validFormIds: valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "RNAM"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "RNAM");
         Assert.Contains(encoded.Warnings, w => w.Contains("RNAM") && w.Contains("dangles"));
     }
 
@@ -170,7 +170,7 @@ public class NpcPkidSanitizerTests
 
         var encoded = NpcEncoder.EncodeNew(npc, validFormIds: valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "CNAM"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "CNAM");
         Assert.Contains(encoded.Warnings, w => w.Contains("CNAM") && w.Contains("dangles"));
     }
 
@@ -182,7 +182,7 @@ public class NpcPkidSanitizerTests
 
         var encoded = NpcEncoder.EncodeNew(npc, validFormIds: valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "VTCK"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "VTCK");
         Assert.Contains(encoded.Warnings, w => w.Contains("VTCK") && w.Contains("dangles"));
     }
 
@@ -194,7 +194,7 @@ public class NpcPkidSanitizerTests
 
         var encoded = NpcEncoder.EncodeNew(npc, validFormIds: valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "INAM"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "INAM");
         Assert.Contains(encoded.Warnings, w => w.Contains("INAM") && w.Contains("dangles"));
     }
 
@@ -210,10 +210,10 @@ public class NpcPkidSanitizerTests
 
         var encoded = NpcEncoder.EncodeNew(npc);
 
-        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "RNAM"));
-        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "CNAM"));
-        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "VTCK"));
-        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "INAM"));
+        Assert.Single(encoded.Subrecords, s => s.Signature == "RNAM");
+        Assert.Single(encoded.Subrecords, s => s.Signature == "CNAM");
+        Assert.Single(encoded.Subrecords, s => s.Signature == "VTCK");
+        Assert.Single(encoded.Subrecords, s => s.Signature == "INAM");
     }
 
     private static NpcRecord MakeNpcWithRefs(

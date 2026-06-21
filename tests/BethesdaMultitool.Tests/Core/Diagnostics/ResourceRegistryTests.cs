@@ -29,7 +29,7 @@ public sealed class ResourceRegistryTests
     }
 
     [Fact]
-    public void Snapshot_is_coherent_under_concurrent_mutation_and_registration()
+    public async Task Snapshot_is_coherent_under_concurrent_mutation_and_registration()
     {
         var registry = new ResourceRegistry();
         var resources = Enumerable.Range(0, 8).Select(static i => new FakeResource($"R{i}")).ToArray();
@@ -39,18 +39,20 @@ public sealed class ResourceRegistryTests
         }
 
         var stop = false;
-        var mutator = Task.Run(() =>
-        {
-            while (!Volatile.Read(ref stop))
+        var mutator = Task.Run(
+            () =>
             {
-                foreach (var resource in resources)
+                while (!Volatile.Read(ref stop))
                 {
-                    resource.Mutate(128);
-                }
+                    foreach (var resource in resources)
+                    {
+                        resource.Mutate(128);
+                    }
 
-                using var transient = registry.Register(new FakeResource("transient"));
-            }
-        });
+                    using var transient = registry.Register(new FakeResource("transient"));
+                }
+            },
+            TestContext.Current.CancellationToken);
 
         for (var i = 0; i < 200; i++)
         {
@@ -67,7 +69,7 @@ public sealed class ResourceRegistryTests
         }
 
         Volatile.Write(ref stop, true);
-        mutator.Wait();
+        await mutator;
     }
 
     [Fact]

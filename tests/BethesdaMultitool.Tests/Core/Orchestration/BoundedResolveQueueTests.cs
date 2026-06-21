@@ -109,8 +109,6 @@ public sealed class BoundedResolveQueueTests
     {
         private readonly Queue<(Func<TResult?> Work, TaskCompletionSource<TResult?> Completion)> _pending = new();
 
-        public int PendingCount => _pending.Count;
-
         public Task<TResult?> Schedule(Func<TResult?> work)
         {
             var completion = new TaskCompletionSource<TResult?>(TaskCreationOptions.RunContinuationsAsynchronously);

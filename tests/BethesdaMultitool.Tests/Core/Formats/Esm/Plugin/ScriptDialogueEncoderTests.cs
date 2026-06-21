@@ -701,6 +701,7 @@ public class ScriptDialogueEncoderTests
     private static byte[] BuildSubrecordStream(bool bigEndianSizes, params (string Signature, byte[] Data)[] subrecords)
     {
         var bytes = new List<byte>();
+        Span<byte> lengthBytes = stackalloc byte[2];
         foreach (var (signature, data) in subrecords)
         {
             var signatureBytes = Encoding.ASCII.GetBytes(signature);
@@ -710,7 +711,6 @@ public class ScriptDialogueEncoderTests
             }
 
             bytes.AddRange(signatureBytes);
-            Span<byte> lengthBytes = stackalloc byte[2];
             if (bigEndianSizes)
             {
                 BinaryPrimitives.WriteUInt16BigEndian(lengthBytes, (ushort)data.Length);

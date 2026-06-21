@@ -32,11 +32,13 @@ public sealed class SemanticFileLoaderBufferTests
             .Build();
 
         var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.esm");
-        await File.WriteAllBytesAsync(path, fileData);
+        await File.WriteAllBytesAsync(path, fileData, TestContext.Current.CancellationToken);
 
         try
         {
-            var analysis = await EsmFileAnalyzer.AnalyzeAsync(path);
+            var analysis = await EsmFileAnalyzer.AnalyzeAsync(
+                path,
+                cancellationToken: TestContext.Current.CancellationToken);
             using var mmfResult = SemanticFileLoader.LoadFromAnalysisResult(
                 path,
                 analysis,

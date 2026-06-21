@@ -24,10 +24,27 @@ public abstract class RuntimeStructReaderTestBase : IDisposable
     private MemoryMappedViewAccessor? _accessor;
     private MemoryMappedFile? _mmf;
     private string? _tempFilePath;
+    private bool _disposed;
 
     public void Dispose()
     {
+        Dispose(true);
         GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        if (!disposing)
+        {
+            return;
+        }
+
         _accessor?.Dispose();
         _mmf?.Dispose();
 
@@ -47,7 +64,7 @@ public abstract class RuntimeStructReaderTestBase : IDisposable
     /// <summary>
     ///     Low-level lifecycle primitive: writes <paramref name="data" /> to a temp file,
     ///     memory-maps it, and returns the read-only accessor. The MMF / accessor / temp file
-    ///     are owned by this base class and torn down in <see cref="Dispose" />.
+    ///     are owned by this base class and torn down in <see cref="Dispose()" />.
     ///     Use this overload when the test needs to build a custom <see cref="MinidumpInfo" />
     ///     (e.g. multi-region layouts for tests that exercise both heap and module regions, or
     ///     callers that invoke <c>RuntimeStructReader.CreateWithAutoDetect</c> directly).
@@ -73,7 +90,7 @@ public abstract class RuntimeStructReaderTestBase : IDisposable
     /// <summary>
     ///     Writes <paramref name="data" /> to a temp file, memory-maps it, and returns a reader
     ///     pointed at a single memory region spanning the file at VA <see cref="HeapBaseVa" />.
-    ///     Subsequent <see cref="Dispose" /> tears the MMF / accessor / temp file down.
+    ///     Subsequent <see cref="Dispose()" /> tears the MMF / accessor / temp file down.
     /// </summary>
     protected RuntimeStructReader CreateReader(byte[] data)
     {

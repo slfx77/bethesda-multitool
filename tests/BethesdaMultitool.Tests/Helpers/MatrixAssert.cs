@@ -11,7 +11,7 @@ internal static class MatrixAssert
 {
     /// <summary>
     ///     Assert two Matrix4x4 values are equal element-wise within <paramref name="epsilon" />.
-    ///     Each element is checked with <see cref="Assert.InRange{T}" /> so a failure points at
+    ///     Each element is checked with <see cref="Assert.InRange{T}(T, T, T)" /> so a failure points at
     ///     the specific offending element.
     /// </summary>
     public static void Equal(Matrix4x4 expected, Matrix4x4 actual, float epsilon = 0.001f)

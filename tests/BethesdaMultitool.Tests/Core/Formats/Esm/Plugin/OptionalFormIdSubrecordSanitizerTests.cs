@@ -59,7 +59,7 @@ public class OptionalFormIdSubrecordSanitizerTests
 
         var encoded = ContEncoder.EncodeNew(cont, valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "SCRI"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "SCRI");
         Assert.Contains(encoded.Warnings, w => w.Contains("SCRI"));
     }
 
@@ -146,7 +146,7 @@ public class OptionalFormIdSubrecordSanitizerTests
 
         var encoded = WeapEncoder.EncodeNew(weap, valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "NAM0"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "NAM0");
         Assert.Contains(encoded.Warnings, w => w.Contains("NAM0"));
     }
 
@@ -214,7 +214,7 @@ public class OptionalFormIdSubrecordSanitizerTests
 
         var encoded = NpcEncoder.EncodeNew(npc, validFormIds: validFormIds);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "SCRI"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "SCRI");
         Assert.Contains(encoded.Warnings, w => w.Contains("SCRI"));
     }
 

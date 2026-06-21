@@ -53,7 +53,7 @@ public sealed class ScptOffsetReaderTests
         var reader = new RuntimeScriptReader(fixture.BuildContext());
 
         var script = reader.ReadRuntimeScript(
-            fixture.MakeEntry(scptFormId, ScriptFormType, ScptVa));
+            RuntimeReaderTestFixture.MakeEntry(scptFormId, ScriptFormType, ScptVa));
 
         Assert.NotNull(script);
         Assert.Equal(scptFormId, script.FormId);
@@ -72,7 +72,7 @@ public sealed class ScptOffsetReaderTests
         var reader = new RuntimeScriptReader(fixture.BuildContext());
 
         var script = reader.ReadRuntimeScript(
-            fixture.MakeEntry(scptFormId, ScriptFormType, ScptVa));
+            RuntimeReaderTestFixture.MakeEntry(scptFormId, ScriptFormType, ScptVa));
 
         Assert.NotNull(script);
         Assert.Null(script.OwnerQuestFormId);
@@ -90,7 +90,7 @@ public sealed class ScptOffsetReaderTests
         var reader = new RuntimeScriptReader(fixture.BuildContext());
 
         var script = reader.ReadRuntimeScript(
-            fixture.MakeEntry(scptFormId, ScriptFormType, ScptVa));
+            RuntimeReaderTestFixture.MakeEntry(scptFormId, ScriptFormType, ScptVa));
 
         Assert.NotNull(script);
         Assert.Equal(5u, script.VariableCount);
@@ -114,7 +114,7 @@ public sealed class ScptOffsetReaderTests
         var reader = new RuntimeScriptReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimeScript(
-            fixture.MakeEntry(scptFormId, ScriptFormType, ScptVa)));
+            RuntimeReaderTestFixture.MakeEntry(scptFormId, ScriptFormType, ScptVa)));
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class ScptOffsetReaderTests
         var reader = new RuntimeScriptReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimeScript(
-            fixture.MakeEntry(scptFormId, 0x19 /* BOOK, not SCPT */, ScptVa)));
+            RuntimeReaderTestFixture.MakeEntry(scptFormId, 0x19 /* BOOK, not SCPT */, ScptVa)));
     }
 
     /// <summary>

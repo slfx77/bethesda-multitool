@@ -21,6 +21,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Export.Projections;
 /// </summary>
 public class CrossDumpSourceProjectorTests
 {
+    private static readonly uint[] DedupedReferencedObjects = [0x1u, 0x2u, 0x3u];
+
     [Fact]
     public void Project_copies_cell_fields_into_skeleton_and_preserves_placed_object_refs()
     {
@@ -108,7 +110,7 @@ public class CrossDumpSourceProjectorTests
         var projection = Project(BuildSource(scripts: [script]));
 
         var skeleton = Assert.Single(projection.ScriptSkeletons);
-        Assert.Equal(new[] { 0x1u, 0x2u, 0x3u }, skeleton.ReferencedObjects);
+        Assert.Equal(DedupedReferencedObjects, skeleton.ReferencedObjects);
     }
 
     [Fact]

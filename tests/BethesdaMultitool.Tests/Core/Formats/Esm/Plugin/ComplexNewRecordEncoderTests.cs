@@ -29,6 +29,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 /// </summary>
 public class ComplexNewRecordEncoderTests
 {
+    private static readonly uint[] ThreeCardFormIds = [0x00012345u, 0x00012346u, 0x00012347u];
+    private static readonly uint[] TwoCardFormIds = [0x00012345u, 0x00012346u];
+
     [Fact]
     public void WeapEncoder_EncodeNew_DnamIs204Bytes()
     {
@@ -731,7 +734,9 @@ public class ComplexNewRecordEncoderTests
         };
 
         var encoded = ArmaEncoder.EncodeNew(arma);
-        var sigs = encoded.Subrecords.Where(s => s.Signature.StartsWith("MOD") || s.Signature.StartsWith("MO"))
+        var sigs = encoded.Subrecords
+            .Where(s => s.Signature.StartsWith("MOD", StringComparison.Ordinal)
+                        || s.Signature.StartsWith("MO", StringComparison.Ordinal))
             .Select(s => s.Signature).ToList();
 
         // Each model variant is immediately followed by its texture-hash subrecord.
@@ -1491,8 +1496,8 @@ public class ComplexNewRecordEncoderTests
         var encoded = BptdEncoder.EncodeNew(bptd);
         Assert.Contains(encoded.Warnings, w => w.Contains("part names vs"));
         // Only the matched prefix is emitted (1 pair).
-        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "BPTN"));
-        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "BPNN"));
+        Assert.Single(encoded.Subrecords, s => s.Signature == "BPTN");
+        Assert.Single(encoded.Subrecords, s => s.Signature == "BPNN");
     }
 
     // ====================================================================================
@@ -1749,7 +1754,7 @@ public class ComplexNewRecordEncoderTests
         var cards = encoded.Subrecords.Where(s => s.Signature == "CARD")
             .Select(s => BinaryPrimitives.ReadUInt32LittleEndian(s.Bytes))
             .ToList();
-        Assert.Equal(new[] { 0x00012345u, 0x00012346u, 0x00012347u }, cards);
+        Assert.Equal(ThreeCardFormIds, cards);
         Assert.Empty(encoded.Warnings);
     }
 
@@ -1790,7 +1795,7 @@ public class ComplexNewRecordEncoderTests
         var cards = encoded.Subrecords.Where(s => s.Signature == "CARD")
             .Select(s => BinaryPrimitives.ReadUInt32LittleEndian(s.Bytes))
             .ToList();
-        Assert.Equal(new[] { 0x00012345u, 0x00012346u }, cards);
+        Assert.Equal(TwoCardFormIds, cards);
     }
 
     // ====================================================================================

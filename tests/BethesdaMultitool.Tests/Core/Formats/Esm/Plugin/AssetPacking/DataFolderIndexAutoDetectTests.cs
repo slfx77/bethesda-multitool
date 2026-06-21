@@ -103,7 +103,7 @@ public sealed class DataFolderIndexAutoDetectTests : IDisposable
         Assert.True(index.TryResolveExact(@"textures\flat\thing.dds", out _));
     }
 
-    private void WriteLooseAsset(string dataFolder, string relativePath)
+    private static void WriteLooseAsset(string dataFolder, string relativePath)
     {
         var absolutePath = Path.Combine(dataFolder, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);

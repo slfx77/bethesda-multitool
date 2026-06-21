@@ -12,11 +12,13 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 ///     resolution falls through to a complete source, and the packer must never pack a
 ///     zero-filled payload even if one slips through.
 /// </summary>
-public class BsaTruncationTests : IDisposable
+public sealed class BsaTruncationTests : IDisposable
 {
     private readonly string _scratchRoot = Path.Combine(
         Path.GetTempPath(),
         $"bsa-truncation-{Guid.NewGuid():N}");
+
+    private bool _disposed;
 
     public BsaTruncationTests()
     {
@@ -25,6 +27,12 @@ public class BsaTruncationTests : IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         try
         {
             if (Directory.Exists(_scratchRoot))
@@ -36,6 +44,8 @@ public class BsaTruncationTests : IDisposable
         {
             // Best-effort cleanup
         }
+
+        GC.SuppressFinalize(this);
     }
 
     [Fact]

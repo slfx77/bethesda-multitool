@@ -18,15 +18,23 @@ public sealed class ConcurrentLazyCacheTests
     public void Factory_runs_once_per_key_under_concurrency()
     {
         var calls = 0;
+        var results = new string?[16];
+
+        // Rendezvous all workers before they touch the cache so the GetOrCreate calls
+        // contend simultaneously — deterministically exercising the single-flight path
+        // without relying on a wall-clock sleep to widen the race window.
+        using var barrier = new Barrier(results.Length);
         var cache = CreateCache(key =>
         {
             Interlocked.Increment(ref calls);
-            Thread.Sleep(10);
             return key + "!";
         });
 
-        var results = new string?[16];
-        Parallel.For(0, results.Length, i => results[i] = cache.GetOrCreate("k"));
+        Parallel.For(0, results.Length, i =>
+        {
+            barrier.SignalAndWait(TestContext.Current.CancellationToken);
+            results[i] = cache.GetOrCreate("k");
+        });
 
         Assert.Equal(1, calls);
         Assert.All(results, static r => Assert.Equal("k!", r));

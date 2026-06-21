@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Allocation;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
@@ -72,7 +73,7 @@ public sealed class FormIdPlannerTests
         Assert.Equal(first[0xBB000003], second[0xBB000003]);
     }
 
-    private static IReadOnlyDictionary<uint, uint> AllocateForInputs(IReadOnlyList<CatalogEntry> inputs)
+    private static ImmutableDictionary<uint, uint> AllocateForInputs(IReadOnlyList<CatalogEntry> inputs)
     {
         var allocator = new FormIdAllocator();
         var planner = new FormIdPlanner(allocator);

@@ -14,7 +14,7 @@ public sealed class RefrReferenceWalkerTests
 
         var refs = walker.Walk(placed).ToList();
 
-        var nameRef = Assert.Single(refs.Where(r => r.FieldPath == "NAME"));
+        var nameRef = Assert.Single(refs, r => r.FieldPath == "NAME");
         Assert.Equal(0x000ABCDEu, nameRef.FormId);
     }
 

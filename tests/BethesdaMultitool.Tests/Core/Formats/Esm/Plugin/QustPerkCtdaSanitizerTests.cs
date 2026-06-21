@@ -31,7 +31,7 @@ public class QustPerkCtdaSanitizerTests
 
         var encoded = QustEncoder.EncodeNew(quest, valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "CTDA"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "CTDA");
         Assert.Contains(encoded.Warnings, w => w.Contains("CTDA sanitizer"));
     }
 
@@ -103,8 +103,8 @@ public class QustPerkCtdaSanitizerTests
         var encoded = QustEncoder.EncodeNew(quest, valid);
 
         // INDX should still emit for the stage; CTDA for that stage was dropped.
-        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "INDX"));
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "CTDA"));
+        Assert.Single(encoded.Subrecords, s => s.Signature == "INDX");
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "CTDA");
     }
 
     // ---------- PERK top-level conditions ----------
@@ -120,7 +120,7 @@ public class QustPerkCtdaSanitizerTests
 
         var encoded = PerkEncoder.EncodeNew(perk, valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "CTDA"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "CTDA");
         Assert.Contains(encoded.Warnings, w => w.Contains("CTDA sanitizer"));
     }
 
@@ -192,7 +192,7 @@ public class QustPerkCtdaSanitizerTests
 
         var encoded = PerkEncoder.EncodeNew(perk, valid);
 
-        Assert.Empty(encoded.Subrecords.Where(s => s.Signature == "PRKC"));
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "PRKC");
         // Make sure PRKE / DATA / EPFT / EPFD / PRKF still emit (the entry itself isn't lost).
         Assert.Single(encoded.Subrecords, s => s.Signature == "PRKE");
         Assert.Single(encoded.Subrecords, s => s.Signature == "PRKF");
@@ -217,7 +217,7 @@ public class QustPerkCtdaSanitizerTests
 
         var encoded = PerkEncoder.EncodeNew(perk, valid);
 
-        Assert.Single(encoded.Subrecords.Where(s => s.Signature == "PRKC"));
+        Assert.Single(encoded.Subrecords, s => s.Signature == "PRKC");
         // Only the GetActorValue CTDA survives (HasPerk was dropped).
         var ctdaCount = encoded.Subrecords.Count(s => s.Signature == "CTDA");
         Assert.Equal(1, ctdaCount);

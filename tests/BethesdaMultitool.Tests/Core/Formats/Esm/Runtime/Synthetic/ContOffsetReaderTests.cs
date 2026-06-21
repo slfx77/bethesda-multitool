@@ -44,7 +44,7 @@ public sealed class ContOffsetReaderTests
         var reader = new RuntimeContainerReader(fixture.BuildContext());
 
         var cont = reader.ReadRuntimeContainer(
-            fixture.MakeEntry(contFormId, ContFormType, ContVa));
+            RuntimeReaderTestFixture.MakeEntry(contFormId, ContFormType, ContVa));
 
         Assert.NotNull(cont);
         Assert.Equal(contFormId, cont.FormId);
@@ -61,7 +61,7 @@ public sealed class ContOffsetReaderTests
         var reader = new RuntimeContainerReader(fixture.BuildContext());
 
         var cont = reader.ReadRuntimeContainer(
-            fixture.MakeEntry(contFormId, ContFormType, ContVa));
+            RuntimeReaderTestFixture.MakeEntry(contFormId, ContFormType, ContVa));
 
         Assert.NotNull(cont);
         Assert.Equal((byte)0x03, cont.Flags);
@@ -88,7 +88,7 @@ public sealed class ContOffsetReaderTests
         var reader = new RuntimeContainerReader(fixture.BuildContext());
 
         var cont = reader.ReadRuntimeContainer(
-            fixture.MakeEntry(contFormId, ContFormType, ContVa));
+            RuntimeReaderTestFixture.MakeEntry(contFormId, ContFormType, ContVa));
 
         Assert.NotNull(cont);
         Assert.Single(cont.Contents);
@@ -105,7 +105,7 @@ public sealed class ContOffsetReaderTests
         var reader = new RuntimeContainerReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimeContainer(
-            fixture.MakeEntry(0x000B0001, ContFormType, ContVa)));
+            RuntimeReaderTestFixture.MakeEntry(0x000B0001, ContFormType, ContVa)));
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class ContOffsetReaderTests
         var reader = new RuntimeContainerReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimeContainer(
-            fixture.MakeEntry(0x000B0004, 0x28 /* WEAP, not CONT */, ContVa)));
+            RuntimeReaderTestFixture.MakeEntry(0x000B0004, 0x28 /* WEAP, not CONT */, ContVa)));
     }
 
     private static byte[] BuildCont(uint formId, uint scriptPtr, byte flags, float weight,

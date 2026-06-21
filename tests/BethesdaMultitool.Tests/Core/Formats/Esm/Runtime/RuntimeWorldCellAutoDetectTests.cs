@@ -108,7 +108,7 @@ public sealed class RuntimeWorldCellAutoDetectTests : RuntimeStructReaderTestBas
         };
     }
 
-    private (RuntimeEditorIdEntry WorldEntry, RuntimeEditorIdEntry CellEntry) WriteShiftedWorldAndCell(
+    private static (RuntimeEditorIdEntry WorldEntry, RuntimeEditorIdEntry CellEntry) WriteShiftedWorldAndCell(
         byte[] data,
         int worldShift,
         int cellShift)

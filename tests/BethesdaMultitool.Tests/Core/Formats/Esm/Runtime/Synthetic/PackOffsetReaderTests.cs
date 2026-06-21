@@ -26,15 +26,12 @@ public sealed class PackOffsetReaderTests
     private const int PackDataOffset = 28 + 16; // 44
     private const int PackLocPtrOffset = 44 + 16; // 60
     private const int PackTargPtrOffset = 48 + 16; // 64
-    private const int PackSchedOffset = 56 + 16; // 72
     private const int CombatStylePtrOffset = 72 + 16; // 88
 
     // PACKAGE_DATA inner offsets (relative to PackDataOffset).
     private const int PackTypeInnerOffset = 4;
 
     private const uint PackVa = 0x40100000;
-    private const uint LocVa = 0x40200000;
-    private const uint TargVa = 0x40300000;
     private const uint CstyVa = 0x40400000;
 
     [Fact]
@@ -53,7 +50,7 @@ public sealed class PackOffsetReaderTests
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         var pack = reader.ReadRuntimePackage(
-            fixture.MakeEntry(packFormId, 0x4A /* PACK = 0x4A */, PackVa));
+            RuntimeReaderTestFixture.MakeEntry(packFormId, 0x4A /* PACK = 0x4A */, PackVa));
 
         Assert.NotNull(pack);
         Assert.Equal(packFormId, pack.FormId);
@@ -75,7 +72,7 @@ public sealed class PackOffsetReaderTests
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         var pack = reader.ReadRuntimePackage(
-            fixture.MakeEntry(packFormId, 0x4A, PackVa));
+            RuntimeReaderTestFixture.MakeEntry(packFormId, 0x4A, PackVa));
 
         Assert.NotNull(pack);
         Assert.Null(pack.CombatStyleFormId);
@@ -96,7 +93,7 @@ public sealed class PackOffsetReaderTests
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimePackage(
-            fixture.MakeEntry(packFormId, 0x4A, PackVa)));
+            RuntimeReaderTestFixture.MakeEntry(packFormId, 0x4A, PackVa)));
     }
 
     [Fact]
@@ -111,7 +108,7 @@ public sealed class PackOffsetReaderTests
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         var pack = reader.ReadRuntimePackage(
-            fixture.MakeEntry(packFormId, 0x4A, PackVa));
+            RuntimeReaderTestFixture.MakeEntry(packFormId, 0x4A, PackVa));
         Assert.NotNull(pack);
         Assert.Null(pack.Location);
     }
@@ -129,7 +126,7 @@ public sealed class PackOffsetReaderTests
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         var pack = reader.ReadRuntimePackage(
-            fixture.MakeEntry(packFormId, 0x4A, PackVa));
+            RuntimeReaderTestFixture.MakeEntry(packFormId, 0x4A, PackVa));
 
         // packType > 20 → PackageData = null, but reader still returns a record
         // (the data is just absent). Confirm both records.
@@ -147,7 +144,7 @@ public sealed class PackOffsetReaderTests
         var reader = new RuntimePackageReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimePackage(
-            fixture.MakeEntry(0x000D0001, 0x4A, PackVa)));
+            RuntimeReaderTestFixture.MakeEntry(0x000D0001, 0x4A, PackVa)));
     }
 
     private static byte[] BuildPack(uint formId, byte packType,

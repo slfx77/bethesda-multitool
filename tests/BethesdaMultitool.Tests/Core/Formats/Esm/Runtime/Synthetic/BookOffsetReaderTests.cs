@@ -52,7 +52,7 @@ public sealed class BookOffsetReaderTests
 
         // Act
         var book = reader.ReadRuntimeBook(
-            fixture.MakeEntry(bookFormId, BookFormType, BookVa, "TestBook"));
+            RuntimeReaderTestFixture.MakeEntry(bookFormId, BookFormType, BookVa, "TestBook"));
 
         // Assert
         Assert.NotNull(book);
@@ -75,7 +75,7 @@ public sealed class BookOffsetReaderTests
         var reader = new RuntimeBookReader(fixture.BuildContext());
 
         var book = reader.ReadRuntimeBook(
-            fixture.MakeEntry(bookFormId, BookFormType, BookVa));
+            RuntimeReaderTestFixture.MakeEntry(bookFormId, BookFormType, BookVa));
 
         Assert.NotNull(book);
         Assert.Null(book.EnchantmentFormId);
@@ -94,7 +94,7 @@ public sealed class BookOffsetReaderTests
         var reader = new RuntimeBookReader(fixture.BuildContext());
 
         var book = reader.ReadRuntimeBook(
-            fixture.MakeEntry(bookFormId, BookFormType, BookVa));
+            RuntimeReaderTestFixture.MakeEntry(bookFormId, BookFormType, BookVa));
 
         Assert.NotNull(book);
         Assert.Null(book.EnchantmentFormId);
@@ -113,7 +113,7 @@ public sealed class BookOffsetReaderTests
         var reader = new RuntimeBookReader(fixture.BuildContext());
 
         var book = reader.ReadRuntimeBook(
-            fixture.MakeEntry(entryFormId, BookFormType, BookVa));
+            RuntimeReaderTestFixture.MakeEntry(entryFormId, BookFormType, BookVa));
 
         Assert.Null(book);
     }
@@ -130,7 +130,7 @@ public sealed class BookOffsetReaderTests
         var reader = new RuntimeBookReader(fixture.BuildContext());
 
         var book = reader.ReadRuntimeBook(
-            fixture.MakeEntry(formId, 0x28 /* WEAP, not BOOK */, BookVa));
+            RuntimeReaderTestFixture.MakeEntry(formId, 0x28 /* WEAP, not BOOK */, BookVa));
 
         Assert.Null(book);
     }
@@ -146,7 +146,7 @@ public sealed class BookOffsetReaderTests
             .WithStruct(bookBuffer, BookVa);
         var reader = new RuntimeBookReader(fixture.BuildContext());
 
-        var book = reader.ReadRuntimeBook(fixture.MakeEntry(formId, BookFormType, BookVa));
+        var book = reader.ReadRuntimeBook(RuntimeReaderTestFixture.MakeEntry(formId, BookFormType, BookVa));
 
         Assert.NotNull(book);
         Assert.Equal(0, book.Value);

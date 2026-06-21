@@ -64,7 +64,7 @@ public sealed class LandOffsetReaderTests
         var reader = new RuntimeWorldReader(fixture.BuildContext());
 
         var land = reader.ReadRuntimeLandData(
-            fixture.MakeEntry(landFormId, LandFormType, LandVa));
+            RuntimeReaderTestFixture.MakeEntry(landFormId, LandFormType, LandVa));
 
         Assert.NotNull(land);
         Assert.Equal(landFormId, land.FormId);
@@ -85,7 +85,7 @@ public sealed class LandOffsetReaderTests
         var reader = new RuntimeWorldReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimeLandData(
-            fixture.MakeEntry(landFormId, LandFormType, LandVa)));
+            RuntimeReaderTestFixture.MakeEntry(landFormId, LandFormType, LandVa)));
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public sealed class LandOffsetReaderTests
         var reader = new RuntimeWorldReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimeLandData(
-            fixture.MakeEntry(landFormId, LandFormType, LandVa)));
+            RuntimeReaderTestFixture.MakeEntry(landFormId, LandFormType, LandVa)));
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public sealed class LandOffsetReaderTests
         var reader = new RuntimeWorldReader(fixture.BuildContext());
 
         var land = reader.ReadRuntimeLandData(
-            fixture.MakeEntry(landFormId, LandFormType, LandVa));
+            RuntimeReaderTestFixture.MakeEntry(landFormId, LandFormType, LandVa));
         Assert.NotNull(land);
         Assert.Null(land.ParentCellFormId);
     }

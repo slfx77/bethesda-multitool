@@ -35,7 +35,7 @@ public sealed class WeapOffsetReaderTests
         var reader = new RuntimeItemReader(fixture.BuildContext());
 
         var weap = reader.ReadRuntimeWeapon(
-            fixture.MakeEntry(weapFormId, WeapFormType, WeapVa));
+            RuntimeReaderTestFixture.MakeEntry(weapFormId, WeapFormType, WeapVa));
 
         Assert.NotNull(weap);
         Assert.Equal(weapFormId, weap.FormId);
@@ -55,7 +55,7 @@ public sealed class WeapOffsetReaderTests
         var reader = new RuntimeItemReader(fixture.BuildContext());
 
         var weap = reader.ReadRuntimeWeapon(
-            fixture.MakeEntry(weapFormId, WeapFormType, WeapVa));
+            RuntimeReaderTestFixture.MakeEntry(weapFormId, WeapFormType, WeapVa));
 
         Assert.NotNull(weap);
         Assert.Equal(pickupSoundFormId, weap.PickupSoundFormId);
@@ -71,7 +71,7 @@ public sealed class WeapOffsetReaderTests
         var reader = new RuntimeItemReader(fixture.BuildContext());
 
         var weap = reader.ReadRuntimeWeapon(
-            fixture.MakeEntry(weapFormId, WeapFormType, WeapVa));
+            RuntimeReaderTestFixture.MakeEntry(weapFormId, WeapFormType, WeapVa));
 
         Assert.NotNull(weap);
         Assert.Null(weap.AmmoFormId);
@@ -88,7 +88,7 @@ public sealed class WeapOffsetReaderTests
         var reader = new RuntimeItemReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimeWeapon(
-            fixture.MakeEntry(entryFormId, WeapFormType, WeapVa)));
+            RuntimeReaderTestFixture.MakeEntry(entryFormId, WeapFormType, WeapVa)));
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class WeapOffsetReaderTests
         var reader = new RuntimeItemReader(fixture.BuildContext());
 
         Assert.Null(reader.ReadRuntimeWeapon(
-            fixture.MakeEntry(formId, 0x19 /* BOOK, not WEAP */, WeapVa)));
+            RuntimeReaderTestFixture.MakeEntry(formId, 0x19 /* BOOK, not WEAP */, WeapVa)));
     }
 
     /// <summary>

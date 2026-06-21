@@ -12,11 +12,13 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 ///     cover both the path-style preservation (<see cref="AssetPathRewriter.DenormalizeForField" />)
 ///     and the end-to-end rewrite against a synthetic <see cref="RecordCollection" />.
 /// </summary>
-public class AssetPathRewriterTests : IDisposable
+public sealed class AssetPathRewriterTests : IDisposable
 {
     private readonly string _scratchRoot = Path.Combine(
         Path.GetTempPath(),
         $"assetrewriter-{Guid.NewGuid():N}");
+
+    private bool _disposed;
 
     public AssetPathRewriterTests()
     {
@@ -25,6 +27,12 @@ public class AssetPathRewriterTests : IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         try
         {
             if (Directory.Exists(_scratchRoot))
@@ -36,6 +44,8 @@ public class AssetPathRewriterTests : IDisposable
         {
             // best-effort
         }
+
+        GC.SuppressFinalize(this);
     }
 
     private string MakeDataFolder(string label)

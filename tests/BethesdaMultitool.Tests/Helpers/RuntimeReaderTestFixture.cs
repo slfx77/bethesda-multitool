@@ -21,7 +21,7 @@ namespace BethesdaMultitool.Tests.Helpers;
 /// var fixture = RuntimeReaderTestFixture.Default()
 ///     .WithStruct(buffer, va: 0x40100000)
 ///     .WithPointerTarget(targetVa: 0x40200000, raceStub);
-/// var entry = fixture.MakeEntry(formId: 0x1234, formType: 0x2A, structVa: 0x40100000);
+/// var entry = RuntimeReaderTestFixture.MakeEntry(formId: 0x1234, formType: 0x2A, structVa: 0x40100000);
 /// var context = fixture.BuildContext();
 ///     </code>
 /// </summary>
@@ -111,7 +111,7 @@ internal sealed class RuntimeReaderTestFixture
     ///     at <paramref name="structVa" />. Mirrors what the production
     ///     hash-table scan would produce for a real entry.
     /// </summary>
-    public RuntimeEditorIdEntry MakeEntry(uint formId, byte formType, uint structVa,
+    public static RuntimeEditorIdEntry MakeEntry(uint formId, byte formType, uint structVa,
         string editorId = "TestEntry")
     {
         return new RuntimeEditorIdEntry

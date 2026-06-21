@@ -32,7 +32,6 @@ public sealed class RefrOffsetReaderTests
     private const int FinalLocationZOffset = 72;
     private const int FinalRefScaleOffset = 76;
     private const int FinalParentCellPtrOffset = 80;
-    private const int FinalExtraListHeadOffset = 88;
 
     // 4-byte TESChildCell variant ("Early"): all OBJ_REFR / extra-list offsets -4.
     private const int EarlyRefrStructSize = 116;
@@ -63,13 +62,14 @@ public sealed class RefrOffsetReaderTests
             .WithPointerTarget(CellVa, BuildTesCell(cellFormId, false));
 
         var reader = new RuntimeRefrReader(fixture.BuildContext());
-        var refr = reader.ReadRuntimeRefr(fixture.MakeEntry(refrFormId, formType, RefrVa));
+        var refr = reader.ReadRuntimeRefr(RuntimeReaderTestFixture.MakeEntry(refrFormId, formType, RefrVa));
 
         Assert.NotNull(refr);
         Assert.Equal(refrFormId, refr.Header.FormId);
         Assert.Equal(baseFormId, refr.BaseFormId);
         Assert.Equal(cellFormId, refr.ParentCellFormId);
         Assert.False(refr.ParentCellIsInterior);
+        Assert.NotNull(refr.Position);
         Assert.Equal(100.5f, refr.Position.X);
         Assert.Equal(200.25f, refr.Position.Y);
         Assert.Equal(-50.0f, refr.Position.Z);
@@ -95,10 +95,11 @@ public sealed class RefrOffsetReaderTests
             .WithPointerTarget(BaseObjVa, BuildTesForm(ActiFormType, baseFormId));
 
         var reader = new RuntimeRefrReader(fixture.BuildContext(), true);
-        var refr = reader.ReadRuntimeRefr(fixture.MakeEntry(refrFormId, 0x3A, RefrVa));
+        var refr = reader.ReadRuntimeRefr(RuntimeReaderTestFixture.MakeEntry(refrFormId, 0x3A, RefrVa));
 
         Assert.NotNull(refr);
         Assert.Equal(baseFormId, refr.BaseFormId);
+        Assert.NotNull(refr.Position);
         Assert.Equal(10.0f, refr.Position.X);
         Assert.Equal(20.0f, refr.Position.Y);
         Assert.Equal(30.0f, refr.Position.Z);
@@ -115,7 +116,7 @@ public sealed class RefrOffsetReaderTests
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, RefrVa);
         var reader = new RuntimeRefrReader(fixture.BuildContext());
 
-        Assert.Null(reader.ReadRuntimeRefr(fixture.MakeEntry(refrFormId, 0x3A, RefrVa)));
+        Assert.Null(reader.ReadRuntimeRefr(RuntimeReaderTestFixture.MakeEntry(refrFormId, 0x3A, RefrVa)));
     }
 
     [Fact]
@@ -133,7 +134,7 @@ public sealed class RefrOffsetReaderTests
             .WithPointerTarget(BaseObjVa, BuildTesForm(ActiFormType, baseFormId));
         var reader = new RuntimeRefrReader(fixture.BuildContext());
 
-        Assert.Null(reader.ReadRuntimeRefr(fixture.MakeEntry(refrFormId, 0x3A, RefrVa)));
+        Assert.Null(reader.ReadRuntimeRefr(RuntimeReaderTestFixture.MakeEntry(refrFormId, 0x3A, RefrVa)));
     }
 
     [Fact]
@@ -152,7 +153,7 @@ public sealed class RefrOffsetReaderTests
             .WithPointerTarget(BaseObjVa, BuildTesForm(ActiFormType, baseFormId));
         var reader = new RuntimeRefrReader(fixture.BuildContext());
 
-        Assert.Null(reader.ReadRuntimeRefr(fixture.MakeEntry(refrFormId, 0x3A, RefrVa)));
+        Assert.Null(reader.ReadRuntimeRefr(RuntimeReaderTestFixture.MakeEntry(refrFormId, 0x3A, RefrVa)));
     }
 
     [Fact]
@@ -170,7 +171,7 @@ public sealed class RefrOffsetReaderTests
             .WithPointerTarget(BaseObjVa, BuildTesForm(ActiFormType, baseFormId));
         var reader = new RuntimeRefrReader(fixture.BuildContext());
 
-        var refr = reader.ReadRuntimeRefr(fixture.MakeEntry(refrFormId, 0x3A, RefrVa));
+        var refr = reader.ReadRuntimeRefr(RuntimeReaderTestFixture.MakeEntry(refrFormId, 0x3A, RefrVa));
         Assert.NotNull(refr);
         Assert.Equal(1.0f, refr.Scale);
     }
@@ -192,7 +193,7 @@ public sealed class RefrOffsetReaderTests
             .WithPointerTarget(BaseObjVa, BuildTesForm(ActiFormType, 0x0001A007));
         var reader = new RuntimeRefrReader(fixture.BuildContext());
 
-        Assert.Null(reader.ReadRuntimeRefr(fixture.MakeEntry(refrFormId, 0x3A, RefrVa)));
+        Assert.Null(reader.ReadRuntimeRefr(RuntimeReaderTestFixture.MakeEntry(refrFormId, 0x3A, RefrVa)));
     }
 
     // =========================================================================

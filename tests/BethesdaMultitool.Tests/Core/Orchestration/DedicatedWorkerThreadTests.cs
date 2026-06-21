@@ -25,7 +25,7 @@ public sealed class DedicatedWorkerThreadTests : IDisposable
             done.Set();
         }));
 
-        Assert.True(done.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(done.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
         Assert.NotEqual(Environment.CurrentManagedThreadId, workerThreadId);
     }
 
@@ -50,7 +50,7 @@ public sealed class DedicatedWorkerThreadTests : IDisposable
             }));
         }
 
-        Assert.True(done.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(done.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
         Assert.Equal([0, 1, 2], results);
         Assert.Equal(3, worker.ProcessedCount);
     }
@@ -99,7 +99,7 @@ public sealed class DedicatedWorkerThreadTests : IDisposable
         worker.TryEnqueue(static () => throw new InvalidOperationException("upload failed"));
         worker.TryEnqueue(done.Set);
 
-        Assert.True(done.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(done.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
         Assert.Equal(2, worker.ProcessedCount);
         Assert.Equal(1, worker.Failures);
         Assert.Contains("upload failed", worker.LastError);

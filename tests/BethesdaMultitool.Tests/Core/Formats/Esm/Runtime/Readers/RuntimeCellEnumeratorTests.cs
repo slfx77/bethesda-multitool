@@ -28,7 +28,6 @@ public sealed class RuntimeCellEnumeratorTests
     private const byte WeapFormType = 0x28;
 
     private const int CellStructSize = 256;
-    private const int CellNavMeshArrayOffset = 116;
     private const int WrldStructSize = 256;
     private const int WrldGridCellArrayPtrOffset = 16;
     private const int GridCellArrayPointersSize = 25 * 4;
@@ -188,8 +187,8 @@ public sealed class RuntimeCellEnumeratorTests
         // Seed cell (also surfaced via Path 0 so heap-scan has a vtable to harvest).
         var seedCellVa = heap.PlaceCell(0x40000001);
         // Two additional cells with the SAME vtable as the seed.
-        var extraCellVa1 = heap.PlaceCell(0x40000002);
-        var extraCellVa2 = heap.PlaceCell(0x40000003);
+        _ = heap.PlaceCell(0x40000002);
+        _ = heap.PlaceCell(0x40000003);
 
         // Decoy 1: a struct that starts with a DIFFERENT module-range vtable.
         heap.PlaceDecoy(DecoyVtable, CellFormType, 0xDEADBEEF);
@@ -697,7 +696,7 @@ public sealed class RuntimeCellEnumeratorTests
         ///     Place a TESForm-shaped decoy in the heap that does NOT match the cell vtable.
         ///     Heap-scan must not surface it because the vtable signature doesn't match.
         /// </summary>
-        public uint PlaceDecoy(uint vtable, byte formTypeByte, uint formId)
+        public void PlaceDecoy(uint vtable, byte formTypeByte, uint formId)
         {
             const int size = 256;
             var va = AllocateAligned(size);
@@ -705,16 +704,15 @@ public sealed class RuntimeCellEnumeratorTests
             WriteUInt32BE(_buffer, offset + 0, vtable);
             _buffer[offset + 4] = formTypeByte;
             WriteUInt32BE(_buffer, offset + 12, formId);
-            return va;
         }
 
         /// <summary>
         ///     Place a decoy that DOES match the cell vtable but fails other validation
         ///     gates (form-type byte or zero FormID).
         /// </summary>
-        public uint PlaceDecoyAtVtable(uint vtable, byte formTypeByte, uint formId)
+        public void PlaceDecoyAtVtable(uint vtable, byte formTypeByte, uint formId)
         {
-            return PlaceDecoy(vtable, formTypeByte, formId);
+            PlaceDecoy(vtable, formTypeByte, formId);
         }
 
         public RuntimeCellEnumerator BuildEnumerator(uint pAllFormsVa)

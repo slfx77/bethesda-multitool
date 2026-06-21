@@ -126,7 +126,7 @@ public class HeightmapPngExporterVisualTests
             var scaleCsv = Path.Combine(worldspaceDir, "height_grayscale_scale.csv");
 
             Assert.True(File.Exists(scaleCsv));
-            var csv = await File.ReadAllTextAsync(scaleCsv);
+            var csv = await File.ReadAllTextAsync(scaleCsv, TestContext.Current.CancellationToken);
             Assert.Contains(",8,", csv);
             Assert.Equal((33, 33), ReadPngDimensions(Path.Combine(
                 worldspaceDir,

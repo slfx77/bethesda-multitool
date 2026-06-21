@@ -55,7 +55,7 @@ public sealed class HouseToolsTerminalDataOffsetTests
         // we use reflection-free invocation through RuntimeStructReader path.
         var reader = new RuntimeQuestTerminalReader(context);
 
-        var entry = fixture.MakeEntry(termFormId, TermFormType, 0x40100000,
+        var entry = RuntimeReaderTestFixture.MakeEntry(termFormId, TermFormType, 0x40100000,
             "HouseToolsTerminal");
         var term = reader.ReadRuntimeTerminal(entry);
 
@@ -87,7 +87,7 @@ public sealed class HouseToolsTerminalDataOffsetTests
         var fixture = RuntimeReaderTestFixture.Default().WithStruct(buffer, 0x40100000);
         var reader = new RuntimeQuestTerminalReader(fixture.BuildContext());
 
-        var entry = fixture.MakeEntry(termFormId, TermFormType, 0x40100000);
+        var entry = RuntimeReaderTestFixture.MakeEntry(termFormId, TermFormType, 0x40100000);
         var term = reader.ReadRuntimeTerminal(entry);
 
         Assert.NotNull(term);
