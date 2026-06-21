@@ -101,7 +101,9 @@ internal static class DumpLoader
         AnsiConsole.MarkupLine("[blue]Running semantic reconstruction...[/]");
         var reconstructor = new RecordParser(
             result.EsmRecords, result.FormIdMap, accessor, fileSize, result.MinidumpInfo);
-        reconstructor.ReconstructAll();
+        // ParseAll() enriches the scan-result's LandRecords (heightmaps + RuntimeTerrainMesh) in place;
+        // the returned RecordCollection is the typed TES4 view, which this terrain tool doesn't need.
+        reconstructor.ParseAll();
 
         var landWithHeightmap = result.EsmRecords.LandRecords.Count(l => l.Heightmap != null);
         var landWithMesh = result.EsmRecords.LandRecords.Count(l => l.RuntimeTerrainMesh != null);
