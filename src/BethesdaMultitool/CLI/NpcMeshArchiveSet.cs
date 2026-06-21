@@ -99,7 +99,7 @@ internal sealed class NpcMeshArchiveSet : IDisposable
                 FileOffset: null);
         }
 
-        var (nameHash, rawSize, size, offset) = hit.Source.GetMetadata(hit.Record);
+        var (nameHash, rawSize, size, offset) = MeshArchiveSource.GetMetadata(hit.Record);
         return new NpcMeshArchiveLookupMetadata(
             normalized,
             Found: true,
@@ -158,6 +158,10 @@ internal sealed class NpcMeshArchiveSet : IDisposable
         return fileIndex;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell",
+        "S3398:\"private\" methods called only by inner classes should be moved to those classes",
+        Justification = "Deliberately paired with the BSA index builder (BuildFileIndex) as sibling archive " +
+                        "index helpers; moving only the BA2 builder into MeshArchiveSource would split the pair.")]
     private static Dictionary<string, Ba2FileRecord> BuildBa2FileIndex(Ba2Archive archive)
     {
         var fileIndex = new Dictionary<string, Ba2FileRecord>(StringComparer.OrdinalIgnoreCase);
@@ -254,7 +258,7 @@ internal sealed class NpcMeshArchiveSet : IDisposable
         ///     distinguishes archives; this distinguishes files within one). BA2 GNRL maps directly;
         ///     a stray DX10 entry (textures normally) keys off its first chunk.
         /// </summary>
-        public (ulong NameHash, uint RawSize, uint Size, uint Offset) GetMetadata(object record) => record switch
+        public static (ulong NameHash, uint RawSize, uint Size, uint Offset) GetMetadata(object record) => record switch
         {
             BsaFileRecord bsa => (bsa.NameHash, bsa.RawSize, bsa.Size, bsa.Offset),
             Ba2FileRecord { Kind: Ba2HeaderType.Texture, Texture: { Chunks.Count: > 0 } texture } ba2
