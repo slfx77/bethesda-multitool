@@ -39,6 +39,8 @@ public record RuntimeCellMapEntry
     /// <summary>
     ///     FormIDs of placed references currently linked from TESObjectCELL.listReferences.
     ///     This is runtime membership data, not carved REFR subrecord ownership.
+    ///     Exposed read-only so the runtime walker can alias the probe snapshot's list directly
+    ///     instead of copying it per cell (the snapshot produces a fresh list per call).
     /// </summary>
-    public List<uint> ReferenceFormIds { get; init; } = [];
+    public IReadOnlyList<uint> ReferenceFormIds { get; init; } = [];
 }
