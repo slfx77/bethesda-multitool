@@ -14,9 +14,6 @@ internal static class WorldMapHitTester
 {
     private const float CellWorldSize = 4096f;
 
-    /// <summary>Maximum half-extent for hit testing (matches rendering clamp).</summary>
-    private const float MaxHalfExtent = 2048f;
-
     /// <summary>
     ///     Bounding area threshold (in square world units) above which an object is considered
     ///     "large" for hit testing purposes. Large objects are deprioritized so smaller objects
@@ -25,67 +22,40 @@ internal static class WorldMapHitTester
     private const float LargeBoundsAreaThreshold = 500f * 500f;
 
     /// <summary>
-    ///     Tests whether worldPos hits the object's visual bounds (rotated AABB or circle fallback).
-    ///     Returns distance to object center if hit, float.MaxValue otherwise.
+    ///     Tests whether worldPos hits the object's visual bounds (rotated AABB or circle fallback)
+    ///     using pre-resolved <paramref name="extents" /> — one bounds lookup per object, shared with
+    ///     the area classification. Returns squared distance to the object center if hit,
+    ///     float.MaxValue otherwise.
     /// </summary>
-    internal static float HitTestObjectBounds(
-        Vector2 worldPos, PlacedReference obj, WorldViewData data, float zoom)
-    {
-        var distSq = HitTestObjectBoundsSquared(worldPos, obj, data, zoom);
-        return distSq >= float.MaxValue ? float.MaxValue : MathF.Sqrt(distSq);
-    }
-
     private static float HitTestObjectBoundsSquared(
-        Vector2 worldPos, PlacedReference obj, WorldViewData data, float zoom)
+        Vector2 worldPos, PlacedReference obj, in WorldMapBoundsMath.ClampedExtents extents, float zoom)
     {
         var pos = new Vector2(obj.X, -obj.Y);
 
-        if (data.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds))
+        if (extents.HasBounds && (extents.HalfW >= 1f || extents.HalfH >= 1f))
         {
-            var halfW = Math.Min((bounds.X2 - bounds.X1) * 0.5f * obj.Scale, MaxHalfExtent);
-            var halfH = Math.Min((bounds.Y2 - bounds.Y1) * 0.5f * obj.Scale, MaxHalfExtent);
+            // Transform test point into object's local (unrotated) space — inverse of the shared
+            // draw yaw (PlacedReferenceTransform.MapCanvasYawRadians), so it tracks the fill/outline
+            // paths automatically if the convention changes.
+            var inverseRotation = Matrix3x2.CreateRotation(
+                -PlacedReferenceTransform.MapCanvasYawRadians(obj.RotZ), pos);
+            var localPoint = Vector2.Transform(worldPos, inverseRotation);
 
-            if (halfW >= 1f || halfH >= 1f)
+            // Add small padding for usability (5 screen pixels)
+            var pad = 5f / zoom;
+            if (localPoint.X >= pos.X - extents.HalfW - pad && localPoint.X <= pos.X + extents.HalfW + pad &&
+                localPoint.Y >= pos.Y - extents.HalfH - pad && localPoint.Y <= pos.Y + extents.HalfH + pad)
             {
-                // Transform test point into object's local (unrotated) space — inverse of the shared
-                // draw yaw (PlacedReferenceTransform.MapCanvasYawRadians), so it tracks the fill/outline
-                // paths automatically if the convention changes.
-                var inverseRotation = Matrix3x2.CreateRotation(
-                    -PlacedReferenceTransform.MapCanvasYawRadians(obj.RotZ), pos);
-                var localPoint = Vector2.Transform(worldPos, inverseRotation);
-
-                // Add small padding for usability (5 screen pixels)
-                var pad = 5f / zoom;
-                if (localPoint.X >= pos.X - halfW - pad && localPoint.X <= pos.X + halfW + pad &&
-                    localPoint.Y >= pos.Y - halfH - pad && localPoint.Y <= pos.Y + halfH + pad)
-                {
-                    return WorldSpatialIndex.DistanceSquared(worldPos, pos);
-                }
-
-                return float.MaxValue;
+                return WorldSpatialIndex.DistanceSquared(worldPos, pos);
             }
+
+            return float.MaxValue;
         }
 
         // No valid OBND -- fallback to circle
         var distSq = WorldSpatialIndex.DistanceSquared(worldPos, pos);
         var radius = 12f / zoom;
         return distSq <= radius * radius ? distSq : float.MaxValue;
-    }
-
-    /// <summary>
-    ///     Returns the clamped bounding area (halfW * halfH) for an object.
-    ///     Objects with no bounds or point-like bounds return 0 (smallest possible).
-    /// </summary>
-    private static float GetBoundsArea(PlacedReference obj, WorldViewData data)
-    {
-        if (data.BoundsIndex.TryGetValue(obj.BaseFormId, out var bounds))
-        {
-            var halfW = Math.Min((bounds.X2 - bounds.X1) * 0.5f * obj.Scale, MaxHalfExtent);
-            var halfH = Math.Min((bounds.Y2 - bounds.Y1) * 0.5f * obj.Scale, MaxHalfExtent);
-            return halfW * halfH;
-        }
-
-        return 0f;
     }
 
     internal static PlacedReference? HitTestPlacedObject(
@@ -116,13 +86,16 @@ internal static class WorldMapHitTester
                 continue;
             }
 
-            var dist = HitTestObjectBounds(worldPos, obj, data, zoom);
-            if (dist >= float.MaxValue)
+            // Resolve bounds once, then reuse for both the hit test and the area classification.
+            var extents = WorldMapBoundsMath.Resolve(obj, data.BoundsIndex);
+            var distSq = HitTestObjectBoundsSquared(worldPos, obj, extents, zoom);
+            if (distSq >= float.MaxValue)
             {
                 continue;
             }
 
-            if (GetBoundsArea(obj, data) > LargeBoundsAreaThreshold)
+            var dist = MathF.Sqrt(distSq);
+            if (extents.Area > LargeBoundsAreaThreshold)
             {
                 if (dist < closestLargeDist)
                 {
@@ -158,7 +131,7 @@ internal static class WorldMapHitTester
 
         var useBounds = zoom > 0.07f;
         var hitRadius = 30f / zoom;
-        var queryRadius = useBounds ? Math.Max(hitRadius, MaxHalfExtent + 5f / zoom) : hitRadius;
+        var queryRadius = useBounds ? Math.Max(hitRadius, WorldMapBoundsMath.MaxHalfExtent + 5f / zoom) : hitRadius;
 
         // Two-pass: prefer normal-sized objects over large-bounds objects so that
         // items beneath oversized bounding boxes remain clickable.
@@ -281,10 +254,13 @@ internal static class WorldMapHitTester
         ref PlacedReference? closestSmall, ref float closestSmallDist,
         ref PlacedReference? closestLarge, ref float closestLargeDist)
     {
+        // Resolve bounds once, then reuse for both the hit test and the area classification.
+        var extents = WorldMapBoundsMath.Resolve(obj, data.BoundsIndex);
+
         float dist;
         if (useBounds)
         {
-            dist = HitTestObjectBoundsSquared(worldPos, obj, data, zoom);
+            dist = HitTestObjectBoundsSquared(worldPos, obj, extents, zoom);
         }
         else
         {
@@ -301,7 +277,7 @@ internal static class WorldMapHitTester
             return;
         }
 
-        if (GetBoundsArea(obj, data) > LargeBoundsAreaThreshold)
+        if (extents.Area > LargeBoundsAreaThreshold)
         {
             if (dist < closestLargeDist)
             {
