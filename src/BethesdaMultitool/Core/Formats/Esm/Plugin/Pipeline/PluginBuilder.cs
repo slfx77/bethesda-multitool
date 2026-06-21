@@ -3598,7 +3598,7 @@ public sealed class PluginBuilder
         }
     }
 
-    private static List<CellOverrideBundle> CoalesceCellOverrideBundles(List<CellOverrideBundle> bundles)
+    internal static List<CellOverrideBundle> CoalesceCellOverrideBundles(List<CellOverrideBundle> bundles)
     {
         if (bundles.Count <= 1)
         {
@@ -3616,16 +3616,24 @@ public sealed class PluginBuilder
             }
 
             var seenRecords = new HashSet<RecordIdentity>();
-            var persistent = new List<byte[]>();
-            var vwd = new List<byte[]>();
-            var temporary = new List<byte[]>();
+            var persistentChunks = new List<List<byte[]>>();
+            var vwdChunks = new List<List<byte[]>>();
+            var temporaryChunks = new List<List<byte[]>>();
 
+            // Dedup in reverse bundle order (later bundles win) to match the previous prepend logic,
+            // collecting each bundle's unique records as a chunk instead of inserting at index 0.
+            // The old InsertRange(0, ...) was O(n) per bundle -> O(n^2) overall.
             foreach (var bundle in group.Reverse())
             {
-                PrependUniqueRecords(persistent, bundle.PersistentChildRecords, seenRecords);
-                PrependUniqueRecords(vwd, bundle.VwdChildRecords, seenRecords);
-                PrependUniqueRecords(temporary, bundle.TemporaryChildRecords, seenRecords);
+                persistentChunks.Add(CollectUniqueRecords(bundle.PersistentChildRecords, seenRecords));
+                vwdChunks.Add(CollectUniqueRecords(bundle.VwdChildRecords, seenRecords));
+                temporaryChunks.Add(CollectUniqueRecords(bundle.TemporaryChildRecords, seenRecords));
             }
+
+            // Chunks were collected in reverse bundle order; emit them in original bundle order.
+            var persistent = FlattenInForwardOrder(persistentChunks);
+            var vwd = FlattenInForwardOrder(vwdChunks);
+            var temporary = FlattenInForwardOrder(temporaryChunks);
 
             coalesced.Add(first with
             {
@@ -3638,8 +3646,7 @@ public sealed class PluginBuilder
         return coalesced;
     }
 
-    private static void PrependUniqueRecords(
-        List<byte[]> target,
+    private static List<byte[]> CollectUniqueRecords(
         IReadOnlyList<byte[]> records,
         HashSet<RecordIdentity> seenRecords)
     {
@@ -3653,10 +3660,29 @@ public sealed class PluginBuilder
             }
         }
 
-        if (unique.Count > 0)
+        return unique;
+    }
+
+    /// <summary>
+    ///     Flattens per-bundle chunks that were collected in reverse bundle order back into original
+    ///     bundle order (chunks reversed, each chunk's internal order preserved). Single allocation
+    ///     sized to the total, so the whole coalesce stays O(n) instead of the old O(n^2) prepend.
+    /// </summary>
+    private static List<byte[]> FlattenInForwardOrder(List<List<byte[]>> reverseOrderedChunks)
+    {
+        var total = 0;
+        foreach (var chunk in reverseOrderedChunks)
         {
-            target.InsertRange(0, unique);
+            total += chunk.Count;
         }
+
+        var result = new List<byte[]>(total);
+        for (var i = reverseOrderedChunks.Count - 1; i >= 0; i--)
+        {
+            result.AddRange(reverseOrderedChunks[i]);
+        }
+
+        return result;
     }
 
     private static RecordIdentity ReadRecordIdentity(byte[] recordBytes)

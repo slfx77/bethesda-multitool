@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Export;
 
 /// <summary>
@@ -5,6 +7,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export;
 /// </summary>
 internal static class Fmt
 {
+    // CsvEscape runs once per CSV cell (millions of cells per report export). A cached SearchValues
+    // lets a single SIMD-accelerated IndexOfAny replace four sequential string.Contains scans.
+    private static readonly SearchValues<char> CsvSpecialChars = SearchValues.Create(",\"\n\r");
+
     /// <summary>CSV-escapes a value (quotes if it contains commas, quotes, or newlines).</summary>
     public static string CsvEscape(string? value)
     {
@@ -13,7 +19,7 @@ internal static class Fmt
             return "";
         }
 
-        if (value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r'))
+        if (value.AsSpan().IndexOfAny(CsvSpecialChars) >= 0)
         {
             return "\"" + value.Replace("\"", "\"\"") + "\"";
         }

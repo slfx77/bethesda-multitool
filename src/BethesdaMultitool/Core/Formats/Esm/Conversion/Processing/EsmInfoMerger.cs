@@ -63,27 +63,45 @@ internal sealed class EsmInfoMerger(byte[] input, EsmConversionStats stats)
             return null;
         }
 
-        // Check if this record has response data (TRDT)
-        var hasTrdt = subs.Any(s => s.Signature == "TRDT");
-        var hasSchr = subs.Any(s => s.Signature == "SCHR");
-        var hasScda = subs.Any(s => s.Signature == "SCDA");
-
-        var filtered = subs;
-
-        // If no response data, strip NAM3 subrecords (they're orphaned)
-        if (!hasTrdt)
+        // Single pass to detect the response/script markers (replaces three .Any() scans).
+        var hasTrdt = false;
+        var hasSchr = false;
+        var hasScda = false;
+        foreach (var sub in subs)
         {
-            filtered = filtered.Where(s => s.Signature != "NAM3").ToList();
+            switch (sub.Signature)
+            {
+                case "TRDT": hasTrdt = true; break;
+                case "SCHR": hasSchr = true; break;
+                case "SCDA": hasScda = true; break;
+            }
         }
 
-        if (!hasSchr && !hasScda)
+        // Has script data - keep subrecords as-is (they should already be in correct order).
+        if (hasSchr || hasScda)
         {
-            filtered = filtered.Where(s => !InfoSubrecordWriter.ScriptSignatures.Contains(s.Signature)).ToList();
-            return InfoSubrecordWriter.WriteSubrecordsToBufferLittleEndian(filtered);
+            return null;
         }
 
-        // Has response data - keep subrecords as-is (they should already be in correct order)
-        return null;
+        // No script data - rewrite, stripping orphaned NAM3 (when no TRDT) and any script subrecords.
+        // Single pass replaces the two chained .Where().ToList() filters.
+        var filtered = new List<AnalyzerSubrecordInfo>(subs.Count);
+        foreach (var sub in subs)
+        {
+            if (!hasTrdt && sub.Signature == "NAM3")
+            {
+                continue;
+            }
+
+            if (InfoSubrecordWriter.ScriptSignatures.Contains(sub.Signature))
+            {
+                continue;
+            }
+
+            filtered.Add(sub);
+        }
+
+        return InfoSubrecordWriter.WriteSubrecordsToBufferLittleEndian(filtered);
     }
 
     /// <summary>
@@ -315,53 +333,106 @@ internal sealed class EsmInfoMerger(byte[] input, EsmConversionStats stats)
     {
         var data = EsmHelpers.GetRecordData(_input, record, true);
         var subs = EsmRecordParser.ParseSubrecords(data, true);
-
-        var hasData = subs.Any(s => s.Signature == "DATA");
-        var hasQsti = subs.Any(s => s.Signature == "QSTI");
-        var hasCtda = subs.Any(s => s.Signature is "CTDA" or "CTDT");
-        var hasTclt = subs.Any(s => s.Signature == "TCLT");
-        var hasPnam = subs.Any(s => s.Signature == "PNAM");
-        var hasTrdt = subs.Any(s => s.Signature == "TRDT");
-        var hasNam1 = subs.Any(s => s.Signature == "NAM1");
-        var hasNam2 = subs.Any(s => s.Signature == "NAM2");
-
-        if (hasData || hasQsti || hasCtda || hasTclt || hasPnam)
-        {
-            return InfoRecordRole.Base;
-        }
-
-        return hasTrdt || hasNam1 || hasNam2
-            ? InfoRecordRole.Response
-            : InfoRecordRole.Unknown;
+        return ClassifyBySubrecords(subs);
     }
 
-    private byte[]? BuildMergedInfoSubrecords(List<AnalyzerSubrecordInfo> baseSubs,
+    /// <summary>
+    ///     Classifies an INFO record as Base/Response/Unknown from its subrecord signatures.
+    ///     Single pass over the subrecord list (replaces eight independent <c>.Any()</c> scans);
+    ///     a base marker dominates and short-circuits the scan.
+    /// </summary>
+    internal static InfoRecordRole ClassifyBySubrecords(IReadOnlyList<AnalyzerSubrecordInfo> subs)
+    {
+        var hasResponseMarker = false; // TRDT | NAM1 | NAM2
+
+        foreach (var sub in subs)
+        {
+            switch (sub.Signature)
+            {
+                case "DATA":
+                case "QSTI":
+                case "CTDA":
+                case "CTDT":
+                case "TCLT":
+                case "PNAM":
+                    return InfoRecordRole.Base;
+                case "TRDT":
+                case "NAM1":
+                case "NAM2":
+                    hasResponseMarker = true;
+                    break;
+            }
+        }
+
+        return hasResponseMarker ? InfoRecordRole.Response : InfoRecordRole.Unknown;
+    }
+
+    /// <summary>
+    ///     Buckets a base INFO record's subrecords into the category lists the merge writer consumes,
+    ///     in a single pass. Replaces the previous ~13 separate <c>Where().ToList()</c> scans of the
+    ///     same list. PNAM is dropped (it was excluded from the original "baseOther" set). All category
+    ///     sets are disjoint, so the if/else-if order is equivalent to the original independent filters.
+    /// </summary>
+    internal static BaseSubrecordBuckets BucketBaseSubrecords(List<AnalyzerSubrecordInfo> baseSubs)
+    {
+        var buckets = BaseSubrecordBuckets.Create();
+        foreach (var sub in baseSubs)
+        {
+            var sig = sub.Signature;
+            if (sig == Nam3Signature)
+            {
+                buckets.Nam3.Add(sub);
+            }
+            else if (ConditionSignatures.Contains(sig))
+            {
+                buckets.Conditions.Add(sub);
+            }
+            else if (ChoiceSignatures.Contains(sig))
+            {
+                buckets.Choices.Add(sub);
+            }
+            else if (InfoSubrecordWriter.ScriptSignatures.Contains(sig))
+            {
+                buckets.Scripts.Add(sub);
+            }
+            else if (BaseHeaderSignatures.Contains(sig))
+            {
+                buckets.Header.Add(sub);
+            }
+            else if (sig != PnamSignature)
+            {
+                switch (sig)
+                {
+                    case "NAME": buckets.PreResponse.Add(sub); break;
+                    case "TCFU": buckets.PreScripts.Add(sub); break;
+                    case "RNAM": buckets.Rnam.Add(sub); break;
+                    case "ANAM": buckets.Anam.Add(sub); break;
+                    case "KNAM": buckets.Knam.Add(sub); break;
+                    case "DNAM": buckets.Dnam.Add(sub); break;
+                    default: buckets.OtherTail.Add(sub); break;
+                }
+            }
+        }
+
+        return buckets;
+    }
+
+    internal byte[]? BuildMergedInfoSubrecords(List<AnalyzerSubrecordInfo> baseSubs,
         List<AnalyzerSubrecordInfo> responseSubs)
     {
-        var baseNam3 = baseSubs.Where(s => s.Signature == Nam3Signature).ToList();
-        var baseConditions = baseSubs.Where(s => ConditionSignatures.Contains(s.Signature)).ToList();
-        var baseChoices = baseSubs.Where(s => ChoiceSignatures.Contains(s.Signature)).ToList();
-        var baseScripts = baseSubs.Where(s => InfoSubrecordWriter.ScriptSignatures.Contains(s.Signature)).ToList();
-        var baseHeader = baseSubs.Where(s => BaseHeaderSignatures.Contains(s.Signature)).ToList();
-        var baseOther = baseSubs.Where(s =>
-                !BaseHeaderSignatures.Contains(s.Signature) &&
-                s.Signature != Nam3Signature &&
-                !ConditionSignatures.Contains(s.Signature) &&
-                !ChoiceSignatures.Contains(s.Signature) &&
-                !InfoSubrecordWriter.ScriptSignatures.Contains(s.Signature) &&
-                s.Signature != PnamSignature)
-            .ToList();
-
-        var basePreResponse = baseOther.Where(s => s.Signature == "NAME").ToList();
-        var basePreScripts = baseOther.Where(s => s.Signature == "TCFU").ToList();
-        var baseRnam = baseOther.Where(s => s.Signature == "RNAM").ToList();
-        var baseAnam = baseOther.Where(s => s.Signature == "ANAM").ToList();
-        var baseKnam = baseOther.Where(s => s.Signature == "KNAM").ToList();
-        var baseDnam = baseOther.Where(s => s.Signature == "DNAM").ToList();
-        var baseOtherTail = baseOther
-            .Where(s => s.Signature is not "NAME" and not "TCFU" and not "RNAM" and not "ANAM" and not "KNAM"
-                and not "DNAM")
-            .ToList();
+        var buckets = BucketBaseSubrecords(baseSubs);
+        var baseNam3 = buckets.Nam3;
+        var baseConditions = buckets.Conditions;
+        var baseChoices = buckets.Choices;
+        var baseScripts = buckets.Scripts;
+        var baseHeader = buckets.Header;
+        var basePreResponse = buckets.PreResponse;
+        var basePreScripts = buckets.PreScripts;
+        var baseRnam = buckets.Rnam;
+        var baseAnam = buckets.Anam;
+        var baseKnam = buckets.Knam;
+        var baseDnam = buckets.Dnam;
+        var baseOtherTail = buckets.OtherTail;
 
         var responseGroups = new List<List<AnalyzerSubrecordInfo>>();
         var responseScripts = new List<AnalyzerSubrecordInfo>();
@@ -447,6 +518,27 @@ internal sealed class EsmInfoMerger(byte[] input, EsmConversionStats stats)
         return stream.ToArray();
     }
 
+    /// <summary>Category lists produced by <see cref="BucketBaseSubrecords" />, in writer-consumption order.</summary>
+    internal readonly record struct BaseSubrecordBuckets(
+        List<AnalyzerSubrecordInfo> Nam3,
+        List<AnalyzerSubrecordInfo> Conditions,
+        List<AnalyzerSubrecordInfo> Choices,
+        List<AnalyzerSubrecordInfo> Scripts,
+        List<AnalyzerSubrecordInfo> Header,
+        List<AnalyzerSubrecordInfo> PreResponse,
+        List<AnalyzerSubrecordInfo> PreScripts,
+        List<AnalyzerSubrecordInfo> Rnam,
+        List<AnalyzerSubrecordInfo> Anam,
+        List<AnalyzerSubrecordInfo> Knam,
+        List<AnalyzerSubrecordInfo> Dnam,
+        List<AnalyzerSubrecordInfo> OtherTail)
+    {
+        public static BaseSubrecordBuckets Create()
+        {
+            return new BaseSubrecordBuckets([], [], [], [], [], [], [], [], [], [], [], []);
+        }
+    }
+
     private readonly record struct InfoMergeEntry(int BaseOffset, int ResponseOffset, bool Skip);
 
     private readonly record struct ResponseItem(bool IsGroup, int GroupIndex, AnalyzerSubrecordInfo? Subrecord)
@@ -462,7 +554,7 @@ internal sealed class EsmInfoMerger(byte[] input, EsmConversionStats stats)
         }
     }
 
-    private enum InfoRecordRole
+    internal enum InfoRecordRole
     {
         Unknown,
         Base,

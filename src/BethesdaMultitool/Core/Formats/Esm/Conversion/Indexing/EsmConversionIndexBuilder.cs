@@ -220,8 +220,23 @@ internal sealed class EsmConversionIndexBuilder(byte[] input)
     ///     Comprehensive scan for ALL Cell Child GRUPs (type 8, 9, 10) throughout the entire file.
     ///     Xbox 360 ESMs have Cell Temporary groups scattered throughout containing LAND/NAVM records.
     /// </summary>
-    private void ScanAllCellChildGroups(ConversionIndex index)
+    internal void ScanAllCellChildGroups(ConversionIndex index)
     {
+        // This flat re-scan re-discovers groups Phase 1 already indexed (at the same offsets), so it
+        // must skip offsets that are already present. Track seen offsets per key in a HashSet (seeded
+        // from Phase 1's entries) for O(1) membership instead of the previous O(k) per-match list scan.
+        var seenOffsets = new Dictionary<(uint, int), HashSet<int>>();
+        foreach (var (existingKey, existingList) in index.CellChildGroups)
+        {
+            var set = new HashSet<int>(existingList.Count);
+            foreach (var entry in existingList)
+            {
+                set.Add(entry.Offset);
+            }
+
+            seenOffsets[existingKey] = set;
+        }
+
         // Scan byte-by-byte for "PURG" (big-endian GRUP) throughout the file
         for (var offset = 0; offset <= _input.Length - 24; offset++)
         {
@@ -251,8 +266,14 @@ internal sealed class EsmConversionIndexBuilder(byte[] input)
                     index.CellChildGroups[key] = list;
                 }
 
-                // Only add if not already indexed at this offset (avoid re-adding the same group)
-                if (!list.Any(g => g.Offset == offset))
+                if (!seenOffsets.TryGetValue(key, out var offsetsForKey))
+                {
+                    offsetsForKey = [];
+                    seenOffsets[key] = offsetsForKey;
+                }
+
+                // Add returns false when this offset was already indexed (Phase 1 or earlier in this scan).
+                if (offsetsForKey.Add(offset))
                 {
                     list.Add(new GrupEntry(grupHeader.GroupType, grupHeader.LabelAsUInt, offset,
                         (int)grupHeader.GroupSize));

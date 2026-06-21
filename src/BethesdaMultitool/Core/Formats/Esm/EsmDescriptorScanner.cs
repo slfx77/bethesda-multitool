@@ -39,9 +39,9 @@ internal static class EsmDescriptorScanner
         var bigEndian = EsmParser.IsBigEndian(data);
         var format = PluginFormat.Detect(data);
 
-        // Morrowind (TES3) is a flat record stream with a different framing — no GRUPs, no FormIDs,
+        // TES3 (Morrowind) is a flat record stream with a different framing — no GRUPs, no FormIDs,
         // 16-byte record headers, and 4-byte subrecord sizes. Walk it separately.
-        if (format.Game == BethesdaGame.Morrowind)
+        if (GameProfiles.For(format.Game).IsTes3)
         {
             return ScanTes3(data, scanResult, grupHeaders, formIdMap);
         }
