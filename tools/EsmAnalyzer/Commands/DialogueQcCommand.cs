@@ -18,181 +18,6 @@ namespace EsmAnalyzer.Commands;
 /// </summary>
 public static class DialogueQcCommand
 {
-    // Common English words that would corrupt normal text if "fixed" to a proper-noun
-    // capitalization just because the same letters appear in an ESM compound name
-    // (e.g. "Great" in "Great Khans" must not turn every "great" into "Great").
-    // Used both at vocab-build time (excluded as multi-word FULL tokens) and at
-    // fix-application time (skipped on the case-fix and edit-distance paths).
-    private static readonly HashSet<string> EnglishStopWords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // Articles / pronouns / determiners / conjunctions / prepositions
-        "the", "a", "an", "and", "or", "but", "nor", "yet", "so", "if", "then",
-        "this", "that", "these", "those", "such", "some", "any", "all", "both", "each", "every", "no", "not",
-        "i", "me", "my", "mine", "you", "your", "yours", "he", "him", "his", "she", "her", "hers", "it", "its",
-        "we", "us", "our", "ours", "they", "them", "their", "theirs", "who", "whom", "whose", "which", "what",
-        "of", "to", "in", "on", "at", "by", "for", "with", "without", "from", "into", "onto", "upon", "over",
-        "under", "above", "below", "between", "through", "across", "around", "about", "against", "along",
-        "among", "before", "after", "since", "until", "during", "while", "as", "than", "though", "although",
-        "because", "unless", "where", "when", "whenever", "wherever", "whether", "until",
-        // Auxiliary / common verbs in low frequency forms
-        "is", "am", "are", "was", "were", "be", "been", "being",
-        "do", "does", "did", "done", "doing",
-        "have", "has", "had", "having",
-        "can", "could", "shall", "should", "will", "would", "may", "might", "must",
-        "go", "goes", "going", "gone", "went",
-        "come", "comes", "came", "coming",
-        "get", "gets", "got", "getting",
-        "say", "says", "said", "saying",
-        "see", "sees", "saw", "seen", "seeing",
-        "make", "makes", "made", "making",
-        "take", "takes", "took", "taken", "taking",
-        "give", "gives", "gave", "given", "giving",
-        "know", "knows", "knew", "known", "knowing",
-        "think", "thinks", "thought", "thinking",
-        "look", "looks", "looked", "looking",
-        "want", "wants", "wanted", "wanting",
-        "use", "uses", "used", "using",
-        "find", "finds", "found", "finding",
-        "tell", "tells", "told", "telling",
-        "ask", "asks", "asked", "asking",
-        "work", "works", "worked", "working",
-        "try", "tries", "tried", "trying",
-        "leave", "leaves", "left", "leaving",
-        "call", "calls", "called", "calling",
-        "feel", "feels", "felt", "feeling",
-        "keep", "keeps", "kept", "keeping",
-        "let", "lets", "letting",
-        "begin", "begins", "began", "begun",
-        "show", "shows", "showed", "shown",
-        "bring", "brings", "brought",
-        "follow", "follows", "followed",
-        "stand", "stands", "stood",
-        "lose", "loses", "lost", "losing",
-        "pay", "pays", "paid",
-        "live", "lives", "lived", "living",
-        "meet", "meets", "met",
-        "run", "runs", "ran", "running",
-        "move", "moves", "moved", "moving",
-        "like", "likes", "liked",
-        "believe", "believes", "believed",
-        "hold", "holds", "held", "holding",
-        "turn", "turns", "turned",
-        "set", "sets", "setting",
-        "start", "starts", "started", "starting",
-        "lead", "leads", "led",
-        "hear", "hears", "heard",
-        "stop", "stops", "stopped",
-        "play", "plays", "played",
-        "speak", "speaks", "spoke", "spoken",
-        "read", "reads", "reading",
-        "spend", "spent",
-        "grow", "grows", "grew", "grown",
-        "win", "wins", "won",
-        "buy", "buys", "bought",
-        "wait", "waits", "waited",
-        "serve", "served",
-        "die", "dies", "died",
-        "send", "sent",
-        "build", "builds", "built",
-        "stay", "stays", "stayed",
-        "fall", "falls", "fell", "fallen",
-        "cut", "cuts", "cutting",
-        "reach", "reached",
-        "kill", "kills", "killed",
-        "remain", "remained",
-        "carry", "carries", "carried",
-        "raise", "raised",
-        "drink", "drinks", "drank",
-        "open", "opens", "opened",
-        "walk", "walks", "walked",
-        "wear", "wears", "wore", "worn",
-        "fight", "fights", "fought",
-        "sit", "sits", "sat",
-        "lay", "lays", "laid",
-        "watch", "watches", "watched",
-        "rest", "rests", "rested",
-        "wonder", "wondered",
-        "hope", "hopes", "hoped",
-        "pull", "pulls", "pulled",
-        "draw", "draws", "drew", "drawn",
-        "throw", "throws", "threw", "thrown",
-        // Common adjectives / adverbs / quantifiers / time / place
-        "good", "great", "bad", "old", "new", "young", "long", "short", "high", "low",
-        "big", "small", "large", "little", "tall", "wide", "deep",
-        "more", "less", "many", "much", "few", "most", "least", "enough", "lot", "lots",
-        "first", "second", "third", "last", "next", "only",
-        "best", "better", "worst", "worse",
-        "early", "late", "later", "soon", "sooner", "now", "never", "always", "often",
-        "again", "still", "ever", "ago", "today", "yesterday", "tomorrow",
-        "here", "there", "everywhere", "anywhere", "nowhere",
-        "out", "in", "inside", "outside", "back", "front", "side",
-        "up", "down", "off", "on", "away", "near", "far",
-        "left", "right", "north", "south", "east", "west",
-        "home", "house", "room", "town", "city", "world",
-        "way", "ways", "place", "places", "time", "times",
-        "day", "days", "night", "nights", "year", "years", "week", "weeks", "month", "months", "hour", "hours",
-        "thing", "things", "stuff",
-        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-        "zero", "hundred", "thousand", "million",
-        "really", "very", "just", "even", "also", "too", "perhaps", "maybe", "actually",
-        "yes", "no", "okay", "ok",
-        "name", "names",
-        "people", "person", "man", "men", "woman", "women", "boy", "girl", "kid", "child",
-        "head", "hand", "foot", "eye", "face", "arm", "leg", "body",
-        "life", "death", "war", "peace",
-        "water", "fire", "earth", "air",
-        "kind", "kinds", "type", "types", "sort", "sorts",
-        "case", "cases", "fact", "facts", "story",
-        "money", "food", "work", "job", "company", "business",
-        "fine", "okay", "true", "false", "real", "fake",
-        "alone", "together", "ourselves", "yourselves", "themselves", "myself", "yourself", "himself", "herself", "itself",
-        // Common nouns / generic NPC titles that exist as single-word FULL strings in FNV
-        // and would otherwise drive false-positive case-fixes on every dialogue use.
-        "guard", "guards", "soldier", "soldiers", "trooper", "troopers", "ranger", "rangers",
-        "citizen", "citizens", "settler", "settlers", "doctor", "doctors", "nurse", "nurses",
-        "captain", "lieutenant", "colonel", "major", "sergeant", "general", "chief",
-        "boss", "bosses", "chairman", "chairmen", "president", "secretary",
-        "slave", "slaves", "stranger", "strangers", "traveler", "travelers",
-        "junkie", "junkies", "drunk", "drunks", "escort", "escorts",
-        "raider", "raiders", "robot", "robots", "ant", "ants", "rat", "rats",
-        "dog", "dogs", "cat", "cats", "fiend", "fiends", "mutant", "mutants",
-        "ghoul", "ghouls", "deathclaw", "deathclaws",
-        "vault", "vaults", "lucky", "fantastic", "meat", "sweetie", "baby", "babies",
-        "trash", "loyal", "gift", "gifts", "members", "member", "friend", "friends",
-        "family", "families", "mountain", "mountains", "area", "supply", "security",
-        "medical", "control", "hell", "power", "powder", "easy", "song", "songs",
-        "mess", "miss", "missing", "service", "services", "news",
-        "caravan", "caravans", "gang", "gangs", "pack", "packs", "base", "bases",
-        "road", "roads", "river", "rivers", "valley", "valleys", "canyon", "canyons",
-        "building", "buildings", "station", "stations", "motor", "society", "societies",
-        "battle", "battles", "war", "wars", "fight", "fights", "crash", "crashed",
-        "saint", "saints", "human", "humans", "creature", "creatures",
-        "king", "queen", "lord", "lady", "sir", "madam",
-        "north", "south", "east", "west", "central", "downtown", "uptown",
-        "sun", "sunset", "sunrise", "moon", "star", "stars",
-        "happy", "sad", "angry", "scared", "tired", "hungry", "thirsty",
-        "blue", "red", "green", "yellow", "black", "white", "brown", "gray", "grey",
-        "shop", "shopper", "shopping", "store", "stores", "market", "markets",
-        // Generic occupational nouns that show up as both vocab proper-nouns and common dialogue terms.
-        "local", "locals", "hunter", "hunters", "merchant", "merchants", "patient", "patients",
-        "gambler", "gamblers", "prospector", "prospectors", "mercenary", "mercenaries",
-        "roller", "rollers", "assistant", "assistants", "hooker", "hookers", "bartender", "bartenders",
-        "thug", "thugs", "angel", "angels", "drill", "heavy", "field", "fields", "jackass",
-        "bouncer", "bouncers", "dealer", "dealers", "patron", "patrons", "owner", "owners",
-        "smith", "smiths", "cook", "cooks", "chef", "chefs", "engineer", "engineers",
-        "scientist", "scientists", "scholar", "scholars", "teacher", "teachers",
-        "leader", "leaders", "follower", "followers", "manager", "managers"
-    };
-
-    // Articles/conjunctions/prepositions that should never seed vocab tokens, even when
-    // they appear capitalized in a multi-word FULL string ("The Strip", "Of The Patriots").
-    private static readonly HashSet<string> StructuralWords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "the", "a", "an", "and", "or", "but", "nor", "yet", "so", "if",
-        "of", "to", "in", "on", "at", "by", "for", "with", "from", "into", "onto",
-        "as", "than", "is", "are", "was", "were", "be"
-    };
-
     public static Command CreateDialogueQcCommand()
     {
         var command = new Command(
@@ -267,7 +92,7 @@ public static class DialogueQcCommand
         AnsiConsole.MarkupLine("[grey]Reading CSV...[/]");
         var rawText = File.ReadAllText(csvPath);
         var newlineStyle = rawText.Contains("\r\n") ? "\r\n" : "\n";
-        var rows = CsvIo.Parse(rawText);
+        var rows = DialogueQcCsvIo.Parse(rawText);
 
         if (rows.Count == 0)
         {
@@ -389,7 +214,7 @@ public static class DialogueQcCommand
         var sb = new StringBuilder(rawText.Length + (changedRows * 16));
         for (var i = 0; i < rows.Count; i++)
         {
-            sb.Append(CsvIo.SerializeRow(rows[i]));
+            sb.Append(DialogueQcCsvIo.SerializeRow(rows[i]));
             sb.Append(newlineStyle);
         }
         File.WriteAllText(csvPath, sb.ToString());
@@ -496,7 +321,7 @@ public static class DialogueQcCommand
                 // ANY token (even from a single-word FULL) that collides with a
                 // common English word is unsafe to seed vocab — case-fixing every
                 // "guard" or "vault" in dialogue would be noise.
-                if (EnglishStopWords.Contains(token))
+                if (DialogueQcStopWords.EnglishStopWords.Contains(token))
                 {
                     continue;
                 }
@@ -508,7 +333,7 @@ public static class DialogueQcCommand
                     {
                         continue;
                     }
-                    if (StructuralWords.Contains(token))
+                    if (DialogueQcStopWords.StructuralWords.Contains(token))
                     {
                         continue;
                     }
@@ -652,7 +477,7 @@ public static class DialogueQcCommand
         }
 
         // Hard skip on common English words even if they show up in vocab somehow.
-        if (EnglishStopWords.Contains(token))
+        if (DialogueQcStopWords.EnglishStopWords.Contains(token))
         {
             return null;
         }
@@ -696,7 +521,7 @@ public static class DialogueQcCommand
         {
             return null;
         }
-        if (EnglishStopWords.Contains(token))
+        if (DialogueQcStopWords.EnglishStopWords.Contains(token))
         {
             return null;
         }
@@ -714,7 +539,7 @@ public static class DialogueQcCommand
         var bestMatches = new List<string>();
         if (vocab.ByFirstChar.TryGetValue(firstLetter, out var sameFirst))
         {
-            CollectEditDistance1(token, sameFirst, minEditLen, bestMatches);
+            DialogueQcEditDistance.CollectEditDistance1(token, sameFirst, minEditLen, bestMatches);
         }
         // Also consider vocab words with different first char (covers "Kris" → "Chris")
         // but only if we haven't already found matches in the same-first-letter bucket.
@@ -722,7 +547,7 @@ public static class DialogueQcCommand
         {
             foreach (var (_, list) in vocab.ByFirstChar)
             {
-                CollectEditDistance1(token, list, minEditLen, bestMatches);
+                DialogueQcEditDistance.CollectEditDistance1(token, list, minEditLen, bestMatches);
             }
         }
 
@@ -759,82 +584,6 @@ public static class DialogueQcCommand
         report.ChangeLog.Add(
             $"L{ctx.LineNumber} [{ctx.FormId}/{ctx.VoiceType}] fuzzy: '{token}' → '{pick}'");
         return pick;
-    }
-
-    private static void CollectEditDistance1(
-        string token, List<string> candidates, int minVocabLen, List<string> matches)
-    {
-        var tokenLen = token.Length;
-        foreach (var c in candidates)
-        {
-            if (c.Length < minVocabLen)
-            {
-                continue;
-            }
-            var diff = c.Length - tokenLen;
-            if (diff < -1 || diff > 1)
-            {
-                continue;
-            }
-            if (EditDistanceAtMost1(token, c))
-            {
-                matches.Add(c);
-            }
-        }
-    }
-
-    // Returns true iff Levenshtein distance between a and b is 0 or 1 (case-insensitive).
-    private static bool EditDistanceAtMost1(string a, string b)
-    {
-        if (a.Length > b.Length)
-        {
-            (a, b) = (b, a);
-        }
-        var diff = b.Length - a.Length;
-        if (diff > 1)
-        {
-            return false;
-        }
-
-        if (diff == 0)
-        {
-            // Substitution or zero differences.
-            var mismatches = 0;
-            for (var i = 0; i < a.Length; i++)
-            {
-                if (char.ToLowerInvariant(a[i]) != char.ToLowerInvariant(b[i]))
-                {
-                    mismatches++;
-                    if (mismatches > 1)
-                    {
-                        return false;
-                    }
-                }
-            }
-            return mismatches <= 1;
-        }
-
-        // diff == 1: a is one char shorter than b. Allow exactly one insertion.
-        int i2 = 0, j = 0;
-        var inserted = false;
-        while (i2 < a.Length && j < b.Length)
-        {
-            if (char.ToLowerInvariant(a[i2]) == char.ToLowerInvariant(b[j]))
-            {
-                i2++;
-                j++;
-            }
-            else
-            {
-                if (inserted)
-                {
-                    return false;
-                }
-                inserted = true;
-                j++;
-            }
-        }
-        return true;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -902,114 +651,4 @@ public static class DialogueQcCommand
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
-
-    // ──────────────────────────────────────────────────────────────────────────
-    //  Minimal CSV reader/writer (handles quoted fields, embedded quotes/commas/newlines)
-    // ──────────────────────────────────────────────────────────────────────────
-
-    private static class CsvIo
-    {
-        public static List<string[]> Parse(string text)
-        {
-            var rows = new List<string[]>();
-            var row = new List<string>();
-            var field = new StringBuilder();
-            var inQuotes = false;
-
-            for (var i = 0; i < text.Length; i++)
-            {
-                var c = text[i];
-
-                if (inQuotes)
-                {
-                    if (c == '"')
-                    {
-                        if (i + 1 < text.Length && text[i + 1] == '"')
-                        {
-                            field.Append('"');
-                            i++;
-                        }
-                        else
-                        {
-                            inQuotes = false;
-                        }
-                    }
-                    else
-                    {
-                        field.Append(c);
-                    }
-                    continue;
-                }
-
-                if (c == '"')
-                {
-                    inQuotes = true;
-                    continue;
-                }
-                if (c == ',')
-                {
-                    row.Add(field.ToString());
-                    field.Clear();
-                    continue;
-                }
-                if (c == '\r')
-                {
-                    if (i + 1 < text.Length && text[i + 1] == '\n')
-                    {
-                        i++;
-                    }
-                    row.Add(field.ToString());
-                    field.Clear();
-                    rows.Add(row.ToArray());
-                    row.Clear();
-                    continue;
-                }
-                if (c == '\n')
-                {
-                    row.Add(field.ToString());
-                    field.Clear();
-                    rows.Add(row.ToArray());
-                    row.Clear();
-                    continue;
-                }
-
-                field.Append(c);
-            }
-
-            if (field.Length > 0 || row.Count > 0)
-            {
-                row.Add(field.ToString());
-                rows.Add(row.ToArray());
-            }
-
-            return rows;
-        }
-
-        public static string SerializeRow(string[] fields)
-        {
-            var sb = new StringBuilder();
-            for (var i = 0; i < fields.Length; i++)
-            {
-                if (i > 0)
-                {
-                    sb.Append(',');
-                }
-                sb.Append(Escape(fields[i]));
-            }
-            return sb.ToString();
-        }
-
-        private static string Escape(string value)
-        {
-            if (value == null)
-            {
-                return "";
-            }
-            if (value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) < 0)
-            {
-                return value;
-            }
-            return "\"" + value.Replace("\"", "\"\"") + "\"";
-        }
-    }
 }
