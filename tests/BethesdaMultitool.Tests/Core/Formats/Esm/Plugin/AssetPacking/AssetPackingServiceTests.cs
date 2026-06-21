@@ -6,8 +6,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 
 /// <summary>
 ///     Unit-level smoke tests for <see cref="AssetPackingService" />. End-to-end packing
-///     against a real ESP fixture lives in the CLI integration test in
-///     <c>tests/BethesdaMultitool.Tests.E2E</c> (TODO).
+///     against a real ESP fixture is intended to live in a separate CLI integration test
+///     project (<c>tests/BethesdaMultitool.Tests.E2E</c>), which does not yet exist.
 /// </summary>
 public class AssetPackingServiceTests
 {
@@ -22,7 +22,10 @@ public class AssetPackingServiceTests
             OutputBsaPath = Path.Combine(Path.GetTempPath(), $"out-{Guid.NewGuid():N}.bsa")
         };
 
-        var result = await AssetPackingService.PackAsync(options, NullConversionProgressSink.Instance);
+        var result = await AssetPackingService.PackAsync(
+            options,
+            NullConversionProgressSink.Instance,
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.NotNull(result.ErrorMessage);
@@ -41,7 +44,7 @@ public class AssetPackingServiceTests
         };
 
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         var result = await AssetPackingService.PackAsync(options, NullConversionProgressSink.Instance, cts.Token);
 

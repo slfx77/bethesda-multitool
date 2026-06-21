@@ -224,7 +224,7 @@ public sealed class AssetPackingService
                 // writer, audit, result) see a stable enumeration order.
                 var packedSnapshot = packedFiles.ToList();
                 var resolutionsSnapshot = resolutions.ToList();
-                ReportVoiceLipPairDiagnostics(
+                AssetPackAuditWriter.ReportVoiceLipPairDiagnostics(
                     packedSnapshot,
                     resolutionsSnapshot,
                     packPathRenames,
@@ -242,7 +242,7 @@ public sealed class AssetPackingService
                 Directory.CreateDirectory(Path.GetDirectoryName(options.OutputBsaPath)!);
 
                 var outputPlans = PlanBsaOutputs(options.OutputBsaPath, packedSnapshot);
-                DeleteStaleBsaOutputs(options.OutputBsaPath, outputPlans, sink);
+                AssetPackBsaPlanner.DeleteStaleBsaOutputs(options.OutputBsaPath, outputPlans, sink);
 
                 var outputPaths = new List<string>(outputPlans.Count);
                 long totalOutputSize = 0;
@@ -278,7 +278,7 @@ public sealed class AssetPackingService
                 // one path per line within each section. Opt-in via WriteAuditFile.
                 if (options.WriteAuditFile)
                 {
-                    TryWriteAuditFile(options.OutputBsaPath, resolutionsSnapshot, stats, sink);
+                    AssetPackAuditWriter.TryWriteAuditFile(options.OutputBsaPath, resolutionsSnapshot, stats, sink);
                 }
 
                 sink.OnPhaseEnd("AssetPacking", new ConversionPipelineStats());
@@ -613,7 +613,7 @@ public sealed class AssetPackingService
         // paths — those are the most important diagnostic). Opt-in via WriteAuditFile.
         if (runningStats is not null && options.WriteAuditFile)
         {
-            TryWriteAuditFile(options.OutputBsaPath, resolutions, runningStats, sink);
+            AssetPackAuditWriter.TryWriteAuditFile(options.OutputBsaPath, resolutions, runningStats, sink);
         }
 
         sink.OnPhaseEnd("AssetPacking", new ConversionPipelineStats());
@@ -642,370 +642,16 @@ public sealed class AssetPackingService
         };
     }
 
-    private static void ReportVoiceLipPairDiagnostics(
-        List<(string Path, byte[] Data)> packedFiles,
-        List<AssetResolution> resolutions,
-        IReadOnlyDictionary<string, string>? packPathRenames,
-        IConversionProgressSink sink)
-    {
-        var oggStems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var lipStems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (path, _) in packedFiles)
-        {
-            if (!IsVoicePath(path))
-            {
-                continue;
-            }
-
-            var ext = Path.GetExtension(path);
-            if (ext.Equals(".ogg", StringComparison.OrdinalIgnoreCase))
-            {
-                oggStems.Add(PathStem(path));
-            }
-            else if (ext.Equals(".lip", StringComparison.OrdinalIgnoreCase))
-            {
-                lipStems.Add(PathStem(path));
-            }
-        }
-
-        if (oggStems.Count == 0)
-        {
-            return;
-        }
-
-        var missingLipStems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var resolution in resolutions)
-        {
-            if (resolution.Kind != AssetResolutionKind.Missing
-                || !resolution.RequestedPath.EndsWith(".lip", StringComparison.OrdinalIgnoreCase)
-                || !IsVoicePath(resolution.RequestedPath))
-            {
-                continue;
-            }
-
-            var packPath = resolution.RequestedPath;
-            if (packPathRenames is not null
-                && packPathRenames.TryGetValue(resolution.RequestedPath, out var renamed))
-            {
-                packPath = renamed;
-            }
-
-            missingLipStems.Add(PathStem(packPath));
-        }
-
-        var unpaired = oggStems
-            .Where(stem => !lipStems.Contains(stem))
-            .Order(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        if (unpaired.Count == 0)
-        {
-            sink.Info("AssetPacking",
-                $"Voice lip pairing: {oggStems.Count:N0} packed OGG voice line(s), every line has a paired LIP.");
-            return;
-        }
-
-        var missingSourceCount = unpaired.Count(stem => missingLipStems.Contains(stem));
-        var samples = string.Join(", ", unpaired.Take(5));
-        sink.Warn("AssetPacking",
-            $"Voice lip pairing: {unpaired.Count:N0}/{oggStems.Count:N0} packed OGG voice line(s) " +
-            $"have no paired LIP in the output ({missingSourceCount:N0} were unresolved source LIP requests). " +
-            $"Samples: {samples}");
-    }
-
-    private static bool IsVoicePath(string path)
-        => path.StartsWith("sound\\voice\\", StringComparison.OrdinalIgnoreCase)
-           || path.StartsWith("sound/voice/", StringComparison.OrdinalIgnoreCase);
-
-    private static string PathStem(string path)
-    {
-        var normalized = path.Replace('/', '\\');
-        var ext = Path.GetExtension(normalized);
-        return (ext.Length == 0 ? normalized : normalized[..^ext.Length]).ToLowerInvariant();
-    }
-
+    /// <summary>
+    ///     Plans the output BSA archives for a set of packed files: classifies into asset
+    ///     buckets, chunks oversized buckets, and assigns sidecar paths. Delegates to
+    ///     <see cref="AssetPackBsaPlanner" />.
+    /// </summary>
     internal static IReadOnlyList<BsaOutputPlan> PlanBsaOutputs(
         string outputBsaPath,
         IReadOnlyList<(string Path, byte[] Data)> packedFiles,
         long maxArchiveBytes = DefaultMaxBsaBytes)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(outputBsaPath);
-
-        if (packedFiles.Count == 0)
-        {
-            return [];
-        }
-
-        var bucketPlans = packedFiles
-            .GroupBy(f => ClassifyAssetBucket(f.Path))
-            .OrderBy(g => BucketSortOrder(g.Key))
-            .SelectMany(g => ChunkBucket(g.Key, g, maxArchiveBytes))
-            .ToList();
-
-        var split = bucketPlans.Count > 1 || bucketPlans[0].ChunkIndex > 0;
-        for (var i = 0; i < bucketPlans.Count; i++)
-        {
-            var plan = bucketPlans[i];
-            var outputPath = split
-                ? BuildSidecarPath(outputBsaPath, plan.Bucket, plan.ChunkIndex)
-                : outputBsaPath;
-            bucketPlans[i] = plan with { OutputPath = outputPath };
-        }
-
-        return bucketPlans;
-    }
-
-    private static IEnumerable<BsaOutputPlan> ChunkBucket(
-        AssetPackBucket bucket,
-        IEnumerable<(string Path, byte[] Data)> files,
-        long maxArchiveBytes)
-    {
-        var ordered = files
-            .OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (EstimateBsaSize(ordered) <= maxArchiveBytes)
-        {
-            yield return new BsaOutputPlan(
-                OutputPath: "",
-                Bucket: bucket,
-                BucketLabel: BucketLabel(bucket),
-                ChunkIndex: 0,
-                Files: ordered);
-            yield break;
-        }
-
-        var chunk = new List<(string Path, byte[] Data)>();
-        var chunkIndex = 0;
-        var chunkEstimate = new BsaSizeEstimate();
-        foreach (var file in ordered)
-        {
-            var candidateEstimate = chunkEstimate.EstimateWith(file);
-            if (chunk.Count > 0 && candidateEstimate > maxArchiveBytes)
-            {
-                yield return new BsaOutputPlan(
-                    OutputPath: "",
-                    Bucket: bucket,
-                    BucketLabel: BucketLabel(bucket),
-                    ChunkIndex: chunkIndex++,
-                    Files: chunk);
-                chunk = [];
-                chunkEstimate = new BsaSizeEstimate();
-            }
-
-            chunk.Add(file);
-            chunkEstimate.Add(file);
-        }
-
-        if (chunk.Count > 0)
-        {
-            yield return new BsaOutputPlan(
-                OutputPath: "",
-                Bucket: bucket,
-                BucketLabel: BucketLabel(bucket),
-                ChunkIndex: chunkIndex,
-                Files: chunk);
-        }
-    }
-
-    private static long EstimateBsaSize(List<(string Path, byte[] Data)> files)
-    {
-        var unique = new Dictionary<(string Folder, string Name), byte[]>(files.Count);
-        foreach (var (path, data) in files)
-        {
-            var normalized = path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
-            var slash = normalized.LastIndexOf('\\');
-            var folder = slash >= 0 ? normalized[..slash] : "";
-            var name = slash >= 0 ? normalized[(slash + 1)..] : normalized;
-            unique.TryAdd((folder, name), data);
-        }
-
-        var folderCount = unique.Keys.Select(k => k.Folder).Distinct(StringComparer.Ordinal).Count();
-        var fileCount = unique.Count;
-        var totalFolderNameLength = unique.Keys
-            .Select(k => k.Folder)
-            .Distinct(StringComparer.Ordinal)
-            .Sum(folder => folder.Length + 1);
-        var totalFileNameLength = unique.Keys.Sum(k => k.Name.Length + 1);
-        var dataLength = unique.Values.Sum(static data => (long)data.Length);
-
-        return 36L
-               + folderCount * 16L
-               + folderCount
-               + totalFolderNameLength
-               + fileCount * 16L
-               + totalFileNameLength
-               + dataLength;
-    }
-
-    private sealed class BsaSizeEstimate
-    {
-        private readonly HashSet<(string Folder, string Name)> _files = [];
-        private readonly HashSet<string> _folders = new(StringComparer.Ordinal);
-        private long _total = 36;
-
-        /// <summary>Returns the projected total BSA size if the given file were added, without adding it.</summary>
-        public long EstimateWith((string Path, byte[] Data) file)
-        {
-            var key = Normalize(file.Path);
-            if (_files.Contains(key))
-            {
-                return _total;
-            }
-
-            var estimate = _total + 16 + key.Name.Length + 1 + file.Data.Length;
-            if (!_folders.Contains(key.Folder))
-            {
-                estimate += 16 + 1 + key.Folder.Length + 1;
-            }
-
-            return estimate;
-        }
-
-        /// <summary>Adds a file to the running BSA size estimate (ignores duplicates by path).</summary>
-        public void Add((string Path, byte[] Data) file)
-        {
-            var key = Normalize(file.Path);
-            if (!_files.Add(key))
-            {
-                return;
-            }
-
-            _total += 16 + key.Name.Length + 1 + file.Data.Length;
-            if (_folders.Add(key.Folder))
-            {
-                _total += 16 + 1 + key.Folder.Length + 1;
-            }
-        }
-
-        private static (string Folder, string Name) Normalize(string path)
-        {
-            var normalized = path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
-            var slash = normalized.LastIndexOf('\\');
-            return slash >= 0
-                ? (normalized[..slash], normalized[(slash + 1)..])
-                : ("", normalized);
-        }
-    }
-
-    private static AssetPackBucket ClassifyAssetBucket(string path)
-    {
-        var normalized = path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
-        if (normalized.StartsWith("textures\\", StringComparison.Ordinal))
-        {
-            return AssetPackBucket.Textures;
-        }
-
-        if (normalized.StartsWith("sound\\voice\\", StringComparison.Ordinal))
-        {
-            return AssetPackBucket.Voices;
-        }
-
-        if (normalized.StartsWith("sound\\", StringComparison.Ordinal))
-        {
-            return AssetPackBucket.Sounds;
-        }
-
-        return AssetPackBucket.Main;
-    }
-
-    private static int BucketSortOrder(AssetPackBucket bucket) => bucket switch
-    {
-        AssetPackBucket.Main => 0,
-        AssetPackBucket.Textures => 1,
-        AssetPackBucket.Sounds => 2,
-        AssetPackBucket.Voices => 3,
-        _ => 99
-    };
-
-    private static string BucketLabel(AssetPackBucket bucket) => bucket switch
-    {
-        AssetPackBucket.Main => "main",
-        AssetPackBucket.Textures => "texture",
-        AssetPackBucket.Sounds => "sound",
-        AssetPackBucket.Voices => "voice",
-        _ => "misc"
-    };
-
-    private static string BucketSuffix(AssetPackBucket bucket) => bucket switch
-    {
-        AssetPackBucket.Main => "Main",
-        AssetPackBucket.Textures => "Textures",
-        AssetPackBucket.Sounds => "Sounds",
-        AssetPackBucket.Voices => "Voices",
-        _ => "Assets"
-    };
-
-    private static string BuildSidecarPath(string outputBsaPath, AssetPackBucket bucket, int chunkIndex)
-    {
-        var directory = Path.GetDirectoryName(outputBsaPath);
-        var stem = Path.GetFileNameWithoutExtension(outputBsaPath);
-        var ext = Path.GetExtension(outputBsaPath);
-        if (string.IsNullOrEmpty(ext))
-        {
-            ext = ".bsa";
-        }
-
-        var suffix = BucketSuffix(bucket);
-        if (chunkIndex > 0)
-        {
-            suffix += chunkIndex + 1;
-        }
-
-        return Path.Combine(directory ?? "", $"{stem} - {suffix}{ext}");
-    }
-
-    private static void DeleteStaleBsaOutputs(
-        string outputBsaPath,
-        IReadOnlyList<BsaOutputPlan> outputPlans,
-        IConversionProgressSink sink)
-    {
-        var planned = new HashSet<string>(
-            outputPlans.Select(p => Path.GetFullPath(p.OutputPath)),
-            StringComparer.OrdinalIgnoreCase);
-
-        DeleteIfStale(outputBsaPath);
-
-        var directory = Path.GetDirectoryName(outputBsaPath);
-        var stem = Path.GetFileNameWithoutExtension(outputBsaPath);
-        var ext = Path.GetExtension(outputBsaPath);
-        if (string.IsNullOrEmpty(ext))
-        {
-            ext = ".bsa";
-        }
-
-        if (string.IsNullOrEmpty(directory))
-        {
-            directory = ".";
-        }
-
-        if (Directory.Exists(directory))
-        {
-            foreach (var sidecar in Directory.EnumerateFiles(directory, $"{stem} - *{ext}"))
-            {
-                DeleteIfStale(sidecar);
-            }
-        }
-
-        void DeleteIfStale(string path)
-        {
-            var fullPath = Path.GetFullPath(path);
-            if (planned.Contains(fullPath) || !File.Exists(fullPath))
-            {
-                return;
-            }
-
-            try
-            {
-                File.Delete(fullPath);
-                sink.Info("AssetPacking", $"Deleted stale BSA output: {Path.GetFileName(fullPath)}");
-            }
-            catch (Exception ex)
-            {
-                sink.Warn("AssetPacking",
-                    $"Could not delete stale BSA output {fullPath}: {ex.GetType().Name}: {ex.Message}");
-            }
-        }
-    }
+        => AssetPackBsaPlanner.Plan(outputBsaPath, packedFiles, maxArchiveBytes);
 
     private static AssetPackingStats EmptyStats(TimeSpan elapsed)
     {
@@ -1022,95 +668,8 @@ public sealed class AssetPackingService
         }
     }
 
-    /// <summary>
-    ///     Writes a human-reviewable per-asset audit next to the output BSA. Sections:
-    ///     missing paths (the most useful — these are what the runtime won't find), fuzzy-
-    ///     matched paths (sanity check the renames), and conversion-failed paths. Each
-    ///     section is sorted alphabetically with one path per line so the user can diff
-    ///     between runs.
-    /// </summary>
-    private static void TryWriteAuditFile(
-        string outputBsaPath,
-        IReadOnlyList<AssetResolution> resolutions,
-        RunningStats stats,
-        IConversionProgressSink sink)
-    {
-        try
-        {
-            var auditPath = outputBsaPath + ".missing.txt";
-            using var writer = new StreamWriter(auditPath);
-
-            writer.WriteLine($"# Asset packing audit for {Path.GetFileName(outputBsaPath)}");
-            writer.WriteLine($"# Generated: {DateTime.UtcNow:O}");
-            writer.WriteLine($"# Total paths scanned: {stats.Total}");
-            writer.WriteLine($"# Already in baseline (skipped pack): {stats.AlreadyInBaseline}");
-            writer.WriteLine($"# Resolved exact:                     {stats.ResolvedExact}");
-            writer.WriteLine($"# Resolved fuzzy:                     {stats.ResolvedFuzzy}");
-            writer.WriteLine($"# 360 → PC converted:                 {stats.Converted360}");
-            writer.WriteLine($"# Conversion failed:                  {stats.ConversionFailed}");
-            writer.WriteLine($"# Missing (unresolved):               {stats.Missing}");
-            writer.WriteLine();
-
-            WriteAuditSection(writer,
-                "## MISSING — runtime will fail to load these (not in baseline, no fuzzy hit)",
-                resolutions.Where(r => r.Kind == AssetResolutionKind.Missing));
-
-            WriteAuditSection(writer,
-                "## CONVERSION FAILED — 360→PC conversion errored; original bytes packed as fallback",
-                resolutions.Where(r => r.Kind == AssetResolutionKind.ConversionFailed),
-                includeError: true);
-
-            WriteAuditSection(writer,
-                "## FUZZY-MATCHED — same basename, different directory; sanity-check these",
-                resolutions.Where(r =>
-                    r.Kind is AssetResolutionKind.ResolvedFuzzy
-                        or AssetResolutionKind.ResolvedFuzzyConverted),
-                true);
-
-            sink.Info("AssetPacking", $"Audit file written: {auditPath}");
-        }
-        catch (Exception ex)
-        {
-            sink.Warn("AssetPacking", $"Could not write audit file: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
-    private static void WriteAuditSection(
-        TextWriter writer,
-        string header,
-        IEnumerable<AssetResolution> entries,
-        bool includeResolved = false,
-        bool includeError = false)
-    {
-        var sorted = entries
-            .OrderBy(r => r.RequestedPath, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        writer.WriteLine(header);
-        writer.WriteLine($"# Count: {sorted.Count}");
-        writer.WriteLine();
-
-        foreach (var entry in sorted)
-        {
-            if (includeResolved && !string.IsNullOrEmpty(entry.ResolvedPath))
-            {
-                writer.WriteLine($"{entry.RequestedPath}  →  {entry.ResolvedPath}");
-            }
-            else if (includeError && !string.IsNullOrEmpty(entry.ConversionError))
-            {
-                writer.WriteLine($"{entry.RequestedPath}  ({entry.ConversionError})");
-            }
-            else
-            {
-                writer.WriteLine(entry.RequestedPath);
-            }
-        }
-
-        writer.WriteLine();
-    }
-
     /// <summary>Mutable counters used while iterating; copied into the immutable Stats record at the end.</summary>
-    private sealed class RunningStats
+    internal sealed class RunningStats
     {
         public int AlreadyInBaseline;
         public int ConversionFailed;
@@ -1121,18 +680,3 @@ public sealed class AssetPackingService
         public int Total;
     }
 }
-
-internal enum AssetPackBucket
-{
-    Main,
-    Textures,
-    Sounds,
-    Voices
-}
-
-internal sealed record BsaOutputPlan(
-    string OutputPath,
-    AssetPackBucket Bucket,
-    string BucketLabel,
-    int ChunkIndex,
-    IReadOnlyList<(string Path, byte[] Data)> Files);

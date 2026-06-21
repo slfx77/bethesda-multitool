@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Text;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
@@ -179,14 +177,14 @@ internal static class DialogueAudioCsvAssetCollector
             bindingsByAllocated = null)
     {
         using var reader = new StreamReader(csvPath);
-        var headerFields = ReadCsvRecord(reader);
+        var headerFields = DialogueAudioCsvReader.ReadCsvRecord(reader);
         if (headerFields.Count == 0)
         {
             return new DialogueAudioCsvCollectionResult(paths, 1, 0, 0, 0);
         }
 
-        var fileIndex = FindColumn(headerFields, "File");
-        var formIdIndex = FindColumn(headerFields, "FormID");
+        var fileIndex = DialogueAudioCsvReader.FindColumn(headerFields, "File");
+        var formIdIndex = DialogueAudioCsvReader.FindColumn(headerFields, "FormID");
         if (fileIndex < 0 || formIdIndex < 0)
         {
             return new DialogueAudioCsvCollectionResult(paths, 1, 0, 0, 0);
@@ -195,7 +193,7 @@ internal static class DialogueAudioCsvAssetCollector
         // Text column is optional but required for prefix-fallback disambiguation. Without
         // it we can still attempt prefix matching but can't pick between candidates that
         // share a (voice, topic-prefix, resp) bucket.
-        var textIndex = FindColumn(headerFields, "Text");
+        var textIndex = DialogueAudioCsvReader.FindColumn(headerFields, "Text");
 
         var rowsRead = 0;
         var rowsMatched = 0;
@@ -206,7 +204,7 @@ internal static class DialogueAudioCsvAssetCollector
 
         while (!reader.EndOfStream)
         {
-            var fields = ReadCsvRecord(reader);
+            var fields = DialogueAudioCsvReader.ReadCsvRecord(reader);
             if (fields.Count == 0)
             {
                 continue;
@@ -218,7 +216,7 @@ internal static class DialogueAudioCsvAssetCollector
                 continue;
             }
 
-            if (!TryParseFormId(fields[formIdIndex], out var formId))
+            if (!DialogueAudioCsvReader.TryParseFormId(fields[formIdIndex], out var formId))
             {
                 continue;
             }
@@ -538,7 +536,7 @@ internal static class DialogueAudioCsvAssetCollector
             return candidates[0];
         }
 
-        var normCsv = NormalizeText(csvText);
+        var normCsv = DialogueAudioTextMatcher.NormalizeText(csvText);
         if (normCsv.Length == 0)
         {
             // No text to disambiguate — return null rather than guessing. Caller logs a miss.
@@ -551,7 +549,7 @@ internal static class DialogueAudioCsvAssetCollector
 
         foreach (var c in candidates)
         {
-            var normC = NormalizeText(c.ResponseText ?? string.Empty);
+            var normC = DialogueAudioTextMatcher.NormalizeText(c.ResponseText ?? string.Empty);
             if (normC.Length == 0)
             {
                 continue;
@@ -563,7 +561,7 @@ internal static class DialogueAudioCsvAssetCollector
                 break;
             }
 
-            var commonLen = CommonPrefixLength(normC, normCsv);
+            var commonLen = DialogueAudioTextMatcher.CommonPrefixLength(normC, normCsv);
             if (commonLen > bestPrefixLen)
             {
                 bestPrefixLen = commonLen;
@@ -581,40 +579,6 @@ internal static class DialogueAudioCsvAssetCollector
         // start the same way ("I can't" / "I will" / etc.), and a wrong match would lay
         // down audio at the wrong INFO.
         return bestPrefixLen >= 16 ? best : null;
-    }
-
-    private static string NormalizeText(string raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return string.Empty;
-        }
-
-        // Lowercase + collapse non-alphanumerics. Punctuation drift between build eras is
-        // common (smart-quotes vs. straight, trailing periods, ellipses), and the actual
-        // VOICED text is the same; matching on alphanumerics-only avoids those false misses.
-        var sb = new StringBuilder(raw.Length);
-        foreach (var ch in raw)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                sb.Append(char.ToLowerInvariant(ch));
-            }
-        }
-
-        return sb.ToString();
-    }
-
-    private static int CommonPrefixLength(string a, string b)
-    {
-        var n = Math.Min(a.Length, b.Length);
-        var i = 0;
-        while (i < n && a[i] == b[i])
-        {
-            i++;
-        }
-
-        return i;
     }
 
     /// <summary>
@@ -825,176 +789,9 @@ internal static class DialogueAudioCsvAssetCollector
         // the allocated FormID's bottom 24 bits zero-padded to 8 hex chars (engine convention).
         var allocatedHex = (allocatedFormId & 0x00FFFFFFu).ToString("x8");
         var sourceHex = sourceFormId.ToString("x8");
-        var rewrittenTail = ReplaceSourceFormIdInFilename(tail, sourceHex, allocatedHex);
+        var rewrittenTail = DialogueAudioPathRewriter.ReplaceSourceFormIdInFilename(tail, sourceHex, allocatedHex);
 
         return voicePrefix + newEspToken + rewrittenTail;
-    }
-
-    private static string ReplaceSourceFormIdInFilename(string tail, string sourceHex, string allocatedHex)
-    {
-        // Only replace the formid token that sits between the response number and the rest of
-        // the filename to avoid accidentally rewriting an unrelated hex token elsewhere.
-        // Filename shape: <stem>_<formid>_<resp>.<ext>
-        var lastSep = tail.LastIndexOf('\\');
-        if (lastSep < 0)
-        {
-            return tail;
-        }
-
-        var dirPart = tail[..lastSep];
-        var fileName = tail[(lastSep + 1)..];
-
-        var dot = fileName.LastIndexOf('.');
-        var stemAndResp = dot >= 0 ? fileName[..dot] : fileName;
-        var ext = dot >= 0 ? fileName[dot..] : string.Empty;
-
-        var underscoreBeforeResp = stemAndResp.LastIndexOf('_');
-        if (underscoreBeforeResp < 0)
-        {
-            return tail;
-        }
-
-        var stemAndFid = stemAndResp[..underscoreBeforeResp];
-        var resp = stemAndResp[(underscoreBeforeResp + 1)..];
-
-        var underscoreBeforeFid = stemAndFid.LastIndexOf('_');
-        if (underscoreBeforeFid < 0)
-        {
-            return tail;
-        }
-
-        var stem = stemAndFid[..underscoreBeforeFid];
-        var fidToken = stemAndFid[(underscoreBeforeFid + 1)..];
-
-        // Only swap when the token actually matches the source FormID — defensive guard
-        // against accidentally rewriting differently-shaped filenames.
-        if (!string.Equals(fidToken, sourceHex, StringComparison.OrdinalIgnoreCase))
-        {
-            return tail;
-        }
-
-        return dirPart + "\\" + stem + "_" + allocatedHex + "_" + resp + ext;
-    }
-
-    private static int FindColumn(List<string> headerFields, string name)
-    {
-        for (var i = 0; i < headerFields.Count; i++)
-        {
-            if (string.Equals(headerFields[i], name, StringComparison.OrdinalIgnoreCase))
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private static bool TryParseFormId(string raw, out uint formId)
-    {
-        raw = raw.Trim();
-        if (raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            raw = raw[2..];
-        }
-
-        return uint.TryParse(
-            raw,
-            NumberStyles.HexNumber,
-            CultureInfo.InvariantCulture,
-            out formId);
-    }
-
-    private static List<string> ReadCsvRecord(TextReader reader)
-    {
-        var record = new StringBuilder();
-        while (true)
-        {
-            var line = reader.ReadLine();
-            if (line is null)
-            {
-                break;
-            }
-
-            if (record.Length > 0)
-            {
-                record.Append('\n');
-            }
-
-            record.Append(line);
-            if (HasBalancedQuotes(record))
-            {
-                break;
-            }
-        }
-
-        return record.Length == 0 ? [] : ParseCsvFields(record.ToString());
-    }
-
-    private static bool HasBalancedQuotes(StringBuilder record)
-    {
-        var inQuotes = false;
-        var i = 0;
-        while (i < record.Length)
-        {
-            if (record[i] != '"')
-            {
-                i++;
-                continue;
-            }
-
-            if (inQuotes && i + 1 < record.Length && record[i + 1] == '"')
-            {
-                i += 2;
-                continue;
-            }
-
-            inQuotes = !inQuotes;
-            i++;
-        }
-
-        return !inQuotes;
-    }
-
-    private static List<string> ParseCsvFields(string record)
-    {
-        var fields = new List<string>();
-        var field = new StringBuilder();
-        var inQuotes = false;
-
-        var i = 0;
-        while (i < record.Length)
-        {
-            var ch = record[i];
-            if (ch == '"')
-            {
-                if (inQuotes && i + 1 < record.Length && record[i + 1] == '"')
-                {
-                    field.Append('"');
-                    i += 2;
-                }
-                else
-                {
-                    inQuotes = !inQuotes;
-                    i++;
-                }
-
-                continue;
-            }
-
-            if (ch == ',' && !inQuotes)
-            {
-                fields.Add(field.ToString());
-                field.Clear();
-                i++;
-                continue;
-            }
-
-            field.Append(ch);
-            i++;
-        }
-
-        fields.Add(field.ToString());
-        return fields;
     }
 
     private static DialogueAudioCsvCollectionResult Empty { get; } =
