@@ -159,7 +159,8 @@ internal sealed class RuntimeCellMapWalker(
             WorldspaceFormId = snapshot.WorldspaceFormId,
             RawWorldspaceFormId = snapshot.WorldspaceFormId,
             LandFormId = snapshot.LandFormId,
-            ReferenceFormIds = snapshot.ReferenceFormIds.ToList()
+            // Alias the snapshot's list directly (it is freshly built per call) instead of copying.
+            ReferenceFormIds = snapshot.ReferenceFormIds
         };
     }
 

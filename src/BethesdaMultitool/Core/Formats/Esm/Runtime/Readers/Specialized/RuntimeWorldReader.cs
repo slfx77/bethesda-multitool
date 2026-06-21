@@ -1,4 +1,3 @@
-using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
@@ -16,6 +15,7 @@ internal sealed class RuntimeWorldReader
 {
     private readonly RuntimeMemoryContext _context;
     private readonly RuntimeLandVisualReader _landVisualReader;
+    private readonly RuntimeLoadedLandDiagnosticsReader _diagnosticsReader;
     private readonly RuntimePdbFieldAccessor _fields;
 
     // Build-specific shift delta vs the PDB baseline (+16). Most builds align with
@@ -56,6 +56,7 @@ internal sealed class RuntimeWorldReader
         _context = context;
         _fields = new RuntimePdbFieldAccessor(context);
         _landVisualReader = new RuntimeLandVisualReader(context);
+        _diagnosticsReader = new RuntimeLoadedLandDiagnosticsReader(context);
         _shift = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(context.MinidumpInfo))
                  - PdbBaselineShift;
     }
@@ -136,7 +137,7 @@ internal sealed class RuntimeWorldReader
         var (minHeight, maxHeight) = ReadHeightExtents(loadedDataBuffer);
 
         // Capture all known LoadedLandData pointer fields from the PDB layout for diagnostics.
-        var diagnostics = BuildLoadedLandDiagnostics(loadedDataBuffer);
+        var diagnostics = _diagnosticsReader.Build(loadedDataBuffer);
         var visualExtraction = _landVisualReader.Read(loadedDataBuffer);
 
         // Extract terrain mesh from heap pointers (ppVertices, ppNormals, ppColorsA)
@@ -222,260 +223,6 @@ internal sealed class RuntimeWorldReader
             : null;
 
         return (min, max);
-    }
-
-    private RuntimeLoadedLandDiagnostics BuildLoadedLandDiagnostics(byte[] loadedDataBuffer)
-    {
-        return new RuntimeLoadedLandDiagnostics
-        {
-            Mesh = ReadDoublePointerDiagnostic(loadedDataBuffer, LoadedDataMeshPtrOffset),
-            Vertices = ReadDoublePointerDiagnostic(loadedDataBuffer, LoadedDataVerticesPtrOffset),
-            VertexArrays =
-                ReadDoublePointerArrayDiagnostics(loadedDataBuffer, LoadedDataVerticesPtrOffset, TerrainQuadrantCount),
-            Normals = ReadDoublePointerDiagnostic(loadedDataBuffer, LoadedDataNormalsPtrOffset),
-            NormalArrays =
-                ReadDoublePointerArrayDiagnostics(loadedDataBuffer, LoadedDataNormalsPtrOffset, TerrainQuadrantCount),
-            Colors = ReadDoublePointerDiagnostic(loadedDataBuffer, LoadedDataColorsPtrOffset),
-            ColorArrays =
-                ReadDoublePointerArrayDiagnostics(loadedDataBuffer, LoadedDataColorsPtrOffset, TerrainQuadrantCount),
-            NormalsSet = ReadDoublePointerDiagnostic(loadedDataBuffer, LoadedDataNormalsSetPtrOffset),
-            Border = ReadPointerDiagnostic(loadedDataBuffer, LoadedDataBorderPtrOffset),
-            MoppCode = ReadPointerDiagnostic(loadedDataBuffer, LoadedDataMoppCodePtrOffset),
-            LandRigidBody = ReadPointerDiagnostic(loadedDataBuffer, LoadedDataLandRigidBodyPtrOffset),
-            DefaultQuadTextures = ReadDefaultQuadTextureDiagnostics(loadedDataBuffer),
-            QuadTextureArrays = ReadQuadTextureArrayDiagnostics(loadedDataBuffer),
-            PercentArrays = ReadPercentArrayDiagnostics(loadedDataBuffer),
-            GrassMapWords = ReadGrassMapWords(loadedDataBuffer)
-        };
-    }
-
-    private List<RuntimePointerDiagnostic> ReadDoublePointerArrayDiagnostics(
-        byte[] buffer,
-        int ptrOffset,
-        int slotCount)
-    {
-        var outer = ReadPointerDiagnostic(buffer, ptrOffset);
-        var results = new List<RuntimePointerDiagnostic>(slotCount);
-        if (outer.FileOffset is not long outerFileOffset)
-        {
-            return results;
-        }
-
-        var pointerBytes = _context.ReadBytes(outerFileOffset, slotCount * 4);
-        if (pointerBytes == null)
-        {
-            return results;
-        }
-
-        for (var slot = 0; slot < slotCount; slot++)
-        {
-            var innerPointer = BinaryUtils.ReadUInt32BE(pointerBytes, slot * 4);
-            results.Add(new RuntimePointerDiagnostic
-            {
-                Pointer = outer.Pointer,
-                FileOffset = outer.FileOffset,
-                DereferencedPointer = innerPointer,
-                DereferencedFileOffset = _context.VaToFileOffset(innerPointer)
-            });
-        }
-
-        return results;
-    }
-
-    private RuntimePointerDiagnostic ReadPointerDiagnostic(byte[] buffer, int ptrOffset)
-    {
-        if (ptrOffset < 0 || ptrOffset + 4 > buffer.Length)
-        {
-            return RuntimePointerDiagnostic.Empty;
-        }
-
-        var pointer = BinaryUtils.ReadUInt32BE(buffer, ptrOffset);
-        return new RuntimePointerDiagnostic
-        {
-            Pointer = pointer,
-            FileOffset = _context.VaToFileOffset(pointer)
-        };
-    }
-
-    private RuntimePointerDiagnostic ReadDoublePointerDiagnostic(byte[] buffer, int ptrOffset)
-    {
-        var trace = ReadPointerDiagnostic(buffer, ptrOffset);
-        if (trace.FileOffset is not long outerFileOffset)
-        {
-            return trace;
-        }
-
-        var innerBytes = _context.ReadBytes(outerFileOffset, 4);
-        if (innerBytes == null)
-        {
-            return trace;
-        }
-
-        var innerPointer = BinaryUtils.ReadUInt32BE(innerBytes);
-        return trace with
-        {
-            DereferencedPointer = innerPointer,
-            DereferencedFileOffset = _context.VaToFileOffset(innerPointer)
-        };
-    }
-
-    private List<RuntimeLandTexturePointerDiagnostic> ReadDefaultQuadTextureDiagnostics(byte[] buffer)
-    {
-        var results = new List<RuntimeLandTexturePointerDiagnostic>(LoadedDataQuadCount);
-        for (var quadrant = 0; quadrant < LoadedDataQuadCount; quadrant++)
-        {
-            var pointer = ReadPointerDiagnostic(buffer, LoadedDataDefaultQuadTextureOffset + quadrant * 4);
-            results.Add(new RuntimeLandTexturePointerDiagnostic
-            {
-                Quadrant = quadrant,
-                Pointer = pointer,
-                TextureFormId = pointer.FileOffset.HasValue
-                    ? ReadFormIdAtFileOffset(pointer.FileOffset.Value, LandTextureFormType)
-                    : null
-            });
-        }
-
-        return results;
-    }
-
-    private List<RuntimeLandTextureArrayDiagnostic> ReadQuadTextureArrayDiagnostics(byte[] buffer)
-    {
-        var results = new List<RuntimeLandTextureArrayDiagnostic>(LoadedDataQuadCount);
-        for (var quadrant = 0; quadrant < LoadedDataQuadCount; quadrant++)
-        {
-            var pointer = ReadPointerDiagnostic(buffer, LoadedDataQuadTextureArrayOffset + quadrant * 4);
-            var sampledPointerCount = 0;
-            var textureFormIds = new List<uint>();
-
-            if (pointer.FileOffset is long arrayFileOffset)
-            {
-                var bytes = _context.ReadBytes(arrayFileOffset, MaxTextureArrayPointersToSample * 4);
-                if (bytes != null)
-                {
-                    for (var i = 0; i < MaxTextureArrayPointersToSample; i++)
-                    {
-                        var texturePointer = BinaryUtils.ReadUInt32BE(bytes, i * 4);
-                        if (texturePointer == 0)
-                        {
-                            continue;
-                        }
-
-                        sampledPointerCount++;
-                        var formId = _context.FollowPointerVaToFormId(texturePointer, LandTextureFormType);
-                        if (formId.HasValue)
-                        {
-                            textureFormIds.Add(formId.Value);
-                        }
-                    }
-                }
-            }
-
-            results.Add(new RuntimeLandTextureArrayDiagnostic
-            {
-                Quadrant = quadrant,
-                Pointer = pointer,
-                SampledPointerCount = sampledPointerCount,
-                ResolvedTextureCount = textureFormIds.Count,
-                TextureFormIds = textureFormIds
-            });
-        }
-
-        return results;
-    }
-
-    private List<RuntimePercentArrayDiagnostic> ReadPercentArrayDiagnostics(byte[] buffer)
-    {
-        var results = new List<RuntimePercentArrayDiagnostic>(LoadedDataQuadCount);
-        for (var quadrant = 0; quadrant < LoadedDataQuadCount; quadrant++)
-        {
-            var pointer = ReadDoublePointerDiagnostic(buffer, LoadedDataPercentArraysOffset + quadrant * 4);
-            var sampledCount = 0;
-            var normalCount = 0;
-            var unitCount = 0;
-            var nonZeroUnitCount = 0;
-            float? minValue = null;
-            float? maxValue = null;
-
-            if (pointer.DereferencedFileOffset is long dataFileOffset)
-            {
-                var bytes = _context.ReadBytes(dataFileOffset, PercentArraySamplesToRead * 4);
-                if (bytes != null)
-                {
-                    sampledCount = PercentArraySamplesToRead;
-                    for (var i = 0; i < PercentArraySamplesToRead; i++)
-                    {
-                        var value = BinaryUtils.ReadFloatBE(bytes, i * 4);
-                        if (!RuntimeMemoryContext.IsNormalFloat(value))
-                        {
-                            continue;
-                        }
-
-                        normalCount++;
-                        minValue = minValue.HasValue ? Math.Min(minValue.Value, value) : value;
-                        maxValue = maxValue.HasValue ? Math.Max(maxValue.Value, value) : value;
-
-                        if (value is >= 0f and <= 1f)
-                        {
-                            unitCount++;
-                            if (value > 0.001f)
-                            {
-                                nonZeroUnitCount++;
-                            }
-                        }
-                    }
-                }
-            }
-
-            results.Add(new RuntimePercentArrayDiagnostic
-            {
-                Quadrant = quadrant,
-                Pointer = pointer,
-                SampledCount = sampledCount,
-                NormalFloatCount = normalCount,
-                UnitRangeCount = unitCount,
-                NonZeroUnitRangeCount = nonZeroUnitCount,
-                MinValue = minValue,
-                MaxValue = maxValue
-            });
-        }
-
-        return results;
-    }
-
-    private static List<uint> ReadGrassMapWords(byte[] buffer)
-    {
-        var words = new List<uint>(LoadedDataGrassMapSize / 4);
-        for (var offset = LoadedDataGrassMapOffset;
-             offset + 4 <= LoadedDataGrassMapOffset + LoadedDataGrassMapSize;
-             offset += 4)
-        {
-            if (offset + 4 > buffer.Length)
-            {
-                break;
-            }
-
-            words.Add(BinaryUtils.ReadUInt32BE(buffer, offset));
-        }
-
-        return words;
-    }
-
-    private uint? ReadFormIdAtFileOffset(long fileOffset, byte expectedFormType)
-    {
-        var buffer = _context.ReadBytes(fileOffset, TesFormHeaderReadSize);
-        if (buffer == null)
-        {
-            return null;
-        }
-
-        var formType = buffer[4];
-        if (formType != expectedFormType)
-        {
-            return null;
-        }
-
-        var formId = BinaryUtils.ReadUInt32BE(buffer, TesFormFormIdOffset);
-        return formId is 0 or 0xFFFFFFFF ? null : formId;
     }
 
     /// <summary>
@@ -892,160 +639,8 @@ internal sealed class RuntimeWorldReader
     /// </summary>
     public int ProbeDialTopicLayout(RuntimeEditorIdEntry entry)
     {
-        if (entry.TesFormOffset == null)
-        {
-            return -1;
-        }
-
-        var offset = entry.TesFormOffset.Value;
-        var readSize = 96; // Read extra bytes to accommodate larger shifts
-        if (offset + readSize > _context.FileSize)
-        {
-            return -1;
-        }
-
-        var buffer = new byte[readSize];
-        try
-        {
-            _context.Accessor.ReadArray(offset, buffer, 0, readSize);
-        }
-        catch
-        {
-            return -1;
-        }
-
-        // Validate FormID at +12 (no shift — standard TESForm header)
-        var formId = BinaryUtils.ReadUInt32BE(buffer, 12);
-        if (formId != entry.FormId)
-        {
-            return -1;
-        }
-
-        var sample = new DialProbeSample(entry, offset, buffer);
-        var candidates = new List<RuntimeLayoutProbeCandidate<int>>
-        {
-            new("Shift +0", 0),
-            new("Shift +4", 4),
-            new("Shift +8", 8),
-            new("Shift +16", 16)
-        };
-
-        var result = RuntimeLayoutProbeEngine.Probe(
-            [sample],
-            candidates,
-            (probeSample, candidate) => ScoreDialCandidate(probeSample, candidate.Layout),
-            "DIAL Probe",
-            Logger.Instance.Info,
-            probeSample =>
-                $"Entry: {probeSample.Entry.EditorId} (FormID 0x{probeSample.Entry.FormId:X8}), TesFormOffset=0x{probeSample.Offset:X}",
-            true);
-
-        return result.WinnerScore > 0 ? result.Winner.Layout : -1;
+        return RuntimeDialLayoutProbe.Probe(_context, entry);
     }
-
-    private RuntimeLayoutProbeScore ScoreDialCandidate(DialProbeSample sample, int shift)
-    {
-        var score = 0;
-        var details = new StringBuilder();
-
-        // Check BSStringT for FullName at PDB+28+shift
-        var bstOff = 28 + shift;
-        if (bstOff + 8 <= sample.Buffer.Length)
-        {
-            var pStr = BinaryUtils.ReadUInt32BE(sample.Buffer, bstOff);
-            var sLen = BinaryUtils.ReadUInt16BE(sample.Buffer, bstOff + 4);
-            var strValid = pStr != 0 && sLen > 0 && sLen < 256 && _context.IsValidPointer(pStr);
-            if (strValid)
-            {
-                var name = _context.ReadBsStringT(sample.Offset, bstOff);
-                if (name != null)
-                {
-                    details.Append($"FullName=\"{name}\" OK, ");
-                    score += 3;
-                }
-                else
-                {
-                    details.Append("FullName=<ptr valid but string unreadable>, ");
-                    score += 1;
-                }
-            }
-            else
-            {
-                details.Append($"FullName=<invalid ptr=0x{pStr:X8} len={sLen}>, ");
-            }
-        }
-
-        // Check m_Data.type at PDB+36+shift (should be 0-7)
-        var typeOff = 36 + shift;
-        if (typeOff < sample.Buffer.Length)
-        {
-            var topicType = sample.Buffer[typeOff];
-            if (topicType <= 7)
-            {
-                details.Append($"type={topicType} OK, ");
-                score += 2;
-            }
-            else
-            {
-                details.Append($"type={topicType} FAIL, ");
-            }
-        }
-
-        // Check m_Data.cFlags at PDB+37+shift (should be 0-3, only bits 0-1 used)
-        var flagsOff = 37 + shift;
-        if (flagsOff < sample.Buffer.Length)
-        {
-            var flags = sample.Buffer[flagsOff];
-            if (flags <= 3)
-            {
-                details.Append($"flags={flags} OK, ");
-                score += 1;
-            }
-            else
-            {
-                details.Append($"flags=0x{flags:X2} FAIL, ");
-            }
-        }
-
-        // Check m_fPriority at PDB+40+shift (should be a reasonable float, typically 50.0)
-        var priorityOff = 40 + shift;
-        if (priorityOff + 4 <= sample.Buffer.Length)
-        {
-            var priority = BinaryUtils.ReadFloatBE(sample.Buffer, priorityOff);
-            if (RuntimeMemoryContext.IsNormalFloat(priority) && priority >= 0 && priority <= 200)
-            {
-                details.Append($"priority={priority:F1} OK, ");
-                score += 2;
-            }
-            else
-            {
-                details.Append($"priority={priority:F1} FAIL, ");
-            }
-        }
-
-        // Check m_uiTopicCount at PDB+68+shift (should be a reasonable count, 0-10000)
-        var countOff = 68 + shift;
-        if (countOff + 4 <= sample.Buffer.Length)
-        {
-            var count = BinaryUtils.ReadUInt32BE(sample.Buffer, countOff);
-            if (count <= 10000)
-            {
-                details.Append($"topicCount={count} OK");
-                score += 1;
-            }
-            else
-            {
-                details.Append($"topicCount={count} FAIL");
-            }
-        }
-
-        return new RuntimeLayoutProbeScore(score, 9, details.ToString());
-    }
-
-    private sealed record DialProbeSample(
-        RuntimeEditorIdEntry Entry,
-        long Offset,
-        byte[] Buffer);
 
     #region World/Land Struct Layout
 
@@ -1053,31 +648,18 @@ internal sealed class RuntimeWorldReader
     // (pParentCell at PDB +48, pLoadedData at PDB +56, structSize=60). Per-build shift
     // routed through WithShift(0, int.MaxValue, _shift).
 
-    // LoadedLandData: 164 bytes — standalone struct, identical across all builds
+    // LoadedLandData: 164 bytes — standalone struct, identical across all builds.
+    // Pointer/texture/percent-array diagnostic offsets live in
+    // RuntimeLoadedLandDiagnosticsReader; only the offsets used by the cell-coordinate
+    // read and terrain-mesh extraction below remain here.
     private const int LoadedDataSize = 164;
-    private const int LoadedDataMeshPtrOffset = 0; // NiPointer<NiTriShape>** ppMesh
     private const int LoadedDataVerticesPtrOffset = 4; // NiPoint3** ppVertices
     private const int LoadedDataNormalsPtrOffset = 8; // NiPoint3** ppNormals
     private const int LoadedDataColorsPtrOffset = 12; // NiColorA** ppColorsA
-    private const int LoadedDataNormalsSetPtrOffset = 16; // bool** ppNormalsSet
-    private const int LoadedDataBorderPtrOffset = 20; // NiPointer<NiLines> spBorder
     private const int LoadedDataHeightExtentsOffset = 24; // NiPoint2: min/max terrain heights
-    private const int LoadedDataDefaultQuadTextureOffset = 32; // TESLandTexture* pDefQuadTexture[4]
-    private const int LoadedDataQuadTextureArrayOffset = 48; // TESLandTexture** pQuadTextureArray[4]
-    private const int LoadedDataPercentArraysOffset = 64; // float** ppPercentArrays[4]
-    private const int LoadedDataMoppCodePtrOffset = 80; // hkpMoppCode* pMoppCode
-    private const int LoadedDataGrassMapOffset = 84; // NiTPointerMap<unsigned int,TESGrassAreaParam**> pmGrassMap[4]
-    private const int LoadedDataGrassMapSize = 64;
-    private const int LoadedDataLandRigidBodyPtrOffset = 148; // NiPointer<bhkRigidBody> spLandRB
     private const int LoadedDataCellXOffset = 152;
     private const int LoadedDataCellYOffset = 156;
     private const int LoadedDataBaseHeightOffset = 160;
-    private const int LoadedDataQuadCount = 4;
-    private const int MaxTextureArrayPointersToSample = 64;
-    private const int PercentArraySamplesToRead = 17 * 17;
-    private const int TesFormHeaderReadSize = 16;
-    private const int TesFormFormIdOffset = 12;
-    private const byte LandTextureFormType = 0x12;
     private const int TerrainQuadrantCount = RuntimeTerrainQuadrantMeshBuilder.QuadrantCount;
 
     #endregion

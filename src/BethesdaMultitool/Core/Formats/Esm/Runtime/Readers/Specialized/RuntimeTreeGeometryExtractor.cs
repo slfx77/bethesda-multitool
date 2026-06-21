@@ -140,11 +140,8 @@ internal sealed class RuntimeTreeGeometryExtractor(RuntimeMemoryContext context)
         }
     }
 
-    private uint ReadPointer(uint va)
-    {
-        var bytes = context.ReadBytesAtVa(va, 4);
-        return bytes is null || bytes.Length < 4 ? 0 : BinaryUtils.ReadUInt32BE(bytes, 0);
-    }
+    // A runtime pointer is just a big-endian uint32 at the given VA.
+    private uint ReadPointer(uint va) => ReadUInt32(va);
 
     private ushort ReadUInt16(uint va)
     {
