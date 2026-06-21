@@ -35,8 +35,9 @@ TestResults/
 *.trx
 *.runsettings
 
-# Coverage
-coverage/
+# Coverage output (anchored to repo root so it never matches the tracked
+# source directory src/BethesdaMultitool/Core/Coverage/).
+/coverage/
 *.coverage
 *.coveragexml
 
@@ -47,9 +48,10 @@ coverage/
 xcompress64.dll
 XnaNative.dll
 
-# Output directories
+# Output directories (the generic ones are anchored to repo root so they can't
+# match PascalCase source folders like src/.../Esm/Plugin/Output/).
 test_output/
-output/
+/output/
 TestOutput/
 publish/
 artifacts/
@@ -78,6 +80,15 @@ tools/BsaAnalyzer/obj/
 !tools/ShaderProbe/
 tools/ShaderProbe/bin/
 tools/ShaderProbe/obj/
+!tools/EgtAnalyzer/
+tools/EgtAnalyzer/bin/
+tools/EgtAnalyzer/obj/
+!tools/PdbAnalyzer/
+tools/PdbAnalyzer/bin/
+tools/PdbAnalyzer/obj/
+!tools/TerrainAnalyzer/
+tools/TerrainAnalyzer/bin/
+tools/TerrainAnalyzer/obj/
 
 # Python remnants (if any)
 .venv/
