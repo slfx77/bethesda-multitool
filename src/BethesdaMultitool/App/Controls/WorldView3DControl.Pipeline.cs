@@ -1,0 +1,152 @@
+using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
+
+namespace BethesdaMultitool;
+
+public sealed partial class WorldView3DControl
+{
+    /// <summary>
+    ///     Collects texture-BSA paths from the primary data file plus every Load Order entry.
+    ///     Each unique parent directory is globbed once (so a load order with 5 ESMs in the same
+    ///     Data folder doesn't issue 5 identical filesystem scans). The result preserves Load
+    ///     Order ordering: primary file first, then load-order entries in order, so a later DLC
+    ///     ESM's BSAs win lookups for textures shared with the base game — matching the engine's
+    ///     "later file overrides earlier" semantics that <see cref="NifTextureResolver" /> already
+    ///     implements via source iteration order.
+    /// </summary>
+    private static string[] DiscoverTextureBsaPaths(WorldViewData data)
+        => WorldDataBsaPathResolver.DiscoverTextureBsaPaths(data);
+
+    /// <summary>
+    ///     Mesh-BSA parallel of <see cref="DiscoverTextureBsaPaths" />. Globs the primary file's
+    ///     directory + every Load Order entry's directory for the BSA(s) that <c>BsaDiscovery</c>
+    ///     classifies as meshes archives (the primary + each entry's extras). Dedupes by full
+    ///     path so identical Load Order entries don't open the same BSA twice.
+    /// </summary>
+    private static string[] DiscoverMeshBsaPaths(WorldViewData data)
+    {
+        var seenDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenBsas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+
+        AddFrom(data.SourceFilePath);
+        if (data.AdditionalDataPaths is not null)
+        {
+            foreach (var path in data.AdditionalDataPaths) AddFrom(path);
+        }
+        return result.ToArray();
+
+        void AddFrom(string? candidatePath)
+        {
+            if (string.IsNullOrEmpty(candidatePath)) return;
+            var dir = Path.GetDirectoryName(Path.GetFullPath(candidatePath));
+            if (string.IsNullOrEmpty(dir) || !seenDirs.Add(dir)) return;
+            var discovery = BsaDiscovery.Discover(candidatePath);
+            foreach (var bsa in discovery.MeshesBsaPaths)
+            {
+                if (seenBsas.Add(bsa)) result.Add(bsa);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     v3 Phase 3 placed-object pipeline init. Mirrors the terrain pipeline init in
+    ///     <see cref="LoadData" /> but lives in its own method since it needs the Meshes BSA
+    ///     discovery in addition to the textures BSAs. Soft-fails when no Meshes BSA is found
+    ///     (REFRs simply don't render — terrain still does).
+    /// </summary>
+    private void TryInitReferencePipeline()
+    {
+        if (_data is null) return;
+
+        try
+        {
+            var meshBsas = DiscoverMeshBsaPaths(_data);
+            if (meshBsas.Length == 0)
+            {
+                Log.Warn(
+                    "WorldView3DControl: no *Meshes*.bsa from '{0}' or {1} Load Order paths — REFRs will be skipped. Add an ESM whose Data folder contains a Meshes BSA to the Load Order.",
+                    Path.GetDirectoryName(_data.SourceFilePath ?? "") ?? "(unknown)",
+                    _data.AdditionalDataPaths.Count);
+                return;
+            }
+
+            var textureBsas = DiscoverTextureBsaPaths(_data);
+            _meshArchives = NpcMeshArchiveSet.Open(meshBsas[0], meshBsas.Length > 1 ? meshBsas[1..] : null);
+            _referenceTextureResolver = new NifTextureResolver(textureBsas);
+            _referenceGpuTextureResolver12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver(textureBsas);
+
+            if (_gpu12 is null ||
+                _commandRecorder12 is null ||
+                _ringBuffer12 is null ||
+                _rootSignature12 is null ||
+                _cbvSrvUavHeap12 is null ||
+                _deletionQueue12 is null)
+            {
+                return;
+            }
+
+            _referenceTextureCache12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTextureCache12(
+                    _gpu12, _commandRecorder12, _cbvSrvUavHeap12!, _referenceGpuTextureResolver12, _deletionQueue12)
+                .RegisterWith(BethesdaMultitool.Core.Diagnostics.ResourceRegistry.Instance, "reference");
+            // Capacity/budget env knobs are diagnostic levers for eviction-pressure stress gates
+            // (e.g. capacity 64 + 16 MB makes the LRU eviction cascade fire constantly); defaults
+            // preserve the shipped behavior. Read here, not in the cache — same as `capacity` always was.
+            _referenceMeshCache12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceMeshCache12(
+                _gpu12, _meshArchives, _referenceTextureResolver, _referenceTextureCache12,
+                _deletionQueue12,
+                capacity: BethesdaMultitool.Core.EnvironmentVariables.GetClampedInt(
+                    BethesdaMultitool.Core.EnvironmentVariables.Viewer.ReferenceMeshCapacity,
+                    defaultValue: 2048, min: 8, max: 65_536),
+                decodedCacheByteBudget: BethesdaMultitool.Core.EnvironmentVariables.GetClampedLong(
+                    BethesdaMultitool.Core.EnvironmentVariables.Viewer.ReferenceDecodedCacheMegabytes,
+                    defaultValue: 256, min: 4, max: 8_192) * 1024L * 1024L,
+                // Auto-size the resident-mesh cap to each worldspace's working set UNLESS the capacity
+                // knob is explicitly set (then honor the pinned value — used by eviction stress gates).
+                autoSizeMeshCapacity: BethesdaMultitool.Core.EnvironmentVariables.Get(
+                    BethesdaMultitool.Core.EnvironmentVariables.Viewer.ReferenceMeshCapacity) is null,
+                // Data-driven SpeedTree sizing: each .spt tree is scaled to its TREE-record OBND height.
+                speedTreeHeights: _data?.SpeedTreeHeights,
+                // Authoritative leaf atlas from the TREE record's ICON (the .spt's dev material often never shipped).
+                speedTreeLeafTextures: _data?.SpeedTreeLeafTextures);
+            _references = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12(
+                _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12,
+                _cbvSrvUavHeap12, _referenceMeshCache12)
+            {
+                DetailedProfilingEnabled = _profileLogging,
+                ShowInitiallyDisabled = _showDisabled, // persist the toggle across ESM reloads
+                // Markers/imposters are hidden by default to match the game; markers are also
+                // toggleable from the toolbar (_showMarkers persists across reloads).
+                ShowMarkers = _showMarkers,
+                ShowImposters = BethesdaMultitool.Core.EnvironmentVariables.IsEnabled(
+                    BethesdaMultitool.Core.EnvironmentVariables.Viewer.ShowImposters),
+            };
+            _references.SetHiddenCategories(_hiddenCategories);
+            Log.Info("WorldView3DControl: reference pipeline initialized ({0} meshes BSA(s), {1} textures BSA(s)).",
+                meshBsas.Length, textureBsas.Length);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("WorldView3DControl: reference pipeline init failed: {0}", ex.Message);
+            DisposeReferencePipeline();
+        }
+    }
+
+    /// <summary>Releases every resource owned by the placed-object pipeline in safe order.</summary>
+    private void DisposeReferencePipeline()
+    {
+        if (_referenceMeshCache12 is not null || _referenceTextureCache12 is not null)
+        {
+            _commandRecorder12?.WaitForGpuIdle();
+        }
+
+        _references?.Dispose(); _references = null;
+        _referenceMeshCache12?.Dispose(); _referenceMeshCache12 = null;
+        _referenceTextureCache12?.Dispose(); _referenceTextureCache12 = null;
+        _referenceGpuTextureResolver12?.Dispose(); _referenceGpuTextureResolver12 = null;
+        _referenceTextureResolver?.Dispose(); _referenceTextureResolver = null;
+        _meshArchives?.Dispose(); _meshArchives = null;
+    }
+}
