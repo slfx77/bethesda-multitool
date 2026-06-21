@@ -3,8 +3,6 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Nif.Collision;
-using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -55,7 +53,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         max: 64L * 1024L * 1024L);
 
     private readonly CLI.NpcMeshArchiveSet _meshArchives;
-    private readonly NifTextureResolver _textureResolver;
+    private readonly ReferenceMeshDecoder12 _decoder;
     private readonly GpuTextureCache12 _textureCache;
     private readonly GpuDeletionQueue12 _deletionQueue;
     private readonly GpuGeometryArena12 _geometryArena;
@@ -84,20 +82,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private readonly ReferenceDecodedMeshDiskCache12? _persistentDecodedCache;
     private readonly object _decodedCacheLock = new();
     private int _activeDecodeTasks;
-    private int _totalMissingModelPaths;
-    private int _totalSkinnedModelPaths;
     private FrameByteBudget _frameUploadByteBudget;
     // When true, LoadData resizes _meshLru to the worldspace's working set (default). False when the
     // FALLOUT_VIEWER_REFERENCE_MESH_CAPACITY env knob pins a fixed cap for eviction-cascade stress gates.
     private readonly bool _autoSizeMeshCapacity;
-
-    // archive-path (trees\<name>.spt) → recorded tree height (TREE OBND Z-extent), so the procedural
-    // SpeedTree generator can size each tree from the ESM data rather than a magic constant.
-    private readonly IReadOnlyDictionary<string, float>? _speedTreeHeights;
-
-    // archive-path (trees\<name>.spt) → the leaf atlas from the TREE record's ICON (the engine's
-    // authoritative leaf texture; the .spt's own dev-era material often never shipped).
-    private readonly IReadOnlyDictionary<string, string>? _speedTreeLeafTextures;
     private bool _disposed;
 
     public ReferenceMeshCache12(
@@ -116,10 +104,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         if (capacity <= 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be > 0.");
 
-        _speedTreeHeights = speedTreeHeights;
-        _speedTreeLeafTextures = speedTreeLeafTextures;
         _meshArchives = meshArchives;
-        _textureResolver = textureResolver;
+        _decoder = new ReferenceMeshDecoder12(meshArchives, textureResolver, speedTreeHeights, speedTreeLeafTextures);
         _textureCache = textureCache;
         _deletionQueue = deletionQueue;
         _geometryArena = new GpuGeometryArena12(gpu)
@@ -164,7 +150,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     {
         collision = null;
         if (_disposed) return false;
-        if (_collisionLru.TryGet(NormalizeModelPath(modelPath), out var mesh))
+        if (_collisionLru.TryGet(ReferenceMeshDecoder12.NormalizeModelPath(modelPath), out var mesh))
         {
             collision = mesh;
             return true;
@@ -231,8 +217,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     public int FrameActiveTextureResolves => _textureCache.FrameActiveResolves;
     public int PendingTextureResolves => _textureCache.PendingResolveCount;
     public int PendingTextureUploads => _textureCache.PendingUploadCount;
-    public int TotalMissingModelPaths => Volatile.Read(ref _totalMissingModelPaths);
-    public int TotalSkinnedModelPaths => Volatile.Read(ref _totalSkinnedModelPaths);
+    public int TotalMissingModelPaths => _decoder.TotalMissingModelPaths;
+    public int TotalSkinnedModelPaths => _decoder.TotalSkinnedModelPaths;
 
     public void ResetFrameStats()
     {
@@ -257,7 +243,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         PruneCompletedDecodeTasks();
         StartQueuedDecodes();
 
-        var cacheKey = NormalizeModelPath(modelPath);
+        var cacheKey = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
         // TryGet bumps the hit to MRU — the old explicit Touch.
         if (_meshLru.TryGet(cacheKey, out var existing))
         {
@@ -480,7 +466,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         {
             try
             {
-                var decoded = DecodeMesh(modelPath);
+                var decoded = _decoder.DecodeMesh(modelPath);
                 StoreDecodedCache(modelPath, decoded);
                 return decoded;
             }
@@ -534,7 +520,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         var decoded = cached.IsNegative || cached.Mesh is null
             ? null
-            : FromPersistentPayload(cached.Mesh);
+            : ReferenceMeshDecoder12.FromPersistentPayload(cached.Mesh);
         StoreDecodedCache(modelPath, decoded, persist: false);
         return TryGetDecodedCache(modelPath, out value);
     }
@@ -543,7 +529,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     {
         var byteSize = decoded is null
             ? 1L
-            : Math.Max(1L, EstimateDecodedMeshBytes(decoded));
+            : Math.Max(1L, ReferenceMeshDecoder12.EstimateDecodedMeshBytes(decoded));
         var value = new DecodedCacheValue(decoded, decoded is null, byteSize);
 
         lock (_decodedCacheLock)
@@ -582,338 +568,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
             _persistentDecodedCache.Store(
                 metadata,
-                decoded is null ? null : ToPersistentPayload(decoded));
+                decoded is null ? null : ReferenceMeshDecoder12.ToPersistentPayload(decoded));
         }
         catch (Exception ex)
         {
             Log.Warn("ReferenceMeshCache12: decoded mesh disk cache write skipped for '{0}': {1}", modelPath, ex.Message);
         }
-    }
-
-    private static ReferenceDecodedMeshPayload12 ToPersistentPayload(DecodedNifMesh12 decoded)
-    {
-        var submeshes = new List<ReferenceDecodedSubmeshPayload12>(decoded.Submeshes.Count);
-        foreach (var sub in decoded.Submeshes)
-        {
-            submeshes.Add(new ReferenceDecodedSubmeshPayload12(
-                sub.Vertices,
-                sub.Indices,
-                sub.DiffuseTexturePath,
-                sub.NormalMapTexturePath,
-                sub.HasBump,
-                sub.AlphaRenderMode,
-                sub.AlphaBlend,
-                sub.AlphaTest,
-                sub.AlphaTestThreshold,
-                sub.AlphaTestFunction,
-                sub.SrcBlendMode,
-                sub.DstBlendMode,
-                sub.MaterialAlpha,
-                sub.DoubleSided,
-                sub.IsEmissive,
-                sub.LocalBoundsCenter,
-                sub.IsBillboard,
-                sub.SpecularColor,
-                sub.Glossiness,
-                sub.SpecularEnabled,
-                sub.IsLeafBillboard));
-        }
-
-        return new ReferenceDecodedMeshPayload12(submeshes, decoded.CollisionPositions, decoded.CollisionTriangles);
-    }
-
-    private static DecodedNifMesh12 FromPersistentPayload(ReferenceDecodedMeshPayload12 payload)
-    {
-        var submeshes = new List<DecodedSubmesh12>(payload.Submeshes.Count);
-        foreach (var sub in payload.Submeshes)
-        {
-            submeshes.Add(new DecodedSubmesh12(
-                sub.Vertices,
-                sub.Indices,
-                sub.DiffuseTexturePath,
-                sub.NormalMapTexturePath,
-                sub.HasBump,
-                sub.AlphaRenderMode,
-                sub.AlphaBlend,
-                sub.AlphaTest,
-                sub.AlphaTestThreshold,
-                sub.AlphaTestFunction,
-                sub.SrcBlendMode,
-                sub.DstBlendMode,
-                sub.MaterialAlpha,
-                sub.DoubleSided,
-                sub.IsEmissive,
-                sub.LocalBoundsCenter,
-                sub.IsBillboard,
-                sub.SpecularColor,
-                sub.Glossiness,
-                sub.SpecularEnabled,
-                sub.IsLeafBillboard));
-        }
-
-        return new DecodedNifMesh12(submeshes, payload.CollisionPositions, payload.CollisionTriangles);
-    }
-
-    private static long EstimateDecodedMeshBytes(DecodedNifMesh12 decoded)
-    {
-        var vertexSize = System.Runtime.InteropServices.Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
-        long total = 0;
-        foreach (var submesh in decoded.Submeshes)
-        {
-            total += (long)submesh.Vertices.Length * vertexSize;
-            total += (long)submesh.Indices.Length * sizeof(ushort);
-            total += 256;
-        }
-
-        if (decoded.CollisionPositions is { } cp) total += (long)cp.Length * 12;
-        if (decoded.CollisionTriangles is { } ct) total += (long)ct.Length * sizeof(int);
-
-        return total;
-    }
-
-    private DecodedNifMesh12? DecodeMesh(string modelPath)
-    {
-        var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
-        var lookupPath = NormalizeModelPath(modelPath);
-        var result = "missing";
-        var nifBytes = 0;
-        var submeshCount = 0;
-
-        try
-        {
-            // No lock needed: NpcMeshArchiveSet.TryExtractFile resolves under its own cache lock and
-            // BsaExtractor.ExtractFile is memory-mapped/lock-free, so concurrent decode tasks extract
-            // in parallel. This is what actually parallelizes mesh streaming (removing the old coarse
-            // archive lock that serialized every decode despite the wider task pool).
-            if (!_meshArchives.TryExtractFile(lookupPath, out var nifData, out _) || nifData.Length == 0)
-            {
-                Interlocked.Increment(ref _totalMissingModelPaths);
-                return null;
-            }
-
-            nifBytes = nifData.Length;
-
-            // Decoded Havok collision soup (set only on the NIF path below; SpeedTree has none).
-            Vector3[]? collisionPositions = null;
-            int[]? collisionTriangles = null;
-
-            NifRenderableModel? model;
-            if (lookupPath.EndsWith(".spt", StringComparison.OrdinalIgnoreCase))
-            {
-                // SpeedTree tree: the .spt is a procedural recipe, not a NIF. Parse it and generate
-                // geometry (branch tubes + scattered leaf cards) via SptGeometryBuilder. Size is
-                // data-driven from the TREE record's OBND height; the seed is the .spt's own embedded
-                // value (token 2005 == TREE SNAM), falling back to a stable per-path hash.
-                var spt = SptFile.TryParse(nifData);
-                if (spt is null)
-                {
-                    result = "spt-parse-failed";
-                    return null;
-                }
-
-                float? targetHeight = null;
-                if (_speedTreeHeights is not null && _speedTreeHeights.TryGetValue(lookupPath, out var h))
-                {
-                    targetHeight = h;
-                }
-
-                // The engine sources the leaf atlas from the TREE record's ICON, not the .spt's dev-era
-                // material (which often never shipped). Use it when we have it for this .spt.
-                string? leafTexture = null;
-                _speedTreeLeafTextures?.TryGetValue(lookupPath, out leafTexture);
-
-                var seed = spt.General.Token2005 != 0 ? spt.General.Token2005 : StableSeed(lookupPath);
-                var sptOptions = SptGeometryOptions.FromEnvironment() with
-                {
-                    TargetHeight = targetHeight,
-                    LeafTextureOverride = leafTexture,
-                    // The live D3D12 viewer re-faces each leaf card to the camera per frame in the
-                    // leaf-billboard vertex shader, so emit GPU billboard cards (center + offset).
-                    LeafBillboard = true,
-                };
-                model = SptGeometryBuilder.Build(spt, seed, sptOptions);
-            }
-            else
-            {
-                // Cheap endianness probe avoids fully parsing the source NIF just to decide whether it
-                // needs big-endian conversion. A determinate probe (true/false) is byte-for-byte the same
-                // verdict a full parse would give; null means the header wasn't cheaply readable, so fall
-                // back to a full parse. This drops the BE mesh path from three parses (source +
-                // convert-internal + converted output) to two.
-                var probe = NifParser.TryProbeEndianness(nifData);
-                NifInfo? sourceInfo = null;
-                bool isBigEndian;
-                if (probe.HasValue)
-                {
-                    isBigEndian = probe.Value;
-                }
-                else
-                {
-                    sourceInfo = NifParser.Parse(nifData);
-                    if (sourceInfo is null)
-                    {
-                        result = "parse-failed";
-                        return null;
-                    }
-
-                    isBigEndian = sourceInfo.IsBigEndian;
-                }
-
-                NifInfo? nif;
-                if (isBigEndian)
-                {
-                    var converted = NifConverter.Convert(nifData);
-                    if (!converted.Success || converted.OutputData is null)
-                    {
-                        result = "convert-failed";
-                        return null;
-                    }
-
-                    nifData = converted.OutputData;
-                    nif = NifParser.Parse(nifData);
-                    if (nif is null)
-                    {
-                        result = "converted-parse-failed";
-                        return null;
-                    }
-                }
-                else
-                {
-                    // LE source: reuse the fallback parse if we already made one, else parse now.
-                    nif = sourceInfo ?? NifParser.Parse(nifData);
-                    if (nif is null)
-                    {
-                        result = "parse-failed";
-                        return null;
-                    }
-                }
-
-                model = NifGeometryExtractor.Extract(
-                    nifData, nif,
-                    textureResolver: _textureResolver,
-                    bindPoseOnly: false,
-                    skipSkinning: true,
-                    // Placed references get their scene-root world transform from the REFR placement
-                    // (RenderableReference.ComposeWorldMatrix). Discard the root node's OWN authored
-                    // transform so a non-identity root rotation (e.g. McMarranWalls wallReg at 90°,
-                    // monorail curves at 15°) is not injected twice — which rendered those meshes
-                    // rotated by the root angle (perpendicular for the 90° walls).
-                    treatRootsAsIdentity: true,
-                    // Flag geometry under a NiBillboardNode (e.g. NVashpile smoke glow) so the renderer
-                    // re-aims it at the camera per frame instead of using the baked-in orientation.
-                    collectBillboards: true,
-                    // Drop the per-bone proxy boxes on animated cloth (e.g. NV_NCR_Flag.NIF) that
-                    // would otherwise render as untextured "havok" blocks beside the flag.
-                    dropBoneAttachedShapes: true);
-
-                // Decode Havok (bhk*) collision geometry from the same (converted, LE) buffer/parse,
-                // off the render thread. Walk mode prefers this gapless physics mesh over the visual
-                // submeshes so the camera doesn't fall through plank gaps. Null when the NIF has none.
-                if (HavokCollisionExtractor.TryExtract(nifData, nif) is { } havok)
-                {
-                    collisionPositions = havok.Positions;
-                    collisionTriangles = havok.Triangles;
-                }
-            }
-
-            if (model is null)
-            {
-                result = "extract-failed";
-                return null;
-            }
-            if (model.WasSkinned)
-            {
-                result = "skinned";
-                Interlocked.Increment(ref _totalSkinnedModelPaths);
-                return null;
-            }
-            if (!model.HasGeometry)
-            {
-                result = "empty";
-                return null;
-            }
-
-            var submeshes = new List<DecodedSubmesh12>(model.Submeshes.Count);
-            foreach (var sub in model.Submeshes)
-            {
-                if (sub.Positions.Length == 0 || sub.Triangles.Length == 0) continue;
-
-                var alphaState = NifAlphaClassifier.Classify(sub, diffuseTexture: null);
-                var alphaRenderMode = alphaState.RenderMode == NifAlphaRenderMode.AlphaToCoverage
-                    ? NifAlphaRenderMode.Blend
-                    : alphaState.RenderMode;
-                var hasBump = sub.Tangents != null &&
-                              sub.Bitangents != null &&
-                              !string.IsNullOrEmpty(sub.NormalMapTexturePath);
-
-                var specularColor = new Vector3(sub.SpecularColor.R, sub.SpecularColor.G, sub.SpecularColor.B);
-                var specularEnabled = ComputeSpecularEnabled(sub);
-
-                submeshes.Add(new DecodedSubmesh12(
-                    GpuMeshUploader.BuildVertices(sub),
-                    sub.Triangles,
-                    sub.DiffuseTexturePath,
-                    hasBump ? sub.NormalMapTexturePath : null,
-                    hasBump,
-                    alphaRenderMode,
-                    alphaState.HasAlphaBlend,
-                    alphaState.HasAlphaTest,
-                    alphaState.AlphaTestThreshold / 255f,
-                    alphaState.AlphaTestFunction,
-                    alphaState.SrcBlendMode,
-                    alphaState.DstBlendMode,
-                    alphaState.MaterialAlpha,
-                    sub.IsDoubleSided,
-                    sub.IsEmissive,
-                    ComputeLocalBoundsCenter(sub.Positions),
-                    sub.IsBillboard,
-                    specularColor,
-                    sub.MaterialGlossiness,
-                    specularEnabled,
-                    sub.IsLeafBillboard));
-            }
-
-            if (submeshes.Count == 0)
-            {
-                result = "empty";
-                return null;
-            }
-
-            submeshCount = submeshes.Count;
-            result = "success";
-            return new DecodedNifMesh12(submeshes, collisionPositions, collisionTriangles);
-        }
-        finally
-        {
-            if (started != 0)
-            {
-                RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>
-                {
-                    ["resource"] = "reference-mesh",
-                    ["phase"] = "decode",
-                    ["path"] = lookupPath,
-                    ["result"] = result,
-                    ["bytes"] = nifBytes,
-                    ["submeshes"] = submeshCount,
-                    ["elapsedMs"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
-                });
-            }
-        }
-    }
-
-    /// <summary>
-    ///     Stable FNV-1a hash of the model path, used to seed the deterministic SpeedTree generator so
-    ///     the same tree type produces identical geometry across decode/cache cycles and process runs.
-    /// </summary>
-    private static uint StableSeed(string path)
-    {
-        var hash = 2166136261u;
-        foreach (var ch in path)
-        {
-            hash = (hash ^ char.ToLowerInvariant(ch)) * 16777619u;
-        }
-
-        return hash;
     }
 
     private CachedNifMesh12? UploadDecodedMesh(string modelPath, DecodedNifMesh12 decoded)
@@ -1000,11 +660,17 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             }
             try
             {
-                var diffuse = string.IsNullOrEmpty(sub.DiffuseTexturePath)
-                    ? _textureCache.WhitePixel
-                    : string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal)
+                GpuTextureCache12.Entry diffuse;
+                if (string.IsNullOrEmpty(sub.DiffuseTexturePath))
+                {
+                    diffuse = _textureCache.WhitePixel;
+                }
+                else
+                {
+                    diffuse = string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal)
                         ? _textureCache.WaterSurface
                         : _textureCache.GetOrUpload(sub.DiffuseTexturePath!);
+                }
                 var normal = !string.IsNullOrEmpty(sub.NormalMapTexturePath)
                     ? _textureCache.GetOrUpload(sub.NormalMapTexturePath!, isNormalMap: true)
                     : _textureCache.FlatNormal;
@@ -1093,7 +759,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var collision = BuildCollisionMesh(decoded);
         if (collision is null) return;
         // Set evicts over-budget tail entries (plain drop — collision payloads are GC-reclaimed).
-        _collisionLru.Set(NormalizeModelPath(modelPath), collision);
+        _collisionLru.Set(ReferenceMeshDecoder12.NormalizeModelPath(modelPath), collision);
     }
 
     /// <summary>
@@ -1156,29 +822,6 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             ? new Vector4(sub.SpecularColor, MathF.Max(sub.Glossiness, 1f))
             : Vector4.Zero;
 
-    // Whether a submesh should get a sun specular highlight. Gated conservatively so it only lights up
-    // where the source material asks for it — never on emissive shapes, never with a black/near-black
-    // specular tint or zero gloss. FO3/FNV expose BSShaderFlags; honor their Specular bit (0x1). When no
-    // shader flags are present (Morrowind NiMaterialProperty, or Skyrim+ BSLightingShaderProperty which
-    // doesn't surface them), fall back to the tint/gloss gate — Skyrim shapes carry no NiMaterialProperty
-    // specular so they stay matte (no regression), while Morrowind's matte materials are filtered by tint.
-    private static bool ComputeSpecularEnabled(RenderableSubmesh sub)
-    {
-        if (sub.IsEmissive)
-        {
-            return false;
-        }
-
-        var (r, g, b) = sub.SpecularColor;
-        if (MathF.Max(r, MathF.Max(g, b)) < 0.04f || sub.MaterialGlossiness <= 0f)
-        {
-            return false;
-        }
-
-        const uint specularFlag = 0x1u; // BSShaderFlags bit 0 = Specular (nif.xml)
-        return sub.ShaderMetadata?.ShaderFlags is not uint flags || (flags & specularFlag) != 0;
-    }
-
     private static uint CheckedByteSize(int elementCount, uint elementSize) =>
         checked((uint)((long)elementCount * elementSize));
 
@@ -1199,39 +842,6 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         (planes ??= new List<(Vector3 Min, Vector3 Max)>(1)).Add((min, max));
-    }
-
-    private static Vector3 ComputeLocalBoundsCenter(float[] positions)
-    {
-        var min = new Vector3(float.PositiveInfinity);
-        var max = new Vector3(float.NegativeInfinity);
-        for (var i = 0; i + 2 < positions.Length; i += 3)
-        {
-            var p = new Vector3(positions[i], positions[i + 1], positions[i + 2]);
-            min = Vector3.Min(min, p);
-            max = Vector3.Max(max, p);
-        }
-
-        return Vector3.Multiply(min + max, 0.5f);
-    }
-
-    private static string NormalizeModelPath(string modelPath)
-    {
-        var normalized = modelPath.Replace('/', '\\').Trim();
-
-        // SpeedTree trees ship at the BSA root under "trees\" (e.g. "trees\wastelandshrub01.spt"),
-        // NOT under "meshes\" like NIFs — and the TREE MODL is typically a bare name with a leading
-        // backslash ("\WastelandShrub01.spt"). Normalize to "trees\<name>.spt" so the archive hit
-        // matches; prepending "meshes\" (correct for NIFs) would miss every .spt and the tree would
-        // silently render nothing.
-        if (SpeedTreeModelPath.IsSpt(normalized))
-        {
-            return SpeedTreeModelPath.ToArchivePath(normalized);
-        }
-
-        return normalized.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
-            ? normalized
-            : "meshes\\" + normalized.TrimStart('\\');
     }
 
     private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)
@@ -1273,197 +883,5 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         DecodedNifMesh12? Mesh,
         bool IsNegative,
         long ByteSize);
-
-    // CollisionPositions/CollisionTriangles carry the NIF's decoded Havok (bhk*) collision soup when
-    // present (root-local treatRootsAsIdentity frame, same as the visual submeshes). BuildCollisionMesh
-    // prefers them over the visual-mesh soup so walk mode rides the gapless physics mesh. Null when the
-    // NIF has no decodable Havok collision (→ visual-mesh fallback).
-    private sealed record DecodedNifMesh12(
-        IReadOnlyList<DecodedSubmesh12> Submeshes,
-        Vector3[]? CollisionPositions = null,
-        int[]? CollisionTriangles = null);
-
-    private sealed record DecodedSubmesh12(
-        GpuMeshUploader.GpuVertex[] Vertices,
-        ushort[] Indices,
-        string? DiffuseTexturePath,
-        string? NormalMapTexturePath,
-        bool HasBump,
-        NifAlphaRenderMode AlphaRenderMode,
-        bool AlphaBlend,
-        bool AlphaTest,
-        float AlphaTestThreshold,
-        byte AlphaTestFunction,
-        byte SrcBlendMode,
-        byte DstBlendMode,
-        float MaterialAlpha,
-        bool DoubleSided,
-        bool IsEmissive,
-        Vector3 LocalBoundsCenter,
-        bool IsBillboard,
-        // NiMaterialProperty specular: highlight tint + Phong exponent, gated to where the shader enables
-        // it (1A). Carried through the decode + persistent cache so it can drive a GPU specular term.
-        Vector3 SpecularColor = default,
-        float Glossiness = 0f,
-        bool SpecularEnabled = false,
-        // SpeedTree leaf cards: GPU re-faces each quad to the camera (tangent = card center, bitangent =
-        // signed 2D offset). Persisted in ReferenceDecodedMeshDiskCache12 v7+.
-        bool IsLeafBillboard = false);
-}
-
-/// <summary>A reference NIF uploaded to GPU geometry/texture caches: its submeshes, bounds, and water planes, drawn each frame and disposed when evicted.</summary>
-internal sealed class CachedNifMesh12 : IDisposable
-{
-    private readonly GeometryAllocation12 _geometry;
-    private readonly GpuGeometryArena12 _arena;
-    private readonly GpuDeletionQueue12 _deletionQueue;
-    private readonly GpuTextureCache12 _textureCache;
-    private bool _texturesReady;
-    private bool _disposed;
-
-    public CachedNifMesh12(
-        IReadOnlyList<CachedSubmesh12> submeshes,
-        GeometryAllocation12 geometry,
-        GpuGeometryArena12 arena,
-        GpuDeletionQueue12 deletionQueue,
-        GpuTextureCache12 textureCache,
-        float localBoundsRadius,
-        IReadOnlyList<(Vector3 Min, Vector3 Max)> waterPlanesLocal)
-    {
-        Submeshes = submeshes;
-        _geometry = geometry;
-        _arena = arena;
-        _deletionQueue = deletionQueue;
-        _textureCache = textureCache;
-        LocalBoundsRadius = localBoundsRadius;
-        WaterPlanesLocal = waterPlanesLocal;
-    }
-
-    public IReadOnlyList<CachedSubmesh12> Submeshes { get; }
-
-    /// <summary>
-    ///     Mesh-local AABBs (min/max) of any WaterShaderProperty submeshes in this NIF — the
-    ///     placeable water planes (cave/pool/reflecting-pool water) that were diverted out of the
-    ///     drawable submesh set at upload. Empty for the common (non-water) mesh. The reference
-    ///     renderer transforms each by the placement world matrix and feeds the result to the water
-    ///     renderer so placed water gets the real Fresnel/ripple/depth-fade shader instead of a slab.
-    /// </summary>
-    public IReadOnlyList<(Vector3 Min, Vector3 Max)> WaterPlanesLocal { get; }
-
-    /// <summary>
-    ///     Conservative bounding-sphere radius of the whole mesh around the NIF origin (max vertex
-    ///     distance from local 0,0,0). The reference cull scales this into world space and uses it
-    ///     instead of the OBND estimate so large meshes aren't culled at screen edges.
-    /// </summary>
-    public float LocalBoundsRadius { get; }
-
-    public bool TexturesReady
-    {
-        get
-        {
-            if (_texturesReady)
-            {
-                return true;
-            }
-
-            foreach (var submesh in Submeshes)
-            {
-                if (!submesh.TexturesReady)
-                {
-                    return false;
-                }
-            }
-
-            _texturesReady = true;
-            return true;
-        }
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-        _disposed = true;
-
-        // Defer the arena free by FramesInFlight frames so in-flight draws referencing this mesh's
-        // sub-range drain before the range is handed back out — the same GPU-safety guarantee the
-        // deletion queue gave the per-mesh committed buffers this replaced.
-        _deletionQueue.EnqueueDispose(_arena.DeferredFreeHandle(_geometry));
-
-        // Release this mesh's references on its submesh textures so the texture cache can evict and
-        // reclaim their bindless slots once no resident mesh needs them. Without this the texture
-        // cache grows unbounded and the persistent descriptor heap exhausts during sustained
-        // streaming (the ~5-minute walk-mode crash). Each GetOrUpload at build time is balanced by
-        // one Release here; shared textures stay alive until their last owning mesh is evicted.
-        foreach (var submesh in Submeshes)
-        {
-            _textureCache.Release(submesh.Diffuse);
-            _textureCache.Release(submesh.Normal);
-        }
-    }
-}
-
-/// <summary>One submesh of a cached reference mesh: its GPU vertex/index buffer views, diffuse/normal texture entries, and packed alpha/render state.</summary>
-internal sealed class CachedSubmesh12
-{
-    private Vector4 _textureState;
-    private bool _textureStateCached;
-
-    public required VertexBufferView VertexBufferView { get; init; }
-    public required IndexBufferView IndexBufferView { get; init; }
-    public required int IndexCount { get; init; }
-    public required GpuTextureCache12.Entry Diffuse { get; init; }
-    public required GpuTextureCache12.Entry Normal { get; init; }
-    public required Vector4 AlphaState { get; init; }
-    public required Vector4 RenderState { get; init; }
-    // Sun specular term (1A): xyz = tint, w = Phong exponent (0 = no specular). Mirrors the
-    // uSpecular cbuffer field in reference(_instanced).vert.hlsl / reference.frag.hlsl.
-    public required Vector4 Specular { get; init; }
-    public Vector4 TextureState
-    {
-        get
-        {
-            if (_textureStateCached)
-            {
-                return _textureState;
-            }
-
-            var state = new Vector4(
-                Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
-                IsLeafBillboard ? 1f : 0f, // .y > 0.5 routes the instanced VS to the leaf-billboard branch
-                0f,
-                0f);
-            if (TexturesReady)
-            {
-                _textureState = state;
-                _textureStateCached = true;
-            }
-
-            return state;
-        }
-    }
-    public bool TexturesReady => Diffuse.IsReady && Normal.IsReady;
-    public required bool HasBump { get; init; }
-    public required NifAlphaRenderMode AlphaRenderMode { get; init; }
-    public required bool AlphaBlend { get; init; }
-    public required bool AlphaTest { get; init; }
-    public required float AlphaTestThreshold { get; init; }
-    public required byte AlphaTestFunction { get; init; }
-    public required byte SrcBlendMode { get; init; }
-    public required byte DstBlendMode { get; init; }
-    public required float MaterialAlpha { get; init; }
-    public required bool DoubleSided { get; init; }
-    public required bool IsEmissive { get; init; }
-    public required Vector3 LocalBoundsCenter { get; init; }
-
-    /// <summary>
-    ///     True if this submesh sat under a <c>NiBillboardNode</c> in the source NIF. The renderer
-    ///     routes it to the per-draw blended path and replaces the placement world matrix with a
-    ///     cylindrical camera-facing matrix so the quad re-aims at the camera every frame.
-    /// </summary>
-    public required bool IsBillboard { get; init; }
-    public bool IsLeafBillboard { get; init; }
 }
 #endif
