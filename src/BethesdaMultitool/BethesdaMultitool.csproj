@@ -161,6 +161,7 @@
     <Compile Include="App\Helpers\RecordDetailPropertyAdapter.cs" />
     <Compile Include="App\Helpers\SpawnResolutionIndex.cs" />
     <Compile Include="App\Helpers\WorldGridConstants.cs" />
+    <Compile Include="App\Helpers\WorldMapBoundsMath.cs" />
     <Compile Include="App\Helpers\WorldRenderCache.cs" />
     <Compile Include="App\Helpers\WorldRenderStats.cs" />
     <Compile Include="App\Helpers\WaterColorPalette.cs" />

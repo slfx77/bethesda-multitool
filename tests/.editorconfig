@@ -1,0 +1,22 @@
+root = true
+
+# The repo's src/.editorconfig is marked `root = true`, so it does NOT apply to this sibling test
+# tree. A handful of analyzer rules that src deliberately relaxes (or that are simply test-idiomatic)
+# are re-declared here so they don't pollute the test build. Genuinely actionable rules (xUnit best
+# practices, unused members, IDisposable, null-deref, etc.) are intentionally left at full severity.
+
+[*.cs]
+indent_size = 4
+
+# S125 misfires on explanatory comments containing code-like tokens (PascalCase identifiers, trailing
+# semicolons, math notation). Same rationale as src/.editorconfig — keep it visible in the IDE as a
+# suggestion so real dead code still surfaces, but not as a build warning.
+dotnet_diagnostic.S125.severity = suggestion
+
+# CA1305: test assertions format strings for human-readable failure messages; the formatting culture
+# is irrelevant in tests. Mirrors the src suppression (Spectre.Console invariant formatting).
+dotnet_diagnostic.CA1305.severity = none
+
+# S1215: tests deliberately call GC.Collect to force eviction/finalization when exercising caches,
+# weak references, and the resource registry — a legitimate testing technique, not a production smell.
+dotnet_diagnostic.S1215.severity = none
