@@ -134,9 +134,16 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             SourceBlend = D12.Blend.SourceAlpha,
             DestinationBlend = D12.Blend.InverseSourceAlpha,
             BlendOperation = D12.BlendOperation.Add,
+            // The swapchain is premultiplied-alpha (GpuSwapChainSurface12), so the scene-RT alpha channel
+            // is composited to the screen — a pass that drops it below the opaque scene's 1.0 makes that
+            // region render see-through over the WinUI background. Water blends its COLOR translucently
+            // (above) but must PRESERVE the destination alpha. Was DestinationBlendAlpha=Zero, which
+            // OVERWROTE the underlying opaque 1.0 with water's <1 alpha and turned the water surface — and
+            // any geometry it overlaps (partially-submerged rocks) — transparent. Max against the opaque
+            // 1.0 underneath keeps the surface opaque to the compositor, matching the reference renderer.
             SourceBlendAlpha = D12.Blend.One,
-            DestinationBlendAlpha = D12.Blend.Zero,
-            BlendOperationAlpha = D12.BlendOperation.Add,
+            DestinationBlendAlpha = D12.Blend.One,
+            BlendOperationAlpha = D12.BlendOperation.Max,
             RenderTargetWriteMask = D12.ColorWriteEnable.All,
         };
 
