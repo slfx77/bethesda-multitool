@@ -316,10 +316,27 @@ internal static class NifParser
     private static int ParseVersionInfo(byte[] data, int pos, NifInfo info)
     {
         info.BinaryVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-        info.IsBigEndian = data[pos + 4] == 0;
-        info.UserVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos + 5));
-        info.BlockCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos + 9));
-        return pos + 13;
+        pos += 4;
+
+        // The Endian-Type byte was added in 20.0.0.3. Older Gamebryo NIFs — e.g. Oblivion's
+        // version-10.2.0.0 architecture meshes (ICPalaceTower01) — don't have it, so reading it would
+        // shift User Version / Num Blocks / BS version down by one byte and desync the whole header
+        // (garbage block count → "no renderable geometry").
+        if (info.BinaryVersion >= 0x14000003)
+        {
+            info.IsBigEndian = data[pos] == 0;
+            pos += 1;
+        }
+        else
+        {
+            info.IsBigEndian = false; // PC little-endian; no endian byte at this version
+        }
+
+        info.UserVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        pos += 4;
+        info.BlockCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        pos += 4;
+        return pos;
     }
 
     private static int ParseBethesdaHeader(byte[] data, int pos, NifInfo info)
@@ -463,6 +480,9 @@ internal static class NifParser
             // header/legacy-block layout is identical for both, so rejecting 10 dropped ~a third of
             // Oblivion meshes to "no geometry".
             0x14000004 or 0x14000005 => userVersion is 10 or 11,
+            // Oblivion also ships some architecture as older-exporter Gamebryo 10.2.0.0 (e.g.
+            // ICPalaceTower01) — same legacy field-walked block layout, BSStreamHeader, user version 10/11.
+            0x0A020000 => userVersion is 10 or 11,
             _ => false
         };
     }
