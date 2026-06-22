@@ -67,6 +67,7 @@ internal static class NifSubmeshExtractor
                     dataBlock,
                     nif.IsBigEndian,
                     nif.BsVersion,
+                    nif.BinaryVersion,
                     transform,
                     skinning,
                     useDualQuaternionSkinning,
@@ -77,6 +78,7 @@ internal static class NifSubmeshExtractor
                     dataBlock,
                     nif.IsBigEndian,
                     nif.BsVersion,
+                    nif.BinaryVersion,
                     transform,
                     skinning,
                     useDualQuaternionSkinning,
@@ -130,6 +132,7 @@ internal static class NifSubmeshExtractor
         BlockInfo block,
         bool be,
         uint bsVersion,
+        uint binaryVersion,
         Matrix4x4 transform,
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
         bool useDualQuaternionSkinning = false,
@@ -138,6 +141,14 @@ internal static class NifSubmeshExtractor
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
+
+        // NiGeometryData layout is keyed deterministically on the NIF version, never the Bethesda stream
+        // version: the "modern" base (Keep/Compress Flags + Data Flags + Bounding Sphere) is present since
+        // NIF 10.1.0.0 — that covers Oblivion 20.0.0.4/5, FNV 20.2.0.7, AND Oblivion's older-exporter
+        // 10.2.0.0 architecture (bsVersion 6, which the old bsVersion>=11 gate wrongly excluded). The
+        // trailing Additional Data ref exists only since 20.0.0.4.
+        var modernGeom = binaryVersion >= 0x0A010000;
+        var hasAdditionalData = binaryVersion >= 0x14000004;
 
         pos += 4;
         if (pos + 2 > end)
@@ -152,7 +163,7 @@ internal static class NifSubmeshExtractor
             return null;
         }
 
-        if (bsVersion >= 11)
+        if (modernGeom)
         {
             pos += 2;
         }
@@ -170,7 +181,7 @@ internal static class NifSubmeshExtractor
         }
 
         ushort bsVectorFlags = 0;
-        if (bsVersion >= 11)
+        if (modernGeom)
         {
             if (pos + 2 > end)
             {
@@ -201,7 +212,7 @@ internal static class NifSubmeshExtractor
             normals = NifGeometryDataReader.ReadVertexPositions(data, pos, numVerts, be);
             pos += numVerts * 12;
 
-            if (bsVersion >= 11)
+            if (modernGeom)
             {
                 pos += 16;
                 if ((bsVectorFlags & 0x1000) != 0)
@@ -220,7 +231,7 @@ internal static class NifSubmeshExtractor
                 }
             }
         }
-        else if (bsVersion >= 11)
+        else if (modernGeom)
         {
             pos += 16;
         }
@@ -242,7 +253,7 @@ internal static class NifSubmeshExtractor
         }
 
         float[]? uvs = null;
-        if (bsVersion >= 11)
+        if (modernGeom)
         {
             var numUvSets = (bsVectorFlags & 0x0001) != 0 ? 1 : 0;
             if (numUvSets > 0 && pos + numVerts * 8 <= end)
@@ -269,7 +280,12 @@ internal static class NifSubmeshExtractor
             pos += numVerts * numUvSets * 8;
         }
 
-        pos += 2 + 4;
+        pos += 2; // Consistency Flags
+        if (hasAdditionalData)
+        {
+            pos += 4; // Additional Data ref (since 20.0.0.4)
+        }
+
         if (pos + 2 > end)
         {
             return null;
@@ -605,13 +621,14 @@ internal static class NifSubmeshExtractor
         BlockInfo block,
         bool be,
         uint bsVersion,
+        uint binaryVersion,
         Matrix4x4 transform,
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
         bool useDualQuaternionSkinning = false,
         float[]? preSkinMorphDeltas = null,
         string? shapeName = null)
     {
-        var triangles = NifTriStripExtractor.ExtractTrianglesFromTriStripsData(data, block, be);
+        var triangles = NifTriStripExtractor.ExtractTrianglesFromTriStripsData(data, block, be, binaryVersion);
         if (triangles == null || triangles.Length == 0)
         {
             return null;
@@ -619,6 +636,9 @@ internal static class NifSubmeshExtractor
 
         var pos = block.DataOffset + 4;
         var end = block.DataOffset + block.Size;
+        // Modern NiGeometryData base (Keep/Compress + Data Flags + Bounding Sphere) — present since NIF
+        // 10.1.0.0, keyed on the NIF version rather than the Bethesda stream version (see ExtractTriShapeData).
+        var modernGeom = binaryVersion >= 0x0A010000;
         if (pos + 2 > end)
         {
             return null;
@@ -631,12 +651,12 @@ internal static class NifSubmeshExtractor
             return null;
         }
 
-        // bsVersion >= 11 = Oblivion (BS 11) and later (FO3/FNV BS 34). They share an identical
+        // modernGeom = Oblivion (BS 11) and later (FO3/FNV BS 34). They share an identical
         // NiGeometryData layout — Keep Flags + Compress Flags (since NIF 10.1.0.0), a Data Flags
         // ushort, and a Bounding Sphere — so all these reads are version-gated together. (Skyrim+,
         // bsVersion > 34, adds a Material CRC and uses BSTriShape, not NiTri*Data.) Morrowind
         // (bsVersion 0, NIF 4.0.0.2) predates Keep/Compress Flags and takes the older else-paths.
-        if (bsVersion >= 11)
+        if (modernGeom)
         {
             pos += 2;
         }
@@ -650,7 +670,7 @@ internal static class NifSubmeshExtractor
         pos += numVerts * 12;
 
         ushort bsVectorFlags = 0;
-        if (bsVersion >= 11)
+        if (modernGeom)
         {
             if (pos + 2 > end)
             {
@@ -681,7 +701,7 @@ internal static class NifSubmeshExtractor
             normals = NifGeometryDataReader.ReadVertexPositions(data, pos, numVerts, be);
             pos += numVerts * 12;
 
-            if (bsVersion >= 11)
+            if (modernGeom)
             {
                 pos += 16;
                 if ((bsVectorFlags & 0x1000) != 0)
@@ -700,7 +720,7 @@ internal static class NifSubmeshExtractor
                 }
             }
         }
-        else if (bsVersion >= 11)
+        else if (modernGeom)
         {
             pos += 16;
         }
@@ -717,7 +737,7 @@ internal static class NifSubmeshExtractor
         }
 
         float[]? uvs = null;
-        if (bsVersion >= 11)
+        if (modernGeom)
         {
             var numUvSets = (bsVectorFlags & 0x0001) != 0 ? 1 : 0;
             if (numUvSets > 0 && pos + numVerts * 8 <= end)

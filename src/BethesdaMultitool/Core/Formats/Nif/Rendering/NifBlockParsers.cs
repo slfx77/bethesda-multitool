@@ -227,6 +227,7 @@ internal static class NifBlockParsers
         BlockInfo block,
         bool be,
         uint bsVersion,
+        uint binaryVersion,
         Matrix4x4 transform,
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
         bool useDualQuaternionSkinning = false)
@@ -236,6 +237,7 @@ internal static class NifBlockParsers
             block,
             be,
             bsVersion,
+            binaryVersion,
             transform,
             skinning,
             useDualQuaternionSkinning);
@@ -246,6 +248,7 @@ internal static class NifBlockParsers
         BlockInfo block,
         bool be,
         uint bsVersion,
+        uint binaryVersion,
         Matrix4x4 transform,
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
         bool useDualQuaternionSkinning = false)
@@ -255,6 +258,7 @@ internal static class NifBlockParsers
             block,
             be,
             bsVersion,
+            binaryVersion,
             transform,
             skinning,
             useDualQuaternionSkinning);

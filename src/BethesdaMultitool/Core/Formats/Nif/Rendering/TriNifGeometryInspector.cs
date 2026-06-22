@@ -29,7 +29,7 @@ internal static class TriNifGeometryInspector
 
             var vertexCount = NifBlockParsers.ReadVertexCount(nifData, block, nif.IsBigEndian, nif.IsMorrowind);
             var triStripInfo = block.TypeName == "NiTriStripsData"
-                ? NifTriStripExtractor.ReadStripSectionInfo(nifData, block, nif.IsBigEndian)
+                ? NifTriStripExtractor.ReadStripSectionInfo(nifData, block, nif.IsBigEndian, nif.BinaryVersion)
                 : null;
             var submesh = block.TypeName == "NiTriShapeData"
                 ? NifBlockParsers.ExtractTriShapeData(
@@ -37,12 +37,14 @@ internal static class TriNifGeometryInspector
                     block,
                     nif.IsBigEndian,
                     nif.BsVersion,
+                    nif.BinaryVersion,
                     Matrix4x4.Identity)
                 : NifBlockParsers.ExtractTriStripsData(
                     nifData,
                     block,
                     nif.IsBigEndian,
                     nif.BsVersion,
+                    nif.BinaryVersion,
                     Matrix4x4.Identity);
             var triangleCount = submesh?.TriangleCount ?? -1;
             var declaredTriangleCount = triStripInfo?.DeclaredTriangleCount ?? triangleCount;

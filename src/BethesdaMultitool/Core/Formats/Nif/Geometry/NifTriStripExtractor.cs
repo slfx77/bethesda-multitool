@@ -17,13 +17,14 @@ internal static class NifTriStripExtractor
     ///     Extract triangles from a NiTriStripsData block by parsing past
     ///     common geometry fields and reading the strip data.
     /// </summary>
-    internal static ushort[]? ExtractTrianglesFromTriStripsData(byte[] data, BlockInfo block, bool isBigEndian)
+    internal static ushort[]? ExtractTrianglesFromTriStripsData(byte[] data, BlockInfo block, bool isBigEndian,
+        uint binaryVersion)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
 
         // Skip NiGeometryData common fields to get to strip data
-        pos = SkipGeometryDataFields(data, pos, end, isBigEndian);
+        pos = SkipGeometryDataFields(data, pos, end, isBigEndian, binaryVersion);
         if (pos < 0)
         {
             return null;
@@ -38,12 +39,13 @@ internal static class NifTriStripExtractor
     ///     flattening it to render triangles. This keeps the declared strip triangle count
     ///     separate from the post-degenerate filtered triangle list.
     /// </summary>
-    internal static NifTriStripSectionInfo? ReadStripSectionInfo(byte[] data, BlockInfo block, bool isBigEndian)
+    internal static NifTriStripSectionInfo? ReadStripSectionInfo(byte[] data, BlockInfo block, bool isBigEndian,
+        uint binaryVersion)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
 
-        pos = SkipGeometryDataFields(data, pos, end, isBigEndian);
+        pos = SkipGeometryDataFields(data, pos, end, isBigEndian, binaryVersion);
         if (pos < 0)
         {
             return null;
@@ -97,7 +99,7 @@ internal static class NifTriStripExtractor
     ///     Skip past NiGeometryData common fields (vertices, normals, colors, UVs, etc.)
     ///     to reach the NiTriStripsData-specific strip section.
     /// </summary>
-    private static int SkipGeometryDataFields(byte[] data, int pos, int end, bool isBigEndian)
+    private static int SkipGeometryDataFields(byte[] data, int pos, int end, bool isBigEndian, uint binaryVersion)
     {
         pos += 4; // GroupId
 
@@ -165,7 +167,10 @@ internal static class NifTriStripExtractor
         }
 
         pos += 2; // ConsistencyFlags
-        pos += 4; // AdditionalData ref
+        if (binaryVersion >= 0x14000004)
+        {
+            pos += 4; // AdditionalData ref (since NIF 20.0.0.4)
+        }
 
         return pos;
     }
