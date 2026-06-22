@@ -44,7 +44,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // by bytes-remaining instead of a magic 100000 cap), so meshes with big tangent/vertex blobs (e.g.
     // Oblivion ICAUTower01 / ICPalaceTowerBase01) extract ALL their shapes instead of desyncing mid-file.
     // The decoded submesh set changes (ICAUTower01: 10→20), so old v7 entries are stale.
-    internal const int DecoderVersion = 8;
+    // Bumped 8→9: NIF 10.2.0.0 geometry now extracts (NiGeometryData reads keyed on the NIF version) — meshes
+    // like ICPalaceTower01 that previously decoded to nothing now produce geometry, so any v8 entry is stale.
+    internal const int DecoderVersion = 9;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
