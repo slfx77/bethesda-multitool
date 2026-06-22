@@ -139,14 +139,14 @@ public sealed partial class WorldView3DControl
         if (_data is null) return;
         if (_selectedReference is not { } door)
         {
-            ShowStatus("No object selected — pick a door first (click, or press E in walk mode).");
+            ShowStatus("No object selected — pick a door first (click, or press E in walk mode).", autoDismiss: true);
             return;
         }
 
         if (door.DestinationCellFormId is not uint destFormId ||
             !_data.CellByFormId.TryGetValue(destFormId, out var destCell))
         {
-            ShowStatus("Selected object is not a teleport door.");
+            ShowStatus("Selected object is not a teleport door.", autoDismiss: true);
             return;
         }
 

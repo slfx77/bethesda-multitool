@@ -95,15 +95,43 @@ public sealed partial class WorldView3DControl
             : Visibility.Collapsed;
     }
 
-    private void ShowStatus(string message)
+    // Auto-dismiss timer for transient notifications (e.g. "not a teleport door"). Persistent status
+    // (load progress, fatal-init errors) passes autoDismiss=false and stays until HideStatus().
+    private DispatcherTimer? _statusDismissTimer;
+
+    private void ShowStatus(string message, bool autoDismiss = false)
     {
         StatusOverlay.Text = message;
         StatusOverlay.Visibility = Visibility.Visible;
         HudPanel.Visibility = Visibility.Collapsed;
+
+        // A new status (transient or persistent) cancels any pending auto-dismiss so a stale timer
+        // can't hide a later persistent message (e.g. a door warning's timer hiding "Loading…").
+        _statusDismissTimer?.Stop();
+        if (autoDismiss)
+        {
+            _statusDismissTimer ??= CreateStatusDismissTimer();
+            _statusDismissTimer.Start();
+        }
+    }
+
+    private DispatcherTimer CreateStatusDismissTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        timer.Tick += (_, _) =>
+        {
+            _statusDismissTimer?.Stop();
+            if (StatusOverlay.Visibility == Visibility.Visible)
+            {
+                HideStatus();
+            }
+        };
+        return timer;
     }
 
     private void HideStatus()
     {
+        _statusDismissTimer?.Stop();
         StatusOverlay.Visibility = Visibility.Collapsed;
         HudPanel.Visibility = _hudHidden ? Visibility.Collapsed : Visibility.Visible;
         _lastHudUpdateTimestamp = 0;
