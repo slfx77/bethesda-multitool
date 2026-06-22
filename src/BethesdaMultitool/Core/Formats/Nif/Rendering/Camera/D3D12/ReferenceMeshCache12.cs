@@ -658,6 +658,17 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 AppendWaterPlaneLocalBounds(sub.Vertices, ref waterPlanesLocal);
                 continue;
             }
+
+            // Refraction geometry (Oblivion's Refract.dds marker — Oblivion-gate portal rings, magic
+            // refraction) is rendered by the engine via framebuffer distortion; the static viewer can't
+            // reproduce it. Refract.dds is a ~58-byte placeholder, so drawing the submesh as a reference
+            // slab shows opaque-white blobs (OblivionArchGate01's three "untextured circles"). Skip it —
+            // keyed on the engine's refraction-marker texture, not a shape-name heuristic.
+            if (sub.DiffuseTexturePath is { } refractPath &&
+                refractPath.EndsWith("refract.dds", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
             try
             {
                 GpuTextureCache12.Entry diffuse;
