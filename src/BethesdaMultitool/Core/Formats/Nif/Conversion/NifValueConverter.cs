@@ -287,9 +287,15 @@ internal sealed class NifValueConverter
             }
         }
 
-        if (count > 100000)
+        // Sanity bound: no valid array has more elements than there are bytes left in the buffer (every
+        // element is ≥ 1 byte). A magic constant here was too low — a big shape's tangent NiBinaryExtraData
+        // (e.g. 144 KB) or vertex blob legitimately exceeds 100 K elements; skipping it under-measures the
+        // block and desyncs every block after it on Oblivion's no-block-size legacy path (whole mesh pieces
+        // vanish — e.g. ICAUTower01). Bounding by remaining bytes still rejects garbage/misread counts.
+        var maxElements = ctx.End - ctx.Position;
+        if (count > maxElements)
         {
-            Log.Trace($"    [Schema] WARNING: Array too large ({count}), skipping field {field.Name}");
+            Log.Trace($"    [Schema] WARNING: Array length {count} exceeds {maxElements} remaining bytes, skipping field {field.Name}");
             return;
         }
 
