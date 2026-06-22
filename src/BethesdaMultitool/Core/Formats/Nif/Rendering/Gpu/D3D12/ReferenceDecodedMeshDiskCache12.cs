@@ -40,7 +40,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // enable gate) for the GPU specular term (1A). Old caches lack those trailing fields.
     // Bumped 6→7: the per-submesh payload now carries IsLeafBillboard, the SpeedTree leaf-billboard
     // shader route bit. Old caches lack the trailing flag and would silently route as static geometry.
-    internal const int DecoderVersion = 7;
+    // Bumped 7→8: the legacy-block measure walk no longer drops large arrays (it now bounds array length
+    // by bytes-remaining instead of a magic 100000 cap), so meshes with big tangent/vertex blobs (e.g.
+    // Oblivion ICAUTower01 / ICPalaceTowerBase01) extract ALL their shapes instead of desyncing mid-file.
+    // The decoded submesh set changes (ICAUTower01: 10→20), so old v7 entries are stale.
+    internal const int DecoderVersion = 8;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
