@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa;
 using Microsoft.UI;
 using Microsoft.UI.Xaml.Media;
@@ -26,13 +27,14 @@ public sealed class BsaFileEntry : INotifyPropertyChanged
     private static SolidColorBrush BlueBrush => _blueBrush ??= new SolidColorBrush(Colors.DodgerBlue);
     private static SolidColorBrush RedBrush => _redBrush ??= new SolidColorBrush(Colors.OrangeRed);
 
-    public required BsaFileRecord Record { get; init; }
+    /// <summary>Backing archive entry — a BSA or a BA2 file, resolved by <see cref="ArchiveReader" />.</summary>
+    public required ArchiveReader.ArchiveEntry Record { get; init; }
 
     public string FullPath => Record.FullPath;
-    public string FileName => Record.Name ?? $"unknown_{Record.NameHash:X16}";
-    public string FolderPath => Record.Folder?.Name ?? "";
+    public string FileName => Record.Name;
+    public string FolderPath => Record.FolderPath;
     public long Size => Record.Size;
-    public bool IsCompressed { get; init; }
+    public bool IsCompressed => Record.Compressed;
 
     public string SizeDisplay => Size switch
     {
@@ -44,7 +46,7 @@ public sealed class BsaFileEntry : INotifyPropertyChanged
     public string CompressedDisplay => IsCompressed ? "Yes" : "";
     public SolidColorBrush CompressedColor => IsCompressed ? GreenBrush : GrayBrush;
 
-    public string Extension => Path.GetExtension(FileName).ToLowerInvariant();
+    public string Extension => Record.Extension;
 
     public bool IsSelected
     {

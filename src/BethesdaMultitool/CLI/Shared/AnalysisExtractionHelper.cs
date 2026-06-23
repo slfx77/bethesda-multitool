@@ -1,6 +1,13 @@
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
+using BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
+using BethesdaMultitool.Core.Formats.Esm.Export.ModelExport;
+using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -10,7 +17,7 @@ using BethesdaMultitool.Core.RuntimeBuffer;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.Strings;
 using Spectre.Console;
-using static BethesdaMultitool.Core.LogLevel;
+using static BethesdaMultitool.Core.Diagnostics.LogLevel;
 
 namespace BethesdaMultitool.CLI.Shared;
 
@@ -378,3 +385,4 @@ internal static class AnalysisExtractionHelper
         File.WriteAllText(outputPath, sb.ToString());
     }
 }
+

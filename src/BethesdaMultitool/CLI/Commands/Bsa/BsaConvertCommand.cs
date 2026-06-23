@@ -2,7 +2,9 @@
 // Licensed under the MIT License.
 
 using System.CommandLine;
+using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Ddx;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Xma;
@@ -86,6 +88,14 @@ internal static class BsaConvertCommand
         if (!File.Exists(input))
         {
             AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", input);
+            return;
+        }
+
+        if (Ba2Parser.IsBa2File(input))
+        {
+            AnsiConsole.MarkupLine(
+                "[yellow]Note:[/] '{0}' is a BA2 (PC) archive. convert applies only to BSA (Xbox 360) " +
+                "archives; BA2 is already a PC format with no equivalent operation.", Path.GetFileName(input));
             return;
         }
 

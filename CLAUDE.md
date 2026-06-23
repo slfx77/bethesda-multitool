@@ -53,15 +53,19 @@ esm diff --xbox <f> --converted <f> --pc <f>  # Unified 2/3-way diff
 esm cell objects <file> <cell>  # List placed objects in a cell
 esm cell npc-trace <file> <id>  # Trace NPC from FormID to cell
 
-# BSA commands
-bsa list <file>                 # List files in BSA archive
-bsa extract <file> -o <dir>     # Extract BSA contents
-bsa info <file>                 # BSA archive statistics
-bsa find <file> <pattern>       # Find files matching pattern
-bsa convert <file>              # Convert/validate BSA format
-bsa validate <file>             # Validate BSA structure
-bsa debug rawdump <file> <off> <len>    # Raw hex dump at offset
-bsa debug file-compare <bsa> <f> <e>    # Compare BSA entry vs extracted
+# Archive commands (format-agnostic: accept .bsa OR .ba2, detected by magic)
+#   `archive` is canonical; `bsa` and `ba2` are deprecated aliases of the same group.
+archive list <file>                 # List files in an archive
+archive extract <file> -o <dir>     # Extract archive contents (-c/--convert: BSA Xbox->PC only)
+archive info <file>                 # Archive statistics (BSA flags or BA2 header, format-aware)
+archive find <file> <pattern>       # Find files matching pattern
+archive inspect <file> <name>       # Inspect one file's metadata + leading bytes
+archive rawdump <file> <off> <len>  # Raw hex dump at offset
+archive file-compare <a> <f> <e>    # Compare an archived file vs an extracted copy
+# BSA/Xbox-360-only (emit a graceful note when handed a BA2 — BA2 is PC-only, no writer):
+archive convert <file>              # Convert Xbox 360 BSA -> PC BSA (extract, convert, repack)
+archive validate <file>             # Validate BSA round-trip (extract -> repack -> compare)
+archive compare <fileA> <fileB>     # Compare two BSA headers/folder hashes
 
 # Render commands (output: PNG sprites)
 render <path> -o <dir>                     # Render single NIF to PNG

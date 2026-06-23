@@ -3,6 +3,7 @@
 
 #if WINDOWS_GUI
 using System.Threading.Channels;
+using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Ddx;
@@ -147,7 +148,7 @@ internal sealed class BsaExtractionEngine
     /// </summary>
     internal static async Task ExtractSingleFileAsync(
         BsaFileEntry entry,
-        BsaExtractor extractor,
+        ArchiveReader reader,
         ExtractionOptions options,
         ExtractionCounters counters,
         ChannelWriter<(BsaFileEntry entry, byte[] data, string outputPath, string conversionType)> conversionWriter,
@@ -162,7 +163,7 @@ internal sealed class BsaExtractionEngine
         var outputPath = ComputeOutputPath(options.OutputDir, entry.FullPath, extension, options);
 
         // Extract to memory
-        var data = extractor.ExtractFile(entry.Record);
+        var data = reader.Extract(entry.Record);
 
         if (needsDdxConvert)
         {
@@ -203,7 +204,7 @@ internal sealed class BsaExtractionEngine
     /// </summary>
     internal static async Task<Dictionary<string, BsaFileEntry>> RunExtractionAsync(
         IReadOnlyList<BsaFileEntry> selectedEntries,
-        BsaExtractor extractor,
+        ArchiveReader reader,
         ExtractionOptions options,
         ExtractionCounters counters,
         ProgressCallbacks callbacks,
@@ -227,7 +228,7 @@ internal sealed class BsaExtractionEngine
         {
             conversionTask = RunConversionWorkersAsync(
                 conversionChannel.Reader,
-                extractor,
+                reader,
                 counters,
                 callbacks,
                 cancellationToken);
@@ -245,7 +246,7 @@ internal sealed class BsaExtractionEngine
                     callbacks.OnStatusChanged(entry, BsaExtractionStatus.Extracting);
 
                     await ExtractSingleFileAsync(
-                        entry, extractor, options, counters,
+                        entry, reader, options, counters,
                         conversionChannel.Writer, ddxEntries,
                         cancellationToken);
 
@@ -355,11 +356,16 @@ internal sealed class BsaExtractionEngine
     /// </summary>
     internal static async Task RunConversionWorkersAsync(
         ChannelReader<(BsaFileEntry entry, byte[] data, string outputPath, string conversionType)> reader,
-        BsaExtractor extractor,
+        ArchiveReader archiveReader,
         ExtractionCounters counters,
         ProgressCallbacks callbacks,
         CancellationToken cancellationToken)
     {
+        // DDX/XMA/NIF conversion is an Xbox 360 / BSA concern (BA2 is already a PC format), so it runs
+        // against the underlying BSA extractor. Conversion workers are only started for a BSA, so this
+        // is non-null whenever this method is reached.
+        var extractor = archiveReader.AsBsaExtractor!;
+
         // Run multiple conversion workers in parallel
         const int workerCount = 2;
         var workers = new Task[workerCount];

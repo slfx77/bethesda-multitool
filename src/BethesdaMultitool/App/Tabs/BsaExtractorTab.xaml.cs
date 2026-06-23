@@ -5,6 +5,9 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Windows.Storage.Pickers;
+using BethesdaMultitool.Core.Formats.Bsa.Extraction;
+using BethesdaMultitool.Core.Formats.Bsa.Index;
+using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Bsa;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
@@ -25,11 +28,10 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
     private readonly ObservableCollection<BsaFileEntry> _allFiles = [];
     private readonly ObservableCollection<BsaFileEntry> _filteredFiles = [];
 
-    private BsaArchive? _archive;
+    private ArchiveReader? _reader;
     private CancellationTokenSource? _cts;
 
     private string _currentSortColumn = "Path";
-    private BsaExtractor? _extractor;
     private bool _sortAscending = true;
 
     public BsaExtractorTab()
@@ -49,7 +51,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
     public void Dispose()
     {
         _cts?.Dispose();
-        _extractor?.Dispose();
+        _reader?.Dispose();
     }
 
     private void File_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -62,7 +64,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
 
     private void UpdateEmptyState()
     {
-        var hasArchive = _archive is not null;
+        var hasArchive = _reader is not null;
         NoArchivePanel.Visibility = hasArchive ? Visibility.Collapsed : Visibility.Visible;
         ArchiveInfoCard.Visibility = hasArchive ? Visibility.Visible : Visibility.Collapsed;
         StatsCard.Visibility = hasArchive ? Visibility.Visible : Visibility.Collapsed;
@@ -92,45 +94,49 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
     {
         try
         {
-            // Clean up previous extractor
-            _extractor?.Dispose();
+            // Clean up previous reader
+            _reader?.Dispose();
 
-            _archive = BsaParser.Parse(path);
-            _extractor = new BsaExtractor(_archive, File.OpenRead(path));
+            _reader = ArchiveReader.Open(path);
 
-            // Update UI with archive info
+            // Update UI with archive info (format-aware: BSA or BA2)
             ArchiveNameText.Text = Path.GetFileName(path);
-            ArchivePlatformText.Text = _archive.Header.IsXbox360 ? "Xbox 360" : "PC";
-            ArchivePlatformText.Foreground = _archive.Header.IsXbox360
+            ArchivePlatformText.Text = _reader.PlatformLabel;
+            ArchivePlatformText.Foreground = _reader.PlatformLabel == "Xbox 360"
                 ? new SolidColorBrush(Colors.Yellow)
                 : new SolidColorBrush(Colors.Green);
-            ArchiveFolderCountText.Text = _archive.Header.FolderCount.ToString("N0");
-            ArchiveFileCountText.Text = _archive.Header.FileCount.ToString("N0");
-            ArchiveCompressedText.Text = _archive.Header.DefaultCompressed ? "Yes" : "No";
+            ArchiveFileCountText.Text = _reader.TotalFiles.ToString("N0");
 
-            // Build content types string
-            var contentTypes = new List<string>();
-            if (_archive.Header.FileFlags.HasFlag(BsaFileFlags.Meshes)) contentTypes.Add("Meshes");
-            if (_archive.Header.FileFlags.HasFlag(BsaFileFlags.Textures)) contentTypes.Add("Textures");
-            if (_archive.Header.FileFlags.HasFlag(BsaFileFlags.Sounds)) contentTypes.Add("Sounds");
-            if (_archive.Header.FileFlags.HasFlag(BsaFileFlags.Voices)) contentTypes.Add("Voices");
-            if (_archive.Header.FileFlags.HasFlag(BsaFileFlags.Menus)) contentTypes.Add("Menus");
-            if (_archive.Header.FileFlags.HasFlag(BsaFileFlags.Misc)) contentTypes.Add("Misc");
-            ArchiveContentText.Text = contentTypes.Count > 0 ? string.Join(", ", contentTypes) : "Unknown";
+            if (_reader.Bsa is { } bsa)
+            {
+                ArchiveFolderCountText.Text = bsa.Header.FolderCount.ToString("N0");
+                ArchiveCompressedText.Text = bsa.Header.DefaultCompressed ? "Yes" : "No";
+
+                var contentTypes = new List<string>();
+                if (bsa.Header.FileFlags.HasFlag(BsaFileFlags.Meshes)) contentTypes.Add("Meshes");
+                if (bsa.Header.FileFlags.HasFlag(BsaFileFlags.Textures)) contentTypes.Add("Textures");
+                if (bsa.Header.FileFlags.HasFlag(BsaFileFlags.Sounds)) contentTypes.Add("Sounds");
+                if (bsa.Header.FileFlags.HasFlag(BsaFileFlags.Voices)) contentTypes.Add("Voices");
+                if (bsa.Header.FileFlags.HasFlag(BsaFileFlags.Menus)) contentTypes.Add("Menus");
+                if (bsa.Header.FileFlags.HasFlag(BsaFileFlags.Misc)) contentTypes.Add("Misc");
+                ArchiveContentText.Text = contentTypes.Count > 0 ? string.Join(", ", contentTypes) : "Unknown";
+            }
+            else
+            {
+                // BA2: flat container with no folder tree or content flags.
+                ArchiveFolderCountText.Text = _reader.GetFolderStats().Count.ToString("N0");
+                ArchiveCompressedText.Text = _reader.Ba2!.Header.CompressionFormat.ToString();
+                ArchiveContentText.Text = "—";
+            }
 
             // Load files
             _allFiles.Clear();
-            var defaultCompressed = _archive.Header.DefaultCompressed;
 
-            foreach (var file in _archive.AllFiles)
+            foreach (var entry in _reader.ListFiles())
             {
-                var entry = new BsaFileEntry
-                {
-                    Record = file,
-                    IsCompressed = defaultCompressed != file.CompressionToggle
-                };
-                entry.PropertyChanged += File_PropertyChanged;
-                _allFiles.Add(entry);
+                var fileEntry = new BsaFileEntry { Record = entry };
+                fileEntry.PropertyChanged += File_PropertyChanged;
+                _allFiles.Add(fileEntry);
             }
 
             // Populate extension filter
@@ -159,7 +165,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
             var dialog = new ContentDialog
             {
                 Title = "Error Loading Archive",
-                Content = $"Failed to load BSA archive:\n{ex.Message}",
+                Content = $"Failed to load archive:\n{ex.Message}",
                 CloseButtonText = "OK",
                 XamlRoot = XamlRoot
             };
@@ -310,7 +316,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
 
     private async void ExtractButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_extractor is null || _archive is null)
+        if (_reader is null)
         {
             return;
         }
@@ -332,15 +338,17 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
         var selectedEntries = _filteredFiles.Where(f => f.IsSelected).ToList();
         var convertFiles = ConvertFilesCheckbox.IsChecked == true;
 
-        // Enable conversions if requested
+        // Enable conversions if requested. Conversion (DDX/XMA/NIF) is an Xbox 360 / BSA concern; for a
+        // BA2 (already a PC format) there is no underlying BSA extractor, so the checkbox is a no-op.
         var ddxConversionAvailable = false;
         var xmaConversionAvailable = false;
         var nifConversionAvailable = false;
-        if (convertFiles)
+        var bsaExtractor = _reader.AsBsaExtractor;
+        if (convertFiles && bsaExtractor != null)
         {
             ddxConversionAvailable = true; // DDXConv is compiled-in, always available
-            xmaConversionAvailable = _extractor.EnableXmaConversion(true);
-            nifConversionAvailable = _extractor.EnableNifConversion(true);
+            xmaConversionAvailable = bsaExtractor.EnableXmaConversion(true);
+            nifConversionAvailable = bsaExtractor.EnableNifConversion(true);
 
             var unavailable = BsaExtractionEngine.CheckConversionAvailability(xmaConversionAvailable);
             await ShowConversionWarningsAsync(unavailable);
@@ -376,7 +384,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
         {
             // Run extraction (parallel file extraction + XMA/NIF conversion workers)
             var ddxEntries = await BsaExtractionEngine.RunExtractionAsync(
-                selectedEntries, _extractor, options, counters, callbacks, _cts.Token);
+                selectedEntries, _reader, options, counters, callbacks, _cts.Token);
 
             // Batch DDX conversion (much faster than per-file subprocess spawning)
             if (convertFiles && ddxConversionAvailable)

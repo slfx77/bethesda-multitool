@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaAudioTranscriber.Models;
 
@@ -24,14 +25,14 @@ public static class BuildDirectoryLoader
         string? esmOverridePath = null,
         CancellationToken ct = default)
     {
-        // Step 1: Find BSA files
-        progress?.Report(("Scanning for BSA files...", 0));
-        var bsaPaths = FindVoiceBsas(dataDirectory);
+        // Step 1: Find voice archives (BSA or BA2)
+        progress?.Report(("Scanning for voice archives...", 0));
+        var archivePaths = FindVoiceArchives(dataDirectory);
 
-        if (bsaPaths.Count == 0)
+        if (archivePaths.Count == 0)
         {
             throw new FileNotFoundException(
-                "No Fallout - Voices*.bsa files found in the Data directory.");
+                "No voice archives (Fallout - Voices*.bsa / *.ba2) found in the Data directory.");
         }
 
         // Step 2: Determine ESM file path (user override takes priority)
@@ -62,19 +63,19 @@ public static class BuildDirectoryLoader
 
         // Step 4: Parse BSAs and enumerate voice files
         var allEntries = new List<VoiceFileEntry>();
-        var fileRecords = new Dictionary<string, BsaFileRecord>();
-        var totalBsas = bsaPaths.Count;
+        var fileRecords = new Dictionary<string, ArchiveReader.ArchiveEntry>();
+        var totalArchives = archivePaths.Count;
 
-        for (var i = 0; i < totalBsas; i++)
+        for (var i = 0; i < totalArchives; i++)
         {
             ct.ThrowIfCancellationRequested();
 
-            var bsaPath = bsaPaths[i];
-            var bsaName = Path.GetFileName(bsaPath);
-            var basePercent = 30 + 60.0 * i / totalBsas;
-            progress?.Report(($"Parsing {bsaName}...", basePercent));
+            var archivePath = archivePaths[i];
+            var archiveName = Path.GetFileName(archivePath);
+            var basePercent = 30 + 60.0 * i / totalArchives;
+            progress?.Report(($"Parsing {archiveName}...", basePercent));
 
-            ParseVoiceFilesFromBsa(bsaPath, allEntries, fileRecords);
+            ParseVoiceFilesFromArchive(archivePath, allEntries, fileRecords);
         }
 
         // Step 5: Enrich with ESM data
@@ -92,7 +93,7 @@ public static class BuildDirectoryLoader
         // used for export. Applying here with a temporary project would set SubtitleText
         // on entries, causing the caller's ApplyToEntries to skip them all.
 
-        progress?.Report(($"Loaded {allEntries.Count} voice files from {totalBsas} BSAs", 100));
+        progress?.Report(($"Loaded {allEntries.Count} voice files from {totalArchives} archive(s)", 100));
 
         var result = new BuildLoadResult
         {
@@ -116,27 +117,29 @@ public static class BuildDirectoryLoader
         return result;
     }
 
-    private static List<string> FindVoiceBsas(string dataDirectory)
+    private static List<string> FindVoiceArchives(string dataDirectory)
     {
-        var bsas = new List<string>();
+        var archives = new List<string>();
 
         if (!Directory.Exists(dataDirectory))
         {
-            return bsas;
+            return archives;
         }
 
-        foreach (var file in Directory.GetFiles(dataDirectory, "*.bsa"))
+        foreach (var file in Directory.EnumerateFiles(dataDirectory)
+                     .Where(f => f.EndsWith(".bsa", StringComparison.OrdinalIgnoreCase) ||
+                                 f.EndsWith(".ba2", StringComparison.OrdinalIgnoreCase)))
         {
             var name = Path.GetFileName(file);
             if (name.Contains("Voices", StringComparison.OrdinalIgnoreCase) ||
                 name.Contains("Voice", StringComparison.OrdinalIgnoreCase))
             {
-                bsas.Add(file);
+                archives.Add(file);
             }
         }
 
-        bsas.Sort(StringComparer.OrdinalIgnoreCase);
-        return bsas;
+        archives.Sort(StringComparer.OrdinalIgnoreCase);
+        return archives;
     }
 
     private static string? FindEsm(string dataDirectory)
@@ -158,66 +161,59 @@ public static class BuildDirectoryLoader
         return esmFiles.Length > 0 ? esmFiles[0] : null;
     }
 
-    private static void ParseVoiceFilesFromBsa(
-        string bsaPath,
+    private static void ParseVoiceFilesFromArchive(
+        string archivePath,
         List<VoiceFileEntry> entries,
-        Dictionary<string, BsaFileRecord> fileRecords)
+        Dictionary<string, ArchiveReader.ArchiveEntry> fileRecords)
     {
-        var archive = BsaParser.Parse(bsaPath);
+        using var reader = ArchiveReader.Open(archivePath);
 
-        foreach (var folder in archive.Folders)
+        // Flat walk works for both a BSA folder tree and a flat BA2 list. Voice files live at
+        // sound\voice\{plugin}\{voicetype}\{file}; BA2 paths may use forward slashes, so normalize.
+        foreach (var file in reader.ListFiles())
         {
-            // Only process voice folders: sound\voice\*
-            if (folder.Name == null ||
-                !folder.Name.StartsWith(@"sound\voice\", StringComparison.OrdinalIgnoreCase))
+            var normalized = file.FullPath.Replace('/', '\\');
+            if (!normalized.StartsWith(@"sound\voice\", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            // Extract voice type from path: sound\voice\{plugin}\{voicetype}\
-            var pathParts = folder.Name.Split('\\');
-            if (pathParts.Length < 4)
+            var pathParts = normalized.Split('\\');
+            if (pathParts.Length < 5)
             {
                 continue;
             }
 
-            var voiceType = pathParts[3]; // sound\voice\plugin\voicetype
+            var voiceType = pathParts[3]; // sound\voice\plugin\voicetype\file
+            var fileName = pathParts[^1];
 
-            foreach (var file in folder.Files)
+            // Only process audio files (xma, wav, mp3, ogg)
+            var ext = Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant();
+            if (ext is not ("xma" or "wav" or "mp3" or "ogg"))
             {
-                if (file.Name == null)
-                {
-                    continue;
-                }
-
-                // Only process audio files (xma, wav, mp3, ogg)
-                var ext = Path.GetExtension(file.Name).TrimStart('.').ToLowerInvariant();
-                if (ext is not ("xma" or "wav" or "mp3" or "ogg"))
-                {
-                    continue;
-                }
-
-                // Try to parse FormID from filename
-                if (!VoiceFileNameParser.TryParse(file.Name, out var formId, out var responseIndex,
-                        out var topicEditorId))
-                {
-                    continue;
-                }
-
-                var entry = new VoiceFileEntry
-                {
-                    FormId = formId,
-                    ResponseIndex = responseIndex,
-                    VoiceType = voiceType,
-                    TopicEditorId = topicEditorId,
-                    Extension = ext,
-                    BsaPath = file.FullPath,
-                    BsaFilePath = bsaPath
-                };
-
-                entries.Add(entry);
-                fileRecords[entry.ExtractionKey] = file;
+                continue;
             }
+
+            // Try to parse FormID from filename
+            if (!VoiceFileNameParser.TryParse(fileName, out var formId, out var responseIndex,
+                    out var topicEditorId))
+            {
+                continue;
+            }
+
+            var entry = new VoiceFileEntry
+            {
+                FormId = formId,
+                ResponseIndex = responseIndex,
+                VoiceType = voiceType,
+                TopicEditorId = topicEditorId,
+                Extension = ext,
+                BsaPath = file.FullPath,
+                BsaFilePath = archivePath
+            };
+
+            entries.Add(entry);
+            fileRecords[entry.ExtractionKey] = file;
         }
     }
 }

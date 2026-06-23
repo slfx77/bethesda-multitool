@@ -3,21 +3,23 @@
 
 using System.CommandLine;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Bsa;
 
 /// <summary>
-///     CLI commands for BSA file searching and inspection (bsa find, bsa inspect).
+///     CLI commands for archive file searching and inspection (<c>archive find</c>, <c>archive inspect</c>).
+///     Format-agnostic via <see cref="ArchiveReader" /> — accepts BSA or BA2.
 /// </summary>
 internal static class BsaFindCommand
 {
     public static Command CreateFindCommand()
     {
-        var command = new Command("find", "Search for files matching a pattern in a BSA archive");
+        var command = new Command("find", "Search for files matching a pattern in an archive (BSA or BA2)");
 
-        var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
+        var inputArg = new Argument<string>("input") { Description = "Path to BSA or BA2 file" };
         var patternArg = new Argument<string>("pattern") { Description = "Search pattern (substring match)" };
         var limitOpt = new Option<int>("-l", "--limit")
         {
@@ -43,10 +45,10 @@ internal static class BsaFindCommand
 
     public static Command CreateInspectCommand()
     {
-        var command = new Command("inspect", "Inspect a file's raw bytes and metadata in a BSA archive");
+        var command = new Command("inspect", "Inspect a file's metadata and leading bytes in an archive");
 
-        var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
-        var filenameArg = new Argument<string>("filename") { Description = "File path within BSA (substring match)" };
+        var inputArg = new Argument<string>("input") { Description = "Path to BSA or BA2 file" };
+        var filenameArg = new Argument<string>("filename") { Description = "File path within archive (substring match)" };
 
         command.Arguments.Add(inputArg);
         command.Arguments.Add(filenameArg);
@@ -70,9 +72,9 @@ internal static class BsaFindCommand
             return;
         }
 
-        var archive = BsaParser.Parse(input);
-        var searchPattern = pattern.Replace("*", "").ToLowerInvariant();
-        var matches = archive.AllFiles
+        using var reader = ArchiveReader.Open(input);
+        var searchPattern = pattern.Replace("*", "");
+        var matches = reader.ListFiles()
             .Where(f => f.FullPath.Contains(searchPattern, StringComparison.OrdinalIgnoreCase))
             .Take(limit)
             .ToList();
@@ -89,12 +91,11 @@ internal static class BsaFindCommand
 
         foreach (var file in matches)
         {
-            var isCompressed = archive.Header.DefaultCompressed != file.CompressionToggle;
             table.AddRow(
-                file.FullPath,
+                Markup.Escape(file.FullPath),
                 $"0x{file.Offset:X8}",
                 CliHelpers.FormatSize(file.Size),
-                isCompressed ? "[green]Yes[/]" : "");
+                file.Compressed ? "[green]Yes[/]" : "");
         }
 
         AnsiConsole.Write(table);
@@ -108,16 +109,15 @@ internal static class BsaFindCommand
             return;
         }
 
-        var archive = BsaParser.Parse(input);
-        var searchName = filename.ToLowerInvariant();
+        using var reader = ArchiveReader.Open(input);
 
-        var file = archive.AllFiles.FirstOrDefault(f =>
-            f.FullPath.Equals(searchName, StringComparison.OrdinalIgnoreCase) ||
-            f.FullPath.Contains(searchName, StringComparison.OrdinalIgnoreCase));
+        var file = reader.ListFiles().FirstOrDefault(f =>
+            f.FullPath.Equals(filename, StringComparison.OrdinalIgnoreCase) ||
+            f.FullPath.Contains(filename, StringComparison.OrdinalIgnoreCase));
 
         if (file == null)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] File not found in BSA: {0}", Markup.Escape(filename));
+            AnsiConsole.MarkupLine("[red]Error:[/] File not found in archive: {0}", Markup.Escape(filename));
             return;
         }
 
@@ -126,32 +126,25 @@ internal static class BsaFindCommand
         table.AddColumn("Value");
         table.Border = TableBorder.Rounded;
 
-        table.AddRow("Path", file.FullPath);
+        table.AddRow("Path", Markup.Escape(file.FullPath));
         table.AddRow("Offset", $"0x{file.Offset:X8} ({file.Offset})");
         table.AddRow("Size", $"{file.Size:N0} bytes");
-        table.AddRow("Compression Toggle", file.CompressionToggle.ToString());
-        table.AddRow("Archive Default Compressed", archive.Header.DefaultCompressed.ToString());
-        table.AddRow("Actually Compressed", (archive.Header.DefaultCompressed != file.CompressionToggle).ToString());
+        table.AddRow("Compressed", file.Compressed.ToString());
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
 
-        // Read and display raw bytes
-        using var fs = File.OpenRead(input);
-        fs.Position = file.Offset;
+        // Extract and display the leading bytes of the actual file content (decompressed).
+        var data = reader.Extract(file);
+        var readSize = Math.Min(data.Length, 256);
 
-        var readSize = Math.Min((int)file.Size, 256);
-        var buffer = new byte[readSize];
-        var bytesRead = fs.Read(buffer, 0, readSize);
+        AnsiConsole.MarkupLine("[bold]First {0} bytes of extracted content:[/]", readSize);
+        BsaDebugCommand.PrintHexDump(data, readSize, 0);
 
-        AnsiConsole.MarkupLine("[bold]First {0} bytes at offset 0x{1:X8}:[/]", bytesRead, file.Offset);
-        BsaDebugCommand.PrintHexDump(buffer, bytesRead, file.Offset);
-
-        // File type identification
         AnsiConsole.WriteLine();
-        if (bytesRead >= 4)
+        if (readSize >= 4)
         {
-            var magicStr = Encoding.ASCII.GetString(buffer, 0, Math.Min(4, bytesRead));
+            var magicStr = Encoding.ASCII.GetString(data, 0, Math.Min(4, readSize));
             AnsiConsole.MarkupLine("[bold]Magic:[/] {0}", Markup.Escape(magicStr.Replace("\0", "\\0")));
         }
     }

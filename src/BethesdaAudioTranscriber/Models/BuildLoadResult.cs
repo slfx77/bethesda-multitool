@@ -1,20 +1,21 @@
+using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa;
 namespace BethesdaAudioTranscriber.Models;
 
 /// <summary>
 ///     Result of loading a build directory.
-///     Separates XAML-bindable VoiceFileEntry from BSA-internal BsaFileRecord.
+///     Separates XAML-bindable VoiceFileEntry from the archive-internal entry record.
 /// </summary>
 public class BuildLoadResult
 {
-    /// <summary>All parsed voice file entries (XAML-safe, no BSA record references).</summary>
+    /// <summary>All parsed voice file entries (XAML-safe, no archive record references).</summary>
     public List<VoiceFileEntry> Entries { get; init; } = [];
 
     /// <summary>
-    ///     Lookup from extraction key (BsaFilePath|BsaPath) to BsaFileRecord.
+    ///     Lookup from extraction key (BsaFilePath|BsaPath) to the backing archive entry (BSA or BA2).
     ///     Used by AudioPlaybackService for on-demand extraction.
     /// </summary>
-    public Dictionary<string, BsaFileRecord> FileRecords { get; init; } = new();
+    public Dictionary<string, ArchiveReader.ArchiveEntry> FileRecords { get; init; } = new();
 
     // ESM enrichment heuristics
 

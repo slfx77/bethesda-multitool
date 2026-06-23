@@ -3,7 +3,10 @@
 
 using System.CommandLine;
 using System.Security.Cryptography;
+using BethesdaMultitool.Core.Formats.Bsa.Extraction;
+using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Bsa;
@@ -42,6 +45,14 @@ internal static class BsaValidateCommand
         if (!File.Exists(input))
         {
             AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", input);
+            return;
+        }
+
+        if (Ba2Parser.IsBa2File(input))
+        {
+            AnsiConsole.MarkupLine(
+                "[yellow]Note:[/] '{0}' is a BA2 (PC) archive. validate performs a BSA extract→repack " +
+                "round-trip and applies only to BSA archives (there is no BA2 writer).", Path.GetFileName(input));
             return;
         }
 

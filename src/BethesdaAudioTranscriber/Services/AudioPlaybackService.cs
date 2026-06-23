@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Bsa.Extraction;
+using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaAudioTranscriber.Models;
 using NAudio.Wave;
@@ -5,16 +7,17 @@ using NAudio.Wave;
 namespace BethesdaAudioTranscriber.Services;
 
 /// <summary>
-///     Handles audio extraction from BSA and playback via NAudio.
-///     Uses BsaExtractor for on-demand extraction and XMA→WAV conversion.
+///     Handles audio extraction from an archive (BSA or BA2) and playback via NAudio.
+///     Uses <see cref="ArchiveReader" /> for on-demand extraction; XMA→WAV conversion is applied for
+///     Xbox 360 BSA voices via the underlying BSA extractor.
 /// </summary>
 public sealed class AudioPlaybackService : IDisposable
 {
     private readonly LinkedList<(string key, byte[] data)> _cache = new();
-    private readonly Dictionary<string, BsaExtractor> _extractors = new();
+    private readonly Dictionary<string, ArchiveReader> _readers = new();
     private readonly int _maxCacheSize;
     private RawSourceWaveStream? _currentStream;
-    private Dictionary<string, BsaFileRecord> _fileRecords = new();
+    private Dictionary<string, ArchiveReader.ArchiveEntry> _fileRecords = new();
 
     private WaveOutEvent? _waveOut;
 
@@ -36,19 +39,19 @@ public sealed class AudioPlaybackService : IDisposable
     {
         Stop();
 
-        foreach (var extractor in _extractors.Values)
+        foreach (var reader in _readers.Values)
         {
-            extractor.Dispose();
+            reader.Dispose();
         }
 
-        _extractors.Clear();
+        _readers.Clear();
         _cache.Clear();
     }
 
     /// <summary>
     ///     Set the file record lookup from BuildLoadResult.
     /// </summary>
-    public void SetFileRecords(Dictionary<string, BsaFileRecord> fileRecords)
+    public void SetFileRecords(Dictionary<string, ArchiveReader.ArchiveEntry> fileRecords)
     {
         _fileRecords = fileRecords;
     }
@@ -161,15 +164,15 @@ public sealed class AudioPlaybackService : IDisposable
             return null;
         }
 
-        var extractor = GetOrCreateExtractor(entry.BsaFilePath);
-        var rawData = extractor.ExtractFile(fileRecord);
+        var reader = GetOrCreateReader(entry.BsaFilePath);
+        var rawData = reader.Extract(fileRecord);
 
         byte[] wavData;
 
-        if (entry.Extension == "xma")
+        if (entry.Extension == "xma" && reader.AsBsaExtractor is { } bsaExtractor)
         {
-            // Convert XMA→WAV via BsaExtractor's built-in conversion
-            var result = await extractor.ConvertXmaAsync(rawData);
+            // Convert XMA→WAV via the BSA extractor's built-in conversion (Xbox 360 voices only).
+            var result = await bsaExtractor.ConvertXmaAsync(rawData);
             if (!result.Success || result.OutputData == null)
             {
                 Console.WriteLine($"[AudioPlayback] XMA conversion failed for {entry.BsaPath}: {result.Notes}");
@@ -180,7 +183,7 @@ public sealed class AudioPlaybackService : IDisposable
         }
         else
         {
-            // Already WAV or other format
+            // Already WAV/other format, or a BA2 (PC) archive with no XMA conversion.
             wavData = rawData;
         }
 
@@ -195,8 +198,8 @@ public sealed class AudioPlaybackService : IDisposable
     }
 
     /// <summary>
-    ///     Extract raw audio bytes from BSA without caching.
-    ///     Thread-safe for concurrent batch use (BsaExtractor.ExtractFile is lock-free,
+    ///     Extract raw audio bytes from the archive without caching.
+    ///     Thread-safe for concurrent batch use (ArchiveReader.Extract is lock-free,
     ///     ConvertXmaAsync spawns independent FFmpeg processes).
     /// </summary>
     public async Task<byte[]?> ExtractWavNoCacheAsync(VoiceFileEntry entry, CancellationToken ct = default)
@@ -206,17 +209,17 @@ public sealed class AudioPlaybackService : IDisposable
             return null;
         }
 
-        BsaExtractor extractor;
-        lock (_extractors)
+        ArchiveReader reader;
+        lock (_readers)
         {
-            extractor = GetOrCreateExtractor(entry.BsaFilePath);
+            reader = GetOrCreateReader(entry.BsaFilePath);
         }
 
-        var rawData = extractor.ExtractFile(fileRecord);
+        var rawData = reader.Extract(fileRecord);
 
-        if (entry.Extension == "xma")
+        if (entry.Extension == "xma" && reader.AsBsaExtractor is { } bsaExtractor)
         {
-            var result = await extractor.ConvertXmaAsync(rawData);
+            var result = await bsaExtractor.ConvertXmaAsync(rawData);
             if (!result.Success || result.OutputData == null)
             {
                 return null;
@@ -228,15 +231,15 @@ public sealed class AudioPlaybackService : IDisposable
         return rawData;
     }
 
-    private BsaExtractor GetOrCreateExtractor(string bsaPath)
+    private ArchiveReader GetOrCreateReader(string archivePath)
     {
-        if (!_extractors.TryGetValue(bsaPath, out var extractor))
+        if (!_readers.TryGetValue(archivePath, out var reader))
         {
-            extractor = new BsaExtractor(bsaPath);
-            extractor.EnableXmaConversion(true);
-            _extractors[bsaPath] = extractor;
+            reader = ArchiveReader.Open(archivePath);
+            reader.AsBsaExtractor?.EnableXmaConversion(true);
+            _readers[archivePath] = reader;
         }
 
-        return extractor;
+        return reader;
     }
 }

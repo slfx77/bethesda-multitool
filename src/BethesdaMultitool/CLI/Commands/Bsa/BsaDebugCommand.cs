@@ -3,7 +3,10 @@
 
 using System.CommandLine;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Bsa.Index;
+using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Bsa;
@@ -39,9 +42,9 @@ internal static class BsaDebugCommand
 
     public static Command CreateRawDumpCommand()
     {
-        var command = new Command("rawdump", "Dump raw bytes at a specific offset in a BSA file");
+        var command = new Command("rawdump", "Dump raw bytes at a specific offset in an archive file");
 
-        var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
+        var inputArg = new Argument<string>("input") { Description = "Path to BSA or BA2 file" };
         var offsetArg = new Argument<long>("offset") { Description = "File offset (decimal or 0x hex)" };
         var lengthArg = new Argument<int>("length") { Description = "Number of bytes to dump" };
 
@@ -63,10 +66,10 @@ internal static class BsaDebugCommand
 
     public static Command CreateFileCompareCommand()
     {
-        var command = new Command("file-compare", "Compare a file in a BSA against an extracted copy");
+        var command = new Command("file-compare", "Compare a file in an archive against an extracted copy");
 
-        var inputArg = new Argument<string>("input") { Description = "Path to BSA file" };
-        var filenameArg = new Argument<string>("filename") { Description = "File path within BSA (substring match)" };
+        var inputArg = new Argument<string>("input") { Description = "Path to BSA or BA2 file" };
+        var filenameArg = new Argument<string>("filename") { Description = "File path within archive (substring match)" };
         var extractedArg = new Argument<string>("extracted") { Description = "Path to extracted file on disk" };
 
         command.Arguments.Add(inputArg);
@@ -113,7 +116,7 @@ internal static class BsaDebugCommand
     {
         if (!File.Exists(bsaPath))
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] BSA file not found: {0}", bsaPath);
+            AnsiConsole.MarkupLine("[red]Error:[/] Archive file not found: {0}", bsaPath);
             return;
         }
 
@@ -123,20 +126,18 @@ internal static class BsaDebugCommand
             return;
         }
 
-        var archive = BsaParser.Parse(bsaPath);
-        var searchName = filename.ToLowerInvariant();
+        using var reader = ArchiveReader.Open(bsaPath);
 
-        var file = archive.AllFiles.FirstOrDefault(f =>
-            f.FullPath.Contains(searchName, StringComparison.OrdinalIgnoreCase));
+        var file = reader.ListFiles().FirstOrDefault(f =>
+            f.FullPath.Contains(filename, StringComparison.OrdinalIgnoreCase));
 
         if (file == null)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] File not found in BSA: {0}", Markup.Escape(filename));
+            AnsiConsole.MarkupLine("[red]Error:[/] File not found in archive: {0}", Markup.Escape(filename));
             return;
         }
 
-        using var extractor = new BsaExtractor(bsaPath);
-        var bsaData = extractor.ExtractFile(file);
+        var bsaData = reader.Extract(file);
         var extractedData = File.ReadAllBytes(extractedPath);
 
         var table = new Table();
@@ -144,19 +145,19 @@ internal static class BsaDebugCommand
         table.AddColumn("Size");
         table.Border = TableBorder.Rounded;
 
-        table.AddRow("BSA (decompressed)", $"{bsaData.Length:N0} bytes");
+        table.AddRow("Archive (decompressed)", $"{bsaData.Length:N0} bytes");
         table.AddRow("Extracted file", $"{extractedData.Length:N0} bytes");
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
 
         if (bsaData.Length != extractedData.Length)
         {
-            AnsiConsole.MarkupLine("[red]SIZE MISMATCH[/]: BSA={0:N0}, Extracted={1:N0}", bsaData.Length,
+            AnsiConsole.MarkupLine("[red]SIZE MISMATCH[/]: Archive={0:N0}, Extracted={1:N0}", bsaData.Length,
                 extractedData.Length);
         }
         else if (bsaData.SequenceEqual(extractedData))
         {
-            AnsiConsole.MarkupLine("[green]MATCH[/]: Extracted file matches BSA content exactly");
+            AnsiConsole.MarkupLine("[green]MATCH[/]: Extracted file matches archive content exactly");
         }
         else
         {
@@ -186,6 +187,14 @@ internal static class BsaDebugCommand
         if (!File.Exists(file2Path))
         {
             AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", file2Path);
+            return;
+        }
+
+        if (Ba2Parser.IsBa2File(file1Path) || Ba2Parser.IsBa2File(file2Path))
+        {
+            AnsiConsole.MarkupLine(
+                "[yellow]Note:[/] compare inspects BSA header/folder-hash structure and applies only to " +
+                "BSA archives; BA2 is a different container with no equivalent comparison.");
             return;
         }
 
