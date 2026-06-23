@@ -1,8 +1,11 @@
+using System.IO;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif;
+using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 
 namespace BethesdaMultitool;
 
@@ -75,9 +78,185 @@ public sealed partial class WorldView3DControl
         _sunGlareTexIndex = Resolve(paths.SunGlare);
         _moonTexIndex = Resolve(paths.Moon);
         _moonSecundaTexIndex = Resolve(paths.Secunda);
-        _cloudTexIndex = Resolve(paths.Cloud);
-        _starTexIndex = Resolve(paths.Star);
+
+        // Rebuild the real sky-dome geometry (atmosphere/stars/clouds NIFs) for this climate + weather.
+        // The dome layers carry their own per-layer textures, so the single cloud/star indices the old
+        // procedural dome used are gone — stars come from the sky NIF, clouds from the active weather.
+        RebuildSkyGeometry(climate, weather);
     }
+
+    // Loads the climate's real sky-dome NIFs (the engine's own sky set — atmosphere, stars, clouds, in
+    // render order) and hands their geometry + per-layer textures to the sky-geometry renderer. The cloud
+    // layers' textures come from the ACTIVE WEATHER (version-driven), so the sky is drawn from the loaded
+    // data, not a procedural approximation. Cleared for interiors / no-climate worldspaces.
+    private void RebuildSkyGeometry(ClimateRecord? climate, WeatherRecord? weather)
+    {
+        if (_skyGeometry is null) return;
+        _skyGeometry.Clear();
+        if (_textureResolver12 is null || _meshArchives is null ||
+            climate?.ModelPath is not string modl || string.IsNullOrWhiteSpace(modl))
+        {
+            return;
+        }
+
+        // The climate MODL is the stars dome (e.g. "Sky\Stars.nif"); the engine draws its sibling clouds
+        // dome from the same sky directory. The atmosphere gradient is the renderer's fallback dome (so it
+        // works for every game), so only the textured stars + clouds NIFs are loaded here.
+        var skyDir = Path.GetDirectoryName(modl.Replace('/', '\\')) ?? string.Empty;
+        var layers = new List<SkyGeometryLayer>();
+        AddSkyNifLayers(layers, modl, weather);
+        AddSkyNifLayers(layers, Path.Combine(skyDir, "Clouds.nif"), weather);
+        if (layers.Count > 0)
+        {
+            _skyGeometry.SetLayers(layers);
+        }
+    }
+
+
+    // Extracts one sky NIF's renderable layers (filtered to sky-shader submeshes) and appends them as
+    // cooked render layers. Stars take the sky NIF's baked texture; clouds take the active weather's
+    // cloud-layer texture by ordinal (falling back to the NIF's baked one); the gradient needs none.
+    private void AddSkyNifLayers(List<SkyGeometryLayer> layers, string modlPath, WeatherRecord? weather)
+    {
+        var submeshes = TryLoadSkyNif(modlPath);
+        if (submeshes is null) return;
+
+        var cloudOrdinal = 0;
+        foreach (var sm in submeshes)
+        {
+            if (sm.SkyType is not SkyObjectType type || sm.Triangles.Length == 0)
+            {
+                continue;
+            }
+
+            var texIndex = uint.MaxValue;
+            var scrollSpeed = Vector2.Zero;
+            WeatherColor? cloudColor = null;
+            if (type == SkyObjectType.Clouds)
+            {
+                // The engine textures clouds.nif's (up to 4) cloud-layer shapes from the ACTIVE weather's
+                // cloud textures in order (Clouds::Initialize attaches the shapes; Clouds::Update indexes
+                // them 1:1 with the weather's per-layer textures — MemDebug XEX). A weather marks an UNUSED
+                // layer by binding it to sky\alpha.dds, a fully transparent texture: FNV clear weather is
+                // [alpha, alpha, alpha, NVCloudlight] — i.e. ONE real cloud sheet, three empty placeholders.
+                // So we draw ONLY the weather's real (non-alpha) layers, with no baked-NIF fallback. Drawing
+                // every baked cap (or the alpha placeholders) was the "5 separate domes" bug — it rendered
+                // all four authored cloud shapes at once instead of the single sheet the engine shows.
+                var layerIndex = cloudOrdinal;
+                cloudOrdinal++;
+                var cloudPath = WeatherCloudTexture(weather, layerIndex);
+                if (cloudPath is null || IsUnusedCloudLayer(cloudPath)) continue;
+                texIndex = ResolveSkyTexture(cloudPath);
+                if (texIndex == uint.MaxValue) continue; // texture missing -> don't draw it
+
+                // This layer's per-draw color (PNAM) + drift speed (QNAM/RNAM) — the engine drives each
+                // cloud layer's color/opacity and scroll independently (SkyShader::SetupGeometryConstants /
+                // Clouds::Update). Both are indexed by the SAME layer ordinal as the textures above.
+                cloudColor = WeatherCloudColor(weather, layerIndex);
+                scrollSpeed = WeatherCloudScroll(weather, layerIndex);
+            }
+            else if (type == SkyObjectType.Stars)
+            {
+                texIndex = ResolveSkyTexture(sm.DiffuseTexturePath);
+                if (texIndex == uint.MaxValue) continue;
+            }
+
+            layers.Add(new SkyGeometryLayer
+            {
+                Positions = sm.Positions,
+                Uvs = sm.UVs,
+                // The cloud/star caps carry the engine's horizon fade in their per-vertex ALPHA
+                // (cloudcloudy ~2 at the rim → 255 overhead) — hand it to the renderer so the sky fades
+                // exactly as the mesh authors baked it, instead of a guessed shader curve.
+                VertexColors = sm.VertexColors,
+                Indices = sm.Triangles,
+                Type = type,
+                TextureIndex = texIndex,
+                ScrollSpeed = scrollSpeed,
+                CloudColor = cloudColor,
+            });
+        }
+    }
+
+    private uint ResolveSkyTexture(string? path) =>
+        path is null || _textureResolver12 is null
+            ? uint.MaxValue
+            : _textureResolver12.ResolveDiffuseBindlessIndex(path) ?? uint.MaxValue;
+
+    // Loads + extracts a sky NIF from the mesh archives (big-endian Xbox NIFs converted first). Returns the
+    // renderable submeshes (each carrying its SkyType + baked texture) or null when absent/unparseable.
+    private List<RenderableSubmesh>? TryLoadSkyNif(string modlPath)
+    {
+        if (_meshArchives is null || string.IsNullOrWhiteSpace(modlPath)) return null;
+
+        var meshPath = modlPath.Replace('/', '\\').TrimStart('\\');
+        if (!meshPath.StartsWith(@"meshes\", StringComparison.OrdinalIgnoreCase))
+        {
+            meshPath = @"meshes\" + meshPath;
+        }
+
+        if (!_meshArchives.TryExtractFile(meshPath, out var bytes, out _)) return null;
+
+        var nif = NifParser.Parse(bytes);
+        if (nif is null) return null;
+        if (nif.IsBigEndian)
+        {
+            var converted = NifConverter.Convert(bytes);
+            if (!converted.Success || converted.OutputData is null) return null;
+            bytes = converted.OutputData;
+            nif = NifParser.Parse(bytes);
+            if (nif is null) return null;
+        }
+
+        try
+        {
+            return NifGeometryExtractor.Extract(bytes, nif)?.Submeshes;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // The active weather's cloud-layer texture for a cloud dome shape's ordinal. WeatherRecord.CloudLayerTextures
+    // is already unified across games by the parser (FO3/FNV DNAM/CNAM/ANAM/BNAM + Skyrim+ ?0TX, in layer
+    // order, per xEdit wbWeatherCloudTextures), so this is game-agnostic. NOTE: Skyrim's clouds.nif has more
+    // shapes than weather layers; shapes past the last layer get no texture and are skipped — the exact
+    // shape<->layer correspondence is a NIF follow-up (clouds.nif node names / Sky::ReloadAllTextures).
+    private static string? WeatherCloudTexture(WeatherRecord? weather, int ordinal)
+    {
+        if (weather is null) return null;
+        var clouds = weather.CloudLayerTextures;
+        return ordinal >= 0 && ordinal < clouds.Count ? clouds[ordinal] : null;
+    }
+
+    // A weather binds sky\alpha.dds to a cloud layer to mean "unused this weather" — a fully transparent
+    // texture. The engine renders nothing for such a layer; we likewise skip it so we draw only the
+    // weather's real cloud sheet(s) instead of empty placeholder dome caps.
+    private static bool IsUnusedCloudLayer(string path) =>
+        Path.GetFileNameWithoutExtension(path).Equals("alpha", StringComparison.OrdinalIgnoreCase);
+
+    // The active weather's PNAM cloud color for a layer ordinal (RGB tint + A opacity, per time-of-day).
+    // The renderer blends its time bands by the game hour — the engine's per-draw cloud color uniform.
+    private static WeatherColor? WeatherCloudColor(WeatherRecord? weather, int layer)
+    {
+        var colors = weather?.CloudColors;
+        return colors is not null && layer >= 0 && layer < colors.Count ? colors[layer] : null;
+    }
+
+    // Per-layer cloud UV drift from the weather's QNAM (X) / RNAM (Y) speed bytes. Read as SIGNED (sbyte)
+    // so 0 = still and the sign gives the drift direction, scaled to a slow UV/sec rate. CloudScrollScale
+    // is the one visual tunable; the per-layer RELATIVE speeds + axes are the data-grounded part (the exact
+    // engine speed constant lives in the binary's data section — Clouds::Update scales the byte by it).
+    private static Vector2 WeatherCloudScroll(WeatherRecord? weather, int layer)
+    {
+        if (weather is null) return Vector2.Zero;
+        var x = layer < weather.CloudSpeedsX.Count ? (sbyte)weather.CloudSpeedsX[layer] : (sbyte)0;
+        var y = layer < weather.CloudSpeedsY.Count ? (sbyte)weather.CloudSpeedsY[layer] : (sbyte)0;
+        return new Vector2(x / 127f, y / 127f) * CloudScrollScale;
+    }
+
+    private const float CloudScrollScale = 0.010f; // UV/sec at full (±127) cloud speed — the visual tunable
 
     // Conventional sky-element asset names, tried against the LOADED archives (first existing wins). This
     // is NOT a per-game path table: an asset is used only if the loaded game actually ships it, so the
@@ -90,17 +269,33 @@ public sealed partial class WorldView3DControl
     private static readonly string[] SecundaCandidates =
         { @"textures\sky\secunda_full.dds" };
 
+    // The sun/moon/secunda billboards + the moon/star archive-probe fallbacks reproduce the
+    // early-Gamebryo/Creation sky (Oblivion, FO3, FNV, Skyrim). Games whose sky the viewer models
+    // differently (FO4/FO76/Starfield) or not at all (Morrowind/Unknown) must NOT probe a moon — else a
+    // conventional sky-texture name that happens to exist in the loaded game's OWN archives gets drawn as
+    // a billboard moon it never had. Mirrors the dome-layer "unknown game → skip layers" gating.
+    private bool GameHasSkyBillboards() => _data?.Game is
+        BethesdaMultitool.Core.Games.BethesdaGame.Oblivion
+        or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3
+        or BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas
+        or BethesdaMultitool.Core.Games.BethesdaGame.Skyrim;
+
     // Builds the sky texture set from the loaded climate + weather. Stars come from the climate's own
     // MODL sky-dome NIF (the sky-shader block tagged STARS); clouds from the active weather's last
     // meaningful cloud layer; moons by probing the loaded archives (engine-procedural, not in the data).
     private SkyTexturePaths ResolveSkyTexturePaths(ClimateRecord? climate, WeatherRecord? weather)
     {
+        // The generic moon/secunda/star archive PROBE is only a billboard-sky feature; gate it on the game
+        // so a non-billboard game (FO4/FO76/Starfield/Morrowind) can't surface a probe match as a moon.
+        var billboards = GameHasSkyBillboards();
+
         // Skyrim's stars.nif tags FOUR blocks STARS (base stars + two constellation layers + galaxy); the
         // single-layer skybox wants the dense base field, so prefer the one whose name reads like "stars"
         // (FNV has just one — SkyStars.dds — which also matches). Falls back to the first STARS block, then
-        // an archive probe when no sky NIF is harvestable.
+        // an archive probe when no sky NIF is harvestable. The HARVEST stays ungated (it reads the loaded
+        // game's own climate NIF); only the generic probe fallback is gated.
         var star = HarvestSkyNifTexture(climate?.ModelPath, SkyObjectType.Stars, preferNameContains: "star")
-                   ?? ProbeFirstExisting(StarCandidates);
+                   ?? (billboards ? ProbeFirstExisting(StarCandidates) : null);
 
         var cloud = PickCloudTexture(weather)
                     ?? HarvestSkyNifTexture(climate?.ModelPath, SkyObjectType.Clouds, preferNameContains: null);
@@ -110,8 +305,8 @@ public sealed partial class WorldView3DControl
             SunGlare: climate?.SunGlareTexture,
             Cloud: cloud,
             Star: star,
-            Moon: ProbeFirstExisting(MoonCandidates),
-            Secunda: ProbeFirstExisting(SecundaCandidates));
+            Moon: billboards ? ProbeFirstExisting(MoonCandidates) : null,
+            Secunda: billboards ? ProbeFirstExisting(SecundaCandidates) : null);
     }
 
     // The active weather's clouds = its last non-placeholder cloud layer (DNAM/CNAM/ANAM/BNAM, layer
@@ -214,10 +409,10 @@ public sealed partial class WorldView3DControl
         var nightDim = MathF.Min(1f, 0.25f + (0.75f * daylight)); // clouds 0.25× at night → 1× by day
         var cloudOpacity = exterior ? 0.55f * nightDim : 0f;
         var domeStarFade = exterior ? starFade : 0f;
-        // Sky dome centered on the camera at the sky-billboard radius: gradient + stars on the dome,
-        // clouds on a flat overhead plane.
-        _skyDome?.Render(viewProj, _camera.Position, 30000f,
-            cloudTint, cloudOpacity, _cloudTexIndex, starTint, domeStarFade, _starTexIndex);
+        // Real sky-dome NIF geometry centered on the camera: atmosphere gradient + stars + cloud layers,
+        // each on its authored UVs. Per-layer textures were resolved in EnsureSkyTexturesResolved.
+        _skyGeometry?.Render(viewProj, _camera.Position,
+            cloudTint, cloudOpacity, starTint, domeStarFade, _gameHour, _currentClimateTiming);
 
         if (exterior)
         {
@@ -274,60 +469,32 @@ public sealed partial class WorldView3DControl
             secundaDir, moonFade, _moonSecundaTexIndex);
     }
 
-    /// <summary>Maps the weather dropdown's current selection to <see cref="_selectedWeather" /> (the
-    /// "(Climate default)" item resolves to the current worldspace default, or null = placeholder).</summary>
+    /// <summary>Maps the lighting panel's current weather selection to <see cref="_selectedWeather" />
+    /// (the "(Climate default)" item resolves to the current worldspace default).</summary>
     private void ApplyWeatherSelection()
     {
-        if (WeatherComboBox?.SelectedItem is WeatherDropdownItem item)
-        {
-            _selectedWeather = item.IsClimateDefault ? _climateDefaultWeather : item.Weather;
-        }
-        else
-        {
-            _selectedWeather = null;
-        }
+        var sel = LightingPanel.CurrentWeatherSelection;
+        _selectedWeather = sel.IsClimateDefault ? _climateDefaultWeather : sel.Weather;
     }
 
-    /// <summary>Builds the weather dropdown once per load: a "(Climate default)" entry plus every
-    /// weather in the file (by EditorId). Defaults the selection to "(Climate default)".</summary>
+    /// <summary>Builds the weather dropdown once per load via the shared lighting panel: a
+    /// "(Climate default)" entry plus every weather in the file. Defaults to "(Climate default)".</summary>
     private void PopulateWeatherDropdown()
     {
-        if (WeatherComboBox is null || _data is null) return;
-
-        var items = new List<WeatherDropdownItem> { new("(Climate default)", null, true) };
-        foreach (var w in _data.AllWeathers)
-        {
-            items.Add(new WeatherDropdownItem(WeatherLabel(w), w, false));
-        }
-
-        _suppressWeatherSelectionEvent = true;
-        WeatherComboBox.ItemsSource = items;
-        WeatherComboBox.SelectedIndex = 0;
-        _suppressWeatherSelectionEvent = false;
+        if (_data is null) return;
+        LightingPanel.SetWeathers(_data.AllWeathers);
     }
 
-    private void WeatherComboBox_SelectionChanged(object sender, Microsoft.UI.Xaml.Controls.SelectionChangedEventArgs e)
+    private void LightingPanel_WeatherChanged(object? sender, WeatherSelection sel)
     {
         // Null-guard _data — the handler can early-fire during XAML load before LoadData runs.
-        if (_suppressWeatherSelectionEvent || _data is null) return;
-        ApplyWeatherSelection();
+        if (_data is null) return;
+        _selectedWeather = sel.IsClimateDefault ? _climateDefaultWeather : sel.Weather;
     }
 
-    private void TimeSlider_ValueChanged(
-        object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    private void LightingPanel_TimeChanged(object? sender, double hour)
     {
         // Continuous input — no _show flag; the next frame's BindAtmosphereConstants reads _gameHour.
-        _gameHour = (float)e.NewValue;
-    }
-
-    private static string WeatherLabel(WeatherRecord w) =>
-        string.IsNullOrEmpty(w.EditorId) ? $"0x{w.FormId:X8}" : $"{w.EditorId} (0x{w.FormId:X8})";
-
-    /// <summary>One weather dropdown entry. The first item is the climate-default sentinel
-    /// (<see cref="IsClimateDefault" /> true, <see cref="Weather" /> resolved per worldspace at
-    /// selection time); the rest carry a concrete weather. <see cref="ToString" /> drives the display.</summary>
-    private sealed record WeatherDropdownItem(string Label, WeatherRecord? Weather, bool IsClimateDefault)
-    {
-        public override string ToString() => Label;
+        _gameHour = (float)hour;
     }
 }

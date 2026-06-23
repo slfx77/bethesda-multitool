@@ -67,12 +67,20 @@ public sealed partial class WorldMapControl
 
         _currentLayer = values[idx];
 
-        // Color scheme only applies to the heightmap layer (user-confirmed).
+        // Color scheme only applies to the heightmap layer (user-confirmed); the terrain-shading
+        // dropdown only to the textured layer. They're mutually exclusive by layer.
         // Null-guard because the SelectionChanged event can fire during XAML load before
         // sibling fields are assigned (see winui3_selectionchanged_early_fire memory).
         if (ColorSchemeComboBox is not null)
         {
             ColorSchemeComboBox.Visibility = _currentLayer == WorldMapLayer.Heightmap
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        if (TerrainShadingComboBox is not null)
+        {
+            TerrainShadingComboBox.Visibility = _currentLayer == WorldMapLayer.TerrainTextures
                 ? Visibility.Visible
                 : Visibility.Collapsed;
         }
@@ -86,6 +94,42 @@ public sealed partial class WorldMapControl
 
         MapCanvas?.Invalidate();
     }
+
+    private void TerrainShadingComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TerrainShadingComboBox is null) return;
+        var idx = TerrainShadingComboBox.SelectedIndex;
+        var values = Enum.GetValues<TerrainShadingMode>();
+        if (idx < 0 || idx >= values.Length || values[idx] == _terrainShading) return;
+
+        _terrainShading = values[idx];
+
+        // Shading is baked into the terrain-texture cell bitmaps + aggregate, so a change must drop
+        // the texture caches and re-stream. keepCurrentBitmap:false → CancelTerrainStream + bump
+        // _layerCellBitmapsCacheGen (drops in-flight pre-change cells) + reset the aggregate.
+        InvalidateWorldBitmap(keepCurrentBitmap: false);
+        if (_cellHeightmapBitmap is not null && _state.SelectedCell is not null)
+        {
+            RebuildCellDetailBitmaps(_state.SelectedCell);
+        }
+        EnsureViewportTimerRunning();
+        MapCanvas?.Invalidate();
+    }
+
+    /// <summary>Display label for a terrain-shading mode in the dropdown.</summary>
+    private static string TerrainShadingDisplayName(TerrainShadingMode mode) => mode switch
+    {
+        TerrainShadingMode.None => "None",
+        TerrainShadingMode.VertexColors => "Vertex colors",
+        TerrainShadingMode.HillShade => "Hill-shade",
+        _ => mode.ToString()
+    };
+
+    /// <summary>Current terrain-texture shading selection plus the hillshade light direction (only
+    /// meaningful for the hill-shade mode; the light direction comes from the lighting control).</summary>
+    private TerrainShadingOptions CurrentTerrainShading() => new(
+        _terrainShading,
+        _terrainShading == TerrainShadingMode.HillShade ? CurrentHillshadeLightDir() : null);
 
     // ========================================================================
     // Profiler-driving surface (used by BethesdaMap2DProfiler to script

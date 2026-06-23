@@ -106,10 +106,10 @@ public sealed partial class WorldView3DControl
                 DetailedProfilingEnabled = _profileLogging,
             };
 
-            // Geometry-based sky DOME — the exterior sky: horizon→top gradient (shared b3 CB) + stars on
-            // the dome (lat-long UVs) + clouds on a flat overhead plane (gnomonic projection), sampling the
-            // shared bindless table. Its own b0 carries the cloud/star params.
-            _skyDome = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SkyDomeRenderer12(
+            // Real sky-dome NIF renderer — the exterior sky drawn from the climate's own Sky\*.nif
+            // (atmosphere gradient + stars + clouds layers) on their authored UVs. Per-layer geometry +
+            // textures are loaded from data in EnsureSkyTexturesResolved; reads the shared b3 sky colors.
+            _skyGeometry = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SkyGeometryRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _cbvSrvUavHeap12);
 
             // Textured sky billboards — sun (disc + glare) + moon, drawn after the gradient. Uses the

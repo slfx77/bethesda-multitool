@@ -35,7 +35,8 @@ internal static class WorldMapTextureBlitter
         WorldRenderCache? cache,
         int pixelsPerCell,
         IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid = null,
-        WaterColorPalette? waterPalette = null)
+        WaterColorPalette? waterPalette = null,
+        TerrainShadingOptions shading = default)
     {
         if (!cell.GridX.HasValue || !cell.GridY.HasValue) return null;
 
@@ -82,8 +83,109 @@ internal static class WorldMapTextureBlitter
         var rgba = new byte[pixelsPerCell * pixelsPerCell * 4];
         BlitTerrainTexturesBlended(rgba, pixelsPerCell, pixelsPerCell, table, palette,
             cell.GridX.Value, cell.GridY.Value, imgCellX: 0, imgCellY: 0);
+        // Modulate the diffuse by VCLR or hillshade BEFORE the water overlay so water stays unshaded.
+        if (shading.IsActive)
+        {
+            ApplyTerrainShading(rgba, pixelsPerCell, shading, cell, cache, cellByGrid);
+        }
         WorldMapWaterRenderer.ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, pixelsPerCell, cache, cellByGrid, waterPalette);
         return rgba;
+    }
+
+    /// <summary>
+    ///     Multiplies a freshly-blitted terrain-texture cell tile by its per-vertex modulation grid —
+    ///     either the VCLR vertex colors (engine-accurate terrain tint) or a Lambertian hillshade — both
+    ///     a 33×33 vertex grid bilinearly sampled up to <paramref name="pixelsPerCell" />. No-ops when the
+    ///     source grid is absent (no VCLR / no terrain), so the raw diffuse shows through.
+    /// </summary>
+    private static void ApplyTerrainShading(
+        byte[] rgba, int pixelsPerCell, TerrainShadingOptions shading,
+        CellRecord cell, WorldRenderCache? cache,
+        IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid)
+    {
+        byte[]? vc = null;        // 33×33×3 VCLR (LAND vertex order, north-up flip applied on read)
+        byte[]? shadeGray = null; // 33×33 hillshade gray (image order, row 0 = north)
+        if (shading.Mode == TerrainShadingMode.VertexColors)
+        {
+            vc = cell.LandVisualData?.VertexColors;
+            if (vc is not { Length: HmGridSize * HmGridSize * 3 }) return; // absent → white → no-op
+        }
+        else // HillShade
+        {
+            var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
+            if (!terrain.HasTerrain) return;
+            shadeGray = WorldMapLayerRenderer.ComputeCellHillshadeGray(
+                cell, terrain, cellByGrid, cache, shading.LightDir);
+        }
+
+        var pixelToVertex = (float)(HmGridSize - 1) / (pixelsPerCell - 1);
+        for (var py = 0; py < pixelsPerCell; py++)
+        {
+            var vyFloat = py * pixelToVertex;
+            var vy0 = (int)vyFloat;
+            if (vy0 > HmGridSize - 2) vy0 = HmGridSize - 2;
+            var fy = vyFloat - vy0;
+
+            for (var px = 0; px < pixelsPerCell; px++)
+            {
+                var vxFloat = px * pixelToVertex;
+                var vx0 = (int)vxFloat;
+                if (vx0 > HmGridSize - 2) vx0 = HmGridSize - 2;
+                var fx = vxFloat - vx0;
+
+                float mr, mg, mb; // modulation in 0..1
+                if (vc is not null)
+                {
+                    (mr, mg, mb) = BilinearVc(vc, vx0, vy0, fx, fy);
+                }
+                else
+                {
+                    var m = BilinearGray(shadeGray!, vx0, vy0, fx, fy);
+                    mr = mg = mb = m;
+                }
+
+                var dst = (py * pixelsPerCell + px) * 4;
+                rgba[dst] = (byte)(rgba[dst] * mr);
+                rgba[dst + 1] = (byte)(rgba[dst + 1] * mg);
+                rgba[dst + 2] = (byte)(rgba[dst + 2] * mb);
+            }
+        }
+    }
+
+    /// <summary>Bilinearly samples the VCLR grid at image-vertex (vx0+fx, vy0+fy), returning RGB in
+    /// 0..1. VCLR is stored in LAND vertex order, so the image row maps to source row 32 - vy.</summary>
+    private static (float r, float g, float b) BilinearVc(byte[] vc, int vx0, int vy0, float fx, float fy)
+    {
+        var (r00, g00, b00) = VcAt(vc, vx0, vy0);
+        var (r10, g10, b10) = VcAt(vc, vx0 + 1, vy0);
+        var (r01, g01, b01) = VcAt(vc, vx0, vy0 + 1);
+        var (r11, g11, b11) = VcAt(vc, vx0 + 1, vy0 + 1);
+        var w00 = (1f - fx) * (1f - fy);
+        var w10 = fx * (1f - fy);
+        var w01 = (1f - fx) * fy;
+        var w11 = fx * fy;
+        return (
+            (r00 * w00 + r10 * w10 + r01 * w01 + r11 * w11) / 255f,
+            (g00 * w00 + g10 * w10 + g01 * w01 + g11 * w11) / 255f,
+            (b00 * w00 + b10 * w10 + b01 * w01 + b11 * w11) / 255f);
+    }
+
+    /// <summary>One VCLR vertex (image row vyImg → source row 32 - vyImg, matching BlitVertexColorsToCell).</summary>
+    private static (float r, float g, float b) VcAt(byte[] vc, int vx, int vyImg)
+    {
+        var idx = ((HmGridSize - 1 - vyImg) * HmGridSize + vx) * 3;
+        return (vc[idx], vc[idx + 1], vc[idx + 2]);
+    }
+
+    /// <summary>Bilinearly samples the image-order gray grid at (vx0+fx, vy0+fy), returning 0..1.</summary>
+    private static float BilinearGray(byte[] gray, int vx0, int vy0, float fx, float fy)
+    {
+        var g00 = gray[vy0 * HmGridSize + vx0];
+        var g10 = gray[vy0 * HmGridSize + vx0 + 1];
+        var g01 = gray[(vy0 + 1) * HmGridSize + vx0];
+        var g11 = gray[(vy0 + 1) * HmGridSize + vx0 + 1];
+        return (g00 * (1f - fx) * (1f - fy) + g10 * fx * (1f - fy)
+                + g01 * (1f - fx) * fy + g11 * fx * fy) / 255f;
     }
 
     private static IReadOnlyList<LandTextureLayer>? NeighborLayers(

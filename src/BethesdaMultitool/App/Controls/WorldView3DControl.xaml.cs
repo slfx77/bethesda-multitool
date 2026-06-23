@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using SharpGen.Runtime;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -70,9 +71,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainRenderer12? _terrain;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.TerrainTextureResolver12? _textureResolver12;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.WaterRenderer12? _water;
-    // Geometry-based sky dome (SkyDomeMesh on real hemisphere geometry) — the exterior sky: horizon→top
-    // gradient + stars on the dome, clouds on a flat overhead plane (gnomonic projection in skydome.frag).
-    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SkyDomeRenderer12? _skyDome;
+    // Real climate sky-dome NIF renderer — the exterior sky drawn from the game's own Sky\*.nif geometry
+    // (atmosphere gradient + stars + clouds layers) on their authored UVs, replacing the procedural dome.
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SkyGeometryRenderer12? _skyGeometry;
     // Textured sky billboards (sun disc + glare, moon). Textures resolved per-climate via the terrain
     // texture cache; uint.MaxValue = SkyBillboardRenderer12.NoTexture (object skipped).
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SkyBillboardRenderer12? _skyBillboards;
@@ -80,8 +81,6 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private uint _sunGlareTexIndex = uint.MaxValue;
     private uint _moonTexIndex = uint.MaxValue;        // Masser (or the single Fallout moon)
     private uint _moonSecundaTexIndex = uint.MaxValue; // Skyrim's second moon; NoTexture for other games
-    private uint _cloudTexIndex = uint.MaxValue;
-    private uint _starTexIndex = uint.MaxValue;
     // (climate FormId, active-weather FormId) the sky textures were resolved for (null = unresolved).
     // Clouds depend on the weather, so a weather change re-resolves even when the climate is unchanged.
     private (uint Climate, uint Weather)? _skyTexKey;
@@ -94,7 +93,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.CollisionDebugRenderer12? _collisionDebug;
     // Placed-object (REFR) rendering pipeline. Parallel to the terrain pipeline; owns separate
     // CPU NIF texture metadata and D3D12 GPU texture payload resolvers.
-    private NpcMeshArchiveSet? _meshArchives;
+    private MeshArchiveSet? _meshArchives;
     private NifTextureResolver? _referenceTextureResolver;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver? _referenceGpuTextureResolver12;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTextureCache12? _referenceTextureCache12;
@@ -113,6 +112,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private Vector2 _pointerPressPosition;
     private bool _pointerDragMoved;
     private const float ClickMoveThresholdPixels = 4f;
+    // Right-button tracking — a clean (non-drag) right-click steps back through the selection history
+    // (SelectPrevious); a right-drag is ignored, keeping that gesture free for future use. Separate
+    // from the left-button drag state so the two never interfere.
+    private bool _rightButtonActive;
+    private Vector2 _rightPressPosition;
+    private bool _rightDragMoved;
     private readonly List<global::BethesdaMultitool.WorldSpatialCell> _pickCellScratch = new();
     // Object-selection state. _selectedReference is the current selection (null = none); the pick
     // collects all ray hits into _pickHitScratch (sorted by distance) so a repeat click on the same
@@ -122,6 +127,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // Broadphase-sphere hits whose tight OBND test missed — used only when no OBND hit lies under the
     // ray, so meshes that overspill a too-tight base-record OBND (SpeedTree canopies) stay clickable.
     private readonly List<PickHit> _pickSphereFallbackScratch = new();
+    // Back-navigation history: each forward selection (click pick, E-in-walk pick, programmatic
+    // SelectObject) pushes the prior selection here; right-click / Q-in-walk pops it (SelectPrevious).
+    // Bounded so a long session can't grow it unboundedly; cleared with the scene in ClearSelection3D.
+    private const int SelectionHistoryMax = 32;
+    private readonly List<PlacedReference> _selectionHistory = new();
     private bool _renderLoopAttached;
     // D3D12-only backend. The renderer interfaces (`I*Renderer`) plug
     // straight into the D3D12 concrete impls; no D3D11 fallback fields remain.
@@ -150,11 +160,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private WeatherRecord? _selectedWeather;
     private WeatherRecord? _climateDefaultWeather;
     private AtmosphereState.ClimateTiming _currentClimateTiming = AtmosphereState.ClimateTiming.Default;
-    private bool _suppressWeatherSelectionEvent;
-    // Interiors are browsed via the shared 2D-viewer cell browser (searchable/filterable grouped
-    // list — appropriate for the hundreds of interiors a dropdown can't handle), NOT the worldspace
-    // combo. _selectedInterior is the interior currently loaded into the 3D scene (null = exterior
-    // mode); _allInteriorItems is the unfiltered browser source the search/filter UI narrows.
+    // Interiors are browsed via the shared CellListControl (searchable/filterable grouped list —
+    // appropriate for the hundreds of interiors a dropdown can't handle), NOT the worldspace combo.
+    // _selectedInterior is the interior currently loaded into the 3D scene (null = exterior mode); the
+    // browser source + sort live inside the CellListControl (CellList).
     private CellRecord? _selectedInterior;
     // Set by NavigateToCell when a cross-worldspace jump is requested: the async
     // WorldspaceComboBox_SelectionChanged handler frames on this cell instead of the worldspace
@@ -163,10 +172,6 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // Warp pose (camera position + yaw) to apply once _pendingNavigateCell's worldspace finishes
     // loading — set by NavigateToCell for an Enter-key door warp into a not-yet-shown exterior.
     private (Vector3 pos, float yaw)? _pendingNavigateWarpPose;
-    private List<WorldMapControl.CellListItem> _allInteriorItems = new();
-    // Sort order within each group of the interior cell browser (Grid by default; "Object count"
-    // surfaces the busiest cells first). Driven by the CellSortCombo dropdown.
-    private CellSortMode _interiorSortMode = CellSortMode.Grid;
     private Dictionary<(int gx, int gy), CellRecord>? _cellGridLookup;
     private WorldSpatialIndex? _spatialIndex;
     private double _lastControllerUpdateMilliseconds;
@@ -254,6 +259,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     {
         InitializeComponent();
         _initializing = false; // XAML load done — toolbar toggle handlers may now run for real.
+        // The interior browser is the shared CellListControl; in 3D a cell loads only on a real click.
+        CellList.Activation = CellListControl.ActivationMode.ItemClick;
+        CellList.CellActivated += CellList_CellActivated;
         _controller = new FlythroughCameraController(_camera);
         _camera.FarPlane = _renderDistance;
         Loaded += OnLoaded;
@@ -305,8 +313,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _skyTexKey = null;
         _skyNifTextures = null;
         _skyNifModlKey = null;
-        _sunDiscTexIndex = _sunGlareTexIndex = _moonTexIndex = _moonSecundaTexIndex =
-            _cloudTexIndex = _starTexIndex = uint.MaxValue;
+        _sunDiscTexIndex = _sunGlareTexIndex = _moonTexIndex = _moonSecundaTexIndex = uint.MaxValue;
 
         if (_gpu12 is not null)
         {
@@ -393,7 +400,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     /// <summary>Sets (or clears, with null) the current 3D selection and its outline programmatically.</summary>
     internal void SelectObject(PlacedReference? obj)
     {
-        _selectedReference = obj;
+        PushSelection(obj);
         _pickHitScratch.Clear();
         UpdateHighlightFromSelection();
     }

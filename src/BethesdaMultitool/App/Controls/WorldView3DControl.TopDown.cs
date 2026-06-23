@@ -117,6 +117,13 @@ public sealed partial class WorldView3DControl
 
                 target.Bind(cmd);
                 _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs
+                // SpeedTree leaf cards re-face the billboard basis; the live frame sets it from the
+                // perspective camera, but this ortho capture looks straight down (east→+X right,
+                // north→+Y up per TopDownViewProjBuilder). Lay the leaf cards flat in the ground plane
+                // so foliage is visible from above instead of edge-on (otherwise SPT canopies vanish in
+                // the overlay). Wind off for a clean static capture.
+                _references.SetLeafBillboardBasis(System.Numerics.Vector3.UnitX, System.Numerics.Vector3.UnitY);
+                _references.SetWind(WindDirection, 0f, 0f);
                 _references.Render(viewProj, cylinder);        // textured objects, depth-tested
                 if (showWater && _water is not null)
                 {

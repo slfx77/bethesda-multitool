@@ -1,5 +1,6 @@
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 
@@ -74,7 +75,14 @@ public sealed partial class WorldView3DControl
             }
 
             var textureBsas = DiscoverTextureBsaPaths(_data);
-            _meshArchives = NpcMeshArchiveSet.Open(meshBsas[0], meshBsas.Length > 1 ? meshBsas[1..] : null);
+            // Memory dumps reference prototype mesh paths that were renamed before the shipped
+            // archives, so enable the fuzzy renamed-asset fallback (+ loose-file overrides) for
+            // dumps only; ESM/ESP browsing stays exact-only.
+            _meshArchives = MeshArchiveSet.Open(
+                meshBsas[0],
+                meshBsas.Length > 1 ? meshBsas[1..] : null,
+                enableFuzzy: _data.IsMemoryDump,
+                includeLooseFiles: _data.IsMemoryDump);
             _referenceTextureResolver = new NifTextureResolver(textureBsas);
             _referenceGpuTextureResolver12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver(textureBsas);
 
@@ -132,6 +140,30 @@ public sealed partial class WorldView3DControl
             Log.Warn("WorldView3DControl: reference pipeline init failed: {0}", ex.Message);
             DisposeReferencePipeline();
         }
+    }
+
+    /// <summary>
+    ///     Resolves a placed-ref's requested mesh path against the open archive set and returns the
+    ///     SUBSTITUTED path when the renamed-asset fuzzy fallback matched a different file. Returns
+    ///     null when no substitution occurred (exact hit, miss, fuzzy disabled / non-DMP view, or the
+    ///     pipeline isn't built). Lets the inspect panel surface "Fallback Mesh" for prototype refs
+    ///     whose mesh was renamed before the shipped archives. Resolves against the same normalized
+    ///     lookup the decoder uses, so the answer matches what actually rendered.
+    /// </summary>
+    internal string? TryResolveFallbackMeshPath(string requestedModelPath)
+    {
+        if (_meshArchives is null || _data is null || !_data.IsMemoryDump ||
+            string.IsNullOrWhiteSpace(requestedModelPath))
+        {
+            return null;
+        }
+
+        var lookup = BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12
+            .ReferenceMeshDecoder12.NormalizeModelPath(requestedModelPath);
+        return _meshArchives.TryResolvePath(lookup, out _, out var resolved) &&
+               !string.Equals(resolved, lookup, StringComparison.OrdinalIgnoreCase)
+            ? resolved
+            : null;
     }
 
     /// <summary>Releases every resource owned by the placed-object pipeline in safe order.</summary>

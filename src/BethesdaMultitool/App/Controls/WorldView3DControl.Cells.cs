@@ -106,66 +106,23 @@ public sealed partial class WorldView3DControl
             : null;
     }
 
-    // ── Interior cell browser (shared 2D WorldMapCellBrowser logic) ──────────────────────────
+    // ── Interior cell browser (shared CellListControl) ───────────────────────────────────────
 
-    private void InteriorsButton_Click(object sender, RoutedEventArgs e)
+    private async void InteriorsButton_Click(object sender, RoutedEventArgs e)
     {
         if (_data is null || _data.InteriorCells.Count == 0) return;
-        PopulateInteriorBrowser();
         CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+        // groupInteriors (Interiors mode) → group by first letter (A..Z), like the 2D viewer.
+        await CellList.PopulateAsync(_data.InteriorCells, CellListControl.CellListMode.Interiors, _data);
     }
 
     private void CellBrowserCloseButton_Click(object sender, RoutedEventArgs e) => HideInteriorBrowser();
 
     private void HideInteriorBrowser() => CellBrowserPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
 
-    private void PopulateInteriorBrowser()
+    private void CellList_CellActivated(object? sender, CellRecord cell)
     {
-        if (_data is null) return;
-        // groupInteriors:false → group by first letter (A..Z), like the 2D viewer's Interiors browser.
-        _allInteriorItems = WorldMapCellBrowser.BuildCellListItems(_data.InteriorCells, groupInteriors: false, _data);
-        CellSearchBox.Text = "";
-        FilterHasObjects.IsChecked = false;
-        FilterNamedOnly.IsChecked = false;
-        RebuildInteriorList(_allInteriorItems);
-    }
-
-    private void CellSearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyInteriorFilters();
-
-    private void CellFilter_Changed(object sender, RoutedEventArgs e) => ApplyInteriorFilters();
-
-    private void ApplyInteriorFilters()
-    {
-        var query = CellSearchBox.Text?.Trim() ?? "";
-        var hasObjects = FilterHasObjects.IsChecked == true;
-        var namedOnly = FilterNamedOnly.IsChecked == true;
-        RebuildInteriorList(WorldMapCellBrowser.ApplyFilters(_allInteriorItems, query, hasObjects, namedOnly));
-    }
-
-    private void CellSortCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        _interiorSortMode = CellSortCombo.SelectedIndex == 1 ? CellSortMode.ObjectCount : CellSortMode.Grid;
-        // Re-apply the active filters so the list re-sorts in place (no-op before the browser populates).
-        if (_allInteriorItems.Count > 0) ApplyInteriorFilters();
-    }
-
-    private void RebuildInteriorList(List<WorldMapControl.CellListItem> items)
-    {
-        var source = WorldMapCellBrowser.BuildGroupedSource(items, _interiorSortMode);
-        var cvs = new Microsoft.UI.Xaml.Data.CollectionViewSource { IsSourceGrouped = true, Source = source };
-        CellListView.ItemsSource = cvs.View;
-        CellBrowserCountText.Text = $"{items.Count} cells";
-    }
-
-    private void CellListView_ItemClick(object sender, ItemClickEventArgs e)
-    {
-        // ItemClick (not SelectionChanged) so ONLY a real user click loads a cell. Reassigning
-        // ItemsSource on open/filter auto-selects item 0 and fired SelectionChanged, which used to
-        // load the first interior on open and hijack every search keystroke — ItemClick never fires
-        // for programmatic selection or type-ahead, so both symptoms are gone.
-        if (e.ClickedItem is not WorldMapControl.CellListItem item) return;
-
-        _selectedInterior = item.Cell;
+        _selectedInterior = cell;
         // Drop the combo selection so re-picking the same worldspace later still returns to exterior.
         _suppressWorldspaceSelectionEvent = true;
         WorldspaceComboBox.SelectedIndex = -1;
@@ -173,7 +130,7 @@ public sealed partial class WorldView3DControl
 
         HideInteriorBrowser();
         TryBuildCellGrid();
-        ResetCameraToInteriorBounds(item.Cell);
+        ResetCameraToInteriorBounds(cell);
         RefreshAtmosphereForCurrentWorldspace();
     }
 

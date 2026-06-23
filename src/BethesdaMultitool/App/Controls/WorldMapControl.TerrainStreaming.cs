@@ -87,7 +87,8 @@ public sealed partial class WorldMapControl
             _cachedHmHeight,
             _data.RenderCache,
             null,
-            WorldMapLayerRenderer.TexturePixelsPerCell);
+            WorldMapLayerRenderer.TexturePixelsPerCell,
+            HillshadeLightDir: CurrentHillshadeLightDir());
 
         _ = BuildAndApplyWorldBitmapAsync(request);
     }
@@ -259,7 +260,7 @@ public sealed partial class WorldMapControl
             $"v={version} cacheGen={cacheGen} ppc={texturePixelsPerCell} requested={requestCells.Count}");
         Interlocked.Increment(ref _activeTerrainStreams);
         _ = StreamAndApplyTerrainTexturesAsync(
-            version, cacheGen, requestCells, palette, texturePixelsPerCell, streamCts);
+            version, cacheGen, requestCells, palette, texturePixelsPerCell, CurrentTerrainShading(), streamCts);
     }
 
     /// <summary>Lazily creates and starts the viewport-rebuild throttle timer (UI thread only).</summary>
@@ -325,10 +326,19 @@ public sealed partial class WorldMapControl
             // TopDownMinIntervalMs so the incomplete-streaming re-request loop fires at a throttled
             // cadence (~3/sec) instead of every ~30 Hz tick — each request is a full scene render +
             // readback + CanvasBitmap upload, which otherwise starves pan/zoom (bug: overlay crawl).
+            //
+            // Defer the request while 2D terrain textures are still streaming/draining: a top-down
+            // render is a full D3D12 scene render + readback + CanvasBitmap upload on the UI thread,
+            // and firing it amid an active terrain stream starves the per-cell uploads (DrainPending
+            // CellApplies, run first in this tick) — the reported "terrain re-renders very slowly when
+            // rendered models is on". The overlay simply waits for the stream to drain; the idle
+            // self-stop below keeps the timer alive while _topDownIncomplete, so nothing is dropped.
             if (_showRenderedObjects
                 && _zoomSettleTicks == 0
                 && !_isPanning
                 && !_topDownInFlight
+                && Volatile.Read(ref _activeTerrainStreams) == 0
+                && _pendingCellApplies.IsEmpty
                 && _topDownProvider?.CanRenderTopDown == true
                 && (_topDownRequestPending || _topDownIncomplete)
                 && IsTopDownEligible()
@@ -423,6 +433,7 @@ public sealed partial class WorldMapControl
         List<CellRecord> requestCells,
         LandscapeTexturePalette palette,
         int pixelsPerCell,
+        TerrainShadingOptions shading,
         CancellationTokenSource streamCts)
     {
         var ct = streamCts.Token;
@@ -437,6 +448,7 @@ public sealed partial class WorldMapControl
                     _data?.RenderCache,
                     pixelsPerCell,
                     _currentWaterPalette,
+                    shading,
                     ct).WithCancellation(ct).ConfigureAwait(false))
             {
                 producedCount++;
@@ -759,7 +771,8 @@ public sealed partial class WorldMapControl
             palette,
             WorldMapLayerRenderer.TexturePixelsPerCell,
             PreferAggregate: true,
-            WaterPalette: _showWater ? _currentWaterPalette : null);
+            WaterPalette: _showWater ? _currentWaterPalette : null,
+            TerrainShading: CurrentTerrainShading());
 
         _ = BuildTerrainAggregateAsync(request, worldspaceFormId);
     }

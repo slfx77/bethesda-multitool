@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
 using Windows.System;
@@ -34,9 +35,9 @@ public sealed partial class WorldView3DControl
                 else if (e.Key == VirtualKey.Number5) RefsToggle.IsChecked = !_showReferences;
                 else if (e.Key == VirtualKey.Number6) SetShowNavMesh(!_showNavMesh);
                 else if (e.Key == VirtualKey.Number7) SetShowDisabled(!_showDisabled);
-                else if (e.Key == VirtualKey.Number8) LightingToggle.IsOn = !_showLighting;
+                else if (e.Key == VirtualKey.Number8) LightingPanel.LightingEnabled = !_showLighting;
                 else if (e.Key == VirtualKey.Number9) SkyboxToggle.IsChecked = !_showSky;
-                else if (e.Key == VirtualKey.Number0) FogToggle.IsOn = !_showFog;
+                else if (e.Key == VirtualKey.Number0) LightingPanel.FogEnabled = !_showFog;
                 else if (e.Key == VirtualKey.F)
                     _controller.Mode = _controller.Mode == CameraMode.Walk ? CameraMode.Fly : CameraMode.Walk;
                 else if (e.Key == VirtualKey.PageUp)
@@ -71,6 +72,16 @@ public sealed partial class WorldView3DControl
             return;
         }
 
+        // Q in walk mode steps back through the selection history (the keyboard twin of right-click).
+        // In fly mode Q still descends (handled by the controller below), so only intercept while
+        // walking. First-press guarded so a held key fires once.
+        if (e.Key == VirtualKey.Q && _controller.Mode == CameraMode.Walk)
+        {
+            if (_toggleKeysDown.Add(e.Key)) SelectPrevious();
+            e.Handled = true;
+            return;
+        }
+
         // Enter warps to a selected teleport door's destination (XTEL arrival pose). Guarded so a held
         // key fires once.
         if (e.Key == VirtualKey.Enter)
@@ -101,21 +112,42 @@ public sealed partial class WorldView3DControl
     private void OnRenderPanelPointerPressed(object sender, PointerRoutedEventArgs e)
     {
         var point = e.GetCurrentPoint(RenderPanel);
-        if (!point.Properties.IsLeftButtonPressed) return;
+        var props = point.Properties;
+        var pos = new Vector2((float)point.Position.X, (float)point.Position.Y);
 
-        _mouseDragActive = RenderPanel.CapturePointer(e.Pointer);
-        _previousPointerPosition = new Vector2((float)point.Position.X, (float)point.Position.Y);
-        _pointerPressPosition = _previousPointerPosition;
-        _pointerDragMoved = false;
-        RenderPanel.Focus(FocusState.Pointer);
-        e.Handled = true;
+        if (props.IsLeftButtonPressed)
+        {
+            _mouseDragActive = RenderPanel.CapturePointer(e.Pointer);
+            _previousPointerPosition = pos;
+            _pointerPressPosition = pos;
+            _pointerDragMoved = false;
+            RenderPanel.Focus(FocusState.Pointer);
+            e.Handled = true;
+        }
+        else if (props.IsRightButtonPressed)
+        {
+            // Right-click (released without a drag) steps back through the selection history. Track the
+            // press here; the drag check + SelectPrevious happen on release. No pointer capture — the
+            // left-drag look path owns that; we only need the down/up pair on the panel.
+            _rightButtonActive = true;
+            _rightPressPosition = pos;
+            _rightDragMoved = false;
+            RenderPanel.Focus(FocusState.Pointer);
+            e.Handled = true;
+        }
     }
 
     private void OnRenderPanelPointerMoved(object sender, PointerRoutedEventArgs e)
     {
-        if (!_mouseDragActive) return;
         var point = e.GetCurrentPoint(RenderPanel);
         var current = new Vector2((float)point.Position.X, (float)point.Position.Y);
+
+        // A right-button move past the click threshold marks the gesture a drag, so its release won't
+        // fire the back-nav (keeps right-drag free for future use).
+        if (_rightButtonActive && (current - _rightPressPosition).Length() > ClickMoveThresholdPixels)
+            _rightDragMoved = true;
+
+        if (!_mouseDragActive) return;
         var delta = current - _previousPointerPosition;
         _previousPointerPosition = current;
         if ((current - _pointerPressPosition).Length() > ClickMoveThresholdPixels) _pointerDragMoved = true;
@@ -124,16 +156,31 @@ public sealed partial class WorldView3DControl
 
     private void OnRenderPanelPointerReleased(object sender, PointerRoutedEventArgs e)
     {
-        if (!_mouseDragActive) return;
-        RenderPanel.ReleasePointerCapture(e.Pointer);
-        _mouseDragActive = false;
-        // A press released without a look-drag is a pick click.
-        if (!_pointerDragMoved)
+        var point = e.GetCurrentPoint(RenderPanel);
+        var kind = point.Properties.PointerUpdateKind;
+
+        // Right-button release: a clean (non-drag) right-click steps back through the selection history.
+        if (kind == PointerUpdateKind.RightButtonReleased)
         {
-            var point = e.GetCurrentPoint(RenderPanel);
-            TryPickObject(new Vector2((float)point.Position.X, (float)point.Position.Y));
+            var wasActive = _rightButtonActive;
+            _rightButtonActive = false;
+            if (wasActive && !_rightDragMoved) SelectPrevious();
+            e.Handled = true;
+            return;
         }
-        e.Handled = true;
+
+        // Left-button release: a press released without a look-drag is a pick click.
+        if (kind == PointerUpdateKind.LeftButtonReleased)
+        {
+            if (!_mouseDragActive) return;
+            RenderPanel.ReleasePointerCapture(e.Pointer);
+            _mouseDragActive = false;
+            if (!_pointerDragMoved)
+            {
+                TryPickObject(new Vector2((float)point.Position.X, (float)point.Position.Y));
+            }
+            e.Handled = true;
+        }
     }
 
     /// <summary>
@@ -230,9 +277,41 @@ public sealed partial class WorldView3DControl
         }
         var next = current >= 0 ? (current + 1) % _pickHitScratch.Count : 0;
 
-        _selectedReference = _pickHitScratch[next].Placement;
+        PushSelection(_pickHitScratch[next].Placement);
         UpdateHighlightFromSelection();
         InspectObject?.Invoke(this, _selectedReference);
+    }
+
+    /// <summary>
+    ///     Assigns the current selection, pushing the prior selection onto the back-navigation history
+    ///     so right-click (and Q in walk mode) can step back to it. Skips the push when nothing is
+    ///     selected yet or the same object is re-selected, so a click-through cycle or a no-op set never
+    ///     stacks duplicates. Bounded to <see cref="SelectionHistoryMax" /> (oldest dropped).
+    /// </summary>
+    private void PushSelection(PlacedReference? next)
+    {
+        if (_selectedReference is { } prev && (next is null || next.FormId != prev.FormId))
+        {
+            _selectionHistory.Add(prev);
+            if (_selectionHistory.Count > SelectionHistoryMax) _selectionHistory.RemoveAt(0);
+        }
+        _selectedReference = next;
+    }
+
+    /// <summary>
+    ///     Back-navigation: pops the most recent prior selection off the history and restores it
+    ///     (right-click, or Q in walk mode). Pops without re-pushing, so repeated calls walk back
+    ///     through the click-through cycle and earlier picks. No-op when the history is empty.
+    /// </summary>
+    private void SelectPrevious()
+    {
+        if (_selectionHistory.Count == 0) return;
+        var prev = _selectionHistory[^1];
+        _selectionHistory.RemoveAt(_selectionHistory.Count - 1);
+        _selectedReference = prev;
+        _pickHitScratch.Clear();
+        UpdateHighlightFromSelection();
+        InspectObject?.Invoke(this, prev);
     }
 
     private readonly record struct PickHit(PlacedReference Placement, uint FormId, float T);
@@ -272,6 +351,9 @@ public sealed partial class WorldView3DControl
     {
         _selectedReference = null;
         _pickHitScratch.Clear();
+        // Drop the back-nav history too: Esc is a full deselect, and on a scene rebuild the prior
+        // selections belong to the worldspace/cell being replaced (FormIDs can be reused).
+        _selectionHistory.Clear();
         _selectionHighlight?.ClearSelection();
     }
 

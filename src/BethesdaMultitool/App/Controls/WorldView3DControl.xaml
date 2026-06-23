@@ -3,7 +3,8 @@
 <UserControl
   x:Class="BethesdaMultitool.WorldView3DControl"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:BethesdaMultitool">
 
   <Grid>
     <Grid.RowDefinitions>
@@ -32,41 +33,12 @@
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
                   VerticalAlignment="Center" HorizontalAlignment="Right">
 
-        <!-- Lighting: on/off toggle (top) + time-of-day + weather -->
-        <DropDownButton AutomationProperties.Name="Lighting menu"
-                        ToolTipService.ToolTip="Lighting — on/off, time of day, weather">
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <FontIcon Glyph="&#xE706;" FontSize="14" />
-            <TextBlock Text="Lighting" />
-          </StackPanel>
-          <DropDownButton.Flyout>
-            <Flyout>
-              <StackPanel Spacing="10" MinWidth="260">
-                <ToggleSwitch x:Name="LightingToggle" IsOn="True" Header="Lighting"
-                              OnContent="On" OffContent="Off"
-                              AutomationProperties.Name="Lighting"
-                              ToolTipService.ToolTip="Toggle scene lighting (press 8)"
-                              Toggled="LightingToggle_Changed" />
-                <ToggleSwitch x:Name="FogToggle" IsOn="True" Header="Fog"
-                              OnContent="On" OffContent="Off"
-                              AutomationProperties.Name="Fog"
-                              ToolTipService.ToolTip="Toggle distance fog (press 0)"
-                              Toggled="FogToggle_Changed" />
-                <TextBlock Text="Time of day" FontWeight="SemiBold" />
-                <Slider x:Name="TimeSlider" Minimum="0" Maximum="24" StepFrequency="0.1" Value="12"
-                        AutomationProperties.Name="Time of day"
-                        ToolTipService.ToolTip="Time of day (0–24h) — drives lighting + sky colors"
-                        ValueChanged="TimeSlider_ValueChanged" />
-                <TextBlock Text="Weather" FontWeight="SemiBold" />
-                <ComboBox x:Name="WeatherComboBox" HorizontalAlignment="Stretch"
-                          SelectionChanged="WeatherComboBox_SelectionChanged"
-                          AutomationProperties.Name="Weather"
-                          ToolTipService.ToolTip="Weather — drives the sky / ambient / sun / fog colors"
-                          PlaceholderText="Weather" />
-              </StackPanel>
-            </Flyout>
-          </DropDownButton.Flyout>
-        </DropDownButton>
+        <!-- Lighting: on/off toggle + fog + time-of-day + weather (shared LightingControlsPanel). -->
+        <local:LightingControlsPanel x:Name="LightingPanel"
+                                     LightingToggled="LightingPanel_LightingToggled"
+                                     FogToggled="LightingPanel_FogToggled"
+                                     TimeChanged="LightingPanel_TimeChanged"
+                                     WeatherChanged="LightingPanel_WeatherChanged" />
 
         <!-- Layers: cell grid / terrain textures / vertex colors / nav-mesh.
              "Terrain textures" and "Vertex colors" are independent terrain shader toggles. -->
@@ -186,14 +158,11 @@
         <FontIcon Glyph="&#xE946;" FontSize="14" />
       </ToggleButton>
 
-      <!-- Interior cell browser — reuses the 2D viewer's searchable/filterable grouped list
-           (WorldMapCellBrowser). Overlays the viewport while browsing; picking a cell loads it
-           into the 3D scene and hides the panel. -->
+      <!-- Interior cell browser — the shared CellListControl (same list the 2D viewer uses). Overlays the
+           viewport while browsing; picking a cell loads it into the 3D scene and hides the panel. -->
       <Grid x:Name="CellBrowserPanel" Visibility="Collapsed" Padding="8"
             Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
         <Grid.RowDefinitions>
-          <RowDefinition Height="Auto" />
-          <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
         </Grid.RowDefinitions>
@@ -208,59 +177,7 @@
                   Click="CellBrowserCloseButton_Click"
                   AutomationProperties.Name="Close interior browser" />
         </Grid>
-        <TextBox x:Name="CellSearchBox" Grid.Row="1" PlaceholderText="Search cells..."
-                 AutomationProperties.Name="Search cells"
-                 TextChanged="CellSearchBox_TextChanged" Margin="0,0,0,4" />
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="12" Margin="0,0,0,4">
-          <CheckBox x:Name="FilterHasObjects" Content="Has objects"
-                    Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
-          <CheckBox x:Name="FilterNamedOnly" Content="Named only"
-                    Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
-          <ComboBox x:Name="CellSortCombo" MinWidth="120" VerticalAlignment="Center"
-                    SelectedIndex="0"
-                    AutomationProperties.Name="Sort cells"
-                    ToolTipService.ToolTip="Sort cells within each group"
-                    SelectionChanged="CellSortCombo_SelectionChanged">
-            <ComboBoxItem Content="Sort: Grid" />
-            <ComboBoxItem Content="Sort: Object count" />
-          </ComboBox>
-          <TextBlock x:Name="CellBrowserCountText" VerticalAlignment="Center" FontSize="11"
-                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        </StackPanel>
-        <ListView x:Name="CellListView" Grid.Row="3"
-                  SelectionMode="Single"
-                  IsItemClickEnabled="True"
-                  AutomationProperties.Name="Interior cells"
-                  ItemClick="CellListView_ItemClick">
-          <ListView.GroupStyle>
-            <GroupStyle>
-              <GroupStyle.HeaderTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding Key}" FontSize="13" FontWeight="Bold"
-                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                </DataTemplate>
-              </GroupStyle.HeaderTemplate>
-            </GroupStyle>
-          </ListView.GroupStyle>
-          <ListView.ItemTemplate>
-            <DataTemplate>
-              <Grid Padding="4,2" ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="70" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" FontSize="11" FontFamily="Consolas"
-                           Text="{Binding GridLabel}" />
-                <TextBlock Grid.Column="1" FontSize="11"
-                           Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
-                <TextBlock Grid.Column="2" FontSize="11" FontFamily="Consolas"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Text="{Binding ObjectCount}" />
-              </Grid>
-            </DataTemplate>
-          </ListView.ItemTemplate>
-        </ListView>
+        <local:CellListControl x:Name="CellList" Grid.Row="1" />
       </Grid>
     </Grid>
   </Grid>

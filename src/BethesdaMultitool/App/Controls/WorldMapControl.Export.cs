@@ -33,7 +33,8 @@ public sealed partial class WorldMapControl
             initialIncludeNavMesh: _showNavMesh,
             initialIncludeWater: _showWater,
             initialIncludeGrid: _showCellGrid,
-            initialLongEdgePx: ExportLongEdge)
+            initialLongEdgePx: ExportLongEdge,
+            canRenderMeshes: _topDownProvider?.CanRenderTopDown == true)
         {
             XamlRoot = XamlRoot
         };
@@ -126,6 +127,13 @@ public sealed partial class WorldMapControl
         var totalTiles = cols * rows;
         var tiled = totalTiles > 1;
 
+        // Rendered-meshes overlay: a per-tile top-down 3D render composited over the terrain. When on,
+        // the overlay bakes its own height-correct water, so the 2D terrain background renders water-FREE
+        // (else water would draw twice). The overlay's showWater still honors req.IncludeWater.
+        var overlayProvider = req.IncludeRenderedMeshes ? _topDownProvider : null;
+        var overlayMeshes = overlayProvider?.CanRenderTopDown == true;
+        var terrainShowWater = req.IncludeWater && !overlayMeshes;
+
         // Texture layer decodes per-tile; other layers build their single (small) 33-px/cell bitmap
         // once and reuse it for every tile (Win2D clips it to each tile's bounds).
         LandscapeTexturePalette? palette = null;
@@ -133,7 +141,7 @@ public sealed partial class WorldMapControl
         if (req.Layer == WorldMapLayer.TerrainTextures && _data is not null)
         {
             palette = LandscapeTexturePalette.GetOrCreate(_data);
-            waterPalette = req.IncludeWater && _state.SelectedWorldspace?.WaterFormId is uint wid
+            waterPalette = terrainShowWater && _state.SelectedWorldspace?.WaterFormId is uint wid
                 ? WaterColorPalette.GetOrCreate(_data, wid)
                 : null;
         }
@@ -145,7 +153,7 @@ public sealed partial class WorldMapControl
                 MapCanvas, activeCells, _cachedGrayscale, _cachedWaterMask,
                 _cachedHmWidth, _cachedHmHeight,
                 _state.SelectedWorldspace, _data,
-                _currentDefaultWaterHeight, _currentColorScheme, req.IncludeWater,
+                _currentDefaultWaterHeight, _currentColorScheme, terrainShowWater,
                 req.Layer, _data?.RenderCache);
         }
 
@@ -182,13 +190,14 @@ public sealed partial class WorldMapControl
                             c.GridX is int gx && c.GridY is int gy &&
                             gx >= tgx0 - 1 && gx <= tgx1 + 1 && gy >= tgy0 - 1 && gy <= tgy1 + 1).ToList();
                         var cache = _data?.RenderCache;
-                        var includeWater = req.IncludeWater;
+                        var includeWater = terrainShowWater;
                         var waterHeight = _currentDefaultWaterHeight;
                         var pal = palette;
                         var wpal = waterPalette;
+                        var shading = CurrentTerrainShading();
                         var perCell = await Task.Run(
                             () => WorldMapLayerRenderer.RenderTerrainTexturesPerCell(
-                                marginCells, pal, waterHeight, includeWater, cache, ppc, wpal), ct);
+                                marginCells, pal, waterHeight, includeWater, cache, ppc, wpal, shading), ct);
                         if (perCell is not null)
                         {
                             tileBitmaps = new Dictionary<(int, int, int), CanvasBitmap>(perCell.Count);
@@ -201,6 +210,18 @@ public sealed partial class WorldMapControl
                         }
                     }
 
+                    // Rendered-meshes overlay for this tile: a top-down 3D render of the tile's world rect,
+                    // looped until streaming settles so the export captures the fully-loaded scene.
+                    CanvasBitmap? overlayBitmap = null;
+                    MapExportMeshOverlay? overlay = null;
+                    if (overlayMeshes && overlayProvider is not null)
+                    {
+                        overlay = await RenderTileMeshOverlayAsync(
+                            overlayProvider, tgx0, tgx1, tgy0, tgy1, tileW, tileH, req.IncludeWater,
+                            hiddenCategories, progress, tileIndex, totalTiles, ct);
+                        overlayBitmap = overlay?.Bitmap;
+                    }
+
                     var tilePath = tiled ? Path.Combine(dir, $"{name}_r{tj}_c{ti}{ext}") : basePath;
                     try
                     {
@@ -211,10 +232,14 @@ public sealed partial class WorldMapControl
                             single?.MinX ?? 0, single?.MaxY ?? 0,
                             tileBitmaps,
                             _state.FilteredMarkers, hiddenCategories, _markerIconBitmaps, _currentColorScheme,
-                            _data, activeCells, req.IncludeNavMesh, req.IncludeGrid);
+                            _data, activeCells, req.IncludeNavMesh, req.IncludeGrid,
+                            overlayBitmap,
+                            overlay?.WorldMinX ?? 0f, overlay?.WorldMaxX ?? 0f,
+                            overlay?.WorldMinY ?? 0f, overlay?.WorldMaxY ?? 0f);
                     }
                     finally
                     {
+                        overlayBitmap?.Dispose();
                         if (tileBitmaps is not null)
                         {
                             foreach (var bmp in tileBitmaps.Values) bmp.Dispose();
@@ -243,11 +268,73 @@ public sealed partial class WorldMapControl
                 };
                 var json = System.Text.Json.JsonSerializer.Serialize(manifest, IndentedJsonOptions);
                 await File.WriteAllTextAsync(Path.Combine(dir, $"{name}_manifest.json"), json, ct);
+
+                // The FileSavePicker creates a 0-byte placeholder at basePath ({ws}_map.png), but a
+                // tiled run never writes it (tiles use {name}_r{r}_c{c}.png + a manifest). Remove the
+                // stray empty file so the output folder only holds the real tiles + manifest. Best
+                // effort — a leftover file must not fail an otherwise-successful export.
+                try
+                {
+                    if (File.Exists(basePath)) File.Delete(basePath);
+                }
+                catch (IOException ex)
+                {
+                    BethesdaMultitool.Core.Logger.Instance.Warn(
+                        "Map export: could not delete empty base file '{0}': {1}", basePath, ex.Message);
+                }
             }
         }
         finally
         {
             single?.Bitmap.Dispose();
         }
+    }
+
+    /// <summary>Grid→world scale matching <see cref="WorldMapExporter" /> (one cell = 4096 world units).</summary>
+    private const float ExportCellWorldSize = 4096f;
+
+    /// <summary>A rendered-meshes overlay tile: the BGRA bitmap plus the world rect (north-Y) it covers.</summary>
+    private sealed record MapExportMeshOverlay(
+        CanvasBitmap Bitmap, float WorldMinX, float WorldMaxX, float WorldMinY, float WorldMaxY);
+
+    /// <summary>
+    ///     Renders one export tile's rendered-meshes overlay: a top-down 3D render of the tile's world
+    ///     rect, re-requested until streaming settles (<see cref="TopDownRender.IsComplete" />) so the
+    ///     export captures the fully-loaded scene rather than a half-streamed frame. The render dimension
+    ///     is clamped internally by the provider; the bitmap is later drawn into the tile's full world
+    ///     rect (upscaled if the provider capped it). Returns null on provider failure.
+    /// </summary>
+    private async Task<MapExportMeshOverlay?> RenderTileMeshOverlayAsync(
+        ITopDownSceneRenderer provider,
+        int tgx0, int tgx1, int tgy0, int tgy1, int tileW, int tileH, bool showWater,
+        HashSet<PlacedObjectCategory> hiddenCategories,
+        ExportProgressController progress, int tileIndex, int totalTiles, CancellationToken ct)
+    {
+        var worldMinX = tgx0 * ExportCellWorldSize;
+        var worldMaxX = (tgx1 + 1) * ExportCellWorldSize;
+        var worldMinY = tgy0 * ExportCellWorldSize;       // world north-Y
+        var worldMaxY = (tgy1 + 1) * ExportCellWorldSize;
+
+        const int maxIterations = 40; // ~2s/tile cap so a region with permanently-missing meshes can't hang
+        TopDownRender? render = null;
+        for (var i = 0; i < maxIterations; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            render = await provider.RenderTopDownAsync(
+                worldMinX, worldMaxX, worldMinY, worldMaxY, tileW, tileH,
+                showDisabled: !_hideDisabledActors, showWater: showWater,
+                worldspaceFormId: _state.SelectedWorldspace?.FormId,
+                hiddenCategories: hiddenCategories, ct);
+            if (render is null || render.IsComplete) break;
+            progress.Report($"Loading meshes (tile {tileIndex}/{totalTiles})", tileIndex, totalTiles);
+            await Task.Delay(50, ct); // let background mesh/texture decode advance before re-rendering
+        }
+
+        if (render is null) return null;
+        var bmp = CanvasBitmap.CreateFromBytes(
+            MapCanvas, render.Bgra, render.Width, render.Height,
+            Windows.Graphics.DirectX.DirectXPixelFormat.B8G8R8A8UIntNormalized);
+        return new MapExportMeshOverlay(
+            bmp, render.WorldMinX, render.WorldMaxX, render.WorldMinY, render.WorldMaxY);
     }
 }

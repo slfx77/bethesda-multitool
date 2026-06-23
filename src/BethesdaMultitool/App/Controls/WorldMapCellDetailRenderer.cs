@@ -131,7 +131,9 @@ internal static class WorldMapCellDetailRenderer
         HeightmapColorScheme colorScheme, bool showWater,
         WorldMapLayer layer = WorldMapLayer.Heightmap,
         WorldViewData? data = null,
-        WorldRenderCache? cache = null)
+        WorldRenderCache? cache = null,
+        TerrainShadingOptions terrainShading = default,
+        System.Numerics.Vector3? hillshadeLightDir = null)
     {
         if (layer != WorldMapLayer.Heightmap)
         {
@@ -145,9 +147,10 @@ internal static class WorldMapCellDetailRenderer
                     WorldMapLayerRenderer.RenderTerrainTexturesForCell(cell,
                         data is null ? null : LandscapeTexturePalette.GetOrCreate(data),
                         currentDefaultWaterHeight, showWater, cache,
-                        WorldMapLayerRenderer.MaxTexturePixelsPerCell),
+                        WorldMapLayerRenderer.MaxTexturePixelsPerCell, terrainShading),
                 WorldMapLayer.Slope =>
-                    WorldMapLayerRenderer.RenderSlopeForCell(cell, currentDefaultWaterHeight, showWater, cache),
+                    WorldMapLayerRenderer.RenderSlopeForCell(cell, currentDefaultWaterHeight, showWater, cache,
+                        cellByGrid: null, lightDir: hillshadeLightDir),
                 _ => null
             };
             if (layerPixels == null) return null;

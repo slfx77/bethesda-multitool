@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 
@@ -28,7 +29,8 @@ internal static class WorldLayerBuildService
                         request.ShowWater,
                         out var aggregatePpc,
                         request.Cache,
-                        request.WaterPalette);
+                        request.WaterPalette,
+                        shading: request.TerrainShading);
                     // Empty result (no bitmap, no cells) signals "too large for aggregate" so the
                     // caller falls back to per-cell streaming instead of paying a full synchronous
                     // per-cell render here. CellPixelsPerCell carries the aggregate's px/cell so the
@@ -46,7 +48,8 @@ internal static class WorldLayerBuildService
                     request.DefaultWaterHeight,
                     request.ShowWater,
                     request.Cache,
-                    pixelsPerCell);
+                    pixelsPerCell,
+                    shading: request.TerrainShading);
                 return new LayerBuildResult(
                     request.Version,
                     null,
@@ -85,7 +88,8 @@ internal static class WorldLayerBuildService
                 WorldMapLayer.TerrainTextures => WorldMapLayerRenderer.RenderTerrainTexturesRegionsFallback(
                     request.ActiveCells, request.DefaultWaterHeight, request.ShowWater, request.Cache),
                 WorldMapLayer.Slope => WorldMapLayerRenderer.RenderSlope(
-                    request.ActiveCells, request.DefaultWaterHeight, request.ShowWater, request.Cache),
+                    request.ActiveCells, request.DefaultWaterHeight, request.ShowWater, request.Cache,
+                    request.HillshadeLightDir),
                 _ => null
             };
 
@@ -205,7 +209,9 @@ internal sealed record LayerBuildRequest(
     LandscapeTexturePalette? Palette,
     int TexturePixelsPerCell = WorldMapLayerRenderer.TexturePixelsPerCell,
     bool PreferAggregate = false,
-    WaterColorPalette? WaterPalette = null);
+    WaterColorPalette? WaterPalette = null,
+    TerrainShadingOptions TerrainShading = default,
+    Vector3? HillshadeLightDir = null);
 
 /// <summary>Output of a world map layer build: the composed bitmap and/or per-cell and coarse-tile pixel data.</summary>
 internal sealed record LayerBuildResult(

@@ -10,6 +10,22 @@ namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
+    // SpeedTree leaf-wind animation clock + cached strength (env FALLOUT_VIEWER_SPT_WIND, 0 = static).
+    // A fixed gentle diagonal wind direction; the per-leaf weight + position phasing do the rest.
+    private float _windClockSeconds;
+    private float? _windStrength;
+    private static readonly Vector2 WindDirection = Vector2.Normalize(new Vector2(0.82f, 0.57f));
+
+    private static float ParseWindStrength()
+    {
+        var raw = EnvironmentVariables.Get(EnvironmentVariables.Viewer.SpeedTreeWind);
+        return !string.IsNullOrWhiteSpace(raw) &&
+               float.TryParse(raw, System.Globalization.NumberStyles.Float,
+                   System.Globalization.CultureInfo.InvariantCulture, out var v)
+            ? Math.Clamp(v, 0f, 5f)
+            : 0.12f;
+    }
+
     private void AttachRenderLoop()
     {
         if (_renderLoopAttached) return;
@@ -34,6 +50,7 @@ public sealed partial class WorldView3DControl
         _lastFrameTime = now;
         // Clamp pathological deltas (long pause, debugger break) to keep camera step bounded.
         if (deltaSeconds > 0.1f) deltaSeconds = 0.1f;
+        _windClockSeconds += deltaSeconds; // drives the SpeedTree leaf-wind sway phase
 
         var controllerStarted = StartProfileTimestamp();
         _controller.Update(deltaSeconds);
@@ -236,6 +253,11 @@ public sealed partial class WorldView3DControl
                 Vector3.Normalize(new Vector3(invViewForLeaves.M11, invViewForLeaves.M12, invViewForLeaves.M13)),
                 Vector3.Normalize(new Vector3(invViewForLeaves.M21, invViewForLeaves.M22, invViewForLeaves.M23)));
         }
+
+        // SpeedTree leaf wind: sway each leaf card this frame (model recovered from STLEAF/STB shaders +
+        // BSTreeManager::UpdateWindMatrices). Strength 0 (env FALLOUT_VIEWER_SPT_WIND=0) keeps trees static.
+        _windStrength ??= ParseWindStrength();
+        _references?.SetWind(WindDirection, _windStrength.Value, _windClockSeconds);
 
         // Resolve + upload the shared atmosphere CB (b3) once per frame, bound for the whole scene.
         // Terrain/reference/water read it for directional + ambient lighting; the sky/fog flags drive

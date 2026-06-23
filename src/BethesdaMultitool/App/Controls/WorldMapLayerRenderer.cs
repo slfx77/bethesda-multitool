@@ -1,6 +1,8 @@
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Orchestration;
@@ -115,7 +117,8 @@ internal static class WorldMapLayerRenderer
         float? defaultWaterHeight, bool showWater,
         out int pixelsPerCell,
         WorldRenderCache? cache = null, WaterColorPalette? waterPalette = null,
-        int targetLongEdge = 2048, int maxDimension = 8192)
+        int targetLongEdge = 2048, int maxDimension = 8192,
+        TerrainShadingOptions shading = default)
     {
         pixelsPerCell = HmGridSize;
 
@@ -169,7 +172,7 @@ internal static class WorldMapLayerRenderer
                 var imgCellY = maxY - cell.GridY!.Value;
                 if (imgCellX < 0 || imgCellY < 0 || imgCellX >= gridW || imgCellY >= gridH) return;
                 var bytes = WorldMapTextureBlitter.RenderTerrainTextureCellOverview(
-                    cell, palette, defaultWaterHeight, showWater, cache, ppc, cellByGrid, waterPalette);
+                    cell, palette, defaultWaterHeight, showWater, cache, ppc, cellByGrid, waterPalette, shading);
                 if (bytes is null) return;
                 WorldMapCellBlitter.BlitCellRgbaBlock(rgba, width, bytes, ppc, imgCellX * ppc, imgCellY * ppc);
             }
@@ -224,7 +227,8 @@ internal static class WorldMapLayerRenderer
         float? defaultWaterHeight, bool showWater,
         WorldRenderCache? cache = null,
         int pixelsPerCell = TexturePixelsPerCell,
-        WaterColorPalette? waterPalette = null)
+        WaterColorPalette? waterPalette = null,
+        TerrainShadingOptions shading = default)
     {
         pixelsPerCell = NormalizeTexturePixelsPerCell(pixelsPerCell);
         palette.Preload(cellSource);
@@ -233,7 +237,7 @@ internal static class WorldMapLayerRenderer
         foreach (var cell in EnumerateCellsWithGrid(cellSource))
         {
             var bytes = WorldMapTextureBlitter.RenderTerrainTextureCellOverview(
-                cell, palette, defaultWaterHeight, showWater, cache, pixelsPerCell, cellByGrid, waterPalette);
+                cell, palette, defaultWaterHeight, showWater, cache, pixelsPerCell, cellByGrid, waterPalette, shading);
             if (bytes is null) continue;
             result[(cell.GridX!.Value, cell.GridY!.Value)] = bytes;
         }
@@ -270,6 +274,7 @@ internal static class WorldMapLayerRenderer
         WorldRenderCache? cache,
         int pixelsPerCell,
         WaterColorPalette? waterPalette = null,
+        TerrainShadingOptions shading = default,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         pixelsPerCell = NormalizeTexturePixelsPerCell(pixelsPerCell);
@@ -322,7 +327,7 @@ internal static class WorldMapLayerRenderer
                             // so toggling water on later is a pure redraw — no re-stream. The
                             // draw-time toggle decides whether the cached water layer is painted.
                             var bytes = WorldMapTextureBlitter.RenderTerrainTextureCellOverview(
-                                cell, palette, defaultWaterHeight, showWater: false, cache, pixelsPerCell, cellByGrid, waterPalette);
+                                cell, palette, defaultWaterHeight, showWater: false, cache, pixelsPerCell, cellByGrid, waterPalette, shading);
                             if (bytes is not null)
                             {
                                 var water = BuildCellWaterTile(
@@ -529,17 +534,28 @@ internal static class WorldMapLayerRenderer
         var tR = scheme.R / 255f;
         var tG = scheme.G / 255f;
         var tB = scheme.B / 255f;
+        var colorful = scheme.Mode == HeightmapRenderMode.Colorful;
         for (var py = 0; py < HmGridSize; py++)
         {
             for (var px = 0; px < HmGridSize; px++)
             {
                 var height = terrain.HeightAt(px, HmGridSize - 1 - py);
                 var normalized = Math.Clamp((height - globalMin) / globalRange, 0f, 1f);
-                var gray = normalized * 255f;
                 var idx = (py * HmGridSize + px) * 4;
-                rgba[idx] = (byte)(gray * tR);
-                rgba[idx + 1] = (byte)(gray * tG);
-                rgba[idx + 2] = (byte)(gray * tB);
+                if (colorful)
+                {
+                    var (cr, cg, cb) = HeightmapColorRenderer.HeightToColor(normalized);
+                    rgba[idx] = cr;
+                    rgba[idx + 1] = cg;
+                    rgba[idx + 2] = cb;
+                }
+                else
+                {
+                    var gray = normalized * 255f;
+                    rgba[idx] = (byte)(gray * tR);
+                    rgba[idx + 1] = (byte)(gray * tG);
+                    rgba[idx + 2] = (byte)(gray * tB);
+                }
                 rgba[idx + 3] = 255;
             }
         }
@@ -605,7 +621,7 @@ internal static class WorldMapLayerRenderer
 
     internal static LayerBitmap? RenderSlope(
         List<CellRecord> cellSource, float? defaultWaterHeight, bool showWater,
-        WorldRenderCache? cache = null)
+        WorldRenderCache? cache = null, Vector3? lightDir = null)
     {
         var cells = new List<(CellRecord Cell, DecodedTerrainCell Terrain)>();
         foreach (var cell in cellSource)
@@ -630,40 +646,135 @@ internal static class WorldMapLayerRenderer
         var width = (maxX - minX + 1) * HmGridSize;
         var height = (maxY - minY + 1) * HmGridSize;
 
-        var heightField = new float[width * height];
-        var hasHeight = new bool[width * height];
+        // Per-cell hillshade with a 1-vertex neighbor border (see RenderCellHillshadeBordered): adjacent
+        // cells share their edge vertex, so shading one contiguous field double-counts that vertex and
+        // halves the cross-seam gradient — a visible grid line at every cell edge. Shading each cell over
+        // a bordered 35×35 field makes the edge central-difference span a uniform 2-vertex distance, so
+        // both cells produce the same shade at the shared vertex (seamless) while staying 33 px/cell.
+        var cellByGrid = BuildCellGridIndex(cellSource);
+        var rgba = new byte[width * height * 4];
+        // Opaque-black background for no-terrain gaps inside the bounding box (matches the old
+        // whole-field ComputeHillshade, which wrote (0,0,0,255) where hasHeight was false).
+        for (var i = 0; i < width * height; i++) rgba[i * 4 + 3] = 255;
         var waterMask = new byte[width * height];
 
         foreach (var (cell, terrain) in cells)
         {
             var imgCellX = cell.GridX!.Value - minX;
             var imgCellY = maxY - cell.GridY!.Value;
-            var waterH = WorldMapWaterRenderer.ResolveWaterHeight(cell, defaultWaterHeight);
 
+            var cellShade = RenderCellHillshadeBordered(cell, terrain, cellByGrid, cache, lightDir);
+            WorldMapCellBlitter.BlitCellRgbaBlock(
+                rgba, width, cellShade, HmGridSize, imgCellX * HmGridSize, imgCellY * HmGridSize);
+
+            var waterH = WorldMapWaterRenderer.ResolveWaterHeight(cell, defaultWaterHeight);
+            if (!waterH.HasValue || waterH.Value is <= -1e6f or >= 1e6f) continue;
             for (var py = 0; py < HmGridSize; py++)
             {
                 for (var px = 0; px < HmGridSize; px++)
                 {
-                    var h = terrain.HeightAt(px, HmGridSize - 1 - py);
+                    if (terrain.HeightAt(px, HmGridSize - 1 - py) >= waterH.Value) continue;
                     var imgX = imgCellX * HmGridSize + px;
                     var imgY = imgCellY * HmGridSize + py;
-                    var idx = imgY * width + imgX;
-                    heightField[idx] = h;
-                    hasHeight[idx] = true;
-
-                    if (waterH.HasValue && waterH.Value is > -1e6f and < 1e6f && h < waterH.Value)
-                    {
-                        waterMask[idx] = 180;
-                    }
+                    waterMask[imgY * width + imgX] = 180;
                 }
             }
         }
 
         HeightmapRenderer.BlurWaterMask(waterMask, width, height);
-
-        var rgba = WorldMapHillshadeRenderer.ComputeHillshade(heightField, hasHeight, width, height);
         if (showWater) WorldMapWaterRenderer.OverlayWater(rgba, waterMask, width, height);
         return new LayerBitmap(rgba, width, height, minX, maxY);
+    }
+
+    /// <summary>
+    ///     Computes a single cell's 33×33 hillshade RGBA against a 1-vertex neighbor border so cell edges
+    ///     shade seamlessly: the field is built at 35×35 (the cell's 33 vertices plus one ring pulled from
+    ///     the 4 neighbours — corners are unused by the 4-neighbour normal), shaded, then cropped to the
+    ///     inner 33×33. At the true worldspace edge (no neighbour) the border replicates the cell's own
+    ///     edge, preserving the old clamped look there. Heights use the image convention (row 0 = north,
+    ///     col 0 = west). <paramref name="lightDir" /> is null → the renderer's NW default.
+    /// </summary>
+    private static byte[] RenderCellHillshadeBordered(
+        CellRecord cell, DecodedTerrainCell terrain,
+        IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid,
+        WorldRenderCache? cache, Vector3? lightDir)
+    {
+        const int n = HmGridSize;   // 33 vertices
+        const int w = n + 2;        // 35 (1-vertex border per side)
+        var field = new float[w * w];
+        var has = new bool[w * w];
+
+        // Inner 33×33 at offset (1,1). HeightAt(vx, vy): vy=32 is north, so image row py → vy = 32 - py.
+        for (var py = 0; py < n; py++)
+        {
+            for (var px = 0; px < n; px++)
+            {
+                field[(py + 1) * w + (px + 1)] = terrain.HeightAt(px, n - 1 - py);
+                has[(py + 1) * w + (px + 1)] = true;
+            }
+        }
+
+        var gx = cell.GridX!.Value;
+        var gy = cell.GridY!.Value;
+        var west = NeighborTerrain(cellByGrid, cache, gx - 1, gy);
+        var east = NeighborTerrain(cellByGrid, cache, gx + 1, gy);
+        var north = NeighborTerrain(cellByGrid, cache, gx, gy + 1);
+        var south = NeighborTerrain(cellByGrid, cache, gx, gy - 1);
+
+        for (var py = 0; py < n; py++)
+        {
+            // Left border (col 0) = vertex one west of this cell's west edge = west neighbour's vx=31.
+            field[(py + 1) * w + 0] = west is { } we ? we.HeightAt(n - 2, n - 1 - py) : field[(py + 1) * w + 1];
+            has[(py + 1) * w + 0] = true;
+            // Right border (col 34) = one east of the east edge = east neighbour's vx=1.
+            field[(py + 1) * w + (w - 1)] = east is { } ea ? ea.HeightAt(1, n - 1 - py) : field[(py + 1) * w + n];
+            has[(py + 1) * w + (w - 1)] = true;
+        }
+        for (var px = 0; px < n; px++)
+        {
+            // Top border (row 0, north) = one north of the north edge = north neighbour's vy=1.
+            field[0 * w + (px + 1)] = north is { } no ? no.HeightAt(px, 1) : field[1 * w + (px + 1)];
+            has[0 * w + (px + 1)] = true;
+            // Bottom border (row 34, south) = one south of the south edge = south neighbour's vy=31.
+            field[(w - 1) * w + (px + 1)] = south is { } so ? so.HeightAt(px, n - 2) : field[n * w + (px + 1)];
+            has[(w - 1) * w + (px + 1)] = true;
+        }
+
+        var rgba35 = WorldMapHillshadeRenderer.ComputeHillshade(field, has, w, w, lightDir);
+
+        var rgba = new byte[n * n * 4];
+        for (var py = 0; py < n; py++)
+        {
+            Array.Copy(rgba35, ((py + 1) * w + 1) * 4, rgba, py * n * 4, n * 4);
+        }
+        return rgba;
+    }
+
+    /// <summary>
+    ///     Seamless 33×33 hillshade GRAY grid (one byte per vertex) for a cell, used by the textured
+    ///     hill-shade modulation (item 6). Wraps <see cref="RenderCellHillshadeBordered" /> and keeps
+    ///     only its (R==G==B) gray channel.
+    /// </summary>
+    internal static byte[] ComputeCellHillshadeGray(
+        CellRecord cell, DecodedTerrainCell terrain,
+        IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid,
+        WorldRenderCache? cache, Vector3? lightDir)
+    {
+        var rgba = RenderCellHillshadeBordered(cell, terrain, cellByGrid, cache, lightDir);
+        var gray = new byte[HmGridSize * HmGridSize];
+        for (var i = 0; i < gray.Length; i++) gray[i] = rgba[i * 4];
+        return gray;
+    }
+
+    /// <summary>Decoded terrain for a neighbour cell, or null when there is no such cell (worldspace
+    /// edge) or it has no terrain. Used to feed the hillshade border ring.</summary>
+    private static DecodedTerrainCell? NeighborTerrain(
+        IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid,
+        WorldRenderCache? cache, int gx, int gy)
+    {
+        if (cellByGrid is null || !cellByGrid.TryGetValue((gx, gy), out var c)) return null;
+        var t = cache?.GetTerrain(c) ?? DecodedTerrainCell.Decode(c);
+        return t.HasTerrain ? t : null;
     }
 
     // ========================================================================
@@ -713,7 +824,8 @@ internal static class WorldMapLayerRenderer
         CellRecord cell, LandscapeTexturePalette? palette,
         float? defaultWaterHeight, bool showWater,
         WorldRenderCache? cache = null,
-        int pixelsPerCell = TexturePixelsPerCell)
+        int pixelsPerCell = TexturePixelsPerCell,
+        TerrainShadingOptions shading = default)
     {
         if (palette is null)
         {
@@ -721,39 +833,50 @@ internal static class WorldMapLayerRenderer
         }
 
         if (!cell.GridX.HasValue || !cell.GridY.HasValue) return null;
-        pixelsPerCell = NormalizeTexturePixelsPerCell(pixelsPerCell);
 
-        var layers = cell.LandVisualData?.TextureLayers;
-        var table = layers is { Count: > 0 } ? CellLayerWeightTable.Build(layers) : null;
-
+        // Single-cell detail render (no cross-cell neighbour blend): the shared overview path with a
+        // null grid index produces this cell's own blended diffuse, then applies VCLR/hillshade shading.
         palette.Preload([cell]);
-        var rgba = new byte[pixelsPerCell * pixelsPerCell * 4];
-        WorldMapTextureBlitter.BlitTerrainTexturesBlended(rgba, pixelsPerCell, pixelsPerCell, table, palette,
-            cell.GridX.Value, cell.GridY.Value, imgCellX: 0, imgCellY: 0);
-        WorldMapWaterRenderer.ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, pixelsPerCell, cache);
-        return rgba;
+        return WorldMapTextureBlitter.RenderTerrainTextureCellOverview(
+            cell, palette, defaultWaterHeight, showWater, cache,
+            NormalizeTexturePixelsPerCell(pixelsPerCell), cellByGrid: null, waterPalette: null, shading);
     }
 
     internal static byte[]? RenderSlopeForCell(
         CellRecord cell, float? defaultWaterHeight, bool showWater,
-        WorldRenderCache? cache = null)
+        WorldRenderCache? cache = null,
+        IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid = null,
+        Vector3? lightDir = null)
     {
         var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
         if (!terrain.HasTerrain) return null;
 
-        var heightField = new float[HmGridSize * HmGridSize];
-        var hasHeight = new bool[HmGridSize * HmGridSize];
-        for (var py = 0; py < HmGridSize; py++)
+        byte[] rgba;
+        if (cellByGrid is not null && cell.GridX.HasValue && cell.GridY.HasValue)
         {
-            for (var px = 0; px < HmGridSize; px++)
+            // Seamless: shade against the neighbour border so this cell's edges match its neighbours
+            // (used where cells are shown adjacent, e.g. the textured hill-shade modulation).
+            rgba = RenderCellHillshadeBordered(cell, terrain, cellByGrid, cache, lightDir);
+        }
+        else
+        {
+            // Standalone cell-detail view: no adjacent cells are shown, so clamp at the cell boundary.
+            var heightField = new float[HmGridSize * HmGridSize];
+            var hasHeight = new bool[HmGridSize * HmGridSize];
+            for (var py = 0; py < HmGridSize; py++)
             {
-                var idx = py * HmGridSize + px;
-                heightField[idx] = terrain.HeightAt(px, HmGridSize - 1 - py);
-                hasHeight[idx] = true;
+                for (var px = 0; px < HmGridSize; px++)
+                {
+                    var idx = py * HmGridSize + px;
+                    heightField[idx] = terrain.HeightAt(px, HmGridSize - 1 - py);
+                    hasHeight[idx] = true;
+                }
             }
+
+            rgba = WorldMapHillshadeRenderer.ComputeHillshade(
+                heightField, hasHeight, HmGridSize, HmGridSize, lightDir);
         }
 
-        var rgba = WorldMapHillshadeRenderer.ComputeHillshade(heightField, hasHeight, HmGridSize, HmGridSize);
         WorldMapWaterRenderer.ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, cache: cache);
         return rgba;
     }

@@ -86,10 +86,12 @@ public sealed partial class SingleFileTab
                 return;
             }
 
-            // Snapshot the primary's own worldspaces before merging supplementary Load-Order records.
-            // A DMP must show only the worldspaces it captured; Load-Order ESM worldspaces are merged
-            // in for terrain/asset data but are filtered back out of the picker below.
+            // Snapshot the primary's own worldspaces AND cells before merging supplementary Load-Order
+            // records. A DMP must show only the worldspaces + cells it captured; Load-Order ESM records are
+            // merged in for base-record/terrain/asset data but the ESM's worldspaces (picker) and cells
+            // (grid/list) are filtered back out below — only what the dump captured is shown.
             var primaryWorldspaceIds = semantic.Worldspaces.Select(w => w.FormId).ToHashSet();
+            var primaryCellIds = semantic.Cells.Select(c => c.FormId).ToHashSet();
 
             // Merge load order records so DLC worldspaces appear on the map.
             var loadOrderRecords = _session.LoadOrder.BuildMergedRecords();
@@ -107,9 +109,17 @@ public sealed partial class SingleFileTab
                 // reach the viewer (which reads ws.Cells), not each worldspace's pre-merge cells.
                 semantic.RelinkWorldspaceCells();
 
-                // Hide worldspaces not captured in the dump for a memory-dump primary.
+                // For a memory-dump primary, hide both the worldspaces AND the cells the dump didn't
+                // capture: the ESM is merged in only so dumped objects can resolve their base
+                // models/textures, not to gap-fill the cell grid/list. Re-link again AFTER filtering so
+                // each worldspace's Cells reflects the trimmed (captured-only) set. (Order matters.)
                 if (!_session.IsEsmFile && !_session.IsSaveFile)
-                    semantic = semantic.WithWorldspacesFilteredTo(primaryWorldspaceIds);
+                {
+                    semantic = semantic
+                        .WithWorldspacesFilteredTo(primaryWorldspaceIds)
+                        .WithCellsFilteredTo(primaryCellIds);
+                    semantic.RelinkWorldspaceCells();
+                }
             }
 
             WorldMapStatusText.Text = Strings.Status_BuildingWorldIndex;
@@ -156,6 +166,11 @@ public sealed partial class SingleFileTab
         // rewire after the 3D scene has accepted the same WorldViewData instance.
         WorldMapControl.TopDownProvider = null;
         _session.WorldViewData = worldData;
+
+        // Memory dumps get the renamed-asset fuzzy mesh fallback + loose-file overrides in the 3D
+        // viewer; ESM/ESP/save views stay exact-only. Set before LoadData so the mesh pipeline opens
+        // its archive set with the right resolution mode.
+        worldData.IsMemoryDump = !_session.IsEsmFile && !_session.IsSaveFile;
 
         WorldMapControl.LoadData(worldData);
         WorldView3DControl.LoadData(worldData);
@@ -279,8 +294,35 @@ public sealed partial class SingleFileTab
             obj, _session.WorldViewData, worldResolver);
 
         WorldPropertyPanel.Children.Clear();
-        BuildWorldPropertyPanel(
-            PlacedObjectCategoryResolver.BuildObjectProperties(obj, _session.WorldViewData, worldResolver));
+        var properties = PlacedObjectCategoryResolver.BuildObjectProperties(obj, _session.WorldViewData, worldResolver);
+
+        // When the viewer rendered this ref from a fuzzy-substituted mesh (a renamed prototype path,
+        // memory-dump browsing only), surface the path it actually used right after the "Model" row.
+        // The requested path is computed the same way BuildObjectProperties does (the ref's own
+        // enriched ModelPath, else the base record's ModelPathIndex entry).
+        var requestedModel = obj.ModelPath;
+        if (string.IsNullOrEmpty(requestedModel) &&
+            _session.WorldViewData?.ModelPathIndex.TryGetValue(obj.BaseFormId, out var mp) == true)
+        {
+            requestedModel = mp;
+        }
+
+        if (!string.IsNullOrEmpty(requestedModel) &&
+            WorldView3DControl.TryResolveFallbackMeshPath(requestedModel) is { } fallbackMesh)
+        {
+            var fallbackEntry = new EsmPropertyEntry { Name = "Fallback Mesh", Value = fallbackMesh, Category = "Identity" };
+            var modelIndex = properties.FindIndex(p => p.Name == "Model" && p.Category == "Identity");
+            if (modelIndex >= 0)
+            {
+                properties.Insert(modelIndex + 1, fallbackEntry);
+            }
+            else
+            {
+                properties.Add(fallbackEntry);
+            }
+        }
+
+        BuildWorldPropertyPanel(properties);
     }
 
     private void BuildWorldPropertyPanel(List<EsmPropertyEntry> properties)

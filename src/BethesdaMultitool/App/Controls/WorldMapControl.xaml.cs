@@ -25,10 +25,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private readonly WorldMapStateController _state = new();
 
     // --- Cell browser ---
-    private List<CellListItem> _allCellItems = [];
-    // Sort order within each group of the cell browser (Grid default; "Object count" surfaces the
-    // busiest cells first). Driven by the CellSortCombo dropdown.
-    private CellSortMode _cellSortMode = CellSortMode.Grid;
+    // The browser list (items, search, filters, sort) lives inside the shared CellListControl (CellList).
     private byte[]? _cachedGrayscale;
     private int _cachedHmWidth, _cachedHmHeight;
     private byte[]? _cachedWaterMask;
@@ -47,6 +44,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     // --- Layer selection ---
     private WorldMapLayer _currentLayer = WorldMapLayer.Heightmap;
     private string? _lastTerrainDrawLog; // change-detection for the gated TerrainTextures draw-decision trace
+
+    // --- Terrain-textures shading (VCLR / hillshade modulation of the textured layer) ---
+    private TerrainShadingMode _terrainShading = TerrainShadingMode.VertexColors;
 
     // --- Overlay toggles ---
     private bool _showNavMesh;
@@ -404,7 +404,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     public WorldMapControl()
     {
         InitializeComponent();
+        // Hillshade lighting defaults OFF (fixed NW look). Set the shared panel's toggle to match while
+        // _initializing is still true, so its Toggled handler early-returns (no spurious rebuild).
+        LightingPanel.LightingEnabled = false;
         _initializing = false; // XAML load done — filter toggle handlers may now run for real.
+        // The cell browser is the shared CellListControl; in 2D selecting a cell inspects it.
+        CellList.Activation = CellListControl.ActivationMode.SelectionChanged;
+        CellList.CellActivated += (_, cell) => InspectCell?.Invoke(this, cell);
         // Cancel any in-flight TerrainTextures stream when the control unloads (tab switch
         // or app shutdown). Without this, the async loop in StreamAndApplyTerrainTexturesAsync
         // keeps producing cells, tries to enqueue onto a now-null DispatcherQueue, and throws
@@ -441,7 +447,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         data.RenderCache.CategoryIndex = data.CategoryIndex;
         _state.LoadData(data);
         _worldHeightmapDirty = true;
-        _currentColorScheme = HeightmapColorScheme.DefaultForFile(data.SourceFilePath);
+        _currentColorScheme = HeightmapColorScheme.DefaultForGame(data.Game, data.SourceFilePath);
         _cachedGrayscale = data.HeightmapGrayscale;
         _cachedWaterMask = data.HeightmapWaterMask;
         _cachedHmWidth = data.HeightmapPixelWidth;
@@ -465,6 +471,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             LayerComboBox.Items.Add(layer.DisplayName());
         }
         LayerComboBox.SelectedIndex = (int)_currentLayer;
+
+        TerrainShadingComboBox.Items.Clear();
+        foreach (var mode in Enum.GetValues<TerrainShadingMode>())
+        {
+            TerrainShadingComboBox.Items.Add(TerrainShadingDisplayName(mode));
+        }
+        TerrainShadingComboBox.SelectedIndex = (int)_terrainShading;
 
         WorldspaceComboBox.Items.Clear();
         foreach (var ws in data.Worldspaces)
@@ -606,7 +619,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _cellWaterBitmap?.Dispose();
         _cellHeightmapBitmap = WorldMapCellDetailRenderer.BuildCellHeightmapBitmap(
             MapCanvas, cell, _currentDefaultWaterHeight, _currentColorScheme,
-            showWater: false, _currentLayer, _data, _data?.RenderCache);
+            showWater: false, _currentLayer, _data, _data?.RenderCache,
+            CurrentTerrainShading(), CurrentHillshadeLightDir());
         _cellWaterBitmap = WorldMapCellDetailRenderer.BuildCellWaterBitmap(
             MapCanvas, cell, _currentDefaultWaterHeight, _currentLayer, _data?.RenderCache);
     }
@@ -825,7 +839,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         public string Group { get; init; } = "";
         public string GridLabel { get; init; } = "";
+
+        /// <summary>The cell's EditorID (or 0xFormID fallback) — the primary name column.</summary>
         public string DisplayName { get; init; } = "";
+
+        /// <summary>The cell's in-game FULL name, shown as a separate column; empty when the cell has none.</summary>
+        public string ProperName { get; init; } = "";
+
         public string ObjectCount { get; init; } = "";
         public required CellRecord Cell { get; init; }
     }

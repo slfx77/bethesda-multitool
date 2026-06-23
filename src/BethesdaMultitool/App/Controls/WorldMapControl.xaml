@@ -4,6 +4,7 @@
   x:Class="BethesdaMultitool.WorldMapControl"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:BethesdaMultitool"
   xmlns:canvas="using:Microsoft.Graphics.Canvas.UI.Xaml">
 
   <Grid>
@@ -62,9 +63,19 @@
                   SelectionChanged="ColorSchemeComboBox_SelectionChanged"
                   AutomationProperties.Name="Heightmap color scheme"
                   ToolTipService.ToolTip="Heightmap color scheme" />
+        <ComboBox x:Name="TerrainShadingComboBox" MinWidth="120" Visibility="Collapsed"
+                  SelectionChanged="TerrainShadingComboBox_SelectionChanged"
+                  AutomationProperties.Name="Terrain texture shading"
+                  ToolTipService.ToolTip="Shade terrain textures by vertex colors or hillshade" />
 
         <StackPanel x:Name="FilterCheckboxPanel" Orientation="Horizontal" Spacing="6"
                     VerticalAlignment="Center">
+
+          <!-- Lighting: drives the hillshade light direction (Slope layer + textured hill-shade). Fog and
+               Weather are hidden — the 2D map only uses the on/off toggle + time-of-day slider. -->
+          <local:LightingControlsPanel x:Name="LightingPanel" ShowFog="False" ShowWeather="False"
+                                       LightingToggled="LightingPanel_LightingToggled"
+                                       TimeChanged="LightingPanel_TimeChanged" />
 
           <!-- Layers: cell grid / nav mesh (vertex coloring is a map data layer here, not a toggle) -->
           <DropDownButton AutomationProperties.Name="Layers menu" ToolTipService.ToolTip="Layers">
@@ -185,63 +196,10 @@
       </StackPanel>
     </Border>
 
-    <!-- Cell Browser (shown instead of canvas when "All Cells" or "Interiors" is selected) -->
+    <!-- Cell Browser (shown instead of canvas when "All Cells" or "Interiors" is selected) — the shared
+         CellListControl (same list the 3D viewer uses). -->
     <Grid x:Name="CellBrowserPanel" Grid.Row="1" Visibility="Collapsed">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="*" />
-      </Grid.RowDefinitions>
-      <TextBox x:Name="CellSearchBox" Grid.Row="0" PlaceholderText="Search cells..."
-               AutomationProperties.Name="Search cells"
-               TextChanged="CellSearchBox_TextChanged" Margin="0,0,0,4" />
-      <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12" Margin="0,0,0,4">
-        <CheckBox x:Name="FilterHasObjects" Content="Has objects"
-                  Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
-        <CheckBox x:Name="FilterNamedOnly" Content="Named only"
-                  Checked="CellFilter_Changed" Unchecked="CellFilter_Changed" />
-        <ComboBox x:Name="CellSortCombo" MinWidth="120" VerticalAlignment="Center"
-                  SelectedIndex="0"
-                  AutomationProperties.Name="Sort cells"
-                  ToolTipService.ToolTip="Sort cells within each group"
-                  SelectionChanged="CellSortCombo_SelectionChanged">
-          <ComboBoxItem Content="Sort: Grid" />
-          <ComboBoxItem Content="Sort: Object count" />
-        </ComboBox>
-      </StackPanel>
-      <ListView x:Name="CellListView" Grid.Row="2"
-                SelectionMode="Single"
-                AutomationProperties.Name="Cells in worldspace"
-                SelectionChanged="CellListView_SelectionChanged">
-        <ListView.GroupStyle>
-          <GroupStyle>
-            <GroupStyle.HeaderTemplate>
-              <DataTemplate>
-                <TextBlock Text="{Binding Key}" FontSize="13" FontWeight="Bold"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-              </DataTemplate>
-            </GroupStyle.HeaderTemplate>
-          </GroupStyle>
-        </ListView.GroupStyle>
-        <ListView.ItemTemplate>
-          <DataTemplate>
-            <Grid Padding="4,2" ColumnSpacing="12">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="70" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-              </Grid.ColumnDefinitions>
-              <TextBlock Grid.Column="0" FontSize="11" FontFamily="Consolas"
-                         Text="{Binding GridLabel}" />
-              <TextBlock Grid.Column="1" FontSize="11"
-                         Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
-              <TextBlock Grid.Column="2" FontSize="11" FontFamily="Consolas"
-                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                         Text="{Binding ObjectCount}" />
-            </Grid>
-          </DataTemplate>
-        </ListView.ItemTemplate>
-      </ListView>
+      <local:CellListControl x:Name="CellList" />
     </Grid>
 
     <!-- Status bar -->

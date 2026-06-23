@@ -232,8 +232,8 @@ public sealed partial class WorldView3DControl
         _collisionDebug = null;
         _water?.Dispose();
         _water = null;
-        _skyDome?.Dispose();
-        _skyDome = null;
+        _skyGeometry?.Dispose();
+        _skyGeometry = null;
         _skyBillboards?.Dispose();
         _skyBillboards = null;
         _terrain?.Dispose();

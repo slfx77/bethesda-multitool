@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 
@@ -149,6 +150,7 @@ internal static class HeightmapRenderer
         var tR = scheme.R / 255f;
         var tG = scheme.G / 255f;
         var tB = scheme.B / 255f;
+        var colorful = scheme.Mode == HeightmapRenderMode.Colorful;
 
         // Water color (untinted)
         const byte waterR = 30, waterG = 55, waterB = 120;
@@ -157,10 +159,20 @@ internal static class HeightmapRenderer
         {
             var gray = grayscale[i];
 
-            // Apply tint: grayscale * tint color
-            var r = (byte)(gray * tR);
-            var g = (byte)(gray * tG);
-            var b = (byte)(gray * tB);
+            byte r, g, b;
+            if (colorful)
+            {
+                // 9-zone HSL elevation gradient. grayscale is the worldspace-global normalized height
+                // (0..255 = globalMin..globalMax), exactly the 0..1 input HeightToColor expects.
+                (r, g, b) = HeightmapColorRenderer.HeightToColor(gray / 255f);
+            }
+            else
+            {
+                // Apply tint: grayscale * tint color
+                r = (byte)(gray * tR);
+                g = (byte)(gray * tG);
+                b = (byte)(gray * tB);
+            }
 
             // Apply water overlay (untinted, proportional blend from blurred mask)
             if (showWater && waterMask[i] > 0)

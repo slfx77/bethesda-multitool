@@ -47,7 +47,10 @@ internal static class WorldMapExporter
         WorldViewData? data = null,
         List<CellRecord>? activeCells = null,
         bool drawNavMesh = false,
-        bool drawGrid = true)
+        bool drawGrid = true,
+        CanvasBitmap? renderedMeshesOverlay = null,
+        float overlayWorldMinX = 0f, float overlayWorldMaxX = 0f,
+        float overlayWorldMinY = 0f, float overlayWorldMaxY = 0f)
     {
         using var renderTarget = new CanvasRenderTarget(mapCanvas, imageW, imageH, 96);
         var device = renderTarget.Device;
@@ -106,6 +109,18 @@ internal static class WorldMapExporter
                 var bitmapY = -(worldHmMaxY + 1) * CellWorldSize;
                 ds.DrawImage(worldHeightmapBitmap,
                     new Rect(bitmapX, bitmapY, bitmapWorldW, bitmapWorldH));
+            }
+
+            // 1b. Rendered-meshes overlay (top-down 3D render) over the terrain, below grid + markers.
+            //     Transparent where there are no meshes (terrain shows through) and bakes height-correct
+            //     water, so the terrain background was rendered water-free. Image Y = -worldNorthY, so the
+            //     north edge (overlayWorldMaxY) maps to the top of the destination rect.
+            if (renderedMeshesOverlay is not null &&
+                overlayWorldMaxX > overlayWorldMinX && overlayWorldMaxY > overlayWorldMinY)
+            {
+                ds.DrawImage(renderedMeshesOverlay, new Rect(
+                    overlayWorldMinX, -overlayWorldMaxY,
+                    overlayWorldMaxX - overlayWorldMinX, overlayWorldMaxY - overlayWorldMinY));
             }
 
             // 2. Cell grid (optional)

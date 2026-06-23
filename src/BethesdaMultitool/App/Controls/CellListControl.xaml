@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!-- Shared searchable/filterable/grouped cell list. Hosts the 2D viewer's "All Cells" + "Interiors"
+     browsers and the 3D viewer's interiors browser from one template (modeled on the 3D viewer's, the
+     nicest), so all three look identical and only differ in the cells they're populated with. Build /
+     filter / group run off the UI thread with a debounced search box (large FO3+FNV cell sets used to
+     freeze the app). Backing logic stays in the static WorldMapCellBrowser. -->
+<UserControl
+  x:Class="BethesdaMultitool.CellListControl"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Grid RowSpacing="4">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <TextBox x:Name="SearchBox" Grid.Row="0" PlaceholderText="Search cells..."
+             AutomationProperties.Name="Search cells"
+             TextChanged="SearchBox_TextChanged" />
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
+      <CheckBox x:Name="FilterHasObjects" Content="Has objects"
+                Checked="Filter_Changed" Unchecked="Filter_Changed" />
+      <CheckBox x:Name="FilterNamedOnly" Content="Named only"
+                Checked="Filter_Changed" Unchecked="Filter_Changed" />
+      <ComboBox x:Name="SortCombo" MinWidth="120" VerticalAlignment="Center"
+                SelectedIndex="0"
+                AutomationProperties.Name="Sort cells"
+                ToolTipService.ToolTip="Sort cells within each group"
+                SelectionChanged="SortCombo_SelectionChanged">
+        <ComboBoxItem Content="Sort: Grid" />
+        <ComboBoxItem Content="Sort: Object count" />
+      </ComboBox>
+      <TextBlock x:Name="CountText" VerticalAlignment="Center" FontSize="11"
+                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+    </StackPanel>
+
+    <ListView x:Name="CellListView" Grid.Row="2"
+              SelectionMode="Single"
+              IsItemClickEnabled="True"
+              AutomationProperties.Name="Cells"
+              ItemClick="CellListView_ItemClick"
+              SelectionChanged="CellListView_SelectionChanged">
+      <ListView.ItemsPanel>
+        <ItemsPanelTemplate>
+          <ItemsStackPanel />
+        </ItemsPanelTemplate>
+      </ListView.ItemsPanel>
+      <ListView.GroupStyle>
+        <GroupStyle>
+          <GroupStyle.HeaderTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Key}" FontSize="13" FontWeight="Bold"
+                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </DataTemplate>
+          </GroupStyle.HeaderTemplate>
+        </GroupStyle>
+      </ListView.GroupStyle>
+      <ListView.ItemTemplate>
+        <DataTemplate>
+          <Grid Padding="4,2" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="70" />
+              <ColumnDefinition Width="2*" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" FontSize="11" FontFamily="Consolas"
+                       Text="{Binding GridLabel}" />
+            <TextBlock Grid.Column="1" FontSize="11"
+                       Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="2" FontSize="11"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="{Binding ProperName}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="3" FontSize="11" FontFamily="Consolas"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="{Binding ObjectCount}" />
+          </Grid>
+        </DataTemplate>
+      </ListView.ItemTemplate>
+    </ListView>
+  </Grid>
+</UserControl>

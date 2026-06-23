@@ -61,7 +61,10 @@ internal static class WorldMapCellBrowser
             var gridLabel = cell.GridX.HasValue && cell.GridY.HasValue
                 ? $"[{cell.GridX.Value},{cell.GridY.Value}]"
                 : "";
-            var displayName = cell.EditorId ?? cell.FullName ?? $"0x{cell.FormId:X8}";
+            // EditorID drives the primary name column; the in-game FULL name gets its own column so a cell
+            // can be found/identified by either. Fall back to 0xFormID only when there's no EditorID.
+            var displayName = cell.EditorId ?? $"0x{cell.FormId:X8}";
+            var properName = cell.FullName ?? "";
             var objectCount = $"{cell.PlacedObjects.Count} obj";
 
             items.Add(new WorldMapControl.CellListItem
@@ -69,6 +72,7 @@ internal static class WorldMapCellBrowser
                 Group = group,
                 GridLabel = gridLabel,
                 DisplayName = displayName,
+                ProperName = properName,
                 ObjectCount = objectCount,
                 Cell = cell
             });
@@ -87,6 +91,7 @@ internal static class WorldMapCellBrowser
         {
             filtered = filtered.Where(i =>
                 i.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                i.ProperName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 i.GridLabel.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 i.Group.Contains(query, StringComparison.OrdinalIgnoreCase));
         }

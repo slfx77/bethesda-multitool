@@ -46,10 +46,10 @@ public sealed partial class WorldView3DControl
         _showReferences = RefsToggle.IsChecked == true;
     }
 
-    private void LightingToggle_Changed(object sender, RoutedEventArgs e)
+    private void LightingPanel_LightingToggled(object? sender, bool isOn)
     {
         if (_initializing) return;
-        _showLighting = LightingToggle.IsOn;
+        _showLighting = isOn;
     }
 
     private void SkyboxToggle_Changed(object sender, RoutedEventArgs e)
@@ -58,10 +58,10 @@ public sealed partial class WorldView3DControl
         _showSky = SkyboxToggle.IsChecked == true;
     }
 
-    private void FogToggle_Changed(object sender, RoutedEventArgs e)
+    private void LightingPanel_FogToggled(object? sender, bool isOn)
     {
         if (_initializing) return;
-        _showFog = FogToggle.IsOn;
+        _showFog = isOn;
     }
 
     private void NavMeshCheckBox_Changed(object sender, RoutedEventArgs e)
