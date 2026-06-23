@@ -3,13 +3,14 @@ using System.Numerics;
 using System.Text;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Resources;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
-///     Persistent on-disk cache of decoded reference meshes. Enabled by DEFAULT — a
-///     shader-cache-style win: the cold first run writes decoded meshes, every warm run after skips
+///     Persistent on-disk cache of decoded reference meshes. Enabled by DEFAULT under the OS temp
+///     directory: the cold first run writes decoded meshes, every warm run after skips
 ///     the entire parse→convert→extract→build chain (the bulk of cold-load CPU cost). Disable with
 ///     <c>FALLOUT_VIEWER_PERSISTENT_MESH_CACHE=0</c>.
 ///     <para>
@@ -79,17 +80,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         var cacheDirectory = EnvironmentVariables.Get(EnvironmentVariables.Viewer.MeshCacheDirectory);
         if (string.IsNullOrWhiteSpace(cacheDirectory))
         {
-            var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            if (string.IsNullOrWhiteSpace(root))
-            {
-                root = Path.GetTempPath();
-            }
-
-            cacheDirectory = Path.Combine(
-                root,
-                "BethesdaMultitool",
+            cacheDirectory = ReferenceDiskCachePaths.ResolveDefaultCacheDirectory(
                 "ReferenceDecodedMeshCache12",
-                $"v{DecoderVersion}");
+                DecoderVersion);
         }
 
         var cache = new ReferenceDecodedMeshDiskCache12(cacheDirectory);
@@ -109,7 +102,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     }
 
     internal bool TryLoad(
-        NpcMeshArchiveLookupMetadata metadata,
+        MeshArchiveLookupMetadata metadata,
         out ReferenceDecodedMeshDiskCacheEntry12 entry)
     {
         if (!TryLoadCore(BuildKeyText(metadata), ReadMesh, out var mesh, out var isNegative))
@@ -122,13 +115,13 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         return true;
     }
 
-    internal void Store(NpcMeshArchiveLookupMetadata metadata, ReferenceDecodedMeshPayload12? payload) =>
+    internal void Store(MeshArchiveLookupMetadata metadata, ReferenceDecodedMeshPayload12? payload) =>
         StoreCore(BuildKeyText(metadata), payload, WriteMesh);
 
-    internal string GetCachePath(NpcMeshArchiveLookupMetadata metadata) =>
+    internal string GetCachePath(MeshArchiveLookupMetadata metadata) =>
         GetCachePath(BuildKeyText(metadata));
 
-    private static string BuildKeyText(NpcMeshArchiveLookupMetadata metadata)
+    private static string BuildKeyText(MeshArchiveLookupMetadata metadata)
     {
         var builder = new StringBuilder(512);
         Append("format", CacheFormatVersion);
