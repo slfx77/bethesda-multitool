@@ -135,7 +135,19 @@ internal static class PersistentRefRedistributionPass
                 }
                 else
                 {
-                    // Source 3: synthesize a virtual exterior tile for this worldspace.
+                    // Source 3: synthesize a virtual exterior tile for this worldspace — but ONLY for DMP
+                    // captures. Synthesis exists so persistent refs from a dump whose streaming cache is
+                    // empty (main menu / interior cell / loading screen) still land in their owning
+                    // exterior tile. For a plain ESM parse (no DMP), a worldspace with no real exterior
+                    // cell at this grid is genuinely interior-only (e.g. Oblivion's ArkvedsTowerWorld);
+                    // its persistent refs carry interior-local coords near the origin, so fabricating a
+                    // (0,0) tile produces a phantom virtual cell. Keep the ref on its persistent container.
+                    if (context.MinidumpInfo is null)
+                    {
+                        keep.Add(pref);
+                        continue;
+                    }
+
                     var wsName = context.GetEditorId(wsId.Value) ?? $"0x{wsId.Value:X8}";
                     var synthetic = new CellRecord
                     {
