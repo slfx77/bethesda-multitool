@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Bsa;
+namespace BethesdaMultitool.Core.Formats.Bsa.Models;
 
 /// <summary>
 ///     Result of extracting a single file from BSA.

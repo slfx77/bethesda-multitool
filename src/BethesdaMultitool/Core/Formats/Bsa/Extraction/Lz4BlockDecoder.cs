@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace BethesdaMultitool.Core.Formats.Bsa;
+namespace BethesdaMultitool.Core.Formats.Bsa.Extraction;
 
 /// <summary>
 ///     Decoder for the LZ4 compression used by Skyrim Special Edition BSAs (version 105). Each

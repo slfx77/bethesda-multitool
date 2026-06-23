@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Bsa;
+namespace BethesdaMultitool.Core.Formats.Bsa.Index;
 
 /// <summary>
 ///     A single entry in a Bethesda Texture Atlas Index (.tai) file.

@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace BethesdaMultitool.Core.Formats.Bsa;
+namespace BethesdaMultitool.Core.Formats.Bsa.Index;
 
 /// <summary>
 ///     Parser for Bethesda Texture Atlas Index (.tai) files.

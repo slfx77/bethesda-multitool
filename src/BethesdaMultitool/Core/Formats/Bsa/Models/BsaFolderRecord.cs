@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Bsa;
+namespace BethesdaMultitool.Core.Formats.Bsa.Models;
 
 /// <summary>
 ///     BSA folder record structure.

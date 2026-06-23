@@ -2,8 +2,9 @@
 // Licensed under the MIT License.
 
 using System.Text;
+using BethesdaMultitool.Core.Formats.Bsa.Models;
 
-namespace BethesdaMultitool.Core.Formats.Bsa;
+namespace BethesdaMultitool.Core.Formats.Bsa.Parsing;
 
 /// <summary>
 ///     Parser for Bethesda BSA archive files.

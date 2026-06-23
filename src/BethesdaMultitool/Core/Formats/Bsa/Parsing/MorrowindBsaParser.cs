@@ -2,8 +2,10 @@
 // Licensed under the MIT License.
 
 using System.Text;
+using BethesdaMultitool.Core.Formats.Bsa.Extraction;
+using BethesdaMultitool.Core.Formats.Bsa.Models;
 
-namespace BethesdaMultitool.Core.Formats.Bsa;
+namespace BethesdaMultitool.Core.Formats.Bsa.Parsing;
 
 /// <summary>
 ///     Parser for the legacy Morrowind BSA format, which predates the "BSA\0"-magic archives

@@ -1,7 +1,8 @@
+using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 // Copyright (c) 2026 BethesdaMultitool Contributors
 // Licensed under the MIT License.
 
-namespace BethesdaMultitool.Core.Formats.Bsa;
+namespace BethesdaMultitool.Core.Formats.Bsa.Models;
 
 /// <summary>
 ///     BSA archive header structure (36 bytes).

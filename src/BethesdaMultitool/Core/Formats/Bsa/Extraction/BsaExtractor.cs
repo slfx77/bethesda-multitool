@@ -4,10 +4,12 @@
 using System.Buffers;
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Formats.Bsa.Models;
+using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Formats.Xma;
 using BethesdaMultitool.Core.Utils;
 
-namespace BethesdaMultitool.Core.Formats.Bsa;
+namespace BethesdaMultitool.Core.Formats.Bsa.Extraction;
 
 /// <summary>
 ///     Extracts files from BSA archives.
