@@ -57,7 +57,11 @@ public sealed partial class SingleFileTab
             if (match != null)
             {
                 NpcListView.SelectedItem = match;
-                NpcListView.ScrollIntoView(match);
+                // Defer the scroll past layout: calling ScrollIntoView synchronously right after an
+                // ItemsSource change forces a full synchronous measure of every intervening item (the
+                // multi-second freeze). Running it on the dispatcher lets it scroll the realized viewport.
+                var target = match;
+                DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => NpcListView.ScrollIntoView(target));
             }
         }
     }

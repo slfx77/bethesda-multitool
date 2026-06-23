@@ -308,7 +308,11 @@ public sealed partial class SingleFileTab
         if (selectedItem != null && _carvedFiles.Contains(selectedItem))
         {
             ResultsListView.SelectedItem = selectedItem;
-            ResultsListView.ScrollIntoView(selectedItem, ScrollIntoViewAlignment.Leading);
+            // Defer past layout so the scroll runs against the realized viewport rather than forcing a
+            // synchronous full measure after ReplaceAll (see ViewNpc_Click for the same pattern).
+            var target = selectedItem;
+            DispatcherQueue.TryEnqueue(() =>
+                ResultsListView.ScrollIntoView(target, ScrollIntoViewAlignment.Leading));
         }
     }
 

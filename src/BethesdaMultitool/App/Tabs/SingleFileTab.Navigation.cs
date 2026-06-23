@@ -461,11 +461,15 @@ public sealed partial class SingleFileTab
             await Task.Delay(50); // Let TreeView create children
         }
 
-        // Load children up to the target's position so its TreeViewNode exists.
-        // Avoid loading ALL children for large type groups (e.g. STAT with 10,000+ records)
-        // which would freeze the UI thread.
+        // Realize children up to the target's position so its TreeViewNode exists. For a record deep in a
+        // large type group (e.g. STAT with tens of thousands of merged FO3+FNV records) this can be many
+        // thousands of nodes, so realize them in YIELDING batches: each Task.Yield lets the dispatcher pump
+        // input + layout between batches, so the snap stays responsive instead of freezing the UI thread.
         if (_pendingTreeLoads.TryGetValue(typeTreeNode, out var pending))
         {
+            // Take ownership of this node's pending realization so the scroll-based loader
+            // (LoadNextPendingBatches) can't double-add to it while we yield between batches.
+            _pendingTreeLoads.Remove(typeTreeNode);
             var (allChildren, loadedCount) = pending;
             var targetDataIndex = allChildren.IndexOf(target);
             var loadUntil = targetDataIndex >= 0
@@ -475,20 +479,21 @@ public sealed partial class SingleFileTab
             for (var i = loadedCount; i < loadUntil; i++)
             {
                 var child = allChildren[i];
-                var childNode = new TreeViewNode
+                typeTreeNode.Children.Add(new TreeViewNode
                 {
                     Content = child,
                     HasUnrealizedChildren = child.HasUnrealizedChildren ||
                                             child.NodeType is "Category" or "RecordType"
-                };
-                typeTreeNode.Children.Add(childNode);
+                });
+
+                if ((i - loadedCount + 1) % TreeNodeBatchSize == 0)
+                {
+                    await Task.Yield();
+                }
             }
 
-            if (loadUntil >= allChildren.Count)
-            {
-                _pendingTreeLoads.Remove(typeTreeNode);
-            }
-            else
+            // Re-register the remainder (if the target wasn't near the end) for scroll-based loading.
+            if (loadUntil < allChildren.Count)
             {
                 _pendingTreeLoads[typeTreeNode] = (allChildren, loadUntil);
             }
