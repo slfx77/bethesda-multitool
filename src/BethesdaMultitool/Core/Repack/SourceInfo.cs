@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Repack;
+namespace BethesdaMultitool.Core.Repack;
 
 /// <summary>
 ///     Information about source folder contents.

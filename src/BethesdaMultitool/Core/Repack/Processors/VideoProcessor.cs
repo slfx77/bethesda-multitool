@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Repack.Processors;
+namespace BethesdaMultitool.Core.Repack.Processors;
 
 /// <summary>
 ///     Processor for Video folder - copies BIK files as-is (format is cross-platform).

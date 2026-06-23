@@ -8,7 +8,7 @@ using BethesdaMultitool.Core.Formats.Xma;
 using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.Core.Utils;
 
-namespace BethesdaMultitool.Repack.Processors;
+namespace BethesdaMultitool.Core.Repack.Processors;
 
 /// <summary>
 ///     Processor for BSA files - extracts, converts contents, and repacks.

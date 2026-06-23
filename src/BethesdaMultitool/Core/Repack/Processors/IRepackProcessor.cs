@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Repack.Processors;
+namespace BethesdaMultitool.Core.Repack.Processors;
 
 /// <summary>
 ///     Interface for repack processors that handle specific file types.

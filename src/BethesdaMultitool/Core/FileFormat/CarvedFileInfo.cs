@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats;
 
-namespace BethesdaMultitool.Core;
+namespace BethesdaMultitool.Core.FileFormat;
 
 /// <summary>
 ///     Information about a carved file.

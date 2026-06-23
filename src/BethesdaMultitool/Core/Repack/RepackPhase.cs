@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Repack;
+namespace BethesdaMultitool.Core.Repack;
 
 /// <summary>
 ///     Processing phases for the repacker.

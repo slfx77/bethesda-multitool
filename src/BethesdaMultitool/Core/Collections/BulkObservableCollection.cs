@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 
-namespace BethesdaMultitool;
+namespace BethesdaMultitool.Core.Collections;
 
 /// <summary>
 ///     Observable collection with a bulk replacement operation that emits one reset event.

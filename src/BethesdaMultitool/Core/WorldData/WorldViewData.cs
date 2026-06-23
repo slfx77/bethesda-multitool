@@ -20,6 +20,14 @@ internal sealed class WorldViewData
     public required Dictionary<uint, ObjectBounds> BoundsIndex { get; init; }
 
     /// <summary>
+    ///     Base-object FormID → NIF/SPT model path (from each base record's MODL subrecord). Lets the
+    ///     selected-object pane show a placed reference's model path even when the reference itself wasn't
+    ///     enriched with a <see cref="PlacedReference.ModelPath" />. Not <c>required</c> so save-overlay
+    ///     builders (which have no record collection) can omit it. Empty when no records were available.
+    /// </summary>
+    public IReadOnlyDictionary<uint, string> ModelPathIndex { get; init; } = new Dictionary<uint, string>();
+
+    /// <summary>
     ///     SpeedTree archive path (<c>trees\&lt;name&gt;.spt</c>) → recorded tree height (TREE OBND
     ///     Z-extent). Lets the procedural <c>.spt</c> geometry generator size each tree from the ESM
     ///     data instead of a constant. Case-insensitive keys.
@@ -166,4 +174,12 @@ internal sealed class WorldViewData
     ///     <c>WorldMapOverlayBuilder</c> can stay agnostic of session/load-order state.
     /// </summary>
     public IReadOnlyList<string> AdditionalDataPaths { get; set; } = [];
+
+    /// <summary>
+    ///     True when this view was built from a memory dump (DMP). The 3D viewer enables the
+    ///     renamed-asset fuzzy mesh fallback (and loose-file overrides) only for dumps, where
+    ///     prototype mesh paths were renamed before the shipped archives; ESM/ESP/save views keep
+    ///     exact-only resolution. Settable post-construction (like <see cref="AdditionalDataPaths" />).
+    /// </summary>
+    public bool IsMemoryDump { get; set; }
 }

@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core;
+namespace BethesdaMultitool.Core.FileFormat;
 
 /// <summary>
 ///     Multi-pattern search for efficient file signature matching.

@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
 
-namespace BethesdaMultitool.Repack.Processors;
+namespace BethesdaMultitool.Core.Repack.Processors;
 
 /// <summary>
 ///     Processor for ESM/ESP files - converts from Xbox 360 big-endian to PC little-endian.

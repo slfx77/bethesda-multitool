@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace BethesdaMultitool.Repack.Processors;
+namespace BethesdaMultitool.Core.Repack.Processors;
 
 /// <summary>
 ///     Processor for generating hybrid INI files.

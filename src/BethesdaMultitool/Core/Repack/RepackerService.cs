@@ -1,6 +1,6 @@
-using BethesdaMultitool.Repack.Processors;
+using BethesdaMultitool.Core.Repack.Processors;
 
-namespace BethesdaMultitool.Repack;
+namespace BethesdaMultitool.Core.Repack;
 
 /// <summary>
 ///     Service that orchestrates the Xbox 360 to PC conversion process.

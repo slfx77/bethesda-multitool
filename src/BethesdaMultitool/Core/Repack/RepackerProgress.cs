@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Repack;
+namespace BethesdaMultitool.Core.Repack;
 
 /// <summary>
 ///     Progress information for the repacker.

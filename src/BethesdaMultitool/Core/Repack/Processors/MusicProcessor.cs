@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats.Xma;
 
-namespace BethesdaMultitool.Repack.Processors;
+namespace BethesdaMultitool.Core.Repack.Processors;
 
 /// <summary>
 ///     Processor for Music folder - converts XMA files to MP3.

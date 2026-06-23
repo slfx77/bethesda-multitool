@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Repack;
+namespace BethesdaMultitool.Core.Repack;
 
 /// <summary>
 ///     Configuration options for the Xbox 360 to PC repacker.

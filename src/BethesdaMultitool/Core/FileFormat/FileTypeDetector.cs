@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core;
+namespace BethesdaMultitool.Core.FileFormat;
 
 /// <summary>
 ///     Detects file types by examining magic bytes at the start of a file.
