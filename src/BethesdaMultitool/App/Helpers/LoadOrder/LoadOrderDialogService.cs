@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Windows.Storage.Pickers;
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.Formats.Subtitles;

@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 namespace BethesdaMultitool;
 
@@ -130,6 +131,21 @@ internal static class PlacedObjectCategoryResolver
         {
             properties.Add(new EsmPropertyEntry
                 { Name = "Category", Value = "Creature", Category = "Identity" });
+        }
+
+        // Model (the base object's NIF/SPT path) — prefer the reference's own enriched ModelPath, else
+        // resolve via the base FormID. Skip engine marker / imposter pseudo-paths so they don't appear.
+        var modelPath = !string.IsNullOrEmpty(obj.ModelPath)
+            ? obj.ModelPath
+            : worldViewData?.ModelPathIndex.TryGetValue(obj.BaseFormId, out var mp) == true
+                ? mp
+                : null;
+        if (!string.IsNullOrEmpty(modelPath) &&
+            !RenderableReference.IsMarkerModelPath(modelPath) &&
+            !RenderableReference.IsImposterModelPath(modelPath))
+        {
+            properties.Add(new EsmPropertyEntry
+                { Name = "Model", Value = modelPath, Category = "Identity" });
         }
 
         var useCount = worldViewData?.UsageIndex?.GetUseCount(obj.FormId) ?? 0;

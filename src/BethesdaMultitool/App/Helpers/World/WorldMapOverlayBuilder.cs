@@ -22,6 +22,7 @@ internal static class WorldMapOverlayBuilder
     public static WorldViewData BuildFromRecords(RecordCollection semantic, string? sourceFilePath)
     {
         var (boundsIndex, categoryIndex) = ObjectBoundsIndex.BuildCombined(semantic);
+        var modelPathIndex = ObjectBoundsIndex.BuildModelPathIndex(semantic);
 
         // Pre-compute grayscale heightmap and water mask for the first (default) worldspace
         byte[]? hmGrayscale = null;
@@ -78,6 +79,7 @@ internal static class WorldMapOverlayBuilder
             CellByFormId = cellByFormId,
             RefrToCellIndex = refrToCellIndex,
             BoundsIndex = boundsIndex,
+            ModelPathIndex = modelPathIndex,
             SpeedTreeHeights = BuildSpeedTreeHeights(semantic),
             SpeedTreeLeafTextures = BuildSpeedTreeLeafTextures(semantic),
             CategoryIndex = categoryIndex,
@@ -169,6 +171,7 @@ internal static class WorldMapOverlayBuilder
         (float X, float Y, float Z)? playerPos)
     {
         var (boundsIndex, categoryIndex) = ObjectBoundsIndex.BuildCombined(suppRecords);
+        var modelPathIndex = ObjectBoundsIndex.BuildModelPathIndex(suppRecords);
 
         byte[]? hmGrayscale = null;
         byte[]? hmWaterMask = null;
@@ -215,6 +218,7 @@ internal static class WorldMapOverlayBuilder
             CellByFormId = cellByFormId,
             RefrToCellIndex = refrToCellIndex,
             BoundsIndex = boundsIndex,
+            ModelPathIndex = modelPathIndex,
             SpeedTreeHeights = BuildSpeedTreeHeights(suppRecords),
             SpeedTreeLeafTextures = BuildSpeedTreeLeafTextures(suppRecords),
             CategoryIndex = categoryIndex,
