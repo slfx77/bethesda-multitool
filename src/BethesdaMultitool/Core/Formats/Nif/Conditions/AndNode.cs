@@ -1,0 +1,11 @@
+using BethesdaMultitool.Core.Formats.Nif.Conversion;
+
+namespace BethesdaMultitool.Core.Formats.Nif.Conditions;
+
+internal sealed class AndNode(IExprNode left, IExprNode right) : IExprNode
+{
+    public bool Eval(NifVersionContext ctx)
+    {
+        return left.Eval(ctx) && right.Eval(ctx);
+    }
+}
