@@ -1,7 +1,7 @@
 using System.Globalization;
 using Spectre.Console;
 
-namespace BethesdaMultitool.Core;
+namespace BethesdaMultitool.Core.Diagnostics;
 
 /// <summary>
 ///     Simple logger with verbosity levels. Thread-safe singleton pattern.

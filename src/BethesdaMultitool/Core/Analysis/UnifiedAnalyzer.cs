@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Semantic;
 
-namespace BethesdaMultitool.Core;
+namespace BethesdaMultitool.Core.Analysis;
 
 /// <summary>
 ///     Format-agnostic file analysis. Auto-detects file type (ESM, DMP, save),

@@ -1,8 +1,9 @@
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 
-namespace BethesdaMultitool.Core;
+namespace BethesdaMultitool.Core.Analysis;
 
 /// <summary>
 ///     Result of format-agnostic file analysis and semantic parsing.
@@ -49,3 +50,4 @@ public sealed class UnifiedAnalysisResult : IDisposable
         return (mappedFile, accessor);
     }
 }
+

@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core;
+namespace BethesdaMultitool.Core.Diagnostics;
 
 /// <summary>
 ///     Verbosity levels for logging.

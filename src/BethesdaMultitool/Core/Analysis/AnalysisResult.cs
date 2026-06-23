@@ -4,7 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Recovery;
 
-namespace BethesdaMultitool.Core;
+namespace BethesdaMultitool.Core.Analysis;
 
 /// <summary>
 ///     Unified result of analyzing a memory dump.

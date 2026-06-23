@@ -1,4 +1,5 @@
-namespace BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Formats.SaveGame.Models;
+namespace BethesdaMultitool.Core.Analysis;
 
 /// <summary>
 ///     Identifies file types for the Single File Analysis tab.

@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core;
+namespace BethesdaMultitool.Core.Analysis;
 
 /// <summary>
 ///     Progress information for analysis operations.
