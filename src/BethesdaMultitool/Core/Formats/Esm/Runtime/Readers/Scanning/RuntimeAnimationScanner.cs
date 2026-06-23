@@ -1,4 +1,5 @@
 using System.Text;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 

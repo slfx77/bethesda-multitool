@@ -4,6 +4,7 @@ using SharpGen.Runtime;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
 using Vortice.WinUI;
+using BethesdaMultitool.Core.Diagnostics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 

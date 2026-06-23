@@ -1,6 +1,8 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -342,7 +344,7 @@ internal static class WorldMapLayerRenderer
                         }
                         catch (Exception ex)
                         {
-                            BethesdaMultitool.Core.Logger.Instance.Warn(
+                            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
                                 "TerrainTextures: cell ({0},{1}) render failed and will be skipped: {2}",
                                 cell.GridX!.Value, cell.GridY!.Value, ex);
                         }
@@ -1001,3 +1003,4 @@ internal static class WorldMapLayerRenderer
         return MaxTexturePixelsPerCell; // 1056
     }
 }
+

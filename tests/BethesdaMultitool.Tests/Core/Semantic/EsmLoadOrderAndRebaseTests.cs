@@ -1,6 +1,9 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
+using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
+using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;

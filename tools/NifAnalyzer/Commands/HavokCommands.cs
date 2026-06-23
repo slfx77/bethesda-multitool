@@ -66,7 +66,7 @@ internal static class HavokCommands
     private static void HavokDump(string path)
     {
         var data = File.ReadAllBytes(path);
-        var nif = BethesdaMultitool.Core.Formats.Nif.NifParser.Parse(data);
+        var nif = BethesdaMultitool.Core.Formats.Nif.Parser.NifParser.Parse(data);
         if (nif is null)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] failed to parse NIF.");

@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -112,3 +114,4 @@ internal static class DmpDanglingEnrichment
         return true;
     }
 }
+

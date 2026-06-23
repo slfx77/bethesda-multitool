@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Esm.Export.Map;
 using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export;
@@ -267,3 +268,4 @@ internal static class WorldMapExporter
         }
     }
 }
+

@@ -1,5 +1,7 @@
 using System.Numerics;
+using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;

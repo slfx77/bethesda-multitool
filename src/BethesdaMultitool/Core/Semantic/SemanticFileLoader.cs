@@ -1,10 +1,12 @@
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Localization;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
+using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Recovery;
 

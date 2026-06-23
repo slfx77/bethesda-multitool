@@ -1,4 +1,6 @@
 using System.CommandLine;
+using BethesdaMultitool.CLI.Commands.Render;
+using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI;
 using Xunit;
 

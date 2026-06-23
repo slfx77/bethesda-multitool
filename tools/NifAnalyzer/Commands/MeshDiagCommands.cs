@@ -59,7 +59,7 @@ internal static class MeshDiagCommands
         }
 
         var data = File.ReadAllBytes(path);
-        var nif = BethesdaMultitool.Core.Formats.Nif.NifParser.Parse(data);
+        var nif = BethesdaMultitool.Core.Formats.Nif.Parser.NifParser.Parse(data);
         if (nif == null)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] Failed to parse NIF header: {0}", Markup.Escape(path));
@@ -76,7 +76,7 @@ internal static class MeshDiagCommands
             }
 
             data = converted.OutputData;
-            nif = BethesdaMultitool.Core.Formats.Nif.NifParser.Parse(data);
+            nif = BethesdaMultitool.Core.Formats.Nif.Parser.NifParser.Parse(data);
             if (nif == null)
             {
                 AnsiConsole.MarkupLine("[red]Error:[/] Failed to parse converted NIF: {0}", Markup.Escape(path));
@@ -125,7 +125,7 @@ internal static class MeshDiagCommands
 
     private static void RenderSummary(
         string path,
-        BethesdaMultitool.Core.Formats.Nif.NifInfo nif,
+        BethesdaMultitool.Core.Formats.Nif.Parser.NifInfo nif,
         NifRenderableModel model,
         string? shapeFilter,
         int textureArchiveCount,

@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using Windows.Storage.Pickers;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
+using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Collections;
 using BethesdaMultitool.Core.Diagnostics;
@@ -251,7 +253,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private async Task AutoOpenRequestedViewAsync(Microsoft.UI.Xaml.Controls.TabViewItem targetTab)
     {
         var view = Program.AutoOpenView?.Trim().ToLowerInvariant() ?? "";
-        var log = BethesdaMultitool.Core.Logger.Instance;
+        var log = BethesdaMultitool.Core.Diagnostics.Logger.Instance;
         log.Info("[AutoOpen] view={0} ws={1} layer={2} — waiting for analysis + map populate…",
             view, Program.AutoOpenWorldspace ?? "(densest)", Program.AutoOpenLayer ?? "(default)");
 
@@ -317,7 +319,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     /// </summary>
     private async Task ReproLayerToggleAsync()
     {
-        var log = BethesdaMultitool.Core.Logger.Instance;
+        var log = BethesdaMultitool.Core.Diagnostics.Logger.Instance;
         var original = WorldMapControl.Profiler_Layer;
 
         void LogState(string tag) => log.Info(

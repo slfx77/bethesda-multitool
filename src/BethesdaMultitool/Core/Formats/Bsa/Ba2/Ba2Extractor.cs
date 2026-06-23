@@ -7,6 +7,7 @@
 
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 

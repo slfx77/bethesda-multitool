@@ -1,6 +1,8 @@
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Rendering.Npc;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Records;

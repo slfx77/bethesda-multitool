@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 
@@ -80,3 +82,4 @@ internal sealed class SemanticSourceSet
         };
     }
 }
+

@@ -1,4 +1,5 @@
 using BethesdaMultitool;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using System.Globalization;

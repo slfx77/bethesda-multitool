@@ -5,7 +5,8 @@
 
 using System.Buffers.Binary;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Nif.Geometry;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Skinning;

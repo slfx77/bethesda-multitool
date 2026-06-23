@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Nif.Geometry;
+using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Conversion;

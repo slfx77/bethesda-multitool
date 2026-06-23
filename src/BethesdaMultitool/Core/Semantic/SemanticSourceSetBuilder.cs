@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Analysis;
 namespace BethesdaMultitool.Core.Semantic;
 
 /// <summary>

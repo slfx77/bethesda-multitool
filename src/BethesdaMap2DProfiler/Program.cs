@@ -1,4 +1,5 @@
 using BethesdaMultitool;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;

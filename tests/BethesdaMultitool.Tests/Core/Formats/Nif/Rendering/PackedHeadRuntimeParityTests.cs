@@ -1,5 +1,5 @@
 using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Nif.Geometry;
+using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Xunit;
 

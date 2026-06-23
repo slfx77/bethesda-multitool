@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.VersionTracking.Models;
 

@@ -1,5 +1,6 @@
 using System.CommandLine;
 using BethesdaMultitool.CLI.Rendering.Nif;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core;
 using Spectre.Console;
 

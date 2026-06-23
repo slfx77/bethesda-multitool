@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using Xunit;
 

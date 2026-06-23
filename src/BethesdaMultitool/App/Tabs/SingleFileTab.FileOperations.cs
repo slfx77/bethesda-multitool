@@ -1,4 +1,7 @@
 using Windows.Storage.Pickers;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
+using BethesdaMultitool.Core.Formats.Esm.Export.Report;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.SaveGame.Export;
 using BethesdaMultitool.Core.RuntimeBuffer;
@@ -439,3 +442,4 @@ public sealed partial class SingleFileTab
 
     #endregion
 }
+

@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Text;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 

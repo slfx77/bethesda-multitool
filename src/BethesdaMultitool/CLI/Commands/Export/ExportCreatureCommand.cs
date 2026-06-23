@@ -1,5 +1,6 @@
 using System.CommandLine;
 using BethesdaMultitool.CLI.Rendering.Gltf;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;

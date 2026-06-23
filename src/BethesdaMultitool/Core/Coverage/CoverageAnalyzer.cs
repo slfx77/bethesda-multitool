@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Minidump;

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.CLI;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using Microsoft.Graphics.Canvas;
 using Microsoft.UI.Xaml;
@@ -460,7 +461,7 @@ public sealed partial class WorldMapControl
                 _pendingCellApplies.Enqueue((cacheGen, cell));
             }
 
-            BethesdaMultitool.Core.Logger.Instance.Info(
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Info(
                 "TerrainTextures stream v{0} complete: requested={1}, produced={2}, skipped-by-worker={3}",
                 version, requestedCount, producedCount, requestedCount - producedCount);
 
@@ -481,7 +482,7 @@ public sealed partial class WorldMapControl
         {
             // Log the full exception (including AggregateException inner) to the diagnostic
             // file. The visible banner has limited width and can clip long stack traces.
-            BethesdaMultitool.Core.Logger.Instance.Warn(
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
                 "TerrainTextures streaming failed: {0}", ex.ToString());
             DispatcherQueue?.TryEnqueue(() =>
             {
@@ -786,7 +787,7 @@ public sealed partial class WorldMapControl
         }
         catch (Exception ex)
         {
-            BethesdaMultitool.Core.Logger.Instance.Warn("Terrain aggregate build failed: {0}", ex.ToString());
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn("Terrain aggregate build failed: {0}", ex.ToString());
             _ = DispatcherQueue.TryEnqueue(() =>
             {
                 _terrainAggregateBuilding = false;
@@ -817,14 +818,14 @@ public sealed partial class WorldMapControl
                 : WorldMapLayerRenderer.HeightmapPixelsPerCell;
             _terrainAggregateWorldspaceFormId = worldspaceFormId;
             _terrainAggregateUnavailable = false;
-            BethesdaMultitool.Core.Logger.Instance.Info(
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Info(
                 "TerrainTextures aggregate LOD built: {0}x{1}px @ {2}px/cell ws=0x{3:X8}",
                 bmp.Width, bmp.Height, _terrainAggPixelsPerCell, worldspaceFormId ?? 0);
         }
         else
         {
             // Worldspace too large for a single aggregate bitmap — fall back to per-cell streaming.
-            BethesdaMultitool.Core.Logger.Instance.Info(
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Info(
                 "TerrainTextures aggregate LOD unavailable (worldspace too large) — using per-cell.");
             _terrainAggregateUnavailable = true;
             _terrainTexturesAggregateActive = false;

@@ -1,4 +1,5 @@
 using System.Text;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Probes;

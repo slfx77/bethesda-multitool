@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -226,3 +227,4 @@ internal static class HeightmapRenderer
         Array.Copy(blurred, mask, mask.Length);
     }
 }
+

@@ -2,6 +2,7 @@ using System.IO.MemoryMappedFiles;
 using Windows.System;
 using Windows.UI;
 using Windows.UI.Core;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Recovery;

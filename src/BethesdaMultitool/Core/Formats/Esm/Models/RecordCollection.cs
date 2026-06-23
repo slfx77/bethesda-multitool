@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
@@ -803,3 +804,4 @@ public record RecordCollection
         return merged;
     }
 }
+

@@ -1,5 +1,7 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Export.Map;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export;
@@ -637,3 +639,4 @@ public static class DmpMapRenderCommands
             _ => new SchemeColor("Amber", 255, 182, 66)
         };
 }
+

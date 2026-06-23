@@ -7,6 +7,7 @@
 // documented BA2 layouts; this code is not derived from any copyleft implementation.
 
 using System.Text;
+using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 

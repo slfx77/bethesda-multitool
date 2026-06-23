@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using Xunit;

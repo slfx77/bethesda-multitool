@@ -2,7 +2,8 @@
 // Parses geometry block fields and calculates how much additional space
 // is needed when expanding packed geometry data into standard format.
 
-using BethesdaMultitool.Core.Formats.Nif.Geometry;
+using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Conversion;

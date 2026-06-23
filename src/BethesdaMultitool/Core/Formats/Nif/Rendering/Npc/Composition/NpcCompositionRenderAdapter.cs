@@ -1,3 +1,4 @@
+using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 

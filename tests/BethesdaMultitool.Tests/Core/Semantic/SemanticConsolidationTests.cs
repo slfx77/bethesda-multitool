@@ -3,6 +3,11 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
+using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
+using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -1894,3 +1899,4 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         throw new DirectoryNotFoundException("Could not locate repository root from test base directory.");
     }
 }
+

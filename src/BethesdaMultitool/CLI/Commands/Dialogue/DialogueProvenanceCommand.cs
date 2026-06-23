@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;

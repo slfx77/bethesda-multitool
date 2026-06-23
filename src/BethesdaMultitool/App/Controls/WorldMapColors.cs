@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using BethesdaMultitool.Core.Formats.Esm.Export.Map;
 using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export;
@@ -137,3 +138,4 @@ internal static class WorldMapColors
         return fullName ?? editorId ?? $"0x{ws.FormId:X8}";
     }
 }
+

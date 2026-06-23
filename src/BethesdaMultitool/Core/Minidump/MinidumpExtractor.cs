@@ -1,4 +1,5 @@
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Carving;
 using BethesdaMultitool.Core.Extraction;
 using BethesdaMultitool.Core.Formats;

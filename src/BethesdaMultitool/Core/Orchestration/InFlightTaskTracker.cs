@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Diagnostics;
 namespace BethesdaMultitool.Core.Orchestration;
 
 /// <summary>

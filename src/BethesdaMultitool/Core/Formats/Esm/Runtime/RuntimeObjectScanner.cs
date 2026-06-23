@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Minidump;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime;

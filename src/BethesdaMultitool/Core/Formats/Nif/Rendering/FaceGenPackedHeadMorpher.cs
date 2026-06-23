@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Formats.Nif.Geometry;
+using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 

@@ -4,6 +4,8 @@
 
 using System.Collections.Concurrent;
 using System.Globalization;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Schema;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Conversion;

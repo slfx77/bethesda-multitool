@@ -1,3 +1,6 @@
+using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
+using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Minidump;
@@ -106,3 +109,4 @@ internal sealed record LateEnrichmentRecords
     public required IReadOnlyList<KeyRecord> Keys { get; init; }
     public required IReadOnlyList<ContainerRecord> Containers { get; init; }
 }
+

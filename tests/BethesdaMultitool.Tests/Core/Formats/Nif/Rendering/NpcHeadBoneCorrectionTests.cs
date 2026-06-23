@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;

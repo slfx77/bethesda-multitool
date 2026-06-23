@@ -1,4 +1,7 @@
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
+using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Diagnostics;
@@ -107,7 +110,7 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
     public bool RecordBreakdownPopulated { get; set; }
 
     // ── Save file data ──
-    public Core.Formats.SaveGame.SaveFile? SaveData { get; set; }
+    public Core.Formats.SaveGame.Models.SaveFile? SaveData { get; set; }
     public Dictionary<int, DecodedFormData>? DecodedForms { get; set; }
 
     // ── Load order data ──
@@ -261,3 +264,4 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
         FileType = AnalysisFileType.Unknown;
     }
 }
+

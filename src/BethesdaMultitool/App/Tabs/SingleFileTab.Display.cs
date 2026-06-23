@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Localization;
 using Microsoft.UI.Xaml;

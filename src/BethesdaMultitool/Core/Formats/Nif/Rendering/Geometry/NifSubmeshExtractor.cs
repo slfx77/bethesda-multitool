@@ -1,6 +1,7 @@
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Geometry;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Parsing;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;

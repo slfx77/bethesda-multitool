@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.VersionTracking.Models;
 
 namespace BethesdaMultitool.Core.VersionTracking.Caching;

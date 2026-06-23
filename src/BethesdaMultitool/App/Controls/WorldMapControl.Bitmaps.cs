@@ -1,4 +1,6 @@
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
+using BethesdaMultitool.Core.Formats.Esm.Export.Map;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using Microsoft.Graphics.Canvas;
@@ -92,7 +94,7 @@ public sealed partial class WorldMapControl
         }
         catch (Exception ex)
         {
-            BethesdaMultitool.Core.Logger.Instance.Warn("World water bitmap build failed: {0}", ex.ToString());
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn("World water bitmap build failed: {0}", ex.ToString());
             _ = DispatcherQueue.TryEnqueue(() => { _worldWaterBuilding = false; });
         }
     }
@@ -363,3 +365,4 @@ public sealed partial class WorldMapControl
         }
     }
 }
+

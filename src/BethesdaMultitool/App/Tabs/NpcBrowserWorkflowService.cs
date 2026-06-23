@@ -1,4 +1,5 @@
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;

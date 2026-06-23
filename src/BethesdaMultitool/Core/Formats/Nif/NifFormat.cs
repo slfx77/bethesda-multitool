@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Utils;
 

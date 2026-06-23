@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Xma;

@@ -3,6 +3,7 @@
 // and to extract/convert triangle strips from NiSkinPartition blocks.
 
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Diagnostics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Skinning;
 

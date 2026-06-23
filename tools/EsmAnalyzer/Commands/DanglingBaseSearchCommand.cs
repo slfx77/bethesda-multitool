@@ -2,6 +2,8 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Semantic;
@@ -204,3 +206,4 @@ internal static class DanglingBaseSearchCommand
         return uint.TryParse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
     }
 }
+

@@ -1,6 +1,10 @@
 using System.CommandLine;
 using System.Text;
 using System.Text.Json;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
+using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Export.Projections;
@@ -422,3 +426,4 @@ internal static class ReportConsistencyCommand
         }
     }
 }
+

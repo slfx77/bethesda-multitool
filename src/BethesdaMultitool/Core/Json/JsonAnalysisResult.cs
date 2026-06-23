@@ -1,8 +1,9 @@
+using BethesdaMultitool.Core.Analysis;
 namespace BethesdaMultitool.Core.Json;
 
 /// <summary>
 ///     Analysis result for JSON serialization.
-///     This is a simplified version of Core.AnalysisResult for trim-compatible JSON output.
+///     This is a simplified version of Core.Analysis.AnalysisResult for trim-compatible JSON output.
 /// </summary>
 public sealed class JsonAnalysisResult
 {

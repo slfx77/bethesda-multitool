@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Minidump;
@@ -18,3 +20,4 @@ internal sealed record SemanticSource
 
     public string DisplayName => Path.GetFileName(FilePath);
 }
+

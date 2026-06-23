@@ -1,4 +1,5 @@
 using System.Globalization;
+using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Esm;
 

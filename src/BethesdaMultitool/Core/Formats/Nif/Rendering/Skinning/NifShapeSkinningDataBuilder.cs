@@ -1,4 +1,6 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 

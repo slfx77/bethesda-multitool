@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Schema;
 using static BethesdaMultitool.Core.Formats.Nif.Conversion.NifEndianUtils;
 

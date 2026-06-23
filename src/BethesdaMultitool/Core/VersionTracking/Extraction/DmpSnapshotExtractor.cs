@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.VersionTracking.Models;
 
 namespace BethesdaMultitool.Core.VersionTracking.Extraction;

@@ -1,7 +1,9 @@
 using System.CommandLine;
 using EgtAnalyzer.Settings;
 using EgtAnalyzer.Verification;
+using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;

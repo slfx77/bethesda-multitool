@@ -1,6 +1,7 @@
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.UI.Xaml;
 using Windows.UI;
+using BethesdaMultitool.Core.Diagnostics;
 
 namespace BethesdaMultitool;
 
@@ -20,7 +21,7 @@ public sealed partial class WorldMapControl
         var sig = $"{where}|{ex.GetType().FullName}|{ex.Message}";
         if (sig == _lastUiFaultSignature) return;
         _lastUiFaultSignature = sig;
-        BethesdaMultitool.Core.Logger.Instance.Error(
+        BethesdaMultitool.Core.Diagnostics.Logger.Instance.Error(
             "[Map2D] UI-thread fault in {0}: mode={1} layer={2} zoom={3:F5} pan=({4:F1},{5:F1}) " +
             "ws=0x{6:X8} renderedObjects={7} navMesh={8} aggregate={9} cacheSize={10} cap={11}\n{12}",
             where, _state.Mode, _currentLayer, _zoom, _panOffset.X, _panOffset.Y,

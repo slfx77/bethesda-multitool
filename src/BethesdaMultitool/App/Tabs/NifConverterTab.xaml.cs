@@ -1,5 +1,7 @@
 using Windows.Storage.Pickers;
+using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -203,7 +205,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             OverwriteExistingCheckBox.IsChecked == true);
         var verbose = VerboseOutputCheckBox.IsChecked == true;
 
-        if (verbose) Core.Logger.Instance.Level = Core.LogLevel.Debug;
+        if (verbose) Core.Diagnostics.Logger.Instance.Level = Core.Diagnostics.LogLevel.Debug;
 
         ConversionCts = new CancellationTokenSource();
         UpdateButtonStates();

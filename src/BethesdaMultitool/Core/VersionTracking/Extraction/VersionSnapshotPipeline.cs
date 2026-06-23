@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.VersionTracking.Models;
 

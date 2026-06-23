@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Export.Csv;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
@@ -629,3 +630,4 @@ public sealed class NpcEncoder : IRecordEncoder
         return baseName + suffix;
     }
 }
+

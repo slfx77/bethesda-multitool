@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
+using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Formats.Bsa;
 using Spectre.Console;
 

@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.SaveGame.Models;
 namespace BethesdaMultitool.Core.FileFormat;
 
 /// <summary>

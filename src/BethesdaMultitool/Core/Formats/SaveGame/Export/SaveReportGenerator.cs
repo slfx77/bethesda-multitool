@@ -1,5 +1,8 @@
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
+using BethesdaMultitool.Core.Formats.SaveGame.Decoding;
+using BethesdaMultitool.Core.Formats.SaveGame.Models;
 
 namespace BethesdaMultitool.Core.Formats.SaveGame.Export;
 
@@ -485,3 +488,4 @@ public static class SaveReportGenerator
         return sb.ToString();
     }
 }
+

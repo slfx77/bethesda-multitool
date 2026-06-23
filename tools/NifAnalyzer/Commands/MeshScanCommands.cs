@@ -1,4 +1,6 @@
 using System.CommandLine;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Spectre.Console;
@@ -67,7 +69,7 @@ internal static class MeshScanCommands
 
         if (verbose)
         {
-            BethesdaMultitool.Core.Logger.Instance.SetVerbose(true);
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.SetVerbose(true);
         }
 
         var files = Directory.EnumerateFiles(dir, "*.nif", SearchOption.AllDirectories).ToList();

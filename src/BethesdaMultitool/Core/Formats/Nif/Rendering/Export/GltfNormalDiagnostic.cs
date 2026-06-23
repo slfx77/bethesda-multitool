@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Diagnostics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 

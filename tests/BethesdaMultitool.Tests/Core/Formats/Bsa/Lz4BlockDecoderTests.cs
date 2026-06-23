@@ -1,4 +1,5 @@
 using System.Text;
+using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa;
 using Xunit;
 

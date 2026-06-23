@@ -1,3 +1,4 @@
+using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 

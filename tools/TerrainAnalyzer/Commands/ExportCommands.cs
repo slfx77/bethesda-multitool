@@ -1,4 +1,5 @@
 using System.CommandLine;
+using BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using Spectre.Console;
 
@@ -99,3 +100,4 @@ internal static class ExportCommands
         }
     }
 }
+

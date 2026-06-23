@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing;

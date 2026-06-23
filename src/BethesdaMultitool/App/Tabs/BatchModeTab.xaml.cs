@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.MemoryMappedFiles;
 using Windows.Storage.Pickers;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Extraction;
 using BethesdaMultitool.Core.Formats.Esm;
@@ -547,3 +549,4 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
 
     #endregion
 }
+

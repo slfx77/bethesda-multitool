@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using Microsoft.Graphics.Canvas;
@@ -100,7 +101,7 @@ public sealed partial class WorldMapControl
         }
         catch (Exception ex)
         {
-            BethesdaMultitool.Core.Logger.Instance.Warn("Map export failed: {0}", ex.ToString());
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn("Map export failed: {0}", ex.ToString());
         }
         finally
         {
@@ -279,7 +280,7 @@ public sealed partial class WorldMapControl
                 }
                 catch (IOException ex)
                 {
-                    BethesdaMultitool.Core.Logger.Instance.Warn(
+                    BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
                         "Map export: could not delete empty base file '{0}': {1}", basePath, ex.Message);
                 }
             }

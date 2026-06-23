@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;

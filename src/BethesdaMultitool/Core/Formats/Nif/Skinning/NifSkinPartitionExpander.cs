@@ -3,7 +3,8 @@
 // but PC NIFs need them in NiSkinPartition for skeletal animation to work.
 
 using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Nif.Geometry;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Skinning;
 

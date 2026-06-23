@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Localization;
@@ -141,7 +142,7 @@ public sealed partial class SingleFileTab
         {
             if (IsCurrentWorldMapLoad(loadGeneration))
             {
-                BethesdaMultitool.Core.Logger.Instance.Warn(
+                BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
                     "World map population failed: {0}", ex);
                 WorldMapStatusText.Text = $"World map failed: {ex.GetType().Name}: {ex.Message}";
             }
@@ -781,3 +782,4 @@ public sealed partial class SingleFileTab
         WorldView3DControl.Visibility = show3D ? Visibility.Visible : Visibility.Collapsed;
     }
 }
+

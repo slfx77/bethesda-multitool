@@ -1,5 +1,5 @@
 using System.CommandLine;
-using BethesdaMultitool.Core.Formats.Nif.Geometry;
+using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
 using NifAnalyzer.Parsers;
 using Spectre.Console;
 using static BethesdaMultitool.Core.Formats.Nif.Conversion.NifEndianUtils;

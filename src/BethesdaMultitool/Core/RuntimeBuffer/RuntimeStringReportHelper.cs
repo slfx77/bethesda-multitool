@@ -1,4 +1,5 @@
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Coverage;
 
 namespace BethesdaMultitool.Core.RuntimeBuffer;

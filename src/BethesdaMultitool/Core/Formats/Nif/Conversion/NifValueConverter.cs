@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
-using BethesdaMultitool.Core.Formats.Nif.Expressions;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Conditions;
 using BethesdaMultitool.Core.Formats.Nif.Schema;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Conversion;

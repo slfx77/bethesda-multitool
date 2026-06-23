@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;

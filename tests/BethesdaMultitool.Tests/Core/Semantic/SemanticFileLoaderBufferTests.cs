@@ -1,4 +1,6 @@
 using System.Text;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;

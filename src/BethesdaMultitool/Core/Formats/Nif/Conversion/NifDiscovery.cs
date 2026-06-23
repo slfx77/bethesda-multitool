@@ -2,7 +2,9 @@
 // Combines parsing, triangle extraction, and geometry calculation methods
 // that populate NifConversionState before the output-writing phase.
 
-using BethesdaMultitool.Core.Formats.Nif.Geometry;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Skinning;
 using BethesdaMultitool.Core.Utils;
 

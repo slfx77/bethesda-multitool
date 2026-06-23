@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Extraction;

@@ -1,9 +1,13 @@
 global using BethesdaMultitool.CLI.Commands.Analysis;
 global using BethesdaMultitool.CLI.Commands.Bsa;
+global using BethesdaMultitool.CLI.Commands.Carve;
+global using BethesdaMultitool.CLI.Commands.Conversion;
 global using BethesdaMultitool.CLI.Commands.Dialogue;
 global using BethesdaMultitool.CLI.Commands.Dmp;
 global using BethesdaMultitool.CLI.Commands.Esm;
 global using BethesdaMultitool.CLI.Commands.Export;
+global using BethesdaMultitool.CLI.Commands.Render;
+global using BethesdaMultitool.CLI.Commands.Repack;
 global using BethesdaMultitool.CLI.Commands.Report;
 global using BethesdaMultitool.CLI.Commands.Save;
 global using BethesdaMultitool.CLI.Commands.Version;

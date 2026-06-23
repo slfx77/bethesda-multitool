@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Globalization;
 using EgtAnalyzer.Settings;
 using EgtAnalyzer.Verification;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;

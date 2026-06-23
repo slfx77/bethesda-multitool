@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.CLI.Rendering.Nif;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;

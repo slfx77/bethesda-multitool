@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Text;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Xma;
@@ -185,3 +187,4 @@ internal static class XmaWavConverter
         return (double)dataSize / byteRate;
     }
 }
+

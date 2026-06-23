@@ -393,3 +393,4 @@ internal static class ScanCommands
         public Dictionary<string, int> DimensionCounts { get; } = new();
     }
 }
+

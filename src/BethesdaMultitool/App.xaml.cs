@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using UnhandledExceptionEventArgs = Microsoft.UI.Xaml.UnhandledExceptionEventArgs;
+using BethesdaMultitool.Core.Diagnostics;
 
 namespace BethesdaMultitool;
 
@@ -75,7 +76,7 @@ public sealed partial class FalloutApp : Application
 
         try
         {
-            var log = BethesdaMultitool.Core.Logger.Instance;
+            var log = BethesdaMultitool.Core.Diagnostics.Logger.Instance;
             log.Error("[CRASH] Unhandled XAML exception: {0}", e.Message);
             LogInnerExceptions(log, e.Exception);
         }
@@ -92,7 +93,7 @@ public sealed partial class FalloutApp : Application
     ///     chain, recording each layer's HRESULT, type, message, and stack trace to the persistent
     ///     GUI log so a UI-thread crash can be diagnosed post-mortem without a debugger attached.
     /// </summary>
-    private static void LogInnerExceptions(BethesdaMultitool.Core.Logger log, Exception? ex)
+    private static void LogInnerExceptions(BethesdaMultitool.Core.Diagnostics.Logger log, Exception? ex)
     {
         var depth = 0;
         while (ex != null)

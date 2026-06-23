@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Bsa.Models;
+using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Formats.Bsa;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;

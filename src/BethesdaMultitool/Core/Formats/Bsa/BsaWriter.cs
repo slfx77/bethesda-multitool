@@ -3,6 +3,8 @@
 
 using System.IO.Compression;
 using System.Text;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Bsa.Models;
 
 namespace BethesdaMultitool.Core.Formats.Bsa;
 

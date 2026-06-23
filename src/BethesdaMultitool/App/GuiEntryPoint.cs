@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using WinRT;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core;
 using UnhandledExceptionEventArgs = System.UnhandledExceptionEventArgs;
 
@@ -143,7 +144,7 @@ public static class GuiEntryPoint
 
         try
         {
-            var log = BethesdaMultitool.Core.Logger.Instance;
+            var log = BethesdaMultitool.Core.Diagnostics.Logger.Instance;
             log.Error("[FATAL] {0} (managed heap {1} MB, terminating={2}):\n{3}",
                 context, managedHeapMb, isTerminating, detail);
         }

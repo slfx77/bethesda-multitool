@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Minidump;
 using Spectre.Console;

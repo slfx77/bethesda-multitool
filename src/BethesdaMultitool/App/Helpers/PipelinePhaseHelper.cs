@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core;
 
@@ -62,7 +63,7 @@ internal static class PipelinePhaseHelper
     ///     Computes the file info card display values from an analysis result.
     /// </summary>
     internal static FileInfoDisplay? ComputeFileInfoDisplay(
-        Core.AnalysisResult? result, bool isEsmFile, Func<long, string> formatSize)
+        Core.Analysis.AnalysisResult? result, bool isEsmFile, Func<long, string> formatSize)
     {
         if (result == null)
         {

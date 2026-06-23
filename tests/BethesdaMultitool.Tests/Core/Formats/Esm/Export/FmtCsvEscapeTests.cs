@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using Xunit;
 
@@ -36,3 +37,4 @@ public class FmtCsvEscapeTests
         Assert.Equal(expected, Fmt.CsvEscape(input));
     }
 }
+

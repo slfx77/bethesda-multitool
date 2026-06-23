@@ -6,6 +6,8 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 
 namespace BethesdaMultitool;
 
@@ -32,7 +34,7 @@ public sealed partial class MainWindow : Window
                 var logPath = string.IsNullOrWhiteSpace(logOverride)
                     ? Path.Combine(Path.GetTempPath(), "BethesdaMultitool-gui.log")
                     : Path.GetFullPath(logOverride);
-                BethesdaMultitool.Core.Logger.Instance.SetLogFile(logPath);
+                BethesdaMultitool.Core.Diagnostics.Logger.Instance.SetLogFile(logPath);
             }
             catch
             {

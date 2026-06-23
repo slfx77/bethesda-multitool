@@ -1,4 +1,7 @@
 using System.Globalization;
+using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
+using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 
@@ -644,3 +647,4 @@ internal static class CrossDumpProjectionAggregator
         }
     }
 }
+

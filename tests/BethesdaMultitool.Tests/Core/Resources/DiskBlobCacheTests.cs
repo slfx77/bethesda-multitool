@@ -1,4 +1,5 @@
 using System.Text;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Resources;
 using Xunit;

@@ -1,4 +1,5 @@
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Xma;
@@ -369,3 +370,4 @@ internal static class XmaParser
         public string? EmbeddedPath;
     }
 }
+

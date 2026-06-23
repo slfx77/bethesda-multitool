@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Threading;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core;
 
 namespace BethesdaMultitool;

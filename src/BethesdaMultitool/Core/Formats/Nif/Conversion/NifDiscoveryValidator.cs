@@ -3,7 +3,9 @@
 // and validates/updates geometry expansion sizes with triangle data.
 
 using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Nif.Geometry;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Skinning;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Conversion;

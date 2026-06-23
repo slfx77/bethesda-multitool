@@ -2,7 +2,9 @@
 // Extracts block index -> name mappings for node name restoration
 
 using System.Text;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Skinning;
 
