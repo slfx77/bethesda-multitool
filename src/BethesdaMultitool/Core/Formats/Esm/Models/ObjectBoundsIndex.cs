@@ -14,6 +14,51 @@ internal static class ObjectBoundsIndex
     }
 
     /// <summary>
+    ///     Builds a FormID → MODL model-path lookup from every base record type that carries a model
+    ///     (mirrors <see cref="Parsing.ObjectIndexBuilder" />). Used by the World tab's selected-object
+    ///     pane to surface a placed reference's NIF/SPT path when the reference wasn't directly enriched.
+    /// </summary>
+    public static Dictionary<uint, string> BuildModelPathIndex(RecordCollection records)
+    {
+        var models = new Dictionary<uint, string>();
+        AddModels(records.Statics, s => s.FormId, s => s.ModelPath, models);
+        AddModels(records.Activators, a => a.FormId, a => a.ModelPath, models);
+        AddModels(records.Doors, d => d.FormId, d => d.ModelPath, models);
+        AddModels(records.Lights, l => l.FormId, l => l.ModelPath, models);
+        AddModels(records.Furniture, f => f.FormId, f => f.ModelPath, models);
+        AddModels(records.StaticCollections, s => s.FormId, s => s.ModelPath, models);
+        AddModels(records.Weapons, w => w.FormId, w => w.ModelPath, models);
+        AddModels(records.Armor, a => a.FormId, a => a.ModelPath, models);
+        AddModels(records.Ammo, a => a.FormId, a => a.ModelPath, models);
+        AddModels(records.Consumables, c => c.FormId, c => c.ModelPath, models);
+        AddModels(records.MiscItems, m => m.FormId, m => m.ModelPath, models);
+        AddModels(records.Books, b => b.FormId, b => b.ModelPath, models);
+        AddModels(records.Containers, c => c.FormId, c => c.ModelPath, models);
+        AddModels(records.Keys, k => k.FormId, k => k.ModelPath, models);
+        AddModels(records.Notes, n => n.FormId, n => n.ModelPath, models);
+        AddModels(records.WeaponMods, w => w.FormId, w => w.ModelPath, models);
+        AddModels(records.GenericRecords, g => g.FormId, g => g.ModelPath, models);
+        return models;
+    }
+
+    private static void AddModels<T>(
+        List<T> records,
+        Func<T, uint> formIdSelector,
+        Func<T, string?> modelSelector,
+        Dictionary<uint, string> models)
+    {
+        foreach (var record in records)
+        {
+            var formId = formIdSelector(record);
+            var model = modelSelector(record);
+            if (formId != 0 && !string.IsNullOrEmpty(model))
+            {
+                models.TryAdd(formId, model);
+            }
+        }
+    }
+
+    /// <summary>
     ///     Builds both ObjectBounds and PlacedObjectCategory indexes in a single pass
     ///     over the record collections, avoiding redundant iteration.
     /// </summary>

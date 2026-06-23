@@ -1,3 +1,4 @@
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using Xunit;
@@ -5,39 +6,44 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 
 /// <summary>
-///     Pins the FNV WTHR NAM0 layout: TEN color categories, each a 24-byte "Time of Day Colors" struct of
-///     SIX RGBA bands (Sunrise/Day/Sunset/Night/HighNoon/Midnight) per the fopdoc FalloutNV WTHR
-///     definition. The original parser used a 16-byte (4-band) stride, which drifted 8 bytes per category
-///     and inverted every sky/sun color after category 0 (horizon black at noon / white at night). These
-///     tests are the regression guard for that stride.
+///     Pins the WTHR NAM0/PNAM weather-color layout across the FO3↔FNV format gap. FNV stores TEN color
+///     categories of SIX RGBA bands each (24 bytes — Sunrise/Day/Sunset/Night/HighNoon/Midnight); FO3 (the
+///     format the earliest crash dumps carry) stores only FOUR bands (16 bytes), since FNV added High Noon
+///     + Midnight. The band count is detected structurally from NAM0's length (10 categories) rather than
+///     assumed, so FO3-era records don't drift 8 bytes per category (horizon black at noon / white at
+///     night). These tests guard both the stride and the structural detection.
 /// </summary>
 public class WeatherColorParsingTests
 {
-    // Each band is 4 bytes laid out [R,G,B,A] (little-endian read). Two full 24-byte categories.
-    private static byte[] BuildTwoCategoryBuffer()
+    // A subrecord = 4-byte signature + 2-byte LE length + payload, matching EsmSubrecordUtils.
+    private static byte[] BuildSubrecord(string sig, int payloadLength)
     {
-        var data = new byte[48];
-        for (var i = 0; i < 48; i++)
+        var buffer = new byte[6 + payloadLength];
+        Encoding.ASCII.GetBytes(sig).CopyTo(buffer, 0);
+        buffer[4] = (byte)(payloadLength & 0xFF);
+        buffer[5] = (byte)((payloadLength >> 8) & 0xFF);
+        return buffer;
+    }
+
+    // Each band is 4 bytes laid out [R,G,B,A] (little-endian read). N full categories at the given stride.
+    private static byte[] BuildCategoryBuffer(int categories, int bandsPerEntry)
+    {
+        var data = new byte[categories * bandsPerEntry * 4];
+        for (var i = 0; i < data.Length; i++)
         {
-            // byte value encodes (band offset) so each band is trivially identifiable.
-            data[i] = (byte)(i + 1);
+            data[i] = (byte)(i + 1); // byte value encodes its offset so bands are trivially identifiable.
         }
 
         return data;
     }
 
     [Fact]
-    public void ReadWeatherColors_Uses24ByteStride_SixBandsPerCategory()
+    public void ReadWeatherColors_SixBands_Uses24ByteStride()
     {
-        var colors = MiscEnvironmentHandler.ReadWeatherColors(BuildTwoCategoryBuffer(), false);
+        var colors = MiscEnvironmentHandler.ReadWeatherColors(BuildCategoryBuffer(2, 6), false, 6);
 
         Assert.Equal(2, colors.Count);
-
-        // Category 0: bands at byte offsets 0,4,8,12,16,20.
         Assert.Equal(new WeatherRgba(1, 2, 3, 4), colors[0].Sunrise);
-        Assert.Equal(new WeatherRgba(5, 6, 7, 8), colors[0].Day);
-        Assert.Equal(new WeatherRgba(9, 10, 11, 12), colors[0].Sunset);
-        Assert.Equal(new WeatherRgba(13, 14, 15, 16), colors[0].Night);
         Assert.Equal(new WeatherRgba(17, 18, 19, 20), colors[0].HighNoon);
         Assert.Equal(new WeatherRgba(21, 22, 23, 24), colors[0].Midnight);
 
@@ -48,18 +54,50 @@ public class WeatherColorParsingTests
     }
 
     [Fact]
+    public void ReadWeatherColors_FourBands_Uses16ByteStride_AndBackfillsNoonMidnight()
+    {
+        // FO3: 4 bands, 16-byte stride. HighNoon/Midnight don't exist → fall back to Day/Night.
+        var colors = MiscEnvironmentHandler.ReadWeatherColors(BuildCategoryBuffer(2, 4), false, 4);
+
+        Assert.Equal(2, colors.Count);
+        Assert.Equal(new WeatherRgba(1, 2, 3, 4), colors[0].Sunrise);
+        Assert.Equal(new WeatherRgba(5, 6, 7, 8), colors[0].Day);
+        Assert.Equal(new WeatherRgba(13, 14, 15, 16), colors[0].Night);
+        Assert.Equal(colors[0].Day, colors[0].HighNoon);
+        Assert.Equal(colors[0].Night, colors[0].Midnight);
+
+        // Category 1 starts at byte 16 (16-byte stride), not 24.
+        Assert.Equal(new WeatherRgba(17, 18, 19, 20), colors[1].Sunrise);
+    }
+
+    [Fact]
     public void ReadWeatherColors_FullFnvNam0_DecodesTenCategories()
     {
-        // FNV NAM0 is 240 bytes = 10 categories × 24 bytes (NOT 15 × 16).
-        var colors = MiscEnvironmentHandler.ReadWeatherColors(new byte[240], false);
+        var colors = MiscEnvironmentHandler.ReadWeatherColors(new byte[240], false, 6);
         Assert.Equal(10, colors.Count);
     }
 
     [Fact]
-    public void ReadWeatherColors_TrailingPartialCategory_Ignored()
+    public void ReadWeatherColors_FullFo3Nam0_DecodesTenCategories()
     {
-        // 24 full bytes + 10 trailing bytes → only the one complete category is produced.
-        var colors = MiscEnvironmentHandler.ReadWeatherColors(new byte[34], false);
-        Assert.Single(colors);
+        // FO3 NAM0 is 160 bytes = 10 categories × 16 bytes (4 bands).
+        var colors = MiscEnvironmentHandler.ReadWeatherColors(new byte[160], false, 4);
+        Assert.Equal(10, colors.Count);
+    }
+
+    [Theory]
+    [InlineData(240, 6)] // FNV NAM0: 10 × 24
+    [InlineData(160, 4)] // FO3 NAM0: 10 × 16
+    public void DetectWeatherBands_ReadsBandCountFromNam0Length(int nam0Payload, int expectedBands)
+    {
+        var record = BuildSubrecord("NAM0", nam0Payload);
+        Assert.Equal(expectedBands, MiscEnvironmentHandler.DetectWeatherBands(record, record.Length, false));
+    }
+
+    [Fact]
+    public void DetectWeatherBands_NoNam0_DefaultsToFnvSixBands()
+    {
+        var record = BuildSubrecord("FNAM", 24);
+        Assert.Equal(6, MiscEnvironmentHandler.DetectWeatherBands(record, record.Length, false));
     }
 }

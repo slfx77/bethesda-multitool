@@ -523,6 +523,24 @@ public record RecordCollection
         return this with { Worldspaces = Worldspaces.Where(w => keep.Contains(w.FormId)).ToList() };
     }
 
+    /// <summary>
+    ///     Returns a copy whose <see cref="Cells" /> contains only entries whose FormID is in
+    ///     <paramref name="keep" />. Scopes a DMP view to the cells actually captured in the dump so the
+    ///     Load-Order ESM cells — merged in only to back base-record/texture/asset resolution — don't
+    ///     gap-fill the viewer's cell grid and lists. Call <see cref="RelinkWorldspaceCells" /> afterward
+    ///     so each worldspace's Cells reflects the trimmed set. All other collections (statics, textures,
+    ///     resolvers) stay shared by reference, so dumped objects still resolve their models/textures.
+    /// </summary>
+    public RecordCollection WithCellsFilteredTo(IReadOnlySet<uint> keep)
+    {
+        if (Cells.Count == 0 || Cells.All(c => keep.Contains(c.FormId)))
+        {
+            return this;
+        }
+
+        return this with { Cells = Cells.Where(c => keep.Contains(c.FormId)).ToList() };
+    }
+
     /// <summary>Creates a FormIdResolver from this collection's dictionaries.</summary>
     public FormIdResolver CreateResolver(Dictionary<uint, string>? overrideEditorIds = null)
     {

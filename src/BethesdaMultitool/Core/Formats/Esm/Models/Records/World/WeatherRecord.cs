@@ -43,6 +43,24 @@ public record WeatherRecord
     /// </summary>
     public IReadOnlyList<string> CloudLayerTextures { get; init; } = [];
 
+    /// <summary>
+    ///     PNAM "Cloud Colors" (xEdit wbWeatherCloudColors): one <see cref="WeatherColor" /> PER CLOUD
+    ///     LAYER (same 6-band Time-of-Day RGBA struct as <see cref="Colors" />). The engine uploads this
+    ///     per layer as the cloud shader's per-draw color uniform (RGB tint + A opacity) — verified in
+    ///     <c>SkyShader::SetupGeometryConstants</c>. Indexed parallel to <see cref="CloudLayerTextures" />.
+    ///     Empty when the record carries no PNAM.
+    /// </summary>
+    public IReadOnlyList<WeatherColor> CloudColors { get; init; } = [];
+
+    /// <summary>
+    ///     QNAM "X Cloud Speeds" (FNV; xEdit wbWeatherCloudSpeed): one byte per cloud layer — the per-layer
+    ///     U-axis scroll rate the engine accumulates in <c>Clouds::Update</c>. Empty when absent.
+    /// </summary>
+    public IReadOnlyList<byte> CloudSpeedsX { get; init; } = [];
+
+    /// <summary>RNAM "Y Cloud Speeds" (FNV): per-layer V-axis scroll rate. Empty when absent.</summary>
+    public IReadOnlyList<byte> CloudSpeedsY { get; init; } = [];
+
     /// <summary>DATA block (wind speed, sun glare, precipitation timing, flags, lightning color).</summary>
     public WeatherData? Data { get; init; }
 

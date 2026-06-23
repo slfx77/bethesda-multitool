@@ -174,10 +174,17 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         string? editorId = null;
         uint? imageSpaceMod = null;
         var sounds = new List<WeatherSound>();
-        var cloudLayers = new List<string>(4);
+        var cloudLayers = new SortedDictionary<int, string>();
         IReadOnlyList<WeatherColor>? colors = null;
+        IReadOnlyList<WeatherColor>? cloudColors = null;
+        byte[]? cloudSpeedsX = null;
+        byte[]? cloudSpeedsY = null;
         IReadOnlyList<float>? fogDistances = null;
         WeatherData? weatherData = null;
+
+        // Determine the RGBA band count once (FO3=4, FNV=6) from NAM0's length so NAM0 and PNAM both
+        // parse with the right per-entry stride regardless of subrecord order.
+        var weatherBands = DetectWeatherBands(data, dataSize, record.IsBigEndian);
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -210,14 +217,16 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     break;
                 }
                 // Cloud-layer texture paths (null-terminated strings, big-endian-safe — the converter
-                // leaves these unswapped). DNAM/CNAM/ANAM/BNAM = cloud layers 0–3, in file order, so
-                // appending preserves the layer index. The active weather's clouds derive from these.
-                case "DNAM" or "CNAM" or "ANAM" or "BNAM":
+                // leaves these unswapped), stored by layer index. FO3/FNV use DNAM/CNAM/ANAM/BNAM (layers
+                // 0–3); Skyrim/FO4/FO76/SF1 use the ?0TX scheme (layer N = (char)(0x30+N) + "0TX", up to 29
+                // layers) — both per xEdit's wbWeatherCloudTextures. Recognized by SIGNATURE (structural, no
+                // game gate); the active weather's clouds derive from these.
+                case var cloudSig when TryCloudLayerIndex(cloudSig, out var cloudLayer):
                 {
                     var cloud = EsmStringUtils.ReadNullTermString(subData);
                     if (!string.IsNullOrWhiteSpace(cloud))
                     {
-                        cloudLayers.Add(cloud);
+                        cloudLayers[cloudLayer] = cloud;
                     }
 
                     break;
@@ -226,8 +235,24 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 // time bands (Sunrise/Day/Sunset/Night/HighNoon/Midnight) per the fopdoc FalloutNV WTHR
                 // definition. Drives the atmosphere renderer's sky/sun/ambient/fog palette (see
                 // WeatherColorType for the index meaning).
-                case "NAM0" when sub.DataLength >= 24:
-                    colors = ReadWeatherColors(subData, record.IsBigEndian);
+                case "NAM0" when sub.DataLength >= 16:
+                    colors = ReadWeatherColors(subData, record.IsBigEndian, weatherBands);
+                    break;
+                // PNAM "Cloud Colors" (xEdit wbWeatherCloudColors): one Time-of-Day color PER CLOUD LAYER —
+                // the SAME 24-byte 6-band RGBA struct as a NAM0 category. The engine uploads this per layer
+                // as the cloud shader's per-draw color/opacity uniform (SkyShader::SetupGeometryConstants,
+                // MemDebug XEX) — so it tints the cloud sheet and its alpha is the layer opacity per band.
+                case "PNAM" when sub.DataLength >= 16:
+                    cloudColors = ReadWeatherColors(subData, record.IsBigEndian, weatherBands);
+                    break;
+                // QNAM/RNAM "X/Y Cloud Speeds" (FNV; xEdit wbWeatherCloudSpeed): one u8 per cloud layer,
+                // the per-axis UV scroll rate. Clouds::Update accumulates layer scroll ∝ this byte × dt, so
+                // each layer drifts at its own speed/direction. Bytes need no endian swap.
+                case "QNAM":
+                    cloudSpeedsX = subData.ToArray();
+                    break;
+                case "RNAM":
+                    cloudSpeedsY = subData.ToArray();
                     break;
                 // FNAM "Fog Distances": 6 floats (24 bytes).
                 case "FNAM" when sub.DataLength >= 4:
@@ -246,8 +271,13 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             ImageSpaceModifier = imageSpaceMod != 0 ? imageSpaceMod : null,
             Sounds = sounds,
-            CloudLayerTextures = cloudLayers,
+            // Present cloud layers in layer-index order (dense, gaps dropped) — the renderer maps each
+            // cloud dome shape to the ordinal-th layer.
+            CloudLayerTextures = cloudLayers.Count == 0 ? [] : cloudLayers.Values.ToList(),
             Colors = colors ?? [],
+            CloudColors = cloudColors ?? [],
+            CloudSpeedsX = cloudSpeedsX ?? [],
+            CloudSpeedsY = cloudSpeedsY ?? [],
             FogDistances = fogDistances ?? [],
             Data = weatherData,
             Offset = record.Offset,
@@ -255,32 +285,97 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         };
     }
 
-    // NAM0 weather colors. Each FNV category is a 24-byte "Time of Day Colors" struct of SIX RGBA bands
-    // (Sunrise/Day/Sunset/Night/HighNoon/Midnight) — fopdoc FalloutNV WTHR. The earlier 16-byte (4-band)
-    // stride mis-read everything after the first category (it drifted 8 bytes per category), which is why
-    // the sky horizon read black at noon / white at night while the sky-top (category 0) looked right.
-    // Each 4-byte band is read with the record's endianness as one uint and the RGBA bytes extracted from
-    // fixed bit positions, so Xbox (the converter byte-swaps each group) and PC produce the same RGBA.
-    internal static List<WeatherColor> ReadWeatherColors(ReadOnlySpan<byte> data, bool isBigEndian)
+    // Maps a WTHR cloud-texture subrecord signature to its layer index, per xEdit's wbWeatherCloudTextures.
+    // FO3/FNV: DNAM/CNAM/ANAM/BNAM = layers 0–3. Skyrim/FO4/FO76/SF1: the ?0TX scheme — signature is
+    // (char)(0x30 + layer) + "0TX" for layers 0–28 (0x30..0x40 then 'A'..'L'). Structural (keyed off the
+    // actual signature), so no game gate is needed — no FO3/FNV record carries ?0TX, and Skyrim+ weathers
+    // that ship the legacy DNAM/CNAM/ANAM/BNAM map them to the same layers, overwritten by ?0TX if present.
+    internal static bool TryCloudLayerIndex(string signature, out int layer)
+    {
+        switch (signature)
+        {
+            case "DNAM": layer = 0; return true;
+            case "CNAM": layer = 1; return true;
+            case "ANAM": layer = 2; return true;
+            case "BNAM": layer = 3; return true;
+        }
+
+        if (signature.Length == 4 && signature[1] == '0' && signature[2] == 'T' && signature[3] == 'X')
+        {
+            var n = signature[0] - 0x30;
+            if (n is >= 0 and <= 28)
+            {
+                layer = n;
+                return true;
+            }
+        }
+
+        layer = -1;
+        return false;
+    }
+
+    // Weather color categories (NAM0) and per-layer cloud colors (PNAM). New Vegas stores SIX RGBA time
+    // bands per entry (Sunrise/Day/Sunset/Night/HighNoon/Midnight = 24 bytes); Fallout 3 — the format the
+    // earliest crash dumps carry — stores only FOUR (Sunrise/Day/Sunset/Night = 16 bytes), since FNV added
+    // High Noon + Midnight (xEdit wbWeatherColors). The band count is read structurally from the data via
+    // <see cref="DetectWeatherBands" /> rather than assumed, so FO3-era records don't drift 8 bytes per
+    // category (which read the sky horizon black at noon / white at night). Each 4-byte band is read with
+    // the record's endianness as one uint and the RGBA bytes extracted from fixed bit positions, so Xbox
+    // (the converter byte-swaps each group) and PC produce the same RGBA.
+    internal static List<WeatherColor> ReadWeatherColors(ReadOnlySpan<byte> data, bool isBigEndian, int bandsPerEntry)
     {
         const int bandBytes = 4;
-        const int bandsPerEntry = 6; // sunrise/day/sunset/night/high-noon/midnight
-        const int entryBytes = bandBytes * bandsPerEntry;
+        if (bandsPerEntry < 4)
+        {
+            bandsPerEntry = 6; // fall back to the FNV layout if the count can't be determined
+        }
+
+        var entryBytes = bandBytes * bandsPerEntry;
         var count = data.Length / entryBytes;
         var colors = new List<WeatherColor>(count);
         for (var i = 0; i < count; i++)
         {
             var b = i * entryBytes;
-            colors.Add(new WeatherColor(
-                ReadRgba(data.Slice(b, bandBytes), isBigEndian),
-                ReadRgba(data.Slice(b + bandBytes, bandBytes), isBigEndian),
-                ReadRgba(data.Slice(b + 2 * bandBytes, bandBytes), isBigEndian),
-                ReadRgba(data.Slice(b + 3 * bandBytes, bandBytes), isBigEndian),
-                ReadRgba(data.Slice(b + 4 * bandBytes, bandBytes), isBigEndian),
-                ReadRgba(data.Slice(b + 5 * bandBytes, bandBytes), isBigEndian)));
+            var sunrise = ReadRgba(data.Slice(b, bandBytes), isBigEndian);
+            var day = ReadRgba(data.Slice(b + bandBytes, bandBytes), isBigEndian);
+            var sunset = ReadRgba(data.Slice(b + 2 * bandBytes, bandBytes), isBigEndian);
+            var night = ReadRgba(data.Slice(b + 3 * bandBytes, bandBytes), isBigEndian);
+            // FO3 (4 bands) has no separate High Noon / Midnight — fall back to Day / Night so the
+            // atmosphere resolver still gets sensible values across the clock.
+            var highNoon = bandsPerEntry >= 5 ? ReadRgba(data.Slice(b + 4 * bandBytes, bandBytes), isBigEndian) : day;
+            var midnight = bandsPerEntry >= 6 ? ReadRgba(data.Slice(b + 5 * bandBytes, bandBytes), isBigEndian) : night;
+            colors.Add(new WeatherColor(sunrise, day, sunset, night, highNoon, midnight));
         }
 
         return colors;
+    }
+
+    // The number of RGBA time bands per weather-color entry (4 for FO3, 6 for FNV). NAM0 carries a fixed
+    // 10 color categories in both games, so its byte length / 10 gives the per-category stride and /4 the
+    // band count — a structural read (no game/version gate). PNAM (cloud colors) uses the same band count.
+    // Defaults to the FNV 6-band layout when NAM0 is absent or its length isn't a clean 10-category block.
+    private const int WeatherColorCategories = 10;
+
+    internal static int DetectWeatherBands(byte[] data, int dataSize, bool bigEndian)
+    {
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, bigEndian))
+        {
+            if (sub.Signature != "NAM0" || sub.DataLength < WeatherColorCategories * 4)
+            {
+                continue;
+            }
+
+            if (sub.DataLength % WeatherColorCategories != 0)
+            {
+                break;
+            }
+
+            var stride = sub.DataLength / WeatherColorCategories;
+            var bands = stride / 4;
+            return bands is 4 or 6 ? bands : 6;
+        }
+
+        return 6;
     }
 
     private static WeatherRgba ReadRgba(ReadOnlySpan<byte> band, bool isBigEndian)

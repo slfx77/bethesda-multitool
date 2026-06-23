@@ -309,7 +309,8 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
         ObjectBounds? bounds = null;
         uint bipedFlags = 0;
         byte generalFlags = 0;
-        byte detectionSoundLevel = 0;
+        var damageResistance = 0;
+        var damageThreshold = 0f;
         var value = 0;
         var maxCondition = 0;
         var weight = 0f;
@@ -376,8 +377,10 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
                 case "MIC2":
                     femaleIcon = EsmStringUtils.ReadNullTermString(subData);
                     break;
-                case "DNAM" when sub.DataLength >= 1:
-                    detectionSoundLevel = subData[0];
+                // ARMA DNAM is the same DR/DT armor-defense struct as ARMO (DR Int16 @+0, DT float @+4);
+                // FO3's is a short 4-byte DR-only block. DT presence keys on length, not version.
+                case "DNAM" when sub.DataLength >= 2:
+                    (damageResistance, damageThreshold) = ArmorDefenseData.Read(subData, record.IsBigEndian);
                     break;
                 case "ETYP" when sub.DataLength >= 4:
                 {
@@ -420,7 +423,8 @@ internal sealed class MiscItemHandler(RecordParserContext context) : RecordHandl
             FemaleFirstPersonTextureHashData = femaleFpTextureHash,
             MaleIconPath = maleIcon,
             FemaleIconPath = femaleIcon,
-            DetectionSoundLevel = detectionSoundLevel,
+            DamageResistance = damageResistance,
+            DamageThreshold = damageThreshold,
             EquipmentType = equipmentType,
             RepairItemListFormId = repairItemListFormId,
             BipedFlags = bipedFlags,

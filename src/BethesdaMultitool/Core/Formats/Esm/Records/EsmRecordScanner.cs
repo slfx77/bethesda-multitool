@@ -38,10 +38,15 @@ internal static class EsmRecordScanner
         var seenFormIds = new HashSet<uint>();
         var seenMainRecordOffsets = new HashSet<long>();
 
+        // Record header size is version-dependent: Oblivion's TES4 header is 20 bytes (no version-control
+        // trailer), FO3/FNV/Skyrim+ are 24. Detect it once from the file header so subrecord-data offsets
+        // (record.Offset + record.HeaderSize) land correctly for every game.
+        var headerSize = PluginFormat.Detect(data).RecordHeaderSize;
+
         for (var i = 0; i <= data.Length - 24; i++)
         {
             // Check for main record headers first (24 bytes minimum)
-            TryAddMainRecordHeader(data, i, data.Length, result.MainRecords, seenMainRecordOffsets);
+            TryAddMainRecordHeader(data, i, data.Length, result.MainRecords, seenMainRecordOffsets, headerSize);
 
             // Then check for subrecords
             if (RecordValidator.MatchesSignature(data, i, "EDID"u8))
@@ -150,6 +155,12 @@ internal static class EsmRecordScanner
         var result = new EsmRecordScanResult();
         var dedup = new RecordScannerDispatch.ScanDedup(
             new HashSet<string>(), new HashSet<uint>(), new HashSet<long>());
+        // Record header size (20 Oblivion / 24 FO3+) from the file header. A memory dump with no clean
+        // TES4 header at offset 0 falls back to the 24-byte FNV layout (DMP carving is FO3/FNV).
+        var headerProbe = new byte[(int)Math.Min(64L, fileSize)];
+        accessor.ReadArray(0, headerProbe, 0, headerProbe.Length);
+        var headerSize = PluginFormat.Detect(headerProbe).RecordHeaderSize;
+
         var buffer = ArrayPool<byte>.Shared.Rent(chunkSize + overlapSize);
 
         try
@@ -165,7 +176,7 @@ internal static class EsmRecordScanner
                 var searchLimit = offset + chunkSize >= fileSize ? toRead - 24 : chunkSize;
 
                 ScanChunkForSubrecords(buffer, toRead, searchLimit, offset,
-                    result, dedup, excludeRanges);
+                    result, dedup, excludeRanges, headerSize);
 
                 offset += chunkSize;
             }
@@ -181,7 +192,7 @@ internal static class EsmRecordScanner
     private static void ScanChunkForSubrecords(
         byte[] buffer, int toRead, int searchLimit, long offset,
         EsmRecordScanResult result, RecordScannerDispatch.ScanDedup dedup,
-        List<(long start, long end)>? excludeRanges)
+        List<(long start, long end)>? excludeRanges, int headerSize)
     {
         var bufferSpan = buffer.AsSpan(0, toRead);
 
@@ -217,7 +228,7 @@ internal static class EsmRecordScanner
                            | RecordScannerDispatch.ActionGrup)) != 0)
             {
                 var recordSize = TryAddMainRecordHeaderWithOffset(buffer, i, toRead, offset,
-                    result.MainRecords, dedup.SeenMainRecordOffsets, action);
+                    result.MainRecords, dedup.SeenMainRecordOffsets, action, headerSize);
 
                 if (recordSize > 24)
                 {
@@ -258,7 +269,8 @@ internal static class EsmRecordScanner
 
     #region Main Record Header Parsing
 
-    private static DetectedMainRecord? TryParseMainRecordHeader(byte[] data, int i, int dataLength, bool isBigEndian)
+    private static DetectedMainRecord? TryParseMainRecordHeader(
+        byte[] data, int i, int dataLength, bool isBigEndian, int headerSize)
     {
         if (i + 24 > dataLength)
         {
@@ -306,13 +318,16 @@ internal static class EsmRecordScanner
             return null;
         }
 
-        return new DetectedMainRecord(recordType, dataSize, flags, formId, i, isBigEndian);
+        return new DetectedMainRecord(recordType, dataSize, flags, formId, i, isBigEndian)
+        {
+            HeaderSize = headerSize, // 20 for Oblivion (TES4 w/o version trailer), 24 for FO3/FNV/Skyrim+
+        };
     }
 
     private static DetectedMainRecord? TryParseMainRecordHeaderWithOffset(byte[] data, int i, int dataLength,
-        long baseOffset, bool isBigEndian)
+        long baseOffset, bool isBigEndian, int headerSize)
     {
-        var header = TryParseMainRecordHeader(data, i, dataLength, isBigEndian);
+        var header = TryParseMainRecordHeader(data, i, dataLength, isBigEndian, headerSize);
         if (header == null)
         {
             return null;
@@ -365,7 +380,7 @@ internal static class EsmRecordScanner
     }
 
     private static void TryAddMainRecordHeader(byte[] data, int i, int dataLength,
-        List<DetectedMainRecord> records, HashSet<long> seenOffsets)
+        List<DetectedMainRecord> records, HashSet<long> seenOffsets, int headerSize)
     {
         if (i + 24 > dataLength || seenOffsets.Contains(i))
         {
@@ -394,7 +409,7 @@ internal static class EsmRecordScanner
         // Try little-endian (PC format)
         if ((action & RecordScannerDispatch.ActionMainRecordLE) != 0)
         {
-            var header = TryParseMainRecordHeader(data, i, dataLength, false);
+            var header = TryParseMainRecordHeader(data, i, dataLength, false, headerSize);
             if (header != null && seenOffsets.Add(i))
             {
                 records.Add(header);
@@ -406,7 +421,7 @@ internal static class EsmRecordScanner
         // Try big-endian (Xbox 360 format)
         if ((action & RecordScannerDispatch.ActionMainRecordBE) != 0)
         {
-            var header = TryParseMainRecordHeader(data, i, dataLength, true);
+            var header = TryParseMainRecordHeader(data, i, dataLength, true, headerSize);
             if (header != null && seenOffsets.Add(i))
             {
                 records.Add(header);
@@ -432,7 +447,7 @@ internal static class EsmRecordScanner
     ///     from the unified dispatch table. Returns total record size for skip-ahead, or 0.
     /// </summary>
     private static int TryAddMainRecordHeaderWithOffset(byte[] data, int i, int dataLength, long baseOffset,
-        List<DetectedMainRecord> records, HashSet<long> seenOffsets, int action)
+        List<DetectedMainRecord> records, HashSet<long> seenOffsets, int action, int headerSize)
     {
         var globalOffset = baseOffset + i;
         if (i + 24 > dataLength || seenOffsets.Contains(globalOffset))
@@ -446,21 +461,21 @@ internal static class EsmRecordScanner
         // Main record LE or BE
         if ((action & RecordScannerDispatch.ActionMainRecordLE) != 0)
         {
-            var header = TryParseMainRecordHeaderWithOffset(data, i, dataLength, baseOffset, false);
+            var header = TryParseMainRecordHeaderWithOffset(data, i, dataLength, baseOffset, false, headerSize);
             if (header != null && seenOffsets.Add(globalOffset))
             {
                 records.Add(header);
-                return 24 + (int)header.DataSize;
+                return headerSize + (int)header.DataSize;
             }
         }
 
         if ((action & RecordScannerDispatch.ActionMainRecordBE) != 0)
         {
-            var header = TryParseMainRecordHeaderWithOffset(data, i, dataLength, baseOffset, true);
+            var header = TryParseMainRecordHeaderWithOffset(data, i, dataLength, baseOffset, true, headerSize);
             if (header != null && seenOffsets.Add(globalOffset))
             {
                 records.Add(header);
-                return 24 + (int)header.DataSize;
+                return headerSize + (int)header.DataSize;
             }
         }
 

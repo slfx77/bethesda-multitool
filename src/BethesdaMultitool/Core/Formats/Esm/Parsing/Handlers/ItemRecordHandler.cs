@@ -3,7 +3,6 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
-using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
@@ -233,10 +232,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 }
                 case "DNAM" when sub.DataLength >= 2:
-                    (damageResistance, damageThreshold) = ParseArmorDefenseData(
-                        subData,
-                        record.IsBigEndian,
-                        Context.Game);
+                    (damageResistance, damageThreshold) = ArmorDefenseData.Read(subData, record.IsBigEndian);
                     break;
                 case "BMDT" when sub.DataLength >= 8:
                 {
@@ -284,37 +280,6 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
-    }
-
-    private static (int DamageResistance, float DamageThreshold) ParseArmorDefenseData(
-        ReadOnlySpan<byte> data,
-        bool bigEndian,
-        BethesdaGame game)
-    {
-        var damageResistance = bigEndian
-            ? BinaryPrimitives.ReadInt16BigEndian(data)
-            : BinaryPrimitives.ReadInt16LittleEndian(data);
-        var damageThreshold = 0f;
-
-        // Fallout 3 stores DR at +0. New Vegas extends DNAM with DT at +4
-        // while leaving DR at +0 for compatibility (the HasArmorDamageThreshold capability).
-        // Some inputs do not carry reliable game metadata, so a plausible DT at +4 is accepted too.
-        var hasDamageThreshold = GameProfiles.For(game).HasArmorDamageThreshold;
-        if ((hasDamageThreshold || data.Length >= 8) && data.Length >= 8)
-        {
-            var possibleThreshold = bigEndian
-                ? BinaryPrimitives.ReadSingleBigEndian(data[4..])
-                : BinaryPrimitives.ReadSingleLittleEndian(data[4..]);
-            if (GameStatNormalizer.ArmorDamageThreshold(possibleThreshold) > 0 ||
-                hasDamageThreshold)
-            {
-                damageThreshold = possibleThreshold;
-            }
-        }
-
-        return (
-            GameStatNormalizer.ArmorDamageResistance(damageResistance),
-            GameStatNormalizer.ArmorDamageThreshold(damageThreshold));
     }
 
     /// <summary>

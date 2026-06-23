@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
@@ -195,6 +196,22 @@ internal sealed class WorldspaceRecordHandler(RecordParserContext context) : Rec
                         : BinaryPrimitives.ReadSingleLittleEndian(subData[8..]);
                     break;
             }
+        }
+
+        // Oblivion (and earlier) worldspaces have no DNAM land/water-height block — that field was
+        // introduced in Fallout 3 (the HasWorldspaceDefaultWaterHeight game capability). Oblivion
+        // exterior water defaults to Z 0 by engine convention, and a cell only carries an explicit XCLW
+        // when it overrides that default (inland lakes sit at 3500-6600). Without a synthesized default,
+        // every Oblivion coastal cell — which carries no XCLW — falls through to "no water" in
+        // WorldRenderCache.ResolveEffectiveWaterHeight and the ocean renders dry. Key the decision on the
+        // DETECTED GAME rather than the mere absence of DNAM: only engines that genuinely lack the field
+        // get the sea-level-0 default, and only for worldspaces that actually reference water (NAM2) so
+        // genuinely waterless worlds stay dry. An FO3+ worldspace always emits DNAM, so its
+        // defaultWaterHeight is already non-null here and this branch is doubly inert for those games.
+        if (defaultWaterHeight == null && water is > 0 &&
+            !GameProfiles.For(Context.Game).HasWorldspaceDefaultWaterHeight)
+        {
+            defaultWaterHeight = 0f;
         }
 
         return new WorldspaceRecord
