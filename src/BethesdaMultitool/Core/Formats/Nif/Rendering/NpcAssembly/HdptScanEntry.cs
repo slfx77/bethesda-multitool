@@ -1,0 +1,10 @@
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+
+/// <summary>
+///     Scanned HDPT record data (head part mesh).
+/// </summary>
+internal sealed class HdptScanEntry
+{
+    public string? EditorId { get; init; }
+    public string? ModelPath { get; init; }
+}
