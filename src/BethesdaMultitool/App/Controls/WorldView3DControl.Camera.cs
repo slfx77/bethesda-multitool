@@ -17,12 +17,12 @@ public sealed partial class WorldView3DControl
     {
         if (_selectedInterior is { } interior)
         {
-            return new WorldViewFocus(-1, true, interior, 0f, 0f, _selectedReference, _interiorSortMode);
+            return new WorldViewFocus(-1, true, interior, 0f, 0f, _selectedReference, CellList.SortMode);
         }
 
         var pos = _camera.Position;
         return new WorldViewFocus(
-            WorldspaceComboBox.SelectedIndex, false, null, pos.X, pos.Y, _selectedReference, _interiorSortMode);
+            WorldspaceComboBox.SelectedIndex, false, null, pos.X, pos.Y, _selectedReference, CellList.SortMode);
     }
 
     /// <summary>
@@ -59,15 +59,8 @@ public sealed partial class WorldView3DControl
         SelectObject(focus.Selected);
     }
 
-    private void ApplyInteriorSortMode(CellSortMode mode)
-    {
-        _interiorSortMode = mode;
-        if (CellSortCombo is not null)
-        {
-            var index = mode == CellSortMode.ObjectCount ? 1 : 0;
-            if (CellSortCombo.SelectedIndex != index) CellSortCombo.SelectedIndex = index;
-        }
-    }
+    // The CellListControl owns the sort state + combo; its setter syncs both and re-sorts in place.
+    private void ApplyInteriorSortMode(CellSortMode mode) => CellList.SortMode = mode;
 
     /// <summary>
     ///     Navigates the 3D scene to a specific cell — the 3D counterpart of

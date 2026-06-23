@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -9,6 +10,28 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
 public sealed class ReferenceDecodedMeshDiskCache12Tests
 {
+    [Fact]
+    public void DefaultCacheDirectories_AreUnderOsTempDirectory()
+    {
+        var tempRoot = System.IO.Path.GetFullPath(System.IO.Path.GetTempPath());
+        if (!System.IO.Path.EndsInDirectorySeparator(tempRoot))
+        {
+            tempRoot += System.IO.Path.DirectorySeparatorChar;
+        }
+
+        var meshCache = ReferenceDiskCachePaths.ResolveDefaultCacheDirectory(
+            "ReferenceDecodedMeshCache12",
+            ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        var textureCache = ReferenceDiskCachePaths.ResolveDefaultCacheDirectory(
+            "ReferenceDecodedTextureCache12",
+            ReferenceDecodedTextureDiskCache12.DecoderVersion);
+
+        Assert.StartsWith(tempRoot, System.IO.Path.GetFullPath(meshCache), StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(tempRoot, System.IO.Path.GetFullPath(textureCache), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("BethesdaMultitool", meshCache, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("BethesdaMultitool", textureCache, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void StoreAndTryLoad_RoundTripsPositivePayload()
     {
@@ -82,12 +105,12 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.False(File.Exists(path));
     }
 
-    private static NpcMeshArchiveLookupMetadata CreateMetadata(
+    private static MeshArchiveLookupMetadata CreateMetadata(
         uint? fileRawSize,
         long archiveTicks,
         bool found = true)
     {
-        return new NpcMeshArchiveLookupMetadata(
+        return new MeshArchiveLookupMetadata(
             "meshes\\clutter\\crate.nif",
             found,
             $"archive-set:{archiveTicks}",

@@ -1,5 +1,6 @@
 using System.Text;
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using Xunit;
 
@@ -7,7 +8,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Bsa;
 
 /// <summary>
 ///     Locks the BA2 mesh-resolution wiring: a GNRL BA2 resolves a virtual mesh path to bytes through
-///     <see cref="NpcMeshArchiveSet" /> (the abstraction the 3D-viewer reference pipeline + NPC
+///     <see cref="MeshArchiveSet" /> (the abstraction the 3D-viewer reference pipeline + NPC
 ///     pipelines consume), and a mesh-bearing GNRL BA2 is discovered into the mesh set.
 /// </summary>
 public class Ba2MeshWiringTests
@@ -15,13 +16,13 @@ public class Ba2MeshWiringTests
     private static readonly byte[] NifPayload = "fake-nif-bytes-for-mesh-resolution"u8.ToArray();
 
     [Fact]
-    public void NpcMeshArchiveSet_ResolvesMeshFromBa2()
+    public void MeshArchiveSet_ResolvesMeshFromBa2()
     {
         var ba2 = Path.Combine(Path.GetTempPath(), $"ba2mesh_{Guid.NewGuid():N}.ba2");
         File.WriteAllBytes(ba2, BuildGnrlBa2(0x1111, "meshes\\test.nif", NifPayload, out var dataOffset));
         try
         {
-            using var set = NpcMeshArchiveSet.Open(ba2, null);
+            using var set = MeshArchiveSet.Open(ba2, null);
 
             Assert.True(set.TryExtractFile("meshes\\test.nif", out var data, out var archivePath));
             Assert.Equal(NifPayload, data);
@@ -86,6 +87,28 @@ public class Ba2MeshWiringTests
         finally
         {
             Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void DataFolderIndex_FromArchivePaths_IndexesBa2_AndResolvesExact()
+    {
+        // The unified backend's explicit-archive construction must index BA2 (FO4/76) the same way
+        // it indexes BSA, returning a Ba2AssetSource whose Read() yields the entry bytes.
+        var ba2 = Path.Combine(Path.GetTempPath(), $"ba2idx_{Guid.NewGuid():N}.ba2");
+        File.WriteAllBytes(ba2, BuildGnrlBa2(0x4444, "meshes\\test.nif", NifPayload, out _));
+        try
+        {
+            using var index = DataFolderIndex.FromArchivePaths([ba2]);
+
+            Assert.True(index.TryResolveExact("meshes\\test.nif", out var source));
+            Assert.IsType<Ba2AssetSource>(source);
+            Assert.Equal(NifPayload, source.Read());
+            Assert.False(index.TryResolveExact("meshes\\missing.nif", out _));
+        }
+        finally
+        {
+            File.Delete(ba2);
         }
     }
 

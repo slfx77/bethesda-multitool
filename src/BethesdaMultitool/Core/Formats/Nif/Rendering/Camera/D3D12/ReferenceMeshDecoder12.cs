@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.SpeedTree;
@@ -20,7 +21,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 /// </summary>
 internal sealed class ReferenceMeshDecoder12
 {
-    private readonly CLI.NpcMeshArchiveSet _meshArchives;
+    private readonly MeshArchiveSet _meshArchives;
     private readonly NifTextureResolver _textureResolver;
 
     // archive-path (trees\<name>.spt) → recorded tree height (TREE OBND Z-extent), so the procedural
@@ -35,7 +36,7 @@ internal sealed class ReferenceMeshDecoder12
     private int _totalSkinnedModelPaths;
 
     public ReferenceMeshDecoder12(
-        CLI.NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         IReadOnlyDictionary<string, float>? speedTreeHeights,
         IReadOnlyDictionary<string, string>? speedTreeLeafTextures)
@@ -59,7 +60,7 @@ internal sealed class ReferenceMeshDecoder12
 
         try
         {
-            // No lock needed: NpcMeshArchiveSet.TryExtractFile resolves under its own cache lock and
+            // No lock needed: MeshArchiveSet.TryExtractFile resolves under its own cache lock and
             // BsaExtractor.ExtractFile is memory-mapped/lock-free, so concurrent decode tasks extract
             // in parallel. This is what actually parallelizes mesh streaming (removing the old coarse
             // archive lock that serialized every decode despite the wider task pool).

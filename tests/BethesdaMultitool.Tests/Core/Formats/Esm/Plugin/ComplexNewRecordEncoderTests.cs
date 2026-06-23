@@ -766,19 +766,20 @@ public class ComplexNewRecordEncoderTests
     }
 
     [Fact]
-    public void ArmaEncoder_EncodeNew_EmitsDnamWhenNonZero()
+    public void ArmaEncoder_EncodeNew_EmitsDrDtDnamWhenDefenseSet()
     {
-        var arma = new ArmaRecord { FormId = 0xF00, EditorId = "T", DetectionSoundLevel = 2 };
+        var arma = new ArmaRecord { FormId = 0xF00, EditorId = "T", DamageResistance = 15, DamageThreshold = 8.5f };
         var encoded = ArmaEncoder.EncodeNew(arma);
         var dnam = Assert.Single(encoded.Subrecords, s => s.Signature == "DNAM");
-        Assert.Single(dnam.Bytes);
-        Assert.Equal(2, dnam.Bytes[0]);
+        Assert.Equal(8, dnam.Bytes.Length); // int16 DR + uint16 Flags + float DT
+        Assert.Equal(15, BinaryPrimitives.ReadInt16LittleEndian(dnam.Bytes));
+        Assert.Equal(8.5f, BinaryPrimitives.ReadSingleLittleEndian(dnam.Bytes.AsSpan(4)));
     }
 
     [Fact]
-    public void ArmaEncoder_EncodeNew_OmitsDnamWhenLoudDefault()
+    public void ArmaEncoder_EncodeNew_OmitsDnamWhenDefenseZero()
     {
-        var arma = new ArmaRecord { FormId = 0xF00, EditorId = "T", DetectionSoundLevel = 0 };
+        var arma = new ArmaRecord { FormId = 0xF00, EditorId = "T", DamageResistance = 0, DamageThreshold = 0f };
         var encoded = ArmaEncoder.EncodeNew(arma);
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "DNAM");
     }
@@ -1140,7 +1141,7 @@ public class ComplexNewRecordEncoderTests
         {
             FormId = 0xF00,
             EditorId = "T",
-            DetectionSoundLevel = 2,
+            DamageResistance = 15,
             EquipmentType = EquipmentType.HeadWear,
             RepairItemListFormId = 0x100
         };

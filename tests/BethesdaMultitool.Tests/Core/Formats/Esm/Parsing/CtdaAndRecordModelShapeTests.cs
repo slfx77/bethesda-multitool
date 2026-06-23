@@ -147,7 +147,8 @@ public class CtdaAndRecordModelShapeTests
         Assert.Null(arma.FemaleFirstPersonTextureHashData);
         Assert.Null(arma.MaleIconPath);
         Assert.Null(arma.FemaleIconPath);
-        Assert.Equal(0, arma.DetectionSoundLevel);
+        Assert.Equal(0, arma.DamageResistance);
+        Assert.Equal(0f, arma.DamageThreshold);
     }
 
     [Fact]
@@ -167,7 +168,8 @@ public class CtdaAndRecordModelShapeTests
             FemaleFirstPersonTextureHashData = [0x04],
             MaleIconPath = "icons/armor_m.dds",
             FemaleIconPath = "icons/armor_f.dds",
-            DetectionSoundLevel = 2 // Silent
+            DamageResistance = 15,
+            DamageThreshold = 8.5f
         };
 
         Assert.Equal((byte)0x01, arma.MaleTextureHashData?[0]);
@@ -176,7 +178,8 @@ public class CtdaAndRecordModelShapeTests
         Assert.Equal((byte)0x04, arma.FemaleFirstPersonTextureHashData?[0]);
         Assert.Equal("icons/armor_m.dds", arma.MaleIconPath);
         Assert.Equal("icons/armor_f.dds", arma.FemaleIconPath);
-        Assert.Equal(2, arma.DetectionSoundLevel);
+        Assert.Equal(15, arma.DamageResistance);
+        Assert.Equal(8.5f, arma.DamageThreshold);
     }
 
     // ====================================================================================

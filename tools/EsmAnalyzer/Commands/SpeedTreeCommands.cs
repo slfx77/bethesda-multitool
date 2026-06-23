@@ -103,7 +103,7 @@ public static class SpeedTreeCommands
             }
         }
 
-        Console.WriteLine($"[Leaves] count={model.Leaves.Count}");
+        Console.WriteLine($"[Leaves] count={model.Leaves.Count}  LeafTextureCoords(10002)={model.LeafTextureCoords.Count}");
         for (var i = 0; i < model.Leaves.Count; i++)
         {
             var l = model.Leaves[i];
@@ -111,6 +111,13 @@ public static class SpeedTreeCommands
                 $"  Leaf {i}: type={l.Type} size={l.Size} pos=({l.Position.X},{l.Position.Y},{l.Position.Z}) mat={l.Material ?? "(none)"}"));
             Console.WriteLine(string.Create(ci,
                 $"        c0=({l.Corner0.X},{l.Corner0.Y},{l.Corner0.Z}) c1=({l.Corner1.X},{l.Corner1.Y},{l.Corner1.Z}) c2=({l.Corner2.X},{l.Corner2.Y},{l.Corner2.Z}) f4007={l.Float4007}"));
+        }
+
+        for (var i = 0; i < model.LeafTextureCoords.Count; i++)
+        {
+            var uv = model.LeafTextureCoords[i];
+            Console.WriteLine(string.Create(ci,
+                $"  UV {i}: ({uv.Corner0.X},{uv.Corner0.Y}) ({uv.Corner1.X},{uv.Corner1.Y}) ({uv.Corner2.X},{uv.Corner2.Y}) ({uv.Corner3.X},{uv.Corner3.Y})"));
         }
 
         if (model.Wind is { } wind)

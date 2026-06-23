@@ -2,6 +2,7 @@ using System.CommandLine;
 using EgtAnalyzer.Settings;
 using EgtAnalyzer.Verification;
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -266,7 +267,7 @@ internal static class VerifyEgtCommand
             NpcFaceGenTextureVerifier.ResetInspectMorphRunState();
         }
 
-        using var meshArchives = NpcMeshArchiveSet.Open(settings.MeshesBsaPath, settings.ExtraMeshesBsaPaths);
+        using var meshArchives = MeshArchiveSet.Open(settings.MeshesBsaPath, settings.ExtraMeshesBsaPaths);
         using var textureResolver = new NifTextureResolver(texturesBsaPaths);
 
         var egtCache = new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);

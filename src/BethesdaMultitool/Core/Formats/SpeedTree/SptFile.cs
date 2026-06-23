@@ -45,7 +45,7 @@ public static class SptFile
         SptGeneralParams? general = null;
         var branches = new List<SptBranch>();
         var leaves = new List<SptLeaf>();
-        var leafSize = 0f;
+        var leafSize = 0.75f;
         SptLeafTable? leafTable = null;
         SptWind? wind = null;
 
@@ -321,9 +321,9 @@ public static class SptFile
 
     private static void ParseLeaves(SptCursor c, List<SptLeaf> leaves, ref float leafSize, ref SptLeafTable? leafTable)
     {
-        uint u3001 = 0, u3008 = 2;
-        float f3002 = 0, f3004 = 0, f3005 = 0, f3007 = 0.5f, f3010 = 0;
-        byte b3003 = 0, b3006 = 0, b3009 = 0;
+        uint u3001 = 1, u3008 = 2;
+        float f3002 = 0.8f, f3004 = 0, f3005 = 0, f3007 = 0.5f, f3010 = 1f;
+        byte b3003 = 0, b3006 = 0, b3009 = 1;
         var sawTable = false;
 
         var token = c.ReadToken();
@@ -337,11 +337,11 @@ public static class SptFile
                 case BeginLeafCollection:
                     ParseLeafCollection(c, leaves);
                     break;
-                case 3001: // case 0 — uint @ +0x34
+                case 3001: // SIdvLeafInfo+0x2c: blossom branch-depth/ancestor mode
                     u3001 = c.ReadToken();
                     sawTable = true;
                     break;
-                case 3002: // case 1 — float @ +0x30
+                case 3002: // SIdvLeafInfo+0x28: blossom probability
                     f3002 = c.ReadFloat();
                     sawTable = true;
                     break;
@@ -361,19 +361,19 @@ public static class SptFile
                     b3006 = c.ReadByte();
                     sawTable = true;
                     break;
-                case 3007: // case 6 — float @ SIdvLeafInfo+0x20
+                case 3007: // SIdvLeafInfo+0x20: RoomForLeaf spacing factor
                     f3007 = c.ReadFloat();
                     sawTable = true;
                     break;
-                case 3008: // case 7 — uint @ +0x0C
+                case 3008: // SIdvLeafInfo+0x0c: RoomForLeaf placement mode
                     u3008 = c.ReadToken();
                     sawTable = true;
                     break;
-                case 3009: // case 8 — byte @ +0
+                case 3009: // SIdvLeafInfo+0
                     b3009 = c.ReadByte();
                     sawTable = true;
                     break;
-                case 3010: // case 9 — float @ +4
+                case 3010: // SIdvLeafInfo+4
                     f3010 = c.ReadFloat();
                     sawTable = true;
                     break;

@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.CLI.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
@@ -19,7 +20,7 @@ internal static class NpcHeadBuilder
     /// </summary>
     internal static NifRenderableModel? Build(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         BethesdaMultitool.Core.Resources.LruCache<string, NifRenderableModel?> headMeshCache,
         Dictionary<string, EgmParser?> egmCache,
@@ -53,7 +54,7 @@ internal static class NpcHeadBuilder
 
     internal static NifRenderableModel? BuildFromPlan(
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcCompositionCaches compositionCaches,
         NpcRenderModelCache renderModelCache)
@@ -255,7 +256,7 @@ internal static class NpcHeadBuilder
 
     private static NifRenderableModel? LoadHeadWithPreSkinMorphs(
         string headNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? boneTransforms,
         float[]? preSkinMorphDeltas)

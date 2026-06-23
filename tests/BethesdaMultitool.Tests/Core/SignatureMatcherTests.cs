@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core;
 using Xunit;
 

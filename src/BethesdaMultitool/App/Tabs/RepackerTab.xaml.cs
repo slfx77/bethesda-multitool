@@ -6,7 +6,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Windows.Storage.Pickers;
 using BethesdaMultitool.Core.Utils;
-using BethesdaMultitool.Repack;
+using BethesdaMultitool.Core.Repack;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;

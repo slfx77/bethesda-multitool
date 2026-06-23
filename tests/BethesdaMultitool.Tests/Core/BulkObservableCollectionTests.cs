@@ -1,4 +1,5 @@
 using System.Collections.Specialized;
+using BethesdaMultitool.Core.Collections;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core;

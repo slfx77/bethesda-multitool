@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using Windows.UI;
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Formats;

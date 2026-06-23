@@ -571,7 +571,9 @@ public class CellWorldspaceAuthorityTests
                         {
                             FormId = 0x3002,
                             BaseFormId = 0x9002,
-                            Offset = 0x5400
+                            // Far beyond both the pinned window radius and the interior
+                            // offset-adjacency cap, so it stays unresolved.
+                            Offset = 0x200000
                         }
                     ]
                 }
@@ -620,6 +622,64 @@ public class CellWorldspaceAuthorityTests
 
         var unresolved = Assert.Single(records.Cells, c => c.IsUnresolvedBucket);
         Assert.Equal(0x3002u, Assert.Single(unresolved.PlacedObjects).FormId);
+    }
+
+    [Fact]
+    public void Apply_ReattachesInteriorOrphansByOffsetAdjacency()
+    {
+        // A captured interior cell's refs are streamed contiguously in memory (offsets
+        // 0x1000/0x1100). An unresolved-bucket orphan at 0x1080 sits interleaved between them with
+        // no authority mapping, so only the interior offset-adjacency pass can recover it. A second
+        // orphan far from any captured interior ref must stay unresolved.
+        var records = new RecordCollection
+        {
+            Cells =
+            [
+                new CellRecord
+                {
+                    FormId = 0x1000,
+                    Flags = 0x01, // interior
+                    EditorId = "CapturedInterior",
+                    PlacedObjects =
+                    [
+                        new PlacedReference
+                        {
+                            FormId = 0x2000, BaseFormId = 0x9000, Offset = 0x1000, AssignmentSource = "ParentCell"
+                        },
+                        new PlacedReference
+                        {
+                            FormId = 0x2001, BaseFormId = 0x9001, Offset = 0x1100, AssignmentSource = "ParentCell"
+                        }
+                    ]
+                },
+                new CellRecord
+                {
+                    FormId = 0xFE100001,
+                    IsVirtual = true,
+                    IsUnresolvedBucket = true,
+                    PlacedObjects =
+                    [
+                        new PlacedReference { FormId = 0x3000, BaseFormId = 0x9100, Offset = 0x1080 },
+                        new PlacedReference { FormId = 0x3001, BaseFormId = 0x9101, Offset = 0x400000 }
+                    ]
+                }
+            ]
+        };
+
+        CellWorldspaceAuthorityApplier.Apply(
+            records,
+            null,
+            cellMetadata: new Dictionary<uint, CellAuthorityMetadata>
+            {
+                [0x1000] = new() { IsInterior = true, EditorId = "CapturedInterior" }
+            });
+
+        var interior = records.Cells.Single(c => c.FormId == 0x1000);
+        var recovered = Assert.Single(interior.PlacedObjects, p => p.FormId == 0x3000);
+        Assert.Equal("InteriorOffsetCluster", recovered.AssignmentSource);
+
+        var unresolved = Assert.Single(records.Cells, c => c.IsUnresolvedBucket);
+        Assert.Equal(0x3001u, Assert.Single(unresolved.PlacedObjects).FormId);
     }
 
     [Fact]

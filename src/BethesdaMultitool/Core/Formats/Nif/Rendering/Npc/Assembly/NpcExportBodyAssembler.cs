@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
@@ -17,7 +18,7 @@ internal static class NpcExportBodyAssembler
     internal static void AddBodyEquipment(
         GlbScene scene,
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NpcExportSceneBuilder.SkeletonContext skeletonContext)
     {
         var pipBoyVisible = EquippedItem.AnyPipBoy(plan.BodyEquipment);
@@ -76,7 +77,7 @@ internal static class NpcExportBodyAssembler
     internal static void AddBodyEquipment(
         GlbScene scene,
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         Dictionary<string, int> nodeIndicesByBoneName,
         Dictionary<string, Matrix4x4> boneTransforms,
         string? effectiveBodyTex,
@@ -163,7 +164,7 @@ internal static class NpcExportBodyAssembler
     internal static void AddWeapon(
         GlbScene scene,
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcExportSceneBuilder.SkeletonContext skeletonContext,
         NpcExportSettings settings)
@@ -342,7 +343,7 @@ internal static class NpcExportBodyAssembler
     internal static void AddWeapon(
         GlbScene scene,
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcExportSceneBuilder.SkeletonContext skeletonContext)
     {
@@ -458,7 +459,7 @@ internal static class NpcExportBodyAssembler
 
     internal static void ApplyBodyEgtMorphs(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgtParser?> egtCache,
         ref string? effectiveBodyTex,
@@ -509,7 +510,7 @@ internal static class NpcExportBodyAssembler
 
     internal static Dictionary<string, NifAnimationParser.AnimPoseOverride>? LoadAnimationOverrides(
         string skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         (byte[] Data, NifInfo Info) skeletonRaw,
         string? animOverride)
     {
@@ -544,7 +545,7 @@ internal static class NpcExportBodyAssembler
 
     private static NpcWeaponAttachmentResolver.WeaponHolsterPose? LoadHolsterPose(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives)
+        MeshArchiveSet meshArchives)
     {
         if (npc.SkeletonNifPath == null || npc.WeaponVisual?.HolsterProfileKey == null)
         {

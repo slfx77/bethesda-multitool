@@ -1,5 +1,6 @@
 using EgtAnalyzer.Verification;
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 
 namespace EgtAnalyzer.Commands;
@@ -121,7 +122,7 @@ internal static class VerifyEgtRawFitReporter
         NpcAppearance appearance,
         NpcFaceGenTextureVerificationDetail verification,
         IReadOnlyList<RawFitNeighborCandidate> candidates,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         Dictionary<string, EgtParser?> egtCache)
     {
         if (!resolver.TryGetNpc(appearance.NpcFormId, out var targetNpc))

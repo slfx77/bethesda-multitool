@@ -1,4 +1,5 @@
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
@@ -7,7 +8,7 @@ internal static class NpcCompositionRenderAdapter
 {
     internal static NifRenderableModel? BuildNpc(
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcCompositionCaches compositionCaches,
         NpcRenderModelCache renderModelCache)
@@ -25,7 +26,7 @@ internal static class NpcCompositionRenderAdapter
 
     internal static NifRenderableModel? BuildCreature(
         CreatureCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver)
     {
         ArgumentNullException.ThrowIfNull(plan);

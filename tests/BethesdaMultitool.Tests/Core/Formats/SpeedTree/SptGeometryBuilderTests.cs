@@ -244,6 +244,32 @@ public class SptGeometryBuilderTests
     }
 
     [Fact]
+    public void Build_ChildBranchRadius_ClampsToRecoveredParentRadiusLimit()
+    {
+        var model = new SptModel
+        {
+            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
+            Branches =
+            [
+                MakeBranch(1f, 0.02f, 1f, 3, 1, taperEnd: 0.25f) with { Float6010 = 0.5f, Float6011 = 0.5f },
+                MakeBranch(0.5f, 0.05f, 0f, 3, 1),
+                MakeBranch(0f, 0.005f, 0f, 3, 1)
+            ],
+            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 }
+        };
+
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
+
+        var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
+        var childBase = BranchVertexCount(3, 1);
+        var uniqueRingVertices = RingVertexCount(3) - 1;
+        var center = AveragePosition(bark.Positions, childBase, uniqueRingVertices);
+        var radius = Vector3.Distance(center, ReadVector3(bark.Positions, childBase));
+
+        Assert.Equal(100f * 0.02f * 0.625f * 0.85f, radius, 2);
+    }
+
+    [Fact]
     public void Build_BudReach_DividesTerminalLengthByTerminalUInt6009()
     {
         var model = MakeSingleLevelLeafModel(0.4f, 2.5f, 4);
@@ -265,10 +291,18 @@ public class SptGeometryBuilderTests
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
         var offsets = result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Bitangents!;
-        AssertVector3(new Vector3(-5f, -30f, 0f), ReadVector3(offsets, 0));
-        AssertVector3(new Vector3(15f, -30f, 0f), ReadVector3(offsets, 1));
-        AssertVector3(new Vector3(15f, 10f, 0f), ReadVector3(offsets, 2));
-        AssertVector3(new Vector3(-5f, 10f, 0f), ReadVector3(offsets, 3));
+        // bitangent.xy = the card corner offset (Corner0 pivot + Corner1 size). bitangent.z now carries
+        // the per-leaf wind weight (a [0.15,1] blend factor for the leaf-billboard VS sway), shared by a
+        // leaf's four corners, so it is asserted separately from the offset math under test here.
+        AssertOffsetXy(offsets, 0, -5f, -30f);
+        AssertOffsetXy(offsets, 1, 15f, -30f);
+        AssertOffsetXy(offsets, 2, 15f, 10f);
+        AssertOffsetXy(offsets, 3, -5f, 10f);
+        var windWeight = offsets[2];
+        Assert.InRange(windWeight, 0.15f, 1f);
+        Assert.Equal(windWeight, offsets[5], 4);
+        Assert.Equal(windWeight, offsets[8], 4);
+        Assert.Equal(windWeight, offsets[11], 4);
     }
 
     [Fact]
@@ -296,6 +330,42 @@ public class SptGeometryBuilderTests
         Assert.Equal(0.1f, uvs[5], 4);
         Assert.Equal(0.75f, uvs[6], 4);
         Assert.Equal(0.1f, uvs[7], 4);
+    }
+
+    [Fact]
+    public void Build_LeafBillboards_CarryPerLeafNormalForShaderLighting()
+    {
+        var model = MakeSingleLevelLeafModel(leafFrequency: 1f);
+
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
+
+        var normal = ReadVector3(result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Normals!, 0);
+        Assert.InRange(normal.Length(), 0.99f, 1.01f);
+        Assert.True(Vector3.Distance(normal, Vector3.UnitZ) > 0.01f);
+    }
+
+    [Fact]
+    public void Build_BlossomGate_ReplacesLeafBudInsteadOfAddingSecondPopulation()
+    {
+        var model = MakeLeafBlossomGateModel(blossomProbability: 1f);
+
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
+
+        Assert.Equal(4, CountAllLeafQuads(result));
+        Assert.Equal(0, CountLeafQuads(result, "leafatlas"));
+        Assert.Equal(4, CountLeafQuads(result, "blossomatlas"));
+    }
+
+    [Fact]
+    public void Build_BlossomGate_ProbabilityZeroUsesLeafPool()
+    {
+        var model = MakeLeafBlossomGateModel(blossomProbability: 0f);
+
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
+
+        Assert.Equal(4, CountAllLeafQuads(result));
+        Assert.Equal(4, CountLeafQuads(result, "leafatlas"));
+        Assert.Equal(0, CountLeafQuads(result, "blossomatlas"));
     }
 
     [Theory]
@@ -378,12 +448,43 @@ public class SptGeometryBuilderTests
         };
     }
 
+    private static SptModel MakeLeafBlossomGateModel(float blossomProbability)
+    {
+        return new SptModel
+        {
+            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
+            Branches =
+            [
+                MakeBranch(1f, 0.02f, 4f, 3, 1)
+            ],
+            Leaves =
+            [
+                new SptLeaf
+                {
+                    Type = 0,
+                    Material = @"C:\x\LeafAtlas.dds",
+                    Corner0 = new Vector3(0.5f, 0.5f, 0f),
+                    Corner1 = new Vector3(0.01f, 0.01f, 0f)
+                },
+                new SptLeaf
+                {
+                    Type = 1,
+                    Material = @"C:\x\BlossomAtlas.dds",
+                    Corner0 = new Vector3(0.5f, 0.5f, 0f),
+                    Corner1 = new Vector3(0.01f, 0.01f, 0f)
+                }
+            ],
+            LeafSize = 0.75f,
+            LeafTable = new SptLeafTable { Float3002 = blossomProbability, Float3007 = 0.5f, UInt3008 = 0 }
+        };
+    }
+
     private static SptBranch MakeBranch(float length, float radius, float frequency, uint u6008, uint u6009,
-        float pathExponent = 1f)
+        float pathExponent = 1f, float taperEnd = 1f)
     {
         return new SptBranch
         {
-            Splines = BuildSlots(length, radius),
+            Splines = BuildSlots(length, radius, taperEnd),
             UInt6008 = u6008,
             UInt6009 = u6009,
             Float6010 = 0f,
@@ -408,10 +509,34 @@ public class SptGeometryBuilderTests
         return leaf.Positions.Length / 12;
     }
 
+    private static int CountLeafQuads(NifRenderableModel model, string texturePart)
+    {
+        return model.Submeshes
+            .Where(s => s.ShapeName == "spt:leaves" &&
+                        s.DiffuseTexturePath?.Contains(texturePart, StringComparison.OrdinalIgnoreCase) == true)
+            .Sum(s => s.Positions.Length / 12);
+    }
+
+    private static int CountAllLeafQuads(NifRenderableModel model)
+    {
+        return model.Submeshes
+            .Where(s => s.ShapeName == "spt:leaves")
+            .Sum(s => s.Positions.Length / 12);
+    }
+
     private static Vector3 ReadVector3(float[] values, int vertex)
     {
         var i = vertex * 3;
         return new Vector3(values[i], values[i + 1], values[i + 2]);
+    }
+
+    /// <summary>Asserts a leaf-card bitangent's x/y (the card corner offset); z carries the wind weight,
+    /// checked separately.</summary>
+    private static void AssertOffsetXy(float[] values, int vertex, float x, float y)
+    {
+        var i = vertex * 3;
+        Assert.Equal(x, values[i], 4);
+        Assert.Equal(y, values[i + 1], 4);
     }
 
     private static int RingVertexCount(uint u6008)
@@ -433,13 +558,6 @@ public class SptGeometryBuilderTests
         }
 
         return sum / count;
-    }
-
-    private static void AssertVector3(Vector3 expected, Vector3 actual, int precision = 4)
-    {
-        Assert.Equal(expected.X, actual.X, precision);
-        Assert.Equal(expected.Y, actual.Y, precision);
-        Assert.Equal(expected.Z, actual.Z, precision);
     }
 
     private static float SpeedTreeRangeAfterReseed(uint seed, float min, float max)
@@ -469,12 +587,12 @@ public class SptGeometryBuilderTests
         }
     }
 
-    private static SptBezierSpline?[] BuildSlots(float length, float radius)
+    private static SptBezierSpline?[] BuildSlots(float length, float radius, float taperEnd = 1f)
     {
         var slots = new SptBezierSpline?[9];
         slots[4] = new SptBezierSpline { Header = new Vector3(length, length, 0f) };
         slots[5] = new SptBezierSpline { Header = new Vector3(radius, radius, 0f) };
-        slots[6] = new SptBezierSpline { Header = new Vector3(1f, 1f, 0f) };
+        slots[6] = new SptBezierSpline { Header = new Vector3(1f, taperEnd, 0f) };
         return slots;
     }
 

@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
@@ -17,7 +18,7 @@ internal static class NpcExportSceneBuilder
 
     internal static GlbScene? Build(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         Dictionary<string, EgtParser?> egtCache,
@@ -70,7 +71,7 @@ internal static class NpcExportSceneBuilder
     internal static void AddSkinnedNif(
         GlbScene scene,
         string nifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         Dictionary<string, int> nodeIndicesByBoneName,
         Action<RenderableSubmesh>? mutateSubmesh = null,
         string? filterShapeName = null,
@@ -173,7 +174,7 @@ internal static class NpcExportSceneBuilder
 
     internal static NifExportExtractor.ExtractedScene? LoadExtractedNif(
         string nifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         string? filterShapeName = null,
         float[]? preSkinMorphDeltas = null)
     {

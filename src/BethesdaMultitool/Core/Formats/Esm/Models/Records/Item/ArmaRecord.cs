@@ -50,8 +50,11 @@ public record ArmaRecord
     /// <summary>Female inventory icon path (MIC2 subrecord).</summary>
     public string? FemaleIconPath { get; init; }
 
-    /// <summary>Detection sound level enum from DNAM (Loud=0, Normal=1, Silent=2).</summary>
-    public byte DetectionSoundLevel { get; init; }
+    /// <summary>Damage Resistance from DNAM (Int16 at +0). See ARMO; ARMA shares the DR/DT layout.</summary>
+    public int DamageResistance { get; init; }
+
+    /// <summary>Damage Threshold from DNAM (float at +4; FNV-era only — absent in FO3's 4-byte DNAM).</summary>
+    public float DamageThreshold { get; init; }
 
     /// <summary>Equipment slot category from ETYP subrecord (int32 enum, -1..13).</summary>
     public EquipmentType EquipmentType { get; init; } = EquipmentType.None;

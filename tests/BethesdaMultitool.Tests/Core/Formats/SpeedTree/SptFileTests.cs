@@ -134,9 +134,14 @@ public class SptFileTests
     {
         var model = SptFile.Parse(BuildLeafTableOnlySpt((3001u, 1u)));
 
+        Assert.Equal(0.75f, model.LeafSize);
         Assert.NotNull(model.LeafTable);
+        Assert.Equal(1u, model.LeafTable!.UInt3001);
+        Assert.Equal(0.8f, model.LeafTable.Float3002);
         Assert.Equal(0.5f, model.LeafTable!.Float3007);
         Assert.Equal(2u, model.LeafTable.UInt3008);
+        Assert.Equal(1, model.LeafTable.Byte3009);
+        Assert.Equal(1f, model.LeafTable.Float3010);
     }
 
     [Fact]

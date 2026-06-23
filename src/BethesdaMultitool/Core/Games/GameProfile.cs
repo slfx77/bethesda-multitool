@@ -39,10 +39,14 @@ public sealed record GameProfile
     public IReadOnlyList<string> MasterFileHints { get; init; } = [];
 
     /// <summary>
-    ///     True when ARMO/ARMA DNAM carries a Damage Threshold field after Damage Resistance (the
-    ///     FNV 12-byte extension of FO3's 8-byte block). See <c>ItemRecordHandler.ParseArmorDefenseData</c>.
+    ///     True when the worldspace WRLD record carries a DNAM block with a default land/water height
+    ///     (introduced in Fallout 3). When false (Oblivion), the engine has no per-worldspace water
+    ///     default: an exterior cell only stores an explicit XCLW when it overrides sea level, so a
+    ///     water-referencing worldspace (NAM2) with no DNAM renders its ocean at Z 0 by convention.
+    ///     Lets the parser key the default-water decision on the detected game instead of inferring it
+    ///     from the absence of a subrecord. See <c>WorldspaceRecordHandler.ParseWorldspaceFromAccessor</c>.
     /// </summary>
-    public bool HasArmorDamageThreshold { get; init; }
+    public bool HasWorldspaceDefaultWaterHeight { get; init; }
 
     /// <summary>
     ///     Engine-default landscape diffuse texture (the <c>SDefaultLandDiffuseTexture</c> ini value),

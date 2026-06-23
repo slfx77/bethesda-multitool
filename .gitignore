@@ -59,6 +59,7 @@ artifacts/
 # Tools folder - ignore most but allow specific tools
 tools/*
 !tools/disasm_shader.py
+!tools/run_decompile_speedtree_pc.py
 !tools/Shared/
 tools/Shared/bin/
 tools/Shared/obj/
@@ -89,6 +90,12 @@ tools/PdbAnalyzer/obj/
 !tools/TerrainAnalyzer/
 tools/TerrainAnalyzer/bin/
 tools/TerrainAnalyzer/obj/
+!tools/RttiScanner/
+tools/RttiScanner/bin/
+tools/RttiScanner/obj/
+!tools/SignatureScanner/
+tools/SignatureScanner/bin/
+tools/SignatureScanner/obj/
 
 # Python remnants (if any)
 .venv/

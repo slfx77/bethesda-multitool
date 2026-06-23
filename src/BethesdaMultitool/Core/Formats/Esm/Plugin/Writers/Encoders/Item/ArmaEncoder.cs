@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 
@@ -11,7 +12,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Item;
 ///     MOD3?, MO3T?, MOD4?, MO4T?, ICON?, MIC2?, DATA, DNAM?.
 ///     BMDT layout (8 bytes): uint32 BipedFlags(0) + uint8 GeneralFlags(4) + 3 padding.
 ///     DATA layout (12 bytes): int32 Value(0) + int32 MaxCondition(4) + float Weight(8).
-///     DNAM (1 byte): detection sound level enum (Loud=0, Normal=1, Silent=2).
+///     DNAM (FNV, 8 bytes): int16 DR(0) + uint16 Flags(2) + float DT(4) — the same DR/DT armor-defense
+///     struct as ARMO (xEdit wbDefinitionsFNV ARMA). FO3's is a short 4-byte DR-only block.
 ///     MODT/MO2T/MO3T/MO4T are opaque texture-hash byte arrays (passthrough from master).
 /// </summary>
 public sealed class ArmaEncoder : IRecordEncoder
@@ -107,12 +109,15 @@ public sealed class ArmaEncoder : IRecordEncoder
 
         subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "ARMA", 12, arma, DataExtractors));
 
-        // DNAM — detection sound level. Emit when non-default (0 = Loud is the default; we
-        // emit when it's been deliberately set to Normal or Silent, but always-emitting is
-        // also valid since the engine treats absence as Loud).
-        if (arma.DetectionSoundLevel != 0)
+        // DNAM — armor-defense struct (8 bytes: int16 DR + uint16 Flags + float DT), matching ARMO/ARMA
+        // in FNV. Emit when DR or DT is set; Flags (Modulates Voice) is left zero for reconstructed
+        // records. Absence is harmless (engine treats it as DR/DT 0).
+        if (arma.DamageResistance != 0 || arma.DamageThreshold != 0f)
         {
-            subs.Add(NewRecordSubrecords.EncodeByteSubrecord("DNAM", arma.DetectionSoundLevel));
+            var dnam = new byte[8];
+            BinaryPrimitives.WriteInt16LittleEndian(dnam, (short)arma.DamageResistance);
+            BinaryPrimitives.WriteSingleLittleEndian(dnam.AsSpan(4), arma.DamageThreshold);
+            subs.Add(NewRecordSubrecords.EncodeByteArraySubrecord("DNAM", dnam));
         }
 
         // ETYP — equipment type (int32 enum, -1..13). Per WeapEncoder/ArmoEncoder precedent,

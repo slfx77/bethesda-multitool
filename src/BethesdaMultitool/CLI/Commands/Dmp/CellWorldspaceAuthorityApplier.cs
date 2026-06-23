@@ -29,6 +29,7 @@ internal static class CellWorldspaceAuthorityApplier
     private const int AuthorityOffsetClusterMinPlacements = 2;
     private const string SourceOffsetCluster = "OffsetCluster";
     private const string SourceVirtual = "Virtual";
+    private const string SourceInteriorOffsetCluster = "InteriorOffsetCluster";
 
     private readonly record struct ResolvedReferenceWindow(
         uint CellFormId,
@@ -135,9 +136,11 @@ internal static class CellWorldspaceAuthorityApplier
             authority,
             scanResult);
         var offsetMove = ReattachOffsetClusteredUnresolvedReferences(records, scanResult);
+        var interiorMove = ReattachOffsetClusteredInteriorUnresolvedReferences(records, scanResult);
 
         if (scanResult is not null &&
-            (matched > 0 || referenceMove.Moved > 0 || windowMove.Moved > 0 || offsetMove.Moved > 0))
+            (matched > 0 || referenceMove.Moved > 0 || windowMove.Moved > 0 || offsetMove.Moved > 0 ||
+             interiorMove.Moved > 0))
         {
             EsmLandEnricher.EnrichLandRecordsWithCellWorldspaces(scanResult, records.Cells);
             CellRecordHandler.AttachTerrainDataFromLandRecords(records.Cells, scanResult);
@@ -151,8 +154,8 @@ internal static class CellWorldspaceAuthorityApplier
             overrode,
             synthesized,
             terrainAttached,
-            referenceMove.Moved + windowMove.Moved + offsetMove.Moved,
-            referenceMove.CreatedCells + windowMove.CreatedCells + offsetMove.CreatedCells,
+            referenceMove.Moved + windowMove.Moved + offsetMove.Moved + interiorMove.Moved,
+            referenceMove.CreatedCells + windowMove.CreatedCells + offsetMove.CreatedCells + interiorMove.CreatedCells,
             windowMove.AppliedWindows,
             windowMove.AmbiguousMatches);
     }
@@ -536,6 +539,134 @@ internal static class CellWorldspaceAuthorityApplier
         records.Cells.RemoveAll(c => c.IsUnresolvedBucket && c.PlacedObjects.Count == 0);
         CellRecordHandler.ResolveDoorLinks(records.Cells);
         return (moved, createdCells);
+    }
+
+    /// <summary>
+    ///     Interior counterpart to <see cref="ReattachOffsetClusteredUnresolvedReferences" />. When a
+    ///     partial DMP loses the parent-cell link on an interior cell's refs, they report no interior
+    ///     parent, get misclassified as exterior orphans during parse, and land in the global
+    ///     <c>[Unresolved …]</c> bucket — they can't be grid-resolved (interiors have no grid) and the
+    ///     exterior offset-cluster passes only anchor to worldspace cells. By this point the authority
+    ///     ref→cell / window passes have already seeded each captured interior cell with the refs they
+    ///     could match by FormID; since an interior's refs are streamed contiguously in memory, any
+    ///     remaining unresolved orphan whose dump offset is bracketed by exactly one captured interior
+    ///     cell's refs almost certainly belongs to that interior. Attach those by offset adjacency.
+    /// </summary>
+    private static (int Moved, int CreatedCells) ReattachOffsetClusteredInteriorUnresolvedReferences(
+        RecordCollection records,
+        EsmRecordScanResult? scanResult)
+    {
+        var anchors = records.Cells
+            .Where(cell => cell.IsInterior &&
+                           !cell.IsVirtual &&
+                           !cell.IsUnresolvedBucket)
+            .SelectMany(cell => cell.PlacedObjects
+                .Where(placed => placed.Offset > 0)
+                .Select(placed => (placed.Offset, Cell: cell)))
+            .OrderBy(anchor => anchor.Offset)
+            .ToList();
+
+        if (anchors.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        var anchorOffsets = anchors.Select(anchor => anchor.Offset).ToArray();
+        var cellIndexByFormId = BuildCellIndex(records.Cells);
+        var moved = 0;
+
+        for (var i = 0; i < records.Cells.Count; i++)
+        {
+            var source = records.Cells[i];
+            if (!source.IsUnresolvedBucket || source.PlacedObjects.Count == 0)
+            {
+                continue;
+            }
+
+            var movedFormIds = new HashSet<uint>();
+            foreach (var placed in source.PlacedObjects)
+            {
+                if (placed.Offset <= 0)
+                {
+                    continue;
+                }
+
+                var owner = FindNearestInteriorOwner(anchors, anchorOffsets, placed.Offset);
+                if (owner == null || !cellIndexByFormId.TryGetValue(owner.FormId, out var targetIndex))
+                {
+                    continue;
+                }
+
+                var target = records.Cells[targetIndex];
+                if (!target.PlacedObjects.Any(p => p.FormId == placed.FormId))
+                {
+                    target.PlacedObjects.Add(placed with { AssignmentSource = SourceInteriorOffsetCluster });
+                }
+
+                MoveScanResultRefLink(scanResult, source.FormId, owner.FormId, placed.FormId);
+                movedFormIds.Add(placed.FormId);
+                moved++;
+            }
+
+            if (movedFormIds.Count > 0)
+            {
+                records.Cells[i] = source with
+                {
+                    PlacedObjects = source.PlacedObjects
+                        .Where(placed => !movedFormIds.Contains(placed.FormId))
+                        .ToList()
+                };
+            }
+        }
+
+        if (moved == 0)
+        {
+            return (0, 0);
+        }
+
+        records.Cells.RemoveAll(c => c.IsUnresolvedBucket && c.PlacedObjects.Count == 0);
+        CellRecordHandler.ResolveDoorLinks(records.Cells);
+        return (moved, 0);
+    }
+
+    /// <summary>
+    ///     Returns the captured interior cell whose ref is nearest in dump offset to
+    ///     <paramref name="offset" />, or null when the nearest interior ref is further than the
+    ///     adjacency cap. An interior's refs are streamed contiguously, so the nearest captured
+    ///     interior ref is the orphan's most likely owner; the cap rejects orphans that sit far
+    ///     from every captured interior ref (the cell shell was captured but its refs were not, so
+    ///     adjacency is not real evidence).
+    /// </summary>
+    private static CellRecord? FindNearestInteriorOwner(
+        List<(long Offset, CellRecord Cell)> anchors,
+        long[] anchorOffsets,
+        long offset)
+    {
+        var idx = Array.BinarySearch(anchorOffsets, offset);
+        if (idx >= 0)
+        {
+            return anchors[idx].Cell;
+        }
+
+        idx = ~idx; // first anchor with offset greater than the orphan
+        CellRecord? best = null;
+        var bestGap = long.MaxValue;
+        if (idx < anchors.Count)
+        {
+            bestGap = anchorOffsets[idx] - offset;
+            best = anchors[idx].Cell;
+        }
+        if (idx - 1 >= 0)
+        {
+            var gapBelow = offset - anchorOffsets[idx - 1];
+            if (gapBelow < bestGap)
+            {
+                bestGap = gapBelow;
+                best = anchors[idx - 1].Cell;
+            }
+        }
+
+        return best is not null && bestGap <= AuthorityOffsetClusterWindowBytes ? best : null;
     }
 
     private static IEnumerable<List<PlacedReference>> BuildPlacedOffsetClusters(

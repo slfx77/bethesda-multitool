@@ -11,7 +11,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///     Mirrors <see cref="ReferenceDecodedMeshDiskCache12" />: the cold first run writes, every warm
 ///     run after reads the ready-to-upload <see cref="GpuTexturePayload" /> from disk and skips the
 ///     entire transcode. Keyed by (texture-source-set identity + normalized path); a changed BSA set
-///     invalidates the whole cache. Enabled by default; disable with
+///     invalidates the whole cache. Enabled by default under the OS temp directory; disable with
 ///     <c>FALLOUT_VIEWER_PERSISTENT_TEXTURE_CACHE=0</c>.
 ///     <para>
 ///         Container handling (header, key echo, negatives, atomic writes, prune, stats) lives in
@@ -54,17 +54,9 @@ internal sealed class ReferenceDecodedTextureDiskCache12 : DiskBlobCache
         var cacheDirectory = EnvironmentVariables.Get(EnvironmentVariables.Viewer.TextureCacheDirectory);
         if (string.IsNullOrWhiteSpace(cacheDirectory))
         {
-            var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            if (string.IsNullOrWhiteSpace(root))
-            {
-                root = Path.GetTempPath();
-            }
-
-            cacheDirectory = Path.Combine(
-                root,
-                "BethesdaMultitool",
+            cacheDirectory = ReferenceDiskCachePaths.ResolveDefaultCacheDirectory(
                 "ReferenceDecodedTextureCache12",
-                $"v{DecoderVersion}");
+                DecoderVersion);
         }
 
         var cache = new ReferenceDecodedTextureDiskCache12(cacheDirectory);

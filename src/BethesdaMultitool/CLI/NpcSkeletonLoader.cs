@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.CLI.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Nif;
@@ -19,7 +20,7 @@ internal static class NpcSkeletonLoader
     /// </summary>
     internal static void LoadSkeletonBones(
         string skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         bool bindPose,
         out Dictionary<string, Matrix4x4>? boneCache,
         out Dictionary<string, Matrix4x4>? poseDeltaCache,
@@ -66,7 +67,7 @@ internal static class NpcSkeletonLoader
     /// </summary>
     internal static Dictionary<string, NifAnimationParser.AnimPoseOverride>? LoadIdleAnimationOverrides(
         string skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         (byte[] Data, NifInfo Info)? skelRaw,
         string? animOverride = null)
     {
@@ -121,7 +122,7 @@ internal static class NpcSkeletonLoader
 
     internal static Dictionary<string, Matrix4x4> BuildHandToHandEquippedArmBones(
         string skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         Dictionary<string, Matrix4x4> fallbackIdleBones,
         WeaponVisual? weaponVisual)
     {
@@ -201,7 +202,7 @@ internal static class NpcSkeletonLoader
 
     internal static Dictionary<string, NifAnimationParser.AnimPoseOverride>? LoadNamedAnimationOverrides(
         string skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         string kfRelPath,
         bool sampleLastKeyframe = false)
     {
@@ -242,7 +243,7 @@ internal static class NpcSkeletonLoader
 
     internal static string? TryLoadSequenceParentBoneName(
         string? skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         string kfRelPath)
     {
         if (skeletonNifPath == null)
@@ -359,7 +360,7 @@ internal static class NpcSkeletonLoader
     /// </summary>
     internal static NifRenderableModel? BuildSkeletonVisualization(
         string skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         bool bindPose)
     {
         var skelRaw = NpcMeshHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);

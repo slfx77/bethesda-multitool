@@ -1,4 +1,5 @@
 using System.CommandLine;
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core;
 using Spectre.Console;
 

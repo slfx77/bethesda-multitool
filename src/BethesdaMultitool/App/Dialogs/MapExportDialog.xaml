@@ -24,7 +24,7 @@
     <StackPanel Spacing="4">
       <TextBlock Text="Resolution" Style="{StaticResource BodyStrongTextBlockStyle}"
                  AutomationProperties.HeadingLevel="Level2" />
-      <TextBlock x:Name="WorldSizeText" FontSize="11"
+      <TextBlock x:Name="WorldSizeText" FontSize="11" TextWrapping="Wrap"
                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
     </StackPanel>
 
@@ -61,7 +61,7 @@
       <TextBlock Grid.Column="2" Text="px" VerticalAlignment="Center" />
     </Grid>
 
-    <TextBlock x:Name="OutputSizeText" FontSize="11"
+    <TextBlock x:Name="OutputSizeText" FontSize="11" TextWrapping="Wrap"
                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
 
     <StackPanel Spacing="4">
@@ -71,6 +71,8 @@
       <CheckBox x:Name="NavMeshCheckBox" Content="Nav mesh" />
       <CheckBox x:Name="WaterCheckBox" Content="Water" />
       <CheckBox x:Name="GridCheckBox" Content="Cell grid" />
+      <CheckBox x:Name="RenderedMeshesCheckBox" Content="Rendered meshes (3D)"
+                ToolTipService.ToolTip="Composite a top-down 3D render of the placed objects over the terrain (needs the 3D viewer ready; exterior worldspaces only)" />
       <CheckBox x:Name="TiledCheckBox" Content="Tiled high-res (multiple PNGs + manifest)"
                 Checked="TiledCheckBox_Changed" Unchecked="TiledCheckBox_Changed" />
     </StackPanel>

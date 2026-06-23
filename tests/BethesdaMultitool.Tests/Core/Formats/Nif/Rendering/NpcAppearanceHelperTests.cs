@@ -3,6 +3,7 @@ using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -1121,7 +1122,7 @@ public sealed class NpcAppearanceHelperTests
         var meshesBsa = FindXboxFinalMeshesBsa();
         Assert.NotNull(meshesBsa);
 
-        using var meshArchives = NpcMeshArchiveSet.Open(meshesBsa!, null);
+        using var meshArchives = MeshArchiveSet.Open(meshesBsa!, null);
 
         var idleBoneTransforms = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
@@ -1151,7 +1152,7 @@ public sealed class NpcAppearanceHelperTests
         var meshesBsa = FindXboxFinalMeshesBsa();
         Assert.NotNull(meshesBsa);
 
-        using var meshArchives = NpcMeshArchiveSet.Open(meshesBsa!, null);
+        using var meshArchives = MeshArchiveSet.Open(meshesBsa!, null);
 
         var idleBoneTransforms = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
@@ -1181,7 +1182,7 @@ public sealed class NpcAppearanceHelperTests
         var meshesBsa = FindXboxFinalMeshesBsa();
         Assert.NotNull(meshesBsa);
 
-        using var meshArchives = NpcMeshArchiveSet.Open(meshesBsa!, null);
+        using var meshArchives = MeshArchiveSet.Open(meshesBsa!, null);
 
         var idleBoneTransforms = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Nif;
@@ -43,7 +44,7 @@ internal static class NpcWeaponAttachmentResolver
         WeaponVisual weaponVisual,
         Dictionary<string, Matrix4x4> idleBoneTransforms,
         string? skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         out string attachmentNodeName,
         out Matrix4x4 attachmentTransform,
         out string? omitReason)
@@ -160,7 +161,7 @@ internal static class NpcWeaponAttachmentResolver
     internal static bool TryResolveHandToHandProcessWeaponAttachmentTransform(
         IReadOnlyDictionary<string, Matrix4x4> idleBoneTransforms,
         string? skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         bool preferProcessStyleRebuild,
         bool preferEquippedForearmMount,
         out string attachmentNodeName,
@@ -330,7 +331,7 @@ internal static class NpcWeaponAttachmentResolver
 
     internal static IReadOnlyList<string> ResolveHandToHandWeaponParentBoneCandidates(
         string? skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         bool preferEquippedForearmMount = false)
     {
         var candidates = new List<string>(4);
@@ -383,7 +384,7 @@ internal static class NpcWeaponAttachmentResolver
     /// </summary>
     internal static WeaponHolsterPose? LoadWeaponHolsterPose(
         string? skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         string holsterProfileKey,
         bool usePowerArmorHolster)
     {
@@ -397,7 +398,7 @@ internal static class NpcWeaponAttachmentResolver
 
     internal static WeaponHolsterPose? LoadWeaponAttachmentPose(
         string? skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         string kfRelPath,
         bool sampleLastKeyframe,
         string poseLabel)

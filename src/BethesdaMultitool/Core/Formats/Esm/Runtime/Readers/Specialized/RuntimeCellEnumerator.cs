@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Minidump;

@@ -29,7 +29,14 @@ internal sealed record EsmDescriptorScanResult(
 
 internal static class EsmDescriptorScanner
 {
-    internal static EsmDescriptorScanResult Scan(ReadOnlySpan<byte> data)
+    /// <param name="onBytesScanned">
+    ///     Optional progress callback invoked once per top-level record/GRUP with the byte offset consumed
+    ///     so far. Fires at top-level granularity only (NOT inside <see cref="ParseGroupRecursive" />, which
+    ///     runs millions of times) — coarse enough to be cheap, fine enough to drive a smooth progress bar
+    ///     on large ESMs. Callers should throttle their own reporting.
+    /// </param>
+    internal static EsmDescriptorScanResult Scan(
+        ReadOnlySpan<byte> data, Action<long>? onBytesScanned = null)
     {
         var scanResult = new EsmRecordScanResult();
         var grupHeaders = new List<GrupHeaderInfo>();
@@ -55,6 +62,7 @@ internal static class EsmDescriptorScanner
         var offset = (long)format.RecordHeaderSize + tes4Header.DataSize;
         while (offset + format.RecordHeaderSize <= data.Length)
         {
+            onBytesScanned?.Invoke(offset);
             var sig = ReadSignature(data[(int)offset..], bigEndian);
 
             if (sig == "GRUP")

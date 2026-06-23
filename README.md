@@ -195,7 +195,6 @@ Standalone CLI tools for format analysis and debugging. These are not included i
 | `tools/RttiScanner` | RTTI and operator-new extraction from raw binaries |
 | `tools/TerrainAnalyzer` | Terrain and heightmap analysis and visualization |
 | `tools/SignatureScanner` | File signature scanning utilities |
-| `tools/LzxVerify` | LZX compression verification |
 
 ```bash
 # ESM analysis and comparison
@@ -249,7 +248,6 @@ tools/
 ├── RttiScanner/             # RTTI / operator-new extraction
 ├── TerrainAnalyzer/         # Terrain/heightmap analysis
 ├── SignatureScanner/        # File signature scanning
-├── LzxVerify/               # LZX compression verification
 └── Shared/                  # Shared CLI strings library
 ```
 

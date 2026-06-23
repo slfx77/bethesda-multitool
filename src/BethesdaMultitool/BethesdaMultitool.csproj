@@ -48,12 +48,6 @@
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Compile Remove="Core\Models\**" />
-    <EmbeddedResource Remove="Core\Models\**" />
-    <None Remove="Core\Models\**" />
-  </ItemGroup>
-
   <!-- Expose internals to test project and EsmAnalyzer tool -->
   <ItemGroup>
     <InternalsVisibleTo Include="BethesdaMultitool.Tests" />
@@ -150,25 +144,10 @@
 
   <!-- Exclude GUI code from cross-platform build -->
   <ItemGroup Condition="!$(TargetFramework.Contains('windows'))">
-    <!-- All GUI code is in App/ folder -->
+    <!-- All GUI code is in App/ folder. Non-UI helpers/models shared with CLI/tests/analysis now
+         live under Core/ (Core/WorldData, Core/EsmView) so they compile for both TFMs without
+         per-file re-inclusion. -->
     <Compile Remove="App\**\*.cs" />
-    <!-- Keep non-UI helpers that are shared with tests and analysis code -->
-    <Compile Include="App\Helpers\DialogueConditionDisplayFormatter.cs" />
-    <Compile Include="App\Helpers\DanglingRefAttributions.cs" />
-    <Compile Include="App\Helpers\FormUsageIndex.cs" />
-    <Compile Include="App\Helpers\FormUsageReference.cs" />
-    <Compile Include="App\Helpers\LayerCellBitmapCapPolicy.cs" />
-    <Compile Include="App\Helpers\RecordDetailPropertyAdapter.cs" />
-    <Compile Include="App\Helpers\SpawnResolutionIndex.cs" />
-    <Compile Include="App\Helpers\WorldGridConstants.cs" />
-    <Compile Include="App\Helpers\WorldMapBoundsMath.cs" />
-    <Compile Include="App\Helpers\WorldRenderCache.cs" />
-    <Compile Include="App\Helpers\WorldRenderStats.cs" />
-    <Compile Include="App\Helpers\WaterColorPalette.cs" />
-    <Compile Include="App\Helpers\WorldSpatialIndex.cs" />
-    <Compile Include="App\Helpers\WorldViewStressBookmarkFinder.cs" />
-    <Compile Include="App\Models\EsmPropertyEntry.cs" />
-    <Compile Include="App\Models\WorldViewData.cs" />
     <!-- XAML files in App/ -->
     <Page Remove="App\**\*.xaml" />
     <!-- Root XAML files -->

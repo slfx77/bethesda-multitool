@@ -54,6 +54,9 @@ internal sealed class CellGridDebugRenderer12
     private Vector3[] _vertexScratch = [];
     private int _cellCount;
     private global::BethesdaMultitool.WorldSpatialIndex? _spatialIndex;
+    // Active worldspace's cell-edge size (4096 Fallout-family, 8192 Morrowind), taken from the spatial
+    // index on load so the wireframe sits on the real cell boundaries (and the wall squares stay square).
+    private float _cellSize = WorldGridConstants.CellSize;
     private bool _disposed;
 
     // World vertical extent the grid spans. The grid is drawn as full-height vertical walls between
@@ -182,6 +185,7 @@ internal sealed class CellGridDebugRenderer12
     {
         _cellCount = 0;
         _spatialIndex = spatialIndex;
+        _cellSize = spatialIndex?.CellSize ?? WorldGridConstants.CellSize;
         _cells.Clear();
         _vertexScratch = [];
 
@@ -334,17 +338,17 @@ internal sealed class CellGridDebugRenderer12
     private void WriteCellVertices(int cellIndex, (int gx, int gy) key)
     {
         var (gx, gy) = key;
-        var x0 = gx * WorldGridConstants.CellSize;
-        var y0 = gy * WorldGridConstants.CellSize;
-        var x1 = x0 + WorldGridConstants.CellSize;
-        var y1 = y0 + WorldGridConstants.CellSize;
+        var x0 = gx * _cellSize;
+        var y0 = gy * _cellSize;
+        var x1 = x0 + _cellSize;
+        var y1 = y0 + _cellSize;
         var idx = cellIndex * _verticesPerCell;
 
-        // Horizontal square rings at each z level (z = _zMin + k*CellSize). These divide the four wall
-        // faces into cell-sized (4096×4096) squares — a full 3D grid rather than just top/bottom edges.
+        // Horizontal square rings at each z level (z = _zMin + k*cellSize). These divide the four wall
+        // faces into cell-sized squares — a full 3D grid rather than just top/bottom edges.
         for (var k = 0; k < _horizontalLevels; k++)
         {
-            var z = _zMin + k * WorldGridConstants.CellSize;
+            var z = _zMin + k * _cellSize;
             _vertexScratch[idx++] = new Vector3(x0, y0, z);
             _vertexScratch[idx++] = new Vector3(x1, y0, z);
             _vertexScratch[idx++] = new Vector3(x1, y0, z);
@@ -376,7 +380,7 @@ internal sealed class CellGridDebugRenderer12
     {
         if (!float.IsFinite(zMin) || !float.IsFinite(zMax) || zMax <= zMin) return;
 
-        var cell = WorldGridConstants.CellSize;
+        var cell = _cellSize;
         _zMin = MathF.Floor(zMin / cell) * cell;
         _zMax = MathF.Ceiling(zMax / cell) * cell;
 

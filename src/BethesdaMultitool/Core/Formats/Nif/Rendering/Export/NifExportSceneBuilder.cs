@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
@@ -58,7 +59,7 @@ internal static class NifExportSceneBuilder
     internal static GlbScene? BuildCreature(
         string skeletonPath,
         string[] bodyModelPaths,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         bool bindPose = false,
         string? idleAnimationPath = null,
         string? weaponMeshPath = null)

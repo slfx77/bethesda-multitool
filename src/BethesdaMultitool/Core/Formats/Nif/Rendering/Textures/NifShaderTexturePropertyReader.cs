@@ -299,6 +299,72 @@ internal static class NifShaderTexturePropertyReader
         }
 
         pos += 24; // Shader Flags 1 + Shader Flags 2 + UV Offset + UV Scale
+
+        var inlineSlots = ReadInlineTextureSet(data, nif, pos, end);
+
+        // Fallout 4 (bsVer 130..<155) usually stores its material in an external .bgsm/.bgem referenced by
+        // the shader's Name, leaving the inline texture set empty — which renders the shape white. When the
+        // inline set yields no diffuse, fall back to the material Name. Unlike FO76 (no leading field), FO4
+        // BSLightingShaderProperty prefixes a 4-byte "Shader Type", so the Name sits at DataOffset + 4.
+        if (!HasDiffuse(inlineSlots) && nif.BsVersion is >= 130 and < 155)
+        {
+            var material = ReadMaterialNameSlot(data, nif, propBlock.DataOffset + 4);
+            if (material.Count > 0)
+            {
+                return material;
+            }
+        }
+
+        return inlineSlots;
+    }
+
+    /// <summary>
+    ///     Fallout 76 BSLightingShaderProperty texture resolution: the NiObjectNET <c>Name</c> (a String
+    ///     table index, since FO76 has no inline texture set) is a <c>.bgsm</c>/<c>.bgem</c> material
+    ///     path. Returned as the diffuse slot so the resolver can parse the material and load its
+    ///     textures. Returns empty when the Name isn't a material path.
+    /// </summary>
+    private static List<string?> ReadFallout76MaterialSlot(byte[] data, NifInfo nif, BlockInfo propBlock) =>
+        ReadMaterialNameSlot(data, nif, propBlock.DataOffset);
+
+    /// <summary>
+    ///     Resolve a shader's material from its NiObjectNET <c>Name</c> (a String-table index) at
+    ///     <paramref name="nameFieldOffset" />. The Name is a <c>.bgsm</c>/<c>.bgem</c> material path,
+    ///     returned as the diffuse slot so the resolver can parse the material and load its real textures
+    ///     (see NifTextureResolver.LoadFromMaterial). FO76 has no leading "Shader Type", so its Name sits at
+    ///     the block data offset; FO4 BSLightingShaderProperty prefixes a 4-byte "Shader Type", so its Name
+    ///     sits at offset + 4. Returns empty when the Name isn't a material path.
+    /// </summary>
+    private static List<string?> ReadMaterialNameSlot(byte[] data, NifInfo nif, int nameFieldOffset)
+    {
+        if (nameFieldOffset < 0 || nameFieldOffset + 4 > data.Length)
+        {
+            return [];
+        }
+
+        var nameIndex = BinaryUtils.ReadInt32(data, nameFieldOffset, nif.IsBigEndian);
+        if (nameIndex < 0 || nameIndex >= nif.Strings.Count)
+        {
+            return [];
+        }
+
+        var name = nif.Strings[nameIndex];
+        if (string.IsNullOrEmpty(name) ||
+            (!name.EndsWith(".bgsm", StringComparison.OrdinalIgnoreCase) &&
+             !name.EndsWith(".bgem", StringComparison.OrdinalIgnoreCase)))
+        {
+            return [];
+        }
+
+        return CreateFixedTextureSlots(name);
+    }
+
+    /// <summary>
+    ///     Read the inline Texture Set ref (Skyrim..FO4) at <paramref name="pos" /> and return its slots, or
+    ///     an empty list when the ref is absent/invalid or doesn't point at a BSShaderTextureSet.
+    /// </summary>
+    private static List<string?> ReadInlineTextureSet(byte[] data, NifInfo nif, int pos, int end)
+    {
         if (pos + 4 > end)
         {
             return [];
@@ -316,35 +382,8 @@ internal static class NifShaderTexturePropertyReader
             : [];
     }
 
-    /// <summary>
-    ///     Fallout 76 BSLightingShaderProperty texture resolution: the NiObjectNET <c>Name</c> (a String
-    ///     table index, since FO76 has no inline texture set) is a <c>.bgsm</c>/<c>.bgem</c> material
-    ///     path. Returned as the diffuse slot so the resolver can parse the material and load its
-    ///     textures. Returns empty when the Name isn't a material path.
-    /// </summary>
-    private static List<string?> ReadFallout76MaterialSlot(byte[] data, NifInfo nif, BlockInfo propBlock)
-    {
-        if (propBlock.DataOffset + 4 > data.Length)
-        {
-            return [];
-        }
-
-        var nameIndex = BinaryUtils.ReadInt32(data, propBlock.DataOffset, nif.IsBigEndian);
-        if (nameIndex < 0 || nameIndex >= nif.Strings.Count)
-        {
-            return [];
-        }
-
-        var name = nif.Strings[nameIndex];
-        if (string.IsNullOrEmpty(name) ||
-            (!name.EndsWith(".bgsm", StringComparison.OrdinalIgnoreCase) &&
-             !name.EndsWith(".bgem", StringComparison.OrdinalIgnoreCase)))
-        {
-            return [];
-        }
-
-        return CreateFixedTextureSlots(name);
-    }
+    /// <summary>True when the diffuse (slot 0) of a texture-slot list is populated.</summary>
+    private static bool HasDiffuse(List<string?> slots) => slots.Count > 0 && !string.IsNullOrEmpty(slots[0]);
 
     /// <summary>
     ///     Reads the inline "Source Texture" of a Skyrim / SE / Fallout 4 BSEffectShaderProperty (the
@@ -370,7 +409,16 @@ internal static class NifShaderTexturePropertyReader
         }
 
         var source = NifBinaryCursor.ReadSizedString(data, ref pos, end, nif.IsBigEndian);
-        return string.IsNullOrEmpty(source) ? [] : CreateFixedTextureSlots(source);
+        if (!string.IsNullOrEmpty(source))
+        {
+            return CreateFixedTextureSlots(source);
+        }
+
+        // FO4 (bsVer 130..<155) effect shaders can carry their texture via an external .bgem material in the
+        // Name. BSEffectShaderProperty has no leading "Shader Type", so the Name is at the block data offset.
+        return nif.BsVersion is >= 130 and < 155
+            ? ReadMaterialNameSlot(data, nif, propBlock.DataOffset)
+            : [];
     }
 
     private static List<string?> ReadTextureSetSlots(

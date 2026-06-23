@@ -20,6 +20,13 @@ namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 public sealed class Ba2Extractor : IDisposable
 {
     private readonly MemoryMappedFile _mappedFile;
+
+    // ONE read-only view over the whole file, reused for every region read. Creating a view accessor is a
+    // real MapViewOfFile (page-aligned, allocates a SafeHandle + view) — the old per-chunk accessor made a
+    // DX10 texture pay N of those, which is why BA2 streamed much slower than BSA. A single read-only view
+    // is safe for concurrent ReadArray from the resolve-queue workers (each reads into its own buffer at an
+    // explicit absolute position; no shared mutable state).
+    private readonly MemoryMappedViewAccessor _view;
     private readonly Ba2CompressionFormat _compression;
     private readonly uint _version;
     private bool _disposed;
@@ -31,6 +38,7 @@ public sealed class Ba2Extractor : IDisposable
         _compression = Archive.Header.CompressionFormat;
         _version = Archive.Header.Version;
         _mappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        _view = _mappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
     }
 
     /// <summary>Open an extractor over an already-parsed archive backed by a <see cref="FileStream" />.</summary>
@@ -41,6 +49,7 @@ public sealed class Ba2Extractor : IDisposable
         _version = archive.Header.Version;
         _mappedFile = MemoryMappedFile.CreateFromFile(
             stream, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, false);
+        _view = _mappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
     }
 
     /// <summary>The parsed archive.</summary>
@@ -53,6 +62,7 @@ public sealed class Ba2Extractor : IDisposable
             return;
         }
 
+        _view.Dispose();
         _mappedFile.Dispose();
         _disposed = true;
     }
@@ -89,20 +99,24 @@ public sealed class Ba2Extractor : IDisposable
         var header = Ba2DdsHeaderWriter.BuildHeader(tex, _version);
         var surfaceBytes = tex.Chunks.Sum(c => (long)c.FullSize);
 
-        using var ms = new MemoryStream(header.Length + (int)surfaceBytes);
-        ms.Write(header, 0, header.Length);
+        // Assemble straight into one pre-sized result buffer (header + decompressed mip chunks): the old
+        // MemoryStream + ToArray() made a second full copy of the whole texture on every extract.
+        var result = new byte[header.Length + (int)surfaceBytes];
+        Buffer.BlockCopy(header, 0, result, 0, header.Length);
+        var pos = header.Length;
 
         foreach (var chunk in tex.Chunks)
         {
             var raw = ReadRegion((long)chunk.Offset, (int)(chunk.Compressed ? chunk.PackedSize : chunk.FullSize));
             var surface = chunk.Compressed ? Decompress(raw, (int)chunk.FullSize) : raw;
-            ms.Write(surface, 0, surface.Length);
+            Buffer.BlockCopy(surface, 0, result, pos, surface.Length);
+            pos += surface.Length;
         }
 
-        return ms.ToArray();
+        return result;
     }
 
-    /// <summary>Reads <paramref name="length" /> bytes from the archive at <paramref name="offset" />.</summary>
+    /// <summary>Reads <paramref name="length" /> bytes from the archive at absolute <paramref name="offset" />.</summary>
     private byte[] ReadRegion(long offset, int length)
     {
         if (length <= 0)
@@ -111,8 +125,8 @@ public sealed class Ba2Extractor : IDisposable
         }
 
         var buffer = new byte[length];
-        using var accessor = _mappedFile.CreateViewAccessor(offset, length, MemoryMappedFileAccess.Read);
-        accessor.ReadArray(0, buffer, 0, length);
+        // Absolute position into the whole-file view (no per-call MapViewOfFile).
+        _view.ReadArray(offset, buffer, 0, length);
         return buffer;
     }
 

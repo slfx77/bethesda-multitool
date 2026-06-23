@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
@@ -14,7 +15,7 @@ internal static class NpcExportHeadAssembler
     internal static void AddHeadContent(
         GlbScene scene,
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcCompositionCaches compositionCaches,
         Dictionary<string, int>? nodeIndicesByBoneName)
@@ -136,7 +137,7 @@ internal static class NpcExportHeadAssembler
     internal static void AddHeadContent(
         GlbScene scene,
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         Dictionary<string, EgtParser?> egtCache,
@@ -264,7 +265,7 @@ internal static class NpcExportHeadAssembler
     private static void AddHair(
         GlbScene scene,
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         bool usedBaseRaceMesh,
@@ -353,7 +354,7 @@ internal static class NpcExportHeadAssembler
     private static void AddRaceFaceParts(
         GlbScene scene,
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         bool usedBaseRaceMesh,
@@ -437,7 +438,7 @@ internal static class NpcExportHeadAssembler
     private static void AddHeadParts(
         GlbScene scene,
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         bool usedBaseRaceMesh,
@@ -502,7 +503,7 @@ internal static class NpcExportHeadAssembler
     private static void AddEyes(
         GlbScene scene,
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         bool usedBaseRaceMesh,
@@ -575,7 +576,7 @@ internal static class NpcExportHeadAssembler
     private static void AddHeadEquipment(
         GlbScene scene,
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         bool usedBaseRaceMesh,
@@ -642,7 +643,7 @@ internal static class NpcExportHeadAssembler
 
     private static float[]? ComputeHeadPreSkinDeltas(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         Dictionary<string, EgmParser?> egmCache,
         NpcExportSettings settings)
     {
@@ -667,7 +668,7 @@ internal static class NpcExportHeadAssembler
     private static string? ApplyHeadEgtMorph(
         NpcAppearance npc,
         string fullHeadTexturePath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgtParser?> egtCache)
     {

@@ -63,6 +63,7 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Fallout3"],
+                HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             },
@@ -74,7 +75,7 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["FalloutNV"],
-                HasArmorDamageThreshold = true,
+                HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             },
@@ -86,6 +87,7 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Skyrim"],
+                HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = SkyrimDiffuse,
                 DefaultLandscapeNormal = SkyrimNormal
             },
@@ -97,6 +99,7 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Fallout4"],
+                HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal
             },
@@ -108,6 +111,7 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["SeventySix", "Fallout76"],
+                HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal
             },
@@ -119,6 +123,7 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Starfield"],
+                HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             }

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
@@ -120,7 +121,32 @@ public static class EsmFileAnalyzer
                 TotalBytes = fileInfo.Length
             });
 
-            var descriptorScan = EsmDescriptorScanner.Scan(fileData);
+            // Drive the 10→55% band smoothly off the scanner's top-level progress instead of jumping in
+            // one step (seconds of dead air on ~1 GB ESMs). Throttle in the producer (~1% / 30 ms) so the
+            // UI DispatcherQueue is never flooded regardless of how fast the scan walks.
+            var scanTotal = fileInfo.Length;
+            var lastReportedPct = 10.0;
+            var reportTimer = Stopwatch.StartNew();
+            var descriptorScan = EsmDescriptorScanner.Scan(fileData, bytesScanned =>
+            {
+                var pct = scanTotal <= 0
+                    ? 10.0
+                    : 10.0 + (Math.Min(bytesScanned, scanTotal) / (double)scanTotal * 45.0);
+                if (pct - lastReportedPct < 1.0 || reportTimer.ElapsedMilliseconds < 30)
+                {
+                    return;
+                }
+
+                lastReportedPct = pct;
+                reportTimer.Restart();
+                progress?.Report(new AnalysisProgress
+                {
+                    Phase = "Scanning Records",
+                    PercentComplete = pct,
+                    BytesProcessed = bytesScanned,
+                    TotalBytes = scanTotal
+                });
+            });
             var grupHeaders = descriptorScan.GrupHeaders;
             var mainRecords = descriptorScan.ScanResult.MainRecords;
 

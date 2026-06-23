@@ -112,6 +112,31 @@ public sealed class DataFolderResolverTests : IDisposable
     }
 
     [Fact]
+    public void Resolve_FuzzyDisabled_ReturnsMissing_ButExactStillWorks()
+    {
+        var baselineDir = MakeDataFolder("baseline");
+        Directory.CreateDirectory(baselineDir);
+        var secondaryDir = MakeDataFolder("fo3");
+        WriteLooseFile(secondaryDir, "armor\\moved\\helm.nif", [1]); // only a fuzzy candidate
+        WriteLooseFile(secondaryDir, "meshes\\exact.nif", [2]); // an exact candidate
+
+        using var baseline = new DataFolderIndex(baselineDir, false);
+        baseline.Build();
+        using var secondary = new DataFolderIndex(secondaryDir, false);
+        secondary.Build();
+
+        // enableFuzzy: false — the fuzzy cascade is gated off, so a renamed asset misses...
+        var exactOnly = new DataFolderResolver(baseline, [secondary], overrideBaseline: false, enableFuzzy: false);
+        Assert.Equal(AssetResolutionKind.Missing, exactOnly.Resolve("meshes\\armor\\headgear\\helm.nif").Kind);
+        // ...but exact resolution is unaffected.
+        Assert.Equal(AssetResolutionKind.ResolvedExact, exactOnly.Resolve("meshes\\exact.nif").Kind);
+
+        // enableFuzzy: true (default) — the same renamed asset now resolves via fuzzy.
+        var fuzzy = new DataFolderResolver(baseline, [secondary]);
+        Assert.Equal(AssetResolutionKind.ResolvedFuzzy, fuzzy.Resolve("meshes\\armor\\headgear\\helm.nif").Kind);
+    }
+
+    [Fact]
     public void Resolve_FuzzyBasenameMultipleCandidates_PicksLongestSuffix()
     {
         var baselineDir = MakeDataFolder("baseline");

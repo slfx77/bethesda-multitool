@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using BethesdaMultitool.Repack;
+using BethesdaMultitool.Core.Repack;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;

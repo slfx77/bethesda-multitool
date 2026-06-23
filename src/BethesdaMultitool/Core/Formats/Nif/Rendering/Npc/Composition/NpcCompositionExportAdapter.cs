@@ -1,4 +1,5 @@
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assembly;
 
@@ -9,7 +10,7 @@ internal static class NpcCompositionExportAdapter
 {
     internal static GlbScene? BuildNpc(
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcCompositionCaches compositionCaches)
     {
@@ -25,7 +26,7 @@ internal static class NpcCompositionExportAdapter
 
     internal static GlbScene? BuildCreature(
         CreatureCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives)
+        MeshArchiveSet meshArchives)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(meshArchives);
@@ -98,7 +99,7 @@ internal static class NpcCompositionExportAdapter
 
     private static GlbScene? BuildFullBodyScene(
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcCompositionCaches compositionCaches)
     {
@@ -142,7 +143,7 @@ internal static class NpcCompositionExportAdapter
 
     private static GlbScene? BuildHeadOnlyScene(
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcCompositionCaches compositionCaches)
     {
@@ -191,7 +192,7 @@ internal static class NpcCompositionExportAdapter
 
     private static NpcExportSceneBuilder.SkeletonContext? CreateSkeletonContext(
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives)
+        MeshArchiveSet meshArchives)
     {
         if (plan.Skeleton?.SkeletonNifPath == null)
         {

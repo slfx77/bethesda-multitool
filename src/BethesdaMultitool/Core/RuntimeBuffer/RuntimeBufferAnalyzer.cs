@@ -1,5 +1,6 @@
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Coverage;
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Pdb;

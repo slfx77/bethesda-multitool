@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using static EgtAnalyzer.Verification.CrossNpcRowAnalyzer;
 using static EgtAnalyzer.Verification.DeltaTextureHelpers;
@@ -33,7 +34,7 @@ internal static class NpcFaceGenMorphInspector
         NpcAppearance appearance,
         EgtParser egt,
         string egtPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         float[] currentCoefficients,
         IReadOnlyList<int> morphIndices,
         (float[] R, float[] G, float[] B) currentNative,
@@ -375,7 +376,7 @@ internal static class NpcFaceGenMorphInspector
     }
 
     internal static void PrintExternalHeadEgtRequiredRowSummary(
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         Dictionary<string, EgtParser?> egtCache)
     {
         if (InspectRequiredRows.Count == 0) return;

@@ -77,9 +77,13 @@ public class GameProfilesTests
     [Fact]
     public void Profiles_PinKeyCapabilities()
     {
-        // The FNV-only armor Damage Threshold capability (replaces the old `game == FNV` branch).
-        Assert.True(GameProfiles.For(BethesdaGame.FalloutNewVegas).HasArmorDamageThreshold);
-        Assert.False(GameProfiles.For(BethesdaGame.Fallout3).HasArmorDamageThreshold);
+        // The worldspace DNAM default-water-height field was added in Fallout 3; Oblivion lacks it
+        // (its oceans default to Z 0). Drives the deterministic default-water decision in
+        // WorldspaceRecordHandler instead of inferring engine era from a missing subrecord.
+        Assert.False(GameProfiles.For(BethesdaGame.Oblivion).HasWorldspaceDefaultWaterHeight);
+        Assert.True(GameProfiles.For(BethesdaGame.Fallout3).HasWorldspaceDefaultWaterHeight);
+        Assert.True(GameProfiles.For(BethesdaGame.FalloutNewVegas).HasWorldspaceDefaultWaterHeight);
+        Assert.True(GameProfiles.For(BethesdaGame.Skyrim).HasWorldspaceDefaultWaterHeight);
 
         // Only Morrowind is the TES3 family.
         Assert.True(GameProfiles.For(BethesdaGame.Morrowind).IsTes3);

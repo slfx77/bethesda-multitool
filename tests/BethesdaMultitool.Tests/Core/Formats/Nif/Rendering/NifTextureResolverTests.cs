@@ -211,6 +211,50 @@ public sealed class NifTextureResolverTests
         Assert.True(texture.Height > 0);
     }
 
+    [Fact]
+    public void ReadShaderMetadata_Fo4LightingProperty_EmptyInlineSet_FallsBackToBgsmMaterial()
+    {
+        // FO4 (bsVer 130) BSLightingShaderProperty: most retail meshes leave the inline texture set empty
+        // and point the NiObjectNET Name at an external .bgsm material. Layout:
+        //   [Shader Type(4)][NiObjectNET(12): Name idx=0, numExtra=0, ctrl=-1]
+        //   [Shader Flags1(4)+Flags2(4)+UVoffset(8)+UVscale(8)=24][Texture Set ref(4) = -1 (none)]
+        // The fix must read the Name at DataOffset + 4 (past the leading Shader Type) and resolve the .bgsm.
+        const string material = @"materials\architecture\building\building01.bgsm";
+
+        var data = new byte[44];
+        WriteInt32(data, 0, 7); // Shader Type (skipped)
+        WriteNiObjectNetHeader(data, 4); // Name index (0) at +4 → Strings[0]
+        WriteInt32(data, 40, -1); // Texture Set ref = none → empty inline set
+
+        var nif = new NifInfo { IsBigEndian = false, BsVersion = 130 };
+        nif.Blocks.Add(new BlockInfo
+            { Index = 0, TypeName = "BSLightingShaderProperty", DataOffset = 0, Size = 44 });
+        nif.Strings.Add(material);
+
+        Assert.Equal(material, NifTextureResolver.ResolveDiffusePath(data, nif, [0]));
+    }
+
+    [Fact]
+    public void ReadShaderMetadata_SkyrimLightingProperty_EmptyInlineSet_DoesNotFallBackToName()
+    {
+        // Guard the gate: the material-Name fallback is FO4-only (bsVer 130..<155). A Skyrim LE (bsVer 83)
+        // lighting property with an empty inline set must NOT mistake its NiObjectNET Name for a material —
+        // it should resolve no diffuse rather than fabricate one.
+        const string material = @"materials\architecture\building\building01.bgsm";
+
+        var data = new byte[44];
+        WriteInt32(data, 0, 7);
+        WriteNiObjectNetHeader(data, 4);
+        WriteInt32(data, 40, -1);
+
+        var nif = new NifInfo { IsBigEndian = false, BsVersion = 83 };
+        nif.Blocks.Add(new BlockInfo
+            { Index = 0, TypeName = "BSLightingShaderProperty", DataOffset = 0, Size = 44 });
+        nif.Strings.Add(material);
+
+        Assert.Null(NifTextureResolver.ResolveDiffusePath(data, nif, [0]));
+    }
+
     private static NifInfo CreateNifInfo(params (string TypeName, int DataOffset, int Size)[] blocks)
     {
         var nif = new NifInfo

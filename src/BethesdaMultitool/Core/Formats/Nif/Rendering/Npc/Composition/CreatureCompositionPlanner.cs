@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.CLI;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
@@ -11,7 +12,7 @@ internal static class CreatureCompositionPlanner
 {
     internal static CreatureCompositionPlan? CreatePlan(
         CreatureScanEntry creature,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NpcAppearanceResolver resolver,
         CreatureCompositionOptions options)
     {
@@ -64,7 +65,7 @@ internal static class CreatureCompositionPlanner
     internal static CreatureCompositionPlan? CreatePlan(
         string skeletonPath,
         string[] bodyModelPaths,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         CreatureCompositionOptions options,
         string? idleAnimationPath = null,
         string? weaponMeshPath = null,
@@ -185,7 +186,7 @@ internal static class CreatureCompositionPlanner
     private static Dictionary<string, NifAnimationParser.AnimPoseOverride>? ResolveCreatureAnimationOverrides(
         string skeletonNifPath,
         (byte[] Data, NifInfo Info) skeletonRaw,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         CreatureCompositionOptions options,
         string? idleAnimationPath)
     {
@@ -282,7 +283,7 @@ internal static class CreatureCompositionPlanner
         ResolveCreatureWeaponPoseOverrides(
             string skeletonNifPath,
             WeapScanEntry weaponEntry,
-            NpcMeshArchiveSet meshArchives)
+            MeshArchiveSet meshArchives)
     {
         if (!NpcWeaponResolver.TryResolveHolsterProfileKey(
                 weaponEntry.WeaponType, out var profileKey))

@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using Windows.Storage.Pickers;
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Collections;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Formats.Esm;

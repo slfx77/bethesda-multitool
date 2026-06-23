@@ -1,6 +1,7 @@
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Tests.Helpers;
@@ -58,7 +59,7 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
         Assert.NotNull(boone);
         Assert.NotNull(boone!.BaseHeadTriPath);
 
-        using var meshArchives = NpcMeshArchiveSet.Open(meshesBsa!, null);
+        using var meshArchives = MeshArchiveSet.Open(meshesBsa!, null);
         var tri = NpcMeshHelpers.LoadTriFromBsa(boone.BaseHeadTriPath!, meshArchives);
 
         Assert.NotNull(tri);
@@ -108,7 +109,7 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
         var egtCache =
             new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
 
-        using var meshArchives = NpcMeshArchiveSet.Open(meshesBsa!, null);
+        using var meshArchives = MeshArchiveSet.Open(meshesBsa!, null);
         using var textureResolver = new NifTextureResolver(texturesBsa!, textures2Bsa!);
 
         var model = NpcHeadBuilder.Build(

@@ -185,12 +185,18 @@ internal static class SpeedTreeRenderCommands
     ///     leaf-billboard vertex shader does — using a camera-facing frame about <paramref name="camDir" />.
     ///     A correct result is identical to the camera-facing still, proving the encoding + billboard math.
     /// </summary>
-    private static void ExpandLeafBillboards(NifRenderableModel model, System.Numerics.Vector3 camDir)
+    private static void ExpandLeafBillboards(NifRenderableModel model, System.Numerics.Vector3 camDir,
+        float windStrength = 0f, float windTime = 0f)
     {
         var dir = System.Numerics.Vector3.Normalize(camDir);
         var reference = MathF.Abs(dir.Z) > 0.99f ? System.Numerics.Vector3.UnitX : System.Numerics.Vector3.UnitZ;
         var right = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Cross(reference, dir));
         var up = System.Numerics.Vector3.Cross(dir, right);
+        // Mirror reference_instanced.vert.hlsl's leaf wind EXACTLY so this still validates the shader math.
+        var windDir = windStrength > 0f
+            ? System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(0.82f, 0.57f, 0f))
+            : System.Numerics.Vector3.Zero;
+        var phaseScale = new System.Numerics.Vector3(0.03f, 0.027f, 0.05f);
         foreach (var sub in model.Submeshes)
         {
             if (!sub.IsLeafBillboard || sub.Tangents is not { } t || sub.Bitangents is not { } b)
@@ -201,12 +207,31 @@ internal static class SpeedTreeRenderCommands
             var p = sub.Positions;
             for (var i = 0; i < p.Length; i += 3)
             {
-                var world = new System.Numerics.Vector3(t[i], t[i + 1], t[i + 2]) + right * b[i] + up * b[i + 1];
+                var center = new System.Numerics.Vector3(t[i], t[i + 1], t[i + 2]);
+                if (windStrength > 0f)
+                {
+                    var windWeight = b[i + 2];
+                    var sizeProxy = MathF.Max(MathF.Abs(b[i]), MathF.Abs(b[i + 1]));
+                    var phase = windTime * 0.7f + System.Numerics.Vector3.Dot(center, phaseScale);
+                    var gust = MathF.Sin(phase) + 0.25f * MathF.Sin(phase * 2.9f + 1.7f);
+                    center += windDir * (gust * windStrength * windWeight * sizeProxy);
+                }
+
+                var world = center + right * b[i] + up * b[i + 1];
                 p[i] = world.X;
                 p[i + 1] = world.Y;
                 p[i + 2] = world.Z;
             }
         }
+    }
+
+    private static float ParseFloatEnv(string name, float fallback)
+    {
+        var raw = Environment.GetEnvironmentVariable(name);
+        return !string.IsNullOrWhiteSpace(raw) &&
+               float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)
+            ? v
+            : fallback;
     }
 
     public static Command CreateRenderCommand()
@@ -351,7 +376,12 @@ internal static class SpeedTreeRenderCommands
         var renderable = SptGeometryBuilder.Build(model, seed, opt);
         if (billboard)
         {
-            ExpandLeafBillboards(renderable, camDir);
+            // FALLOUT_SPT_WIND=<strength> (+ optional FALLOUT_SPT_WIND_TIME=<seconds>) bakes the viewer's
+            // leaf-wind sway into this still at a fixed phase, so the headless render verifies the exact
+            // shader math (reference_instanced.vert.hlsl) — leaves should be displaced along the wind dir.
+            var windStrength = ParseFloatEnv("FALLOUT_SPT_WIND", 0f);
+            var windTime = ParseFloatEnv("FALLOUT_SPT_WIND_TIME", 2f);
+            ExpandLeafBillboards(renderable, camDir, windStrength, windTime);
         }
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"Built geometry: seed={seed} targetH={(resolvedTargetHeight?.ToString(CultureInfo.InvariantCulture) ?? "(raw)")} {renderable.Submeshes.Count} submeshes, bounds W={renderable.Width:F1} H={renderable.Height:F1} D={renderable.Depth:F1}"));

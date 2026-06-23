@@ -1,5 +1,6 @@
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Coverage;
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Localization;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;

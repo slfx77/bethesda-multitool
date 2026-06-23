@@ -1,5 +1,6 @@
 using System.CommandLine;
 using BethesdaMultitool.CLI.Rendering.Gltf;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
@@ -131,7 +132,7 @@ internal static class ExportCreatureCommand
 
         Directory.CreateDirectory(outputDir);
 
-        using var meshArchives = NpcMeshArchiveSet.Open(meshesBsaPath, extraMeshesBsa);
+        using var meshArchives = MeshArchiveSet.Open(meshesBsaPath, extraMeshesBsa);
         using var textureResolver = texturesBsaPaths is { Length: > 0 }
             ? new NifTextureResolver(texturesBsaPaths)
             : new NifTextureResolver();

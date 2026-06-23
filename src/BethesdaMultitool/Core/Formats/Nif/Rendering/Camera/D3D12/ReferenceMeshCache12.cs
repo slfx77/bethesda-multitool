@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -39,7 +40,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // Positions-only collision data is ~12 B/vertex (vs the 72 B GPU vertex), so a generous budget
     // holds the walkable footprint of a worldspace many times over. Render-thread LRU.
     private const long CollisionMeshCacheByteBudget = 128L * 1024L * 1024L;
-    private const float ReferenceBumpStrength = 0.35f;
+    // Tangent-space normal-map perturbation scale (reference.frag.hlsl: mapN.xy *= vRenderState.z).
+    // The FNV SLS pixel shader applies the sampled tangent-space normal at full strength, so this is
+    // 1.0 (engine-faithful). It was previously 0.35, which flattened the perturbation to ~a third and
+    // made bump mapping read as "not applied" under the viewer's lighting.
+    private const float ReferenceBumpStrength = 1.0f;
 
     // Size-aware ceiling on render-thread mesh-upload work per frame. The integer upload budget
     // (passed by the renderer) caps *how many* meshes upload; this caps the *bytes*, checked before
@@ -52,7 +57,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         min: 1L * 1024L * 1024L,
         max: 64L * 1024L * 1024L);
 
-    private readonly CLI.NpcMeshArchiveSet _meshArchives;
+    private readonly MeshArchiveSet _meshArchives;
     private readonly ReferenceMeshDecoder12 _decoder;
     private readonly GpuTextureCache12 _textureCache;
     private readonly GpuDeletionQueue12 _deletionQueue;
@@ -90,7 +95,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     public ReferenceMeshCache12(
         GpuDevice12 gpu,
-        CLI.NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         GpuTextureCache12 textureCache,
         GpuDeletionQueue12 deletionQueue,

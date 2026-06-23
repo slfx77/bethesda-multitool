@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
@@ -14,7 +15,7 @@ internal static class NpcCreatureRenderer
 {
     internal static void RenderCreaturesCpu(
         List<(uint FormId, CreatureScanEntry Creature)> creatures,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcAppearanceResolver resolver,
         NpcRenderSettings settings,
@@ -74,7 +75,7 @@ internal static class NpcCreatureRenderer
 
     internal static NifRenderableModel? BuildCreatureModel(
         CreatureScanEntry creature,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcAppearanceResolver resolver,
         NpcRenderSettings settings)

@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Minidump;
 
@@ -107,6 +109,18 @@ public sealed class MinidumpAnalyzer
         if (result.EsmRecords is { } scanResult)
         {
             RuntimeBuildOffsets.ApplyDriftCorrection(scanResult);
+
+            // A crash dump is known to be Fallout New Vegas — it is the only game we have dumps for —
+            // so pin the game here rather than letting RecordParserContext fall through to
+            // DetectGameFromTes4()'s coarse HEDR-float guess (a dump may carve no readable TES4, which
+            // would otherwise leave it Unknown). The FNV record format drifted over development (early
+            // dumps are closer to FO3), but those deltas are resolved structurally from the carved
+            // bytes themselves (e.g. ARMO DT presence keys on DNAM length, not on game/version), so no
+            // build/version axis is needed beyond knowing the game is FNV.
+            if (scanResult.Game == BethesdaGame.Unknown)
+            {
+                scanResult.Game = BethesdaGame.FalloutNewVegas;
+            }
         }
 
         progress?.Report(new AnalysisProgress

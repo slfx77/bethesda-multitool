@@ -1,5 +1,5 @@
 using System.CommandLine;
-using BethesdaMultitool.Repack;
+using BethesdaMultitool.Core.Repack;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI;

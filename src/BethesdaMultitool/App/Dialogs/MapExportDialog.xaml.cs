@@ -14,7 +14,8 @@ internal sealed record MapExportRequest(
     bool IncludeNavMesh,
     bool IncludeWater,
     bool IncludeGrid,
-    bool Tiled);
+    bool Tiled,
+    bool IncludeRenderedMeshes);
 
 /// <summary>
 ///     Dialog that lets the user choose the export layer, resolution, and which overlays to include.
@@ -43,11 +44,15 @@ public sealed partial class MapExportDialog : ContentDialog
         WorldMapLayer initialLayer,
         bool initialIncludeMarkers, bool initialIncludeNavMesh, bool initialIncludeWater,
         bool initialIncludeGrid,
-        int initialLongEdgePx = 4096)
+        int initialLongEdgePx = 4096,
+        bool canRenderMeshes = false)
     {
         InitializeComponent();
         _cellsWide = Math.Max(1, cellsWide);
         _cellsTall = Math.Max(1, cellsTall);
+
+        // Rendered-meshes overlay needs the 3D top-down provider; disable when it isn't available.
+        RenderedMeshesCheckBox.IsEnabled = canRenderMeshes;
 
         foreach (var layer in s_layers)
         {
@@ -95,7 +100,8 @@ public sealed partial class MapExportDialog : ContentDialog
             IncludeNavMesh: NavMeshCheckBox.IsChecked == true,
             IncludeWater: WaterCheckBox.IsChecked == true,
             IncludeGrid: GridCheckBox.IsChecked == true,
-            Tiled: TiledCheckBox.IsChecked == true);
+            Tiled: TiledCheckBox.IsChecked == true,
+            IncludeRenderedMeshes: RenderedMeshesCheckBox.IsChecked == true);
     }
 
     private void LayerComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateOutputSize();

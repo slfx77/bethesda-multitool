@@ -148,7 +148,7 @@ public sealed partial class WorldMapControl
         var selected = _state.SelectedObject;
         if (_state.SelectedCell is { IsInterior: true } interior)
         {
-            return new WorldViewFocus(-1, true, interior, 0f, 0f, selected, _cellSortMode);
+            return new WorldViewFocus(-1, true, interior, 0f, 0f, selected, CellList.SortMode);
         }
 
         var canvasW = Math.Max((float)MapCanvas.ActualWidth, 800f);
@@ -157,7 +157,7 @@ public sealed partial class WorldMapControl
             new Vector2(canvasW / 2f, canvasH / 2f), _zoom, _panOffset);
         // 2D-map Y is the negative of the shared (3D / PlacedReference) Y.
         return new WorldViewFocus(
-            WorldspaceComboBox.SelectedIndex, false, null, center2D.X, -center2D.Y, selected, _cellSortMode);
+            WorldspaceComboBox.SelectedIndex, false, null, center2D.X, -center2D.Y, selected, CellList.SortMode);
     }
 
     /// <summary>
@@ -202,15 +202,8 @@ public sealed partial class WorldMapControl
         MapCanvas.Invalidate();
     }
 
-    private void ApplyCellSortMode(CellSortMode mode)
-    {
-        _cellSortMode = mode;
-        if (CellSortCombo is not null)
-        {
-            var index = mode == CellSortMode.ObjectCount ? 1 : 0;
-            if (CellSortCombo.SelectedIndex != index) CellSortCombo.SelectedIndex = index;
-        }
-    }
+    // The CellListControl owns the sort state + combo; its setter syncs both and re-sorts in place.
+    private void ApplyCellSortMode(CellSortMode mode) => CellList.SortMode = mode;
 
     /// <summary>Centers and zooms the overview on a placed object, sizing the view to its object bounds.</summary>
     public void NavigateToObjectInOverview(PlacedReference obj)

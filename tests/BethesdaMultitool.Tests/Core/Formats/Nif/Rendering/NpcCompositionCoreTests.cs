@@ -2,6 +2,7 @@ using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
@@ -249,7 +250,7 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
         Assert.NotNull(esm);
 
         return new PcAssets(
-            NpcMeshArchiveSet.Open(meshesBsa!, null),
+            MeshArchiveSet.Open(meshesBsa!, null),
             new NifTextureResolver(texturesBsa!, textures2Bsa!),
             NpcAppearanceResolver.Build(esm.Data, esm.IsBigEndian));
     }
@@ -348,7 +349,7 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
     }
 
     private sealed record PcAssets(
-        NpcMeshArchiveSet MeshArchives,
+        MeshArchiveSet MeshArchives,
         NifTextureResolver TextureResolver,
         NpcAppearanceResolver AppearanceResolver) : IDisposable
     {

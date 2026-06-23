@@ -2,6 +2,7 @@ using System.Globalization;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
@@ -161,7 +162,7 @@ internal static class NpcFaceGenTextureVerifier
     internal static NpcFaceGenTextureVerificationResult Verify(
         NpcAppearance appearance,
         ShippedNpcFaceTexture shippedTexture,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgtParser?> egtCache)
     {
@@ -176,7 +177,7 @@ internal static class NpcFaceGenTextureVerifier
     internal static NpcFaceGenTextureVerificationDetail VerifyDetailed(
         NpcAppearance appearance,
         ShippedNpcFaceTexture shippedTexture,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgtParser?> egtCache)
     {
@@ -770,7 +771,7 @@ internal static class NpcFaceGenTextureVerifier
         NpcFaceGenMorphInspector.PrintCrossNpcRequiredRowSimilaritySummary();
 
     internal static void PrintExternalHeadEgtRequiredRowSummary(
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         Dictionary<string, EgtParser?> egtCache) =>
         NpcFaceGenMorphInspector.PrintExternalHeadEgtRequiredRowSummary(meshArchives, egtCache);
 }

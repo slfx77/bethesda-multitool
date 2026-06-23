@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
@@ -50,7 +51,7 @@ internal static class NpcRenderPipeline
         AnsiConsole.MarkupLine(
             "Parsing meshes BSA: [cyan]{0}[/]",
             Path.GetFileName(settings.MeshesBsaPath));
-        using var meshArchives = NpcMeshArchiveSet.Open(settings.MeshesBsaPath, settings.ExtraMeshesBsaPaths);
+        using var meshArchives = MeshArchiveSet.Open(settings.MeshesBsaPath, settings.ExtraMeshesBsaPaths);
         foreach (var extraMeshesBsaPath in meshArchives.ArchivePaths.Skip(1))
         {
             AnsiConsole.MarkupLine(
@@ -272,7 +273,7 @@ internal static class NpcRenderPipeline
 
     private static void RenderNpcsCpu(
         List<NpcAppearance> appearances,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcRenderCaches caches,
         NpcRenderSettings settings,
@@ -315,7 +316,7 @@ internal static class NpcRenderPipeline
     private static void RenderNpcsPipelinedGpu(
         List<NpcAppearance> appearances,
         GpuSpriteRenderer12 gpuRenderer,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcRenderCaches caches,
         NpcRenderSettings settings,
@@ -389,7 +390,7 @@ internal static class NpcRenderPipeline
 
     private static NifRenderableModel? BuildNpcModel(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcRenderCaches caches,
         NpcRenderSettings settings)
@@ -407,7 +408,7 @@ internal static class NpcRenderPipeline
 
     private static SpriteResult? RenderNpcHead(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcRenderCaches caches,
         NpcRenderSettings settings,
@@ -422,7 +423,7 @@ internal static class NpcRenderPipeline
 
     private static SpriteResult? RenderNpcFullBody(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcRenderCaches caches,
         NpcRenderSettings settings,

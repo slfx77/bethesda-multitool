@@ -2,6 +2,7 @@ using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
@@ -23,7 +24,7 @@ internal sealed class NpcBrowserService : IDisposable
 
     // Pre-resolved appearances from DMP (null for ESM-only mode)
     private readonly Dictionary<uint, NpcAppearance>? _dmpAppearances;
-    private readonly NpcMeshArchiveSet _meshArchives;
+    private readonly MeshArchiveSet _meshArchives;
     private readonly string _pluginName;
     private readonly NpcRenderCaches _renderCaches = new();
 
@@ -32,7 +33,7 @@ internal sealed class NpcBrowserService : IDisposable
 
     private NpcBrowserService(
         NpcAppearanceResolver resolver,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         string pluginName,
         Dictionary<uint, NpcAppearance>? dmpAppearances = null)
@@ -68,7 +69,7 @@ internal sealed class NpcBrowserService : IDisposable
         }
 
         var resolver = NpcAppearanceResolver.Build(esmData, bigEndian);
-        var meshArchives = NpcMeshArchiveSet.Open(
+        var meshArchives = MeshArchiveSet.Open(
             bsaPaths.MeshesBsaPaths[0],
             bsaPaths.MeshesBsaPaths.Length > 1 ? bsaPaths.MeshesBsaPaths[1..] : null);
         var textureResolver = new NifTextureResolver(bsaPaths.TexturesBsaPaths);
@@ -97,7 +98,7 @@ internal sealed class NpcBrowserService : IDisposable
         }
 
         var resolver = NpcAppearanceResolver.Build(esmData, esmBigEndian);
-        var meshArchives = NpcMeshArchiveSet.Open(
+        var meshArchives = MeshArchiveSet.Open(
             bsaPaths.MeshesBsaPaths[0],
             bsaPaths.MeshesBsaPaths.Length > 1 ? bsaPaths.MeshesBsaPaths[1..] : null);
         var textureResolver = new NifTextureResolver(bsaPaths.TexturesBsaPaths);

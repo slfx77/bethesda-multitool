@@ -1,5 +1,6 @@
 using BethesdaMultitool.CLI.Rendering.Gltf;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
@@ -52,7 +53,7 @@ internal static class NpcExportPipeline
             return;
         }
 
-        using var meshArchives = NpcMeshArchiveSet.Open(settings.MeshesBsaPath, settings.ExtraMeshesBsaPaths);
+        using var meshArchives = MeshArchiveSet.Open(settings.MeshesBsaPath, settings.ExtraMeshesBsaPaths);
         foreach (var extraMeshesBsaPath in meshArchives.ArchivePaths.Skip(1))
         {
             AnsiConsole.MarkupLine(

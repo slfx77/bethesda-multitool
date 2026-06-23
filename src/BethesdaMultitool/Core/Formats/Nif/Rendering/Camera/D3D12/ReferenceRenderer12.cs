@@ -23,7 +23,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private const uint PerDrawByteSize = 144;
     // 3 float4 (material) + uint4 (tex indices) + uint base + uint3 pad + float4 specular
     // + float4 camRight + float4 camUp (leaf billboard basis) = 128 bytes.
-    private const uint InstanceDrawByteSize = 128;
+    private const uint InstanceDrawByteSize = 144;
     private const float FrustumCullMargin = 512f;
 
     // Cold mesh realization is render-thread work. By DEFAULT there is no per-frame COUNT cap: the
@@ -67,11 +67,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private readonly OpaqueBatchRegistry12 _opaqueBatches = new();
     private readonly List<BlendedReferenceDraw> _blendedDraws = new(256);
 
+    // TEMP transparency diagnostic — set FALLOUT_VIEWER_ALPHA_DEBUG=<path-substring> (e.g. "maniasm25")
+    // to append each matching mesh's per-submesh alpha classification + actual render pass to
+    // %TEMP%\alpha_debug.txt (once per mesh). Tells us whether a "transparent" mesh is genuinely in the
+    // OPAQUE pass (→ deeper GPU-state cause) or routed to BLEND at runtime. Remove after diagnosis.
+    private static readonly string? AlphaDebugFilter = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_ALPHA_DEBUG");
+    private readonly HashSet<string> _alphaDebugLogged = new(StringComparer.OrdinalIgnoreCase);
+
     // Camera world-space right/up for per-card SpeedTree leaf billboards, set each frame by the host
     // (WorldView3DControl) from the inverse view matrix — same source as the sky billboards. Defaults to
     // the world basis so leaves still render sanely if the host never sets it.
     private Vector4 _leafBillboardRight = new(1f, 0f, 0f, 0f);
     private Vector4 _leafBillboardUp = new(0f, 0f, 1f, 0f);
+    // SpeedTree wind: xy = horizontal wind direction, z = strength (0 = static), w = time (seconds).
+    // Set per frame by WorldView3DControl; default strength 0 so non-viewer paths render trees static.
+    private Vector4 _wind;
     private readonly List<global::BethesdaMultitool.WorldSpatialCell> _candidateCells = new();
 
     // Candidates returned by the per-cell spatial broadphase before exact sphere/frustum cull.
@@ -277,6 +287,19 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     {
         _leafBillboardRight = new Vector4(cameraRight, 0f);
         _leafBillboardUp = new Vector4(cameraUp, 0f);
+    }
+
+    /// <summary>
+    ///     Sets the SpeedTree wind state used by the leaf-billboard vertex shader to sway leaf cards
+    ///     (recovered model: <c>windedPos = lerp(pos, WindMatrix·pos, windWeight)</c>; the engine animates
+    ///     4 sway matrices per frame in <c>BSTreeManager::UpdateWindMatrices</c>, which we approximate with
+    ///     a time/position-phased gust). <paramref name="direction" /> is the horizontal wind direction,
+    ///     <paramref name="strength" /> the sway amplitude (0 = static), <paramref name="timeSeconds" /> the
+    ///     animation clock. Call each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?)" />.
+    /// </summary>
+    public void SetWind(Vector2 direction, float strength, float timeSeconds)
+    {
+        _wind = new Vector4(direction.X, direction.Y, strength, timeSeconds);
     }
 
     // IWorldRenderer entry point — draws opaque + blended inline (no deferral). Used by the 2D
@@ -554,8 +577,32 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             }
 
             var anySubmeshDrawn = false;
+            var alphaDebug = AlphaDebugFilter != null
+                && !string.IsNullOrEmpty(r.ModelPath)
+                && r.ModelPath.Contains(AlphaDebugFilter, StringComparison.OrdinalIgnoreCase)
+                && _alphaDebugLogged.Add(r.ModelPath);
+            var alphaDebugIndex = 0;
             foreach (var sub in mesh.Submeshes)
             {
+                if (alphaDebug)
+                {
+                    var pass = sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard
+                        ? "BLEND"
+                        : "OPAQUE/" + (sub.DoubleSided ? "DoublePso" : "BackPso");
+                    try
+                    {
+                        File.AppendAllText(
+                            Path.Combine(Path.GetTempPath(), "alpha_debug.txt"),
+                            $"{r.ModelPath} sub#{alphaDebugIndex++} mode={sub.AlphaRenderMode} " +
+                            $"billboard={sub.IsBillboard} double={sub.DoubleSided} pass={pass} " +
+                            $"alphaStateW={sub.AlphaState.W:0.##}{Environment.NewLine}");
+                    }
+                    catch
+                    {
+                        // diagnostic only — never let logging break the frame
+                    }
+                }
+
                 // Billboards must take the per-draw blended path even when opaque: the instanced
                 // opaque path has no per-draw matrix, but a billboard needs a unique camera-facing
                 // world matrix per placement.
@@ -816,7 +863,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 startInstance,
                 Specular: sub.Specular,
                 CameraRight: _leafBillboardRight,
-                CameraUp: _leafBillboardUp);
+                CameraUp: _leafBillboardUp,
+                Wind: _wind);
             if (!_ringBuffer.TryAllocate(frameIndex, InstanceDrawByteSize, out var instanceDrawAlloc, GpuRingBuffer12.CbAlignment))
             {
                 LastFrameDrawsTruncated += batch.Count;
@@ -1003,10 +1051,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // 1A — sun specular term (xyz = tint, w = Phong exponent; 0 = none). Matches the uSpecular field
         // in reference_instanced.vert.hlsl.
         Vector4 Specular = default,
-        // Camera world-space right/up for per-card leaf billboards (uCameraRight/uCameraUp); brings this
-        // to 128 bytes. Identical across every batch in a frame; only read by leaf submeshes.
+        // Camera world-space right/up for per-card leaf billboards (uCameraRight/uCameraUp).
+        // Identical across every batch in a frame; only read by leaf submeshes.
         Vector4 CameraRight = default,
-        Vector4 CameraUp = default);
+        Vector4 CameraUp = default,
+        // SpeedTree wind (uWind: xy = direction, z = strength, w = time); brings this to 144 bytes.
+        Vector4 Wind = default);
 
     /// <summary>
     ///     Packed 4-uint TexIndices field. C# has no <c>uint4</c> primitive, so we lay out

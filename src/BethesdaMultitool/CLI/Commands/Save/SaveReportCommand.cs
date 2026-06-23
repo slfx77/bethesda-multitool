@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Text;
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.SaveGame;

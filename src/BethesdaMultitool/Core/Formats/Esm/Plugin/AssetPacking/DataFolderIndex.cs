@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
@@ -34,6 +35,24 @@ internal sealed record BsaAssetSource : AssetSource
     public required BsaExtractor Extractor { get; init; }
     public required BsaFileRecord Record { get; init; }
     public required string ArchiveFileName { get; init; }
+
+    /// <summary>Full path of the backing archive on disk (for lookup-metadata / cache keying).</summary>
+    public required string ArchivePath { get; init; }
+
+    public override byte[] Read()
+    {
+        return Extractor.ExtractFile(Record);
+    }
+}
+
+internal sealed record Ba2AssetSource : AssetSource
+{
+    public required Ba2Extractor Extractor { get; init; }
+    public required Ba2FileRecord Record { get; init; }
+    public required string ArchiveFileName { get; init; }
+
+    /// <summary>Full path of the backing archive on disk (for lookup-metadata / cache keying).</summary>
+    public required string ArchivePath { get; init; }
 
     public override byte[] Read()
     {
@@ -78,15 +97,7 @@ internal sealed class DataFolderIndex : IDisposable
 
     private readonly List<BsaExtractor> _ownedExtractors = [];
 
-    /// <summary>
-    ///     The path actually used for indexing — equal to <see cref="DataFolderPath" /> when
-    ///     that already points at a Data folder, or an auto-detected child Data folder when
-    ///     the user supplied an install root (e.g. <c>Fallout 3 goty</c> →
-    ///     <c>Fallout 3 goty\Data</c>) or an Xbox 360 disc layout (e.g.
-    ///     <c>Fallout New Vegas (July 21, 2010)</c> →
-    ///     <c>Fallout New Vegas (July 21, 2010)\FalloutNV\Data</c>).
-    /// </summary>
-    private string _effectiveDataFolderPath = string.Empty;
+    private readonly List<Ba2Extractor> _ownedBa2Extractors = [];
 
     private bool _disposed;
 
@@ -128,6 +139,16 @@ internal sealed class DataFolderIndex : IDisposable
             return;
         }
 
+        DisposeExtractors();
+        _byPath.Clear();
+        _byBasename.Clear();
+        _byLooseBasename.Clear();
+        _byLastDirectory.Clear();
+        _disposed = true;
+    }
+
+    private void DisposeExtractors()
+    {
         foreach (var extractor in _ownedExtractors)
         {
             try
@@ -141,18 +162,30 @@ internal sealed class DataFolderIndex : IDisposable
         }
 
         _ownedExtractors.Clear();
-        _byPath.Clear();
-        _byBasename.Clear();
-        _byLooseBasename.Clear();
-        _byLastDirectory.Clear();
-        _disposed = true;
+
+        foreach (var extractor in _ownedBa2Extractors)
+        {
+            try
+            {
+                extractor.Dispose();
+            }
+            catch
+            {
+                // Best-effort cleanup
+            }
+        }
+
+        _ownedBa2Extractors.Clear();
     }
 
     /// <summary>
     ///     Walk the data folder, indexing every loose asset and every BSA's contents.
     ///     Safe to call once; subsequent calls clear and rebuild.
+    ///     <paramref name="indexBa2" /> additionally indexes any <c>*.ba2</c> archives (Fallout 4 /
+    ///     76). It defaults OFF so the conversion pipeline's behavior is unchanged (FNV/FO3 Data
+    ///     folders contain no BA2); the viewer / explicit-archive path turn it on.
     /// </summary>
-    public void Build()
+    public void Build(bool indexBa2 = false)
     {
         if (!Directory.Exists(DataFolderPath))
         {
@@ -167,13 +200,74 @@ internal sealed class DataFolderIndex : IDisposable
         // this descent, IndexLooseFiles registers paths as "Data\meshes\..." (which won't
         // match runtime requests for "meshes\...") and IndexBsas misses every BSA entirely
         // because Directory.GetFiles top-only doesn't recurse.
-        _effectiveDataFolderPath = ResolveDataPathOrSelf(DataFolderPath);
+        // The path actually used for indexing — equal to DataFolderPath when it already points at a
+        // Data folder, or an auto-detected child Data folder when the user supplied an install root
+        // (e.g. "Fallout 3 goty" → "Fallout 3 goty\Data") or an Xbox 360 disc layout.
+        var effectiveDataFolderPath = ResolveDataPathOrSelf(DataFolderPath);
 
         // 1) Loose files (highest priority within this folder)
-        IndexLooseFiles();
+        IndexLooseFiles(effectiveDataFolderPath);
 
         // 2) BSAs in alphabetical order (mirrors FNV's SArchiveList convention)
-        IndexBsas();
+        IndexBsas(effectiveDataFolderPath);
+
+        // 3) BA2s (FO4/76) when requested.
+        if (indexBa2)
+        {
+            IndexBa2s(effectiveDataFolderPath);
+        }
+    }
+
+    /// <summary>
+    ///     Builds an index over an EXPLICIT, ordered list of archive paths (BSA or BA2, dispatched
+    ///     by magic) rather than scanning a folder — used by callers that already know which
+    ///     archives to open (e.g. the 3D viewer / NPC pipelines, which receive specific Meshes
+    ///     archives). Earlier archives in the list win on duplicate paths (first-write-wins).
+    ///     <paramref name="includeLooseFromArchiveDirs" /> additionally walks each archive's parent
+    ///     directory for loose assets (loose still beats archive entries, mirroring the game).
+    /// </summary>
+    public static DataFolderIndex FromArchivePaths(
+        IReadOnlyList<string> archivePaths,
+        bool includeLooseFromArchiveDirs = false)
+    {
+        var index = new DataFolderIndex(string.Empty, xbox360FormatHint: false);
+        index.BuildFromExplicitArchives(archivePaths, includeLooseFromArchiveDirs);
+        return index;
+    }
+
+    private void BuildFromExplicitArchives(
+        IReadOnlyList<string> archivePaths,
+        bool includeLooseFromArchiveDirs)
+    {
+        Clear();
+
+        // Optional loose files first (highest priority), one walk per distinct archive directory.
+        if (includeLooseFromArchiveDirs)
+        {
+            var seenDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var archivePath in archivePaths)
+            {
+                var dir = Path.GetDirectoryName(Path.GetFullPath(archivePath));
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir) && seenDirs.Add(dir))
+                {
+                    IndexLooseFiles(dir);
+                }
+            }
+        }
+
+        // Then the archives, in caller order (first-write-wins).
+        foreach (var archivePath in archivePaths)
+        {
+            var fullPath = Path.GetFullPath(archivePath);
+            if (Ba2Parser.IsBa2File(fullPath))
+            {
+                IndexBa2Archive(fullPath);
+            }
+            else
+            {
+                IndexBsaArchive(fullPath);
+            }
+        }
     }
 
     private static string ResolveDataPathOrSelf(string rootPath)
@@ -302,11 +396,10 @@ internal sealed class DataFolderIndex : IDisposable
     // Indexing
     // ====================================================================================
 
-    private void IndexLooseFiles()
+    private void IndexLooseFiles(string dataRoot)
     {
         // Walk the entire Data folder tree once. Capture only files whose extension
         // looks like an asset; everything else is irrelevant to the packer.
-        var dataRoot = _effectiveDataFolderPath;
         var rootLen = dataRoot.Length;
         if (dataRoot.EndsWith(Path.DirectorySeparatorChar) ||
             dataRoot.EndsWith(Path.AltDirectorySeparatorChar))
@@ -355,12 +448,12 @@ internal sealed class DataFolderIndex : IDisposable
         }
     }
 
-    private void IndexBsas()
+    private void IndexBsas(string dataRoot)
     {
         string[] bsaPaths;
         try
         {
-            bsaPaths = Directory.GetFiles(_effectiveDataFolderPath, "*.bsa", SearchOption.TopDirectoryOnly);
+            bsaPaths = Directory.GetFiles(dataRoot, "*.bsa", SearchOption.TopDirectoryOnly);
         }
         catch
         {
@@ -371,62 +464,140 @@ internal sealed class DataFolderIndex : IDisposable
 
         foreach (var bsaPath in bsaPaths)
         {
-            BsaExtractor? extractor = null;
-            try
+            IndexBsaArchive(bsaPath);
+        }
+    }
+
+    private void IndexBsaArchive(string bsaPath)
+    {
+        BsaExtractor? extractor = null;
+        try
+        {
+            extractor = new BsaExtractor(bsaPath);
+        }
+        catch
+        {
+            return; // skip unreadable BSAs
+        }
+
+        _ownedExtractors.Add(extractor);
+        var isXbox360 = extractor.Archive.Header.IsXbox360;
+        var archiveFileName = Path.GetFileName(bsaPath);
+        var archivePath = Path.GetFullPath(bsaPath);
+
+        // Partially-recovered BSAs keep an intact file table but a zero-filled payload
+        // tail. Records pointing past the last real byte extract to all zeros, so skip
+        // them — resolution then falls through to a complete source.
+        var dataBoundary = extractor.FindDataTruncationBoundary();
+
+        foreach (var record in extractor.Archive.AllFiles)
+        {
+            if (record.Name is null || record.Folder is null)
             {
-                extractor = new BsaExtractor(bsaPath);
+                continue;
             }
-            catch
+
+            if (record.Offset >= dataBoundary)
             {
-                continue; // skip unreadable BSAs
+                TruncatedEntrySkipCount++;
+                continue;
             }
 
-            _ownedExtractors.Add(extractor);
-            var isXbox360 = extractor.Archive.Header.IsXbox360;
-            var archiveFileName = Path.GetFileName(bsaPath);
-
-            // Partially-recovered BSAs keep an intact file table but a zero-filled payload
-            // tail. Records pointing past the last real byte extract to all zeros, so skip
-            // them — resolution then falls through to a complete source.
-            var dataBoundary = extractor.FindDataTruncationBoundary();
-
-            foreach (var record in extractor.Archive.AllFiles)
+            var fullPath = record.FullPath;
+            var ext = Path.GetExtension(fullPath);
+            if (!AssetPathRules.AssetExtensions.Contains(ext))
             {
-                if (record.Name is null || record.Folder is null)
-                {
-                    continue;
-                }
-
-                if (record.Offset >= dataBoundary)
-                {
-                    TruncatedEntrySkipCount++;
-                    continue;
-                }
-
-                var fullPath = record.FullPath;
-                var ext = Path.GetExtension(fullPath);
-                if (!AssetPathRules.AssetExtensions.Contains(ext))
-                {
-                    continue;
-                }
-
-                var normalized = AssetPathRules.NormalizeDataRelativePath(fullPath);
-                if (normalized.Length == 0)
-                {
-                    continue;
-                }
-
-                var source = new BsaAssetSource
-                {
-                    NormalizedPath = normalized,
-                    IsXbox360 = isXbox360,
-                    Extractor = extractor,
-                    Record = record,
-                    ArchiveFileName = archiveFileName
-                };
-
-                AddSource(normalized, source);
+                continue;
             }
+
+            var normalized = AssetPathRules.NormalizeDataRelativePath(fullPath);
+            if (normalized.Length == 0)
+            {
+                continue;
+            }
+
+            var source = new BsaAssetSource
+            {
+                NormalizedPath = normalized,
+                IsXbox360 = isXbox360,
+                Extractor = extractor,
+                Record = record,
+                ArchiveFileName = archiveFileName,
+                ArchivePath = archivePath
+            };
+
+            AddSource(normalized, source);
+        }
+    }
+
+    private void IndexBa2s(string dataRoot)
+    {
+        string[] ba2Paths;
+        try
+        {
+            ba2Paths = Directory.GetFiles(dataRoot, "*.ba2", SearchOption.TopDirectoryOnly);
+        }
+        catch
+        {
+            return;
+        }
+
+        Array.Sort(ba2Paths, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var ba2Path in ba2Paths)
+        {
+            IndexBa2Archive(ba2Path);
+        }
+    }
+
+    private void IndexBa2Archive(string ba2Path)
+    {
+        if (!Ba2Parser.IsBa2File(ba2Path))
+        {
+            return;
+        }
+
+        Ba2Extractor? extractor = null;
+        try
+        {
+            extractor = new Ba2Extractor(ba2Path);
+        }
+        catch
+        {
+            return; // skip unreadable BA2s
+        }
+
+        _ownedBa2Extractors.Add(extractor);
+        // BA2 is a Fallout 4 / 76 (PC) format — never an Xbox 360 archive.
+        var archiveFileName = Path.GetFileName(ba2Path);
+        var archivePath = Path.GetFullPath(ba2Path);
+
+        foreach (var record in extractor.Archive.AllFiles)
+        {
+            var fullPath = record.FullPath;
+            var ext = Path.GetExtension(fullPath);
+            if (!AssetPathRules.AssetExtensions.Contains(ext))
+            {
+                continue;
+            }
+
+            var normalized = AssetPathRules.NormalizeDataRelativePath(fullPath);
+            if (normalized.Length == 0)
+            {
+                continue;
+            }
+
+            var source = new Ba2AssetSource
+            {
+                NormalizedPath = normalized,
+                IsXbox360 = false,
+                Extractor = extractor,
+                Record = record,
+                ArchiveFileName = archiveFileName,
+                ArchivePath = archivePath
+            };
+
+            AddSource(normalized, source);
         }
     }
 
@@ -510,19 +681,7 @@ internal sealed class DataFolderIndex : IDisposable
 
     private void Clear()
     {
-        foreach (var extractor in _ownedExtractors)
-        {
-            try
-            {
-                extractor.Dispose();
-            }
-            catch
-            {
-                /* Best-effort cleanup */
-            }
-        }
-
-        _ownedExtractors.Clear();
+        DisposeExtractors();
         _byPath.Clear();
         _byBasename.Clear();
         _byLooseBasename.Clear();

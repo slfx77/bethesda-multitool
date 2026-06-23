@@ -17,7 +17,7 @@ public sealed record SptModel
 
     public IReadOnlyList<SptLeafTextureCoords> LeafTextureCoords { get; init; } = [];
 
-    /// <summary>Leaf-table float (token 3000, struct offset +0x2C) — typically a global leaf size.</summary>
+    /// <summary>Token 3000, <c>SIdvLeafInfo+0x24</c>: blossom branch-param threshold (default 0.75).</summary>
     public float LeafSize { get; init; }
 
     public SptLeafTable? LeafTable { get; init; }
@@ -91,17 +91,17 @@ public readonly record struct SptLeafTextureCoords(Vector2 Corner0, Vector2 Corn
     };
 }
 
-/// <summary>General leaf-table parameters (tokens 3001..3010). Captured for completeness.</summary>
+/// <summary>General leaf-table parameters (tokens 3001..3010), mapped to <c>SIdvLeafInfo</c>.</summary>
 public sealed record SptLeafTable
 {
-    public uint UInt3001 { get; init; }  // +0x34
-    public float Float3002 { get; init; } // +0x30
+    public uint UInt3001 { get; init; }   // +0x2c: blossom branch-depth/ancestor mode
+    public float Float3002 { get; init; } // +0x28: blossom probability
     public byte Byte3003 { get; init; }
     public float Float3004 { get; init; }
     public float Float3005 { get; init; }
     public byte Byte3006 { get; init; }
-    public float Float3007 { get; init; } // SIdvLeafInfo+0x20
-    public uint UInt3008 { get; init; }   // +0x0C
+    public float Float3007 { get; init; } // +0x20: RoomForLeaf spacing factor
+    public uint UInt3008 { get; init; }   // +0x0c: RoomForLeaf placement mode
     public byte Byte3009 { get; init; }   // +0
     public float Float3010 { get; init; } // +4
 }

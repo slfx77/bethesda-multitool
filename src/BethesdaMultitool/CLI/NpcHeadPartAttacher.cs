@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 
@@ -17,7 +18,7 @@ internal static class NpcHeadPartAttacher
         NifRenderableModel model,
         Dictionary<string, Matrix4x4>? attachmentBoneTransforms,
         bool usedBaseRaceMesh,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         Matrix4x4? bonelessAttachmentTransform)
@@ -110,7 +111,7 @@ internal static class NpcHeadPartAttacher
         NpcAppearance npc, NifRenderableModel model,
         Dictionary<string, Matrix4x4>? attachmentBoneTransforms,
         bool usedBaseRaceMesh, string? hairFilterOverride,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         Matrix4x4? bonelessAttachmentTransform)
@@ -186,7 +187,7 @@ internal static class NpcHeadPartAttacher
         NpcAppearance npc, NifRenderableModel model,
         Dictionary<string, Matrix4x4>? headBoneTransforms,
         bool usedBaseRaceMesh,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         Matrix4x4? bonelessAttachmentTransform)
@@ -273,7 +274,7 @@ internal static class NpcHeadPartAttacher
         NpcAppearance npc, NifRenderableModel model,
         Dictionary<string, Matrix4x4>? attachmentBoneTransforms,
         bool usedBaseRaceMesh,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         Matrix4x4? bonelessAttachmentTransform)
@@ -338,7 +339,7 @@ internal static class NpcHeadPartAttacher
         NifRenderableModel model,
         Dictionary<string, Matrix4x4>? attachmentBoneTransforms,
         bool usedBaseRaceMesh,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgmParser?> egmCache,
         Matrix4x4? bonelessAttachmentTransform)

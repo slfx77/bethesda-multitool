@@ -234,6 +234,27 @@ public sealed class AtmosphereStateTests
         AssertColor(50, 40, 30, a.AmbientColor);
     }
 
+    [Fact]
+    public void SampleCloudColor_BlendsBandsByHour_KeepsAlphaAsOpacity()
+    {
+        // A cloud layer's PNAM color: RGB tint + A opacity, sampled by the SAME band blend as the sky.
+        var c = new WeatherColor(
+            new WeatherRgba(50, 50, 50, 50),    // sunrise
+            new WeatherRgba(10, 20, 30, 200),   // day
+            new WeatherRgba(60, 60, 60, 60),    // sunset
+            new WeatherRgba(1, 2, 3, 40));      // night
+
+        var noon = AtmosphereState.SampleCloudColor(c, 12f, CleanTiming);
+        Assert.Equal(10f / 255f, noon.X, 3);
+        Assert.Equal(20f / 255f, noon.Y, 3);
+        Assert.Equal(30f / 255f, noon.Z, 3);
+        Assert.Equal(200f / 255f, noon.W, 3); // alpha = layer opacity, NOT dropped
+
+        var midnight = AtmosphereState.SampleCloudColor(c, 0f, CleanTiming);
+        Assert.Equal(1f / 255f, midnight.X, 3);
+        Assert.Equal(40f / 255f, midnight.W, 3);
+    }
+
     private static WeatherRecord WeatherWithAmbient(WeatherRgba sunrise, WeatherRgba day, WeatherRgba sunset,
         WeatherRgba night)
     {

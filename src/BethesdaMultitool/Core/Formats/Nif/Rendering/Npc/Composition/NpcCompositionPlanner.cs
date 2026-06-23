@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
@@ -12,7 +13,7 @@ internal static class NpcCompositionPlanner
 
     internal static NpcCompositionPlan CreatePlan(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcCompositionCaches caches,
         NpcCompositionOptions options)
@@ -94,7 +95,7 @@ internal static class NpcCompositionPlanner
 
     internal static NpcSkeletonComposition? BuildSkeletonComposition(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NpcCompositionCaches caches,
         NpcCompositionOptions options)
     {
@@ -142,7 +143,7 @@ internal static class NpcCompositionPlanner
 
     private static NpcCompositionCaches.CachedNpcSkeletonPlan? LoadSkeletonPlan(
         string skeletonNifPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NpcCompositionOptions options)
     {
         var skelRaw = NpcMeshHelpers.LoadNifRawFromBsa(skeletonNifPath, meshArchives);
@@ -188,7 +189,7 @@ internal static class NpcCompositionPlanner
 
     private static NpcHeadCompositionPlan BuildHeadPlan(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcCompositionCaches caches,
         NpcCompositionOptions options,
@@ -391,7 +392,7 @@ internal static class NpcCompositionPlanner
 
     private static void ApplyBodyEgtMorphs(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgtParser?> egtCache,
         ref string? effectiveBodyTex,
@@ -450,7 +451,7 @@ internal static class NpcCompositionPlanner
 
     private static NpcWeaponCompositionPlan? BuildWeaponPlan(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NpcSkeletonComposition? skeleton,
         NpcCompositionOptions options)
     {

@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Bsa.Ba2;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 
@@ -49,7 +50,7 @@ internal static class BsaDiscovery
 
         // BA2 (Fallout 4 / Fallout 76). DX10 archives hold textures only; GNRL archives hold
         // meshes/materials/etc. Both the texture path (NifTextureArchiveSourceFactory) and the mesh
-        // path (NpcMeshArchiveSet) are now BA2-aware, so classify by content and route accordingly.
+        // path (MeshArchiveSet) are now BA2-aware, so classify by content and route accordingly.
         // DX10 → textures by definition. GNRL → scan its name-table paths for meshes\/textures\
         // prefixes (BA2 has no BSA-style content-flag bits).
         foreach (var path in ba2Paths)

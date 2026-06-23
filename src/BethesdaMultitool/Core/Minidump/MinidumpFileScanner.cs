@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Orchestration;
 

@@ -1,5 +1,6 @@
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using static EgtAnalyzer.Verification.CrossNpcRowAnalyzer;
@@ -9,7 +10,7 @@ namespace EgtAnalyzer.Verification;
 
 internal static class ExternalEgtDonorAnalyzer
 {
-    internal static IReadOnlyList<string> EnumerateExternalHeadEgtPaths(NpcMeshArchiveSet meshArchives)
+    internal static IReadOnlyList<string> EnumerateExternalHeadEgtPaths(MeshArchiveSet meshArchives)
     {
         var discovered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var archivePath in meshArchives.ArchivePaths)

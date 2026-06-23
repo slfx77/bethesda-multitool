@@ -103,12 +103,27 @@ internal static class EnvironmentVariables
         /// The only host-side tree knob — branch/leaf geometry is fully derived from the .spt + decompile.</summary>
         public const string SpeedTreeHeightScale = "FALLOUT_VIEWER_SPT_HEIGHT_SCALE";
 
+        /// <summary>SpeedTree leaf-wind sway strength (default 0.12; 0 disables, trees render static).
+        /// The leaf-billboard VS sways each card by this × per-leaf weight × card size (model recovered
+        /// from STLEAF/STB shaders + BSTreeManager::UpdateWindMatrices). Live-tunable; .spt isn't cached.</summary>
+        public const string SpeedTreeWind = "FALLOUT_VIEWER_SPT_WIND";
+
         public const string TextureResolveConcurrency = "FALLOUT_VIEWER_TEXTURE_RESOLVE_CONCURRENCY";
         public const string RetainTexturePayloads = "FALLOUT_VIEWER_RETAIN_TEXTURE_PAYLOADS";
+
+        /// <summary>Persistent decoded texture cache toggle. Default cache root is under <see cref="System.IO.Path.GetTempPath()" />;
+        /// set to "0" to disable disk caching.</summary>
         public const string PersistentTextureCache = "FALLOUT_VIEWER_PERSISTENT_TEXTURE_CACHE";
+
+        /// <summary>Optional override for decoded texture cache directory. When unset, the OS temp directory is used.</summary>
         public const string TextureCacheDirectory = "FALLOUT_VIEWER_TEXTURE_CACHE_DIR";
         public const string TextureCacheMaxMegabytes = "FALLOUT_VIEWER_TEXTURE_CACHE_MAX_MB";
+
+        /// <summary>Persistent decoded mesh cache toggle. Default cache root is under <see cref="System.IO.Path.GetTempPath()" />;
+        /// set to "0" to disable disk caching.</summary>
         public const string PersistentMeshCache = "FALLOUT_VIEWER_PERSISTENT_MESH_CACHE";
+
+        /// <summary>Optional override for decoded mesh cache directory. When unset, the OS temp directory is used.</summary>
         public const string MeshCacheDirectory = "FALLOUT_VIEWER_MESH_CACHE_DIR";
         public const string MeshCacheMaxMegabytes = "FALLOUT_VIEWER_MESH_CACHE_MAX_MB";
     }
@@ -133,6 +148,19 @@ internal static class EnvironmentVariables
     public static class Profiler
     {
         public const string With3D = "FALLOUT_PROFILER_WITH_3D";
+    }
+
+    /// <summary>Environment-variable names for ESM / memory-dump record parsing.</summary>
+    public static class Esm
+    {
+        /// <summary>
+        ///     When 1, DISABLES lenient partial recovery of truncated compressed records read from memory
+        ///     dumps. Default (unset) = ON for DMPs: a compressed record whose zlib payload is cut short in
+        ///     the dump still yields its complete leading subrecords (the parser stops cleanly at the cut)
+        ///     instead of being dropped — data preservation for the pre-July-2010 dumps. Clean on-disk ESMs
+        ///     and the Xbox→PC conversion path stay strictly all-or-nothing regardless of this knob.
+        /// </summary>
+        public const string DisableDmpPartialRecovery = "FALLOUT_ESM_DISABLE_DMP_PARTIAL_RECOVERY";
     }
 
     /// <summary>Environment-variable names that override CLI output paths and external tool locations.</summary>

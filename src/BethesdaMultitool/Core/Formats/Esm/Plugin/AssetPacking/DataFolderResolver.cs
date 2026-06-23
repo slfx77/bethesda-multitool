@@ -59,19 +59,27 @@ internal sealed class DataFolderResolver
     private readonly DataFolderIndex _baseline;
     private readonly bool _overrideBaseline;
     private readonly IReadOnlyList<DataFolderIndex> _secondaries;
+    private readonly bool _enableFuzzy;
 
     /// <summary>
     ///     Creates a resolver over a baseline data folder and ordered secondary folders;
     ///     <paramref name="overrideBaseline" /> lets secondaries replace baseline matches.
+    ///     <paramref name="enableFuzzy" /> gates the renamed-asset fuzzy fallback cascade: it is
+    ///     ON by default (the conversion pipeline relies on it to match prototype→final renames),
+    ///     but callers that want exact-only resolution (e.g. the viewer browsing an ESM, or CLI
+    ///     NPC asset loading) pass <c>false</c> so a missing path simply misses instead of
+    ///     resolving to a similarly-named sibling. Exact + extension-swap resolution is unaffected.
     /// </summary>
     public DataFolderResolver(
         DataFolderIndex baseline,
         IReadOnlyList<DataFolderIndex> secondaries,
-        bool overrideBaseline = false)
+        bool overrideBaseline = false,
+        bool enableFuzzy = true)
     {
         _baseline = baseline;
         _secondaries = secondaries;
         _overrideBaseline = overrideBaseline;
+        _enableFuzzy = enableFuzzy;
     }
 
     /// <summary>Resolve one requested path. The path must already be normalized.</summary>
@@ -81,6 +89,13 @@ internal sealed class DataFolderResolver
         if (head is not null)
         {
             return head;
+        }
+
+        // Exact + extension-swap resolution above is always applied; the renamed-asset fuzzy
+        // cascade below is opt-in (see the constructor's enableFuzzy parameter).
+        if (!_enableFuzzy)
+        {
+            return Miss(normalizedPath);
         }
 
         // Fuzzy fallback: collect all basename-equal candidates across every secondary.
