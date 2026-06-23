@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.CLI.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -17,7 +18,7 @@ internal static class NpcEquipmentAttacher
 
     internal static void LoadEquipment(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? idleBoneTransforms,
         string? effectiveBodyTex, string? effectiveHandTex,
@@ -138,7 +139,7 @@ internal static class NpcEquipmentAttacher
 
     internal static void LoadWeapon(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? addonSkinningBoneTransforms,
         Dictionary<string, Matrix4x4>? attachmentBoneTransforms,
@@ -151,7 +152,7 @@ internal static class NpcEquipmentAttacher
 
     internal static void LoadEquipmentFromPlan(
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NifRenderableModel bodyModel)
     {
@@ -241,7 +242,7 @@ internal static class NpcEquipmentAttacher
 
     internal static void LoadWeaponFromPlan(
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NifRenderableModel bodyModel)
     {
@@ -257,7 +258,7 @@ internal static class NpcEquipmentAttacher
 
     internal static void LoadWeaponAddonMeshes(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? idleBoneTransforms,
         NifRenderableModel bodyModel)
@@ -272,7 +273,7 @@ internal static class NpcEquipmentAttacher
 
     internal static void LoadWeaponAddonMeshes(
         IReadOnlyList<WeaponAddonVisual> addonMeshes,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? idleBoneTransforms,
         NifRenderableModel bodyModel)

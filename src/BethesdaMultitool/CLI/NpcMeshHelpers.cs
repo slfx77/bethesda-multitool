@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
@@ -18,7 +19,7 @@ internal static class NpcMeshHelpers
     /// </summary>
     internal static NifRenderableModel? LoadNifFromBsa(
         string bsaPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? externalBoneTransforms = null,
         string? filterShapeName = null,
@@ -41,7 +42,7 @@ internal static class NpcMeshHelpers
     /// </summary>
     internal static (byte[] Data, NifInfo Info)? LoadNifRawFromBsa(
         string bsaPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         bool skipConversion = false)
     {
         if (!meshArchives.TryExtractFile(bsaPath, out var nifData, out _))
@@ -87,7 +88,7 @@ internal static class NpcMeshHelpers
         return (nifData, nif);
     }
 
-    internal static EgmParser? LoadEgmFromBsa(string bsaPath, NpcMeshArchiveSet meshArchives)
+    internal static EgmParser? LoadEgmFromBsa(string bsaPath, MeshArchiveSet meshArchives)
     {
         if (!meshArchives.TryExtractFile(bsaPath, out var data, out _))
         {
@@ -104,7 +105,7 @@ internal static class NpcMeshHelpers
         return EgmParser.Parse(data);
     }
 
-    internal static EgtParser? LoadEgtFromBsa(string bsaPath, NpcMeshArchiveSet meshArchives)
+    internal static EgtParser? LoadEgtFromBsa(string bsaPath, MeshArchiveSet meshArchives)
     {
         if (!meshArchives.TryExtractFile(bsaPath, out var data, out _))
         {
@@ -121,7 +122,7 @@ internal static class NpcMeshHelpers
         return EgtParser.Parse(data);
     }
 
-    internal static TriParser? LoadTriFromBsa(string bsaPath, NpcMeshArchiveSet meshArchives)
+    internal static TriParser? LoadTriFromBsa(string bsaPath, MeshArchiveSet meshArchives)
     {
         if (!meshArchives.TryExtractFile(bsaPath, out var data, out _))
         {
@@ -146,7 +147,7 @@ internal static class NpcMeshHelpers
         string egmPath,
         NifRenderableModel model,
         float[]? symCoeffs, float[]? asymCoeffs,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         Dictionary<string, EgmParser?> egmCache,
         bool recalculateNormals = true)
     {
@@ -166,7 +167,7 @@ internal static class NpcMeshHelpers
 
     internal static EgmParser? LoadAndCacheEgm(
         string egmPath,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         Dictionary<string, EgmParser?> egmCache)
     {
         if (!egmCache.TryGetValue(egmPath, out var egm))
@@ -190,7 +191,7 @@ internal static class NpcMeshHelpers
         uint npcFormId,
         string partLabel,
         string? renderVariantLabel,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, EgtParser?> egtCache)
     {

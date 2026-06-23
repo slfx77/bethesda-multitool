@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.CLI.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
@@ -21,7 +22,7 @@ internal static class NpcBodyBuilder
     /// </summary>
     internal static NifRenderableModel? Build(
         NpcAppearance npc,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         BethesdaMultitool.Core.Resources.LruCache<string, NifRenderableModel?> headMeshCache,
         Dictionary<string, EgmParser?> egmCache,
@@ -67,7 +68,7 @@ internal static class NpcBodyBuilder
 
     internal static NifRenderableModel? BuildFromPlan(
         NpcCompositionPlan plan,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         NpcCompositionCaches compositionCaches,
         NpcRenderModelCache renderModelCache)
@@ -138,7 +139,7 @@ internal static class NpcBodyBuilder
     /// </summary>
     private static void LoadAndMergeBodyPart(
         string nifPath, string? textureOverride, int renderOrder,
-        NpcMeshArchiveSet meshArchives,
+        MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? idleBoneTransforms,
         NifRenderableModel targetModel)
