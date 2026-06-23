@@ -59,13 +59,17 @@ float3 AtmosphereLight(float3 N)
         return (0.4 + 0.6 * legacyLambert).xxx;
     }
 
-    // Matches the FNV PC SLS pixel shader EXACTLY: finalRGB = BaseMap * (AmbientColor + NdotL*SunColor)
-    // -- a STRAIGHT ambient + directional sum with NO energy-conservation scale. The removed
-    // (1 - ambientLuma) factor was suppressing the sun (the "lighting too weak" symptom). Grounded in
-    // pc_basic_sls_shader_disassembly.txt: `mad r1, NdotL, PSLightColor, AmbientColor`. HDR/tonemap
-    // absorbs values > 1, exactly as the engine does.
+    // FNV basic SLS lighting, decompile-exact (Sky::UpdateColors, atmosphere_decompiled.txt): the
+    // engine scales the lighting bands by per-category constants before the SLS sum — Sunlight (cat 4)
+    // × fRam8323ca04 = 1.0, Ambient (cat 3) × fRam8323ca10 = 0.3 (both read straight from the MemDebug
+    // binary's .data: 0x8323ca04 = 0x3f800000 = 1.0, 0x8323ca10 = 0x3e99999a = 0.3). The viewer used the
+    // Ambient band at FULL strength — ~3.3× too much fill — which washed out daytime contrast and kept
+    // nights too bright; apply the 0.3 attenuation. Sunlight keeps its 1.0 scale. Net:
+    // finalRGB = BaseMap * (0.3*Ambient + NdotL*Sunlight). pc_basic_sls_shader_disassembly.txt shows the
+    // `mad r1, NdotL, PSLightColor, AmbientColor` sum; HDR/tonemap absorbs values > 1 as the engine does.
+    const float kAmbientScale = 0.3; // fRam8323ca10
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
-    return uAmbientColor.rgb + uSunColorLighting.rgb * ndotl;
+    return uAmbientColor.rgb * kAmbientScale + uSunColorLighting.rgb * ndotl;
 }
 
 struct PSInput
@@ -116,18 +120,24 @@ float4 main(PSInput input) : SV_Target
         normal = -normal;
     }
 
+    // FNV: the normal-map ALPHA channel is the per-texel specular mask (decompile-confirmed in
+    // SLS2047.pso — the engine's specular SLS variant). Captured here from the same sample the bump
+    // uses; 0 ⇒ no specular (the default when there's no normal map, or for alpha-less BC5).
+    float specMask = 0.0;
     if (input.vRenderState.y > 0.5)
     {
-        float3 normalSample = textures[NonUniformResourceIndex(input.vTexIndices.y)].Sample(sNormalMap, input.vTexCoord).rgb;
+        float4 normalSample = textures[NonUniformResourceIndex(input.vTexIndices.y)].Sample(sNormalMap, input.vTexCoord);
         float3 mapN;
         if (input.vTextureState.x > 0.5)
         {
             float2 xy = normalSample.rg * 2.0 - 1.0;
             mapN = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
+            // BC5/ATI2 carries no alpha → no spec mask (Skyrim+; FNV normal maps are DXT5/DXT1).
         }
         else
         {
-            mapN = normalSample * 2.0 - 1.0;
+            mapN = normalSample.rgb * 2.0 - 1.0;
+            specMask = normalSample.a; // DXT5 _n.dds alpha = per-texel specular intensity mask
         }
 
         mapN.y = -mapN.y; // DirectX convention (Y-down normal maps), matching skin.frag.hlsl.
@@ -159,18 +169,27 @@ float4 main(PSInput input) : SV_Target
     // rocks, painted billboards). Default-white VCLR leaves the texture untouched.
     float3 lit = sample.rgb * input.vVertexColor.rgb * shade;
 
-    // Blinn-Phong sun specular (1A). Gated: only when scene lighting is on, the material enables it
-    // (vSpecular.w > 0 — set CPU-side from BSShaderFlags' Specular bit + a non-black NiMaterialProperty
-    // specular tint), and the shape is not emissive. Half-vector from the view dir (camera pos in the
-    // atmosphere CB) and the sun dir; N·L gates out the shadowed side; sun intensity scales it with the
-    // daylight fraction so it fades at dusk. Additive on top of the lit diffuse, then fogged.
-    if (uSunColorLighting.w >= 0.5 && input.vSpecular.w > 0.0 && input.vRenderState.w <= 0.5)
+    // FNV sun specular — grounded in the engine's specular SLS pixel shader (SLS2047.pso):
+    //   spec = NormalMap.a * pow(saturate(N·H), shininess); a soft N·L ramp fades it on grazing/
+    //   back-lit faces; the specular color is the LIGHT color (no per-material specular tint).
+    // The per-texel mask (normal-map alpha) is the key correctness fix vs the old always-on
+    // Blinn-Phong: the engine only highlights where the material's spec mask is bright (metal/wet
+    // trim), not the whole surface — which is why specular previously read as far too strong. Gated on
+    // scene lighting on, a normal map present (the mask's source), the material's Specular flag
+    // (vSpecular.w > 0 via ComputeSpecularEnabled), a non-zero mask, and a non-emissive shape. The
+    // exponent uses the material glossiness as a per-material stand-in for the engine's global shininess
+    // constant (Toggles.z / c27.z), which isn't recoverable from the static shader.
+    if (uSunColorLighting.w >= 0.5 && input.vRenderState.y > 0.5 && input.vSpecular.w > 0.0 &&
+        input.vRenderState.w <= 0.5 && specMask > 0.0)
     {
         float3 V = normalize(uCameraPosFogPower.xyz - input.vWorldPos);
         float3 H = normalize(uSunDirIntensity.xyz + V);
-        float ndotl = saturate(dot(normal, uSunDirIntensity.xyz));
         float specTerm = pow(saturate(dot(normal, H)), max(input.vSpecular.w, 1.0));
-        lit += uSunColorLighting.rgb * input.vSpecular.rgb * (specTerm * ndotl * uSunDirIntensity.w);
+        float spec = specMask * specTerm;
+        // SLS2047 soft ramp: below N·L 0.2, scale by (N·L + 0.5) (→ 0 by N·L −0.5); full above.
+        float ndotl = dot(normal, uSunDirIntensity.xyz);
+        if (ndotl <= 0.2) spec *= max(ndotl + 0.5, 0.0);
+        lit += uSunColorLighting.rgb * (spec * uSunDirIntensity.w);
     }
 
     float outAlpha = input.vAlphaState.w > 0.5
