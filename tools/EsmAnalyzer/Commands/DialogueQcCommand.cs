@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using Spectre.Console;
@@ -652,3 +653,4 @@ public static class DialogueQcCommand
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 }
+

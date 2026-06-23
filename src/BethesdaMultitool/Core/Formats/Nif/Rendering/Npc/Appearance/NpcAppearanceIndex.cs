@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
@@ -53,3 +54,4 @@ internal sealed class NpcAppearanceIndex
     public Dictionary<uint, CstyEntry> CombatStyles { get; } =
         new();
 }
+

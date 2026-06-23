@@ -2,6 +2,7 @@ using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using static EgtAnalyzer.Verification.CrossNpcRowAnalyzer;
@@ -420,3 +421,4 @@ internal static class ExternalEgtDonorAnalyzer
         return true;
     }
 }
+

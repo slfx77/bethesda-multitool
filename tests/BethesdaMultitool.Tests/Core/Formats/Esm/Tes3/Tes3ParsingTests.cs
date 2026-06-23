@@ -1,10 +1,10 @@
 using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Tes3;
+using BethesdaMultitool.Core.Formats.Tes3;
 using Xunit;
 
-namespace BethesdaMultitool.Tests.Core.Formats.Esm.Tes3;
+namespace BethesdaMultitool.Tests.Core.Formats.Tes3;
 
 /// <summary>
 ///     Fixture-free tests for the Morrowind (TES3) subrecord framing + decoder. Byte buffers are

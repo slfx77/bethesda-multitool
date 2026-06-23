@@ -1,4 +1,5 @@
 using System.CommandLine;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
@@ -169,3 +170,4 @@ public static class EsmStatsCommand
 
     private sealed record RecordTypeStats(string Type, int Count, long TotalSize, uint MinSize, uint MaxSize);
 }
+

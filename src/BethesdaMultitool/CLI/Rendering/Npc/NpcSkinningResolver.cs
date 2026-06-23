@@ -1,5 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 
@@ -124,3 +126,4 @@ internal static class NpcSkinningResolver
         RootFallback
     }
 }
+

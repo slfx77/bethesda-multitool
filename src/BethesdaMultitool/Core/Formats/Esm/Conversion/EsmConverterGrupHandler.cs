@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Indexing;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using static BethesdaMultitool.Core.Formats.Esm.Conversion.EsmEndianHelpers;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Conversion;
@@ -310,3 +311,4 @@ internal sealed class EsmConverterGrupHandler
         grupStack.Push((grupHeaderPosition, grupEnd));
     }
 }
+

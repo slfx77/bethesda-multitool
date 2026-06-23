@@ -2,6 +2,8 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
@@ -932,3 +934,4 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         // Total: 224 bytes
     }
 }
+

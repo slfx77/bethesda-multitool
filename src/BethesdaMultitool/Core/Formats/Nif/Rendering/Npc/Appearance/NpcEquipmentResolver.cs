@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
@@ -291,3 +292,4 @@ internal sealed class NpcEquipmentResolver
 
     private readonly record struct ResolvedArmorChoice(uint FormId, ArmoScanEntry Armor);
 }
+

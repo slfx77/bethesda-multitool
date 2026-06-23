@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
@@ -241,3 +242,4 @@ internal static class GltfNormalDiagnostic
         int ZeroNormalCount,
         List<int> SampleFlippedIndices);
 }
+

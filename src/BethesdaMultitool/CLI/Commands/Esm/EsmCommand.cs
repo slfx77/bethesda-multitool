@@ -3,6 +3,7 @@ using System.IO.MemoryMappedFiles;
 using System.Text;
 using System.Text.Json;
 using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
 using BethesdaMultitool.Core.Formats.Esm;
@@ -453,4 +454,5 @@ public static class EsmCommand
         return group;
     }
 }
+
 

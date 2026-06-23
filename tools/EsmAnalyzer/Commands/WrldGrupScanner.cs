@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
@@ -454,3 +455,4 @@ internal static class WrldGrupScanner
         }
     }
 }
+

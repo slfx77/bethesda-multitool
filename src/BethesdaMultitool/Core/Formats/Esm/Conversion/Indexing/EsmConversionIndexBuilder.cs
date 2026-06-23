@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Conversion.Indexing;
@@ -643,3 +644,4 @@ internal sealed class EsmConversionIndexBuilder(byte[] input)
         return null;
     }
 }
+

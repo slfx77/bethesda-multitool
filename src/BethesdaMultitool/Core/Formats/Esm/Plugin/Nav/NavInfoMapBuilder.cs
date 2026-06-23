@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
@@ -202,3 +203,4 @@ internal static class NavInfoMapBuilder
         return (entry.GridX * 4096f + 2048f, entry.GridY * 4096f + 2048f, 0f);
     }
 }
+

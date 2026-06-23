@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 
@@ -162,3 +163,4 @@ internal static class NpcPipelineHelpers
         return allNamed.Count > 0 ? allNamed : null;
     }
 }
+

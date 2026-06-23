@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 
@@ -129,3 +130,4 @@ public static class RecordHeaderProcessor
         stream.Position = currentPos;
     }
 }
+

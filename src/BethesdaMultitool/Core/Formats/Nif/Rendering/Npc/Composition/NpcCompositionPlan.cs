@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
 /// <summary>A resolved plan for composing an NPC: its appearance, options, and the head/body/skeleton/weapon sub-plans to assemble.</summary>
@@ -23,3 +24,4 @@ internal sealed class NpcCompositionPlan
 
     public NpcWeaponCompositionPlan? Weapon { get; init; }
 }
+

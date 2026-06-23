@@ -3,6 +3,7 @@ using System.Text;
 using EgtAnalyzer.Verification;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
@@ -152,3 +153,4 @@ internal static class VerifyEgtImageExporter
             : $"{appearance.NpcFormId:X8}_{safeName}";
     }
 }
+

@@ -1,6 +1,7 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Utils;
 using Spectre.Console;
 
@@ -392,3 +393,4 @@ public static class DiffHelpers
         return null;
     }
 }
+

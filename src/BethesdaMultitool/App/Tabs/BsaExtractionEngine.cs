@@ -1,6 +1,3 @@
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
-
 #if WINDOWS_GUI
 using System.Threading.Channels;
 using BethesdaMultitool.Core.Formats.Bsa.Index;

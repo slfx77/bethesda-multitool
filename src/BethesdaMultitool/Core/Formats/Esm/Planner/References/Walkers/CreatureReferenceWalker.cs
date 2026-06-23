@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 
@@ -130,3 +131,4 @@ public sealed class CreatureReferenceWalker : IRecordReferenceWalker
         }
     }
 }
+

@@ -1,4 +1,5 @@
 using System.CommandLine;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using Spectre.Console;
 
@@ -186,3 +187,4 @@ public static class EsmSemdiffCommand
         return 0;
     }
 }
+

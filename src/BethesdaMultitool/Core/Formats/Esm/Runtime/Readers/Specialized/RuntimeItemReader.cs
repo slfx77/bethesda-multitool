@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
@@ -639,3 +640,4 @@ internal sealed class RuntimeItemReader(
         return relOffset < 0 ? null : _context.ReadBsStringT(structFileOffset, relOffset);
     }
 }
+

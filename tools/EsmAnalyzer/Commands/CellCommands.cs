@@ -4,6 +4,7 @@ using System.Buffers.Binary;
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;

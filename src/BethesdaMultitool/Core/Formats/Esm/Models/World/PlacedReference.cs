@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
@@ -166,3 +167,4 @@ public record PlacedReference
     /// <summary>How this ref was assigned to its cell during DMP linkage (ParentCell, GridMap, or Virtual).</summary>
     public string? AssignmentSource { get; init; }
 }
+

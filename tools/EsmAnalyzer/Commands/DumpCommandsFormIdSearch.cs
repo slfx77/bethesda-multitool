@@ -1,4 +1,5 @@
 using Spectre.Console;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
@@ -141,3 +142,4 @@ internal static class DumpCommandsFormIdSearch
         return matches;
     }
 }
+

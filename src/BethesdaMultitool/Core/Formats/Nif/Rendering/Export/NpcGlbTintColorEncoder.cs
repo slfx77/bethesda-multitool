@@ -1,5 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
@@ -113,3 +115,4 @@ internal static class NpcGlbTintColorEncoder
         return (byte)Math.Clamp(MathF.Round(channel * tint), 0f, 255f);
     }
 }
+

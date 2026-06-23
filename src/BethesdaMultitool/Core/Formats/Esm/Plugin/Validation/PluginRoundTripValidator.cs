@@ -1,4 +1,5 @@
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Validation;
 
@@ -54,3 +55,4 @@ public static class PluginRoundTripValidator
         return sb.ToString().TrimEnd();
     }
 }
+

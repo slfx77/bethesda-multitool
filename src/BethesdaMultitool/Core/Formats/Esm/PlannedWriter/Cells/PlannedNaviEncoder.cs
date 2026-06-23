@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
@@ -48,3 +49,4 @@ public static class PlannedNaviEncoder
         return NavInfoMapBuilder.BuildNaviOverride(masterNavi, legacyEntries, options);
     }
 }
+

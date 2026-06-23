@@ -1,6 +1,3 @@
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
-
 using System.CommandLine;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Land.Btd;

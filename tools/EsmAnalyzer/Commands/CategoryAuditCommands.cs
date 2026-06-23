@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using BethesdaMultitool;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
@@ -598,3 +599,4 @@ public static class CategoryAuditCommands
         Uncategorizable
     }
 }
+

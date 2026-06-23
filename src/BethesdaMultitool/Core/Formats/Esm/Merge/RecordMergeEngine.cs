@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Merge;
@@ -98,3 +99,4 @@ public static class RecordMergeEngine
         };
     }
 }
+

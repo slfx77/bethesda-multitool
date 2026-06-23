@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
 /// <summary>Derives a safe output file name for an exported NPC from its editor ID and FormID.</summary>
@@ -28,3 +29,4 @@ internal static class NpcExportFileNaming
         return sanitized.Length == 0 ? null : sanitized;
     }
 }
+

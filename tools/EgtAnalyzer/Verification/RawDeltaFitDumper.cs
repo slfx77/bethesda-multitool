@@ -1,5 +1,7 @@
 using System.Globalization;
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using static EgtAnalyzer.Verification.DeltaTextureHelpers;
@@ -624,3 +626,4 @@ internal static class RawDeltaFitDumper
         }
     }
 }
+

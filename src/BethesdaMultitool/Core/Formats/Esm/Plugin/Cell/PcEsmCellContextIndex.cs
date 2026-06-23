@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 
@@ -151,3 +152,4 @@ public static class PcEsmCellContextIndex
         };
     }
 }
+

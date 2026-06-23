@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Export;
@@ -295,3 +296,4 @@ public static class FaceGenCommands
         return result;
     }
 }
+

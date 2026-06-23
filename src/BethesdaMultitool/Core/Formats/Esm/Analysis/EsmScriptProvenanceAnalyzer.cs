@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.EsmScriptProvenanceClassifier;
@@ -875,3 +876,4 @@ public static class EsmScriptProvenanceAnalyzer
         uint TopicFormId,
         uint SpeakerFormId);
 }
+

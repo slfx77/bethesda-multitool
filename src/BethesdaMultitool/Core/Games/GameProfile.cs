@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 namespace BethesdaMultitool.Core.Games;
 
 /// <summary>Record-stream family. TES3 (Morrowind) is a flat stream; everything since is TES4-style.</summary>
@@ -58,3 +59,4 @@ public sealed record GameProfile
     /// <inheritdoc cref="DefaultLandscapeDiffuse" />
     public string DefaultLandscapeNormal { get; init; } = string.Empty;
 }
+

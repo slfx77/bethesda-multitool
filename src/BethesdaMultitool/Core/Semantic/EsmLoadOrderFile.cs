@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 
 namespace BethesdaMultitool.Core.Semantic;
@@ -8,3 +9,4 @@ internal sealed record EsmLoadOrderFile(
     string FileName,
     EsmFileHeader Header,
     int LoadIndex);
+

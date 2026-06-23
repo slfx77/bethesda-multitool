@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
@@ -52,3 +53,4 @@ public sealed class MasterRecordSource
         }
     }
 }
+

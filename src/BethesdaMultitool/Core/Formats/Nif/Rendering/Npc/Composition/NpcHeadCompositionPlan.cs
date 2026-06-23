@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
@@ -31,3 +32,4 @@ internal sealed class NpcHeadCompositionPlan
 
     public IReadOnlyList<EquippedItem> HeadEquipment { get; init; } = [];
 }
+

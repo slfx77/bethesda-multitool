@@ -2,6 +2,8 @@ using EgtAnalyzer.Verification;
 using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 
 namespace EgtAnalyzer.Commands;
@@ -229,3 +231,4 @@ internal static class VerifyEgtRawFitReporter
         double RootMeanSquareDifference,
         float MaxAbsoluteDifference);
 }
+

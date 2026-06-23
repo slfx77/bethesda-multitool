@@ -1,6 +1,3 @@
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
-//
 // Extraction follows the public BA2 format and fo76utils (extractBA2Texture / extractBlock in
 // libfo76utils/src/ba2file.cpp). Decompression uses the framework's zlib and this repo's own
 // LZ4 block decoder. Not derived from any copyleft source.

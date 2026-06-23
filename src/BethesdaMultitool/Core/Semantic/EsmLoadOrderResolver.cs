@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 
 namespace BethesdaMultitool.Core.Semantic;
@@ -82,3 +83,4 @@ internal static class EsmLoadOrderResolver
         return EsmParser.ParseFileHeader(headerBytes.AsSpan(0, bytesRead));
     }
 }
+

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 
@@ -36,3 +37,4 @@ internal sealed class NpcCompositionCaches
         Dictionary<string, Matrix4x4> PoseDeltas,
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? AnimationOverrides);
 }
+

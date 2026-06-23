@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Enums;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
@@ -210,3 +211,4 @@ internal static class WeaponSelectionScorer
         };
     }
 }
+

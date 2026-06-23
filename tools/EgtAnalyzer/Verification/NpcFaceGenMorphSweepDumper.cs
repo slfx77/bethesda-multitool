@@ -1,4 +1,6 @@
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using static EgtAnalyzer.Verification.DeltaTextureHelpers;
 
@@ -81,3 +83,4 @@ internal static class NpcFaceGenMorphSweepDumper
             $"mouthMAE={bestMouthMae:F4}");
     }
 }
+

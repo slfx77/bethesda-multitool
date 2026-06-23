@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 
@@ -53,3 +54,4 @@ internal static class TopLevelRecordEmitter
         return WrapInTopLevelGrup("QUST", combined);
     }
 }
+

@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
@@ -174,3 +175,4 @@ internal static class NpcGlbAlphaTexturePacker
         byte AlphaThreshold,
         bool HasTextureTransform);
 }
+

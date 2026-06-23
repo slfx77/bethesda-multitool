@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Games;
 using Xunit;
 
@@ -90,3 +91,4 @@ public class GameProfilesTests
         Assert.False(GameProfiles.For(BethesdaGame.Oblivion).IsTes3);
     }
 }
+

@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Indexing;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 
@@ -302,3 +303,4 @@ public sealed class EsmGrupWriter(byte[] input, EsmRecordWriter recordWriter, Es
 
     #endregion
 }
+

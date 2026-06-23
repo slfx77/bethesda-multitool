@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
@@ -706,3 +707,4 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
 
     #endregion
 }
+

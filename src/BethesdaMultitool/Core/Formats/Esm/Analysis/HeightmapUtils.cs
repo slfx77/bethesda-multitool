@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
@@ -315,3 +316,4 @@ public static class HeightmapUtils
         public uint Offset { get; init; }
     }
 }
+

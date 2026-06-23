@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
@@ -345,3 +346,4 @@ internal static class EsmDiffThreeWayCommand
         }
     }
 }
+

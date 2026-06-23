@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using Spectre.Console;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
@@ -566,3 +567,4 @@ public static class FormIdAuditCommands
         public string? FieldName { get; set; }
     }
 }
+

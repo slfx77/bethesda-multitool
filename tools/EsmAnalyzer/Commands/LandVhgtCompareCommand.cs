@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using Spectre.Console;
 using System.Globalization;
@@ -173,3 +174,4 @@ internal static class LandVhgtCompareCommand
         return (scale, bias, mae);
     }
 }
+

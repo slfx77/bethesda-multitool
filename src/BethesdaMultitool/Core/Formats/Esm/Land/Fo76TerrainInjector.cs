@@ -1,6 +1,3 @@
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
-
 using BethesdaMultitool.Core.Formats.Esm.Land.Btd;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;

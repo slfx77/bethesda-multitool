@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
@@ -478,3 +479,4 @@ internal static class NifExportExtractor
         public float EnvMapScale { get; init; }
     }
 }
+

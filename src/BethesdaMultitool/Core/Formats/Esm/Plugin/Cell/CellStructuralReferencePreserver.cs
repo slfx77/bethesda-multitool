@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 
@@ -348,3 +349,4 @@ internal static class CellStructuralReferencePreserver
         return record.Subrecords.Any(sub => sub.Signature == "SCRI");
     }
 }
+

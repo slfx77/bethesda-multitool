@@ -5,6 +5,8 @@ using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
@@ -777,3 +779,4 @@ internal static class NpcFaceGenTextureVerifier
         Dictionary<string, EgtParser?> egtCache) =>
         NpcFaceGenMorphInspector.PrintExternalHeadEgtRequiredRowSummary(meshArchives, egtCache);
 }
+

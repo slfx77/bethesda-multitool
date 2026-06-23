@@ -3,6 +3,7 @@ using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using Spectre.Console;
 
@@ -357,3 +358,4 @@ public static class RecordTraversalHelpers
         int DataEnd,
         int DataSize);
 }
+

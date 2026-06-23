@@ -3,6 +3,7 @@ using System.Globalization;
 using EgtAnalyzer.Settings;
 using EgtAnalyzer.Verification;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -241,3 +242,4 @@ internal static class CompareRuntimeCommand
         return parts.Count == 0 ? "-" : string.Join(" | ", parts);
     }
 }
+

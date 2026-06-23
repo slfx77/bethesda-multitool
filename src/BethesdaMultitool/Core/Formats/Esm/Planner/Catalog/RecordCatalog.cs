@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 
 /// <summary>
@@ -83,3 +84,4 @@ public static class RecordCatalog
         return entries;
     }
 }
+

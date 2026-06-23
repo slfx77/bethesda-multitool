@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Spectre.Console;
 
@@ -415,3 +416,4 @@ internal static class InspectTriCommand
         return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 }
+

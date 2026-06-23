@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
@@ -965,3 +966,4 @@ internal static class DialogGrupBuilder
         return RecordHeaderProcessor.WriteGrupHeader(stream, header);
     }
 }
+

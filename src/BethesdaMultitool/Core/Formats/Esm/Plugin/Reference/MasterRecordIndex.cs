@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
@@ -204,3 +205,4 @@ internal sealed record MasterRecordIndex
         return recordsByCell;
     }
 }
+

@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;

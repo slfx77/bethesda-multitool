@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Nif;
@@ -534,3 +535,4 @@ internal static class NpcWeaponAttachmentResolver
         NifInfo SkeletonInfo,
         string? ParentOverrideBone);
 }
+

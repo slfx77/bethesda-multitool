@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using static EgtAnalyzer.Verification.DeltaTextureHelpers;
 using static EgtAnalyzer.Verification.MorphCorrectionHelpers;
@@ -340,3 +341,4 @@ internal static class MorphPlausibilityAnalyzer
             GetRegionRawMae((correctedR, correctedG, correctedB), shippedDecoded, egt.Cols, mouth.X, mouth.Y, mouth.W, mouth.H));
     }
 }
+

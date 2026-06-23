@@ -1,4 +1,5 @@
-﻿using Spectre.Console;
+using Spectre.Console;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
@@ -127,3 +128,4 @@ public static class EsmFileLoader
         }
     }
 }
+

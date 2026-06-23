@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
@@ -368,3 +369,4 @@ public static class CellGrupBuilder
         return stream.ToArray();
     }
 }
+

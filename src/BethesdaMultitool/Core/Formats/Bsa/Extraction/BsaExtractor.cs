@@ -1,6 +1,3 @@
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
-
 using System.Buffers;
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;

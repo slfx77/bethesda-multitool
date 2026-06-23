@@ -1,10 +1,11 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
 
 /// <summary>
 ///     Re-serializes a typed-field dictionary (as produced by
-///     <see cref="BethesdaMultitool.Core.Formats.Esm.SubrecordSchemaView.Raw" />)
+///     <see cref="BethesdaMultitool.Core.Formats.Esm.Parsing.SubrecordSchemaView.Raw" />)
 ///     back into the byte layout defined by a
 ///     <see cref="SubrecordSchema" />. Used by encoders for record types whose
 ///     parsers store schema-parsed dictionaries instead of typed model fields (CSTY, LGTM,
@@ -198,3 +199,4 @@ internal static class SchemaDictionarySerializer
         };
     }
 }
+

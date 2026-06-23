@@ -1,4 +1,5 @@
-﻿using System.CommandLine;
+using System.CommandLine;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
@@ -189,3 +190,4 @@ public static class EsmConvertCommand
         }
     }
 }
+

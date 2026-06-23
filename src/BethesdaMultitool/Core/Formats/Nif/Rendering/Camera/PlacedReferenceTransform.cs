@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
@@ -59,3 +60,4 @@ internal static class PlacedReferenceTransform
     public static float MapCanvasYawRadians(float rotZ, float rootNodeYawRadians = 0f)
         => rotZ - rootNodeYawRadians;
 }
+

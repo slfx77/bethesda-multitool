@@ -1,4 +1,5 @@
 using Spectre.Console;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
@@ -181,3 +182,4 @@ internal static class DumpCommandsTrace
         return 0;
     }
 }
+

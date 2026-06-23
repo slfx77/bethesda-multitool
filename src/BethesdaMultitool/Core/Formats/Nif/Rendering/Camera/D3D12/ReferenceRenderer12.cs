@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Orchestration;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
@@ -1107,3 +1108,4 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         Vector4 Specular);
 }
 #endif
+

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner;
 
@@ -99,3 +100,4 @@ public sealed record RecordPlan
     /// <summary>Why the planner chose this disposition. Captured for diagnostics.</summary>
     public required PlanProvenance Provenance { get; init; }
 }
+

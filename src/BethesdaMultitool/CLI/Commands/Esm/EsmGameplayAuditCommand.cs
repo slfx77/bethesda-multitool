@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Globalization;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
@@ -542,3 +543,4 @@ public static class EsmGameplayAuditCommand
 
     private readonly record struct RawLandRange(uint LandFormId, int VhgtLength, float? Min, float? Max, float? Range);
 }
+

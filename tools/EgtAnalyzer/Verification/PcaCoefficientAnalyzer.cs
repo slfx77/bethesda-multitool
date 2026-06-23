@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using static EgtAnalyzer.Verification.LinearAlgebraUtils;
 
@@ -337,3 +338,4 @@ internal static class PcaCoefficientAnalyzer
         return quantized;
     }
 }
+

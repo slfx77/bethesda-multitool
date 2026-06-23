@@ -9,6 +9,8 @@ using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Core.Minidump;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
@@ -555,3 +557,4 @@ internal sealed class NpcBrowserService : IDisposable
         return appearances.Where(npc => idSet.Contains(npc.NpcFormId)).ToList();
     }
 }
+

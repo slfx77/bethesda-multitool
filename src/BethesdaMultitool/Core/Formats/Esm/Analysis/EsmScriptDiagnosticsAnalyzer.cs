@@ -1,6 +1,7 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.EsmScriptDiagnosticsResolvers;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
@@ -713,3 +714,4 @@ public static class EsmScriptDiagnosticsAnalyzer
 
     private sealed record TargetRecordMatch(EsmScriptFormIdInfo Info, string Reason);
 }
+

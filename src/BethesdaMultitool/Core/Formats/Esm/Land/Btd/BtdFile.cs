@@ -1,6 +1,3 @@
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
-//
 // Ported from fo76utils (MIT, https://github.com/fo76utils/fo76utils) src/btdfile.cpp.
 // Decodes Bethesda Terrain Data (.btd) landscape files used by Fallout 76 (Appalachia.btd)
 // and — as a simplified variant — Starfield. These store the entire worldspace heightmap,

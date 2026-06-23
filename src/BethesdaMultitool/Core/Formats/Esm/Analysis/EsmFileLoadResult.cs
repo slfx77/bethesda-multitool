@@ -1,4 +1,5 @@
-﻿namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
 /// <summary>
 ///     Result of loading and validating an ESM file.
@@ -12,3 +13,4 @@ public sealed class EsmFileLoadResult
     public required string FilePath { get; init; }
     public bool IsBigEndian => Header.IsBigEndian;
 }
+

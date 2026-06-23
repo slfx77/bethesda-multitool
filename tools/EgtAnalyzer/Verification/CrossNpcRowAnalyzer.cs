@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using static EgtAnalyzer.Verification.DeltaTextureHelpers;
 
@@ -224,3 +225,4 @@ internal static class CrossNpcRowAnalyzer
             .TrimStart('\\');
     }
 }
+

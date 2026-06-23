@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 
@@ -72,3 +73,4 @@ internal static class GpuMeshUploader
         public Vector3 Bitangent;
     }
 }
+

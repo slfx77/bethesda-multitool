@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
 using Xunit;
@@ -127,3 +128,4 @@ public class CompressedRecordPartialRecoveryTests
         Assert.False(isComplete);
     }
 }
+

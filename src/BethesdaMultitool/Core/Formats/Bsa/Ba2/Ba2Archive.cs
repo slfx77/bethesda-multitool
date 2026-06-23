@@ -1,6 +1,4 @@
 using BethesdaMultitool.Core.Formats.Bsa.Models;
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
 
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 
@@ -30,3 +31,4 @@ internal static class ArmorDefenseData
             GameStatNormalizer.ArmorDamageThreshold(damageThreshold));
     }
 }
+

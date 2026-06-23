@@ -1,6 +1,7 @@
 using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
@@ -158,3 +159,4 @@ internal static class EsmScriptDiagnosticsResolvers
         return value[..Math.Max(0, maxLength - 3)] + "...";
     }
 }
+

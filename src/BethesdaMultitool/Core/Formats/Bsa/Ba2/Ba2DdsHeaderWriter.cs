@@ -1,6 +1,3 @@
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
-//
 // The DDS header this emits is the Microsoft DDS file format: the DDS_HEADER, DDS_PIXELFORMAT and
 // DDS_HEADER_DXT10 layouts, the legacy D3DFMT/FourCC codes (DXT1/3/5, BC4U/BC5U, A16B16G16R16F),
 // and the DXGI_FORMAT enum are all from Microsoft's DDS programming guide and DirectXTex. The

@@ -1,6 +1,3 @@
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
-//
 // BA2 format layout re-implemented from the public Bethesda Archive v2 format and the
 // MIT-licensed fo76utils reference (libfo76utils/src/ba2file.{hpp,cpp},
 // https://github.com/fo76utils/fo76utils). Not derived from any copyleft source.

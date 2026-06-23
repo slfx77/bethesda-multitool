@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Utils;
@@ -481,3 +482,4 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
 
     #endregion
 }
+

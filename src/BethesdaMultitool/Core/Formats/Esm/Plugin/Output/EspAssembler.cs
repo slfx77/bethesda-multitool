@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
@@ -89,3 +90,4 @@ internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
         return stream.ToArray();
     }
 }
+

@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Records;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Minidump;
 using Spectre.Console;
@@ -174,3 +175,4 @@ internal static class NpcInventoryCommand
         string? EditorId,
         string? DisplayName);
 }
+

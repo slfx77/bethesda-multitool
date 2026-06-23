@@ -1,5 +1,6 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
@@ -105,3 +106,4 @@ public static class DeletedRefSynthesizer
         return stream.ToArray();
     }
 }
+

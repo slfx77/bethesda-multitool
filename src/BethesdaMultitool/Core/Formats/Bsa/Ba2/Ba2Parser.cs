@@ -1,6 +1,3 @@
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
-//
 // Re-implemented from the publicly documented Bethesda Archive v2 (BA2) format and the
 // MIT-licensed fo76utils reference (loadBA2General / loadBA2Textures in
 // libfo76utils/src/ba2file.cpp, https://github.com/fo76utils/fo76utils). Record layouts are the

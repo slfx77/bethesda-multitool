@@ -1,4 +1,5 @@
 using System.Globalization;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using static EgtAnalyzer.Verification.MorphCorrectionHelpers;
 
@@ -525,3 +526,4 @@ internal static class MorphRowSimilarityAnalyzer
         return string.Join(" ", values.Select(value => value.ToString(CultureInfo.InvariantCulture)));
     }
 }
+

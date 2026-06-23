@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
@@ -86,3 +87,4 @@ internal static class NifNodeControllerPoseReader
             : -1;
     }
 }
+

@@ -5,6 +5,8 @@ using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -498,3 +500,4 @@ internal static class VerifyEgtCommand
         return deduped;
     }
 }
+

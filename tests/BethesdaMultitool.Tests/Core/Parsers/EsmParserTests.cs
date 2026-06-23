@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.BinaryTestWriter;

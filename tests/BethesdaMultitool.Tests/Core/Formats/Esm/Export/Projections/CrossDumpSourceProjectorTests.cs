@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Export;
@@ -295,4 +296,5 @@ public class CrossDumpSourceProjectorTests
         };
     }
 }
+
 

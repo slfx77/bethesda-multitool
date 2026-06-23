@@ -2,6 +2,8 @@ using System.Buffers.Binary;
 using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using static EgtAnalyzer.Verification.CrossNpcRowAnalyzer;
 using static EgtAnalyzer.Verification.DeltaTextureHelpers;
@@ -494,3 +496,4 @@ internal static class NpcFaceGenMorphInspector
         }
     }
 }
+

@@ -1,6 +1,3 @@
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
-//
 // Chunk record layout from the public BA2 DX10 format and fo76utils (loadBA2Textures in
 // libfo76utils/src/ba2file.cpp). Not derived from any copyleft source.
 

@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Indexing;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 
@@ -561,3 +562,4 @@ internal sealed class EsmInfoMerger(byte[] input, EsmConversionStats stats)
         Response
     }
 }
+

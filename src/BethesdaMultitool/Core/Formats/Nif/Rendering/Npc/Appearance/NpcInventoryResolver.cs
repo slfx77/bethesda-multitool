@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
@@ -76,3 +77,4 @@ internal sealed class NpcInventoryResolver
         return null;
     }
 }
+

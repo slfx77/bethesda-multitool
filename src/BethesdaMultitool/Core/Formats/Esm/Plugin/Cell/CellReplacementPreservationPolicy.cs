@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 
@@ -122,3 +123,4 @@ internal static class CellReplacementPreservationPolicy
         list.Add(placed);
     }
 }
+

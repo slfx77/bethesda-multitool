@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaAudioTranscriber.Models;
 
@@ -127,3 +128,4 @@ public static class EsmIndexBuilder
         return index;
     }
 }
+

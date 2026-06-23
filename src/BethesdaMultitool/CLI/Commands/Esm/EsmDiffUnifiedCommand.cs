@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
@@ -475,3 +476,4 @@ internal static class EsmDiffUnifiedCommand
         public int Other { get; set; }
     }
 }
+

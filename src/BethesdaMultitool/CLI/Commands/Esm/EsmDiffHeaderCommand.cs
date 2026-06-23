@@ -1,4 +1,5 @@
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Utils;
 using Spectre.Console;
@@ -257,3 +258,4 @@ internal static class EsmDiffHeaderCommand
         return 0;
     }
 }
+

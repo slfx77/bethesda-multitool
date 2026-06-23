@@ -2,6 +2,8 @@ using System.Numerics;
 using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
@@ -183,3 +185,4 @@ internal static class NpcBodyBuilder
         return $"{skeletonNifPath}|bind:{settings.BindPose}|anim:{settings.AnimOverride ?? string.Empty}";
     }
 }
+

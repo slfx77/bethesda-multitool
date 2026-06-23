@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
@@ -643,3 +644,4 @@ internal sealed class NpcWeaponResolver
         uint? ActorRefFormId,
         uint? WeaponFormId);
 }
+

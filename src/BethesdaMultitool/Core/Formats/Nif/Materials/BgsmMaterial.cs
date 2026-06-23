@@ -1,6 +1,3 @@
-// Copyright (c) 2026 BethesdaMultitool Contributors
-// Licensed under the MIT License.
-//
 // Texture-path extraction from Bethesda material files (.bgsm = lighting, .bgem = effect), ported
 // from fo76utils (MIT) src/bgsmfile.cpp. Fallout 4 and Fallout 76 NIFs don't carry an inline
 // BSShaderTextureSet ref on their BSLightingShaderProperty; instead the shader's Name points at a

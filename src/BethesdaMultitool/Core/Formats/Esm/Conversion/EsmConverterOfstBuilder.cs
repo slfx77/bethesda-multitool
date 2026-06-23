@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Indexing;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Conversion;
 
@@ -448,3 +449,4 @@ internal static class EsmConverterOfstBuilder
 
     internal sealed record CellGrid(uint FormId, int GridX, int GridY);
 }
+

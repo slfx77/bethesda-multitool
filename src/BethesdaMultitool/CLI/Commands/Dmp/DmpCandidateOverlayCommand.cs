@@ -3,6 +3,7 @@ using System.CommandLine;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
@@ -745,3 +746,4 @@ internal static class DmpCandidateOverlayCommand
         public List<(uint, ResolvedRef, string)> Refs { get; } = [];
     }
 }
+

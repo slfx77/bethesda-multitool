@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
@@ -314,3 +315,4 @@ public sealed record SemanticValidationResult(int ErrorCount, int WarningCount, 
     /// <summary>True when no semantic errors or warnings were found.</summary>
     public bool IsClean => ErrorCount == 0 && WarningCount == 0;
 }
+

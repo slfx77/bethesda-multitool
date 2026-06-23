@@ -1,4 +1,6 @@
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 
@@ -299,3 +301,4 @@ internal static class DeltaTextureHelpers
         return (value + alignment - 1) & ~(alignment - 1);
     }
 }
+

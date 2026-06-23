@@ -1,4 +1,5 @@
 using System.Globalization;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Spectre.Console;
 
@@ -164,3 +165,4 @@ internal static class NpcTextureHelpers
         return found;
     }
 }
+

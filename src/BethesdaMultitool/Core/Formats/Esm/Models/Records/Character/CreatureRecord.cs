@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 
@@ -165,3 +166,4 @@ public record CreatureRecord
         _ => $"Unknown ({CreatureType})"
     };
 }
+

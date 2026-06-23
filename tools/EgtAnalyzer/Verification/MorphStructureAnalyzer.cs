@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using static EgtAnalyzer.Verification.DeltaTextureHelpers;
@@ -391,3 +393,4 @@ internal static class MorphStructureAnalyzer
         return (int)Math.Round(numerator / denominator, MidpointRounding.AwayFromZero);
     }
 }
+

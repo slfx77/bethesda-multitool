@@ -1,5 +1,6 @@
 using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -403,3 +404,4 @@ public sealed class EsmFileAnalyzerTests(SampleFileFixture samples) : IDisposabl
         return filePath;
     }
 }
+

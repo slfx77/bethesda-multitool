@@ -2,6 +2,7 @@ using System.IO.MemoryMappedFiles;
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
@@ -620,3 +621,4 @@ internal static class NpcRenderHelpers
         RuntimeActorWeaponReader.RuntimeActorWeaponState? WeaponState,
         RuntimeActorWeaponReader.RuntimeActorWornArmorState? WornArmorState);
 }
+

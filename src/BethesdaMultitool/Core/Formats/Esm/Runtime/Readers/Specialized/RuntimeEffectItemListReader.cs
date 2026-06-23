@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Utils;
 
@@ -99,3 +100,4 @@ internal static class RuntimeEffectItemListReader
         };
     }
 }
+

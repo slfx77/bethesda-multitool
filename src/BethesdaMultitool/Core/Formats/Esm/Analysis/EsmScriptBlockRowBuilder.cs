@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.EsmScriptDiagnosticsResolvers;
@@ -217,3 +218,4 @@ internal static class EsmScriptBlockRowBuilder
         return validFormIds.Contains(reference.RawValue) ? "Resolved" : "Missing";
     }
 }
+

@@ -1,5 +1,6 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 
@@ -95,3 +96,4 @@ public static class Tes4HeaderBuilder
         SubrecordEncoder.WriteSubrecord(writer, "DATA", data);
     }
 }
+

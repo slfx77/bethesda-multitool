@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 
 namespace EgtAnalyzer.Verification;
@@ -626,3 +627,4 @@ internal static class NpcRuntimeFaceGenProbeCaptureComparer
         return $"\"{escaped}\"";
     }
 }
+

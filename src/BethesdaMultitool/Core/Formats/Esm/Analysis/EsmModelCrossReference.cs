@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
@@ -219,3 +220,4 @@ internal sealed class EsmModelCrossReference
         return path.Replace('/', '\\').ToLowerInvariant();
     }
 }
+

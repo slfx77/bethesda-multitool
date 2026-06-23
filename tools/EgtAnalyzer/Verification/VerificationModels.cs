@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 
 namespace EgtAnalyzer.Verification;
@@ -331,3 +332,4 @@ internal sealed record ShippedNpcFaceTexture(
     string PluginName,
     string VirtualPath,
     string? ArchivePath);
+

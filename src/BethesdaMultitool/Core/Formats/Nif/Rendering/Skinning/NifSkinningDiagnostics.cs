@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Skinning;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
@@ -182,3 +183,4 @@ internal static class NifSkinningDiagnostics
                MathF.Abs(matrix.M43) < 0.0001f;
     }
 }
+

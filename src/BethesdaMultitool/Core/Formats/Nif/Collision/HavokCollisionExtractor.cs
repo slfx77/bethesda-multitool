@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Utils;
@@ -285,3 +286,4 @@ internal static class HavokCollisionExtractor
         return BinaryUtils.ReadFloat(data, block.DataOffset + rel, be);
     }
 }
+
