@@ -59,9 +59,13 @@ float3 AtmosphereLight(float3 N)
         return (0.4 + 0.6 * legacyLambert).xxx;
     }
 
+    // Matches the FNV PC SLS pixel shader EXACTLY: finalRGB = BaseMap * (AmbientColor + NdotL*SunColor)
+    // -- a STRAIGHT ambient + directional sum with NO energy-conservation scale. The removed
+    // (1 - ambientLuma) factor was suppressing the sun (the "lighting too weak" symptom). Grounded in
+    // pc_basic_sls_shader_disassembly.txt: `mad r1, NdotL, PSLightColor, AmbientColor`. HDR/tonemap
+    // absorbs values > 1, exactly as the engine does.
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
-    float ambientLuma = saturate(dot(uAmbientColor.rgb, float3(0.3333, 0.3333, 0.3333)));
-    return uAmbientColor.rgb + uSunColorLighting.rgb * ndotl * (1.0 - ambientLuma);
+    return uAmbientColor.rgb + uSunColorLighting.rgb * ndotl;
 }
 
 struct PSInput
@@ -129,10 +133,18 @@ float4 main(PSInput input) : SV_Target
         mapN.y = -mapN.y; // DirectX convention (Y-down normal maps), matching skin.frag.hlsl.
         mapN.xy *= input.vRenderState.z;
 
-        float3 T = normalize(input.vTangent);
-        float3 B = normalize(input.vBitangent);
-        float3x3 TBN = float3x3(T, B, normal);
-        normal = normalize(mul(mapN, TBN));
+        // Only perturb when there's a usable tangent basis. SpeedTree bark carries a normal map but NO
+        // tangents (the tube generator emits none), so vTangent is zero — normalize(0) = NaN, which
+        // produced garbage per-pixel normals and a "deformed"/ribboned trunk once culling stopped hiding
+        // the bark. With a degenerate tangent, fall back to the geometric normal (flat bark, no bump).
+        float tLenSq = dot(input.vTangent, input.vTangent);
+        if (tLenSq > 1e-6)
+        {
+            float3 T = input.vTangent * rsqrt(tLenSq);
+            float3 B = normalize(input.vBitangent);
+            float3x3 TBN = float3x3(T, B, normal);
+            normal = normalize(mul(mapN, TBN));
+        }
     }
 
     // Shared atmosphere lighting (rgb). Lighting-off path inside AtmosphereLight reproduces the

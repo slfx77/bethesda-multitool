@@ -33,6 +33,11 @@ cbuffer InstanceDraw : register(b1)
     // as SkyBillboardRenderer12). Only read when uTextureState.y marks a leaf submesh.
     float4 uCameraRight;
     float4 uCameraUp;
+    // SpeedTree wind: xy = horizontal wind direction, z = strength (0 disables), w = time (seconds).
+    // The STLEAF/STB vertex shaders displace each vertex toward a per-frame wind-matrix-transformed
+    // position by a per-vertex weight; we approximate the engine's 4 sway matrices with a time- and
+    // world-position-phased gust (see reference_instanced.vert.hlsl leaf branch).
+    float4 uWind;
 };
 
 // Per-instance data is now JUST the world matrix (64 bytes). Everything else is per-batch.
@@ -77,15 +82,30 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
         // center, scaled by the instance's uniform REFR scale. (SpeedTree builds leaf cards CPU-side as
         // flat 2D offsets around a center and re-faces them to the camera each frame — CLeafGeometry; we
         // do that same transform here in the VS.)
-        float3 worldCenter = mul(world, float4(input.aTangent, 1.0)).xyz - uCameraOrigin.xyz;
+        float4 worldCenterAbs = mul(world, float4(input.aTangent, 1.0)); // pre camera-relative shift
+        float3 worldCenter = worldCenterAbs.xyz - uCameraOrigin.xyz;
         float scale = length(float3(world[0].x, world[0].y, world[0].z)); // uniform REFR scale
+
+        // SpeedTree wind sway. The STLEAF/STB VS does windedPos = lerp(pos, WindMatrix[idx]*pos,
+        // windWeight); the engine builds 4 time-animated two-angle sway matrices per frame
+        // (BSTreeManager::UpdateWindMatrices). We approximate that with a single gust whose phase varies
+        // by absolute world position (so leaves sway out of sync) and by time (uWind.w), displacing the
+        // card center along the horizontal wind direction (uWind.xy). Amplitude = strength (uWind.z) ×
+        // per-leaf weight (aBitangent.z, height up the canopy) × card half-size (∝ tree size) × REFR
+        // scale, so big trees sway more than bushes. uWind.z = 0 leaves the tree static.
+        float windWeight = input.aBitangent.z;
+        float sizeProxy = max(abs(input.aBitangent.x), abs(input.aBitangent.y));
+        float phase = uWind.w * 0.7 + dot(worldCenterAbs.xyz, float3(0.03, 0.027, 0.05));
+        float gust = sin(phase) + 0.25 * sin(phase * 2.9 + 1.7);
+        worldCenter += float3(uWind.x, uWind.y, 0.0) * (gust * uWind.z * windWeight * sizeProxy * scale);
+
         worldPos = float4(
             worldCenter
                 + uCameraRight.xyz * (input.aBitangent.x * scale)
                 + uCameraUp.xyz    * (input.aBitangent.y * scale),
             1.0);
-        // Card faces the camera; light it from world-up for a natural canopy look (leaves are flat cards).
-        o.vWorldNormal = float3(0.0, 0.0, 1.0);
+        // STLEAF shaders light each billboard from the per-leaf normal/leaf-base data, not a fixed up vector.
+        o.vWorldNormal = normalize(mul((float3x3)world, input.aNormal));
     }
     else
     {

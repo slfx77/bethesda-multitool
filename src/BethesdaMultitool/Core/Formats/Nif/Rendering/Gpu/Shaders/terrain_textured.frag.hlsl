@@ -75,9 +75,12 @@ float3 AtmosphereLight(float3 N)
         return (0.4 + 0.6 * legacyLambert).xxx;
     }
 
+    // Matches the FNV PC land/SLS pixel shader EXACTLY: lit = AmbientColor + NdotL*SunColor -- a STRAIGHT
+    // ambient + directional sum with NO energy-conservation scale. The removed (1 - ambientLuma) factor
+    // was suppressing the sun (the "lighting too weak" symptom). Grounded in pc_land_shader_disassembly.txt
+    // / pc_basic_sls_shader_disassembly.txt (`mad r1, NdotL, PSLightColor, AmbientColor`). HDR absorbs > 1.
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
-    float ambientLuma = saturate(dot(uAmbientColor.rgb, float3(0.3333, 0.3333, 0.3333)));
-    return uAmbientColor.rgb + uSunColorLighting.rgb * ndotl * (1.0 - ambientLuma);
+    return uAmbientColor.rgb + uSunColorLighting.rgb * ndotl;
 }
 
 struct PSInput
