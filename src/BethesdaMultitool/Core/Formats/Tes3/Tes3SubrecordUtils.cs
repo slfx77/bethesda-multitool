@@ -1,8 +1,9 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Utils;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Tes3;
+namespace BethesdaMultitool.Core.Formats.Tes3;
 
 /// <summary>
 ///     Iterates subrecords inside a Morrowind (TES3) record's data section. TES3 differs from

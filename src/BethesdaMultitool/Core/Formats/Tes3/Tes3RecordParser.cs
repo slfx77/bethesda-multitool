@@ -4,8 +4,9 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Tes3;
+namespace BethesdaMultitool.Core.Formats.Tes3;
 
 /// <summary>
 ///     Builds a <see cref="RecordCollection" /> from a scanned Morrowind (TES3) plugin. Because TES3
@@ -399,7 +400,7 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
                 RecordType = "REFR",
                 IsMapMarker = true,
                 MarkerName = name,
-                MarkerType = Enums.MapMarkerType.Settlement,
+                MarkerType = BethesdaMultitool.Core.Formats.Esm.Enums.MapMarkerType.Settlement,
                 X = (float)(agg.SumX / agg.Count),
                 Y = (float)(agg.SumY / agg.Count),
                 Z = 0f

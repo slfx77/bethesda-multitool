@@ -1,7 +1,8 @@
 using System.Globalization;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Tes3;
+namespace BethesdaMultitool.Core.Formats.Tes3;
 
 /// <summary>
 ///     Decodes a single TES3 (Morrowind) subrecord into named, typed fields. Coverage spans all the

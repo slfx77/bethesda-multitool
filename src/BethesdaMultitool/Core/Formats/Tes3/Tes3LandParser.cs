@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Tes3;
+namespace BethesdaMultitool.Core.Formats.Tes3;
 
 /// <summary>
 ///     Decoded Morrowind LAND record: a 65×65 heightmap + a 16×16 land-texture index grid + optional

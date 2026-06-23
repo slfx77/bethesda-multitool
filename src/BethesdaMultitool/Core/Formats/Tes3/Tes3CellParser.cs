@@ -1,4 +1,5 @@
-namespace BethesdaMultitool.Core.Formats.Esm.Tes3;
+using BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Tes3;
 
 /// <summary>
 ///     A placed object inside a TES3 cell, as read from the cell's reference stream (before base-record

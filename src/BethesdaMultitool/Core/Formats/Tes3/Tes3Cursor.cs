@@ -1,7 +1,8 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm;
 
-namespace BethesdaMultitool.Core.Formats.Esm.Tes3;
+namespace BethesdaMultitool.Core.Formats.Tes3;
 
 /// <summary>
 ///     A forward-only little-endian reader over a TES3 subrecord's bytes. Every read is
