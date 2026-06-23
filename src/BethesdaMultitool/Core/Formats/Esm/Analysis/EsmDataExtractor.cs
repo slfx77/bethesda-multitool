@@ -1,10 +1,11 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
 /// <summary>
 ///     Extracts structured data (positions, conditions, REFR records, etc.) from parsed ESM records.
@@ -385,3 +386,4 @@ internal static class EsmDataExtractor
             offset);
     }
 }
+

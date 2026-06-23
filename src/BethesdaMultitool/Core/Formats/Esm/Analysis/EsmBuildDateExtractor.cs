@@ -1,7 +1,8 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
 /// <summary>
 ///     Extracts build dates from embedded ESM revision-control date stamps.
@@ -221,3 +222,4 @@ internal static class EsmBuildDateExtractor
         return true;
     }
 }
+

@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Analysis;
 
 /// <summary>
 ///     Domain guards for values read from mixed ESM/runtime sources before they enter reports.

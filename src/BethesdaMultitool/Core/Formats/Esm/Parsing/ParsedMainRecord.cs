@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Parsed main record with subrecords.

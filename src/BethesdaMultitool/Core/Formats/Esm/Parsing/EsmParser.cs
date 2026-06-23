@@ -8,7 +8,7 @@ using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Utils;
 using ParsedSubrecord = BethesdaMultitool.Core.Formats.Esm.Subrecords.ParsedSubrecord;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Parses ESM file structure including the TES4 header, groups, and records.

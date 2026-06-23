@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Records;
@@ -7,7 +8,7 @@ using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 internal readonly record struct EsmRecordDescriptor(
     string Signature,
@@ -745,3 +746,4 @@ internal static class EsmDescriptorScanner
             ? BinaryPrimitives.ReadSingleBigEndian(data.Slice(offset, 4))
             : BinaryPrimitives.ReadSingleLittleEndian(data.Slice(offset, 4));
 }
+

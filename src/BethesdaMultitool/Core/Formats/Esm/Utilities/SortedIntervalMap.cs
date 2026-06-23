@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Utilities;
 
 /// <summary>
 ///     A binary-search interval map over non-overlapping GRUP ranges.
@@ -92,3 +93,4 @@ internal readonly struct SortedIntervalMap
         return BinaryPrimitives.ReadUInt32LittleEndian(_labels[index]);
     }
 }
+

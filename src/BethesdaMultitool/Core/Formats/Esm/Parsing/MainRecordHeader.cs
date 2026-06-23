@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Main record header (24 bytes for FNV).

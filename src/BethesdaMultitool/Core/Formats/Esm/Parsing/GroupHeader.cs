@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Records;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Group header (24 bytes).

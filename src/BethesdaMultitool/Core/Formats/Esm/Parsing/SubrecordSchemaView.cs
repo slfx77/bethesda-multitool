@@ -1,6 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Typed view over a single subrecord's schema-decoded field values. Pairs with

@@ -4,7 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Utils;
 using ParsedSubrecord = BethesdaMultitool.Core.Formats.Esm.Subrecords.ParsedSubrecord;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Handles GRUP-aware record enumeration and TOFT block scanning for the ESM parser.

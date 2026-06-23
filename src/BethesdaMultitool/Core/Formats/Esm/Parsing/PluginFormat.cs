@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Games;
 
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Binary layout descriptor for a plugin file's record/group framing — the convenient view the

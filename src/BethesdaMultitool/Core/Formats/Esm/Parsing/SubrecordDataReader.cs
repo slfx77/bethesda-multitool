@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 /// <summary>
 ///     Type-coercion helpers for the schema-decoded subrecord field dictionary produced by

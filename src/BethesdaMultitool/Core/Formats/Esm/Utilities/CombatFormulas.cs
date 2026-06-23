@@ -1,4 +1,4 @@
-namespace BethesdaMultitool.Core.Formats.Esm;
+namespace BethesdaMultitool.Core.Formats.Esm.Utilities;
 
 /// <summary>
 ///     Pure calculation helpers derived from decompiled CombatFormulas.cpp
