@@ -32,6 +32,36 @@ public sealed class NifAlphaCompositionTests
     }
 
     [Fact]
+    public void Classify_MaterialAlphaBelowOneWithoutAlphaProperty_StaysOpaque()
+    {
+        // Engine-correct: only NiAlphaProperty (HasAlphaBlend) enables blending. A sub-1 material
+        // alpha with no NiAlphaProperty must NOT route a solid mesh to the blend pass (which rendered
+        // opaque rocks/walls see-through over the premultiplied swapchain).
+        var submesh = CreateQuadSubmesh(0f, JacketTexturePath);
+        submesh.MaterialAlpha = 0.5f;
+
+        var alphaState = NifAlphaClassifier.Classify(submesh, null);
+
+        Assert.Equal(NifAlphaRenderMode.Opaque, alphaState.RenderMode);
+        Assert.False(alphaState.HasAlphaBlend);
+    }
+
+    [Fact]
+    public void Classify_MaterialAlphaBelowOneWithAlphaTestOnly_IsCutoutNotBlend()
+    {
+        // A NiAlphaProperty alpha-TEST (bit 9) without alpha-BLEND (bit 0) plus a sub-1 material alpha
+        // is alpha-tested cutout, not blend — the material alpha alone never promotes it to blend.
+        var submesh = CreateQuadSubmesh(0f, JacketTexturePath, hasAlphaTest: true);
+        submesh.MaterialAlpha = 0.5f;
+
+        var alphaState = NifAlphaClassifier.Classify(submesh, null);
+
+        Assert.Equal(NifAlphaRenderMode.Cutout, alphaState.RenderMode);
+        Assert.False(alphaState.HasAlphaBlend);
+        Assert.True(alphaState.HasAlphaTest);
+    }
+
+    [Fact]
     public void Classify_TintedHairFallbackUsesCutoutWhenTextureHasAlpha()
     {
         var submesh = CreateQuadSubmesh(

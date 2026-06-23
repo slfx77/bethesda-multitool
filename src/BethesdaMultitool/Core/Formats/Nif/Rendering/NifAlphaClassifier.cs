@@ -13,7 +13,15 @@ internal static class NifAlphaClassifier
         RenderableSubmesh submesh,
         DecodedTexture? diffuseTexture)
     {
-        var hasAlphaBlend = submesh.HasAlphaBlend || submesh.MaterialAlpha < 1f;
+        // Alpha blending is enabled ONLY by NiAlphaProperty (bit 0) — that's what `HasAlphaBlend`
+        // carries. A NiMaterialProperty alpha < 1 with NO NiAlphaProperty does NOT make geometry
+        // transparent in Gamebryo; many opaque architecture/rock meshes (e.g. ManiaSm25,
+        // RockDementiaMed03) carry a sub-1 material alpha purely as a shader input. Treating that
+        // alone as "blend" misclassified solid meshes, rendering them see-through over the
+        // premultiplied swapchain. The material alpha still modulates the blend WHEN a NiAlphaProperty
+        // is present (it flows through to vAlphaState.z in BuildAlphaState), so dropping the heuristic
+        // only changes property-less meshes — and matches the engine, not a substring/threshold guess.
+        var hasAlphaBlend = submesh.HasAlphaBlend;
         var hasAlphaTest = submesh.HasAlphaTest;
         var alphaTestThreshold = submesh.AlphaTestThreshold;
         var alphaTestFunction = submesh.AlphaTestFunction;
