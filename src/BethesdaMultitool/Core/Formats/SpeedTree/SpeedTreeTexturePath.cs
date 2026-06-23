@@ -1,5 +1,18 @@
 namespace BethesdaMultitool.Core.Formats.SpeedTree;
 
+/// <summary>The role a SpeedTree texture plays, used to route it to the correct shipped folder.</summary>
+public enum SpeedTreeTextureKind
+{
+    /// <summary>Infer bark vs leaf vs other from keywords in the file name (legacy behavior).</summary>
+    Auto,
+
+    /// <summary>Bark/branch texture → <c>textures\trees\branches\</c>.</summary>
+    Bark,
+
+    /// <summary>Leaf-card atlas → <c>textures\trees\leaves\</c>.</summary>
+    Leaf
+}
+
 /// <summary>
 ///     Maps the dev-machine absolute texture paths embedded in a <c>.spt</c> (e.g.
 ///     <c>C:\Noah\Fallout\Trees\WastelandShrub01\WastelandShrub01Bark.tga</c>) to the game-relative
@@ -42,12 +55,35 @@ public static class SpeedTreeTexturePath
         return $@"textures\trees\leaves\{stem}.dds";
     }
 
-    /// <summary>Convert a <c>.spt</c>-embedded texture path to a game-relative <c>textures\trees\...</c> path.</summary>
-    public static string? ToGamePath(string? devPath)
+    /// <summary>
+    ///     Convert a <c>.spt</c>-embedded texture path to a game-relative <c>textures\trees\...</c> path.
+    ///     <paramref name="kind" /> disambiguates the destination folder when the file name alone can't:
+    ///     a leaf card named like <c>WastelandUndergrowthBranches01.tga</c> contains none of the
+    ///     bark/foliage/leaf keywords, so <see cref="SpeedTreeTextureKind.Auto" /> would mis-file it under
+    ///     <c>textures\trees\</c> (untextured). The bark vs leaf call sites in <c>SptGeometryBuilder</c> know
+    ///     which role the texture plays and pass <see cref="SpeedTreeTextureKind.Bark" /> /
+    ///     <see cref="SpeedTreeTextureKind.Leaf" />.
+    /// </summary>
+    public static string? ToGamePath(string? devPath, SpeedTreeTextureKind kind = SpeedTreeTextureKind.Auto)
     {
         if (string.IsNullOrWhiteSpace(devPath))
         {
             return null;
+        }
+
+        // Some .spt embed an ALREADY game-relative shipped path rather than a dev abspath — e.g.
+        // Oblivion's TreeKvatchBurnt bark is "C:\Oblivion\Data\Textures\Trees\Branches\TreeKvatchBurnt.dds"
+        // (note: no "bark" in the stem, already .dds, real \trees\branches\ subfolder). The stem heuristic
+        // below would mis-file it under \trees\ (untextured), so honor an embedded "textures\trees\..."
+        // segment verbatim (for every kind). Dev abspaths use "…\Trees\<TreeName>\…" (no "textures\trees\")
+        // and fall through.
+        var lower = devPath.Replace('/', '\\').ToLowerInvariant();
+        var embedded = lower.IndexOf(@"textures\trees\", StringComparison.Ordinal);
+        if (embedded >= 0)
+        {
+            var rel = lower[embedded..];
+            var extDot = rel.LastIndexOf('.');
+            return (extDot >= 0 ? rel[..extDot] : rel) + ".dds";
         }
 
         // Normalize separators and take the base file name without extension.
@@ -61,6 +97,23 @@ public static class SpeedTreeTexturePath
             return null;
         }
 
+        return kind switch
+        {
+            // Bark always lives under \trees\branches\, regardless of whether the stem says "bark".
+            SpeedTreeTextureKind.Bark => $@"textures\trees\branches\{stem}.dds",
+            // Leaf cards always live under \trees\leaves\. The leaf material the engine actually ships may
+            // collapse several per-card variants to one shared atlas — see CollapseLeafCardIndex.
+            SpeedTreeTextureKind.Leaf => $@"textures\trees\leaves\{CollapseLeafCardIndex(stem)}.dds",
+            _ => ToGamePathByKeyword(stem)
+        };
+    }
+
+    /// <summary>
+    ///     Legacy <see cref="SpeedTreeTextureKind.Auto" /> routing: infer bark vs leaf vs other from
+    ///     keywords in the file name. Used when the caller doesn't know the texture's role.
+    /// </summary>
+    private static string ToGamePathByKeyword(string stem)
+    {
         if (stem.Contains("bark", StringComparison.Ordinal))
         {
             return $@"textures\trees\branches\{stem}.dds";
@@ -87,5 +140,23 @@ public static class SpeedTreeTexturePath
         }
 
         return $@"textures\trees\{stem}.dds";
+    }
+
+    /// <summary>
+    ///     For a leaf-kind card, collapse a trailing per-card numeric index to the shared atlas name
+    ///     (e.g. <c>wastelandundergrowthbranches01</c> / <c>…branches02</c> → <c>…branches</c>, matching the
+    ///     single shipped <c>…branches.ddx</c>), UNLESS the stem is a genuinely numbered "leaf"/"leaves"
+    ///     atlas (e.g. <c>pineleaves01</c>) that the engine ships per-number.
+    /// </summary>
+    private static string CollapseLeafCardIndex(string stem)
+    {
+        if (stem.Contains("leaf", StringComparison.Ordinal) ||
+            stem.Contains("leaves", StringComparison.Ordinal))
+        {
+            return stem;
+        }
+
+        var stripped = stem.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9');
+        return stripped.Length > 0 ? stripped : stem;
     }
 }

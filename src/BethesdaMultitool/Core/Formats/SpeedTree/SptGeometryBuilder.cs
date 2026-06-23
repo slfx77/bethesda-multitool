@@ -33,6 +33,23 @@ internal static class SptGeometryBuilder
     /// token 3007 (<see cref="SptLeafTable.Float3007" />), e.g. pine 0.35 / whiteoak 0.45 / shrub 0.31.</summary>
     private const float DefaultLeafSpacingFactor = 0.5f;
 
+    /// <summary>Default blossom threshold from <c>SIdvLeafInfo</c> ctor (<c>+0x24 = 0.75</c>), overridden
+    /// by token 3000. <c>CIdvBranch::IsBlossom</c> only considers blossoms when branch-param exceeds it.</summary>
+    private const float DefaultBlossomThreshold = 0.75f;
+
+    /// <summary>Default blossom probability from <c>SIdvLeafInfo</c> ctor (<c>+0x28 = 0.8</c>), overridden
+    /// by token 3002.</summary>
+    private const float DefaultBlossomProbability = 0.8f;
+
+    /// <summary>Per-ring slot-0 angular-noise damping applied to the TRUNK (recursion level 0) only. The
+    /// engine accumulates the slot-0 ScaledVariance per ring (verified vs CIdvBranch::Compute L2285-2291),
+    /// which is fine for branches but, on a tree whose slot-0 curve is non-zero at the base (e.g. Oblivion
+    /// JapaneseMaple's constant ~0.5 curve → ±5°/ring from the ground up), random-walks the main stem into
+    /// a strange lean. Since our RNG is not the engine's exact sequence (visual fidelity, not bit-exact), we
+    /// damp the trunk's noise so the stem stays upright; branches keep full character, and trees whose trunk
+    /// slot-0 curve already ramps from 0 (e.g. whiteoak) are ~unaffected at the base.</summary>
+    private const float TrunkNoiseDamping = 0.3f;
+
     public static NifRenderableModel Build(SptModel model, uint seed, SptGeometryOptions? options = null)
     {
         var opt = options ?? SptGeometryOptions.FromEnvironment();
@@ -44,7 +61,7 @@ internal static class SptGeometryBuilder
         rng.Reseed(seed);
         Func<float, float, float> rand = rng.Range;
 
-        var barkPath = SpeedTreeTexturePath.ToGamePath(model.General.BarkTexturePath);
+        var barkPath = SpeedTreeTexturePath.ToGamePath(model.General.BarkTexturePath, SpeedTreeTextureKind.Bark);
         var barkNormalPath = DeriveNormalMap(barkPath);
 
         var bark = new MeshBuffer();
@@ -131,7 +148,8 @@ internal static class SptGeometryBuilder
         // slot 4 = length, slot 5 = radius (both ×treeSize). slot 6 = radius taper curve. The engine has
         // NO child-length clamp — limbs are MEANT to be far longer than the (stubby) trunk (a cottonwood
         // trunk ≈ 0.04·treeSize but its level-1 limbs ≈ 0.45·treeSize). Clamping them is what collapsed the
-        // canopy into a ball, so only the radius is clamped (children ≤ 0.85× the parent's radius).
+        // canopy into a ball, so only the radius is clamped. Xbox CIdvBranch::Compute passes the sampled
+        // parent ring radius at the child attachment, then clamps children to ≤ 0.85× that radius.
         var length = MathF.Max(0.01f, Eval(s, 4, parentT, rand) * treeSize);
         var radius = MathF.Max(0.005f, Eval(s, 5, parentT, rand) * treeSize);
         if (radius > parentRadius * 0.85f)
@@ -152,14 +170,32 @@ internal static class SptGeometryBuilder
             frame = frame.MultiplyLocal(BranchFrame.FromAxisAngle(Vector3.UnitX, spinDeg * Deg2Rad));
         }
 
-        var initialNoiseB = ScaledVariance(s, 0, parentT, rand);
-        var initialNoiseA = ScaledVariance(s, 0, parentT, rand);
-        frame = frame.MultiplyLocal(BranchFrame.RotateTwoAngles(Eval(s, 7, parentT, rand) + initialNoiseA,
-            initialNoiseB));
+        if (level == 0)
+        {
+            // The engine's root trunk grows straight +Z: apply ONLY slot-7's MEAN (the −90° that maps the
+            // local +X growth vector to world-up), with NO declination variance and NO base slot-0 noise.
+            // Otherwise a tree whose slot-7 carries variance (e.g. JapaneseMaple slot7 VAR=7) and/or whose
+            // slot-0 noise curve is non-zero at the base (JapaneseMaple slot0 is a constant 1 → ±10° even at
+            // param 0) tilts the WHOLE trunk ~15-20° ("angled strangely"). Per-ring slot-0 noise (in the
+            // ring loop below) still adds natural wiggle up the trunk; only the base tilt is removed.
+            var rootAngle = s.Count > 7 && s[7] is { } s7 ? s7.Evaluate(parentT, null) : 0f;
+            frame = frame.MultiplyLocal(BranchFrame.RotateTwoAngles(rootAngle, 0f));
+        }
+        else
+        {
+            var initialNoiseB = ScaledVariance(s, 0, parentT, rand);
+            var initialNoiseA = ScaledVariance(s, 0, parentT, rand);
+            frame = frame.MultiplyLocal(BranchFrame.RotateTwoAngles(Eval(s, 7, parentT, rand) + initialNoiseA,
+                initialNoiseB));
+        }
 
         // slot 1 = the branch's bend gain, evaluated ONCE at its parent-t (CIdvBranch::Compute L964).
         // No scale factor: the engine applies this verbatim (decompile L1105/L1204).
         var slot1Gain = Eval(s, 1, parentT, rand);
+
+        // Damp the trunk's per-ring angular noise so the main stem stays upright (see TrunkNoiseDamping);
+        // branches (level > 0) keep full character.
+        var noiseScale = level == 0 ? TrunkNoiseDamping : 1f;
 
         var pos = basePos;
         int[]? prevRing = null;
@@ -182,8 +218,8 @@ internal static class SptGeometryBuilder
                 pos += previousFrame.Direction * delta;
                 frame = ApplyGravity(previousFrame, s, pathT, slot1Gain, rand);
                 frame = frame.MultiplyLocal(BranchFrame.RotateTwoAngles(
-                    ScaledVariance(s, 0, pathT, rand),
-                    ScaledVariance(s, 0, pathT, rand)));
+                    ScaledVariance(s, 0, pathT, rand) * noiseScale,
+                    ScaledVariance(s, 0, pathT, rand) * noiseScale));
             }
 
             previousDistance = pathDistance;
@@ -195,7 +231,7 @@ internal static class SptGeometryBuilder
             var ringRadius = MathF.Max(0.01f, radius * taper);
 
             prevRing = EmitRing(bark, pos, frame, ringRadius, vertsPerRing, pathT, prevRing);
-            rings.Add(new BranchRing(pos, frame, pathDistance));
+            rings.Add(new BranchRing(pos, frame, pathDistance, ringRadius));
             previousFrame = frame;
         }
 
@@ -207,7 +243,7 @@ internal static class SptGeometryBuilder
         var terminalRecord = model.Branches.Count - 1;
         if (level + 1 < terminalRecord && level + 1 < levels)
         {
-            SpawnChildren(model, level, levels, branch, rings, length, radius, treeSize, opt, rng, rand, bark,
+            SpawnChildren(model, level, levels, branch, rings, length, treeSize, opt, rng, rand, bark,
                 leafAnchors, branchSeed, ref nextLeafPlacementScope);
         }
         else
@@ -218,7 +254,7 @@ internal static class SptGeometryBuilder
 
     private static void SpawnChildren(
         SptModel model, int level, int levels, SptBranch branch, List<BranchRing> rings,
-        float length, float radius, float treeSize, SptGeometryOptions opt, SptRandom rng,
+        float length, float treeSize, SptGeometryOptions opt, SptRandom rng,
         Func<float, float, float> rand, MeshBuffer bark, List<LeafAnchor> leafAnchors,
         uint branchSeed, ref int nextLeafPlacementScope)
     {
@@ -253,11 +289,11 @@ internal static class SptGeometryBuilder
 
             var frac = Math.Clamp(rng.Range(min, max), 0f, 1f);
             var spawnT = SpawnTemplateParam(frac, start, end);
-            var (cpos, cframe) = SampleAlong(rings, frac);
+            var (cpos, cframe, parentAttachRadius) = SampleAlong(rings, frac);
             rng.Reseed(childSeed);
             _ = rng.Range(0f, 100f);
 
-            GenerateBranch(model, level + 1, levels, spawnT, cpos, cframe, radius, treeSize, opt, rng, rand,
+            GenerateBranch(model, level + 1, levels, spawnT, cpos, cframe, parentAttachRadius, treeSize, opt, rng, rand,
                 bark, leafAnchors, childSeed, ref nextLeafPlacementScope);
         }
     }
@@ -293,12 +329,37 @@ internal static class SptGeometryBuilder
         var budSplines = terminalBranch.Splines;
         var budReachDivisor = MathF.Max(1f, terminalBranch.UInt6009);
 
-        for (var i = 0; i < count; i++)
+        // Partition templates into leaves (Type 0) and blossoms (Type 1). MakeLeaf keeps the pools separate:
+        // IsBlossom first gates the current bud by token 3000/3002, then the accepted pool selects a template.
+        // Blossoms replace that bud; they are not seeded as an extra second population.
+        List<int>? leafTemplates = null;
+        List<int>? blossomTemplates = null;
+        for (var t = 0; t < model.Leaves.Count; t++)
         {
-            var frac = Math.Clamp(rng.Range(start, end), 0f, 1f);
-            var spawnT = SpawnTemplateParam(frac, start, end);
-            var (pos, frame) = SampleAlong(rings, frac);
-            var templateIndex = rng.NextInt(model.Leaves.Count);
+            if (model.Leaves[t].Type == 1)
+            {
+                (blossomTemplates ??= []).Add(t);
+            }
+            else
+            {
+                (leafTemplates ??= []).Add(t);
+            }
+        }
+
+        // A tree with only blossom records (no Type-0) falls back to treating them as leaves so it still
+        // renders rather than vanishing.
+        if (leafTemplates is null)
+        {
+            leafTemplates = new List<int>(model.Leaves.Count);
+            for (var t = 0; t < model.Leaves.Count; t++)
+            {
+                leafTemplates.Add(t);
+            }
+        }
+
+        void PlaceBud(int templateIndex, float frac, float spawnT)
+        {
+            var (pos, frame, _) = SampleAlong(rings, frac);
             var template = model.Leaves[templateIndex];
             var textureCoords = templateIndex < model.LeafTextureCoords.Count
                 ? model.LeafTextureCoords[templateIndex]
@@ -306,6 +367,28 @@ internal static class SptGeometryBuilder
             var budReach = MathF.Max(0.01f, Eval(budSplines, 4, spawnT, rng.Range) * treeSize / budReachDivisor);
             leafAnchors.Add(new LeafAnchor(pos, frame, template, textureCoords, budReach, leafPlacementScope));
         }
+
+        for (var i = 0; i < count; i++)
+        {
+            var frac = Math.Clamp(rng.Range(start, end), 0f, 1f);
+            var spawnT = SpawnTemplateParam(frac, start, end);
+            var useBlossom = blossomTemplates is { Count: > 0 } && ShouldUseBlossom(spawnT, model, rng);
+            var pool = useBlossom ? blossomTemplates! : leafTemplates;
+            PlaceBud(pool[rng.NextInt(pool.Count)], frac, spawnT);
+        }
+    }
+
+    private static bool ShouldUseBlossom(float branchParam, SptModel model, SptRandom rng)
+    {
+        var threshold = model.LeafSize > 0f ? model.LeafSize : DefaultBlossomThreshold;
+        if (branchParam <= threshold)
+        {
+            return false;
+        }
+
+        var probability = model.LeafTable?.Float3002 ?? DefaultBlossomProbability;
+        probability = Math.Clamp(probability, 0f, 1f);
+        return probability >= 1f || rng.Range(0f, 1f) <= probability;
     }
 
     /// <summary>
@@ -327,9 +410,27 @@ internal static class SptGeometryBuilder
         var globalPlaced = placementMode == 1 ? new List<Vector3>(anchors.Count) : null;
         var scopedPlaced = placementMode == 2 ? new Dictionary<int, List<Vector3>>() : null;
 
-        foreach (var anchor in anchors)
+        // Per-leaf wind weight (the SFVFLeafVertex blend factor, recovered from STLEAF*.vso / STB*.vso:
+        // windedPos = lerp(pos, WindMatrix·pos, windWeight)). The SDK derives it from leaf exposure; we
+        // approximate with normalized height up the canopy (low leaves barely move, the crown sways most)
+        // plus a floor so the whole crown stirs. A fraction, so it survives ApplyHeightScale; carried in
+        // the leaf-billboard card's bitangent.z and consumed by reference_instanced.vert.hlsl.
+        var zMin = float.MaxValue;
+        var zMax = float.MinValue;
+        foreach (var a in anchors)
+        {
+            if (a.Pos.Z < zMin) zMin = a.Pos.Z;
+            if (a.Pos.Z > zMax) zMax = a.Pos.Z;
+        }
+
+        var zRange = MathF.Max(1e-3f, zMax - zMin);
+
+        // Place one leaf/blossom card; returns true if a card was actually emitted (not rejected by
+        // RoomForLeaf or a full buffer).
+        bool TryPlace(LeafAnchor anchor)
         {
             var template = anchor.Template;
+            var windWeight = 0.15f + 0.85f * Math.Clamp((anchor.Pos.Z - zMin) / zRange, 0f, 1f);
 
             // Card width/height = treeSize · Corner1, derived from CSpeedTreeRT::Compute: it overwrites
             // leaf[+0x48/+0x4c] with treeSizeField·leaf[+0x3c/+0x40]. CLeafGeometry::Init copies those
@@ -366,7 +467,7 @@ internal static class SptGeometryBuilder
                 var spacing = MathF.Max(width, height) * spacingFactor;
                 if (!HasRoomForLeaf(placed, center, spacing))
                 {
-                    continue;
+                    return false;
                 }
 
                 placed.Add(center);
@@ -375,7 +476,8 @@ internal static class SptGeometryBuilder
             // The engine uses the TREE record's ICON as the leaf atlas (overriding the .spt's dev-era
             // material); fall back to the .spt material only when no override is supplied.
             var atlasPath = opt.LeafTextureOverride
-                            ?? SpeedTreeTexturePath.ToGamePath(template.Material) ?? "spt:leaf";
+                            ?? SpeedTreeTexturePath.ToGamePath(template.Material, SpeedTreeTextureKind.Leaf)
+                            ?? "spt:leaf";
             if (!leafGroups.TryGetValue(atlasPath, out var buffer))
             {
                 buffer = new MeshBuffer();
@@ -385,7 +487,7 @@ internal static class SptGeometryBuilder
             var quads = opt is { LeafBillboard: false, CrossedLeafCards: true } ? 2 : 1;
             if (!buffer.CanAdd(4 * quads))
             {
-                continue;
+                return false;
             }
 
             // CLeafGeometry::SetTextureCoords consumes an 8-float UV block per leaf template. That block
@@ -398,8 +500,9 @@ internal static class SptGeometryBuilder
                 // One card per leaf, encoded as center + signed offset; the GPU re-faces it per frame. The
                 // baked positions (default bud frame) only feed bounds + the CPU still path.
                 var (bbRight, bbUp) = BuildFrame(budDir);
-                AddLeafCard(buffer, center, bbRight, bbUp, budDir, uv, x0, x1, y0, y1, billboard: true);
-                continue;
+                AddLeafCard(buffer, center, bbRight, bbUp, budDir, uv, x0, x1, y0, y1, billboard: true,
+                    windWeight: windWeight);
+                return true;
             }
 
             if (opt.LeafFaceDirection is { } face)
@@ -409,7 +512,7 @@ internal static class SptGeometryBuilder
                 var faceDir = SafeNormalize(face, Vector3.UnitZ);
                 var (fRight, fUp) = BuildFrame(faceDir);
                 AddLeafCard(buffer, center, fRight, fUp, faceDir, uv, x0, x1, y0, y1);
-                continue;
+                return true;
             }
 
             // Static fallback: crossed pair gives volume from any angle (the engine re-faces leaves to
@@ -420,6 +523,13 @@ internal static class SptGeometryBuilder
             {
                 AddLeafCard(buffer, center, budDir, up, right, uv, x0, x1, y0, y1);
             }
+
+            return true;
+        }
+
+        foreach (var anchor in anchors)
+        {
+            _ = TryPlace(anchor);
         }
     }
 
@@ -477,18 +587,23 @@ internal static class SptGeometryBuilder
         {
             for (var k = 0; k < radial; k++)
             {
-                bark.Quad(prevRing[k], prevRing[k + 1], ring[k + 1], ring[k]);
+                // CCW winding when viewed from OUTSIDE the tube: the opaque PSO is FrontCounterClockwise
+                // with CullMode.Back, so the previous (prevRing[k], prevRing[k+1], ring[k+1], ring[k])
+                // order wound the outer wall clockwise → back-facing → culled (the "reversed culling" on
+                // trunks). Reversing it makes the outer wall front-facing. Normals stay outward (set above),
+                // so lighting is unchanged.
+                bark.Quad(prevRing[k], ring[k], ring[k + 1], prevRing[k + 1]);
             }
         }
 
         return ring;
     }
 
-    private static (Vector3 Pos, BranchFrame Frame) SampleAlong(List<BranchRing> rings, float frac)
+    private static (Vector3 Pos, BranchFrame Frame, float Radius) SampleAlong(List<BranchRing> rings, float frac)
     {
         if (rings.Count == 0)
         {
-            return (Vector3.Zero, BranchFrame.Identity);
+            return (Vector3.Zero, BranchFrame.Identity, 0f);
         }
 
         // CIdvBranch::FillBranch receives frac * branchLength, then searches each ring's stored
@@ -498,7 +613,7 @@ internal static class SptGeometryBuilder
         var targetDistance = Math.Clamp(frac, 0f, 1f) * rings[^1].Distance;
         if (targetDistance <= rings[0].Distance)
         {
-            return (rings[0].Pos, rings[0].Frame);
+            return (rings[0].Pos, rings[0].Frame, rings[0].Radius);
         }
 
         for (var i = 1; i < rings.Count; i++)
@@ -513,15 +628,16 @@ internal static class SptGeometryBuilder
             var span = upper.Distance - lower.Distance;
             var lt = span > 1e-6f ? (targetDistance - lower.Distance) / span : 0f;
             var pos = Vector3.Lerp(lower.Pos, upper.Pos, lt);
-            return (pos, lower.Frame);
+            var radius = MathF.Max(0f, lower.Radius + (upper.Radius - lower.Radius) * lt);
+            return (pos, lower.Frame, radius);
         }
 
-        return (rings[^1].Pos, rings[^1].Frame);
+        return (rings[^1].Pos, rings[^1].Frame, rings[^1].Radius);
     }
 
     private static void AddLeafCard(
         MeshBuffer buf, Vector3 center, Vector3 right, Vector3 up, Vector3 normal, SptLeafTextureCoords uv,
-        float x0, float x1, float y0, float y1, bool billboard = false)
+        float x0, float x1, float y0, float y1, bool billboard = false, float windWeight = 0f)
     {
         var p00 = center + right * x0 + up * y0;
         var p10 = center + right * x1 + up * y0;
@@ -533,10 +649,12 @@ internal static class SptGeometryBuilder
             // Encode the card as center (tangent) + signed 2D card-space offset (bitangent) so the GPU
             // leaf-billboard VS rebuilds it camera-facing (SpeedTree's CPU-side leaf billboard, moved to
             // the shader). The baked positions still hold a real 3D quad for bounds + the CPU still path.
-            var v00b = buf.Add(p00, normal, uv[0], center, new Vector3(x0, y0, 0f));
-            var v10b = buf.Add(p10, normal, uv[1], center, new Vector3(x1, y0, 0f));
-            var v11b = buf.Add(p11, normal, uv[2], center, new Vector3(x1, y1, 0f));
-            var v01b = buf.Add(p01, normal, uv[3], center, new Vector3(x0, y1, 0f));
+            // bitangent.z = per-leaf wind weight (a [0,1] blend factor, NOT a size — ApplyHeightScale
+            // leaves it untouched), consumed by the VS's wind sway.
+            var v00b = buf.Add(p00, normal, uv[0], center, new Vector3(x0, y0, windWeight));
+            var v10b = buf.Add(p10, normal, uv[1], center, new Vector3(x1, y0, windWeight));
+            var v11b = buf.Add(p11, normal, uv[2], center, new Vector3(x1, y1, windWeight));
+            var v01b = buf.Add(p01, normal, uv[3], center, new Vector3(x0, y1, windWeight));
             buf.Triangle(v00b, v10b, v11b);
             buf.Triangle(v00b, v11b, v01b);
             return;
@@ -613,8 +731,9 @@ internal static class SptGeometryBuilder
                 p[i] *= scale;
             }
 
-            // Leaf-billboard tangent (card center) is a POSITION and bitangent (card offset) a SIZE — both
-            // scale with the tree, exactly like positions, or the cards would keep their pre-rescale size.
+            // Leaf-billboard tangent (card center) is a POSITION and bitangent.xy (card offset) a SIZE —
+            // both scale with the tree, or the cards would keep their pre-rescale size. bitangent.z is the
+            // per-leaf wind WEIGHT (a [0,1] factor), so it must NOT be scaled — skip every 3rd component.
             if (sub.IsLeafBillboard)
             {
                 if (sub.Tangents is { } t)
@@ -624,7 +743,10 @@ internal static class SptGeometryBuilder
 
                 if (sub.Bitangents is { } b)
                 {
-                    for (var i = 0; i < b.Length; i++) b[i] *= scale;
+                    for (var i = 0; i < b.Length; i++)
+                    {
+                        if (i % 3 != 2) b[i] *= scale;
+                    }
                 }
             }
         }
@@ -656,7 +778,7 @@ internal static class SptGeometryBuilder
         return dot < 0 ? null : barkPath[..dot] + "_n" + barkPath[dot..];
     }
 
-    private readonly record struct BranchRing(Vector3 Pos, BranchFrame Frame, float Distance);
+    private readonly record struct BranchRing(Vector3 Pos, BranchFrame Frame, float Distance, float Radius);
 
     /// <summary>
     ///     Column-major 3x3 branch frame matching the runtime ring matrix. Column X is the branch growth
