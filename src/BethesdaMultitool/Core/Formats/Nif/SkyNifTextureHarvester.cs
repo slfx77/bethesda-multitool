@@ -91,6 +91,29 @@ public static class SkyNifTextureHarvester
     }
 
     /// <summary>
+    ///     Reads ONLY the trailing <c>Sky Object Type</c> uint32 of a sky-shader block. Present on every
+    ///     <c>SkyShaderProperty</c>/<c>BSSkyShaderProperty</c> regardless of whether it carries a texture
+    ///     (the gradient atmosphere layer has an empty FileName but still a type), so the geometry
+    ///     extractor can classify a sky layer even when <see cref="TryReadSkyShaderProperty" /> finds no
+    ///     path. Null when the block is too small. Internal for unit testing.
+    /// </summary>
+    internal static SkyObjectType? ReadSkyObjectType(byte[] data, int dataOffset, int size, bool be)
+    {
+        if (dataOffset < 0 || size < 4)
+        {
+            return null;
+        }
+
+        var typePos = Math.Min(dataOffset + size, data.Length) - 4;
+        if (typePos < dataOffset)
+        {
+            return null;
+        }
+
+        return (SkyObjectType)BinaryUtils.ReadUInt32(data, typePos, be);
+    }
+
+    /// <summary>
     ///     Reads a single sky-shader block's FileName + Sky Object Type from the block content at
     ///     <paramref name="dataOffset" /> (length <paramref name="size" />). Both <c>SkyShaderProperty</c>
     ///     (FO3/FNV) and <c>BSSkyShaderProperty</c> (Skyrim+) end with <c>[SizedString FileName][uint

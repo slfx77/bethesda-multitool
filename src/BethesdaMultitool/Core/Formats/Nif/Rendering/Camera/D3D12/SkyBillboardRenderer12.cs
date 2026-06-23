@@ -14,7 +14,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 ///     v3 textured-sky billboards — the sun (disc + glare) and moon, drawn as camera-facing textured
 ///     quads at their sky directions. Mirrors the engine, which draws each celestial object as a
 ///     4-vertex billboard quad with a NiBillboard controller (decompiled Sun::Initialize /
-///     Moon::Initialize). Drawn right AFTER the <see cref="SkyDomeRenderer12" /> gradient and BEFORE
+///     Moon::Initialize). Drawn right AFTER the <see cref="SkyGeometryRenderer12" /> sky dome and BEFORE
 ///     terrain, depth test/write OFF (DSV stays bound) — so depth-written geometry overwrites it and
 ///     mountains correctly hide the sun.
 ///     <para>
@@ -37,8 +37,13 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
     private const float Radius = 30000f;
     private const float SunDiscHalfSize = Radius * 0.040f;
     private const float SunGlareHalfSize = Radius * 0.160f;
-    private const float MoonHalfSize = Radius * 0.060f;   // Masser (or the single Fallout moon)
-    private const float SecundaHalfSize = Radius * 0.042f; // Skyrim's smaller second moon
+    // Eyeball-tuned half-extents (NOT engine-exact). The engine draws the moon as its own billboard quad
+    // (Sky\Moon.cpp: Moon::Initialize builds a ±size quad from a data-global moon size at VA 0x8323C980,
+    // passed through Moon::Moon → Moon+0x6c). Matching it exactly would need that size plus the engine's
+    // sky-dome radius to get the angular size; until then this is hand-sized for readability. Bumped from
+    // 0.060 → 0.090 (moon read too small).
+    private const float MoonHalfSize = Radius * 0.090f;   // Masser (or the single Fallout moon)
+    private const float SecundaHalfSize = Radius * 0.063f; // Skyrim's smaller second moon (kept ~0.7× Masser)
     private const float GlareAlpha = 0.5f; // the glare halo is fainter than the disc
 
     private readonly GpuCommandRecorder12 _recorder;

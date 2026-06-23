@@ -289,6 +289,38 @@ public static class AtmosphereState
 
     private static Vector3 ToVec(WeatherRgba c) => new(c.R / 255f, c.G / 255f, c.B / 255f);
 
+    /// <summary>
+    ///     Samples a cloud-layer's PNAM Time-of-Day color — RGB tint + <b>A = layer opacity</b> — for the
+    ///     given game hour, using the SAME windowed band blend as the sky colors (Sky::FillColorBlend).
+    ///     Public so the sky-geometry renderer can resolve each cloud layer's engine per-draw color uniform
+    ///     (SkyShader::SetupGeometryConstants) per frame, instead of a guessed daylight tint.
+    /// </summary>
+    public static Vector4 SampleCloudColor(WeatherColor c, float gameHour, ClimateTiming? timing)
+    {
+        var (srB, srE, ssB, ssE) = NormalizeWindows(timing ?? ClimateTiming.Default);
+        return SampleBand4(c, WrapHour(gameHour), srB, srE, ssB, ssE);
+    }
+
+    // RGBA twin of SampleBand — identical windowed blend, but keeps the alpha channel (cloud opacity).
+    private static Vector4 SampleBand4(WeatherColor c, float hour, float srB, float srE, float ssB, float ssE)
+    {
+        var srMid = (srB + srE) * 0.5f;
+        var ssMid = (ssB + ssE) * 0.5f;
+        var night = ToVec4(c.Night);
+        var sunrise = ToVec4(c.Sunrise);
+        var day = ToVec4(c.Day);
+        var sunset = ToVec4(c.Sunset);
+
+        if (hour < srB || hour >= ssE) return night;
+        if (hour < srMid) return Vector4.Lerp(night, sunrise, (hour - srB) / (srMid - srB));
+        if (hour < srE) return Vector4.Lerp(sunrise, day, (hour - srMid) / (srE - srMid));
+        if (hour < ssB) return day;
+        if (hour < ssMid) return Vector4.Lerp(day, sunset, (hour - ssB) / (ssMid - ssB));
+        return Vector4.Lerp(sunset, night, (hour - ssMid) / (ssE - ssMid));
+    }
+
+    private static Vector4 ToVec4(WeatherRgba c) => new(c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f);
+
     private static float Lerp1(float a, float b, float t) => a + ((b - a) * t);
 
     private static float WrapHour(float hour)

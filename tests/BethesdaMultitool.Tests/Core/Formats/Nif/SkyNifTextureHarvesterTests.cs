@@ -78,6 +78,20 @@ public sealed class SkyNifTextureHarvesterTests
         Assert.Equal(@"textures\sky\SkyStars.dds", fileName);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadSkyObjectType_ReadsTrailingTypeEvenWithoutATexture(bool bigEndian)
+    {
+        // The gradient atmosphere layer has an EMPTY FileName (SkyObjectType.Sky), so TryReadSkyShaderProperty
+        // finds no path — but ReadSkyObjectType still recovers the type from the trailing uint32, which is
+        // how the geometry extractor classifies a gradient layer.
+        var block = BuildSkyShaderProperty(fileName: "", (uint)SkyObjectType.Sky, bigEndian);
+
+        Assert.Equal(SkyObjectType.Sky, SkyNifTextureHarvester.ReadSkyObjectType(block, 0, block.Length, bigEndian));
+        Assert.False(SkyNifTextureHarvester.TryReadSkyShaderProperty(block, 0, block.Length, bigEndian, out _, out _));
+    }
+
     [Fact]
     public void TryReadSkyShaderProperty_RejectsTruncatedBlock()
     {

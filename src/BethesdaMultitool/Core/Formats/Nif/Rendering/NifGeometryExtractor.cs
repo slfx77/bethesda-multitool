@@ -320,6 +320,7 @@ internal static class NifGeometryExtractor
             var specularColor = (R: 0f, G: 0f, B: 0f);
             var isEyeEnvmap = false;
             var envMapScale = 0f;
+            SkyObjectType? skyType = null;
             List<int>? propRefs = null;
             if (shapePropertyMap.TryGetValue(shapeIndex, out propRefs))
             {
@@ -379,6 +380,35 @@ internal static class NifGeometryExtractor
                         break;
                     }
                 }
+
+                // SkyShaderProperty (FO3/FNV) / BSSkyShaderProperty (Skyrim+): a layer of a climate sky
+                // NIF (atmosphere / stars / clouds). Classify it by its Sky Object Type and take the baked
+                // texture from the sky-shader's own FileName (the gradient atmosphere layer has none). The
+                // sky renderer keys blend + texture-source off SkyType — version-driven, not a heuristic.
+                foreach (var propRef in propRefs)
+                {
+                    if (propRef < 0 || propRef >= nif.Blocks.Count)
+                    {
+                        continue;
+                    }
+
+                    var typeName = nif.Blocks[propRef].TypeName;
+                    if (typeName is not ("SkyShaderProperty" or "BSSkyShaderProperty"))
+                    {
+                        continue;
+                    }
+
+                    var block = nif.Blocks[propRef];
+                    skyType = SkyNifTextureHarvester.ReadSkyObjectType(data, block.DataOffset, block.Size, nif.IsBigEndian);
+                    if (SkyNifTextureHarvester.TryReadSkyShaderProperty(
+                            data, block.DataOffset, block.Size, nif.IsBigEndian, out _, out var skyFile) &&
+                        !string.IsNullOrWhiteSpace(skyFile))
+                    {
+                        diffusePath = skyFile;
+                    }
+
+                    break;
+                }
             }
 
             // Look up skinning data for this shape (null if not skinned or bind-pose mode)
@@ -403,6 +433,7 @@ internal static class NifGeometryExtractor
             if (submesh != null)
             {
                 submesh.SourceBlockIndex = shapeIndex;
+                submesh.SkyType = skyType;
                 submesh.IsBillboard = billboardShapes?.Contains(shapeIndex) == true;
 
                 if (propRefs != null &&

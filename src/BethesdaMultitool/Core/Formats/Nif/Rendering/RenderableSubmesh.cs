@@ -149,6 +149,16 @@ internal sealed class RenderableSubmesh
     public int SourceBlockIndex { get; set; } = -1;
 
     /// <summary>
+    ///     Sky-dome classification when this submesh came from a <c>SkyShaderProperty</c> (FO3/FNV) or
+    ///     <c>BSSkyShaderProperty</c> (Skyrim+) — i.e. it's a layer of a climate sky NIF (atmosphere /
+    ///     stars / clouds). Null for ordinary world geometry. The sky renderer keys blend + texture-source
+    ///     off this (gradient for SKY, additive for STARS, alpha + weather-override for CLOUDS), so the
+    ///     decision is driven by the real NIF data, not a per-game heuristic. <see cref="DiffuseTexturePath" />
+    ///     holds the layer's baked texture (empty for the gradient atmosphere layer).
+    /// </summary>
+    public SkyObjectType? SkyType { get; set; }
+
+    /// <summary>
     ///     True if this submesh's geometry sat under a <c>NiBillboardNode</c> in the source NIF
     ///     (e.g. the smoke glow under "billboardUp" in effects\NVashpile01.NIF). The billboard node's
     ///     own rotation is dropped during the bake (only its translation is kept) so the renderer can
