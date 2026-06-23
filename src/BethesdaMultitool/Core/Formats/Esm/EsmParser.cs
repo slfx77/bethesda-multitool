@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Utils;
@@ -411,6 +412,36 @@ public static class EsmParser
     /// <param name="compressedData">The compressed record data including the 4-byte size prefix.</param>
     /// <param name="bigEndian">True for Xbox 360 (BE), false for PC (LE).</param>
     /// <returns>Decompressed data, or null if decompression fails.</returns>
+    /// <summary>
+    ///     Lenient sibling of <see cref="DecompressRecordData" /> for memory-dump data preservation:
+    ///     salvages the decompressible prefix of a compressed record whose zlib payload is cut short in
+    ///     the dump. Returns the recovered bytes plus whether the full declared size was reached. Returns
+    ///     empty when the 4-byte size prefix is implausible (a false-positive signature match) or nothing
+    ///     inflates. Callers feed the (possibly partial) bytes through the normal subrecord iterator, which
+    ///     stops cleanly at the buffer's end so only whole leading subrecords are parsed.
+    /// </summary>
+    public static (byte[] Data, bool IsComplete) DecompressRecordDataPartial(
+        ReadOnlySpan<byte> compressedData, bool bigEndian)
+    {
+        if (compressedData.Length < 5)
+        {
+            return ([], false);
+        }
+
+        var decompressedSize = bigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(compressedData)
+            : BinaryPrimitives.ReadUInt32LittleEndian(compressedData);
+
+        // A garbage size prefix (0 or absurdly large) means this isn't a real compressed record — don't
+        // attempt recovery on signature-scan false positives.
+        if (decompressedSize is 0 or > 16 * 1024 * 1024)
+        {
+            return ([], false);
+        }
+
+        return EsmHelpers.DecompressZlibPartial(compressedData[4..].ToArray(), (int)decompressedSize);
+    }
+
     public static byte[]? DecompressRecordData(ReadOnlySpan<byte> compressedData, bool bigEndian)
     {
         if (compressedData.Length < 5)
@@ -444,3 +475,4 @@ public static class EsmParser
         }
     }
 }
+

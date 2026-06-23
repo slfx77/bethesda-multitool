@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
@@ -593,6 +594,14 @@ public sealed class RecordParser
         totalSw.Stop();
         Logger.Instance.Info(
             $"[Semantic Parse] Complete. Time: {totalSw.Elapsed}, Records: {result.TotalRecordsParsed}");
+
+        if (_context.PartiallyRecoveredFormIds.Count > 0)
+        {
+            Logger.Instance.Info(
+                "[Semantic Parse] Recovered {0} truncated compressed record(s) from the memory dump " +
+                "(leading subrecords preserved; set FALLOUT_ESM_DISABLE_DMP_PARTIAL_RECOVERY=1 to disable).",
+                _context.PartiallyRecoveredFormIds.Count);
+        }
 
         progress?.Report((100, "Complete"));
         return result;

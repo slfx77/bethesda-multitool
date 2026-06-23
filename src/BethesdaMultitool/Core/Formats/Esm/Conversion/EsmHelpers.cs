@@ -12,6 +12,67 @@ namespace BethesdaMultitool.Core.Formats.Esm.Conversion;
 public static class EsmHelpers
 {
     /// <summary>
+    ///     Lenient sibling of <see cref="DecompressZlib" /> for salvaging truncated streams (memory-dump
+    ///     data preservation). Inflates as much as possible and returns whatever bytes came out together
+    ///     with whether the full declared size was reached, instead of throwing on a short result. A
+    ///     complete stream returns the full payload with <c>IsComplete=true</c>; a stream cut short in the
+    ///     dump returns its decompressible prefix with <c>IsComplete=false</c>; unrecoverable garbage
+    ///     (bad zlib header, nothing inflates) returns an empty array.
+    /// </summary>
+    public static (byte[] Data, bool IsComplete) DecompressZlibPartial(byte[] compressedData, int decompressedSize)
+    {
+        // Strict zlib path first — a complete, valid stream inflates to exactly the declared size.
+        try
+        {
+            using var inputStream = new MemoryStream(compressedData);
+            using var zlibStream = new ZLibStream(inputStream, CompressionMode.Decompress);
+            using var outputStream = new MemoryStream(decompressedSize);
+            zlibStream.CopyTo(outputStream);
+            var result = outputStream.ToArray();
+            if (result.Length >= decompressedSize)
+            {
+                return (result, true);
+            }
+
+            if (result.Length > 0)
+            {
+                return (result, false); // ended short without throwing — treat as partial
+            }
+        }
+        catch (InvalidDataException)
+        {
+            // Truncated/corrupt: the trailing Adler-32 (and possibly the final block) is missing. Fall
+            // through to a raw-DEFLATE inflate that keeps the bytes produced before the cut.
+        }
+
+        // Raw-DEFLATE inflate: skip the 2-byte zlib (CMF/FLG) header and keep whatever inflates. Do NOT
+        // chop a trailing checksum here (unlike DecompressZlib's complete-stream fallback) — a truncated
+        // stream has no Adler-32 to chop, and CopyTo writes each chunk before any truncation throw.
+        if (compressedData.Length > 2)
+        {
+            using var rawInput = new MemoryStream(compressedData, 2, compressedData.Length - 2);
+            using var deflateStream = new DeflateStream(rawInput, CompressionMode.Decompress);
+            using var rawOutput = new MemoryStream(decompressedSize);
+            try
+            {
+                deflateStream.CopyTo(rawOutput);
+            }
+            catch (InvalidDataException)
+            {
+                // Keep the bytes inflated before the truncation point.
+            }
+
+            var partial = rawOutput.ToArray();
+            if (partial.Length > 0)
+            {
+                return (partial, partial.Length >= decompressedSize);
+            }
+        }
+
+        return ([], false);
+    }
+
+    /// <summary>
     ///     Decompresses zlib-compressed data.
     /// </summary>
     public static byte[] DecompressZlib(byte[] compressedData, int decompressedSize)

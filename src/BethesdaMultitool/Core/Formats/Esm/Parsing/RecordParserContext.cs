@@ -1,6 +1,8 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Localization;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -24,6 +26,7 @@ public sealed class RecordParserContext
 {
     private readonly Dictionary<string, List<DetectedMainRecord>> _recordsByType;
     private Dictionary<uint, uint>? _refToBase;
+    private readonly bool _recoverPartialCompressed;
 
     /// <summary>
     ///     Creates the parser context over a scan result, optionally backed by a memory-mapped
@@ -59,6 +62,12 @@ public sealed class RecordParserContext
         FileSize = fileSize;
         MinidumpInfo = minidumpInfo;
         LocalizedStrings = localizedStrings;
+
+        // Partial recovery of truncated compressed records is ON by default for memory dumps (their
+        // compressed payloads are often cut short by the partial capture) and never applies to clean
+        // on-disk ESMs. Opt out via EnvironmentVariables.Esm.DisableDmpPartialRecovery.
+        _recoverPartialCompressed = minidumpInfo != null
+            && !EnvironmentVariables.IsEnabled(EnvironmentVariables.Esm.DisableDmpPartialRecovery);
 
         // Create runtime struct reader if we have both accessor and minidump info
         // Uses probe-based auto-detection of early vs final build struct layout
@@ -164,6 +173,14 @@ public sealed class RecordParserContext
 
     /// <summary>Detected game/engine, auto-detected from the scan result or TES4/HEDR.</summary>
     public BethesdaGame Game { get; }
+
+    /// <summary>
+    ///     FormIDs of compressed records whose zlib payload was truncated in a memory dump and only
+    ///     partially recovered (complete leading subrecords salvaged, the cut-off tail dropped). Empty for
+    ///     clean ESMs and for records that decompressed fully. Lets callers report/flag preserved-partial
+    ///     provenance.
+    /// </summary>
+    public HashSet<uint> PartiallyRecoveredFormIds { get; } = [];
 
     /// <summary>
     ///     External string tables for a localized plugin (Skyrim/FO4/Starfield with the TES4 0x80
@@ -493,14 +510,36 @@ public sealed class RecordParserContext
 
         var decompressed = EsmParser.DecompressRecordData(
             useBuffer.AsSpan(0, dataSize), record.IsBigEndian);
-        if (decompressed == null)
+        if (decompressed != null)
         {
-            Logger.Instance.Debug(
-                "  [ReadRecordData] NULL: {0} 0x{1:X8} decompression failed (flags=0x{2:X8}, dataSize={3})",
-                record.RecordType, record.FormId, record.Flags, dataSize);
+            return (decompressed, decompressed.Length);
         }
 
-        return decompressed != null ? (decompressed, decompressed.Length) : null;
+        // Strict decompress failed. For memory dumps (opt-out via Esm.DisableDmpPartialRecovery), salvage
+        // the complete leading subrecords of a truncated compressed payload instead of dropping the whole
+        // record — the iterator stops cleanly at the buffer's end, so the cut-off tail is never emitted.
+        if (_recoverPartialCompressed)
+        {
+            var (partial, isComplete) = EsmParser.DecompressRecordDataPartial(
+                useBuffer.AsSpan(0, dataSize), record.IsBigEndian);
+            if (partial.Length > 0)
+            {
+                if (!isComplete)
+                {
+                    PartiallyRecoveredFormIds.Add(record.FormId);
+                    Logger.Instance.Debug(
+                        "  [ReadRecordData] PARTIAL: {0} 0x{1:X8} recovered {2} bytes from truncated compressed payload",
+                        record.RecordType, record.FormId, partial.Length);
+                }
+
+                return (partial, partial.Length);
+            }
+        }
+
+        Logger.Instance.Debug(
+            "  [ReadRecordData] NULL: {0} 0x{1:X8} decompression failed (flags=0x{2:X8}, dataSize={3})",
+            record.RecordType, record.FormId, record.Flags, dataSize);
+        return null;
     }
 
     /// <summary>
@@ -820,3 +859,4 @@ public sealed class RecordParserContext
 
     #endregion
 }
+
