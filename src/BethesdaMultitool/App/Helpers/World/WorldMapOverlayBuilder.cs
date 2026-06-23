@@ -1,9 +1,12 @@
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core.Formats.SaveGame;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Games;
@@ -67,6 +70,7 @@ internal static class WorldMapOverlayBuilder
         // Build spawn resolution index
         var spawnIndex = SpawnResolutionIndex.Build(semantic);
         var usageIndex = FormUsageIndex.Build(semantic);
+        var (moonPrimarySize, moonSecondarySize) = ComputeMoonSizes(semantic);
 
         return new WorldViewData
         {
@@ -95,6 +99,8 @@ internal static class WorldMapOverlayBuilder
             HeightmapMaxCellY = hmMaxY,
             SourceFilePath = sourceFilePath,
             Game = DetectGame(sourceFilePath),
+            MoonPrimaryHalfSizeFraction = moonPrimarySize,
+            MoonSecondaryHalfSizeFraction = moonSecondarySize,
             SpawnIndex = spawnIndex,
             UsageIndex = usageIndex,
             RefPositionIndex = refPositionIndex,
@@ -116,6 +122,24 @@ internal static class WorldMapOverlayBuilder
     /// </summary>
     private static BethesdaGame DetectGame(string? sourceFilePath)
         => GameDetector.DetectFromFile(sourceFilePath).Game;
+
+    // Engine-exact moon-disc sizes for the loaded game, read from its GMSTs: iMasserSize / iSecundaSize
+    // (the ±size billboard quad half-extent) ÷ fSunXExtreme (the sky-dome horizontal radius), as a fraction
+    // of the billboard radius. This is the engine's exact apparent-size model (decompiled from FNV Moon.cpp
+    // + Skyrim TESV Moon::Initialize); because they're GMSTs the values vary per game/mod (FNV 85 / dome 800,
+    // Skyrim 90 / dome 400), so reading them here makes the moon exact and mod-aware. Either fraction is null
+    // when its GMSTs are absent (e.g. Morrowind TES3) → the viewer uses the per-game SkyMoonProfile default.
+    private static (float? Primary, float? Secondary) ComputeMoonSizes(RecordCollection records)
+    {
+        int? GmstInt(string id) => records.GameSettings
+            .FirstOrDefault(g => string.Equals(g.EditorId, id, StringComparison.OrdinalIgnoreCase))?.IntValue;
+        float? GmstFloat(string id) => records.GameSettings
+            .FirstOrDefault(g => string.Equals(g.EditorId, id, StringComparison.OrdinalIgnoreCase))?.FloatValue;
+
+        var sunXExtreme = GmstFloat("fSunXExtreme");
+        return (SkyMoonProfile.FractionFromGmst(GmstInt("iMasserSize"), sunXExtreme),
+                SkyMoonProfile.FractionFromGmst(GmstInt("iSecundaSize"), sunXExtreme));
+    }
 
     /// <summary>
     ///     Build <see cref="WorldViewData" /> from a save file, optionally enriched with a supplementary ESM.
@@ -206,6 +230,7 @@ internal static class WorldMapOverlayBuilder
         var (refrToCellIndex, refPositionIndex) = BuildRefrIndices(suppRecords.Cells);
         var spawnIndex = SpawnResolutionIndex.Build(suppRecords);
         var usageIndex = FormUsageIndex.Build(suppRecords);
+        var (moonPrimarySize, moonSecondarySize) = ComputeMoonSizes(suppRecords);
 
         return new WorldViewData
         {
@@ -233,6 +258,8 @@ internal static class WorldMapOverlayBuilder
             HeightmapMinCellX = hmMinX,
             HeightmapMaxCellY = hmMaxY,
             SourceFilePath = supplementaryEsmPath,
+            MoonPrimaryHalfSizeFraction = moonPrimarySize,
+            MoonSecondaryHalfSizeFraction = moonSecondarySize,
             SpawnIndex = spawnIndex,
             UsageIndex = usageIndex,
             RefPositionIndex = refPositionIndex,
@@ -528,3 +555,4 @@ internal static class WorldMapOverlayBuilder
         return (refrToCellIndex, refPositionIndex);
     }
 }
+

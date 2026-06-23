@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -103,6 +104,20 @@ internal sealed class WorldViewData
     /// </summary>
     public BethesdaGame Game { get; init; } = BethesdaGame.Unknown;
 
+    /// <summary>
+    ///     Engine-exact apparent moon sizes for this game, read from its GMSTs at load:
+    ///     <c>iMasserSize</c> / <c>iSecundaSize</c> (the ±size billboard quad half-extent) divided by
+    ///     <c>fSunXExtreme</c> (the sky-dome horizontal radius), expressed as a fraction of the billboard
+    ///     radius. Null when the GMSTs are absent (Morrowind TES3, save/DMP with no settings table), in
+    ///     which case the 3D viewer falls back to the per-game <c>SkyMoonProfile</c> default. Mod-aware:
+    ///     an ESM that overrides these GMSTs changes the rendered moon size automatically.
+    /// </summary>
+    public float? MoonPrimaryHalfSizeFraction { get; init; }
+
+    /// <summary>Engine-exact Secunda size (see <see cref="MoonPrimaryHalfSizeFraction" />); only used by
+    /// two-moon games.</summary>
+    public float? MoonSecondaryHalfSizeFraction { get; init; }
+
     /// <summary>Spawn resolution index for leveled list and AI package lookups.</summary>
     public SpawnResolutionIndex? SpawnIndex { get; init; }
 
@@ -183,3 +198,4 @@ internal sealed class WorldViewData
     /// </summary>
     public bool IsMemoryDump { get; set; }
 }
+

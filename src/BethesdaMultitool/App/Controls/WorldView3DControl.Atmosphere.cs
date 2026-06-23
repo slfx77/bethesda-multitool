@@ -1,6 +1,7 @@
 using System.IO;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -264,38 +265,32 @@ public sealed partial class WorldView3DControl
     // NIF carries it) and act as a safety net for stars when a sky NIF can't be harvested.
     private static readonly string[] StarCandidates =
         { @"textures\sky\skystars.dds", @"textures\sky\stars.dds" };
-    private static readonly string[] MoonCandidates =
-        { @"textures\sky\skymoonfull.dds", @"textures\sky\masser_full.dds" };
-    private static readonly string[] SecundaCandidates =
-        { @"textures\sky\secunda_full.dds" };
 
-    // The sun/moon/secunda billboards + the moon/star archive-probe fallbacks reproduce the
-    // early-Gamebryo/Creation sky (Oblivion, FO3, FNV, Skyrim). Games whose sky the viewer models
-    // differently (FO4/FO76/Starfield) or not at all (Morrowind/Unknown) must NOT probe a moon — else a
-    // conventional sky-texture name that happens to exist in the loaded game's OWN archives gets drawn as
-    // a billboard moon it never had. Mirrors the dome-layer "unknown game → skip layers" gating.
-    private bool GameHasSkyBillboards() => _data?.Game is
-        BethesdaMultitool.Core.Games.BethesdaGame.Oblivion
-        or BethesdaMultitool.Core.Games.BethesdaGame.Fallout3
-        or BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas
-        or BethesdaMultitool.Core.Games.BethesdaGame.Skyrim;
+    // The per-game moon configuration: how many moons this engine draws, from which assets, at what
+    // apparent size. Each Bethesda engine differs (Morrowind/Oblivion/Skyrim draw two moons, FO3/FNV/4/76
+    // one, Starfield/Unknown none), so the moon is resolved from the loaded game rather than a shared
+    // constant — and each game probes only ITS own moon assets, so the wrong game's texture can never be
+    // drawn as a billboard moon. Cheap (returns a cached per-game singleton); read per use.
+    private SkyMoonProfile MoonProfile =>
+        SkyMoonProfile.ForGame(_data?.Game ?? BethesdaMultitool.Core.Games.BethesdaGame.Unknown);
 
     // Builds the sky texture set from the loaded climate + weather. Stars come from the climate's own
     // MODL sky-dome NIF (the sky-shader block tagged STARS); clouds from the active weather's last
     // meaningful cloud layer; moons by probing the loaded archives (engine-procedural, not in the data).
     private SkyTexturePaths ResolveSkyTexturePaths(ClimateRecord? climate, WeatherRecord? weather)
     {
-        // The generic moon/secunda/star archive PROBE is only a billboard-sky feature; gate it on the game
-        // so a non-billboard game (FO4/FO76/Starfield/Morrowind) can't surface a probe match as a moon.
-        var billboards = GameHasSkyBillboards();
+        // The moon/secunda/star archive PROBE is only a billboard-sky feature; drive it from the per-game
+        // moon profile so a game with no billboard moon can't surface a probe match, and each game probes
+        // only ITS own moon assets at ITS own count.
+        var moon = MoonProfile;
 
         // Skyrim's stars.nif tags FOUR blocks STARS (base stars + two constellation layers + galaxy); the
         // single-layer skybox wants the dense base field, so prefer the one whose name reads like "stars"
         // (FNV has just one — SkyStars.dds — which also matches). Falls back to the first STARS block, then
         // an archive probe when no sky NIF is harvestable. The HARVEST stays ungated (it reads the loaded
-        // game's own climate NIF); only the generic probe fallback is gated.
+        // game's own climate NIF); only the generic probe fallback is gated to billboard-moon games.
         var star = HarvestSkyNifTexture(climate?.ModelPath, SkyObjectType.Stars, preferNameContains: "star")
-                   ?? (billboards ? ProbeFirstExisting(StarCandidates) : null);
+                   ?? (moon.HasMoon ? ProbeFirstExisting(StarCandidates) : null);
 
         var cloud = PickCloudTexture(weather)
                     ?? HarvestSkyNifTexture(climate?.ModelPath, SkyObjectType.Clouds, preferNameContains: null);
@@ -305,8 +300,8 @@ public sealed partial class WorldView3DControl
             SunGlare: climate?.SunGlareTexture,
             Cloud: cloud,
             Star: star,
-            Moon: billboards ? ProbeFirstExisting(MoonCandidates) : null,
-            Secunda: billboards ? ProbeFirstExisting(SecundaCandidates) : null);
+            Moon: moon.HasMoon ? ProbeFirstExisting(moon.PrimaryTextureCandidates) : null,
+            Secunda: moon.HasSecondMoon ? ProbeFirstExisting(moon.SecondaryTextureCandidates) : null);
     }
 
     // The active weather's clouds = its last non-placeholder cloud layer (DNAM/CNAM/ANAM/BNAM, layer
@@ -377,7 +372,7 @@ public sealed partial class WorldView3DControl
     }
 
     // First candidate path that exists in the loaded texture archives / loose files, or null if none do.
-    private string? ProbeFirstExisting(string[] candidates)
+    private string? ProbeFirstExisting(IReadOnlyList<string> candidates)
     {
         if (_textureResolver12 is null) return null;
         foreach (var candidate in candidates)
@@ -463,10 +458,20 @@ public sealed partial class WorldView3DControl
         var secCosE = MathF.Cos(secElev);
         var secundaDir = Vector3.Normalize(new Vector3(MathF.Cos(secAz) * secCosE, MathF.Sin(secAz) * secCosE, MathF.Sin(secElev)));
 
+        // Per-game moon disc sizes (fraction of the billboard radius → world half-extent). Prefer the
+        // engine-exact size read from the loaded ESM's GMSTs (iMasserSize/iSecundaSize ÷ fSunXExtreme —
+        // mod-aware), falling back to the per-game SkyMoonProfile default when the GMSTs are absent
+        // (Morrowind TES3, DMP/save without a settings table).
+        var moonProfile = MoonProfile;
+        var primaryFraction = _data?.MoonPrimaryHalfSizeFraction ?? moonProfile.PrimaryHalfSizeFraction;
+        var secondaryFraction = _data?.MoonSecondaryHalfSizeFraction ?? moonProfile.SecondaryHalfSizeFraction;
+        var moonHalf = SkyBillboardRenderer12.Radius * primaryFraction;
+        var moon2Half = SkyBillboardRenderer12.Radius * secondaryFraction;
+
         _skyBillboards.Render(viewProj, camPos, camRight, camUp,
             sunDir, sunFade, sunTint, _sunDiscTexIndex, _sunGlareTexIndex,
-            moonDir, moonFade, _moonTexIndex,
-            secundaDir, moonFade, _moonSecundaTexIndex);
+            moonDir, moonFade, _moonTexIndex, moonHalf,
+            secundaDir, moonFade, _moonSecundaTexIndex, moon2Half);
     }
 
     /// <summary>Maps the lighting panel's current weather selection to <see cref="_selectedWeather" />

@@ -31,20 +31,16 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
     public const uint NoTexture = uint.MaxValue;
 
     // Sky-sphere radius the billboards sit on (world units). Depth is off, so this only sets the
-    // projected screen position/size — kept well inside the camera far plane. Half-sizes are the
-    // quad's world half-extent at that radius (≈ radius * tan(angular half-size)); tuned for a
-    // readable sun/moon, larger for the soft glare halo.
-    private const float Radius = 30000f;
+    // projected screen position/size — kept well inside the camera far plane. Public so the per-game
+    // moon profile (SkyMoonProfile) can size each game's moon disc against it (half-extent =
+    // Radius * fraction ≈ radius * tan(angular half-size)).
+    public const float Radius = 30000f;
     private const float SunDiscHalfSize = Radius * 0.040f;
     private const float SunGlareHalfSize = Radius * 0.160f;
-    // Eyeball-tuned half-extents (NOT engine-exact). The engine draws the moon as its own billboard quad
-    // (Sky\Moon.cpp: Moon::Initialize builds a ±size quad from a data-global moon size at VA 0x8323C980,
-    // passed through Moon::Moon → Moon+0x6c). Matching it exactly would need that size plus the engine's
-    // sky-dome radius to get the angular size; until then this is hand-sized for readability. Bumped from
-    // 0.060 → 0.090 (moon read too small).
-    private const float MoonHalfSize = Radius * 0.090f;   // Masser (or the single Fallout moon)
-    private const float SecundaHalfSize = Radius * 0.063f; // Skyrim's smaller second moon (kept ~0.7× Masser)
     private const float GlareAlpha = 0.5f; // the glare halo is fainter than the disc
+    // Moon half-extents are NOT a shared constant any more: each engine draws a different number of moons
+    // at different apparent sizes, so the per-game SkyMoonProfile supplies moonHalfSize/moon2HalfSize per
+    // draw (FNV/Skyrim decompile-grounded, the rest hand-tuned). See SkyMoonProfile.
 
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
@@ -136,8 +132,8 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
     public void Render(
         Matrix4x4 viewProj, Vector3 camPos, Vector3 camRight, Vector3 camUp,
         Vector3 sunDir, float sunFade, Vector3 sunColor, uint sunDiscTex, uint sunGlareTex,
-        Vector3 moonDir, float moonFade, uint moonTex,
-        Vector3 moon2Dir, float moon2Fade, uint moon2Tex)
+        Vector3 moonDir, float moonFade, uint moonTex, float moonHalfSize,
+        Vector3 moon2Dir, float moon2Fade, uint moon2Tex, float moon2HalfSize)
     {
         if (_disposed) return;
 
@@ -157,17 +153,18 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
             }
         }
 
-        // Moon(s) (night): alpha-blended lit discs. Masser, plus Skyrim's smaller Secunda when supplied.
+        // Moon(s) (night): alpha-blended lit discs. The primary moon plus an optional second moon
+        // (Secunda for the two-moon TES games), each sized by the caller's per-game SkyMoonProfile.
         if (moonFade > 0.001f && moonDir.Z > -0.05f && moonTex != NoTexture)
         {
             Draw(_psoAlpha, viewProj, camPos, camRight, camUp, moonDir,
-                MoonHalfSize, moonFade, moonTex, Vector3.One, 1f);
+                moonHalfSize, moonFade, moonTex, Vector3.One, 1f);
         }
 
         if (moon2Fade > 0.001f && moon2Dir.Z > -0.05f && moon2Tex != NoTexture)
         {
             Draw(_psoAlpha, viewProj, camPos, camRight, camUp, moon2Dir,
-                SecundaHalfSize, moon2Fade, moon2Tex, Vector3.One, 1f);
+                moon2HalfSize, moon2Fade, moon2Tex, Vector3.One, 1f);
         }
     }
 
