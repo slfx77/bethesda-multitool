@@ -1,0 +1,25 @@
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.RuntimeBuffer;
+using BethesdaMultitool.Core.Strings;
+
+namespace BethesdaMultitool.Core.Formats.Esm.Export.Report;
+
+/// <summary>
+///     Aggregated data sources for report generation. Used by both CLI and GUI
+///     to ensure identical report output regardless of entry point.
+/// </summary>
+public record ReportDataSources(
+    RecordCollection Records,
+    Dictionary<uint, string>? FormIdMap = null,
+    List<DetectedAssetString>? AssetStrings = null,
+    List<RuntimeEditorIdEntry>? RuntimeEditorIds = null,
+    StringPoolSummary? StringPool = null,
+    RuntimeStringOwnershipAnalysis? StringOwnership = null)
+{
+    private FormIdResolver? _resolver;
+
+    /// <summary>Lazily-built unified resolver from the Records dictionaries.</summary>
+    public FormIdResolver Resolver => _resolver ??= Records.CreateResolver(FormIdMap);
+}
+

@@ -1,0 +1,10 @@
+namespace BethesdaMultitool.Core.Formats.Esm.Export.Map;
+
+/// <summary>Proportional sizing values computed from the image long edge.</summary>
+public readonly record struct MapExportSizing(
+    float MarkerRadius,
+    float LabelFontSize,
+    float OutlineWidth,
+    float LabelPadH,
+    float LabelPadV,
+    float Gap);

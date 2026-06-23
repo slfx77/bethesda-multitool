@@ -1,0 +1,4 @@
+namespace BethesdaMultitool.Core.Formats.Esm.Export.Map;
+
+/// <summary>A grid line segment in pixel coordinates.</summary>
+public readonly record struct GridLine(float X1, float Y1, float X2, float Y2);
