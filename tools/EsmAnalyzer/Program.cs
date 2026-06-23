@@ -44,7 +44,10 @@ internal sealed class Program
         rootCommand.Subcommands.Add(LandCommands.CreateLandSummaryCommand());
         rootCommand.Subcommands.Add(CellTexturesCommand.Create());
         rootCommand.Subcommands.Add(WeatherDumpCommand.Create());
+        rootCommand.Subcommands.Add(SubrecordSizeCensusCommand.Create());
+        rootCommand.Subcommands.Add(CompressedRecordCheckCommand.Create());
         rootCommand.Subcommands.Add(LtexAuditCommand.Create());
+        rootCommand.Subcommands.Add(WaterLayoutCommand.Create());
         rootCommand.Subcommands.Add(ExportCommands.CreateExportLandCommand());
         rootCommand.Subcommands.Add(ExportCommands.CreateWorldmapCommand());
         rootCommand.Subcommands.Add(WorldMapDiagCommands.CreateWorldMapDiagCommand());
@@ -132,6 +135,8 @@ internal sealed class Program
         dmpCommand.Subcommands.Add(DmpRefrSweepCommand.CreateSweepRefrsCommand()); // "dmp sweep-refrs"
         dmpCommand.Subcommands.Add(DmpAttributeDanglingCommand.CreateAttributeDanglingCommand()); // "dmp attribute-dangling"
         dmpCommand.Subcommands.Add(DmpFindRefsByParentCellCommand.CreateFindRefsByParentCellCommand()); // "dmp find-refs-by-parent-cell"
+        dmpCommand.Subcommands.Add(DmpSceneryCensusCommand.CreateSceneryCensusCommand()); // "dmp scenery-census"
+        dmpCommand.Subcommands.Add(DmpUnresolvedRefsCommand.CreateUnresolvedRefsCommand()); // "dmp unresolved-refs"
         rootCommand.Subcommands.Add(dmpCommand);
 
         // Default action: show help

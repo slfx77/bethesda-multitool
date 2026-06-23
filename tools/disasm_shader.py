@@ -1,5 +1,6 @@
 """Disassemble D3D9 shaders from a Bethesda PC SDP file."""
 import argparse
+import datetime
 import struct
 import sys
 from pathlib import Path
@@ -83,14 +84,35 @@ def _parse_ctab(ctab_data):
     return result
 
 def disasm_d3d9(bytecode, const_map):
-    ops = {
-        0x01: 'mov', 0x02: 'add', 0x03: 'sub', 0x04: 'mad',
-        0x05: 'mul', 0x06: 'rcp', 0x07: 'rsq', 0x08: 'dp3', 0x09: 'dp4',
-        0x0A: 'min', 0x0B: 'max', 0x0C: 'slt', 0x0D: 'sge', 0x0E: 'exp',
-        0x0F: 'log', 0x13: 'frc', 0x23: 'abs', 0x24: 'nrm',
-        0x20: 'pow', 0x42: 'texld', 0x50: 'cmp', 0x04: 'mad', 0x12: 'lrp',
-        0x58: 'dp2add', 0x5E: 'setp',
+    # D3DSHADER_INSTRUCTION_OPCODE_TYPE (d3d9types.h): opcode -> (mnemonic, has_dst).
+    # operand[0] is the destination when has_dst; the remaining operands are sources.
+    # Source COUNT is taken from the instruction-length field, not hard-coded — that is
+    # what keeps the stream aligned through opcodes this table does not name.
+    OPCODES = {
+        0x00: ('nop', False),
+        0x01: ('mov', True), 0x02: ('add', True), 0x03: ('sub', True), 0x04: ('mad', True),
+        0x05: ('mul', True), 0x06: ('rcp', True), 0x07: ('rsq', True), 0x08: ('dp3', True),
+        0x09: ('dp4', True), 0x0A: ('min', True), 0x0B: ('max', True), 0x0C: ('slt', True),
+        0x0D: ('sge', True), 0x0E: ('exp', True), 0x0F: ('log', True), 0x10: ('lit', True),
+        0x11: ('dst', True), 0x12: ('lrp', True), 0x13: ('frc', True),
+        0x14: ('m4x4', True), 0x15: ('m4x3', True), 0x16: ('m3x4', True),
+        0x17: ('m3x3', True), 0x18: ('m3x2', True),
+        0x19: ('call', False), 0x1A: ('callnz', False), 0x1B: ('loop', False),
+        0x1C: ('ret', False), 0x1D: ('endloop', False), 0x1E: ('label', False),
+        0x20: ('pow', True), 0x21: ('crs', True), 0x22: ('sgn', True), 0x23: ('abs', True),
+        0x24: ('nrm', True), 0x25: ('sincos', True), 0x26: ('rep', False), 0x27: ('endrep', False),
+        0x28: ('if', False), 0x29: ('ifc', False), 0x2A: ('else', False), 0x2B: ('endif', False),
+        0x2C: ('break', False), 0x2D: ('breakc', False), 0x2E: ('mova', True),
+        0x40: ('texcoord', True), 0x41: ('texkill', True), 0x42: ('texld', True),
+        0x4E: ('expp', True), 0x4F: ('logp', True), 0x50: ('cnd', True),
+        0x58: ('cmp', True), 0x5A: ('dp2add', True), 0x5B: ('dsx', True), 0x5C: ('dsy', True),
+        0x5D: ('texldd', True), 0x5E: ('setp', True), 0x5F: ('texldl', True),
+        0x60: ('breakp', False),
     }
+    # Opcodes whose instruction token carries a comparison selector in bits [18:16].
+    CMP_SUFFIX = {1: 'gt', 2: 'eq', 3: 'ge', 4: 'lt', 5: 'ne', 6: 'le'}
+    # Special opcodes whose operands are NOT plain register tokens (immediates / usage).
+    OP_DCL, OP_DEFB, OP_DEFI, OP_DEF = 0x1F, 0x2F, 0x30, 0x51
 
     # Reverse map: c_register -> name
     c_names = {}
@@ -162,37 +184,60 @@ def disasm_d3d9(bytecode, const_map):
 
     lines = []
     pos = 0
-    while pos < len(bytecode):
+    sm_major = 0
+    n = len(bytecode)
+    while pos + 4 <= n:
         token = struct.unpack_from("<I", bytecode, pos)[0]
 
-        # Version
+        # Version token (first dword).
         if pos == 0:
-            profile_token = (token >> 16) & 0xFFFF
-            profile = {0xFFFE: 'vs', 0xFFFF: 'ps'}.get(profile_token, 'shader')
-            major = (token >> 8) & 0xFF
-            minor = token & 0xFF
-            lines.append(f"{profile}_{major}_{minor}")
+            profile = {0xFFFE: 'vs', 0xFFFF: 'ps'}.get((token >> 16) & 0xFFFF, 'shader')
+            sm_major = (token >> 8) & 0xFF
+            lines.append(f"{profile}_{sm_major}_{token & 0xFF}")
             pos += 4
             continue
 
-        # End
+        # End token.
         if token == 0x0000FFFF:
             lines.append("end")
             break
 
-        # Comment
+        # Comment block (CTAB etc.) — skip its payload.
         if (token & 0xFFFF) == 0xFFFE:
-            cdwords = (token >> 16) & 0x7FFF
-            pos += 4 + cdwords * 4
+            pos += 4 + ((token >> 16) & 0x7FFF) * 4
             continue
 
         opcode = token & 0xFFFF
+        predicated = ((token >> 28) & 1) if sm_major >= 2 else 0
         pos += 4
 
-        # DCL
-        if opcode == 0x1F:
-            dcl_tok = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            dst_tok = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
+        # Read the operand tokens and ALWAYS advance past exactly them, so an opcode we do not
+        # recognize is skipped at the right length instead of desyncing the stream. Special
+        # opcodes have fixed layouts; otherwise SM2.0+ carries an instruction-length field while
+        # SM1.x has none, so its operands are walked by the parameter-token marker (bit 31).
+        op_toks = []
+        fixed = {OP_DCL: 2, OP_DEF: 5, OP_DEFI: 5, OP_DEFB: 2}.get(opcode)
+        if fixed is not None:
+            for _ in range(fixed):
+                if pos + 4 > n:
+                    break
+                op_toks.append(struct.unpack_from("<I", bytecode, pos)[0])
+                pos += 4
+        elif sm_major >= 2:
+            for _ in range((token >> 24) & 0xF):
+                if pos + 4 > n:
+                    break
+                op_toks.append(struct.unpack_from("<I", bytecode, pos)[0])
+                pos += 4
+        else:  # SM1.x — consume following parameter tokens (high bit set)
+            while pos + 4 <= n and (struct.unpack_from("<I", bytecode, pos)[0] & 0x80000000):
+                op_toks.append(struct.unpack_from("<I", bytecode, pos)[0])
+                pos += 4
+        inst_len = len(op_toks)
+
+        # dcl: [usage/sampler token][destination register]
+        if opcode == OP_DCL and len(op_toks) >= 2:
+            dcl_tok, dst_tok = op_toks[0], op_toks[1]
             dst = decode_reg(dst_tok, True)
             rtype = ((dst_tok >> 28) & 0x7) | (((dst_tok >> 11) & 0x3) << 3)
             if rtype == 10:  # D3DSPR_SAMPLER
@@ -201,130 +246,44 @@ def disasm_d3d9(bytecode, const_map):
             else:
                 usage = dcl_tok & 0x1F
                 uidx = (dcl_tok >> 16) & 0xF
-                unames = {5: 'texcoord', 10: 'color'}
+                unames = {0: 'position', 1: 'blendweight', 2: 'blendindices', 3: 'normal',
+                          5: 'texcoord', 6: 'tangent', 7: 'binormal', 10: 'color'}
                 lines.append(f"dcl_{unames.get(usage, f'u{usage}')}{uidx} {dst}")
             continue
 
-        # DEF (constant definition)
-        if opcode == 0x51:
-            dst_tok = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            f0 = struct.unpack_from("<f", bytecode, pos)[0]; pos += 4
-            f1 = struct.unpack_from("<f", bytecode, pos)[0]; pos += 4
-            f2 = struct.unpack_from("<f", bytecode, pos)[0]; pos += 4
-            f3 = struct.unpack_from("<f", bytecode, pos)[0]; pos += 4
-            dst = decode_reg(dst_tok, True)
-            lines.append(f"def {dst}, {f0:.6f}, {f1:.6f}, {f2:.6f}, {f3:.6f}")
+        # def (float) / defi (int): [dst][4 immediates]
+        if opcode == OP_DEF and len(op_toks) >= 5:
+            f = struct.unpack("<4f", struct.pack("<4I", *op_toks[1:5]))
+            lines.append(f"def {decode_reg(op_toks[0], True)}, {f[0]:.6f}, {f[1]:.6f}, {f[2]:.6f}, {f[3]:.6f}")
+            continue
+        if opcode == OP_DEFI and len(op_toks) >= 5:
+            i = struct.unpack("<4i", struct.pack("<4I", *op_toks[1:5]))
+            lines.append(f"defi i{op_toks[0] & 0x7FF}, {i[0]}, {i[1]}, {i[2]}, {i[3]}")
+            continue
+        if opcode == OP_DEFB and len(op_toks) >= 2:
+            lines.append(f"defb b{op_toks[0] & 0x7FF}, {op_toks[1]}")
             continue
 
-        # DEFI
-        if opcode == 0x34:
-            dst_tok = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            i0 = struct.unpack_from("<i", bytecode, pos)[0]; pos += 4
-            i1 = struct.unpack_from("<i", bytecode, pos)[0]; pos += 4
-            i2 = struct.unpack_from("<i", bytecode, pos)[0]; pos += 4
-            i3 = struct.unpack_from("<i", bytecode, pos)[0]; pos += 4
-            lines.append(f"defi i{dst_tok & 0x7FF}, {i0}, {i1}, {i2}, {i3}")
-            continue
+        mnemonic, has_dst = OPCODES.get(opcode, (f"op_{opcode:04x}", True))
+        # Comparison selector for ifc / breakc / setp (bits [18:16] of the opcode token).
+        if opcode in (0x29, 0x2D, 0x5E):
+            mnemonic += "_" + CMP_SUFFIX.get((token >> 16) & 0x7, f"c{(token >> 16) & 0x7}")
 
-        # DEFB
-        if opcode == 0x35:
-            dst_tok = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            val = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            lines.append(f"defb b{dst_tok & 0x7FF}, {val}")
-            continue
+        # The predicate source register (when present) sits right after the destination.
+        pred_prefix = ""
+        operands = op_toks
+        if predicated and operands:
+            pidx = 1 if has_dst else 0
+            if pidx < len(operands):
+                pred_prefix = f"({decode_reg(operands[pidx])}) "
+                operands = operands[:pidx] + operands[pidx + 1:]
 
-        # Check for predication (bit 28 of instruction token)
-        predicated = (token >> 28) & 1
-        pred_token = None
-        if predicated:
-            # Next token is the predicate source register
-            pred_token = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-
-        op_name = ops.get(opcode, f'op_{opcode:04x}')
-        pred_prefix = f"({decode_reg(pred_token)}) " if predicated and pred_token is not None else ""
-
-        # SETP: setp_comp dst, src0, src1 (D3DSIO_SETP = 0x005E)
-        if opcode == 0x5E:
-            comp = (token >> 16) & 0x7
-            comp_str = {1: 'gt', 2: 'eq', 3: 'ge', 4: 'lt', 5: 'ne', 6: 'le'}.get(comp, f'c{comp}')
-            d = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            s0 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            s1 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            lines.append(f"setp_{comp_str} {decode_reg(d, True)}, {decode_reg(s0)}, {decode_reg(s1)}")
-            continue
-
-        # 1 src ops
-        if opcode in (0x01, 0x06, 0x07, 0x0E, 0x0F, 0x13, 0x23, 0x24):
-            d = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            s = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            lines.append(f"{pred_prefix}{op_name} {decode_reg(d, True)}, {decode_reg(s)}")
-            continue
-
-        # 2 src ops
-        if opcode in (0x02, 0x03, 0x05, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20):
-            d = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            s0 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            s1 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            lines.append(f"{pred_prefix}{op_name} {decode_reg(d, True)}, {decode_reg(s0)}, {decode_reg(s1)}")
-            continue
-
-        # 3 src ops (mad, lrp, cmp, dp2add)
-        if opcode in (0x04, 0x12, 0x50, 0x58):
-            d = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            s0 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            s1 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            s2 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            lines.append(f"{pred_prefix}{op_name} {decode_reg(d, True)}, {decode_reg(s0)}, {decode_reg(s1)}, {decode_reg(s2)}")
-            continue
-
-        # texkill (D3DSIO_TEXKILL = 0x41): kill pixel if any component of dst < 0
-        if opcode == 0x41:
-            d = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            lines.append(f"texkill {decode_reg(d, True)}")
-            continue
-
-        # tex family (D3DSIO_TEX = 0x42): texld, texldb, texldp, texldd
-        # In SM2.x+, instruction length in bits [27:24] of the instruction token
-        # distinguishes variants: texld=3 tokens, texldd=5 tokens
-        if opcode == 0x42:
-            inst_len = (token >> 24) & 0xF  # number of dword tokens after instruction
-            d = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            s0 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            s1 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            if inst_len >= 5:
-                # texldd: dst, texcoord, sampler, ddx, ddy
-                s2 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-                s3 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-                lines.append(f"texldd {decode_reg(d, True)}, {decode_reg(s0)}, {decode_reg(s1)}, {decode_reg(s2)}, {decode_reg(s3)}")
-            else:
-                lines.append(f"texld {decode_reg(d, True)}, {decode_reg(s0)}, {decode_reg(s1)}")
-            continue
-
-        # IF/IFC/ELSE/ENDIF
-        if opcode == 0x29:
-            s = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            lines.append(f"if {decode_reg(s)}")
-            continue
-        if opcode == 0x2A:
-            s0 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            s1 = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-            comp = (token >> 16) & 0x7
-            comp_str = {1: 'gt', 2: 'eq', 3: 'ge', 4: 'lt', 5: 'ne', 6: 'le'}.get(comp, f'c{comp}')
-            lines.append(f"if_{comp_str} {decode_reg(s0)}, {decode_reg(s1)}")
-            continue
-        if opcode in (0x2B, 0x2C):
-            lines.append(op_name)
-            continue
-        if opcode in (0x2E, 0x2F, 0x31, 0x32):
-            if opcode in (0x2E, 0x31):
-                s = struct.unpack_from("<I", bytecode, pos)[0]; pos += 4
-                lines.append(f"{op_name} {decode_reg(s)}")
-            else:
-                lines.append(op_name)
-            continue
-
-        lines.append(f"; UNKNOWN opcode 0x{opcode:04x}")
-        break
+        rendered = ", ".join(
+            decode_reg(t, is_dst=(has_dst and idx == 0)) for idx, t in enumerate(operands))
+        text = f"{pred_prefix}{mnemonic} {rendered}".rstrip()
+        if opcode not in OPCODES:
+            text = f"; UNKNOWN opcode 0x{opcode:04x} (len {inst_len}): {text}"
+        lines.append(text)
 
     return lines
 
@@ -345,11 +304,34 @@ def main():
     parser.add_argument("--sdp", default=str(DEFAULT_SDP), help="PC shaderpackage*.sdp path")
     parser.add_argument("--list", action="store_true", help="List shader records instead of disassembling")
     parser.add_argument("--contains", help="Filter --list by a case-insensitive substring")
+    parser.add_argument("--all", action="store_true",
+                        help="Disassemble every shader (optionally filtered by --prefix) into one artifact")
+    parser.add_argument("--prefix",
+                        help="Comma-separated name prefixes for --all (e.g. 'ST,DISTTREE'); case-insensitive")
     parser.add_argument("--out", help="Optional output text file")
     args = parser.parse_args()
 
     sdp_path = Path(args.sdp)
-    if args.list:
+    if args.all:
+        prefixes = [p.strip().upper() for p in (args.prefix or "").split(",") if p.strip()]
+        entries = [
+            (name, size) for _, name, _, size, _ in iter_sdp_entries(sdp_path)
+            if not prefixes or any(name.upper().startswith(p) for p in prefixes)
+        ]
+        lines = [
+            "=== SpeedTree PC shader disassembly ===",
+            f"Date: {datetime.datetime.now().isoformat(timespec='seconds')}",
+            f"Package: {sdp_path}",
+            f"Shaders: {len(entries)}" + (f" (prefix filter: {','.join(prefixes)})" if prefixes else ""),
+            "",
+        ]
+        for name, _ in entries:
+            lines.append("")
+            try:
+                lines.extend(format_shader_disassembly(sdp_path, name))
+            except Exception as exc:  # noqa: BLE001 - keep batch going past a single bad shader
+                lines.append(f"; ERROR disassembling {name}: {exc}")
+    elif args.list:
         needle = args.contains.lower() if args.contains else None
         lines = []
         for index, name, offset, size, _ in iter_sdp_entries(sdp_path):
