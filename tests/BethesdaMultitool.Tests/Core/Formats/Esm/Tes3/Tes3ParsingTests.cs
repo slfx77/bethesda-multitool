@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Tes3;
 using Xunit;
 
@@ -101,6 +102,35 @@ public class Tes3ParsingTests
         var script = "MyScript\0"u8.ToArray();
         var fields = Tes3SubrecordDecoder.Decode("NPC_", "SCRI", script);
         Assert.Equal("MyScript", Field(fields, "Script"));
+    }
+
+    [Fact]
+    public void BuildWorldspaces_SeedsSeaLevelZeroWaterForMorrowindExterior()
+    {
+        // TES3 has no DNAM and its exterior cells carry no XCLW, so without a worldspace default every
+        // coastal cell falls through to "no water" and Vvardenfell's ocean renders dry. The synthetic
+        // exterior worldspace must seed DefaultWaterHeight = 0 (engine sea-level convention). Interior
+        // cells are excluded from the exterior worldspace.
+        var cells = new List<CellRecord>
+        {
+            new() { FormId = 0x1000, GridX = 0, GridY = 0, Flags = 0x00 },  // exterior
+            new() { FormId = 0x1001, GridX = 1, GridY = 0, Flags = 0x00 },  // exterior
+            new() { FormId = 0x2000, Flags = 0x01 },                        // interior — excluded
+        };
+
+        var ws = Assert.Single(Tes3RecordParser.BuildWorldspaces(cells, 0x0000BCA9));
+
+        Assert.Equal(0f, ws.DefaultWaterHeight);
+        Assert.Equal(2, ws.Cells.Count);
+    }
+
+    [Fact]
+    public void BuildWorldspaces_NoExteriorCells_ReturnsEmpty()
+    {
+        // An all-interior plugin has no exterior worldspace to seed water on.
+        var cells = new List<CellRecord> { new() { FormId = 0x2000, Flags = 0x01 } };
+
+        Assert.Empty(Tes3RecordParser.BuildWorldspaces(cells, 0x0000BCA9));
     }
 
     private static object? Field(IReadOnlyList<Tes3SubrecordDecoder.Field> fields, string name)

@@ -409,7 +409,7 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
         return markers;
     }
 
-    private static List<WorldspaceRecord> BuildWorldspaces(List<CellRecord> cells, uint worldspaceFormId)
+    internal static List<WorldspaceRecord> BuildWorldspaces(List<CellRecord> cells, uint worldspaceFormId)
     {
         var exterior = cells.Where(c => !c.IsInterior).ToList();
         if (exterior.Count == 0)
@@ -443,6 +443,15 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
                 MapNWCellY = nwY,
                 MapSECellX = seX,
                 MapSECellY = seY,
+                // Morrowind (TES3) has no DNAM land/water-height block — that field is a Fallout 3
+                // addition (the HasWorldspaceDefaultWaterHeight capability, which TES3 lacks), and TES3
+                // exterior cells carry no XCLW: the engine renders the sea at Z 0 by convention and a
+                // cell only overrides that for an inland body of water (a WHGT, parsed into WaterHeight).
+                // Without a worldspace default every coastal cell falls through to "no water" in
+                // WorldRenderCache.ResolveEffectiveWaterHeight and Vvardenfell's ocean renders dry, so seed
+                // the sea-level-0 default here — mirroring the synthesized Oblivion default in
+                // WorldspaceRecordHandler. A cell's own WaterHeight still takes precedence over this.
+                DefaultWaterHeight = 0f,
                 Cells = exterior
             }
         ];
