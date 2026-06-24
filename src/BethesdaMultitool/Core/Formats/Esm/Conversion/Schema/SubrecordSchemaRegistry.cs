@@ -475,6 +475,43 @@ public static class SubrecordSchemaRegistry
             Description = "Sound Data"
         };
 
+        // ---- FNV completeness batch: small record-specific structs (xEdit FNV defs) ----
+        // FACT 'Faction' DATA (len 1 = Flags 1 only; full form adds Flags 2 + Unused(2)).
+        schemas[new SchemaKey("DATA", "FACT", 1)] = new SubrecordSchema(F.UInt8("Flags1"))
+        {
+            Description = "Faction flags"
+        };
+        // FACT CNAM 'Unused' float.
+        schemas[new SchemaKey("CNAM", "FACT", 4)] = new SubrecordSchema(F.Float("Unused"))
+        {
+            Description = "Faction unused"
+        };
+        // TERM 'Terminal' DNAM (3 bytes): hacking difficulty, flags, server type.
+        schemas[new SchemaKey("DNAM", "TERM", 3)] = new SubrecordSchema(
+            F.UInt8("BaseHackingDifficulty"),
+            F.UInt8("Flags"),
+            F.UInt8("ServerType"))
+        {
+            Description = "Terminal data"
+        };
+        // DIAL 'Dialog Topic' DATA (len 1 = Type only; full form adds Flags).
+        schemas[new SchemaKey("DATA", "DIAL", 1)] = new SubrecordSchema(F.UInt8("Type"))
+        {
+            Description = "Dialog type"
+        };
+        // QUST 'Quest' DATA (len 2 = Flags + Priority; full FNV form adds Unused(2) + Quest Delay float).
+        schemas[new SchemaKey("DATA", "QUST", 2)] = new SubrecordSchema(
+            F.UInt8("Flags"),
+            F.UInt8("Priority"))
+        {
+            Description = "Quest data"
+        };
+        // PACK 'Package' PKPT 'Patrol Flags' (len 1 = Repeatable only; full form adds Unused(1)).
+        schemas[new SchemaKey("PKPT", "PACK", 1)] = new SubrecordSchema(F.UInt8("Repeatable"))
+        {
+            Description = "Patrol flags"
+        };
+
         // Register category-specific schemas
         SubrecordActorSchemas.Register(schemas);
         SubrecordItemSchemas.Register(schemas);

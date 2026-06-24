@@ -20,8 +20,8 @@ public class SubrecordCompletenessTests
     // FACT/DATA, ARMA/DNAM, ARMO/DNAM, AMMO/DAT2, PACK/PKDT, WATR/DATA + WATR/DNAM, EFSH/DATA variants,
     // WTHR/NAM0 + WTHR/PNAM, WEAP/VATS(16), REFR/XLOC(12), *./MODB, QUST/DATA, DIAL/DATA, TERM/DNAM.
     // Closed so far (oracle-grounded): SOUN/SNDX, CELL/XCLC(8), IDLM+PACK/IDLC, REFR/XMBP, MESG/NAM0-9,
-    // *./MODB (intentional-raw: wbByteArray 'Unknown' cpIgnore).
-    private const int FnvRawGapBaseline = 24;
+    // *./MODB (intentional-raw), FACT/DATA+CNAM, TERM/DNAM, DIAL/DATA, QUST/DATA, PACK/PKPT.
+    private const int FnvRawGapBaseline = 18;
 
     [Fact]
     public void Fnv_Master_Has_No_New_Unmodeled_Subrecord_Shapes()
