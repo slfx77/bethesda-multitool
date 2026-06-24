@@ -38,6 +38,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     // World units per NNAM tile. FNV cells are 4096 units; ~2 tiles/cell reads as gentle swell.
     private const uint NoiseTilingWorldUnits = 2048;
 
+    // Depth-sample (in-shader) occlusion tie-break for 3D-2 water/land z-fighting: keep the water fragment
+    // when the scene geometry behind it is within this many world units of the water surface, so a shoreline
+    // where water and terrain are ~coplanar resolves in the water's favor instead of flickering on
+    // sub-ULP depth noise. Tiny vs the default DepthFalloff (0→4096), so it never reveals water that is
+    // clearly occluded. GUI-tunable: passed to the shader via WaterFrameUniforms.DepthTieBias.
+    private const float DepthTieBiasWorldUnits = 8f;
+
     // Fallback tints when the worldspace has no resolvable WATR appearance (DNAM colors).
     private static readonly Vector3 DefaultShallow = new(0.12f, 0.24f, 0.32f);
     private static readonly Vector3 DefaultDeep = new(0.03f, 0.09f, 0.16f);
@@ -119,7 +126,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         {
             DepthEnable = true,
             DepthWriteMask = D12.DepthWriteMask.Zero,
-            DepthFunc = ComparisonFunction.Greater, // reversed-Z (near→1, far→0); depth clear = 0
+            // reversed-Z (near→1, far→0; depth clear = 0). GreaterEqual (not Greater) so water WINS a
+            // coplanar tie with the terrain beneath it (3D-2 z-fighting): at a shoreline where the water
+            // plane and the land mesh resolve to the same depth, Greater would reject the water fragment
+            // and the land would flicker through; GreaterEqual draws the water. Water writes no depth, so
+            // letting it pass ties has no knock-on effect on later passes. (This hardware-test PSO is the
+            // no-scene-depth-SRV fallback; the depth-sample PSO does the same tie-break in the shader.)
+            DepthFunc = ComparisonFunction.GreaterEqual,
             StencilEnable = false,
         };
 
@@ -340,7 +353,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 DepthIndex = _depthBindlessIndex,
                 DepthNear = _depthNear,
                 DepthFar = _depthFar,
-                DepthPad = 0,
+                DepthTieBias = DepthTieBiasWorldUnits,
             };
         }
 
@@ -614,11 +627,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         public Vector4 Layer2;
         public Vector4 Layer3;
         // uint4 uDepthParams: x = scene-depth SRV bindless index (0xFFFFFFFF = none/proxy),
-        // y = near, z = far (both bit-reinterpreted floats), w = spare.
+        // y = near, z = far (both bit-reinterpreted floats), w = depth-occlusion tie-break bias
+        // (world units, asfloat in the shader) so coplanar water wins over land (3D-2).
         public uint DepthIndex;
         public float DepthNear;
         public float DepthFar;
-        public uint DepthPad;
+        public float DepthTieBias;
     }
 }
 

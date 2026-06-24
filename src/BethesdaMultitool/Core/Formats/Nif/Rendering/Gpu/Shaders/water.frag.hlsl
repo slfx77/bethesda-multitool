@@ -30,7 +30,8 @@ cbuffer Uniforms : register(b0)
     float4 uLayer1;      // per noise layer: UvScale, WindDirDeg, WindSpeed, AmpScale
     float4 uLayer2;
     float4 uLayer3;
-    uint4 uDepthParams;  // x = scene-depth SRV bindless index (0xFFFFFFFF = none), y/z = near/far bits
+    uint4 uDepthParams;  // x = scene-depth SRV bindless index (0xFFFFFFFF = none), y/z = near/far bits,
+                         // w = depth-occlusion tie-break bias (world units, asfloat) — water wins coplanar ties
 };
 
 // Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants (7×float4),
@@ -163,7 +164,11 @@ float4 main(PSInput input) : SV_Target
         float sceneDist = LinearizeDepth(sceneNdc, near, far);
         float waterDist = LinearizeDepth(input.Position.z, near, far);
         float column = sceneDist - waterDist;     // >0: water over a floor; <0: geometry occludes
-        clip(column);                              // discard water hidden behind opaque geometry
+        // 3D-2 tie-break: bias the occlusion test toward KEEPING the water (uDepthParams.w world units) so
+        // a shoreline where water and terrain are ~coplanar (column ≈ 0 ± sub-ULP depth noise) resolves to
+        // water instead of flickering. The bias is tiny vs DepthFalloff, so genuinely occluded water
+        // (column far negative) is still discarded.
+        clip(column + asfloat(uDepthParams.w));    // discard water hidden behind opaque geometry
         float start = uSurface1.y;                 // DepthFalloffStart
         float end = uSurface1.z;                   // DepthFalloffEnd
         depthT = saturate((column - start) / max(end - start, 1e-3));
