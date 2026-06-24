@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
@@ -182,9 +183,17 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         IReadOnlyList<float>? fogDistances = null;
         WeatherData? weatherData = null;
 
-        // Determine the RGBA band count once (FO3=4, FNV=6) from NAM0's length so NAM0 and PNAM both
-        // parse with the right per-entry stride regardless of subrecord order.
-        var weatherBands = DetectWeatherBands(data, dataSize, record.IsBigEndian);
+        // NAM0/PNAM per-category stride. Two distinct NAM0 layouts:
+        //  • FO3/FNV/Oblivion: a fixed 10 color categories; only the band count varies (FO3=4, FNV=6),
+        //    so it's read structurally from NAM0's length (DetectWeatherBands).
+        //  • Skyrim/FO4/FO76/SF1: a wbWeatherTimeOfDay struct per category whose width is form-versioned
+        //    (FO4/FO76/SF1 widen 4→8 RGBA bands at form version 111) and whose category COUNT grows with
+        //    form version (10→19) — so the /10 structural divide is invalid. Key the stride off the game +
+        //    form version instead and read whatever categories fit (only 0–9 are consumed downstream).
+        var modernWeather = Context.Game is BethesdaGame.Skyrim or BethesdaGame.Fallout4
+            or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
+        var modernStride = modernWeather ? ModernWeatherStride(Context.Game, ReadRecordFormVersion(record)) : 0;
+        var weatherBands = modernWeather ? 0 : DetectWeatherBands(data, dataSize, record.IsBigEndian);
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -236,14 +245,18 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 // definition. Drives the atmosphere renderer's sky/sun/ambient/fog palette (see
                 // WeatherColorType for the index meaning).
                 case "NAM0" when sub.DataLength >= 16:
-                    colors = ReadWeatherColors(subData, record.IsBigEndian, weatherBands);
+                    colors = modernWeather
+                        ? ReadWeatherColorsModern(subData, record.IsBigEndian, modernStride)
+                        : ReadWeatherColors(subData, record.IsBigEndian, weatherBands);
                     break;
                 // PNAM "Cloud Colors" (xEdit wbWeatherCloudColors): one Time-of-Day color PER CLOUD LAYER —
                 // the SAME 24-byte 6-band RGBA struct as a NAM0 category. The engine uploads this per layer
                 // as the cloud shader's per-draw color/opacity uniform (SkyShader::SetupGeometryConstants,
                 // MemDebug XEX) — so it tints the cloud sheet and its alpha is the layer opacity per band.
                 case "PNAM" when sub.DataLength >= 16:
-                    cloudColors = ReadWeatherColors(subData, record.IsBigEndian, weatherBands);
+                    cloudColors = modernWeather
+                        ? ReadWeatherColorsModern(subData, record.IsBigEndian, modernStride)
+                        : ReadWeatherColors(subData, record.IsBigEndian, weatherBands);
                     break;
                 // QNAM/RNAM "X/Y Cloud Speeds" (FNV; xEdit wbWeatherCloudSpeed): one u8 per cloud layer,
                 // the per-axis UV scroll rate. Clouds::Update accumulates layer scroll ∝ this byte × dt, so
@@ -348,6 +361,68 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         }
 
         return colors;
+    }
+
+    // Skyrim/FO4/FO76/SF1 NAM0 + PNAM categories: each is a wbWeatherTimeOfDay struct of FOUR RGBA bands
+    // (Sunrise/Day/Sunset/Night = 16 bytes). FO4/FO76/SF1 form version 111+ append FOUR more bands
+    // (Early/Late Sunrise + Early/Late Sunset = 32 bytes total) per xEdit's wbWeatherTimeOfDay. Those extra
+    // bands are interpolation aids with no engine "High Noon"/"Midnight" analogue, so HighNoon/Midnight
+    // fall back to Day/Night (matching the FO3 fallback). Unlike FO3/FNV, the category COUNT here is
+    // form-version dependent (10→19), so the stride is taken as given rather than derived from the length;
+    // only categories 0–9 (Sky/Fog/Ambient/Sunlight/Sun/Stars/Sky-Lower/Horizon/…) are consumed by the
+    // atmosphere renderer and they sit at identical ordinals across every game, so reading whatever fits at
+    // the correct stride is sufficient. Each band is one endian-aware uint with RGBA from fixed bit slots.
+    internal static List<WeatherColor> ReadWeatherColorsModern(ReadOnlySpan<byte> data, bool isBigEndian, int strideBytes)
+    {
+        const int bandBytes = 4;
+        if (strideBytes < 4 * bandBytes)
+        {
+            strideBytes = 4 * bandBytes; // never read fewer than the four base bands
+        }
+
+        var count = data.Length / strideBytes;
+        var colors = new List<WeatherColor>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var b = i * strideBytes;
+            var sunrise = ReadRgba(data.Slice(b, bandBytes), isBigEndian);
+            var day = ReadRgba(data.Slice(b + bandBytes, bandBytes), isBigEndian);
+            var sunset = ReadRgba(data.Slice(b + 2 * bandBytes, bandBytes), isBigEndian);
+            var night = ReadRgba(data.Slice(b + 3 * bandBytes, bandBytes), isBigEndian);
+            colors.Add(new WeatherColor(sunrise, day, sunset, night, day, night));
+        }
+
+        return colors;
+    }
+
+    // Per-category NAM0/PNAM stride for the version-trailered games. FO4/FO76/SF1 widen each category from
+    // 4 to 8 RGBA bands at form version 111 (xEdit wbWeatherTimeOfDay's wbFromVersion(111, …)); Skyrim never
+    // does. Stride = bands × 4 bytes (16 or 32).
+    internal static int ModernWeatherStride(BethesdaGame game, int formVersion)
+    {
+        const int bandBytes = 4;
+        var wide = formVersion >= 111
+            && game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
+        return (wide ? 8 : 4) * bandBytes;
+    }
+
+    // FO3/FNV/Skyrim/FO4/FO76/SF1 store a u16 "form version" at record-header offset 0x14 (20); Oblivion's
+    // 20-byte header has none. Read it (endian-aware) only for the modern games, where it gates NAM0's band
+    // width. Returns 0 when unavailable (scan-only path or a short/legacy header) — callers then take the
+    // narrow 4-band stride, the safe default for pre-111 records.
+    private int ReadRecordFormVersion(DetectedMainRecord record)
+    {
+        const int formVersionHeaderOffset = 20;
+        if (Context.Accessor is null || record.HeaderSize < formVersionHeaderOffset + 2)
+        {
+            return 0;
+        }
+
+        var buf = new byte[2];
+        Context.Accessor.ReadArray(record.Offset + formVersionHeaderOffset, buf, 0, 2);
+        return record.IsBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(buf)
+            : BinaryPrimitives.ReadUInt16LittleEndian(buf);
     }
 
     // The number of RGBA time bands per weather-color entry (4 for FO3, 6 for FNV). NAM0 carries a fixed

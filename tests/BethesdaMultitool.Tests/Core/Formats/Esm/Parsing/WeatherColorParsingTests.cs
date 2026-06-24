@@ -1,6 +1,7 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
@@ -99,5 +100,66 @@ public class WeatherColorParsingTests
     {
         var record = BuildSubrecord("FNAM", 24);
         Assert.Equal(6, MiscEnvironmentHandler.DetectWeatherBands(record, record.Length, false));
+    }
+
+    // --- Modern (Skyrim/FO4/FO76/SF1) NAM0 layout -------------------------------------------------------
+    // These games use a form-versioned wbWeatherTimeOfDay per category: 4 RGBA bands (16B) base, widening
+    // to 8 (32B) for FO4/FO76/SF1 at form version 111. Category COUNT is form-version dependent (10→19),
+    // so the stride is taken as given rather than derived from NAM0's length.
+
+    [Theory]
+    [InlineData(BethesdaGame.Fallout4, 131, 32)]   // FO4 retail: 8 bands
+    [InlineData(BethesdaGame.Fallout4, 110, 16)]   // FO4 pre-111: 4 bands
+    [InlineData(BethesdaGame.Fallout76, 120, 32)]
+    [InlineData(BethesdaGame.Starfield, 150, 32)]
+    [InlineData(BethesdaGame.Skyrim, 43, 16)]      // Skyrim never widens — 4 bands regardless of version
+    [InlineData(BethesdaGame.Skyrim, 200, 16)]
+    public void ModernWeatherStride_WidensOnlyForFo4PlusAtVersion111(BethesdaGame game, int formVersion, int expectedStride)
+    {
+        Assert.Equal(expectedStride, MiscEnvironmentHandler.ModernWeatherStride(game, formVersion));
+    }
+
+    [Fact]
+    public void ReadWeatherColorsModern_EightBandStride_ReadsFourBaseBands_BackfillsNoonMidnight()
+    {
+        // FO4 v111+: 32-byte stride (8 bands), but only Sunrise/Day/Sunset/Night map to our model; the
+        // extra Early/Late Sunrise/Sunset bands are skipped and HighNoon/Midnight fall back to Day/Night.
+        var colors = MiscEnvironmentHandler.ReadWeatherColorsModern(BuildCategoryBuffer(2, 8), false, 32);
+
+        Assert.Equal(2, colors.Count);
+        Assert.Equal(new WeatherRgba(1, 2, 3, 4), colors[0].Sunrise);
+        Assert.Equal(new WeatherRgba(5, 6, 7, 8), colors[0].Day);
+        Assert.Equal(new WeatherRgba(9, 10, 11, 12), colors[0].Sunset);
+        Assert.Equal(new WeatherRgba(13, 14, 15, 16), colors[0].Night);
+        Assert.Equal(colors[0].Day, colors[0].HighNoon);
+        Assert.Equal(colors[0].Night, colors[0].Midnight);
+
+        // Category 1 must START at byte 32 (32-byte stride), not 16 — this is the stride guard that a
+        // regressed 16-byte read (the FO4 "red sky" bug) would fail by landing on category 0's Early
+        // Sunrise band (17,18,19,20).
+        Assert.Equal(new WeatherRgba(33, 34, 35, 36), colors[1].Sunrise);
+        Assert.NotEqual(new WeatherRgba(17, 18, 19, 20), colors[1].Sunrise);
+    }
+
+    [Fact]
+    public void ReadWeatherColorsModern_FourBandStride_Uses16ByteStride()
+    {
+        // FO4 pre-111 / Skyrim: 16-byte stride (4 bands).
+        var colors = MiscEnvironmentHandler.ReadWeatherColorsModern(BuildCategoryBuffer(2, 4), false, 16);
+
+        Assert.Equal(2, colors.Count);
+        Assert.Equal(new WeatherRgba(1, 2, 3, 4), colors[0].Sunrise);
+        Assert.Equal(new WeatherRgba(13, 14, 15, 16), colors[0].Night);
+        Assert.Equal(colors[0].Day, colors[0].HighNoon);
+        Assert.Equal(new WeatherRgba(17, 18, 19, 20), colors[1].Sunrise);
+    }
+
+    [Fact]
+    public void ReadWeatherColorsModern_Fo4RetailNam0_Decodes19Categories()
+    {
+        // FO4 retail NAM0 is 608 bytes = 19 categories × 32 bytes (verified against Fallout4.esm
+        // 0x0024A3C1). Only categories 0–9 are consumed by the atmosphere renderer; the rest are harmless.
+        var colors = MiscEnvironmentHandler.ReadWeatherColorsModern(new byte[608], false, 32);
+        Assert.Equal(19, colors.Count);
     }
 }
