@@ -34,6 +34,13 @@ public class SubrecordCompletenessTests
     // FNV is now FULLY MODELED: zero non-intentional-raw subrecord shapes in the PC master.
     private const int FnvRawGapBaseline = 0;
 
+    // Skyrim LE (TES5) reference game. Calibrated to the current count, then ratcheted down as TES5
+    // records get modeled against wbDefinitionsTES5.pas + the Sample/Skyrim/TESV symbols.
+    // NOTE: this count is inflated by the gate keying on exact DataLength - variable-length TES5
+    // subrecords (VMAD, lstring/array subrecords, ...) appear as many shapes; a single signature-keyed
+    // registration collapses all of one subrecord's length-variants at once.
+    private const int SkyrimRawGapBaseline = 9489;
+
     [Fact]
     public void Fnv_Master_Has_No_New_Unmodeled_Subrecord_Shapes()
     {
@@ -54,6 +61,40 @@ public class SubrecordCompletenessTests
         Assert.True(gaps.Count <= FnvRawGapBaseline,
             $"FNV unmodeled subrecord shapes = {gaps.Count} (baseline {FnvRawGapBaseline}).{Environment.NewLine}" +
             $"Top gaps:{Environment.NewLine}{detail}");
+    }
+
+    [Fact]
+    public void Skyrim_Master_Has_No_New_Unmodeled_Subrecord_Shapes()
+    {
+        var esm = ResolveSkyrimEsm();
+        Assert.SkipUnless(esm is not null,
+            "Skyrim.esm not found (set BETHESDA_TEST_DATA_ROOT or install Skyrim LE).");
+
+        var result = EsmCoverageAnalyzer.AnalyzeFile(esm!);
+        var gaps = result.Subrecords
+            .Where(r => r.UsesRawByteArray && !r.IsIntentionalRaw)
+            .OrderByDescending(r => r.Count)
+            .ToList();
+
+        var detail = string.Join(
+            Environment.NewLine,
+            gaps.Take(60).Select(g => $"  {g.RecordType}/{g.Subrecord} len={g.DataLength} x{g.Count} [{g.Classification}]"));
+
+        Assert.True(gaps.Count <= SkyrimRawGapBaseline,
+            $"Skyrim unmodeled subrecord shapes = {gaps.Count} (baseline {SkyrimRawGapBaseline}).{Environment.NewLine}" +
+            $"Top gaps:{Environment.NewLine}{detail}");
+    }
+
+    private static string? ResolveSkyrimEsm()
+    {
+        var root = Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT");
+        if (!string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, "Skyrim.esm")))
+        {
+            return Path.Combine(root, "Skyrim.esm");
+        }
+
+        const string steam = @"E:\SteamLibrary\SteamApps\common\Skyrim\Data\Skyrim.esm";
+        return File.Exists(steam) ? steam : null;
     }
 
     private static string? ResolveEsm(string fileName, string repoRelativePath)
