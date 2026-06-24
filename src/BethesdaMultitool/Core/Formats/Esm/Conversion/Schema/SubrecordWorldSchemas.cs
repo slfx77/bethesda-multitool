@@ -67,6 +67,18 @@ internal static class SubrecordWorldSchemas
             Description = "Lock Information"
         };
 
+        // XLOC - 12 bytes: older form without the trailing NumTries/TimesUnlocked counts.
+        // Mirrors the leading 12 bytes (and the single Key FormID swap) of the 20-byte form.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("XLOC", null, 12)] = new SubrecordSchema(
+            F.UInt8("Level"),
+            F.Padding(3),
+            F.FormId("Key"),
+            F.UInt8("Flags"),
+            F.Padding(3))
+        {
+            Description = "Lock Information (no try counts)"
+        };
+
         // XLOD - LOD Data (12 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("XLOD", null, 12)] = new SubrecordSchema(F.Vec3("LOD"))
         {

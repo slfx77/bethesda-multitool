@@ -190,6 +190,17 @@ internal static class SubrecordItemSchemas
             Description = "VATS Data (Weapon)"
         };
 
+        // VATS - 16 bytes: minimal form (Effect + Skill/Mult/AP floats) without the trailing
+        // Silent/ModRequired/Flags byte tail. Same leading-field swaps as the 20-byte form.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("VATS", "WEAP", 16)] = new SubrecordSchema(
+            F.FormIdLittleEndian("VatSpecialEffect"),
+            F.Float("VatSpecialAP"),
+            F.Float("VatSpecialMultiplier"),
+            F.Float("VatSkillRequired"))
+        {
+            Description = "VATS Data (Weapon, no flag tail)"
+        };
+
         schemas[new SubrecordSchemaRegistry.SchemaKey("SNAM", "WEAP", 4)] = SubrecordSchema.Simple4Byte("Sound FormID");
 
         // ========================================================================
