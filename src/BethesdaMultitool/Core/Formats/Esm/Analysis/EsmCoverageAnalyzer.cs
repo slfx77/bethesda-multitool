@@ -121,7 +121,8 @@ public static class EsmCoverageAnalyzer
             [("*", "FGTS")] = "FaceGen coefficient blob; parsed for diagnostics and emitted as its canonical float payload.",
             [("*", "FGGA")] = "FaceGen coefficient blob; parsed for diagnostics and emitted as its canonical float payload.",
             [("LAND", "VNML")] = "LAND vertex normals; generated from modeled heightmaps for emitted LAND and byte-preserved otherwise.",
-            [("PROJ", "NAM2")] = "Projectile model-info texture hash blob; byte-preserved like MODT-family hashes."
+            [("PROJ", "NAM2")] = "Projectile model-info texture hash blob; byte-preserved like MODT-family hashes.",
+            [("*", "MODB")] = "Model bound-radius 'Unknown' bytes; xEdit wbByteArray('MODB','Unknown',cpIgnore) — opaque, engine-recomputed."
         };
 
     private static readonly Dictionary<(string RecordType, string Subrecord), string> CustomModeledSubrecordReasons =
