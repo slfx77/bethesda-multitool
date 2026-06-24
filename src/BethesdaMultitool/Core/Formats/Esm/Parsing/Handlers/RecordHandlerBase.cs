@@ -12,6 +12,16 @@ internal abstract class RecordHandlerBase(RecordParserContext context)
     protected readonly RecordParserContext Context = context;
 
     /// <summary>
+    ///     Records a subrecord this handler iterated over but did not model (its <c>switch</c> fell through
+    ///     to <c>default:</c>) to <see cref="UnmodeledSubrecordLog" />, so the drop is visible to the
+    ///     completeness tooling instead of silent. No-op unless <see cref="UnmodeledSubrecordLog.Enabled" />.
+    /// </summary>
+    protected static void NoteUnmodeledSubrecord(string recordType, string signature, int dataLength)
+    {
+        UnmodeledSubrecordLog.Note(recordType, signature, dataLength);
+    }
+
+    /// <summary>
     ///     Common parse loop: get records by type, rent buffer, iterate, parse each record.
     ///     When <see cref="RecordParserContext.Accessor" /> is null, uses the scan-only path.
     /// </summary>

@@ -111,6 +111,9 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
                                        ?? projectileFormId;
                     weight = TryReadAmmoWeightFromDat2(subData, record.IsBigEndian) ?? weight;
                     break;
+                default:
+                    NoteUnmodeledSubrecord("AMMO", sub.Signature, sub.DataLength);
+                    break;
             }
         }
 
@@ -455,6 +458,10 @@ internal sealed class ConsumableRecordHandler(RecordParserContext context) : Rec
 
                     break;
                 }
+
+                default:
+                    NoteUnmodeledSubrecord("ALCH", sub.Signature, sub.DataLength);
+                    break;
             }
         }
 
