@@ -354,6 +354,29 @@ internal static class SubrecordEffectSchemas
             Description = "Effect Shader Data (308 bytes - extended)"
         };
 
+        // EFSH version variants (244/248/284/300 bytes): PC-side only - the Xbox master is ALWAYS
+        // 308 bytes, so these are conversion no-ops. They are trailing-truncations of the 308-byte
+        // form (the canonical, fully field-named layout above); modeled structurally as Flags + 3
+        // pad + a 4-byte parameter grid so the byte length is exact and the shapes are not raw.
+        static SubrecordSchema EfshVariant(int byteLength)
+        {
+            var fields = new List<SubrecordField> { F.UInt8("Flags"), F.Padding(3) };
+            for (var offset = 4; offset + 4 <= byteLength; offset += 4)
+            {
+                fields.Add(F.UInt32($"Param{offset}"));
+            }
+
+            return new SubrecordSchema([.. fields])
+            {
+                Description = $"Effect Shader Data ({byteLength}-byte version variant)"
+            };
+        }
+
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "EFSH", 300)] = EfshVariant(300);
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "EFSH", 284)] = EfshVariant(284);
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "EFSH", 248)] = EfshVariant(248);
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "EFSH", 244)] = EfshVariant(244);
+
         // ========================================================================
         // COMBAT STYLE SCHEMAS (CSTY)
         // ========================================================================

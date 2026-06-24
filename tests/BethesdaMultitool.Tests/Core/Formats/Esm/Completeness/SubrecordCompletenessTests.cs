@@ -26,10 +26,13 @@ public class SubrecordCompletenessTests
     // ARMO/DNAM(4)=DR+pad, ARMA/DNAM(4)=DR+Flags (oracle-correct minimal forms),
     // DAT2(12) + PKDT(8) (PC-side minimal forms; Xbox-byte-dump confirmed these are conversion no-ops),
     // WTHR/NAM0(160) + WTHR/PNAM(64) (shorter weather color-arrays; uniform 4-byte swap like the 240/96
-    // forms, no mixed-endian special-case).
-    // Remaining 6 are the heavy version-conditional structs needing oracle version-maps + Xbox endian
-    // verification: WATR/DATA(186), WATR/DNAM(184), EFSH/DATA(300/248/244/284).
-    private const int FnvRawGapBaseline = 6;
+    // forms, no mixed-endian special-case), WATR/DNAM(184) + WATR/DATA(186) (shared 184-byte visual body
+    // + legacy U16 damage), EFSH/DATA(300/248/244/284) (PC-only version variants of the always-308 Xbox
+    // form). The Xbox byte dump confirmed every one of these is a conversion no-op (Xbox uses the
+    // canonical long form), so they are PC-side modeling only.
+    //
+    // FNV is now FULLY MODELED: zero non-intentional-raw subrecord shapes in the PC master.
+    private const int FnvRawGapBaseline = 0;
 
     [Fact]
     public void Fnv_Master_Has_No_New_Unmodeled_Subrecord_Shapes()
