@@ -218,6 +218,15 @@ internal static class SubrecordItemSchemas
             Description = "ARMO Defense Data"
         };
 
+        // DNAM - ARMO (4 bytes): minimal form, DR + padding only (DT/Flags absent).
+        // xEdit FNV ARMO DNAM = DR(s16) + Unused(2) + DT(f32) + Flags(u16) + Unused(2).
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "ARMO", 4)] = new SubrecordSchema(
+            F.Int16("DamageResistance"),
+            F.Padding(2))
+        {
+            Description = "ARMO Defense Data (DR only)"
+        };
+
         // DATA - ARMO (12 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "ARMO", 12)] = new SubrecordSchema(
             F.Int32("Value"),
@@ -260,6 +269,17 @@ internal static class SubrecordItemSchemas
         };
 
         schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "ARMA", 12)] = SubrecordSchema.FloatArray;
+
+        // DNAM - ARMA (4 bytes): minimal form, DR + Flags (DT/Unused absent). Field order differs
+        // from ARMO: xEdit FNV ARMA DNAM = DR(s16) + Flags(u16) + DT(f32) + Unused(4). The two 2-byte
+        // fields swap independently (NOTE: the 12-byte FloatArray form above 4-byte-swaps this pair —
+        // disagrees with the oracle and is flagged for review).
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DNAM", "ARMA", 4)] = new SubrecordSchema(
+            F.Int16("DamageResistance"),
+            F.UInt16("Flags"))
+        {
+            Description = "ARMA Defense Data (DR + Flags)"
+        };
 
         // ========================================================================
         // AMMO-SPECIFIC SCHEMAS
