@@ -306,6 +306,16 @@ internal static class SubrecordItemSchemas
             Description = "AMMO Secondary Data"
         };
 
+        // DAT2 - AMMO Secondary Data (12 bytes): minimal form (no Consumed Ammo/Percentage).
+        // PC-side only (Xbox master has no 12-byte DAT2). Mirrors the 20-byte leading bytes; the
+        // Xbox byte dump confirms Weight@8 is BE (swap) while the Projectile FormID stays LE (no swap).
+        schemas[new SubrecordSchemaRegistry.SchemaKey("DAT2", null, 12)] = new SubrecordSchema(
+            F.Padding(8),
+            F.Float("Weight"))
+        {
+            Description = "AMMO Secondary Data (proj/projectile/weight)"
+        };
+
         // DATA - AMEF (12 bytes) - Ammo Effect Data
         schemas[new SubrecordSchemaRegistry.SchemaKey("DATA", "AMEF", 12)] = new SubrecordSchema(
             F.UInt32("Type"),

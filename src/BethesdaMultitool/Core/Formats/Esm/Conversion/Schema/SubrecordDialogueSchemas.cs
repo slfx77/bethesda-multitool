@@ -316,6 +316,18 @@ internal static class SubrecordDialogueSchemas
             Description = "Package Data"
         };
 
+        // PKDT - Package Data (8 bytes): older/minimal form. PC-side only (Xbox master has no 8-byte
+        // PKDT; the 12-byte form converts via ConvertPkdt's special Xbox-ordering path). Models the
+        // leading 8 bytes for completeness.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("PKDT", "PACK", 8)] = new SubrecordSchema(
+            F.UInt32("iPackFlags"),
+            F.UInt8("cPackType"),
+            F.UInt8("Unused"),
+            F.UInt16("iFOBehaviorFlags"))
+        {
+            Description = "Package Data (8-byte form)"
+        };
+
         // PSDT - Package Schedule Data (8 bytes)
         schemas[new SubrecordSchemaRegistry.SchemaKey("PSDT", null, 8)] = new SubrecordSchema(
             F.UInt8("Month"),

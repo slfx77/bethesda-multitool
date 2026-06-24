@@ -23,8 +23,11 @@ public class SubrecordCompletenessTests
     // *./MODB (intentional-raw), FACT/DATA+CNAM, TERM/DNAM, DIAL/DATA, QUST/DATA, PACK/PKPT,
     // WEAP/VATS(16) + REFR/XLOC(12) (leading-field truncations of the validated 20-byte forms),
     // CTDA(20)+(24) (FO3-form prefixes of the PDB-verified 28-byte CONDITION_ITEM_DATA),
-    // ARMO/DNAM(4)=DR+pad, ARMA/DNAM(4)=DR+Flags (oracle-correct minimal forms).
-    private const int FnvRawGapBaseline = 10;
+    // ARMO/DNAM(4)=DR+pad, ARMA/DNAM(4)=DR+Flags (oracle-correct minimal forms),
+    // DAT2(12) + PKDT(8) (PC-side minimal forms; Xbox-byte-dump confirmed these are conversion no-ops).
+    // Remaining 8 are the complex version-conditional/mixed-endian structs:
+    // WATR/DATA(186)+DNAM(184), EFSH/DATA x4 versions, WTHR/NAM0(160)+PNAM(64).
+    private const int FnvRawGapBaseline = 8;
 
     [Fact]
     public void Fnv_Master_Has_No_New_Unmodeled_Subrecord_Shapes()
