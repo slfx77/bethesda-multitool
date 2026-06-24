@@ -36,6 +36,15 @@ internal static class SubrecordCellAndMiscSchemas
             Description = "Cell Grid"
         };
 
+        // XCLC - Cell Grid (8 bytes): older form without the Land Flags trailing byte.
+        // xEdit FNV 'Grid' = S32 X, S32 Y, [U8 Land Flags, Unused(3)] — the trailing 4 bytes are optional.
+        schemas[new SubrecordSchemaRegistry.SchemaKey("XCLC", null, 8)] = new SubrecordSchema(
+            F.Int32("X"),
+            F.Int32("Y"))
+        {
+            Description = "Cell Grid"
+        };
+
         // XCLR - Cell Regions (array of FormIDs)
         schemas[new SubrecordSchemaRegistry.SchemaKey("XCLR")] = SubrecordSchema.FormIdArray;
 

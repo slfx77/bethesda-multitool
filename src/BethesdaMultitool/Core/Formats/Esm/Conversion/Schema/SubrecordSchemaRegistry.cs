@@ -359,6 +359,8 @@ public static class SubrecordSchemaRegistry
         RegisterSimple4Byte(schemas, "XXXX", "Size Prefix");
         RegisterSimpleFormId(schemas, "RNAM", "FormID");
         schemas[new SchemaKey("NAM9", null, 4)] = SubrecordSchema.Simple4Byte("FormID");
+        // IDLC - Idle Animation Count. FNV uses itU32 (len 4); FO3 uses itU8 (len 1, keyed elsewhere if needed).
+        schemas[new SchemaKey("IDLC", null, 4)] = SubrecordSchema.Simple4Byte("Animation Count");
 
         // Conditional 4-byte swaps (depend on data length)
         schemas[new SchemaKey("HNAM", null, 4)] = SubrecordSchema.Simple4Byte();
@@ -408,6 +410,7 @@ public static class SubrecordSchemaRegistry
         schemas[new SchemaKey("XMRK", "REFR", 0)] = SubrecordSchema.Empty;
         schemas[new SchemaKey("XPPA", "REFR", 0)] = SubrecordSchema.Empty;
         schemas[new SchemaKey("ONAM", "REFR", 0)] = SubrecordSchema.Empty;
+        schemas[new SchemaKey("XMBP", "REFR", 0)] = SubrecordSchema.Empty; // xEdit FNV: wbEmpty 'MultiBound Primitive Marker'
 
         // Byte arrays - no conversion needed
         schemas[new SchemaKey("VNML")] = SubrecordSchema.ByteArray;
@@ -455,6 +458,21 @@ public static class SubrecordSchemaRegistry
             F.UInt32("NextObjectId"))
         {
             Description = "File Header"
+        };
+
+        // SNDX - SOUN Sound Data (12 bytes) — xEdit FNV wbStruct 'Sound Data'.
+        // swap32 at offset 4 (Flags), swap16 at offset 8 (Static attenuation); single bytes don't swap.
+        schemas[new SchemaKey("SNDX", null, 12)] = new SubrecordSchema(
+            F.UInt8("MinAttenuationDistance"),
+            F.UInt8("MaxAttenuationDistance"),
+            F.Int8("FrequencyAdjustmentPct"),
+            F.Padding(1),
+            F.UInt32("Flags"),
+            F.Int16("StaticAttenuationCdB"),
+            F.UInt8("StopTime"),
+            F.UInt8("StartTime"))
+        {
+            Description = "Sound Data"
         };
 
         // Register category-specific schemas

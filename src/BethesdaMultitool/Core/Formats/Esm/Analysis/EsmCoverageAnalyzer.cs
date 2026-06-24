@@ -545,6 +545,14 @@ public static class EsmCoverageAnalyzer
         string subrecord,
         out string reason)
     {
+        // MESG NAM0..NAM9 are xEdit wbByteArray('Unused', cpIgnore) — opaque placeholder bytes, preserved.
+        if (recordType == "MESG" && subrecord.Length == 4 && subrecord.StartsWith("NAM", StringComparison.Ordinal)
+            && char.IsAsciiDigit(subrecord[3]))
+        {
+            reason = "MESG unused button-placeholder bytes (xEdit: wbByteArray 'Unused', cpIgnore).";
+            return true;
+        }
+
         if (IntentionalRawSubrecordReasons.TryGetValue((recordType, subrecord), out var specificReason))
         {
             reason = specificReason;

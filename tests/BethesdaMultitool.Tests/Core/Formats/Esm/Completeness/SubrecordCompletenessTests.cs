@@ -15,10 +15,12 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Completeness;
 public class SubrecordCompletenessTests
 {
     // Calibrated to the current count, then ratcheted DOWN as records get fully modeled (never up). FNV
-    // is the reference game we complete first. The current 39 unmodeled shapes are the work-list, e.g.
-    // IDLE/CTDA (idle conditions), FACT/CNAM (rank names), MESG/NAM* (message flags), CELL/XCLC,
-    // PACK/PKDT, ARMA/DNAM, AMMO/DAT2, WATR/DATA — model each against the xEdit oracle, then lower this.
-    private const int FnvRawGapBaseline = 39;
+    // is the reference game we complete first. Each modeled shape lowers this toward zero. Remaining
+    // work-list (29): IDLE/CTDA + PACK/CTDA + QUST/CTDA (20/24-byte condition variants), FACT/CNAM +
+    // FACT/DATA, ARMA/DNAM, ARMO/DNAM, AMMO/DAT2, PACK/PKDT, WATR/DATA + WATR/DNAM, EFSH/DATA variants,
+    // WTHR/NAM0 + WTHR/PNAM, WEAP/VATS(16), REFR/XLOC(12), *./MODB, QUST/DATA, DIAL/DATA, TERM/DNAM.
+    // Closed so far (oracle-grounded): SOUN/SNDX, CELL/XCLC(8), IDLM+PACK/IDLC, REFR/XMBP, MESG/NAM0-9.
+    private const int FnvRawGapBaseline = 29;
 
     [Fact]
     public void Fnv_Master_Has_No_New_Unmodeled_Subrecord_Shapes()
