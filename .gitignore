@@ -96,6 +96,12 @@ tools/RttiScanner/obj/
 !tools/SignatureScanner/
 tools/SignatureScanner/bin/
 tools/SignatureScanner/obj/
+!tools/EsmSchemaGen/
+tools/EsmSchemaGen/bin/
+tools/EsmSchemaGen/obj/
+!tools/EsmSchemaGen.Tests/
+tools/EsmSchemaGen.Tests/bin/
+tools/EsmSchemaGen.Tests/obj/
 
 # Python remnants (if any)
 .venv/

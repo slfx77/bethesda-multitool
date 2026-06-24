@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Code generator: translates xEdit (TES5Edit) `wbDefinitions*.pas` record definitions into C#
+    schema-data tables for the BethesdaMultitool ESM record model. It is a pure text-in / text-out
+    tool (Pascal DSL -> IR -> generated C#), so it deliberately references NOTHING from the main
+    BethesdaMultitool library — the generated *output* lives in the main lib, the generator does not.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- CA1720: PrimType/TokenKind members (Int/Float/Double) deliberately mirror the DSL's own names.
+         CA1822/CA1859: micro-perf suggestions not worth the churn in a build-time generator. -->
+    <NoWarn>$(NoWarn);CA1720;CA1822;CA1859</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+</Project>
