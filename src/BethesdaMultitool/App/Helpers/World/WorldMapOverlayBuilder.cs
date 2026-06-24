@@ -471,26 +471,12 @@ internal static class WorldMapOverlayBuilder
 
     // -- Shared helpers for both ESM and save+ESM paths --
 
+    // Group map markers by owning worldspace, folding in markers inherited from "Use Map Data" child
+    // worldspaces. Pure record computation, so it lives in Core (WorldspaceMarkerGrouping) where it is
+    // headless-unit-testable; this WinUI builder just delegates.
     private static Dictionary<uint, List<PlacedReference>> GroupMarkersByWorldspace(
         List<WorldspaceRecord> worldspaces)
-    {
-        var markersByWorldspace = new Dictionary<uint, List<PlacedReference>>();
-        foreach (var ws in worldspaces)
-        {
-            var wsMarkers = new List<PlacedReference>();
-            foreach (var cell in ws.Cells)
-            {
-                wsMarkers.AddRange(cell.PlacedObjects.Where(o => o.IsMapMarker));
-            }
-
-            if (wsMarkers.Count > 0)
-            {
-                markersByWorldspace[ws.FormId] = wsMarkers;
-            }
-        }
-
-        return markersByWorldspace;
-    }
+        => WorldspaceMarkerGrouping.GroupByWorldspace(worldspaces);
 
     private static HashSet<uint> CollectLinkedCellFormIds(List<WorldspaceRecord> worldspaces)
     {
