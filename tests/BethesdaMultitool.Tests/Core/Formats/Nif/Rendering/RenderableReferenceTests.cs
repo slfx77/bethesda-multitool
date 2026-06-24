@@ -231,9 +231,14 @@ public sealed class RenderableReferenceTests
 
         var built = RenderableReference.TryBuild(placement)!.Value;
         Assert.Equal(new Vector3(100f, 200f, 50f), built.BoundsCenter);
-        // Generous transient fallback (raised from 256) so large OBND-less props (walls/buildings) are not
-        // edge-culled for the frame or two before their true mesh radius resolves. See ComposeWorldBounds.
-        Assert.Equal(1024f, built.BoundsRadius, 1);
+        // Transient fallback centered at the REFR position. It MUST cover single-cell architecture: decode
+        // only runs for cull survivors, so an under-sized fallback (the previous 1024) culls a large
+        // OBND-less mesh before it can decode + self-correct, leaving it permanently invisible (OBLIV-4/5 —
+        // every Oblivion record lacks OBND). Pinned to the constant, and asserted to clear cathedral scale
+        // (a CathedralStendarr01 measures a local bounds radius ~3049).
+        Assert.Equal(RenderableReference.NoBoundsFallbackRadius, built.BoundsRadius, 1);
+        Assert.True(built.BoundsRadius >= 3049f,
+            $"no-OBND fallback {built.BoundsRadius} must cover cathedral-scale architecture (~3049)");
     }
 
     [Fact]

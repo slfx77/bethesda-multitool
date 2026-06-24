@@ -40,6 +40,17 @@ internal readonly record struct RenderableReference(
     private static readonly char[] PathSeparators = ['/', '\\'];
 
     /// <summary>
+    ///     Cull-sphere radius (world units) used for a reference whose base record has NO OBND, until its
+    ///     mesh first resolves and supplies true bounds. Sized to one exterior cell (4096) so it comfortably
+    ///     contains single-cell architecture: an Oblivion cathedral measures a local bounds radius of ~3049,
+    ///     and OBND is absent on EVERY Oblivion record, so a smaller value (the previous 1024) culled such
+    ///     large meshes before they could decode and self-correct — a chicken-and-egg, since decode only runs
+    ///     for cull survivors (ReferenceRenderer12). Structures larger than one cell still need OBLIV-1
+    ///     (model-derived bounds). See memory: oblivion-nonrender-nifs-decode-ok.
+    /// </summary>
+    internal const float NoBoundsFallbackRadius = 4096f;
+
+    /// <summary>
     ///     4-pre Item B — computes the stable per-process MeshId from a ModelPath. Used to
     ///     dedupe the per-REFR mesh-cache lookup in the cull loop: instead of doing a
     ///     case-insensitive string hash + dict lookup per REFR (~80 ns × 5000 REFRs), the
@@ -228,13 +239,13 @@ internal readonly record struct RenderableReference(
         var bounds = p.Bounds;
         if (bounds is null)
         {
-            // No OBND (some MSTT / runtime-only refs) — use a generous fallback sphere centered at the
-            // REFR position. This radius is TRANSIENT: it only gates the cull until the mesh resolves,
-            // after which _meshLocalRadius supplies the true local bounds. 256 (a human-scale prop) was
-            // too small for OBND-less walls/buildings — they edge-popped for the frame or two before
-            // resolving — so use 1024 to keep large props in view; the cost is a few extra candidate
-            // loads that self-correct on resolve.
-            return (new Vector3(p.X, p.Y, p.Z), 1024f);
+            // No OBND (every Oblivion record, plus some MSTT / runtime-only refs) — use a generous fallback
+            // sphere centered at the REFR position. This radius is TRANSIENT: it only gates the cull until
+            // the mesh resolves, after which _meshLocalRadius supplies the true local bounds. It MUST cover
+            // single-cell architecture (a cathedral's local radius is ~3049): decode only runs for cull
+            // survivors, so an under-sized fallback culls a large mesh before it can decode + self-correct,
+            // leaving it permanently invisible. See NoBoundsFallbackRadius.
+            return (new Vector3(p.X, p.Y, p.Z), NoBoundsFallbackRadius);
         }
 
         // OBND is in mesh-local space. The conservative sphere = (centerLocal · world) for the
