@@ -232,11 +232,13 @@ internal static class SubrecordCellAndMiscSchemas
         // FNAM - Weather Fog Distance (24 bytes = 6 floats)
         schemas[new SubrecordSchemaRegistry.SchemaKey("FNAM", "WTHR", 24)] = SubrecordSchema.FloatArray;
 
-        // PNAM - Weather Cloud Colors (96 bytes)
+        // PNAM - Weather Cloud Colors (96 bytes; shorter color-array versions also occur)
         schemas[new SubrecordSchemaRegistry.SchemaKey("PNAM", "WTHR", 96)] = SubrecordSchema.FormIdArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("PNAM", "WTHR", 64)] = SubrecordSchema.FormIdArray;
 
-        // NAM0 - Weather Colors (240 bytes)
+        // NAM0 - Weather Colors (240 bytes; shorter color-array versions also occur)
         schemas[new SubrecordSchemaRegistry.SchemaKey("NAM0", "WTHR", 240)] = SubrecordSchema.FormIdArray;
+        schemas[new SubrecordSchemaRegistry.SchemaKey("NAM0", "WTHR", 160)] = SubrecordSchema.FormIdArray;
 
         // INAM - Weather Image Spaces (304 bytes = 76 floats)
         schemas[new SubrecordSchemaRegistry.SchemaKey("INAM", "WTHR", 304)] = SubrecordSchema.FloatArray;

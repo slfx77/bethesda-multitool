@@ -24,10 +24,12 @@ public class SubrecordCompletenessTests
     // WEAP/VATS(16) + REFR/XLOC(12) (leading-field truncations of the validated 20-byte forms),
     // CTDA(20)+(24) (FO3-form prefixes of the PDB-verified 28-byte CONDITION_ITEM_DATA),
     // ARMO/DNAM(4)=DR+pad, ARMA/DNAM(4)=DR+Flags (oracle-correct minimal forms),
-    // DAT2(12) + PKDT(8) (PC-side minimal forms; Xbox-byte-dump confirmed these are conversion no-ops).
-    // Remaining 8 are the complex version-conditional/mixed-endian structs:
-    // WATR/DATA(186)+DNAM(184), EFSH/DATA x4 versions, WTHR/NAM0(160)+PNAM(64).
-    private const int FnvRawGapBaseline = 8;
+    // DAT2(12) + PKDT(8) (PC-side minimal forms; Xbox-byte-dump confirmed these are conversion no-ops),
+    // WTHR/NAM0(160) + WTHR/PNAM(64) (shorter weather color-arrays; uniform 4-byte swap like the 240/96
+    // forms, no mixed-endian special-case).
+    // Remaining 6 are the heavy version-conditional structs needing oracle version-maps + Xbox endian
+    // verification: WATR/DATA(186), WATR/DNAM(184), EFSH/DATA(300/248/244/284).
+    private const int FnvRawGapBaseline = 6;
 
     [Fact]
     public void Fnv_Master_Has_No_New_Unmodeled_Subrecord_Shapes()
