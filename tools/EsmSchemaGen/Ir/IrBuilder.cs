@@ -126,6 +126,7 @@ public sealed class IrBuilder
                 return Field(PrimType.Half, args);
             case "wbstring":
             case "wbstringforward":
+            case "wbstringlc":
                 return Field(PrimType.ZString, args);
             case "wbstringkc":
                 return Field(PrimType.StringKC, args);
@@ -146,6 +147,7 @@ public sealed class IrBuilder
                 return BuildStruct(args);
             case "wbrstruct":
             case "wbrstructsk":
+            case "wbrstructexsk":
             case "wbrstructs":
                 return BuildStruct(args);
             case "wbarray":
@@ -163,6 +165,11 @@ public sealed class IrBuilder
                 return new EmptyDef { Signature = SignatureOf(args), Name = FirstString(args) };
             case "wbtexturedmodel":
                 return BuildTexturedModel(args);
+            case "wbunknown":
+                // xEdit's explicit "unmapped bytes" subrecord — model as an opaque byte array.
+                return Field(PrimType.ByteArray, args);
+            case "wbfromversion":
+                return BuildFromVersion(args);
             default:
                 // A reference to a defined symbol (e.g. `wbModel.SetRequired` — no args), or a
                 // Common helper function (e.g. `wbByteColors('Sunrise')`), else genuinely unknown.
@@ -297,6 +304,16 @@ public sealed class IrBuilder
         }
 
         return new StructDef(members) { Name = name };
+    }
+
+    /// <summary>
+    ///     <c>wbFromVersion(formVersion, member)</c> — a form-version gate around a single member. The
+    ///     oracle unwraps to the inner member (the version threshold is a runtime concern modeled later).
+    /// </summary>
+    private MemberDef BuildFromVersion(IReadOnlyList<WbValue> args)
+    {
+        var inner = args.FirstOrDefault(a => a is WbCall || (a is WbIdent id && !IsItType(id.Name)));
+        return inner is not null ? BuildMember(inner) : Unknown("wbFromVersion");
     }
 
     private MemberDef BuildArray(IReadOnlyList<WbValue> args, bool greedy)

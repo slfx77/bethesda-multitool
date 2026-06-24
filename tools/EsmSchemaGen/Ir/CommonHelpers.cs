@@ -22,8 +22,31 @@ public static class CommonHelpers
         "wbobnd" => Obnd(),
         // wbGenericModel — the per-game model RStruct (MODL/MODB/MODT/MODS/MODD) (FNV.pas:1080).
         "wbgenericmodel" => GenericModel(),
+        // wbVec3PosRot — a position+rotation struct: six floats (X,Y,Z position then X,Y,Z rotation).
+        "wbvec3posrot" => Vec3PosRot(args),
+        // wbModelInfo(aSignature) — the MODT-style model-info subrecord: opaque texture-hash bytes.
+        "wbmodelinfo" => ModelInfo(args),
         _ => null
     };
+
+    private static StructDef Vec3PosRot(IReadOnlyList<WbValue> args)
+    {
+        return new StructDef([
+            new FieldDef(PrimType.Float) { Name = "Position X" },
+            new FieldDef(PrimType.Float) { Name = "Position Y" },
+            new FieldDef(PrimType.Float) { Name = "Position Z" },
+            new FieldDef(PrimType.Float) { Name = "Rotation X" },
+            new FieldDef(PrimType.Float) { Name = "Rotation Y" },
+            new FieldDef(PrimType.Float) { Name = "Rotation Z" }
+        ])
+        {
+            Signature = SignatureArg(args),
+            Name = NameArg(args) ?? "Position/Rotation"
+        };
+    }
+
+    private static FieldDef ModelInfo(IReadOnlyList<WbValue> args)
+        => new(PrimType.ByteArray) { Signature = SignatureArg(args), Name = "Model Info" };
 
     private static StructDef Obnd()
     {
@@ -82,9 +105,14 @@ public static class CommonHelpers
     }
 
     private static string? SignatureArg(IReadOnlyList<WbValue> args)
-        => args.Count > 0 && args[0] is WbIdent id && !id.Name.StartsWith("it", StringComparison.Ordinal)
-            ? (id.Name == "NULL" ? "" : id.Name)
-            : null;
+    {
+        if (args.Count > 0 && args[0] is WbIdent id && !id.Name.StartsWith("it", StringComparison.Ordinal))
+        {
+            return id.Name == "NULL" ? "" : id.Name;
+        }
+
+        return null;
+    }
 
     private static string? NameArg(IReadOnlyList<WbValue> args)
         => args.OfType<WbStr>().FirstOrDefault()?.Value;
