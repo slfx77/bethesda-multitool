@@ -16,6 +16,18 @@ internal static class CtdaParser
 {
     internal static DialogueCondition Decode(ReadOnlySpan<byte> data, bool bigEndian)
     {
+        // RunOn (offset 20) and Reference (offset 24) are FNV additions; FO3-form CTDAs are
+        // 20 bytes (neither) or 24 bytes (RunOn only). Read each only when present.
+        var runOn = 0u;
+        if (data.Length >= 24)
+        {
+            runOn = bigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(data[20..])
+                : BinaryPrimitives.ReadUInt32LittleEndian(data[20..]);
+        }
+
+        var reference = data.Length >= 28 ? RecordParserContext.ReadFormId(data[24..28], bigEndian) : 0u;
+
         return new DialogueCondition
         {
             Type = data[0],
@@ -29,10 +41,8 @@ internal static class CtdaParser
             Parameter2 = bigEndian
                 ? BinaryPrimitives.ReadUInt32BigEndian(data[16..])
                 : BinaryPrimitives.ReadUInt32LittleEndian(data[16..]),
-            RunOn = bigEndian
-                ? BinaryPrimitives.ReadUInt32BigEndian(data[20..])
-                : BinaryPrimitives.ReadUInt32LittleEndian(data[20..]),
-            Reference = RecordParserContext.ReadFormId(data[24..28], bigEndian)
+            RunOn = runOn,
+            Reference = reference
         };
     }
 }

@@ -21,8 +21,9 @@ public class SubrecordCompletenessTests
     // WTHR/NAM0 + WTHR/PNAM, WEAP/VATS(16), REFR/XLOC(12), *./MODB, QUST/DATA, DIAL/DATA, TERM/DNAM.
     // Closed so far (oracle-grounded): SOUN/SNDX, CELL/XCLC(8), IDLM+PACK/IDLC, REFR/XMBP, MESG/NAM0-9,
     // *./MODB (intentional-raw), FACT/DATA+CNAM, TERM/DNAM, DIAL/DATA, QUST/DATA, PACK/PKPT,
-    // WEAP/VATS(16) + REFR/XLOC(12) (leading-field truncations of the validated 20-byte forms).
-    private const int FnvRawGapBaseline = 16;
+    // WEAP/VATS(16) + REFR/XLOC(12) (leading-field truncations of the validated 20-byte forms),
+    // CTDA(20)+(24) (FO3-form prefixes of the PDB-verified 28-byte CONDITION_ITEM_DATA).
+    private const int FnvRawGapBaseline = 12;
 
     [Fact]
     public void Fnv_Master_Has_No_New_Unmodeled_Subrecord_Shapes()

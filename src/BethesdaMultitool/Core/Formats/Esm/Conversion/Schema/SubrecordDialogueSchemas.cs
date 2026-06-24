@@ -214,6 +214,35 @@ internal static class SubrecordDialogueSchemas
             Description = "Condition Data (CONDITION_ITEM_DATA)"
         };
 
+        // CTDA - 24 bytes: FO3/older condition form without the trailing Reference FormID.
+        // Exact 24-byte prefix of CONDITION_ITEM_DATA (swap32 @4/@20, FUNCTION_DATA::Endian @8).
+        schemas[new SubrecordSchemaRegistry.SchemaKey("CTDA", null, 24)] = new SubrecordSchema(
+            F.UInt8("Type"),
+            F.Padding(3),
+            F.Float("ComparisonValue"),
+            F.UInt16("FunctionIndex"),
+            F.Padding(2),
+            F.FormId("Parameter1"),
+            F.UInt32("Parameter2"),
+            F.UInt32("RunOn"))
+        {
+            Description = "Condition Data (no Reference)"
+        };
+
+        // CTDA - 20 bytes: FO3/older condition form without RunOn + Reference (both FNV additions).
+        // Exact 20-byte prefix of CONDITION_ITEM_DATA (swap32 @4, FUNCTION_DATA::Endian @8).
+        schemas[new SubrecordSchemaRegistry.SchemaKey("CTDA", null, 20)] = new SubrecordSchema(
+            F.UInt8("Type"),
+            F.Padding(3),
+            F.Float("ComparisonValue"),
+            F.UInt16("FunctionIndex"),
+            F.Padding(2),
+            F.FormId("Parameter1"),
+            F.UInt32("Parameter2"))
+        {
+            Description = "Condition Data (no RunOn/Reference)"
+        };
+
         // ========================================================================
         // CHALLENGE SCHEMAS (CHAL)
         // ========================================================================
