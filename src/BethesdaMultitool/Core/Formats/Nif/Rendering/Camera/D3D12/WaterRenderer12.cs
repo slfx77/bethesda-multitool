@@ -343,7 +343,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 NoisePad0 = 0,
                 NoisePad1 = 0,
                 Surface0 = new Vector4(surface.NormalsUvScale, surface.FresnelAmount, surface.ReflectivityAmount, surface.Shininess),
-                Surface1 = new Vector4(surface.SunPower, surface.DepthFalloffStart, surface.DepthFalloffEnd, 0f),
+                // .w carries the lava flag (OBLIV-2): 1 = render as emissive, Fresnel-free lava (Oblivion
+                // Deadlands lava planes) instead of reflective water. Was an unused spare.
+                Surface1 = new Vector4(surface.SunPower, surface.DepthFalloffStart, surface.DepthFalloffEnd,
+                    _appearance?.IsLava == true ? 1f : 0f),
                 Layer1 = LayerToVector4(surface.Layer1),
                 Layer2 = LayerToVector4(surface.Layer2),
                 Layer3 = LayerToVector4(surface.Layer3),

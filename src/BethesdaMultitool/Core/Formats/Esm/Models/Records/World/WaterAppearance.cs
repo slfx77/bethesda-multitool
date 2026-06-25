@@ -68,18 +68,58 @@ public sealed record WaterAppearance(
     (byte R, byte G, byte B) Deep,
     (byte R, byte G, byte B) Reflection,
     string? NoiseTexture,
-    WaterSurfaceParams Surface)
+    WaterSurfaceParams Surface,
+    bool CausesDamage = false,
+    bool IsLava = false)
 {
     /// <summary>
     ///     Builds appearance from a <see cref="WaterRecord" />. Returns null when the record is
-    ///     missing or has no usable DNAM colors (caller falls back to a default tint). A missing
+    ///     missing or has no usable colors (caller falls back to a default tint). A missing
     ///     Shallow/Deep endpoint mirrors the other; a missing Reflection falls back to Shallow.
+    ///     Also surfaces the WATR FNAM "Causes Damage" flag and whether this is lava, so the renderer
+    ///     can give lava an emissive, Fresnel-free look (OBLIV-2) instead of drawing it as water.
     /// </summary>
     public static WaterAppearance? FromWaterRecord(WaterRecord? water)
     {
         if (water is null) return null;
-        return FromVisualProperties(water.VisualProperties, water.NoiseTexture);
+
+        // FNAM flags (xEdit wbDefinitions: bit 0 = Causes Damage, bit 1 = Reflective). Damaging water
+        // is lava OR oil in Oblivion (and radioactive water in Fallout), so "Causes Damage" alone does
+        // not mean lava — distinguish lava by name (every shipped Oblivion lava WATR is editor-id'd
+        // "…Lava…": OblivionCitadelLavaPlane / CamoranLava / OblivionLavaTest01; OblivionOil01 is not).
+        var causesDamage = water.WaterFlags is { Length: > 0 } f && (f[0] & 0x01) != 0;
+        var isLava = LooksLikeLava(water);
+
+        var appearance = FromVisualProperties(water.VisualProperties, water.NoiseTexture);
+        if (appearance is not null)
+        {
+            return appearance with { CausesDamage = causesDamage, IsLava = isLava };
+        }
+
+        // No usable DATA/DNAM colors. The shipping Oblivion lava planes (OblivionCitadelLavaPlane,
+        // CamoranLava) carry no vertex colors — the engine colors them from the TNAM texture, which the
+        // viewer doesn't sample for water — so without a fallback they would render as default water (the
+        // OBLIV-2 bug). Hand lava a default molten palette + the lava flag so the renderer still gives it
+        // the emissive look. Ordinary color-less water returns null so the caller keeps its own tint.
+        return isLava
+            ? new WaterAppearance(DefaultLavaShallow, DefaultLavaDeep, DefaultLavaShallow,
+                water.NoiseTexture, WaterSurfaceParams.Default, causesDamage, IsLava: true)
+            : null;
     }
+
+    // Fallback molten palette for lava records whose DATA carries no colors — bright orange crust grading
+    // to dark red by depth (the shader's lava branch boosts + pulses these).
+    private static readonly (byte R, byte G, byte B) DefaultLavaShallow = (255, 100, 30);
+    private static readonly (byte R, byte G, byte B) DefaultLavaDeep = (140, 25, 10);
+
+    // Name-based lava detection — game-agnostic and false-positive-free vs Fallout's damaging
+    // (radioactive) water, which carries no "lava" token. Checks the identifying strings the record
+    // carries (editor id, full name, noise/texture path).
+    private static bool LooksLikeLava(WaterRecord water) =>
+        ContainsLava(water.EditorId) || ContainsLava(water.FullName) || ContainsLava(water.NoiseTexture);
+
+    private static bool ContainsLava(string? s) =>
+        !string.IsNullOrEmpty(s) && s.Contains("lava", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     ///     Builds appearance from a WATR DNAM properties dictionary + the NNAM path. Returns null

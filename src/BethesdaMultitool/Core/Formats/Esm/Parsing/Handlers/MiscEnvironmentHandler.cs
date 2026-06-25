@@ -98,6 +98,13 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                         ? BinaryPrimitives.ReadUInt16BigEndian(subData)
                         : BinaryPrimitives.ReadUInt16LittleEndian(subData);
                     break;
+                // Oblivion stores its water visual data in DATA (a ~102-byte struct), not the FNV DNAM.
+                // Game-gated rather than length-gated because FNV's WATR also has a large DATA variant
+                // (the DNAM-or-DATA visual union, ~186 bytes) with a different field layout. Without this
+                // every Oblivion water renders with the default tint (all 23 Oblivion WATR have no DNAM).
+                case "DATA" when Context.Game == BethesdaGame.Oblivion && sub.DataLength >= 56:
+                    visualProps = ReadOblivionWaterData(subData, record.IsBigEndian);
+                    break;
                 case "DNAM" when sub.DataLength == 196:
                 {
                     if (SubrecordSchemaView.TryRead("DNAM", "WATR", subData, record.IsBigEndian) is { } v)
@@ -133,6 +140,28 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             RelatedWater = relatedWater,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    // Oblivion WATR DATA struct (xEdit wbDefinitionsTES4): 9 leading floats (wind/wave/SunPower@16/
+    // Reflectivity@20/Fresnel@24/scroll), FogDistance Near@36/Far@40, then the three wbByteColors at
+    // 44/48/52 (Shallow/Deep/Reflection), texture-blend, rain/displacement sims, damage. The three colors
+    // + the key surface scalars are surfaced under the SAME dictionary keys WaterAppearance reads from the
+    // FNV DNAM, so the shared color/surface decoder handles Oblivion unchanged. Colors are a byte sequence
+    // (R,G,B,A) packed R|G<<8|B<<16 (endian-independent); the scalars are endian-aware floats.
+    internal static Dictionary<string, object?> ReadOblivionWaterData(ReadOnlySpan<byte> d, bool isBigEndian)
+    {
+        static uint Color(ReadOnlySpan<byte> d, int off) =>
+            (uint)(d[off] | (d[off + 1] << 8) | (d[off + 2] << 16));
+
+        return new Dictionary<string, object?>
+        {
+            ["SunPower"] = ReadFloat(d, 16, isBigEndian),
+            ["ReflectivityAmount"] = ReadFloat(d, 20, isBigEndian),
+            ["FresnelAmount"] = ReadFloat(d, 24, isBigEndian),
+            ["ShallowColor"] = Color(d, 44),
+            ["DeepColor"] = Color(d, 48),
+            ["ReflectionColor"] = Color(d, 52),
         };
     }
 

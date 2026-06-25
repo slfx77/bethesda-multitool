@@ -129,4 +129,76 @@ public sealed class WaterAppearanceTests
         Assert.Equal((R: (byte)0x40, G: (byte)0x50, B: (byte)0x60), appearance.Deep);
         Assert.Equal("water\\water.dds", appearance.NoiseTexture);
     }
+
+    private static WaterRecord WaterWith(string? editorId, byte flags) => new()
+    {
+        FormId = 0x1,
+        EditorId = editorId,
+        WaterFlags = [flags],
+        // FromWaterRecord needs at least one color or it returns null.
+        VisualProperties = new Dictionary<string, object?> { ["ShallowColor"] = 0x00_30_20_10u }
+    };
+
+    [Fact]
+    public void FromWaterRecord_LavaByName_IsLavaAndCausesDamage()
+    {
+        // Every shipped Oblivion lava WATR is FNAM "Causes Damage" (bit 0) AND editor-id'd "…Lava…".
+        var appearance = WaterAppearance.FromWaterRecord(WaterWith("OblivionCitadelLavaPlane", 0x01));
+
+        Assert.NotNull(appearance);
+        Assert.True(appearance!.IsLava);
+        Assert.True(appearance.CausesDamage);
+    }
+
+    [Fact]
+    public void FromWaterRecord_DamagingOil_CausesDamageButNotLava()
+    {
+        // OblivionOil01 also sets Causes Damage but is not lava — name disambiguates so oil doesn't glow.
+        var appearance = WaterAppearance.FromWaterRecord(WaterWith("OblivionOil01", 0x01));
+
+        Assert.NotNull(appearance);
+        Assert.True(appearance!.CausesDamage);
+        Assert.False(appearance.IsLava);
+    }
+
+    [Fact]
+    public void FromWaterRecord_OrdinaryWater_NeitherLavaNorDamage()
+    {
+        // Reflective-only flag (bit 1) → no damage; no "lava" token → not lava.
+        var appearance = WaterAppearance.FromWaterRecord(WaterWith("DefaultWater", 0x02));
+
+        Assert.NotNull(appearance);
+        Assert.False(appearance!.CausesDamage);
+        Assert.False(appearance.IsLava);
+    }
+
+    [Fact]
+    public void FromWaterRecord_LavaTokenIsCaseInsensitive()
+    {
+        Assert.True(WaterAppearance.FromWaterRecord(WaterWith("camoranLAVA02", 0x01))!.IsLava);
+    }
+
+    [Fact]
+    public void FromWaterRecord_ColorlessLava_StillFlaggedWithMoltenFallback()
+    {
+        // The shipping Oblivion lava planes carry no DATA colors (engine colors them from TNAM). They must
+        // still come back flagged IsLava with a reddish molten palette, not null → default water.
+        var water = new WaterRecord { FormId = 0x1, EditorId = "OblivionCitadelLavaPlane", WaterFlags = [0x01] };
+
+        var a = WaterAppearance.FromWaterRecord(water);
+
+        Assert.NotNull(a);
+        Assert.True(a!.IsLava);
+        Assert.True(a.CausesDamage);
+        Assert.True(a.Shallow.R > a.Shallow.B); // molten (reddish), not a default blue water tint
+    }
+
+    [Fact]
+    public void FromWaterRecord_ColorlessOrdinaryWater_ReturnsNull()
+    {
+        // No colors and not lava → null, so the caller keeps its own default tint (unchanged behavior).
+        var water = new WaterRecord { FormId = 0x1, EditorId = "DungeonWater01", WaterFlags = [0x02] };
+
+        Assert.Null(WaterAppearance.FromWaterRecord(water));
+    }
 }

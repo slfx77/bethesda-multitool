@@ -26,7 +26,7 @@ cbuffer Uniforms : register(b0)
     float4 uCamPosTime;  // xyz = camera world pos (FNV EyePos c1), w = elapsed seconds
     uint4 uNoiseParams;  // x = NNAM bindless index (0xFFFFFFFF = none), y = world units/tile
     float4 uSurface0;    // NormalsUvScale, FresnelAmount(=F0), ReflectivityAmount, Shininess(spec exp)
-    float4 uSurface1;    // SunPower, DepthFalloffStart, DepthFalloffEnd, spare (depth-SRV upgrade hook)
+    float4 uSurface1;    // SunPower, DepthFalloffStart, DepthFalloffEnd, w = lava flag (1 = emissive lava)
     float4 uLayer1;      // per noise layer: UvScale, WindDirDeg, WindSpeed, AmpScale
     float4 uLayer2;
     float4 uLayer3;
@@ -172,6 +172,16 @@ float4 main(PSInput input) : SV_Target
         float start = uSurface1.y;                 // DepthFalloffStart
         float end = uSurface1.z;                   // DepthFalloffEnd
         depthT = saturate((column - start) / max(end - start, 1e-3));
+    }
+
+    // OBLIV-2 lava: emissive, no Fresnel/reflection/specular. The DATA Shallow/Deep colors are the molten
+    // body (bright crust -> darker by depth); output them at full brightness with a slow spatial pulse so a
+    // flow reads as lava rather than reflective water. Opaque. uSurface1.w is the lava flag (1 = lava).
+    if (uSurface1.w > 0.5)
+    {
+        float3 lava = lerp(uShallow.rgb, uDeep.rgb, depthT);
+        float pulse = 0.9 + 0.1 * sin(t * 1.5 + (input.vWorldPos.x + input.vWorldPos.y) * 0.001);
+        return float4(ApplyFog(saturate(lava * pulse * 1.3), input.vWorldPos), 1.0);
     }
 
     // FNV distance fade of ripples: full within 4096 world units, -> 0 at 8192.
