@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Generated;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
 using Xunit;
 
@@ -117,6 +118,60 @@ public class SchemaRecordDecoderTests
         // The FO4-only trailing member is absent in this Oblivion-length subrecord.
         Assert.Null(Find(first.Children, "Unused (FO4+)"));
     }
+
+    [Fact]
+    public void Decodes_Real_OblivionSchema_Npc_With_GroupStruct_And_Stats()
+    {
+        var npcSchema = OblivionSchema.Records.First(r => r.Signature == "NPC_");
+
+        // ACBS (16B): Flags=0x01(Female), spell=50, fatigue=50, barter=0, level=1, calcMin=0, calcMax=0
+        var acbs = new List<byte>();
+        acbs.AddRange(Le(0x01));
+        acbs.AddRange(U16(50));
+        acbs.AddRange(U16(50));
+        acbs.AddRange(U16(0));
+        acbs.AddRange(U16(1));
+        acbs.AddRange(U16(0));
+        acbs.AddRange(U16(0));
+
+        // DATA (33B): 21 U8 skills (Armorer=10, rest 5), Health U16=50, 2 unused, 8 U8 attributes (Str=40)
+        var data = new List<byte> { 10 };
+        data.AddRange(Enumerable.Repeat((byte)5, 20));
+        data.AddRange(U16(50));
+        data.AddRange([0, 0]);
+        data.AddRange([40, 50, 50, 50, 50, 50, 50, 50]);
+
+        var subs = new List<RawSubrecord>
+        {
+            new("EDID", Zstr("TestNpcOblivion")),
+            new("MODL", Zstr("characters\\test.nif")), // Model group struct (MODL/MODB/MODT)
+            new("ACBS", [.. acbs]),
+            new("SNAM", [.. Le(0x000A2B62), 1]), // faction 0x0A2B62, rank 1 (IsFO4Plus consumes 0)
+            new("DATA", [.. data]),
+            new("CNAM", Le(0x00023F2A)) // class FormID
+        };
+
+        var tree = SchemaRecordDecoder.Decode(npcSchema, subs, resolveName: f => f == 0x0A2B62 ? "TestFaction" : null);
+
+        // Group struct: Model appears once with the filename child (not duplicated per MODL/MODB/MODT).
+        var model = Assert.Single(tree, n => n.Label == "Model");
+        Assert.Equal("characters\\test.nif", Find(model.Children, "Model Filename")!.Value);
+
+        var acbsNode = Find(tree, "Configuration")!;
+        Assert.Contains("Female", Find(acbsNode.Children, "Flags")!.Value);
+
+        var stats = Find(tree, "Stats")!;
+        Assert.Equal("10", Find(stats.Children, "Armorer")!.Value);
+        Assert.Equal("40", Find(stats.Children, "Strength")!.Value);
+        Assert.Equal("50", Find(stats.Children, "Health")!.Value);
+
+        var factions = Find(tree, "Factions")!;
+        var faction = Find(factions.Children[0].Children, "Faction")!;
+        Assert.Equal(0x0A2B62u, faction.FormId);
+        Assert.Contains("TestFaction", faction.Value);
+    }
+
+    private static byte[] U16(ushort v) => [(byte)v, (byte)(v >> 8)];
 
     [Fact]
     public void Unmatched_Subrecord_Is_Preserved_As_Raw()

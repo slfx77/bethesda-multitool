@@ -59,14 +59,31 @@ public static class SchemaRecordDecoder
                 continue;
             }
 
-            if (member is ArrayDef array)
+            switch (member)
             {
-                output.Add(DecodeArray(array, subrecords, ref i, ctx));
-            }
-            else
-            {
-                output.Add(DecodeSignedMember(member, sub.Signature, sub.Data, ctx));
-                i++;
+                case ArrayDef array:
+                    output.Add(DecodeArray(array, subrecords, ref i, ctx));
+                    break;
+                case StructDef group when string.IsNullOrEmpty(group.Signature):
+                {
+                    // A group struct whose children each own their own subrecord (e.g. Model =
+                    // MODL + MODB + MODT). Consume one group, decoding each child from its own subrecord.
+                    var before = i;
+                    var children = DecodeOneGroup(group, subrecords, ref i, ctx);
+                    if (i == before)
+                    {
+                        output.Add(RawNode(sub.Signature, sub.Signature, sub.Data));
+                        i++;
+                        break;
+                    }
+
+                    output.Add(new DecodedNode { Label = group.Name ?? "Group", Children = children });
+                    break;
+                }
+                default:
+                    output.Add(DecodeSignedMember(member, sub.Signature, sub.Data, ctx));
+                    i++;
+                    break;
             }
         }
 
@@ -123,34 +140,14 @@ public static class SchemaRecordDecoder
         }
         else if (element is StructDef groupStruct)
         {
-            // Multi-subrecord element group (e.g. MAST filename + DATA size). A new element starts each
-            // time the group's first signed member recurs.
-            var firstSig = EntrySignatures(groupStruct).FirstOrDefault();
+            // Multi-subrecord element group (e.g. MAST filename + DATA size). Each call to DecodeOneGroup
+            // consumes one element; repeat while the group's signed children keep appearing.
             var index = 0;
-            while (i < subrecords.Count && bySignatureContains(groupStruct, subrecords[i].Signature))
+            while (i < subrecords.Count && GroupContainsSignature(groupStruct, subrecords[i].Signature))
             {
-                var groupChildren = new List<DecodedNode>();
-                var started = false;
-                foreach (var child in groupStruct.Members)
-                {
-                    if (i >= subrecords.Count || child.Signature is not { Length: > 0 } cs ||
-                        subrecords[i].Signature != cs)
-                    {
-                        continue;
-                    }
-
-                    if (started && cs == firstSig)
-                    {
-                        break; // next element begins
-                    }
-
-                    var sub = subrecords[i];
-                    groupChildren.Add(DecodeSignedMember(child, sub.Signature, sub.Data, ctx));
-                    started = true;
-                    i++;
-                }
-
-                if (groupChildren.Count == 0)
+                var before = i;
+                var groupChildren = DecodeOneGroup(groupStruct, subrecords, ref i, ctx);
+                if (i == before)
                 {
                     break; // no progress — avoid an infinite loop on a malformed stream
                 }
@@ -170,9 +167,32 @@ public static class SchemaRecordDecoder
             Value = $"{children.Count} item(s)",
             Children = children
         };
+    }
 
-        static bool bySignatureContains(StructDef group, string signature) =>
-            group.Members.Any(m => m.Signature == signature);
+    private static bool GroupContainsSignature(StructDef group, string signature) =>
+        group.Members.Any(m => m.Signature == signature);
+
+    /// <summary>
+    ///     Consumes one group element: walks the struct's signed children in order, decoding each from its
+    ///     own consecutive subrecord (skipping absent optional children). Advances <paramref name="i" />.
+    /// </summary>
+    private static List<DecodedNode> DecodeOneGroup(
+        StructDef group, IReadOnlyList<RawSubrecord> subrecords, ref int i, DecodeContext ctx)
+    {
+        var children = new List<DecodedNode>();
+        foreach (var child in group.Members)
+        {
+            if (child.Signature is not { Length: > 0 } cs || i >= subrecords.Count || subrecords[i].Signature != cs)
+            {
+                continue;
+            }
+
+            var sub = subrecords[i];
+            children.Add(DecodeSignedMember(child, sub.Signature, sub.Data, ctx));
+            i++;
+        }
+
+        return children;
     }
 
     private static string ElementLabel(MemberDef element, string fallback) =>
