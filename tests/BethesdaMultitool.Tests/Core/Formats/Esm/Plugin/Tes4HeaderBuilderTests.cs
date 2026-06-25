@@ -49,6 +49,26 @@ public class Tes4HeaderBuilderTests
     }
 
     [Fact]
+    public void ParseFileHeader_DeclaredDataSizeExceedsBuffer_ClampsInsteadOfThrowing()
+    {
+        // EsmLoadOrderResolver / GameDetector pass only an ~8 KB prefix of a plugin to sniff masters +
+        // version. Fallout 76's TES4 header is larger than that (many masters + a big ONAM overridden-form
+        // list), so the record's declared DataSize exceeds the prefix — which used to throw
+        // ArgumentOutOfRangeException on the header Slice and break FO76 load-order resolution. Simulate it
+        // by inflating the DataSize field past the buffer; ParseFileHeader must clamp and still parse the
+        // early subrecords (HEDR version + masters) that sit before the truncated tail.
+        var bytes = Tes4HeaderBuilder.Build(
+            new PluginBuildOptions { MasterFileName = "SeventySix.esm", MasterFileSize = 100 }, 0, 0x800);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4), 5_000_000); // record DataSize >> buffer
+
+        var header = EsmParser.ParseFileHeader(bytes); // must not throw
+
+        Assert.NotNull(header);
+        Assert.Equal(Tes4HeaderBuilder.HedrVersion, header!.Version);
+        Assert.Contains("SeventySix.esm", header.Masters);
+    }
+
+    [Fact]
     public void Build_OmitsAuthorAndDescription_WhenNullOrEmpty()
     {
         var bytes = Tes4HeaderBuilder.Build(

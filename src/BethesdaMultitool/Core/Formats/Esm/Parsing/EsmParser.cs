@@ -131,8 +131,16 @@ public static class EsmParser
             return null;
         }
 
-        // Parse TES4 subrecords
-        var headerData = data.Slice(format.RecordHeaderSize, (int)header.DataSize);
+        // Parse TES4 subrecords. The header record's declared DataSize can exceed the buffer when the
+        // caller passed only a PREFIX of the file — EsmLoadOrderResolver / GameDetector read ~8 KB to
+        // sniff the masters + version without loading the whole plugin. Fallout 76's TES4 header is large
+        // (many masters + a big ONAM overridden-form list), so an unclamped Slice overran the prefix and
+        // threw ArgumentOutOfRangeException, breaking FO76 load-order resolution. Clamp to the available
+        // bytes: HEDR + the MAST masters sit early (before the truncated ONAM tail) and ParseSubrecords
+        // stops cleanly at the buffer end, so load-order resolution still gets what it needs. Full-file
+        // callers are unaffected (DataSize fits, so Min picks it).
+        var headerDataLength = Math.Min((int)header.DataSize, data.Length - format.RecordHeaderSize);
+        var headerData = data.Slice(format.RecordHeaderSize, headerDataLength);
         var subrecords = ParseSubrecords(headerData, bigEndian);
 
         string? author = null;
