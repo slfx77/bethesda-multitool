@@ -125,14 +125,86 @@ public static class Fo76TerrainInjector
 
         foreach (var cell in targets)
         {
+            var gx = cell.GridX!.Value;
+            var gy = cell.GridY!.Value;
             cell.Heightmap = new LandHeightmap
             {
                 HeightDeltas = UnusedDeltas,
-                ExactHeights = BuildExactHeights(btd, cell.GridX!.Value, cell.GridY!.Value)
+                ExactHeights = BuildExactHeights(btd, gx, gy)
             };
+
+            // Attach the cell's land-texture grid so it shows its real regional textures instead of the
+            // single engine default (FO76-1B). FO76 has no in-CELL BTXT/ATXT; the textures live in the BTD.
+            if (cell.LandVisualData is null && BuildVtexFormIdGrid(btd, gx, gy) is { } vtex)
+            {
+                cell.LandVisualData = new LandVisualData
+                {
+                    VtexTextureFormIds = vtex,
+                    Source = Models.World.VisualDataSource.MasterEsm
+                };
+            }
         }
 
         return targets.Count;
+    }
+
+    // FO76 land-texture grid size for VtexTextureFormIds (16×16, row-major south→north / west→east —
+    // the renderer's Morrowind VTEX path resamples it to the live terrain grid).
+    private const int VtexGridSize = 16;
+
+    /// <summary>
+    ///     Builds the cell's 16×16 <see cref="LandVisualData.VtexTextureFormIds" /> grid from the BTD's
+    ///     per-quadrant default land texture, so FO76 terrain shows its real regional textures rather than
+    ///     the single engine default (FO76-1B). Each quadrant's dominant (base) land-texture index is mapped
+    ///     through the BTD LTEX table to an LTEX FormID, which <c>TerrainTextureResolver12</c> resolves via
+    ///     the LTEX→TXST→diffuse chain. Returns null when no quadrant has a texture (all engine-default), so
+    ///     the cell keeps the default fallback. Per-pixel alpha blending (the BTD A16 weight map) is a later
+    ///     refinement — the per-quadrant base already removes the "default everywhere" look.
+    /// </summary>
+    private static uint[]? BuildVtexFormIdGrid(BtdFile btd, int cellX, int cellY)
+    {
+        // GetCellTextureSet leaves a quadrant's default slot (byte q*16) untouched when the quadrant has no
+        // texture, so pre-fill 0xFF ("none") to detect that.
+        var texSet = new byte[64];
+        Array.Fill(texSet, (byte)0xFF);
+        btd.GetCellTextureSet(texSet, cellX, cellY);
+
+        var quadFormIds = new uint[4];
+        var anyReal = false;
+        for (var q = 0; q < 4; q++)
+        {
+            var index = texSet[q << 4];
+            if (index == 0xFF)
+            {
+                continue;
+            }
+
+            quadFormIds[q] = btd.GetLandTexture(index);
+            anyReal |= quadFormIds[q] != 0;
+        }
+
+        return anyReal ? AssembleVtexGrid(quadFormIds) : null;
+    }
+
+    /// <summary>
+    ///     Lays the four BTD quadrant land-texture FormIDs (indexed (north&lt;&lt;1)|east, i.e. SW/SE/NW/NE)
+    ///     into the renderer's 16×16 row-major (south→north rows, west→east columns) VtexTextureFormIds grid:
+    ///     SW fills the south-west 8×8 block, SE the south-east, NW the north-west, NE the north-east.
+    /// </summary>
+    internal static uint[] AssembleVtexGrid(uint[] quadrantFormIds)
+    {
+        var grid = new uint[VtexGridSize * VtexGridSize];
+        for (var r = 0; r < VtexGridSize; r++)
+        {
+            var north = r >= VtexGridSize / 2 ? 1 : 0;
+            for (var c = 0; c < VtexGridSize; c++)
+            {
+                var east = c >= VtexGridSize / 2 ? 1 : 0;
+                grid[(r * VtexGridSize) + c] = quadrantFormIds[(north << 1) | east];
+            }
+        }
+
+        return grid;
     }
 
     /// <summary>Orders cells by their 8×8-cell BTD tile, then by cell within the tile.</summary>

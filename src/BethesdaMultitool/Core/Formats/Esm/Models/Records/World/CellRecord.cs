@@ -96,7 +96,9 @@ public record CellRecord
     public LandHeightmap? Heightmap { get; set; }
 
     /// <summary>Associated LAND visual subrecords (VCLR/VTEX/BTXT/ATXT/VTXT), if found.</summary>
-    public LandVisualData? LandVisualData { get; init; }
+    // Settable (like Heightmap) so the Fallout 76 terrain injector can attach BTD-derived land-texture
+    // data to an already-parsed exterior cell (FO76 keeps terrain in an external .btd, not the CELL).
+    public LandVisualData? LandVisualData { get; set; }
 
     /// <summary>Runtime terrain mesh extracted from LoadedLandData heap pointers (if available).</summary>
     public RuntimeTerrainMesh? RuntimeTerrainMesh { get; init; }
