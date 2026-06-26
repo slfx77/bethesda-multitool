@@ -15,6 +15,7 @@ public static class EsmSchemas
     private static readonly Dictionary<string, RecordDef> OblivionByType = Index(OblivionSchema.Records);
     private static readonly Dictionary<string, RecordDef> SkyrimByType = Index(SkyrimSchema.Records);
     private static readonly Dictionary<string, RecordDef> Fallout4ByType = Index(Fallout4Schema.Records);
+    private static readonly Dictionary<string, RecordDef> Fallout76ByType = Index(Fallout76Schema.Records);
 
     /// <summary>The schema record set for the game, or null when no generated schema exists yet.</summary>
     public static IReadOnlyList<RecordDef>? ForGame(BethesdaGame game) => game switch
@@ -22,6 +23,7 @@ public static class EsmSchemas
         BethesdaGame.Oblivion => OblivionSchema.Records,
         BethesdaGame.Skyrim => SkyrimSchema.Records,
         BethesdaGame.Fallout4 => Fallout4Schema.Records,
+        BethesdaGame.Fallout76 => Fallout76Schema.Records,
         _ => null
     };
 
@@ -31,6 +33,7 @@ public static class EsmSchemas
         BethesdaGame.Oblivion => OblivionByType,
         BethesdaGame.Skyrim => SkyrimByType,
         BethesdaGame.Fallout4 => Fallout4ByType,
+        BethesdaGame.Fallout76 => Fallout76ByType,
         _ => null
     };
 

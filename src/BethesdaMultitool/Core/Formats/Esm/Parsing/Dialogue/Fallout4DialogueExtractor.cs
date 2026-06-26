@@ -9,6 +9,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 ///     Builds the typed dialogue models (<see cref="DialogTopicRecord" /> / <see cref="DialogueRecord" />)
 ///     from Fallout 4 (FO4) DIAL and INFO subrecords, so the schema-driven reader can feed the shared,
 ///     game-agnostic <see cref="Handlers.DialogueTreeBuilder" /> and the Dialogue tab works for FO4.
+///     <b>Fallout 76 reuses this extractor</b> — its DIAL/INFO layout (TRDA response struct, ENAM flags,
+///     localized NAM1/RNAM, ANAM speaker, 32-byte CTDA) is identical to FO4's; only the DIAL DATA Category
+///     enum differs, which affects the cosmetic topic-type label alone.
 ///     <para>
 ///         FO4 sits on the same Skyrim-era framing (localized text, explicit ANAM speaker, 32-byte CTDA,
 ///         DIAL FULL/QNAM/DATA-Category), so the topic build and condition parse mirror

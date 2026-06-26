@@ -188,8 +188,8 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
     /// <summary>
     ///     Builds the typed dialogue model for DIAL/INFO records (game-aware) alongside their generic
     ///     decode, so the Dialogue tab has data. Each schema game has its own extractor: Oblivion (inline
-    ///     text, 20-byte CTDA), Skyrim (localized text, TRDT, 32-byte CTDA), and FO4 (localized text, TRDA,
-    ///     32-byte CTDA). No-op for every other record type.
+    ///     text, 20-byte CTDA), Skyrim (localized text, TRDT, 32-byte CTDA), and FO4/FO76 (localized text,
+    ///     TRDA, 32-byte CTDA — FO76's INFO layout is identical to FO4's). No-op for every other type.
     /// </summary>
     private void ExtractDialogue(DetectedMainRecord record, string? editorId, IReadOnlyList<RawSubrecord> subrecords)
     {
@@ -210,7 +210,8 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
         _context.Game switch
         {
             BethesdaGame.Skyrim => SkyrimDialogueExtractor.BuildTopic(formId, editorId, subs, _context),
-            BethesdaGame.Fallout4 => Fallout4DialogueExtractor.BuildTopic(formId, editorId, subs, _context),
+            BethesdaGame.Fallout4 or BethesdaGame.Fallout76 =>
+                Fallout4DialogueExtractor.BuildTopic(formId, editorId, subs, _context),
             _ => OblivionDialogueExtractor.BuildTopic(formId, editorId, subs)
         };
 
@@ -219,7 +220,8 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
         _context.Game switch
         {
             BethesdaGame.Skyrim => SkyrimDialogueExtractor.BuildInfo(formId, editorId, topic, index, subs, _context),
-            BethesdaGame.Fallout4 => Fallout4DialogueExtractor.BuildInfo(formId, editorId, topic, index, subs, _context),
+            BethesdaGame.Fallout4 or BethesdaGame.Fallout76 =>
+                Fallout4DialogueExtractor.BuildInfo(formId, editorId, topic, index, subs, _context),
             _ => OblivionDialogueExtractor.BuildInfo(formId, editorId, topic, index, subs)
         };
 
