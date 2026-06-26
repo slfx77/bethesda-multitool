@@ -22,7 +22,7 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
 
     public RecordCollection ParseAll(IProgress<(int percent, string phase)>? progress = null)
     {
-        var generic = new List<GenericEsmRecord>(_context.ScanResult.MainRecords.Count);
+        var generic = new List<GenericEsmRecord>();
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         try
         {
@@ -30,9 +30,12 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
             var done = 0;
             foreach (var record in _context.ScanResult.MainRecords)
             {
-                generic.Add(ParseRecord(record, buffer));
+                if (!NonBrowsableChildTypes.Contains(record.RecordType))
+                {
+                    generic.Add(ParseRecord(record, buffer));
+                }
 
-                if (++done % 8192 == 0)
+                if (++done % 16384 == 0)
                 {
                     progress?.Report((total == 0 ? 100 : (int)(done * 100L / total), "Decoding records..."));
                 }
@@ -50,10 +53,23 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
             GenericRecords = generic,
             FormIdToEditorId = _context.FormIdToEditorId,
             FormIdToDisplayName = _context.FormIdToFullName,
-            TotalRecordsProcessed = _context.ScanResult.MainRecords.Count
-            // UnparsedTypeCounts left empty: every record is decoded (schema tree or identity-only).
+            TotalRecordsProcessed = generic.Count
+            // UnparsedTypeCounts left empty: browsable records are decoded; placement children are skipped.
         };
     }
+
+    /// <summary>
+    ///     Per-cell child / placement record types: extremely high volume (REFR alone is ~90% of an
+    ///     Oblivion plugin — ~1.07M of 1.16M records) and not browsable base definitions. The Records tab
+    ///     lists base records, not the millions of placed instances, so decoding every one into a field
+    ///     tree is pure waste (the bulk of parse time and retained memory). Skipping them keeps the read
+    ///     fast and the browser usable; placement/world structure is out of scope for the schema read path.
+    /// </summary>
+    private static readonly HashSet<string> NonBrowsableChildTypes = new(StringComparer.Ordinal)
+    {
+        "REFR", "ACHR", "ACRE", "PGRD", "PGRE", "PMIS", "LAND", "NAVM", "ROAD",
+        "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PHZD", "PWAT"
+    };
 
     private GenericEsmRecord ParseRecord(DetectedMainRecord record, byte[] buffer)
     {
