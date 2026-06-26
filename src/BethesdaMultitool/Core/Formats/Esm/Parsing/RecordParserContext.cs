@@ -822,39 +822,28 @@ public sealed class RecordParserContext
             return BethesdaGame.Unknown;
         }
 
-        // Read TES4 record data and look for HEDR subrecord. Header size varies (Oblivion = 20).
-        var headerSize = tes4.HeaderSize;
-        var buffer = new byte[Math.Min(tes4.DataSize + (uint)headerSize, 4096)];
-        var readSize = Math.Min(buffer.Length, (int)(FileSize - tes4.Offset));
-        if (readSize < headerSize + 12) // record header + 6-byte HEDR header + 4-byte version + 2 padding
+        // Classify the framing structurally from the file header's leading bytes. This is
+        // authoritative for Oblivion (and Morrowind) — its 20-byte header puts HEDR at a fixed offset,
+        // unlike the 24-byte TES4 family whose HEDR version floats overlap. Reading the HEDR version
+        // alone mis-resolved Oblivion (1.0) into the Fallout/Starfield range; PluginFormat.Detect keys
+        // on the structural HEDR offset instead (same probe GameDetector uses, minus name refinement).
+        var len = (int)Math.Min(256, FileSize - tes4.Offset);
+        if (len < 30)
         {
             return BethesdaGame.Unknown;
         }
 
+        var buffer = new byte[len];
         try
         {
-            Accessor.ReadArray(tes4.Offset + headerSize, buffer, 0, readSize - headerSize);
+            Accessor.ReadArray(tes4.Offset, buffer, 0, len);
         }
         catch
         {
             return BethesdaGame.Unknown;
         }
 
-        // Iterate subrecords within TES4 to find HEDR
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(buffer, readSize - headerSize, tes4.IsBigEndian))
-        {
-            if (sub.Signature != "HEDR" || sub.DataLength < 4)
-            {
-                continue;
-            }
-
-            var versionBytes = buffer.AsSpan(sub.DataOffset, 4);
-            var version = BinaryUtils.ReadFloat(versionBytes, 0, tes4.IsBigEndian);
-
-            return GameProfiles.ResolveByHedrVersion(version);
-        }
-
-        return BethesdaGame.Unknown;
+        return PluginFormat.Detect(buffer).Game;
     }
 
     #endregion

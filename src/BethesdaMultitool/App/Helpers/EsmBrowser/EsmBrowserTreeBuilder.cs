@@ -654,6 +654,14 @@ internal static class EsmBrowserTreeBuilder
         IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null,
         Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembersIndex = null)
     {
+        // Records read by the schema-driven parser (Oblivion today; Skyrim/FO4/FO76 next) carry an
+        // ordered, labeled field tree. Render it directly so member order is preserved and FormID
+        // references resolve to names — the rich, browsable presentation the deliverable calls for.
+        if (record is GenericEsmRecord schemaGeneric && schemaGeneric.DecodedTree is { Count: > 0 } decodedTree)
+        {
+            return DecodedTreePropertyAdapter.Convert(schemaGeneric, decodedTree, resolver);
+        }
+
         if (resolver != null &&
             RecordDetailPresenter.TryBuildForRecord(record, allRecords, resolver, out var detailModel) &&
             detailModel != null)

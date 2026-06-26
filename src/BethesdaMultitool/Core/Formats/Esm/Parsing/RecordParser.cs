@@ -126,6 +126,22 @@ public sealed class RecordParser
             return tes3Result;
         }
 
+        // Games whose record layouts diverge from the hand-written FNV/FO3 handlers but that have a
+        // generated record schema (Oblivion today; Skyrim/FO4/FO76 as their schemas are validated) are
+        // read by the schema-driven parser — it decodes every record into a GenericEsmRecord with a
+        // labeled field tree, so divergent types are read correctly instead of misparsed through FNV
+        // offsets. Gated per game via EsmSchemas, so FNV/FO3 fall through to the typed handlers below.
+        if (RecordModel.EsmSchemas.ForGame(_context.Game) is { } gameSchema)
+        {
+            progress?.Report((0, $"Decoding {_context.Game} records (schema-driven)..."));
+            var schemaResult = new SchemaDrivenRecordParser(_context, gameSchema).ParseAll(progress);
+            totalSw.Stop();
+            Logger.Instance.Info(
+                $"[Semantic Parse] Complete (schema:{_context.Game}). Time: {totalSw.Elapsed}, " +
+                $"Records: {schemaResult.TotalRecordsProcessed}");
+            return schemaResult;
+        }
+
         // Parsed record types — single source of truth lives in EsmParsedRecordTypes, which is
         // completeness-checked against RecordCollection so a new parser can't silently end up
         // mislabeled as "not parsed". Anything not in this set falls into UnparsedTypeCounts below.

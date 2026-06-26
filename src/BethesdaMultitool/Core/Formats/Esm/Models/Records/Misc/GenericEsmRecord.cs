@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 
 /// <summary>
@@ -32,6 +33,13 @@ public record GenericEsmRecord
     ///     or stored as raw byte arrays. Keys are subrecord signatures.
     /// </summary>
     public Dictionary<string, object?> Fields { get; init; } = [];
+
+    /// <summary>
+    ///     The schema-decoded, ordered, labeled field tree, when this record was read by the schema-driven
+    ///     reader (<see cref="Parsing.SchemaDrivenRecordParser" />). Null for records read by the
+    ///     hand-written FNV handlers, which populate <see cref="Fields" /> instead.
+    /// </summary>
+    public IReadOnlyList<DecodedNode>? DecodedTree { get; init; }
 
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }

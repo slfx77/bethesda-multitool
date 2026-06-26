@@ -59,6 +59,7 @@ public static class SchemaRecordDecoder
                 continue;
             }
 
+            var iBefore = i;
             switch (member)
             {
                 case ArrayDef array:
@@ -84,6 +85,13 @@ public static class SchemaRecordDecoder
                     output.Add(DecodeSignedMember(member, sub.Signature, sub.Data, ctx));
                     i++;
                     break;
+            }
+
+            // Safety net: a matched member must always consume at least the current subrecord. If some
+            // schema edge case leaves i unmoved, force progress so the decode can never stall.
+            if (i == iBefore)
+            {
+                i++;
             }
         }
 
@@ -125,9 +133,12 @@ public static class SchemaRecordDecoder
         var element = array.Element;
         var children = new List<DecodedNode>();
 
-        if (element.Signature is { Length: > 0 } elementSig)
+        // The repeating subrecord's signature lives on the array itself when its element is an inline
+        // field (ENAM eyes, KFFZ animations), or on the element when it owns a framed struct/field
+        // (SNAM faction, CNTO item, PKID package). Either way each matching subrecord is one element.
+        var elementSig = !string.IsNullOrEmpty(array.Signature) ? array.Signature : element.Signature;
+        if (!string.IsNullOrEmpty(elementSig))
         {
-            // One subrecord per element (SNAM faction, CNTO item, SPLO spell, ...).
             var index = 0;
             while (i < subrecords.Count && subrecords[i].Signature == elementSig)
             {

@@ -174,6 +174,29 @@ public class SchemaRecordDecoderTests
     private static byte[] U16(ushort v) => [(byte)v, (byte)(v >> 8)];
 
     [Fact]
+    public void Decodes_Array_With_Signature_On_The_Array_Not_The_Element()
+    {
+        // ENAM (eyes) / KFFZ (animations) pattern: the array owns the repeating subrecord signature and
+        // the element is a bare inline field. Must consume each subrecord (and never spin forever).
+        var schema = new RecordDef("TEST",
+        [
+            new ArrayDef(new FormIdDef { Name = "Eye" }) { Signature = "ENAM", Name = "Eyes", Count = -1 }
+        ]);
+        var subs = new List<RawSubrecord>
+        {
+            new("ENAM", Le(0x00000011)),
+            new("ENAM", Le(0x00000022))
+        };
+
+        var tree = SchemaRecordDecoder.Decode(schema, subs);
+
+        var eyes = Find(tree, "Eyes")!;
+        Assert.Equal(2, eyes.Children.Count);
+        Assert.Equal(0x11u, eyes.Children[0].FormId);
+        Assert.Equal(0x22u, eyes.Children[1].FormId);
+    }
+
+    [Fact]
     public void Unmatched_Subrecord_Is_Preserved_As_Raw()
     {
         var schema = BuildNpcSchema();
