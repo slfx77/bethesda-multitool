@@ -16,6 +16,7 @@ public static class SpeedTreeCommands
         command.Subcommands.Add(SpeedTreeExtractDumpCommand.CreateExtractDumpCommand());
         command.Subcommands.Add(SpeedTreeRenderCommands.CreateRenderCommand());
         command.Subcommands.Add(SpeedTreeRenderCommands.CreateRenderAllCommand());
+        command.Subcommands.Add(SpeedTreeRenderCommands.CreateSurveyCommand());
         return command;
     }
 
@@ -123,6 +124,16 @@ public static class SpeedTreeCommands
         if (model.Wind is { } wind)
         {
             Console.WriteLine(string.Create(ci, $"[Wind] 5005={wind.Float5005} 5006={wind.Byte5006}"));
+        }
+
+        if (model.Lod is { } lod)
+        {
+            Console.WriteLine(string.Create(ci,
+                $"[LOD] numBranchLods={lod.NumBranchLods} branchNear(LOD0)={lod.BranchNearFraction} branchFar={lod.BranchFarFraction}"));
+        }
+        else
+        {
+            Console.WriteLine("[LOD] (no section — engine defaults: 6 levels, near 1.0 = keep all)");
         }
 
         return 0;

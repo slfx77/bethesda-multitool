@@ -67,7 +67,7 @@ internal static class SptGeometryBuilder
         var bark = new MeshBuffer();
         var leafGroups = new Dictionary<string, MeshBuffer>(StringComparer.OrdinalIgnoreCase);
         var leafAnchors = new List<LeafAnchor>();
-        var nextLeafPlacementScope = 0;
+        var collectedBranches = new List<CollectedBranch>();
 
         var levels = Math.Min(model.Branches.Count, Math.Max(1, opt.MaxLevels));
         if (model.Branches.Count > 0)
@@ -76,9 +76,13 @@ internal static class SptGeometryBuilder
             // slot-7 two-angle rotation; shipped trees use slot7=-90 so the local +X growth vector maps
             // to FNV world-up (+Z). parentRadius starts large so the trunk's own radius is not clamped.
             GenerateBranch(model, 0, levels, 0f, Vector3.Zero, BranchFrame.Identity,
-                parentRadius: float.MaxValue, treeSize, opt, rng, rand, bark, leafAnchors, seed,
-                ref nextLeafPlacementScope);
+                parentRadius: float.MaxValue, treeSize, opt, rng, rand, collectedBranches, leafAnchors, seed);
         }
+
+        // The engine never renders the raw skeleton: CTreeEngine::Compute lofts every branch, then
+        // BuildBranchLods decimates them into the rendered LOD mesh. Reproduce LOD0 here — keep the
+        // highest-"volume" branches until their cumulative volume reaches the .spt's near fraction.
+        EmitDecimatedBranches(collectedBranches, model.Lod, bark);
 
         // Leaf cards are sized relative to the BUILT skeleton's height (the SDK's absolute units are
         // arbitrary and rescaled later), so collect anchors during the loft and emit them now. The
@@ -86,7 +90,15 @@ internal static class SptGeometryBuilder
         // (token 3007 / 3008, SIdvLeafInfo::Parse), defaulting to the engine ctor's 0.5 / mode 2.
         var leafSpacing = model.LeafTable?.Float3007 ?? DefaultLeafSpacingFactor;
         var placementMode = model.LeafTable?.UInt3008 ?? 2u;
-        EmitLeaves(leafAnchors, treeSize, leafSpacing, placementMode, opt, rng, leafGroups);
+        // Leaf-card size uses the tree-size MID (Float2006), NOT the per-instance random draw `treeSize`.
+        // CTreeEngine::Compute sets each leaf template's card size = CTreeEngine[+0x4c] (the non-random size
+        // mid, token 2006) * leafTemplate[+0x3c] (=Corner1), while branches use random(mid +/- spread). The
+        // runtime RoomForLeaf trace proved this: card = mid*Corner1 EXACTLY (treeSize-independent), and using
+        // the random draw made the spacing ~mid/draw too small -> the canopy over-accepted (62 vs the engine's
+        // 39 for WastelandShrub). The absolute scale washes out in the later OBND rescale, so only the
+        // mid-vs-draw distinction matters for leaf density.
+        var treeSizeMid = model.General.Float2006 > 1e-3f ? model.General.Float2006 : opt.TrunkHeight;
+        EmitLeaves(leafAnchors, treeSizeMid, leafSpacing, placementMode, opt, rng, leafGroups);
 
         var submeshes = new List<RenderableSubmesh>(4);
         if (bark.VertexCount > 0)
@@ -133,8 +145,8 @@ internal static class SptGeometryBuilder
     private static void GenerateBranch(
         SptModel model, int level, int levels, float parentT, Vector3 basePos, BranchFrame parentFrame,
         float parentRadius, float treeSize, SptGeometryOptions opt, SptRandom rng,
-        Func<float, float, float> rand, MeshBuffer bark, List<LeafAnchor> leafAnchors,
-        uint branchSeed, ref int nextLeafPlacementScope)
+        Func<float, float, float> rand, List<CollectedBranch> collected, List<LeafAnchor> leafAnchors,
+        uint branchSeed)
     {
         if (level >= levels || level >= model.Branches.Count)
         {
@@ -142,7 +154,6 @@ internal static class SptGeometryBuilder
         }
 
         var branch = model.Branches[level];
-        var leafPlacementScope = nextLeafPlacementScope++;
         var s = branch.Splines;
 
         // slot 4 = length, slot 5 = radius (both ×treeSize). slot 6 = radius taper curve. The engine has
@@ -198,7 +209,6 @@ internal static class SptGeometryBuilder
         var noiseScale = level == 0 ? TrunkNoiseDamping : 1f;
 
         var pos = basePos;
-        int[]? prevRing = null;
         var rings = new List<BranchRing>(numRings);
         var previousDistance = 0f;
         var previousFrame = frame;
@@ -230,10 +240,21 @@ internal static class SptGeometryBuilder
             var taper = s[6] is { } s6 ? MathF.Max(0f, s6.Evaluate(pathT, rand)) : 1f - pathT;
             var ringRadius = MathF.Max(0.01f, radius * taper);
 
-            prevRing = EmitRing(bark, pos, frame, ringRadius, vertsPerRing, pathT, prevRing);
-            rings.Add(new BranchRing(pos, frame, pathDistance, ringRadius));
+            // Defer emission: the branch is collected as a unit so BuildBranchLods-style decimation can
+            // drop it whole before any vertices exist (the engine lofts THEN decimates).
+            rings.Add(new BranchRing(pos, frame, pathDistance, ringRadius, pathT));
             previousFrame = frame;
         }
+
+        // Branch "volume" weight = CIdvBranch::ComputeVolume (360 0x82975E80): Σ segLen·(rᵢ+rᵢ₊₁) over the
+        // ring centers — the importance metric BuildBranchLods ranks branches by when decimating.
+        var importance = 0f;
+        for (var i = 0; i < rings.Count - 1; i++)
+        {
+            importance += Vector3.Distance(rings[i].Pos, rings[i + 1].Pos) * (rings[i].Radius + rings[i + 1].Radius);
+        }
+
+        collected.Add(new CollectedBranch(rings, vertsPerRing, importance));
 
         // A branch at level L spawns children at L+1. The LAST .spt branch record is the leaf-stub
         // TEMPLATE — never lofted as a tube; when a branch's child level would be that terminal record,
@@ -243,20 +264,20 @@ internal static class SptGeometryBuilder
         var terminalRecord = model.Branches.Count - 1;
         if (level + 1 < terminalRecord && level + 1 < levels)
         {
-            SpawnChildren(model, level, levels, branch, rings, length, treeSize, opt, rng, rand, bark,
-                leafAnchors, branchSeed, ref nextLeafPlacementScope);
+            SpawnChildren(model, level, levels, branch, rings, length, treeSize, opt, rng, rand, collected,
+                leafAnchors, branchSeed);
         }
         else
         {
-            SpawnLeaves(branch, rings, length, treeSize, model, rng, leafAnchors, leafPlacementScope);
+            SpawnLeaves(branch, rings, length, treeSize, model, rng, leafAnchors);
         }
     }
 
     private static void SpawnChildren(
         SptModel model, int level, int levels, SptBranch branch, List<BranchRing> rings,
         float length, float treeSize, SptGeometryOptions opt, SptRandom rng,
-        Func<float, float, float> rand, MeshBuffer bark, List<LeafAnchor> leafAnchors,
-        uint branchSeed, ref int nextLeafPlacementScope)
+        Func<float, float, float> rand, List<CollectedBranch> collected, List<LeafAnchor> leafAnchors,
+        uint branchSeed)
     {
         // Child count = (Float6012 / treeSize) · length  (CIdvBranch::Compute L1305; = Float6012·Eval(slot4)).
         // No density multiplier — the engine has none. The cap only bounds the vertex budget (the engine's
@@ -294,7 +315,7 @@ internal static class SptGeometryBuilder
             _ = rng.Range(0f, 100f);
 
             GenerateBranch(model, level + 1, levels, spawnT, cpos, cframe, parentAttachRadius, treeSize, opt, rng, rand,
-                bark, leafAnchors, childSeed, ref nextLeafPlacementScope);
+                collected, leafAnchors, childSeed);
         }
     }
 
@@ -302,7 +323,7 @@ internal static class SptGeometryBuilder
 
     private static void SpawnLeaves(
         SptBranch branch, List<BranchRing> rings, float length, float treeSize,
-        SptModel model, SptRandom rng, List<LeafAnchor> leafAnchors, int leafPlacementScope)
+        SptModel model, SptRandom rng, List<LeafAnchor> leafAnchors)
     {
         if (model.Leaves.Count == 0 || rings.Count == 0)
         {
@@ -365,7 +386,7 @@ internal static class SptGeometryBuilder
                 ? model.LeafTextureCoords[templateIndex]
                 : SptLeafTextureCoords.FullAtlas;
             var budReach = MathF.Max(0.01f, Eval(budSplines, 4, spawnT, rng.Range) * treeSize / budReachDivisor);
-            leafAnchors.Add(new LeafAnchor(pos, frame, template, textureCoords, budReach, leafPlacementScope));
+            leafAnchors.Add(new LeafAnchor(pos, frame, template, textureCoords, budReach));
         }
 
         for (var i = 0; i < count; i++)
@@ -395,11 +416,12 @@ internal static class SptGeometryBuilder
     ///     Emit the collected leaf-card anchors with the engine's <c>RoomForLeaf</c> overlap rejection: a
     ///     candidate is skipped if any already-placed leaf lies within an axis-aligned cube around it, so
     ///     the canopy fills to "as many leaves as fit" and reveals the branch structure instead of burying
-    ///     it under every <c>Float6012·length/treeSize</c> candidate. Card size = treeSize · Corner1, split
-    ///     around the leaf's Corner0 pivot.
+    ///     it under every <c>Float6012·length/treeSize</c> candidate. Card size = cardScale · Corner1, split
+    ///     around the leaf's Corner0 pivot, where cardScale is the tree-size MID (token 2006), not the random
+    ///     per-instance draw — see the call site / CTreeEngine::Compute leaf-template size overwrite.
     /// </summary>
     private static void EmitLeaves(
-        List<LeafAnchor> anchors, float treeSize, float spacingFactor, uint placementMode,
+        List<LeafAnchor> anchors, float cardScale, float spacingFactor, uint placementMode,
         SptGeometryOptions opt, SptRandom rng, Dictionary<string, MeshBuffer> leafGroups)
     {
         if (anchors.Count == 0)
@@ -407,8 +429,14 @@ internal static class SptGeometryBuilder
             return;
         }
 
-        var globalPlaced = placementMode == 1 ? new List<Vector3>(anchors.Count) : null;
-        var scopedPlaced = placementMode == 2 ? new Dictionary<int, List<Vector3>>() : null;
+        // RoomForLeaf rejects against the engine's SINGLE leaf-manager array (CTreeEngine+0x84+0x10 =
+        // pcRam832ae8b0 in CIdvBranch::MakeLeaf/RoomForLeaf) — one GLOBAL list across the whole tree, NOT a
+        // per-branch list. The earlier per-branch (PlacementScope) bucketing let leaves from different
+        // branches cluster freely and over-spawned the canopy ~8x (404 cards vs the engine's 53 for
+        // WastelandShrub, whose runtime cards sit ~12u apart in a 90u canopy = exactly this spacing
+        // applied globally). Any non-zero placement mode rejects against this one global list; mode 0
+        // disables rejection (engine SIdvLeafInfo+0xc == 0).
+        var globalPlaced = placementMode != 0 ? new List<Vector3>(anchors.Count) : null;
 
         // Per-leaf wind weight (the SFVFLeafVertex blend factor, recovered from STLEAF*.vso / STB*.vso:
         // windedPos = lerp(pos, WindMatrix·pos, windWeight)). The SDK derives it from leaf exposure; we
@@ -432,12 +460,13 @@ internal static class SptGeometryBuilder
             var template = anchor.Template;
             var windWeight = 0.15f + 0.85f * Math.Clamp((anchor.Pos.Z - zMin) / zRange, 0f, 1f);
 
-            // Card width/height = treeSize · Corner1, derived from CSpeedTreeRT::Compute: it overwrites
-            // leaf[+0x48/+0x4c] with treeSizeField·leaf[+0x3c/+0x40]. CLeafGeometry::Init copies those
-            // values into its size table, and CLeafGeometry::Update splits that full width/height around
-            // Corner0 (leaf[+0x30/+0x34]) rather than treating it as a symmetric half-size.
-            var width = treeSize * template.Corner1.X;
-            var height = treeSize * template.Corner1.Y;
+            // Card width/height = cardScale · Corner1, from CSpeedTreeRT::Compute (compute decompile L3679):
+            // leaf[+0x48/+0x4c] = CTreeEngine[+0x4c](size mid) · leaf[+0x3c/+0x40](=Corner1). cardScale is the
+            // non-random size MID (token 2006), NOT the per-instance random draw — runtime-verified by the
+            // RoomForLeaf trace (card = mid·Corner1 exactly). CLeafGeometry::Update splits that full
+            // width/height around Corner0 (leaf[+0x30/+0x34]) rather than treating it as a symmetric half-size.
+            var width = cardScale * template.Corner1.X;
+            var height = cardScale * template.Corner1.Y;
             var x0 = -template.Corner0.X * width;
             var x1 = (1f - template.Corner0.X) * width;
             var y0 = -template.Corner0.Y * height;
@@ -452,16 +481,11 @@ internal static class SptGeometryBuilder
             var budDir = budFrame.Direction;
             var center = anchor.Pos + budDir * anchor.BudReach;
 
-            // RoomForLeaf (CIdvBranch::RoomForLeaf L2252-2268): reject if an existing leaf is within
-            // max(hx,hy)·spacing in ALL THREE axes. The cube half-extent = leaf size × the leaf table's
-            // spacing factor (token 3007 = SIdvLeafInfo+0x20). Skipped when the placement mode (token 3008
-            // = +0xc) is 0; mode 1 checks a global list, mode 2 checks only the spawning branch scope.
-            var placed = placementMode switch
-            {
-                1 => globalPlaced,
-                2 => GetScopedPlaced(scopedPlaced!, anchor.PlacementScope),
-                _ => null,
-            };
+            // RoomForLeaf (CIdvBranch::RoomForLeaf, 360 0x829753D8): reject if an existing leaf is within
+            // max(w,h)·spacing in ALL THREE axes, checked against the engine's ONE global leaf-manager array
+            // (CTreeEngine+0x84+0x10). Half-extent = leaf size × the leaf table's spacing factor (token 3007
+            // = SIdvLeafInfo+0x20). Skipped only when the placement mode (token 3008 = SIdvLeafInfo+0xc) is 0.
+            var placed = placementMode == 0 ? null : globalPlaced;
             if (placed is not null)
             {
                 var spacing = MathF.Max(width, height) * spacingFactor;
@@ -550,21 +574,75 @@ internal static class SptGeometryBuilder
         return true;
     }
 
-    private static List<Vector3> GetScopedPlaced(Dictionary<int, List<Vector3>> scopedPlaced, int scope)
-    {
-        if (!scopedPlaced.TryGetValue(scope, out var placed))
-        {
-            placed = [];
-            scopedPlaced.Add(scope, placed);
-        }
-
-        return placed;
-    }
-
     private static int TruncateSpawnCount(float raw) =>
         raw > 0f && float.IsFinite(raw) ? (int)raw : 0;
 
     // ---- Geometry emission --------------------------------------------------------------
+
+    /// <summary>
+    ///     Reproduce <c>CTreeEngine::BuildBranchLods</c>' LOD0 selection: the engine lofts the full skeleton
+    ///     then keeps, for the rendered LOD0 mesh, only the highest-"volume" branches until their cumulative
+    ///     volume reaches <c>nearFraction · totalVolume</c> (decompile L3915-3961; LOD0 fraction = near when
+    ///     <c>numLods ≥ 2</c>, else 1.0 = keep all). Without a <c>.spt</c> LOD section the ctor default near
+    ///     = 1.0, so every branch is kept (no decimation), matching the engine.
+    /// </summary>
+    private static void EmitDecimatedBranches(List<CollectedBranch> branches, SptLodInfo? lod, MeshBuffer bark)
+    {
+        if (branches.Count == 0)
+        {
+            return;
+        }
+
+        var keepFraction = lod is { NumBranchLods: >= 2 } && lod.BranchNearFraction < 1f
+            ? Math.Clamp(lod.BranchNearFraction, 0f, 1f)
+            : 1f;
+
+        IReadOnlyList<CollectedBranch> kept;
+        if (keepFraction >= 1f)
+        {
+            kept = branches;
+        }
+        else
+        {
+            var total = 0f;
+            foreach (var b in branches)
+            {
+                total += b.Importance;
+            }
+
+            // BuildBranchLods (L3864-3961) accumulates branches until cumulative volume reaches the fraction.
+            // The engine walks a partitioned flat order (high-volume branches first); we approximate with a
+            // strict volume-descending sort, which keeps the trunk + main limbs and drops the small twigs.
+            // NOTE: this is the closest visual match, NOT the engine's exact order — the exact flat order over
+            // our current branch generation over-keeps (the generated branch volumes don't yet match the
+            // engine's), so closing the residual count gap is a branch-GENERATION fidelity task, not a
+            // decimation one. Always keeps at least the single most-important branch so a tree never vanishes.
+            var ordered = branches.OrderByDescending(b => b.Importance).ToList();
+            var target = total * keepFraction;
+            var selected = new List<CollectedBranch>(ordered.Count);
+            var cumulative = 0f;
+            foreach (var b in ordered)
+            {
+                selected.Add(b);
+                cumulative += b.Importance;
+                if (cumulative >= target)
+                {
+                    break;
+                }
+            }
+
+            kept = selected;
+        }
+
+        foreach (var b in kept)
+        {
+            int[]? prevRing = null;
+            foreach (var ring in b.Rings)
+            {
+                prevRing = EmitRing(bark, ring.Pos, ring.Frame, ring.Radius, b.VertsPerRing, ring.PathT, prevRing);
+            }
+        }
+    }
 
     private static int[]? EmitRing(
         MeshBuffer bark, Vector3 center, BranchFrame frame, float radius, int radial, float v, int[]? prevRing)
@@ -778,7 +856,13 @@ internal static class SptGeometryBuilder
         return dot < 0 ? null : barkPath[..dot] + "_n" + barkPath[dot..];
     }
 
-    private readonly record struct BranchRing(Vector3 Pos, BranchFrame Frame, float Distance, float Radius);
+    private readonly record struct BranchRing(Vector3 Pos, BranchFrame Frame, float Distance, float Radius, float PathT);
+
+    /// <summary>A fully-lofted branch held back from emission so the LOD decimation can drop the
+    /// lowest-"volume" branches before any vertices are produced (see <see cref="EmitDecimatedBranches" />).
+    /// <paramref name="Importance" /> = <c>CIdvBranch::ComputeVolume</c> = Σ segLen·(rᵢ+rᵢ₊₁).</summary>
+    private readonly record struct CollectedBranch(
+        IReadOnlyList<BranchRing> Rings, int VertsPerRing, float Importance);
 
     /// <summary>
     ///     Column-major 3x3 branch frame matching the runtime ring matrix. Column X is the branch growth
@@ -843,11 +927,10 @@ internal static class SptGeometryBuilder
         }
     }
 
-    /// <summary>A pending leaf card: where on a terminal branch it attaches, which template it uses, how
-    /// far the bud steps off the branch, and which branch instance owns mode-2 overlap rejection.</summary>
+    /// <summary>A pending leaf card: where on a terminal branch it attaches, which template it uses, and
+    /// how far the bud steps off the branch.</summary>
     private readonly record struct LeafAnchor(
-        Vector3 Pos, BranchFrame Frame, SptLeaf Template, SptLeafTextureCoords TextureCoords, float BudReach,
-        int PlacementScope);
+        Vector3 Pos, BranchFrame Frame, SptLeaf Template, SptLeafTextureCoords TextureCoords, float BudReach);
 
     /// <summary>
     ///     SpeedTree's <c>CIdvRandom</c>/<c>Random</c> uniform generator: a Park-Miller 16807 LCG with a
@@ -860,7 +943,14 @@ internal static class SptGeometryBuilder
         private const int Multiplier = 16807;
         private const int Quotient = 127773;
         private const int Remainder = 2836;
-        private readonly float[] _shuffle = new float[128];
+
+        // Engine scale constant from Random::Raw: `(float)state * 4.656613e-10`. The literal is a DOUBLE
+        // and `state` is cast to float first, so the product is computed in double — reproduced exactly here.
+        // Matching the float/double mix bit-for-bit matters: the shuffle index and the uniform multiply ride
+        // on this value, so a float-only port drifts in the ~7th digit and flips RoomForLeaf decisions near
+        // the spacing boundary (verified divergence vs the runtime trace).
+        private const double InvModulus = 4.656613e-10;
+        private readonly float[] _shuffle = new float[128]; // engine stores the shuffle table as float
         private int _state;
 
         public SptRandom(uint seed)
@@ -879,29 +969,38 @@ internal static class SptGeometryBuilder
             _state = s;
             for (var i = 0; i < _shuffle.Length; i++)
             {
-                _shuffle[i] = Raw();
+                _shuffle[i] = (float)Raw();
             }
         }
 
-        public float NextFloat()
+        // Random::Next (Bays-Durham shuffle): the index uses the DOUBLE raw * 128.0; the value comes from the
+        // float table; the replaced entry stores (float)Raw(); the result is the table float promoted to double.
+        public double NextDouble()
         {
-            var index = (int)(Raw() * _shuffle.Length);
+            var index = (int)(Raw() * 128.0);
             if ((uint)index >= (uint)_shuffle.Length)
             {
-                index = _shuffle.Length - 1;
+                index = _shuffle.Length - 1; // engine relies on raw<1; guard the (float)maxState rounding edge
             }
 
-            var value = _shuffle[index];
-            _shuffle[index] = Raw();
+            double value = _shuffle[index];
+            _shuffle[index] = (float)Raw();
             return value;
         }
 
-        public float Range(float min, float max) => min + NextFloat() * (max - min);
+        public float NextFloat() => (float)NextDouble();
+
+        // CIdvRandom::GetUniform: min + (float)((double)(max-min) * Next()). The subtract is float, promoted to
+        // double for the multiply with the double Next(), the product cast back to float, then added to min.
+        public float Range(float min, float max) => min + (float)((double)(max - min) * NextDouble());
 
         public int NextInt(int exclusiveMax) =>
             exclusiveMax <= 0 ? 0 : (int)Range(0f, 1_000_000f) % exclusiveMax;
 
-        private float Raw()
+        // Random::Raw: Park-Miller 16807 via Schrage; identical to the engine's `state*16807 - hi*Modulus`
+        // (since 16807*Quotient + Remainder == Modulus and the result fits in int32, the engine's overflowing
+        // form and this Schrage form agree bit-for-bit). Returns a DOUBLE (see InvModulus).
+        private double Raw()
         {
             var hi = _state / Quotient;
             var lo = _state - hi * Quotient;
@@ -912,7 +1011,7 @@ internal static class SptGeometryBuilder
             }
 
             _state = next;
-            return _state * 4.656613e-10f;
+            return (float)_state * InvModulus;
         }
     }
 

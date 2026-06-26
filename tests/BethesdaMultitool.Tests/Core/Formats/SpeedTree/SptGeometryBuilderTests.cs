@@ -368,11 +368,19 @@ public class SptGeometryBuilderTests
         Assert.Equal(0, CountLeafQuads(result, "blossomatlas"));
     }
 
+    /// <summary>
+    ///     <c>CIdvBranch::RoomForLeaf</c> (360 0x829753D8) + <c>MakeLeaf</c> reject a candidate against ONE
+    ///     global leaf-manager array (<c>CTreeEngine+0x84+0x10</c>), not a per-branch list — confirmed by the
+    ///     runtime oracle (WastelandShrub: per-branch scoping over-spawned 404 cards vs the engine's 53; global
+    ///     rejection yields 62). So mode 0 disables rejection (all 4 candidates kept) and BOTH non-zero modes
+    ///     reject globally (the mode-2 "scope" is per-tree-instance, which collapses to global for a single
+    ///     built tree) → 1 card survives the cluster.
+    /// </summary>
     [Theory]
     [InlineData(0u, 4)]
     [InlineData(1u, 1)]
-    [InlineData(2u, 2)]
-    public void Build_RoomForLeaf_HonorsPlacementModeScope(uint placementMode, int expectedLeaves)
+    [InlineData(2u, 1)]
+    public void Build_RoomForLeaf_HonorsPlacementMode(uint placementMode, int expectedLeaves)
     {
         var model = MakePlacementModeModel(placementMode);
 

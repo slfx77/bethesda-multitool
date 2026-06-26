@@ -58,6 +58,128 @@ internal static class SpeedTreeRenderCommands
         return command;
     }
 
+    /// <summary>
+    ///     Build (no render, no textures) every <c>.spt</c> in a BSA/directory and print its LOD section +
+    ///     resulting bark/leaf counts — a fast breadth check that the LOD parse + branch decimation + global
+    ///     leaf rejection behave across a whole game's trees (e.g. Oblivion's ~113), not just one sample.
+    /// </summary>
+    public static Command CreateSurveyCommand()
+    {
+        var command = new Command("survey",
+            "Build every .spt in a BSA/dir (no render) and print LOD section + bark/leaf counts");
+        var bsaOption = new Option<string?>("--bsa") { Description = "Meshes BSA to enumerate .spt from" };
+        var dirOption = new Option<string?>("--dir") { Description = "Directory to enumerate .spt from" };
+        var esmOption = new Option<string?>("--esm")
+        { Description = "ESM to source per-tree TREE.SNAM seed + OBND/BNAM height (matches the viewer build)" };
+        command.Options.Add(bsaOption);
+        command.Options.Add(dirOption);
+        command.Options.Add(esmOption);
+        command.SetAction(parseResult => Survey(
+            parseResult.GetValue(bsaOption), parseResult.GetValue(dirOption), parseResult.GetValue(esmOption)));
+        return command;
+    }
+
+    private static int Survey(string? bsa, string? dir, string? esmPath)
+    {
+        var items = EnumerateSptItems(bsa, dir);
+        if (items is null)
+        {
+            return 1;
+        }
+
+        var treeByPath = string.IsNullOrEmpty(esmPath)
+            ? new Dictionary<string, TreeMetadata>(StringComparer.OrdinalIgnoreCase)
+            : SpeedTreeMetadata.BuildTreeMetadataMap(esmPath);
+
+        var ci = CultureInfo.InvariantCulture;
+        Console.WriteLine($"Surveying {items.Count} .spt ...");
+        int withLod = 0, blobs = 0, failed = 0;
+        foreach (var (archivePath, name, bytes) in items.OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var model = SptFile.Parse(bytes);
+                treeByPath.TryGetValue(archivePath, out var treeMeta);
+                var opt = SptGeometryOptions.FromEnvironment() with { TargetHeight = treeMeta?.TargetHeight };
+                var seed = treeMeta?.Seed ?? model.General.Token2005;
+                var renderable = SptGeometryBuilder.Build(model, seed, opt);
+                var bark = renderable.Submeshes.FirstOrDefault(s => s.ShapeName == "spt:bark");
+                var barkTris = bark is null ? 0 : bark.Triangles.Length / 3;
+                var leafCards = renderable.Submeshes.Where(s => s.ShapeName == "spt:leaves")
+                    .Sum(s => s.Triangles.Length / 6); // 2 tris per quad card
+                var lod = model.Lod;
+                if (lod is { NumBranchLods: >= 2 } && lod.BranchNearFraction < 1f)
+                {
+                    withLod++;
+                }
+                else if (barkTris > 2000)
+                {
+                    blobs++; // no usable LOD section AND dense → would render as an over-dense blob
+                }
+
+                Console.WriteLine(string.Create(ci,
+                    $"  {name,-32} LOD={(lod is null ? "(none)" : $"n={lod.NumBranchLods} near={lod.BranchNearFraction:F2}")}" +
+                    $"  barkTris={barkTris,-6} leafCards={leafCards}"));
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                Console.Error.WriteLine($"  FAIL {name}: {ex.Message}");
+            }
+        }
+
+        Console.WriteLine($"Done: {items.Count} trees, {withLod} with branch-LOD decimation, " +
+                          $"{blobs} dense-without-LOD, {failed} failed.");
+        return 0;
+    }
+
+    /// <summary>Enumerate <c>(archivePath, name, bytes)</c> for every <c>.spt</c> in a BSA or directory.</summary>
+    private static List<(string ArchivePath, string Name, byte[] Bytes)>? EnumerateSptItems(string? bsa, string? dir)
+    {
+        var items = new List<(string ArchivePath, string Name, byte[] Bytes)>();
+        if (!string.IsNullOrEmpty(bsa))
+        {
+            if (!File.Exists(bsa))
+            {
+                Console.Error.WriteLine($"BSA not found: {bsa}");
+                return null;
+            }
+
+            var archive = BsaParser.Parse(bsa);
+            using var extractor = new BsaExtractor(bsa);
+            foreach (var rec in archive.AllFiles.Where(f =>
+                         f.FullPath?.EndsWith(".spt", StringComparison.OrdinalIgnoreCase) == true))
+            {
+                try
+                {
+                    items.Add((SpeedTreeModelPath.ToArchivePath(rec.FullPath!),
+                        Path.GetFileNameWithoutExtension(rec.FullPath!), extractor.ExtractFile(rec)));
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"  extract failed {rec.FullPath}: {ex.Message}");
+                }
+            }
+        }
+        else if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+        {
+            var root = Path.GetFullPath(dir);
+            foreach (var f in Directory.EnumerateFiles(dir, "*.spt", SearchOption.AllDirectories))
+            {
+                var relativePath = Path.GetRelativePath(root, f);
+                items.Add((SpeedTreeModelPath.ToArchivePath(relativePath),
+                    Path.GetFileNameWithoutExtension(f), File.ReadAllBytes(f)));
+            }
+        }
+        else
+        {
+            Console.Error.WriteLine("Provide --bsa <archive> or --dir <directory>.");
+            return null;
+        }
+
+        return items;
+    }
+
     private static int RenderAll(string? bsa, string? dir, string dataSources, string outDir, float azimuth,
         float elevation, int size, string? esmPath, bool billboards)
     {

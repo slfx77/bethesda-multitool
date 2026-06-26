@@ -72,6 +72,7 @@ public static class SptFile
         }
 
         var leafTextureCoords = ParseTrailingTextureCoordInfo(data, c.Position);
+        var lod = ParseTrailingLodInfo(data, c.Position);
 
         return new SptModel
         {
@@ -82,7 +83,82 @@ public static class SptFile
             LeafSize = leafSize,
             LeafTable = leafTable,
             Wind = wind,
+            Lod = lod,
         };
+    }
+
+    // Post-tree branch-LOD sub-section tokens (CTreeEngine::ParseLodInfo, 360 MemDebug 0x8298A5B0).
+    private const uint LodBranchEnd = 9006;       // 0x232E section terminator
+    private const uint LodNumBranchLods = 9007;   // 0x232F -> +0x70
+    private const uint LodBranchFar = 9008;       // 0x2330 -> +0xdc
+    private const uint LodBranchNear = 9012;      // 0x2334 -> +0xe0 (LOD0)
+
+    /// <summary>
+    ///     Scan the post-tree region for the branch-LOD sub-section and recover the LOD0 keep fraction the
+    ///     engine uses to decimate the rendered mesh. The section is a flat token/value stream beginning at
+    ///     <see cref="LodNumBranchLods" /> and ending at <see cref="LodBranchEnd" />; each token is followed
+    ///     by one 4-byte value (uint or float). Mirrors <c>CTreeEngine::ParseLodInfo</c>. Returns null when
+    ///     no well-formed section is present (the engine then keeps the ctor defaults = no decimation).
+    /// </summary>
+    private static SptLodInfo? ParseTrailingLodInfo(byte[] data, int startOffset)
+    {
+        for (var offset = startOffset; offset <= data.Length - 8; offset += 4)
+        {
+            if (BinaryUtils.ReadUInt32LE(data, offset) != LodNumBranchLods)
+            {
+                continue;
+            }
+
+            var num = BinaryUtils.ReadUInt32LE(data, offset + 4);
+            if (num is 0 or > 64)
+            {
+                continue; // false match inside another payload — a sane LOD count is small
+            }
+
+            int? numLods = (int)num;
+            float? near = null, far = null;
+            var pos = offset + 8;
+            var terminated = false;
+            // Walk (token, value) pairs to the section terminator; ignore tokens we don't model.
+            for (var guard = 0; guard < 16 && pos <= data.Length - 4; guard++)
+            {
+                var token = BinaryUtils.ReadUInt32LE(data, pos);
+                if (token == LodBranchEnd)
+                {
+                    terminated = true;
+                    break;
+                }
+
+                if (pos > data.Length - 8)
+                {
+                    break;
+                }
+
+                switch (token)
+                {
+                    case LodBranchFar:
+                        far = BinaryUtils.ReadFloatLE(data, pos + 4);
+                        break;
+                    case LodBranchNear:
+                        near = BinaryUtils.ReadFloatLE(data, pos + 4);
+                        break;
+                }
+
+                pos += 8;
+            }
+
+            if (terminated && near is not null)
+            {
+                return new SptLodInfo
+                {
+                    NumBranchLods = numLods.Value,
+                    BranchNearFraction = near.Value,
+                    BranchFarFraction = far ?? new SptLodInfo().BranchFarFraction,
+                };
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

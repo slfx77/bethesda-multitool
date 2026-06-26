@@ -23,6 +23,31 @@ public sealed record SptModel
     public SptLeafTable? LeafTable { get; init; }
 
     public SptWind? Wind { get; init; }
+
+    /// <summary>Post-tree branch-LOD parameters (token 9001 section). Null when the <c>.spt</c> omits the
+    /// section, in which case the engine's constructor defaults apply (no LOD0 decimation).</summary>
+    public SptLodInfo? Lod { get; init; }
+}
+
+/// <summary>
+///     Branch-LOD parameters recovered from the post-tree LOD section (<c>CTreeEngine::ParseLodInfo</c>,
+///     360 MemDebug 0x8298A5B0). The engine NEVER renders the raw <c>CIdvBranch::Compute</c> skeleton — it
+///     decimates it in <c>CTreeEngine::BuildBranchLods</c>: each branch gets a "volume" weight
+///     (<c>ComputeVolume</c> = Σ segLen·(rᵢ+rᵢ₊₁)), and LOD level <c>d</c> keeps the heaviest branches until
+///     their cumulative weight reaches <c>fraction·total</c>, where LOD0's fraction is <see cref="BranchNearFraction" />
+///     (lerping toward <see cref="BranchFarFraction" /> at the last level). Defaults are the
+///     <c>CTreeEngine</c> ctor values (near 1.0 = keep all, so a missing section means no decimation).
+/// </summary>
+public sealed record SptLodInfo
+{
+    /// <summary>Token 9007 → <c>CTreeEngine+0x70</c>. Ctor default 6. When &lt; 2, LOD0 keeps everything.</summary>
+    public int NumBranchLods { get; init; } = 6;
+
+    /// <summary>Token 9012 → <c>+0xe0</c>: LOD0 (near) keep fraction of total branch volume. Ctor default 1.0.</summary>
+    public float BranchNearFraction { get; init; } = 1f;
+
+    /// <summary>Token 9008 → <c>+0xdc</c>: far-LOD keep fraction. Ctor default 0.5.</summary>
+    public float BranchFarFraction { get; init; } = 0.5f;
 }
 
 /// <summary>Section 1002 (general) parameters.</summary>
