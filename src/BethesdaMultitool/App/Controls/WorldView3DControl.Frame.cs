@@ -45,6 +45,14 @@ public sealed partial class WorldView3DControl
         if (Visibility == Microsoft.UI.Xaml.Visibility.Collapsed) return;
         if (_surface12 is null || _gpu12 is null || _commandRecorder12 is null) return;
 
+        // Skip the whole frame until a scene is loaded. The render loop attaches at device init (see
+        // Lifecycle.AttachRenderLoop), BEFORE LoadData runs — so without this gate the control renders an
+        // empty scene at vsync for the entire duration of a worldspace load happening on the background
+        // thread, contending for the GPU and triggering GC pauses that stall both threads. That stretches
+        // the load many-fold: a 5.6M-record FO76 parse measured ~8x slower with the loop running than the
+        // same parse headless (world-data 2.5 min vs 17.6 s). Rendering resumes the instant LoadData sets _data.
+        if (_data is null) return;
+
         var now = DateTime.UtcNow;
         var deltaSeconds = (float)(now - _lastFrameTime).TotalSeconds;
         _lastFrameTime = now;
