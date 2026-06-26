@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -186,19 +187,26 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
 
     /// <summary>
     ///     Builds the typed dialogue model for DIAL/INFO records (game-aware) alongside their generic
-    ///     decode, so the Dialogue tab has data. No-op for every other record type.
+    ///     decode, so the Dialogue tab has data. Skyrim's INFO layout (localized text, explicit ANAM
+    ///     speaker, 32-byte CTDA) differs from Oblivion's, so each game has its own extractor. No-op for
+    ///     every other record type.
     /// </summary>
     private void ExtractDialogue(DetectedMainRecord record, string? editorId, IReadOnlyList<RawSubrecord> subrecords)
     {
+        var isSkyrim = _context.Game == BethesdaGame.Skyrim;
         switch (record.RecordType)
         {
             case "DIAL":
-                _topics.Add(OblivionDialogueExtractor.BuildTopic(record.FormId, editorId, subrecords));
+                _topics.Add(isSkyrim
+                    ? SkyrimDialogueExtractor.BuildTopic(record.FormId, editorId, subrecords, _context)
+                    : OblivionDialogueExtractor.BuildTopic(record.FormId, editorId, subrecords));
                 break;
             case "INFO":
                 var link = _infoLink.TryGetValue(record.FormId, out var l) ? l : default;
-                _infos.Add(OblivionDialogueExtractor.BuildInfo(
-                    record.FormId, editorId, link.Topic == 0 ? null : link.Topic, link.Index, subrecords));
+                var topic = link.Topic == 0 ? (uint?)null : link.Topic;
+                _infos.Add(isSkyrim
+                    ? SkyrimDialogueExtractor.BuildInfo(record.FormId, editorId, topic, link.Index, subrecords, _context)
+                    : OblivionDialogueExtractor.BuildInfo(record.FormId, editorId, topic, link.Index, subrecords));
                 break;
         }
     }

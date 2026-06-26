@@ -13,11 +13,13 @@ namespace BethesdaMultitool.Core.Formats.Esm.RecordModel;
 public static class EsmSchemas
 {
     private static readonly Dictionary<string, RecordDef> OblivionByType = Index(OblivionSchema.Records);
+    private static readonly Dictionary<string, RecordDef> SkyrimByType = Index(SkyrimSchema.Records);
 
     /// <summary>The schema record set for the game, or null when no generated schema exists yet.</summary>
     public static IReadOnlyList<RecordDef>? ForGame(BethesdaGame game) => game switch
     {
         BethesdaGame.Oblivion => OblivionSchema.Records,
+        BethesdaGame.Skyrim => SkyrimSchema.Records,
         _ => null
     };
 
@@ -25,6 +27,7 @@ public static class EsmSchemas
     public static IReadOnlyDictionary<string, RecordDef>? IndexForGame(BethesdaGame game) => game switch
     {
         BethesdaGame.Oblivion => OblivionByType,
+        BethesdaGame.Skyrim => SkyrimByType,
         _ => null
     };
 
