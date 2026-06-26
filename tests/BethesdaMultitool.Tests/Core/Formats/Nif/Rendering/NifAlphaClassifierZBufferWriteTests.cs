@@ -6,123 +6,121 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
 /// <summary>
-///     Covers the BSShaderFlags2 ZBuffer_Write handling in <see cref="NifAlphaClassifier" />: a shape
-///     authored to occlude (the engine writes depth for it) must be routed to the depth-writing
-///     opaque/cutout pass, not the depth-write-off blend pass where its interior / anything behind it
-///     shows through. Two real cases drive this — MobileHomeASNV's cabin shell (alpha-blend + alpha-test
-///     opaque hull with window cutouts) and NV_McCarran-Wall03's tower body (alpha-blend + ZBuffer_Write,
-///     NO alpha-test) — while genuine FX (smoke / glass / decals) stay in the blend pass for soft edges.
+///     Covers the engine-accurate alpha classification in <see cref="NifAlphaClassifier" />, decompiled from
+///     BSShader::SetupGeometryAlphaBlending + BSShader::SetupGeometryRenderStates (MemDebug XEX —
+///     tools/GhidraProject/shader_zwrite_decompiled.txt):
+///     <list type="bullet">
+///         <item>Alpha BLEND is enabled by NiAlphaProperty bit 0.</item>
+///         <item>Depth WRITE in the alpha pass follows the alpha-TEST bit: alpha-tested geometry writes depth;
+///         plain alpha-blend does not.</item>
+///         <item>BSShaderFlags2 ZBuffer_Write does NOT drive the per-draw Z-write and does NOT demote
+///         alpha-blend to opaque — that earlier rule was a workaround for a hull leak the engine actually
+///         avoids by back-to-front sorting + back-face culling (both of which the renderer already does).</item>
+///     </list>
 /// </summary>
 public sealed class NifAlphaClassifierZBufferWriteTests
 {
     [Fact]
-    public void Classify_BlendWithZBufferWriteAndAlphaTest_RoutesToCutoutAndWritesDepth()
+    public void Classify_PlainBlend_NoTest_StaysBlendAndDoesNotWriteDepth()
     {
-        var submesh = CreateSubmesh(true, true, 0x1u);
+        // Alpha-blend, no alpha-test → plain Blend, Z-write OFF (the engine sorts it back-to-front).
+        var submesh = CreateSubmesh(hasAlphaBlend: true, hasAlphaTest: false, shaderFlags2: 0x0u);
+
+        var state = NifAlphaClassifier.Classify(submesh, null);
+
+        Assert.Equal(NifAlphaRenderMode.Blend, state.RenderMode);
+        Assert.True(state.HasAlphaBlend);
+        Assert.False(state.DepthWritingBlend);
+        Assert.False(state.WritesDepth);
+    }
+
+    [Fact]
+    public void Classify_BlendPlusAlphaTest_IsDepthWritingBlend()
+    {
+        // Engine: Z-write = alpha-TEST bit. A shape that BOTH blends and alpha-tests writes depth, while
+        // staying a blend (its kept cutout texels are opaque). NVSeaPlant02 foliage / window-cutout hulls.
+        var submesh = CreateSubmesh(hasAlphaBlend: true, hasAlphaTest: true, shaderFlags2: 0x1u,
+            "NVSeaPlant02:0", @"textures\effects\nv\NVSeaPlant02.dds");
+
+        var state = NifAlphaClassifier.Classify(submesh, null);
+
+        Assert.Equal(NifAlphaRenderMode.Blend, state.RenderMode);
+        Assert.True(state.HasAlphaBlend);
+        Assert.True(state.HasAlphaTest);
+        Assert.True(state.DepthWritingBlend);
+        Assert.True(state.WritesDepth);
+    }
+
+    [Fact]
+    public void Classify_AlphaTestOnly_IsCutoutAndWritesDepth()
+    {
+        var submesh = CreateSubmesh(hasAlphaBlend: false, hasAlphaTest: true, shaderFlags2: 0x1u);
 
         var state = NifAlphaClassifier.Classify(submesh, null);
 
         Assert.Equal(NifAlphaRenderMode.Cutout, state.RenderMode);
-        Assert.True(state.WritesDepth);
         Assert.False(state.HasAlphaBlend);
-        Assert.True(state.HasAlphaTest);
+        Assert.True(state.WritesDepth);
     }
 
     [Fact]
-    public void Classify_NonFxBlendWithZBufferWriteNoAlphaTest_WritesDepth()
+    public void Classify_ZBufferWriteFlag_DoesNotDemoteBlendToOpaque()
     {
-        // The McCarran tower body: alpha-blend + ZBuffer_Write, NO alpha-test, on a solid architectural
-        // mesh (not FX). The engine writes depth for it; leaving it in the blend pass let the railing
-        // render through the metal ring. With no see-through diffuse it becomes a depth-writing Opaque.
-        var submesh = CreateSubmesh(true, false, 0x1u,
-            "tower03:0", @"textures\architecture\mccarran\mccarranTower.dds");
+        // The decisive behavioral change: a plain alpha-blend shape whose shader sets BSShaderFlags2
+        // ZBuffer_Write (the McCarran-tower / blood-decal case) is NO LONGER demoted to opaque/cutout — the
+        // engine renders it as a sorted blend. It stays Blend with Z-write off; the renderer's back-to-front
+        // sort + single-sided back-face culling handle any closed-hull see-through, as the engine does.
+        var solidHullStyle = CreateSubmesh(hasAlphaBlend: true, hasAlphaTest: false, shaderFlags2: 0x1u,
+            "tower03:0", @"textures\architecture\mccarran\tower.dds");
+
+        var state = NifAlphaClassifier.Classify(solidHullStyle, null);
+
+        Assert.Equal(NifAlphaRenderMode.Blend, state.RenderMode);
+        Assert.True(state.HasAlphaBlend);
+        Assert.False(state.DepthWritingBlend);
+        Assert.False(state.WritesDepth);
+    }
+
+    [Fact]
+    public void Classify_UnlitDecalWithZBufferWrite_StaysBlend()
+    {
+        // Unlit decals/glows/halos (BSShaderNoLightingProperty: ground-blend skirts, neon, radioactive glow)
+        // keep their authored blend — they were the meshes the old ZBuffer_Write demotion painted opaque.
+        var submesh = CreateSubmesh(hasAlphaBlend: true, hasAlphaTest: false, shaderFlags2: 0x1u,
+            "RadioactiveGlow", @"textures\clutter\radioactive.dds", "BSShaderNoLightingProperty");
+
+        var state = NifAlphaClassifier.Classify(submesh, null);
+
+        Assert.Equal(NifAlphaRenderMode.Blend, state.RenderMode);
+        Assert.True(state.HasAlphaBlend);
+        Assert.False(state.WritesDepth);
+    }
+
+    [Fact]
+    public void Classify_Opaque_WhenNoBlendNoTest()
+    {
+        var submesh = CreateSubmesh(hasAlphaBlend: false, hasAlphaTest: false, shaderFlags2: 0x1u);
 
         var state = NifAlphaClassifier.Classify(submesh, null);
 
         Assert.Equal(NifAlphaRenderMode.Opaque, state.RenderMode);
         Assert.True(state.WritesDepth);
-        Assert.False(state.HasAlphaBlend);
     }
 
     [Fact]
-    public void Classify_NonFxOccluderWithSeeThroughDiffuse_RoutesToCutoutKeepingHoles()
+    public void Classify_BlendWithoutShaderMetadata_StaysBlend()
     {
-        // Same occluder but the diffuse has see-through texels (window glass): keep them as an alpha-test
-        // cutout (so the holes survive) while still writing depth — rather than filling them in solid.
-        var submesh = CreateSubmesh(true, false, 0x1u,
-            "tower03:0", @"textures\architecture\mccarran\mccarranTower.dds");
-
-        var state = NifAlphaClassifier.Classify(submesh, HalfTransparentTexture());
-
-        Assert.Equal(NifAlphaRenderMode.Cutout, state.RenderMode);
-        Assert.True(state.WritesDepth);
-        Assert.False(state.HasAlphaBlend);
-        Assert.True(state.HasAlphaTest);
-    }
-
-    [Fact]
-    public void Classify_FxBlendWithZBufferWrite_StaysBlend()
-    {
-        // Genuine FX (smoke / sandstorm / glass / decals) sometimes quirkily set ZBuffer_Write but are
-        // real transparency — they must stay in the blend pass for soft edges, NOT be forced to a
-        // depth-writing opaque/cutout (which gives the reported "sharp edges" on smoke/sandstorms).
-        var smoke = CreateSubmesh(true, false, 0x1u,
-            "SmokeQuad", @"textures\effects\smoke01.dds");
-        var glassWithTest = CreateSubmesh(true, true, 0x1u,
-            "iceShard", @"textures\effects\glassbreak.dds");
-
-        var smokeState = NifAlphaClassifier.Classify(smoke, null);
-        var glassState = NifAlphaClassifier.Classify(glassWithTest, null);
-
-        Assert.Equal(NifAlphaRenderMode.Blend, smokeState.RenderMode);
-        Assert.False(smokeState.WritesDepth);
-        Assert.Equal(NifAlphaRenderMode.Blend, glassState.RenderMode);
-        Assert.False(glassState.WritesDepth);
-    }
-
-    [Fact]
-    public void Classify_BlendWithoutZBufferWrite_StaysBlendAndSkipsDepth()
-    {
-        // Genuine transparency (glass, decals, smoke) leaves the ZBuffer_Write bit clear.
-        var submesh = CreateSubmesh(true, false, 0x0u);
+        var submesh = CreateSubmesh(hasAlphaBlend: true, hasAlphaTest: false, shaderFlags2: null);
 
         var state = NifAlphaClassifier.Classify(submesh, null);
 
         Assert.Equal(NifAlphaRenderMode.Blend, state.RenderMode);
         Assert.False(state.WritesDepth);
-        Assert.True(state.HasAlphaBlend);
-    }
-
-    [Fact]
-    public void Classify_BlendWithZBufferWriteButNoShaderMetadata_StaysBlend()
-    {
-        var submesh = CreateSubmesh(true, false, null);
-
-        var state = NifAlphaClassifier.Classify(submesh, null);
-
-        Assert.Equal(NifAlphaRenderMode.Blend, state.RenderMode);
-        Assert.False(state.WritesDepth);
-    }
-
-    private static DecodedTexture HalfTransparentTexture()
-    {
-        // 4×4 RGBA where half the texels are fully transparent → HasSignificantAlpha() is true.
-        var pixels = new byte[4 * 4 * 4];
-        for (var i = 0; i < 16; i++)
-        {
-            var o = i * 4;
-            pixels[o] = 200;
-            pixels[o + 1] = 200;
-            pixels[o + 2] = 200;
-            pixels[o + 3] = (byte)(i % 2 == 0 ? 255 : 0);
-        }
-
-        return DecodedTexture.FromBaseLevel(pixels, 4, 4, false);
     }
 
     private static RenderableSubmesh CreateSubmesh(
         bool hasAlphaBlend, bool hasAlphaTest, uint? shaderFlags2,
-        string? shapeName = null, string? diffusePath = null)
+        string? shapeName = null, string? diffusePath = null, string propertyType = "BSShaderPPLightingProperty")
     {
         return new RenderableSubmesh
         {
@@ -139,7 +137,7 @@ public sealed class NifAlphaClassifierZBufferWriteTests
                 ? null
                 : new NifShaderTextureMetadata
                 {
-                    PropertyType = "BSShaderPPLightingProperty",
+                    PropertyType = propertyType,
                     ShaderFlags2 = shaderFlags2
                 }
         };
