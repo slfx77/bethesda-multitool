@@ -77,5 +77,10 @@ public class OblivionSchemaParseIntegrationTests
         // The Dialogue tab consumes the assembled tree; it must group topics under quests.
         Assert.NotNull(result.Records.DialogueTree);
         Assert.NotEmpty(result.Records.DialogueTree!.QuestTrees);
+
+        // Speaker attribution (CTDA GetIsID/GetInFaction/GetIsRace) powers the NPC-grouped view.
+        var withSpeaker = result.Records.Dialogues.Count(d => d.SpeakerFormId is > 0);
+        Assert.True(withSpeaker > 5000,
+            $"Expected most Oblivion INFOs to attribute a speaker via CTDA; got {withSpeaker}.");
     }
 }

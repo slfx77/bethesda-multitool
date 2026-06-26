@@ -57,6 +57,11 @@ internal static class OblivionDialogueExtractor
         var responses = new List<DialogueResponse>();
         var addTopics = new List<uint>();
         var linkToTopics = new List<uint>();
+        var conditionFunctions = new List<ushort>();
+        var conditions = new List<DialogueCondition>();
+        uint? speakerFormId = null;
+        uint? speakerFactionFormId = null;
+        uint? speakerRaceFormId = null;
 
         // Each response is a TRDT (emotion) followed by NAM1 (text); emit on NAM1 using the last TRDT.
         var haveTrdt = false;
@@ -99,6 +104,10 @@ internal static class OblivionDialogueExtractor
                     });
                     haveTrdt = false;
                     break;
+                case "CTDA" when sub.Data.Length >= 16:
+                    ParseCondition(sub.Data, conditions, conditionFunctions,
+                        ref speakerFormId, ref speakerFactionFormId, ref speakerRaceFormId);
+                    break;
             }
         }
 
@@ -113,8 +122,68 @@ internal static class OblivionDialogueExtractor
             InfoIndex = infoIndex,
             Responses = responses,
             AddTopics = addTopics,
-            LinkToTopics = linkToTopics
+            LinkToTopics = linkToTopics,
+            ConditionFunctions = conditionFunctions,
+            Conditions = conditions,
+            SpeakerFormId = speakerFormId,
+            SpeakerFactionFormId = speakerFactionFormId,
+            SpeakerRaceFormId = speakerRaceFormId
         };
+    }
+
+    /// <summary>
+    ///     Parses one Oblivion CTDA condition and, when it positively asserts the speaker's identity,
+    ///     records the FormID. Oblivion CTDA layout (xEdit <c>wbConditionMembers</c>, little-endian):
+    ///     Type@0 (1) + unused (3) + Comparison Value@4 (float) + Function@8 (u16) + unused (2) +
+    ///     Parameter #1@12 (4) + Parameter #2@16 (4). There is no RunOn field (FNV-only), so a positive
+    ///     condition asserts the dialogue subject directly. Function indices match FNV's:
+    ///     GetIsRace=0x45, GetInFaction=0x47, GetIsID=0x48 (Oblivion has no GetIsVoiceType).
+    /// </summary>
+    private static void ParseCondition(
+        byte[] data,
+        List<DialogueCondition> conditions,
+        List<ushort> conditionFunctions,
+        ref uint? speaker,
+        ref uint? faction,
+        ref uint? race)
+    {
+        var typeByte = data[0];
+        var comparisonValue = BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(4));
+        var functionIndex = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(8));
+        var param1 = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(12));
+        var param2 = data.Length >= 20 ? BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(16)) : 0u;
+
+        conditionFunctions.Add(functionIndex);
+        conditions.Add(new DialogueCondition
+        {
+            Type = typeByte,
+            ComparisonValue = comparisonValue,
+            FunctionIndex = functionIndex,
+            Parameter1 = param1,
+            Parameter2 = param2
+        });
+
+        // "Speaker is X" reads as the function equalling true (== / >= ~1) or not-false (!= / > ~0).
+        var compOp = (typeByte >> 5) & 0x7;
+        var isPositive = (compOp is 0 or 3 && comparisonValue >= 0.99f) ||
+                         (compOp is 1 or 2 && comparisonValue < 0.01f);
+        if (!isPositive || param1 == 0)
+        {
+            return;
+        }
+
+        switch (functionIndex)
+        {
+            case 0x48: // GetIsID
+                speaker ??= param1;
+                break;
+            case 0x47: // GetInFaction
+                faction ??= param1;
+                break;
+            case 0x45: // GetIsRace
+                race ??= param1;
+                break;
+        }
     }
 
     /// <summary>
