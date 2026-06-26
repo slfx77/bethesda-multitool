@@ -434,7 +434,7 @@ dotnet test -p:CollectCoverage=false
 
 ### Build Flags
 
-- `BuildTestsOnly=true` — Skips `net10.0-windows` TFM (WinUI 3 GUI). Saves ~2 min. Safe for test runs since the test project only targets `net10.0`.
+- `BuildTestsOnly=true` — Skips `net10.0-windows` TFM (WinUI 3 GUI). Saves ~2 min. Safe for test runs since the test project only targets `net10.0`. Also skips the standalone WinUI app projects (`BethesdaAudioTranscriber`, `BethesdaRendererProfiler`, `BethesdaMap2DProfiler`) — they depend on the dropped GUI TFM, so each no-ops its `Build` under this flag via `eng/SkipBuildInTestsOnly.targets` (wired in through a `BuildTestsOnly`-gated `CustomAfterMicrosoftCommonTargets`). Build them with a normal (no-flag) build.
 - `SkipAnalyzers=true` — Disables SonarAnalyzer + Roslynator during build. Saves 5-15s. Use for fast iteration; omit for CI/lint passes.
 - `CollectCoverage=false` — Required: coverage collection hangs without this flag.
 

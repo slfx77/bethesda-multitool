@@ -26,6 +26,13 @@
     <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
   </PropertyGroup>
 
+  <!-- Fast test builds (-p:BuildTestsOnly=true) drop the BethesdaMultitool net10.0-windows TFM
+       this GUI profiler depends on (WorldView3DControl), so skip building it then. See the targets
+       file for why this is gated at the import rather than via a target Condition. -->
+  <PropertyGroup Condition="'$(BuildTestsOnly)' == 'true'">
+    <CustomAfterMicrosoftCommonTargets>$(MSBuildThisFileDirectory)..\..\eng\SkipBuildInTestsOnly.targets</CustomAfterMicrosoftCommonTargets>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />

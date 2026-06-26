@@ -26,6 +26,14 @@
     <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
   </PropertyGroup>
 
+  <!-- Fast test builds (-p:BuildTestsOnly=true) drop the BethesdaMultitool net10.0-windows TFM.
+       This GUI companion app's XAML references the App's XAML metadata provider from that TFM, so
+       it can't compile (and a stale full-build obj poisons incremental test builds) — skip it then.
+       It is irrelevant to the test suite. See the targets file for why this is gated at the import. -->
+  <PropertyGroup Condition="'$(BuildTestsOnly)' == 'true'">
+    <CustomAfterMicrosoftCommonTargets>$(MSBuildThisFileDirectory)..\..\eng\SkipBuildInTestsOnly.targets</CustomAfterMicrosoftCommonTargets>
+  </PropertyGroup>
+
   <!-- WinUI 3 packages -->
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />

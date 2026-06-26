@@ -1,0 +1,28 @@
+<Project>
+
+  <!--
+    Overrides the default Build target with a no-op.
+
+    This file is imported ONLY when BuildTestsOnly=true, via CustomAfterMicrosoftCommonTargets
+    set in a conditional PropertyGroup in the importing project. CustomAfterMicrosoftCommonTargets
+    is imported at the very end of Microsoft.Common.targets — AFTER the SDK defines the canonical
+    'Build' target — so this definition wins (last one registered under a given name wins).
+
+    Why this exists: the fast, test-only build (-p:BuildTestsOnly=true) collapses BethesdaMultitool
+    to its net10.0 TFM and drops net10.0-windows (the WinUI 3 GUI). The profiler apps depend on
+    GUI controls (WorldMapControl / WorldView3DControl) that live only in that dropped TFM, so they
+    cannot compile in a test-only build. Rather than fail, they are skipped — they are GUI tools,
+    irrelevant to the test suite.
+
+    Note: the import is gated on BuildTestsOnly by the importing project (not by a Condition on the
+    target). A Condition on a same-named override target would still shadow the SDK's Build even when
+    false, turning normal builds into no-ops — so the gating must happen at the import, never here.
+  -->
+  <Target Name="Build">
+    <Message Importance="high"
+             Text="$(MSBuildProjectName): skipped (GUI app excluded from -p:BuildTestsOnly=true build; needs the net10.0-windows TFM)." />
+  </Target>
+
+  <Target Name="Rebuild" DependsOnTargets="Build" />
+
+</Project>
