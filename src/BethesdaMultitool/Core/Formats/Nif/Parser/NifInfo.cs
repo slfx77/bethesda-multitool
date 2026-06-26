@@ -30,15 +30,6 @@ public sealed class NifInfo
     public Dictionary<int, string> BlockNames { get; } = [];
 
     /// <summary>
-    ///     True for Morrowind-era NetImmerse NIFs (4.0.0.2). These predate several NiObjectNET /
-    ///     NiAVObject / NiGeometryData layout changes that the render field-walkers assume: a single
-    ///     Extra Data ref (vs the count+list added at 10.0.1.0), an NiAVObject Velocity vector and
-    ///     Has-Bounding-Volume flag (vs the Collision Object ref), 32-bit booleans, and no
-    ///     NiGeometryData Group ID. Render readers branch on this to take the legacy paths.
-    /// </summary>
-    public bool IsMorrowind { get; set; }
-
-    /// <summary>
     ///     Get the type name for a block by index.
     /// </summary>
     public string GetBlockTypeName(int blockIndex)

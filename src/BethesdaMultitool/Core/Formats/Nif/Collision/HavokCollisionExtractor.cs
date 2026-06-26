@@ -72,7 +72,7 @@ internal static class HavokCollisionExtractor
         {
             var block = nif.Blocks[i];
             if (!NifSceneGraphWalker.NodeTypes.Contains(block.TypeName)) continue;
-            var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, bigEndian, nif.HasInlineStrings);
+            var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, nif.BinaryVersion, bigEndian, nif.HasInlineStrings);
             if (children != null) nodeChildren[i] = children;
         }
 

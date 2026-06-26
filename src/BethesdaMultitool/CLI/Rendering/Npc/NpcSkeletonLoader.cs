@@ -330,7 +330,7 @@ internal static class NpcSkeletonLoader
                 continue;
             }
 
-            localTransform = NifBlockParsers.ParseNiAVObjectTransform(data, block, nif.BsVersion, nif.IsBigEndian);
+            localTransform = NifBlockParsers.ParseNiAVObjectTransform(data, block, nif.BsVersion, nif.BinaryVersion, nif.IsBigEndian);
             return true;
         }
 

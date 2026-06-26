@@ -45,24 +45,24 @@ internal static class NifBinaryCursor
     /// <summary>
     ///     Skip past the NiObjectNET header fields: Name + NumExtraData(4) + refs + Controller(4).
     ///     Advances <paramref name="pos" /> past the header and returns false if the block is too small.
-    ///     <paramref name="hasInlineStrings" /> selects the inline-vs-index Name encoding.
-    ///     <para>
-    ///         <paramref name="morrowind" />: the legacy NiObjectNET form (3.0..4.2.2.0) has a single
-    ///         Extra Data ref instead of the Num Extra Data List + refs added at 10.0.1.0, so the header
-    ///         is just Name + Extra Data ref(4) + Controller(4).
-    ///     </para>
+    ///     <paramref name="hasInlineStrings" /> selects the inline-vs-index Name encoding. The Extra Data
+    ///     form is keyed on <paramref name="binaryVersion" /> via <see cref="NifVersions.HasExtraDataList" />:
+    ///     NIFs before 10.0.1.0 (NetImmerse ≤ 4.2.2.0, i.e. Morrowind) have a single Extra Data ref instead
+    ///     of the Num Extra Data List + refs, so the header is just Name + Extra Data ref(4) + Controller(4).
+    ///     <paramref name="binaryVersion" /> defaults to a modern (≥ 10.0.1.0) value, matching the prior
+    ///     <c>morrowind: false</c> default for the version-agnostic callers that only read modern NIFs.
     /// </summary>
     internal static bool SkipNiObjectNET(byte[] data, ref int pos, int end, bool be,
-        bool hasInlineStrings = false, bool morrowind = false)
+        bool hasInlineStrings = false, uint binaryVersion = NifVersions.Gamebryo10010)
     {
         if (!SkipName(data, ref pos, end, be, hasInlineStrings))
         {
             return false;
         }
 
-        if (morrowind)
+        if (!NifVersions.HasExtraDataList(binaryVersion))
         {
-            // Extra Data ref(4) + Controller ref(4) — no Num Extra Data List.
+            // Legacy NetImmerse: single Extra Data ref(4) + Controller ref(4) — no Num Extra Data List.
             if (pos + 8 > end)
             {
                 return false;
@@ -95,7 +95,7 @@ internal static class NifBinaryCursor
     ///     Returns the block index of the first controller, or -1 if none/invalid.
     /// </summary>
     internal static int ReadNiObjectNETControllerRef(byte[] data, int dataOffset, int end, bool be,
-        bool hasInlineStrings = false, bool morrowind = false)
+        bool hasInlineStrings = false, uint binaryVersion = NifVersions.Gamebryo10010)
     {
         var pos = dataOffset;
 
@@ -105,9 +105,9 @@ internal static class NifBinaryCursor
             return -1;
         }
 
-        if (morrowind)
+        if (!NifVersions.HasExtraDataList(binaryVersion))
         {
-            // Single Extra Data ref(4), then the Controller ref.
+            // Legacy NetImmerse: single Extra Data ref(4), then the Controller ref.
             pos += 4;
             return pos + 4 > end ? -1 : BinaryUtils.ReadInt32(data, pos, be);
         }

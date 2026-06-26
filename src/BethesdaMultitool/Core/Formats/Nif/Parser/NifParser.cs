@@ -47,7 +47,13 @@ internal static class NifParser
             return info; // Return minimal info for non-Bethesda files
         }
 
-        pos = ParseBethesdaHeader(data, pos, info);
+        // The BSStreamHeader is version-gated (nif.xml #BSSTREAMHEADER#): 10.0.1.2 has one, but 10.0.1.0
+        // does NOT — its Num Block Types table follows Num Blocks directly. Parsing a stream header that
+        // isn't there would consume block-type-table bytes as ExportStrings and lose all geometry.
+        if (NifVersions.HasBsStreamHeader(info.BinaryVersion, info.UserVersion))
+        {
+            pos = ParseBethesdaHeader(data, pos, info);
+        }
 
         // This (modern) path locates blocks via the header's per-block "Block Size" array (added in
         // NIF 20.2.0.5) and reads block names from the header String table (added in 20.1.0.1). Older
@@ -90,7 +96,6 @@ internal static class NifParser
         info.UserVersion = 0;
         info.BsVersion = 0; // no BS stream header
         info.HasInlineStrings = true; // < 20.1.0.1: names are inline SizedStrings
-        info.IsMorrowind = true; // legacy NiObjectNET/NiAVObject/NiGeometryData layout
         pos += 4;
 
         if (pos + 4 > data.Length)
@@ -227,12 +232,25 @@ internal static class NifParser
             (int)info.BsVersion,
             measure: true);
 
+        // Pre-10.2.0.0 Gamebryo/Bethesda-stream NIFs (Oblivion's bsVersion 4/5 architecture, e.g.
+        // fort-ruins 10.1.0.106 rfcastlearchfront / rfcastleruinswall3way) precede EVERY data block with
+        // a 4-byte word (zero in all sampled meshes) that nif.xml does not model — verified by decoding:
+        // each NiObjectNET's Name SizedString sits 4 bytes past where the contiguous block layout expects
+        // it. 10.2.0.0 / 20.0.0.x have no such per-block word. Skipping it advances DataOffset to the real
+        // block start so the field-walk (and the render readers, which key off DataOffset) line up.
+        var hasPerBlockWord = NifVersions.HasPerBlockLegacyWord(info.BinaryVersion);
+
         var pos = dataStart;
         for (var i = 0; i < info.BlockCount; i++)
         {
             var typeName = blockTypeIndices[i] < info.BlockTypeNames.Count
                 ? info.BlockTypeNames[blockTypeIndices[i]]
                 : "Unknown";
+
+            if (hasPerBlockWord)
+            {
+                pos += 4;
+            }
 
             if (pos > data.Length)
             {
@@ -267,6 +285,87 @@ internal static class NifParser
 
             pos += size;
         }
+    }
+
+    /// <summary>The header version identity of a NIF — read without parsing blocks. See
+    /// <see cref="ProbeVersionInfo" />. <c>BsVersion</c> is the BSStreamHeader's BS Version (0 for
+    /// NetImmerse/Morrowind and non-Bethesda Gamebryo, which have no stream header).</summary>
+    public readonly record struct NifVersionProbe(
+        string HeaderString, uint BinaryVersion, uint UserVersion, uint BsVersion, bool IsBigEndian);
+
+    /// <summary>
+    ///     Reads only a NIF's header version identity — binary version, user version, BS stream version —
+    ///     without the (relatively expensive) block list / string-table / measure walk. Returns null when
+    ///     the header can't be read (too short / no newline). Used by the version-census tooling to tally
+    ///     NIF versions across an archive cheaply. Mirrors the field layout of <see cref="ParseVersionInfo" />
+    ///     + <see cref="ParseBethesdaHeader" /> (Morrowind 4.0.0.2 has version then Num Blocks directly).
+    /// </summary>
+    public static NifVersionProbe? ProbeVersionInfo(byte[] data)
+    {
+        if (data.Length < 50)
+        {
+            return null;
+        }
+
+        var newlinePos = Array.IndexOf(data, (byte)0x0A, 0, Math.Min(60, data.Length));
+        if (newlinePos < 0)
+        {
+            return null;
+        }
+
+        var headerString = Encoding.ASCII.GetString(data, 0, newlinePos);
+        var pos = newlinePos + 1;
+        if (pos + 4 > data.Length)
+        {
+            return null;
+        }
+
+        var version = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+        pos += 4;
+
+        // Morrowind / pre-Gamebryo NetImmerse (4.0.0.2): version then Num Blocks directly — no endian
+        // byte, no user version, no BS stream header.
+        if (version == 0x04000002)
+        {
+            return new NifVersionProbe(headerString, version, 0, 0, false);
+        }
+
+        var bigEndian = false;
+        if (version >= 0x14000003) // Endian-Type byte added at 20.0.0.3
+        {
+            if (pos >= data.Length)
+            {
+                return new NifVersionProbe(headerString, version, 0, 0, false);
+            }
+
+            bigEndian = data[pos] == 0;
+            pos += 1;
+        }
+
+        // User Version (since 10.0.1.8) then Num Blocks. 10.0.1.0 / 10.0.1.2 have no User Version, so Num
+        // Blocks follows Version directly — reading one there would mis-tally the version.
+        var userVersion = 0u;
+        if (NifVersions.HasUserVersion(version))
+        {
+            if (pos + 4 > data.Length)
+            {
+                return new NifVersionProbe(headerString, version, 0, 0, bigEndian);
+            }
+
+            userVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+            pos += 4;
+        }
+
+        pos += 4; // Num Blocks (skip)
+
+        // BS Version — the first field of the BSStreamHeader, present only when nif.xml's #BSSTREAMHEADER#
+        // gate holds (e.g. 10.0.1.2 yes, 10.0.1.0 no). Where there's no stream header the next bytes are
+        // the Block Types table, so reading them as a BS version would be meaningless.
+        var bsVersion = NifVersions.HasBsStreamHeader(version, userVersion) && pos + 4 <= data.Length
+            ? BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos))
+            : 0u;
+
+        return new NifVersionProbe(headerString, version, userVersion, bsVersion, bigEndian);
     }
 
     /// <summary>
@@ -333,8 +432,19 @@ internal static class NifParser
             info.IsBigEndian = false; // PC little-endian; no endian byte at this version
         }
 
-        info.UserVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-        pos += 4;
+        // User Version was added at 10.0.1.8. The oldest Oblivion Gamebryo meshes — 10.0.1.0 / 10.0.1.2
+        // (groundcover, fort tiles such as rf1xhousingtiles) — predate it: Num Blocks follows Version
+        // directly, so reading a User Version there would shift Num Blocks (and everything after) by 4.
+        if (NifVersions.HasUserVersion(info.BinaryVersion))
+        {
+            info.UserVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
+            pos += 4;
+        }
+        else
+        {
+            info.UserVersion = 0;
+        }
+
         info.BlockCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
         pos += 4;
         return pos;
@@ -484,6 +594,19 @@ internal static class NifParser
             // Oblivion also ships some architecture as older-exporter Gamebryo 10.2.0.0 (e.g.
             // ICPalaceTower01) — same legacy field-walked block layout, BSStreamHeader, user version 10/11.
             0x0A020000 => userVersion is 10 or 11,
+            // ...and some as even older Gamebryo 10.1.0.101 (bsVersion 4) / 10.1.0.106 (bsVersion 5) —
+            // e.g. fort-ruins rfcastlearchfront / rfcastleruinswall3way. The header is the legacy
+            // field-walked form (no size array, no string table, inline names), but these pre-10.2.0.0
+            // streams also (a) precede every data block with a 4-byte word and (b) omit the
+            // NiGeometryData Group ID (added at 10.1.0.114) — both handled in MeasureLegacyBlocks and the
+            // geometry readers. Rejecting them dropped those pieces to "no geometry".
+            0x0A010065 or 0x0A01006A => userVersion is 10 or 11,
+            // The oldest Gamebryo architecture Oblivion ships: NetImmerse-headed 10.0.1.0 (e.g. fort
+            // tile rf1xhousingtiles, darkelf ears) and 10.0.1.2 (groundcover plants). These predate the
+            // Header User Version field (added 10.0.1.8), so UserVersion is always 0; 10.0.1.0 also has
+            // NO BSStreamHeader while 10.0.1.2 does (both handled at parse time). The block body is the
+            // same legacy field-walked form as 10.1.0.10x (per-block word, no Group ID).
+            0x0A000100 or 0x0A000102 => userVersion == 0,
             _ => false
         };
     }

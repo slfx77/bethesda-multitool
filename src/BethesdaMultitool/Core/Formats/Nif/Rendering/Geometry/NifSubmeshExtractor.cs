@@ -51,7 +51,8 @@ internal static class NifSubmeshExtractor
         // Morrowind (NIF 4.0.0.2) NiTri*Data uses a distinct NiGeometryData layout (no Group ID,
         // 32-bit booleans, an always-present Bounding Sphere, and the legacy Data Flags + Has UV
         // before the UV sets), so it takes a dedicated reader rather than the FNV/Oblivion one.
-        var submesh = nif.IsMorrowind && dataBlock.TypeName is "NiTriShapeData" or "NiTriStripsData"
+        var submesh = NifVersions.IsLegacyNetImmerse(nif.BinaryVersion)
+                      && dataBlock.TypeName is "NiTriShapeData" or "NiTriStripsData"
             ? ExtractMorrowindGeometryData(
                 data,
                 dataBlock,
@@ -88,7 +89,7 @@ internal static class NifSubmeshExtractor
                 // BSTriShape and its variants are self-contained (the shape block IS its own data block,
                 // so dataIndex == shapeIndex). Skyrim SE / Fallout 4 / Fallout 76 geometry.
                 "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape"
-                    => ExtractBsTriShape(data, dataBlock, nif.IsBigEndian, nif.BsVersion, transform, shapeName),
+                    => ExtractBsTriShape(data, dataBlock, nif.IsBigEndian, nif.BsVersion, nif.BinaryVersion, transform, shapeName),
                 _ => null
             };
 
@@ -144,14 +145,22 @@ internal static class NifSubmeshExtractor
         var end = block.DataOffset + block.Size;
 
         // NiGeometryData layout is keyed deterministically on the NIF version, never the Bethesda stream
-        // version: the "modern" base (Keep/Compress Flags + Data Flags + Bounding Sphere) is present since
-        // NIF 10.1.0.0 — that covers Oblivion 20.0.0.4/5, FNV 20.2.0.7, AND Oblivion's older-exporter
-        // 10.2.0.0 architecture (bsVersion 6, which the old bsVersion>=11 gate wrongly excluded). The
-        // trailing Additional Data ref exists only since 20.0.0.4.
-        var modernGeom = binaryVersion >= 0x0A010000;
+        // version. The "modern" base — a Data Flags ushort, an always-present Bounding Sphere, flag-driven
+        // UV and a trailing Consistency Flags — is present since NIF 10.0.1.0: that covers Oblivion's
+        // oldest 10.0.1.0 / 10.0.1.2 meshes, its 10.1.0.10x / 10.2.0.0 architecture, 20.0.0.4/5, and FNV
+        // 20.2.0.7. The Keep/Compress Flags pair is narrower (since 10.1.0.0), so 10.0.1.x has the base
+        // WITHOUT it. The trailing Additional Data ref exists only since 20.0.0.4.
+        var modernGeom = NifVersions.HasModernGeometryBase(binaryVersion);
+        var hasKeepCompressFlags = NifVersions.HasGeometryKeepFlags(binaryVersion);
         var hasAdditionalData = binaryVersion >= 0x14000004;
 
-        pos += 4;
+        // NiGeometryData.Group ID (int) is present only since NIF 10.1.0.114. Oblivion 20.0.0.x and
+        // 10.2.0.0 have it, but the older 10.1.0.106 fort-ruins architecture does NOT — skipping it
+        // unconditionally would consume the first 4 bytes of Num Vertices and yield no geometry.
+        if (NifVersions.HasGeometryGroupId(binaryVersion))
+        {
+            pos += 4;
+        }
         if (pos + 2 > end)
         {
             return null;
@@ -164,9 +173,9 @@ internal static class NifSubmeshExtractor
             return null;
         }
 
-        if (modernGeom)
+        if (hasKeepCompressFlags)
         {
-            pos += 2;
+            pos += 2; // Keep Flags + Compress Flags (since 10.1.0.0; absent on 10.0.1.x)
         }
 
         if (pos + 1 > end)
@@ -294,13 +303,24 @@ internal static class NifSubmeshExtractor
 
         var numTriangles = BinaryUtils.ReadUInt16(data, pos, be);
         pos += 2;
-        if (pos + 5 > end)
+        if (pos + 4 > end)
         {
             return null;
         }
 
-        pos += 4;
-        if (data[pos++] == 0 || numTriangles == 0 || positions == null)
+        pos += 4; // Num Triangle Points
+
+        // "Has Triangles" bool exists only since 10.1.0.0; at or below 10.0.1.2 (Oblivion 10.0.1.x) the
+        // triangle list follows unconditionally, so reading the bool would eat the first triangle index.
+        if (NifVersions.HasShapeTriangleFlag(binaryVersion))
+        {
+            if (pos + 1 > end || data[pos++] == 0)
+            {
+                return null;
+            }
+        }
+
+        if (numTriangles == 0 || positions == null)
         {
             return null;
         }
@@ -361,7 +381,7 @@ internal static class NifSubmeshExtractor
     ///     Data Flags (ushort, low 6 bits = UV-set count) + Has UV (32-bit bool) precede the UV sets.
     ///     Triangle data is either a triangle list (NiTriShapeData) or triangle strips
     ///     (NiTriStripsData: Num Strips + Strip Lengths + jagged Points). Field offsets validated
-    ///     byte-for-byte against the schema measure walk; see the format note on NifInfo.IsMorrowind.
+    ///     byte-for-byte against the schema measure walk; gated via NifVersions.IsLegacyNetImmerse.
     /// </summary>
     private static RenderableSubmesh? ExtractMorrowindGeometryData(
         byte[] data,
@@ -635,11 +655,15 @@ internal static class NifSubmeshExtractor
             return null;
         }
 
-        var pos = block.DataOffset + 4;
+        // NiGeometryData.Group ID (int) only since NIF 10.1.0.114 (see ExtractTriShapeData) — absent on
+        // Oblivion's 10.1.0.106 architecture, so skip it only when present.
+        var pos = block.DataOffset + (NifVersions.HasGeometryGroupId(binaryVersion) ? 4 : 0);
         var end = block.DataOffset + block.Size;
-        // Modern NiGeometryData base (Keep/Compress + Data Flags + Bounding Sphere) — present since NIF
-        // 10.1.0.0, keyed on the NIF version rather than the Bethesda stream version (see ExtractTriShapeData).
-        var modernGeom = binaryVersion >= 0x0A010000;
+        // Modern NiGeometryData base (Data Flags + Bounding Sphere + flag-driven UV) — present since NIF
+        // 10.0.1.0; the Keep/Compress Flags pair is narrower (since 10.1.0.0). Keyed on the NIF version
+        // rather than the Bethesda stream version (see ExtractTriShapeData).
+        var modernGeom = NifVersions.HasModernGeometryBase(binaryVersion);
+        var hasKeepCompressFlags = NifVersions.HasGeometryKeepFlags(binaryVersion);
         if (pos + 2 > end)
         {
             return null;
@@ -652,12 +676,11 @@ internal static class NifSubmeshExtractor
             return null;
         }
 
-        // modernGeom = Oblivion (BS 11) and later (FO3/FNV BS 34). They share an identical
-        // NiGeometryData layout — Keep Flags + Compress Flags (since NIF 10.1.0.0), a Data Flags
-        // ushort, and a Bounding Sphere — so all these reads are version-gated together. (Skyrim+,
-        // bsVersion > 34, adds a Material CRC and uses BSTriShape, not NiTri*Data.) Morrowind
-        // (bsVersion 0, NIF 4.0.0.2) predates Keep/Compress Flags and takes the older else-paths.
-        if (modernGeom)
+        // The Keep Flags + Compress Flags pair sits right after Num Vertices, since NIF 10.1.0.0. Oblivion
+        // 10.1.0.10x / 10.2.0.0 / 20.0.0.x and FO3/FNV all have it; Oblivion's oldest 10.0.1.x and
+        // Morrowind 4.0.0.2 do not. (Skyrim+, bsVersion > 34, also adds a Material CRC and uses BSTriShape,
+        // not NiTri*Data.)
+        if (hasKeepCompressFlags)
         {
             pos += 2;
         }
@@ -805,10 +828,11 @@ internal static class NifSubmeshExtractor
         BlockInfo block,
         bool be,
         uint bsVersion,
+        uint binaryVersion,
         Matrix4x4 transform,
         string? shapeName = null)
     {
-        var parsed = NifSceneGraphBlockReader.ParseBsTriShape(data, block, bsVersion, be);
+        var parsed = NifSceneGraphBlockReader.ParseBsTriShape(data, block, bsVersion, binaryVersion, be);
         if (parsed is not { } info || info.NumVertices == 0 || info.NumTriangles == 0)
         {
             return null;

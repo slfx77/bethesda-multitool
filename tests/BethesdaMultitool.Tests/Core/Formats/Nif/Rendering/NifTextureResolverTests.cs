@@ -261,6 +261,7 @@ public sealed class NifTextureResolverTests
         var nif = new NifInfo
         {
             IsBigEndian = false,
+            BinaryVersion = 0x14020007, // 20.2.0.7 (FNV, bsVersion 34) — non-legacy NiTexturingProperty layout
             BsVersion = 34
         };
 

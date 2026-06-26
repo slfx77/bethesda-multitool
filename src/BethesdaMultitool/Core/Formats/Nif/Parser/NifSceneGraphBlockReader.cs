@@ -11,6 +11,7 @@ internal static class NifSceneGraphBlockReader
         byte[] data,
         BlockInfo block,
         uint bsVersion,
+        uint binaryVersion,
         bool be)
     {
         var pos = block.DataOffset;
@@ -20,6 +21,7 @@ internal static class NifSceneGraphBlockReader
                 ref pos,
                 end,
                 bsVersion,
+                binaryVersion,
                 be))
         {
             return -1;
@@ -105,11 +107,12 @@ internal static class NifSceneGraphBlockReader
         byte[] data,
         BlockInfo block,
         uint bsVersion,
+        uint binaryVersion,
         bool be)
     {
         // Morrowind NiGeometryData has no Group ID and is read by the dedicated Morrowind extractor;
         // its Additional Data ref (added at 20.0.0.4) does not exist, so report none.
-        if (bsVersion == 0)
+        if (NifVersions.IsLegacyNetImmerse(binaryVersion))
         {
             return -1;
         }
@@ -212,10 +215,12 @@ internal static class NifSceneGraphBlockReader
         return BinaryUtils.ReadInt32(data, pos, be);
     }
 
-    internal static int ReadVertexCount(byte[] data, BlockInfo block, bool be, bool morrowind = false)
+    internal static int ReadVertexCount(byte[] data, BlockInfo block, bool be, uint binaryVersion)
     {
-        // Num Vertices is the first NiGeometryData field in Morrowind (no Group ID); 4 bytes in.
-        var pos = block.DataOffset + (morrowind ? 0 : 4);
+        // NiGeometryData.Group ID (int) is present only since NIF 10.1.0.114. Num Vertices is the first
+        // field when it's absent — Morrowind (4.0.0.2) and Oblivion's 10.1.0.106 architecture — and sits
+        // 4 bytes in otherwise (10.2.0.0 / 20.0.0.x / FNV).
+        var pos = block.DataOffset + (NifVersions.HasGeometryGroupId(binaryVersion) ? 4 : 0);
         return pos + 2 > block.DataOffset + block.Size
             ? -1
             : BinaryUtils.ReadUInt16(data, pos, be);
@@ -225,6 +230,7 @@ internal static class NifSceneGraphBlockReader
         byte[] data,
         BlockInfo block,
         uint bsVersion,
+        uint binaryVersion,
         bool be,
         bool hasInlineStrings = false)
     {
@@ -235,6 +241,7 @@ internal static class NifSceneGraphBlockReader
                 ref pos,
                 end,
                 bsVersion,
+                binaryVersion,
                 be,
                 hasInlineStrings))
         {
@@ -267,8 +274,8 @@ internal static class NifSceneGraphBlockReader
         return children;
     }
 
-    internal static int ParseShapeDataRef(byte[] data, BlockInfo block, uint bsVersion, bool be,
-        bool hasInlineStrings = false)
+    internal static int ParseShapeDataRef(byte[] data, BlockInfo block, uint bsVersion, uint binaryVersion,
+        bool be, bool hasInlineStrings = false)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -277,6 +284,7 @@ internal static class NifSceneGraphBlockReader
                 ref pos,
                 end,
                 bsVersion,
+                binaryVersion,
                 be,
                 hasInlineStrings) ||
             pos + 4 > end)
@@ -291,6 +299,7 @@ internal static class NifSceneGraphBlockReader
         byte[] data,
         BlockInfo block,
         uint bsVersion,
+        uint binaryVersion,
         bool be,
         bool hasInlineStrings = false)
     {
@@ -299,14 +308,13 @@ internal static class NifSceneGraphBlockReader
         // Data ref, Skin Instance ref, and the variable-length Material Data block.
         if (bsVersion > 34)
         {
-            return ParseNiGeometryBsPropertyRefs(data, block, bsVersion, be);
+            return ParseNiGeometryBsPropertyRefs(data, block, bsVersion, binaryVersion, be);
         }
 
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
-        var morrowind = bsVersion == 0;
 
-        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be, hasInlineStrings, morrowind))
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be, hasInlineStrings, binaryVersion))
         {
             return null;
         }
@@ -314,7 +322,7 @@ internal static class NifSceneGraphBlockReader
         pos += bsVersion > 26 ? 4 : 2; // Flags
         pos += 12 + 36 + 4; // Translation + Rotation + Scale
 
-        if (morrowind)
+        if (NifVersions.HasAvObjectVelocity(binaryVersion))
         {
             pos += 12; // Velocity (Vector3, until 4.2.2.0) precedes the Properties array
         }
@@ -351,12 +359,13 @@ internal static class NifSceneGraphBlockReader
     ///     in place of the old Properties array. Layout after the NiAVObject base: Data ref(4) +
     ///     Skin Instance ref(4) + MaterialData(variable) + Shader Property(4) + Alpha Property(4).
     /// </summary>
-    private static List<int>? ParseNiGeometryBsPropertyRefs(byte[] data, BlockInfo block, uint bsVersion, bool be)
+    private static List<int>? ParseNiGeometryBsPropertyRefs(
+        byte[] data, BlockInfo block, uint bsVersion, uint binaryVersion, bool be)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
 
-        if (!SkipNiGeometryHeader(data, ref pos, end, bsVersion, be))
+        if (!SkipNiGeometryHeader(data, ref pos, end, bsVersion, binaryVersion, be))
         {
             return null;
         }
@@ -432,7 +441,8 @@ internal static class NifSceneGraphBlockReader
     ///     null if the block is too small or self-inconsistent. Only valid for bsVersion ≥ 100
     ///     (BSTriShape was introduced with Skyrim Special Edition).
     /// </summary>
-    internal static BsTriShapeInfo? ParseBsTriShape(byte[] data, BlockInfo block, uint bsVersion, bool be)
+    internal static BsTriShapeInfo? ParseBsTriShape(
+        byte[] data, BlockInfo block, uint bsVersion, uint binaryVersion, bool be)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -440,7 +450,7 @@ internal static class NifSceneGraphBlockReader
         // SkipNiGeometryHeader lands at the first NiAVObject-derived field. For bsVersion > 34 it
         // skips NiObjectNET + flags + transform + collision ref (no Properties array), which is
         // exactly the BSTriShape NiAVObject base — pos now points at the Bounding Sphere.
-        if (!SkipNiGeometryHeader(data, ref pos, end, bsVersion, be))
+        if (!SkipNiGeometryHeader(data, ref pos, end, bsVersion, binaryVersion, be))
         {
             return null;
         }
@@ -528,13 +538,11 @@ internal static class NifSceneGraphBlockReader
         ref int pos,
         int end,
         uint bsVersion,
+        uint binaryVersion,
         bool be,
         bool hasInlineStrings = false)
     {
-        // Morrowind streams (bsVersion 0) carry the legacy NiObjectNET/NiAVObject layout.
-        var morrowind = bsVersion == 0;
-
-        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be, hasInlineStrings, morrowind))
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be, hasInlineStrings, binaryVersion))
         {
             return false;
         }
@@ -542,7 +550,7 @@ internal static class NifSceneGraphBlockReader
         pos += bsVersion > 26 ? 4 : 2; // Flags (uint Bethesda > 26, else ushort)
         pos += 12 + 36 + 4; // Translation (Vector3) + Rotation (Matrix33) + Scale (float)
 
-        if (morrowind)
+        if (NifVersions.HasAvObjectVelocity(binaryVersion))
         {
             pos += 12; // Velocity (Vector3, until 4.2.2.0)
         }
@@ -564,7 +572,7 @@ internal static class NifSceneGraphBlockReader
             return false;
         }
 
-        if (morrowind)
+        if (!NifVersions.HasCollisionObjectRef(binaryVersion))
         {
             // Has Bounding Volume (bool32) replaces the Collision Object ref (added at 10.0.1.0). The
             // BoundingVolume union that follows when set is rare on shape/node bases and not modeled

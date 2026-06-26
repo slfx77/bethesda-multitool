@@ -32,7 +32,7 @@ internal static class NifTriStripExtractor
         }
 
         // NiTriStripsData-specific fields
-        return ExtractStripsSection(data, pos, end, isBigEndian);
+        return ExtractStripsSection(data, pos, end, isBigEndian, binaryVersion);
     }
 
     /// <summary>
@@ -52,7 +52,7 @@ internal static class NifTriStripExtractor
             return null;
         }
 
-        return ExtractStripsSectionInfo(data, pos, end, isBigEndian);
+        return ExtractStripsSectionInfo(data, pos, end, isBigEndian, binaryVersion);
     }
 
     /// <summary>
@@ -102,7 +102,12 @@ internal static class NifTriStripExtractor
     /// </summary>
     private static int SkipGeometryDataFields(byte[] data, int pos, int end, bool isBigEndian, uint binaryVersion)
     {
-        pos += 4; // GroupId
+        // NiGeometryData.Group ID (int) only since NIF 10.1.0.114 — absent on Oblivion's 10.1.0.106
+        // architecture (rfcastlearchfront / rfcastleruinswall3way), present on 10.2.0.0 / 20.0.0.x.
+        if (NifVersions.HasGeometryGroupId(binaryVersion))
+        {
+            pos += 4; // GroupId
+        }
 
         if (pos + 2 > end)
         {
@@ -112,7 +117,13 @@ internal static class NifTriStripExtractor
         var numVerts = BinaryUtils.ReadUInt16(data, pos, isBigEndian);
         pos += 2;
 
-        pos += 2; // KeepFlags, CompressFlags
+        // Keep Flags + Compress Flags exist only since NIF 10.1.0.0. Oblivion's oldest 10.0.1.0 / 10.0.1.2
+        // meshes have the modern base below this but not these two bytes — skipping them anyway would
+        // desync the strip section and report no triangles.
+        if (NifVersions.HasGeometryKeepFlags(binaryVersion))
+        {
+            pos += 2; // KeepFlags, CompressFlags
+        }
 
         if (pos + 1 > end)
         {
@@ -180,7 +191,8 @@ internal static class NifTriStripExtractor
     ///     Parse the strips section of a NiTriStripsData block: read strip lengths,
     ///     read strip index data, and convert to explicit triangles.
     /// </summary>
-    private static ushort[]? ExtractStripsSection(byte[] data, int pos, int end, bool isBigEndian)
+    private static ushort[]? ExtractStripsSection(byte[] data, int pos, int end, bool isBigEndian,
+        uint binaryVersion)
     {
         if (pos + 2 > end)
         {
@@ -215,15 +227,14 @@ internal static class NifTriStripExtractor
             pos += 2;
         }
 
-        if (pos + 1 > end)
+        // "Has Points" bool exists only since 10.0.1.3; at or below 10.0.1.2 (Oblivion 10.0.1.0 / 10.0.1.2)
+        // the strip points follow the strip lengths unconditionally.
+        if (NifVersions.HasStripPointsFlag(binaryVersion))
         {
-            return null;
-        }
-
-        var hasPoints = data[pos++];
-        if (hasPoints == 0)
-        {
-            return null;
+            if (pos + 1 > end || data[pos++] == 0)
+            {
+                return null;
+            }
         }
 
         // Read all strip indices
@@ -249,7 +260,8 @@ internal static class NifTriStripExtractor
         return ConvertStripsToTriangles(allStrips);
     }
 
-    private static NifTriStripSectionInfo? ExtractStripsSectionInfo(byte[] data, int pos, int end, bool isBigEndian)
+    private static NifTriStripSectionInfo? ExtractStripsSectionInfo(byte[] data, int pos, int end, bool isBigEndian,
+        uint binaryVersion)
     {
         if (pos + 2 > end)
         {
@@ -290,15 +302,13 @@ internal static class NifTriStripExtractor
             pos += 2;
         }
 
-        if (pos + 1 > end)
+        // "Has Points" bool exists only since 10.0.1.3 (see ExtractStripsSection).
+        if (NifVersions.HasStripPointsFlag(binaryVersion))
         {
-            return null;
-        }
-
-        var hasPoints = data[pos++];
-        if (hasPoints == 0)
-        {
-            return null;
+            if (pos + 1 > end || data[pos++] == 0)
+            {
+                return null;
+            }
         }
 
         var candidateTriangleWindowCount = 0;

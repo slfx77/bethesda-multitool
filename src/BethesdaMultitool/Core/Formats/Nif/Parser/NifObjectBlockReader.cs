@@ -8,19 +8,50 @@ namespace BethesdaMultitool.Core.Formats.Nif.Parser;
 /// </summary>
 internal static class NifObjectBlockReader
 {
-    internal static Matrix4x4 ParseNiAVObjectTransform(
+    /// <summary>
+    ///     True when an NiAVObject-derived block (a node or geometry shape) has its <c>Hidden</c> flag set
+    ///     (NiAVObject Flags bit 0 = APP_CULLED) — the engine does not render it. The Flags field sits right
+    ///     after the NiObjectNET header: 4 bytes for <c>bsVersion &gt; 26</c> (FO3+), 2 bytes otherwise
+    ///     (same split as <see cref="ParseNiAVObjectTransform" />). Returns false when the header can't be
+    ///     read so a malformed block is treated as visible rather than silently dropped.
+    /// </summary>
+    internal static bool IsHidden(
         byte[] data,
         BlockInfo block,
         uint bsVersion,
+        uint binaryVersion,
         bool be,
         bool hasInlineStrings = false)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
-        // Morrowind (bsVersion 0) uses the legacy NiObjectNET header (single Extra Data ref). The
-        // transform itself (Flags + Translation/Rotation/Scale) is identical; Velocity follows it and
-        // does not affect the matrix, so no further Morrowind branching is needed here.
-        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be, hasInlineStrings, bsVersion == 0))
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be, hasInlineStrings, binaryVersion))
+        {
+            return false;
+        }
+
+        if (bsVersion > 26)
+        {
+            return pos + 4 <= end && (BinaryUtils.ReadUInt32(data, pos, be) & 1u) != 0;
+        }
+
+        return pos + 2 <= end && (BinaryUtils.ReadUInt16(data, pos, be) & 1) != 0;
+    }
+
+    internal static Matrix4x4 ParseNiAVObjectTransform(
+        byte[] data,
+        BlockInfo block,
+        uint bsVersion,
+        uint binaryVersion,
+        bool be,
+        bool hasInlineStrings = false)
+    {
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+        // Legacy NetImmerse (Morrowind) uses the single Extra Data ref form of the NiObjectNET header.
+        // The transform itself (Flags + Translation/Rotation/Scale) is identical; Velocity follows it and
+        // does not affect the matrix, so no further legacy branching is needed here.
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be, hasInlineStrings, binaryVersion))
         {
             return Matrix4x4.Identity;
         }

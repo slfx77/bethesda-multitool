@@ -48,6 +48,11 @@ internal sealed class NifValueConverter
 
             if (!ShouldProcessField(ctx, field, depth))
             {
+                if (_measure && ctx.BlockType is "bhkMoppBvTreeShape" or "bhkNiTriStripsShape")
+                {
+                    Console.Error.WriteLine($"RBT SKIP d{depth} {field.Name} (since={field.Since} until={field.Until} vercond={field.VersionCond} cond={field.Condition})");
+                }
+
                 continue;
             }
 
@@ -56,7 +61,12 @@ internal sealed class NifValueConverter
                 Log.Trace($"    Converting field {field.Name} at pos {ctx.Position:X}");
             }
 
+            var before = ctx.Position;
             ConvertField(ctx, field, depth);
+            if (_measure && ctx.BlockType is "bhkMoppBvTreeShape" or "bhkNiTriStripsShape")
+            {
+                Console.Error.WriteLine($"RBT d{depth} {field.Name} ({field.Type}) {before}->{ctx.Position} (+{ctx.Position - before})");
+            }
         }
     }
 

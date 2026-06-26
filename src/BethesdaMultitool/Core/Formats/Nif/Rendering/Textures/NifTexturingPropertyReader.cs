@@ -51,12 +51,12 @@ internal static class NifTexturingPropertyReader
         sourceRef = -1;
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
-        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.IsMorrowind))
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.BinaryVersion))
         {
             return false;
         }
 
-        if (nif.IsMorrowind)
+        if (NifVersions.IsLegacyNetImmerse(nif.BinaryVersion))
         {
             // Morrowind NiTexturingProperty: Flags (ushort) + Apply Mode (uint) + Texture Count (uint)
             // + Has Base Texture (32-bit bool) + Base Texture (TexDesc). The TexDesc's first field is
@@ -116,7 +116,7 @@ internal static class NifTexturingPropertyReader
 
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
-        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.IsMorrowind))
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.BinaryVersion))
         {
             return false;
         }

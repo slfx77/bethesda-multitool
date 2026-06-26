@@ -75,7 +75,7 @@ internal static class NifSkinningDiagnostics
             return null;
         }
 
-        var vertexCount = NifBlockParsers.ReadVertexCount(data, nif.Blocks[dataIndex], nif.IsBigEndian, nif.IsMorrowind);
+        var vertexCount = NifBlockParsers.ReadVertexCount(data, nif.Blocks[dataIndex], nif.IsBigEndian, nif.BinaryVersion);
         if (vertexCount <= 0)
         {
             return null;

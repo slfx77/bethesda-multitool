@@ -33,7 +33,7 @@ public class Tes3NifStructureProbe
 
         var nif = NifParser.Parse(data);
         Assert.NotNull(nif);
-        Assert.True(nif.IsMorrowind);
+        Assert.True(NifVersions.IsLegacyNetImmerse(nif.BinaryVersion));
 
         var nodeChildren = new Dictionary<int, List<int>>();
         var shapeDataMap = new Dictionary<int, int>();
@@ -68,8 +68,8 @@ public class Tes3NifStructureProbe
                 continue;
             }
 
-            var kids = NifBlockParsers.ParseNodeChildren(data, nif.Blocks[i], nif.BsVersion, nif.IsBigEndian,
-                nif.HasInlineStrings);
+            var kids = NifBlockParsers.ParseNodeChildren(data, nif.Blocks[i], nif.BsVersion, nif.BinaryVersion,
+                nif.IsBigEndian, nif.HasInlineStrings);
             if (kids is null)
             {
                 continue;

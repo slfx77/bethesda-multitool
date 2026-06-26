@@ -28,7 +28,7 @@ internal static class TriNifGeometryInspector
                 continue;
             }
 
-            var vertexCount = NifBlockParsers.ReadVertexCount(nifData, block, nif.IsBigEndian, nif.IsMorrowind);
+            var vertexCount = NifBlockParsers.ReadVertexCount(nifData, block, nif.IsBigEndian, nif.BinaryVersion);
             var triStripInfo = block.TypeName == "NiTriStripsData"
                 ? NifTriStripExtractor.ReadStripSectionInfo(nifData, block, nif.IsBigEndian, nif.BinaryVersion)
                 : null;

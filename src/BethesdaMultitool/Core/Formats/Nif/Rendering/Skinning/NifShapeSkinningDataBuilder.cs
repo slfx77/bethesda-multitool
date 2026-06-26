@@ -60,7 +60,7 @@ internal static class NifShapeSkinningDataBuilder
                 data,
                 nif.Blocks[dataIndex],
                 be,
-                nif.IsMorrowind);
+                nif.BinaryVersion);
             if (numVertices <= 0)
             {
                 continue;

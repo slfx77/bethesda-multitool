@@ -19,15 +19,26 @@ internal static class NifBlockParsers
         byte[] data,
         BlockInfo block,
         uint bsVersion,
+        uint binaryVersion,
         bool be,
         bool hasInlineStrings = false)
     {
-        return NifObjectBlockReader.ParseNiAVObjectTransform(data, block, bsVersion, be, hasInlineStrings);
+        return NifObjectBlockReader.ParseNiAVObjectTransform(data, block, bsVersion, binaryVersion, be, hasInlineStrings);
     }
 
     internal static string? ReadBlockName(byte[] data, BlockInfo block, NifInfo nif)
     {
         return NifObjectBlockReader.ReadBlockName(data, block, nif);
+    }
+
+    /// <summary>
+    ///     True when a geometry/node block carries the NiAVObject <c>Hidden</c> flag (bit 0 = APP_CULLED) —
+    ///     the engine culls it, so the renderer must too (e.g. NV_FencePickCleanGate's hidden C_gatepost
+    ///     proxy posts that otherwise render as untextured white "duplicate" posts).
+    /// </summary>
+    internal static bool IsHiddenShape(byte[] data, BlockInfo block, NifInfo nif)
+    {
+        return NifObjectBlockReader.IsHidden(data, block, nif.BsVersion, nif.BinaryVersion, nif.IsBigEndian, nif.HasInlineStrings);
     }
 
     internal static string? ReadParentNodeExtraData(byte[] data, BlockInfo block, NifInfo nif)
@@ -110,9 +121,10 @@ internal static class NifBlockParsers
         byte[] data,
         BlockInfo block,
         uint bsVersion,
+        uint binaryVersion,
         bool be)
     {
-        return NifSceneGraphBlockReader.ParseShapeSkinInstanceRef(data, block, bsVersion, be);
+        return NifSceneGraphBlockReader.ParseShapeSkinInstanceRef(data, block, bsVersion, binaryVersion, be);
     }
 
     internal static int[]? ParseDismemberPartitions(byte[] data, BlockInfo block, bool be)
@@ -129,40 +141,43 @@ internal static class NifBlockParsers
         byte[] data,
         BlockInfo block,
         uint bsVersion,
+        uint binaryVersion,
         bool be)
     {
-        return NifSceneGraphBlockReader.ParseGeometryAdditionalDataRef(data, block, bsVersion, be);
+        return NifSceneGraphBlockReader.ParseGeometryAdditionalDataRef(data, block, bsVersion, binaryVersion, be);
     }
 
-    internal static int ReadVertexCount(byte[] data, BlockInfo block, bool be, bool morrowind = false)
+    internal static int ReadVertexCount(byte[] data, BlockInfo block, bool be, uint binaryVersion)
     {
-        return NifSceneGraphBlockReader.ReadVertexCount(data, block, be, morrowind);
+        return NifSceneGraphBlockReader.ReadVertexCount(data, block, be, binaryVersion);
     }
 
     internal static List<int>? ParseNodeChildren(
         byte[] data,
         BlockInfo block,
         uint bsVersion,
+        uint binaryVersion,
         bool be,
         bool hasInlineStrings = false)
     {
-        return NifSceneGraphBlockReader.ParseNodeChildren(data, block, bsVersion, be, hasInlineStrings);
+        return NifSceneGraphBlockReader.ParseNodeChildren(data, block, bsVersion, binaryVersion, be, hasInlineStrings);
     }
 
-    internal static int ParseShapeDataRef(byte[] data, BlockInfo block, uint bsVersion, bool be,
-        bool hasInlineStrings = false)
+    internal static int ParseShapeDataRef(byte[] data, BlockInfo block, uint bsVersion, uint binaryVersion,
+        bool be, bool hasInlineStrings = false)
     {
-        return NifSceneGraphBlockReader.ParseShapeDataRef(data, block, bsVersion, be, hasInlineStrings);
+        return NifSceneGraphBlockReader.ParseShapeDataRef(data, block, bsVersion, binaryVersion, be, hasInlineStrings);
     }
 
     internal static List<int>? ParseShapePropertyRefs(
         byte[] data,
         BlockInfo block,
         uint bsVersion,
+        uint binaryVersion,
         bool be,
         bool hasInlineStrings = false)
     {
-        return NifSceneGraphBlockReader.ParseShapePropertyRefs(data, block, bsVersion, be, hasInlineStrings);
+        return NifSceneGraphBlockReader.ParseShapePropertyRefs(data, block, bsVersion, binaryVersion, be, hasInlineStrings);
     }
 
     internal static RenderableSubmesh? ExtractSubmesh(
