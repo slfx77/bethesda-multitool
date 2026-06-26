@@ -131,15 +131,23 @@ public sealed class RecordParser
         // read by the schema-driven parser — it decodes every record into a GenericEsmRecord with a
         // labeled field tree, so divergent types are read correctly instead of misparsed through FNV
         // offsets. Gated per game via EsmSchemas, so FNV/FO3 fall through to the typed handlers below.
+        // Schema-driven games (Oblivion today) decode EVERY record into a GenericEsmRecord with a labeled
+        // field tree — the Records/Dialogue tabs read those (the typed handlers misparse Oblivion's complex
+        // actor/item records through FNV offsets). But the 3D viewer + atmosphere need TYPED Worldspace/
+        // Cell/Climate/Weather/Land/Static records, which the schema parser does NOT produce (and it skips
+        // LAND/REFR for perf). So for a schema game we run BOTH: keep the schema decode here, then FALL
+        // THROUGH to the typed handlers and, at the end, merge — schema result as the base (its empty typed
+        // lists make EsmBrowserTreeBuilder.Pick() fall to the rich generics), with the viewer's
+        // world/atmosphere collections overlaid from the typed parse (those are subrecord-based and parse
+        // Oblivion correctly — verified: 19 climates, 84 worldspaces, 35k cells, real CLMT timing).
+        RecordCollection? schemaResult = null;
         if (RecordModel.EsmSchemas.ForGame(_context.Game) is { } gameSchema)
         {
             progress?.Report((0, $"Decoding {_context.Game} records (schema-driven)..."));
-            var schemaResult = new SchemaDrivenRecordParser(_context, gameSchema).ParseAll(progress);
-            totalSw.Stop();
+            schemaResult = new SchemaDrivenRecordParser(_context, gameSchema).ParseAll(progress);
             Logger.Instance.Info(
-                $"[Semantic Parse] Complete (schema:{_context.Game}). Time: {totalSw.Elapsed}, " +
-                $"Records: {schemaResult.TotalRecordsProcessed}");
-            return schemaResult;
+                $"[Semantic Parse] Schema decode (schema:{_context.Game}): {schemaResult.TotalRecordsProcessed} " +
+                "records; running typed world/atmosphere handlers for the viewer bridge...");
         }
 
         // Parsed record types — single source of truth lives in EsmParsedRecordTypes, which is
@@ -179,12 +187,19 @@ public sealed class RecordParser
         RuntimeDataEnricher.EnrichWorldspaceCellMaps(_context, phaseSw);
 
         // Pre-scan all records for FULL subrecords (display names) so that
-        // unparsed types (HAIR, EYES, CSTY, etc.) have names available for display
+        // unparsed types (HAIR, EYES, CSTY, etc.) have names available for display.
+        // Skipped on the schema-bridge path: SchemaDrivenRecordParser already captured EDID + FULL
+        // for every browsable record into the shared context (placement children — REFR/ACHR/NAVM/
+        // LAND/... — carry no FULL), so re-reading the whole file here (~1M placement children on a
+        // large Oblivion plugin) is pure waste. FNV/FO3 (schemaResult is null) are unchanged.
         progress?.Report((2, "Scanning display names..."));
-        phaseSw.Restart();
-        _context.CaptureAllFullNames();
-        Logger.Instance.Debug(
-            $"  [Semantic] Display names: {phaseSw.Elapsed} ({_context.FormIdToFullName.Count} names captured)");
+        if (schemaResult is null)
+        {
+            phaseSw.Restart();
+            _context.CaptureAllFullNames();
+            Logger.Instance.Debug(
+                $"  [Semantic] Display names: {phaseSw.Elapsed} ({_context.FormIdToFullName.Count} names captured)");
+        }
 
         // Build weapons and ammo first, then cross-reference for projectile data
         progress?.Report((5, "Parsing characters..."));
@@ -606,6 +621,39 @@ public sealed class RecordParser
             TotalRecordsProcessed = _context.ScanResult.MainRecords.Count,
             UnparsedTypeCounts = unparsedCounts
         };
+
+        // Schema→typed viewer bridge (Oblivion): keep the schema decode as the base — its GenericRecords +
+        // DecodedTrees + Oblivion dialogue/quests drive the Records/Dialogue tabs, and its empty typed lists
+        // make the Records-tab Pick() fall to the rich generics for the complex types. Overlay ONLY the
+        // viewer's world/atmosphere collections from the typed parse (the schema parser produces none of
+        // these). The overlaid world/static types — correctly subrecord-parsed — then show typed in the
+        // Records tab, which is accurate and FNV-consistent.
+        if (schemaResult is not null)
+        {
+            result = schemaResult with
+            {
+                Worldspaces = result.Worldspaces,
+                Cells = result.Cells,
+                Climate = result.Climate,
+                Weather = result.Weather,
+                LandTextures = result.LandTextures,
+                TextureSets = result.TextureSets,
+                Water = result.Water,
+                NavMeshes = result.NavMeshes,
+                MapMarkers = result.MapMarkers,
+                Regions = result.Regions,
+                Statics = result.Statics,
+                Activators = result.Activators,
+                Doors = result.Doors,
+                Lights = result.Lights,
+                Furniture = result.Furniture,
+                StaticCollections = result.StaticCollections,
+                ModelPathIndex = result.ModelPathIndex,
+                RuntimeWorldspaceMaps = result.RuntimeWorldspaceMaps,
+                FormIdToEditorId = result.FormIdToEditorId,
+                FormIdToDisplayName = result.FormIdToDisplayName,
+            };
+        }
 
         totalSw.Stop();
         Logger.Instance.Info(

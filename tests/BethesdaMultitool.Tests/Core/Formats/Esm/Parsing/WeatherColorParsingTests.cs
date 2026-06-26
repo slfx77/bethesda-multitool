@@ -1,3 +1,4 @@
+using System;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
@@ -161,5 +162,87 @@ public class WeatherColorParsingTests
         // 0x0024A3C1). Only categories 0–9 are consumed by the atmosphere renderer; the rest are harmless.
         var colors = MiscEnvironmentHandler.ReadWeatherColorsModern(new byte[608], false, 32);
         Assert.Equal(19, colors.Count);
+    }
+
+    // --- JNAM "Cloud Alphas" (Skyrim/FO4/FO76/SF1 per-layer cloud opacity) -------------------------------
+    // The engine's real per-layer cloud OPACITY lives in JNAM, NOT the PNAM color's alpha byte (which these
+    // records author as 0). Each layer is a wbWeatherCloudAlphas struct of FOUR opacity floats (Sunrise/Day/
+    // Sunset/Night), widening to 8 floats for FO4/FO76/SF1 at form version 111 like the colors. Verified
+    // against FalloutNV (no JNAM → flat opacity), SkyrimCloudy (all 1.0 → heavy overcast) and FO4
+    // CommonwealthClear (layers 0.0/0.2/0.4/0.75 → mostly-sky clear).
+
+    // Builds N layers of cloud-alpha floats at the given stride; layer L band B float = L*10 + B + 1 so
+    // every band is trivially identifiable and the stride is testable.
+    private static byte[] BuildCloudAlphaBuffer(int layers, int floatsPerLayer)
+    {
+        var data = new byte[layers * floatsPerLayer * 4];
+        for (var L = 0; L < layers; L++)
+        {
+            for (var b = 0; b < floatsPerLayer; b++)
+            {
+                BitConverter.GetBytes((float)((L * 10) + b + 1)).CopyTo(data, ((L * floatsPerLayer) + b) * 4);
+            }
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [InlineData(BethesdaGame.Fallout4, 131, 32)]   // FO4 retail: 8 floats
+    [InlineData(BethesdaGame.Fallout4, 110, 16)]   // FO4 pre-111: 4 floats
+    [InlineData(BethesdaGame.Fallout76, 120, 32)]
+    [InlineData(BethesdaGame.Starfield, 150, 32)]
+    [InlineData(BethesdaGame.Skyrim, 43, 16)]      // Skyrim never widens
+    public void ModernCloudAlphaStride_WidensOnlyForFo4PlusAtVersion111(BethesdaGame game, int formVersion, int expectedStride)
+    {
+        Assert.Equal(expectedStride, MiscEnvironmentHandler.ModernCloudAlphaStride(game, formVersion));
+    }
+
+    [Fact]
+    public void ReadCloudAlphas_FourFloatStride_ReadsAllBands()
+    {
+        // Skyrim / FO4 pre-111: 16-byte stride (4 floats).
+        var alphas = MiscEnvironmentHandler.ReadCloudAlphas(BuildCloudAlphaBuffer(2, 4), false, 16);
+
+        Assert.Equal(2, alphas.Count);
+        Assert.Equal(1f, alphas[0].Sunrise);
+        Assert.Equal(2f, alphas[0].Day);
+        Assert.Equal(3f, alphas[0].Sunset);
+        Assert.Equal(4f, alphas[0].Night);
+        // Layer 1 starts at byte 16 (L*10 + b + 1 → 11,12,13,14).
+        Assert.Equal(11f, alphas[1].Sunrise);
+        Assert.Equal(12f, alphas[1].Day);
+    }
+
+    [Fact]
+    public void ReadCloudAlphas_EightFloatStride_ReadsFourBaseBands_SkipsExtra()
+    {
+        // FO4 v111+: 32-byte stride (8 floats) but only the four base bands map to our model; the extra
+        // Early/Late Sunrise/Sunset interpolation aids are skipped. This is the stride guard — a regressed
+        // 16-byte read would land layer 1 on layer 0's Early-Sunrise float (5) instead of byte 32 (11).
+        var alphas = MiscEnvironmentHandler.ReadCloudAlphas(BuildCloudAlphaBuffer(2, 8), false, 32);
+
+        Assert.Equal(2, alphas.Count);
+        Assert.Equal(1f, alphas[0].Sunrise);
+        Assert.Equal(2f, alphas[0].Day);
+        Assert.Equal(3f, alphas[0].Sunset);
+        Assert.Equal(4f, alphas[0].Night);
+        Assert.Equal(11f, alphas[1].Sunrise);
+        Assert.NotEqual(5f, alphas[1].Sunrise);
+    }
+
+    [Fact]
+    public void ReadCloudAlphas_BigEndian_ReadsSwappedFloats()
+    {
+        // Xbox 360 records are big-endian; the float read must honor the record endianness so Xbox and PC
+        // produce the same opacities. Encode one layer's Day = 1.0 in big-endian and read it back.
+        var data = new byte[16];
+        var dayBe = BitConverter.GetBytes(1.0f);
+        Array.Reverse(dayBe);
+        dayBe.CopyTo(data, 4); // Day is the second float (offset 4)
+
+        var alphas = MiscEnvironmentHandler.ReadCloudAlphas(data, true, 16);
+        Assert.Single(alphas);
+        Assert.Equal(1.0f, alphas[0].Day);
     }
 }

@@ -53,6 +53,18 @@ public record WeatherRecord
     public IReadOnlyList<WeatherColor> CloudColors { get; init; } = [];
 
     /// <summary>
+    ///     JNAM "Cloud Alphas" (Skyrim/FO4/FO76/SF1; xEdit wbWeatherCloudAlphas): one <see cref="WeatherCloudAlpha" />
+    ///     PER CLOUD LAYER — the per-layer, per-time-of-day OPACITY (float, default 1.0) the engine applies to
+    ///     each cloud sheet. This is the layer-opacity channel the modern weather authors SEPARATELY from the
+    ///     PNAM cloud color (whose alpha byte is unused, hence the 0s). A weather hides a layer by authoring 0
+    ///     and thins others with fractional values — so a CLEAR weather (e.g. CommonwealthClear: layers at
+    ///     0.0/0.2/0.4/0.75/…) shows mostly sky, while a CLOUDY one (SkyrimCloudy: all 1.0) fully overcasts.
+    ///     Indexed parallel to <see cref="CloudLayerTextures" />. Empty for FO3/FNV (which carry no JNAM —
+    ///     they use a single cloud sheet, so the renderer's flat opacity is correct there).
+    /// </summary>
+    public IReadOnlyList<WeatherCloudAlpha> CloudLayerAlphas { get; init; } = [];
+
+    /// <summary>
     ///     QNAM "X Cloud Speeds" (FNV; xEdit wbWeatherCloudSpeed): one byte per cloud layer — the per-layer
     ///     U-axis scroll rate the engine accumulates in <c>Clouds::Update</c>. Empty when absent.
     /// </summary>
@@ -73,6 +85,15 @@ public record WeatherRecord
 
 /// <summary>An 8-bit RGBA color as stored in a WTHR NAM0 entry.</summary>
 public readonly record struct WeatherRgba(byte R, byte G, byte B, byte A);
+
+/// <summary>
+///     One cloud layer's JNAM "Cloud Alphas" opacity sampled at the four times of day (Sunrise / Day /
+///     Sunset / Night), each a float in [0, 1]. FO4/FO76/SF1 form version 111+ author four extra
+///     interpolation bands (Early/Late Sunrise/Sunset) after these; they're interpolation aids with no
+///     distinct time slot, so only the four base bands are kept (blended the same windowed way as the
+///     sky/cloud colors). Default 1.0 (fully opaque) per xEdit's wbWeatherCloudAlphas.
+/// </summary>
+public readonly record struct WeatherCloudAlpha(float Sunrise, float Day, float Sunset, float Night);
 
 /// <summary>
 ///     One NAM0 color category sampled at the times of day. Band order is Sunrise / Day / Sunset /

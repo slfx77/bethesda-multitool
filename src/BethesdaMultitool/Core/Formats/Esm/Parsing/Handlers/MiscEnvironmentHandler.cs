@@ -207,6 +207,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         var cloudLayers = new SortedDictionary<int, string>();
         IReadOnlyList<WeatherColor>? colors = null;
         IReadOnlyList<WeatherColor>? cloudColors = null;
+        IReadOnlyList<WeatherCloudAlpha>? cloudAlphas = null;
         byte[]? cloudSpeedsX = null;
         byte[]? cloudSpeedsY = null;
         IReadOnlyList<float>? fogDistances = null;
@@ -287,6 +288,14 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                         ? ReadWeatherColorsModern(subData, record.IsBigEndian, modernStride)
                         : ReadWeatherColors(subData, record.IsBigEndian, weatherBands);
                     break;
+                // JNAM "Cloud Alphas" (Skyrim/FO4/FO76/SF1; xEdit wbWeatherCloudAlphas): per-cloud-layer
+                // per-time-of-day OPACITY floats — the engine's real per-layer cloud opacity (PNAM's alpha
+                // byte is unused). Modern-only; FO3/FNV carry no JNAM. Stride is form-versioned exactly like
+                // the colors (FO4/76/SF1 widen 4→8 float bands at version 111); only the four base bands are
+                // kept. Floats are endian-aware so Xbox (byte-swapped) and PC agree.
+                case "JNAM" when modernWeather && sub.DataLength >= 16:
+                    cloudAlphas = ReadCloudAlphas(subData, record.IsBigEndian, ModernCloudAlphaStride(Context.Game, ReadRecordFormVersion(record)));
+                    break;
                 // QNAM/RNAM "X/Y Cloud Speeds" (FNV; xEdit wbWeatherCloudSpeed): one u8 per cloud layer,
                 // the per-axis UV scroll rate. Clouds::Update accumulates layer scroll ∝ this byte × dt, so
                 // each layer drifts at its own speed/direction. Bytes need no endian swap.
@@ -318,6 +327,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             CloudLayerTextures = cloudLayers.Count == 0 ? [] : cloudLayers.Values.ToList(),
             Colors = colors ?? [],
             CloudColors = cloudColors ?? [],
+            CloudLayerAlphas = cloudAlphas ?? [],
             CloudSpeedsX = cloudSpeedsX ?? [],
             CloudSpeedsY = cloudSpeedsY ?? [],
             FogDistances = fogDistances ?? [],
@@ -433,6 +443,43 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         var wide = formVersion >= 111
             && game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
         return (wide ? 8 : 4) * bandBytes;
+    }
+
+    // JNAM "Cloud Alphas": per-layer opacity FLOATS (Sunrise/Day/Sunset/Night), one struct per cloud layer.
+    // FO4/FO76/SF1 widen 4→8 float bands at form version 111 (the extra Early/Late Sunrise/Sunset aids),
+    // exactly like the colors; Skyrim is always 4. Stride = bands × 4 bytes (16 or 32). Only the four base
+    // bands are read regardless of stride, since they sit at the same fixed offsets in both layouts.
+    internal static int ModernCloudAlphaStride(BethesdaGame game, int formVersion)
+    {
+        const int floatBytes = 4;
+        var wide = formVersion >= 111
+            && game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
+        return (wide ? 8 : 4) * floatBytes;
+    }
+
+    // Reads the JNAM cloud-alpha array: one per-layer <see cref="WeatherCloudAlpha" /> (Sunrise/Day/Sunset/
+    // Night floats) per stride-byte block. Floats are endian-aware so Xbox (byte-swapped) and PC agree.
+    internal static List<WeatherCloudAlpha> ReadCloudAlphas(ReadOnlySpan<byte> data, bool isBigEndian, int strideBytes)
+    {
+        const int floatBytes = 4;
+        if (strideBytes < 4 * floatBytes)
+        {
+            strideBytes = 4 * floatBytes; // never read fewer than the four base bands
+        }
+
+        var count = data.Length / strideBytes;
+        var alphas = new List<WeatherCloudAlpha>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var b = i * strideBytes;
+            var sunrise = ReadFloat(data, b, isBigEndian);
+            var day = ReadFloat(data, b + floatBytes, isBigEndian);
+            var sunset = ReadFloat(data, b + (2 * floatBytes), isBigEndian);
+            var night = ReadFloat(data, b + (3 * floatBytes), isBigEndian);
+            alphas.Add(new WeatherCloudAlpha(sunrise, day, sunset, night));
+        }
+
+        return alphas;
     }
 
     // FO3/FNV/Skyrim/FO4/FO76/SF1 store a u16 "form version" at record-header offset 0x14 (20); Oblivion's
@@ -585,9 +632,13 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
                     break;
-                // WLST: weather list — 12-byte entries (Weather FormID, Chance int32, Global FormID).
-                case "WLST" when sub.DataLength >= 12:
-                    weatherTypes = ReadClimateWeatherList(subData, record.IsBigEndian);
+                // WLST: weather list. FO3/FNV entries are 12 bytes (Weather FormID + Chance int32 + Global
+                // FormID); Oblivion (TES4) entries are 8 bytes — Weather FormID + Chance, NO Global (xEdit
+                // wbArrayS WLST). Accept >= 8 and pick the stride by game, else a 1-entry Oblivion WLST (8
+                // bytes) is rejected outright and multi-entry ones misparse at the 12-byte stride.
+                case "WLST" when sub.DataLength >= 8:
+                    weatherTypes = ReadClimateWeatherList(
+                        subData, record.IsBigEndian, Context.Game == BethesdaGame.Oblivion ? 8 : 12);
                     break;
                 // TNAM: 6-byte timing (sunrise/sunset begin+end, volatility, moon phase length).
                 case "TNAM" when sub.DataLength >= 6:
@@ -611,9 +662,8 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         };
     }
 
-    private static List<ClimateWeatherEntry> ReadClimateWeatherList(ReadOnlySpan<byte> data, bool isBigEndian)
+    private static List<ClimateWeatherEntry> ReadClimateWeatherList(ReadOnlySpan<byte> data, bool isBigEndian, int entryBytes)
     {
-        const int entryBytes = 12;
         var count = data.Length / entryBytes;
         var list = new List<ClimateWeatherEntry>(count);
         for (var i = 0; i < count; i++)
@@ -623,7 +673,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             var chance = isBigEndian
                 ? BinaryPrimitives.ReadInt32BigEndian(data.Slice(b + 4, 4))
                 : BinaryPrimitives.ReadInt32LittleEndian(data.Slice(b + 4, 4));
-            var global = RecordParserContext.ReadFormId(data.Slice(b + 8, 4), isBigEndian);
+            // Oblivion (8-byte entries) has no Global FormID — leave it 0 so the entry is treated as
+            // ungated (correct: TES4 carries no conditional-weather global here). FO3/FNV read it at +8.
+            var global = entryBytes >= 12 ? RecordParserContext.ReadFormId(data.Slice(b + 8, 4), isBigEndian) : 0u;
             list.Add(new ClimateWeatherEntry(weather, chance, global));
         }
 
