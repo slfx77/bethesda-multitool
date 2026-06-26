@@ -42,10 +42,17 @@ internal interface ITopDownSceneRenderer
     ///     "Rendered models" overlay matches the rest of the map (the user's category toggles drive
     ///     the rendered 3D meshes too, not just the 2D markers). Empty = show all.
     /// </param>
+    /// <param name="enableLighting">
+    ///     When true, the overlay bakes directional sun + ambient lighting from <paramref name="gameHour" />
+    ///     (the 2D map's lighting control); when false, flat legacy shade. Fog is always off (the 2D map
+    ///     has no fog control).
+    /// </param>
+    /// <param name="gameHour">Time of day (0–24h) driving the sun direction/intensity when lighting is on.</param>
     Task<TopDownRender?> RenderTopDownAsync(
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
         int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId,
-        IReadOnlyCollection<PlacedObjectCategory> hiddenCategories, CancellationToken ct);
+        IReadOnlyCollection<PlacedObjectCategory> hiddenCategories,
+        bool enableLighting, float gameHour, CancellationToken ct);
 }
 
 /// <summary>

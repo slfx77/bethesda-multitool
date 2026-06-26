@@ -151,7 +151,21 @@ public sealed partial class WorldView3DControl
         var delta = current - _previousPointerPosition;
         _previousPointerPosition = current;
         if ((current - _pointerPressPosition).Length() > ClickMoveThresholdPixels) _pointerDragMoved = true;
-        if (delta != Vector2.Zero) _controller.OnMouseDelta(delta);
+        if (delta == Vector2.Zero) return;
+        // In an ortho projection mode left-drag PANS the focus (the camera look angle is locked), except
+        // with Shift held, which free-rotates the azimuth (the next ◄ ► click re-snaps to 90°). Outside
+        // a projection mode it drives the flythrough mouse-look. A clean (non-drag) click still picks.
+        if (ProjectionActive)
+        {
+            if (e.KeyModifiers.HasFlag(Windows.System.VirtualKeyModifiers.Shift))
+                RotateProjectionAzimuth(delta.X);
+            else
+                PanProjectionFocus(delta);
+        }
+        else
+        {
+            _controller.OnMouseDelta(delta);
+        }
     }
 
     private void OnRenderPanelPointerReleased(object sender, PointerRoutedEventArgs e)
@@ -195,11 +209,25 @@ public sealed partial class WorldView3DControl
         var height = (float)RenderPanel.ActualHeight;
         if (width <= 0f || height <= 0f) return;
 
-        // Rebuild the exact view-projection the render loop uses (CameraState.GetProjectionMatrix
-        // applies reversed-Z), then invert it to unproject the click into a world-space ray.
-        var view = _camera.GetViewMatrix();
-        var proj = _camera.GetProjectionMatrix(width / height);
-        if (!Matrix4x4.Invert(view * proj, out var invViewProj)) return;
+        // Rebuild the exact view-projection the render loop uses (reversed-Z applied) for the active
+        // projection mode, then invert it to unproject the click into a world-space ray. The unproject
+        // is projection-agnostic — for ortho the inverse yields the (constant) parallel view direction.
+        Matrix4x4 viewProj;
+        Vector3 queryCenter;
+        float queryRadius;
+        if (ProjectionActive)
+        {
+            viewProj = BuildProjectionViewProj(width / height, out var orthoCylinder, out _);
+            queryCenter = _projectionFocus;
+            queryRadius = orthoCylinder.Radius;
+        }
+        else
+        {
+            viewProj = _camera.GetViewMatrix() * _camera.GetProjectionMatrix(width / height);
+            queryCenter = _camera.Position;
+            queryRadius = _renderDistance;
+        }
+        if (!Matrix4x4.Invert(viewProj, out var invViewProj)) return;
 
         var ndcX = 2f * (screen.X / width) - 1f;
         var ndcY = 1f - 2f * (screen.Y / height);
@@ -214,9 +242,9 @@ public sealed partial class WorldView3DControl
         if (rayLen < 1e-4f) return;
         rayDir /= rayLen;
 
-        // Limit candidates to cells within the render distance (what's actually drawn).
+        // Limit candidates to cells within the drawn radius (around the camera, or the ortho focus).
         _pickCellScratch.Clear();
-        _spatialIndex.QueryCellsInRadius(_camera.Position.X, -_camera.Position.Y, _renderDistance, _pickCellScratch);
+        _spatialIndex.QueryCellsInRadius(queryCenter.X, -queryCenter.Y, queryRadius, _pickCellScratch);
 
         // Click-through: collect ALL hits along the ray (same filters as the renderer so the
         // pickable set matches the visible set), sorted nearest-first.
@@ -232,25 +260,37 @@ public sealed partial class WorldView3DControl
                 // Broadphase: cheap bounding-sphere reject. Narrowphase: ray vs the OBND-tight
                 // oriented box — the exact box the selection highlight draws — so the pick lands on
                 // the clicked mesh instead of the near edge of an oversized bounding sphere.
-                if (!RaySphereHit(nearWorld, rayDir, r.BoundsCenter, r.BoundsRadius, out var sphereT)) continue;
+                // Broadphase sphere. For refs with no OBND the baked sphere is an oversized 1024-unit
+                // fallback (→ "massive click zone" e.g. GarbageCanUrban02); when the mesh has resolved,
+                // use its real local bounds so the pick is tight. Refs WITH an OBND use the tight OBB
+                // narrowphase below, so this only affects the OBND-less ones.
+                var sphereRadius = r.BoundsRadius;
+                if (placement.Bounds is null && _references is not null
+                    && _references.TryGetMeshLocalRadius(r.MeshId, out var meshRadius) && meshRadius > 0f)
+                {
+                    var s = placement.Scale > 0f ? placement.Scale : 1f;
+                    sphereRadius = meshRadius * s;
+                }
+                if (!RaySphereHit(nearWorld, rayDir, r.BoundsCenter, sphereRadius, out var sphereT,
+                        out var sphereInside)) continue;
                 if (placement.Bounds is { } b)
                 {
-                    if (RayObbHit(nearWorld, rayDir, b, r.WorldMatrix, out var obbT))
+                    if (RayObbHit(nearWorld, rayDir, b, r.WorldMatrix, out var obbT, out var obbInside))
                     {
-                        _pickHitScratch.Add(new PickHit(placement, placement.FormId, obbT));
+                        _pickHitScratch.Add(new PickHit(placement, placement.FormId, obbT, obbInside));
                     }
                     else
                     {
                         // OBND missed but the broadphase sphere hit — some meshes' visible geometry
                         // overspills a too-tight base-record OBND (notably SpeedTree canopies), making
                         // them "impossible to click" under an OBB-only gate. Keep as a fallback.
-                        _pickSphereFallbackScratch.Add(new PickHit(placement, placement.FormId, sphereT));
+                        _pickSphereFallbackScratch.Add(new PickHit(placement, placement.FormId, sphereT, sphereInside));
                     }
                 }
                 else
                 {
                     // No OBND at all — the broadphase sphere is the only available signal.
-                    _pickHitScratch.Add(new PickHit(placement, placement.FormId, sphereT));
+                    _pickHitScratch.Add(new PickHit(placement, placement.FormId, sphereT, sphereInside));
                 }
             }
         }
@@ -262,7 +302,14 @@ public sealed partial class WorldView3DControl
             if (_pickSphereFallbackScratch.Count == 0) return; // empty space → keep current selection
             _pickHitScratch.AddRange(_pickSphereFallbackScratch);
         }
-        _pickHitScratch.Sort(static (a, b) => a.T.CompareTo(b.T));
+        // Order: hits whose box the camera is OUTSIDE first (the thing you're aiming at), then by ray
+        // distance; hits whose box encloses the camera (fog/wind/snow effect volumes) go last so they no
+        // longer steal the click — but they stay in the list, cycle-selectable on repeat clicks.
+        _pickHitScratch.Sort(static (a, b) =>
+        {
+            if (a.OriginInside != b.OriginInside) return a.OriginInside ? 1 : -1;
+            return a.T.CompareTo(b.T);
+        });
 
         // If the current selection is still under this ray, advance to the next hit behind it (wrapping
         // past the last back to the nearest); otherwise select the nearest hit. Membership is recomputed
@@ -314,7 +361,7 @@ public sealed partial class WorldView3DControl
         InspectObject?.Invoke(this, prev);
     }
 
-    private readonly record struct PickHit(PlacedReference Placement, uint FormId, float T);
+    private readonly record struct PickHit(PlacedReference Placement, uint FormId, float T, bool OriginInside);
 
     /// <summary>Rebuilds the selection outline from the current <see cref="_selectedReference" />.</summary>
     private void UpdateHighlightFromSelection()
@@ -334,9 +381,21 @@ public sealed partial class WorldView3DControl
                 new Vector3(b.X2, b.Y2, b.Z2),
                 r.WorldMatrix);
         }
+        else if (_references is not null
+                 && _references.TryGetMeshLocalBounds(r.MeshId, out var localMin, out var localMax)
+                 && localMin != localMax)
+        {
+            // No OBND (every Oblivion ref; some FO3+ records omit it too) but the mesh has resolved —
+            // box its real mesh-local AABB, placed by the world matrix (carrying scale/rotation), so the
+            // highlight hugs the geometry instead of the oversized no-bounds fallback sphere (OBLIV-1).
+            // Same local-AABB × world-matrix path the OBND branch uses above.
+            _selectionHighlight.SetSelection(localMin, localMax, r.WorldMatrix);
+        }
         else
         {
-            // No OBND — fall back to a world-space cube around the bounding sphere (identity world).
+            // No OBND and the mesh has not resolved yet — fall back to a world-space cube around the
+            // bounding sphere (identity world). Re-selecting once the mesh has streamed in upgrades it to
+            // the tight AABB above.
             var c = r.BoundsCenter;
             var rad = r.BoundsRadius;
             _selectionHighlight.SetSelection(
@@ -358,12 +417,14 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>Ray vs sphere; returns the nearest non-negative hit distance along a unit-length ray.</summary>
-    private static bool RaySphereHit(Vector3 origin, Vector3 dir, Vector3 center, float radius, out float t)
+    private static bool RaySphereHit(
+        Vector3 origin, Vector3 dir, Vector3 center, float radius, out float t, out bool originInside)
     {
         t = 0f;
         var m = origin - center;
         var b = Vector3.Dot(m, dir);
         var c = Vector3.Dot(m, m) - radius * radius;
+        originInside = c <= 0f;                   // origin within the sphere
         if (c > 0f && b > 0f) return false;       // outside the sphere and pointing away
         var disc = b * b - c;
         if (disc < 0f) return false;              // misses
@@ -379,12 +440,22 @@ public sealed partial class WorldView3DControl
     ///     returned <paramref name="t" /> stays in world-ray units (consistent with the sphere
     ///     broadphase). Returns the entry distance, clamped to 0 when the camera is inside the box.
     /// </summary>
-    private static bool RayObbHit(Vector3 origin, Vector3 dir, ObjectBounds bounds, Matrix4x4 world, out float t)
+    private static bool RayObbHit(
+        Vector3 origin, Vector3 dir, ObjectBounds bounds, Matrix4x4 world, out float t, out bool originInside)
     {
         t = 0f;
+        originInside = false;
         if (!Matrix4x4.Invert(world, out var invWorld)) return false;
         var lo = Vector3.Transform(origin, invWorld);
         var ld = Vector3.TransformNormal(dir, invWorld);
+
+        // The camera/ray origin is inside the box when its local point falls within all three slabs.
+        // Such a hit clamps to t=0 below, which would wrongly sort the enclosing volume (a fog/wind/snow
+        // effect box you're standing in) ahead of the object you're actually aiming at — so the caller
+        // deprioritizes inside-box hits.
+        originInside = lo.X >= bounds.X1 && lo.X <= bounds.X2 &&
+                       lo.Y >= bounds.Y1 && lo.Y <= bounds.Y2 &&
+                       lo.Z >= bounds.Z1 && lo.Z <= bounds.Z2;
 
         var tMin = 0f;
         var tMax = float.PositiveInfinity;
@@ -410,7 +481,8 @@ public sealed partial class WorldView3DControl
     private void OnRenderPanelPointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
         var delta = e.GetCurrentPoint(RenderPanel).Properties.MouseWheelDelta;
-        _controller.OnScroll(delta);
+        // Ortho modes: the wheel zooms the ortho extent. Perspective: it adjusts the fly/walk speed.
+        if (!TryZoomProjection(delta)) _controller.OnScroll(delta);
         e.Handled = true;
     }
 }

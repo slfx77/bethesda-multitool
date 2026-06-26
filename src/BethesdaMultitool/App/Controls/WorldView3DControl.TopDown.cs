@@ -25,7 +25,8 @@ public sealed partial class WorldView3DControl
     async Task<TopDownRender?> ITopDownSceneRenderer.RenderTopDownAsync(
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
         int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId,
-        IReadOnlyCollection<PlacedObjectCategory> hiddenCategories, CancellationToken ct)
+        IReadOnlyCollection<PlacedObjectCategory> hiddenCategories,
+        bool enableLighting, float gameHour, CancellationToken ct)
     {
         if (!CanRenderTopDownCore) return null;
         if (worldMaxX <= worldMinX || worldMaxY <= worldMinY) return null;
@@ -111,10 +112,11 @@ public sealed partial class WorldView3DControl
                 cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
 
                 // Bind the atmosphere CB here too so the references the overlay draws read b3
-                // (reference.frag). Fog AND lighting OFF: the overlay is an orthographic top-down
-                // capture with no fog/lighting controls on the 2D map, so directional shading and
-                // distance fog would bake an uncontrollable look into the composite. Flat shade only.
-                BindAtmosphereConstants(cmd, recorder.FrameIndex, enableFog: false, enableLighting: false);
+                // (reference.frag). Fog stays OFF (the 2D map has no fog control), but lighting follows
+                // the 2D map's lighting toggle + its time-of-day (gameHourOverride) so the overlay's
+                // directional sun/ambient match the map's hillshade. Lighting off ⇒ flat legacy shade.
+                BindAtmosphereConstants(cmd, recorder.FrameIndex, enableFog: false,
+                    enableLighting: enableLighting, gameHourOverride: gameHour);
 
                 target.Bind(cmd);
                 _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs

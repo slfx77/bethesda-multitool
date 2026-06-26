@@ -201,6 +201,9 @@ public sealed partial class WorldMapControl
                 // Apply the legend's category filter to the rendered-models overlay so category
                 // toggles drive the 3D meshes too (snapshot — the render awaits off the UI thread).
                 hiddenCategories: new HashSet<PlacedObjectCategory>(_hiddenCategories),
+                // Drive the overlay's directional lighting from the 2D map's lighting control so it
+                // matches the hillshade (off ⇒ flat shade).
+                enableLighting: _hillshadeLightingEnabled, gameHour: _gameHour,
                 ct);
 
             if (gen != _topDownGen) return; // superseded (teardown / toggle off)

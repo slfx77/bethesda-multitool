@@ -48,7 +48,7 @@
             <TextBlock Text="Layers" />
           </StackPanel>
           <DropDownButton.Flyout>
-            <Flyout>
+            <Flyout Placement="Bottom" ShouldConstrainToRootBounds="False">
               <StackPanel Spacing="8" MinWidth="220">
                 <CheckBox x:Name="CellsCheckBox" IsChecked="False" Content="Cell grid"
                           AutomationProperties.Name="Cell grid"
@@ -78,7 +78,7 @@
             <TextBlock Text="Visibility" />
           </StackPanel>
           <DropDownButton.Flyout>
-            <Flyout>
+            <Flyout Placement="Bottom" ShouldConstrainToRootBounds="False">
               <StackPanel Spacing="8" MinWidth="240">
                 <CheckBox x:Name="TerrainToggle" IsChecked="True" Content="Terrain"
                           AutomationProperties.Name="Terrain"
@@ -117,6 +117,49 @@
           </DropDownButton.Flyout>
         </DropDownButton>
 
+        <!-- Projection: perspective (None) / orthographic / isometric / trimetric + FOV (perspective
+             only). The ◄ ► 90°-snap buttons live in the viewport corner, shown only in an ortho mode. -->
+        <DropDownButton AutomationProperties.Name="Projection menu" ToolTipService.ToolTip="Projection">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <FontIcon Glyph="&#xE809;" FontSize="14" />
+            <TextBlock Text="Projection" />
+          </StackPanel>
+          <DropDownButton.Flyout>
+            <Flyout Placement="Bottom" ShouldConstrainToRootBounds="False">
+              <StackPanel Spacing="10" MinWidth="240">
+                <RadioButtons x:Name="ProjectionModeRadios"
+                              AutomationProperties.Name="Projection mode"
+                              SelectedIndex="0"
+                              SelectionChanged="ProjectionModeRadios_SelectionChanged">
+                  <x:String>Perspective (default)</x:String>
+                  <x:String>Orthographic (top-down)</x:String>
+                  <x:String>Isometric</x:String>
+                  <x:String>Trimetric</x:String>
+                </RadioButtons>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock x:Name="FovLabel" Text="Field of view" VerticalAlignment="Center" />
+                  <Slider x:Name="FovSlider" Width="130" VerticalAlignment="Center"
+                          Minimum="30" Maximum="110" Value="60" StepFrequency="1"
+                          AutomationProperties.Name="Field of view"
+                          ToolTipService.ToolTip="Perspective field of view (degrees) — perspective mode only"
+                          ValueChanged="FovSlider_ValueChanged" />
+                </StackPanel>
+              </StackPanel>
+            </Flyout>
+          </DropDownButton.Flyout>
+        </DropDownButton>
+
+        <!-- Export: render the active exterior worldspace to PNG(s) via the projection/direction/scale
+             chosen in MapExport3DDialog. -->
+        <Button x:Name="ExportButton" Click="ExportButton_Click"
+                AutomationProperties.Name="Export 3D worldspace"
+                ToolTipService.ToolTip="Export the worldspace as a 3D projection (PNG)">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <FontIcon Glyph="&#xEDE1;" FontSize="14" />
+            <TextBlock Text="Export" />
+          </StackPanel>
+        </Button>
+
       </StackPanel>
     </Grid>
 
@@ -145,6 +188,25 @@
                    AutomationProperties.Name="3D view HUD"
                    Text="" />
       </Border>
+
+      <!-- 90°-snap rotate buttons for the projection modes — sit to the LEFT of the diagnostics toggle
+           (extra right margin clears it). Collapsed in perspective mode (SetProjectionMode toggles it). -->
+      <StackPanel x:Name="ProjectionSnapPanel" Orientation="Horizontal" Spacing="4"
+                  HorizontalAlignment="Right" VerticalAlignment="Top"
+                  Margin="8,8,52,8" Visibility="Collapsed">
+        <Button x:Name="RotateLeftButton" Padding="6" MinWidth="0"
+                ToolTipService.ToolTip="Rotate view 90° left"
+                AutomationProperties.Name="Rotate view 90 degrees left"
+                Click="RotateLeftButton_Click">
+          <FontIcon Glyph="&#xE7A7;" FontSize="14" />
+        </Button>
+        <Button x:Name="RotateRightButton" Padding="6" MinWidth="0"
+                ToolTipService.ToolTip="Rotate view 90° right"
+                AutomationProperties.Name="Rotate view 90 degrees right"
+                Click="RotateRightButton_Click">
+          <FontIcon Glyph="&#xE7A6;" FontSize="14" />
+        </Button>
+      </StackPanel>
 
       <!-- Hide/show toggle for the diagnostics overlay (top-right, away from the HUD). Stays visible
            when the HUD is hidden so it can be brought back. -->

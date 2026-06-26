@@ -93,19 +93,28 @@ public sealed partial class WorldView3DControl
     // the lighting toggle (the 8 key) still drives the 3D view.
     private void BindAtmosphereConstants(
         Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex, bool enableFog = true,
-        bool enableLighting = true, bool cameraRelative = false)
+        bool enableLighting = true, bool cameraRelative = false, Vector3? shadingCameraPosOverride = null,
+        float? gameHourOverride = null)
     {
+        // The top-down overlay drives lighting from the 2D map's own time-of-day, passed via
+        // gameHourOverride; the live perspective path uses the 3D control's _gameHour. enableLighting is
+        // the per-call gate (still AND-ed with the scene's _showLighting toggle for the live path; the
+        // overlay passes its own lighting-enabled flag as enableLighting with _showLighting left true).
+        var gameHour = gameHourOverride ?? _gameHour;
         var lightingOn = enableLighting && _showLighting;
         var resolved = AtmosphereState.Resolve(
-            _gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: lightingOn);
+            gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: lightingOn);
         // Camera-relative: the scene VS subtract CameraOrigin from each world vertex and the camera
         // sits at the origin, so the shader's "camera position" (used by fog distance + specular view dir)
         // is 0 and CameraOrigin carries the real camera pos. Absolute mode (top-down capture / flag off)
         // keeps the camera position in CameraPosFogPower and a zero origin.
+        // shadingCameraPosOverride: the ortho projection modes pass their (far-off) eye position so the
+        // specular view vector reads as parallel; ortho is always absolute (camera-relative off there).
         var cameraOrigin = cameraRelative ? _camera.Position : Vector3.Zero;
-        var shadingCameraPos = cameraRelative ? Vector3.Zero : _camera.Position;
+        var shadingCameraPos = shadingCameraPosOverride
+            ?? (cameraRelative ? Vector3.Zero : _camera.Position);
         var constants = AtmosphereConstants.From(
-            resolved, _gameHour, shadingCameraPos, lightingEnabled: lightingOn ? 1f : 0f,
+            resolved, gameHour, shadingCameraPos, lightingEnabled: lightingOn ? 1f : 0f,
             skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f, time: 0f,
             cameraOrigin: cameraOrigin);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
@@ -222,32 +231,56 @@ public sealed partial class WorldView3DControl
         segmentStarted = StartProfileTimestamp();
         // Camera + cylinder match the D3D11 path so visible-cell sets are identical.
         var aspect = surface.Width / (float)surface.Height;
-        // Decouple the far plane from the streaming radius: the cylinder (= _renderDistance) controls
-        // what LOADS; the far plane only needs to be large enough never to clip the loaded set from
-        // any altitude/tilt (this was the horizon-cutoff bug — far plane == render distance). The
-        // farthest loaded point is within _renderDistance horizontally and |Z| vertically of the
-        // camera, so cover that plus a couple cells of slack. Reversed-Z keeps precision at range.
-        _camera.FarPlane = _renderDistance * 2f + MathF.Abs(_camera.Position.Z)
-                           + 2f * _cellSize;
-        var proj = _camera.GetProjectionMatrix(aspect);
-        // Camera-relative rendering (default on; FALLOUT_VIEWER_CAMERA_RELATIVE=0 disables). The
-        // ABSOLUTE viewProj drives sky + debug overlays (their geometry stays in world space and they
-        // read no CameraOrigin); the SCENE viewProj is translation-free, and terrain/reference/water VS
-        // subtract CameraOrigin from each world vertex before projection. Both map to the SAME clip
-        // position (lookAt's translation just moves into the subtraction), so the layers stay aligned —
-        // only the scene's float precision improves, killing the worldspace-edge wobble. When disabled
-        // the scene viewProj == the absolute one and CameraOrigin == 0, i.e. bit-identical to before.
-        var cameraRelative = !string.Equals(
-            EnvironmentVariables.Get(EnvironmentVariables.Viewer.CameraRelative), "0", StringComparison.Ordinal);
-        var viewProjAbsolute = _camera.GetViewMatrix() * proj;
-        var viewProjScene = cameraRelative ? _camera.GetViewMatrixCameraRelative() * proj : viewProjAbsolute;
-        var cylinder = new VisibilityCylinder(_camera.Position, _renderDistance);
+        var projectionActive = ProjectionActive;
+        Matrix4x4 viewProjAbsolute, viewProjScene;
+        VisibilityCylinder cylinder;
+        Vector3 orthoEye = default;
+        bool cameraRelative;
+        if (projectionActive)
+        {
+            // Orthographic / isometric / trimetric: the shared OrthoViewProjBuilder owns the matrices.
+            // Ortho renders in ABSOLUTE world space (no camera-relative origin subtraction) — its focus
+            // points stay within worldspace coords and there's no perspective divide to amplify float
+            // cancellation. Scene == absolute, so terrain/reference/water draw with the same matrix.
+            viewProjAbsolute = BuildProjectionViewProj(aspect, out cylinder, out orthoEye);
+            viewProjScene = viewProjAbsolute;
+            cameraRelative = false;
+        }
+        else
+        {
+            // Decouple the far plane from the streaming radius: the cylinder (= _renderDistance) controls
+            // what LOADS; the far plane only needs to be large enough never to clip the loaded set from
+            // any altitude/tilt (this was the horizon-cutoff bug — far plane == render distance). The
+            // farthest loaded point is within _renderDistance horizontally and |Z| vertically of the
+            // camera, so cover that plus a couple cells of slack. Reversed-Z keeps precision at range.
+            _camera.FarPlane = _renderDistance * 2f + MathF.Abs(_camera.Position.Z)
+                               + 2f * _cellSize;
+            var proj = _camera.GetProjectionMatrix(aspect);
+            // Camera-relative rendering (default on; FALLOUT_VIEWER_CAMERA_RELATIVE=0 disables). The
+            // ABSOLUTE viewProj drives sky + debug overlays (their geometry stays in world space and they
+            // read no CameraOrigin); the SCENE viewProj is translation-free, and terrain/reference/water VS
+            // subtract CameraOrigin from each world vertex before projection. Both map to the SAME clip
+            // position (lookAt's translation just moves into the subtraction), so the layers stay aligned —
+            // only the scene's float precision improves, killing the worldspace-edge wobble. When disabled
+            // the scene viewProj == the absolute one and CameraOrigin == 0, i.e. bit-identical to before.
+            cameraRelative = !string.Equals(
+                EnvironmentVariables.Get(EnvironmentVariables.Viewer.CameraRelative), "0", StringComparison.Ordinal);
+            viewProjAbsolute = _camera.GetViewMatrix() * proj;
+            viewProjScene = cameraRelative ? _camera.GetViewMatrixCameraRelative() * proj : viewProjAbsolute;
+            cylinder = new VisibilityCylinder(_camera.Position, _renderDistance);
+        }
         var cameraMs = ElapsedMilliseconds(segmentStarted);
 
         // Per-card SpeedTree leaf billboards: hand the reference renderer the camera world right/up (from
         // the inverse view matrix, same source as the sky billboards) so the leaf-billboard VS re-faces
-        // each leaf card to the camera this frame.
-        if (Matrix4x4.Invert(_camera.GetViewMatrix(), out var invViewForLeaves))
+        // each leaf card to the camera this frame. In an ortho mode the perspective camera isn't aimed
+        // where the view looks, so derive the basis from the ortho camera instead (top-down → flat).
+        if (projectionActive)
+        {
+            var (leafRight, leafUp) = ProjectionCameraBasis();
+            _references?.SetLeafBillboardBasis(leafRight, leafUp);
+        }
+        else if (Matrix4x4.Invert(_camera.GetViewMatrix(), out var invViewForLeaves))
         {
             _references?.SetLeafBillboardBasis(
                 Vector3.Normalize(new Vector3(invViewForLeaves.M11, invViewForLeaves.M12, invViewForLeaves.M13)),
@@ -263,13 +296,20 @@ public sealed partial class WorldView3DControl
         // Terrain/reference/water read it for directional + ambient lighting; the sky/fog flags drive
         // those shader paths and are each on by default. Bound once — the renderers only set their
         // own PSO + slots, never the root signature, so this CBV survives every scene pass.
-        BindAtmosphereConstants(cmd, recorder.FrameIndex, cameraRelative: cameraRelative);
+        // Ortho modes: force fog OFF (distance-from-a-1,000,000-unit-eye fog would max out everywhere)
+        // and feed the ortho eye as the shading camera position so the specular view vector is parallel.
+        BindAtmosphereConstants(
+            cmd, recorder.FrameIndex, enableFog: !projectionActive, cameraRelative: cameraRelative,
+            shadingCameraPosOverride: projectionActive ? orthoEye : null);
 
         // Sky FIRST — gradient + clouds + stars into the cleared color target (depth OFF, so terrain
         // overwrites it via the normal depth pass; OFF ⇒ the flat dark-blue clear shows), then the
         // sun/moon billboards over it. Reads the b3 atmosphere CB bound just above. Sky renders in
         // absolute space (camera-centered geometry / direction-based skybox) — the absolute viewProj.
-        if (_showSky)
+        // Suppressed in the ortho projection modes: the dome is centered on the perspective camera
+        // (RenderSky uses _camera.Position), which isn't where the ortho view looks — it would render
+        // a misplaced dome across a top-down map. A clean technical view shows the flat clear instead.
+        if (_showSky && !projectionActive)
         {
             RenderSky(viewProjAbsolute);
         }
@@ -313,7 +353,11 @@ public sealed partial class WorldView3DControl
         // PIXEL_SHADER_RESOURCE, then restore both for the depth-reading navmesh/wireframe overlays.
         // Without a depth SRV, water keeps the hardware-depth-test PSO + view-angle proxy (DSV stays).
         var depthRes = surface.DepthResource;
-        var waterUsesDepth = _showWater && _water is not null && _depthSrv is not null && depthRes is not null;
+        // Ortho modes skip the depth-SRV soft-fade: it linearizes with the perspective camera near/far,
+        // which don't describe the ortho depth range. Fall back to the hardware depth-test water PSO
+        // (same path the top-down overlay uses) so water stays height-correct in ortho.
+        var waterUsesDepth = !projectionActive && _showWater && _water is not null
+                             && _depthSrv is not null && depthRes is not null;
         _water?.SetSceneDepth(
             waterUsesDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
             _camera.NearPlane,
@@ -359,8 +403,13 @@ public sealed partial class WorldView3DControl
         _selectionHighlight?.Render(viewProjAbsolute);
 
         segmentStarted = StartProfileTimestamp();
-        var visible = Math.Max(visibleTerrain, visibleWireframe);
         var totalCells = _terrain?.CellCount ?? _cellGrid?.CellCount ?? 0;
+        // In interior mode the single loaded cell has no LAND, so the terrain and (off-by-default)
+        // wireframe passes both report 0 drawn — even though the camera sits inside that exact cell.
+        // Count the loaded cell(s) as visible so the HUD reads "1 / 1" instead of a misleading "0 / 1".
+        var visible = _selectedInterior is not null
+            ? totalCells
+            : Math.Max(visibleTerrain, visibleWireframe);
         UpdateHud(visible, totalCells, visibleWater, visibleReferences, visibleNavMesh);
         var hudMs = ElapsedMilliseconds(segmentStarted);
 

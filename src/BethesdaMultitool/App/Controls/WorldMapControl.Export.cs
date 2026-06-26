@@ -325,7 +325,8 @@ public sealed partial class WorldMapControl
                 worldMinX, worldMaxX, worldMinY, worldMaxY, tileW, tileH,
                 showDisabled: !_hideDisabledActors, showWater: showWater,
                 worldspaceFormId: _state.SelectedWorldspace?.FormId,
-                hiddenCategories: hiddenCategories, ct);
+                hiddenCategories: hiddenCategories,
+                enableLighting: _hillshadeLightingEnabled, gameHour: _gameHour, ct);
             if (render is null || render.IsComplete) break;
             progress.Report($"Loading meshes (tile {tileIndex}/{totalTiles})", tileIndex, totalTiles);
             await Task.Delay(50, ct); // let background mesh/texture decode advance before re-rendering

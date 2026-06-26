@@ -223,6 +223,9 @@ public sealed partial class WorldView3DControl
         _topDownTarget = null;
         _topDownTargetW = _topDownTargetH = 0;
 
+        // Reused 3D-export offscreen target (synchronous per tile, never in flight at teardown).
+        DisposeExport3DTarget();
+
         // Reference pipeline disposes first — it borrows the texture caches / mesh archives
         // but owns its own copy, so this is independent of the terrain stack.
         DisposeReferencePipeline();

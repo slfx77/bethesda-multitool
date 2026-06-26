@@ -103,6 +103,110 @@ public sealed class OrthoViewProjBuilderTests
     }
 
     [Fact]
+    public void Orthographic_AzimuthRollsImage_EastToTop()
+    {
+        // At the top-down extreme the azimuth becomes the image ROLL (the ◄ ► rotate + the export's
+        // N/E/S/W "what's at the top"). az 90 must put EAST at the top — a fixed north-up would ignore
+        // the azimuth there, leaving the rotate buttons inert in orthographic mode.
+        var vp = OrthoViewProjBuilder.BuildViewProj(Vector3.Zero, azimuthDeg: 90f, elevationDeg: 90f,
+            orthoHalfHeight: 1000f, aspect: 1f);
+
+        var east = Ndc(vp, new Vector3(500f, 0f, 0f));
+        var west = Ndc(vp, new Vector3(-500f, 0f, 0f));
+        Assert.True(east.Y > west.Y, "world +X (east) must map to the image top (larger clip Y) at azimuth 90");
+    }
+
+    [Fact]
+    public void BuildViewProjTile_TopLeftTile_CentersOnNorthwestQuadrant()
+    {
+        // North-up top-down (az 0), 2×2 tiling: the top-left tile (col 0, row 0) covers the west half
+        // (X∈[-1000,0]) × north half (Y∈[0,1000]); that sub-rect's center (−500, +500) must land at the
+        // tile's clip center. tileRow counts top→bottom, so row 0 is the NORTH (top) band.
+        var vp = OrthoViewProjBuilder.BuildViewProjTile(Vector3.Zero, 0f, 90f, 1000f, 1f,
+            tileCol: 0, tileRow: 0, cols: 2, rows: 2);
+
+        var center = Ndc(vp, new Vector3(-500f, 500f, 0f));
+        Assert.InRange(center.X, -0.01f, 0.01f);
+        Assert.InRange(center.Y, -0.01f, 0.01f);
+    }
+
+    [Fact]
+    public void BuildViewProjTile_IsometricTilesSubdivideClipExactly()
+    {
+        // The seam-free property for TILTED views: a tile renders an off-center sub-rectangle of the
+        // SAME global ortho clip volume, so tiles stitch at any elevation. A world point at the full
+        // frame's (−0.5, +0.5) clip — the center of the top-left quadrant — must map to the top-left
+        // tile's clip center (0, 0).
+        const float az = 45f, el = 30f, half = 1000f;
+        var focus = new Vector3(123f, -456f, 78f);
+        var full = OrthoViewProjBuilder.BuildViewProj(focus, az, el, half, 1f);
+        var tile = OrthoViewProjBuilder.BuildViewProjTile(focus, az, el, half, 1f, 0, 0, 2, 2);
+
+        var (right, up) = OrthoViewProjBuilder.CameraBasis(az, el);
+        var p = focus - (right * (half * 0.5f)) + (up * (half * 0.5f)); // view-space (−500, +500)
+
+        var cFull = Ndc(full, p);
+        Assert.InRange(cFull.X, -0.51f, -0.49f);
+        Assert.InRange(cFull.Y, 0.49f, 0.51f);
+
+        var cTile = Ndc(tile, p);
+        Assert.InRange(cTile.X, -0.02f, 0.02f);
+        Assert.InRange(cTile.Y, -0.02f, 0.02f);
+    }
+
+    [Fact]
+    public void SnapAzimuth_Aligned_StepsFull90()
+    {
+        // Orthographic increments are the cardinals 0/90/180/270. Stepping from an aligned position is a
+        // clean 90° turn each way (with [0,360) wrap).
+        Assert.Equal(90f, OrthoViewProjBuilder.SnapAzimuth(0f, ProjectionMode.Orthographic, +1), 3);
+        Assert.Equal(270f, OrthoViewProjBuilder.SnapAzimuth(0f, ProjectionMode.Orthographic, -1), 3);
+        Assert.Equal(0f, OrthoViewProjBuilder.SnapAzimuth(270f, ProjectionMode.Orthographic, +1), 3);
+    }
+
+    [Fact]
+    public void SnapAzimuth_OffAxis_SnapsToNearestIncrementInArrowDirection()
+    {
+        // After a free Shift+drag the azimuth sits off the increments; the next ◄ ► click snaps to the
+        // bounding increment in the arrow's direction (right → above, left → below), not a full 90° step.
+        Assert.Equal(90f, OrthoViewProjBuilder.SnapAzimuth(30f, ProjectionMode.Orthographic, +1), 3);
+        Assert.Equal(0f, OrthoViewProjBuilder.SnapAzimuth(30f, ProjectionMode.Orthographic, -1), 3);
+        Assert.Equal(180f, OrthoViewProjBuilder.SnapAzimuth(95f, ProjectionMode.Orthographic, +1), 3);
+        Assert.Equal(90f, OrthoViewProjBuilder.SnapAzimuth(95f, ProjectionMode.Orthographic, -1), 3);
+    }
+
+    [Fact]
+    public void SnapAzimuth_IsoTri_UsesDiagonalIncrements()
+    {
+        // Iso/tri increments are the diagonals 45/135/225/315. Off-axis 100° snaps right → 135, left → 45.
+        Assert.Equal(135f, OrthoViewProjBuilder.SnapAzimuth(100f, ProjectionMode.Isometric, +1), 3);
+        Assert.Equal(45f, OrthoViewProjBuilder.SnapAzimuth(100f, ProjectionMode.Isometric, -1), 3);
+        // Aligned diagonal steps a full 90°.
+        Assert.Equal(225f, OrthoViewProjBuilder.SnapAzimuth(135f, ProjectionMode.Trimetric, +1), 3);
+    }
+
+    [Fact]
+    public void SlidingFocusAlongEyeDirection_PreservesProjectedXy()
+    {
+        // The viewer's image-preserving "seat focus on the ground" re-seat relies on this invariant:
+        // translating the ortho look-at focus (the eye is recomputed from it) along the eye direction
+        // changes only depth, never the projected XY. So a world point's clip XY must be unchanged when
+        // the focus slides along EyeDirection — that's why the re-seat can run on every pan without jump.
+        const float az = 45f, el = 30f, half = 2000f, aspect = 1.6f;
+        var focus = new Vector3(1000f, -500f, 200f);
+        var p = new Vector3(1500f, -200f, 350f);
+
+        var before = Ndc(OrthoViewProjBuilder.BuildViewProj(focus, az, el, half, aspect), p);
+        var slidFocus = focus + (OrthoViewProjBuilder.EyeDirection(az, el) * 5000f);
+        var after = Ndc(OrthoViewProjBuilder.BuildViewProj(slidFocus, az, el, half, aspect), p);
+
+        Assert.Equal(before.X, after.X, 2);
+        Assert.Equal(before.Y, after.Y, 2);
+        // Depth DOES change (the camera moved along its view axis) — the whole point is XY is preserved.
+        Assert.True(MathF.Abs(before.Z - after.Z) > 1e-3f, "depth should change as the focus slides along the view axis");
+    }
+
+    [Fact]
     public void BuildCoverCylinder_CentersOnFocus()
     {
         var cyl = OrthoViewProjBuilder.BuildCoverCylinder(new Vector3(1000f, 2000f, 50f), 5000f);
