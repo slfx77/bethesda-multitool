@@ -136,9 +136,17 @@ internal static class WorldMapOverlayBuilder
         float? GmstFloat(string id) => records.GameSettings
             .FirstOrDefault(g => string.Equals(g.EditorId, id, StringComparison.OrdinalIgnoreCase))?.FloatValue;
 
-        var sunXExtreme = GmstFloat("fSunXExtreme");
-        return (SkyMoonProfile.FractionFromGmst(GmstInt("iMasserSize"), sunXExtreme),
-                SkyMoonProfile.FractionFromGmst(GmstInt("iSecundaSize"), sunXExtreme));
+        // FNV/FO3 ship fSunXExtreme=800, which yields a correct-looking moon (verified in-viewer); Skyrim
+        // ships 400. Oblivion ships iMasserSize but NO fSunXExtreme (and no iSecundaSize), so its moon was
+        // falling back to the over-large profile default. Use the FNV-calibrated dome radius (800) when
+        // fSunXExtreme is absent so the size is still computed from iMasserSize, and estimate Secunda at
+        // ~0.55x Masser (the smaller second moon) when its GMST is missing.
+        const float fallbackDomeRadius = 800f;
+        var dome = GmstFloat("fSunXExtreme") ?? fallbackDomeRadius;
+        var masser = GmstInt("iMasserSize");
+        var secunda = GmstInt("iSecundaSize") ?? (masser is int m ? (int)(m * 0.55f) : null);
+        return (SkyMoonProfile.FractionFromGmst(masser, dome),
+                SkyMoonProfile.FractionFromGmst(secunda, dome));
     }
 
     /// <summary>

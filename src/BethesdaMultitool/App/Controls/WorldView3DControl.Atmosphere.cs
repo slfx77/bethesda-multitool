@@ -28,19 +28,57 @@ public sealed partial class WorldView3DControl
         return index >= 0 && index < _data.Worldspaces.Count ? _data.Worldspaces[index] : null;
     }
 
+    /// <summary>
+    ///     The climate driving the sky for an exterior worldspace, via the engine's precedence:
+    ///     <list type="number">
+    ///         <item>the worldspace's own climate (WRLD <c>CNAM</c>) — present in FO3/FNV/Skyrim/FO4 and the
+    ///         Oblivion worldspaces that set one;</item>
+    ///         <item>a global default climate when the worldspace carries none — Oblivion's Tamriel has NO
+    ///         <c>CNAM</c> (climate is a rare per-cell <c>XCCM</c> override there — only ~55 in the whole
+    ///         277&#160;MB Oblivion.esm, so nothing to sample at cell 0,0), and the engine falls back to a
+    ///         global default. Oblivion ships one literally named <c>DefaultClimate</c>.</item>
+    ///     </list>
+    ///     Returns null for an interior / no selection (those have no sky climate). The fallback only fires
+    ///     for an actual exterior worldspace whose climate doesn't resolve, so FO3/FNV/Skyrim/FO4 — whose
+    ///     exterior worldspaces all carry a CNAM — are unaffected.
+    /// </summary>
     private ClimateRecord? ResolveClimate(WorldspaceRecord? ws)
     {
-        if (_data is null || ws?.ClimateFormId is not uint climateFormId) return null;
-        return _data.ClimatesByFormId.TryGetValue(climateFormId, out var climate) ? climate : null;
+        if (_data is null || ws is null) return null; // interior / nothing selected → no sky climate
+        if (ws.ClimateFormId is uint climateFormId &&
+            _data.ClimatesByFormId.TryGetValue(climateFormId, out var climate))
+        {
+            return climate;
+        }
+
+        return ResolveDefaultClimate(); // climateless exterior worldspace (Oblivion Tamriel)
     }
 
-    /// <summary>The climate's default weather = its first WLST entry (highest-priority candidate),
-    /// resolved to a record. Null when the worldspace has no climate / weather list.</summary>
+    /// <summary>The loaded data's global default climate for a worldspace that names none: prefer the one
+    /// EditorID'd exactly <c>DefaultClimate</c> (Oblivion's), then any <c>*Default*</c> climate (e.g.
+    /// FNV's NVDefaultClimate), then the first loaded climate so an exterior worldspace still gets a real
+    /// sky (sun + per-weather colors) instead of the bare gradient. Null when no climates are loaded.</summary>
+    private ClimateRecord? ResolveDefaultClimate()
+    {
+        if (_data is null || _data.ClimatesByFormId.Count == 0) return null;
+        var climates = _data.ClimatesByFormId.Values;
+        return climates.FirstOrDefault(c => string.Equals(c.EditorId, "DefaultClimate", StringComparison.OrdinalIgnoreCase))
+               ?? climates.FirstOrDefault(c => c.EditorId?.Contains("Default", StringComparison.OrdinalIgnoreCase) == true)
+               ?? climates.First();
+    }
+
+    /// <summary>The climate's default weather, resolved to a record. The climate's weather list (WLST)
+    /// gates conditional variants with a Global FormID — e.g. NVDefaultClimate lists NVWastelandClearNight
+    /// gated by the VNight global (night only, cloud = a starfield) AND NVWastelandClear with NO gate. The
+    /// UNGATED entry is the base/default weather, so prefer it; otherwise a night-gated variant could become
+    /// the daytime default. Falls back to the first entry when every entry is gated. Null when the
+    /// worldspace has no climate / weather list.</summary>
     private WeatherRecord? ResolveClimateDefaultWeather(WorldspaceRecord? ws)
     {
         var climate = ResolveClimate(ws);
         if (_data is null || climate is null || climate.WeatherTypes.Count == 0) return null;
-        return _data.WeathersByFormId.TryGetValue(climate.WeatherTypes[0].WeatherFormId, out var w) ? w : null;
+        var entry = climate.WeatherTypes.FirstOrDefault(w => w.GlobalFormId == 0) ?? climate.WeatherTypes[0];
+        return _data.WeathersByFormId.TryGetValue(entry.WeatherFormId, out var w) ? w : null;
     }
 
     /// <summary>Refreshes the climate timing + default weather for whatever worldspace is now showing,
@@ -92,6 +130,20 @@ public sealed partial class WorldView3DControl
     // data, not a procedural approximation. Cleared for interiors / no-climate worldspaces.
     private void RebuildSkyGeometry(ClimateRecord? climate, WeatherRecord? weather)
     {
+        if (_skyDiag)
+        {
+            var dws = CurrentExteriorWorldspace();
+            Log.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "[SkyGeo] enter: game={0} skyGeom={1} resolver={2} meshArch={3} climate={4} modl='{5}' | wsEdid={6} wsClimateFid={7} climCount={8} wsComboIdx={9} interior={10}",
+                _data?.Game, _skyGeometry is not null, _textureResolver12 is not null, _meshArchives is not null,
+                climate?.EditorId ?? "(null)", climate?.ModelPath ?? "(null)",
+                dws?.EditorId ?? "(null)",
+                dws?.ClimateFormId is uint cf ? $"0x{cf:X8}" : "(none)",
+                _data?.ClimatesByFormId.Count ?? -1,
+                WorldspaceComboBox?.SelectedIndex ?? -2,
+                _selectedInterior is not null));
+        }
+
         if (_skyGeometry is null) return;
         _skyGeometry.Clear();
         if (_textureResolver12 is null || _meshArchives is null ||
@@ -107,10 +159,39 @@ public sealed partial class WorldView3DControl
         var layers = new List<SkyGeometryLayer>();
         AddSkyNifLayers(layers, modl, weather);
         AddSkyNifLayers(layers, Path.Combine(skyDir, "Clouds.nif"), weather);
+
+        if (_skyDiag)
+        {
+            var cloudTex = weather?.CloudLayerTextures is { Count: > 0 } ct ? string.Join(", ", ct) : "(none)";
+            Log.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "[SkyGeo] game={0} climate={1} modl='{2}' weather={3} cloudTex=[{4}] => layers: {5} stars, {6} clouds (of {7} total)",
+                _data?.Game, climate?.EditorId, modl, weather?.EditorId ?? "(default)", cloudTex,
+                layers.Count(l => l.Type == SkyObjectType.Stars),
+                layers.Count(l => l.Type == SkyObjectType.Clouds), layers.Count));
+        }
+
         if (layers.Count > 0)
         {
             _skyGeometry.SetLayers(layers);
         }
+    }
+
+    // Diagnostic toggle for the sky-geometry pipeline — env FALLOUT_VIEWER_SKY_DIAG=1. Logs once per
+    // climate/weather change (RebuildSkyGeometry), so it's quiet during steady-state rendering. Used to
+    // ground per-game cloud diagnoses (which NIF, how many sky-typed submeshes, which cloud layers resolve).
+    private static readonly bool _skyDiag =
+        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SKY_DIAG") == "1";
+
+    // Classifies a sky-dome shape by NAME, for pre-SkyShaderProperty NIFs (Oblivion's clouds.nif "CloudDome"
+    // + stars.nif "Stars" shapes, NIF 20.0.0.4) that carry no Sky Object Type. Returns null for shapes that
+    // aren't a cloud/star layer (e.g. an atmosphere/sky-dome base — the renderer's fallback gradient covers
+    // that). Only consulted when the NIF gives no SkyType, so shader-typed games are unaffected.
+    private static SkyObjectType? InferSkyTypeFromName(string? shapeName)
+    {
+        if (string.IsNullOrEmpty(shapeName)) return null;
+        if (shapeName.Contains("Cloud", StringComparison.OrdinalIgnoreCase)) return SkyObjectType.Clouds;
+        if (shapeName.Contains("Star", StringComparison.OrdinalIgnoreCase)) return SkyObjectType.Stars;
+        return null;
     }
 
 
@@ -120,12 +201,27 @@ public sealed partial class WorldView3DControl
     private void AddSkyNifLayers(List<SkyGeometryLayer> layers, string modlPath, WeatherRecord? weather)
     {
         var submeshes = TryLoadSkyNif(modlPath);
+        if (_skyDiag)
+        {
+            Log.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "[SkyGeo]   nif '{0}': {1}", modlPath,
+                submeshes is null
+                    ? "NOT LOADED (missing/unparseable)"
+                    : $"{submeshes.Count} submeshes [{string.Join(", ", submeshes.Select(s => $"{(s.SkyType?.ToString() ?? "null")}:{s.Triangles.Length / 3}tri"))}]"));
+        }
+
         if (submeshes is null) return;
 
         var cloudOrdinal = 0;
         foreach (var sm in submeshes)
         {
-            if (sm.SkyType is not SkyObjectType type || sm.Triangles.Length == 0)
+            // SkyType comes from the NIF's SkyShaderProperty (FO3/FNV/Skyrim/FO4). Oblivion's
+            // pre-SkyShaderProperty sky NIFs (clouds.nif/stars.nif, NIF 20.0.0.4) carry no such block, so
+            // their CloudDome/Stars shapes arrive with SkyType=null and were dropped. Classify those by
+            // NAME instead (the engine keys them by node name). Gated to null-SkyType, so the shader-typed
+            // games keep their authoritative type; this method only processes sky NIFs, so it's safe here.
+            var resolved = sm.SkyType ?? InferSkyTypeFromName(sm.ShapeName);
+            if (resolved is not SkyObjectType type || sm.Triangles.Length == 0)
             {
                 continue;
             }
@@ -133,6 +229,7 @@ public sealed partial class WorldView3DControl
             var texIndex = uint.MaxValue;
             var scrollSpeed = Vector2.Zero;
             WeatherColor? cloudColor = null;
+            WeatherCloudAlpha? cloudAlpha = null;
             if (type == SkyObjectType.Clouds)
             {
                 // The engine textures clouds.nif's (up to 4) cloud-layer shapes from the ACTIVE weather's
@@ -146,19 +243,45 @@ public sealed partial class WorldView3DControl
                 var layerIndex = cloudOrdinal;
                 cloudOrdinal++;
                 var cloudPath = WeatherCloudTexture(weather, layerIndex);
-                if (cloudPath is null || IsUnusedCloudLayer(cloudPath)) continue;
-                texIndex = ResolveSkyTexture(cloudPath);
-                if (texIndex == uint.MaxValue) continue; // texture missing -> don't draw it
+                if (cloudPath is null || IsUnusedCloudLayer(cloudPath))
+                {
+                    if (_skyDiag) Log.Info($"[SkyGeo]     cloud shape #{layerIndex}: layer='{cloudPath ?? "(no layer)"}' -> SKIP (unused/no-layer)");
+                    continue;
+                }
 
-                // This layer's per-draw color (PNAM) + drift speed (QNAM/RNAM) — the engine drives each
-                // cloud layer's color/opacity and scroll independently (SkyShader::SetupGeometryConstants /
-                // Clouds::Update). Both are indexed by the SAME layer ordinal as the textures above.
+                texIndex = ResolveSkyTexture(cloudPath);
+                if (texIndex == uint.MaxValue)
+                {
+                    if (_skyDiag) Log.Info($"[SkyGeo]     cloud shape #{layerIndex}: layer='{cloudPath}' -> SKIP (texture unresolved)");
+                    continue; // texture missing -> don't draw it
+                }
+
+                if (_skyDiag)
+                {
+                    var cc = WeatherCloudColor(weather, layerIndex);
+                    var a = cc is null ? "n/a" : $"R{cc.Day.R} G{cc.Day.G} B{cc.Day.B} A{cc.Day.A}";
+                    Log.Info($"[SkyGeo]     cloud shape #{layerIndex}: layer='{cloudPath}' -> DRAW (tex#{texIndex}) dayColor=[{a}]");
+                }
+
+                // This layer's per-draw color (PNAM), per-layer opacity (JNAM) + drift speed (QNAM/RNAM) —
+                // the engine drives each cloud layer's color/opacity/scroll independently
+                // (SkyShader::SetupGeometryConstants / Clouds::Update). All are indexed by the SAME layer
+                // ordinal as the textures above. JNAM (modern weathers) hides/thins layers per weather; FO3/
+                // FNV carry none, so cloudAlpha stays null and the renderer keeps its flat per-layer opacity.
                 cloudColor = WeatherCloudColor(weather, layerIndex);
+                cloudAlpha = WeatherCloudAlphaFor(weather, layerIndex);
                 scrollSpeed = WeatherCloudScroll(weather, layerIndex);
             }
             else if (type == SkyObjectType.Stars)
             {
+                // Stars take the sky NIF's baked texture (FO3/FNV/Skyrim). Oblivion's stars.nif shapes carry
+                // no baked diffuse, so fall back to the conventional star asset the loaded archives ship.
                 texIndex = ResolveSkyTexture(sm.DiffuseTexturePath);
+                if (texIndex == uint.MaxValue)
+                {
+                    texIndex = ResolveSkyTexture(ProbeFirstExisting(StarCandidates));
+                }
+
                 if (texIndex == uint.MaxValue) continue;
             }
 
@@ -175,6 +298,7 @@ public sealed partial class WorldView3DControl
                 TextureIndex = texIndex,
                 ScrollSpeed = scrollSpeed,
                 CloudColor = cloudColor,
+                CloudAlpha = cloudAlpha,
             });
         }
     }
@@ -182,7 +306,17 @@ public sealed partial class WorldView3DControl
     private uint ResolveSkyTexture(string? path) =>
         path is null || _textureResolver12 is null
             ? uint.MaxValue
-            : _textureResolver12.ResolveDiffuseBindlessIndex(path) ?? uint.MaxValue;
+            : _textureResolver12.ResolveDiffuseBindlessIndex(NormalizeSkyTexturePath(path)) ?? uint.MaxValue;
+
+    // WTHR cloud-texture paths are stored relative to the textures\ root (e.g. "sky\NVCloudlight.dds"),
+    // but the texture cache keys off the full "textures\..." path the NIFs use — a bare "sky\..." path
+    // misses and resolves to the transparent placeholder, so the cloud sheet renders invisible. Prepend
+    // the prefix when absent (idempotent for the NIF/sun/moon paths that already carry it).
+    private static string NormalizeSkyTexturePath(string path)
+    {
+        var p = path.Replace('/', '\\').TrimStart('\\');
+        return p.StartsWith(@"textures\", StringComparison.OrdinalIgnoreCase) ? p : @"textures\" + p;
+    }
 
     // Loads + extracts a sky NIF from the mesh archives (big-endian Xbox NIFs converted first). Returns the
     // renderable submeshes (each carrying its SkyType + baked texture) or null when absent/unparseable.
@@ -245,19 +379,35 @@ public sealed partial class WorldView3DControl
         return colors is not null && layer >= 0 && layer < colors.Count ? colors[layer] : null;
     }
 
+    // The active weather's JNAM per-layer cloud OPACITY for a layer ordinal (modern weathers only). The
+    // renderer multiplies the host cloud opacity by the time-of-day-sampled value, so a layer authored 0 is
+    // hidden and fractional layers thin out. Null when the weather has no JNAM (FO3/FNV) or the ordinal is
+    // past the authored layers — the renderer then keeps its flat per-layer opacity.
+    private static WeatherCloudAlpha? WeatherCloudAlphaFor(WeatherRecord? weather, int layer)
+    {
+        var alphas = weather?.CloudLayerAlphas;
+        return alphas is not null && layer >= 0 && layer < alphas.Count ? alphas[layer] : null;
+    }
+
     // Per-layer cloud UV drift from the weather's QNAM (X) / RNAM (Y) speed bytes. Read as SIGNED (sbyte)
     // so 0 = still and the sign gives the drift direction, scaled to a slow UV/sec rate. CloudScrollScale
     // is the one visual tunable; the per-layer RELATIVE speeds + axes are the data-grounded part (the exact
     // engine speed constant lives in the binary's data section — Clouds::Update scales the byte by it).
+    // NOTE: FNV weathers in practice OMIT QNAM/RNAM (confirmed: count 0 on every NVWastelandClear*), so the
+    // engine drifts clouds at a built-in default speed (Clouds::Update defaults the per-layer byte to 0x33).
+    // We reproduce that with DefaultCloudDrift when a layer has no authored speed, so FNV clouds still move.
     private static Vector2 WeatherCloudScroll(WeatherRecord? weather, int layer)
     {
-        if (weather is null) return Vector2.Zero;
-        var x = layer < weather.CloudSpeedsX.Count ? (sbyte)weather.CloudSpeedsX[layer] : (sbyte)0;
-        var y = layer < weather.CloudSpeedsY.Count ? (sbyte)weather.CloudSpeedsY[layer] : (sbyte)0;
+        var hasX = weather is not null && layer < weather.CloudSpeedsX.Count;
+        var hasY = weather is not null && layer < weather.CloudSpeedsY.Count;
+        if (!hasX && !hasY) return DefaultCloudDrift; // no QNAM/RNAM (typical FNV) -> engine default drift
+        var x = hasX ? (sbyte)weather!.CloudSpeedsX[layer] : (sbyte)0;
+        var y = hasY ? (sbyte)weather!.CloudSpeedsY[layer] : (sbyte)0;
         return new Vector2(x / 127f, y / 127f) * CloudScrollScale;
     }
 
-    private const float CloudScrollScale = 0.010f; // UV/sec at full (±127) cloud speed — the visual tunable
+    private const float CloudScrollScale = 0.010f;                 // UV/sec at full (±127) authored cloud speed
+    private static readonly Vector2 DefaultCloudDrift = new(0.0040f, 0.0015f); // engine default when no QNAM/RNAM
 
     // Conventional sky-element asset names, tried against the LOADED archives (first existing wins). This
     // is NOT a per-game path table: an asset is used only if the loaded game actually ships it, so the

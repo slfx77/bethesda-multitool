@@ -92,9 +92,11 @@ public sealed record SkyMoonProfile
         MoonCount = 2,
         PrimaryTextureCandidates = CreationMasser,
         SecondaryTextureCandidates = CreationSecunda,
-        // Fallback; the actual Oblivion.esm GMSTs override this at runtime. Creation default ≈ Skyrim's.
-        PrimaryHalfSizeFraction = 0.225f,
-        SecondaryHalfSizeFraction = 0.100f,
+        // Oblivion.esm has iMasserSize=100 but NO fSunXExtreme/iSecundaSize, so the runtime read uses the
+        // FNV-calibrated dome (800) → Masser 100/800 = 0.125, Secunda ≈ 0.069. These fallbacks match that
+        // (NOT the old 0.225, which rendered the moons gigantic in-viewer) for the no-GameSettings case.
+        PrimaryHalfSizeFraction = 0.125f,
+        SecondaryHalfSizeFraction = 0.069f,
     };
 
     // FO3/FNV: single moon. Fallback = the FNV shipped GMSTs (iMasserSize 85 / fSunXExtreme 800 = 0.106).

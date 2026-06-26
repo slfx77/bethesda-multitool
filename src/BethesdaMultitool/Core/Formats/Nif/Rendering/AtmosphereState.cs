@@ -120,15 +120,26 @@ public static class AtmosphereState
         }
         else
         {
-            // Placeholder day palette blended toward the night tint by the daylight fraction.
-            sunColorBase = Vector3.Lerp(Vector3.Zero, DaySun, day);
+            // Placeholder palette. The sun BASE is the full day colour; the daylight-fraction fade is
+            // applied to sunColor below, so the placeholder and the NAM0-band paths fade the directional
+            // identically (DaySun * day == the old Lerp(Zero, DaySun, day), so this path is unchanged).
+            sunColorBase = DaySun;
             ambient = Vector3.Lerp(NightAmbient, DayAmbient, day);
             skyTop = Vector3.Lerp(NightTint, DaySkyTop, day);
             skyHorizon = Vector3.Lerp(NightTint, DaySkyHorizon, day);
             fogColor = Vector3.Lerp(NightTint, DayFog, day);
         }
 
-        var sunColor = lightingEnabled ? sunColorBase : Vector3.Zero;
+        // Fade the directional sun colour by the daylight fraction. GROUNDED in Sky::UpdateColors
+        // (atmosphere_decompiled.txt): the engine modulates the Sunlight (cat 4) colour by a daylight
+        // factor (sky+0x100), so the directional vanishes as the sun sets. This fixes BOTH night bugs with
+        // NO direction hack: (1) at night day=0 ⇒ the directional is 0 ⇒ a below-horizon sun vector can no
+        // longer light mesh undersides; (2) `day` is CONTINUOUS and 0 at both window edges (srB, ssE), so
+        // there is no sudden dark↔bright step at the night boundaries (the earlier zenith-direction hack
+        // caused that step — a 90° swing in N·L). The NAM0 night Sunlight band is thus correctly suppressed
+        // at night instead of lighting the scene. The shader stays decompile-faithful
+        // (`mad NdotL, PSLightColor, Ambient`) — the fade is baked into PSLightColor here, as the engine does.
+        var sunColor = lightingEnabled ? sunColorBase * day : Vector3.Zero;
         var sunIntensity = lightingEnabled ? day : 0f;
 
         // Distance fog (grounded in Sky::UpdateFog): the engine blends day↔night near/far/power by the
@@ -202,14 +213,26 @@ public static class AtmosphereState
 
     // Analytic placeholder sun: a great-arc above the horizon for the whole daylight span — rises in +X
     // ("east") at sunriseBegin, arcs overhead at solar noon (Z up), sets in -X at sunsetEnd. Returns the
-    // unit TO-sun direction; night (outside the span) returns a below-horizon sun. The engine builds the
-    // real direction from climate azimuth/elevation via NiMatrix3 rotations (Sun::Update); this matches
-    // its structure (Z up, peak at solar noon, below-horizon at night), which is what the lighting needs.
+    // unit TO-sun direction. The engine builds the real direction from climate azimuth/elevation via
+    // NiMatrix3 rotations (Sun::Update); this matches its structure (Z up, peak at solar noon), which is
+    // what the lighting needs.
+    //
+    // Analytic placeholder sun: a great-arc above the horizon for the whole daylight span — rises in +X
+    // ("east") at sunriseBegin, arcs overhead at solar noon (Z up), sets in -X at sunsetEnd. Returns the
+    // unit TO-sun direction. Night (outside the span) returns a below-horizon vector — which is now FINE:
+    // the directional COLOUR is faded to 0 at night by the daylight fraction (see Resolve), so the night
+    // direction is never actually applied to the scene. (An earlier attempt aimed it at the zenith to stop
+    // "lit from below"; that caused a sudden dark↔bright step at the night boundaries — the colour fade is
+    // the grounded fix, so the direction is back to the natural below-horizon arc.) The engine builds the
+    // real direction from climate azimuth/elevation via NiMatrix3 rotations (Sun::Update); this matches its
+    // structure (Z up, peak at solar noon). NOTE: still NOT decompile-confirmed end-to-end — the night
+    // directional path (Sun::Update → scene light → Lighting30Shader::SetLight, and pinning sky+0x100) is
+    // owed; the colour fade matches the Sky::UpdateColors cat-4 modulation, which is as far as it's traced.
     private static Vector3 SunDirection(float hour, float srB, float ssE)
     {
         if (hour <= srB || hour >= ssE)
         {
-            return new Vector3(0f, 0f, -1f); // sun below the horizon
+            return new Vector3(0f, 0f, -1f); // night: below the horizon (moot — the directional colour is faded to 0)
         }
 
         var t01 = (hour - srB) / (ssE - srB);        // 0 at sunriseBegin → 1 at sunsetEnd
@@ -320,6 +343,27 @@ public static class AtmosphereState
     }
 
     private static Vector4 ToVec4(WeatherRgba c) => new(c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f);
+
+    /// <summary>
+    ///     Samples a cloud layer's JNAM per-layer OPACITY for the given game hour, using the SAME windowed
+    ///     band blend as the sky/cloud colors (Sky::FillColorBlend). Returns the layer's authored opacity in
+    ///     [0, 1] — the engine's per-draw cloud-layer alpha (so a weather hides a layer with 0 and thins
+    ///     others with fractions). Public so the sky-geometry renderer can apply each cloud layer's real
+    ///     opacity instead of a flat constant.
+    /// </summary>
+    public static float SampleCloudAlpha(WeatherCloudAlpha a, float gameHour, ClimateTiming? timing)
+    {
+        var (srB, srE, ssB, ssE) = NormalizeWindows(timing ?? ClimateTiming.Default);
+        var hour = WrapHour(gameHour);
+        var srMid = (srB + srE) * 0.5f;
+        var ssMid = (ssB + ssE) * 0.5f;
+        if (hour < srB || hour >= ssE) return a.Night;
+        if (hour < srMid) return Lerp1(a.Night, a.Sunrise, (hour - srB) / (srMid - srB));
+        if (hour < srE) return Lerp1(a.Sunrise, a.Day, (hour - srMid) / (srE - srMid));
+        if (hour < ssB) return a.Day;
+        if (hour < ssMid) return Lerp1(a.Day, a.Sunset, (hour - ssB) / (ssMid - ssB));
+        return Lerp1(a.Sunset, a.Night, (hour - ssMid) / (ssE - ssMid));
+    }
 
     private static float Lerp1(float a, float b, float t) => a + ((b - a) * t);
 

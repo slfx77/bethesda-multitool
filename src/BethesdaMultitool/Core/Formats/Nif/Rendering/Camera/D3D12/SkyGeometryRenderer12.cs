@@ -51,6 +51,7 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         public uint TexIndex;            // bindless diffuse index
         public Vector2 ScrollVelocity;   // UV/sec drift (clouds: per-layer from QNAM/RNAM; stars: zero)
         public WeatherColor? CloudColor; // PNAM per-layer cloud color (RGB tint + A opacity); null = fallback
+        public WeatherCloudAlpha? CloudAlpha; // JNAM per-layer opacity (modern weathers); null = no JNAM
     }
 
     private readonly GpuCommandRecorder12 _recorder;
@@ -176,6 +177,7 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
                 TexIndex = layer.TextureIndex,
                 ScrollVelocity = mode == 2 ? layer.ScrollSpeed : Vector2.Zero,
                 CloudColor = mode == 2 ? layer.CloudColor : null,
+                CloudAlpha = mode == 2 ? layer.CloudAlpha : null,
             });
         }
     }
@@ -216,6 +218,19 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
                 continue; // suppressed this frame (interior) or no resolved texture
             }
 
+            // Per-layer cloud OPACITY from the weather's JNAM "Cloud Alphas" (modern weathers) — the engine's
+            // real per-layer cloud alpha. A weather hides a cloud-dome shape by authoring 0 and thins others
+            // with fractions, so a CLEAR weather (most layers 0/low) shows sky while a CLOUDY one (all 1.0)
+            // overcasts. Applied as a MULTIPLIER on the host opacity (which keeps the global translucency +
+            // day/night fade), so FO3/FNV — no JNAM → factor 1.0 — render exactly as before.
+            var cloudAlphaFactor = layer.CloudAlpha is { } ca
+                ? AtmosphereState.SampleCloudAlpha(ca, gameHour, cloudTiming)
+                : 1f;
+            if (layer.Mode == 2 && cloudAlphaFactor <= 0.001f)
+            {
+                continue; // this cloud layer is authored fully transparent for this weather/time — skip it
+            }
+
             Vector3 tint;
             float param;
             if (layer.Mode == 1)
@@ -225,18 +240,27 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
             }
             else if (layer.CloudColor is { } cc)
             {
-                // Per-layer cloud color: the weather's PNAM color (RGB tint + A opacity) blended by the
-                // game hour — the engine's per-draw cloud uniform (SkyShader::SetupGeometryConstants). The
-                // loop only runs when clouds are enabled (cloudOpacity gate above), so the PNAM alpha is the
-                // opacity. vertex alpha (the horizon fade) and texture alpha still multiply in the shader.
-                var rgba = AtmosphereState.SampleCloudColor(cc, gameHour, cloudTiming);
-                tint = new Vector3(rgba.X, rgba.Y, rgba.Z);
-                param = rgba.W;
+                // Per-layer cloud TINT: the weather's PNAM color (RGB), blended by the game hour — the
+                // engine's per-draw cloud color uniform (SkyShader::SetupGeometryConstants). Only the RGB is
+                // the tint: Clouds::Update pushes the cloud color's alpha as a CONSTANT 1.0 (fStack_a4), so
+                // the PNAM alpha byte is NOT an opacity — the opacity is the host gate here, and the real
+                // fade is the vertex alpha × texture alpha multiplied in the shader. (Using the PNAM alpha
+                // as opacity made clouds vanish, since these records author it ~0.)
+                var rgb = AtmosphereState.SampleCloudColor(cc, gameHour, cloudTiming);
+                var pnam = new Vector3(rgb.X, rgb.Y, rgb.Z);
+                // Skyrim/FO4 weathers author MOST cloud layers with a (0,0,0) PNAM color (verified: e.g.
+                // SkyrimCloudy layers 0–7 are RGB 0,0,0 with JNAM alpha 1.0 — the engine LIGHTS the cloud
+                // sheets by sun/sky, so a black PNAM is "no extra tint", not "black cloud"). The shader
+                // MULTIPLIES texture × tint, so a near-black tint nukes the layer to black — the dark,
+                // faceted Skyrim/FO4 overcast. When the authored tint is near-black, light the layer with
+                // the daylight cloud tint instead (FNV/FO3 PNAM is ~white, so they keep their authored tint).
+                tint = pnam.LengthSquared() < 0.0025f ? cloudTint : pnam;
+                param = cloudOpacity * cloudAlphaFactor;
             }
             else
             {
                 tint = cloudTint;       // fallback for weathers with no PNAM cloud color
-                param = cloudOpacity;
+                param = cloudOpacity * cloudAlphaFactor;
             }
 
             // Per-layer UV drift: stars hold still; each cloud layer scrolls at its own QNAM/RNAM speed.
@@ -463,5 +487,6 @@ internal sealed class SkyGeometryLayer
     public uint TextureIndex { get; init; }
     public Vector2 ScrollSpeed { get; init; }        // clouds: per-layer UV/sec drift (QNAM/RNAM); else zero
     public WeatherColor? CloudColor { get; init; }   // clouds: weather PNAM per-layer color (RGB tint + A opacity)
+    public WeatherCloudAlpha? CloudAlpha { get; init; } // clouds: weather JNAM per-layer opacity (modern weathers)
 }
 #endif

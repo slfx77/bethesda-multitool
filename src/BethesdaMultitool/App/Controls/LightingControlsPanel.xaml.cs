@@ -20,6 +20,7 @@ public sealed partial class LightingControlsPanel : UserControl
     public LightingControlsPanel()
     {
         InitializeComponent();
+        UpdateTimeValueText();
     }
 
     /// <summary>Raised when the Lighting toggle changes. Argument is the new on/off state.</summary>
@@ -103,8 +104,21 @@ public sealed partial class LightingControlsPanel : UserControl
     private void FogToggle_Changed(object sender, RoutedEventArgs e) =>
         FogToggled?.Invoke(this, FogToggle.IsOn);
 
-    private void TimeSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e) =>
+    private void TimeSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdateTimeValueText();
         TimeChanged?.Invoke(this, e.NewValue);
+    }
+
+    /// <summary>Formats the 0–24h slider value as HH:MM (24:00 wraps to 00:00).</summary>
+    private void UpdateTimeValueText()
+    {
+        var v = TimeSlider.Value;
+        var totalMinutes = (int)Math.Round(v * 60.0);
+        var hours = (totalMinutes / 60) % 24;
+        var minutes = totalMinutes % 60;
+        TimeValueText.Text = $"{hours:00}:{minutes:00}";
+    }
 
     private void WeatherComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

@@ -64,6 +64,11 @@ float4 main(PSInput input) : SV_Target
     }
 
     // Clouds: alpha (PSO SrcAlpha/InvSrcAlpha), tinted by daylight, opacity-scaled, vertex-alpha faded.
-    return float4(tex.rgb * uTintParam.rgb * input.vColor.rgb,
+    // Clouds: alpha (PSO SrcAlpha/InvSrcAlpha). Color = cloud texture × the weather's PNAM tint (the
+    // engine's per-draw cloud color uniform). The per-vertex RGB is intentionally NOT applied — these cap
+    // meshes carry a blue-ish vertex tint that reads as a strong red cast, and the PNAM color is the
+    // authoritative cloud color. Alpha = texture α × cloudOpacity × the mesh's baked vertex-alpha horizon
+    // fade (cloudcloudy ~2 at the rim → 255 overhead), so clouds dense overhead, clean toward the horizon.
+    return float4(tex.rgb * uTintParam.rgb,
                   saturate(tex.a * uTintParam.a * input.vColor.a));
 }

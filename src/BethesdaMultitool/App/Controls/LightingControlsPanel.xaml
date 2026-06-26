@@ -27,7 +27,15 @@
                         AutomationProperties.Name="Fog"
                         ToolTipService.ToolTip="Toggle distance fog (press 0)"
                         Toggled="FogToggle_Changed" />
-          <TextBlock Text="Time of day" FontWeight="SemiBold" />
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Time of day" FontWeight="SemiBold" />
+            <TextBlock Grid.Column="1" x:Name="TimeValueText" FontWeight="SemiBold"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          </Grid>
           <Slider x:Name="TimeSlider" Minimum="0" Maximum="24" StepFrequency="0.1" Value="12"
                   AutomationProperties.Name="Time of day"
                   ToolTipService.ToolTip="Time of day (0–24h) — drives lighting + sky colors"

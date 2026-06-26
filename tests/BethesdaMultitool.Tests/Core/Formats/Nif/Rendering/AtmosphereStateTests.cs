@@ -37,8 +37,10 @@ public sealed class AtmosphereStateTests
         var a = AtmosphereState.Resolve(0f);
 
         Assert.Equal(0f, a.SunIntensity);
+        // The directional COLOUR is faded to 0 by the daylight fraction at night (Resolve), so no
+        // below-horizon vector can light mesh undersides. The night direction itself is moot (colour 0).
         Assert.Equal(Vector3.Zero, a.SunColor);
-        Assert.True(a.SunWorldDirection.Z < 0f, "midnight sun must be below the horizon");
+        Assert.True(a.SunWorldDirection.Z < 0f, "midnight sun is below the horizon (its colour is faded to 0)");
         // Ambient/sky still resolve (the scene isn't pitch black) but are dimmer than the day palette.
         Assert.True(a.AmbientColor.Length() < AtmosphereState.Resolve(12f).AmbientColor.Length());
     }

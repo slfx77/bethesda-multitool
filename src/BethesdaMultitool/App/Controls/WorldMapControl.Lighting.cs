@@ -20,14 +20,24 @@ public sealed partial class WorldMapControl
         if (_initializing) return;
         _hillshadeLightingEnabled = isOn;
         RebuildForHillshadeChange();
+        // The rendered-models overlay bakes lighting from this toggle + time, so re-render it too.
+        InvalidateTopDownOverlay();
     }
 
     private void LightingPanel_TimeChanged(object? sender, double hour)
     {
         if (_initializing) return;
         _gameHour = (float)hour;
-        if (_hillshadeLightingEnabled) RebuildForHillshadeChange();
+        if (_hillshadeLightingEnabled)
+        {
+            RebuildForHillshadeChange();
+            InvalidateTopDownOverlay();
+        }
     }
+
+    /// <summary>Per-game hillshade slope-emphasis scale derived from the active worldspace cell size
+    /// (Morrowind's 8192-unit cells get a gentler scale so the relief isn't harsh).</summary>
+    private float CurrentHillshadeZScale() => WorldMapHillshadeRenderer.ZScaleForCellSize(_cellSize);
 
     /// <summary>
     ///     The hillshade light direction in image space (x = east, y = south, z = elevation), or null to
@@ -54,7 +64,7 @@ public sealed partial class WorldMapControl
         {
             InvalidateWorldBitmap(keepCurrentBitmap: true);
         }
-        else if (_currentLayer == WorldMapLayer.TerrainTextures && _terrainShading == TerrainShadingMode.HillShade)
+        else if (_currentLayer == WorldMapLayer.TerrainTextures && _shadeHillshade)
         {
             // Hillshade is baked into the terrain cell bitmaps + aggregate → drop them and re-stream.
             InvalidateWorldBitmap(keepCurrentBitmap: false);

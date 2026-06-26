@@ -75,12 +75,14 @@ float3 AtmosphereLight(float3 N)
         return (0.4 + 0.6 * legacyLambert).xxx;
     }
 
-    // Matches the FNV PC land/SLS pixel shader EXACTLY: lit = AmbientColor + NdotL*SunColor -- a STRAIGHT
-    // ambient + directional sum with NO energy-conservation scale. The removed (1 - ambientLuma) factor
-    // was suppressing the sun (the "lighting too weak" symptom). Grounded in pc_land_shader_disassembly.txt
-    // / pc_basic_sls_shader_disassembly.txt (`mad r1, NdotL, PSLightColor, AmbientColor`). HDR absorbs > 1.
+    // Decompile-exact SLS sum, IDENTICAL to reference.frag.hlsl so terrain and placed meshes shade the
+    // SAME way: lit = 0.3*AmbientColor + NdotL*SunColor. The 0.3 ambient scale (fRam8323ca10 in the
+    // MemDebug .data) was previously missing here while the mesh shader applied it, so at night the meshes
+    // (0.3×ambient) darkened far more than the terrain (full ambient) — the reported imbalance. Applying
+    // the same scale balances them. (`mad r1, NdotL, PSLightColor, AmbientColor`; HDR absorbs > 1.)
+    const float kAmbientScale = 0.3; // fRam8323ca10
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
-    return uAmbientColor.rgb + uSunColorLighting.rgb * ndotl;
+    return uAmbientColor.rgb * kAmbientScale + uSunColorLighting.rgb * ndotl;
 }
 
 struct PSInput
