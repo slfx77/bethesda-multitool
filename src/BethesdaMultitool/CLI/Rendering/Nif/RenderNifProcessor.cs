@@ -25,11 +25,14 @@ internal static class RenderNifProcessor
     private static (GpuDevice12? device, GpuSpriteRenderer12? renderer) TryCreateGpuRenderer(
         NifRenderSettings s)
     {
+        // forcedCpuMessage MUST stay null: a non-null value makes Create short-circuit to CPU
+        // unconditionally (ignoring --gpu). Let Create's own ForceCpu/ForceGpu/auto logic run — it
+        // prints the CPU message itself when --cpu, and the GPU/fallback messages otherwise.
         var selection = SpriteRenderBackendSelector.Create(
             s.ForceCpu,
             s.ForceGpu,
-            "Using CPU software renderer ([yellow]--cpu[/])",
-            fallbackCpuMessage: null);
+            forcedCpuMessage: null,
+            fallbackCpuMessage: "GPU not available -- using [yellow]CPU software renderer[/]");
         return (selection.Device, selection.Renderer);
     }
 

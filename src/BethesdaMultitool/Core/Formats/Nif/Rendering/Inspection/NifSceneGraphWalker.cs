@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
@@ -51,13 +52,19 @@ internal static class NifSceneGraphWalker
         // rendering (it is a physics hull, untextured, that would otherwise draw over the real mesh).
         var collisionShapes = CollectCollisionShapes(data, nif);
 
+        // Pre-pass: collect emitter-VOLUME meshes referenced by NiPSysMeshEmitter. The engine emits
+        // particles from these but never renders them; left in, they extract as untextured white blobs
+        // (e.g. FXDustWhirlWind01's emitter NiTriStrips). The particle system itself renders as a baked
+        // quad cloud via the particle extractor, not these meshes.
+        var emitterMeshShapes = NifParticleSystemParser.CollectEmitterMeshShapes(data, nif);
+
         for (var i = 0; i < nif.Blocks.Count; i++)
         {
             var block = nif.Blocks[i];
 
             if (NodeTypes.Contains(block.TypeName))
             {
-                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, be, nif.HasInlineStrings);
+                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
                 if (children != null)
                 {
                     nodeChildren[i] = children;
@@ -67,6 +74,12 @@ internal static class NifSceneGraphWalker
             {
                 // Collision-hull geometry under a RootCollisionNode is never rendered.
                 if (collisionShapes.Contains(i))
+                {
+                    continue;
+                }
+
+                // Particle emitter-volume meshes are never rendered (the engine emits from them).
+                if (emitterMeshShapes.Contains(i))
                 {
                     continue;
                 }
@@ -92,7 +105,7 @@ internal static class NifSceneGraphWalker
                     // resolve via the standard path. BSTriShape carries both refs inline.
                     if (shapePropertyMap != null)
                     {
-                        var bsInfo = NifSceneGraphBlockReader.ParseBsTriShape(data, block, nif.BsVersion, be);
+                        var bsInfo = NifSceneGraphBlockReader.ParseBsTriShape(data, block, nif.BsVersion, nif.BinaryVersion, be);
                         if (bsInfo is { } info)
                         {
                             var props = new List<int>(2);
@@ -118,7 +131,7 @@ internal static class NifSceneGraphWalker
 
                 // Skip gore shapes identified via BSDismemberSkinInstance partition data.
                 // Body part IDs 100-299 are gore caps (section caps + torso caps).
-                var skinRef = NifBlockParsers.ParseShapeSkinInstanceRef(data, block, nif.BsVersion, be);
+                var skinRef = NifBlockParsers.ParseShapeSkinInstanceRef(data, block, nif.BsVersion, nif.BinaryVersion, be);
                 if (skinRef >= 0 && skinRef < nif.Blocks.Count &&
                     nif.Blocks[skinRef].TypeName == "BSDismemberSkinInstance")
                 {
@@ -140,7 +153,7 @@ internal static class NifSceneGraphWalker
                     }
                 }
 
-                var dataRef = NifBlockParsers.ParseShapeDataRef(data, block, nif.BsVersion, be, nif.HasInlineStrings);
+                var dataRef = NifBlockParsers.ParseShapeDataRef(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
                 if (dataRef >= 0 && dataRef < nif.Blocks.Count)
                 {
                     shapeDataMap[i] = dataRef;
@@ -148,7 +161,7 @@ internal static class NifSceneGraphWalker
 
                 if (shapePropertyMap != null)
                 {
-                    var propRefs = NifBlockParsers.ParseShapePropertyRefs(data, block, nif.BsVersion, be, nif.HasInlineStrings);
+                    var propRefs = NifBlockParsers.ParseShapePropertyRefs(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
                     if (propRefs != null && propRefs.Count > 0)
                     {
                         shapePropertyMap[i] = propRefs;
@@ -188,7 +201,7 @@ internal static class NifSceneGraphWalker
         }
 
         var children = NifBlockParsers.ParseNodeChildren(data, nif.Blocks[nodeIndex], nif.BsVersion,
-            nif.IsBigEndian, nif.HasInlineStrings);
+            nif.BinaryVersion, nif.IsBigEndian, nif.HasInlineStrings);
         if (children is null)
         {
             return;
@@ -324,8 +337,8 @@ internal static class NifSceneGraphWalker
                 // so the shape's own authored transform is discarded for a placed-ref bake.
                 worldTransforms[i] = treatRootsAsIdentity
                     ? Matrix4x4.Identity
-                    : NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[i], nif.BsVersion, nif.IsBigEndian,
-                        nif.HasInlineStrings);
+                    : NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[i], nif.BsVersion, nif.BinaryVersion,
+                        nif.IsBigEndian, nif.HasInlineStrings);
             }
         }
     }
@@ -343,7 +356,7 @@ internal static class NifSceneGraphWalker
         // relative to identity. See ComputeWorldTransforms' treatRootsAsIdentity note.
         var localTransform = ignoreOwnTransform
             ? Matrix4x4.Identity
-            : NifBlockParsers.ParseNiAVObjectTransform(data, block, nif.BsVersion, nif.IsBigEndian,
+            : NifBlockParsers.ParseNiAVObjectTransform(data, block, nif.BsVersion, nif.BinaryVersion, nif.IsBigEndian,
                 nif.HasInlineStrings);
 
         // If animation overrides are available, merge per-channel: animation rotation
@@ -403,7 +416,7 @@ internal static class NifSceneGraphWalker
                     // lands at the right spot in its authored local orientation, then flag every shape
                     // underneath as a billboard for the renderer to re-aim per frame.
                     var bbLocal = NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[childIdx],
-                        nif.BsVersion, nif.IsBigEndian, nif.HasInlineStrings);
+                        nif.BsVersion, nif.BinaryVersion, nif.IsBigEndian, nif.HasInlineStrings);
                     var bbWorld = bbLocal * worldTransform;
                     var bbParent = Matrix4x4.CreateTranslation(bbWorld.Translation);
                     WalkNode(data, nif, childIdx, bbParent, nodeChildren, worldTransforms, animOverrides,
@@ -420,7 +433,7 @@ internal static class NifSceneGraphWalker
                 // Shape inherits parent's world transform + its own local transform
                 var shapeLocal =
                     NifBlockParsers.ParseNiAVObjectTransform(data, nif.Blocks[childIdx], nif.BsVersion,
-                        nif.IsBigEndian, nif.HasInlineStrings);
+                        nif.BinaryVersion, nif.IsBigEndian, nif.HasInlineStrings);
                 worldTransforms[childIdx] = shapeLocal * worldTransform;
                 if (underBillboard)
                 {
@@ -447,7 +460,7 @@ internal static class NifSceneGraphWalker
             var block = nif.Blocks[i];
             if (NodeTypes.Contains(block.TypeName))
             {
-                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, be, nif.HasInlineStrings);
+                var children = NifBlockParsers.ParseNodeChildren(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
                 if (children != null)
                 {
                     nodeChildren[i] = children;
@@ -466,7 +479,7 @@ internal static class NifSceneGraphWalker
             }
 
             var controllerRef = NifBinaryCursor.ReadNiObjectNETControllerRef(
-                data, block.DataOffset, block.DataOffset + block.Size, be, nif.HasInlineStrings, nif.IsMorrowind);
+                data, block.DataOffset, block.DataOffset + block.Size, be, nif.HasInlineStrings, nif.BinaryVersion);
 
             // Walk the controller chain (NiTimeController has a nextController ref at offset 4)
             while (controllerRef >= 0 && controllerRef < nif.Blocks.Count)

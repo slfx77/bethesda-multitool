@@ -158,6 +158,20 @@ internal static class NifGeometryExtractor
             }
         }
 
+        // Drop shapes the engine culls via the NiAVObject Hidden flag (Flags bit 0 = APP_CULLED). Bethesda
+        // ships hidden proxy/template geometry inside otherwise-visible NIFs — e.g. NV_FencePickCleanGate's
+        // untextured "C_gatepost" posts (Flags 0x0F vs the visible shapes' 0x0E) — which the game never
+        // renders but the extractor otherwise bakes as stray white "duplicate" geometry.
+        var hiddenShapes = shapeDataMap.Keys
+            .Where(idx => NifBlockParsers.IsHiddenShape(data, nif.Blocks[idx], nif))
+            .ToList();
+        foreach (var idx in hiddenShapes)
+        {
+            shapeDataMap.Remove(idx);
+            shapePropertyMap.Remove(idx);
+            shapeSkinInstanceMap.Remove(idx);
+        }
+
         // Filter shapes by name if requested (e.g., "NoHat" for hair NIFs to exclude "Hat" variant).
         // Hair NIFs may contain both "NoHat" (full hair) and "Hat" (trimmed for headgear) shapes,
         // and the engine only attaches one based on equipment state.
@@ -460,6 +474,16 @@ internal static class NifGeometryExtractor
                 model.Submeshes.Add(submesh);
                 model.ExpandBounds(submesh.Positions);
             }
+        }
+
+        // Bake NiParticleSystem effects (NV whirlwinds, Oblivion Gates, FXDust) into camera-facing quad
+        // clouds. Only on the worldspace/reference path (collectBillboards) — the same path that drives the
+        // leaf-billboard VS these reuse; NPC/export paths don't render ambient particle systems. Skipped in
+        // bind-pose alignment mode (no scene-graph transforms there).
+        if (collectBillboards && !bindPoseOnly)
+        {
+            Particles.NifParticleSystemExtractor.Append(
+                data, nif, model, nodeTransforms, nodeChildren, treatRootsAsIdentity);
         }
 
         return model.HasGeometry ? model : null;
