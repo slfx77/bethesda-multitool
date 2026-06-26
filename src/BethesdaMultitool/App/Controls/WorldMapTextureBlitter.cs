@@ -15,6 +15,11 @@ internal static class WorldMapTextureBlitter
 {
     private const int HmGridSize = 33;
 
+    /// <summary>Darkest factor the hillshade may apply when MODULATING terrain textures. Lifts the
+    /// hillshade's 0.15-ambient floor so steep slopes ease the diffuse toward this instead of crushing it
+    /// to near-black (the standalone Slope layer keeps the full-contrast hillshade).</summary>
+    private const float HillshadeMultiplyFloor = 0.5f;
+
     /// <summary>
     ///     Last-ditch terrain color for the Terrain Textures layer when even the engine-default
     ///     DirtWasteland01 texture can't be loaded (no Textures BSA next to the ESM). Tuned to
@@ -67,7 +72,14 @@ internal static class WorldMapTextureBlitter
                            || IsRealLayerList(northN) || IsRealLayerList(southN);
 
         CellLayerWeightTable? table = null;
-        if (hasOwnLayers || hasRealNeighbor)
+        // Morrowind: no Fallout BTXT/ATXT quadrant layers — paint from the flat 16×16 VTEX grid
+        // (resolved to LTEX FormIds) the same way the 3D terrain builder does, so the 2D textured
+        // layer matches it instead of rendering blank/engine-default.
+        if (!hasOwnLayers && cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtex)
+        {
+            table = CellLayerWeightTable.BuildFromVtexGrid(HmGridSize, vtex);
+        }
+        else if (hasOwnLayers || hasRealNeighbor)
         {
             var srcLayers = hasOwnLayers ? layers! : s_engineDefaultSyntheticLayers;
             // Reuse the per-worker scratch table across cells. BuildInto resets the vertex
@@ -103,20 +115,25 @@ internal static class WorldMapTextureBlitter
         CellRecord cell, WorldRenderCache? cache,
         IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid)
     {
+        // Both modulations are independent and multiply together. VCLR absent → no tint; no terrain →
+        // no hillshade. Either grid being null just drops that factor (raw diffuse if both null).
         byte[]? vc = null;        // 33×33×3 VCLR (LAND vertex order, north-up flip applied on read)
         byte[]? shadeGray = null; // 33×33 hillshade gray (image order, row 0 = north)
-        if (shading.Mode == TerrainShadingMode.VertexColors)
+        if (shading.VertexColors)
         {
-            vc = cell.LandVisualData?.VertexColors;
-            if (vc is not { Length: HmGridSize * HmGridSize * 3 }) return; // absent → white → no-op
+            // Normalize handles Morrowind's native 65×65 VCLR by downsampling to 33×33.
+            vc = WorldMapCellBlitter.NormalizeVertexColorsTo33(cell.LandVisualData?.VertexColors);
         }
-        else // HillShade
+        if (shading.HillShade)
         {
             var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
-            if (!terrain.HasTerrain) return;
-            shadeGray = WorldMapLayerRenderer.ComputeCellHillshadeGray(
-                cell, terrain, cellByGrid, cache, shading.LightDir);
+            if (terrain.HasTerrain)
+            {
+                shadeGray = WorldMapLayerRenderer.ComputeCellHillshadeGray(
+                    cell, terrain, cellByGrid, cache, shading.LightDir, shading.ZScale);
+            }
         }
+        if (vc is null && shadeGray is null) return; // nothing to apply
 
         var pixelToVertex = (float)(HmGridSize - 1) / (pixelsPerCell - 1);
         for (var py = 0; py < pixelsPerCell; py++)
@@ -133,15 +150,21 @@ internal static class WorldMapTextureBlitter
                 if (vx0 > HmGridSize - 2) vx0 = HmGridSize - 2;
                 var fx = vxFloat - vx0;
 
-                float mr, mg, mb; // modulation in 0..1
+                float mr = 1f, mg = 1f, mb = 1f; // combined modulation in 0..1
                 if (vc is not null)
                 {
                     (mr, mg, mb) = BilinearVc(vc, vx0, vy0, fx, fy);
                 }
-                else
+                if (shadeGray is not null)
                 {
-                    var m = BilinearGray(shadeGray!, vx0, vy0, fx, fy);
-                    mr = mg = mb = m;
+                    // Soften the hillshade when it MODULATES textures: lift the darkest factor toward
+                    // HillshadeMultiplyFloor so steep slopes don't crush the diffuse to near-black. The
+                    // standalone Slope layer keeps the full-contrast hillshade; only this multiply is eased.
+                    var m = HillshadeMultiplyFloor
+                            + (1f - HillshadeMultiplyFloor) * BilinearGray(shadeGray, vx0, vy0, fx, fy);
+                    mr *= m;
+                    mg *= m;
+                    mb *= m;
                 }
 
                 var dst = (py * pixelsPerCell + px) * 4;

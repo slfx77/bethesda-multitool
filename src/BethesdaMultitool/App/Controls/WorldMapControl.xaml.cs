@@ -45,8 +45,9 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private WorldMapLayer _currentLayer = WorldMapLayer.Heightmap;
     private string? _lastTerrainDrawLog; // change-detection for the gated TerrainTextures draw-decision trace
 
-    // --- Terrain-textures shading (VCLR / hillshade modulation of the textured layer) ---
-    private TerrainShadingMode _terrainShading = TerrainShadingMode.VertexColors;
+    // --- Terrain-textures shading (independent VCLR + hillshade modulation of the textured layer) ---
+    private bool _shadeVertexColors = true; // default ON (engine-accurate tint, preserves prior look)
+    private bool _shadeHillshade;           // default OFF
 
     // --- Overlay toggles ---
     private bool _showNavMesh;
@@ -407,6 +408,10 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // Hillshade lighting defaults OFF (fixed NW look). Set the shared panel's toggle to match while
         // _initializing is still true, so its Toggled handler early-returns (no spurious rebuild).
         LightingPanel.LightingEnabled = false;
+        // Terrain-textures shading checkboxes: VCLR on, hillshade off (handlers early-return while
+        // _initializing, so this just syncs the visual state to the backing fields).
+        ShadeVertexColorsCheckBox.IsChecked = _shadeVertexColors;
+        ShadeHillshadeCheckBox.IsChecked = _shadeHillshade;
         _initializing = false; // XAML load done — filter toggle handlers may now run for real.
         // The cell browser is the shared CellListControl; in 2D selecting a cell inspects it.
         CellList.Activation = CellListControl.ActivationMode.SelectionChanged;
@@ -471,13 +476,6 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
             LayerComboBox.Items.Add(layer.DisplayName());
         }
         LayerComboBox.SelectedIndex = (int)_currentLayer;
-
-        TerrainShadingComboBox.Items.Clear();
-        foreach (var mode in Enum.GetValues<TerrainShadingMode>())
-        {
-            TerrainShadingComboBox.Items.Add(TerrainShadingDisplayName(mode));
-        }
-        TerrainShadingComboBox.SelectedIndex = (int)_terrainShading;
 
         WorldspaceComboBox.Items.Clear();
         foreach (var ws in data.Worldspaces)
@@ -620,7 +618,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         _cellHeightmapBitmap = WorldMapCellDetailRenderer.BuildCellHeightmapBitmap(
             MapCanvas, cell, _currentDefaultWaterHeight, _currentColorScheme,
             showWater: false, _currentLayer, _data, _data?.RenderCache,
-            CurrentTerrainShading(), CurrentHillshadeLightDir());
+            CurrentTerrainShading(), CurrentHillshadeLightDir(), CurrentHillshadeZScale());
         _cellWaterBitmap = WorldMapCellDetailRenderer.BuildCellWaterBitmap(
             MapCanvas, cell, _currentDefaultWaterHeight, _currentLayer, _data?.RenderCache);
     }

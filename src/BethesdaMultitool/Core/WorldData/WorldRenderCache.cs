@@ -106,9 +106,20 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         return _textureWinners.GetOrAdd(cell, static c =>
         {
             var layers = c.LandVisualData?.TextureLayers;
-            var winners = layers is { Count: > 0 }
-                ? TextureWinnerGrid.Build(layers)
-                : null;
+            TextureWinnerGrid? winners;
+            if (layers is { Count: > 0 })
+            {
+                winners = TextureWinnerGrid.Build(layers);
+            }
+            else if (c.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtex)
+            {
+                // Morrowind: build the region grid from the flat 16×16 VTEX grid (no BTXT/ATXT quadrants).
+                winners = TextureWinnerGrid.BuildFromVtex(vtex);
+            }
+            else
+            {
+                winners = null;
+            }
             return new Cached<TextureWinnerGrid>(winners);
         }).Value;
     }
@@ -743,6 +754,45 @@ internal sealed class TextureWinnerGrid
                 }
 
                 winners[quadStart + entry.Position] = layer.TextureFormId;
+                any = true;
+            }
+        }
+
+        return any ? new TextureWinnerGrid(winners) : null;
+    }
+
+    /// <summary>
+    ///     Builds a winner grid from Morrowind's flat <paramref name="vtexSize" />×<paramref name="vtexSize" />
+    ///     VTEX land-texture grid (resolved to LTEX FormIds; 0 = engine-default). Each 33-grid vertex is
+    ///     assigned its VTEX cell's texture using the SAME row/col mapping as
+    ///     <c>CellLayerWeightTable.BuildFromVtexGrid</c> so the regions layer agrees with the textured
+    ///     layer. Populated via <see cref="Lookup" />'s quadrant addressing so lookups round-trip.
+    /// </summary>
+    internal static TextureWinnerGrid? BuildFromVtex(uint[] vtex, int vtexSize = 16)
+    {
+        if (vtex.Length < vtexSize * vtexSize) return null;
+
+        var winners = new uint?[4 * QuadVertexCount];
+        var any = false;
+        for (var py = 0; py <= 32; py++)
+        {
+            var isNorth = py <= 16;
+            var qy = isNorth ? 16 - py : 32 - py;
+            var row = Math.Min(vtexSize - 1, (32 - py) * vtexSize / 32); // py=0 north → top VTEX row
+            for (var px = 0; px <= 32; px++)
+            {
+                var isEast = px > 16;
+                var qx = isEast ? px - 16 : px;
+                if (qx < 0 || qx >= QuadSize || qy < 0 || qy >= QuadSize) continue;
+                var quad = (isNorth, isEast) switch
+                {
+                    (true, false) => 2,
+                    (true, true) => 3,
+                    (false, false) => 0,
+                    (false, true) => 1
+                };
+                var col = Math.Min(vtexSize - 1, px * vtexSize / 32);
+                winners[quad * QuadVertexCount + qy * QuadSize + qx] = vtex[row * vtexSize + col];
                 any = true;
             }
         }

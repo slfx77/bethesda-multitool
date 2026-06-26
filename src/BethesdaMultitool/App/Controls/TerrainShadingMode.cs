@@ -3,27 +3,38 @@ using System.Numerics;
 namespace BethesdaMultitool;
 
 /// <summary>
-///     How the rendered "Terrain textures" layer is modulated. Mirrors how the engine shades terrain:
-///     the diffuse texture is multiplied either by the per-vertex VCLR colors or by a hillshade derived
-///     from the height field. <see cref="None" /> leaves the raw blended diffuse.
+///     Compatibility selection for UI paths that still expose terrain shading as a single choice.
+///     Newer render code uses independent <see cref="TerrainShadingOptions.VertexColors" /> and
+///     <see cref="TerrainShadingOptions.HillShade" /> flags.
 /// </summary>
 internal enum TerrainShadingMode
 {
     /// <summary>Raw blended diffuse, no modulation.</summary>
     None,
 
-    /// <summary>Multiply by the bilinearly-interpolated per-vertex VCLR color (engine-accurate).</summary>
+    /// <summary>Multiply by the bilinearly-interpolated per-vertex VCLR color.</summary>
     VertexColors,
 
     /// <summary>Multiply by a Lambertian hillshade computed from the cell's height field.</summary>
     HillShade
 }
 
-/// <summary>Shading selection plus the (optional) hillshade light direction, threaded through the
-/// terrain-texture render call chain. <c>default</c> is <see cref="TerrainShadingMode.None" />.</summary>
-internal readonly record struct TerrainShadingOptions(TerrainShadingMode Mode, Vector3? LightDir = null)
+/// <summary>
+///     Modulation applied to the rendered "Terrain textures" layer. Vertex colors and hillshade are
+///     INDEPENDENT and combine multiplicatively (engine-accurate VCLR tint × Lambertian relief), so
+///     either, both, or neither can be active. The optional <see cref="LightDir" /> drives the hillshade
+///     (null = the renderer's NW default). <c>default</c> is neither (raw diffuse).
+/// </summary>
+internal readonly record struct TerrainShadingOptions(
+    bool VertexColors, bool HillShade, Vector3? LightDir = null,
+    float ZScale = WorldMapHillshadeRenderer.DefaultZScale)
 {
-    internal static readonly TerrainShadingOptions None = new(TerrainShadingMode.None);
+    internal static readonly TerrainShadingOptions None = new(false, false);
 
-    internal bool IsActive => Mode != TerrainShadingMode.None;
+    internal TerrainShadingOptions(TerrainShadingMode mode, Vector3? lightDir = null)
+        : this(mode == TerrainShadingMode.VertexColors, mode == TerrainShadingMode.HillShade, lightDir)
+    {
+    }
+
+    internal bool IsActive => VertexColors || HillShade;
 }

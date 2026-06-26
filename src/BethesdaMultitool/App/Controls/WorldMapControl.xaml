@@ -63,10 +63,30 @@
                   SelectionChanged="ColorSchemeComboBox_SelectionChanged"
                   AutomationProperties.Name="Heightmap color scheme"
                   ToolTipService.ToolTip="Heightmap color scheme" />
-        <ComboBox x:Name="TerrainShadingComboBox" MinWidth="120" Visibility="Collapsed"
-                  SelectionChanged="TerrainShadingComboBox_SelectionChanged"
-                  AutomationProperties.Name="Terrain texture shading"
-                  ToolTipService.ToolTip="Shade terrain textures by vertex colors or hillshade" />
+        <!-- Terrain-texture shading: independent vertex-color + hillshade modulation (shown only for the
+             TerrainTextures layer). Both can apply at once. -->
+        <DropDownButton x:Name="ShadingMenu" Visibility="Collapsed"
+                        AutomationProperties.Name="Terrain texture shading menu"
+                        ToolTipService.ToolTip="Shade terrain textures by vertex colors and/or hillshade">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <FontIcon Glyph="&#xE790;" FontSize="14" />
+            <TextBlock Text="Shading" />
+          </StackPanel>
+          <DropDownButton.Flyout>
+            <Flyout>
+              <StackPanel Spacing="8" MinWidth="180">
+                <CheckBox x:Name="ShadeVertexColorsCheckBox" Content="Vertex colors"
+                          AutomationProperties.Name="Shade by vertex colors"
+                          ToolTipService.ToolTip="Multiply terrain textures by the per-vertex VCLR colors"
+                          Checked="ShadeVertexColorsCheckBox_Changed" Unchecked="ShadeVertexColorsCheckBox_Changed" />
+                <CheckBox x:Name="ShadeHillshadeCheckBox" Content="Hill-shade"
+                          AutomationProperties.Name="Shade by hillshade"
+                          ToolTipService.ToolTip="Multiply terrain textures by a hillshade derived from the heightmap"
+                          Checked="ShadeHillshadeCheckBox_Changed" Unchecked="ShadeHillshadeCheckBox_Changed" />
+              </StackPanel>
+            </Flyout>
+          </DropDownButton.Flyout>
+        </DropDownButton>
 
         <StackPanel x:Name="FilterCheckboxPanel" Orientation="Horizontal" Spacing="6"
                     VerticalAlignment="Center">

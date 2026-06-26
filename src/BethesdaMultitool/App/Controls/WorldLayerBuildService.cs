@@ -89,7 +89,7 @@ internal static class WorldLayerBuildService
                     request.ActiveCells, request.DefaultWaterHeight, request.ShowWater, request.Cache),
                 WorldMapLayer.Slope => WorldMapLayerRenderer.RenderSlope(
                     request.ActiveCells, request.DefaultWaterHeight, request.ShowWater, request.Cache,
-                    request.HillshadeLightDir),
+                    request.HillshadeLightDir, request.HillshadeZScale),
                 _ => null
             };
 
@@ -211,7 +211,8 @@ internal sealed record LayerBuildRequest(
     bool PreferAggregate = false,
     WaterColorPalette? WaterPalette = null,
     TerrainShadingOptions TerrainShading = default,
-    Vector3? HillshadeLightDir = null);
+    Vector3? HillshadeLightDir = null,
+    float HillshadeZScale = WorldMapHillshadeRenderer.DefaultZScale);
 
 /// <summary>Output of a world map layer build: the composed bitmap and/or per-cell and coarse-tile pixel data.</summary>
 internal sealed record LayerBuildResult(

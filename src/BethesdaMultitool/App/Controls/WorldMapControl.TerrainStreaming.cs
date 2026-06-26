@@ -89,7 +89,8 @@ public sealed partial class WorldMapControl
             _data.RenderCache,
             null,
             WorldMapLayerRenderer.TexturePixelsPerCell,
-            HillshadeLightDir: CurrentHillshadeLightDir());
+            HillshadeLightDir: CurrentHillshadeLightDir(),
+            HillshadeZScale: CurrentHillshadeZScale());
 
         _ = BuildAndApplyWorldBitmapAsync(request);
     }

@@ -53,8 +53,9 @@ internal static class WorldMapLayerRenderer
             var imgCellX = cell.GridX!.Value - minX;
             var imgCellY = maxY - cell.GridY!.Value;
 
-            var vc = cell.LandVisualData?.VertexColors;
-            if (vc is { Length: HmGridSize * HmGridSize * 3 })
+            // Normalize handles Morrowind's native 65×65 VCLR by downsampling to 33×33.
+            var vc = WorldMapCellBlitter.NormalizeVertexColorsTo33(cell.LandVisualData?.VertexColors);
+            if (vc is not null)
             {
                 WorldMapCellBlitter.BlitVertexColorsToCell(rgba, width, vc, imgCellX, imgCellY);
                 continue;
@@ -86,10 +87,7 @@ internal static class WorldMapLayerRenderer
 
         foreach (var cell in EnumerateCellsWithGrid(cellSource))
         {
-            var winners = cache?.GetTextureWinners(cell) ??
-                          (cell.LandVisualData?.TextureLayers is { Count: > 0 } layers
-                              ? TextureWinnerGrid.Build(layers)
-                              : null);
+            var winners = cache?.GetTextureWinners(cell) ?? BuildWinnersFallback(cell);
             if (winners == null) continue;
 
             var imgCellX = cell.GridX!.Value - minX;
@@ -623,7 +621,8 @@ internal static class WorldMapLayerRenderer
 
     internal static LayerBitmap? RenderSlope(
         List<CellRecord> cellSource, float? defaultWaterHeight, bool showWater,
-        WorldRenderCache? cache = null, Vector3? lightDir = null)
+        WorldRenderCache? cache = null, Vector3? lightDir = null,
+        float zScale = WorldMapHillshadeRenderer.DefaultZScale)
     {
         var cells = new List<(CellRecord Cell, DecodedTerrainCell Terrain)>();
         foreach (var cell in cellSource)
@@ -665,7 +664,7 @@ internal static class WorldMapLayerRenderer
             var imgCellX = cell.GridX!.Value - minX;
             var imgCellY = maxY - cell.GridY!.Value;
 
-            var cellShade = RenderCellHillshadeBordered(cell, terrain, cellByGrid, cache, lightDir);
+            var cellShade = RenderCellHillshadeBordered(cell, terrain, cellByGrid, cache, lightDir, zScale);
             WorldMapCellBlitter.BlitCellRgbaBlock(
                 rgba, width, cellShade, HmGridSize, imgCellX * HmGridSize, imgCellY * HmGridSize);
 
@@ -699,7 +698,8 @@ internal static class WorldMapLayerRenderer
     private static byte[] RenderCellHillshadeBordered(
         CellRecord cell, DecodedTerrainCell terrain,
         IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid,
-        WorldRenderCache? cache, Vector3? lightDir)
+        WorldRenderCache? cache, Vector3? lightDir,
+        float zScale = WorldMapHillshadeRenderer.DefaultZScale)
     {
         const int n = HmGridSize;   // 33 vertices
         const int w = n + 2;        // 35 (1-vertex border per side)
@@ -742,7 +742,7 @@ internal static class WorldMapLayerRenderer
             has[(w - 1) * w + (px + 1)] = true;
         }
 
-        var rgba35 = WorldMapHillshadeRenderer.ComputeHillshade(field, has, w, w, lightDir);
+        var rgba35 = WorldMapHillshadeRenderer.ComputeHillshade(field, has, w, w, lightDir, zScale);
 
         var rgba = new byte[n * n * 4];
         for (var py = 0; py < n; py++)
@@ -760,9 +760,10 @@ internal static class WorldMapLayerRenderer
     internal static byte[] ComputeCellHillshadeGray(
         CellRecord cell, DecodedTerrainCell terrain,
         IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid,
-        WorldRenderCache? cache, Vector3? lightDir)
+        WorldRenderCache? cache, Vector3? lightDir,
+        float zScale = WorldMapHillshadeRenderer.DefaultZScale)
     {
-        var rgba = RenderCellHillshadeBordered(cell, terrain, cellByGrid, cache, lightDir);
+        var rgba = RenderCellHillshadeBordered(cell, terrain, cellByGrid, cache, lightDir, zScale);
         var gray = new byte[HmGridSize * HmGridSize];
         for (var i = 0; i < gray.Length; i++) gray[i] = rgba[i * 4];
         return gray;
@@ -787,9 +788,10 @@ internal static class WorldMapLayerRenderer
         CellRecord cell, float? defaultWaterHeight, bool showWater,
         WorldRenderCache? cache = null)
     {
-        var vc = cell.LandVisualData?.VertexColors;
+        // Normalize handles Morrowind's native 65×65 VCLR by downsampling to 33×33.
+        var vc = WorldMapCellBlitter.NormalizeVertexColorsTo33(cell.LandVisualData?.VertexColors);
         var rgba = new byte[HmGridSize * HmGridSize * 4];
-        if (vc is { Length: HmGridSize * HmGridSize * 3 })
+        if (vc is not null)
         {
             WorldMapCellBlitter.BlitVertexColorsToCell(rgba, HmGridSize, vc, imgCellX: 0, imgCellY: 0);
         }
@@ -806,14 +808,21 @@ internal static class WorldMapLayerRenderer
         return rgba;
     }
 
+    /// <summary>Builds the terrain-region winner grid when there's no cache: Fallout BTXT/ATXT layers, or
+    /// Morrowind's flat 16×16 VTEX grid. Mirrors <c>WorldRenderCache.GetTextureWinners</c>.</summary>
+    private static TextureWinnerGrid? BuildWinnersFallback(CellRecord cell)
+    {
+        var layers = cell.LandVisualData?.TextureLayers;
+        if (layers is { Count: > 0 }) return TextureWinnerGrid.Build(layers);
+        if (cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtex) return TextureWinnerGrid.BuildFromVtex(vtex);
+        return null;
+    }
+
     internal static byte[]? RenderTerrainRegionsForCell(
         CellRecord cell, float? defaultWaterHeight, bool showWater,
         WorldRenderCache? cache = null)
     {
-        var winners = cache?.GetTextureWinners(cell) ??
-                      (cell.LandVisualData?.TextureLayers is { Count: > 0 } layers
-                          ? TextureWinnerGrid.Build(layers)
-                          : null);
+        var winners = cache?.GetTextureWinners(cell) ?? BuildWinnersFallback(cell);
         if (winners == null) return null;
 
         var rgba = new byte[HmGridSize * HmGridSize * 4];
@@ -848,7 +857,8 @@ internal static class WorldMapLayerRenderer
         CellRecord cell, float? defaultWaterHeight, bool showWater,
         WorldRenderCache? cache = null,
         IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid = null,
-        Vector3? lightDir = null)
+        Vector3? lightDir = null,
+        float zScale = WorldMapHillshadeRenderer.DefaultZScale)
     {
         var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
         if (!terrain.HasTerrain) return null;
@@ -858,7 +868,7 @@ internal static class WorldMapLayerRenderer
         {
             // Seamless: shade against the neighbour border so this cell's edges match its neighbours
             // (used where cells are shown adjacent, e.g. the textured hill-shade modulation).
-            rgba = RenderCellHillshadeBordered(cell, terrain, cellByGrid, cache, lightDir);
+            rgba = RenderCellHillshadeBordered(cell, terrain, cellByGrid, cache, lightDir, zScale);
         }
         else
         {
@@ -876,7 +886,7 @@ internal static class WorldMapLayerRenderer
             }
 
             rgba = WorldMapHillshadeRenderer.ComputeHillshade(
-                heightField, hasHeight, HmGridSize, HmGridSize, lightDir);
+                heightField, hasHeight, HmGridSize, HmGridSize, lightDir, zScale);
         }
 
         WorldMapWaterRenderer.ApplyCellWaterOverlay(rgba, cell, defaultWaterHeight, showWater, cache: cache);

@@ -14,15 +14,23 @@ internal static class WorldMapHillshadeRenderer
     /// light direction is supplied (lighting off / no lighting control).</summary>
     internal static readonly Vector3 DefaultLightDir = Vector3.Normalize(new Vector3(-1f, 1f, 1.5f));
 
+    /// <summary>Slope-emphasis scale tuned for the 4096-unit / 33-vert-per-cell Fallout-family grid.
+    /// Larger cells (Morrowind's 8192) sample heights over a wider horizontal step, so the same height
+    /// delta reads as a steeper slope — <see cref="ZScaleForCellSize" /> scales this down for them.</summary>
+    internal const float DefaultZScale = 0.02f;
+
+    /// <summary>Per-game zScale: inversely proportional to cell world size so the hillshade contrast is
+    /// consistent across games (Fallout 4096 → 0.02; Morrowind 8192 → 0.01, which tames the harsh relief).</summary>
+    internal static float ZScaleForCellSize(float cellSize) =>
+        DefaultZScale * (4096f / MathF.Max(cellSize, 1f));
+
     internal static byte[] ComputeHillshade(
-        float[] heightField, bool[] hasHeight, int width, int height, Vector3? lightDir = null)
+        float[] heightField, bool[] hasHeight, int width, int height,
+        Vector3? lightDir = null, float zScale = DefaultZScale)
     {
         var rgba = new byte[width * height * 4];
         // Lambertian shade w/ ambient floor against the (configurable) sun direction.
         var light = Vector3.Normalize(lightDir ?? DefaultLightDir);
-        // Tunes how punchy slope reads in a 33-vert-per-cell world. ~0.02 keeps
-        // gentle dunes visible without hard cliffs blowing to pure white.
-        const float zScale = 0.02f;
         const float ambient = 0.15f;
 
         for (var y = 0; y < height; y++)

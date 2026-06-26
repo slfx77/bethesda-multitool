@@ -68,7 +68,7 @@ public sealed partial class WorldMapControl
         _currentLayer = values[idx];
 
         // Color scheme only applies to the heightmap layer (user-confirmed); the terrain-shading
-        // dropdown only to the textured layer. They're mutually exclusive by layer.
+        // menu only to the textured layer. They're mutually exclusive by layer.
         // Null-guard because the SelectionChanged event can fire during XAML load before
         // sibling fields are assigned (see winui3_selectionchanged_early_fire memory).
         if (ColorSchemeComboBox is not null)
@@ -78,9 +78,9 @@ public sealed partial class WorldMapControl
                 : Visibility.Collapsed;
         }
 
-        if (TerrainShadingComboBox is not null)
+        if (ShadingMenu is not null)
         {
-            TerrainShadingComboBox.Visibility = _currentLayer == WorldMapLayer.TerrainTextures
+            ShadingMenu.Visibility = _currentLayer == WorldMapLayer.TerrainTextures
                 ? Visibility.Visible
                 : Visibility.Collapsed;
         }
@@ -95,18 +95,28 @@ public sealed partial class WorldMapControl
         MapCanvas?.Invalidate();
     }
 
-    private void TerrainShadingComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ShadeVertexColorsCheckBox_Changed(object sender, RoutedEventArgs e)
     {
-        if (TerrainShadingComboBox is null) return;
-        var idx = TerrainShadingComboBox.SelectedIndex;
-        var values = Enum.GetValues<TerrainShadingMode>();
-        if (idx < 0 || idx >= values.Length || values[idx] == _terrainShading) return;
+        if (_initializing) return;
+        _shadeVertexColors = ShadeVertexColorsCheckBox.IsChecked == true;
+        RebuildForShadingChange();
+    }
 
-        _terrainShading = values[idx];
+    private void ShadeHillshadeCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        _shadeHillshade = ShadeHillshadeCheckBox.IsChecked == true;
+        RebuildForShadingChange();
+    }
 
-        // Shading is baked into the terrain-texture cell bitmaps + aggregate, so a change must drop
-        // the texture caches and re-stream. keepCurrentBitmap:false → CancelTerrainStream + bump
-        // _layerCellBitmapsCacheGen (drops in-flight pre-change cells) + reset the aggregate.
+    /// <summary>
+    ///     Re-bakes the terrain-textures layer after a shading-checkbox change. Shading is baked into the
+    ///     terrain-texture cell bitmaps + aggregate, so a change must drop the texture caches and
+    ///     re-stream. keepCurrentBitmap:false → CancelTerrainStream + bump _layerCellBitmapsCacheGen
+    ///     (drops in-flight pre-change cells) + reset the aggregate.
+    /// </summary>
+    private void RebuildForShadingChange()
+    {
         InvalidateWorldBitmap(keepCurrentBitmap: false);
         if (_cellHeightmapBitmap is not null && _state.SelectedCell is not null)
         {
@@ -116,20 +126,13 @@ public sealed partial class WorldMapControl
         MapCanvas?.Invalidate();
     }
 
-    /// <summary>Display label for a terrain-shading mode in the dropdown.</summary>
-    private static string TerrainShadingDisplayName(TerrainShadingMode mode) => mode switch
-    {
-        TerrainShadingMode.None => "None",
-        TerrainShadingMode.VertexColors => "Vertex colors",
-        TerrainShadingMode.HillShade => "Hill-shade",
-        _ => mode.ToString()
-    };
-
-    /// <summary>Current terrain-texture shading selection plus the hillshade light direction (only
-    /// meaningful for the hill-shade mode; the light direction comes from the lighting control).</summary>
+    /// <summary>Current terrain-texture shading selection (independent VCLR + hillshade) plus the
+    /// hillshade light direction (from the lighting control; null = the renderer's NW default).</summary>
     private TerrainShadingOptions CurrentTerrainShading() => new(
-        _terrainShading,
-        _terrainShading == TerrainShadingMode.HillShade ? CurrentHillshadeLightDir() : null);
+        _shadeVertexColors,
+        _shadeHillshade,
+        _shadeHillshade ? CurrentHillshadeLightDir() : null,
+        CurrentHillshadeZScale());
 
     // ========================================================================
     // Profiler-driving surface (used by BethesdaMap2DProfiler to script

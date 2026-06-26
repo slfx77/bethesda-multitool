@@ -89,6 +89,40 @@ internal static class WorldMapCellBlitter
         }
     }
 
+    /// <summary>
+    ///     Returns the cell's VCLR as a 33×33×3 grid, downsampling a larger native grid (Morrowind's
+    ///     65×65 → 12,675 bytes) by integer step — the same way <c>DecodedTerrainCell</c> downsamples its
+    ///     heights — so the 2D map's fixed 33×33 path can consume it. Returns the input unchanged when it's
+    ///     already 33×33; null when it isn't a square RGB grid whose edge maps cleanly onto 33 (caller then
+    ///     falls back to white, the engine's no-VCLR default).
+    /// </summary>
+    internal static byte[]? NormalizeVertexColorsTo33(byte[]? vc)
+    {
+        if (vc is null) return null;
+        if (vc.Length == HmGridSize * HmGridSize * 3) return vc;
+        if (vc.Length % 3 != 0) return null;
+
+        var verts = vc.Length / 3;
+        var edge = (int)Math.Round(Math.Sqrt(verts));
+        if (edge * edge != verts || edge <= HmGridSize) return null;
+        if ((edge - 1) % (HmGridSize - 1) != 0) return null; // not an integer-step downsample of 33
+
+        var step = (edge - 1) / (HmGridSize - 1);
+        var dst = new byte[HmGridSize * HmGridSize * 3];
+        for (var y = 0; y < HmGridSize; y++)
+        {
+            for (var x = 0; x < HmGridSize; x++)
+            {
+                var src = (y * step * edge + x * step) * 3;
+                var d = (y * HmGridSize + x) * 3;
+                dst[d] = vc[src];
+                dst[d + 1] = vc[src + 1];
+                dst[d + 2] = vc[src + 2];
+            }
+        }
+        return dst;
+    }
+
     internal static void BlitVertexColorsToCell(byte[] rgba, int stride, byte[] vc, int imgCellX, int imgCellY)
     {
         for (var py = 0; py < HmGridSize; py++)

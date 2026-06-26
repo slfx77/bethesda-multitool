@@ -133,7 +133,8 @@ internal static class WorldMapCellDetailRenderer
         WorldViewData? data = null,
         WorldRenderCache? cache = null,
         TerrainShadingOptions terrainShading = default,
-        System.Numerics.Vector3? hillshadeLightDir = null)
+        System.Numerics.Vector3? hillshadeLightDir = null,
+        float hillshadeZScale = WorldMapHillshadeRenderer.DefaultZScale)
     {
         if (layer != WorldMapLayer.Heightmap)
         {
@@ -150,7 +151,7 @@ internal static class WorldMapCellDetailRenderer
                         WorldMapLayerRenderer.MaxTexturePixelsPerCell, terrainShading),
                 WorldMapLayer.Slope =>
                     WorldMapLayerRenderer.RenderSlopeForCell(cell, currentDefaultWaterHeight, showWater, cache,
-                        cellByGrid: null, lightDir: hillshadeLightDir),
+                        cellByGrid: null, lightDir: hillshadeLightDir, zScale: hillshadeZScale),
                 _ => null
             };
             if (layerPixels == null) return null;
