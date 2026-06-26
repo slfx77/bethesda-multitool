@@ -187,29 +187,41 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
 
     /// <summary>
     ///     Builds the typed dialogue model for DIAL/INFO records (game-aware) alongside their generic
-    ///     decode, so the Dialogue tab has data. Skyrim's INFO layout (localized text, explicit ANAM
-    ///     speaker, 32-byte CTDA) differs from Oblivion's, so each game has its own extractor. No-op for
-    ///     every other record type.
+    ///     decode, so the Dialogue tab has data. Each schema game has its own extractor: Oblivion (inline
+    ///     text, 20-byte CTDA), Skyrim (localized text, TRDT, 32-byte CTDA), and FO4 (localized text, TRDA,
+    ///     32-byte CTDA). No-op for every other record type.
     /// </summary>
     private void ExtractDialogue(DetectedMainRecord record, string? editorId, IReadOnlyList<RawSubrecord> subrecords)
     {
-        var isSkyrim = _context.Game == BethesdaGame.Skyrim;
         switch (record.RecordType)
         {
             case "DIAL":
-                _topics.Add(isSkyrim
-                    ? SkyrimDialogueExtractor.BuildTopic(record.FormId, editorId, subrecords, _context)
-                    : OblivionDialogueExtractor.BuildTopic(record.FormId, editorId, subrecords));
+                _topics.Add(BuildTopic(record.FormId, editorId, subrecords));
                 break;
             case "INFO":
                 var link = _infoLink.TryGetValue(record.FormId, out var l) ? l : default;
                 var topic = link.Topic == 0 ? (uint?)null : link.Topic;
-                _infos.Add(isSkyrim
-                    ? SkyrimDialogueExtractor.BuildInfo(record.FormId, editorId, topic, link.Index, subrecords, _context)
-                    : OblivionDialogueExtractor.BuildInfo(record.FormId, editorId, topic, link.Index, subrecords));
+                _infos.Add(BuildInfo(record.FormId, editorId, topic, link.Index, subrecords));
                 break;
         }
     }
+
+    private DialogTopicRecord BuildTopic(uint formId, string? editorId, IReadOnlyList<RawSubrecord> subs) =>
+        _context.Game switch
+        {
+            BethesdaGame.Skyrim => SkyrimDialogueExtractor.BuildTopic(formId, editorId, subs, _context),
+            BethesdaGame.Fallout4 => Fallout4DialogueExtractor.BuildTopic(formId, editorId, subs, _context),
+            _ => OblivionDialogueExtractor.BuildTopic(formId, editorId, subs)
+        };
+
+    private DialogueRecord BuildInfo(
+        uint formId, string? editorId, uint? topic, ushort index, IReadOnlyList<RawSubrecord> subs) =>
+        _context.Game switch
+        {
+            BethesdaGame.Skyrim => SkyrimDialogueExtractor.BuildInfo(formId, editorId, topic, index, subs, _context),
+            BethesdaGame.Fallout4 => Fallout4DialogueExtractor.BuildInfo(formId, editorId, topic, index, subs, _context),
+            _ => OblivionDialogueExtractor.BuildInfo(formId, editorId, topic, index, subs)
+        };
 
     private static Dictionary<string, RecordDef> BuildIndex(IReadOnlyList<RecordDef> schema)
     {
