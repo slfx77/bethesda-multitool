@@ -1,6 +1,9 @@
 using System.Buffers;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
 using BethesdaMultitool.Core.Utils;
@@ -20,8 +23,19 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
     private readonly RecordParserContext _context = context;
     private readonly Dictionary<string, RecordDef> _byType = BuildIndex(schema);
 
+    // Typed dialogue, built game-aware from DIAL/INFO so the Dialogue tab works (the shared
+    // DialogueTreeBuilder consumes these). Populated as a side effect while decoding records.
+    private readonly List<DialogTopicRecord> _topics = [];
+    private readonly List<DialogueRecord> _infos = [];
+
+    // INFO FormID -> (parent topic FormID, ordering index within the topic), from the GRUP-based
+    // TopicToInfoMap the analyzer already built (structural, game-agnostic).
+    private Dictionary<uint, (uint Topic, ushort Index)> _infoLink = [];
+
     public RecordCollection ParseAll(IProgress<(int percent, string phase)>? progress = null)
     {
+        _infoLink = BuildInfoLink(_context.ScanResult.TopicToInfoMap);
+
         var generic = new List<GenericEsmRecord>();
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         try
@@ -48,14 +62,35 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
 
         progress?.Report((100, "Complete"));
 
+        var dialogueTree = new DialogueTreeBuilder(_context).BuildDialogueTrees(_infos, _topics, []);
+
         return new RecordCollection
         {
             GenericRecords = generic,
+            DialogTopics = _topics,
+            Dialogues = _infos,
+            DialogueTree = dialogueTree,
             FormIdToEditorId = _context.FormIdToEditorId,
             FormIdToDisplayName = _context.FormIdToFullName,
             TotalRecordsProcessed = generic.Count
             // UnparsedTypeCounts left empty: browsable records are decoded; placement children are skipped.
         };
+    }
+
+    /// <summary>Inverts the topic-&gt;infos GRUP map into info-&gt;(topic, order-index) for INFO linkage.</summary>
+    private static Dictionary<uint, (uint Topic, ushort Index)> BuildInfoLink(
+        Dictionary<uint, List<uint>> topicToInfo)
+    {
+        var link = new Dictionary<uint, (uint, ushort)>();
+        foreach (var (topic, infos) in topicToInfo)
+        {
+            for (var i = 0; i < infos.Count; i++)
+            {
+                link[infos[i]] = (topic, (ushort)i);
+            }
+        }
+
+        return link;
     }
 
     /// <summary>
@@ -133,6 +168,8 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
             _context.FormIdToFullName.TryAdd(record.FormId, fullName);
         }
 
+        ExtractDialogue(record, editorId, subrecords);
+
         return new GenericEsmRecord
         {
             FormId = record.FormId,
@@ -145,6 +182,25 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    /// <summary>
+    ///     Builds the typed dialogue model for DIAL/INFO records (game-aware) alongside their generic
+    ///     decode, so the Dialogue tab has data. No-op for every other record type.
+    /// </summary>
+    private void ExtractDialogue(DetectedMainRecord record, string? editorId, IReadOnlyList<RawSubrecord> subrecords)
+    {
+        switch (record.RecordType)
+        {
+            case "DIAL":
+                _topics.Add(OblivionDialogueExtractor.BuildTopic(record.FormId, editorId, subrecords));
+                break;
+            case "INFO":
+                var link = _infoLink.TryGetValue(record.FormId, out var l) ? l : default;
+                _infos.Add(OblivionDialogueExtractor.BuildInfo(
+                    record.FormId, editorId, link.Topic == 0 ? null : link.Topic, link.Index, subrecords));
+                break;
+        }
     }
 
     private static Dictionary<string, RecordDef> BuildIndex(IReadOnlyList<RecordDef> schema)

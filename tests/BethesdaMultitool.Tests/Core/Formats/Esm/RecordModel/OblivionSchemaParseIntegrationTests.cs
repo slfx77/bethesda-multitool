@@ -52,4 +52,30 @@ public class OblivionSchemaParseIntegrationTests
         Assert.Contains(stats.Children, c => c.Label == "Luck");
         Assert.Contains(stats.Children, c => c.Label == "Health");
     }
+
+    [Fact]
+    public async Task Oblivion_Dialogue_Is_Surfaced_For_The_Dialogue_Tab()
+    {
+        var esm = ResolveOblivionEsm();
+        Assert.SkipUnless(esm is not null,
+            "Oblivion.esm not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
+
+        using var result = await SemanticFileLoader.LoadAsync(
+            esm!, cancellationToken: TestContext.Current.CancellationToken);
+
+        // DIAL topics and INFO responses must be built game-aware so the Dialogue tab has data.
+        Assert.True(result.Records.DialogTopics.Count > 1000,
+            $"Expected Oblivion DIAL topics; got {result.Records.DialogTopics.Count}.");
+        Assert.True(result.Records.Dialogues.Count > 10000,
+            $"Expected Oblivion INFO records; got {result.Records.Dialogues.Count}.");
+
+        // INFOs must link to their parent topic (GRUP-based) and carry response text.
+        Assert.Contains(result.Records.Dialogues, d => d.TopicFormId is > 0);
+        Assert.Contains(result.Records.Dialogues,
+            d => d.Responses.Any(r => !string.IsNullOrEmpty(r.Text)));
+
+        // The Dialogue tab consumes the assembled tree; it must group topics under quests.
+        Assert.NotNull(result.Records.DialogueTree);
+        Assert.NotEmpty(result.Records.DialogueTree!.QuestTrees);
+    }
 }
