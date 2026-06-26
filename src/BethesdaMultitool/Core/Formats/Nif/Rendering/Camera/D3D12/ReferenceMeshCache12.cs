@@ -636,13 +636,27 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         // Conservative whole-mesh bounding radius around the NIF origin (max vertex distance from
-        // local 0,0,0). One pass over the combined vertex array; used by the reference cull to size
-        // each placement's sphere from real geometry rather than the OBND estimate.
+        // local 0,0,0) AND the mesh-local AABB (min/max XYZ). One pass over the combined vertex array;
+        // the radius sizes the reference cull's sphere from real geometry rather than the OBND estimate,
+        // and the AABB gives the selection highlight a tight box for refs with no OBND (every Oblivion
+        // ref — see WorldView3DControl.UpdateHighlightFromSelection / OBLIV-1).
         var meshLocalRadiusSq = 0f;
+        var aabbMin = new Vector3(float.PositiveInfinity);
+        var aabbMax = new Vector3(float.NegativeInfinity);
         foreach (var v in vertices)
         {
-            var lenSq = v.Position.LengthSquared();
+            var p = v.Position;
+            var lenSq = p.LengthSquared();
             if (lenSq > meshLocalRadiusSq) meshLocalRadiusSq = lenSq;
+            aabbMin = Vector3.Min(aabbMin, p);
+            aabbMax = Vector3.Max(aabbMax, p);
+        }
+
+        // Degenerate (no vertices) → collapse the AABB to the origin so consumers see min == max and
+        // fall back to the sphere rather than an inverted box.
+        if (aabbMin.X > aabbMax.X)
+        {
+            aabbMin = aabbMax = Vector3.Zero;
         }
 
         var submeshes = new List<CachedSubmesh12>(decoded.Submeshes.Count);
@@ -728,7 +742,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     IsEmissive = sub.IsEmissive,
                     LocalBoundsCenter = sub.LocalBoundsCenter,
                     IsBillboard = sub.IsBillboard,
-                    IsLeafBillboard = sub.IsLeafBillboard
+                    IsLeafBillboard = sub.IsLeafBillboard,
+                    DepthWritingBlend = sub.DepthWritingBlend
                 });
             }
             catch (Exception ex)
@@ -747,6 +762,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         success = true;
         var cached = new CachedNifMesh12(
             submeshes, geometry, _geometryArena, _deletionQueue, _textureCache, MathF.Sqrt(meshLocalRadiusSq),
+            aabbMin, aabbMax,
             (IReadOnlyList<(Vector3 Min, Vector3 Max)>?)waterPlanesLocal ?? Array.Empty<(Vector3 Min, Vector3 Max)>());
         if (started != 0)
         {
@@ -815,7 +831,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     private static Vector4 BuildAlphaState(DecodedSubmesh12 sub)
     {
-        var alphaTestEnabled = sub.AlphaRenderMode != NifAlphaRenderMode.Blend && sub.AlphaTest;
+        // The alpha test discards sub-threshold texels in the pixel shader. We normally skip it for plain
+        // Blend (blend itself fades transparency, no discard needed). But a DepthWritingBlend shape ALSO
+        // writes depth, so it MUST discard its transparent texels — otherwise the whole card writes depth
+        // and occludes whatever's behind it (e.g. NVSeaPlant02 punching holes in the water and showing only
+        // a faint full-card haze). With the test on, the card background discards (no depth, no haze) and
+        // only the surviving fronds blend + write depth — exactly the engine's blend+test+ZBuffer_Write.
+        var alphaTestEnabled = (sub.AlphaRenderMode != NifAlphaRenderMode.Blend || sub.DepthWritingBlend)
+                               && sub.AlphaTest;
         return new Vector4(
             alphaTestEnabled ? sub.AlphaTestThreshold : 0f,
             alphaTestEnabled ? sub.AlphaTestFunction : -1f,

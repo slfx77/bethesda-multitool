@@ -65,5 +65,12 @@ internal sealed class CachedSubmesh12
     /// </summary>
     public required bool IsBillboard { get; init; }
     public bool IsLeafBillboard { get; init; }
+
+    /// <summary>
+    ///     True for an alpha-BLEND shape the engine writes depth for (effects-folder foliage like
+    ///     NVSeaPlant02). The renderer draws it inline BEFORE the water pass with a depth-writing blend
+    ///     PSO, so water occludes it from above instead of it painting over the surface.
+    /// </summary>
+    public bool DepthWritingBlend { get; init; }
 }
 #endif

@@ -38,6 +38,10 @@ cbuffer PerDraw : register(b1)
     uint4  uTexIndices;
     // 1A — specular: xyz = tint, w = Phong exponent (0 = no specular). Matches PerDrawConstants.
     float4 uSpecular;
+    // Camera world-space basis for per-card leaf billboards (same source as the instanced VS). Only read
+    // when uTextureState.y marks a leaf submesh — used by baked particle clouds drawn on the blended path.
+    float4 uCameraRight;
+    float4 uCameraUp;
 };
 
 struct VSInput
@@ -69,8 +73,27 @@ struct VSOutput
 VSOutput main(VSInput input)
 {
     VSOutput o;
-    float4 worldPos = mul(uWorld, float4(input.aPosition, 1.0));
-    worldPos.xyz -= uCameraOrigin.xyz; // camera-relative shift before projection (1G); 0 when off
+    float4 worldPos;
+    if (uTextureState.y > 0.5)
+    {
+        // Per-card leaf billboard (baked particle quads): the vertex carries the card CENTER (aTangent)
+        // and the signed 2D card-space offset (aBitangent.xy). Rebuild the quad facing the camera around
+        // the world-space center, scaled by the uniform REFR scale. Same math as reference_instanced.vert.hlsl;
+        // particles have no wind weight so the sway term is omitted.
+        float4 worldCenterAbs = mul(uWorld, float4(input.aTangent, 1.0));
+        float3 worldCenter = worldCenterAbs.xyz - uCameraOrigin.xyz;
+        float scale = length(float3(uWorld[0].x, uWorld[0].y, uWorld[0].z));
+        worldPos = float4(
+            worldCenter
+                + uCameraRight.xyz * (input.aBitangent.x * scale)
+                + uCameraUp.xyz    * (input.aBitangent.y * scale),
+            1.0);
+    }
+    else
+    {
+        worldPos = mul(uWorld, float4(input.aPosition, 1.0));
+        worldPos.xyz -= uCameraOrigin.xyz; // camera-relative shift before projection (1G); 0 when off
+    }
     o.Position = mul(uViewProj, worldPos);
     o.vWorldPos = worldPos.xyz; // camera-relative world pos (matches the shader camera = 0 for fog/spec)
     // Uniform scale only — pass the normal through the world rotation (3x3 sub-matrix). For

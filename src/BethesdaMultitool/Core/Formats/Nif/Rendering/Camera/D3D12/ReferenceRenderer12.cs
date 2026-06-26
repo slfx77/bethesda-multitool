@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
@@ -21,7 +22,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 {
     private const uint PerFrameByteSize = 64;
-    private const uint PerDrawByteSize = 144;
+    private const uint PerDrawByteSize = 176;
     // 3 float4 (material) + uint4 (tex indices) + uint base + uint3 pad + float4 specular
     // + float4 camRight + float4 camUp (leaf billboard basis) = 128 bytes.
     private const uint InstanceDrawByteSize = 144;
@@ -67,6 +68,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private readonly ReferencePipelineFactory12 _pipelines;
     private readonly OpaqueBatchRegistry12 _opaqueBatches = new();
     private readonly List<BlendedReferenceDraw> _blendedDraws = new(256);
+    // Depth-writing blend foliage (effects-folder shapes the engine marks ZBuffer_Write, e.g. NVSeaPlant02):
+    // kept as alpha blend but drawn INLINE before the water pass with a depth-writing PSO, so water occludes
+    // them from above. Separate from _blendedDraws, which defers to after the water pass.
+    private readonly List<BlendedReferenceDraw> _depthWritingBlendDraws = new(64);
 
     // TEMP transparency diagnostic — set FALLOUT_VIEWER_ALPHA_DEBUG=<path-substring> (e.g. "maniasm25")
     // to append each matching mesh's per-submesh alpha classification + actual render pass to
@@ -123,6 +128,33 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // instead of the OBND/256 fallback, so large meshes stop popping at screen edges / near camera.
     // Persists across frames + worldspaces (radius is static per NIF); bounded by unique-mesh count.
     private readonly Dictionary<uint, float> _meshLocalRadius = new(512);
+
+    // MeshId → the mesh's local AABB (min/max around the NIF origin), recorded alongside the radius on
+    // the first resident sighting. Feeds the selection highlight a tight box for refs with no OBND
+    // (OBLIV-1). Grows in lockstep with _meshLocalRadius, so the cull cache's radius-count gate covers it.
+    private readonly Dictionary<uint, (Vector3 Min, Vector3 Max)> _meshLocalBounds = new(512);
+
+    /// <summary>The resolved local bounding-sphere radius for a mesh (around its NIF origin), or false
+    /// when that mesh hasn't streamed yet. Lets object picking use the real geometry extent for refs that
+    /// have no OBND, instead of the oversized fallback sphere (the "massive click zone" symptom).</summary>
+    internal bool TryGetMeshLocalRadius(uint meshId, out float radius) =>
+        _meshLocalRadius.TryGetValue(meshId, out radius);
+
+    // The resolved mesh's local AABB (min/max), once it has been seen resident at least once. Used by the
+    // selection highlight to box no-OBND refs to their real geometry (OBLIV-1). False until first sighting.
+    internal bool TryGetMeshLocalBounds(uint meshId, out Vector3 min, out Vector3 max)
+    {
+        if (_meshLocalBounds.TryGetValue(meshId, out var bounds))
+        {
+            min = bounds.Min;
+            max = bounds.Max;
+            return true;
+        }
+
+        min = default;
+        max = default;
+        return false;
+    }
 
     // Placed-NIF water planes (WaterShaderProperty geometry diverted out of the drawable submesh set
     // at upload) accumulated as their meshes resolve, deduped per REFR FormId, and handed to
@@ -385,6 +417,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         _opaqueBatches.Begin();
         _blendedDraws.Clear();
+        _depthWritingBlendDraws.Clear();
         _resolvedMeshesThisFrame.Clear();
 
         // === Cull pass (or cache reuse) ===
@@ -564,6 +597,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // geometry extent for this MeshId. A new key here grows _meshLocalRadius.Count, which
             // invalidates the cull cache next frame so the tighter bounds are applied.
             _meshLocalRadius[r.MeshId] = mesh.LocalBoundsRadius;
+            _meshLocalBounds[r.MeshId] = (mesh.LocalBoundsMin, mesh.LocalBoundsMax);
             // Placed water planes need no textures — emit them as soon as the mesh resolves, once per
             // REFR (the seen-set dedups the per-frame resolve). Transforms the mesh-local water AABB(s)
             // by this placement's world matrix into world-space footprints for WaterRenderer12.
@@ -571,10 +605,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             {
                 AccumulateNifWaterPlanes(r.WorldMatrix, mesh.WaterPlanesLocal);
             }
-            if (!mesh.TexturesReady)
+            var texturesReady = mesh.TexturesReady;
+            if (!texturesReady)
             {
                 texturePending++;
-                continue;
+                // SpeedTree .spt geometry has a valid fallback SRV immediately. Do not hide the
+                // entire tree while a bark/leaf atlas is still resolving or unavailable; otherwise a
+                // single pending foliage texture suppresses both bark and leaves in the live viewer.
+                if (!SpeedTreeModelPath.IsSpt(r.ModelPath))
+                {
+                    continue;
+                }
             }
 
             var anySubmeshDrawn = false;
@@ -613,14 +654,25 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     var world = sub.IsBillboard
                         ? BuildBillboardWorld(sub.LocalBoundsCenter, r.WorldMatrix, worldCenter, cylinder.Position)
                         : r.WorldMatrix;
-                    _blendedDraws.Add(new BlendedReferenceDraw(
+                    var blendedDraw = new BlendedReferenceDraw(
                         world,
                         sub,
                         Vector3.DistanceSquared(worldCenter, cylinder.Position),
                         sub.AlphaState,
                         sub.RenderState,
                         sub.TextureState,
-                        sub.Specular));
+                        sub.Specular);
+                    // Depth-writing blend foliage (e.g. NVSeaPlant02) draws inline BEFORE the water pass so
+                    // water occludes it from above; everything else defers to after water. Billboards keep
+                    // the deferred path — they need per-frame camera-facing matrices and aren't occluders.
+                    if (sub.DepthWritingBlend && !sub.IsBillboard)
+                    {
+                        _depthWritingBlendDraws.Add(blendedDraw);
+                    }
+                    else
+                    {
+                        _blendedDraws.Add(blendedDraw);
+                    }
                     anySubmeshDrawn = true;
                     continue;
                 }
@@ -646,6 +698,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         ID3D12PipelineState? currentPso = null;
         DrawOpaqueBatches(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref srvBindMs, ref drawCallMs, ref srvBinds, ref submeshDraws);
+        // Depth-writing blend foliage draws here — INLINE, after the opaque batches but before the water
+        // pass — with a depth-writing blend PSO, so the water surface occludes it from above (a no-depth
+        // blend drawn after water painted over the surface). Runs every frame regardless of deferBlended.
+        DrawDepthWritingBlend(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref drawCallMs, ref submeshDraws);
         // 3D-8: blended submeshes draw now (inline, e.g. top-down overlay) or are deferred to after the
         // water pass via RenderBlendedDeferred() so water never paints over transparent meshes.
         if (!deferBlended)
@@ -926,6 +982,48 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
     }
 
+    /// <summary>
+    ///     Draws the depth-writing blend submeshes (effects-folder foliage the engine marks ZBuffer_Write,
+    ///     e.g. NVSeaPlant02) accumulated by the most recent <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?)" />.
+    ///     Unlike <see cref="DrawBlended" /> these run INLINE — after the opaque batches but before the
+    ///     water pass — with a depth-WRITING blend PSO, so the water surface occludes them from above
+    ///     instead of them painting over it. Sorted back-to-front so overlapping cards blend correctly.
+    /// </summary>
+    private void DrawDepthWritingBlend(
+        ID3D12GraphicsCommandList cmd,
+        int frameIndex,
+        ref ID3D12PipelineState? currentPso,
+        ref double cbUpdateMs,
+        ref double drawCallMs,
+        ref int submeshDraws)
+    {
+        if (_depthWritingBlendDraws.Count == 0) return;
+
+        _depthWritingBlendDraws.Sort(static (a, b) => b.DistanceSquared.CompareTo(a.DistanceSquared));
+        for (var i = 0; i < _depthWritingBlendDraws.Count; i++)
+        {
+            var draw = _depthWritingBlendDraws[i];
+            var pso = _pipelines.GetBlendDepthWritePipeline(
+                draw.Submesh.SrcBlendMode,
+                draw.Submesh.DstBlendMode,
+                draw.Submesh.DoubleSided);
+            if (!DrawBlendedSubmesh(
+                cmd,
+                frameIndex,
+                draw,
+                pso,
+                ref currentPso,
+                ref cbUpdateMs,
+                ref drawCallMs))
+            {
+                LastFrameDrawsTruncated += _depthWritingBlendDraws.Count - i;
+                break;
+            }
+            submeshDraws++;
+            LastStats.ReferenceBlendedDraws++;
+        }
+    }
+
     /// <summary>Returns <c>false</c> when the ring slot is full so the caller stops the blended pass.</summary>
     private bool DrawBlendedSubmesh(
         ID3D12GraphicsCommandList cmd,
@@ -951,6 +1049,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 0,
                 0),
             Specular = draw.Specular,
+            // Leaf-billboard camera basis (consumed only when TextureState.y marks a leaf submesh, e.g. a
+            // baked particle cloud) so the blended-path VS can re-face the quads to the camera.
+            CameraRight = _leafBillboardRight,
+            CameraUp = _leafBillboardUp,
         };
         // Allocate before mutating PSO state so a soft-fail leaves the command list consistent.
         if (!_ringBuffer.TryAllocate(frameIndex, PerDrawByteSize, out var perDrawAlloc, GpuRingBuffer12.CbAlignment))
@@ -1026,9 +1128,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // Bindless TexIndices for the (non-instanced) blended draw path. Kept here so the
         // PS interface stays uniform (it expects vTexIndices regardless of which VS produced it).
         public TexIndexQuad TexIndices;
-        // Sun specular term: xyz = tint, w = Phong exponent (0 = no specular). Appended last to
-        // match the trailing uSpecular field in reference.vert.hlsl; brings this to 144 bytes total.
+        // Sun specular term: xyz = tint, w = Phong exponent (0 = no specular). Matches the uSpecular field
+        // in reference.vert.hlsl.
         public Vector4 Specular;
+        // Camera world-space right/up for per-card leaf billboards (baked particle clouds on the blended
+        // path). Only read when TextureState.y marks a leaf submesh; brings this to 176 bytes.
+        public Vector4 CameraRight;
+        public Vector4 CameraUp;
     }
 
     /// <summary>

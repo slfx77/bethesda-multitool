@@ -26,6 +26,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     private readonly byte[] _blendedVsBytecode;
     private readonly byte[] _psBytecode;
     private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _blendPsos = new();
+    private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _blendDepthWritePsos = new();
     private bool _disposed;
 
     public ReferencePipelineFactory12(GpuDevice12 gpu, GpuRootSignature12 rootSignature)
@@ -70,6 +71,37 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
         var pso = CreatePipelineState(_blendedVsBytecode, _psBytecode, doubleSided, rtBlend, depthWriteEnabled: false);
         _blendPsos[key] = pso;
+        return pso;
+    }
+
+    /// <summary>
+    ///     Depth-WRITING variant of <see cref="GetBlendPipeline" />: the same alpha blend, but it also
+    ///     writes depth. Used for effects-folder foliage the engine marks ZBuffer_Write (e.g. NVSeaPlant02).
+    ///     The renderer draws these inline BEFORE the water pass so the water surface occludes them from
+    ///     above — which a no-depth blend (drawn after water) can't do.
+    /// </summary>
+    public ID3D12PipelineState GetBlendDepthWritePipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided)
+    {
+        var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided);
+        if (_blendDepthWritePsos.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        var rtBlend = new D12.RenderTargetBlendDescription
+        {
+            BlendEnable = true,
+            SourceBlend = NifD3D12BlendMapper.ResolveBlendFactor(srcBlendMode),
+            DestinationBlend = NifD3D12BlendMapper.ResolveBlendFactor(dstBlendMode),
+            BlendOperation = D12.BlendOperation.Add,
+            SourceBlendAlpha = D12.Blend.One,
+            DestinationBlendAlpha = D12.Blend.One,
+            BlendOperationAlpha = D12.BlendOperation.Max,
+            RenderTargetWriteMask = D12.ColorWriteEnable.All
+        };
+
+        var pso = CreatePipelineState(_blendedVsBytecode, _psBytecode, doubleSided, rtBlend, depthWriteEnabled: true);
+        _blendDepthWritePsos[key] = pso;
         return pso;
     }
 
@@ -181,6 +213,11 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             pso.Dispose();
         }
         _blendPsos.Clear();
+        foreach (var pso in _blendDepthWritePsos.Values)
+        {
+            pso.Dispose();
+        }
+        _blendDepthWritePsos.Clear();
         OpaqueDoublePso.Dispose();
         OpaqueBackPso.Dispose();
     }

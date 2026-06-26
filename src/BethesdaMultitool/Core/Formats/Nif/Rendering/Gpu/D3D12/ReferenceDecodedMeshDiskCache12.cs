@@ -47,7 +47,27 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // The decoded submesh set changes (ICAUTower01: 10→20), so old v7 entries are stale.
     // Bumped 8→9: NIF 10.2.0.0 geometry now extracts (NiGeometryData reads keyed on the NIF version) — meshes
     // like ICPalaceTower01 that previously decoded to nothing now produce geometry, so any v8 entry is stale.
-    internal const int DecoderVersion = 9;
+    // Bumped 9→10: the per-submesh payload now carries DepthWritingBlend (effects-folder foliage that keeps
+    // alpha blend but writes depth, e.g. NVSeaPlant02). Old caches lack the trailing flag.
+    // Bumped 10→11: the alpha classifier no longer demotes UNLIT decals (BSShaderNoLightingProperty) NOR flat
+    // planar decals to opaque on ZBuffer_Write — neither has a closed interior to leak, so they keep their
+    // authored blend instead of rendering as opaque blocks: white/black ground-blend rings (SuperMutantBedding01,
+    // SewerLidExit01, HoldingTankTopOnly), the opaque green NV_BarrelPile03 radioactive disc, opaque neon signage,
+    // and lit surface decals like Vault87Blood10 (which fell to OPAQUE because the cutout fallback needs a texture
+    // that isn't decoded yet at decode time). The baked AlphaRenderMode changes, so old v10 entries are stale.
+    // Bumped 11→12: the geometry extractor now drops shapes with the NiAVObject Hidden flag (Flags bit 0 =
+    // APP_CULLED) that the engine culls — e.g. NV_FencePickCleanGate's hidden C_gatepost proxy posts. The
+    // decoded submesh SET changes, so old v11 entries bake the stray hidden geometry.
+    // Bumped 12→13: the alpha classifier is now engine-accurate (decompiled BSShader::SetupGeometry*): the
+    // BSShaderFlags2 ZBuffer_Write "demote alpha-blend to opaque" heuristic (+ the unlit/flat-decal exemptions)
+    // is gone — alpha-blend shapes keep their blend, and depth-write follows the alpha-TEST bit (blend+test ⇒
+    // DepthWritingBlend). The baked AlphaRenderMode/DepthWritingBlend changes, so old v12 entries are stale.
+    // Bumped 13→14: NiParticleSystem effects now bake to leaf-billboard quad clouds (NifParticleSystemExtractor)
+    // and the emitter-volume meshes are dropped — the decoded submesh set changes, so old v13 entries lack the
+    // particle clouds and still carry the suppressed emitter blobs.
+    // Bumped 14→15: mesh emitters (e.g. NV whirlwind columns) now spawn over the emitter mesh's AABB instead of a
+    // single point (NifParticleSystemExtractor.ResolveMeshEmitterBounds), so the baked particle positions change.
+    internal const int DecoderVersion = 15;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -250,6 +270,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(submesh.Glossiness);
         writer.Write(submesh.SpecularEnabled);
         writer.Write(submesh.IsLeafBillboard);
+        writer.Write(submesh.DepthWritingBlend);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -302,6 +323,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadBoolean(),
             ReadVector3(reader),
             reader.ReadSingle(),
+            reader.ReadBoolean(),
             reader.ReadBoolean(),
             reader.ReadBoolean());
     }
@@ -370,4 +392,5 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     Vector3 SpecularColor = default,
     float Glossiness = 0f,
     bool SpecularEnabled = false,
-    bool IsLeafBillboard = false);
+    bool IsLeafBillboard = false,
+    bool DepthWritingBlend = false);

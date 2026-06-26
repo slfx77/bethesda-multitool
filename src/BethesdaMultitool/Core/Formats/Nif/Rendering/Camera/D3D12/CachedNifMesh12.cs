@@ -21,6 +21,8 @@ internal sealed class CachedNifMesh12 : IDisposable
         GpuDeletionQueue12 deletionQueue,
         GpuTextureCache12 textureCache,
         float localBoundsRadius,
+        Vector3 localBoundsMin,
+        Vector3 localBoundsMax,
         IReadOnlyList<(Vector3 Min, Vector3 Max)> waterPlanesLocal)
     {
         Submeshes = submeshes;
@@ -29,6 +31,8 @@ internal sealed class CachedNifMesh12 : IDisposable
         _deletionQueue = deletionQueue;
         _textureCache = textureCache;
         LocalBoundsRadius = localBoundsRadius;
+        LocalBoundsMin = localBoundsMin;
+        LocalBoundsMax = localBoundsMax;
         WaterPlanesLocal = waterPlanesLocal;
     }
 
@@ -49,6 +53,19 @@ internal sealed class CachedNifMesh12 : IDisposable
     ///     instead of the OBND estimate so large meshes aren't culled at screen edges.
     /// </summary>
     public float LocalBoundsRadius { get; }
+
+    /// <summary>
+    ///     Mesh-local axis-aligned bounding box (min/max over all combined vertices, in NIF-local
+    ///     space). Used as the selection-highlight box for refs that carry no OBND (every Oblivion
+    ///     ref, and any FO3+ ref whose base record omits OBND): the highlight transforms this by the
+    ///     placement world matrix so the box hugs the real geometry instead of the oversized
+    ///     no-bounds fallback sphere. <see cref="LocalBoundsMin" /> &gt; <see cref="LocalBoundsMax" />
+    ///     for a degenerate (empty) mesh — callers should treat that as "no AABB".
+    /// </summary>
+    public Vector3 LocalBoundsMin { get; }
+
+    /// <inheritdoc cref="LocalBoundsMin" />
+    public Vector3 LocalBoundsMax { get; }
 
     public bool TexturesReady
     {

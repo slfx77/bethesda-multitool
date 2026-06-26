@@ -150,6 +150,15 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
         _lineVertexCount = 0;
         SpatialIndex.QueryCellsInRadius(cylinder.Position.X, -cylinder.Position.Y, cylinder.Radius, _visibleCellScratch);
 
+        // Draw NEAREST cells first so the per-frame line-vertex budget (MaxLineVertices) is spent on the
+        // collision closest to the camera — that's what you compare against the rendered meshes up close.
+        // QueryCellsInRadius returns cells in index order, so without this the budget could be exhausted by
+        // distant cells, leaving near collision undrawn ("only rendered far from the camera").
+        var camCanvas = new Vector2(cylinder.Position.X, -cylinder.Position.Y);
+        _visibleCellScratch.Sort((a, b) =>
+            Vector2.DistanceSquared(a.CenterCanvas, camCanvas)
+                .CompareTo(Vector2.DistanceSquared(b.CenterCanvas, camCanvas)));
+
         var refsDrawn = 0;
         foreach (var spatialCell in _visibleCellScratch)
         {

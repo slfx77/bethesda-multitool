@@ -38,5 +38,9 @@ internal sealed record DecodedSubmesh12(
     bool SpecularEnabled = false,
     // SpeedTree leaf cards: GPU re-faces each quad to the camera (tangent = card center, bitangent =
     // signed 2D offset). Persisted in ReferenceDecodedMeshDiskCache12 v7+.
-    bool IsLeafBillboard = false);
+    bool IsLeafBillboard = false,
+    // Effects-folder foliage (e.g. NVSeaPlant02): an alpha-blend shape the engine writes depth for. The
+    // reference renderer draws it inline before the water pass with a depth-writing blend PSO so water
+    // occludes it from above. Persisted in ReferenceDecodedMeshDiskCache12 v10+.
+    bool DepthWritingBlend = false);
 #endif

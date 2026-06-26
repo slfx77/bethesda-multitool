@@ -112,7 +112,13 @@ float4 main(PSInput input) : SV_Target
     // Alpha-test branch — controlled per-draw so foliage with NiAlphaProperty bit 9 set
     // discards transparent pixels rather than rendering them as opaque. Full NIF comparison
     // function is preserved; function < 0 disables testing for opaque and blended draws.
-    if (!PassAlphaTest(sampleAlpha, input.vAlphaState.x, input.vAlphaState.y)) discard;
+    // A shape that is BOTH blended (vAlphaState.w > 0.5) AND alpha-tested is depth-writing-blend
+    // foliage (e.g. NVSeaPlant02): test the TEXTURE alpha alone, not the vertex-color-modulated
+    // alpha. Its (binary) leaf mask must survive the test so only the transparent card background
+    // discards, while the low vertex-color alpha stays a soft underwater fade applied to outAlpha —
+    // testing the modulated alpha would push the whole leaf below the threshold and blank the plant.
+    float testAlpha = (input.vAlphaState.w > 0.5) ? sample.a : sampleAlpha;
+    if (!PassAlphaTest(testAlpha, input.vAlphaState.x, input.vAlphaState.y)) discard;
 
     float3 normal = normalize(input.vWorldNormal);
     if (input.vRenderState.x > 0.5 && !input.IsFrontFace)
