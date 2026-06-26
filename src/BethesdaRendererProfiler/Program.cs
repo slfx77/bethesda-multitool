@@ -19,6 +19,15 @@ public static class Program
     {
         AttachConsole(AttachParentProcess);
 
+        // Headless single-NIF render: renders one NIF through the real viewer D3D12 stack
+        // (ReferenceRenderer12) to a PNG and exits, without launching the profiler window. Used to
+        // self-verify viewer-specific NIF rendering (material/alpha/effect) bugs offscreen.
+        if (Array.IndexOf(args, "--render-nif") >= 0)
+        {
+            Environment.ExitCode = NifHeadlessRenderer.Run(args);
+            return;
+        }
+
         var parse = RendererProfilerOptions.TryParse(args, out var options, out var error);
         if (!parse)
         {

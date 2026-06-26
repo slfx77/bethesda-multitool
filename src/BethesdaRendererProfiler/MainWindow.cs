@@ -178,6 +178,14 @@ internal sealed class MainWindow : Window, IDisposable
                 return;
             }
 
+            if (!string.IsNullOrWhiteSpace(_options.CaptureFramePath))
+            {
+                // Autonomous perspective capture: stream the scene, point the camera up, render one live
+                // perspective frame (sky included) to a PNG, then exit. Verifies the sky/sun renders.
+                _ = RunSceneCaptureAsync();
+                return;
+            }
+
             _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
 
             StartTimedExitIfRequested();
@@ -263,6 +271,7 @@ internal sealed class MainWindow : Window, IDisposable
                     showWater: true,
                     worldspaceFormId: targetFormId,
                     hiddenCategories: Array.Empty<BethesdaMultitool.Core.Formats.Esm.Models.PlacedObjectCategory>(),
+                    enableLighting: false, gameHour: 12f,
                     CancellationToken.None);
                 if (render is null)
                 {
@@ -302,6 +311,90 @@ internal sealed class MainWindow : Window, IDisposable
         catch (Exception ex)
         {
             Log.Error("Capture failed: {0}", ex);
+            Console.WriteLine($"[Capture] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            ExitProfiler("capture-complete");
+        }
+    }
+
+    private async Task RunSceneCaptureAsync()
+    {
+        var path = _options.CaptureFramePath!;
+        const int px = 768, pyh = 480;
+        try
+        {
+            if (!_worldView.CanRenderProjectionExport)
+            {
+                Console.WriteLine("[Capture] UNAVAILABLE: D3D12 scene renderer not ready (no GPU / no Meshes BSA).");
+                ExitProfiler("capture-unavailable");
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_options.CaptureWorldspaceName) &&
+                !_worldView.Profiler_TrySelectWorldspaceByName(_options.CaptureWorldspaceName))
+            {
+                Console.WriteLine($"[Capture] worldspace '{_options.CaptureWorldspaceName}' not found; using the default bookmark.");
+            }
+
+            // Phase 1 — settle the worldspace FIRST. Selecting a worldspace kicks off async cell streaming
+            // AND an atmosphere refresh that resets the active weather back to the climate default; doing it
+            // before that refresh lands would just get overwritten. So let the worldspace stabilize first.
+            _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
+            await Task.Delay(7000);
+            _scenario.Dispose();
+            _scenario = null;
+
+            // NOW select the weather + hour (worldspace stable → the selection sticks).
+            if (!string.IsNullOrWhiteSpace(_options.CaptureWeatherName) &&
+                !_worldView.Profiler_TrySelectWeatherByName(_options.CaptureWeatherName))
+            {
+                Console.WriteLine($"[Capture] weather '{_options.CaptureWeatherName}' not found; using climate default.");
+            }
+
+            _worldView.Profiler_SetGameHour(_options.CaptureHour);
+
+            // Phase 2 — run the loop again so the SELECTED weather's cloud textures stream in + upload to
+            // the GPU before the single (render-loop-paused) capture frame.
+            _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
+            await Task.Delay(3000);
+            _scenario.Dispose();
+            _scenario = null;
+
+            // Point the camera up at the sky (degrees → radians; Profiler_SetCameraPose clamps near ±90°).
+            var pose = _worldView.Profiler_CameraPose;
+            var pitchRadians = _options.CapturePitchDegrees * (MathF.PI / 180f);
+            _worldView.Profiler_SetCameraPose(pose with { Pitch = pitchRadians });
+
+            // Collapse the live view so the capture frame doesn't share the command recorder with a live one.
+            _worldView.Visibility = Visibility.Collapsed;
+            await Task.Delay(400);
+
+            var bgra = await _worldView.Profiler_CaptureSceneAsync(px, pyh);
+            if (bgra is null)
+            {
+                Console.WriteLine("[Capture] FAILED: capture returned null.");
+                ExitProfiler("capture-null");
+                return;
+            }
+
+            var rgba = BgraToRgba(bgra);
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            BethesdaMultitool.Core.Formats.Esm.Analysis.PngWriter.SaveRgba(rgba, px, pyh, path);
+
+            var msg = string.Format(
+                CultureInfo.InvariantCulture,
+                "[Capture] saved {0} ({1}x{2}) ws='{3}' weather='{4}' hour={5:0.#} pitch={6:0.#}deg coverage={7:P1}",
+                path, px, pyh, _options.CaptureWorldspaceName ?? "(default)",
+                _options.CaptureWeatherName ?? "(climate default)", _options.CaptureHour,
+                _options.CapturePitchDegrees, Coverage(bgra));
+            Log.Info(msg);
+            Console.WriteLine(msg);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Scene capture failed: {0}", ex);
             Console.WriteLine($"[Capture] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
         }
         finally

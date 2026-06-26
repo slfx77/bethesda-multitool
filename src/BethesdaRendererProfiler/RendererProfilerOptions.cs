@@ -60,6 +60,25 @@ internal sealed record RendererProfilerOptions
 
     internal float? CaptureCenterY { get; init; }
 
+    /// <summary>
+    ///     When set, renders ONE live perspective frame (sky dome + sun/moon + scene) to this PNG and exits
+    ///     — the sky-verification capture. Honors <see cref="CaptureWorldspaceName" /> /
+    ///     <see cref="CaptureWeatherName" /> / <see cref="CaptureHour" /> / <see cref="CapturePitchDegrees" />.
+    /// </summary>
+    internal string? CaptureFramePath { get; init; }
+
+    /// <summary>Exterior worldspace EditorID to frame for <see cref="CaptureFramePath" /> (e.g. WastelandNV).</summary>
+    internal string? CaptureWorldspaceName { get; init; }
+
+    /// <summary>Weather EditorID to force for the capture (e.g. NVWastelandClear).</summary>
+    internal string? CaptureWeatherName { get; init; }
+
+    /// <summary>Time-of-day (0..24) for the capture. Default 12 (noon).</summary>
+    internal float CaptureHour { get; init; } = 12f;
+
+    /// <summary>Camera pitch in degrees for the capture; positive looks UP (90 ≈ straight up at the sky).</summary>
+    internal float CapturePitchDegrees { get; init; } = 80f;
+
     internal static string Usage =>
         """
         BethesdaRendererProfiler
@@ -125,6 +144,11 @@ internal sealed record RendererProfilerOptions
         int? captureWorldspaceIndex = null;
         float? captureCenterX = null;
         float? captureCenterY = null;
+        string? captureFrame = null;
+        string? captureWorldspaceName = null;
+        string? captureWeatherName = null;
+        var captureHour = 12f;
+        var capturePitchDegrees = 80f;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -300,6 +324,47 @@ internal sealed record RendererProfilerOptions
                     captureCenterY = ccy;
                     break;
 
+                case "--capture-frame":
+                    captureFrame = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options, error);
+                    break;
+
+                case "--capture-worldspace-name":
+                    captureWorldspaceName = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options, error);
+                    break;
+
+                case "--capture-weather":
+                    captureWeatherName = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options, error);
+                    break;
+
+                case "--capture-hour":
+                    if (!TryReadNonNegativeDouble(args, ref i, arg, out var hour, out error))
+                    {
+                        return Fail(out options, error);
+                    }
+
+                    captureHour = (float)hour;
+                    break;
+
+                // Pitch can be negative (look down), so read the value directly rather than via RequireValue.
+                case "--capture-pitch":
+                    if (i + 1 >= args.Length)
+                    {
+                        error = $"{arg} requires a value.";
+                        return Fail(out options, error);
+                    }
+
+                    if (!float.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out capturePitchDegrees) ||
+                        !float.IsFinite(capturePitchDegrees))
+                    {
+                        error = $"{arg} must be a finite number (degrees; positive looks up).";
+                        return Fail(out options, error);
+                    }
+
+                    break;
+
                 case "--width":
                     if (!TryReadPositiveInt(args, ref i, arg, out width, out error))
                     {
@@ -380,7 +445,12 @@ internal sealed record RendererProfilerOptions
             CaptureSpanCells = captureSpanCells,
             CaptureWorldspaceIndex = captureWorldspaceIndex,
             CaptureCenterX = captureCenterX,
-            CaptureCenterY = captureCenterY
+            CaptureCenterY = captureCenterY,
+            CaptureFramePath = string.IsNullOrWhiteSpace(captureFrame) ? null : Path.GetFullPath(captureFrame),
+            CaptureWorldspaceName = captureWorldspaceName,
+            CaptureWeatherName = captureWeatherName,
+            CaptureHour = captureHour,
+            CapturePitchDegrees = capturePitchDegrees
         };
         error = null;
         return true;
