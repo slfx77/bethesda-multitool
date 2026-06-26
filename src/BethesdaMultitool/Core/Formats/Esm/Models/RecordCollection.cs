@@ -304,6 +304,15 @@ public record RecordCollection
     /// <summary>Total records processed.</summary>
     public int TotalRecordsProcessed { get; init; }
 
+    /// <summary>
+    ///     True when this collection was parsed from a Morrowind (TES3) plugin. TES3 carries no real
+    ///     FormIDs, so the parser assigns file-local synthetic ones; the load-order merge keys on FormID,
+    ///     which would make one plugin's synthetic id collide with an unrelated record in another. This
+    ///     flag tells the merge helpers to namespace each source's synthetic IDs by load order first
+    ///     (see <c>Tes3LoadOrderNamespacer</c>). Propagated through <see cref="MergeWith" />.
+    /// </summary>
+    public bool IsTes3 { get; init; }
+
     /// <summary>Number of records successfully parsed.</summary>
     public int TotalRecordsParsed =>
         Npcs.Count + Creatures.Count + Races.Count + Factions.Count + EncounterZones.Count +
@@ -453,7 +462,8 @@ public record RecordCollection
             RuntimeWorldspaceMaps = MergeDictionary(RuntimeWorldspaceMaps, overlay.RuntimeWorldspaceMaps),
             UnparsedTypeCounts = MergeDictionary(UnparsedTypeCounts, overlay.UnparsedTypeCounts),
 
-            TotalRecordsProcessed = TotalRecordsProcessed + overlay.TotalRecordsProcessed
+            TotalRecordsProcessed = TotalRecordsProcessed + overlay.TotalRecordsProcessed,
+            IsTes3 = IsTes3 || overlay.IsTes3
         };
     }
 
@@ -501,7 +511,18 @@ public record RecordCollection
         {
             var ws = Worldspaces[i];
             var cells = cellsByWorldspace.TryGetValue(ws.FormId, out var list) ? list : [];
-            Worldspaces[i] = ws with { Cells = cells };
+            ws = ws with { Cells = cells };
+
+            // The single shared TES3 exterior worldspace is the merge of every plugin's "Wilderness";
+            // MergeWith keeps only the last plugin's map corners, so recompute them to span the unioned
+            // cells (otherwise Solstheim or Vvardenfell gets clipped off the 2D map). Other games' WRLD
+            // bounds are authoritative and left untouched.
+            if (ws.FormId == WorldspaceRecord.Tes3SyntheticExteriorFormId)
+            {
+                ws = ws.WithMorrowindExteriorBounds(cells);
+            }
+
+            Worldspaces[i] = ws;
         }
 
         return this;

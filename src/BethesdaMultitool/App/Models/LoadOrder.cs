@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Subtitles;
+using BethesdaMultitool.Core.Semantic;
 
 namespace BethesdaMultitool;
 
@@ -49,12 +50,17 @@ internal sealed class LoadOrder : IDisposable
     public RecordCollection? BuildMergedRecords()
     {
         RecordCollection? merged = null;
-        foreach (var entry in Entries)
+        for (var i = 0; i < Entries.Count; i++)
         {
-            if (entry.Records == null) continue;
-            merged = merged == null
-                ? entry.Records
-                : merged.MergeWith(entry.Records);
+            var records = Entries[i].Records;
+            if (records == null) continue;
+
+            // TES3 plugins carry only file-local synthetic FormIDs; stamp each entry with a load index so
+            // distinct records from different plugins don't collide on merge (no-op for other games). The
+            // Load Order is supplementary to the externally-loaded primary file, which holds the unstamped
+            // 0x00 range, so entries start at index 1 to stay clear of it (see Tes3LoadOrderNamespacer).
+            records = Tes3LoadOrderNamespacer.Namespaced(records, i + 1);
+            merged = merged == null ? records : merged.MergeWith(records);
         }
 
         return merged;

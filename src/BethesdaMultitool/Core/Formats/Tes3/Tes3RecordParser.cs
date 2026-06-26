@@ -112,9 +112,12 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        // Pass 2: build typed cells (with terrain) + a synthetic exterior worldspace.
+        // Pass 2: build typed cells (with terrain) + a synthetic exterior worldspace. The worldspace
+        // uses a fixed cross-plugin FormID (not maxFormId+1) so every Morrowind plugin's exterior folds
+        // into one worldspace at merge time; per-record synthetic IDs are namespaced by load order later
+        // (Tes3FormIdScheme.Namespace) so they don't collide across plugins.
         var nextFormId = maxFormId + 1;
-        var worldspaceFormId = nextFormId++;
+        var worldspaceFormId = WorldspaceRecord.Tes3SyntheticExteriorFormId;
         var modelPathIndex = new Dictionary<uint, string>();
         var landByGrid = landDrafts
             .GroupBy(l => (l.GridX, l.GridY))
@@ -135,15 +138,14 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
             ModelPathIndex = modelPathIndex,
             FormIdToEditorId = formIdToEditorId,
             FormIdToDisplayName = formIdToDisplayName,
-            TotalRecordsProcessed = _context.ScanResult.MainRecords.Count
+            TotalRecordsProcessed = _context.ScanResult.MainRecords.Count,
+            IsTes3 = true
             // UnparsedTypeCounts intentionally left empty: every TES3 record is parsed (typed cells/
             // worldspaces + decoded GenericRecords), so nothing should display as "not parsed".
         };
     }
 
     private const float MorrowindCellWorldSize = 8192f;
-    private const uint LtexFormIdBase = 0x10000000u;
-    private const uint LtexTextureSetFormIdBase = 0x11000000u;
 
     // Morrowind LTEX: NAME = editor id, INTV = land-texture index (VTEX references index+1),
     // DATA = the texture file name. We model each as a LandscapeTextureRecord whose TextureSetFormId
@@ -182,8 +184,8 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
             return;
         }
 
-        var ltexFormId = LtexFormIdBase + (uint)index;
-        var txstFormId = LtexTextureSetFormIdBase + (uint)index;
+        var ltexFormId = Tes3FormIdScheme.LtexFormIdBase + (uint)index;
+        var txstFormId = Tes3FormIdScheme.LtexTextureSetFormIdBase + (uint)index;
         ltexIndexToFormId[index] = ltexFormId;
 
         landTextures.Add(new LandscapeTextureRecord
@@ -418,21 +420,6 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
             return [];
         }
 
-        short? nwX = null, nwY = null, seX = null, seY = null;
-        foreach (var c in exterior)
-        {
-            if (c.GridX is not { } gx || c.GridY is not { } gy)
-            {
-                continue;
-            }
-
-            nwX = (short)Math.Min(nwX ?? gx, gx);
-            seX = (short)Math.Max(seX ?? gx, gx);
-            // Morrowind's map has +Y north; NW = min X / max Y, SE = max X / min Y.
-            nwY = (short)Math.Max(nwY ?? gy, gy);
-            seY = (short)Math.Min(seY ?? gy, gy);
-        }
-
         return
         [
             new WorldspaceRecord
@@ -440,10 +427,6 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
                 FormId = worldspaceFormId,
                 EditorId = "Wilderness",
                 FullName = "Morrowind (Exterior)",
-                MapNWCellX = nwX,
-                MapNWCellY = nwY,
-                MapSECellX = seX,
-                MapSECellY = seY,
                 // Morrowind (TES3) has no DNAM land/water-height block — that field is a Fallout 3
                 // addition (the HasWorldspaceDefaultWaterHeight capability, which TES3 lacks), and TES3
                 // exterior cells carry no XCLW: the engine renders the sea at Z 0 by convention and a
@@ -454,7 +437,7 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
                 // WorldspaceRecordHandler. A cell's own WaterHeight still takes precedence over this.
                 DefaultWaterHeight = 0f,
                 Cells = exterior
-            }
+            }.WithMorrowindExteriorBounds(exterior)
         ];
     }
 

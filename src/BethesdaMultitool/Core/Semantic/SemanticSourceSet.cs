@@ -35,11 +35,14 @@ internal sealed class SemanticSourceSet
     public RecordCollection? BuildMergedRecords()
     {
         RecordCollection? merged = null;
-        foreach (var source in Sources)
+        for (var i = 0; i < Sources.Count; i++)
         {
-            merged = merged == null
-                ? source.Records
-                : merged.MergeWith(source.Records);
+            // TES3 sources carry only file-local synthetic FormIDs, so stamp each with its load index
+            // before merging (no-op for other games and for the index-0 base). Source 0 is the base and
+            // keeps the unstamped 0x00-prefixed range; later sources get 0x01, 0x02, … (see
+            // Tes3LoadOrderNamespacer).
+            var records = Tes3LoadOrderNamespacer.Namespaced(Sources[i].Records, i);
+            merged = merged == null ? records : merged.MergeWith(records);
         }
 
         return merged;

@@ -5,6 +5,16 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 /// </summary>
 public record WorldspaceRecord
 {
+    /// <summary>
+    ///     Synthetic FormID shared by every Morrowind (TES3) plugin's exterior worldspace. TES3 has no
+    ///     WRLD records, so <see cref="BethesdaMultitool.Core.Formats.Tes3.Tes3RecordParser" /> synthesizes
+    ///     one exterior worldspace per file; using a single well-known constant (rather than a per-file
+    ///     value) lets the load-order merge fold every plugin's exterior cells into one worldspace
+    ///     (Vvardenfell + Bloodmoon's Solstheim, etc.). It lives in the 0xFF-prefixed "shared" range that
+    ///     <c>Tes3FormIdScheme.Namespace</c> leaves untouched when it namespaces per-plugin record IDs.
+    /// </summary>
+    public const uint Tes3SyntheticExteriorFormId = 0xFF000000u;
+
     /// <summary>FormID of the WRLD record.</summary>
     public uint FormId { get; init; }
 
@@ -91,4 +101,31 @@ public record WorldspaceRecord
 
     /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
     public bool IsBigEndian { get; init; }
+
+    /// <summary>
+    ///     Returns a copy whose <see cref="MapNWCellX" />/<see cref="MapNWCellY" />/<see cref="MapSECellX" />/
+    ///     <see cref="MapSECellY" /> corners are recomputed to span <paramref name="exteriorCells" />.
+    ///     Morrowind's map has +Y north, so NW = (min X, max Y) and SE = (max X, min Y). Used both when the
+    ///     TES3 parser synthesizes the exterior worldspace and after a load-order merge, where the merged
+    ///     worldspace would otherwise keep only the last plugin's bounds and clip the others' cells off the
+    ///     map (e.g. Bloodmoon's Solstheim dropping Vvardenfell, or vice-versa).
+    /// </summary>
+    public WorldspaceRecord WithMorrowindExteriorBounds(IEnumerable<CellRecord> exteriorCells)
+    {
+        short? nwX = null, nwY = null, seX = null, seY = null;
+        foreach (var c in exteriorCells)
+        {
+            if (c.GridX is not { } gx || c.GridY is not { } gy)
+            {
+                continue;
+            }
+
+            nwX = (short)Math.Min(nwX ?? gx, gx);
+            seX = (short)Math.Max(seX ?? gx, gx);
+            nwY = (short)Math.Max(nwY ?? gy, gy);
+            seY = (short)Math.Min(seY ?? gy, gy);
+        }
+
+        return this with { MapNWCellX = nwX, MapNWCellY = nwY, MapSECellX = seX, MapSECellY = seY };
+    }
 }
