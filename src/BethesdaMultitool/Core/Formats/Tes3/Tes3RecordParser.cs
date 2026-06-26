@@ -1,10 +1,16 @@
 using System.Buffers;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
 using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Tes3;
 
@@ -25,6 +31,18 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
 
     private readonly RecordParserContext _context = context;
 
+    // The registered TES3 record-layout schema (RecordModel/Generated/Tes3Schema). Drives the
+    // SchemaRecordDecoder so Morrowind Records render the same DecodedTree the TES4 family does; the
+    // legacy Tes3SubrecordDecoder Fields are still emitted for the CLI/report/semdiff tooling.
+    private readonly IReadOnlyDictionary<string, RecordDef>? _schema =
+        EsmSchemas.IndexForGame(BethesdaGame.Morrowind);
+
+    // Typed dialogue, built positionally (an INFO belongs to the most recent DIAL in file order) so the
+    // Dialogue tab works for Morrowind. INFO speakers are editor-id strings resolved to synthetic FormIDs
+    // after the whole-file id index is built.
+    private readonly List<DialogTopicRecord> _topics = [];
+    private readonly List<Tes3DialogueExtractor.Tes3InfoDraft> _infoDrafts = [];
+
     public RecordCollection ParseAll()
     {
         var generic = new List<GenericEsmRecord>(_context.ScanResult.MainRecords.Count);
@@ -42,6 +60,10 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
         var idToModel = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var idToType = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var maxFormId = 0u;
+
+        // Positional DIAL→INFO linkage: an INFO belongs to the most recent DIAL in file order.
+        uint? currentTopicFormId = null;
+        ushort currentInfoIndex = 0;
 
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         try
@@ -87,7 +109,7 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
                     continue;
                 }
 
-                var parsed = ParseRecord(record, buffer);
+                var (parsed, subs) = ParseRecord(record, buffer);
                 generic.Add(parsed);
 
                 if (!string.IsNullOrEmpty(parsed.EditorId))
@@ -105,12 +127,33 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
                 {
                     formIdToDisplayName[parsed.FormId] = parsed.FullName!;
                 }
+
+                // Dialogue: a DIAL opens a topic; the INFOs that follow it (until the next DIAL) are its
+                // responses. Speakers (ONAM/FNAM/RNAM strings) are resolved after the loop, once every
+                // record's editor-id → synthetic-FormID mapping exists.
+                switch (record.RecordType)
+                {
+                    case "DIAL":
+                        currentTopicFormId = record.FormId;
+                        currentInfoIndex = 0;
+                        _topics.Add(Tes3DialogueExtractor.BuildTopic(record.FormId, parsed.EditorId, subs));
+                        break;
+                    case "INFO":
+                        _infoDrafts.Add(Tes3DialogueExtractor.BuildInfoDraft(
+                            record.FormId, currentTopicFormId, currentInfoIndex++, subs));
+                        break;
+                }
             }
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+
+        // Resolve INFO speaker editor-id strings to the synthetic FormIDs now that the whole-file id
+        // index is complete, then assemble the topic→response tree the Dialogue tab consumes.
+        var dialogues = _infoDrafts.Select(d => Tes3DialogueExtractor.ToRecord(d, idToFormId)).ToList();
+        var dialogueTree = new DialogueTreeBuilder(_context).BuildDialogueTrees(dialogues, _topics, []);
 
         // Pass 2: build typed cells (with terrain) + a synthetic exterior worldspace. The worldspace
         // uses a fixed cross-plugin FormID (not maxFormId+1) so every Morrowind plugin's exterior folds
@@ -136,6 +179,9 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
             LandTextures = landTextures,
             TextureSets = textureSets,
             ModelPathIndex = modelPathIndex,
+            DialogTopics = _topics,
+            Dialogues = dialogues,
+            DialogueTree = dialogueTree,
             FormIdToEditorId = formIdToEditorId,
             FormIdToDisplayName = formIdToDisplayName,
             TotalRecordsProcessed = _context.ScanResult.MainRecords.Count,
@@ -462,19 +508,19 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
             : $"[{draft.GridX},{draft.GridY}]";
     }
 
-    private GenericEsmRecord ParseRecord(DetectedMainRecord record, byte[] buffer)
+    private (GenericEsmRecord Record, List<RawSubrecord> Subs) ParseRecord(DetectedMainRecord record, byte[] buffer)
     {
         var read = _context.ReadRecordData(record, buffer);
         if (read == null)
         {
-            return new GenericEsmRecord
+            return (new GenericEsmRecord
             {
                 FormId = record.FormId,
                 RecordType = record.RecordType,
                 EditorId = _context.GetEditorId(record.FormId),
                 Offset = record.Offset,
                 IsBigEndian = false
-            };
+            }, []);
         }
 
         var (data, dataSize) = read.Value;
@@ -485,6 +531,7 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
         string? modelPath = null;
         var fields = new Dictionary<string, object?>(StringComparer.Ordinal);
         var sigCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var rawSubs = new List<RawSubrecord>();
         var decodedCount = 0;
         var truncated = 0;
 
@@ -492,6 +539,9 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
         {
             var span = data.AsSpan(sub.DataOffset, sub.DataLength);
             var sig = sub.Signature;
+
+            // Captured once for the schema decode below and (for DIAL/INFO) the dialogue extractor.
+            rawSubs.Add(new RawSubrecord(sig, span.ToArray()));
 
             // Header-level fields: surfaced via EditorId / FullName / ModelPath rather than the table.
             if (TryCaptureHeaderField(type, sig, span, ref editorId, ref fullName, ref modelPath))
@@ -519,7 +569,16 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
             fields["(more).subrecords"] = $"+{truncated} additional subrecords not shown";
         }
 
-        return new GenericEsmRecord
+        // Schema-driven DecodedTree (the GUI Records tab renders this via EsmBrowserTreeBuilder's
+        // early-return, identical to the TES4 family). The legacy Fields above stay for the CLI/report/
+        // semdiff surfaces. TES3 is little-endian and refs are strings, so no FormID resolver is needed.
+        IReadOnlyList<DecodedNode>? tree = null;
+        if (_schema != null && _schema.TryGetValue(type, out var def))
+        {
+            tree = SchemaRecordDecoder.Decode(def, rawSubs);
+        }
+
+        return (new GenericEsmRecord
         {
             FormId = record.FormId,
             RecordType = type,
@@ -527,9 +586,10 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
             FullName = fullName,
             ModelPath = modelPath,
             Fields = fields,
+            DecodedTree = tree,
             Offset = record.Offset,
             IsBigEndian = false
-        };
+        }, rawSubs);
     }
 
     // Pulls the id / display-name / model out into the record header. Returns true when the subrecord
