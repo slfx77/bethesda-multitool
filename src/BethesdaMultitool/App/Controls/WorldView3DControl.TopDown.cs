@@ -21,22 +21,49 @@ public sealed partial class WorldView3DControl
     /// <inheritdoc />
     bool ITopDownSceneRenderer.CanRenderTopDown => CanRenderTopDownCore;
 
+    // Interior top-down overlay state: the interior currently loaded for the overlay + its converged
+    // ceiling-clip world Z (the height below which the floor plan shows; null until the scene's mesh
+    // bounds have streamed in enough to compute it). Reset when the interior changes / on exterior.
+    private uint? _topDownInteriorFormId;
+    private float? _topDownInteriorCeilingZ;
+
     /// <inheritdoc />
     async Task<TopDownRender?> ITopDownSceneRenderer.RenderTopDownAsync(
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
         int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId,
         IReadOnlyCollection<PlacedObjectCategory> hiddenCategories,
-        bool enableLighting, float gameHour, CancellationToken ct)
+        bool enableLighting, float gameHour, uint? interiorCellFormId, CancellationToken ct)
     {
         if (!CanRenderTopDownCore) return null;
         if (worldMaxX <= worldMinX || worldMaxY <= worldMinY) return null;
         if (pixelWidth <= 0 || pixelHeight <= 0) return null;
         ct.ThrowIfCancellationRequested();
 
-        // Sync the 3D control's active worldspace to the one the 2D map is showing (the 3D view picks
-        // its own initial worldspace independently). Switching reloads the renderers' cells, so the
-        // overlay matches the map instead of showing a stale worldspace. No-op when already current.
-        if (!EnsureActiveExteriorWorldspace(worldspaceFormId)) return null;
+        // Sync the 3D control's active view to what the 2D map is showing (the 3D view picks its own
+        // initial view independently). Switching reloads the renderers' cells, so the overlay matches
+        // the map instead of a stale view. No-op when already current. Interior cells take the
+        // single-cell path + a ceiling clip (the roof is removed so the floor plan shows); exteriors
+        // render the whole worldspace as before.
+        float? ceilingClipZ = null;
+        if (interiorCellFormId is uint interiorId)
+        {
+            if (!EnsureActiveInteriorCell(interiorId)) return null;
+            if (_topDownInteriorFormId != interiorId)
+            {
+                _topDownInteriorFormId = interiorId;
+                _topDownInteriorCeilingZ = null; // converge afresh for the new interior
+            }
+
+            // First render has no resident mesh bounds yet → no clip (roof shows briefly); the
+            // post-render pass below computes the real ceiling and re-requests until it converges.
+            ceilingClipZ = _topDownInteriorCeilingZ;
+        }
+        else
+        {
+            if (!EnsureActiveExteriorWorldspace(worldspaceFormId)) return null;
+            _topDownInteriorFormId = null;
+            _topDownInteriorCeilingZ = null;
+        }
 
         var finalW = Math.Clamp(pixelWidth, 1, MaxTopDownFinalDimension);
         var finalH = Math.Clamp(pixelHeight, 1, MaxTopDownFinalDimension);
@@ -51,7 +78,8 @@ public sealed partial class WorldView3DControl
         // Orthographic top-down viewProj + covering cylinder (see TopDownViewProjBuilder for the
         // orientation contract — east→right, north→top, no readback flip). The renderers treat
         // viewProj as an opaque matrix, so this bypasses the perspective CameraState.
-        var viewProj = TopDownViewProjBuilder.BuildViewProj(worldMinX, worldMaxX, worldMinY, worldMaxY);
+        var viewProj = TopDownViewProjBuilder.BuildViewProj(
+            worldMinX, worldMaxX, worldMinY, worldMaxY, ceilingClipZ);
         var cylinder = TopDownViewProjBuilder.BuildCoverCylinder(
             worldMinX, worldMaxX, worldMinY, worldMaxY, _cellSize);
 
@@ -149,7 +177,28 @@ public sealed partial class WorldView3DControl
             }
 
             fenceValue = recorder.LastSubmittedFenceValue;
-            isComplete = TopDownStreamingComplete();
+
+            // Interior ceiling clip: now that this render populated the survivor set + their mesh
+            // bounds, compute the scene's real geometric ceiling and clip just below it (the roof slab
+            // is thin relative to room height, so a small margin off the top removes it while keeping
+            // walls/furniture). If the clip changed materially from what THIS render used, request one
+            // more pass so the displayed overlay is the clipped one. Converges in 1–2 extra renders as
+            // meshes stream in; exteriors never set a clip.
+            var ceilingNeedsAnotherPass = false;
+            if (interiorCellFormId is not null &&
+                _references!.GetRenderedSceneWorldZExtent() is { } zext)
+            {
+                var span = MathF.Max(zext.Max - zext.Min, 0f);
+                var margin = Math.Clamp(span * 0.05f, 64f, 512f);
+                var clip = zext.Max - margin;
+                if (_topDownInteriorCeilingZ is not float prev || MathF.Abs(prev - clip) > 16f)
+                {
+                    _topDownInteriorCeilingZ = clip;
+                    ceilingNeedsAnotherPass = true;
+                }
+            }
+
+            isComplete = TopDownStreamingComplete() && !ceilingNeedsAnotherPass;
             _gpu12.PumpDebugMessages();
         }
         catch (Exception ex)

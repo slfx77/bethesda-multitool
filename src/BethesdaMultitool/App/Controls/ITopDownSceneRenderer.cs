@@ -48,11 +48,19 @@ internal interface ITopDownSceneRenderer
     ///     has no fog control).
     /// </param>
     /// <param name="gameHour">Time of day (0–24h) driving the sun direction/intensity when lighting is on.</param>
+    /// <param name="interiorCellFormId">
+    ///     When non-null, render this INTERIOR cell top-down instead of an exterior worldspace
+    ///     (<paramref name="worldspaceFormId" /> is then ignored). Interiors have no grid coords; their
+    ///     objects sit at absolute world coords — the same frame the 2D map's cell-detail view draws them
+    ///     in — so the world rectangle aligns. The provider clips just below the interior's geometry
+    ///     ceiling so the top-down view shows the floor plan instead of the roof. Returns null if the
+    ///     interior cell isn't found.
+    /// </param>
     Task<TopDownRender?> RenderTopDownAsync(
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
         int pixelWidth, int pixelHeight, bool showDisabled, bool showWater, uint? worldspaceFormId,
         IReadOnlyCollection<PlacedObjectCategory> hiddenCategories,
-        bool enableLighting, float gameHour, CancellationToken ct);
+        bool enableLighting, float gameHour, uint? interiorCellFormId, CancellationToken ct);
 }
 
 /// <summary>

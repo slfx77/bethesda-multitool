@@ -261,6 +261,37 @@ public sealed partial class WorldView3DControl
         return true;
     }
 
+    /// <summary>
+    ///     Ensures the active view is the interior cell <paramref name="interiorFormId" /> so the
+    ///     top-down overlay renders the interior the 2D map is showing. Mirrors
+    ///     <see cref="EnsureActiveExteriorWorldspace" /> for the interior case (the 2D map's
+    ///     cell-detail overlay path). Switches + rebuilds the single-cell grid only when it differs.
+    ///     Suppresses the worldspace selection event so the live camera isn't disturbed. Returns false
+    ///     when no interior cell with that FormID exists.
+    /// </summary>
+    private bool EnsureActiveInteriorCell(uint interiorFormId)
+    {
+        if (_data is null) return false;
+        if (_selectedInterior?.FormId == interiorFormId) return true; // already active
+
+        CellRecord? interior = null;
+        foreach (var c in _data.InteriorCells)
+        {
+            if (c.FormId == interiorFormId) { interior = c; break; }
+        }
+
+        if (interior is null) return false;
+
+        _selectedInterior = interior;
+        // Drop the combo selection so the grid builder takes the interior path (TryBuildCellGrid checks
+        // _selectedInterior first); suppress the event so the live camera isn't reset under the overlay.
+        _suppressWorldspaceSelectionEvent = true;
+        WorldspaceComboBox.SelectedIndex = -1;
+        _suppressWorldspaceSelectionEvent = false;
+        TryBuildCellGrid();
+        return true;
+    }
+
     private static List<PlacedReference> GetSelectedWorldspaceMarkers(WorldViewData data, uint? worldspaceFormId)
     {
         if (worldspaceFormId is uint ws &&

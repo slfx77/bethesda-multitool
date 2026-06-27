@@ -325,7 +325,8 @@ public sealed partial class WorldMapControl
                 showDisabled: !_hideDisabledActors, showWater: showWater,
                 worldspaceFormId: _state.SelectedWorldspace?.FormId,
                 hiddenCategories: hiddenCategories,
-                enableLighting: _hillshadeLightingEnabled, gameHour: _gameHour, ct);
+                enableLighting: _hillshadeLightingEnabled, gameHour: _gameHour,
+                interiorCellFormId: null, ct); // export is exterior worldspace tiles only
             if (render is null || render.IsComplete) break;
             progress.Report($"Loading meshes (tile {tileIndex}/{totalTiles})", tileIndex, totalTiles);
             await Task.Delay(50, ct); // let background mesh/texture decode advance before re-rendering

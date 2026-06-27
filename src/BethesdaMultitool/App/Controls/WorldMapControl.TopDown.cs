@@ -45,10 +45,11 @@ public sealed partial class WorldMapControl
         }
     }
 
-    /// <summary>Top-down sprites apply to exterior views only — World Overview, or a CellDetail view
-    /// of an exterior cell. Interiors keep the dot/box markers (a top-down render shows the ceiling).</summary>
+    /// <summary>Top-down sprites apply to World Overview or any CellDetail view (exterior OR interior).
+    /// Interiors render through the provider's ceiling-clip path (the roof is removed so the floor plan
+    /// shows) — see <see cref="ITopDownSceneRenderer.RenderTopDownAsync" /> interiorCellFormId.</summary>
     private bool IsTopDownEligible() =>
-        _state.Mode == ViewMode.WorldOverview || _state.SelectedCell is { IsInterior: false };
+        _state.Mode == ViewMode.WorldOverview || _state.SelectedCell is not null;
 
     private void DisposeTopDownOverlay()
     {
@@ -193,6 +194,13 @@ public sealed partial class WorldMapControl
             var pxW = (int)MathF.Round(canvasW * (1f + 2f * TopDownMarginFraction));
             var pxH = (int)MathF.Round(canvasH * (1f + 2f * TopDownMarginFraction));
 
+            // A CellDetail view of an interior cell renders that interior top-down (ceiling-clipped);
+            // World Overview and exterior cells render the worldspace. Interiors have no grid coords —
+            // their objects are drawn at absolute world coords in cell-detail, the same frame the
+            // provider renders them in, so the world rect lines up.
+            var selectedCell = _state.SelectedCell;
+            var interiorCellFormId = selectedCell is { IsInterior: true } ? selectedCell.FormId : (uint?)null;
+
             var render = await provider.RenderTopDownAsync(
                 worldMinX, worldMaxX, worldMinY, worldMaxY, pxW, pxH,
                 showDisabled: !_hideDisabledActors,
@@ -204,6 +212,7 @@ public sealed partial class WorldMapControl
                 // Drive the overlay's directional lighting from the 2D map's lighting control so it
                 // matches the hillshade (off ⇒ flat shade).
                 enableLighting: _hillshadeLightingEnabled, gameHour: _gameHour,
+                interiorCellFormId: interiorCellFormId,
                 ct);
 
             if (gen != _topDownGen) return; // superseded (teardown / toggle off)

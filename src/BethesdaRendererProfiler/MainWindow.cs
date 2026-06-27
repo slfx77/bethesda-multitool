@@ -272,6 +272,7 @@ internal sealed class MainWindow : Window, IDisposable
                     worldspaceFormId: targetFormId,
                     hiddenCategories: Array.Empty<BethesdaMultitool.Core.Formats.Esm.Models.PlacedObjectCategory>(),
                     enableLighting: false, gameHour: 12f,
+                    interiorCellFormId: null, // profiler top-down capture is exterior worldspaces only
                     CancellationToken.None);
                 if (render is null)
                 {

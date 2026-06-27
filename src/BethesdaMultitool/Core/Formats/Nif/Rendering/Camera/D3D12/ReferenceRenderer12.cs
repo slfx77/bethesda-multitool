@@ -156,6 +156,45 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         return false;
     }
 
+    /// <summary>
+    ///     World-space Z extent (min/max) over every reference rendered in the last cull whose mesh AABB
+    ///     has streamed in — i.e. the actual geometric vertical span of the loaded scene. The 2D map's
+    ///     interior top-down overlay clips just below <c>Max</c> to remove the ceiling: interiors are
+    ///     room-meshes with floor-level origins, so placed-object Z can't reveal the roof height, but the
+    ///     transformed mesh bounds can. Returns null until at least one survivor's mesh bounds are
+    ///     resident (the overlay re-renders while streaming, so the clip converges to the real ceiling).
+    /// </summary>
+    internal (float Min, float Max)? GetRenderedSceneWorldZExtent()
+    {
+        var minZ = float.MaxValue;
+        var maxZ = float.MinValue;
+        var any = false;
+        foreach (var r in _cachedCullSurvivors)
+        {
+            if (!_meshLocalBounds.TryGetValue(r.MeshId, out var b))
+            {
+                continue;
+            }
+
+            // Transform the 8 local-AABB corners by the instance world matrix; keep the Z extent. (A
+            // rotated box's world-Z span needs all 8 corners, not just min/max.)
+            for (var c = 0; c < 8; c++)
+            {
+                var corner = new Vector3(
+                    (c & 1) == 0 ? b.Min.X : b.Max.X,
+                    (c & 2) == 0 ? b.Min.Y : b.Max.Y,
+                    (c & 4) == 0 ? b.Min.Z : b.Max.Z);
+                var wz = Vector3.Transform(corner, r.WorldMatrix).Z;
+                if (wz < minZ) minZ = wz;
+                if (wz > maxZ) maxZ = wz;
+            }
+
+            any = true;
+        }
+
+        return any ? (minZ, maxZ) : null;
+    }
+
     // Placed-NIF water planes (WaterShaderProperty geometry diverted out of the drawable submesh set
     // at upload) accumulated as their meshes resolve, deduped per REFR FormId, and handed to
     // WaterRenderer12 each frame. Each plane is static (mesh AABB × placement), so it is computed

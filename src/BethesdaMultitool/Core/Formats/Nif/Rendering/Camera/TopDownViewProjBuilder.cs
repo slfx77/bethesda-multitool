@@ -21,8 +21,15 @@ internal static class TopDownViewProjBuilder
     /// [near, far] ortho depth range regardless of placement Z.</summary>
     public const float EyeHeight = 1_000_000f;
 
-    /// <summary>Builds the view-projection for the given world rectangle (north-Y).</summary>
-    public static Matrix4x4 BuildViewProj(float worldMinX, float worldMaxX, float worldMinY, float worldMaxY)
+    /// <summary>
+    ///     Builds the view-projection for the given world rectangle (north-Y). When
+    ///     <paramref name="clipWorldZMax" /> is set, geometry above that world Z is clipped by the near
+    ///     plane — used by the interior top-down overlay to remove the ceiling/roof so the floor plan
+    ///     shows (Bethesda interiors are single room-meshes whose origin sits at the floor, so the roof
+    ///     can't be culled by placement Z; clipping the camera frustum below the geometry ceiling does it).
+    /// </summary>
+    public static Matrix4x4 BuildViewProj(
+        float worldMinX, float worldMaxX, float worldMinY, float worldMaxY, float? clipWorldZMax = null)
     {
         // View is a pure −Z translation (camera lifted by EyeHeight looking straight down), NOT a
         // look-at: a look-at would recenter X/Y on the camera, which wouldn't match an ortho frustum
@@ -33,8 +40,18 @@ internal static class TopDownViewProjBuilder
         // GreaterEqual + depth-clear-0): higher world Z (taller geometry) lands at a LARGER clip Z,
         // so it wins the depth test. Only the Z row is touched — X/Y readback orientation is intact.
         var view = Matrix4x4.CreateTranslation(0f, 0f, -EyeHeight);
+
+        // The near plane sits at the TOP of the looking-down frustum, at world Z = EyeHeight − zNear.
+        // Default zNear = 1 puts it ~EyeHeight up (nothing clipped). To clip everything above
+        // clipWorldZMax, push the near plane down to that world Z: zNear = EyeHeight − clipWorldZMax.
+        var zNear = 1f;
+        if (clipWorldZMax is float zmax)
+        {
+            zNear = MathF.Max(1f, EyeHeight - zmax);
+        }
+
         var proj = Matrix4x4.CreateOrthographicOffCenter(
-            worldMinX, worldMaxX, worldMinY, worldMaxY, 1f, 2f * EyeHeight);
+            worldMinX, worldMaxX, worldMinY, worldMaxY, zNear, 2f * EyeHeight);
         return view * proj * CameraState.ReverseZ;
     }
 
