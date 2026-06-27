@@ -185,7 +185,8 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
             FormIdToEditorId = formIdToEditorId,
             FormIdToDisplayName = formIdToDisplayName,
             TotalRecordsProcessed = _context.ScanResult.MainRecords.Count,
-            IsTes3 = true
+            IsTes3 = true,
+            Game = _context.Game
             // UnparsedTypeCounts intentionally left empty: every TES3 record is parsed (typed cells/
             // worldspaces + decoded GenericRecords), so nothing should display as "not parsed".
         };

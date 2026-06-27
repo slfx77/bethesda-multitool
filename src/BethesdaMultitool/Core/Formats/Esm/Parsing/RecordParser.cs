@@ -671,6 +671,10 @@ public sealed class RecordParser
                 $"{string.Join("/", SchemaTreeEnricher.ProfiledTypes)} in {phaseSw.Elapsed}");
         }
 
+        // The profile-driven presentation reads game-specific layouts out of the DecodedTree, so the
+        // detected game must travel on the result (it isn't otherwise carried).
+        result = result with { Game = _context.Game };
+
         totalSw.Stop();
         Logger.Instance.Info(
             $"[Semantic Parse] Complete. Time: {totalSw.Elapsed}, Records: {result.TotalRecordsParsed}");

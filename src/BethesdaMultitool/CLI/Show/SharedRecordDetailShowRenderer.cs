@@ -16,6 +16,17 @@ internal sealed class SharedRecordDetailShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
+        Render(model);
+        return true;
+    }
+
+    /// <summary>
+    ///     Renders a <see cref="RecordDetailModel" /> to a Spectre panel. Shared so the profile-driven
+    ///     renderer (<see cref="ProfileShowRenderer" />) presents schema-decoded records identically to the
+    ///     typed ones.
+    /// </summary>
+    internal static void Render(RecordDetailModel model)
+    {
         var lines = new List<string>();
         foreach (var section in model.Sections)
         {
@@ -61,7 +72,6 @@ internal sealed class SharedRecordDetailShowRenderer : IRecordDisplayRenderer
                 $"{Markup.Escape(model.DisplayName ?? $"0x{model.FormId:X8}")}")
         };
         AnsiConsole.Write(panel);
-        return true;
     }
 }
 

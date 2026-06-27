@@ -7,6 +7,8 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Presentation;
+using BethesdaMultitool.Core.Formats.Esm.Presentation.Profiles;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
@@ -654,6 +656,17 @@ internal static class EsmBrowserTreeBuilder
         IReadOnlyDictionary<uint, RaceRecord>? raceLookup = null,
         Dictionary<uint, List<(uint FormId, string? Name)>>? factionMembersIndex = null)
     {
+        // Unified curated display: when a presentation profile exists for this schema-decoded record's
+        // type, build the SAME sectioned RecordDetailModel the typed FNV path produces — so every game's
+        // records (NPC_ today) render with FNV-quality curation instead of the generic flat field tree.
+        if (record is GenericEsmRecord profiled && profiled.DecodedTree is { Count: > 0 } profiledTree &&
+            resolver != null && RecordProfiles.Get(profiled.RecordType) is { } profile)
+        {
+            var model = profile.Build(profiled.FormId, profiled.EditorId, profiled.FullName, profiledTree,
+                allRecords?.Game ?? BethesdaGame.Unknown, resolver);
+            return RecordDetailPropertyAdapter.Convert(model);
+        }
+
         // Records read by the schema-driven parser (Oblivion today; Skyrim/FO4/FO76 next) carry an
         // ordered, labeled field tree. Render it directly so member order is preserved and FormID
         // references resolve to names — the rich, browsable presentation the deliverable calls for.

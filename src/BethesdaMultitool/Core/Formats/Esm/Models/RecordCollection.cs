@@ -10,6 +10,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
@@ -325,6 +326,13 @@ public record RecordCollection
     public IReadOnlyDictionary<uint, IReadOnlyList<DecodedNode>> DecodedTreesByFormId { get; init; } =
         new Dictionary<uint, IReadOnlyList<DecodedNode>>();
 
+    /// <summary>
+    ///     The game this collection was parsed from. Needed by the unified, profile-driven record
+    ///     presentation (a profile reads game-specific layouts out of the DecodedTree). Defaults to
+    ///     <see cref="BethesdaGame.Unknown" />; set by the parser from its detected game.
+    /// </summary>
+    public BethesdaGame Game { get; init; } = BethesdaGame.Unknown;
+
     /// <summary>Number of records successfully parsed.</summary>
     public int TotalRecordsParsed =>
         Npcs.Count + Creatures.Count + Races.Count + Factions.Count + EncounterZones.Count +
@@ -475,7 +483,11 @@ public record RecordCollection
             UnparsedTypeCounts = MergeDictionary(UnparsedTypeCounts, overlay.UnparsedTypeCounts),
 
             TotalRecordsProcessed = TotalRecordsProcessed + overlay.TotalRecordsProcessed,
-            IsTes3 = IsTes3 || overlay.IsTes3
+            IsTes3 = IsTes3 || overlay.IsTes3,
+            Game = Game != BethesdaGame.Unknown ? Game : overlay.Game,
+            DecodedTreesByFormId = MergeDictionary(
+                new Dictionary<uint, IReadOnlyList<DecodedNode>>(DecodedTreesByFormId),
+                new Dictionary<uint, IReadOnlyList<DecodedNode>>(overlay.DecodedTreesByFormId))
         };
     }
 

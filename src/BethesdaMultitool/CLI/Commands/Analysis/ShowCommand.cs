@@ -48,6 +48,9 @@ public static class ShowCommand
         new ExplosionShowRenderer(),
         new MessageShowRenderer(),
         new ChallengeShowRenderer(),
+        // Schema/profile-driven curated display for games without typed handlers (must be after the typed
+        // renderers, before the generic fallback).
+        new ProfileShowRenderer(),
         // Generic fallback (must be last)
         new GenericShowRenderer()
     ];
