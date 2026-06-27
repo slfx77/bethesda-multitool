@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
@@ -312,6 +313,17 @@ public record RecordCollection
     ///     (see <c>Tes3LoadOrderNamespacer</c>). Propagated through <see cref="MergeWith" />.
     /// </summary>
     public bool IsTes3 { get; init; }
+
+    /// <summary>
+    ///     Schema-decoded field trees keyed by record FormID, for games that carry typed models AND a
+    ///     registered schema (FNV/FO3). The schema-primary games (Oblivion→FO76) instead carry their
+    ///     <see cref="DecodedNode" /> tree directly on each <see cref="GenericEsmRecord.DecodedTree" />;
+    ///     for the typed-primary games the typed model is the record, so the parallel tree lives here.
+    ///     This is the common substrate the unified, profile-driven record presentation reads from.
+    ///     Empty for games without a registered schema.
+    /// </summary>
+    public IReadOnlyDictionary<uint, IReadOnlyList<DecodedNode>> DecodedTreesByFormId { get; init; } =
+        new Dictionary<uint, IReadOnlyList<DecodedNode>>();
 
     /// <summary>Number of records successfully parsed.</summary>
     public int TotalRecordsParsed =>

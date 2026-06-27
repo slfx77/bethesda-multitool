@@ -141,7 +141,8 @@ public sealed class RecordParser
         // world/atmosphere collections overlaid from the typed parse (those are subrecord-based and parse
         // Oblivion correctly — verified: 19 climates, 84 worldspaces, 35k cells, real CLMT timing).
         RecordCollection? schemaResult = null;
-        if (RecordModel.EsmSchemas.ForGame(_context.Game) is { } gameSchema)
+        if (RecordModel.EsmSchemas.ForGame(_context.Game) is { } gameSchema
+            && RecordModel.EsmSchemas.IsSchemaPrimary(_context.Game))
         {
             progress?.Report((0, $"Decoding {_context.Game} records (schema-driven)..."));
             schemaResult = new SchemaDrivenRecordParser(_context, gameSchema).ParseAll(progress);
@@ -653,6 +654,21 @@ public sealed class RecordParser
                 FormIdToEditorId = result.FormIdToEditorId,
                 FormIdToDisplayName = result.FormIdToDisplayName,
             };
+        }
+
+        // Typed-primary schema enrichment (FNV/FO3): keep the rich typed lists as the base, but decode the
+        // profiled record types into a parallel DecodedTree map so the unified, profile-driven presentation
+        // reads the same substrate every other game produces. Additive — the typed models are untouched.
+        if (schemaResult is null
+            && RecordModel.EsmSchemas.ForGame(_context.Game) is not null
+            && RecordModel.EsmSchemas.IndexForGame(_context.Game) is { } enrichSchema)
+        {
+            phaseSw.Restart();
+            var trees = SchemaTreeEnricher.Enrich(_context, enrichSchema, SchemaTreeEnricher.ProfiledTypes);
+            result = result with { DecodedTreesByFormId = trees };
+            Logger.Instance.Debug(
+                $"  [Semantic] Schema-tree enrichment ({_context.Game}): {trees.Count} tree(s) for " +
+                $"{string.Join("/", SchemaTreeEnricher.ProfiledTypes)} in {phaseSw.Elapsed}");
         }
 
         totalSw.Stop();
