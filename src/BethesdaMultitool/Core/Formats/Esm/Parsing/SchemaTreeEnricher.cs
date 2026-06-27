@@ -21,11 +21,14 @@ internal static class SchemaTreeEnricher
 {
     /// <summary>
     ///     Record types the unified presenter has a profile for (so they are worth decoding a tree for).
-    ///     Grows as the curated-display rollout proceeds; today: NPC_ (the proving slice).
+    ///     Grows as the curated-display rollout proceeds. Keep in sync with
+    ///     <see cref="Presentation.Profiles.RecordProfiles" />.
     /// </summary>
     public static readonly IReadOnlySet<string> ProfiledTypes = new HashSet<string>(StringComparer.Ordinal)
     {
-        "NPC_"
+        "NPC_",
+        "ARMO",
+        "WEAP"
     };
 
     public static Dictionary<uint, IReadOnlyList<DecodedNode>> Enrich(
