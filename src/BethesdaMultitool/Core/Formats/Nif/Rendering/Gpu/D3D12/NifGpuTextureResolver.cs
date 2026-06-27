@@ -194,6 +194,16 @@ internal sealed class NifGpuTextureResolver : IDisposable
 
     private GpuTexturePayload? LoadTextureUncached(string path)
     {
+        // Fallout 4 / Fallout 76 shapes point at a .bgsm/.bgem material under materials\ instead of an
+        // inline texture set; the material's diffuse path is the real texture. The CPU NifTextureResolver
+        // already follows this — without the same branch here every FO4/FO76 shape in the D3D12 worldspace
+        // viewer resolves no diffuse (the material file fails to decode as a DDS) and renders white.
+        if (path.EndsWith(".bgsm", StringComparison.Ordinal) || path.EndsWith(".bgem", StringComparison.Ordinal))
+        {
+            var materialDiffuse = MaterialTexturePathResolver.ResolveDiffuseTexturePath(path, _sources);
+            return materialDiffuse is null ? null : TryLoadFromSources(materialDiffuse);
+        }
+
         var texture = TryLoadFromSources(path);
         if (texture != null)
         {

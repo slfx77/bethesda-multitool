@@ -180,22 +180,7 @@ internal sealed class NifTextureResolver : IDisposable
     /// </summary>
     private DecodedTexture? LoadFromMaterial(string materialPath)
     {
-        byte[]? raw = null;
-        foreach (var source in _sources)
-        {
-            raw = source.TryLoadRaw(materialPath);
-            if (raw is not null)
-            {
-                break;
-            }
-        }
-
-        var diffuse = raw is null ? null : Materials.BgsmMaterial.Parse(raw)?.Diffuse;
-        if (string.IsNullOrEmpty(diffuse))
-        {
-            return null;
-        }
-
-        return NifTextureLoader.TryLoadFromSources(NifTexturePathUtility.Normalize(diffuse), _sources);
+        var diffuse = MaterialTexturePathResolver.ResolveDiffuseTexturePath(materialPath, _sources);
+        return diffuse is null ? null : NifTextureLoader.TryLoadFromSources(diffuse, _sources);
     }
 }

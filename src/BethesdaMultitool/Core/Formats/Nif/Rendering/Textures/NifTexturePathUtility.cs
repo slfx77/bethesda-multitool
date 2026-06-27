@@ -9,14 +9,21 @@ internal static class NifTexturePathUtility
     {
         var normalized = path.Replace('/', '\\').ToLowerInvariant().Trim();
 
-        // Some Bethesda subrecords author the asset path relative to the game directory
-        // (the parent of Data\ — where FalloutNV.exe lives) rather than relative to Data\
-        // itself. Vanilla FNV's WATR DefaultWater NNAM is the canonical example:
-        // "data\textures\water\genaratednoise01.dds". BSA entries are stored relative to
-        // Data\, so the explicit "data\" step has to be peeled off before the "textures\"
-        // check below — otherwise the prepend doubles into "textures\data\textures\…" and
-        // every BSA lookup misses. The engine peels it off silently; we have to match.
-        if (normalized.StartsWith("data\\", StringComparison.Ordinal))
+        // Peel any path prefix down to the Data-relative portion that archives index by. Two forms:
+        //  • A leading "data\" step — vanilla FNV's WATR DefaultWater NNAM authors the path relative
+        //    to the game directory (parent of Data\), e.g. "data\textures\water\genaratednoise01.dds".
+        //  • An absolute developer build path baked into the asset — extremely common on FO4/FO76,
+        //    where a NIF's BSLightingShaderProperty Name (and some material texture entries) ships as
+        //    e.g. "C:\Projects\Fallout4\Build\PC\Data\Materials\Architecture\X.bgsm". Without peeling,
+        //    the lookup misses and every such FO4/FO76 shape renders untextured (white).
+        // Archive entries are stored relative to Data\, so strip everything up to and including the
+        // "...\data\" segment (or the leading "data\"). The engine roots at Data\ the same way.
+        var dataSegment = normalized.IndexOf("\\data\\", StringComparison.Ordinal);
+        if (dataSegment >= 0)
+        {
+            normalized = normalized[(dataSegment + "\\data\\".Length)..];
+        }
+        else if (normalized.StartsWith("data\\", StringComparison.Ordinal))
         {
             normalized = normalized[5..];
         }

@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.CLI.Rendering.Nif;
+using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -36,6 +38,62 @@ public sealed class NifTextureResolverTests
         var normalized = NifTexturePathUtility.Normalize(@"Data\textures\water\foo.dds");
 
         Assert.Equal(@"textures\water\foo.dds", normalized);
+    }
+
+    [Fact]
+    public void TexturePathUtility_StripsAbsoluteFallout4BuildPath()
+    {
+        // FO4/FO76 ship the developer's absolute build path baked into a NIF's BSLightingShaderProperty
+        // Name (and some material texture entries), e.g.
+        // "C:\Projects\Fallout4\Build\PC\Data\Materials\Architecture\AsylumDoor01.BGSM". Archives index
+        // relative to Data\, so the peel must reach the "...\Data\" segment — without it ~97% of FO76
+        // statics resolve no material and render white (the untextured-worldspace bug).
+        var normalized = NifTexturePathUtility.Normalize(
+            @"C:\Projects\Fallout4\Build\PC\Data\Materials\Architecture\AsylumDoor01.BGSM");
+
+        Assert.Equal(@"materials\architecture\asylumdoor01.bgsm", normalized);
+    }
+
+    [Fact]
+    public void TexturePathUtility_StripsAbsoluteFallout76BuildPath_ForwardSlashes()
+    {
+        var normalized = NifTexturePathUtility.Normalize(
+            @"C:/Projects/76/Build/PC/Data/Materials/Landscape/Roads/ConcreteHWTrim01.BGSM");
+
+        Assert.Equal(@"materials\landscape\roads\concretehwtrim01.bgsm", normalized);
+    }
+
+    [Fact]
+    public void TexturePathUtility_StripsAbsoluteBuildPath_TextureUnderData()
+    {
+        // The same peel applies to texture entries, not just .bgsm material names.
+        var normalized = NifTexturePathUtility.Normalize(
+            @"C:\Projects\Fallout4\Build\PC\Data\Textures\Architecture\Brick_d.dds");
+
+        Assert.Equal(@"textures\architecture\brick_d.dds", normalized);
+    }
+
+    [Fact]
+    public void MaterialTexturePathResolver_ResolvesNormalizedDiffuse_FromBgsm()
+    {
+        // The shared helper both texture resolvers (CPU NifTextureResolver + GPU NifGpuTextureResolver)
+        // use to follow a FO4/FO76 .bgsm material to its diffuse texture. Locks that a material loaded
+        // from a source resolves to its diffuse path, normalized for archive lookup.
+        const string materialKey = @"materials\test\thing.bgsm";
+        var source = new FakeMaterialSource(materialKey,
+            BuildBgsm(22, headerLength: 60, "SetDressing/Test/thing_d.dds", "Shared/flat_n.dds"));
+
+        var diffuse = MaterialTexturePathResolver.ResolveDiffuseTexturePath(materialKey, [source]);
+
+        Assert.Equal(@"textures\setdressing\test\thing_d.dds", diffuse);
+    }
+
+    [Fact]
+    public void MaterialTexturePathResolver_ReturnsNull_WhenMaterialAbsent()
+    {
+        var source = new FakeMaterialSource(@"materials\present.bgsm", [1, 2, 3]);
+
+        Assert.Null(MaterialTexturePathResolver.ResolveDiffuseTexturePath(@"materials\missing.bgsm", [source]));
     }
 
     [Fact]
@@ -316,5 +374,44 @@ public sealed class NifTextureResolverTests
     private static void WriteFloat(byte[] data, int offset, float value)
     {
         WriteInt32(data, offset, BitConverter.SingleToInt32Bits(value));
+    }
+
+    /// <summary>
+    ///     Minimal FO4/FO76 BGSM with the gradient flag zeroed (→ the non-gradient texture-path map,
+    ///     whose first two slots are diffuse then normal), then the supplied paths. Mirrors
+    ///     <c>BgsmMaterialTests.BuildBgsm</c>.
+    /// </summary>
+    private static byte[] BuildBgsm(byte version, int headerLength, params string[] paths)
+    {
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+        bw.Write(Encoding.ASCII.GetBytes("BGSM"));
+        bw.Write((uint)version);
+        bw.Write(new byte[headerLength - 8]);
+        foreach (var path in paths)
+        {
+            var bytes = Encoding.ASCII.GetBytes(path);
+            bw.Write((uint)(bytes.Length + 1));
+            bw.Write(bytes);
+            bw.Write((byte)0);
+        }
+
+        bw.Flush();
+        return ms.ToArray();
+    }
+
+    /// <summary>Single-entry texture source that returns fixed bytes for one path (case-insensitive).</summary>
+    private sealed class FakeMaterialSource(string key, byte[] bytes) : INifTextureSource
+    {
+        public DecodedTexture? TryLoad(string path) => null;
+
+        public byte[]? TryLoadRaw(string path) =>
+            string.Equals(path, key, StringComparison.OrdinalIgnoreCase) ? bytes : null;
+
+        public bool Exists(string path) => string.Equals(path, key, StringComparison.OrdinalIgnoreCase);
+
+        public void Dispose()
+        {
+        }
     }
 }

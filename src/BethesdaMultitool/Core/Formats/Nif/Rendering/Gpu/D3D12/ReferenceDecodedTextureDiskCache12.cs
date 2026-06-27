@@ -23,8 +23,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 internal sealed class ReferenceDecodedTextureDiskCache12 : DiskBlobCache
 {
     internal const int CacheFormatVersion = 1;
-    // Bump whenever the decode output bytes can change (transcode/untile/parse algorithm changes).
-    internal const int DecoderVersion = 1;
+    // Bump whenever the decode output bytes can change (transcode/untile/parse algorithm changes), OR
+    // when the set of paths that resolve changes — a cached negative ("not found") would otherwise mask
+    // a newly-resolvable path. v2: FO4/FO76 .bgsm/.bgem materials now resolve in the GPU path and
+    // absolute "…\Data\…" build paths are peeled, so pre-fix negative entries must be discarded.
+    internal const int DecoderVersion = 2;
 
     private const int MaxMipLevels = 24;
     private const int MaxMipBytes = 128 * 1024 * 1024;
