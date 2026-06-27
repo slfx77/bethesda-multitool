@@ -700,7 +700,14 @@ public sealed partial class WorldMapControl
 
     private int ChooseTerrainTexturePixelsPerCell(float zoom)
     {
-        var screenPixelsPerCell = _cellSize * zoom;
+        // Pick the texture tier by TEXEL DENSITY, not raw on-screen cell size. A larger world cell
+        // (Morrowind's 8192 vs Fallout's 4096) covers ~2× the screen pixels at the same zoom, which would
+        // bump it a full tier → ~4× the bytes per tile → the per-tick apply cap (MaxCellApplyBytesPerTick)
+        // can't drain a fast pan and the map stutters. Scaling by (4096/_cellSize) makes every game pick
+        // the same byte-budget tier at equal zoom (the factor is 1 for Fallout-family cells, so their
+        // behavior is byte-for-byte unchanged), trading a little zoomed-in sharpness on big-celled games
+        // for smooth streaming.
+        var screenPixelsPerCell = _cellSize * zoom * (WorldGridConstants.CellSize / _cellSize);
 
         // Low tiers (33/66) for the aggregate→per-cell transition zone: rendering cells at ~display
         // resolution keeps minification to ≤~1.4× (vs ~5× at a fixed 132), which — with the

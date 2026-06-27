@@ -119,11 +119,11 @@ public sealed partial class WorldMapControl
         EnsureOverviewMode();
         if (!cell.GridX.HasValue || !cell.GridY.HasValue) return;
 
-        var cellCenterX = (cell.GridX.Value + 0.5f) * 4096f;
-        var cellCenterY = -(cell.GridY.Value + 0.5f) * 4096f;
+        var cellCenterX = (cell.GridX.Value + 0.5f) * _cellSize;
+        var cellCenterY = -(cell.GridY.Value + 0.5f) * _cellSize;
         var canvasW = Math.Max((float)MapCanvas.ActualWidth, 800f);
         var canvasH = Math.Max((float)MapCanvas.ActualHeight, 600f);
-        _zoom = Math.Min(canvasW, canvasH) / (4096f * 3f);
+        _zoom = Math.Min(canvasW, canvasH) / (_cellSize * 3f);
         _panOffset = new Vector2(canvasW / 2f - cellCenterX * _zoom, canvasH / 2f - cellCenterY * _zoom);
         MapCanvas.Invalidate();
     }

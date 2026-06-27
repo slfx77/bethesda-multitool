@@ -291,9 +291,6 @@ public sealed partial class WorldMapControl
         }
     }
 
-    /// <summary>Grid→world scale matching <see cref="WorldMapExporter" /> (one cell = 4096 world units).</summary>
-    private const float ExportCellWorldSize = 4096f;
-
     /// <summary>A rendered-meshes overlay tile: the BGRA bitmap plus the world rect (north-Y) it covers.</summary>
     private sealed record MapExportMeshOverlay(
         CanvasBitmap Bitmap, float WorldMinX, float WorldMaxX, float WorldMinY, float WorldMaxY);
@@ -311,10 +308,12 @@ public sealed partial class WorldMapControl
         HashSet<PlacedObjectCategory> hiddenCategories,
         ExportProgressController progress, int tileIndex, int totalTiles, CancellationToken ct)
     {
-        var worldMinX = tgx0 * ExportCellWorldSize;
-        var worldMaxX = (tgx1 + 1) * ExportCellWorldSize;
-        var worldMinY = tgy0 * ExportCellWorldSize;       // world north-Y
-        var worldMaxY = (tgy1 + 1) * ExportCellWorldSize;
+        // One cell = _cellSize world units (8192 Morrowind, 4096 Fallout); matches WorldMapExporter so the
+        // 3D overlay tile aligns with the exported terrain at the same scale.
+        var worldMinX = tgx0 * _cellSize;
+        var worldMaxX = (tgx1 + 1) * _cellSize;
+        var worldMinY = tgy0 * _cellSize;       // world north-Y
+        var worldMaxY = (tgy1 + 1) * _cellSize;
 
         const int maxIterations = 40; // ~2s/tile cap so a region with permanently-missing meshes can't hang
         TopDownRender? render = null;
