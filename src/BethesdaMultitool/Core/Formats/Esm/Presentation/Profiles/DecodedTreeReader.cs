@@ -75,4 +75,7 @@ internal static class DecodedTreeReader
 
     public static int? ReadS32(byte[]? data, int offset) =>
         data is not null && offset + 4 <= data.Length ? BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset)) : null;
+
+    public static float? ReadFloat(byte[]? data, int offset) =>
+        data is not null && offset + 4 <= data.Length ? BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(offset)) : null;
 }
