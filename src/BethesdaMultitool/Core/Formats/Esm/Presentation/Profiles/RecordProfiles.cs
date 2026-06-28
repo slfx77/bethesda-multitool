@@ -11,7 +11,11 @@ namespace BethesdaMultitool.Core.Formats.Esm.Presentation.Profiles;
 internal static class RecordProfiles
 {
     private static readonly Dictionary<string, IRecordProfile> ByType =
-        new IRecordProfile[] { new NpcProfile(), new ArmorProfile(), new WeaponProfile(), new CreatureProfile() }
+        new IRecordProfile[]
+            {
+                new NpcProfile(), new ArmorProfile(), new WeaponProfile(), new CreatureProfile(),
+                new QuestProfile()
+            }
             .ToDictionary(p => p.RecordType, p => p, StringComparer.Ordinal);
 
     /// <summary>The profile for <paramref name="recordType" />, or null when none is registered.</summary>

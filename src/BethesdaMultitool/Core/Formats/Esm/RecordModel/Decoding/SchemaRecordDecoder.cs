@@ -427,7 +427,11 @@ public static class SchemaRecordDecoder
             case PrimType.ZString:
             case PrimType.StringKC:
             {
-                size = field.FixedSize ?? available;
+                // FixedSize 0 (or null) marks a variable-length / null-terminated string — read what's
+                // available (for a signed member that's the whole subrecord). Only a POSITIVE FixedSize is a
+                // fixed-width field. (Treating 0 literally would read an empty string, silently dropping every
+                // EDID/FULL/NNAM/DESC value.)
+                size = field.FixedSize is { } fs and > 0 ? fs : available;
                 var count = Math.Min(size, Math.Max(available, 0));
                 var s = DecodeString(data, offset, count);
                 return (s, s, null);
