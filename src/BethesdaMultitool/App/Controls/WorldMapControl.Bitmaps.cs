@@ -279,39 +279,37 @@ public sealed partial class WorldMapControl
         }
     }
 
-    private void EnsureMarkerIcons(ICanvasResourceCreator resourceCreator)
+    /// <summary>
+    ///     Builds the marker icon set for the loaded game (embedded tinted for FO3/FNV, atlas for the
+    ///     atlas games, glyph-only otherwise), rebuilding only when the game changes. The marker TYPE is
+    ///     always resolved per game via <c>MapMarkerCatalog</c>; this only governs the icon art.
+    /// </summary>
+    private void EnsureMarkerIconSet(ICanvasResourceCreator resourceCreator)
     {
-        if (_markerIconBitmaps != null) return;
+        var game = _data?.Game ?? Core.Games.BethesdaGame.Unknown;
+        if (_markerIconSet is not null && _markerIconSetGame == game) return;
 
-        _markerIconBitmaps = new Dictionary<MapMarkerType, CanvasBitmap>();
-        foreach (var type in Enum.GetValues<MapMarkerType>())
-        {
-            if (type == MapMarkerType.None) continue;
-            var png = MapMarkerIconProvider.GetIconPng(type);
-            if (png == null) continue;
-
-            using var ms = new MemoryStream(png);
-            // Non-pumping block: GetAwaiter().GetResult() on the STA UI thread (this runs inside
-            // the Win2D Draw handler) is a COM pumping wait that can re-enter XAML and fail-fast
-            // (see NonPumpingWait docs). The decode runs on the thread pool, so polling completes.
-            var loadTask = CanvasBitmap.LoadAsync(resourceCreator, ms.AsRandomAccessStream()).AsTask();
-            Core.Orchestration.NonPumpingWait.Wait(loadTask);
-            var bitmap = loadTask.GetAwaiter().GetResult();
-            _markerIconBitmaps[type] = bitmap;
-        }
+        _markerIconSet?.Dispose();
+        DisposeTintedMarkerIcons();
+        _markerIconSet = MapMarkerIconSetFactory.Create(game, resourceCreator);
+        _markerIconSetGame = game;
     }
 
     /// <summary>
-    ///     Returns marker icons pre-tinted to the current color scheme, rebuilding the cache only when the
-    ///     scheme changes. Tinting once here (a handful of one-shot <see cref="ColorMatrixEffect" /> passes
-    ///     into per-icon render targets) replaces the old per-marker-per-frame effect in
-    ///     <c>DrawMapMarkers</c>, which dominated frame time at zoomed-out overview (every worldspace marker
-    ///     in view). Returns null if the base icons aren't loaded yet.
+    ///     Returns the per-raw-value icon bitmaps to blit for the current marker set: pre-tinted to the
+    ///     color scheme for the embedded (monochrome) set, the raw set otherwise, or null/empty for the
+    ///     glyph-only set (the caller then draws catalog glyph/color dots). Tinting once here (a handful of
+    ///     one-shot <see cref="ColorMatrixEffect" /> passes into per-icon render targets) replaces the old
+    ///     per-marker-per-frame effect in <c>DrawMapMarkers</c>, which dominated frame time at zoomed-out
+    ///     overview (every worldspace marker in view). Cached until the color scheme changes.
     /// </summary>
-    private Dictionary<MapMarkerType, CanvasBitmap>? EnsureTintedMarkerIcons(
+    private IReadOnlyDictionary<int, CanvasBitmap>? GetMarkerDrawIcons(
         ICanvasResourceCreator resourceCreator, HeightmapColorScheme scheme)
     {
-        if (_markerIconBitmaps is null) return null;
+        var set = _markerIconSet;
+        if (set is null) return null;
+        var baseIcons = set.Icons;
+        if (baseIcons.Count == 0 || !set.RequiresTinting) return baseIcons; // glyph-only or pre-styled atlas
 
         var argb = (uint)((255 << 24) | (scheme.R << 16) | (scheme.G << 8) | scheme.B);
         if (_tintedMarkerIconBitmaps is not null && _tintedMarkerColorArgb == argb)
@@ -324,8 +322,8 @@ public sealed partial class WorldMapControl
         {
             M11 = scheme.R / 255f, M22 = scheme.G / 255f, M33 = scheme.B / 255f, M44 = 1f
         };
-        var tinted = new Dictionary<MapMarkerType, CanvasBitmap>(_markerIconBitmaps.Count);
-        foreach (var (type, icon) in _markerIconBitmaps)
+        var tinted = new Dictionary<int, CanvasBitmap>(baseIcons.Count);
+        foreach (var (raw, icon) in baseIcons)
         {
             var w = (float)icon.SizeInPixels.Width;
             var h = (float)icon.SizeInPixels.Height;
@@ -337,7 +335,7 @@ public sealed partial class WorldMapControl
                 using var tintEffect = new ColorMatrixEffect { Source = icon, ColorMatrix = tintScale };
                 rtds.DrawImage(tintEffect, new Rect(0, 0, w, h), new Rect(0, 0, w, h));
             }
-            tinted[type] = rt; // CanvasRenderTarget is a CanvasBitmap; blit it directly per marker.
+            tinted[raw] = rt; // CanvasRenderTarget is a CanvasBitmap; blit it directly per marker.
         }
 
         _tintedMarkerIconBitmaps = tinted;
@@ -347,11 +345,9 @@ public sealed partial class WorldMapControl
 
     private void DisposeMarkerIcons()
     {
-        if (_markerIconBitmaps != null)
-        {
-            foreach (var bmp in _markerIconBitmaps.Values) bmp.Dispose();
-            _markerIconBitmaps = null;
-        }
+        _markerIconSet?.Dispose();
+        _markerIconSet = null;
+        _markerIconSetGame = Core.Games.BethesdaGame.Unknown;
         DisposeTintedMarkerIcons();
     }
 
@@ -359,6 +355,9 @@ public sealed partial class WorldMapControl
     {
         if (_tintedMarkerIconBitmaps != null)
         {
+            // Only the render targets we created for tinting are ours to dispose; the base icons belong
+            // to _markerIconSet. A pre-styled (untinted) set returns its base icons directly, so it never
+            // populates this cache — every entry here is a tint render target.
             foreach (var bmp in _tintedMarkerIconBitmaps.Values) bmp.Dispose();
             _tintedMarkerIconBitmaps = null;
             _tintedMarkerColorArgb = 0;

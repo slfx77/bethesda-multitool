@@ -90,5 +90,25 @@ public class GameProfilesTests
         Assert.True(GameProfiles.For(BethesdaGame.Morrowind).IsTes3);
         Assert.False(GameProfiles.For(BethesdaGame.Oblivion).IsTes3);
     }
+
+    [Fact]
+    public void Profiles_PinMapMarkerStrategy()
+    {
+        // Morrowind has no world-map markers; every TES4 game does.
+        Assert.False(GameProfiles.For(BethesdaGame.Morrowind).HasMapMarkers);
+        Assert.True(GameProfiles.For(BethesdaGame.Oblivion).HasMapMarkers);
+
+        // FO3/FNV use the bundled white-silhouette set (tinted to the map scheme).
+        Assert.Equal(MarkerArtStrategy.EmbeddedTinted, GameProfiles.For(BethesdaGame.Fallout3).MarkerArt);
+        Assert.Equal(MarkerArtStrategy.EmbeddedTinted, GameProfiles.For(BethesdaGame.FalloutNewVegas).MarkerArt);
+        Assert.True(GameProfiles.For(BethesdaGame.FalloutNewVegas).MarkersAreTinted);
+
+        // Atlas games are glyph-only until their atlas phase wires authentic art (and never tinted).
+        foreach (var game in new[] { BethesdaGame.Oblivion, BethesdaGame.Skyrim, BethesdaGame.Fallout4, BethesdaGame.Fallout76 })
+        {
+            Assert.Equal(MarkerArtStrategy.GlyphOnly, GameProfiles.For(game).MarkerArt);
+            Assert.False(GameProfiles.For(game).MarkersAreTinted);
+        }
+    }
 }
 

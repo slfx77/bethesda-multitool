@@ -74,7 +74,7 @@ public sealed partial class WorldMapControl
         var file = await picker.PickSaveFileAsync();
         if (file == null) return;
 
-        EnsureMarkerIcons(MapCanvas);
+        EnsureMarkerIconSet(MapCanvas);
 
         // Apply markers preference: hidden if user unchecked Map markers in the dialog.
         var exportHiddenCategories = new HashSet<PlacedObjectCategory>(_hiddenCategories);
@@ -232,7 +232,7 @@ public sealed partial class WorldMapControl
                             single?.Bitmap, single?.PixelWidth ?? 0, single?.PixelHeight ?? 0,
                             single?.MinX ?? 0, single?.MaxY ?? 0,
                             tileBitmaps,
-                            _state.FilteredMarkers, hiddenCategories, _markerIconBitmaps, _currentColorScheme,
+                            _state.FilteredMarkers, hiddenCategories, _markerIconSet?.Icons, _currentColorScheme,
                             _data, activeCells, req.IncludeNavMesh, req.IncludeGrid,
                             overlayBitmap,
                             overlay?.WorldMinX ?? 0f, overlay?.WorldMaxX ?? 0f,

@@ -52,6 +52,8 @@ public static class GameProfiles
                 GroupHeaderSize = 20,
                 HasRecordVersionTrailer = false,
                 MasterFileHints = ["Oblivion"],
+                HasMapMarkers = true,
+                MarkerArt = MarkerArtStrategy.GlyphOnly, // authentic atlas art deferred to the Oblivion atlas phase
                 DefaultLandscapeDiffuse = OblivionDiffuse,
                 DefaultLandscapeNormal = OblivionNormal
             },
@@ -63,6 +65,8 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Fallout3"],
+                HasMapMarkers = true,
+                MarkerArt = MarkerArtStrategy.EmbeddedTinted,
                 HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
@@ -75,6 +79,8 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["FalloutNV"],
+                HasMapMarkers = true,
+                MarkerArt = MarkerArtStrategy.EmbeddedTinted,
                 HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
@@ -87,6 +93,8 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Skyrim"],
+                HasMapMarkers = true,
+                MarkerArt = MarkerArtStrategy.GlyphOnly, // authentic atlas art deferred to the Skyrim atlas phase
                 HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = SkyrimDiffuse,
                 DefaultLandscapeNormal = SkyrimNormal
@@ -99,6 +107,8 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Fallout4"],
+                HasMapMarkers = true,
+                MarkerArt = MarkerArtStrategy.GlyphOnly, // authentic atlas art deferred to the FO4 atlas phase
                 HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal
@@ -111,6 +121,8 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["SeventySix", "Fallout76"],
+                HasMapMarkers = true,
+                MarkerArt = MarkerArtStrategy.GlyphOnly, // authentic atlas art deferred to the FO76 atlas phase
                 HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal
@@ -123,6 +135,7 @@ public static class GameProfiles
                 GroupHeaderSize = 24,
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Starfield"],
+                HasMapMarkers = true, // MarkerArt defaults to GlyphOnly (taxonomy + atlas TBD)
                 HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal

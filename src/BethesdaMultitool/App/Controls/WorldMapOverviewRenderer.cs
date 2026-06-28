@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Esm.Export;
+using BethesdaMultitool.Core.Formats.Esm.Export.Map;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Geometry;
@@ -49,7 +50,7 @@ internal static class WorldMapOverviewRenderer
         bool hideDisabledActors,
         PlacedReference? selectedObject,
         PlacedReference? hoveredObject,
-        Dictionary<MapMarkerType, CanvasBitmap>? markerIconBitmaps,
+        MarkerRenderContext markers,
         HeightmapColorScheme colorScheme,
         bool showCellGrid = true,
         bool showRenderedObjects = false,
@@ -192,7 +193,7 @@ internal static class WorldMapOverviewRenderer
         }
 
         // 4. Map markers (always visible)
-        DrawMapMarkers(ds, filteredMarkers, markerIconBitmaps, hiddenCategories,
+        DrawMapMarkers(ds, filteredMarkers, markers, hiddenCategories,
             zoom, panOffset, canvasWidth, canvasHeight, colorScheme);
 
         // 4b. NPC/Creature dots (always visible)
@@ -340,7 +341,7 @@ internal static class WorldMapOverviewRenderer
     internal static void DrawMapMarkers(
         CanvasDrawingSession ds,
         List<PlacedReference> filteredMarkers,
-        Dictionary<MapMarkerType, CanvasBitmap>? markerIconBitmaps,
+        MarkerRenderContext markers,
         HashSet<PlacedObjectCategory> hiddenCategories,
         float zoom, Vector2 panOffset,
         float canvasWidth, float canvasHeight,
@@ -392,23 +393,31 @@ internal static class WorldMapOverviewRenderer
                 pos.X - markerSize / 2, pos.Y - markerSize / 2,
                 markerSize, markerSize);
 
-            if (marker.MarkerType.HasValue &&
-                markerIconBitmaps?.TryGetValue(marker.MarkerType.Value, out var icon) == true)
+            // The raw TNAM value means different things per game, so resolve type/name/glyph/color
+            // through the per-game catalog rather than the FO3/FNV enum.
+            var raw = marker.MarkerType.HasValue ? (int)marker.MarkerType.Value : 0;
+
+            if (markers.Icons is not null && markers.Icons.TryGetValue(raw, out var icon))
             {
-                // Icons are pre-tinted to the color scheme by EnsureTintedMarkerIcons, so this is a plain
-                // blit — NOT a per-marker ColorMatrixEffect (which dominated frame time at zoomed-out
-                // overview where every worldspace marker is in view).
+                // Embedded icons are pre-tinted to the color scheme; atlas crops are pre-styled. Either
+                // way this is a plain blit — NOT a per-marker ColorMatrixEffect (which dominated frame time
+                // at zoomed-out overview where every worldspace marker is in view).
                 var iconSrc = new Rect(0, 0, icon.SizeInPixels.Width, icon.SizeInPixels.Height);
                 ds.DrawImage(icon, destRect, iconSrc);
             }
             else
             {
-                var color = WorldMapColors.GetMarkerColor(marker.MarkerType);
+                var fb = MapMarkerCatalog.Resolve(markers.Game, raw).Fallback;
+                var color = Color.FromArgb(255, fb.R, fb.G, fb.B);
                 var radius = markerSize / 2;
                 ds.FillCircle(pos, radius, WorldMapColors.WithAlpha(color, 200));
                 ds.DrawCircle(pos, radius, Colors.White, 1f / zoom);
-                var glyph = WorldMapColors.GetMarkerGlyph(marker.MarkerType);
-                ds.DrawText(glyph, destRect, Colors.White, glyphFormat);
+                // No glyph for atlas games pre-RE (the distinct dot color carries the type); games with a
+                // named table supply a glyph.
+                if (!string.IsNullOrEmpty(fb.Glyph))
+                {
+                    ds.DrawText(fb.Glyph, destRect, Colors.White, glyphFormat);
+                }
             }
 
             if (zoom > 0.05f && labelsDrawn < maxLabelsPerDraw && !string.IsNullOrEmpty(marker.MarkerName))

@@ -1,0 +1,91 @@
+using BethesdaMultitool.Core.Formats.Esm.Export.Map;
+using BethesdaMultitool.Core.Games;
+using Xunit;
+
+namespace BethesdaMultitool.Tests.Core.Formats.Esm.Export.Map;
+
+/// <summary>
+///     Pins the per-game marker taxonomy. The same raw TNAM value means different things per game, so a
+///     single cross-game enum is wrong — these tests lock the divergence (and the graceful fallback) that
+///     <see cref="MapMarkerCatalog" /> exists to provide.
+/// </summary>
+public class MapMarkerCatalogTests
+{
+    [Fact]
+    public void Resolve_SameRawValue_DiffersByGame()
+    {
+        // The exact bug this feature fixes: raw 3 is "Encampment" in FO3/FNV but "City" in Oblivion.
+        Assert.Equal("Encampment", MapMarkerCatalog.Resolve(BethesdaGame.FalloutNewVegas, 3).DisplayName);
+        Assert.Equal("Encampment", MapMarkerCatalog.Resolve(BethesdaGame.Fallout3, 3).DisplayName);
+        Assert.Equal("City", MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 3).DisplayName);
+    }
+
+    [Fact]
+    public void Resolve_KnownValues_MatchXEditTables()
+    {
+        Assert.Equal("City", MapMarkerCatalog.Resolve(BethesdaGame.FalloutNewVegas, 1).DisplayName);
+        Assert.Equal("Vault", MapMarkerCatalog.Resolve(BethesdaGame.FalloutNewVegas, 14).DisplayName);
+        Assert.Equal("Cave", MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 2).DisplayName);
+        Assert.Equal("Oblivion Gate", MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 11).DisplayName);
+    }
+
+    [Fact]
+    public void Resolve_IndexZero_IsNone_ForTabledGames()
+    {
+        Assert.Equal("None", MapMarkerCatalog.Resolve(BethesdaGame.FalloutNewVegas, 0).DisplayName);
+        Assert.Equal("None", MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 0).DisplayName);
+    }
+
+    [Theory]
+    [InlineData(BethesdaGame.Skyrim)]
+    [InlineData(BethesdaGame.Fallout4)]
+    [InlineData(BethesdaGame.Fallout76)]
+    [InlineData(BethesdaGame.Morrowind)]
+    [InlineData(BethesdaGame.Unknown)]
+    public void Resolve_UnwiredGame_FallsBackToTypeDistinctEntry(BethesdaGame game)
+    {
+        var entry = MapMarkerCatalog.Resolve(game, 5);
+        Assert.Equal("Type 5", entry.DisplayName);
+        Assert.Empty(entry.IconKey);
+        // Type-distinct: a different raw value yields a different fallback color.
+        var other = MapMarkerCatalog.Resolve(game, 6);
+        Assert.NotEqual((entry.Fallback.R, entry.Fallback.G, entry.Fallback.B),
+            (other.Fallback.R, other.Fallback.G, other.Fallback.B));
+    }
+
+    [Theory]
+    [InlineData(BethesdaGame.FalloutNewVegas)]
+    [InlineData(BethesdaGame.Oblivion)]
+    public void Resolve_OutOfRange_FallsBackInsteadOfThrowing(BethesdaGame game)
+    {
+        var entry = MapMarkerCatalog.Resolve(game, 999);
+        Assert.Equal("Type 999", entry.DisplayName);
+
+        var negative = MapMarkerCatalog.Resolve(game, -1);
+        Assert.Equal("Type -1", negative.DisplayName);
+    }
+
+    [Fact]
+    public void HasMarkers_TrueOnlyForWiredTables()
+    {
+        Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.FalloutNewVegas));
+        Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Fallout3));
+        Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Oblivion));
+
+        // Atlas games' name tables land with their atlas phase; Morrowind has no markers.
+        Assert.False(MapMarkerCatalog.HasMarkers(BethesdaGame.Skyrim));
+        Assert.False(MapMarkerCatalog.HasMarkers(BethesdaGame.Morrowind));
+    }
+
+    [Fact]
+    public void For_TabledGames_AreDenseByRawValue()
+    {
+        var fnv = MapMarkerCatalog.For(BethesdaGame.FalloutNewVegas);
+        Assert.Equal(15, fnv.Count);
+        for (var i = 0; i < fnv.Count; i++) Assert.Equal(i, fnv[i].RawValue);
+
+        var oblivion = MapMarkerCatalog.For(BethesdaGame.Oblivion);
+        Assert.Equal(13, oblivion.Count);
+        for (var i = 0; i < oblivion.Count; i++) Assert.Equal(i, oblivion[i].RawValue);
+    }
+}

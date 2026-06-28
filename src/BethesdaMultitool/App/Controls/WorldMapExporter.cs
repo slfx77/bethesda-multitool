@@ -43,7 +43,7 @@ internal static class WorldMapExporter
         IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap>? textureCellBitmaps,
         List<PlacedReference> filteredMarkers,
         HashSet<PlacedObjectCategory> hiddenCategories,
-        Dictionary<MapMarkerType, CanvasBitmap>? markerIconBitmaps,
+        IReadOnlyDictionary<int, CanvasBitmap>? markerIconBitmaps,
         HeightmapColorScheme colorScheme,
         WorldViewData? data = null,
         List<CellRecord>? activeCells = null,
@@ -146,7 +146,8 @@ internal static class WorldMapExporter
             // 4. Map markers
             DrawExportMapMarkers(ds, device, pixelsPerWorldUnit, imageW, imageH,
                 worldOriginX, worldMaxX, worldMinY, worldMaxY, sizing,
-                filteredMarkers, hiddenCategories, markerIconBitmaps, colorScheme);
+                filteredMarkers, hiddenCategories, markerIconBitmaps, colorScheme,
+                data?.Game ?? Core.Games.BethesdaGame.Unknown);
         }
 
         await using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
@@ -160,8 +161,9 @@ internal static class WorldMapExporter
         MapExportSizing sizing,
         List<PlacedReference> filteredMarkers,
         HashSet<PlacedObjectCategory> hiddenCategories,
-        Dictionary<MapMarkerType, CanvasBitmap>? markerIconBitmaps,
-        HeightmapColorScheme colorScheme)
+        IReadOnlyDictionary<int, CanvasBitmap>? markerIconBitmaps,
+        HeightmapColorScheme colorScheme,
+        Core.Games.BethesdaGame game)
     {
         if (filteredMarkers.Count == 0 ||
             hiddenCategories.Contains(PlacedObjectCategory.MapMarker))
@@ -192,7 +194,7 @@ internal static class WorldMapExporter
         {
             var marker = filteredMarkers[m.OriginalIndex];
             DrawExportMarkerIcon(ds, marker, markerWorldRadius, tint,
-                sizing.LabelFontSize, pixelsPerWorldUnit, markerIconBitmaps);
+                sizing.LabelFontSize, pixelsPerWorldUnit, markerIconBitmaps, game);
         }
 
         // Switch to pixel space for leader lines + labels
@@ -239,32 +241,39 @@ internal static class WorldMapExporter
     private static void DrawExportMarkerIcon(
         CanvasDrawingSession ds, PlacedReference marker,
         float worldRadius, Color tint, float labelFontSize, float pixelsPerWorldUnit,
-        Dictionary<MapMarkerType, CanvasBitmap>? markerIconBitmaps)
+        IReadOnlyDictionary<int, CanvasBitmap>? markerIconBitmaps,
+        Core.Games.BethesdaGame game)
     {
         var pos = new Vector2(marker.X, -marker.Y);
         var destRect = new Rect(
             pos.X - worldRadius, pos.Y - worldRadius,
             worldRadius * 2, worldRadius * 2);
 
-        if (marker.MarkerType.HasValue &&
-            markerIconBitmaps?.TryGetValue(marker.MarkerType.Value, out var icon) == true)
+        // The raw TNAM value is game-specific; resolve it through the per-game catalog (mirrors the live
+        // map). The embedded set's untinted base icons are tinted here at draw time.
+        var raw = marker.MarkerType.HasValue ? (int)marker.MarkerType.Value : 0;
+
+        if (markerIconBitmaps?.TryGetValue(raw, out var icon) == true)
         {
             WorldMapDrawingHelper.DrawTintedIcon(ds, icon, destRect, tint);
         }
         else
         {
-            var color = WorldMapColors.GetMarkerColor(marker.MarkerType);
+            var fb = MapMarkerCatalog.Resolve(game, raw).Fallback;
+            var color = Color.FromArgb(255, fb.R, fb.G, fb.B);
             ds.FillCircle(pos, worldRadius, WorldMapColors.WithAlpha(color, 200));
             ds.DrawCircle(pos, worldRadius, Colors.White, 1f / pixelsPerWorldUnit);
-            var glyph = WorldMapColors.GetMarkerGlyph(marker.MarkerType);
-            using var glyphFormat = new CanvasTextFormat
+            if (!string.IsNullOrEmpty(fb.Glyph))
             {
-                FontSize = labelFontSize / pixelsPerWorldUnit,
-                FontFamily = "Segoe MDL2 Assets",
-                HorizontalAlignment = CanvasHorizontalAlignment.Center,
-                VerticalAlignment = CanvasVerticalAlignment.Center
-            };
-            ds.DrawText(glyph, destRect, Colors.White, glyphFormat);
+                using var glyphFormat = new CanvasTextFormat
+                {
+                    FontSize = labelFontSize / pixelsPerWorldUnit,
+                    FontFamily = "Segoe MDL2 Assets",
+                    HorizontalAlignment = CanvasHorizontalAlignment.Center,
+                    VerticalAlignment = CanvasVerticalAlignment.Center
+                };
+                ds.DrawText(fb.Glyph, destRect, Colors.White, glyphFormat);
+            }
         }
     }
 }

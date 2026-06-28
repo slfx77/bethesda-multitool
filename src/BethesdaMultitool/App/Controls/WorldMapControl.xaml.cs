@@ -74,15 +74,18 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private bool _isPanning;
     private bool _legendExpanded = true;
 
-    // --- Marker icon bitmaps ---
-    private Dictionary<MapMarkerType, CanvasBitmap>? _markerIconBitmaps;
+    // --- Marker icons (per game) ---
+    // The active game's marker icon set (embedded tinted for FO3/FNV, atlas for others, glyph-only when
+    // no art is wired). Keyed by raw TNAM value via MapMarkerCatalog; rebuilt on a game change.
+    private IMapMarkerIconSet? _markerIconSet;
+    private Core.Games.BethesdaGame _markerIconSetGame = Core.Games.BethesdaGame.Unknown;
 
-    // Pre-tinted marker icons, rebuilt only when the color scheme changes. The overview used to build a
-    // ColorMatrixEffect PER MARKER PER FRAME (DrawTintedIcon) — hundreds of Direct2D effect graphs every
-    // frame at zoomed-out overview where every worldspace marker is in view — which tanked frame time
-    // (hiding markers was a huge speedup). Tinting each icon once and blitting the cached bitmap collapses
-    // that to a handful of one-time tint passes. Keyed by the scheme's packed ARGB so a scheme change rebuilds.
-    private Dictionary<MapMarkerType, CanvasBitmap>? _tintedMarkerIconBitmaps;
+    // Pre-tinted marker icons (embedded set only), rebuilt only when the color scheme changes. The
+    // overview used to build a ColorMatrixEffect PER MARKER PER FRAME (DrawTintedIcon) — hundreds of
+    // Direct2D effect graphs every frame at zoomed-out overview where every worldspace marker is in view —
+    // which tanked frame time (hiding markers was a huge speedup). Tinting each icon once and blitting the
+    // cached bitmap collapses that to a handful of one-time tint passes. Keyed by the scheme's packed ARGB.
+    private Dictionary<int, CanvasBitmap>? _tintedMarkerIconBitmaps;
     private uint _tintedMarkerColorArgb;
 
     // --- State ---

@@ -82,10 +82,12 @@ public sealed partial class WorldMapControl
 
         if (_state.Mode == ViewMode.WorldOverview)
         {
-            EnsureMarkerIcons(MapCanvas);
-            // Pre-tint the marker icons once for this color scheme (rebuilt only on scheme change) so the
-            // overview blits cached bitmaps instead of building a ColorMatrixEffect per marker per frame.
-            var tintedMarkers = EnsureTintedMarkerIcons(MapCanvas, _currentColorScheme) ?? _markerIconBitmaps;
+            EnsureMarkerIconSet(MapCanvas);
+            // Per-game icons (pre-tinted once per color scheme for the embedded set; raw atlas crops or
+            // null/glyph-only otherwise) + the game, so the renderer resolves each marker's type via
+            // MapMarkerCatalog and falls back to a type-distinct glyph dot when no art exists.
+            var markerContext = new MarkerRenderContext(
+                _data.Game, GetMarkerDrawIcons(MapCanvas, _currentColorScheme));
             // Build the standalone world water layer once per worldspace (cheap guard); used as the water
             // pass over every non-per-cell terrain layer (heightmap/vertex/slope/regions/terrain-aggregate).
             EnsureWorldWaterBitmap(_state.SelectedWorldspace?.FormId);
@@ -149,7 +151,7 @@ public sealed partial class WorldMapControl
                 _zoom, _panOffset, canvasW, canvasH,
                 _hiddenCategories, _hideDisabledActors,
                 _state.SelectedObject, _hoveredObject,
-                tintedMarkers, _currentColorScheme,
+                markerContext, _currentColorScheme,
                 _showCellGrid,
                 _showRenderedObjects, _topDownOverlay,
                 _topDownWorldMinX, _topDownWorldMaxX, _topDownWorldMinY, _topDownWorldMaxY,

@@ -12,6 +12,22 @@ public enum EngineFamily
 }
 
 /// <summary>
+///     How the 2D world map sources marker icon art for a game. The marker <c>TNAM</c> type value is
+///     game-specific (resolved via <c>MapMarkerCatalog</c>); this picks where the icon picture comes from.
+/// </summary>
+public enum MarkerArtStrategy
+{
+    /// <summary>No authentic art wired yet — draw the catalog's type-distinct glyph/color dot.</summary>
+    GlyphOnly,
+
+    /// <summary>FO3/FNV: bundled white-silhouette PNGs, tinted to the map color scheme at draw time.</summary>
+    EmbeddedTinted,
+
+    /// <summary>Oblivion/Skyrim/FO4/FO76: per-type sub-rects cropped from a packed atlas in the game archives.</summary>
+    AtlasPacked
+}
+
+/// <summary>
 ///     The single source of truth for everything that varies by game. One immutable instance per
 ///     <see cref="BethesdaGame" /> lives in <see cref="GameProfiles" />; adding a new game is adding
 ///     one entry there. Resolve a profile with <see cref="GameProfiles.For" /> or detect one from a
@@ -58,5 +74,19 @@ public sealed record GameProfile
 
     /// <inheritdoc cref="DefaultLandscapeDiffuse" />
     public string DefaultLandscapeNormal { get; init; } = string.Empty;
+
+    // ---- Map markers (consumed by the 2D world map; see MapMarkerCatalog + IMapMarkerIconSet) ----
+
+    /// <summary>
+    ///     True when this game places world-map markers (every TES4 game does; Morrowind has none).
+    ///     Marker type values are decoded per game by <c>MapMarkerCatalog</c>.
+    /// </summary>
+    public bool HasMapMarkers { get; init; }
+
+    /// <summary>Where the 2D map sources this game's marker icon art. Defaults to glyph-only.</summary>
+    public MarkerArtStrategy MarkerArt { get; init; } = MarkerArtStrategy.GlyphOnly;
+
+    /// <summary>True only for the embedded white-silhouette set (FO3/FNV), which is tinted at draw time.</summary>
+    public bool MarkersAreTinted => MarkerArt == MarkerArtStrategy.EmbeddedTinted;
 }
 
