@@ -94,7 +94,7 @@ public static class GameProfiles
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Skyrim"],
                 HasMapMarkers = true,
-                MarkerArt = MarkerArtStrategy.GlyphOnly, // authentic atlas art deferred to the Skyrim atlas phase
+                MarkerArt = MarkerArtStrategy.EmbeddedColored, // icons extracted from map.swf (skyrim_marker_NN.png)
                 HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = SkyrimDiffuse,
                 DefaultLandscapeNormal = SkyrimNormal

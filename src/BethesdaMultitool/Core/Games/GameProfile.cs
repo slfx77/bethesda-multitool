@@ -23,8 +23,12 @@ public enum MarkerArtStrategy
     /// <summary>FO3/FNV: bundled white-silhouette PNGs, tinted to the map color scheme at draw time.</summary>
     EmbeddedTinted,
 
-    /// <summary>Oblivion/Skyrim/FO4/FO76: per-type sub-rects cropped from a packed atlas in the game archives.</summary>
-    AtlasPacked
+    /// <summary>
+    ///     Skyrim/FO4/FO76 (and eventually Oblivion): per-type icons extracted offline from the game's
+    ///     map SWF/atlas and embedded as pre-styled PNGs (drawn untinted). Works for asset-less memory
+    ///     dumps too, since the art ships with the tool.
+    /// </summary>
+    EmbeddedColored
 }
 
 /// <summary>

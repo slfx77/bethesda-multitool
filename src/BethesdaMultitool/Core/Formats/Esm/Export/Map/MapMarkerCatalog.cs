@@ -27,6 +27,7 @@ public static class MapMarkerCatalog
     private static readonly IReadOnlyList<MapMarkerEntry> Empty = [];
     private static readonly IReadOnlyList<MapMarkerEntry> FalloutTable = BuildFalloutTable();
     private static readonly IReadOnlyList<MapMarkerEntry> OblivionTable = BuildOblivionTable();
+    private static readonly IReadOnlyList<MapMarkerEntry> SkyrimTable = BuildSkyrimTable();
 
     /// <summary>The full dense marker table for <paramref name="game" /> (index == raw value), or an
     ///     empty list for games whose table isn't wired yet (Skyrim/FO4/FO76 — populated with their
@@ -35,6 +36,7 @@ public static class MapMarkerCatalog
     {
         BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas => FalloutTable,
         BethesdaGame.Oblivion => OblivionTable,
+        BethesdaGame.Skyrim => SkyrimTable,
         _ => Empty
     };
 
@@ -111,6 +113,37 @@ public static class MapMarkerCatalog
         {
             var (name, iconKey, glyph, r, g, b) = rows[raw];
             entries[raw] = new MapMarkerEntry(raw, name, iconKey, new MapMarkerFallback(glyph, r, g, b));
+        }
+
+        return entries;
+    }
+
+    // Skyrim (0..59) — names from xEdit wbMapMarkerEnum (TES5). Icons (1..52) were extracted offline from
+    // the discovered *Marker sprites in interface\map.swf and embedded as skyrim_marker_NN.png; the DLC02
+    // Solstheim markers (53..59) ship in the Dragonborn archive, so they carry names but no base-game icon
+    // (they degrade to a labeled distinct dot). Icons are pre-styled (gray), so this game is NOT tinted.
+    private static IReadOnlyList<MapMarkerEntry> BuildSkyrimTable()
+    {
+        string[] names =
+        [
+            "None", "City", "Town", "Settlement", "Cave", "Camp", "Fort", "Nordic Ruins", "Dwemer Ruin",
+            "Shipwreck", "Grove", "Landmark", "Dragon Lair", "Farm", "Wood Mill", "Mine", "Imperial Camp",
+            "Stormcloak Camp", "Doomstone", "Wheat Mill", "Smelter", "Stable", "Imperial Tower", "Clearing",
+            "Pass", "Altar", "Rock", "Lighthouse", "Orc Stronghold", "Giant Camp", "Shack", "Nordic Tower",
+            "Nordic Dwelling", "Docks", "Shrine", "Riften Castle", "Riften Capitol", "Windhelm Castle",
+            "Windhelm Capitol", "Whiterun Castle", "Whiterun Capitol", "Solitude Castle", "Solitude Capitol",
+            "Markarth Castle", "Markarth Capitol", "Winterhold Castle", "Winterhold Capitol", "Morthal Castle",
+            "Morthal Capitol", "Falkreath Castle", "Falkreath Capitol", "Dawnstar Castle", "Dawnstar Capitol",
+            "Temple of Miraak", "Raven Rock", "Beast Stone", "Tel Mithryn", "To Skyrim", "To Solstheim",
+            "Castle Karstaag"
+        ];
+
+        var entries = new MapMarkerEntry[names.Length];
+        for (var raw = 0; raw < names.Length; raw++)
+        {
+            var iconKey = raw is >= 1 and <= 52 ? $"skyrim_marker_{raw:D2}" : "";
+            var (r, g, b) = HsvToRgb((raw * 137.508) % 360.0, 0.45, 0.85);
+            entries[raw] = new MapMarkerEntry(raw, names[raw], iconKey, new MapMarkerFallback("", r, g, b));
         }
 
         return entries;

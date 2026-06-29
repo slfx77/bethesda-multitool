@@ -103,8 +103,12 @@ public class GameProfilesTests
         Assert.Equal(MarkerArtStrategy.EmbeddedTinted, GameProfiles.For(BethesdaGame.FalloutNewVegas).MarkerArt);
         Assert.True(GameProfiles.For(BethesdaGame.FalloutNewVegas).MarkersAreTinted);
 
-        // Atlas games are glyph-only until their atlas phase wires authentic art (and never tinted).
-        foreach (var game in new[] { BethesdaGame.Oblivion, BethesdaGame.Skyrim, BethesdaGame.Fallout4, BethesdaGame.Fallout76 })
+        // Skyrim icons were extracted from map.swf and embedded pre-styled (never tinted).
+        Assert.Equal(MarkerArtStrategy.EmbeddedColored, GameProfiles.For(BethesdaGame.Skyrim).MarkerArt);
+        Assert.False(GameProfiles.For(BethesdaGame.Skyrim).MarkersAreTinted);
+
+        // FO4/FO76/Oblivion are glyph-only until their icons are extracted + wired (and never tinted).
+        foreach (var game in new[] { BethesdaGame.Oblivion, BethesdaGame.Fallout4, BethesdaGame.Fallout76 })
         {
             Assert.Equal(MarkerArtStrategy.GlyphOnly, GameProfiles.For(game).MarkerArt);
             Assert.False(GameProfiles.For(game).MarkersAreTinted);

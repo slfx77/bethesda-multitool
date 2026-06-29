@@ -37,7 +37,6 @@ public class MapMarkerCatalogTests
     }
 
     [Theory]
-    [InlineData(BethesdaGame.Skyrim)]
     [InlineData(BethesdaGame.Fallout4)]
     [InlineData(BethesdaGame.Fallout76)]
     [InlineData(BethesdaGame.Morrowind)]
@@ -71,10 +70,32 @@ public class MapMarkerCatalogTests
         Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.FalloutNewVegas));
         Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Fallout3));
         Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Oblivion));
+        Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Skyrim));
 
-        // Atlas games' name tables land with their atlas phase; Morrowind has no markers.
-        Assert.False(MapMarkerCatalog.HasMarkers(BethesdaGame.Skyrim));
+        // FO4/FO76 name tables land with their icon phase; Morrowind has no markers.
+        Assert.False(MapMarkerCatalog.HasMarkers(BethesdaGame.Fallout4));
         Assert.False(MapMarkerCatalog.HasMarkers(BethesdaGame.Morrowind));
+    }
+
+    [Fact]
+    public void Resolve_Skyrim_MatchesEnumAndCarriesIconKeys()
+    {
+        Assert.Equal("Town", MapMarkerCatalog.Resolve(BethesdaGame.Skyrim, 2).DisplayName);
+        Assert.Equal("Cave", MapMarkerCatalog.Resolve(BethesdaGame.Skyrim, 4).DisplayName);
+        Assert.Equal("Dawnstar Capitol", MapMarkerCatalog.Resolve(BethesdaGame.Skyrim, 52).DisplayName);
+        // Skyrim diverges from FO3/FNV at the same raw value (4 = Cave here, Natural Landmark there).
+        Assert.Equal("Natural Landmark", MapMarkerCatalog.Resolve(BethesdaGame.FalloutNewVegas, 4).DisplayName);
+
+        // Base-game types 1..52 carry an embedded icon key; None (0) and DLC02 (53..59) don't.
+        Assert.Equal("skyrim_marker_04", MapMarkerCatalog.Resolve(BethesdaGame.Skyrim, 4).IconKey);
+        Assert.Equal("skyrim_marker_52", MapMarkerCatalog.Resolve(BethesdaGame.Skyrim, 52).IconKey);
+        Assert.Empty(MapMarkerCatalog.Resolve(BethesdaGame.Skyrim, 0).IconKey);
+        Assert.Equal("Raven Rock", MapMarkerCatalog.Resolve(BethesdaGame.Skyrim, 54).DisplayName);
+        Assert.Empty(MapMarkerCatalog.Resolve(BethesdaGame.Skyrim, 54).IconKey);
+
+        var table = MapMarkerCatalog.For(BethesdaGame.Skyrim);
+        Assert.Equal(60, table.Count);
+        for (var i = 0; i < table.Count; i++) Assert.Equal(i, table[i].RawValue);
     }
 
     [Fact]

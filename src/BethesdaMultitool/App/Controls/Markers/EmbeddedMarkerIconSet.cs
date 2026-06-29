@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export.Map;
 using BethesdaMultitool.Core.Games;
 using Microsoft.Graphics.Canvas;
@@ -6,10 +5,12 @@ using Microsoft.Graphics.Canvas;
 namespace BethesdaMultitool;
 
 /// <summary>
-///     FO3/FNV marker icons: the bundled white-silhouette PNGs from <see cref="MapMarkerIconProvider" />,
-///     keyed by raw value (== <see cref="MapMarkerType" /> for these games). Monochrome, so the map
-///     tints them to its color scheme at draw time (<see cref="RequiresTinting" /> is true). Decoded
-///     once on construction — this runs inside the Win2D draw handler on the STA UI thread, so the
+///     Marker icons that ship embedded in the tool, keyed by raw <c>TNAM</c> value. Catalog-driven: it
+///     loads <see cref="MapMarkerEntry.IconKey" /> for each entry in the game's
+///     <see cref="MapMarkerCatalog" /> table, so it serves every game whose art was extracted offline —
+///     FO3/FNV (white silhouettes, tinted to the map color scheme) and Skyrim/FO4/FO76 (pre-styled,
+///     untinted). Because the art is embedded, it also works for memory dumps with no game assets.
+///     Decoded once on construction; this runs inside the Win2D draw handler on the STA UI thread, so the
 ///     decode uses the non-pumping wait pattern (a plain <c>GetResult()</c> there can re-enter XAML).
 /// </summary>
 internal sealed class EmbeddedMarkerIconSet : IMapMarkerIconSet
@@ -19,21 +20,22 @@ internal sealed class EmbeddedMarkerIconSet : IMapMarkerIconSet
     public EmbeddedMarkerIconSet(BethesdaGame game, ICanvasResourceCreator resourceCreator)
     {
         Game = game;
-        foreach (var type in Enum.GetValues<MapMarkerType>())
+        RequiresTinting = GameProfiles.For(game).MarkersAreTinted;
+
+        foreach (var entry in MapMarkerCatalog.For(game))
         {
-            if (type == MapMarkerType.None) continue;
-            var png = MapMarkerIconProvider.GetIconPng(type);
+            var png = MapMarkerIconProvider.GetIconPng(entry.IconKey);
             if (png is null) continue;
 
             using var ms = new MemoryStream(png);
             var loadTask = CanvasBitmap.LoadAsync(resourceCreator, ms.AsRandomAccessStream()).AsTask();
             Core.Orchestration.NonPumpingWait.Wait(loadTask);
-            _icons[(int)type] = loadTask.GetAwaiter().GetResult();
+            _icons[entry.RawValue] = loadTask.GetAwaiter().GetResult();
         }
     }
 
     public BethesdaGame Game { get; }
-    public bool RequiresTinting => true;
+    public bool RequiresTinting { get; }
     public IReadOnlyDictionary<int, CanvasBitmap> Icons => _icons;
 
     public void Dispose()
