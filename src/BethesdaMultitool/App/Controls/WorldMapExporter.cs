@@ -250,12 +250,26 @@ internal static class WorldMapExporter
             worldRadius * 2, worldRadius * 2);
 
         // The raw TNAM value is game-specific; resolve it through the per-game catalog (mirrors the live
-        // map). The embedded set's untinted base icons are tinted here at draw time.
+        // map). Mirrors the live map's height-normalized, aspect-preserved, per-game-scaled blit.
         var raw = marker.MarkerType.HasValue ? (int)marker.MarkerType.Value : 0;
+        var profile = Core.Games.GameProfiles.For(game);
 
         if (markerIconBitmaps?.TryGetValue(raw, out var icon) == true)
         {
-            WorldMapDrawingHelper.DrawTintedIcon(ds, icon, destRect, tint);
+            float sw = icon.SizeInPixels.Width;
+            float sh = icon.SizeInPixels.Height;
+            var drawH = worldRadius * 2f * profile.MarkerIconScale;
+            var drawW = sh > 0f ? drawH * sw / sh : drawH;
+            var iconDest = new Rect(pos.X - drawW / 2, pos.Y - drawH / 2, drawW, drawH);
+            // FO3/FNV silhouettes tint to the scheme; pre-styled sets (Skyrim) draw as-is.
+            if (profile.MarkersAreTinted)
+            {
+                WorldMapDrawingHelper.DrawTintedIcon(ds, icon, iconDest, tint);
+            }
+            else
+            {
+                ds.DrawImage(icon, iconDest, new Rect(0, 0, sw, sh));
+            }
         }
         else
         {

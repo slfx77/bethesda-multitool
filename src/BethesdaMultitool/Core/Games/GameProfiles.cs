@@ -95,6 +95,7 @@ public static class GameProfiles
                 MasterFileHints = ["Skyrim"],
                 HasMapMarkers = true,
                 MarkerArt = MarkerArtStrategy.EmbeddedColored, // icons extracted from map.swf (skyrim_marker_NN.png)
+                MarkerIconScale = 1.5f, // map.swf icons are taller/finer than FNV's bold silhouettes
                 HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = SkyrimDiffuse,
                 DefaultLandscapeNormal = SkyrimNormal

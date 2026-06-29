@@ -92,5 +92,12 @@ public sealed record GameProfile
 
     /// <summary>True only for the embedded white-silhouette set (FO3/FNV), which is tinted at draw time.</summary>
     public bool MarkersAreTinted => MarkerArt == MarkerArtStrategy.EmbeddedTinted;
+
+    /// <summary>
+    ///     Multiplier on the 2D map's base marker icon size for this game. FO3/FNV's bold silhouettes
+    ///     read well at the base size (1.0); games whose icons are taller/finer (Skyrim) are bumped so
+    ///     they don't render cramped. Tune here per game; the draw also preserves each icon's aspect ratio.
+    /// </summary>
+    public float MarkerIconScale { get; init; } = 1.0f;
 }
 

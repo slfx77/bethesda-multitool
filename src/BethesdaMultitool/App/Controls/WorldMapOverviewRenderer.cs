@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Export.Map;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Games;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Geometry;
 using Microsoft.Graphics.Canvas.Text;
@@ -356,6 +357,7 @@ internal static class WorldMapOverviewRenderer
         var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
             canvasWidth, canvasHeight, zoom, panOffset);
         var markerSize = 16f / zoom;
+        var iconScale = GameProfiles.For(markers.Game).MarkerIconScale;
 
         using var labelFormat = new CanvasTextFormat
         {
@@ -401,9 +403,15 @@ internal static class WorldMapOverviewRenderer
             {
                 // Embedded icons are pre-tinted to the color scheme; atlas crops are pre-styled. Either
                 // way this is a plain blit — NOT a per-marker ColorMatrixEffect (which dominated frame time
-                // at zoomed-out overview where every worldspace marker is in view).
-                var iconSrc = new Rect(0, 0, icon.SizeInPixels.Width, icon.SizeInPixels.Height);
-                ds.DrawImage(icon, destRect, iconSrc);
+                // at zoomed-out overview where every worldspace marker is in view). Height-normalized to
+                // markerSize × per-game scale and aspect-preserved, so non-square icons (Skyrim's tall
+                // city/hold markers) aren't squashed into the square cell and don't render cramped.
+                float sw = icon.SizeInPixels.Width;
+                float sh = icon.SizeInPixels.Height;
+                var drawH = markerSize * iconScale;
+                var drawW = sh > 0f ? drawH * sw / sh : drawH;
+                var iconDest = new Rect(pos.X - drawW / 2, pos.Y - drawH / 2, drawW, drawH);
+                ds.DrawImage(icon, iconDest, new Rect(0, 0, sw, sh));
             }
             else
             {
