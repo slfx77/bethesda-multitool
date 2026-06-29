@@ -86,11 +86,14 @@ public class MapMarkerCatalogTests
         Assert.Equal("Vault", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 15).DisplayName);
         Assert.Equal("Town", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 49).DisplayName);
 
-        // Base types 0..49 carry an embedded icon; faction/DLC types 50..80 carry names only.
+        // All 81 types (0..80) carry an embedded icon — base 0..49 from MapMarkers.swf, faction/DLC
+        // 50..80 from Pipboy_MapPage.swf.
         Assert.Equal("fo4_marker_00", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 0).IconKey);
         Assert.Equal("fo4_marker_49", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 49).IconKey);
         Assert.Equal("Brotherhood of Steel", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 50).DisplayName);
-        Assert.Empty(MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 50).IconKey);
+        Assert.Equal("fo4_marker_50", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 50).IconKey);
+        Assert.Equal("Pack", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 80).DisplayName);
+        Assert.Equal("fo4_marker_80", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 80).IconKey);
     }
 
     [Fact]

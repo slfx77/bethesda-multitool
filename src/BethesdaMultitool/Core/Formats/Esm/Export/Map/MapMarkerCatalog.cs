@@ -151,11 +151,12 @@ public static class MapMarkerCatalog
         return entries;
     }
 
-    // FO4 (0..80) — names from xEdit wbDefinitionsFO4.pas. Icons (0..49) extracted offline from the named
-    // AS3 SymbolClass sprites in Interface\MapMarkers.swf (the Discovered/frame-1, solid variant) and
-    // embedded as fo4_marker_NN.png; types 50..80 (Brotherhood/factions/Nuka-World/etc.) ship icons in DLC
-    // SWFs, so they carry names only here (labeled distinct dots). White silhouettes → tinted (EmbeddedTinted).
-    // NOTE: FO4 index 0 is Cave, NOT None.
+    // FO4 (0..80) — names from xEdit wbDefinitionsFO4.pas. ALL 81 icons extracted offline from the named
+    // AS3 SymbolClass sprites (Discovered/frame-1, solid variant) and embedded as fo4_marker_NN.png: base
+    // location types 0..49 from Interface\MapMarkers.swf, and the faction/DLC types 50..80 (Brotherhood,
+    // Prydwen, the Castle, Minutemen, Railroad, USS Constitution, Mechanist, Nuka-World, ...) from
+    // Interface\Pipboy_MapPage.swf (which carries the complete set). White silhouettes → tinted
+    // (EmbeddedTinted). NOTE: FO4 index 0 is Cave, NOT None.
     private static IReadOnlyList<MapMarkerEntry> BuildFallout4Table()
     {
         string[] names =
@@ -179,9 +180,9 @@ public static class MapMarkerCatalog
         var entries = new MapMarkerEntry[names.Length];
         for (var raw = 0; raw < names.Length; raw++)
         {
-            var iconKey = raw <= 49 ? $"fo4_marker_{raw:D2}" : "";
             var (r, g, b) = HsvToRgb((raw * 137.508) % 360.0, 0.45, 0.85);
-            entries[raw] = new MapMarkerEntry(raw, names[raw], iconKey, new MapMarkerFallback("", r, g, b));
+            entries[raw] = new MapMarkerEntry(
+                raw, names[raw], $"fo4_marker_{raw:D2}", new MapMarkerFallback("", r, g, b));
         }
 
         return entries;

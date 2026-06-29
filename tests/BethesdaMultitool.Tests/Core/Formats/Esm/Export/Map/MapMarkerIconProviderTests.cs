@@ -35,7 +35,7 @@ public class MapMarkerIconProviderTests
 
     [Theory]
     [InlineData(BethesdaGame.Skyrim, 52)]
-    [InlineData(BethesdaGame.Fallout4, 50)]
+    [InlineData(BethesdaGame.Fallout4, 81)]
     public void EmbeddedGame_HasExpectedIconCount(BethesdaGame game, int expected)
     {
         var count = MapMarkerCatalog.For(game)
