@@ -110,8 +110,12 @@ public class GameProfilesTests
         Assert.True(GameProfiles.For(BethesdaGame.Skyrim).MarkerIconScale > 1.0f);
         Assert.Equal(1.0f, GameProfiles.For(BethesdaGame.FalloutNewVegas).MarkerIconScale);
 
-        // FO4/FO76/Oblivion are glyph-only until their icons are extracted + wired (and never tinted).
-        foreach (var game in new[] { BethesdaGame.Oblivion, BethesdaGame.Fallout4, BethesdaGame.Fallout76 })
+        // FO4 icons are white silhouettes from MapMarkers.swf → tinted to the scheme like FO3/FNV.
+        Assert.Equal(MarkerArtStrategy.EmbeddedTinted, GameProfiles.For(BethesdaGame.Fallout4).MarkerArt);
+        Assert.True(GameProfiles.For(BethesdaGame.Fallout4).MarkersAreTinted);
+
+        // FO76/Oblivion are glyph-only until their icons are extracted + wired (and never tinted).
+        foreach (var game in new[] { BethesdaGame.Oblivion, BethesdaGame.Fallout76 })
         {
             Assert.Equal(MarkerArtStrategy.GlyphOnly, GameProfiles.For(game).MarkerArt);
             Assert.False(GameProfiles.For(game).MarkersAreTinted);

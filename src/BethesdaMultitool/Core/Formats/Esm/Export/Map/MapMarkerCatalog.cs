@@ -28,6 +28,7 @@ public static class MapMarkerCatalog
     private static readonly IReadOnlyList<MapMarkerEntry> FalloutTable = BuildFalloutTable();
     private static readonly IReadOnlyList<MapMarkerEntry> OblivionTable = BuildOblivionTable();
     private static readonly IReadOnlyList<MapMarkerEntry> SkyrimTable = BuildSkyrimTable();
+    private static readonly IReadOnlyList<MapMarkerEntry> Fallout4Table = BuildFallout4Table();
 
     /// <summary>The full dense marker table for <paramref name="game" /> (index == raw value), or an
     ///     empty list for games whose table isn't wired yet (Skyrim/FO4/FO76 — populated with their
@@ -37,6 +38,7 @@ public static class MapMarkerCatalog
         BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas => FalloutTable,
         BethesdaGame.Oblivion => OblivionTable,
         BethesdaGame.Skyrim => SkyrimTable,
+        BethesdaGame.Fallout4 => Fallout4Table,
         _ => Empty
     };
 
@@ -142,6 +144,42 @@ public static class MapMarkerCatalog
         for (var raw = 0; raw < names.Length; raw++)
         {
             var iconKey = raw is >= 1 and <= 52 ? $"skyrim_marker_{raw:D2}" : "";
+            var (r, g, b) = HsvToRgb((raw * 137.508) % 360.0, 0.45, 0.85);
+            entries[raw] = new MapMarkerEntry(raw, names[raw], iconKey, new MapMarkerFallback("", r, g, b));
+        }
+
+        return entries;
+    }
+
+    // FO4 (0..80) — names from xEdit wbDefinitionsFO4.pas. Icons (0..49) extracted offline from the named
+    // AS3 SymbolClass sprites in Interface\MapMarkers.swf (the Discovered/frame-1, solid variant) and
+    // embedded as fo4_marker_NN.png; types 50..80 (Brotherhood/factions/Nuka-World/etc.) ship icons in DLC
+    // SWFs, so they carry names only here (labeled distinct dots). White silhouettes → tinted (EmbeddedTinted).
+    // NOTE: FO4 index 0 is Cave, NOT None.
+    private static IReadOnlyList<MapMarkerEntry> BuildFallout4Table()
+    {
+        string[] names =
+        [
+            "Cave", "City", "Diamond City", "Encampment", "Factory / Industrial Site",
+            "Gov't Building / Monument", "Metro Station", "Military Base", "Natural Landmark",
+            "Office / Civic Building", "Ruins - Town", "Ruins - Urban", "Sanctuary", "Settlement",
+            "Sewer / Utility Tunnels", "Vault", "Airfield", "Bunker Hill", "Camper", "Car", "Church",
+            "Country Club", "Custom House", "Drive-In", "Elevated Highway", "Faneuil Hall", "Farm",
+            "Filling Station", "Forested", "Goodneighbor", "Graveyard", "Hospital", "Industrial Dome",
+            "Industrial Stacks", "Institute", "Irish Pride", "Junkyard", "Observatory", "Pier", "Pond / Lake",
+            "Quarry", "Radioactive Area", "Radio Tower", "Salem", "School", "Shipwreck", "Submarine",
+            "Swan Pond", "Synth Head", "Town", "Brotherhood of Steel", "Brownstone Townhouse", "Bunker",
+            "Castle", "Skyscraper", "Libertalia", "Low-Rise Building", "Minutemen", "Police Station", "Prydwen",
+            "Railroad - Faction", "Railroad", "Satellite", "Sentinel", "USS Constitution", "Mechanist Lair",
+            "Raider settlement", "Vassal settlement", "Potential Vassal settlement", "Bottling Plant",
+            "Galactic", "HUB", "Kiddie Kingdom", "Monorail", "Rides", "Safari", "Wild West", "POI",
+            "Disciples", "Operators", "Pack"
+        ];
+
+        var entries = new MapMarkerEntry[names.Length];
+        for (var raw = 0; raw < names.Length; raw++)
+        {
+            var iconKey = raw <= 49 ? $"fo4_marker_{raw:D2}" : "";
             var (r, g, b) = HsvToRgb((raw * 137.508) % 360.0, 0.45, 0.85);
             entries[raw] = new MapMarkerEntry(raw, names[raw], iconKey, new MapMarkerFallback("", r, g, b));
         }

@@ -37,7 +37,6 @@ public class MapMarkerCatalogTests
     }
 
     [Theory]
-    [InlineData(BethesdaGame.Fallout4)]
     [InlineData(BethesdaGame.Fallout76)]
     [InlineData(BethesdaGame.Morrowind)]
     [InlineData(BethesdaGame.Unknown)]
@@ -71,10 +70,27 @@ public class MapMarkerCatalogTests
         Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Fallout3));
         Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Oblivion));
         Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Skyrim));
+        Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Fallout4));
 
-        // FO4/FO76 name tables land with their icon phase; Morrowind has no markers.
-        Assert.False(MapMarkerCatalog.HasMarkers(BethesdaGame.Fallout4));
+        // FO76 name table lands with its icon phase; Morrowind has no markers.
+        Assert.False(MapMarkerCatalog.HasMarkers(BethesdaGame.Fallout76));
         Assert.False(MapMarkerCatalog.HasMarkers(BethesdaGame.Morrowind));
+    }
+
+    [Fact]
+    public void Resolve_Fallout4_MatchesEnumAndCarriesIconKeys()
+    {
+        // FO4's enum starts at Cave (index 0 is NOT None, unlike FO3/FNV/Oblivion/Skyrim).
+        Assert.Equal("Cave", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 0).DisplayName);
+        Assert.Equal("Diamond City", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 2).DisplayName);
+        Assert.Equal("Vault", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 15).DisplayName);
+        Assert.Equal("Town", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 49).DisplayName);
+
+        // Base types 0..49 carry an embedded icon; faction/DLC types 50..80 carry names only.
+        Assert.Equal("fo4_marker_00", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 0).IconKey);
+        Assert.Equal("fo4_marker_49", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 49).IconKey);
+        Assert.Equal("Brotherhood of Steel", MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 50).DisplayName);
+        Assert.Empty(MapMarkerCatalog.Resolve(BethesdaGame.Fallout4, 50).IconKey);
     }
 
     [Fact]

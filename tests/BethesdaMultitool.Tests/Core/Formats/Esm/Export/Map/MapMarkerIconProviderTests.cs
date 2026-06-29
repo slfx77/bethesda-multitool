@@ -16,6 +16,7 @@ public class MapMarkerIconProviderTests
     [Theory]
     [InlineData(BethesdaGame.FalloutNewVegas)]
     [InlineData(BethesdaGame.Skyrim)]
+    [InlineData(BethesdaGame.Fallout4)]
     public void EveryCatalogIconKey_ResolvesToEmbeddedPng(BethesdaGame game)
     {
         var withIcons = MapMarkerCatalog.For(game)
@@ -32,12 +33,14 @@ public class MapMarkerIconProviderTests
         }
     }
 
-    [Fact]
-    public void Skyrim_HasAll52BaseIcons()
+    [Theory]
+    [InlineData(BethesdaGame.Skyrim, 52)]
+    [InlineData(BethesdaGame.Fallout4, 50)]
+    public void EmbeddedGame_HasExpectedIconCount(BethesdaGame game, int expected)
     {
-        var count = MapMarkerCatalog.For(BethesdaGame.Skyrim)
+        var count = MapMarkerCatalog.For(game)
             .Count(e => !string.IsNullOrEmpty(e.IconKey) && MapMarkerIconProvider.GetIconPng(e.IconKey) is not null);
-        Assert.Equal(52, count);
+        Assert.Equal(expected, count);
     }
 
     [Theory]

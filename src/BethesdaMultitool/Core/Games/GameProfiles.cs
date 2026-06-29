@@ -109,7 +109,7 @@ public static class GameProfiles
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["Fallout4"],
                 HasMapMarkers = true,
-                MarkerArt = MarkerArtStrategy.GlyphOnly, // authentic atlas art deferred to the FO4 atlas phase
+                MarkerArt = MarkerArtStrategy.EmbeddedTinted, // white silhouettes from MapMarkers.swf (fo4_marker_NN.png)
                 HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal
