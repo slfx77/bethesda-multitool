@@ -123,7 +123,7 @@ public static class GameProfiles
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["SeventySix", "Fallout76"],
                 HasMapMarkers = true,
-                MarkerArt = MarkerArtStrategy.GlyphOnly, // authentic atlas art deferred to the FO76 atlas phase
+                MarkerArt = MarkerArtStrategy.EmbeddedTinted, // white silhouettes from mapmarkerslibrary.swf (fo76_marker_NNN.png)
                 HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal

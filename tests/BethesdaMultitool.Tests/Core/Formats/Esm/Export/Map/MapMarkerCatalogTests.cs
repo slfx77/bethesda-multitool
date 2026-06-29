@@ -37,7 +37,6 @@ public class MapMarkerCatalogTests
     }
 
     [Theory]
-    [InlineData(BethesdaGame.Fallout76)]
     [InlineData(BethesdaGame.Morrowind)]
     [InlineData(BethesdaGame.Unknown)]
     public void Resolve_UnwiredGame_FallsBackToTypeDistinctEntry(BethesdaGame game)
@@ -71,10 +70,28 @@ public class MapMarkerCatalogTests
         Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Oblivion));
         Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Skyrim));
         Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Fallout4));
+        Assert.True(MapMarkerCatalog.HasMarkers(BethesdaGame.Fallout76));
 
-        // FO76 name table lands with its icon phase; Morrowind has no markers.
-        Assert.False(MapMarkerCatalog.HasMarkers(BethesdaGame.Fallout76));
+        // Morrowind has no map markers.
         Assert.False(MapMarkerCatalog.HasMarkers(BethesdaGame.Morrowind));
+    }
+
+    [Fact]
+    public void Resolve_Fallout76_HumanizesNamesAndKeysIcons()
+    {
+        // FO76's itU16 enum reuses FO4's base range then adds Appalachia-specific types; labels are the
+        // AS class names, humanized for display.
+        Assert.Equal("Cave", MapMarkerCatalog.Resolve(BethesdaGame.Fallout76, 0).DisplayName);
+        Assert.Equal("Vault", MapMarkerCatalog.Resolve(BethesdaGame.Fallout76, 14).DisplayName);
+        Assert.Equal("Vault 76", MapMarkerCatalog.Resolve(BethesdaGame.Fallout76, 68).DisplayName);
+        Assert.Equal("Arktos Pharma", MapMarkerCatalog.Resolve(BethesdaGame.Fallout76, 73).DisplayName);
+
+        Assert.Equal("fo76_marker_000", MapMarkerCatalog.Resolve(BethesdaGame.Fallout76, 0).IconKey);
+        Assert.Equal("fo76_marker_068", MapMarkerCatalog.Resolve(BethesdaGame.Fallout76, 68).IconKey);
+        // FO4-enum leftover with no FO76 sprite → no icon key (labeled dot).
+        Assert.Empty(MapMarkerCatalog.Resolve(BethesdaGame.Fallout76, 53).IconKey);
+        // Runtime markers (>=100) aren't ESM XMRK markers → names only.
+        Assert.Empty(MapMarkerCatalog.Resolve(BethesdaGame.Fallout76, 105).IconKey);
     }
 
     [Fact]

@@ -29,6 +29,7 @@ public static class MapMarkerCatalog
     private static readonly IReadOnlyList<MapMarkerEntry> OblivionTable = BuildOblivionTable();
     private static readonly IReadOnlyList<MapMarkerEntry> SkyrimTable = BuildSkyrimTable();
     private static readonly IReadOnlyList<MapMarkerEntry> Fallout4Table = BuildFallout4Table();
+    private static readonly IReadOnlyList<MapMarkerEntry> Fallout76Table = BuildFallout76Table();
 
     /// <summary>The full dense marker table for <paramref name="game" /> (index == raw value), or an
     ///     empty list for games whose table isn't wired yet (Skyrim/FO4/FO76 — populated with their
@@ -39,6 +40,7 @@ public static class MapMarkerCatalog
         BethesdaGame.Oblivion => OblivionTable,
         BethesdaGame.Skyrim => SkyrimTable,
         BethesdaGame.Fallout4 => Fallout4Table,
+        BethesdaGame.Fallout76 => Fallout76Table,
         _ => Empty
     };
 
@@ -186,6 +188,85 @@ public static class MapMarkerCatalog
         }
 
         return entries;
+    }
+
+    // FO76 (0..113) — names from xEdit wbDefinitionsFO76.pas, whose enum labels ARE the AS class names.
+    // Icons extracted offline from the named sprites in interface\mapmarkerslibrary.swf and embedded as
+    // fo76_marker_NNN.png. World-location types 0..99 carry icons (96 of them — Salem/Minutemen/USS
+    // Constitution/Vassal are FO4-enum leftovers with no FO76 sprite); runtime types 100..113 (door/quest/
+    // player/teammate/camp/event) are names-only (they aren't ESM XMRK markers). White silhouettes → tinted.
+    private static IReadOnlyList<MapMarkerEntry> BuildFallout76Table()
+    {
+        string[] classes =
+        [
+            "CaveMarker", "CityMarker", "EncampmentMarker", "FactoryMarker", "MonumentMarker", "MetroMarker",
+            "MilitaryBaseMarker", "LandmarkMarker", "OfficeMarker", "TownRuinsMarker", "UrbanRuinsMarker",
+            "SancHillsMarker", "SettlementMarker", "SewerMarker", "VaultMarker", "AirfieldMarker",
+            "CamperMarker", "CarMarker", "ChurchMarker", "CountryClubMarker", "CustomHouseMarker",
+            "DriveInMarker", "ElevatedHighwayMarker", "FarmMarker", "FillingStationMarker", "ForestedMarker",
+            "GoodneighborMarker", "GraveyardMarker", "HospitalMarker", "IndustrialDomeMarker",
+            "IndustrialStacksMarker", "InstituteMarker", "IrishPrideMarker", "JunkyardMarker",
+            "ObservatoryMarker", "PierMarker", "PondLakeMarker", "QuarryMarker", "RadioactiveAreaMarker",
+            "RadioTowerMarker", "SalemMarker", "SchoolMarker", "ShipwreckMarker", "SubmarineMarker",
+            "SwanPondMarker", "TownMarker", "BoSMarker", "BrownstoneMarker", "BunkerMarker", "CastleMarker",
+            "SkyscraperMarker", "LibertaliaMarker", "LowRiseMarker", "MinutemenMarker", "PoliceStationMarker",
+            "RailroadFactionMarker", "RailroadMarker", "SatelliteMarker", "SentinelMarker",
+            "USSConstitutionMarker", "MechanistMarker", "RaiderSettlementMarker", "VassalSettlementMarker",
+            "PotentialVassalSettlementMarker", "TrainStationMarker", "ElectricalSubstationMarker",
+            "FissureMarker", "Vault63Marker", "Vault76Marker", "Vault94Marker", "Vault96Marker",
+            "AmusementParkMarker", "MansionMarker", "ArktosPharmaMarker", "PowerPlantMarker", "SkiResortMarker",
+            "AppalachianAntiquesMarker", "TeapotMarker", "AgriculturalCenterMarker", "WoodShackMarker",
+            "HouseTrailerMarker", "LookoutTowerMarker", "OverlookMarker", "PumpkinMarker",
+            "CowSpotsCreameryMarker", "CabinMarker", "TrainTrackMark", "CapitalBuildingMarker",
+            "HighTechBuildingMarker", "LighthouseMarker", "ExcavatorMarker", "SpaceStationMarker",
+            "PalaceWindingPathMarker", "TopOfTheWorldMarker", "DamMarker", "MonorailMarker",
+            "WhitespringResort", "NukaColaQuantumPlant", "MysteriousGuidestoneMarker", "PublicWorkshopMarker",
+            "DoorMarker", "QuestMarker", "DoorMarker", "QuestMarker", "PlayerSetMarker", "PlayerLocMarker",
+            "PowerArmorLocMarker", "TeammateMarker", "LastCorpseMarker", "YourCampMarker", "InWorldEventMarker",
+            "MasterFissureMarker", "NukedZoneMarker", "WaypointMarker"
+        ];
+
+        // FO4-enum leftovers with no sprite in mapmarkerslibrary.swf, and runtime markers (>=100) that
+        // never appear as ESM XMRK markers — both get a labeled distinct dot instead of an icon.
+        var noIcon = new HashSet<int> { 40, 53, 59, 62 };
+
+        var entries = new MapMarkerEntry[classes.Length];
+        for (var raw = 0; raw < classes.Length; raw++)
+        {
+            var iconKey = raw < 100 && !noIcon.Contains(raw) ? $"fo76_marker_{raw:D3}" : "";
+            var (r, g, b) = HsvToRgb((raw * 137.508) % 360.0, 0.45, 0.85);
+            entries[raw] = new MapMarkerEntry(raw, Humanize(classes[raw]), iconKey, new MapMarkerFallback("", r, g, b));
+        }
+
+        return entries;
+    }
+
+    // Turn an AS3 marker class name into a readable type label: drop a trailing "Marker", then break
+    // camelCase + letter/digit runs (e.g. "Vault63Marker" → "Vault 63", "ArktosPharmaMarker" → "Arktos Pharma").
+    private static string Humanize(string className)
+    {
+        var s = className.EndsWith("Marker", StringComparison.Ordinal)
+            ? className[..^"Marker".Length]
+            : className;
+        if (s.Length == 0) return className;
+
+        var sb = new System.Text.StringBuilder(s.Length + 8);
+        for (var i = 0; i < s.Length; i++)
+        {
+            var c = s[i];
+            if (i > 0)
+            {
+                var p = s[i - 1];
+                var boundary = (char.IsUpper(c) && char.IsLower(p))
+                    || (char.IsDigit(c) && char.IsLetter(p))
+                    || (char.IsLetter(c) && char.IsDigit(p));
+                if (boundary) sb.Append(' ');
+            }
+
+            sb.Append(c);
+        }
+
+        return sb.ToString();
     }
 
     private static string EmbeddedIconStem(MapMarkerType type) => type switch

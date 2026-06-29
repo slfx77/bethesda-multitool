@@ -17,6 +17,7 @@ public class MapMarkerIconProviderTests
     [InlineData(BethesdaGame.FalloutNewVegas)]
     [InlineData(BethesdaGame.Skyrim)]
     [InlineData(BethesdaGame.Fallout4)]
+    [InlineData(BethesdaGame.Fallout76)]
     public void EveryCatalogIconKey_ResolvesToEmbeddedPng(BethesdaGame game)
     {
         var withIcons = MapMarkerCatalog.For(game)
@@ -36,6 +37,7 @@ public class MapMarkerIconProviderTests
     [Theory]
     [InlineData(BethesdaGame.Skyrim, 52)]
     [InlineData(BethesdaGame.Fallout4, 81)]
+    [InlineData(BethesdaGame.Fallout76, 96)]
     public void EmbeddedGame_HasExpectedIconCount(BethesdaGame game, int expected)
     {
         var count = MapMarkerCatalog.For(game)
