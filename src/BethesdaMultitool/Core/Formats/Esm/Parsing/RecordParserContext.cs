@@ -604,8 +604,11 @@ public sealed class RecordParserContext
                     {
                         if (sub.Signature == "FULL" && sub.DataLength > 0)
                         {
-                            var name = EsmStringUtils.ReadNullTermString(
-                                data.AsSpan(sub.DataOffset, sub.DataLength));
+                            // Table-aware: on a localized plugin (Skyrim/FO4/FO76) a FULL holds a 4-byte
+                            // .STRINGS index, not inline text. ReadFullName resolves it; reading raw bytes
+                            // here would seed FormIdToFullName with mojibake that then wins the TryAdd race
+                            // against the schema parser's resolved name. No-op on non-localized plugins.
+                            var name = ReadFullName(data.AsSpan(sub.DataOffset, sub.DataLength));
                             if (!string.IsNullOrEmpty(name))
                             {
                                 FormIdToFullName.TryAdd(record.FormId, name);
@@ -709,7 +712,11 @@ public sealed class RecordParserContext
 
     private void PrePopulateFullNames(EsmRecordScanResult scanResult)
     {
-        if (scanResult.FullNames.Count == 0)
+        // On a localized plugin (Skyrim/FO4/FO76) the scanner captured each FULL as raw bytes — but a FULL is
+        // a 4-byte .STRINGS index there, so scanResult.FullNames hold mojibake (e.g. "1\xAD"), not real names.
+        // Seeding them would win the first-write-wins TryAdd race against the schema parser's table-resolved
+        // name, so skip the pre-pop entirely and let the table-aware parse populate FormIdToFullName.
+        if (LocalizedStrings != null || scanResult.FullNames.Count == 0)
         {
             return;
         }
