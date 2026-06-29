@@ -53,7 +53,7 @@ public static class GameProfiles
                 HasRecordVersionTrailer = false,
                 MasterFileHints = ["Oblivion"],
                 HasMapMarkers = true,
-                MarkerArt = MarkerArtStrategy.GlyphOnly, // authentic atlas art deferred to the Oblivion atlas phase
+                MarkerArt = MarkerArtStrategy.EmbeddedColored, // parchment-tile icons from menus\map\world (oblivion_marker_NN.png)
                 DefaultLandscapeDiffuse = OblivionDiffuse,
                 DefaultLandscapeNormal = OblivionNormal
             },

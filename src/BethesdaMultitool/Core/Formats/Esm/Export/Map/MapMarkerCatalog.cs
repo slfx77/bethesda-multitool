@@ -91,8 +91,10 @@ public static class MapMarkerCatalog
         return entries;
     }
 
-    // Oblivion (0..12) — values from xEdit wbDefinitionsTES4.pas. Glyph/color are the deferred-art
-    // fallback (Oblivion's authentic icons are atlas-packed; see the Oblivion atlas phase).
+    // Oblivion (0..12) — values from xEdit wbDefinitionsTES4.pas. Authentic icons are the individual
+    // parchment-tile DDS in textures\menus\map\world\ (embedded as oblivion_marker_NN.png, drawn untinted
+    // = EmbeddedColored). The glyph/color in each row is the dot fallback for None (0) and Oblivion Gate
+    // (11), which have no dedicated icon.
     private static IReadOnlyList<MapMarkerEntry> BuildOblivionTable()
     {
         (string Name, string IconKey, string Glyph, byte R, byte G, byte B) [] rows =
@@ -115,7 +117,10 @@ public static class MapMarkerCatalog
         var entries = new MapMarkerEntry[rows.Length];
         for (var raw = 0; raw < rows.Length; raw++)
         {
-            var (name, iconKey, glyph, r, g, b) = rows[raw];
+            var (name, _, glyph, r, g, b) = rows[raw];
+            // Authentic parchment-tile icons (textures\menus\map\world\world_map_icon_*.dds) exist for
+            // types 1..10 + 12 (Door); None (0) and Oblivion Gate (11, no dedicated icon) fall to a dot.
+            var iconKey = raw is (>= 1 and <= 10) or 12 ? $"oblivion_marker_{raw:D2}" : "";
             entries[raw] = new MapMarkerEntry(raw, name, iconKey, new MapMarkerFallback(glyph, r, g, b));
         }
 

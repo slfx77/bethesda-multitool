@@ -116,9 +116,12 @@ public class GameProfilesTests
         Assert.Equal(MarkerArtStrategy.EmbeddedTinted, GameProfiles.For(BethesdaGame.Fallout76).MarkerArt);
         Assert.True(GameProfiles.For(BethesdaGame.Fallout76).MarkersAreTinted);
 
-        // Oblivion is glyph-only until its atlas icons are extracted + wired (and never tinted).
-        Assert.Equal(MarkerArtStrategy.GlyphOnly, GameProfiles.For(BethesdaGame.Oblivion).MarkerArt);
+        // Oblivion uses its parchment-tile icons drawn untinted (EmbeddedColored, like Skyrim).
+        Assert.Equal(MarkerArtStrategy.EmbeddedColored, GameProfiles.For(BethesdaGame.Oblivion).MarkerArt);
         Assert.False(GameProfiles.For(BethesdaGame.Oblivion).MarkersAreTinted);
+
+        // Morrowind has no map markers (glyph-only default, never reached).
+        Assert.False(GameProfiles.For(BethesdaGame.Morrowind).HasMapMarkers);
     }
 }
 

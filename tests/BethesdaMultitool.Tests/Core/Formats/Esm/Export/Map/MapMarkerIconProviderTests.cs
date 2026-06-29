@@ -15,6 +15,7 @@ public class MapMarkerIconProviderTests
 
     [Theory]
     [InlineData(BethesdaGame.FalloutNewVegas)]
+    [InlineData(BethesdaGame.Oblivion)]
     [InlineData(BethesdaGame.Skyrim)]
     [InlineData(BethesdaGame.Fallout4)]
     [InlineData(BethesdaGame.Fallout76)]
@@ -35,6 +36,7 @@ public class MapMarkerIconProviderTests
     }
 
     [Theory]
+    [InlineData(BethesdaGame.Oblivion, 11)]
     [InlineData(BethesdaGame.Skyrim, 52)]
     [InlineData(BethesdaGame.Fallout4, 81)]
     [InlineData(BethesdaGame.Fallout76, 96)]
