@@ -191,9 +191,11 @@ public sealed class RecordParserContext
 
     /// <summary>
     ///     Read a localizable string subrecord. For a localized plugin the subrecord holds a 4-byte
-    ///     string ID resolved against the matching external table; otherwise (and for any unknown
-    ///     ID) the bytes are read as an inline Windows-1252 null-terminated string. This is what
-    ///     fixes localized plugins showing a single garbage character for FULL/DESC/dialogue text.
+    ///     string ID resolved against the matching external table; for a non-localized plugin the bytes are
+    ///     inline Windows-1252 null-terminated text. On a localized plugin a MISSED lookup returns empty (not
+    ///     the index bytes rendered as text) so callers fall back to the EditorID rather than showing mojibake
+    ///     — some IDs are genuinely absent from the table (e.g. internal dialogue topics whose player-prompt
+    ///     string was never authored).
     /// </summary>
     public string ReadLString(ReadOnlySpan<byte> subData, LStringKind kind)
     {
@@ -205,11 +207,7 @@ public sealed class RecordParserContext
             }
 
             var stringId = BinaryPrimitives.ReadUInt32LittleEndian(subData);
-            var resolved = tables.Resolve(stringId, kind);
-            if (resolved != null)
-            {
-                return resolved;
-            }
+            return tables.Resolve(stringId, kind) ?? string.Empty;
         }
 
         return EsmStringUtils.ReadNullTermString(subData);
@@ -223,6 +221,12 @@ public sealed class RecordParserContext
 
     /// <summary>Read a dialogue response text subrecord (resolves via the .ILSTRINGS table if localized).</summary>
     public string ReadDialogueText(ReadOnlySpan<byte> subData) => ReadLString(subData, LStringKind.IlStrings);
+
+    /// <summary>
+    ///     Read a dialogue prompt subrecord (INFO RNAM). xEdit models this as <c>wbLStringKC</c> like FULL, so
+    ///     it resolves via the .STRINGS table (not .ILSTRINGS, which holds the longer NAM1 response text).
+    /// </summary>
+    public string ReadPromptText(ReadOnlySpan<byte> subData) => ReadLString(subData, LStringKind.Strings);
 
     /// <summary>
     ///     Mutable: handlers write to this during parsing (e.g., EDID subrecord enrichment).

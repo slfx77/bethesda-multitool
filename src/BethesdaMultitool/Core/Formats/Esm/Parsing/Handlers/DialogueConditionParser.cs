@@ -337,7 +337,11 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     currentResponseText = Context.ReadDialogueText(subData);
                     break;
                 case "RNAM":
-                    promptText = EsmStringUtils.ReadNullTermString(subData);
+                    // RNAM (Prompt) is inline text on a non-localized plugin, but a 4-byte .STRINGS index on
+                    // a localized one (Skyrim/FO4/FO76) — read it table-aware so the topic prompt that
+                    // BackfillDialogTopicPromptText surfaces as the display name resolves instead of rendering
+                    // the index bytes as mojibake.
+                    promptText = Context.ReadPromptText(subData);
                     break;
                 case "TRDT" when sub.DataLength >= 24:
                 {
