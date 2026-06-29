@@ -663,7 +663,7 @@ internal static class EsmBrowserTreeBuilder
             resolver != null && RecordProfiles.Get(profiled.RecordType) is { } profile)
         {
             var model = profile.Build(profiled.FormId, profiled.EditorId, profiled.FullName, profiledTree,
-                allRecords?.Game ?? BethesdaGame.Unknown, resolver);
+                allRecords?.Game ?? BethesdaGame.Unknown, resolver, allRecords);
             return RecordDetailPropertyAdapter.Convert(model);
         }
 

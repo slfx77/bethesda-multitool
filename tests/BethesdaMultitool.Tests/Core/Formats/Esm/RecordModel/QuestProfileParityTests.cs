@@ -63,7 +63,7 @@ public class QuestProfileParityTests
             var bare = quest with { Variables = [], RelatedNpcFormIds = [] };
             var typed = Serialize(RecordDetailBuilders.BuildQuest(bare, resolver));
             var profiled = Serialize(profile.Build(
-                formId, quest.EditorId, quest.FullName, tree, BethesdaGame.FalloutNewVegas, resolver));
+                formId, quest.EditorId, quest.FullName, tree, BethesdaGame.FalloutNewVegas, resolver, result.Records));
 
             compared++;
             if (typed != profiled && mismatches.Count < 5)

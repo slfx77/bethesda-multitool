@@ -31,7 +31,8 @@ internal static class SchemaTreeEnricher
         "WEAP",
         "CREA",
         "QUST",
-        "PACK"
+        "PACK",
+        "DIAL"
     };
 
     public static Dictionary<uint, IReadOnlyList<DecodedNode>> Enrich(

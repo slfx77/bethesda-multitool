@@ -38,7 +38,7 @@ internal sealed class WeaponProfile : IRecordProfile
 
     public RecordDetailModel Build(
         uint formId, string? editorId, string? displayName,
-        IReadOnlyList<DecodedNode> tree, BethesdaGame game, FormIdResolver resolver)
+        IReadOnlyList<DecodedNode> tree, BethesdaGame game, FormIdResolver resolver, RecordCollection? records)
     {
         var data = TopBySignature(tree, "DATA");
         var dnam = TopBySignature(tree, "DNAM");

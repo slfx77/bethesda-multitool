@@ -29,7 +29,7 @@ internal sealed class ArmorProfile : IRecordProfile
 
     public RecordDetailModel Build(
         uint formId, string? editorId, string? displayName,
-        IReadOnlyList<DecodedNode> tree, BethesdaGame game, FormIdResolver resolver)
+        IReadOnlyList<DecodedNode> tree, BethesdaGame game, FormIdResolver resolver, RecordCollection? records)
     {
         var (damageResistance, damageThreshold) = DefenseStats(tree);
         var data = TopBySignature(tree, "DATA");

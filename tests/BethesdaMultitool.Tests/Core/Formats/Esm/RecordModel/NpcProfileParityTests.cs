@@ -61,7 +61,7 @@ public class NpcProfileParityTests
 
             var typed = Serialize(RecordDetailBuilders.BuildNpc(npc, resolver));
             var profiled = Serialize(profile.Build(
-                formId, npc.EditorId, npc.FullName, tree, BethesdaGame.FalloutNewVegas, resolver));
+                formId, npc.EditorId, npc.FullName, tree, BethesdaGame.FalloutNewVegas, resolver, result.Records));
 
             compared++;
             if (typed != profiled && mismatches.Count < 5)

@@ -29,7 +29,7 @@ internal sealed class ProfileShowRenderer : IRecordDisplayRenderer
         }
 
         var model = profile.Build(
-            record.FormId, record.EditorId, record.FullName, record.DecodedTree, records.Game, resolver);
+            record.FormId, record.EditorId, record.FullName, record.DecodedTree, records.Game, resolver, records);
         SharedRecordDetailShowRenderer.Render(model);
         return true;
     }

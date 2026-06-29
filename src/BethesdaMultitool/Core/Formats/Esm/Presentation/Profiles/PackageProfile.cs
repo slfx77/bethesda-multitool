@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Games;
@@ -26,7 +27,7 @@ internal sealed class PackageProfile : IRecordProfile
 
     public RecordDetailModel Build(
         uint formId, string? editorId, string? displayName,
-        IReadOnlyList<DecodedNode> tree, BethesdaGame game, FormIdResolver resolver)
+        IReadOnlyList<DecodedNode> tree, BethesdaGame game, FormIdResolver resolver, RecordCollection? records)
     {
         var pkdt = TopBySignature(tree, "PKDT");
         var data = pkdt is not null

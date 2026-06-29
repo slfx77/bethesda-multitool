@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Games;
@@ -28,7 +29,7 @@ internal sealed class NpcProfile : IRecordProfile
 
     public RecordDetailModel Build(
         uint formId, string? editorId, string? displayName,
-        IReadOnlyList<DecodedNode> tree, BethesdaGame game, FormIdResolver resolver)
+        IReadOnlyList<DecodedNode> tree, BethesdaGame game, FormIdResolver resolver, RecordCollection? records)
     {
         var isFalloutSpecial = game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3;
 

@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Games;
 
@@ -21,11 +22,17 @@ internal interface IRecordProfile
     /// <summary>The 4-char record type this profile renders (e.g. "NPC_").</summary>
     string RecordType { get; }
 
+    /// <param name="records">
+    ///     The full record set, when available, for profiles that surface cross-record data the record's own
+    ///     subrecords don't carry (e.g. DIAL's child INFO list). Null when the caller has no collection;
+    ///     subrecord-local profiles ignore it.
+    /// </param>
     RecordDetailModel Build(
         uint formId,
         string? editorId,
         string? displayName,
         IReadOnlyList<DecodedNode> tree,
         BethesdaGame game,
-        FormIdResolver resolver);
+        FormIdResolver resolver,
+        RecordCollection? records);
 }

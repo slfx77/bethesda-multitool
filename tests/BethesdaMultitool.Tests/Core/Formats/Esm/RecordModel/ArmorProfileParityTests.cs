@@ -58,7 +58,7 @@ public class ArmorProfileParityTests
 
             var typed = Serialize(RecordDetailBuilders.BuildArmor(armor, resolver));
             var profiled = Serialize(profile.Build(
-                formId, armor.EditorId, armor.FullName, tree, BethesdaGame.FalloutNewVegas, resolver));
+                formId, armor.EditorId, armor.FullName, tree, BethesdaGame.FalloutNewVegas, resolver, result.Records));
 
             compared++;
             if (typed != profiled && mismatches.Count < 5)

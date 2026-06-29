@@ -58,7 +58,7 @@ public class WeaponProfileParityTests
 
             var typed = Serialize(RecordDetailBuilders.BuildWeapon(weapon, resolver));
             var profiled = Serialize(profile.Build(
-                formId, weapon.EditorId, weapon.FullName, tree, BethesdaGame.FalloutNewVegas, resolver));
+                formId, weapon.EditorId, weapon.FullName, tree, BethesdaGame.FalloutNewVegas, resolver, result.Records));
 
             compared++;
             if (typed != profiled && mismatches.Count < 5)

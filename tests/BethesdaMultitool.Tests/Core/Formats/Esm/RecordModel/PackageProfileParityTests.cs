@@ -66,7 +66,7 @@ public class PackageProfileParityTests
             };
             var typed = Serialize(RecordDetailBuilders.BuildPackage(bare, resolver));
             var profiled = Serialize(profile.Build(
-                formId, package.EditorId, null, tree, BethesdaGame.FalloutNewVegas, resolver));
+                formId, package.EditorId, null, tree, BethesdaGame.FalloutNewVegas, resolver, result.Records));
 
             compared++;
             if (typed != profiled && mismatches.Count < 5)

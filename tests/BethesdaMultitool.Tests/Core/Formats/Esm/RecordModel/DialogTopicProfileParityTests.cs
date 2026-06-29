@@ -9,13 +9,14 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 
 /// <summary>
-///     The FNV parity gate for the CREA presentation profile. For every FNV creature record, the schema
-///     <see cref="CreatureProfile" /> (reading the DecodedTree) must build the EXACT same
-///     <see cref="RecordDetailModel" /> the hand-written typed <see cref="RecordDetailBuilders.BuildCreature" />
-///     produces (reading the typed CreatureRecord) — all six sections, every label/value/link. Skipped when no
-///     FNV plugin is available.
+///     The FNV parity gate for the DIAL presentation profile. For every FNV dialog topic, the schema
+///     <see cref="DialogTopicProfile" /> (tree + record set) must build the EXACT same
+///     <see cref="RecordDetailModel" /> the typed <see cref="RecordDetailBuilders.BuildDialogTopic" /> produces
+///     for an ESM load. Both sides pull the "INFO Records" section from the same <c>records.Dialogues</c>;
+///     the runtime-only fields (Responses / Journal Index / Dummy Prompt) are 0 / 0 / null on both. Skipped
+///     when no FNV plugin is available.
 /// </summary>
-public class CreatureProfileParityTests
+public class DialogTopicProfileParityTests
 {
     private static string? ResolveFalloutNvEsm()
     {
@@ -34,7 +35,7 @@ public class CreatureProfileParityTests
     }
 
     [Fact]
-    public async Task CreatureProfile_Reproduces_BuildCreature_Exactly_For_Fnv()
+    public async Task DialogTopicProfile_Reproduces_BuildDialogTopic_For_Fnv()
     {
         var esm = ResolveFalloutNvEsm();
         Assert.SkipUnless(esm is not null,
@@ -44,32 +45,36 @@ public class CreatureProfileParityTests
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         var resolver = new FormIdResolver(result.Records.FormIdToEditorId, result.Records.FormIdToDisplayName);
-        var profile = new CreatureProfile();
-        var creaturesByFormId = result.Records.Creatures.ToDictionary(c => c.FormId);
+        var profile = new DialogTopicProfile();
+        var topicsByFormId = result.Records.DialogTopics.ToDictionary(t => t.FormId);
 
         var compared = 0;
         var mismatches = new List<string>();
         foreach (var (formId, tree) in result.Records.DecodedTreesByFormId)
         {
-            if (!creaturesByFormId.TryGetValue(formId, out var creature))
+            if (!topicsByFormId.TryGetValue(formId, out var topic))
             {
                 continue;
             }
 
-            var typed = Serialize(RecordDetailBuilders.BuildCreature(creature, resolver));
+            // Dummy Prompt is an enrichment-derived prompt the tree can't reproduce — strip it from the
+            // reference (the profile omits it; FNV keeps BuildDialogTopic for the full display).
+            var bare = topic with { DummyPrompt = null };
+            var typed = Serialize(RecordDetailBuilders.BuildDialogTopic(bare, result.Records, resolver));
             var profiled = Serialize(profile.Build(
-                formId, creature.EditorId, creature.FullName, tree, BethesdaGame.FalloutNewVegas, resolver, result.Records));
+                formId, topic.EditorId, topic.FullName, tree, BethesdaGame.FalloutNewVegas, resolver,
+                result.Records));
 
             compared++;
             if (typed != profiled && mismatches.Count < 5)
             {
-                mismatches.Add($"CREA 0x{formId:X8} ({creature.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
+                mismatches.Add($"DIAL 0x{formId:X8} ({topic.EditorId}):\n--- typed ---\n{typed}\n--- profile ---\n{profiled}");
             }
         }
 
-        Assert.True(compared > 50, $"Expected to compare many FNV creatures; got {compared}.");
+        Assert.True(compared > 50, $"Expected to compare many FNV dialog topics; got {compared}.");
         Assert.True(mismatches.Count == 0,
-            $"{mismatches.Count} of {compared} creature models diverged from the typed builder:\n\n" +
+            $"{mismatches.Count} of {compared} topic models diverged from the typed builder:\n\n" +
             string.Join("\n\n", mismatches));
     }
 

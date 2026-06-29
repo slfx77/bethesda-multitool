@@ -14,7 +14,7 @@ internal static class RecordProfiles
         new IRecordProfile[]
             {
                 new NpcProfile(), new ArmorProfile(), new WeaponProfile(), new CreatureProfile(),
-                new QuestProfile(), new PackageProfile()
+                new QuestProfile(), new PackageProfile(), new DialogTopicProfile()
             }
             .ToDictionary(p => p.RecordType, p => p, StringComparer.Ordinal);
 
