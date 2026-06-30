@@ -12,22 +12,55 @@ namespace EsmSchemaGen.Ir;
 public static class CommonHelpers
 {
     /// <summary>Build the IR for a Common helper call, or null if the name is not a known helper.</summary>
-    public static MemberDef? TryBuild(string name, IReadOnlyList<WbValue> args) => name.ToLowerInvariant() switch
+    public static MemberDef? TryBuild(string name, IReadOnlyList<WbValue> args, bool isFo4Plus = false) =>
+        name.ToLowerInvariant() switch
+        {
+            // wbByteColors(aSignature?, aName='Color', R, G, B) — a 3-byte RGB struct (Common.pas:516-527).
+            "wbbytecolors" => ByteColors(args),
+            // wbVec3(aSignature?, aName) — three little-endian floats (X, Y, Z); ubiquitous across all games.
+            "wbvec3" => Vec3(args),
+            // wbOBND — the OBND Object Bounds subrecord: six int16 (X1,Y1,Z1,X2,Y2,Z2) (Common.pas:5654).
+            "wbobnd" => Obnd(),
+            // wbGenericModel — the per-game model RStruct (MODL/MODB/MODT/MODS/MODD) (FNV.pas:1080).
+            "wbgenericmodel" => GenericModel(),
+            // wbVec3PosRot — a position+rotation struct: six floats (X,Y,Z position then X,Y,Z rotation).
+            "wbvec3posrot" => Vec3PosRot(args),
+            // wbModelInfo(aSignature) — the MODT-style model-info subrecord: opaque texture-hash bytes.
+            "wbmodelinfo" => ModelInfo(args),
+            // wbLeveledListEntry(aObjectName, aSigs) — the LVLO leveled-list entry struct (Common.pas:5704).
+            "wbleveledlistentry" => LeveledListEntry(args, isFo4Plus),
+            _ => null
+        };
+
+    // wbStructExSK(LVLO, …, [ Level:u16, unused(2), FormID(aObjectName→aSigs), Count:u16,
+    //   IsFO4Plus(ChanceNone:u8, unused(2)), IsFO4Plus(unused(1), nil) ]). 12 bytes for every game; only the
+    // trailing 2 bytes differ between pre-FO4 (two unused) and FO4+ (a Chance None u8 then one unused).
+    private static StructDef LeveledListEntry(IReadOnlyList<WbValue> args, bool isFo4Plus)
     {
-        // wbByteColors(aSignature?, aName='Color', R, G, B) — a 3-byte RGB struct (Common.pas:516-527).
-        "wbbytecolors" => ByteColors(args),
-        // wbVec3(aSignature?, aName) — three little-endian floats (X, Y, Z); ubiquitous across all games.
-        "wbvec3" => Vec3(args),
-        // wbOBND — the OBND Object Bounds subrecord: six int16 (X1,Y1,Z1,X2,Y2,Z2) (Common.pas:5654).
-        "wbobnd" => Obnd(),
-        // wbGenericModel — the per-game model RStruct (MODL/MODB/MODT/MODS/MODD) (FNV.pas:1080).
-        "wbgenericmodel" => GenericModel(),
-        // wbVec3PosRot — a position+rotation struct: six floats (X,Y,Z position then X,Y,Z rotation).
-        "wbvec3posrot" => Vec3PosRot(args),
-        // wbModelInfo(aSignature) — the MODT-style model-info subrecord: opaque texture-hash bytes.
-        "wbmodelinfo" => ModelInfo(args),
-        _ => null
-    };
+        var objectName = (args.ElementAtOrDefault(0) as WbStr)?.Value ?? "Reference";
+        var targets = (args.ElementAtOrDefault(1) as WbList)?.Items
+            .OfType<WbIdent>().Select(i => i.Name).ToList() ?? [];
+
+        var members = new List<MemberDef>
+        {
+            new FieldDef(PrimType.U16) { Name = "Level" },
+            new UnusedDef(2),
+            new FormIdDef { Name = objectName, Targets = targets },
+            new FieldDef(PrimType.U16) { Name = "Count", DefaultValue = 1 }
+        };
+
+        if (isFo4Plus)
+        {
+            members.Add(new FieldDef(PrimType.U8) { Name = "Chance None" });
+            members.Add(new UnusedDef(1));
+        }
+        else
+        {
+            members.Add(new UnusedDef(2));
+        }
+
+        return new StructDef(members) { Signature = "LVLO", Name = "Leveled List Entry" };
+    }
 
     private static StructDef Vec3PosRot(IReadOnlyList<WbValue> args)
     {

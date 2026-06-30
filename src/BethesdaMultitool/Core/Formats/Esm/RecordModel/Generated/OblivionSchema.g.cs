@@ -1341,7 +1341,15 @@ public static class OblivionSchema
                 new FieldDef(PrimType.U8) { Signature = "LVLD", Name = "Chance none", Required = true },
                 new FieldDef(PrimType.U8) { Signature = "LVLF", Name = "Flags", Required = true, InlineFlags = new FlagsDef(null, [new FlagMember(0, "Calculate from all levels <= player's level"), new FlagMember(1, "Calculate for each item in count")]) },
                 new ArrayDef(
-                    new RawMemberDef("wbLeveledListEntry")
+                    new StructDef(
+                        [
+                            new FieldDef(PrimType.U16) { Name = "Level" },
+                            new UnusedDef(2),
+                            new FormIdDef { Name = "Creature", Targets = ["CREA", "LVLC", "NPC_"] },
+                            new FieldDef(PrimType.U16) { Name = "Count", DefaultValue = 1 },
+                            new UnusedDef(2)
+                        ]
+                    ) { Signature = "LVLO", Name = "Leveled List Entry" }
                 ) { Name = "Leveled List Entries", Count = 0 },
                 new FormIdDef { Signature = "SCRI", Name = "Script", Targets = ["SCPT"] },
                 new FormIdDef { Signature = "TNAM", Name = "Creature template", Targets = ["CREA", "NPC_"] }
@@ -1353,7 +1361,15 @@ public static class OblivionSchema
                 new FieldDef(PrimType.U8) { Signature = "LVLD", Name = "Chance none", Required = true },
                 new FieldDef(PrimType.U8) { Signature = "LVLF", Name = "Flags", Required = true, InlineFlags = new FlagsDef(null, [new FlagMember(0, "Calculate from all levels <= player's level"), new FlagMember(1, "Calculate for each item in count")]) },
                 new ArrayDef(
-                    new RawMemberDef("wbLeveledListEntry")
+                    new StructDef(
+                        [
+                            new FieldDef(PrimType.U16) { Name = "Level" },
+                            new UnusedDef(2),
+                            new FormIdDef { Name = "Item", Targets = ["ALCH", "AMMO", "APPA", "ARMO", "BOOK", "CLOT", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SGST", "SLGM", "WEAP"] },
+                            new FieldDef(PrimType.U16) { Name = "Count", DefaultValue = 1 },
+                            new UnusedDef(2)
+                        ]
+                    ) { Signature = "LVLO", Name = "Leveled List Entry" }
                 ) { Name = "Leveled List Entries", Count = 0 },
                 new UnusedDef(1)
             ]
@@ -1364,7 +1380,15 @@ public static class OblivionSchema
                 new FieldDef(PrimType.U8) { Signature = "LVLD", Name = "Chance none", Required = true },
                 new FieldDef(PrimType.U8) { Signature = "LVLF", Name = "Flags", Required = true, InlineFlags = new FlagsDef(null, [new FlagMember(0, "Calculate from all levels <= player's level"), new FlagMember(1, "Calculate for each item in count"), new FlagMember(2, "Use all spells")]) },
                 new ArrayDef(
-                    new RawMemberDef("wbLeveledListEntry")
+                    new StructDef(
+                        [
+                            new FieldDef(PrimType.U16) { Name = "Level" },
+                            new UnusedDef(2),
+                            new FormIdDef { Name = "Spell", Targets = ["LVSP", "SPEL"] },
+                            new FieldDef(PrimType.U16) { Name = "Count", DefaultValue = 1 },
+                            new UnusedDef(2)
+                        ]
+                    ) { Signature = "LVLO", Name = "Leveled List Entry" }
                 ) { Name = "Leveled List Entries", Count = 0 }
             ]
         ) { Name = "Leveled Spell" },

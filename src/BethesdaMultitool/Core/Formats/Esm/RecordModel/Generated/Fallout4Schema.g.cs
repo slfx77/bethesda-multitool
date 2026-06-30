@@ -9360,7 +9360,16 @@ public static class Fallout4Schema
                 new ArrayDef(
                     new StructDef(
                         [
-                            new RawMemberDef("wbLeveledListEntry"),
+                            new StructDef(
+                                [
+                                    new FieldDef(PrimType.U16) { Name = "Level" },
+                                    new UnusedDef(2),
+                                    new FormIdDef { Name = "NPC", Targets = ["LVLN", "NPC_"] },
+                                    new FieldDef(PrimType.U16) { Name = "Count", DefaultValue = 1 },
+                                    new FieldDef(PrimType.U8) { Name = "Chance None" },
+                                    new UnusedDef(1)
+                                ]
+                            ) { Signature = "LVLO", Name = "Leveled List Entry" },
                             new RawMemberDef("wbStructExSK")
                         ]
                     ) { Name = "Leveled List Entry" }
@@ -9405,7 +9414,16 @@ public static class Fallout4Schema
                 new ArrayDef(
                     new StructDef(
                         [
-                            new RawMemberDef("wbLeveledListEntry"),
+                            new StructDef(
+                                [
+                                    new FieldDef(PrimType.U16) { Name = "Level" },
+                                    new UnusedDef(2),
+                                    new FormIdDef { Name = "Item" },
+                                    new FieldDef(PrimType.U16) { Name = "Count", DefaultValue = 1 },
+                                    new FieldDef(PrimType.U8) { Name = "Chance None" },
+                                    new UnusedDef(1)
+                                ]
+                            ) { Signature = "LVLO", Name = "Leveled List Entry" },
                             new RawMemberDef("wbStructExSK")
                         ]
                     ) { Name = "Leveled List Entry" }
@@ -9442,7 +9460,16 @@ public static class Fallout4Schema
                 new ArrayDef(
                     new StructDef(
                         [
-                            new RawMemberDef("wbLeveledListEntry")
+                            new StructDef(
+                                [
+                                    new FieldDef(PrimType.U16) { Name = "Level" },
+                                    new UnusedDef(2),
+                                    new FormIdDef { Name = "Spell", Targets = ["LVSP", "SPEL"] },
+                                    new FieldDef(PrimType.U16) { Name = "Count", DefaultValue = 1 },
+                                    new FieldDef(PrimType.U8) { Name = "Chance None" },
+                                    new UnusedDef(1)
+                                ]
+                            ) { Signature = "LVLO", Name = "Leveled List Entry" }
                         ]
                     ) { Name = "Leveled List Entry" }
                 ) { Name = "Leveled List Entries", Count = 0 }

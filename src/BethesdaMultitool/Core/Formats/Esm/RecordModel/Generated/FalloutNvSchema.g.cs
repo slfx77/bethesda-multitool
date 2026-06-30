@@ -3776,7 +3776,15 @@ public static class FalloutNvSchema
                 new ArrayDef(
                     new StructDef(
                         [
-                            new RawMemberDef("wbLeveledListEntry"),
+                            new StructDef(
+                                [
+                                    new FieldDef(PrimType.U16) { Name = "Level" },
+                                    new UnusedDef(2),
+                                    new FormIdDef { Name = "Creature", Targets = ["CREA", "LVLC"] },
+                                    new FieldDef(PrimType.U16) { Name = "Count", DefaultValue = 1 },
+                                    new UnusedDef(2)
+                                ]
+                            ) { Signature = "LVLO", Name = "Leveled List Entry" },
                             new RawMemberDef("wbStructExSK")
                         ]
                     ) { Name = "Leveled List Entry" }
@@ -3810,7 +3818,15 @@ public static class FalloutNvSchema
                 new ArrayDef(
                     new StructDef(
                         [
-                            new RawMemberDef("wbLeveledListEntry"),
+                            new StructDef(
+                                [
+                                    new FieldDef(PrimType.U16) { Name = "Level" },
+                                    new UnusedDef(2),
+                                    new FormIdDef { Name = "NPC", Targets = ["LVLN", "NPC_"] },
+                                    new FieldDef(PrimType.U16) { Name = "Count", DefaultValue = 1 },
+                                    new UnusedDef(2)
+                                ]
+                            ) { Signature = "LVLO", Name = "Leveled List Entry" },
                             new RawMemberDef("wbStructExSK")
                         ]
                     ) { Name = "Leveled List Entry" }
@@ -3845,7 +3861,15 @@ public static class FalloutNvSchema
                 new ArrayDef(
                     new StructDef(
                         [
-                            new RawMemberDef("wbLeveledListEntry"),
+                            new StructDef(
+                                [
+                                    new FieldDef(PrimType.U16) { Name = "Level" },
+                                    new UnusedDef(2),
+                                    new FormIdDef { Name = "Item", Targets = ["ALCH", "AMMO", "ARMO", "BOOK", "CCRD", "CHIP", "CMNY", "IMOD", "KEYM", "LVLI", "MISC", "NOTE", "WEAP"] },
+                                    new FieldDef(PrimType.U16) { Name = "Count", DefaultValue = 1 },
+                                    new UnusedDef(2)
+                                ]
+                            ) { Signature = "LVLO", Name = "Leveled List Entry" },
                             new RawMemberDef("wbStructExSK")
                         ]
                     ) { Name = "Leveled List Entry" }

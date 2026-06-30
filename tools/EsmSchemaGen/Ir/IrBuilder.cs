@@ -13,6 +13,13 @@ public sealed class IrBuilder
     /// <summary>Count of each unmapped <c>wb*</c> call/symbol name encountered, for coverage reporting.</summary>
     public Dictionary<string, int> UnknownCalls { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>
+    ///     True when emitting a Fallout 4 / 76 (or later) game, so Common helpers whose layout branches on
+    ///     <c>IsFO4Plus(...)</c> (e.g. <c>wbLeveledListEntry</c>) pick the post-FO4 variant. Set per file by
+    ///     <see cref="DefinitionsFileParser.LoadWithCommon" /> from the definitions filename.
+    /// </summary>
+    public bool IsFo4Plus { get; set; }
+
     // Pascal identifiers are case-insensitive, so all symbol/builder name matching is OrdinalIgnoreCase
     // (xEdit's sources mix casings, e.g. wbFormIDCk / wbFormIDCK / wbFormIDck for the same function).
     private readonly Dictionary<string, MemberDef> _symbols = new(StringComparer.OrdinalIgnoreCase);
@@ -178,7 +185,7 @@ public sealed class IrBuilder
                     return symbol;
                 }
 
-                return CommonHelpers.TryBuild(call.Name, args) ?? Unknown(call.Name);
+                return CommonHelpers.TryBuild(call.Name, args, IsFo4Plus) ?? Unknown(call.Name);
         }
     }
 
@@ -355,7 +362,7 @@ public sealed class IrBuilder
 
         // A bare helper reference — a Common function invoked with all-default args and no parens
         // (Pascal allows `wbOBND` / `wbGenericModel` without `()`), so it parses as an identifier.
-        if (CommonHelpers.TryBuild(name, []) is { } helper)
+        if (CommonHelpers.TryBuild(name, [], IsFo4Plus) is { } helper)
         {
             return helper;
         }

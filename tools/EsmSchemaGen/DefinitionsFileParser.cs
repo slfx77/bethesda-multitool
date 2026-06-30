@@ -33,6 +33,13 @@ public sealed class DefinitionsFileParser
         var parser = new DefinitionsFileParser();
         var dir = Path.GetDirectoryName(Path.GetFullPath(definitionsPath));
         var fileName = Path.GetFileName(definitionsPath);
+
+        // Some Common helpers branch their byte layout on IsFO4Plus(...) (e.g. wbLeveledListEntry's tail).
+        // The definitions filename carries the game (wbDefinitionsFO4.pas / wbDefinitionsFO76.pas), so derive
+        // the FO4+ bit once here and let CommonHelpers pick the right variant.
+        var suffix = Path.GetFileNameWithoutExtension(fileName)
+            .Replace("wbDefinitions", "", StringComparison.OrdinalIgnoreCase);
+        parser.Builder.IsFo4Plus = suffix is "FO4" or "FO76";
         if (dir is not null && !fileName.Equals("wbDefinitionsCommon.pas", StringComparison.OrdinalIgnoreCase))
         {
             var common = Path.Combine(dir, "wbDefinitionsCommon.pas");
