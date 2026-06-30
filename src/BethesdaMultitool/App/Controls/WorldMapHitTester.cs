@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Esm.Export.Map;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
@@ -420,7 +421,10 @@ internal static class WorldMapHitTester
         if (marker != null)
         {
             var markerName = marker.MarkerName ?? "Unknown";
-            var markerType = marker.MarkerType?.ToString() ?? "";
+            // Resolve the type label per game (the raw TNAM value means different things per game), not
+            // via the FO3/FNV MapMarkerType enum name.
+            var raw = marker.MarkerType.HasValue ? (int)marker.MarkerType.Value : 0;
+            var markerType = MapMarkerCatalog.Resolve(data.Game, raw).DisplayName;
             return new HoverResult($"Marker: {markerName} ({markerType})", null, true);
         }
 

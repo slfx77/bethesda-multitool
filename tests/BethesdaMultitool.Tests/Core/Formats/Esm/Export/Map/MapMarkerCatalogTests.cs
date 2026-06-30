@@ -28,11 +28,12 @@ public class MapMarkerCatalogTests
         Assert.Equal("Cave", MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 2).DisplayName);
         Assert.Equal("Oblivion Gate", MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 11).DisplayName);
 
-        // Parchment-tile icons exist for types 1..10 + 12; None (0) and Oblivion Gate (11) have none.
+        // Icons exist for types 1..11 (Oblivion Gate = the eye); None (0) and Door (12, goblet dup) have none.
         Assert.Equal("oblivion_marker_02", MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 2).IconKey);
-        Assert.Equal("oblivion_marker_12", MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 12).IconKey);
+        Assert.Equal("oblivion_marker_10", MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 10).IconKey);
+        Assert.Equal("oblivion_marker_11", MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 11).IconKey);
         Assert.Empty(MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 0).IconKey);
-        Assert.Empty(MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 11).IconKey);
+        Assert.Empty(MapMarkerCatalog.Resolve(BethesdaGame.Oblivion, 12).IconKey);
     }
 
     [Fact]

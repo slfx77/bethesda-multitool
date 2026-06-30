@@ -93,8 +93,11 @@ public static class MapMarkerCatalog
 
     // Oblivion (0..12) — values from xEdit wbDefinitionsTES4.pas. Authentic icons are the individual
     // parchment-tile DDS in textures\menus\map\world\ (embedded as oblivion_marker_NN.png, drawn untinted
-    // = EmbeddedColored). The glyph/color in each row is the dot fallback for None (0) and Oblivion Gate
-    // (11), which have no dedicated icon.
+    // = EmbeddedColored). Bethesda's filenames are misleading, so the mapping is by VISUAL content:
+    //   10 Daedric Shrine = world_map_daedric_shrine_icon.dds (the Daedric symbol)
+    //   11 Oblivion Gate  = world_map_icon_daedric_shrine.dds (the Oblivion "eye"/portal — NOT a shrine)
+    //   12 Door           = world_map_icon_door.dds is a goblet dup of Tavern (wrong) → no icon, dot fallback
+    // Icons exist for types 1..11; None (0) and Door (12) fall to the glyph/color dot in each row.
     private static IReadOnlyList<MapMarkerEntry> BuildOblivionTable()
     {
         (string Name, string IconKey, string Glyph, byte R, byte G, byte B) [] rows =
@@ -118,9 +121,8 @@ public static class MapMarkerCatalog
         for (var raw = 0; raw < rows.Length; raw++)
         {
             var (name, _, glyph, r, g, b) = rows[raw];
-            // Authentic parchment-tile icons (textures\menus\map\world\world_map_icon_*.dds) exist for
-            // types 1..10 + 12 (Door); None (0) and Oblivion Gate (11, no dedicated icon) fall to a dot.
-            var iconKey = raw is (>= 1 and <= 10) or 12 ? $"oblivion_marker_{raw:D2}" : "";
+            // Icons exist for types 1..11 (Camp..Oblivion Gate); None (0) and Door (12, goblet dup) fall to a dot.
+            var iconKey = raw is >= 1 and <= 11 ? $"oblivion_marker_{raw:D2}" : "";
             entries[raw] = new MapMarkerEntry(raw, name, iconKey, new MapMarkerFallback(glyph, r, g, b));
         }
 
