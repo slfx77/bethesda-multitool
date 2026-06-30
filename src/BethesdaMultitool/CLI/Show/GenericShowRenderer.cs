@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Show;
@@ -36,15 +37,26 @@ internal sealed class GenericShowRenderer : IRecordDisplayRenderer
             $"[cyan]Name:[/]      {Markup.Escape(match.DisplayName ?? "(none)")}"
         };
 
-        if (genericRecord?.ModelPath != null)
-        {
-            lines.Add($"[cyan]Model:[/]     {Markup.Escape(genericRecord.ModelPath)}");
-        }
-
-        if (genericRecord?.Fields is { Count: > 0 })
+        // Schema-decoded games (Oblivion/Skyrim/FO4/FO76/Morrowind) carry the full decoded structure on
+        // DecodedTree; render it so every subrecord is visible (e.g. an Oblivion TREE's ICON/SNAM/CNAM/BNAM).
+        // The tree already includes the model, so skip the standalone Model line to avoid duplicating it.
+        if (genericRecord?.DecodedTree is { Count: > 0 } tree)
         {
             lines.Add("");
-            ShowHelpers.AppendPdbFields(lines, genericRecord.Fields, resolver);
+            AppendDecodedTree(lines, tree, 0);
+        }
+        else
+        {
+            if (genericRecord?.ModelPath != null)
+            {
+                lines.Add($"[cyan]Model:[/]     {Markup.Escape(genericRecord.ModelPath)}");
+            }
+
+            if (genericRecord?.Fields is { Count: > 0 })
+            {
+                lines.Add("");
+                ShowHelpers.AppendPdbFields(lines, genericRecord.Fields, resolver);
+            }
         }
 
         var panel = new Panel(string.Join("\n", lines))
@@ -54,6 +66,27 @@ internal sealed class GenericShowRenderer : IRecordDisplayRenderer
         };
         AnsiConsole.Write(panel);
         return true;
+    }
+
+    internal static void AppendDecodedTree(List<string> lines, IReadOnlyList<DecodedNode> nodes, int depth)
+    {
+        var indent = new string(' ', depth * 2);
+        foreach (var node in nodes)
+        {
+            var sig = node.Signature is { Length: > 0 } s ? $" [grey]({s})[/]" : "";
+            var raw = node.IsRaw ? " [grey]raw[/]" : "";
+
+            if (node.Children is { Count: > 0 })
+            {
+                lines.Add($"{indent}[cyan]{Markup.Escape(node.Label)}[/]{sig}{raw}");
+                AppendDecodedTree(lines, node.Children, depth + 1);
+            }
+            else
+            {
+                var value = node.Value ?? (node.FormId is { } f ? $"0x{f:X8}" : "(empty)");
+                lines.Add($"{indent}[cyan]{Markup.Escape(node.Label)}:[/]{sig} {Markup.Escape(value)}{raw}");
+            }
+        }
     }
 }
 
