@@ -362,7 +362,8 @@ internal static class WorldMapOverviewRenderer
         using var labelFormat = new CanvasTextFormat
         {
             FontSize = 10f / zoom,
-            FontFamily = "Segoe UI"
+            FontFamily = "Segoe UI",
+            WordWrapping = CanvasWordWrapping.NoWrap
         };
 
         using var glyphFormat = new CanvasTextFormat
@@ -399,6 +400,9 @@ internal static class WorldMapOverviewRenderer
             // through the per-game catalog rather than the FO3/FNV enum.
             var raw = marker.MarkerType.HasValue ? (int)marker.MarkerType.Value : 0;
 
+            // Right-edge half-width of whatever we draw, so the label clears the marker art regardless
+            // of per-game icon dimensions (Skyrim's tall holds vs FNV's square icons vs a fallback dot).
+            float markerHalfWidth;
             if (markers.Icons is not null && markers.Icons.TryGetValue(raw, out var icon))
             {
                 // Embedded icons are pre-tinted to the color scheme; atlas crops are pre-styled. Either
@@ -412,6 +416,7 @@ internal static class WorldMapOverviewRenderer
                 var drawW = sh > 0f ? drawH * sw / sh : drawH;
                 var iconDest = new Rect(pos.X - drawW / 2, pos.Y - drawH / 2, drawW, drawH);
                 ds.DrawImage(icon, iconDest, new Rect(0, 0, sw, sh));
+                markerHalfWidth = drawW / 2;
             }
             else
             {
@@ -426,15 +431,51 @@ internal static class WorldMapOverviewRenderer
                 {
                     ds.DrawText(fb.Glyph, destRect, Colors.White, glyphFormat);
                 }
+
+                markerHalfWidth = radius;
             }
 
             if (zoom > 0.05f && labelsDrawn < maxLabelsPerDraw && !string.IsNullOrEmpty(marker.MarkerName))
             {
-                var labelPos = new Vector2(pos.X + markerSize / 2 + 2f / zoom, pos.Y - markerSize / 4);
-                ds.DrawText(marker.MarkerName, labelPos, tint, labelFormat);
+                DrawMarkerLabel(ds, marker.MarkerName, pos, markerHalfWidth, labelFormat, tint, zoom);
                 labelsDrawn++;
             }
         }
+    }
+
+    /// <summary>
+    ///     Draws a marker's name label to the right of its art with a dark pill background. The pill
+    ///     keeps the text legible over the colored object dots / bright terrain it would otherwise blend
+    ///     into (the old background-less <c>DrawText</c> was unreadable when zoomed in), and the block is
+    ///     vertically centered on the marker center (<paramref name="pos" />.Y) rather than offset by a
+    ///     fixed amount — icon heights vary per game, so anchoring to the center keeps the label level
+    ///     with the icon for every game. Mirrors the static export label style (<c>WorldMapExporter</c>).
+    /// </summary>
+    private static void DrawMarkerLabel(
+        CanvasDrawingSession ds, string text, Vector2 pos, float markerHalfWidth,
+        CanvasTextFormat labelFormat, Color textColor, float zoom)
+    {
+        // Measure once (NoWrap → natural single-line extent); reused for both the pill and the draw.
+        using var layout = new CanvasTextLayout(ds, text, labelFormat, 0f, 0f);
+        var b = layout.LayoutBounds;
+
+        var padH = 4f / zoom;
+        var padV = 2f / zoom;
+        var gap = 4f / zoom;
+
+        var textLeft = pos.X + markerHalfWidth + gap;
+        var textTop = pos.Y - (float)(b.Top + b.Height / 2);
+
+        var pill = new Rect(
+            textLeft + b.Left - padH,
+            textTop + b.Top - padV,
+            b.Width + padH * 2,
+            b.Height + padV * 2);
+
+        var corner = 3f / zoom;
+        ds.FillRoundedRectangle(pill, corner, corner, Color.FromArgb(200, 0, 0, 0));
+        ds.DrawRoundedRectangle(pill, corner, corner, Color.FromArgb(90, 255, 255, 255), 0.5f / zoom);
+        ds.DrawTextLayout(layout, new Vector2(textLeft, textTop), textColor);
     }
 
     internal static void DrawActorDots(
