@@ -85,11 +85,30 @@ internal static class Tes3LandParser
 
     private static ushort[] DecodeVtex(ReadOnlySpan<byte> span)
     {
-        const int count = Tes3LandDraft.VtexSize * Tes3LandDraft.VtexSize;
-        var indices = new ushort[count];
-        for (var i = 0; i < count; i++)
+        // Per the TES3 LAND format (UESP "Tes3Mod:File Format / LAND"), VTEX is NOT a simple row-major
+        // 16×16 grid: it is stored as 16 sub-blocks of 4×4, streamed in (outer block row y1, outer block
+        // col x1, inner row y2, inner col x2) order, so storage position p maps to grid
+        // (x = x1*4 + x2, y = y1*4 + y2). Reading it row-major scatters each vertex's land texture and the
+        // terrain renders as per-cell stippled noise. De-swizzle to true spatial row-major order so the
+        // resolved VtexTextureFormIds / TextureWinnerGrid line up with the heightmap.
+        const int size = Tes3LandDraft.VtexSize; // 16
+        var indices = new ushort[size * size];
+        var readPos = 0;
+        for (var y1 = 0; y1 < 4; y1++)
         {
-            indices[i] = BinaryPrimitives.ReadUInt16LittleEndian(span[(i * 2)..]);
+            for (var x1 = 0; x1 < 4; x1++)
+            {
+                for (var y2 = 0; y2 < 4; y2++)
+                {
+                    for (var x2 = 0; x2 < 4; x2++)
+                    {
+                        var x = x1 * 4 + x2;
+                        var y = y1 * 4 + y2;
+                        indices[y * size + x] = BinaryPrimitives.ReadUInt16LittleEndian(span[(readPos * 2)..]);
+                        readPos++;
+                    }
+                }
+            }
         }
 
         return indices;

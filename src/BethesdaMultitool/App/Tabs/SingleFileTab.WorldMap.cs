@@ -107,8 +107,12 @@ public sealed partial class SingleFileTab
                     : loadOrderRecords.MergeWith(semantic);
 
                 // Re-link cells to worldspaces against the MERGED cell list so overridden/added cells
-                // reach the viewer (which reads ws.Cells), not each worldspace's pre-merge cells.
-                semantic.RelinkWorldspaceCells();
+                // reach the viewer (which reads ws.Cells), not each worldspace's pre-merge cells. Then
+                // resolve placed-object meshes against the merged base set so a ref that places a base
+                // defined in another loaded plugin (e.g. Bloodmoon's Fort Frostmoth placing Morrowind
+                // Imperial-fort statics, or a TES4 mod placing a vanilla static) gets its ModelPath
+                // instead of rendering "missing" — per-source parse enrichment can't see other plugins.
+                semantic.RelinkWorldspaceCells().ResolvePlacedModels();
 
                 // For a memory-dump primary, hide both the worldspaces AND the cells the dump didn't
                 // capture: the ESM is merged in only so dumped objects can resolve their base
@@ -119,7 +123,7 @@ public sealed partial class SingleFileTab
                     semantic = semantic
                         .WithWorldspacesFilteredTo(primaryWorldspaceIds)
                         .WithCellsFilteredTo(primaryCellIds);
-                    semantic.RelinkWorldspaceCells();
+                    semantic.RelinkWorldspaceCells().ResolvePlacedModels();
                 }
             }
 

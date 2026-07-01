@@ -219,6 +219,21 @@ internal static class ObjectBoundsIndex
                 "IDLM" => PlacedObjectCategory.Effects,
                 "SCOL" => PlacedObjectCategory.Static,
                 "PWAT" => PlacedObjectCategory.Landscape,
+
+                // Morrowind (TES3) routes every non-CELL/LAND/LTEX record into GenericRecords with its
+                // raw 4-char code (TES4 parses these same codes into typed lists, so they never reach
+                // here — these arms are TES3-only). Without them every placed TES3 object resolves to
+                // Unknown and renders no map dot/box. NPC_/CREA become ACHR/ACRE refs upstream
+                // (Tes3RecordParser.ReferenceRecordType), so they don't need an arm here.
+                "STAT" => PlacedObjectCategory.Static,
+                "ACTI" => PlacedObjectCategory.Activator,
+                "DOOR" => PlacedObjectCategory.Door,
+                "CONT" => PlacedObjectCategory.Container,
+                "LIGH" => PlacedObjectCategory.Light,
+                "FURN" => PlacedObjectCategory.Furniture,
+                "WEAP" or "ARMO" or "MISC" or "BOOK" or "INGR" or "ALCH" or "APPA"
+                    or "CLOT" or "REPA" or "LOCK" or "PROB" or "LEVI" => PlacedObjectCategory.Item,
+                "LEVC" => PlacedObjectCategory.Creature,
                 _ => (PlacedObjectCategory?)null
             };
 

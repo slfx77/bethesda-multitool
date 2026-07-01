@@ -48,6 +48,9 @@ internal static class Tes3SubrecordDecoder
                 return One("Class", c.ReadRemainingString());
             case "CNAM" when recordType == "CELL":
                 return One("Region", c.ReadRemainingString());
+            case "CNAM" when recordType == "REGN" && data.Length >= 4:
+                // REGN map color, a packed 0x00BBGGRR word. esmtool prints it as the raw decimal value.
+                return One("MapColor", c.ReadUInt32());
             case "ANAM" when recordType == "NPC_":
                 return One("Faction", c.ReadRemainingString());
             case "ANAM" when recordType == "DOOR":
@@ -56,6 +59,8 @@ internal static class Tes3SubrecordDecoder
                 return One("Head", c.ReadRemainingString());
             case "BNAM" when recordType == "INFO":
                 return One("ResultScript", c.ReadRemainingString());
+            case "BNAM" when recordType == "REGN":
+                return One("SleepCreature", c.ReadRemainingString());
             case "KNAM" when recordType is "NPC_" or "CREA":
                 return One("Hair", c.ReadRemainingString());
             case "SNAM" when recordType == "DOOR":
@@ -145,6 +150,8 @@ internal static class Tes3SubrecordDecoder
                 return One("WaterHeight", c.ReadFloat());
             case "NAM0" when recordType == "CELL":
                 return One("RefCount", c.ReadInt32());
+            case "WEAT" when recordType == "REGN":
+                return DecodeRegionWeather(data);
             case "INTV" when recordType == "LAND":
                 return Struct(ref c, ("GridX", T.Int), ("GridY", T.Int));
             case "INTV" when recordType == "LTEX":
@@ -244,14 +251,19 @@ internal static class Tes3SubrecordDecoder
             new("Personality", (int)c.ReadByte()), new("Luck", (int)c.ReadByte())
         };
         c.Skip(27); // 27 skill values (indexed by skill id; omitted for brevity)
-        f.Add(new Field("Reputation", (int)c.ReadByte()));
+        // NPDT byte 37 is an unknown padding byte, NOT reputation. Reputation sits at byte 45, after
+        // Health/Magicka/Fatigue/Disposition — there is no per-NPC FactionID in NPDT (faction is the
+        // ANAM subrecord). The old layout read byte 37 as Reputation (always 0) and byte 45 as a
+        // phantom "FactionID"; Disposition/Rank/Gold still landed correctly by coincidence. Verified
+        // against OpenMW esmtool (tier-2 harness): e.g. athyn sarethi rep 18, bolvyn venim rep 20.
+        c.Skip(1); // byte 37: Unknown1
         f.Add(new Field("Health", (int)c.ReadInt16()));
         f.Add(new Field("Magicka", (int)c.ReadInt16()));
         f.Add(new Field("Fatigue", (int)c.ReadInt16()));
         f.Add(new Field("Disposition", (int)c.ReadByte()));
-        f.Add(new Field("FactionId", (int)c.ReadByte()));
+        f.Add(new Field("Reputation", (int)c.ReadByte()));
         f.Add(new Field("Rank", (int)c.ReadByte()));
-        c.Skip(1); // unknown
+        c.Skip(1); // byte 47: Unknown2
         f.Add(new Field("Gold", c.ReadInt32()));
         return f;
     }
@@ -321,6 +333,21 @@ internal static class Tes3SubrecordDecoder
 
         fields.Add(new Field("Playable", c.ReadInt32()));
         fields.Add(new Field("Services", Flag(c.ReadUInt32())));
+        return fields;
+    }
+
+    // REGN WEAT: one chance byte per weather type. The base game ships 8 (Clear..Blight); Bloodmoon
+    // appends Snow + Blizzard (10). Names/order match the UESP TES3 layout (and esmtool's dump labels).
+    private static List<Field> DecodeRegionWeather(ReadOnlySpan<byte> data)
+    {
+        string[] names =
+            ["Clear", "Cloudy", "Fog", "Overcast", "Rain", "Thunder", "Ash", "Blight", "Snow", "Blizzard"];
+        var fields = new List<Field>(Math.Min(names.Length, data.Length));
+        for (var i = 0; i < names.Length && i < data.Length; i++)
+        {
+            fields.Add(new Field(names[i], (int)data[i]));
+        }
+
         return fields;
     }
 

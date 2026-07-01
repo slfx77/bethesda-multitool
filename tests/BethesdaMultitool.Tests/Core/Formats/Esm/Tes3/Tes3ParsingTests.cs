@@ -133,6 +133,76 @@ public class Tes3ParsingTests
         Assert.Empty(Tes3RecordParser.BuildWorldspaces(cells, 0x0000BCA9));
     }
 
+    [Fact]
+    public void Decode_NpcFull_Npdt52_ReputationAtByte45_NotByte37()
+    {
+        // 52-byte NPDT: byte 37 is an unknown padding byte (NOT reputation). Reputation is byte 45, after
+        // Health/Magicka/Fatigue/Disposition, and there is no per-NPC FactionID. The old layout read byte
+        // 37 as Reputation (always 0); OpenMW esmtool reads the real value at byte 45 (tier-2 harness).
+        var npdt = new byte[52];
+        var s = npdt.AsSpan();
+        BinaryPrimitives.WriteInt16LittleEndian(s[..], 7); // Level
+        s[2] = 40; // Strength
+        s[9] = 33; // Luck (last attribute byte)
+        s[37] = 99; // Unknown1 — must NOT surface as Reputation
+        BinaryPrimitives.WriteInt16LittleEndian(s[38..], 120); // Health
+        BinaryPrimitives.WriteInt16LittleEndian(s[40..], 80); // Magicka
+        BinaryPrimitives.WriteInt16LittleEndian(s[42..], 110); // Fatigue
+        s[44] = 50; // Disposition
+        s[45] = 18; // Reputation
+        s[46] = 3; // Rank
+        BinaryPrimitives.WriteInt32LittleEndian(s[48..], 500); // Gold
+
+        var fields = Tes3SubrecordDecoder.Decode("NPC_", "NPDT", npdt);
+
+        Assert.Equal(7, Field(fields, "Level"));
+        Assert.Equal(40, Field(fields, "Strength"));
+        Assert.Equal(33, Field(fields, "Luck"));
+        Assert.Equal(120, Field(fields, "Health"));
+        Assert.Equal(50, Field(fields, "Disposition"));
+        Assert.Equal(18, Field(fields, "Reputation")); // byte 45, not the byte-37 unknown (99)
+        Assert.Equal(3, Field(fields, "Rank"));
+        Assert.Equal(500, Field(fields, "Gold"));
+        Assert.DoesNotContain(fields, f => f.Name == "FactionId"); // the phantom field is gone
+    }
+
+    [Fact]
+    public void Decode_RegionWeather_Weat_NamesChancesInOrder()
+    {
+        // 10 chance bytes: Clear, Cloudy, Fog, Overcast, Rain, Thunder, Ash, Blight, Snow, Blizzard.
+        var weat = new byte[] { 10, 60, 5, 0, 10, 10, 0, 0, 2, 1 };
+
+        var fields = Tes3SubrecordDecoder.Decode("REGN", "WEAT", weat);
+
+        Assert.Equal(10, Field(fields, "Clear"));
+        Assert.Equal(60, Field(fields, "Cloudy"));
+        Assert.Equal(5, Field(fields, "Fog"));
+        Assert.Equal(10, Field(fields, "Rain"));
+        Assert.Equal(2, Field(fields, "Snow"));
+        Assert.Equal(1, Field(fields, "Blizzard"));
+    }
+
+    [Fact]
+    public void Decode_RegionMapColor_Cnam_ReadsPackedColor()
+    {
+        var cnam = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(cnam, 16721698u);
+
+        var fields = Tes3SubrecordDecoder.Decode("REGN", "CNAM", cnam);
+
+        Assert.Equal(16721698u, Field(fields, "MapColor"));
+    }
+
+    [Fact]
+    public void Decode_RegionSleep_Bnam_ReadsCreatureId()
+    {
+        var bnam = "ex_bittercoast_sleep\0"u8.ToArray();
+
+        var fields = Tes3SubrecordDecoder.Decode("REGN", "BNAM", bnam);
+
+        Assert.Equal("ex_bittercoast_sleep", Field(fields, "SleepCreature"));
+    }
+
     private static object? Field(IReadOnlyList<Tes3SubrecordDecoder.Field> fields, string name)
     {
         return fields.First(f => f.Name == name).Value;
