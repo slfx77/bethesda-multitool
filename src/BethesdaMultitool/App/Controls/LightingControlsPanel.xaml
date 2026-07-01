@@ -40,6 +40,19 @@
                   AutomationProperties.Name="Time of day"
                   ToolTipService.ToolTip="Time of day (0–24h) — drives lighting + sky colors"
                   ValueChanged="TimeSlider_ValueChanged" />
+          <Grid x:Name="DayRow">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Day" FontWeight="SemiBold" />
+            <TextBlock Grid.Column="1" x:Name="DayValueText" FontWeight="SemiBold"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          </Grid>
+          <Slider x:Name="DaySlider" Minimum="0" Maximum="24" StepFrequency="1" Value="0"
+                  AutomationProperties.Name="Day"
+                  ToolTipService.ToolTip="Day of the lunar cycle — drives the moon phase + sky position"
+                  ValueChanged="DaySlider_ValueChanged" />
           <TextBlock x:Name="WeatherHeader" Text="Weather" FontWeight="SemiBold" />
           <ComboBox x:Name="WeatherComboBox" HorizontalAlignment="Stretch"
                     SelectionChanged="WeatherComboBox_SelectionChanged"

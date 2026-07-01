@@ -61,6 +61,10 @@ public sealed partial class WorldView3DControl
     /// <summary>Profiler hook: set the time-of-day (0..24) that drives the sun arc, daylight, and sky colors.</summary>
     internal void Profiler_SetGameHour(float hour) => _gameHour = hour;
 
+    /// <summary>Profiler hook: set the day of the lunar cycle that drives the moon phase + orbit position
+    /// (for headless night-sky captures used to calibrate the two-moon model against OpenMW).</summary>
+    internal void Profiler_SetGameDay(float day) => _gameDay = day;
+
     /// <summary>
     ///     Renders one perspective frame (sky + terrain + references) from the current camera pose into the
     ///     offscreen target and returns its BGRA pixels (<paramref name="pixelWidth" />×<paramref name="pixelHeight" />,
@@ -138,7 +142,9 @@ public sealed partial class WorldView3DControl
             // this open command list.
             if (_showSky)
             {
-                RenderSky(viewProj);
+                // Offscreen capture uses an absolute viewProj, so center the dome on the camera position
+                // (the prior behavior). Jitter is a live-motion artifact and irrelevant to a static capture.
+                RenderSky(viewProj, _camera.Position);
             }
 
             _terrain?.Render(viewProj, cylinder);

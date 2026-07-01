@@ -80,7 +80,10 @@ float3 AtmosphereLight(float3 N)
     // MemDebug .data) was previously missing here while the mesh shader applied it, so at night the meshes
     // (0.3×ambient) darkened far more than the terrain (full ambient) — the reported imbalance. Applying
     // the same scale balances them. (`mad r1, NdotL, PSLightColor, AmbientColor`; HDR absorbs > 1.)
-    const float kAmbientScale = 0.3; // fRam8323ca10
+    // Per-game ambient ("fill") scale in uAmbientColor.w (see GameProfile.AmbientLightScale); 0.3 = FNV's
+    // fRam8323ca10. Terrain and objects MUST read the same scale or they re-imbalance (the reason both were
+    // pinned to 0.3). Falls back to 0.3 when the slot is unset so unchanged paths keep FNV's value.
+    float kAmbientScale = uAmbientColor.w > 0.0001 ? uAmbientColor.w : 0.3;
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
     return uAmbientColor.rgb * kAmbientScale + uSunColorLighting.rgb * ndotl;
 }

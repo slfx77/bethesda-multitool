@@ -121,10 +121,14 @@ public sealed partial class WorldView3DControl
         var cameraOrigin = cameraRelative ? _camera.Position : Vector3.Zero;
         var shadingCameraPos = shadingCameraPosOverride
             ?? (cameraRelative ? Vector3.Zero : _camera.Position);
+        // Per-game ambient fill scale (uAmbientColor.w): FNV's 0.3 is too dark for the ambient-heavier
+        // TES4-era engines, so Oblivion etc. raise it (see GameProfile.AmbientLightScale).
+        var ambientScale = BethesdaMultitool.Core.Games.GameProfiles
+            .For(_data?.Game ?? BethesdaMultitool.Core.Games.BethesdaGame.Unknown).AmbientLightScale;
         var constants = AtmosphereConstants.From(
             resolved, gameHour, shadingCameraPos, lightingEnabled: lightingOn ? 1f : 0f,
             skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f, time: 0f,
-            cameraOrigin: cameraOrigin);
+            cameraOrigin: cameraOrigin, ambientScale: ambientScale);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
@@ -161,11 +165,13 @@ public sealed partial class WorldView3DControl
             float skyEnabled,
             float fogEnabled,
             float time,
-            Vector3 cameraOrigin) => new()
+            Vector3 cameraOrigin,
+            float ambientScale = 0.3f) => new()
             {
                 SunDirIntensity = new Vector4(a.SunWorldDirection, a.SunIntensity),
                 SunColorLighting = new Vector4(a.SunColor, lightingEnabled),
-                AmbientColor = new Vector4(a.AmbientColor, 0f),
+                // w carries the per-game ambient ("fill") scale read by the object/terrain shaders.
+                AmbientColor = new Vector4(a.AmbientColor, ambientScale),
                 SkyTopSkyEnabled = new Vector4(a.SkyTopColor, skyEnabled),
                 SkyHorizon = new Vector4(a.SkyHorizonColor, 0f),
                 FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
@@ -241,6 +247,12 @@ public sealed partial class WorldView3DControl
         var aspect = surface.Width / (float)surface.Height;
         var projectionActive = ProjectionActive;
         Matrix4x4 viewProjAbsolute, viewProjScene;
+        // Translation-free view-projection for the sky dome (camera at the origin). The dome is centered
+        // on the camera and rendered with domeCenter = 0, so the large camera world coordinates never
+        // enter the vertex math — killing the float-cancellation jitter the absolute viewProj caused as
+        // the camera moved far from the worldspace origin. Sky is direction-based (effectively at
+        // infinity), so dropping the translation does not change its alignment with the scene.
+        Matrix4x4 viewProjSky;
         VisibilityCylinder cylinder;
         Vector3 orthoEye = default;
         bool cameraRelative;
@@ -252,6 +264,7 @@ public sealed partial class WorldView3DControl
             // cancellation. Scene == absolute, so terrain/reference/water draw with the same matrix.
             viewProjAbsolute = BuildProjectionViewProj(aspect, out cylinder, out orthoEye);
             viewProjScene = viewProjAbsolute;
+            viewProjSky = viewProjAbsolute; // sky is suppressed in ortho modes; unused.
             cameraRelative = false;
         }
         else
@@ -275,6 +288,9 @@ public sealed partial class WorldView3DControl
                 EnvironmentVariables.Get(EnvironmentVariables.Viewer.CameraRelative), "0", StringComparison.Ordinal);
             viewProjAbsolute = _camera.GetViewMatrix() * proj;
             viewProjScene = cameraRelative ? _camera.GetViewMatrixCameraRelative() * proj : viewProjAbsolute;
+            // Sky ALWAYS uses the translation-free view (independent of the camera-relative scene toggle):
+            // the dome is camera-centered, so its only correct frame is one with the camera at the origin.
+            viewProjSky = _camera.GetViewMatrixCameraRelative() * proj;
             cylinder = new VisibilityCylinder(_camera.Position, _renderDistance);
         }
         var cameraMs = ElapsedMilliseconds(segmentStarted);
@@ -312,14 +328,13 @@ public sealed partial class WorldView3DControl
 
         // Sky FIRST — gradient + clouds + stars into the cleared color target (depth OFF, so terrain
         // overwrites it via the normal depth pass; OFF ⇒ the flat dark-blue clear shows), then the
-        // sun/moon billboards over it. Reads the b3 atmosphere CB bound just above. Sky renders in
-        // absolute space (camera-centered geometry / direction-based skybox) — the absolute viewProj.
-        // Suppressed in the ortho projection modes: the dome is centered on the perspective camera
-        // (RenderSky uses _camera.Position), which isn't where the ortho view looks — it would render
-        // a misplaced dome across a top-down map. A clean technical view shows the flat clear instead.
+        // sun/moon billboards over it. Reads the b3 atmosphere CB bound just above. Sky renders
+        // CAMERA-RELATIVE: the translation-free viewProjSky with the dome centered at the origin
+        // (domeCenter 0), so far-from-origin camera coords don't jitter the dome. Suppressed in the ortho
+        // projection modes: the dome is centered on the perspective camera, not where the ortho view looks.
         if (_showSky && !projectionActive)
         {
-            RenderSky(viewProjAbsolute);
+            RenderSky(viewProjSky, Vector3.Zero);
         }
 
         // Layer order matches D3D11: terrain → references → water → wireframe. Water is

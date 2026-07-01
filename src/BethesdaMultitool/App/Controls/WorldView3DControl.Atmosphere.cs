@@ -118,6 +118,16 @@ public sealed partial class WorldView3DControl
         _moonTexIndex = Resolve(paths.Moon);
         _moonSecundaTexIndex = Resolve(paths.Secunda);
 
+        // Per-phase moon textures (Morrowind ships 8 per moon). Other games have no per-phase pattern, so
+        // every entry resolves to NoTexture and RenderSkyBillboards falls back to the full-moon index. Cheap
+        // (cached by the resolver); re-resolved with the rest of the sky set.
+        var moonForPhases = MoonProfile;
+        for (var i = 0; i < MoonSky.PhaseCount; i++)
+        {
+            _moonPhaseTexIndices[i] = Resolve(moonForPhases.PhaseTexturePath(secondary: false, i));
+            _moonSecundaPhaseTexIndices[i] = Resolve(moonForPhases.PhaseTexturePath(secondary: true, i));
+        }
+
         // Rebuild the real sky-dome geometry (atmosphere/stars/clouds NIFs) for this climate + weather.
         // The dome layers carry their own per-layer textures, so the single cloud/star indices the old
         // procedural dome used are gone — stars come from the sky NIF, clouds from the active weather.
@@ -537,7 +547,10 @@ public sealed partial class WorldView3DControl
     // billboards over them. The atmosphere is resolved ONCE here with lighting forced on (the sky shows
     // regardless of the lighting toggle) and shared by both. Clouds/stars are exterior-only (suppressed,
     // not the gradient, in interiors); the sun/moon billboards are exterior-only too.
-    private void RenderSky(Matrix4x4 viewProj)
+    // <paramref name="domeCenter"/> is the world-space center of the sky dome / sun-moon billboards. The
+    // live frame passes Vector3.Zero together with a translation-free viewProj (camera-relative, jitter-
+    // free); the offscreen scene capture passes the absolute camera position with its absolute viewProj.
+    private void RenderSky(Matrix4x4 viewProj, Vector3 domeCenter)
     {
         EnsureSkyTexturesResolved();
         var atmo = AtmosphereState.Resolve(_gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: true);
@@ -556,12 +569,12 @@ public sealed partial class WorldView3DControl
         var domeStarFade = exterior ? starFade : 0f;
         // Real sky-dome NIF geometry centered on the camera: atmosphere gradient + stars + cloud layers,
         // each on its authored UVs. Per-layer textures were resolved in EnsureSkyTexturesResolved.
-        _skyGeometry?.Render(viewProj, _camera.Position,
+        _skyGeometry?.Render(viewProj, domeCenter,
             cloudTint, cloudOpacity, starTint, domeStarFade, _gameHour, _currentClimateTiming);
 
         if (exterior)
         {
-            RenderSkyBillboards(viewProj, atmo);
+            RenderSkyBillboards(viewProj, atmo, domeCenter);
         }
     }
 
@@ -569,7 +582,7 @@ public sealed partial class WorldView3DControl
     // direction/intensity come from the decompile-grounded AtmosphereState (already resolved by the
     // caller with lighting forced on); the moon uses a plausible night arc (the engine's independent
     // orbit isn't tracked here — documented simplification).
-    private void RenderSkyBillboards(Matrix4x4 viewProj, AtmosphereState.Resolved atmo)
+    private void RenderSkyBillboards(Matrix4x4 viewProj, AtmosphereState.Resolved atmo, Vector3 domeCenter)
     {
         if (_skyBillboards is null)
         {
@@ -585,34 +598,37 @@ public sealed partial class WorldView3DControl
 
         var camRight = Vector3.Normalize(new Vector3(invView.M11, invView.M12, invView.M13));
         var camUp = Vector3.Normalize(new Vector3(invView.M21, invView.M22, invView.M23));
-        var camPos = _camera.Position;
+        // Billboard origin = the dome center. The live frame passes 0 (camera-relative, with a translation-
+        // free viewProj) so the sun/moon don't jitter at far-from-origin camera positions; the offscreen
+        // capture passes the absolute camera position. camRight/camUp are pure directions either way.
+        var camPos = domeCenter;
 
         var sunDir = atmo.SunWorldDirection;
         var sunFade = Math.Clamp(sunDir.Z * 6f, 0f, 1f);                    // soft fade through the horizon
         var sunTint = Vector3.Lerp(new Vector3(1.0f, 0.55f, 0.30f), new Vector3(1.0f, 0.97f, 0.92f),
             Math.Clamp(sunDir.Z * 2f, 0f, 1f));                            // warm at the horizon → near-white high
 
-        // Moon arc: peaks at midnight, below the horizon by day; fades in as the sun sets.
-        var nightAng = (_gameHour / 24f) * MathF.Tau;                       // 0 at midnight
-        var moonElev = MathF.Cos(nightAng) * (MathF.PI / 2f * 0.7f);        // peak ≈ 63° up at midnight
-        var moonAz = (MathF.PI * 0.5f) + (nightAng * 0.5f);
-        var cosE = MathF.Cos(moonElev);
-        var moonDir = Vector3.Normalize(new Vector3(MathF.Cos(moonAz) * cosE, MathF.Sin(moonAz) * cosE, MathF.Sin(moonElev)));
+        // Two moons on independent, day-driven orbits (MoonSky, decompile-grounded) — Masser and Secunda
+        // no longer share a path (the headline fix). The day slider advances both the orbital position and
+        // the phase; time-of-day drives the nightly arc. The renderer skips a moon below the horizon, and
+        // skips Secunda entirely for single-moon games (its texture is NoTexture).
+        var moonProfile = MoonProfile;
+        var moonDir = MoonSky.ComputeMoonDirection(moonProfile.PrimaryOrbit, _gameHour, _gameDay);
+        var secundaDir = MoonSky.ComputeMoonDirection(moonProfile.SecondaryOrbit, _gameHour, _gameDay);
         var moonFade = Math.Clamp(1f - (atmo.SunIntensity * 1.4f), 0f, 1f);
 
-        // Secunda (Skyrim's second moon): offset azimuth + a slightly lower arc so the two moons sit
-        // apart. Always computed; the renderer skips it when _moonSecundaTexIndex is NoTexture (every
-        // single-moon game), so this is a no-op outside Skyrim.
-        var secAz = moonAz + 0.55f;
-        var secElev = moonElev * 0.82f;
-        var secCosE = MathF.Cos(secElev);
-        var secundaDir = Vector3.Normalize(new Vector3(MathF.Cos(secAz) * secCosE, MathF.Sin(secAz) * secCosE, MathF.Sin(secElev)));
+        // Phase texture per moon. Morrowind swaps among its 8 per-phase textures by the day-driven phase
+        // index; other games have no per-phase art so PhaseTextureOrFull returns the full-moon texture.
+        // Secunda's phase is offset from Masser's so the two moons aren't locked to the same phase.
+        var masserPhase = MoonSky.PhaseIndex(_gameDay, moonProfile.PhaseLengthDays);
+        var secundaPhase = MoonSky.PhaseIndex(_gameDay, moonProfile.PhaseLengthDays, moonProfile.SecondaryPhaseOffsetDays);
+        var moonTex = PhaseTextureOrFull(_moonPhaseTexIndices, masserPhase, _moonTexIndex);
+        var secundaTex = PhaseTextureOrFull(_moonSecundaPhaseTexIndices, secundaPhase, _moonSecundaTexIndex);
 
         // Per-game moon disc sizes (fraction of the billboard radius → world half-extent). Prefer the
         // engine-exact size read from the loaded ESM's GMSTs (iMasserSize/iSecundaSize ÷ fSunXExtreme —
         // mod-aware), falling back to the per-game SkyMoonProfile default when the GMSTs are absent
         // (Morrowind TES3, DMP/save without a settings table).
-        var moonProfile = MoonProfile;
         var primaryFraction = _data?.MoonPrimaryHalfSizeFraction ?? moonProfile.PrimaryHalfSizeFraction;
         var secondaryFraction = _data?.MoonSecondaryHalfSizeFraction ?? moonProfile.SecondaryHalfSizeFraction;
         var moonHalf = SkyBillboardRenderer12.Radius * primaryFraction;
@@ -620,8 +636,16 @@ public sealed partial class WorldView3DControl
 
         _skyBillboards.Render(viewProj, camPos, camRight, camUp,
             sunDir, sunFade, sunTint, _sunDiscTexIndex, _sunGlareTexIndex,
-            moonDir, moonFade, _moonTexIndex, moonHalf,
-            secundaDir, moonFade, _moonSecundaTexIndex, moon2Half);
+            moonDir, moonFade, moonTex, moonHalf,
+            secundaDir, moonFade, secundaTex, moon2Half);
+    }
+
+    // The bindless texture index for a moon's current phase, falling back to its full-moon texture when the
+    // game ships no per-phase art (that phase slot is NoTexture). Phase is clamped so a bad index can't throw.
+    private static uint PhaseTextureOrFull(uint[] phaseIndices, int phase, uint fullMoonIndex)
+    {
+        var idx = phaseIndices[Math.Clamp(phase, 0, phaseIndices.Length - 1)];
+        return idx != SkyBillboardRenderer12.NoTexture ? idx : fullMoonIndex;
     }
 
     /// <summary>Maps the lighting panel's current weather selection to <see cref="_selectedWeather" />
@@ -651,5 +675,11 @@ public sealed partial class WorldView3DControl
     {
         // Continuous input — no _show flag; the next frame's BindAtmosphereConstants reads _gameHour.
         _gameHour = (float)hour;
+    }
+
+    private void LightingPanel_DayChanged(object? sender, double day)
+    {
+        // Drives the moon phase (texture) + orbit position; the next frame's RenderSkyBillboards reads it.
+        _gameDay = (float)day;
     }
 }

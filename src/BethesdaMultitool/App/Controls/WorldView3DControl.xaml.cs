@@ -80,8 +80,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.SkyBillboardRenderer12? _skyBillboards;
     private uint _sunDiscTexIndex = uint.MaxValue;
     private uint _sunGlareTexIndex = uint.MaxValue;
-    private uint _moonTexIndex = uint.MaxValue;        // Masser (or the single Fallout moon)
-    private uint _moonSecundaTexIndex = uint.MaxValue; // Skyrim's second moon; NoTexture for other games
+    private uint _moonTexIndex = uint.MaxValue;        // Masser full moon (or the single Fallout moon)
+    private uint _moonSecundaTexIndex = uint.MaxValue; // Secunda full moon; NoTexture for single-moon games
+    // Per-phase moon textures (Morrowind ships 8 per moon: new..full..waning). Index = MoonSky phase 0..7;
+    // NoTexture entries (games with no per-phase moon art) fall back to the full-moon index above.
+    private readonly uint[] _moonPhaseTexIndices = new uint[BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.MoonSky.PhaseCount];
+    private readonly uint[] _moonSecundaPhaseTexIndices = new uint[BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.MoonSky.PhaseCount];
     // (climate FormId, active-weather FormId) the sky textures were resolved for (null = unresolved).
     // Clouds depend on the weather, so a weather change re-resolves even when the climate is unchanged.
     private (uint Climate, uint Weather)? _skyTexKey;
@@ -106,6 +110,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // driven by the time-of-day slider (TimeSlider_ValueChanged). The lighting/sky/water shaders read
     // the resolved atmosphere from this CB each frame.
     private float _gameHour = 12f;
+    // Atmosphere: current day of the lunar cycle (0..24, one full Morrowind cycle), driven by the day
+    // slider (LightingPanel_DayChanged). Feeds the moon phase (texture) + orbit position for the two-moon
+    // sky; time-of-day alone can't separate Masser/Secunda or pick a phase. Only the 3D moon billboards
+    // read it, so the 2D map hides the Day row (ShowDay=False).
+    private float _gameDay;
     private bool _mouseDragActive;
     private Vector2 _previousPointerPosition;
     // Click-vs-drag tracking for object picking: a press that releases without moving past the
@@ -297,6 +306,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // Make the base-object category available to the placement bake before the renderer pulls
         // its first cell — drives the per-category visibility filter (activators off by default).
         data.RenderCache.CategoryIndex = data.CategoryIndex;
+        // Same timing for MODS alternate textures: the placement bake reads this to give each
+        // re-skinned base (e.g. billboards) its own textured mesh variant.
+        data.RenderCache.AlternateTextureIndex = data.AlternateTexturesByFormId;
         _stressBookmarkApplied = false;
 
         // Tear down any prior pipelines (a second LoadData = switching ESMs) so the texture
@@ -315,6 +327,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         _skyNifTextures = null;
         _skyNifModlKey = null;
         _sunDiscTexIndex = _sunGlareTexIndex = _moonTexIndex = _moonSecundaTexIndex = uint.MaxValue;
+        Array.Fill(_moonPhaseTexIndices, uint.MaxValue);
+        Array.Fill(_moonSecundaPhaseTexIndices, uint.MaxValue);
 
         if (_gpu12 is not null)
         {

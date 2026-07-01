@@ -94,6 +94,7 @@
           <!-- Lighting: drives the hillshade light direction (Slope layer + textured hill-shade). Fog and
                Weather are hidden — the 2D map only uses the on/off toggle + time-of-day slider. -->
           <local:LightingControlsPanel x:Name="LightingPanel" ShowFog="False" ShowWeather="False"
+                                       ShowDay="False"
                                        LightingToggled="LightingPanel_LightingToggled"
                                        TimeChanged="LightingPanel_TimeChanged" />
 

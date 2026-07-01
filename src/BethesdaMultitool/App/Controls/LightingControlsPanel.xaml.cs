@@ -21,6 +21,7 @@ public sealed partial class LightingControlsPanel : UserControl
     {
         InitializeComponent();
         UpdateTimeValueText();
+        UpdateDayValueText();
     }
 
     /// <summary>Raised when the Lighting toggle changes. Argument is the new on/off state.</summary>
@@ -31,6 +32,10 @@ public sealed partial class LightingControlsPanel : UserControl
 
     /// <summary>Raised when the time-of-day slider changes. Argument is the new game hour (0–24).</summary>
     public event EventHandler<double>? TimeChanged;
+
+    /// <summary>Raised when the day slider changes. Argument is the new day of the lunar cycle (drives the
+    /// moon phase + sky position in the 3D viewer).</summary>
+    public event EventHandler<double>? DayChanged;
 
     /// <summary>Raised when the weather selection changes (suppressed during programmatic population).</summary>
     public event EventHandler<WeatherSelection>? WeatherChanged;
@@ -54,6 +59,26 @@ public sealed partial class LightingControlsPanel : UserControl
     {
         get => TimeSlider.Value;
         set => TimeSlider.Value = value;
+    }
+
+    /// <summary>Day of the lunar cycle (0–24; one full Morrowind cycle). Drives the 3D moon phase + arc.</summary>
+    public double GameDay
+    {
+        get => DaySlider.Value;
+        set => DaySlider.Value = value;
+    }
+
+    /// <summary>Whether the Day header + slider are shown (default true; the 2D map hides it — the day only
+    /// affects the 3D moon billboards).</summary>
+    public bool ShowDay
+    {
+        get => DaySlider.Visibility == Visibility.Visible;
+        set
+        {
+            var vis = value ? Visibility.Visible : Visibility.Collapsed;
+            DaySlider.Visibility = vis;
+            DayRow.Visibility = vis;
+        }
     }
 
     /// <summary>Whether the Fog toggle row is shown (default true; the 2D map hides it).</summary>
@@ -119,6 +144,15 @@ public sealed partial class LightingControlsPanel : UserControl
         var minutes = totalMinutes % 60;
         TimeValueText.Text = $"{hours:00}:{minutes:00}";
     }
+
+    private void DaySlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdateDayValueText();
+        DayChanged?.Invoke(this, e.NewValue);
+    }
+
+    /// <summary>Shows the whole-day slider value (e.g. "Day 6").</summary>
+    private void UpdateDayValueText() => DayValueText.Text = $"Day {(int)DaySlider.Value}";
 
     private void WeatherComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

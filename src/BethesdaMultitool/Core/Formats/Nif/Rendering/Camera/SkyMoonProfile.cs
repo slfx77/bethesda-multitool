@@ -48,11 +48,57 @@ public sealed record SkyMoonProfile
     /// <summary>Fallback second-moon half-extent (fraction of the billboard radius).</summary>
     public float SecondaryHalfSizeFraction { get; init; }
 
+    /// <summary>Primary moon's sky orbit (distinct from <see cref="SecondaryOrbit" /> so two moons don't
+    /// share an arc). Single-moon games use only this.</summary>
+    public MoonSky.MoonOrbit PrimaryOrbit { get; init; }
+
+    /// <summary>Second moon's sky orbit — only used when <see cref="HasSecondMoon" />.</summary>
+    public MoonSky.MoonOrbit SecondaryOrbit { get; init; }
+
+    /// <summary>Days per moon phase for this game (8 phases × this = full lunar cycle). Morrowind = 3
+    /// (24-day cycle). Only meaningful where <see cref="HasPerPhaseTextures" />.</summary>
+    public int PhaseLengthDays { get; init; } = MoonSky.MorrowindPhaseLengthDays;
+
+    /// <summary>Day offset of the second moon's phase from the first, so the two moons aren't phase-locked
+    /// (seeded; visually calibrated against OpenMW).</summary>
+    public int SecondaryPhaseOffsetDays { get; init; }
+
+    /// <summary>Format string for the primary moon's per-phase texture (<c>{0}</c> = a <see cref="PhaseTokens" />
+    /// entry), e.g. Morrowind's <c>textures\tx_masser_{0}.dds</c>. Null when the game ships no per-phase
+    /// moon textures — the renderer then draws the single full-moon texture for every phase.</summary>
+    public string? PrimaryPhaseTexturePattern { get; init; }
+
+    /// <summary>Format string for the second moon's per-phase texture (<c>{0}</c> = a phase token).</summary>
+    public string? SecondaryPhaseTexturePattern { get; init; }
+
+    /// <summary>The 8 phase tokens in phase-index order (0 = new … 4 = full … 7 = waning crescent), spliced
+    /// into the phase-texture patterns. Empty when the game has no per-phase textures.</summary>
+    public IReadOnlyList<string> PhaseTokens { get; init; } = [];
+
     /// <summary>True when this engine draws at least one billboard moon.</summary>
     public bool HasMoon => MoonCount >= 1;
 
     /// <summary>True when this engine draws a second moon (Secunda).</summary>
     public bool HasSecondMoon => MoonCount >= 2;
+
+    /// <summary>True when the game ships distinct per-phase moon textures (only Morrowind, verified). Other
+    /// games reuse the single full-moon texture for every phase.</summary>
+    public bool HasPerPhaseTextures => PrimaryPhaseTexturePattern is not null && PhaseTokens.Count == MoonSky.PhaseCount;
+
+    /// <summary>The per-phase texture path for a moon at <paramref name="phaseIndex" /> (0..7), or null when
+    /// this game has no per-phase textures (caller falls back to the full-moon texture). The index is
+    /// clamped into range so a bad phase can't throw.</summary>
+    public string? PhaseTexturePath(bool secondary, int phaseIndex)
+    {
+        var pattern = secondary ? SecondaryPhaseTexturePattern : PrimaryPhaseTexturePattern;
+        if (pattern is null || PhaseTokens.Count != MoonSky.PhaseCount)
+        {
+            return null;
+        }
+
+        var idx = Math.Clamp(phaseIndex, 0, MoonSky.PhaseCount - 1);
+        return string.Format(System.Globalization.CultureInfo.InvariantCulture, pattern, PhaseTokens[idx]);
+    }
 
     /// <summary>A game the viewer draws no billboard moon for (Starfield / Unknown).</summary>
     public static readonly SkyMoonProfile None = new() { MoonCount = 0 };
@@ -76,6 +122,11 @@ public sealed record SkyMoonProfile
     private static readonly string[] MorrowindMasser = [@"textures\tx_masser_full.dds"];
     private static readonly string[] MorrowindSecunda = [@"textures\tx_secunda_full.dds"];
 
+    // Morrowind ships 8 per-phase textures per moon (tx_masser_<token>.dds / tx_secunda_<token>.dds),
+    // in waxing→full→waning order; phase 0 = new, 4 = full (the phase-anchor day is calibrated in M5).
+    private static readonly string[] MorrowindPhaseTokens =
+        ["new", "one_wax", "half_wax", "three_wax", "full", "three_wan", "half_wan", "one_wan"];
+
     private static readonly SkyMoonProfile Morrowind = new()
     {
         MoonCount = 2,
@@ -85,6 +136,19 @@ public sealed record SkyMoonProfile
         // Masser dwarfs Secunda in Morrowind's sky (big red moon vs. small white one).
         PrimaryHalfSizeFraction = 0.150f,
         SecondaryHalfSizeFraction = 0.080f,
+        // Two distinct arcs (the headline fix): Masser climbs higher and culminates toward a different
+        // compass bearing than Secunda, and a slightly longer Secunda period makes them drift apart over
+        // days. Seeded from the decompiled orbit FORM; the literal Morrowind constants aren't in the shared
+        // calendar code, so M5 calibrates these against OpenMW night-sky captures.
+        PrimaryOrbit = new MoonSky.MoonOrbit(
+            PeriodHours: 24f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 72f, PeakAzimuthDeg: 100f, AzSwingDeg: 22f),
+        SecondaryOrbit = new MoonSky.MoonOrbit(
+            PeriodHours: 24.6f, PhaseOffsetTurns: 0.14f, MaxAltitudeDeg: 56f, PeakAzimuthDeg: 55f, AzSwingDeg: 30f),
+        PhaseLengthDays = MoonSky.MorrowindPhaseLengthDays,
+        SecondaryPhaseOffsetDays = 11, // seed: Secunda nearly opposite Masser → clearly different phase
+        PrimaryPhaseTexturePattern = @"textures\tx_masser_{0}.dds",
+        SecondaryPhaseTexturePattern = @"textures\tx_secunda_{0}.dds",
+        PhaseTokens = MorrowindPhaseTokens,
     };
 
     private static readonly SkyMoonProfile Oblivion = new()
@@ -97,7 +161,16 @@ public sealed record SkyMoonProfile
         // (NOT the old 0.225, which rendered the moons gigantic in-viewer) for the no-GameSettings case.
         PrimaryHalfSizeFraction = 0.125f,
         SecondaryHalfSizeFraction = 0.069f,
+        // Two distinct arcs (no per-phase textures → full moon every phase). Seeded; calibrate if needed.
+        PrimaryOrbit = new MoonSky.MoonOrbit(
+            PeriodHours: 24f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 70f, PeakAzimuthDeg: 95f, AzSwingDeg: 22f),
+        SecondaryOrbit = new MoonSky.MoonOrbit(
+            PeriodHours: 24.6f, PhaseOffsetTurns: 0.16f, MaxAltitudeDeg: 54f, PeakAzimuthDeg: 60f, AzSwingDeg: 28f),
     };
+
+    // A plain nightly arc for the single-moon Fallout games (no second moon, no per-phase textures).
+    private static readonly MoonSky.MoonOrbit SingleNightlyOrbit = new(
+        PeriodHours: 24f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 68f, PeakAzimuthDeg: 90f, AzSwingDeg: 20f);
 
     // FO3/FNV: single moon. Fallback = the FNV shipped GMSTs (iMasserSize 85 / fSunXExtreme 800 = 0.106).
     private static readonly SkyMoonProfile Fallout = new()
@@ -105,6 +178,7 @@ public sealed record SkyMoonProfile
         MoonCount = 1,
         PrimaryTextureCandidates = FalloutSingleMoon,
         PrimaryHalfSizeFraction = 0.106f,
+        PrimaryOrbit = SingleNightlyOrbit,
     };
 
     // Skyrim: fallback = the shipped Skyrim.esm GMSTs (iMasserSize 90 / 400 = 0.225, iSecundaSize 40 / 400 = 0.10).
@@ -115,6 +189,12 @@ public sealed record SkyMoonProfile
         SecondaryTextureCandidates = CreationSecunda,
         PrimaryHalfSizeFraction = 0.225f,
         SecondaryHalfSizeFraction = 0.100f,
+        // Two distinct arcs. Skyrim renders moon phases via its own shader, not per-phase textures, so the
+        // full-moon texture is used for every phase here (no PhaseTexturePattern).
+        PrimaryOrbit = new MoonSky.MoonOrbit(
+            PeriodHours: 24f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 74f, PeakAzimuthDeg: 100f, AzSwingDeg: 24f),
+        SecondaryOrbit = new MoonSky.MoonOrbit(
+            PeriodHours: 24.5f, PhaseOffsetTurns: 0.18f, MaxAltitudeDeg: 58f, PeakAzimuthDeg: 62f, AzSwingDeg: 30f),
     };
 
     // FO4/FO76: single moon drawn from the Creation Masser slot (the Boston/Appalachia moon reuses the
@@ -124,6 +204,7 @@ public sealed record SkyMoonProfile
         MoonCount = 1,
         PrimaryTextureCandidates = CreationMasser,
         PrimaryHalfSizeFraction = 0.100f,
+        PrimaryOrbit = SingleNightlyOrbit,
     };
 
     /// <summary>The moon configuration for the loaded game. Unknown/Starfield → <see cref="None" />.</summary>

@@ -77,6 +77,24 @@ public static class AtmosphereState
     private static readonly Vector3 DayFog = new(0.62f, 0.70f, 0.80f);
     private static readonly Vector3 NightTint = new(0.03f, 0.04f, 0.09f);
 
+    /// <summary>Apex of the analytic sun arc at solar noon, in radians (72°). Capped below the zenith so a
+    /// directional light component survives at midday — see <see cref="SunDirection" />.</summary>
+    private const float PeakSunElevation = 72f * (MathF.PI / 180f);
+
+    // Twilight (sunrise/sunset) placeholder tints — used by the no-NAM0 palette so a worldspace without
+    // authored weather still warms to orange at dawn/dusk instead of fading straight blue→night. Sunrise
+    // and sunset share these (the look is symmetric). Warm low-sun light: orange horizon, muted purple
+    // upper sky, warm fog + ambient. (When a weather DOES carry NAM0, its authored bands win.)
+    private static readonly Vector3 TwilightSun = new(1.00f, 0.60f, 0.33f);
+    private static readonly Vector3 TwilightAmbient = new(0.34f, 0.27f, 0.30f);
+    private static readonly Vector3 TwilightSkyTop = new(0.38f, 0.36f, 0.52f);
+    private static readonly Vector3 TwilightSkyHorizon = new(0.96f, 0.52f, 0.32f);
+    private static readonly Vector3 TwilightFog = new(0.74f, 0.54f, 0.50f);
+
+    // Max fraction of the dome horizon replaced by the warm NAM0 "Horizon" band when the sun is at the
+    // horizon (scaled down by sun elevation, so noon is untouched). Tuned for a visible-but-not-garish glow.
+    private const float HorizonGlowStrength = 0.7f;
+
     // Scene-scale fog fallback (world units) when the weather carries no FNAM distances.
     private const float DefaultFogNear = 4096f;
     private const float DefaultFogFar = 98304f;
@@ -115,19 +133,30 @@ public static class AtmosphereState
             sunColorBase = BandOr(wc, WeatherColorType.Sunlight, hour, srB, srE, ssB, ssE, DaySun);
             ambient = BandOr(wc, WeatherColorType.Ambient, hour, srB, srE, ssB, ssE, Vector3.Lerp(NightAmbient, DayAmbient, day));
             skyTop = BandOr(wc, WeatherColorType.SkyUpper, hour, srB, srE, ssB, ssE, Vector3.Lerp(NightTint, DaySkyTop, day));
-            skyHorizon = BandOr(wc, WeatherColorType.SkyLower, hour, srB, srE, ssB, ssE, Vector3.Lerp(NightTint, DaySkyHorizon, day));
+            var skyLowerBand = BandOr(wc, WeatherColorType.SkyLower, hour, srB, srE, ssB, ssE, Vector3.Lerp(NightTint, DaySkyHorizon, day));
+            // Horizon glow: FNV authors the warm sunrise/sunset horizon in the SEPARATE NAM0 "Horizon"
+            // band (index 8) — e.g. NVWastelandClear Sunset Horizon=(219,192,174) warm vs its blue
+            // SkyUpper/SkyLower — which the dome gradient (SkyUpper↔SkyLower) otherwise drops, leaving the
+            // sky blue at sunset ("no sunset lighting"). Fold the Horizon band into the dome's horizon,
+            // gated by sun elevation so it only appears when the sun is low (zero at noon → the daytime
+            // sky is unchanged), reproducing the warm low-sun horizon glow.
+            var horizonBand = BandOr(wc, WeatherColorType.Horizon, hour, srB, srE, ssB, ssE, skyLowerBand);
+            var horizonGlow = Math.Clamp(1f - (sunDir.Z * 1.5f), 0f, 1f);
+            skyHorizon = Vector3.Lerp(skyLowerBand, horizonBand, horizonGlow * HorizonGlowStrength);
             fogColor = BandOr(wc, WeatherColorType.Fog, hour, srB, srE, ssB, ssE, Vector3.Lerp(NightTint, DayFog, day));
         }
         else
         {
-            // Placeholder palette. The sun BASE is the full day colour; the daylight-fraction fade is
-            // applied to sunColor below, so the placeholder and the NAM0-band paths fade the directional
-            // identically (DaySun * day == the old Lerp(Zero, DaySun, day), so this path is unchanged).
-            sunColorBase = DaySun;
-            ambient = Vector3.Lerp(NightAmbient, DayAmbient, day);
-            skyTop = Vector3.Lerp(NightTint, DaySkyTop, day);
-            skyHorizon = Vector3.Lerp(NightTint, DaySkyHorizon, day);
-            fogColor = Vector3.Lerp(NightTint, DayFog, day);
+            // Placeholder palette with explicit sunrise/sunset phases (same windowed scheme as the NAM0
+            // path) so a worldspace with NO authored NAM0 weather still shows a warm dawn/dusk instead of
+            // fading straight blue→night. Sunrise and sunset share the twilight tints. The sun BASE warms
+            // through the windows; the daylight-fraction fade (sunColor = base * day, below) still dims it
+            // to near-zero at the horizon, so the directional reads as a low, warm sunrise/sunset light.
+            sunColorBase = SampleBandV(DaySun, TwilightSun, DaySun, TwilightSun, hour, srB, srE, ssB, ssE);
+            ambient = SampleBandV(NightAmbient, TwilightAmbient, DayAmbient, TwilightAmbient, hour, srB, srE, ssB, ssE);
+            skyTop = SampleBandV(NightTint, TwilightSkyTop, DaySkyTop, TwilightSkyTop, hour, srB, srE, ssB, ssE);
+            skyHorizon = SampleBandV(NightTint, TwilightSkyHorizon, DaySkyHorizon, TwilightSkyHorizon, hour, srB, srE, ssB, ssE);
+            fogColor = SampleBandV(NightTint, TwilightFog, DayFog, TwilightFog, hour, srB, srE, ssB, ssE);
         }
 
         // Fade the directional sun colour by the daylight fraction. GROUNDED in Sky::UpdateColors
@@ -236,7 +265,14 @@ public static class AtmosphereState
         }
 
         var t01 = (hour - srB) / (ssE - srB);        // 0 at sunriseBegin → 1 at sunsetEnd
-        var elevation = MathF.Sin(t01 * MathF.PI) * (MathF.PI / 2f); // 0 → π/2 (solar noon) → 0
+        // Peak the arc BELOW the zenith. A sun that reaches an exact 90° at noon (sunDir.Z = 1) leaves every
+        // VERTICAL surface — tree trunks, walls, side-facing leaf cards — at N·L ≈ 0 under the shader's
+        // saturate(N·L) term, so they collapse to dim ambient and read as too dark, while every up-facing
+        // surface is lit identically (flat, no midday shading). Real climates never put the sun directly
+        // overhead at this worldspace's latitude — the engine derives the apex from climate azimuth/elevation —
+        // so cap the arc's apex so a directional component survives at noon: trunks stay lit and the canopy
+        // keeps directional shading. (Future refinement: read the true per-climate sun-path elevation.)
+        var elevation = MathF.Sin(t01 * MathF.PI) * PeakSunElevation; // 0 → peak (solar noon) → 0
         var azimuth = MathF.PI * t01;                // 0 (east) → π (west)
         var cosEl = MathF.Cos(elevation);
         var dir = new Vector3(
@@ -273,14 +309,15 @@ public static class AtmosphereState
     // represent, and the daytime colors it blends are near-identical, so holding Day steady is a faithful
     // approximation of the dominant look (the visible sunrise/sunset transitions are reproduced exactly).
     private static Vector3 SampleBand(WeatherColor c, float hour, float srB, float srE, float ssB, float ssE)
+        => SampleBandV(ToVec(c.Night), ToVec(c.Sunrise), ToVec(c.Day), ToVec(c.Sunset),
+            hour, srB, srE, ssB, ssE);
+
+    // Vector3 form of the time-band blend, shared by the NAM0 path (above) and the placeholder palette.
+    private static Vector3 SampleBandV(Vector3 night, Vector3 sunrise, Vector3 day, Vector3 sunset,
+        float hour, float srB, float srE, float ssB, float ssE)
     {
         var srMid = (srB + srE) * 0.5f;
         var ssMid = (ssB + ssE) * 0.5f;
-
-        var night = ToVec(c.Night);
-        var sunrise = ToVec(c.Sunrise);
-        var day = ToVec(c.Day);
-        var sunset = ToVec(c.Sunset);
 
         if (hour < srB || hour >= ssE)
         {

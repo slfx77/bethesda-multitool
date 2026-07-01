@@ -38,6 +38,7 @@
                                      LightingToggled="LightingPanel_LightingToggled"
                                      FogToggled="LightingPanel_FogToggled"
                                      TimeChanged="LightingPanel_TimeChanged"
+                                     DayChanged="LightingPanel_DayChanged"
                                      WeatherChanged="LightingPanel_WeatherChanged" />
 
         <!-- Layers: cell grid / terrain textures / vertex colors / nav-mesh.

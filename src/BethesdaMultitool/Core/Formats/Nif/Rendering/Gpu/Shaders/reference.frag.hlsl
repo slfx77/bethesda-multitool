@@ -67,7 +67,11 @@ float3 AtmosphereLight(float3 N)
     // nights too bright; apply the 0.3 attenuation. Sunlight keeps its 1.0 scale. Net:
     // finalRGB = BaseMap * (0.3*Ambient + NdotL*Sunlight). pc_basic_sls_shader_disassembly.txt shows the
     // `mad r1, NdotL, PSLightColor, AmbientColor` sum; HDR/tonemap absorbs values > 1 as the engine does.
-    const float kAmbientScale = 0.3; // fRam8323ca10
+    // Per-game ambient ("fill") scale in uAmbientColor.w: 0.3 = FNV's fRam8323ca10, but the older
+    // ambient-heavier TES4 engines (Oblivion) read far softer, so the host raises it (GameProfile.
+    // AmbientLightScale) to keep vertical/shadow surfaces lit instead of point-lit. Falls back to 0.3 when
+    // the slot is unset (legacy/headless paths), so unchanged callers keep FNV's value.
+    float kAmbientScale = uAmbientColor.w > 0.0001 ? uAmbientColor.w : 0.3;
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
     return uAmbientColor.rgb * kAmbientScale + uSunColorLighting.rgb * ndotl;
 }
