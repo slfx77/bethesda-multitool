@@ -7044,8 +7044,14 @@
   <struct name="HavokMaterial" module="BSHavok" versions="#BETHESDA#">
     Bethesda Havok. Material
     wrapper for varying material enums by game.
+    <!-- Oblivion's oldest Gamebryo Havok (NIF 10.0.1.0 / 10.0.1.2) does NOT carry this leading "Unknown
+         Int": the shape's Material is followed directly by its Radius (0.1) in the real bytes. Upstream
+         nif.xml gates it "until 10.0.1.2", making every collision shape (bhkBoxShape, bhkNiTriStripsShape,
+         …) 4 bytes too long and desyncing all later blocks (e.g. floorplane01, stonepedastellarge01).
+         Bethesda Havok begins at 10.0.1.0, so "until 4.2.2.0" removes the phantom from every Bethesda file
+         while leaving truly pre-Gamebryo NetImmerse untouched. -->
     <field name="Unknown Int" type="uint"
-           until="10.0.1.2" />
+           until="4.2.2.0" />
     <field name="Material" suffix="OB" type="OblivionHavokMaterial"
            until="20.0.0.5" vercond="#BSVER# #LT# 16">
       The material of the shape.
@@ -8006,7 +8012,12 @@
       The shape for this collision
       object.
     </field>
-    <field name="Unknown Int" type="uint" until="10.0.1.2" />
+    <!-- Bethesda extension: Oblivion's oldest Gamebryo Havok (NIF 10.0.1.0 / 10.0.1.2 — e.g.
+         floorplane01, stonepedastellarge01) does NOT carry this "Unknown Int". Decoding the real bytes
+         shows Shape is followed directly by Havok Filter (Layer=OL_STATIC for static collision) then
+         World Object Info. Upstream nif.xml gates it "until 10.0.1.2", which over-measures these blocks by
+         4 bytes and desyncs every later block. (The Havok Filter itself IS present and stays ungated.) -->
+    <field name="Unknown Int" type="uint" until="4.2.2.0" />
     <field
       name="Havok Filter" type="HavokFilter" />
     <field name="World Object Info"
@@ -8313,12 +8324,15 @@
       name="Num Constraints" type="uint" />
     <field name="Constraints" type="Ref"
            template="bhkSerializable" length="Num Constraints" />
+    <!-- Body Flags exist only since NIF 10.1.0.0. Oblivion's oldest Gamebryo Havok (10.0.1.0 / 10.0.1.2)
+         ends the rigid body at Num Constraints; reading Body Flags there over-measures by 4 and desyncs
+         the following blocks. Forts (10.1.0.106) / 20.x / FNV conversion are all >= 10.1.0.0, unchanged. -->
     <field name="Body Flags" type="uint"
-           vercond="#BSVER# #LT# 76">
+           vercond="#BSVER# #LT# 76" since="10.1.0.0">
       1 = respond to wind
     </field>
     <field name="Body Flags" type="ushort"
-           vercond="#BSVER# #GTE# 76">
+           vercond="#BSVER# #GTE# 76" since="10.1.0.0">
       1 = respond to wind
     </field>
   </niobject>
@@ -8789,9 +8803,15 @@
            type="uint" default="1" />
     <field name="Strips Data" type="Ref" template="NiTriStripsData"
            length="Num Strips Data" />
+    <!-- Num Filters is a calc field (always == Strips Data length) serialized only since 10.1.0.0.
+         Oblivion's oldest Gamebryo Havok (10.0.1.0 / 10.0.1.2 — e.g. stonepedastellarge01) stores the
+         Filters array right after Strips Data with no count; reading the phantom count there adds 4 bytes
+         and desyncs the following bhkMoppBvTreeShape (its MOPP Data Size is then read from the wrong
+         offset, collapsing the block). The Filters length keys on Num Strips Data (== Num Filters) so it
+         resolves whether or not the count is present. -->
     <field name="Num Filters" type="uint" default="1"
-           calc="#LEN[Strips Data]#" />
-    <field name="Filters" type="HavokFilter" length="Num Filters" />
+           calc="#LEN[Strips Data]#" since="10.1.0.0" />
+    <field name="Filters" type="HavokFilter" length="Num Strips Data" />
   </niobject>
 
   <niobject name="NiExtraData" inherit="NiObject" module="NiMain">

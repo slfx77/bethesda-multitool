@@ -224,7 +224,13 @@ internal static class NifSubmeshExtractor
 
             if (modernGeom)
             {
-                pos += 16;
+                // nif.xml NiGeometryData order is Normals → Tangents → Bitangents → Bounding Sphere, so the
+                // tangents/bitangents sit RIGHT AFTER the normals, BEFORE the 16-byte bounding sphere. The old
+                // code skipped the sphere FIRST, shifting every tangent 16 bytes (~1.33 verts) into the array
+                // → a garbage/degenerate per-vertex tangent basis. That made the normal-map TBN swim and
+                // produced triangulation-following bump banding on flat panels (e.g. billboards). Read them
+                // first; skip the sphere after. The total advance is unchanged (24N + 16) so the bounding
+                // sphere and downstream vertex colors/UVs stay aligned — which is why this stayed hidden.
                 if ((bsVectorFlags & 0x1000) != 0)
                 {
                     if (pos + numVerts * 24 <= end)
@@ -239,6 +245,8 @@ internal static class NifSubmeshExtractor
 
                     pos += numVerts * 24;
                 }
+
+                pos += 16; // bounding sphere (Center + Radius) comes AFTER tangents/bitangents
             }
         }
         else if (modernGeom)
@@ -727,7 +735,13 @@ internal static class NifSubmeshExtractor
 
             if (modernGeom)
             {
-                pos += 16;
+                // nif.xml NiGeometryData order is Normals → Tangents → Bitangents → Bounding Sphere, so the
+                // tangents/bitangents sit RIGHT AFTER the normals, BEFORE the 16-byte bounding sphere. The old
+                // code skipped the sphere FIRST, shifting every tangent 16 bytes (~1.33 verts) into the array
+                // → a garbage/degenerate per-vertex tangent basis. That made the normal-map TBN swim and
+                // produced triangulation-following bump banding on flat panels (e.g. billboards). Read them
+                // first; skip the sphere after. The total advance is unchanged (24N + 16) so the bounding
+                // sphere and downstream vertex colors/UVs stay aligned — which is why this stayed hidden.
                 if ((bsVectorFlags & 0x1000) != 0)
                 {
                     if (pos + numVerts * 24 <= end)
@@ -742,6 +756,8 @@ internal static class NifSubmeshExtractor
 
                     pos += numVerts * 24;
                 }
+
+                pos += 16; // bounding sphere (Center + Radius) comes AFTER tangents/bitangents
             }
         }
         else if (modernGeom)
