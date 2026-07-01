@@ -22,6 +22,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\BethesdaMultitool\BethesdaMultitool.csproj" />
+    <!-- EsmAnalyzer is referenced so its text adapters (e.g. the OpenMW esmtool dump parser) can be
+         unit-tested directly; it exposes internals to this assembly via InternalsVisibleTo. -->
+    <ProjectReference Include="..\..\tools\EsmAnalyzer\EsmAnalyzer.csproj" />
   </ItemGroup>
 
 </Project>
