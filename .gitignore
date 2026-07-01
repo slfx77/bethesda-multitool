@@ -137,4 +137,7 @@ docs/facegen_testoutput_research_index.md
 docs/facegen_head_rendering_current_status.md
 docs/facegen_head_rendering_function_map.md
 docs/facegen_head_rendering_pipeline.md
-research/facegen_research_artifacts/
+# Relocated under docs/ (was research/facegen_research_artifacts/). Ignore the whole
+# research + backlog note trees; curated docs live directly under docs/ and stay tracked.
+docs/research/
+docs/backlog/
