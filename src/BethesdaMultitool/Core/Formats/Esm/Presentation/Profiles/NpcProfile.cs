@@ -94,12 +94,15 @@ internal sealed class NpcProfile : IRecordProfile
     private static IEnumerable<uint> RefList(DecodedNode? arrayNode) =>
         arrayNode?.Children.Select(c => c.RawValue as uint?).Where(v => v.HasValue).Select(v => v!.Value) ?? [];
 
-    // ACBS Flags bit 0. The typed model only populates Stats when ACBS >= 24, in which case the union "Level"
-    // tail child is >= 16 bytes; otherwise "Female" defaults to "No".
+    // The typed model only populates Stats when the full ACBS parsed — its last field, Template Flags
+    // (offset 22), is present exactly when the subrecord is the full 24 bytes that yield a non-null Stats.
+    private static bool HasStats(DecodedNode? acbs) => Int(ChildByLabel(acbs, "Template Flags")) is not null;
+
+    // ACBS Flags bit 0; "No" unless Stats is populated, mirroring (npc.Stats?.Flags ?? 0) & 1.
     private static string Female(IReadOnlyList<DecodedNode> tree)
     {
         var acbs = TopBySignature(tree, "ACBS");
-        if (Bytes(ChildByLabel(acbs, "Level")) is not { Length: >= 16 })
+        if (!HasStats(acbs))
         {
             return "No";
         }
@@ -107,11 +110,11 @@ internal sealed class NpcProfile : IRecordProfile
         return ((Int(ChildByLabel(acbs, "Flags")) ?? 0) & 1) != 0 ? "Yes" : "No";
     }
 
-    // ACBS Level — a UnionDef, so it lands in the raw tail child starting at ACBS offset 8 (S16).
+    // ACBS Level — the decoded union value (variant 0 = "Level"); "(unknown)" when Stats is absent.
     private static string Level(IReadOnlyList<DecodedNode> tree)
     {
-        var levelBytes = Bytes(ChildByLabel(TopBySignature(tree, "ACBS"), "Level"));
-        return levelBytes is { Length: >= 16 } && ReadS16(levelBytes, 0) is { } level
+        var acbs = TopBySignature(tree, "ACBS");
+        return HasStats(acbs) && Int(ChildByLabel(acbs, "Level")) is { } level
             ? level.ToString()
             : "(unknown)";
     }

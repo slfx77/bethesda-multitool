@@ -72,12 +72,13 @@ internal sealed class CreatureProfile : IRecordProfile
         return RecordDetailHelpers.Model("CREA", formId, editorId, displayName, sections);
     }
 
-    // ACBS Level union → raw-tail child starting at ACBS offset 8 (S16); same read NpcProfile uses. The typed
-    // Stats are only populated when ACBS == 24, in which case the tail is >= 16 bytes.
+    // ACBS Level — the decoded union value (variant 0 = "Level"); same read NpcProfile uses. Stats is
+    // populated only when the full ACBS parsed, signalled by its last field (Template Flags).
     private static string Level(IReadOnlyList<DecodedNode> tree)
     {
-        var levelBytes = Bytes(ChildByLabel(TopBySignature(tree, "ACBS"), "Level"));
-        return levelBytes is { Length: >= 16 } && ReadS16(levelBytes, 0) is { } level
+        var acbs = TopBySignature(tree, "ACBS");
+        return Int(ChildByLabel(acbs, "Template Flags")) is not null
+               && Int(ChildByLabel(acbs, "Level")) is { } level
             ? level.ToString()
             : "(unknown)";
     }

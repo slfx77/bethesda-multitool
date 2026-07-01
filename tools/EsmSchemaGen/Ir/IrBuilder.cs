@@ -26,6 +26,12 @@ public sealed class IrBuilder
     private readonly Dictionary<string, EnumDef> _enumSymbols = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, FlagsDef> _flagsSymbols = new(StringComparer.OrdinalIgnoreCase);
 
+    // Bare member-array assignments (wbConditionMembers := [ wbInteger(...), wbUnion(...), ... ]). xEdit passes
+    // these by name into wbStructSK(SIG, [sortkeys], 'Name', wbConditionMembers, ...) and wbUnion(..., variants),
+    // so they must resolve to a member list, not the single-member symbol table.
+    private readonly Dictionary<string, IReadOnlyList<MemberDef>> _memberArraySymbols =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Resolved <c>wb* := …</c> builder-symbol assignments (the per-file / Common symbol table).</summary>
     public IReadOnlyDictionary<string, MemberDef> Symbols => _symbols;
 
@@ -57,6 +63,14 @@ public sealed class IrBuilder
             }
         }
 
+        // A bare list assignment is a member array (wbConditionMembers/wbConditionParameters/...). Built
+        // eagerly: xEdit declares these before the structs/unions that reference them by name.
+        if (rhs is WbList list)
+        {
+            _memberArraySymbols[name] = list.Items.Select(BuildMember).ToList();
+            return;
+        }
+
         _symbols[name] = BuildMember(rhs);
     }
 
@@ -83,6 +97,16 @@ public sealed class IrBuilder
 
     private IReadOnlyList<MemberDef> BuildMembers(IReadOnlyList<WbValue> args)
     {
+        // Members may be passed by name — wbStructSK(SIG, [sort-keys], 'Name', wbConditionMembers, ...) — in
+        // which case the only inline list is the sort-key indices. A referenced member-array symbol wins.
+        foreach (var arg in args)
+        {
+            if (arg is WbIdent id && _memberArraySymbols.TryGetValue(id.Name, out var spliced))
+            {
+                return spliced;
+            }
+        }
+
         // The member list is the LAST bracketed list: builders like wbStructSK(SIG, 'Name',
         // [sort-key indices], [members]) carry an earlier index list that must not be mistaken for members.
         var list = LastList(args);
@@ -344,7 +368,14 @@ public sealed class IrBuilder
     {
         var decider = SkipSignature(args).OfType<WbIdent>().FirstOrDefault(i => !IsItType(i.Name))?.Name
                       ?? "<unknown-decider>";
-        var variants = FirstList(args)?.Items.Select(BuildMember).ToList() ?? [];
+        // Variants are usually an inline list, but a union like wbUnion('Parameter #1', decider,
+        // wbConditionParameters) passes them by name (the decider is also an ident — only the member-array
+        // symbol resolves here, so it is not mistaken for the decider).
+        var variants = FirstList(args)?.Items.Select(BuildMember).ToList()
+                       ?? args.OfType<WbIdent>()
+                           .Select(i => _memberArraySymbols.GetValueOrDefault(i.Name))
+                           .FirstOrDefault(v => v is not null)?.ToList()
+                       ?? [];
         return new UnionDef(decider, variants)
         {
             Signature = SignatureOf(args),

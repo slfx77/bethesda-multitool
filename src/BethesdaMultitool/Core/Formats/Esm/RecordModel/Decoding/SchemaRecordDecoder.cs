@@ -125,6 +125,18 @@ public static class SchemaRecordDecoder
                 }
             }
         }
+        else if (member is UnionDef union)
+        {
+            // A subrecord-level union (e.g. a Condition that is either a CTDA or a CTDT struct): each
+            // variant contributes its own entry signature.
+            foreach (var variant in union.Variants)
+            {
+                foreach (var s in EntrySignatures(variant))
+                {
+                    yield return s;
+                }
+            }
+        }
     }
 
     private static DecodedNode DecodeArray(
@@ -145,6 +157,26 @@ public static class SchemaRecordDecoder
                 var sub = subrecords[i];
                 var node = DecodeSignedMember(element, sub.Signature, sub.Data, ctx);
                 children.Add(node with { Label = $"{ElementLabel(element, node.Label)} [{index}]" });
+                index++;
+                i++;
+            }
+        }
+        else if (element is UnionDef union)
+        {
+            // Each element is one of several signed-struct variants (e.g. a Condition that is a CTDA or a
+            // CTDT subrecord); pick the variant whose signature matches the next subrecord.
+            var index = 0;
+            while (i < subrecords.Count)
+            {
+                var sub = subrecords[i];
+                var variant = union.Variants.FirstOrDefault(v => v.Signature == sub.Signature);
+                if (variant is null)
+                {
+                    break;
+                }
+
+                var node = DecodeSignedMember(variant, sub.Signature, sub.Data, ctx);
+                children.Add(node with { Label = $"{ElementLabel(variant, node.Label)} [{index}]" });
                 index++;
                 i++;
             }
@@ -312,9 +344,19 @@ public static class SchemaRecordDecoder
                     });
                     break;
                 }
+                case UnionDef union when TryUniformVariantSize(union, out var usize) && offset + usize <= limit:
+                {
+                    // An inline value union (e.g. CTDA Comparison Value / Parameter #1) — every variant is the
+                    // same width, so the struct stays aligned whichever one the data is. There is no
+                    // per-function decider yet, so decode the first variant as a representative.
+                    output.Add(DecodeInlineUnion(union, data, offset, limit, ctx));
+                    offset += usize;
+                    break;
+                }
                 default:
-                    // Union / dynamic array / RawMemberDef / unmodeled — preserve the tail verbatim. For a
-                    // trailing member this is the conditional-absent case (0 bytes); mid-struct it stops here.
+                    // Union (non-uniform) / dynamic array / RawMemberDef / unmodeled — preserve the tail
+                    // verbatim. For a trailing member this is the conditional-absent case (0 bytes);
+                    // mid-struct it stops here.
                     output.Add(RawNode(member.Name ?? member.GetType().Name, null, data[offset..limit]));
                     return limit;
             }
@@ -388,6 +430,103 @@ public static class SchemaRecordDecoder
             : $"0x{value:X8}";
         return (display, value, value);
     }
+
+    /// <summary>
+    ///     Decode an inline value union by its first variant (no per-function decider yet). A purely opaque
+    ///     first variant (an <c>wbUnknown(4)</c> byte array, e.g. a condition parameter) is surfaced as a u32
+    ///     so the value stays visible rather than rendering as "&lt;4 bytes&gt;".
+    /// </summary>
+    private static DecodedNode DecodeInlineUnion(UnionDef union, byte[] data, int offset, int limit, DecodeContext ctx)
+    {
+        var label = union.Name ?? "Value";
+        var repr = union.Variants[0];
+        if (repr is FieldDef { Type: PrimType.ByteArray } opaque)
+        {
+            repr = new FieldDef(PrimType.U32) { Name = opaque.Name };
+        }
+
+        switch (repr)
+        {
+            case FormIdDef formId:
+            {
+                var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx);
+                return new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = fid };
+            }
+            case FieldDef field:
+            {
+                var (value, raw, fid) = DecodeScalar(field, data, offset, limit, ctx, out _);
+                return new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = fid };
+            }
+            default:
+                return RawNode(label, null, data[offset..limit]);
+        }
+    }
+
+    /// <summary>True when every union variant has the same known fixed width (so decoding any one keeps the
+    /// enclosing struct byte-aligned). Returns false for variable/mixed-width unions (e.g. GMST DATA).</summary>
+    private static bool TryUniformVariantSize(UnionDef union, out int size)
+    {
+        size = 0;
+        if (union.Variants.Count == 0)
+        {
+            return false;
+        }
+
+        int? common = null;
+        foreach (var variant in union.Variants)
+        {
+            if (TryFixedSize(variant) is not { } s)
+            {
+                return false;
+            }
+
+            common ??= s;
+            if (common != s)
+            {
+                return false;
+            }
+        }
+
+        size = common ?? 0;
+        return size > 0;
+    }
+
+    /// <summary>The fixed byte width of a member, or null when it is variable/unknown (strings, dynamic arrays).</summary>
+    private static int? TryFixedSize(MemberDef member) => member switch
+    {
+        FormIdDef => 4,
+        UnusedDef unused => unused.Size,
+        FieldDef field => FixedPrimSize(field),
+        StructDef structDef => SumFixedSizes(structDef.Members),
+        _ => null
+    };
+
+    private static int? SumFixedSizes(IReadOnlyList<MemberDef> members)
+    {
+        var total = 0;
+        foreach (var m in members)
+        {
+            if (TryFixedSize(m) is not { } s)
+            {
+                return null;
+            }
+
+            total += s;
+        }
+
+        return total;
+    }
+
+    private static int? FixedPrimSize(FieldDef field) => field.Type switch
+    {
+        PrimType.U8 or PrimType.S8 => 1,
+        PrimType.U16 or PrimType.S16 or PrimType.Half => 2,
+        PrimType.U24 => 3,
+        PrimType.U32 or PrimType.S32 or PrimType.Float or PrimType.FormId or PrimType.LString => 4,
+        PrimType.U64 or PrimType.S64 or PrimType.Double => 8,
+        PrimType.ByteArray => field.FixedSize,
+        _ => null
+    };
 
     private static readonly (string?, object?, uint?) NoValue = (null, null, null);
 

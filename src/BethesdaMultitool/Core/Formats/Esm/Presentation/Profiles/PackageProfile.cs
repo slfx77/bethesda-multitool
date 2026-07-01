@@ -108,10 +108,11 @@ internal sealed class PackageProfile : IRecordProfile
             ? new PackageLocation { Type = b[0], Union = ReadU32(b, 4) ?? 0, Radius = ReadS32(b, 8) ?? 0 }
             : null;
 
-    // PLD2 is a struct with a mid-struct union: "Type"(S32, low byte) + a "Location" raw tail = Union @0, Radius @4.
+    // PLD2: "Type"(S32, low byte) + a mid-struct "Location" union (4-byte variants) + "Radius"(S32). The union
+    // now decodes; its 4 bytes are the same value the typed model reads as a U32 whichever variant applies.
     private static PackageLocation? LocationFromStruct(DecodedNode? node)
     {
-        if (node is null || Bytes(ChildByLabel(node, "Location")) is not { } tail)
+        if (node is null || ChildByLabel(node, "Location") is not { } location)
         {
             return null;
         }
@@ -119,15 +120,16 @@ internal sealed class PackageProfile : IRecordProfile
         return new PackageLocation
         {
             Type = (byte)(Int(ChildByLabel(node, "Type")) ?? 0),
-            Union = ReadU32(tail, 0) ?? 0,
-            Radius = ReadS32(tail, 4) ?? 0
+            Union = location.RawValue as uint? ?? 0,
+            Radius = (int)(Int(ChildByLabel(node, "Radius")) ?? 0)
         };
     }
 
-    // PTDT/PTD2: "Type"(S32, low byte) + a "Target" raw tail = FormID/Type @0, Count/Distance @4, AcquireRadius @8.
+    // PTDT/PTD2: "Type"(S32, low byte) + a mid-struct "Target" union (4-byte variants) + "Count / Distance"(S32)
+    // + "Unknown"(Float). Read the decoded union value and the trailing fields.
     private static PackageTarget? TargetFromStruct(DecodedNode? node)
     {
-        if (node is null || Bytes(ChildByLabel(node, "Target")) is not { } tail)
+        if (node is null || ChildByLabel(node, "Target") is not { } target)
         {
             return null;
         }
@@ -135,9 +137,9 @@ internal sealed class PackageProfile : IRecordProfile
         return new PackageTarget
         {
             Type = (byte)(Int(ChildByLabel(node, "Type")) ?? 0),
-            FormIdOrType = ReadU32(tail, 0) ?? 0,
-            CountDistance = ReadS32(tail, 4) ?? 0,
-            AcquireRadius = ReadFloat(tail, 8) ?? 0f
+            FormIdOrType = target.RawValue as uint? ?? 0,
+            CountDistance = (int)(Int(ChildByLabel(node, "Count / Distance")) ?? 0),
+            AcquireRadius = Float(ChildByLabel(node, "Unknown")) ?? 0f
         };
     }
 
