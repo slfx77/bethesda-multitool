@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Games;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
@@ -35,20 +36,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     // normal so proto/test worldspaces with no water texture still animate.
     private const uint NoNormalMap = 0xFFFFFFFF;
 
-    // World units per NNAM tile. FNV cells are 4096 units; ~2 tiles/cell reads as gentle swell.
-    private const uint NoiseTilingWorldUnits = 2048;
-
-    // Depth-sample (in-shader) occlusion tie-break for 3D-2 water/land z-fighting: keep the water fragment
-    // when the scene geometry behind it is within this many world units of the water surface, so a shoreline
-    // where water and terrain are ~coplanar resolves in the water's favor instead of flickering on
-    // sub-ULP depth noise. Tiny vs the default DepthFalloff (0→4096), so it never reveals water that is
-    // clearly occluded. GUI-tunable: passed to the shader via WaterFrameUniforms.DepthTieBias.
-    private const float DepthTieBiasWorldUnits = 8f;
-
-    // Fallback tints when the worldspace has no resolvable WATR appearance (DNAM colors).
-    private static readonly Vector3 DefaultShallow = new(0.12f, 0.24f, 0.32f);
-    private static readonly Vector3 DefaultDeep = new(0.03f, 0.09f, 0.16f);
-    private static readonly Vector3 DefaultReflection = new(0.22f, 0.32f, 0.40f);
+    // Per-game water config (noise tile size, depth tie-break bias, no-WATR fallback tints, shader
+    // variant). These were FNV-specific constants hardcoded here; they now live in WaterProfile so they
+    // stop being silently universal. Defaults to the FNV profile (the renderer is built before the ESM
+    // loads); SetGame swaps in the loaded game's profile. FNV/FO3 → identical values → byte-identical.
+    private WaterProfile _waterProfile = WaterProfile.Fnv;
 
     private readonly GpuDevice12 _gpu;
     private readonly GpuCommandRecorder12 _recorder;
@@ -255,6 +247,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _depthFar = far;
     }
 
+    /// <summary>Selects the per-game <see cref="WaterProfile" /> (shader variant + tuning) for the loaded
+    /// game. Call before <see cref="Render" /> on each worldspace/interior load. FNV/FO3 resolve to the
+    /// FNV profile (byte-identical); every other game falls back to it until its own water shader is
+    /// reverse-engineered (binary-RE-only policy).</summary>
+    public void SetGame(BethesdaGame game) => _waterProfile = WaterProfile.ForGame(game);
+
     /// <summary>
     ///     Supplies the world-space water planes detected on placed-reference NIFs (cave/pool water).
     ///     The list is owned by <see cref="ReferenceRenderer12" /> and grows as those references'
@@ -333,14 +331,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             *(WaterFrameUniforms*)perFrameAlloc.CpuPtr = new WaterFrameUniforms
             {
                 ViewProj = viewProj,
-                Shallow = ColorToVector4(_appearance?.Shallow, DefaultShallow),
-                Deep = ColorToVector4(_appearance?.Deep, DefaultDeep),
-                Reflection = ColorToVector4(_appearance?.Reflection, DefaultReflection),
+                Shallow = ColorToVector4(_appearance?.Shallow, _waterProfile.DefaultShallow),
+                Deep = ColorToVector4(_appearance?.Deep, _waterProfile.DefaultDeep),
+                Reflection = ColorToVector4(_appearance?.Reflection, _waterProfile.DefaultReflection),
                 CamPosTime = new Vector4(cylinder.Position, elapsedSeconds),
                 // x = NNAM bindless index (NoNormalMap → procedural ripple); y = world units/tile.
                 NoiseIndex = _noiseBindlessIndex,
-                NoiseTiling = NoiseTilingWorldUnits,
-                NoisePad0 = 0,
+                NoiseTiling = _waterProfile.NoiseTilingWorldUnits,
+                NoiseScale = surface.NoiseScale,
                 NoisePad1 = 0,
                 Surface0 = new Vector4(surface.NormalsUvScale, surface.FresnelAmount, surface.ReflectivityAmount, surface.Shininess),
                 // .w carries the lava flag (OBLIV-2): 1 = render as emissive, Fresnel-free lava (Oblivion
@@ -356,7 +354,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 DepthIndex = _depthBindlessIndex,
                 DepthNear = _depthNear,
                 DepthFar = _depthFar,
-                DepthTieBias = DepthTieBiasWorldUnits,
+                DepthTieBias = _waterProfile.DepthTieBiasWorldUnits,
             };
         }
 
@@ -621,7 +619,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         // Kept as raw uints so the index reaches the shader bit-exact (no float reinterpretation).
         public uint NoiseIndex;
         public uint NoiseTiling;
-        public uint NoisePad0;
+        public float NoiseScale; // DNAM fNoiseScale @96; shader reads asfloat(uNoiseParams.z)
         public uint NoisePad1;
         // Engine-faithful WATR DNAM shading params (see WaterSurfaceParams).
         public Vector4 Surface0; // NormalsUvScale, FresnelAmount, ReflectivityAmount, Shininess

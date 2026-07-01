@@ -105,6 +105,15 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "DATA" when Context.Game == BethesdaGame.Oblivion && sub.DataLength >= 56:
                     visualProps = ReadOblivionWaterData(subData, record.IsBigEndian);
                     break;
+                // Skyrim WATR DNAM (xEdit wbDefinitionsTES5): a longer struct (~228 bytes LE / 232 SSE)
+                // whose colors are shifted +4 vs FNV (an extra float at +28) and which adds Skyrim-specific
+                // specular/noise fields. Game-gated because its length (≠196) and layout differ from FNV's
+                // DNAM; without this every Skyrim water falls back to the default tint (the FNV 196-byte case
+                // below never matches Skyrim). Grounded in the disassembled Skyrim water PS
+                // (tools/GhidraProject/skyrim_water_pixel_shader_decompiled.txt).
+                case "DNAM" when Context.Game == BethesdaGame.Skyrim && sub.DataLength >= 52:
+                    visualProps = ReadSkyrimWaterData(subData, record.IsBigEndian);
+                    break;
                 case "DNAM" when sub.DataLength == 196:
                 {
                     if (SubrecordSchemaView.TryRead("DNAM", "WATR", subData, record.IsBigEndian) is { } v)
@@ -163,6 +172,55 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             ["DeepColor"] = Color(d, 48),
             ["ReflectionColor"] = Color(d, 52),
         };
+    }
+
+    // Skyrim WATR DNAM struct (xEdit wbDefinitionsTES5, little-endian). Leading: 4 unused wind/wave
+    // floats, then Sun Specular Power@16, Reflectivity@20, Fresnel@24, an extra float@28, fog Above
+    // Near@32/Far@36; then the three wbByteColors (R,G,B,A) at 40/44/48 (Shallow/Deep/Reflection) —
+    // shifted +4 from FNV by that float@28. Later: noise Wind Direction@100.., Wind Speed@112..,
+    // under-water fog Near@144/Far@148 (the depth-fade analog → DepthFalloff), Specular Power@156
+    // (the sun-spec exponent → Shininess), noise UV Scale@172.., Amplitude@184... Colors are packed
+    // R|G<<8|B<<16 (endian-independent); scalars are endian-aware floats. Deeper fields exist only in
+    // a full (non-truncated, optionalFromElement=36) DNAM, so each is added only when in-bounds.
+    // Surfaced under the SAME dictionary keys WaterAppearance reads (see ReadOblivionWaterData).
+    internal static Dictionary<string, object?> ReadSkyrimWaterData(ReadOnlySpan<byte> d, bool isBigEndian)
+    {
+        static uint Color(ReadOnlySpan<byte> d, int off) =>
+            (uint)(d[off] | (d[off + 1] << 8) | (d[off + 2] << 16));
+
+        var props = new Dictionary<string, object?>
+        {
+            ["SunPower"] = ReadFloat(d, 16, isBigEndian),
+            ["ReflectivityAmount"] = ReadFloat(d, 20, isBigEndian),
+            ["FresnelAmount"] = ReadFloat(d, 24, isBigEndian),
+            ["ShallowColor"] = Color(d, 40),
+            ["DeepColor"] = Color(d, 44),
+            ["ReflectionColor"] = Color(d, 48),
+        };
+
+        // Static local (the ReadOnlySpan must be passed, not captured): adds a float only when the
+        // record is long enough to carry it (truncated DNAMs keep only up to the colors).
+        static void Add(Dictionary<string, object?> props, ReadOnlySpan<byte> d, string key, int off, bool be)
+        {
+            if (off + 4 <= d.Length) props[key] = ReadFloat(d, off, be);
+        }
+
+        Add(props, d, "NoiseLayer1WindDir", 100, isBigEndian);
+        Add(props, d, "NoiseLayer2WindDir", 104, isBigEndian);
+        Add(props, d, "NoiseLayer3WindDir", 108, isBigEndian);
+        Add(props, d, "NoiseLayer1WindSpeed", 112, isBigEndian);
+        Add(props, d, "NoiseLayer2WindSpeed", 116, isBigEndian);
+        Add(props, d, "NoiseLayer3WindSpeed", 120, isBigEndian);
+        Add(props, d, "DepthFalloffStart", 144, isBigEndian);
+        Add(props, d, "DepthFalloffEnd", 148, isBigEndian);
+        Add(props, d, "Shininess", 156, isBigEndian);
+        Add(props, d, "NoiseLayer1UVScale", 172, isBigEndian);
+        Add(props, d, "NoiseLayer2UVScale", 176, isBigEndian);
+        Add(props, d, "NoiseLayer3UVScale", 180, isBigEndian);
+        Add(props, d, "NoiseLayer1AmpScale", 184, isBigEndian);
+        Add(props, d, "NoiseLayer2AmpScale", 188, isBigEndian);
+        Add(props, d, "NoiseLayer3AmpScale", 192, isBigEndian);
+        return props;
     }
 
     #endregion

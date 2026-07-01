@@ -32,21 +32,31 @@ public sealed record WaterSurfaceParams(
     float DepthFalloffEnd,
     WaterNoiseLayer Layer1,
     WaterNoiseLayer Layer2,
-    WaterNoiseLayer Layer3)
+    WaterNoiseLayer Layer3,
+    // DNAM fNoiseScale (@96). Per the MemDebug decompile (ISNOISENORMALMAP.pso + WaterShader RE) this is
+    // the noise-map detail scale: the noise repeats ~NoiseScale times across each NormalsUvScale world-tile,
+    // so the effective ripple wavelength ≈ NormalsUvScale / NoiseScale. Engine default 1.0; real water ~13.
+    float NoiseScale = 1f)
 {
-    /// <summary>Fallback used when a record has no full 196-byte DNAM (proto/test water). Three
-    /// gently-divergent layers so the procedural-free path still animates plausibly.</summary>
+    /// <summary>Fallback when a record has no full 196-byte DNAM (proto/test water, or a worldspace whose
+    /// WATR didn't resolve). These are the engine's shipped <c>NVCleanWater</c> preset values (FormID
+    /// 0x178882, the most common FNV water), read straight from <c>FalloutNV.esm</c>'s DNAM — so an
+    /// unresolved water body still renders like real Fallout water rather than a tuned guess. NormalsUvScale
+    /// is the DNAM fUVScale (= the VS TexScale world tile); the three layers carry the real WindDir(°),
+    /// WindSpeed, and fAmplitude blend weights; NoiseScale is the fNoiseScale detail multiplier.</summary>
     public static readonly WaterSurfaceParams Default = new(
-        NormalsUvScale: 1f,
-        FresnelAmount: 0.5f,
-        ReflectivityAmount: 1f,
-        Shininess: 80f,
-        SunPower: 1f,
+        NormalsUvScale: 1000f,   // DNAM fUVScale @136 = noise world tile (TexScale)
+        FresnelAmount: 0.025f,   // DNAM fFresnelAmount @24 (engine default; clean water authors ~this)
+        ReflectivityAmount: 0.5f,
+        Shininess: 500f,         // DNAM fShininess @156 (sharp sun glint)
+        SunPower: 826f,          // DNAM fSunPower @16
         DepthFalloffStart: 0f,
-        DepthFalloffEnd: 4096f,
-        Layer1: new WaterNoiseLayer(1.0f, 0f, 1.0f, 1.0f),
-        Layer2: new WaterNoiseLayer(1.7f, 120f, 0.8f, 0.6f),
-        Layer3: new WaterNoiseLayer(2.3f, 240f, 0.6f, 0.4f));
+        DepthFalloffEnd: 0.01f,  // DNAM DepthFalloffEnd @128 (NVCleanWater)
+        // WaterNoiseLayer = (UvScale[displacement, unused for noise], WindDirDeg, WindSpeed, AmpScale=fAmplitude).
+        Layer1: new WaterNoiseLayer(0f, 180f, 0.065f, 0.300f),
+        Layer2: new WaterNoiseLayer(0f, 10f, 0.033f, 0.525f),
+        Layer3: new WaterNoiseLayer(0f, 67f, 0.029f, 0.138f),
+        NoiseScale: 13.41f);     // DNAM fNoiseScale @96
 }
 
 /// <summary>
@@ -159,7 +169,8 @@ public sealed record WaterAppearance(
             DepthFalloffEnd: ExtractFloat(props, "DepthFalloffEnd", def.DepthFalloffEnd),
             Layer1: ExtractLayer(props, "NoiseLayer1", def.Layer1),
             Layer2: ExtractLayer(props, "NoiseLayer2", def.Layer2),
-            Layer3: ExtractLayer(props, "NoiseLayer3", def.Layer3));
+            Layer3: ExtractLayer(props, "NoiseLayer3", def.Layer3),
+            NoiseScale: ExtractFloat(props, "NoiseScale", def.NoiseScale));
     }
 
     private static WaterNoiseLayer ExtractLayer(

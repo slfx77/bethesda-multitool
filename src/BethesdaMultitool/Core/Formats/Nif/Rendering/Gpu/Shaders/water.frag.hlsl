@@ -75,8 +75,12 @@ float3 ApplyFog(float3 color, float3 worldPos)
 Texture2D gWaterTextures[] : register(t0, space1);
 SamplerState gWaterSampler : register(s0);
 
-// Wind-speed (DNAM units) -> UV/sec; lives in the engine vertex shader. Tuned for gentle swell.
-static const float kScrollScale = 0.01;
+// Noise scroll/blend is now fully DNAM-driven (RE-recovered, no tuned constants): each of the 3 noise
+// layers scrolls at its own DNAM WindSpeed in noise-UV space along its WindDir(°), and is weighted by its
+// DNAM fAmplitude — exactly the engine's ISNOISESCROLLANDBLEND prepass (TESWaterSystem::UpdateWaterNoise:
+// texScroll += WindSpeed·dt·(cosθ,sinθ)). The composite is sampled once and the noise frequency comes
+// from fNoiseScale/fUVScale (see main()). So the old kNoiseGain / kOctaves / kScrollWorldSpeed tuning
+// constants are gone — their values are the real DNAM fAmplitude / fNoiseScale / WindSpeed.
 // FNV passes the live scene SunDir (c12) / SunColor (c13). P3 feeds those from the shared b3
 // atmosphere CB (uSunDirIntensity / uSunColorLighting) when lighting is enabled, so water tracks the
 // time-of-day/weather sun; when lighting is OFF these static constants stand in (the pre-atmosphere
@@ -104,17 +108,24 @@ float2 RipplePerturb(float2 p, float t)
     return -grad * 45.0;
 }
 
-// One scrolling NNAM layer -> its tangent-space xy perturbation, weighted by the layer amplitude.
-// The engine combines its 3 DNAM noise layers in the vertex/displacement stage and the pixel shader
-// then samples once; here we sum the layers directly (the viewer has no engine vertex shader).
-float2 SampleLayerPerturb(uint idx, float2 worldXy, float baseUv, float normalsScale, float4 layer, float t)
+// One scrolling noise octave -> its raw xyz perturbation in [-1,1]. The FNV NoiseMap
+// (genaratednoise01.dds) is a full-range RGB noise, NOT a blue-biased normal map — the engine adds the
+// (0,0,1) z-bias in the pixel shader (see main()), so all three channels are the perturbation (engine
+// WATER000.pso: `texld r3,v7,s2; mad r3.xyz,r3,2,-1`).
+//   IMPORTANT: `layer.x` (UvScale) and `layer.w` (AmpScale) are NOT used — those WATR-DNAM fields are the
+//   FFT-DISPLACEMENT params (fHeightUVScale @172-180 / fAmplitude @184-192), which are ZERO in standard
+//   water; reading them as noise params collapsed the UV to a constant texel (flat) at zero amplitude.
+//   The noise normal is driven by ONE shared scale (`freq`, from fNoiseScale-era tiling) scrolled by the
+//   real DNAM noise wind dir/speed (`layer.y` = WindDirDeg @100-108, `layer.z` = WindSpeed @112-120).
+float3 SampleNoiseLayer(uint idx, float2 worldXy, float freq, float4 layer, float t)
 {
-    float scale = baseUv * normalsScale * max(layer.x, 1e-4);
+    // layer = (UvScale[displacement fHeightUVScale, NOT used for noise], WindDirDeg, WindSpeed, fAmplitude).
+    // Engine ISNOISESCROLLANDBLEND: each layer scrolls the noise in its own UV by WindSpeed·dt along WindDir°,
+    // weighted by fAmplitude (UpdateWaterNoise, RE-recovered — no fudge multiplier on the scroll rate).
     float rad = radians(layer.y);
     float2 dir = float2(cos(rad), sin(rad));
-    float2 uv = worldXy * scale + dir * (layer.z * kScrollScale * t);
-    float2 n = gWaterTextures[NonUniformResourceIndex(idx)].Sample(gWaterSampler, uv).xy * 2.0 - 1.0;
-    return n * layer.w;
+    float2 uv = worldXy * freq + dir * (layer.z * t);
+    return (gWaterTextures[NonUniformResourceIndex(idx)].Sample(gWaterSampler, uv).xyz * 2.0 - 1.0) * layer.w;
 }
 
 // Reversed-Z [1,0] depth -> positive view-space distance (world units). The scene uses reversed-Z
@@ -134,8 +145,16 @@ float4 main(PSInput input) : SV_Target
     float3 sunDir = lit ? normalize(uSunDirIntensity.xyz) : kSunDir;
     float3 sunCol = lit ? uSunColorLighting.rgb : kSunColor;
     uint noiseIndex = uNoiseParams.x;
-    float baseUv = 1.0 / max((float)uNoiseParams.y, 1.0);
-    float normalsScale = max(uSurface0.x, 1e-4);
+    // RE-recovered scales (the 256² NNAM tiles at TexScale). The recovered VS does v7=(worldXY+QPos)/TexScale,
+    // and TexScale = DNAM fUVScale (@136, ~1000 world units) — fNoiseScale (@96, ~13) is far too small to be a
+    // world tile, so it is the ISNOISENORMALMAP normal-DETAIL scale, not the macro tile. The engine has BOTH:
+    // a big macro tile (fUVScale) AND fine normal detail (fNoiseScale finer). We span that with 3 octaves —
+    // macro (1/fUVScale → ~1000u features, far-apart repeat) down to detail (fNoiseScale/fUVScale → ~75u fine
+    // ripple). Tiling everything at the 75u detail scale was the "too small + repetitive" bug.
+    float fUVScale = max(uSurface0.x, 1.0);
+    float fNoiseScale = max(asfloat(uNoiseParams.z), 1.0);
+    float fMacro = 1.0 / fUVScale;               // macro world tile = TexScale (fUVScale ~1000): broad structure
+    float fDetail = fNoiseScale / fUVScale;      // fine normal-detail scale (fUVScale/fNoiseScale ~75): dense ripple
     float F0 = saturate(uSurface0.y);            // FNV FresnelRI.x
     float reflectivity = saturate(uSurface0.z);  // FNV FresnelRI.w (reflection multiplier)
     float specExp = max(uSurface0.w, 1.0);       // FNV VarAmounts.x (sun-specular exponent)
@@ -187,24 +206,44 @@ float4 main(PSInput input) : SV_Target
     // FNV distance fade of ripples: full within 4096 world units, -> 0 at 8192.
     float noiseFade = saturate((8192.0 - distXY) / 4096.0);
 
-    // Perturbation xy (3 scrolled NNAM layers, or procedural fallback), then the FNV pixel shader's
-    // depth-scale (shallow water reads flat) + distance fade. z rebuilt so the normal is robust for
-    // RGB and BC5-style maps.
-    float2 pxy;
+    // FNV WATER000 surface normal — engine PS (WATER000.pso lines 90-96), reproduced exactly:
+    //   r3 = noise.xyz*2-1 ; r3 = r3*depthT + (0,0,1) ; r3.xy *= distFade ; N = normalize(r3)
+    // Adding the (0,0,1) z-bias IN THE SHADER (engine const c7.xxww) — rather than rebuilding
+    // z = sqrt(1 - |xy|^2) — is the fix for the harsh "blips": when the summed perturbation magnitude
+    // exceeded 1, the rebuilt z collapsed to 0, tilting the normal flat/horizontal and smearing the sun
+    // glint into elongated streaks. The z-bias keeps the normal near-vertical, so the surface reads as
+    // gentle ripples. The engine pre-composites its 3 noise layers (ISNOISESCROLLANDBLEND) into one
+    // texture and taps it once; lacking that prepass the viewer sums the 3 DNAM layers here — each a tap
+    // of the NNAM at noiseFreq, scrolled by its own WindDir/WindSpeed and weighted by its fAmplitude.
+    float3 pert;
     if (noiseIndex == 0xFFFFFFFFu)
     {
-        pxy = RipplePerturb(input.vWorldPos.xy, t);
+        pert = float3(RipplePerturb(input.vWorldPos.xy, t), 0.0);
     }
     else
     {
-        pxy = SampleLayerPerturb(noiseIndex, input.vWorldPos.xy, baseUv, normalsScale, uLayer1, t)
-            + SampleLayerPerturb(noiseIndex, input.vWorldPos.xy, baseUv, normalsScale, uLayer2, t)
-            + SampleLayerPerturb(noiseIndex, input.vWorldPos.xy, baseUv, normalsScale, uLayer3, t);
-        pxy *= 0.5;
+        // TWO octaves of the full 3-layer blend so the fine ripple is at full authored amplitude (not a single
+        // weak layer): the macro octave (tile=fUVScale) gives the broad, non-repeating structure; the detail
+        // octave (tile=fUVScale/fNoiseScale) gives dense fine ripples — the engine's fNoiseScale normal detail.
+        // Each layer carries WindDir(°)=.y, WindSpeed=.z, fAmplitude=.w. uLayerN.x (displacement) is unused.
+        float3 macro = SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fMacro, uLayer1, t)
+                     + SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fMacro, uLayer2, t)
+                     + SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fMacro, uLayer3, t);
+        float3 detail = SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fDetail, uLayer1, t)
+                      + SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fDetail, uLayer2, t)
+                      + SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fDetail, uLayer3, t);
+        pert = macro + detail;
     }
-    float2 nxy = pxy * depthT * noiseFade;
-    float nz = sqrt(saturate(1.0 - dot(nxy, nxy)));
-    float3 N = normalize(float3(nxy, nz));
+    // Ripple amplitude scales with the REAL water-column depth (engine r0.z: shallow water reads flat,
+    // deep water ripples). depthT is that column ONLY when a scene-depth SRV is bound; otherwise it's the
+    // view-angle proxy (saturate(N·V)) — which is unrelated to water depth and wrongly flattened ripples
+    // to nothing at oblique/grazing angles (V.z→0). So use the real column when we have it, else full
+    // amplitude (1.0): with no depth info we can't know the column, and oblique water should still ripple.
+    float rippleDepth = (depthIndex == 0xFFFFFFFFu) ? 1.0 : depthT;
+    float3 n3 = pert * rippleDepth; // engine: perturbation *= water-column depth factor
+    n3.z += 1.0;                // engine: + (0,0,1) z-bias — normal stays near-vertical (gentle ripples)
+    n3.xy *= noiseFade;         // engine: xy faded out with distance
+    float3 N = normalize(n3);
 
     float ndotv = saturate(dot(N, V));
 

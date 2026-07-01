@@ -84,6 +84,7 @@ public sealed partial class WorldView3DControl
         _cellGrid?.LoadData(cellList, _spatialIndex);
         if (ComputeGridZExtent(cellList) is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
+        _water?.SetGame(_data.Game);
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, noiseIndex);
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
@@ -151,6 +152,7 @@ public sealed partial class WorldView3DControl
         _cellGrid?.LoadData(cellList, _spatialIndex);
         if (ComputeGridZExtent(cellList) is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
+        _water?.SetGame(_data.Game);
         _water?.LoadData(_cellGridLookup, worldspaceDefaultWaterHeight: null, _spatialIndex);
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);

@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.Abstractions;
 
@@ -46,4 +47,10 @@ internal interface IWaterRenderer : IWorldRenderer
     /// sampled depth. The host must transition the depth resource to PIXEL_SHADER_RESOURCE (and
     /// unbind the DSV) before <see cref="IWorldRenderer.Render" /> when a valid index is passed.</summary>
     void SetSceneDepth(uint depthBindlessIndex, float near, float far);
+
+    /// <summary>Selects the per-game water profile (shader variant + tuning constants) for the loaded
+    /// game. Call before <see cref="IWorldRenderer.Render" /> on each worldspace/interior load. FNV/FO3
+    /// resolve to the FNV profile (byte-identical); every other game falls back to it until its own water
+    /// shader is reverse-engineered (binary-RE-only policy).</summary>
+    void SetGame(BethesdaGame game);
 }
