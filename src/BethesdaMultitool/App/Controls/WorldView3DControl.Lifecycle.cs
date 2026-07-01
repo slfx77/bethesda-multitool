@@ -38,8 +38,10 @@ public sealed partial class WorldView3DControl
         RenderPanel.Focus(FocusState.Programmatic);
 
         // Walk-mode ground sampling: read the camera's current cell heightmap and bilinearly
-        // interpolate. _cellGridLookup is set in TryBuildCellGrid. On return the grid persists.
-        _controller.GroundHeightSampler = SampleGroundHeight;
+        // interpolate, then take the highest ground under the player's capsule footprint (center + a
+        // ring) so the camera rides over thin seams instead of dropping through a single point.
+        // _cellGridLookup is set in TryBuildCellGrid. On return the grid persists.
+        _controller.GroundHeightSampler = SampleGroundHeightCapsule;
         // Walk-mode ceiling sampling for jumps: up-ray against the same per-ref collision meshes so the
         // camera bonks low roofs instead of clipping through them.
         _controller.CeilingHeightSampler = SampleCeilingHeight;

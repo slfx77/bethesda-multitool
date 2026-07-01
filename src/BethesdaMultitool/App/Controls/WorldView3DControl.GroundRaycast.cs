@@ -12,6 +12,41 @@ public sealed partial class WorldView3DControl
     // registers against float error. Also the slack on the "surface must be at/below the eye" rule.
     private const float GroundRaycastEpsUp = 8f;
 
+    // Walk-mode player "footprint" radius (world units) — roughly the Bethesda human collision-capsule
+    // radius. The camera samples the ground at the center PLUS a ring at this radius and rides the
+    // HIGHEST hit, so a single point slipping through a thin seam (the crack between two abutting floor
+    // meshes, or a cell border) no longer drops the camera: a point of the footprint still rests on
+    // solid ground. Small enough that walking near a low ledge doesn't lift the camera onto it early.
+    private const float WalkCapsuleRadius = 24f;
+
+    // Ring samples around the footprint, in addition to the center. 8 (every 45°) catches seams at any
+    // orientation; the whole capsule sample is only taken once per frame in walk mode (SnapToGround).
+    private const int WalkCapsuleRingSamples = 8;
+
+    /// <summary>
+    ///     Capsule-aware ground sample for walk mode: the HIGHEST ground height under the player's
+    ///     footprint — the center plus a ring at <see cref="WalkCapsuleRadius" />. A real player has
+    ///     width, so taking the max means the camera rides over thin seams instead of falling through a
+    ///     single point that slips between two surfaces. Returns <c>null</c> only when neither terrain
+    ///     nor an object sits under ANY sample (camera off the loaded grid), preserving
+    ///     <c>SnapToGround</c>'s off-edge no-op. Reuses the single-point <see cref="SampleGroundHeight" />
+    ///     for each sample, so terrain + warm-mesh triangle raycasts apply at every footprint point.
+    /// </summary>
+    private float? SampleGroundHeightCapsule(float worldX, float worldY)
+    {
+        var best = SampleGroundHeight(worldX, worldY);
+        for (var i = 0; i < WalkCapsuleRingSamples; i++)
+        {
+            var angle = MathF.Tau * i / WalkCapsuleRingSamples;
+            var h = SampleGroundHeight(
+                worldX + (MathF.Cos(angle) * WalkCapsuleRadius),
+                worldY + (MathF.Sin(angle) * WalkCapsuleRadius));
+            if (h is { } v && (best is null || v > best)) best = v;
+        }
+
+        return best;
+    }
+
     private float? SampleGroundHeight(float worldX, float worldY)
     {
         if (_cellGridLookup is null) return null;

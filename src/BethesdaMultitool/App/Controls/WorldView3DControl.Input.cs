@@ -260,16 +260,25 @@ public sealed partial class WorldView3DControl
                 // Broadphase: cheap bounding-sphere reject. Narrowphase: ray vs the OBND-tight
                 // oriented box — the exact box the selection highlight draws — so the pick lands on
                 // the clicked mesh instead of the near edge of an oversized bounding sphere.
-                // Broadphase sphere. For refs with no OBND the baked sphere is an oversized 1024-unit
-                // fallback (→ "massive click zone" e.g. GarbageCanUrban02); when the mesh has resolved,
-                // use its real local bounds so the pick is tight. Refs WITH an OBND use the tight OBB
-                // narrowphase below, so this only affects the OBND-less ones.
+                // Broadphase sphere. Refs with no OBND bake an oversized cell-wide cull sphere
+                // (NoBoundsFallbackRadius); reusing it for the pick turns each into a "massive click
+                // zone" (→ overlapping fallbacks swallow every click in Oblivion, where trees never
+                // decode). When the mesh has resolved, use its real local bounds (tight). When it has
+                // NOT, drop to a small prop-sized SelectionFallbackRadius instead of the cull sphere.
+                // Refs WITH an OBND use the tight OBB narrowphase below, so this only affects OBND-less.
                 var sphereRadius = r.BoundsRadius;
-                if (placement.Bounds is null && _references is not null
-                    && _references.TryGetMeshLocalRadius(r.MeshId, out var meshRadius) && meshRadius > 0f)
+                if (placement.Bounds is null)
                 {
-                    var s = placement.Scale > 0f ? placement.Scale : 1f;
-                    sphereRadius = meshRadius * s;
+                    if (_references is not null
+                        && _references.TryGetMeshLocalRadius(r.MeshId, out var meshRadius) && meshRadius > 0f)
+                    {
+                        var s = placement.Scale > 0f ? placement.Scale : 1f;
+                        sphereRadius = meshRadius * s;
+                    }
+                    else
+                    {
+                        sphereRadius = RenderableReference.SelectionFallbackRadius;
+                    }
                 }
                 if (!RaySphereHit(nearWorld, rayDir, r.BoundsCenter, sphereRadius, out var sphereT,
                         out var sphereInside)) continue;
@@ -393,11 +402,12 @@ public sealed partial class WorldView3DControl
         }
         else
         {
-            // No OBND and the mesh has not resolved yet — fall back to a world-space cube around the
-            // bounding sphere (identity world). Re-selecting once the mesh has streamed in upgrades it to
+            // No OBND and the mesh has not resolved yet — fall back to a small prop-sized cube around
+            // the ref origin (identity world), matching the pick's SelectionFallbackRadius so the
+            // outline isn't a cell-wide box. Re-selecting once the mesh has streamed in upgrades it to
             // the tight AABB above.
             var c = r.BoundsCenter;
-            var rad = r.BoundsRadius;
+            var rad = RenderableReference.SelectionFallbackRadius;
             _selectionHighlight.SetSelection(
                 new Vector3(c.X - rad, c.Y - rad, c.Z - rad),
                 new Vector3(c.X + rad, c.Y + rad, c.Z + rad),
