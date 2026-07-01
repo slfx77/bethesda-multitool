@@ -12,6 +12,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.SpeedTree;
 using Vortice.Direct3D12;
 
 namespace BethesdaRendererProfiler;
@@ -163,6 +164,10 @@ internal static class NifHeadlessRenderer
             // frames use a default frame size; once the mesh resolves we frame to its real bounds.
             const int maxIterations = 200;
             byte[]? finalBgra = null;
+            var drew = false;
+            // Per-iteration render stats are noisy; opt in with NIF_RENDER_VERBOSE=1 when diagnosing a
+            // "nothing rendered" case (shows cull/missing/texPending/drawn counts per frame).
+            var verbose = Environment.GetEnvironmentVariable("NIF_RENDER_VERBOSE") is "1";
             for (var it = 0; it < maxIterations; it++)
             {
                 var localRadius = references.TryGetMeshLocalRadius(meshId, out var r) && r > 1f ? r : 300f;
@@ -204,13 +209,36 @@ internal static class NifHeadlessRenderer
                 var complete = StreamingComplete(references.LastStats);
                 WaitForFence(gpu.FrameFence, fenceValue);
 
-                if (complete && it > 0)
+                var s = references.LastStats;
+                if (verbose)
                 {
-                    Console.WriteLine($"[nif-render] settled at iter {it} (local radius {localRadius:F0})");
-                    finalBgra = target.ReadbackToBytes();
+                    Console.WriteLine(
+                        $"[nif-render] it={it} focus=({focus.X:F0},{focus.Y:F0},{focus.Z:F0}) halfH={halfHeight:F0} " +
+                        $"cells={s.ReferenceCellsVisited} cand={s.ReferenceCandidates} culled={s.ReferenceCulled} " +
+                        $"missing={s.ReferenceMeshMissing} texPending={s.ReferenceTexturePending} drawn={s.ReferenceDrawn} " +
+                        $"submeshDraws={s.ReferenceSubmeshDraws} batches={s.ReferenceBatches} inst={s.ReferenceInstances} " +
+                        $"instDraws={s.ReferenceInstancedDraws} blended={s.ReferenceBlendedDraws} " +
+                        $"uploads={s.ReferenceGpuUploads} qDec={s.ReferenceQueuedDecodes} aDec={s.ReferenceActiveDecodes} " +
+                        $"texPendRes={s.ReferenceTexturePendingResolves} texPendUp={s.ReferenceTexturePendingUploads}");
+                }
+
+                finalBgra = target.ReadbackToBytes(); // keep latest in case we hit the cap
+
+                // Settle only once the reference has actually DRAWN (its submeshes passed the
+                // TexturesReady gate) AND streaming has quiesced. StreamingComplete alone can go true a
+                // frame or two before a resolved texture's async copy-queue upload flips TexturesReady —
+                // that intermediate state isn't in PendingResolveCount/PendingUploadCount — so waiting on
+                // it alone saves a blank frame with the mesh withheld. Requiring ReferenceDrawn > 0 waits
+                // for the actual draw. (IsReady flips on success OR failure, so a missing texture still
+                // resolves to a fallback and draws rather than hanging.)
+                if (complete && it > 0 && s.ReferenceDrawn > 0)
+                {
+                    drew = true;
+                    Console.WriteLine(
+                        $"[nif-render] settled at iter {it} (drawn={s.ReferenceDrawn}, " +
+                        $"submeshDraws={s.ReferenceSubmeshDraws}, local radius {localRadius:F0})");
                     break;
                 }
-                finalBgra = target.ReadbackToBytes(); // keep latest in case we hit the cap
                 Thread.Sleep(40); // let background decode/texture-resolve advance before re-rendering
             }
 
@@ -218,6 +246,18 @@ internal static class NifHeadlessRenderer
             {
                 Console.Error.WriteLine("Render produced no pixels.");
                 return 4;
+            }
+
+            if (!drew)
+            {
+                // The reference never issued a draw within the cap — the saved frame is likely blank.
+                // Surface it loudly (with the last stats) instead of silently writing an empty PNG; re-run
+                // with NIF_RENDER_VERBOSE=1 to see per-frame cull/missing/texPending counts.
+                var s = references.LastStats;
+                Console.Error.WriteLine(
+                    $"[nif-render] WARNING: reference never drew within {maxIterations} iterations — output " +
+                    $"may be blank. last: cells={s.ReferenceCellsVisited} culled={s.ReferenceCulled} " +
+                    $"missing={s.ReferenceMeshMissing} texPending={s.ReferenceTexturePending} drawn={s.ReferenceDrawn}");
             }
 
             var rgba = BgraToRgba(finalBgra);
@@ -313,6 +353,44 @@ internal static class NifHeadlessRenderer
     {
         min = default;
         max = default;
+
+        // SpeedTree trees are .spt recipes, not NIFs — NifParser.Parse would throw and the camera would fall
+        // back to origin framing (the tree renders off-frame / invisibly). Build the same geometry the live
+        // decode does (LeafBillboard=true) and take ITS AABB so --render-nif frames trees correctly.
+        if (nifPath.EndsWith(".spt", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!meshArchives.TryExtractFile(nifPath, out var sptBytes, out _)
+                && !meshArchives.TryExtractFile("trees\\" + Path.GetFileName(nifPath), out sptBytes, out _))
+            {
+                return false;
+            }
+
+            try
+            {
+                var spt = SptFile.TryParse(sptBytes);
+                if (spt is null)
+                {
+                    return false;
+                }
+
+                var seed = spt.General.Token2005 != 0 ? spt.General.Token2005 : 1u;
+                var sptModel = SptGeometryBuilder.Build(spt, seed,
+                    SptGeometryOptions.FromEnvironment() with { LeafBillboard = true });
+                if (sptModel is not { HasGeometry: true } || sptModel.MaxX < sptModel.MinX)
+                {
+                    return false;
+                }
+
+                min = new Vector3(sptModel.MinX, sptModel.MinY, sptModel.MinZ);
+                max = new Vector3(sptModel.MaxX, sptModel.MaxY, sptModel.MaxZ);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         if (!meshArchives.TryExtractFile(nifPath, out var bytes, out _)
             && !meshArchives.TryExtractFile("meshes\\" + nifPath, out bytes, out _))
         {
