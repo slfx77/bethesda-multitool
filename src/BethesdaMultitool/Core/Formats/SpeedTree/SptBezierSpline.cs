@@ -18,21 +18,33 @@ public sealed record SptBezierSpline
 
     public IReadOnlyList<SptSplineControlPoint> ControlPoints { get; init; } = [];
 
+    /// <summary>Size of the engine's precomputed curve LUT (<c>CIdvBezierSpline::CreateEvenlySpacedPoints</c>
+    /// builds exactly 500 evenly-spaced points; <c>Evaluate</c>/<c>ScaledVariance</c> assert the count is 500).</summary>
+    private const int LutSamples = 500;
+
+    /// <summary>Lazily-built, x-reparameterized 500-entry curve LUT (the engine's <c>+0x3c</c> array). Cached;
+    /// safe as a mutable field because no <see cref="SptBezierSpline" /> equality / <c>with</c> is used anywhere.</summary>
+    private float[]? _lut;
+
     /// <summary>
     ///     Evaluate the spline at <paramref name="param" /> (0..1) exactly as the SDK's
-    ///     <c>CIdvBezierSpline::Evaluate</c> does (decompiled from the Xbox MemDebug PE):
-    ///     <c>Header.X + curve(param)·(Header.Y − Header.X) + random(−Header.Z, +Header.Z)</c>.
-    ///     The three header floats are <c>(MIN, MAX, VARIANCE)</c>; <see cref="Curve" /> is the
-    ///     normalized 0..1 control-point curve. <paramref name="random" /> is a <c>(min,max)→value</c>
-    ///     uniform RNG; pass null to omit the variance term (deterministic mean).
+    ///     <c>CIdvBezierSpline::Evaluate</c> does (decompiled, L131): <c>Header.X + lut(param)·(Header.Y −
+    ///     Header.X) + random(−Header.Z, +Header.Z)</c>, where <c>lut(param)</c> reads the 500-entry curve LUT
+    ///     at a TRUNCATED index with linear interpolation (<see cref="LutInterp" />). The three header floats
+    ///     are <c>(MIN, MAX, VARIANCE)</c>. <paramref name="random" /> is a <c>(min,max)→value</c> uniform RNG;
+    ///     pass null to omit the variance term (deterministic mean).
     /// </summary>
-    public float Evaluate(float param, Func<float, float, float>? random = null)
+    public float Evaluate(float param, Func<float, float, float>? random = null, bool forceDraw = false)
     {
-        // When MIN == MAX the curve term is multiplied by zero, so skip the (relatively expensive)
-        // curve evaluation entirely — the common case for length/radius/most profile splines.
+        // When MIN == MAX the curve term is multiplied by zero, so skip the (relatively expensive) curve
+        // evaluation entirely — the common case for length/radius/most profile splines.
         var span = Header.Y - Header.X;
-        var value = MathF.Abs(span) > 1e-9f ? Header.X + Curve(param) * span : Header.X;
-        if (random is not null && MathF.Abs(Header.Z) > 1e-9f)
+        var value = MathF.Abs(span) > 1e-9f ? Header.X + LutInterp(param) * span : Header.X;
+
+        // The engine's spline evaluator calls GetUniform(-Z, +Z) UNCONDITIONALLY — even when the variance Z
+        // is 0, returning 0 but still ADVANCING the shared RNG. `forceDraw` reproduces that for the per-ring
+        // loft evals (the draw count must match draw-for-draw or the whole downstream uniform stream desyncs).
+        if (random is not null && (forceDraw || MathF.Abs(Header.Z) > 1e-9f))
         {
             value += random(-Header.Z, Header.Z);
         }
@@ -41,77 +53,122 @@ public sealed record SptBezierSpline
     }
 
     /// <summary>
-    ///     Curve-modulated noise, mirroring the SDK's <c>CIdvBezierSpline::ScaledVariance</c>:
-    ///     <c>random(−Header.Z·curve(param), +Header.Z·curve(param))</c>. Returns 0 when the spline
-    ///     has no variance.
+    ///     Curve-modulated noise, mirroring the SDK's <c>CIdvBezierSpline::ScaledVariance</c> (decompiled,
+    ///     L469): <c>random(−Header.Z·lut, +Header.Z·lut)</c> where <c>lut</c> reads the SAME 500-entry LUT
+    ///     but at a ROUNDED index with NO interpolation (<see cref="LutNearest" />) — distinct from
+    ///     <see cref="Evaluate" />'s truncate+interp. Always draws (advances the shared RNG even at Z·lut = 0).
     /// </summary>
     public float ScaledVariance(float param, Func<float, float, float> random)
     {
-        if (MathF.Abs(Header.Z) <= 1e-9f)
-        {
-            return 0f;
-        }
-
-        var scaled = Header.Z * Curve(param);
+        var scaled = Header.Z * LutNearest(param);
         return random(-scaled, scaled);
     }
 
-    /// <summary>
-    ///     The control-point curve <c>y(param)</c>, evaluated exactly as the SDK's
-    ///     <c>CIdvBezierSpline</c> 500-sample LUT does (decompiled <c>CreateEvenlySpacedPoints</c> →
-    ///     <c>EvaluateRawPoint</c> → <c>SplineInterpolate</c>): a cubic Bézier through the control
-    ///     points — on-curve point <c>(Param, A)</c>, handle <c>(B, C)</c> — reparameterized so
-    ///     <paramref name="param" /> indexes the curve's x (parameter) axis, then the stored y is read
-    ///     back with linear interpolation. Identity when there are no control points; constant for one.
-    /// </summary>
-    public float Curve(float param)
+    /// <summary>The normalized 0..1 control-point curve at <paramref name="param" /> — the
+    /// <see cref="Evaluate" />-style truncate+interp LUT read (kept for callers/tests that want the bare curve).</summary>
+    public float Curve(float param) => LutInterp(param);
+
+    /// <summary>Read the curve LUT at a TRUNCATED index with linear interpolation, matching
+    /// <c>CIdvBezierSpline::Evaluate</c> (L146-154): <c>i = (int)(param·499)</c>, lerp <c>lut[i]..lut[i+1]</c>
+    /// by the fractional part.</summary>
+    private float LutInterp(float param)
     {
-        var cps = ControlPoints;
-        if (cps.Count == 0)
+        var lut = Lut();
+        if (lut is null)
         {
             return Math.Clamp(param, 0f, 1f);
         }
 
-        if (cps.Count == 1)
+        var fp = Math.Clamp(param, 0f, 1f) * (LutSamples - 1);
+        var i = (int)fp;
+        if (i >= LutSamples - 1)
         {
-            return cps[0].A;
+            return lut[LutSamples - 1];
         }
 
-        var p = Math.Clamp(param, 0f, 1f);
+        return lut[i] + (lut[i + 1] - lut[i]) * (fp - i);
+    }
+
+    /// <summary>Read the curve LUT at the NEAREST index (no interpolation), matching
+    /// <c>CIdvBezierSpline::ScaledVariance</c> (L481): <c>lut[(int)(param·499 + 0.5)]</c>.</summary>
+    private float LutNearest(float param)
+    {
+        var lut = Lut();
+        if (lut is null)
+        {
+            return Math.Clamp(param, 0f, 1f);
+        }
+
+        var i = (int)(Math.Clamp(param, 0f, 1f) * (LutSamples - 1) + 0.5f);
+        return lut[Math.Min(i, LutSamples - 1)];
+    }
+
+    /// <summary>
+    ///     Build the engine's 500-entry curve LUT exactly as <c>CIdvBezierSpline::CreateEvenlySpacedPoints</c>
+    ///     (decompiled, L518): (1) sample the raw cubic Bézier at evenly-spaced PARAMETER <c>t = i/500</c>
+    ///     (<c>EvaluateRawPoint</c> → <c>SplineInterpolate</c>, a de Casteljau cubic over Hermite handles
+    ///     <c>anchor ± normalize(B,C)·D</c>), giving (x, y) pairs; (2) REPARAMETERIZE BY X — for each grid
+    ///     point <c>target = i/500</c> bracket the raw samples by x and lerp y (L645-665). Endpoints are the
+    ///     first/last control-point A values (L610-637). Returns null for &lt;2 control points (degenerate;
+    ///     callers fall back to identity), constant for 1.
+    /// </summary>
+    private float[]? Lut()
+    {
+        if (_lut is not null)
+        {
+            return _lut;
+        }
+
+        var cps = ControlPoints;
         var n = cps.Count;
-
-        // 1) Sample the cubic Bézier polyline at evenly-spaced parameter t (CreateEvenlySpacedPoints'
-        //    first pass / EvaluateRawPoint+SplineInterpolate). Each sample is (x, y): x = the spline's
-        //    parameter axis (control-point Param), y = its value (A).
-        const int samples = 500;
-        Span<float> sx = stackalloc float[samples];
-        Span<float> sy = stackalloc float[samples];
-        for (var i = 0; i < samples; i++)
+        if (n < 2)
         {
-            var (x, y) = RawPoint(cps, n, i / (float)(samples - 1));
-            sx[i] = x;
-            sy[i] = y;
-        }
-
-        // 2) Read y back at x = p (the SDK reparameterizes so the LUT index maps to the param axis;
-        //    decompiled L566-586 brackets by x and lerps the stored value). The samples advance
-        //    monotonically in x for the well-behaved control polygons SpeedTree authors use.
-        if (p <= sx[0])
-        {
-            return sy[0];
-        }
-
-        for (var i = 1; i < samples; i++)
-        {
-            if (p <= sx[i])
+            if (n == 1)
             {
-                var dx = sx[i] - sx[i - 1];
-                var t = dx > 1e-9f ? (p - sx[i - 1]) / dx : 0f;
-                return sy[i - 1] + (sy[i] - sy[i - 1]) * t;
+                var flat = new float[LutSamples];
+                Array.Fill(flat, cps[0].A);
+                return _lut = flat;
             }
+
+            return null;
         }
 
-        return sy[samples - 1];
+        // 1) Raw cubic samples at t = i/500 (engine samples i/N, NOT i/(N-1) — t maxes at 499/500).
+        Span<float> rawX = stackalloc float[LutSamples];
+        Span<float> rawY = stackalloc float[LutSamples];
+        for (var i = 0; i < LutSamples; i++)
+        {
+            var (x, y) = RawPoint(cps, n, i / (float)LutSamples);
+            rawX[i] = x;
+            rawY[i] = y;
+        }
+
+        // 2) Reparameterize by x onto an even grid. Endpoints copy the control-point A values directly.
+        var lut = new float[LutSamples];
+        lut[0] = cps[0].A;
+        lut[LutSamples - 1] = cps[n - 1].A;
+        var k = 0;
+        for (var i = 1; i < LutSamples - 1; i++)
+        {
+            var target = i / (float)LutSamples;
+            while (k < LutSamples - 1 && !(rawX[k] <= target && target < rawX[k + 1]))
+            {
+                k++;
+            }
+
+            if (k >= LutSamples - 1)
+            {
+                lut[i] = rawY[LutSamples - 1];
+                k = LutSamples - 2;
+                continue;
+            }
+
+            var dx = rawX[k + 1] - rawX[k];
+            var frac = dx > 1e-9f ? (target - rawX[k]) / dx : 0f;
+            lut[i] = rawY[k] + (rawY[k + 1] - rawY[k]) * frac;
+        }
+
+        return _lut = lut;
     }
 
     /// <summary>

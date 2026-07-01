@@ -52,35 +52,49 @@ public sealed class SptBezierSplineTests
         Assert.Equal(7f, spline.Evaluate(0.75f, (_, max) => max));
     }
 
+    // Independent reference for the engine's CIdvBezierSpline curve LUT (CreateEvenlySpacedPoints +
+    // Evaluate): sample the raw cubic at t = i/N, copy the endpoints from the control-point A values,
+    // reparameterize the interior by x, then read back at a TRUNCATED index with linear interpolation.
     private static float ExpectedCurve(
         IReadOnlyList<SptSplineControlPoint> cps, float param, int samples, bool normalizeTangents)
     {
-        var p = Math.Clamp(param, 0f, 1f);
-        var sx = new float[samples];
-        var sy = new float[samples];
+        var n = cps.Count;
+        var rawX = new float[samples];
+        var rawY = new float[samples];
         for (var i = 0; i < samples; i++)
         {
-            var (x, y) = RawPoint(cps, i / (float)(samples - 1), normalizeTangents);
-            sx[i] = x;
-            sy[i] = y;
+            var (x, y) = RawPoint(cps, i / (float)samples, normalizeTangents);
+            rawX[i] = x;
+            rawY[i] = y;
         }
 
-        if (p <= sx[0])
+        var lut = new float[samples];
+        lut[0] = cps[0].A;
+        lut[samples - 1] = cps[n - 1].A;
+        var k = 0;
+        for (var i = 1; i < samples - 1; i++)
         {
-            return sy[0];
-        }
-
-        for (var i = 1; i < samples; i++)
-        {
-            if (p <= sx[i])
+            var target = i / (float)samples;
+            while (k < samples - 1 && !(rawX[k] <= target && target < rawX[k + 1]))
             {
-                var dx = sx[i] - sx[i - 1];
-                var t = dx > 1e-9f ? (p - sx[i - 1]) / dx : 0f;
-                return sy[i - 1] + (sy[i] - sy[i - 1]) * t;
+                k++;
             }
+
+            if (k >= samples - 1)
+            {
+                lut[i] = rawY[samples - 1];
+                k = samples - 2;
+                continue;
+            }
+
+            var dx = rawX[k + 1] - rawX[k];
+            var frac = dx > 1e-9f ? (target - rawX[k]) / dx : 0f;
+            lut[i] = rawY[k] + (rawY[k + 1] - rawY[k]) * frac;
         }
 
-        return sy[^1];
+        var fp = Math.Clamp(param, 0f, 1f) * (samples - 1);
+        var idx = (int)fp;
+        return idx >= samples - 1 ? lut[samples - 1] : lut[idx] + (lut[idx + 1] - lut[idx]) * (fp - idx);
     }
 
     private static (float X, float Y) RawPoint(
