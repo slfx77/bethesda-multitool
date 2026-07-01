@@ -17,6 +17,7 @@ public static class SpeedTreeCommands
         command.Subcommands.Add(SpeedTreeRenderCommands.CreateRenderCommand());
         command.Subcommands.Add(SpeedTreeRenderCommands.CreateRenderAllCommand());
         command.Subcommands.Add(SpeedTreeRenderCommands.CreateSurveyCommand());
+        command.Subcommands.Add(SpeedTreeLeafDebugCommand.Create());
         return command;
     }
 

@@ -53,6 +53,34 @@ public sealed class SpeedTreeTexturePathTests
         Assert.Equal(@"textures\trees\leaves\pineleaves01.dds", result);
     }
 
+    [Theory]
+    // Oblivion ships ONE combined leaf atlas per tree+season; the .spt's per-card materials carry a MEDIAL
+    // index between "leaves" and the season suffix that must collapse to the single shipped atlas, or every
+    // leaf card resolves to a non-existent numbered file and renders untextured (the missing-leaves bug).
+    [InlineData(@"C:\Noah\Oblivion\Trees\TreeWillowOak\TreeWillowOakLeaves01SU.tga",
+        @"textures\trees\leaves\treewillowoakleavessu.dds")]
+    [InlineData(@"C:\Noah\Oblivion\Trees\TreeWillowOak\TreeWillowOakLeaves03SU.tga",
+        @"textures\trees\leaves\treewillowoakleavessu.dds")]
+    [InlineData(@"C:\Noah\Oblivion\Trees\TreeSilverBirch\TreeSilverBirchLeaves02SU.tga",
+        @"textures\trees\leaves\treesilverbirchleavessu.dds")]
+    [InlineData(@"C:\Noah\Oblivion\Trees\TreeSilverBirch\TreeSilverBirchLeaves01FA.tga",
+        @"textures\trees\leaves\treesilverbirchleavesfa.dds")]
+    public void ToGamePath_LeafKind_OblivionMedialSeasonIndex_CollapsesToSeasonAtlas(string dev, string expected)
+    {
+        Assert.Equal(expected, SpeedTreeTexturePath.ToGamePath(dev, SpeedTreeTextureKind.Leaf));
+    }
+
+    [Fact]
+    public void ToGamePath_LeafKind_TrailingIndexNoSeason_KeepsIndex()
+    {
+        // FNV's "…leavesNN" (no season suffix) ships per-number — only a MEDIAL index before a season token is
+        // collapsed, so a bare trailing index is preserved (regression guard for the Oblivion-vs-FNV split).
+        var result = SpeedTreeTexturePath.ToGamePath(
+            @"C:\Noah\Fallout\Trees\WhiteOak01\WhiteOakLeaves01.tga", SpeedTreeTextureKind.Leaf);
+
+        Assert.Equal(@"textures\trees\leaves\whiteoakleaves01.dds", result);
+    }
+
     [Fact]
     public void ToGamePath_EmbeddedGameRelativePath_HonoredVerbatimForAnyKind()
     {

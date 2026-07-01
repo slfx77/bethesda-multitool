@@ -10,7 +10,10 @@ internal static class AssetPathRules
     public static readonly HashSet<string> AssetExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".nif", ".dds", ".ddx", ".kf", ".wav", ".lip", ".egm", ".egt",
-        ".xwm", ".ogg", ".bik", ".psa", ".tri", ".xma", ".mp3"
+        ".xwm", ".ogg", ".bik", ".psa", ".tri", ".xma", ".mp3",
+        // SpeedTree trees ship under trees\*.spt (NOT meshes\). Without this the index skipped every
+        // .spt, so DataFolderResolver returned "missing" for TREE refs and the viewer rendered no trees.
+        ".spt"
     };
 
     public static readonly Dictionary<string, string> ExtensionToPrefix =
@@ -22,6 +25,7 @@ internal static class AssetPathRules
             [".egt"] = "meshes\\",
             [".tri"] = "meshes\\",
             [".psa"] = "meshes\\",
+            [".spt"] = "trees\\",
             [".dds"] = "textures\\",
             [".ddx"] = "textures\\",
             [".wav"] = "sound\\",
