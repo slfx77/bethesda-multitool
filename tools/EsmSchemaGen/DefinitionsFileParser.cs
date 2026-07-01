@@ -34,9 +34,9 @@ public sealed class DefinitionsFileParser
         var dir = Path.GetDirectoryName(Path.GetFullPath(definitionsPath));
         var fileName = Path.GetFileName(definitionsPath);
 
-        // Some Common helpers branch their byte layout on IsFO4Plus(...) (e.g. wbLeveledListEntry's tail).
-        // The definitions filename carries the game (wbDefinitionsFO4.pas / wbDefinitionsFO76.pas), so derive
-        // the FO4+ bit once here and let CommonHelpers pick the right variant.
+        // Some engine structs changed shape at Fallout 4 (e.g. LEVELED_OBJECT's tail), which the xEdit source
+        // encodes as IsFO4Plus(...). The definitions filename carries the game (wbDefinitionsFO4.pas /
+        // wbDefinitionsFO76.pas), so derive the FO4+ bit once here and let CommonHelpers pick the right variant.
         var suffix = Path.GetFileNameWithoutExtension(fileName)
             .Replace("wbDefinitions", "", StringComparison.OrdinalIgnoreCase);
         parser.Builder.IsFo4Plus = suffix is "FO4" or "FO76";

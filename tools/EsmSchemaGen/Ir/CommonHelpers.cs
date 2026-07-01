@@ -27,14 +27,15 @@ public static class CommonHelpers
             "wbvec3posrot" => Vec3PosRot(args),
             // wbModelInfo(aSignature) — the MODT-style model-info subrecord: opaque texture-hash bytes.
             "wbmodelinfo" => ModelInfo(args),
-            // wbLeveledListEntry(aObjectName, aSigs) — the LVLO leveled-list entry struct (Common.pas:5704).
+            // The engine LEVELED_OBJECT entry struct (TESLeveledList::GetLeveledList → LEVELED_OBJECT*,
+            // confirmed in the FNV/Skyrim symbols). The dispatch key is the xEdit builder that emits it;
+            // byte layout cross-checked against xEdit Common.pas:5704.
             "wbleveledlistentry" => LeveledListEntry(args, isFo4Plus),
             _ => null
         };
 
-    // wbStructExSK(LVLO, …, [ Level:u16, unused(2), FormID(aObjectName→aSigs), Count:u16,
-    //   IsFO4Plus(ChanceNone:u8, unused(2)), IsFO4Plus(unused(1), nil) ]). 12 bytes for every game; only the
-    // trailing 2 bytes differ between pre-FO4 (two unused) and FO4+ (a Chance None u8 then one unused).
+    // LEVELED_OBJECT: [ Level:u16, unused(2), FormID(aObjectName→aSigs), Count:u16, then FO4+ ChanceNone:u8 +
+    // unused(1), pre-FO4 unused(2) ]. 12 bytes for every game; only the trailing 2 bytes differ by engine.
     private static StructDef LeveledListEntry(IReadOnlyList<WbValue> args, bool isFo4Plus)
     {
         var objectName = (args.ElementAtOrDefault(0) as WbStr)?.Value ?? "Reference";

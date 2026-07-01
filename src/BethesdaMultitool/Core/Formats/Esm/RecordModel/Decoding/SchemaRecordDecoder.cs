@@ -127,8 +127,8 @@ public static class SchemaRecordDecoder
         }
         else if (member is UnionDef union)
         {
-            // A subrecord-level union (e.g. a Condition that is either a CTDA or a CTDT struct): each
-            // variant contributes its own entry signature.
+            // A subrecord-level union (e.g. a TESConditionItem serialized as either a CTDA or a CTDT
+            // subrecord): each variant contributes its own entry signature.
             foreach (var variant in union.Variants)
             {
                 foreach (var s in EntrySignatures(variant))
@@ -433,7 +433,7 @@ public static class SchemaRecordDecoder
 
     /// <summary>
     ///     Decode an inline value union by its first variant (no per-function decider yet). A purely opaque
-    ///     first variant (an <c>wbUnknown(4)</c> byte array, e.g. a condition parameter) is surfaced as a u32
+    ///     first variant (an unmodeled 4-byte value, e.g. a TESConditionItem parameter) is surfaced as a u32
     ///     so the value stays visible rather than rendering as "&lt;4 bytes&gt;".
     /// </summary>
     private static DecodedNode DecodeInlineUnion(UnionDef union, byte[] data, int offset, int limit, DecodeContext ctx)

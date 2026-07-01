@@ -14,8 +14,8 @@ public sealed class IrBuilder
     public Dictionary<string, int> UnknownCalls { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
-    ///     True when emitting a Fallout 4 / 76 (or later) game, so Common helpers whose layout branches on
-    ///     <c>IsFO4Plus(...)</c> (e.g. <c>wbLeveledListEntry</c>) pick the post-FO4 variant. Set per file by
+    ///     True when emitting a Fallout 4 / 76 (or later) game, so Common helpers whose engine struct changed
+    ///     shape at FO4 (e.g. <c>LEVELED_OBJECT</c>) pick the post-FO4 variant. Set per file by
     ///     <see cref="DefinitionsFileParser.LoadWithCommon" /> from the definitions filename.
     /// </summary>
     public bool IsFo4Plus { get; set; }
