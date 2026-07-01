@@ -8,6 +8,7 @@ using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -53,7 +54,15 @@ internal sealed class ReferenceMeshDecoder12
     public int TotalMissingModelPaths => Volatile.Read(ref _totalMissingModelPaths);
     public int TotalSkinnedModelPaths => Volatile.Read(ref _totalSkinnedModelPaths);
 
-    public DecodedNifMesh12? DecodeMesh(string modelPath)
+    /// <param name="overrides">
+    ///     Optional MODS alternate-texture overrides (shape name → texture paths, case-insensitive).
+    ///     When a decoded submesh's <c>ShapeName</c> matches, its diffuse/normal paths are substituted so
+    ///     one shared NIF renders per-base textures (e.g. per-vendor billboard ads). The caller keys the
+    ///     mesh cache on a variant of the model path so each override set is its own cached mesh.
+    /// </param>
+    public DecodedNifMesh12? DecodeMesh(
+        string modelPath,
+        IReadOnlyDictionary<string, ShapeTextureOverride>? overrides = null)
     {
         var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
         var lookupPath = NormalizeModelPath(modelPath);
@@ -220,13 +229,24 @@ internal sealed class ReferenceMeshDecoder12
             {
                 if (sub.Positions.Length == 0 || sub.Triangles.Length == 0) continue;
 
+                // MODS alternate-texture re-skin: if the base record overrides this named shape, swap in
+                // its TXST-resolved paths. Resolved before hasBump so an override normal map is honored.
+                var diffusePath = sub.DiffuseTexturePath;
+                var normalPath = sub.NormalMapTexturePath;
+                if (overrides is not null && sub.ShapeName is { Length: > 0 } shapeName &&
+                    overrides.TryGetValue(shapeName, out var textureOverride))
+                {
+                    if (textureOverride.Diffuse is not null) diffusePath = textureOverride.Diffuse;
+                    if (textureOverride.Normal is not null) normalPath = textureOverride.Normal;
+                }
+
                 var alphaState = NifAlphaClassifier.Classify(sub, diffuseTexture: null);
                 var alphaRenderMode = alphaState.RenderMode == NifAlphaRenderMode.AlphaToCoverage
                     ? NifAlphaRenderMode.Blend
                     : alphaState.RenderMode;
                 var hasBump = sub.Tangents != null &&
                               sub.Bitangents != null &&
-                              !string.IsNullOrEmpty(sub.NormalMapTexturePath);
+                              !string.IsNullOrEmpty(normalPath);
 
                 var specularColor = new Vector3(sub.SpecularColor.R, sub.SpecularColor.G, sub.SpecularColor.B);
                 var specularEnabled = ComputeSpecularEnabled(sub);
@@ -234,8 +254,8 @@ internal sealed class ReferenceMeshDecoder12
                 submeshes.Add(new DecodedSubmesh12(
                     GpuMeshUploader.BuildVertices(sub),
                     sub.Triangles,
-                    sub.DiffuseTexturePath,
-                    hasBump ? sub.NormalMapTexturePath : null,
+                    diffusePath,
+                    hasBump ? normalPath : null,
                     hasBump,
                     alphaRenderMode,
                     alphaState.HasAlphaBlend,

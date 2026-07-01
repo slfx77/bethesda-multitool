@@ -3,6 +3,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
@@ -35,7 +36,8 @@ internal readonly record struct RenderableReference(
     bool IsInitiallyDisabled,
     bool IsMarker,
     bool IsImposter,
-    PlacedObjectCategory Category)
+    PlacedObjectCategory Category,
+    AlternateTextureSet? AlternateTextures = null)
 {
     private static readonly char[] PathSeparators = ['/', '\\'];
 
@@ -49,6 +51,19 @@ internal readonly record struct RenderableReference(
     ///     (model-derived bounds). See memory: oblivion-nonrender-nifs-decode-ok.
     /// </summary>
     internal const float NoBoundsFallbackRadius = 4096f;
+
+    /// <summary>
+    ///     Click-target radius (world units) used for SELECTION ONLY when a reference has no OBND and its
+    ///     mesh has not resolved real bounds — distinct from the generous <see cref="NoBoundsFallbackRadius" />
+    ///     used for culling. The cull sphere must be large (one cell) so a big OBND-less mesh survives the
+    ///     cull long enough to decode and self-correct; but reusing that 4096 sphere for the pick broadphase
+    ///     turns every OBND-less ref into a cell-wide click zone, so in partly-supported games (Oblivion
+    ///     trees never decode) overlapping fallback spheres swallow every click. A small "prop-sized" target
+    ///     keeps these refs selectable without blanketing the cell. Refs WHOSE mesh resolves still use the
+    ///     tight mesh-local bounds; this only governs the never-resolved ones. See memory:
+    ///     oblivion-nonrender-nifs-decode-ok.
+    /// </summary>
+    internal const float SelectionFallbackRadius = 256f;
 
     /// <summary>
     ///     4-pre Item B — computes the stable per-process MeshId from a ModelPath. Used to
@@ -122,7 +137,8 @@ internal readonly record struct RenderableReference(
     /// </summary>
     public static RenderableReference? TryBuild(
         PlacedReference placement,
-        PlacedObjectCategory category = PlacedObjectCategory.Unknown)
+        PlacedObjectCategory category = PlacedObjectCategory.Unknown,
+        AlternateTextureSet? alternateTextures = null)
     {
         // Skip skinned actors — v3 renders static meshes only.
         if (placement.RecordType is "ACHR" or "ACRE") return null;
@@ -140,17 +156,24 @@ internal readonly record struct RenderableReference(
         if (DumpFilter is { Length: > 0 } && placement.ModelPath!.Contains(DumpFilter, StringComparison.OrdinalIgnoreCase))
             DumpRefr(placement, world);
 
+        // Fold the alternate-texture variant key into the MeshId so re-skinned placements of a shared
+        // NIF get distinct per-frame resolve slots + mesh-cache entries (see ReferenceMeshCache12).
+        var meshId = alternateTextures is null
+            ? ComputeMeshId(placement.ModelPath!)
+            : ComputeMeshId(placement.ModelPath! + "#" + alternateTextures.VariantKey);
+
         return new RenderableReference(
             FormId: placement.FormId,
             WorldMatrix: world,
             ModelPath: placement.ModelPath!,
             BoundsCenter: center,
             BoundsRadius: radius,
-            MeshId: ComputeMeshId(placement.ModelPath!),
+            MeshId: meshId,
             IsInitiallyDisabled: placement.IsInitiallyDisabled,
             IsMarker: IsMarkerModelPath(placement.ModelPath),
             IsImposter: IsImposterModelPath(placement.ModelPath),
-            Category: category);
+            Category: category,
+            AlternateTextures: alternateTextures);
     }
 
     /// <summary>

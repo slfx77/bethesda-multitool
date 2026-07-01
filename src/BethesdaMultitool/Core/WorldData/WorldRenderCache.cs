@@ -42,6 +42,15 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     /// </summary>
     internal IReadOnlyDictionary<uint, PlacedObjectCategory>? CategoryIndex { get; set; }
 
+    /// <summary>
+    ///     Base-FormID → resolved alternate-texture set (the owning
+    ///     <see cref="WorldViewData.AlternateTexturesByFormId" />). Set once at LoadData alongside
+    ///     <see cref="CategoryIndex" />, before any placement list is baked, so each placement of a
+    ///     re-skinned base (e.g. a billboard) carries its per-shape MODS override into its own
+    ///     mesh-cache variant. Null → no alternate textures applied (the common case).
+    /// </summary>
+    internal IReadOnlyDictionary<uint, AlternateTextureSet>? AlternateTextureIndex { get; set; }
+
     public string ResourceName => nameof(WorldRenderCache);
 
     public Core.Diagnostics.ResourceCategory Category => Core.Diagnostics.ResourceCategory.CpuCache;
@@ -184,13 +193,18 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         }
 
         var categoryIndex = CategoryIndex;
+        var alternateTextureIndex = AlternateTextureIndex;
         var built = new List<RenderableReference>(placements.Count);
         foreach (var p in placements)
         {
             var category = categoryIndex is not null && categoryIndex.TryGetValue(p.BaseFormId, out var c)
                 ? c
                 : PlacedObjectCategory.Unknown;
-            var renderable = RenderableReference.TryBuild(p, category);
+            var alternateTextures = alternateTextureIndex is not null &&
+                                    alternateTextureIndex.TryGetValue(p.BaseFormId, out var alt)
+                ? alt
+                : null;
+            var renderable = RenderableReference.TryBuild(p, category, alternateTextures);
             if (renderable.HasValue) built.Add(renderable.Value);
         }
         // Sort by ModelPath so consecutive draws batch on the same SRV — adjacent REFRs

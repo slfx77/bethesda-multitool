@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
@@ -27,6 +28,16 @@ internal sealed class WorldViewData
     ///     builders (which have no record collection) can omit it. Empty when no records were available.
     /// </summary>
     public IReadOnlyDictionary<uint, string> ModelPathIndex { get; init; } = new Dictionary<uint, string>();
+
+    /// <summary>
+    ///     Base-object FormID → its resolved <c>MODS</c> ("Alternate Textures") re-skin, or absent when
+    ///     the base has none. Drives per-placement texture swapping in the 3D viewer: the render cache
+    ///     keys a placement's mesh on <c>ModelPath + VariantKey</c> so, e.g., each billboard shows its
+    ///     own vendor ad instead of one shared default. Empty for save-overlay builders and games
+    ///     without alternate textures.
+    /// </summary>
+    public IReadOnlyDictionary<uint, AlternateTextureSet> AlternateTexturesByFormId { get; init; } =
+        new Dictionary<uint, AlternateTextureSet>();
 
     /// <summary>
     ///     SpeedTree archive path (<c>trees\&lt;name&gt;.spt</c>) → recorded tree height (TREE OBND

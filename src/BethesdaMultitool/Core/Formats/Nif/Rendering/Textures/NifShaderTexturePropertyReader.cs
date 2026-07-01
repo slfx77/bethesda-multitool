@@ -31,9 +31,16 @@ internal static class NifShaderTexturePropertyReader
                     continue;
                 }
 
+                // Read the SkyrimShaderPropertyFlags1/2 so callers can act on shader behaviour the texture
+                // slots don't convey — e.g. SLSF1_Refraction / SLSF1_Fire_Refraction (heat-haze/vapor planes
+                // that must NOT draw as opaque normal-map "gems"). Best-effort; null when the layout is unknown.
+                TryReadBsLightingShaderFlags(data, nif, propBlock, out var lsFlags1, out var lsFlags2);
+
                 return new NifShaderTextureMetadata
                 {
                     PropertyType = propBlock.TypeName,
+                    ShaderFlags = lsFlags1,
+                    ShaderFlags2 = lsFlags2,
                     TextureSlots = slots
                 };
             }
@@ -269,6 +276,33 @@ internal static class NifShaderTexturePropertyReader
     ///     (FO4/Starfield store materials in external BGSM/.mat files when "Name" is a path — not
     ///     handled here; the embedded texture set is still read when present.)
     /// </summary>
+    /// <summary>
+    ///     Best-effort read of a Skyrim/SE/FO4 BSLightingShaderProperty's Shader Flags 1 + 2
+    ///     (SkyrimShaderPropertyFlags1/2). They sit right after the optional leading "Shader Type" (4 bytes,
+    ///     bsVer 83..130) + the NiObjectNET base. Sets both to null when the layout isn't this known form
+    ///     (e.g. FO76 bsVer >= 155, which the texture-slot path handles via the material name).
+    /// </summary>
+    private static void TryReadBsLightingShaderFlags(
+        byte[] data, NifInfo nif, BlockInfo propBlock, out uint? flags1, out uint? flags2)
+    {
+        flags1 = null;
+        flags2 = null;
+        if (nif.BsVersion is < 83 or > 130)
+        {
+            return;
+        }
+
+        var pos = propBlock.DataOffset + 4; // leading "Shader Type"
+        var end = propBlock.DataOffset + propBlock.Size;
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian) || pos + 8 > end)
+        {
+            return;
+        }
+
+        flags1 = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
+        flags2 = BinaryUtils.ReadUInt32(data, pos + 4, nif.IsBigEndian);
+    }
+
     private static List<string?> ReadBsLightingShaderTextureSlots(
         byte[] data,
         NifInfo nif,

@@ -289,6 +289,15 @@ public record RecordCollection
     /// </summary>
     public Dictionary<uint, string> ModelPathIndex { get; init; } = [];
 
+    /// <summary>
+    ///     Base-object FormID → its <c>MODS</c> ("Alternate Textures") entries (shape name → TXST
+    ///     FormID → 3D index). Present on material-swapped statics (billboards, signs, re-skinned
+    ///     props); empty for most records. Resolved to actual TXST texture paths at world-view build
+    ///     time (<c>WorldMapOverlayBuilder</c>) for the 3D viewer's per-placement re-skin.
+    /// </summary>
+    public IReadOnlyDictionary<uint, IReadOnlyList<AlternateTextureEntry>> AlternateTexturesByFormId { get; init; } =
+        new Dictionary<uint, IReadOnlyList<AlternateTextureEntry>>();
+
     /// <summary>FormID to Editor ID mapping built during parsing.</summary>
     public Dictionary<uint, string> FormIdToEditorId { get; init; } = [];
 
@@ -481,6 +490,9 @@ public record RecordCollection
             FormIdToDisplayName = MergeDictionary(FormIdToDisplayName, overlay.FormIdToDisplayName),
             RuntimeWorldspaceMaps = MergeDictionary(RuntimeWorldspaceMaps, overlay.RuntimeWorldspaceMaps),
             UnparsedTypeCounts = MergeDictionary(UnparsedTypeCounts, overlay.UnparsedTypeCounts),
+            AlternateTexturesByFormId = MergeDictionary(
+                new Dictionary<uint, IReadOnlyList<AlternateTextureEntry>>(AlternateTexturesByFormId),
+                new Dictionary<uint, IReadOnlyList<AlternateTextureEntry>>(overlay.AlternateTexturesByFormId)),
 
             TotalRecordsProcessed = TotalRecordsProcessed + overlay.TotalRecordsProcessed,
             IsTes3 = IsTes3 || overlay.IsTes3,
@@ -550,6 +562,93 @@ public record RecordCollection
         }
 
         return this;
+    }
+
+    /// <summary>
+    ///     Resolves the mesh for any placed reference left without a <see cref="PlacedReference.ModelPath" />
+    ///     after a load-order merge, against the MERGED base set. The per-source enrichment that bakes a
+    ///     ref's model (<c>ObjectIndexBuilder.BuildAndEnrich</c> for TES4+, <c>Tes3RecordParser</c> for
+    ///     TES3) only ever sees that source's OWN records, and <see cref="MergeWith" /> unions the records +
+    ///     <see cref="ModelPathIndex" /> but never re-resolves the placed refs — so a ref that places a base
+    ///     defined in another loaded plugin (e.g. a Bloodmoon REFR placing a Morrowind Imperial-fort STAT in
+    ///     Fort Frostmoth, or a TES4 mod placing a vanilla static) is left with a null ModelPath and is then
+    ///     silently dropped by the renderer (<c>RenderableReference.TryBuild</c>) — it renders "missing
+    ///     entirely". This pass closes that gap for every game:
+    ///     <list type="number">
+    ///       <item>by <see cref="PlacedReference.BaseFormId" /> through the merged
+    ///       <see cref="ModelPathIndex" /> (TES4+ references carry real, cross-plugin-stable FormIDs); then</item>
+    ///       <item>by <see cref="PlacedReference.BaseEditorId" /> for refs whose cross-plugin FormID is
+    ///       unresolved — TES3 references are editor-id strings, so a master-defined base leaves
+    ///       <c>BaseFormId == 0</c> — which also backfills the FormID.</item>
+    ///     </list>
+    ///     Call after <see cref="MergeWith" />; mutates each cell's <see cref="CellRecord.PlacedObjects" />
+    ///     list in place (replacing entries via <c>with</c>; the shared base records are never mutated).
+    /// </summary>
+    public RecordCollection ResolvePlacedModels()
+    {
+        if (Cells.Count == 0)
+        {
+            return this;
+        }
+
+        // editor-id → (FormId, model) over the merged base set, for string-keyed refs whose per-plugin
+        // FormID didn't resolve cross-plugin (TES3). Built lazily: TES4+ refs resolve by FormID first and
+        // never need it. TES3 routes every base into GenericRecords, which carry both the id and the MODL.
+        Dictionary<string, (uint FormId, string Model)>? byEditorId = null;
+
+        foreach (var cell in Cells)
+        {
+            var refs = cell.PlacedObjects;
+            for (var i = 0; i < refs.Count; i++)
+            {
+                var p = refs[i];
+                if (!string.IsNullOrEmpty(p.ModelPath))
+                {
+                    continue;
+                }
+
+                // 1) FormID → model via the merged index (all games; covers cross-plugin overlays).
+                if (p.BaseFormId != 0 && ModelPathIndex.TryGetValue(p.BaseFormId, out var model))
+                {
+                    refs[i] = p with { ModelPath = model };
+                    continue;
+                }
+
+                // 2) editor-id → model, for refs whose base FormID is unresolved cross-plugin (TES3).
+                if (string.IsNullOrEmpty(p.BaseEditorId))
+                {
+                    continue;
+                }
+
+                byEditorId ??= BuildGenericEditorIdModelMap();
+                if (byEditorId.TryGetValue(p.BaseEditorId!, out var found))
+                {
+                    refs[i] = p with
+                    {
+                        ModelPath = found.Model,
+                        BaseFormId = p.BaseFormId == 0 ? found.FormId : p.BaseFormId
+                    };
+                }
+            }
+        }
+
+        return this;
+    }
+
+    // editor-id → (FormId, model) from the generic base records, last-wins so a higher-priority plugin's
+    // override of a base's mesh takes effect. Used by ResolvePlacedModels for TES3 string-keyed refs.
+    private Dictionary<string, (uint FormId, string Model)> BuildGenericEditorIdModelMap()
+    {
+        var map = new Dictionary<string, (uint, string)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rec in GenericRecords)
+        {
+            if (!string.IsNullOrEmpty(rec.EditorId) && !string.IsNullOrEmpty(rec.ModelPath))
+            {
+                map[rec.EditorId!] = (rec.FormId, rec.ModelPath!);
+            }
+        }
+
+        return map;
     }
 
     /// <summary>

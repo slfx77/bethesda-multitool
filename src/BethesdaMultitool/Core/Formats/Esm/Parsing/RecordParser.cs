@@ -506,6 +506,11 @@ public sealed class RecordParser
             containers, keys, notes, weaponMods, sounds, genericRecords,
             cells, worldspaces, modelIndex, phaseSw);
 
+        // Harvest MODS ("Alternate Textures") across every model-bearing base type into a single
+        // base-FormID → entry index. Reuses the raw-subrecord read path (accessor-only), so it's
+        // empty on scan-only loads. Resolved to real TXST texture paths later in the world-view build.
+        var alternateTextures = new AlternateTextureHandler(_context).BuildIndex();
+
         progress?.Report((95, "Building lookup tables..."));
 
         var result = new RecordCollection
@@ -614,6 +619,7 @@ public sealed class RecordParser
             Climate = climate,
 
             ModelPathIndex = modelIndex,
+            AlternateTexturesByFormId = alternateTextures,
             FormIdToEditorId = new Dictionary<uint, string>(_context.FormIdToEditorId),
             FormIdToDisplayName = _context.BuildFormIdToDisplayNameMap(),
             RuntimeWorldspaceMaps = _context.RuntimeWorldspaceCellMaps != null
@@ -650,6 +656,7 @@ public sealed class RecordParser
                 Furniture = result.Furniture,
                 StaticCollections = result.StaticCollections,
                 ModelPathIndex = result.ModelPathIndex,
+                AlternateTexturesByFormId = result.AlternateTexturesByFormId,
                 RuntimeWorldspaceMaps = result.RuntimeWorldspaceMaps,
                 FormIdToEditorId = result.FormIdToEditorId,
                 FormIdToDisplayName = result.FormIdToDisplayName,

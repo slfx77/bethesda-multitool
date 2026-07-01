@@ -53,7 +53,14 @@ internal static class RecordCollectionFormIdRebaser
 
         if (type.IsArray)
         {
-            return value;
+            // A uint[] whose property is a registered FormID property (e.g. the Morrowind LAND grid's
+            // VtexTextureFormIds) holds FormIDs and must be rebased element-by-element. Every other array
+            // (byte[] payloads, the raw VTEX TextureIndices grid, etc.) is opaque data and passes through
+            // unchanged — the name gate keeps raw uint indices from being mistaken for FormIDs. (FormID
+            // *lists* are handled separately in CloneList.)
+            return value is uint[] uintArray && EsmFormIdPropertyRegistry.IsFormIdProperty(propertyName)
+                ? RebaseUIntArray(uintArray, mapFormId)
+                : value;
         }
 
         if (value is IDictionary dictionary)
@@ -95,6 +102,17 @@ internal static class RecordCollectionFormIdRebaser
         }
 
         return clone;
+    }
+
+    private static uint[] RebaseUIntArray(uint[] source, Func<uint, uint> mapFormId)
+    {
+        var result = new uint[source.Length];
+        for (var i = 0; i < source.Length; i++)
+        {
+            result[i] = mapFormId(source[i]);
+        }
+
+        return result;
     }
 
     private static object CloneList(IList source, string propertyName, Func<uint, uint> mapFormId)

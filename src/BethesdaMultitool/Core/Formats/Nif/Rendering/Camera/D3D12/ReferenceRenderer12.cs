@@ -624,7 +624,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // across frames). Cheap — only computed on the first sighting of each MeshId.
                 var pdx = r.BoundsCenter.X - cylinderX;
                 var pdy = r.BoundsCenter.Y - cylinderY;
-                mesh = _meshCache.GetOrUpload(r.ModelPath, ref uploadBudget, pdx * pdx + pdy * pdy);
+                mesh = _meshCache.GetOrUpload(
+                    r.ModelPath, ref uploadBudget, pdx * pdx + pdy * pdy, r.AlternateTextures);
                 _resolvedMeshesThisFrame[r.MeshId] = mesh;
             }
             if (mesh is null)

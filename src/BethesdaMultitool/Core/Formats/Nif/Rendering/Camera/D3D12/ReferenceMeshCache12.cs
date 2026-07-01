@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.Core.Resources;
 using Vortice.Direct3D12;
@@ -241,14 +242,27 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         PruneCompletedDecodeTasks();
     }
 
-    public CachedNifMesh12? GetOrUpload(string modelPath, ref int uploadBudget, float priority = 0f)
+    public CachedNifMesh12? GetOrUpload(
+        string modelPath,
+        ref int uploadBudget,
+        float priority = 0f,
+        AlternateTextureSet? alternateTextures = null)
     {
         if (_disposed) return null;
 
         PruneCompletedDecodeTasks();
         StartQueuedDecodes();
 
-        var cacheKey = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
+        var decodePath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
+        // A placement whose base carries MODS alternate textures gets its own cache entry per texture
+        // variant (so a shared NIF — e.g. every billboard — renders its correct per-base textures). The
+        // '#variant' suffix is an in-memory-cache discriminator ONLY: archive lookups, on-disk cache
+        // metadata, decode, and collision all key on the plain decodePath via Node.DecodePath. Disk
+        // persistence is skipped for variants (the on-disk cache keys on the NIF's archive identity, so
+        // two variants of one NIF would otherwise collide there — see Node.HasVariant).
+        var cacheKey = alternateTextures is null
+            ? decodePath
+            : decodePath + "#" + alternateTextures.VariantKey;
         // TryGet bumps the hit to MRU — the old explicit Touch.
         if (_meshLru.TryGet(cacheKey, out var existing))
         {
@@ -261,7 +275,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var node = new Node(
             Mesh: null,
             DecodeTask: null,
-            ResolvedNull: false);
+            ResolvedNull: false)
+        {
+            DecodePath = decodePath,
+            Overrides = alternateTextures?.Overrides,
+            HasVariant = alternateTextures is not null
+        };
         // Set evicts LRU entries over capacity, each through onEvicted (the dispose cascade);
         // the just-inserted node always survives its own Set.
         _meshLru.Set(cacheKey, node);
@@ -373,7 +392,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         mesh = null;
         if (!TryGetDecodedCache(modelPath, out var decoded))
         {
-            if (!TryLoadPersistentDecodedCache(modelPath, out decoded) &&
+            // Variants never consult the on-disk cache (it keys on the NIF's archive identity, shared
+            // across variants). Non-variant load uses the plain DecodePath (== modelPath here).
+            if ((node.HasVariant || !TryLoadPersistentDecodedCache(node.DecodePath, out decoded)) &&
                 !node.DecodedCacheMissRecorded)
             {
                 FrameCpuDecodedCacheMisses++;
@@ -410,7 +431,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         uploadBudget--;
         FrameGpuUploads++;
         _frameUploadByteBudget.Record(decoded.ByteSize);
-        mesh = UploadDecodedMesh(modelPath, decoded.Mesh);
+        // Upload + collision keying use the plain archive path (collision geometry is texture-
+        // independent, so all variants of a NIF share one collision entry keyed on DecodePath).
+        mesh = UploadDecodedMesh(node.DecodePath, decoded.Mesh);
         if (mesh is null)
         {
             node.ResolvedNull = true;
@@ -458,21 +481,28 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             }
 
             node.DecodeQueued = false;
-            node.DecodeTask = StartDecodeTask(modelPath);
+            node.DecodeTask = StartDecodeTask(modelPath, node);
             FrameDecodeRequests++;
             FrameDecodeStarts++;
         }
     }
 
-    private Task<DecodedNifMesh12?> StartDecodeTask(string modelPath)
+    private Task<DecodedNifMesh12?> StartDecodeTask(string cacheKey, Node node)
     {
+        // Decode from the plain archive path with the node's MODS overrides (if any) baked into the
+        // submesh texture paths; cache the result under the composite cacheKey. Variants aren't
+        // persisted to disk (their overridden textures would collide with the base under the NIF's
+        // archive identity) — the in-memory decoded LRU still caches them for the session.
+        var decodePath = node.DecodePath;
+        var overrides = node.Overrides;
+        var persist = !node.HasVariant;
         Interlocked.Increment(ref _activeDecodeTasks);
         var task = Task.Run(() =>
         {
             try
             {
-                var decoded = _decoder.DecodeMesh(modelPath);
-                StoreDecodedCache(modelPath, decoded);
+                var decoded = _decoder.DecodeMesh(decodePath, overrides);
+                StoreDecodedCache(cacheKey, decoded, persist);
                 return decoded;
             }
             finally
@@ -916,6 +946,19 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         public bool DecodeQueued { get; set; }
         public bool DecodedCacheAvailable { get; set; }
         public bool DecodedCacheMissRecorded { get; set; }
+
+        /// <summary>Plain normalized archive path (no '#variant' suffix) — used for decode, on-disk
+        /// cache metadata, and collision keying, all of which are texture-variant-independent.</summary>
+        public string DecodePath { get; init; } = "";
+
+        /// <summary>MODS alternate-texture overrides (shape name → texture paths) to bake into the
+        /// decoded submeshes, or null when this is the mesh's default (non-re-skinned) variant.</summary>
+        public IReadOnlyDictionary<string, ShapeTextureOverride>? Overrides { get; init; }
+
+        /// <summary>True when this node is a MODS re-skin variant. Disk persistence is skipped for
+        /// variants (the on-disk cache keys on the NIF's archive identity, which is shared across
+        /// variants and would collide); the in-memory LRUs still de-dupe by the '#variant' cache key.</summary>
+        public bool HasVariant { get; init; }
     }
 
     private readonly record struct DecodedCacheValue(

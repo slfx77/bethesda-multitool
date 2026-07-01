@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using BethesdaMultitool.Core.Formats.SaveGame;
 using BethesdaMultitool.Core.Formats.SpeedTree;
@@ -71,6 +72,7 @@ internal static class WorldMapOverlayBuilder
         var spawnIndex = SpawnResolutionIndex.Build(semantic);
         var usageIndex = FormUsageIndex.Build(semantic);
         var (moonPrimarySize, moonSecondarySize) = ComputeMoonSizes(semantic);
+        var textureSetsByFormId = BuildTextureSetIndex(semantic.TextureSets);
 
         return new WorldViewData
         {
@@ -107,7 +109,9 @@ internal static class WorldMapOverlayBuilder
             DanglingRefs = DanglingRefAttributions.LoadDefault(),
             NavMeshesByCell = BuildNavMeshIndex(semantic.NavMeshes, semantic.Cells),
             LandTexturesByFormId = BuildLandTextureIndex(semantic.LandTextures),
-            TextureSetsByFormId = BuildTextureSetIndex(semantic.TextureSets),
+            TextureSetsByFormId = textureSetsByFormId,
+            AlternateTexturesByFormId = BuildAlternateTextureIndex(
+                semantic.AlternateTexturesByFormId, textureSetsByFormId),
             WatersByFormId = BuildWaterIndex(semantic.Water),
             WeathersByFormId = BuildWeatherIndex(semantic.Weather),
             ClimatesByFormId = BuildClimateIndex(semantic.Climate),
@@ -239,6 +243,7 @@ internal static class WorldMapOverlayBuilder
         var spawnIndex = SpawnResolutionIndex.Build(suppRecords);
         var usageIndex = FormUsageIndex.Build(suppRecords);
         var (moonPrimarySize, moonSecondarySize) = ComputeMoonSizes(suppRecords);
+        var textureSetsByFormId = BuildTextureSetIndex(suppRecords.TextureSets);
 
         return new WorldViewData
         {
@@ -276,7 +281,9 @@ internal static class WorldMapOverlayBuilder
             DanglingRefs = DanglingRefAttributions.LoadDefault(),
             NavMeshesByCell = BuildNavMeshIndex(suppRecords.NavMeshes, suppRecords.Cells),
             LandTexturesByFormId = BuildLandTextureIndex(suppRecords.LandTextures),
-            TextureSetsByFormId = BuildTextureSetIndex(suppRecords.TextureSets),
+            TextureSetsByFormId = textureSetsByFormId,
+            AlternateTexturesByFormId = BuildAlternateTextureIndex(
+                suppRecords.AlternateTexturesByFormId, textureSetsByFormId),
             WatersByFormId = BuildWaterIndex(suppRecords.Water),
             WeathersByFormId = BuildWeatherIndex(suppRecords.Weather),
             ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),
@@ -334,13 +341,16 @@ internal static class WorldMapOverlayBuilder
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var record in semantic.GenericRecords)
         {
-            if (record.ModelPath is not { } modelPath || !SpeedTreeModelPath.IsSpt(modelPath) ||
-                !record.Fields.TryGetValue("ICON", out var iconObj) || iconObj is not string icon)
+            if (record.ModelPath is not { } modelPath || !SpeedTreeModelPath.IsSpt(modelPath))
             {
                 continue;
             }
 
-            if (SpeedTreeTexturePath.IconToLeafPath(icon) is { } leaf)
+            // ICON is the engine's leaf atlas. FNV exposes it in the typed Fields; Oblivion/TES4 records decode
+            // via SchemaRecordDecoder, so it lives in DecodedTree — resolve from both. Without the DecodedTree
+            // fallback, Oblivion trees got no leaf atlas and the renderer fell back to the .spt's dev-era
+            // material name (which ships inconsistently), so every Oblivion leaf card rendered untextured.
+            if (SpeedTreeTreeRecordReader.ResolveLeafIcon(record.Fields, record.DecodedTree) is { } leaf)
             {
                 map[SpeedTreeModelPath.ToArchivePath(modelPath)] = leaf;
             }
@@ -405,6 +415,59 @@ internal static class WorldMapOverlayBuilder
         {
             dict.TryAdd(r.FormId, r);
         }
+        return dict;
+    }
+
+    /// <summary>
+    ///     Resolves each base record's raw <c>MODS</c> entries (shape → TXST FormID) into an
+    ///     <see cref="AlternateTextureSet" /> keyed by base FormID, by looking each TXST FormID up in
+    ///     <paramref name="textureSets" /> and taking its diffuse/normal slots. Paths are canonicalized
+    ///     with <see cref="NifTexturePathUtility.Normalize" /> so a TXST's data-relative path resolves
+    ///     through the same texture cache as a NIF-embedded path. Entries whose TXST is unresolved or has
+    ///     no diffuse/normal are skipped; base objects left with nothing to override are omitted.
+    /// </summary>
+    private static Dictionary<uint, AlternateTextureSet> BuildAlternateTextureIndex(
+        IReadOnlyDictionary<uint, IReadOnlyList<AlternateTextureEntry>> entriesByFormId,
+        IReadOnlyDictionary<uint, TextureSetRecord> textureSets)
+    {
+        var dict = new Dictionary<uint, AlternateTextureSet>();
+        if (entriesByFormId.Count == 0)
+        {
+            return dict;
+        }
+
+        foreach (var (baseFormId, entries) in entriesByFormId)
+        {
+            var overrides = new Dictionary<string, ShapeTextureOverride>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in entries)
+            {
+                if (!textureSets.TryGetValue(entry.TextureSetFormId, out var txst))
+                {
+                    continue;
+                }
+
+                var diffuse = string.IsNullOrEmpty(txst.DiffuseTexture)
+                    ? null
+                    : NifTexturePathUtility.Normalize(txst.DiffuseTexture);
+                var normal = string.IsNullOrEmpty(txst.NormalTexture)
+                    ? null
+                    : NifTexturePathUtility.Normalize(txst.NormalTexture);
+
+                if (diffuse is null && normal is null)
+                {
+                    continue;
+                }
+
+                // Later MODS entries for the same shape win (engine applies the array in order).
+                overrides[entry.ShapeName] = new ShapeTextureOverride(diffuse, normal);
+            }
+
+            if (AlternateTextureSet.Create(overrides) is { } set)
+            {
+                dict[baseFormId] = set;
+            }
+        }
+
         return dict;
     }
 
