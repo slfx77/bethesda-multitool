@@ -58,11 +58,9 @@ internal static class SpeedTreeMetadata
                 continue;
             }
 
-            string? leaf = null;
-            if (rec.Fields.TryGetValue("ICON", out var ic) && ic is string icon)
-            {
-                leaf = SpeedTreeTexturePath.IconToLeafPath(icon);
-            }
+            // ICON is the engine's leaf atlas. FNV exposes it via the typed Fields; Oblivion/TES4 records
+            // decode through SchemaRecordDecoder, so it lives in DecodedTree instead — resolve from both.
+            var leaf = SpeedTreeTreeRecordReader.ResolveLeafIcon(rec.Fields, rec.DecodedTree);
 
             var archivePath = SpeedTreeModelPath.ToArchivePath(mp);
             var (billboardWidth, billboardHeight) = ExtractTreeBillboardSize(rec.Fields, rec.IsBigEndian);
@@ -70,7 +68,8 @@ internal static class SpeedTreeMetadata
                 archivePath,
                 rec.EditorId,
                 leaf,
-                ExtractTreeSeed(rec.Fields, rec.IsBigEndian),
+                ExtractTreeSeed(rec.Fields, rec.IsBigEndian)
+                    ?? SpeedTreeTreeRecordReader.ResolveFirstSeed(rec.DecodedTree),
                 ExtractObjectBoundsHeight(rec.Bounds),
                 billboardWidth,
                 billboardHeight);

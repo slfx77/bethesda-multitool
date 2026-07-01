@@ -203,7 +203,9 @@ public class SptGeometryBuilderTests
 
         var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
         var childBase = AveragePosition(bark.Positions, BranchVertexCount(3, 2), RingVertexCount(3));
-        Assert.InRange(childBase.X, 45f, 55f);
+        // The builder lofts at the engine's ×10 world scale (treeSizeMid = Float2006·10 = 1000), so the
+        // child attaches at frac·1000 ≈ 500 rather than the pre-×10 ≈ 50.
+        Assert.InRange(childBase.X, 450f, 550f);
     }
 
     [Fact]
@@ -240,7 +242,7 @@ public class SptGeometryBuilderTests
         var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
         var childBase = AveragePosition(bark.Positions, BranchVertexCount(3, 4), RingVertexCount(3));
 
-        Assert.Equal(expectedFrac * 100f, childBase.X, 2);
+        Assert.Equal(expectedFrac * 1000f, childBase.X, 2); // ×10 engine world scale (Float2006·10)
     }
 
     [Fact]
@@ -266,7 +268,9 @@ public class SptGeometryBuilderTests
         var center = AveragePosition(bark.Positions, childBase, uniqueRingVertices);
         var radius = Vector3.Distance(center, ReadVector3(bark.Positions, childBase));
 
-        Assert.Equal(100f * 0.02f * 0.625f * 0.85f, radius, 2);
+        // ×10 engine world scale (Float2006·10). Tolerance (not 2-decimal rounding): the measured radius is
+        // 10.625 ± a 1e-6 float wobble from the engine-exact deg→rad division, which straddles the x.625 boundary.
+        Assert.Equal(1000f * 0.02f * 0.625f * 0.85f, radius, 0.01f);
     }
 
     [Fact]
@@ -277,7 +281,7 @@ public class SptGeometryBuilderTests
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
         var center = ReadVector3(result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Tangents!, 0);
-        Assert.Equal(10f, center.Length(), 4);
+        Assert.Equal(100f, center.Length(), 4); // ×10 engine world scale (budReach ∝ treeSize = Float2006·10)
     }
 
     [Fact]
@@ -294,10 +298,11 @@ public class SptGeometryBuilderTests
         // bitangent.xy = the card corner offset (Corner0 pivot + Corner1 size). bitangent.z now carries
         // the per-leaf wind weight (a [0.15,1] blend factor for the leaf-billboard VS sway), shared by a
         // leaf's four corners, so it is asserted separately from the offset math under test here.
-        AssertOffsetXy(offsets, 0, -5f, -30f);
-        AssertOffsetXy(offsets, 1, 15f, -30f);
-        AssertOffsetXy(offsets, 2, 15f, 10f);
-        AssertOffsetXy(offsets, 3, -5f, 10f);
+        // Card size = cardScale·Corner1 with cardScale = treeSizeMid = Float2006·10 (×10 engine world scale).
+        AssertOffsetXy(offsets, 0, -50f, -300f);
+        AssertOffsetXy(offsets, 1, 150f, -300f);
+        AssertOffsetXy(offsets, 2, 150f, 100f);
+        AssertOffsetXy(offsets, 3, -50f, 100f);
         var windWeight = offsets[2];
         Assert.InRange(windWeight, 0.15f, 1f);
         Assert.Equal(windWeight, offsets[5], 4);
@@ -322,26 +327,36 @@ public class SptGeometryBuilderTests
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
         var uvs = result.Submeshes.Single(s => s.ShapeName == "spt:leaves").UVs!;
+        // The builder flips V (v → 1−v) on the .spt's leaf UVs: they use a bottom-left texture origin
+        // (SpeedTree RT / Gamebryo GL sampler) and our rasterizer samples top-left, so without the flip each
+        // card grabbed the wrong atlas region (the squared-edge bug). U is unchanged; V is mirrored, so the
+        // parsed 0.9 → 0.1 and 0.1 → 0.9.
         Assert.Equal(0.75f, uvs[0], 4);
-        Assert.Equal(0.9f, uvs[1], 4);
+        Assert.Equal(0.1f, uvs[1], 4);
         Assert.Equal(0.25f, uvs[2], 4);
-        Assert.Equal(0.9f, uvs[3], 4);
+        Assert.Equal(0.1f, uvs[3], 4);
         Assert.Equal(0.25f, uvs[4], 4);
-        Assert.Equal(0.1f, uvs[5], 4);
+        Assert.Equal(0.9f, uvs[5], 4);
         Assert.Equal(0.75f, uvs[6], 4);
-        Assert.Equal(0.1f, uvs[7], 4);
+        Assert.Equal(0.9f, uvs[7], 4);
     }
 
     [Fact]
-    public void Build_LeafBillboards_CarryPerLeafNormalForShaderLighting()
+    public void Build_LeafBillboards_CarryUpDominantCanopyNormalForShaderLighting()
     {
         var model = MakeSingleLevelLeafModel(leafFrequency: 1f);
 
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
+        // The leaf lighting normal is the soft CANOPY normal: up-dominant (the canopy is lit primarily from
+        // above) with a gentle outward lean for volume. Regressing to a blend of the RAW world-space outward
+        // vector (the units bug) collapses the normal to horizontal (Z≈0), which makes every shadow-side
+        // billboard render BLACK under the shader's saturate(N·L) lighting — the bug this guards against.
         var normal = ReadVector3(result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Normals!, 0);
         Assert.InRange(normal.Length(), 0.99f, 1.01f);
-        Assert.True(Vector3.Distance(normal, Vector3.UnitZ) > 0.01f);
+        Assert.True(normal.Z > 0.7f, $"leaf normal should be up-dominant, was {normal}");
+        Assert.True(normal.Z >= MathF.Sqrt(normal.X * normal.X + normal.Y * normal.Y),
+            $"Z should dominate the horizontal magnitude, was {normal}");
     }
 
     [Fact]
