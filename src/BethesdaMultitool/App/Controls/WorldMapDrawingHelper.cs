@@ -14,8 +14,6 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapDrawingHelper
 {
-    private const float CellWorldSize = 4096f;
-
     /// <summary>
     ///     Creates a rotated rectangle CanvasGeometry from center, half-extents, and rotation.
     /// </summary>
@@ -62,24 +60,24 @@ internal static class WorldMapDrawingHelper
 
     /// <summary>Draw a cell grid overlay for PNG export (no viewport culling).</summary>
     internal static void DrawExportCellGrid(CanvasDrawingSession ds,
-        int minGridX, int maxGridX, int minGridY, int maxGridY, float pixelsPerWorldUnit)
+        int minGridX, int maxGridX, int minGridY, int maxGridY, float pixelsPerWorldUnit, float cellWorldSize)
     {
         var gridColor = Color.FromArgb(40, 255, 255, 255);
         var lineWidth = 0.5f / pixelsPerWorldUnit;
 
         for (var cx = minGridX; cx <= maxGridX + 1; cx++)
         {
-            var worldX = cx * CellWorldSize;
-            var yStart = -(maxGridY + 1) * CellWorldSize;
-            var yEnd = -minGridY * CellWorldSize;
+            var worldX = cx * cellWorldSize;
+            var yStart = -(maxGridY + 1) * cellWorldSize;
+            var yEnd = -minGridY * cellWorldSize;
             ds.DrawLine(worldX, yStart, worldX, yEnd, gridColor, lineWidth);
         }
 
         for (var cy = minGridY; cy <= maxGridY + 1; cy++)
         {
-            var worldY = -cy * CellWorldSize;
-            var xStart = minGridX * CellWorldSize;
-            var xEnd = (maxGridX + 1) * CellWorldSize;
+            var worldY = -cy * cellWorldSize;
+            var xStart = minGridX * cellWorldSize;
+            var xEnd = (maxGridX + 1) * cellWorldSize;
             ds.DrawLine(xStart, worldY, xEnd, worldY, gridColor, lineWidth);
         }
     }

@@ -21,7 +21,6 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapExporter
 {
-    private const float CellWorldSize = 4096f;
     private const int HmGridSize = 33;
 
     /// <summary>
@@ -59,12 +58,15 @@ internal static class WorldMapExporter
         var longEdge = Math.Max(imageW, imageH);
         var sizing = MapExportLayoutEngine.ComputeSizing(longEdge);
 
-        var pixelsPerWorldUnit = (float)pixelsPerCell / CellWorldSize;
-        var worldOriginX = minGridX * CellWorldSize;
-        var worldOriginY = -(maxGridY + 1) * CellWorldSize;
-        var worldMaxX = (maxGridX + 1) * CellWorldSize;
-        var worldMinY = minGridY * CellWorldSize;
-        var worldMaxY = (maxGridY + 1) * CellWorldSize;
+        // Real world-units per cell (8192 Morrowind, 4096 Fallout). Drives the grid→world transform so
+        // the exported PNG places terrain/markers/overlay at the same scale as the live map.
+        var cellWorldSize = data?.CellWorldSize ?? WorldGridConstants.CellSize;
+        var pixelsPerWorldUnit = (float)pixelsPerCell / cellWorldSize;
+        var worldOriginX = minGridX * cellWorldSize;
+        var worldOriginY = -(maxGridY + 1) * cellWorldSize;
+        var worldMaxX = (maxGridX + 1) * cellWorldSize;
+        var worldMinY = minGridY * cellWorldSize;
+        var worldMaxY = (maxGridY + 1) * cellWorldSize;
 
         using (var ds = renderTarget.CreateDrawingSession())
         {
@@ -92,22 +94,22 @@ internal static class WorldMapExporter
                 }
                 // Outset by ~1 export pixel in world units so adjacent opaque tiles overlap and no
                 // seam shows when the grid is off — mirrors WorldMapOverviewRenderer.DrawTextureCellBitmaps.
-                var outset = Math.Min(1f / pixelsPerWorldUnit, CellWorldSize * 0.01f);
+                var outset = Math.Min(1f / pixelsPerWorldUnit, cellWorldSize * 0.01f);
                 foreach (var ((gx, gy), (_, bmp)) in bestPerCell)
                 {
-                    var originX = gx * CellWorldSize;
-                    var originY = -(gy + 1) * CellWorldSize;
+                    var originX = gx * cellWorldSize;
+                    var originY = -(gy + 1) * cellWorldSize;
                     ds.DrawImage(bmp, new Rect(originX - outset, originY - outset,
-                        CellWorldSize + 2 * outset, CellWorldSize + 2 * outset));
+                        cellWorldSize + 2 * outset, cellWorldSize + 2 * outset));
                 }
             }
             else if (worldHeightmapBitmap != null)
             {
-                var pixelScale = CellWorldSize / HmGridSize;
+                var pixelScale = cellWorldSize / HmGridSize;
                 var bitmapWorldW = worldHmPixelWidth * pixelScale;
                 var bitmapWorldH = worldHmPixelHeight * pixelScale;
-                var bitmapX = worldHmMinX * CellWorldSize;
-                var bitmapY = -(worldHmMaxY + 1) * CellWorldSize;
+                var bitmapX = worldHmMinX * cellWorldSize;
+                var bitmapY = -(worldHmMaxY + 1) * cellWorldSize;
                 ds.DrawImage(worldHeightmapBitmap,
                     new Rect(bitmapX, bitmapY, bitmapWorldW, bitmapWorldH));
             }
@@ -127,7 +129,7 @@ internal static class WorldMapExporter
             // 2. Cell grid (optional)
             if (drawGrid)
             {
-                WorldMapDrawingHelper.DrawExportCellGrid(ds, minGridX, maxGridX, minGridY, maxGridY, pixelsPerWorldUnit);
+                WorldMapDrawingHelper.DrawExportCellGrid(ds, minGridX, maxGridX, minGridY, maxGridY, pixelsPerWorldUnit, cellWorldSize);
             }
 
             // 3. Nav mesh overlay (below markers so labels stay on top).

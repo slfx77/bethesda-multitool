@@ -20,7 +20,6 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapDanglingRefOverlayRenderer
 {
-    private const float CellWorldSize = 4096f;
     [ThreadStatic] private static List<DanglingRefPosition>? t_danglingScratch;
 
     // Per-confidence base color (alpha applied per-cell based on ref count).
@@ -58,6 +57,7 @@ internal static class WorldMapDanglingRefOverlayRenderer
         var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
             canvasWidth, canvasHeight, zoom, panOffset);
 
+        var cellWorldSize = data.CellWorldSize;
         var outlineWidth = 2f / zoom;
         var drawCount = 0;
 
@@ -76,10 +76,10 @@ internal static class WorldMapDanglingRefOverlayRenderer
                 continue;
             }
 
-            var worldLeft = gx * CellWorldSize;
-            var worldTop = -(gy + 1) * CellWorldSize;
-            var worldRight = worldLeft + CellWorldSize;
-            var worldBottom = worldTop + CellWorldSize;
+            var worldLeft = gx * cellWorldSize;
+            var worldTop = -(gy + 1) * cellWorldSize;
+            var worldRight = worldLeft + cellWorldSize;
+            var worldBottom = worldTop + cellWorldSize;
 
             // Cull cells fully outside the viewport
             if (worldRight < tlWorld.X || worldLeft > brWorld.X ||
@@ -89,8 +89,8 @@ internal static class WorldMapDanglingRefOverlayRenderer
             }
 
             var (fill, outline) = ColorsFor(attr.Confidence, attr.RefCount);
-            ds.FillRectangle(worldLeft, worldTop, CellWorldSize, CellWorldSize, fill);
-            ds.DrawRectangle(worldLeft, worldTop, CellWorldSize, CellWorldSize, outline, outlineWidth);
+            ds.FillRectangle(worldLeft, worldTop, cellWorldSize, cellWorldSize, fill);
+            ds.DrawRectangle(worldLeft, worldTop, cellWorldSize, cellWorldSize, outline, outlineWidth);
             drawCount++;
         }
 
@@ -134,10 +134,10 @@ internal static class WorldMapDanglingRefOverlayRenderer
                 continue;
             }
 
-            var worldLeft = gx * CellWorldSize;
-            var worldTop = -(gy + 1) * CellWorldSize;
-            if (worldLeft + CellWorldSize < tlWorld.X || worldLeft > brWorld.X ||
-                worldTop + CellWorldSize < tlWorld.Y || worldTop > brWorld.Y)
+            var worldLeft = gx * cellWorldSize;
+            var worldTop = -(gy + 1) * cellWorldSize;
+            if (worldLeft + cellWorldSize < tlWorld.X || worldLeft > brWorld.X ||
+                worldTop + cellWorldSize < tlWorld.Y || worldTop > brWorld.Y)
             {
                 continue;
             }

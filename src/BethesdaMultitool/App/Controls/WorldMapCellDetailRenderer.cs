@@ -14,7 +14,6 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapCellDetailRenderer
 {
-    private const float CellWorldSize = 4096f;
     private const int HmGridSize = 33;
 
     internal static void DrawCellDetail(
@@ -38,17 +37,18 @@ internal static class WorldMapCellDetailRenderer
         ds.Transform = WorldMapViewportHelper.GetViewTransform(zoom, panOffset);
 
         var overlayActive = showRenderedObjects && renderedObjectsOverlay is not null;
+        var cellWorldSize = data.CellWorldSize;
 
         // 1. Cell heightmap background
         if (cellHeightmapBitmap != null && selectedCell.GridX.HasValue && selectedCell.GridY.HasValue)
         {
             var cellX = selectedCell.GridX.Value;
             var cellY = selectedCell.GridY.Value;
-            var originX = cellX * CellWorldSize;
-            var originY = -(cellY + 1) * CellWorldSize;
+            var originX = cellX * cellWorldSize;
+            var originY = -(cellY + 1) * cellWorldSize;
 
             ds.DrawImage(cellHeightmapBitmap,
-                new Rect(originX, originY, CellWorldSize, CellWorldSize));
+                new Rect(originX, originY, cellWorldSize, cellWorldSize));
         }
 
         // 2. Cell boundary
@@ -56,9 +56,9 @@ internal static class WorldMapCellDetailRenderer
         {
             var cellX = selectedCell.GridX.Value;
             var cellY = selectedCell.GridY.Value;
-            var originX = cellX * CellWorldSize;
-            var originY = -(cellY + 1) * CellWorldSize;
-            ds.DrawRectangle(new Rect(originX, originY, CellWorldSize, CellWorldSize),
+            var originX = cellX * cellWorldSize;
+            var originY = -(cellY + 1) * cellWorldSize;
+            ds.DrawRectangle(new Rect(originX, originY, cellWorldSize, cellWorldSize),
                 Color.FromArgb(80, 255, 255, 255), 2f / zoom);
         }
 
@@ -68,11 +68,11 @@ internal static class WorldMapCellDetailRenderer
         if (showWater && !overlayActive && cellWaterBitmap != null
             && selectedCell.GridX.HasValue && selectedCell.GridY.HasValue)
         {
-            var wOriginX = selectedCell.GridX.Value * CellWorldSize;
-            var wOriginY = -(selectedCell.GridY.Value + 1) * CellWorldSize;
+            var wOriginX = selectedCell.GridX.Value * cellWorldSize;
+            var wOriginY = -(selectedCell.GridY.Value + 1) * cellWorldSize;
             var src = cellWaterBitmap.SizeInPixels;
             ds.DrawImage(cellWaterBitmap,
-                new Rect(wOriginX, wOriginY, CellWorldSize, CellWorldSize),
+                new Rect(wOriginX, wOriginY, cellWorldSize, cellWorldSize),
                 new Rect(0, 0, src.Width, src.Height),
                 200f / 255f);
         }

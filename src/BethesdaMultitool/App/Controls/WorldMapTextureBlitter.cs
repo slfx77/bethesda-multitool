@@ -72,10 +72,13 @@ internal static class WorldMapTextureBlitter
                            || IsRealLayerList(northN) || IsRealLayerList(southN);
 
         CellLayerWeightTable? table = null;
-        // Morrowind: no Fallout BTXT/ATXT quadrant layers — paint from the flat 16×16 VTEX grid
-        // (resolved to LTEX FormIds) the same way the 3D terrain builder does, so the 2D textured
-        // layer matches it instead of rendering blank/engine-default.
-        if (!hasOwnLayers && cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtex)
+        // Morrowind (TES3) ground texturing is the flat 16×16 VTEX grid (resolved to LTEX FormIds),
+        // the same source the 3D terrain builder uses. Prefer it whenever present so the 2D textured
+        // layer matches the 3D viewer at full per-vertex fidelity. The parser ALSO emits a coarse
+        // 4-quadrant TextureLayers fallback (so hasOwnLayers is true for TES3), so this must be checked
+        // FIRST — otherwise the fine grid is dead code and Morrowind renders 4 dominant-texture blocks.
+        // Fallout/Oblivion/Skyrim have no VtexTextureFormIds and fall through to the quadrant path.
+        if (cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtex)
         {
             table = CellLayerWeightTable.BuildFromVtexGrid(HmGridSize, vtex);
         }
@@ -92,9 +95,10 @@ internal static class WorldMapTextureBlitter
             }
         }
 
+        var cellWorldSize = cell.CellWorldSize > 0 ? cell.CellWorldSize : WorldGridConstants.CellSize;
         var rgba = new byte[pixelsPerCell * pixelsPerCell * 4];
         BlitTerrainTexturesBlended(rgba, pixelsPerCell, pixelsPerCell, table, palette,
-            cell.GridX.Value, cell.GridY.Value, imgCellX: 0, imgCellY: 0);
+            cell.GridX.Value, cell.GridY.Value, imgCellX: 0, imgCellY: 0, cellWorldSize);
         // Modulate the diffuse by VCLR or hillshade BEFORE the water overlay so water stays unshaded.
         if (shading.IsActive)
         {
@@ -282,12 +286,12 @@ internal static class WorldMapTextureBlitter
     internal static void BlitTerrainTexturesBlended(
         byte[] rgba, int stride, int pixelsPerCell, CellLayerWeightTable? table,
         LandscapeTexturePalette palette,
-        int cellGridX, int cellGridY, int imgCellX, int imgCellY)
+        int cellGridX, int cellGridY, int imgCellX, int imgCellY, float cellWorldSize)
     {
-        var worldUnitsPerPixel = 4096f / (pixelsPerCell - 1);
+        var worldUnitsPerPixel = cellWorldSize / (pixelsPerCell - 1);
         var pixelToVertex = (float)(HmGridSize - 1) / (pixelsPerCell - 1);
-        var cellOriginX = cellGridX * 4096f;
-        var cellOriginY = cellGridY * 4096f;
+        var cellOriginX = cellGridX * cellWorldSize;
+        var cellOriginY = cellGridY * cellWorldSize;
 
         // Hoist tile-space UV math out of the per-pixel inner loop. Inside a cell
         // worldX/worldY are linear in px/py, so `worldX % WorldUnitsPerTile / WorldUnitsPerTile`

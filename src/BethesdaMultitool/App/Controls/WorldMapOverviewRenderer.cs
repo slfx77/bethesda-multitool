@@ -23,7 +23,6 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapOverviewRenderer
 {
-    private const float CellWorldSize = 4096f;
     [ThreadStatic] private static List<PlacedReference>? t_refScratch;
 
     /// <summary>
@@ -71,6 +70,11 @@ internal static class WorldMapOverviewRenderer
         var transform = WorldMapViewportHelper.GetViewTransform(zoom, panOffset);
         ds.Transform = transform;
 
+        // Real world-units per cell for this worldspace (8192 Morrowind, 4096 Fallout). Drives every
+        // grid→world / bitmap-placement conversion below so the terrain layer lines up with placed
+        // objects and the 3D top-down overlay (which both use raw world coords). Defaults to 4096.
+        var cellWorldSize = data.CellWorldSize;
+
         var overlayActive = showRenderedObjects && renderedObjectsOverlay is not null;
 
         // 1. Layer background — one of: coarse multi-cell tiles (oversized worldspace, e.g. FO76
@@ -80,22 +84,22 @@ internal static class WorldMapOverviewRenderer
         if (coarseTileBitmaps is not null && coarseTileCellSpan > 0)
         {
             WorldMapTerrainTileRenderer.DrawCoarseTileBitmaps(
-                ds, coarseTileBitmaps, coarseTileCellSpan, coarseTilePixelsPerCell, zoom);
+                ds, coarseTileBitmaps, coarseTileCellSpan, coarseTilePixelsPerCell, zoom, cellWorldSize);
         }
         else if (textureCellBitmaps is not null)
         {
-            WorldMapTerrainTileRenderer.DrawTextureCellBitmaps(ds, textureCellBitmaps, zoom);
+            WorldMapTerrainTileRenderer.DrawTextureCellBitmaps(ds, textureCellBitmaps, zoom, cellWorldSize);
         }
         else if (worldHeightmapBitmap != null)
         {
             // Scale by the bitmap's actual px/cell: heightmap-family aggregates are 33 px/cell, but the
             // TerrainTextures aggregate LOD uses an adaptive (smaller) px/cell sized to the worldspace.
             var ppc = worldHmPixelsPerCell > 0 ? worldHmPixelsPerCell : 33f;
-            var pixelScale = CellWorldSize / ppc;
+            var pixelScale = cellWorldSize / ppc;
             var bitmapWorldW = worldHmPixelWidth * pixelScale;
             var bitmapWorldH = worldHmPixelHeight * pixelScale;
-            var bitmapX = worldHmMinX * CellWorldSize;
-            var bitmapY = -(worldHmMaxY + 1) * CellWorldSize;
+            var bitmapX = worldHmMinX * cellWorldSize;
+            var bitmapY = -(worldHmMaxY + 1) * cellWorldSize;
 
             // A plain CanvasBitmap has no mip chain, so a fixed-tap cubic still moires the aggregate once
             // it is shrunk several-fold (the zoomed-out case). Anisotropic minification resamples it
@@ -103,7 +107,7 @@ internal static class WorldMapOverviewRenderer
             // GPU sampler does — which is what removes the shimmer. One DrawImage/frame, so quality-first.
             // Source rect = the full bitmap.
             var aggInterp = WorldMapTerrainTileRenderer.ChooseInterpolation(
-                ppc, CellWorldSize * Math.Max(zoom, 1e-6f), preferQuality: true);
+                ppc, cellWorldSize * Math.Max(zoom, 1e-6f), preferQuality: true);
             ds.DrawImage(worldHeightmapBitmap,
                 new Rect(bitmapX, bitmapY, bitmapWorldW, bitmapWorldH),
                 new Rect(0, 0, worldHmPixelWidth, worldHmPixelHeight),
@@ -117,7 +121,7 @@ internal static class WorldMapOverviewRenderer
             DrawCellGrid(ds, activeCells, cellGridLookup,
                 worldHeightmapBitmap is not null || textureCellBitmaps is not null
                 || (coarseTileBitmaps is not null && coarseTileCellSpan > 0),
-                zoom, panOffset, canvasWidth, canvasHeight);
+                zoom, panOffset, canvasWidth, canvasHeight, cellWorldSize);
         }
 
         // 2b. Rendered-models overlay — a top-down 3D render of the placed objects (terrain-occluded
@@ -139,18 +143,18 @@ internal static class WorldMapOverviewRenderer
         {
             if (waterCellBitmaps is not null)
             {
-                WorldMapTerrainTileRenderer.DrawWaterCellBitmaps(ds, waterCellBitmaps, zoom);
+                WorldMapTerrainTileRenderer.DrawWaterCellBitmaps(ds, waterCellBitmaps, zoom, cellWorldSize);
             }
             else if (worldWaterBitmap is not null)
             {
                 // Same world-rect math as the aggregate-terrain branch (33 px/cell, scaled to world space).
                 var ppc = worldWaterPixelsPerCell > 0 ? worldWaterPixelsPerCell : 33f;
-                var pixelScale = CellWorldSize / ppc;
+                var pixelScale = cellWorldSize / ppc;
                 var src = worldWaterBitmap.SizeInPixels;
                 var waterInterp = WorldMapTerrainTileRenderer.ChooseInterpolation(
-                    ppc, CellWorldSize * Math.Max(zoom, 1e-6f), preferQuality: true);
+                    ppc, cellWorldSize * Math.Max(zoom, 1e-6f), preferQuality: true);
                 ds.DrawImage(worldWaterBitmap,
-                    new Rect(worldWaterMinX * CellWorldSize, -(worldWaterMaxY + 1) * CellWorldSize,
+                    new Rect(worldWaterMinX * cellWorldSize, -(worldWaterMaxY + 1) * cellWorldSize,
                         worldWaterPixelWidth * pixelScale, worldWaterPixelHeight * pixelScale),
                     new Rect(0, 0, src.Width, src.Height),
                     1f,
@@ -240,7 +244,8 @@ internal static class WorldMapOverviewRenderer
         Dictionary<(int x, int y), CellRecord>? cellGridLookup,
         bool hasLayerBackground,
         float zoom, Vector2 panOffset,
-        float canvasWidth, float canvasHeight)
+        float canvasWidth, float canvasHeight,
+        float cellWorldSize)
     {
         if (activeCells.Count == 0)
         {
@@ -250,10 +255,10 @@ internal static class WorldMapOverviewRenderer
         var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
             canvasWidth, canvasHeight, zoom, panOffset);
 
-        var startCellX = (int)Math.Floor(Math.Min(tlWorld.X, brWorld.X) / CellWorldSize) - 1;
-        var endCellX = (int)Math.Ceiling(Math.Max(tlWorld.X, brWorld.X) / CellWorldSize) + 1;
-        var startCellY = (int)Math.Floor(Math.Min(tlWorld.Y, brWorld.Y) / CellWorldSize) - 1;
-        var endCellY = (int)Math.Ceiling(Math.Max(tlWorld.Y, brWorld.Y) / CellWorldSize) + 1;
+        var startCellX = (int)Math.Floor(Math.Min(tlWorld.X, brWorld.X) / cellWorldSize) - 1;
+        var endCellX = (int)Math.Ceiling(Math.Max(tlWorld.X, brWorld.X) / cellWorldSize) + 1;
+        var startCellY = (int)Math.Floor(Math.Min(tlWorld.Y, brWorld.Y) / cellWorldSize) - 1;
+        var endCellY = (int)Math.Ceiling(Math.Max(tlWorld.Y, brWorld.Y) / cellWorldSize) + 1;
 
         // Clamp to reasonable range
         startCellX = Math.Max(startCellX, -200);
@@ -272,9 +277,9 @@ internal static class WorldMapOverviewRenderer
                     continue;
                 }
 
-                var worldLeft = cx * CellWorldSize;
-                var worldTop = -(cy + 1) * CellWorldSize;
-                ds.FillRectangle(worldLeft, worldTop, CellWorldSize, CellWorldSize, cellFill);
+                var worldLeft = cx * cellWorldSize;
+                var worldTop = -(cy + 1) * cellWorldSize;
+                ds.FillRectangle(worldLeft, worldTop, cellWorldSize, cellWorldSize, cellFill);
             }
         }
 
@@ -285,21 +290,21 @@ internal static class WorldMapOverviewRenderer
         // list carries one DrawGeometry instead of up to ~800 individual DrawLine calls per
         // frame. Each line is an open figure on the path. Geometry + path builder are both
         // IDisposable; `using` is correct.
-        var startWorldY = startCellY * CellWorldSize;
-        var endWorldY = endCellY * CellWorldSize;
-        var startWorldX = startCellX * CellWorldSize;
-        var endWorldX = endCellX * CellWorldSize;
+        var startWorldY = startCellY * cellWorldSize;
+        var endWorldY = endCellY * cellWorldSize;
+        var startWorldX = startCellX * cellWorldSize;
+        var endWorldX = endCellX * cellWorldSize;
         using var pathBuilder = new CanvasPathBuilder(ds);
         for (var cx = startCellX; cx <= endCellX; cx++)
         {
-            var worldX = cx * CellWorldSize;
+            var worldX = cx * cellWorldSize;
             pathBuilder.BeginFigure(worldX, startWorldY);
             pathBuilder.AddLine(worldX, endWorldY);
             pathBuilder.EndFigure(CanvasFigureLoop.Open);
         }
         for (var cy = startCellY; cy <= endCellY; cy++)
         {
-            var worldY = cy * CellWorldSize;
+            var worldY = cy * cellWorldSize;
             pathBuilder.BeginFigure(startWorldX, worldY);
             pathBuilder.AddLine(endWorldX, worldY);
             pathBuilder.EndFigure(CanvasFigureLoop.Open);
@@ -326,10 +331,10 @@ internal static class WorldMapOverviewRenderer
 
                 var cx = cell.GridX.Value;
                 var cy = cell.GridY.Value;
-                var labelX = cx * CellWorldSize + 50;
-                var labelY = -(cy + 1) * CellWorldSize + 50;
+                var labelX = cx * cellWorldSize + 50;
+                var labelY = -(cy + 1) * cellWorldSize + 50;
 
-                if (!WorldMapViewportHelper.IsPointInView(labelX, labelY, tlWorld, brWorld, CellWorldSize))
+                if (!WorldMapViewportHelper.IsPointInView(labelX, labelY, tlWorld, brWorld, cellWorldSize))
                 {
                     continue;
                 }
@@ -461,7 +466,10 @@ internal static class WorldMapOverviewRenderer
 
         var padH = 4f / zoom;
         var padV = 2f / zoom;
-        var gap = 4f / zoom;
+        // The pill's left edge lands at textLeft + b.Left − padH ≈ pos.X + markerHalfWidth + (gap − padH), so the
+        // gap must EXCEED padH or the pill sits flush against the icon (it read as "label too close to the icon").
+        // gap = padH + clearance keeps a real gap between the marker art and the label pill at every zoom.
+        var gap = padH + 4f / zoom;
 
         var textLeft = pos.X + markerHalfWidth + gap;
         var textTop = pos.Y - (float)(b.Top + b.Height / 2);
@@ -746,6 +754,7 @@ internal static class WorldMapOverviewRenderer
             ? Color.FromArgb(120, 0, 200, 0)
             : Color.FromArgb(120, 220, 50, 50);
 
+        var cellWorldSize = data.CellWorldSize;
         var actorFormIds = new List<uint>();
         if (spawnIndex.LeveledListEntries.TryGetValue(selectedObj.BaseFormId, out var resolved))
         {
@@ -768,13 +777,13 @@ internal static class WorldMapOverviewRenderer
                 if (data.CellByFormId.TryGetValue(cellFid, out var cell) &&
                     cell.GridX.HasValue && cell.GridY.HasValue)
                 {
-                    var originX = cell.GridX.Value * CellWorldSize;
-                    var originY = -(cell.GridY.Value + 1) * CellWorldSize;
+                    var originX = cell.GridX.Value * cellWorldSize;
+                    var originY = -(cell.GridY.Value + 1) * cellWorldSize;
                     ds.FillRectangle(
-                        new Rect(originX, originY, CellWorldSize, CellWorldSize),
+                        new Rect(originX, originY, cellWorldSize, cellWorldSize),
                         overlayColor);
                     ds.DrawRectangle(
-                        new Rect(originX, originY, CellWorldSize, CellWorldSize),
+                        new Rect(originX, originY, cellWorldSize, cellWorldSize),
                         overlayBorder, 2f / zoom);
                 }
             }

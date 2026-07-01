@@ -403,6 +403,7 @@ internal static class WorldMapLayerRenderer
         WorldMapLayer layer,
         List<CellRecord> cellSource, float? defaultWaterHeight, bool showWater,
         HeightmapColorScheme scheme, WorldRenderCache? cache,
+        Vector3? lightDir = null, float zScale = WorldMapHillshadeRenderer.DefaultZScale,
         int targetLongEdge = CoarseOverviewTargetLongEdge,
         int tilePixelSize = CoarseTilePixelSize)
     {
@@ -435,6 +436,11 @@ internal static class WorldMapLayerRenderer
             return null;
         }
 
+        // The Slope layer shades across cell boundaries, so it needs the (gx,gy)→cell index to pull each
+        // cell's neighbour border (otherwise the coarse overview seams at every cell edge — Bug 4). The
+        // other layers are per-cell and ignore it, so only build it where it's used.
+        var cellByGrid = layer == WorldMapLayer.Slope ? BuildCellGridIndex(cellSource) : null;
+
         var tiles = new Dictionary<(int tileGx, int tileGy), byte[]>();
         foreach (var cell in EnumerateCellsWithGrid(cellSource))
         {
@@ -442,7 +448,7 @@ internal static class WorldMapLayerRenderer
             var gy = cell.GridY!.Value;
 
             var cell33 = RenderCellForLayer(layer, cell, globalMin, globalRange,
-                             defaultWaterHeight, showWater, scheme, cache)
+                             defaultWaterHeight, showWater, scheme, cache, cellByGrid, lightDir, zScale)
                          ?? RenderMissingCell(cell, defaultWaterHeight, showWater, cache);
             var cellPixels = ppc == HmGridSize ? cell33 : WorldMapCellBlitter.DownsampleCell(cell33, HmGridSize, ppc);
 
@@ -498,7 +504,9 @@ internal static class WorldMapLayerRenderer
 
     private static byte[]? RenderCellForLayer(
         WorldMapLayer layer, CellRecord cell, float globalMin, float globalRange,
-        float? defaultWaterHeight, bool showWater, HeightmapColorScheme scheme, WorldRenderCache? cache)
+        float? defaultWaterHeight, bool showWater, HeightmapColorScheme scheme, WorldRenderCache? cache,
+        IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid = null,
+        Vector3? lightDir = null, float zScale = WorldMapHillshadeRenderer.DefaultZScale)
         => layer switch
         {
             WorldMapLayer.Heightmap =>
@@ -510,8 +518,12 @@ internal static class WorldMapLayerRenderer
             // No-palette fallback (no Textures BSA next to the ESM): regions stand in for textures.
             WorldMapLayer.TerrainTextures =>
                 RenderTerrainRegionsForCell(cell, defaultWaterHeight, showWater, cache),
+            // Slope is the one terrain-derived layer whose shading reaches across the cell boundary, so it
+            // needs the neighbour index (else the hillshade replicates this cell's own edge and the
+            // one-sided edge normals draw a grid seam at every cell border — Bug 4), plus the light
+            // direction / z-scale so the coarse overview tracks the time-of-day slider like the whole-map path.
             WorldMapLayer.Slope =>
-                RenderSlopeForCell(cell, defaultWaterHeight, showWater, cache),
+                RenderSlopeForCell(cell, defaultWaterHeight, showWater, cache, cellByGrid, lightDir, zScale),
             _ => null
         };
 

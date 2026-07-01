@@ -66,7 +66,7 @@ internal static class WorldLayerBuildService
                 // px/cell to the worldspace size and reuses the single-cell renderers internally.
                 var tiles = WorldMapLayerRenderer.RenderLayerCoarseTiles(
                     request.Layer, request.ActiveCells, request.DefaultWaterHeight, request.ShowWater,
-                    request.ColorScheme, request.Cache);
+                    request.ColorScheme, request.Cache, request.HillshadeLightDir, request.HillshadeZScale);
                 return new LayerBuildResult(
                     request.Version,
                     null,

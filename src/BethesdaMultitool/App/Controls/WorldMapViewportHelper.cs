@@ -11,9 +11,15 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapViewportHelper
 {
-    private const float CellWorldSize = 4096f;
     private const float MinZoom = 0.001f;
     private const float MaxZoom = 50f;
+
+    /// <summary>
+    ///     World-units per cell edge for the given cell (8192 Morrowind, 4096 Fallout-family), with the
+    ///     Fallout default when a cell carries no size (e.g. interiors, which are CellWorldSize == 0).
+    /// </summary>
+    private static float CellSizeOf(CellRecord cell) =>
+        cell.CellWorldSize > 0 ? cell.CellWorldSize : WorldGridConstants.CellSize;
 
     internal static Matrix3x2 GetViewTransform(float zoom, Vector2 panOffset)
     {
@@ -44,10 +50,11 @@ internal static class WorldMapViewportHelper
             return false;
         }
 
-        var cellMinX = cell.GridX.Value * CellWorldSize;
-        var cellMaxX = cellMinX + CellWorldSize;
-        var cellMinY = -(cell.GridY.Value + 1) * CellWorldSize;
-        var cellMaxY = cellMinY + CellWorldSize;
+        var cellWorldSize = CellSizeOf(cell);
+        var cellMinX = cell.GridX.Value * cellWorldSize;
+        var cellMaxX = cellMinX + cellWorldSize;
+        var cellMinY = -(cell.GridY.Value + 1) * cellWorldSize;
+        var cellMaxY = cellMinY + cellWorldSize;
 
         var viewMinX = Math.Min(tlWorld.X, brWorld.X);
         var viewMaxX = Math.Max(tlWorld.X, brWorld.X);
@@ -75,7 +82,7 @@ internal static class WorldMapViewportHelper
             var maxExtent = Math.Max(
                 Math.Max(Math.Abs(bounds.X2 - bounds.X1), Math.Abs(bounds.Y2 - bounds.Y1)),
                 Math.Abs(bounds.Z2 - bounds.Z1)) * obj.Scale;
-            return Math.Clamp(maxExtent, 500f, CellWorldSize);
+            return Math.Clamp(maxExtent, 500f, data?.CellWorldSize ?? WorldGridConstants.CellSize);
         }
 
         return 500f;
@@ -96,10 +103,11 @@ internal static class WorldMapViewportHelper
 
         if (cellsWithGrid.Count == 0) return;
 
-        var minX = cellsWithGrid.Min(c => c.GridX!.Value) * CellWorldSize;
-        var maxX = (cellsWithGrid.Max(c => c.GridX!.Value) + 1) * CellWorldSize;
-        var minY = -(cellsWithGrid.Max(c => c.GridY!.Value) + 1) * CellWorldSize;
-        var maxY = -cellsWithGrid.Min(c => c.GridY!.Value) * CellWorldSize;
+        var cellWorldSize = CellSizeOf(cellsWithGrid[0]);
+        var minX = cellsWithGrid.Min(c => c.GridX!.Value) * cellWorldSize;
+        var maxX = (cellsWithGrid.Max(c => c.GridX!.Value) + 1) * cellWorldSize;
+        var minY = -(cellsWithGrid.Max(c => c.GridY!.Value) + 1) * cellWorldSize;
+        var maxY = -cellsWithGrid.Min(c => c.GridY!.Value) * cellWorldSize;
 
         ZoomToFitBounds(minX, minY, maxX, maxY, canvasWidth, canvasHeight, out zoom, out panOffset);
     }
@@ -128,10 +136,11 @@ internal static class WorldMapViewportHelper
 
         var cx = cell.GridX.Value;
         var cy = cell.GridY.Value;
-        var worldMinX = cx * CellWorldSize - 200;
-        var worldMaxX = (cx + 1) * CellWorldSize + 200;
-        var worldMinY = -(cy + 1) * CellWorldSize - 200;
-        var worldMaxY = -cy * CellWorldSize + 200;
+        var cellWorldSize = CellSizeOf(cell);
+        var worldMinX = cx * cellWorldSize - 200;
+        var worldMaxX = (cx + 1) * cellWorldSize + 200;
+        var worldMinY = -(cy + 1) * cellWorldSize - 200;
+        var worldMaxY = -cy * cellWorldSize + 200;
 
         ZoomToFitBounds(worldMinX, worldMinY, worldMaxX, worldMaxY, canvasWidth, canvasHeight, out zoom, out panOffset);
     }

@@ -13,7 +13,6 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapHitTester
 {
-    private const float CellWorldSize = 4096f;
 
     /// <summary>
     ///     Bounding area threshold (in square world units) above which an object is considered
@@ -171,8 +170,9 @@ internal static class WorldMapHitTester
         else
         {
             // Only check cells near the cursor (3x3 grid around cursor cell)
-            var cellX = (int)Math.Floor(worldPos.X / CellWorldSize);
-            var cellY = (int)Math.Floor(-worldPos.Y / CellWorldSize);
+            var cellWorldSize = data.CellWorldSize;
+            var cellX = (int)Math.Floor(worldPos.X / cellWorldSize);
+            var cellY = (int)Math.Floor(-worldPos.Y / cellWorldSize);
 
             for (var dx = -1; dx <= 1; dx++)
             {
@@ -376,8 +376,9 @@ internal static class WorldMapHitTester
             // Find cell at click position
             if (activeCells.Count > 0)
             {
-                var cellX = (int)Math.Floor(worldPos.X / CellWorldSize);
-                var cellY = (int)Math.Floor(-worldPos.Y / CellWorldSize);
+                var cellWorldSize = data?.CellWorldSize ?? WorldGridConstants.CellSize;
+                var cellX = (int)Math.Floor(worldPos.X / cellWorldSize);
+                var cellY = (int)Math.Floor(-worldPos.Y / cellWorldSize);
 
                 if (cellGridLookup != null &&
                     cellGridLookup.TryGetValue((cellX, cellY), out var cell))
@@ -440,8 +441,9 @@ internal static class WorldMapHitTester
         }
 
         // Show cell info
-        var cellX = (int)Math.Floor(worldPos.X / CellWorldSize);
-        var cellY = (int)Math.Floor(-worldPos.Y / CellWorldSize);
+        var cellWorldSize = data.CellWorldSize;
+        var cellX = (int)Math.Floor(worldPos.X / cellWorldSize);
+        var cellY = (int)Math.Floor(-worldPos.Y / cellWorldSize);
         if (cellGridLookup?.TryGetValue((cellX, cellY), out var cell) == true)
         {
             var cellName = cell.FullName ?? cell.EditorId ?? $"0x{cell.FormId:X8}";

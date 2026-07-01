@@ -12,8 +12,6 @@ namespace BethesdaMultitool;
 /// </summary>
 internal static class WorldMapTerrainTileRenderer
 {
-    private const float CellWorldSize = 4096f;
-
     /// <summary>
     ///     Reusable per-frame dedup dict for <see cref="DrawTextureCellBitmaps" />. Sized to
     ///     ~256 entries (typical fill viewport) on first frame; subsequent frames clear + refill
@@ -49,13 +47,13 @@ internal static class WorldMapTerrainTileRenderer
     internal static void DrawCoarseTileBitmaps(
         CanvasDrawingSession ds,
         IReadOnlyDictionary<(int tileGx, int tileGy), CanvasBitmap> bitmaps,
-        int tileCellSpan, int pixelsPerCell, float zoom)
+        int tileCellSpan, int pixelsPerCell, float zoom, float cellWorldSize)
     {
-        var tileWorldSize = tileCellSpan * CellWorldSize;
-        var outset = Math.Min(1f / Math.Max(zoom, 1e-6f), CellWorldSize * 0.01f);
+        var tileWorldSize = tileCellSpan * cellWorldSize;
+        var outset = Math.Min(1f / Math.Max(zoom, 1e-6f), cellWorldSize * 0.01f);
         // Source px/cell vs on-screen px/cell drives the minify/magnify interpolation choice (GPU-sampler
         // analogue). One DrawImage per tile (≤ a few dozen), so quality-first anisotropic minification.
-        var targetScreenPpc = CellWorldSize * Math.Max(zoom, 1e-6f);
+        var targetScreenPpc = cellWorldSize * Math.Max(zoom, 1e-6f);
 
         foreach (var ((tileGx, tileGy), bmp) in bitmaps)
         {
@@ -85,21 +83,21 @@ internal static class WorldMapTerrainTileRenderer
     internal static void DrawTextureCellBitmaps(
         CanvasDrawingSession ds,
         IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap> bitmaps,
-        float zoom)
+        float zoom, float cellWorldSize)
     {
         // Outset each tile's destination rect by ~1 device pixel in world units so adjacent
         // OPAQUE tiles overlap by ~1px and the inter-tile seam disappears (the seam shows when the
         // cell-grid overlay — which used to mask it — is hidden). World-units-per-screen-pixel =
-        // 1/zoom (the view transform is Scale(zoom)·Translate(pan)). The CellWorldSize*0.01f clamp
+        // 1/zoom (the view transform is Scale(zoom)·Translate(pan)). The cellWorldSize*0.01f clamp
         // caps the outset at very low zoom (where the seam is already sub-pixel) so it can never
         // reach a non-adjacent cell. Lossless: tiles are opaque (alpha=255) with a +1-cell blend
         // margin, so the overlap band is opaque-over-opaque with identical edge colors — no
         // darkening, and mixed per-cell resolutions are fine.
-        var outset = Math.Min(1f / Math.Max(zoom, 1e-6f), CellWorldSize * 0.01f);
+        var outset = Math.Min(1f / Math.Max(zoom, 1e-6f), cellWorldSize * 0.01f);
 
         // Target on-screen pixels per cell = the mip level we want. The cache may hold several tiers
         // per cell; pick the one nearest this (smallest tier that still covers it).
-        var targetScreenPpc = CellWorldSize * Math.Max(zoom, 1e-6f);
+        var targetScreenPpc = cellWorldSize * Math.Max(zoom, 1e-6f);
 
         // Per-frame scan over ≤256 entries (typical fill viewport) to pick the mip-correct tier per
         // (gx, gy). Reused thread-local scratch dict avoids a 60-Hz allocation; clear + refill keeps
@@ -126,8 +124,8 @@ internal static class WorldMapTerrainTileRenderer
 
         foreach (var ((gx, gy), (ppc, bmp)) in bestPerCell)
         {
-            var originX = gx * CellWorldSize;
-            var originY = -(gy + 1) * CellWorldSize;
+            var originX = gx * cellWorldSize;
+            var originY = -(gy + 1) * cellWorldSize;
             // Cheap bilinear when the tile is near screen resolution (mip-correct — the common steady
             // state). When only a stale higher-res tier stands in, it would be minified several-fold and
             // alias: anisotropic (mip-pyramid + anisotropic footprint) resamples it cleanly instead of
@@ -137,7 +135,7 @@ internal static class WorldMapTerrainTileRenderer
             var src = bmp.SizeInPixels;
             ds.DrawImage(bmp,
                 new Rect(originX - outset, originY - outset,
-                    CellWorldSize + 2 * outset, CellWorldSize + 2 * outset),
+                    cellWorldSize + 2 * outset, cellWorldSize + 2 * outset),
                 new Rect(0, 0, src.Width, src.Height),
                 1f,
                 interpolation);
@@ -222,9 +220,9 @@ internal static class WorldMapTerrainTileRenderer
     internal static void DrawWaterCellBitmaps(
         CanvasDrawingSession ds,
         IReadOnlyDictionary<(int gx, int gy, int pixelsPerCell), CanvasBitmap> bitmaps,
-        float zoom)
+        float zoom, float cellWorldSize)
     {
-        var targetScreenPpc = CellWorldSize * Math.Max(zoom, 1e-6f);
+        var targetScreenPpc = cellWorldSize * Math.Max(zoom, 1e-6f);
         var bestPerCell = t_bestPerCellScratch ??= new Dictionary<(int gx, int gy), (int ppc, CanvasBitmap bmp)>(256);
         bestPerCell.Clear();
         foreach (var (key, bmp) in bitmaps)
@@ -238,12 +236,12 @@ internal static class WorldMapTerrainTileRenderer
 
         foreach (var ((gx, gy), (ppc, bmp)) in bestPerCell)
         {
-            var originX = gx * CellWorldSize;
-            var originY = -(gy + 1) * CellWorldSize;
+            var originX = gx * cellWorldSize;
+            var originY = -(gy + 1) * cellWorldSize;
             var interpolation = ChooseInterpolation(ppc, targetScreenPpc, preferQuality: false);
             var src = bmp.SizeInPixels;
             ds.DrawImage(bmp,
-                new Rect(originX, originY, CellWorldSize, CellWorldSize),
+                new Rect(originX, originY, cellWorldSize, cellWorldSize),
                 new Rect(0, 0, src.Width, src.Height),
                 1f,
                 interpolation);

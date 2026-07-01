@@ -152,14 +152,24 @@ internal static class WorldMapCellBlitter
         {
             for (var px = 0; px < HmGridSize; px++)
             {
+                var imgX = imgCellX * HmGridSize + px;
+                var imgY = imgCellY * HmGridSize + py;
+                var dst = (imgY * stride + imgX) * 4;
+
+                // Clip cells that fall outside the bitmap. The regions buffer is sized to the heightmap
+                // (terrain) extent, but this runs for every cell with a texture-winner grid — a cell with
+                // VTEX but no heightmap lands outside that extent and would otherwise index out of bounds
+                // ("Terrain regions failed: Index was outside the bounds of the array").
+                if (imgX < 0 || imgX >= stride || dst < 0 || dst + 3 >= rgba.Length)
+                {
+                    continue;
+                }
+
                 var formId = winners.Lookup(px, py);
                 var (r, g, b) = formId.HasValue
                     ? WorldMapLayerColors.FormIdToColor(formId.Value)
                     : (MissingR, MissingG, MissingB);
 
-                var imgX = imgCellX * HmGridSize + px;
-                var imgY = imgCellY * HmGridSize + py;
-                var dst = (imgY * stride + imgX) * 4;
                 rgba[dst] = r;
                 rgba[dst + 1] = g;
                 rgba[dst + 2] = b;
