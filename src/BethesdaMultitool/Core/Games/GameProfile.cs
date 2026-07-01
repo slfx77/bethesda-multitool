@@ -99,5 +99,16 @@ public sealed record GameProfile
     ///     they don't render cramped. Tune here per game; the draw also preserves each icon's aspect ratio.
     /// </summary>
     public float MarkerIconScale { get; init; } = 1.0f;
+
+    /// <summary>
+    ///     Multiplier on the ambient ("fill") term in the scene lighting sum
+    ///     <c>lit = AmbientLightScale·ambient + saturate(N·L)·sun</c> (objects + terrain). 0.3 is FNV's
+    ///     decompile-exact <c>fRam8323ca10</c>; the older, ambient-heavier TES4-era engines (Oblivion) read
+    ///     far softer — at 0.3 their vertical/shadow surfaces (tree trunks, side-facing leaf cards, walls)
+    ///     collapse to a weak fill and the sun reads like a hard point light. A higher scale lifts the fill so
+    ///     surfaces out of the sun's path stay lit. Bound into <c>uAmbientColor.w</c>; the shader falls back to
+    ///     0.3 when the slot is unset, so unchanged paths keep FNV's value.
+    /// </summary>
+    public float AmbientLightScale { get; init; } = 0.3f;
 }
 

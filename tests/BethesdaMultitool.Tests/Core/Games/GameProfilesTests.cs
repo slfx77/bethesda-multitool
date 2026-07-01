@@ -110,6 +110,17 @@ public class GameProfilesTests
         Assert.True(GameProfiles.For(BethesdaGame.Skyrim).MarkerIconScale > 1.0f);
         Assert.Equal(1.0f, GameProfiles.For(BethesdaGame.FalloutNewVegas).MarkerIconScale);
 
+        // Oblivion's 32×32 parchment-tile icons render small at the 1.0 default, so they get the same
+        // detailed-icon upscale as Skyrim.
+        Assert.Equal(MarkerArtStrategy.EmbeddedColored, GameProfiles.For(BethesdaGame.Oblivion).MarkerArt);
+        Assert.True(GameProfiles.For(BethesdaGame.Oblivion).MarkerIconScale > 1.0f);
+
+        // FNV keeps its decompile-exact 0.3 ambient ("fill") scale; the ambient-heavier TES4-era Oblivion
+        // engine raises it so vertical/shadow surfaces aren't point-lit.
+        Assert.Equal(0.3f, GameProfiles.For(BethesdaGame.FalloutNewVegas).AmbientLightScale);
+        Assert.True(GameProfiles.For(BethesdaGame.Oblivion).AmbientLightScale >
+                    GameProfiles.For(BethesdaGame.FalloutNewVegas).AmbientLightScale);
+
         // FO4/FO76 icons are white silhouettes from their map SWFs → tinted to the scheme like FO3/FNV.
         Assert.Equal(MarkerArtStrategy.EmbeddedTinted, GameProfiles.For(BethesdaGame.Fallout4).MarkerArt);
         Assert.True(GameProfiles.For(BethesdaGame.Fallout4).MarkersAreTinted);

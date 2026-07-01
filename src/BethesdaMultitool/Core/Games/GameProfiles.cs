@@ -54,6 +54,8 @@ public static class GameProfiles
                 MasterFileHints = ["Oblivion"],
                 HasMapMarkers = true,
                 MarkerArt = MarkerArtStrategy.EmbeddedColored, // parchment-tile icons from menus\map\world (oblivion_marker_NN.png)
+                MarkerIconScale = 1.5f, // 32×32 parchment tiles render small at 1.0; match Skyrim's detailed-icon scale
+                AmbientLightScale = 0.7f, // TES4-era engine reads far softer than FNV's 0.3; lifts fill so verticals aren't point-lit (estimate, tune)
                 DefaultLandscapeDiffuse = OblivionDiffuse,
                 DefaultLandscapeNormal = OblivionNormal
             },
