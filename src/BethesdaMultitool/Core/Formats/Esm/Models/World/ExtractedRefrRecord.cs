@@ -106,8 +106,13 @@ public record ExtractedRefrRecord
     /// <summary>TNAM - Map marker type enum value.</summary>
     public ushort? MarkerType { get; init; }
 
-    /// <summary>FULL - Map marker display name.</summary>
+    /// <summary>FULL - Map marker display name (eager null-term decode; garbage for a localized plugin's
+    /// 4-byte string ID — prefer resolving <see cref="MarkerNameRaw" /> via the .STRINGS table).</summary>
     public string? MarkerName { get; init; }
+
+    /// <summary>Raw FULL subrecord bytes, resolved late against the localized .STRINGS table (the table isn't
+    /// loaded during the descriptor scan). Null for records without a FULL.</summary>
+    public byte[]? MarkerNameRaw { get; init; }
 
     /// <summary>XLKR - Linked reference keyword FormID when present on the 8-byte variant.</summary>
     public uint? LinkedRefKeywordFormId { get; init; }

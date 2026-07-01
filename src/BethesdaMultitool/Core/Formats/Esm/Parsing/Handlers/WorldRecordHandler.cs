@@ -62,7 +62,12 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                 IsInitiallyDisabled = refr.Header.IsInitiallyDisabled,
                 IsMapMarker = true,
                 MarkerType = refr.MarkerType.HasValue ? (MapMarkerType)refr.MarkerType.Value : null,
-                MarkerName = refr.MarkerName,
+                // Resolve the marker's FULL through the localized .STRINGS table (loaded after the scan).
+                // For a localized plugin (Skyrim/FO4) the raw FULL is a 4-byte string ID; ReadFullName turns
+                // it into real text and falls back to the inline string for non-localized FNV/Xbox plugins.
+                MarkerName = refr.MarkerNameRaw is { Length: > 0 } rawName
+                    ? Context.ReadFullName(rawName)
+                    : refr.MarkerName,
                 LinkedRefKeywordFormId = refr.LinkedRefKeywordFormId,
                 LinkedRefFormId = refr.LinkedRefFormId,
                 LinkedRefChildrenFormIds = refr.LinkedRefChildrenFormIds,

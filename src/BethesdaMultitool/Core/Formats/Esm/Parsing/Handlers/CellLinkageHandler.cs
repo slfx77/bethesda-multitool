@@ -833,7 +833,12 @@ internal static class CellLinkageHandler
             TeleportFlags = r.TeleportFlags,
             IsMapMarker = r.IsMapMarker,
             MarkerType = r.MarkerType.HasValue ? (MapMarkerType)r.MarkerType.Value : null,
-            MarkerName = r.MarkerName,
+            // Resolve the marker's FULL through the localized .STRINGS table (the table isn't loaded during the
+            // descriptor scan, so the eager MarkerName is a 4-byte string ID misread as garbage for Skyrim/FO4).
+            // ReadFullName resolves the ID and falls back to inline text for non-localized FNV/Xbox plugins.
+            MarkerName = r.MarkerNameRaw is { Length: > 0 } rawMarkerName
+                ? context.ReadFullName(rawMarkerName)
+                : r.MarkerName,
             LinkedRefKeywordFormId = r.LinkedRefKeywordFormId,
             LinkedRefFormId = r.LinkedRefFormId,
             LinkedRefChildrenFormIds = r.LinkedRefChildrenFormIds,

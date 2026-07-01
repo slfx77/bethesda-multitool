@@ -597,6 +597,13 @@ internal static class EsmDescriptorScanner
                 state.MarkerType = ReadUInt16(subData, 0, record.IsBigEndian);
                 break;
             case "FULL":
+                // Keep the RAW FULL bytes: in a localized plugin (Skyrim/FO4) this is a 4-byte string ID, not
+                // inline text — the .STRINGS table needed to resolve it isn't loaded yet at scan time, so the
+                // eager null-term decode yields garbage. The consumer (WorldRecordHandler.ExtractMapMarkers)
+                // re-resolves these bytes via RecordParserContext.ReadFullName once the table is available.
+                // The eager decode stays as a fallback for paths without a context (and is correct for
+                // non-localized FNV/Xbox FULLs, which are inline strings).
+                state.MarkerNameRaw = subData.ToArray();
                 state.MarkerName = EsmStringUtils.ReadNullTermString(subData);
                 break;
         }
@@ -639,6 +646,7 @@ internal static class EsmDescriptorScanner
                 IsMapMarker = state.IsMapMarker,
                 MarkerType = state.MarkerType,
                 MarkerName = state.MarkerName,
+                MarkerNameRaw = state.MarkerNameRaw,
                 EditorId = state.EditorId,
                 LinkedRefKeywordFormId = state.LinkedRefKeywordFormId,
                 LinkedRefFormId = state.LinkedRefFormId
@@ -685,6 +693,10 @@ internal static class EsmDescriptorScanner
         public bool IsMapMarker { get; set; }
         public ushort? MarkerType { get; set; }
         public string? MarkerName { get; set; }
+
+        /// <summary>Raw FULL subrecord bytes (a 4-byte string ID in a localized plugin) for late resolution
+        /// against the .STRINGS table, which isn't loaded at scan time. See the FULL case above.</summary>
+        public byte[]? MarkerNameRaw { get; set; }
         public string? EditorId { get; set; }
     }
 
