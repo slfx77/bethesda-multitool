@@ -154,19 +154,113 @@ internal static class NifSceneGraphWalker
                 }
 
                 var dataRef = NifBlockParsers.ParseShapeDataRef(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
-                if (dataRef >= 0 && dataRef < nif.Blocks.Count)
+                if (dataRef < 0 || dataRef >= nif.Blocks.Count)
                 {
-                    shapeDataMap[i] = dataRef;
+                    continue; // no geometry data
                 }
 
                 if (shapePropertyMap != null)
                 {
                     var propRefs = NifBlockParsers.ParseShapePropertyRefs(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
-                    if (propRefs != null && propRefs.Count > 0)
+
+                    // BSShaderProperty-era (FO3/FNV+) shapes with no texture-source property are non-visual
+                    // helpers — furniture-marker / boundary / collision-viz placeholders the game never
+                    // draws (e.g. LoungeChair_Tops' MarkerSource/ChairBoundary strips, NV_McCarran-
+                    // WallRubble's shader-less :2 strip). Drop them so they never bake as untextured white
+                    // blobs. Legacy NIFs (property inheritance) are excluded by the BSVersion gate inside
+                    // the helper, and run through PropagateInheritedProperties below instead.
+                    if (NifBlockParsers.IsNonRenderableHelperShape(nif, propRefs))
+                    {
+                        continue;
+                    }
+
+                    if (propRefs is { Count: > 0 })
                     {
                         shapePropertyMap[i] = propRefs;
                     }
                 }
+
+                shapeDataMap[i] = dataRef;
+            }
+        }
+
+        // Legacy NetImmerse (Morrowind-era, NIF ≤ 4.2.2.0) render-property inheritance: a NiAlphaProperty /
+        // NiTexturingProperty / NiMaterialProperty / NiStencilProperty attached to a NiNode applies to ALL
+        // descendant geometry unless a nearer node/shape carries one of the same type. Newer Bethesda NIFs
+        // moved properties onto the shape (BSLightingShaderProperty), so this pass is gated to legacy NIFs.
+        // Covers Morrowind meshes whose render properties live on a parent NiNode rather than the shape.
+        if (shapePropertyMap != null &&
+            Parser.NifVersions.IsLegacyNetImmerse(nif.BinaryVersion))
+        {
+            PropagateInheritedProperties(data, nif, nodeChildren, shapeDataMap, shapePropertyMap, be);
+        }
+    }
+
+    /// <summary>
+    ///     Appends each rendered shape's ancestor-NiNode property refs to its own (NetImmerse property
+    ///     inheritance). The shape's own refs stay first so they win per type — the property readers take
+    ///     the first block of each type — then the nearest ancestor's, then farther ancestors'.
+    /// </summary>
+    private static void PropagateInheritedProperties(
+        byte[] data, NifInfo nif, Dictionary<int, List<int>> nodeChildren,
+        Dictionary<int, int> shapeDataMap, Dictionary<int, List<int>> shapePropertyMap, bool be)
+    {
+        // child block -> parent node
+        var parentOf = new Dictionary<int, int>();
+        foreach (var (parent, children) in nodeChildren)
+        {
+            foreach (var child in children)
+            {
+                parentOf.TryAdd(child, parent);
+            }
+        }
+
+        // Parse each NiNode's own Properties array once (NiNode shares the NiAVObject layout the shape
+        // property parser reads up to).
+        var nodeProps = new Dictionary<int, List<int>>();
+        foreach (var nodeIndex in nodeChildren.Keys)
+        {
+            var refs = NifBlockParsers.ParseShapePropertyRefs(
+                data, nif.Blocks[nodeIndex], nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
+            if (refs is { Count: > 0 })
+            {
+                nodeProps[nodeIndex] = refs;
+            }
+        }
+
+        if (nodeProps.Count == 0)
+        {
+            return; // no inheritable node properties
+        }
+
+        foreach (var shapeIndex in shapeDataMap.Keys)
+        {
+            shapePropertyMap.TryGetValue(shapeIndex, out var own);
+            var merged = own != null ? new List<int>(own) : [];
+            var seen = new HashSet<int>(merged);
+
+            // Walk ancestors nearest-first, appending their property refs after the shape's own.
+            var current = shapeIndex;
+            var guard = 0;
+            while (parentOf.TryGetValue(current, out var parent) && guard++ < 64)
+            {
+                if (nodeProps.TryGetValue(parent, out var parentRefs))
+                {
+                    foreach (var r in parentRefs)
+                    {
+                        if (seen.Add(r))
+                        {
+                            merged.Add(r);
+                        }
+                    }
+                }
+
+                current = parent;
+            }
+
+            if (merged.Count > 0)
+            {
+                shapePropertyMap[shapeIndex] = merged;
             }
         }
     }

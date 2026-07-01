@@ -66,6 +66,43 @@ internal static class NifBlockParsers
     }
 
     /// <summary>
+    ///     True when a NiGeometry shape in a BSShaderProperty-era NIF (FO3/FNV and later, BSVersion ≥ 34)
+    ///     carries NO texture-source property — neither a <c>*ShaderProperty</c> (BSShaderPPLighting,
+    ///     BSLighting, BSEffect, Water/Sky shaders, …) nor a legacy <c>NiTexturingProperty</c>. The FO3+
+    ///     render pipeline can only draw geometry through a shader, so such a shape is a non-visual helper
+    ///     the game never renders but the extractor would otherwise bake as an untextured white blob:
+    ///     furniture-marker / boundary / capsule-collision-viz placeholders (e.g.
+    ///     <c>furniture\LoungeChair_Tops.NIF</c>'s MarkerSource / ChairBoundary strips, which carry zero
+    ///     properties), or a shape left with only a NiMaterialProperty and no shader (e.g.
+    ///     <c>NV_McCarran-WallRubble.NIF</c>'s :2 strip). Older NIFs (Oblivion/Morrowind, BSVersion &lt; 34)
+    ///     use property inheritance + NiTexturingProperty, so they are deliberately left untouched.
+    /// </summary>
+    internal static bool IsNonRenderableHelperShape(NifInfo nif, IReadOnlyList<int>? propertyRefs)
+    {
+        if (nif.BsVersion < 34) return false;
+        if (propertyRefs is null || propertyRefs.Count == 0) return true; // no shader path at all
+
+        foreach (var propRef in propertyRefs)
+        {
+            if (propRef < 0 || propRef >= nif.Blocks.Count) continue;
+            var type = nif.Blocks[propRef].TypeName;
+
+            // Any shader property is a texture source. The FO3/FNV names interleave the word
+            // ("BSShaderPPLightingProperty", "BSShaderNoLightingProperty") so a "ShaderProperty"
+            // substring would MISS them — match "Shader" + the "Property" suffix instead. Legacy
+            // geometry without a shader gets its texture from NiTexturingProperty.
+            if ((type.Contains("Shader", StringComparison.Ordinal) &&
+                 type.EndsWith("Property", StringComparison.Ordinal)) ||
+                string.Equals(type, "NiTexturingProperty", StringComparison.Ordinal))
+            {
+                return false; // has a texture-source property → renderable
+            }
+        }
+
+        return true; // BSShader-era shape with only material/alpha/stencil → non-visual helper
+    }
+
+    /// <summary>
     ///     Pip-Boy effect shapes that FOPipboyManager drives at runtime (screen glare,
     ///     the flashlight quad, per-tab button glows) and that render as blown-out
     ///     overlays in a static render/export. The physical screen face
