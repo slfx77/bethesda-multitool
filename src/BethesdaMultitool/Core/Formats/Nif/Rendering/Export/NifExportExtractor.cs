@@ -371,7 +371,10 @@ internal static class NifExportExtractor
             ShaderMetadata = shaderMetadata,
             DiffusePath = shaderMetadata?.DiffusePath,
             NormalMapPath = shaderMetadata?.NormalMapPath,
-            IsEmissive = shaderMetadata?.PropertyType == "BSShaderNoLightingProperty",
+            // Self-illuminated (unlit): FO3/FNV BSShaderNoLightingProperty + Skyrim/SE/FO4
+            // BSEffectShaderProperty (fire/magic/glow). Mirrors NifGeometryExtractor's emissive rule.
+            IsEmissive = shaderMetadata?.PropertyType is "BSShaderNoLightingProperty"
+                or "BSEffectShaderProperty",
             UseVertexColors = useVertexColors,
             IsDoubleSided = NifBlockParsers.ReadIsDoubleSided(data, nif, propRefs),
             HasAlphaBlend = hasAlphaBlend,

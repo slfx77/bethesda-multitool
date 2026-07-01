@@ -67,7 +67,22 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // particle clouds and still carry the suppressed emitter blobs.
     // Bumped 14→15: mesh emitters (e.g. NV whirlwind columns) now spawn over the emitter mesh's AABB instead of a
     // single point (NifParticleSystemExtractor.ResolveMeshEmitterBounds), so the baked particle positions change.
-    internal const int DecoderVersion = 15;
+    // Bumped 15→16: particle bake now (a) honors NiPSysDragModifier (velocity damping) and transforms planar
+    // gravity by its gravity-object (fountain jet arcs back down instead of flying to the sky), and (b) only
+    // marks ADDITIVE (Dst=ONE) particles emissive — alpha-blended dust/smoke are shaded. Positions + the
+    // emissive flag change, so old v15 entries are stale.
+    // Bumped 16→17: particle density now follows the AUTHORED birth rate (NiPSysEmitterCtlr interpolator) instead
+    // of filling to NiPSysData capacity — far fewer live particles for dust/smoke (SandDust "too opaque" fix), and
+    // the volume-emitter declination axis defaults to +Z (fountain jet goes up, not sideways). Positions + counts
+    // change, so old v16 entries are stale.
+    // Bumped 17→18: NiPSysDragModifier is now engine-accurate (decompiled NiPSysDragModifier::Update) — anisotropic
+    // (damps only the velocity component along the drag-object-transformed axis), range-gated, frame-scaled, and
+    // no-op without a drag object (was a uniform -pct·v on the whole velocity). Baked positions change for any
+    // system with a drag modifier, so old v17 entries are stale.
+    // Bumped 18→19: NiPSysSpawnModifier now spawns child particles on death (decompiled SpawnParticles) — a dying
+    // particle bursts MinToSpawn..MaxToSpawn chaos-scattered children (the fountain's splash spray), cascading up
+    // to NumSpawnGenerations. Particle counts + positions change for any system with an active spawn modifier.
+    internal const int DecoderVersion = 19;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

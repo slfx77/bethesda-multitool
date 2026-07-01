@@ -344,7 +344,24 @@ internal static class NifGeometryExtractor
                 // independently of whether textures can be resolved — read it unconditionally so
                 // rendering without a texture BSA still respects these flags.
                 shaderMetadata = NifTextureResolver.ReadShaderMetadata(data, nif, propRefs);
-                isEmissive = shaderMetadata?.PropertyType == "BSShaderNoLightingProperty";
+                // Self-illuminated (unlit) shaders: FO3/FNV BSShaderNoLightingProperty AND the Skyrim/
+                // SE/FO4 BSEffectShaderProperty (fire, magic, glow, light shafts). Without the effect
+                // case, every Skyrim effect shape was N·L-lit and rendered as a faceted, shaded "gem"
+                // instead of a flat self-lit billboard.
+                var isEffectShader = shaderMetadata?.PropertyType == "BSEffectShaderProperty";
+                isEmissive = shaderMetadata?.PropertyType is "BSShaderNoLightingProperty"
+                    or "BSEffectShaderProperty";
+
+                // SLSF1_Refraction (0x8000) / SLSF1_Fire_Refraction (0x10000) on a BSLightingShaderProperty
+                // mark a screen-space heat-haze / distortion plane (e.g. the campfire's VaporTileNormal_n
+                // billboard). We don't do screen-space refraction, and such a plane ships a NORMAL map in its
+                // diffuse slot with no NiAlphaProperty — drawing it opaque produces a blue/purple "gem" that
+                // also occludes the real fire behind it. Skip it so the distorted effect shows through.
+                if (shaderMetadata is { PropertyType: "BSLightingShaderProperty", ShaderFlags: { } lsRefract }
+                    && (lsRefract & 0x18000u) != 0)
+                {
+                    continue;
+                }
 
                 // BSShaderFlags bit 17 = Eye_Environment_Mapping + EnvMapScale for eye specular
                 if (shaderMetadata?.ShaderFlags is uint shaderFlags &&
@@ -371,6 +388,15 @@ internal static class NifGeometryExtractor
                 NifBlockParsers.ReadAlphaProperty(data, nif, propRefs, out hasAlphaBlend, out hasAlphaTest,
                     out alphaTestThreshold, out alphaTestFunction, out srcBlendMode, out dstBlendMode);
 
+                // Effect shaders are blended by the engine. When the shape carries no explicit
+                // NiAlphaProperty, default to alpha blending so the effect reads as a translucent glow
+                // rather than an opaque "gem" (keeps the SRC_ALPHA / INV_SRC_ALPHA defaults — additive
+                // glows that DO ship a NiAlphaProperty keep their authored ONE dst-blend above).
+                if (isEffectShader && !hasAlphaBlend && !hasAlphaTest)
+                {
+                    hasAlphaBlend = true;
+                }
+
                 // NiMaterialProperty: alpha float (< 1.0 triggers blending even without NiAlphaProperty)
                 materialAlpha = NifBlockParsers.ReadMaterialAlpha(data, nif, propRefs);
                 materialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, propRefs);
@@ -387,8 +413,18 @@ internal static class NifGeometryExtractor
                 // 1×1 white pixel and render as an opaque white slab.
                 foreach (var propRef in propRefs)
                 {
-                    if (propRef >= 0 && propRef < nif.Blocks.Count &&
-                        string.Equals(nif.Blocks[propRef].TypeName, "WaterShaderProperty", StringComparison.Ordinal))
+                    if (propRef < 0 || propRef >= nif.Blocks.Count)
+                    {
+                        continue;
+                    }
+
+                    // "WaterShaderProperty" is the Oblivion/legacy type; Skyrim/FO3/FNV placeable water ships
+                    // the BS-prefixed "BSWaterShaderProperty" (nif.xml: "different from WaterShaderProperty").
+                    // Match both, or Skyrim water (Water\Tundra*…WaterA.nif) misses the water path and renders
+                    // as an opaque white slab.
+                    var waterType = nif.Blocks[propRef].TypeName;
+                    if (string.Equals(waterType, "WaterShaderProperty", StringComparison.Ordinal) ||
+                        string.Equals(waterType, "BSWaterShaderProperty", StringComparison.Ordinal))
                     {
                         diffusePath = RenderableSubmesh.WaterSurfaceTexturePath;
                         hasAlphaBlend = true;

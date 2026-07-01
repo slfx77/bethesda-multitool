@@ -263,6 +263,12 @@ internal static class NifParticleSystemExtractor
             triangles[ti + 5] = (ushort)(baseV + 3);
         }
 
+        // Additive particles (Dst blend = ONE → 0) are glows — fire, wisps, energy — and render full-bright
+        // emissive. Alpha-blended particles (Dst = INV_SRC_ALPHA → 7: dust, smoke, water spray) are NOT
+        // emissive: they're shaded by the scene so they darken at night / pick up ambient instead of glowing
+        // (the SandDust "too opaque / unlit" fix).
+        var isEmissive = def.DstBlendMode == 0;
+
         return new RenderableSubmesh
         {
             ShapeName = "ParticleCloud",
@@ -276,7 +282,7 @@ internal static class NifParticleSystemExtractor
             UseVertexColors = true,
             DiffuseTexturePath = def.DiffuseTexturePath,
             IsLeafBillboard = true,
-            IsEmissive = true,
+            IsEmissive = isEmissive,
             IsDoubleSided = true,
             HasAlphaBlend = true,
             SrcBlendMode = def.SrcBlendMode,

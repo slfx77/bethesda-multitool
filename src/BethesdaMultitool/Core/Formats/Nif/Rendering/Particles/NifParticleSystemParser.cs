@@ -160,8 +160,130 @@ internal static class NifParticleSystemParser
             }
         }
 
+        // Steady-state density comes from the BIRTH RATE, not the capacity (which is just the buffer max). The
+        // rate lives on the NiPSysEmitterCtlr's interpolator; without it the bake fills to capacity and dust
+        // stacks to opaque. Sets it on the emitter so the baker maintains birthRate·lifespan live particles.
+        if (def.Emitter is not null)
+        {
+            def.Emitter.BirthRate = ResolveBirthRate(data, nif, blockIndex);
+        }
+
         ResolveAppearance(data, nif, propertyRefs, def);
         return def;
+    }
+
+    /// <summary>
+    ///     Resolve the steady-state birth rate (particles/sec) for the system's emitter. The rate is animated
+    ///     through the NiControllerManager, so it isn't on the emitter ctlr's (blend) interpolator directly —
+    ///     it's on the real NiFloatInterpolator referenced by the matching ControlledBlock in a
+    ///     NiControllerSequence. Returns 0 when it can't be found (the baker then falls back to capacity).
+    /// </summary>
+    private static float ResolveBirthRate(byte[] data, NifInfo nif, int systemIndex)
+    {
+        var be = nif.IsBigEndian;
+
+        // 1. The NiPSysEmitterCtlr that targets this system (NiTimeController.Target at +22).
+        var emitterCtlr = -1;
+        for (var i = 0; i < nif.Blocks.Count; i++)
+        {
+            if (nif.Blocks[i].TypeName != "NiPSysEmitterCtlr")
+            {
+                continue;
+            }
+
+            var b = nif.Blocks[i];
+            if (b.DataOffset + 26 <= b.DataOffset + b.Size &&
+                BinaryUtils.ReadInt32(data, b.DataOffset + 22, be) == systemIndex)
+            {
+                emitterCtlr = i;
+                break;
+            }
+        }
+
+        if (emitterCtlr < 0)
+        {
+            return 0f;
+        }
+
+        // 2. Find the ControlledBlock referencing that ctlr inside a NiControllerSequence. Each ControlledBlock
+        //    begins [Interpolator(int32)][Controller(int32)], so scan for Controller == emitterCtlr and take the
+        //    preceding int32 as the interpolator — validated by requiring it to be a NiFloatInterpolator.
+        for (var i = 0; i < nif.Blocks.Count; i++)
+        {
+            if (nif.Blocks[i].TypeName != "NiControllerSequence")
+            {
+                continue;
+            }
+
+            var b = nif.Blocks[i];
+            var end = b.DataOffset + b.Size;
+            for (var p = b.DataOffset + 4; p + 4 <= end; p += 4)
+            {
+                if (BinaryUtils.ReadInt32(data, p, be) != emitterCtlr)
+                {
+                    continue;
+                }
+
+                var interp = BinaryUtils.ReadInt32(data, p - 4, be);
+                if (interp < 0 || interp >= nif.Blocks.Count ||
+                    nif.Blocks[interp].TypeName != "NiFloatInterpolator")
+                {
+                    continue;
+                }
+
+                var rate = ReadFloatInterpolatorValue(data, nif, interp);
+                if (rate > 0f)
+                {
+                    return rate;
+                }
+            }
+        }
+
+        return 0f;
+    }
+
+    /// <summary>Read a NiFloatInterpolator's effective value: the constant Value when set, else the peak key of
+    /// its NiFloatData (the busiest moment of an animated rate). Returns 0 when neither is usable.</summary>
+    private static float ReadFloatInterpolatorValue(byte[] data, NifInfo nif, int interp)
+    {
+        var be = nif.IsBigEndian;
+        var b = nif.Blocks[interp];
+        var value = BinaryUtils.ReadFloat(data, b.DataOffset, be);
+        if (float.IsFinite(value) && value is > 0f and < 1e30f)
+        {
+            return value;
+        }
+
+        var dataRef = BinaryUtils.ReadInt32(data, b.DataOffset + 4, be);
+        if (dataRef < 0 || dataRef >= nif.Blocks.Count || nif.Blocks[dataRef].TypeName != "NiFloatData")
+        {
+            return 0f;
+        }
+
+        var db = nif.Blocks[dataRef];
+        var pos = db.DataOffset;
+        var dend = db.DataOffset + db.Size;
+        if (pos + 8 > dend)
+        {
+            return 0f;
+        }
+
+        var numKeys = BinaryUtils.ReadUInt32(data, pos, be);
+        var interpolation = BinaryUtils.ReadUInt32(data, pos + 4, be);
+        pos += 8;
+        if (numKeys == 0 || numKeys > 1024)
+        {
+            return 0f;
+        }
+
+        var stride = 4 + 4 + (interpolation == 2 ? 8 : 0); // QUADRATIC: + in/out tangents (2 floats)
+        var peak = 0f;
+        for (var k = 0; k < numKeys && pos + 8 <= dend; k++, pos += stride)
+        {
+            peak = MathF.Max(peak, BinaryUtils.ReadFloat(data, pos + 4, be));
+        }
+
+        return peak;
     }
 
     /// <summary>Resolve the particle sprite texture + blend mode from the system's property refs.</summary>
@@ -289,14 +411,57 @@ internal static class NifParticleSystemParser
                     Keys = p + 4 <= end ? ReadColorDataKeys(data, nif, BinaryUtils.ReadInt32(data, p, be)) : [],
                 };
 
+            case "NiPSysDragModifier":
+            {
+                // Drag Object(Ptr 4) + Drag Axis(12) + Percentage(4) + Range(4) + Range Falloff(4).
+                if (p + 4 + 12 + 12 > end)
+                {
+                    return new ParticleModifierDefinition { Kind = ParticleModifierKind.Drag, Active = active, BlockIndex = modRef };
+                }
+
+                var dragObj = BinaryUtils.ReadInt32(data, p, be);
+                return new DragModifierDefinition
+                {
+                    Kind = ParticleModifierKind.Drag, Active = active, BlockIndex = modRef,
+                    HasDragObject = dragObj >= 0,
+                    DragObjectTransform = ResolveObjectTransform(data, nif, dragObj),
+                    DragAxis = ReadVector3(data, p + 4, be),
+                    Percentage = BinaryUtils.ReadFloat(data, p + 16, be),
+                    Range = BinaryUtils.ReadFloat(data, p + 20, be),
+                    RangeFalloff = BinaryUtils.ReadFloat(data, p + 24, be),
+                };
+            }
+
             case "NiPSysAgeDeathModifier":
                 return new ParticleModifierDefinition { Kind = ParticleModifierKind.AgeDeath, Active = active, BlockIndex = modRef };
             case "NiPSysPositionModifier":
                 return new ParticleModifierDefinition { Kind = ParticleModifierKind.Position, Active = active, BlockIndex = modRef };
             case "NiPSysRotationModifier":
                 return new ParticleModifierDefinition { Kind = ParticleModifierKind.Rotation, Active = active, BlockIndex = modRef };
+
             case "NiPSysSpawnModifier":
-                return new ParticleModifierDefinition { Kind = ParticleModifierKind.Spawn, Active = active, BlockIndex = modRef };
+            {
+                // nif.xml: NumSpawnGenerations(ushort 2) + PercentageSpawned(float 4) + MinToSpawn(ushort 2) +
+                // MaxToSpawn(ushort 2) + SpawnSpeedVar(float 4) + SpawnDirVar(float 4) + LifeSpan(float 4) +
+                // LifeSpanVar(float 4). Packed (NIF has no field alignment padding).
+                if (p + 26 > end)
+                {
+                    return new ParticleModifierDefinition { Kind = ParticleModifierKind.Spawn, Active = active, BlockIndex = modRef };
+                }
+
+                return new SpawnModifierDefinition
+                {
+                    Kind = ParticleModifierKind.Spawn, Active = active, BlockIndex = modRef,
+                    NumSpawnGenerations = BinaryUtils.ReadUInt16(data, p, be),
+                    PercentageSpawned = BinaryUtils.ReadFloat(data, p + 2, be),
+                    MinToSpawn = BinaryUtils.ReadUInt16(data, p + 6, be),
+                    MaxToSpawn = BinaryUtils.ReadUInt16(data, p + 8, be),
+                    SpawnSpeedVariation = BinaryUtils.ReadFloat(data, p + 10, be),
+                    SpawnDirVariation = BinaryUtils.ReadFloat(data, p + 14, be),
+                    LifeSpan = BinaryUtils.ReadFloat(data, p + 18, be),
+                    LifeSpanVariation = BinaryUtils.ReadFloat(data, p + 22, be),
+                };
+            }
             case "NiPSysBoundUpdateModifier":
                 return new ParticleModifierDefinition { Kind = ParticleModifierKind.BoundUpdate, Active = active, BlockIndex = modRef };
 
@@ -330,7 +495,7 @@ internal static class NifParticleSystemParser
         float width = 0, height = 0, depth = 0, radius = 0;
         var emitterObjectTransform = Matrix4x4.Identity;
         IReadOnlyList<int> meshIndices = [];
-        var emissionAxis = Vector3.UnitX;
+        var emissionAxis = Vector3.UnitZ; // +Z = declination reference for volume emitters (mesh emitter overrides)
 
         switch (block.TypeName)
         {

@@ -68,7 +68,11 @@ internal sealed class ParticleEmitterDefinition : ParticleModifierDefinition
     public float RadiusVariation { get; init; }
     public float LifeSpan { get; init; }
     public float LifeSpanVariation { get; init; }
-    public Vector3 EmissionAxis { get; init; } = Vector3.UnitX;
+
+    /// <summary>Declination reference axis. Declination=0 emits along this; the emitter-object transform then
+    /// orients it to world. Defaults to +Z (the convention for volume emitters, which carry no explicit axis) —
+    /// NOT +X, or the fountain jet shoots sideways. Mesh emitters override it with their authored Emission Axis.</summary>
+    public Vector3 EmissionAxis { get; init; } = Vector3.UnitZ;
 
     // Volume params (only the relevant ones for the shape are populated).
     public float Width { get; init; }
@@ -101,6 +105,7 @@ internal enum ParticleModifierKind
     Color,
     Bomb,
     Gravity,
+    Drag,
     Position,
     Rotation,
     Spawn,
@@ -147,6 +152,47 @@ internal sealed class GravityModifierDefinition : ParticleModifierDefinition
     public int ForceType { get; init; }     // 0 planar, 1 spherical
     public Matrix4x4 GravityObjectTransform { get; init; } = Matrix4x4.Identity;
     public bool HasGravityObject { get; init; }
+}
+
+/// <summary>
+///     NiPSysDragModifier — anisotropic drag, grounded in the decompiled <c>NiPSysDragModifier::Update</c>.
+///     The engine damps ONLY the velocity component along the (drag-object-transformed) drag axis, and only
+///     for particles within <see cref="Range" /> of the drag object (linearly fading to zero at
+///     <see cref="RangeFalloff" />). Crucially the engine NO-OPS the whole modifier when there is no drag
+///     object, so <see cref="HasDragObject" /> gates it. Per tick: <c>f = Percentage · dt/(1/30)</c>;
+///     <c>v -= min(f,1) · dot(v, axisHat) · axisHat</c>.
+/// </summary>
+internal sealed class DragModifierDefinition : ParticleModifierDefinition
+{
+    public Vector3 DragAxis { get; init; } = Vector3.UnitX;
+    public float Percentage { get; init; } = 0.05f; // linear drag coefficient (nif.xml default)
+    public float Range { get; init; }
+    public float RangeFalloff { get; init; }
+
+    /// <summary>The engine no-ops drag without a drag object (the reference frame for the axis + range).</summary>
+    public bool HasDragObject { get; init; }
+
+    /// <summary>Drag object local transform (system-relative): orients the drag axis + locates the range origin.</summary>
+    public Matrix4x4 DragObjectTransform { get; init; } = Matrix4x4.Identity;
+}
+
+/// <summary>
+///     NiPSysSpawnModifier — when a particle dies, spawn child copies, grounded in the decompiled
+///     <c>NiPSysSpawnModifier::SpawnParticles</c>: gated by <c>spawnGeneration &lt; NumSpawnGenerations</c> and a
+///     <c>rand ≤ PercentageSpawned</c> roll; count = <c>MinToSpawn + round(rand·(MaxToSpawn-MinToSpawn))</c>
+///     (min 1). Children inherit the parent's death position + (chaos-perturbed) velocity and a new lifespan.
+///     This is what turns a sparse jet into a full spray (the fountain's splash). Field order per nif.xml.
+/// </summary>
+internal sealed class SpawnModifierDefinition : ParticleModifierDefinition
+{
+    public int NumSpawnGenerations { get; init; }
+    public float PercentageSpawned { get; init; } = 1f;
+    public int MinToSpawn { get; init; } = 1;
+    public int MaxToSpawn { get; init; } = 1;
+    public float SpawnSpeedVariation { get; init; }
+    public float SpawnDirVariation { get; init; }
+    public float LifeSpan { get; init; }
+    public float LifeSpanVariation { get; init; }
 }
 
 /// <summary>A color key (NiColorData): RGBA at a normalized life fraction.</summary>

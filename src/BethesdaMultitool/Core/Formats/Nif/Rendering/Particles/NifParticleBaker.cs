@@ -43,10 +43,11 @@ internal static class NifParticleBaker
         var dt = MathF.Max(opt.TimeStep, 1f / 240f);
         var avgLifespan = MathF.Max(emitter.LifeSpan, dt);
 
-        // Steady-state target: the NiPSysData capacity is the system's allocated particle budget — a good
-        // proxy for intended density. Clamp to the hard cap. Birth rate that maintains it: target/lifespan.
-        var target = Math.Clamp(def.Capacity > 0 ? def.Capacity : 64, 1, opt.MaxParticles);
-        var birthRate = target / avgLifespan; // particles/sec
+        // Density = birth rate × lifespan. Prefer the AUTHORED birth rate (from the emitter controller) — the
+        // capacity is only the buffer max, and filling to it stacks dust/smoke to opaque. Fall back to
+        // capacity/lifespan when the rate can't be resolved. Either way the live count is hard-capped below.
+        var capacityTarget = Math.Clamp(def.Capacity > 0 ? def.Capacity : 64, 1, opt.MaxParticles);
+        var birthRate = emitter.BirthRate > 0f ? emitter.BirthRate : capacityTarget / avgLifespan; // particles/sec
 
         var simSeconds = avgLifespan + opt.SettleMarginSeconds;
         var totalSteps = (int)MathF.Ceiling(simSeconds / dt);
@@ -56,30 +57,47 @@ internal static class NifParticleBaker
         var color = def.Modifiers.OfType<ColorModifierDefinition>().FirstOrDefault(m => m.Active);
         var bombs = def.Modifiers.OfType<BombModifierDefinition>().Where(m => m.Active).ToList();
         var gravities = def.Modifiers.OfType<GravityModifierDefinition>().Where(m => m.Active).ToList();
+        var drags = def.Modifiers.OfType<DragModifierDefinition>().Where(m => m.Active)
+            .Select(PrepareDrag).Where(d => d.Active).ToList();
+        var spawn = def.Modifiers.OfType<SpawnModifierDefinition>().FirstOrDefault(m => m.Active);
         var hasPosition = def.Modifiers.Any(m => m.Kind == ParticleModifierKind.Position && m.Active);
 
         var rng = new DeterministicRng(unchecked((uint)(def.BlockIndex * 2654435761u) ^ 0x9E3779B9u));
-        var live = new List<Particle>(target + 16);
+        var live = new List<Particle>(capacityTarget + 16);
         var spawnAccumulator = 0f;
 
         for (var step = 0; step < totalSteps; step++)
         {
             // AgeDeath: age all, remove the dead (only when an AgeDeath modifier is present, else immortal —
-            // capped by the spawn budget below so it can't run away).
+            // capped by the spawn budget below so it can't run away). A NiPSysSpawnModifier bursts child
+            // particles at each death point (the fountain's splash spray) — appended after the sweep so they
+            // aren't re-aged this tick.
             if (hasAgeDeath)
             {
+                List<Particle>? spawned = null;
                 for (var i = live.Count - 1; i >= 0; i--)
                 {
                     var p = live[i];
                     p.Age += dt;
                     if (p.Age > p.LifeSpan)
                     {
+                        if (spawn is not null && p.SpawnGeneration < spawn.NumSpawnGenerations)
+                        {
+                            SpawnChildren(spawn, emitter, p, ref rng, ref spawned,
+                                opt.MaxParticles - live.Count - (spawned?.Count ?? 0));
+                        }
+
                         live.RemoveAt(i);
                     }
                     else
                     {
                         live[i] = p;
                     }
+                }
+
+                if (spawned is not null)
+                {
+                    live.AddRange(spawned);
                 }
             }
             else
@@ -122,7 +140,8 @@ internal static class NifParticleBaker
                     p.Color = color.Sample(lifeFrac, emitter.InitialColor);
                 }
 
-                // Bomb vortex + Gravity → velocity.
+                // Bomb vortex + Gravity → velocity (forces simulate in the system's local frame, balanced with
+                // the authored lifespan for a clean ballistic arc).
                 foreach (var bomb in bombs)
                 {
                     p.Velocity += BombForce(bomb, p.Position) * dt;
@@ -131,6 +150,15 @@ internal static class NifParticleBaker
                 foreach (var gravity in gravities)
                 {
                     p.Velocity += GravityForce(gravity, p.Position) * dt;
+                }
+
+                // Anisotropic drag (engine-accurate): damps only the velocity component along the drag axis,
+                // range-gated around the drag object. The frame-scale (dt/(1/30)) is baked into the delta — it
+                // is NOT a force·dt, so it isn't multiplied by dt again, and it isn't accel-scaled (it's a
+                // fraction of velocity, already frame-consistent).
+                foreach (var drag in drags)
+                {
+                    p.Velocity += DragDelta(drag, p.Position, p.Velocity, dt);
                 }
 
                 // Position integration.
@@ -182,7 +210,57 @@ internal static class NifParticleBaker
             BaseSize = radius,
             Size = radius,
             Color = e.InitialColor,
+            SpawnGeneration = 0,
         };
+    }
+
+    /// <summary>
+    ///     NiPSysSpawnModifier::SpawnParticles: a dying particle, if it passes the <c>PercentageSpawned</c> roll,
+    ///     bursts <c>MinToSpawn + round(rand·(MaxToSpawn-MinToSpawn))</c> children (≥1) at its death position.
+    ///     Each child inherits the parent's velocity scaled by the speed variation and scattered by the dir
+    ///     variation (the chaos that fans a splash out), with a fresh spawn lifespan and an incremented
+    ///     generation so the cascade terminates at <c>NumSpawnGenerations</c>. Capped by <paramref name="budget" />.
+    /// </summary>
+    private static void SpawnChildren(
+        SpawnModifierDefinition s, ParticleEmitterDefinition e, Particle parent, ref DeterministicRng rng,
+        ref List<Particle>? sink, int budget)
+    {
+        if (budget <= 0 || rng.NextFloat() > s.PercentageSpawned)
+        {
+            return;
+        }
+
+        var span = Math.Max(0, s.MaxToSpawn - s.MinToSpawn);
+        var count = s.MinToSpawn + (int)MathF.Round(rng.NextFloat() * span);
+        count = Math.Clamp(count < 1 ? 1 : count, 1, budget);
+
+        var parentSpeed = parent.Velocity.Length();
+        for (var i = 0; i < count; i++)
+        {
+            var speedFactor = 1f + s.SpawnSpeedVariation * (2f * rng.NextFloat() - 1f);
+            var childVel = parent.Velocity * speedFactor;
+            if (s.SpawnDirVariation > 0f && parentSpeed > 1e-4f)
+            {
+                childVel += RandomUnitVector(ref rng) * (s.SpawnDirVariation * parentSpeed);
+            }
+
+            // The spawn modifier authors the child's lifespan; fall back to the parent's when it's unset (0).
+            var life = s.LifeSpan > 1e-3f
+                ? MathF.Max(0.01f, s.LifeSpan + s.LifeSpanVariation * (rng.NextFloat() - 0.5f))
+                : parent.LifeSpan;
+
+            (sink ??= []).Add(new Particle
+            {
+                Position = parent.Position,
+                Velocity = childVel,
+                Age = 0f,
+                LifeSpan = life,
+                BaseSize = e.InitialRadius,
+                Size = e.InitialRadius,
+                Color = e.InitialColor,
+                SpawnGeneration = parent.SpawnGeneration + 1,
+            });
+        }
     }
 
     private static Vector3 SamplePosition(ParticleEmitterDefinition e, ref DeterministicRng rng)
@@ -287,9 +365,77 @@ internal static class NifParticleBaker
             return len > 1e-6f ? d / len * g.Strength : Vector3.Zero;
         }
 
-        // planar: constant directional force along the gravity axis
-        var axis = g.GravityAxis.LengthSquared() > 1e-6f ? Vector3.Normalize(g.GravityAxis) : Vector3.UnitZ;
+        // planar: constant directional force along the gravity axis. The axis is in the gravity OBJECT's local
+        // frame (nif.xml: "the local direction of the force"), so transform it by that object's transform —
+        // mirroring how emission velocity is transformed by the emitter object. This is load-bearing: the
+        // fountain's authored axis is +Z (up), but its gravity object orients it to world -Z (down), so without
+        // this the jet accelerates UP into the sky instead of arcing back down.
+        var localAxis = g.GravityAxis.LengthSquared() > 1e-6f ? Vector3.Normalize(g.GravityAxis) : Vector3.UnitZ;
+        var axis = localAxis;
+        if (g.HasGravityObject)
+        {
+            var world = Vector3.TransformNormal(localAxis, g.GravityObjectTransform);
+            if (world.LengthSquared() > 1e-6f)
+            {
+                axis = Vector3.Normalize(world);
+            }
+        }
+
         return axis * g.Strength;
+    }
+
+    /// <summary>Drag axis (system-local, normalized) + range origin + coefficients, precomputed once per
+    /// modifier. <see cref="Active" /> is false when the engine would no-op the modifier (no drag object,
+    /// non-positive percentage, or a degenerate axis).</summary>
+    private readonly record struct PreparedDrag(
+        bool Active, Vector3 AxisHat, Vector3 ObjectPos, float Range, float Falloff, float Percentage);
+
+    private static PreparedDrag PrepareDrag(DragModifierDefinition d)
+    {
+        // The engine transforms the drag axis into the drag-object frame and normalizes it; it no-ops the whole
+        // modifier when there is no drag object or the percentage isn't positive.
+        var worldAxis = Vector3.TransformNormal(d.DragAxis, d.DragObjectTransform);
+        if (!d.HasDragObject || d.Percentage <= 0f || worldAxis.LengthSquared() < 1e-8f)
+        {
+            return new PreparedDrag(false, Vector3.UnitZ, Vector3.Zero, 0f, 0f, 0f);
+        }
+
+        return new PreparedDrag(true, Vector3.Normalize(worldAxis), d.DragObjectTransform.Translation,
+            d.Range, d.RangeFalloff, d.Percentage);
+    }
+
+    /// <summary>
+    ///     Engine-accurate <c>NiPSysDragModifier::Update</c> delta. Damps ONLY the velocity component along the
+    ///     drag axis, scaled by the drag percentage and the frame-step (dt/(1/30)). Particles beyond
+    ///     <c>Range</c> get a linearly-fading drag down to zero at <c>RangeFalloff</c>; beyond that, none. The
+    ///     fraction is clamped so it never removes more than the whole axis component (the engine's clamp). The
+    ///     result is the velocity delta to ADD (already includes the frame-step, so callers don't multiply by dt).
+    /// </summary>
+    private static Vector3 DragDelta(PreparedDrag d, Vector3 position, Vector3 velocity, float dt)
+    {
+        if (!d.Active)
+        {
+            return Vector3.Zero;
+        }
+
+        var dist = (position - d.ObjectPos).Length();
+        float effPct;
+        if (dist <= d.Range)
+        {
+            effPct = d.Percentage;
+        }
+        else if (dist < d.Falloff && d.Falloff > d.Range)
+        {
+            effPct = (1f - (dist - d.Range) / (d.Falloff - d.Range)) * d.Percentage;
+        }
+        else
+        {
+            return Vector3.Zero; // beyond the falloff radius the engine applies no drag
+        }
+
+        var component = Vector3.Dot(velocity, d.AxisHat);
+        var frac = MathF.Min(1f, effPct * (dt / (1f / 30f)));
+        return -frac * component * d.AxisHat;
     }
 
     /// <summary>Rotate <paramref name="local" /> (defined with +Z = up) so +Z maps to <paramref name="axis" />.</summary>
@@ -337,6 +483,10 @@ internal static class NifParticleBaker
         public float BaseSize;
         public float Size;
         public Vector4 Color;
+
+        /// <summary>How many NiPSysSpawnModifier generations deep this particle is (0 = emitted directly).
+        /// Spawning stops once this reaches the modifier's NumSpawnGenerations.</summary>
+        public int SpawnGeneration;
     }
 
     /// <summary>Small deterministic xorshift32 PRNG — reproducible across runs/platforms (no Math.Random).</summary>

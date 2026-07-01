@@ -129,6 +129,87 @@ public sealed class NifParticleBakerTests
     }
 
     [Fact]
+    public void Bake_DragWithObject_DampsVelocityAlongDragAxis()
+    {
+        // The BoxSystem jet rises along +Z. A +Z drag (with a drag object + effectively-infinite range) should
+        // damp the vertical velocity, so the cloud rises far less than the undamped jet (engine-accurate
+        // anisotropic NiPSysDragModifier behaviour).
+        var drag = new DragModifierDefinition
+        {
+            Kind = ParticleModifierKind.Drag,
+            HasDragObject = true,
+            DragObjectTransform = Matrix4x4.Identity,
+            DragAxis = Vector3.UnitZ,
+            Percentage = 0.5f,
+            Range = 1e30f,
+            RangeFalloff = 1e30f,
+        };
+
+        var maxZNoDrag = NifParticleBaker.Bake(BoxSystem()).Max(p => p.Position.Z);
+        var maxZWithDrag = NifParticleBaker.Bake(BoxSystem(drag)).Max(p => p.Position.Z);
+
+        Assert.True(maxZWithDrag < maxZNoDrag - 2f,
+            $"drag along +Z should lower the jet ({maxZWithDrag:F2} vs {maxZNoDrag:F2})");
+    }
+
+    [Fact]
+    public void Bake_DragWithoutObject_IsNoOp()
+    {
+        // The engine no-ops NiPSysDragModifier entirely when there is no drag object, so the bake must match the
+        // drag-free system exactly (same seed ⇒ identical particles).
+        var drag = new DragModifierDefinition
+        {
+            Kind = ParticleModifierKind.Drag,
+            HasDragObject = false, // no drag object ⇒ engine applies no drag
+            DragAxis = Vector3.UnitZ,
+            Percentage = 0.5f,
+            Range = 1e30f,
+            RangeFalloff = 1e30f,
+        };
+
+        var maxZNoDrag = NifParticleBaker.Bake(BoxSystem()).Max(p => p.Position.Z);
+        var maxZNoObjDrag = NifParticleBaker.Bake(BoxSystem(drag)).Max(p => p.Position.Z);
+
+        Assert.Equal(maxZNoDrag, maxZNoObjDrag);
+    }
+
+    [Fact]
+    public void Bake_SpawnWithGenerations_BurstsChildrenOnDeath()
+    {
+        // A spawn modifier with ≥1 generation and Min/Max=4 should multiply the cloud: every dying particle
+        // bursts 4 children (the splash). Compare against the same system with no spawn modifier.
+        var spawn = new SpawnModifierDefinition
+        {
+            Kind = ParticleModifierKind.Spawn,
+            NumSpawnGenerations = 1, PercentageSpawned = 1f, MinToSpawn = 4, MaxToSpawn = 4,
+            LifeSpan = 1f,
+        };
+
+        var withoutSpawn = NifParticleBaker.Bake(BoxSystem());
+        var withSpawn = NifParticleBaker.Bake(BoxSystem(spawn));
+
+        Assert.True(withSpawn.Count > withoutSpawn.Count,
+            $"spawn should add child particles ({withSpawn.Count} vs {withoutSpawn.Count})");
+    }
+
+    [Fact]
+    public void Bake_SpawnZeroGenerations_IsNoOp()
+    {
+        // NumSpawnGenerations=0 (the UL fountain's case) ⇒ the gate spawnGen<0 is never true, so no children and
+        // no RNG consumed — identical to the spawn-free bake.
+        var spawn = new SpawnModifierDefinition
+        {
+            Kind = ParticleModifierKind.Spawn,
+            NumSpawnGenerations = 0, PercentageSpawned = 1f, MinToSpawn = 4, MaxToSpawn = 4,
+        };
+
+        var withoutSpawn = NifParticleBaker.Bake(BoxSystem());
+        var withSpawn = NifParticleBaker.Bake(BoxSystem(spawn));
+
+        Assert.Equal(withoutSpawn.Count, withSpawn.Count);
+    }
+
+    [Fact]
     public void Bake_BombVortex_PushesParticlesOutwardBeyondEmitterVolume()
     {
         // A spherical bomb with a strong positive DeltaV should fling particles well past the 20×10×6
