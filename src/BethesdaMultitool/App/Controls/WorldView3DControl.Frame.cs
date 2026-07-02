@@ -355,8 +355,16 @@ public sealed partial class WorldView3DControl
         // this, camera-relative rendering culls everything except a narrow cone from the origin
         // (objects only visible facing one direction). When camera-relative is off the two matrices
         // are equal, so this is a no-op then.
+        // renderOrigin MUST equal the CameraOrigin bound in the atmosphere CB above (line: cameraOrigin =
+        // cameraRelative ? _camera.Position : Zero): the reference VS no longer subtracts uCameraOrigin, so
+        // the renderer folds this origin into each world matrix on the CPU instead. That yields the same
+        // camera-relative clip position as terrain/water (which still subtract uCameraOrigin in-shader) but
+        // with far better float32 precision — killing coplanar Z-fighting on distant architecture.
+        var referenceRenderOrigin = cameraRelative ? _camera.Position : Vector3.Zero;
         var visibleReferences = _showReferences
-            ? _references?.Render(viewProjScene, cylinder, deferBlended: true, cullViewProj: viewProjAbsolute) ?? 0
+            ? _references?.Render(
+                  viewProjScene, cylinder, deferBlended: true, cullViewProj: viewProjAbsolute,
+                  renderOrigin: referenceRenderOrigin) ?? 0
             : 0;
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesEnd);
         var referencesMs = ElapsedMilliseconds(segmentStarted);

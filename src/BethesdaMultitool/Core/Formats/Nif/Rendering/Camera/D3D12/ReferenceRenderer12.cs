@@ -398,7 +398,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     absolute viewProj so the frustum matches the cull geometry's space. Null ⇒ use
     ///     <paramref name="viewProj" /> (correct when it is already absolute, e.g. the top-down overlay).
     /// </param>
-    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder, bool deferBlended, Matrix4x4? cullViewProj = null)
+    /// <param name="renderOrigin">
+    ///     The world-space point <paramref name="viewProj" /> treats as its origin — i.e. the same value
+    ///     the caller binds as <c>uCameraOrigin</c> in the shared atmosphere CB (b3). It is folded into
+    ///     each uploaded world matrix's TRANSLATION on the CPU so the reference VS projects small
+    ///     near-camera coordinates (the reference VS no longer subtracts <c>uCameraOrigin</c> itself);
+    ///     this keeps float32 depth precision far from the world origin, killing the coplanar-surface
+    ///     Z-fighting on distant architecture. Camera-relative live path passes the camera position;
+    ///     the absolute paths (top-down / scene-capture / export / headless, all with
+    ///     <c>uCameraOrigin == 0</c>) pass <see cref="Vector3.Zero" /> (the default), making the fold a
+    ///     no-op. The CPU cull below stays in ABSOLUTE space (uses <c>r.WorldMatrix</c>, not the folded
+    ///     copy) — only the GPU upload is shifted.
+    /// </param>
+    public int Render(
+        Matrix4x4 viewProj, VisibilityCylinder cylinder, bool deferBlended, Matrix4x4? cullViewProj = null,
+        Vector3 renderOrigin = default)
     {
         ReferencesDrawnLastFrame = 0;
         LastFrameDrawsTruncated = 0;
@@ -659,6 +673,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             }
 
             var anySubmeshDrawn = false;
+            // Camera-relative UPLOAD: fold the render origin into this reference's world-matrix translation
+            // once, and upload the folded copy for every submesh. mul(uWorld_rel, pos) in the VS then
+            // operates on small near-camera coordinates instead of ~52,000 absolute ones — float32 keeps
+            // ~30× more precision, so coplanar surfaces on far-from-origin architecture stop Z-fighting. The
+            // CULL above still uses the ABSOLUTE r.WorldMatrix; only this GPU copy is shifted. renderOrigin
+            // is 0 on the absolute paths, so relWorldMatrix == r.WorldMatrix there (fold is a no-op).
+            var relWorldMatrix = r.WorldMatrix;
+            relWorldMatrix.Translation -= renderOrigin;
             var alphaDebug = AlphaDebugFilter != null
                 && !string.IsNullOrEmpty(r.ModelPath)
                 && r.ModelPath.Contains(AlphaDebugFilter, StringComparison.OrdinalIgnoreCase)
@@ -691,9 +713,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard)
                 {
                     var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, r.WorldMatrix);
+                    // worldCenter stays ABSOLUTE (sorted against the absolute cylinder.Position; billboard
+                    // facing needs the absolute camera vector). The uploaded matrix is camera-relative:
+                    // the non-billboard case reuses the folded relWorldMatrix; BuildBillboardWorld folds
+                    // renderOrigin into its own composed translation.
                     var world = sub.IsBillboard
-                        ? BuildBillboardWorld(sub.LocalBoundsCenter, r.WorldMatrix, worldCenter, cylinder.Position)
-                        : r.WorldMatrix;
+                        ? BuildBillboardWorld(sub.LocalBoundsCenter, r.WorldMatrix, worldCenter, cylinder.Position, renderOrigin)
+                        : relWorldMatrix;
                     var blendedDraw = new BlendedReferenceDraw(
                         world,
                         sub,
@@ -724,7 +750,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // across the whole batch — it comes from the submesh, which IS the batch key
                 // — so it is uploaded once per batch via the InstanceDraw CBV at draw time
                 // instead of being copied into every instance record.
-                batch.Instances.Add(r.WorldMatrix);
+                batch.Instances.Add(relWorldMatrix);
                 anySubmeshDrawn = true;
             }
 
@@ -1230,7 +1256,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     </para>
     /// </summary>
     private static Matrix4x4 BuildBillboardWorld(
-        Vector3 localBoundsCenter, Matrix4x4 world, Vector3 worldCenter, Vector3 cameraPosition)
+        Vector3 localBoundsCenter, Matrix4x4 world, Vector3 worldCenter, Vector3 cameraPosition,
+        Vector3 renderOrigin)
     {
         var toCam = cameraPosition - worldCenter;
         toCam.Z = 0f;
@@ -1239,8 +1266,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // Uniform scale = length of the placement matrix's first row (X axis).
         var scale = new Vector3(world.M11, world.M12, world.M13).Length();
         var rs = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateRotationZ(angle);
-        // Anchor the quad so its local bounds center maps to the placement's world position.
-        rs.Translation = worldCenter - Vector3.TransformNormal(localBoundsCenter, rs);
+        // Anchor the quad so its local bounds center maps to the placement's world position, then fold in
+        // the camera-relative render origin (0 on absolute paths) so the uploaded matrix matches the
+        // camera-relative space the reference VS now projects in — see the Render(renderOrigin) docs.
+        rs.Translation = worldCenter - Vector3.TransformNormal(localBoundsCenter, rs) - renderOrigin;
         return rs;
     }
 

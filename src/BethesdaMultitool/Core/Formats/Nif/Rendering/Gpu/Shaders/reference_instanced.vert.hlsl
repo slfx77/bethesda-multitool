@@ -8,13 +8,16 @@ cbuffer PerFrame : register(b0)
     float4x4 uViewProj;
 };
 
-// 1G — camera-relative render origin (xyz) from the shared atmosphere CB (b3). Subtracted from each
-// world vertex before projection (kills the worldspace-edge wobble). Zero when camera-relative is off;
+// Shared atmosphere CB (b3). References no longer read uCameraOrigin here: the render origin is folded
+// into each instance world matrix's translation on the CPU (ReferenceRenderer12.Render's renderOrigin), so
+// mul(world, pos) already yields the camera-relative position — keeping float32 precision far from the
+// world origin (subtracting a ~52,000 absolute position AFTER the multiply lost it, Z-fighting distant
+// architecture). The cbuffer is still declared for b3 layout parity (terrain/water read uCameraOrigin);
 // the leading 8 float4 are the sun/sky/fog/camera fields this VS does not use.
 cbuffer Atmosphere : register(b3)
 {
     float4 uAtmospherePad[8];
-    float4 uCameraOrigin;
+    float4 uCameraOrigin; // retained for CB layout parity; references fold the origin CPU-side instead
 };
 
 // Per-batch (one DrawIndexedInstanced) constants. TextureState.x marks BC5/ATI2 normal
@@ -82,8 +85,8 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
         // center, scaled by the instance's uniform REFR scale. (SpeedTree builds leaf cards CPU-side as
         // flat 2D offsets around a center and re-faces them to the camera each frame — CLeafGeometry; we
         // do that same transform here in the VS.)
-        float4 worldCenterAbs = mul(world, float4(input.aTangent, 1.0)); // pre camera-relative shift
-        float3 worldCenter = worldCenterAbs.xyz - uCameraOrigin.xyz;
+        float4 worldCenterAbs = mul(world, float4(input.aTangent, 1.0)); // world is CPU-folded camera-relative
+        float3 worldCenter = worldCenterAbs.xyz;
         float scale = length(float3(world[0].x, world[0].y, world[0].z)); // uniform REFR scale
 
         // SpeedTree wind sway. The STLEAF/STB VS does windedPos = lerp(pos, WindMatrix[idx]*pos,
@@ -95,7 +98,11 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
         // scale, so big trees sway more than bushes. uWind.z = 0 leaves the tree static.
         float windWeight = input.aBitangent.z;
         float sizeProxy = max(abs(input.aBitangent.x), abs(input.aBitangent.y));
-        float phase = uWind.w * 0.7 + dot(worldCenterAbs.xyz, float3(0.03, 0.027, 0.05));
+        // Phase seed must stay anchored to the ABSOLUTE world position (so a fixed leaf sways with a
+        // stable per-world-position phase as the camera moves). worldCenterAbs is now camera-relative
+        // (world matrix is CPU-folded), so add uCameraOrigin — still bound in b3 — back to recover it.
+        float3 worldCenterWorld = worldCenterAbs.xyz + uCameraOrigin.xyz;
+        float phase = uWind.w * 0.7 + dot(worldCenterWorld, float3(0.03, 0.027, 0.05));
         float gust = sin(phase) + 0.25 * sin(phase * 2.9 + 1.7);
         worldCenter += float3(uWind.x, uWind.y, 0.0) * (gust * uWind.z * windWeight * sizeProxy * scale);
 
@@ -109,8 +116,9 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
     }
     else
     {
+        // world's translation is CPU-folded to the render origin, so this is already the camera-relative
+        // position (absolute when renderOrigin == 0). The prior post-multiply "-= uCameraOrigin" is gone.
         worldPos = mul(world, float4(input.aPosition, 1.0));
-        worldPos.xyz -= uCameraOrigin.xyz; // camera-relative shift before projection (1G); 0 when off
         o.vWorldNormal = mul((float3x3)world, input.aNormal);
     }
 

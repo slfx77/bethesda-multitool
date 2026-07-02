@@ -13,13 +13,16 @@ cbuffer PerFrame : register(b0)
     float4x4 uViewProj;
 };
 
-// 1G — camera-relative render origin (xyz) from the shared atmosphere CB (b3). Subtracted from each
-// world vertex before projection (kills the worldspace-edge wobble). Zero when camera-relative is off;
+// Shared atmosphere CB (b3). References no longer read uCameraOrigin here: the render origin is folded
+// into uWorld's translation on the CPU (ReferenceRenderer12.Render's renderOrigin), so mul(uWorld, pos)
+// already yields the camera-relative position — computing it that way keeps float32 precision far from
+// the world origin (subtracting a ~52,000 absolute position AFTER the multiply lost it, Z-fighting distant
+// architecture). The cbuffer is still declared for b3 layout parity (terrain/water read uCameraOrigin);
 // the leading 8 float4 are the sun/sky/fog/camera fields this VS does not use.
 cbuffer Atmosphere : register(b3)
 {
     float4 uAtmospherePad[8];
-    float4 uCameraOrigin;
+    float4 uCameraOrigin; // retained for CB layout parity; references fold the origin CPU-side instead
 };
 
 cbuffer PerDraw : register(b1)
@@ -80,8 +83,8 @@ VSOutput main(VSInput input)
         // and the signed 2D card-space offset (aBitangent.xy). Rebuild the quad facing the camera around
         // the world-space center, scaled by the uniform REFR scale. Same math as reference_instanced.vert.hlsl;
         // particles have no wind weight so the sway term is omitted.
-        float4 worldCenterAbs = mul(uWorld, float4(input.aTangent, 1.0));
-        float3 worldCenter = worldCenterAbs.xyz - uCameraOrigin.xyz;
+        // uWorld already carries the CPU-folded camera-relative origin, so this center is camera-relative.
+        float3 worldCenter = mul(uWorld, float4(input.aTangent, 1.0)).xyz;
         float scale = length(float3(uWorld[0].x, uWorld[0].y, uWorld[0].z));
         worldPos = float4(
             worldCenter
@@ -91,8 +94,9 @@ VSOutput main(VSInput input)
     }
     else
     {
+        // uWorld's translation is CPU-folded to the render origin, so this is already the camera-relative
+        // position (absolute when renderOrigin == 0). The prior post-multiply "-= uCameraOrigin" is gone.
         worldPos = mul(uWorld, float4(input.aPosition, 1.0));
-        worldPos.xyz -= uCameraOrigin.xyz; // camera-relative shift before projection (1G); 0 when off
     }
     o.Position = mul(uViewProj, worldPos);
     o.vWorldPos = worldPos.xyz; // camera-relative world pos (matches the shader camera = 0 for fog/spec)

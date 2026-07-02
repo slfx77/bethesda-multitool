@@ -335,7 +335,10 @@ internal static class NifHeadlessRenderer
         var eye = new Vector3(focus.X - 5793f, focus.Y - 5793f, focus.Z + 4096f); // NW + up
         Put(6, gameHour, a.FogNear, a.FogFar, 0f);
         Put(7, eye.X, eye.Y, eye.Z, a.FogPower);  // camera pos for spec/fog
-        Put(8, eye.X, eye.Y, eye.Z, 0f);
+        // CameraOrigin (camera-relative render origin) = 0: this is an ABSOLUTE ortho render, so nothing is
+        // shifted. The reference VS no longer reads this slot anyway (it folds the origin CPU-side); leaving
+        // the old eye value here was a latent shift that only didn't bite because the VS now ignores it.
+        Put(8, 0f, 0f, 0f, 0f);
 
         const int atmosphereBytes = 9 * 16;
         var alloc = ring.Allocate(frameIndex, atmosphereBytes, GpuRingBuffer12.CbAlignment);
