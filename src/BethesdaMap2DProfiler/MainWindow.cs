@@ -249,7 +249,29 @@ internal sealed class MainWindow : Window, IDisposable
         }
 
         Log.Info("Profiler: starting scenario '{0}'.", _options.ScenarioName);
-        _ = scenario.RunAsync(_worldMap, DispatcherQueue);
+        _ = RunScenarioThenExitAsync(scenario);
+    }
+
+    private async Task RunScenarioThenExitAsync(Map2DScenario scenario)
+    {
+        try
+        {
+            await scenario.RunAsync(_worldMap, DispatcherQueue);
+            Log.Info("Profiler: scenario '{0}' complete; exiting.", _options.ScenarioName);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Profiler: scenario '{0}' failed: {1}", _options.ScenarioName, ex);
+        }
+
+        // A scenario run is an automated session — close when it finishes (or faults) instead of
+        // leaving the window open forever. --duration-seconds stays as an independent upper bound
+        // (whichever fires first wins); its timer path does this same Dispose+Exit.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            Dispose();
+            Application.Current.Exit();
+        });
     }
 
     /// <summary>
