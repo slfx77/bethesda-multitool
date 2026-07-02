@@ -202,13 +202,23 @@ public sealed class RecordParser
                 $"  [Semantic] Display names: {phaseSw.Elapsed} ({_context.FormIdToFullName.Count} names captured)");
         }
 
+        // On the schema-bridge path the typed parse exists ONLY to supply the viewer's world/
+        // atmosphere/static collections + ModelPathIndex — the schema decode already owns the
+        // Records/Dialogue tabs and every generic, and the final merge (below) discards the typed
+        // characters/dialogue/scripts/abilities/packages/leveled-lists entirely. So skip parsing them:
+        // none feed a kept collection (ObjectIndexBuilder's ModelPathIndex needs items/books/notes/
+        // weaponMods/sounds/generics, which we KEEP; SpawnPositionResolver only resolves >0 with a
+        // runtime DMP, and these are ESM loads — SpawnResolved is always 0). FNV/FO3 (schemaResult is
+        // null) run the full pipeline unchanged.
+        var typedForViewerOnly = schemaResult is not null;
+
         // Build weapons and ammo first, then cross-reference for projectile data
         progress?.Report((5, "Parsing characters..."));
         phaseSw.Restart();
-        var npcs = _actors.ParseNpcs();
-        var creatures = _actors.ParseCreatures();
-        var races = _actors.ParseRaces();
-        var factions = _actors.ParseFactions();
+        var npcs = typedForViewerOnly ? new List<NpcRecord>() : _actors.ParseNpcs();
+        var creatures = typedForViewerOnly ? new List<CreatureRecord>() : _actors.ParseCreatures();
+        var races = typedForViewerOnly ? new List<RaceRecord>() : _actors.ParseRaces();
+        var factions = typedForViewerOnly ? new List<FactionRecord>() : _actors.ParseFactions();
         Logger.Instance.Debug(
             $"  [Semantic] Characters: {phaseSw.Elapsed} (NPCs: {npcs.Count}, Creatures: {creatures.Count}, Races: {races.Count}, Factions: {factions.Count})");
 
@@ -230,9 +240,12 @@ public sealed class RecordParser
         // Build dialogue data, then construct the tree hierarchy
         progress?.Report((30, "Parsing dialogue..."));
         phaseSw.Restart();
-        var quests = _dialogue.ParseQuests();
-        var dialogTopics = _dialogue.ParseDialogTopics();
-        var dialogues = _dialogue.ParseDialogue();
+        // Bridge: schema decode already produced the Dialogue tab's topics/infos/tree (game-aware
+        // extractors) and the QUST generics — the typed dialogue below is discarded. The downstream
+        // linking/backfill/tree-build all no-op on these empty lists.
+        var quests = typedForViewerOnly ? new List<QuestRecord>() : _dialogue.ParseQuests();
+        var dialogTopics = typedForViewerOnly ? new List<DialogTopicRecord>() : _dialogue.ParseDialogTopics();
+        var dialogues = typedForViewerOnly ? new List<DialogueRecord>() : _dialogue.ParseDialogue();
 
         if (_context.RuntimeReader != null)
         {
@@ -288,7 +301,7 @@ public sealed class RecordParser
         QuestScriptEnricher.BuildRuntimeScriptMappings(
             _context, _scripts, npcs, creatures, containers, activators, doors, furniture);
 
-        var scripts = _scripts.ParseScripts();
+        var scripts = typedForViewerOnly ? new List<ScriptRecord>() : _scripts.ParseScripts();
         Logger.Instance.Debug(
             $"  [Semantic] Trees/text: {phaseSw.Elapsed} (Notes: {notes.Count}, Books: {books.Count}, Terminals: {terminals.Count}, Scripts: {scripts.Count})");
 
@@ -297,8 +310,8 @@ public sealed class RecordParser
 
         progress?.Report((55, "Parsing abilities..."));
         phaseSw.Restart();
-        var perks = _effects.ParsePerks();
-        var spells = _effects.ParseSpells();
+        var perks = typedForViewerOnly ? new List<PerkRecord>() : _effects.ParsePerks();
+        var spells = typedForViewerOnly ? new List<SpellRecord>() : _effects.ParseSpells();
         Logger.Instance.Debug(
             $"  [Semantic] Abilities: {phaseSw.Elapsed} (Perks: {perks.Count}, Spells: {spells.Count})");
 
@@ -381,8 +394,10 @@ public sealed class RecordParser
 
         WorldRecordHandler.EnsureWorldspacesForCells(cells, worldspaces, _context);
         WorldRecordHandler.LinkCellsToWorldspaces(cells, worldspaces);
-        var packages = _ai.ParsePackages();
-        var leveledLists = _miscCollections.ParseLeveledLists();
+        // Packages/leveled-lists are discarded by the bridge merge and only feed SpawnPositionResolver,
+        // which resolves >0 solely from a runtime DMP (these are ESM loads → SpawnResolved 0). Skip both.
+        var packages = typedForViewerOnly ? new List<PackageRecord>() : _ai.ParsePackages();
+        var leveledLists = typedForViewerOnly ? new List<LeveledListRecord>() : _miscCollections.ParseLeveledLists();
         var resolvedCount =
             SpawnPositionResolver.ResolveSpawnPositions(cells, packages, npcs, creatures, leveledLists);
         var mapMarkers = _world.ExtractMapMarkers();
