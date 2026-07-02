@@ -86,14 +86,23 @@ public sealed class WorldRenderInfrastructureTests
             1400f,
             0f,
             new ObjectBounds { X1 = -1000, X2 = 1000 });
-        var far = RenderablePlacement(0x203, 3000f, 0f);
+        var far = RenderablePlacement(
+            0x203,
+            3000f,
+            0f,
+            new ObjectBounds { X1 = -64, X2 = 64, Y1 = -64, Y2 = 64 });
+        // No OBND ⇒ RenderableReference.NoBoundsFallbackRadius (one cell) keeps it a candidate from
+        // anywhere in the cell — intentional, so large OBND-less meshes are never query-culled.
+        // Placed on the other axis so its inflated bounds don't widen `far`'s bucket (the query
+        // filters at bucket granularity, so a no-OBND ref would otherwise carry its bucketmates in).
+        var farNoBounds = RenderablePlacement(0x205, 0f, 3000f);
         var actor = RenderablePlacement(0x204, 0f, 0f) with { RecordType = "ACHR" };
         var cell = new CellRecord
         {
             FormId = 0x200,
             GridX = 0,
             GridY = 0,
-            PlacedObjects = [near, largeIntersecting, far, actor]
+            PlacedObjects = [near, largeIntersecting, far, farNoBounds, actor]
         };
         var cache = new WorldRenderCache();
         var candidates = new List<RenderableReference>();
@@ -107,9 +116,10 @@ public sealed class WorldRenderInfrastructureTests
             0f,
             candidates);
 
-        Assert.Equal(3, totalRenderable);
+        Assert.Equal(4, totalRenderable);
         Assert.Contains(candidates, r => r.FormId == near.FormId);
         Assert.Contains(candidates, r => r.FormId == largeIntersecting.FormId);
+        Assert.Contains(candidates, r => r.FormId == farNoBounds.FormId);
         Assert.DoesNotContain(candidates, r => r.FormId == far.FormId);
         Assert.DoesNotContain(candidates, r => r.FormId == actor.FormId);
     }
