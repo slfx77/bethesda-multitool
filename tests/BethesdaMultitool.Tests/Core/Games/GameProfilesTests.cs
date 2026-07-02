@@ -115,11 +115,12 @@ public class GameProfilesTests
         Assert.Equal(MarkerArtStrategy.EmbeddedColored, GameProfiles.For(BethesdaGame.Oblivion).MarkerArt);
         Assert.True(GameProfiles.For(BethesdaGame.Oblivion).MarkerIconScale > 1.0f);
 
-        // FNV keeps its decompile-exact 0.3 ambient ("fill") scale; the ambient-heavier TES4-era Oblivion
-        // engine raises it so vertical/shadow surfaces aren't point-lit.
-        Assert.Equal(0.3f, GameProfiles.For(BethesdaGame.FalloutNewVegas).AmbientLightScale);
-        Assert.True(GameProfiles.For(BethesdaGame.Oblivion).AmbientLightScale >
-                    GameProfiles.For(BethesdaGame.FalloutNewVegas).AmbientLightScale);
+        // Engine ambient scale is 1.0 everywhere: the SLS shader consumes the ambient register at full
+        // strength (no scale constant exists in any SLS variant) and Sun::Update stores the NAM0 Ambient
+        // band unscaled. The old 0.3 was a misread of the lightning-flash boost fraction — see
+        // GameProfile.AmbientLightScale.
+        Assert.Equal(1.0f, GameProfiles.For(BethesdaGame.FalloutNewVegas).AmbientLightScale);
+        Assert.Equal(1.0f, GameProfiles.For(BethesdaGame.Oblivion).AmbientLightScale);
 
         // FO4/FO76 icons are white silhouettes from their map SWFs → tinted to the scheme like FO3/FNV.
         Assert.Equal(MarkerArtStrategy.EmbeddedTinted, GameProfiles.For(BethesdaGame.Fallout4).MarkerArt);

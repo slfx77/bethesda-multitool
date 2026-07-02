@@ -26,8 +26,11 @@ public sealed class AtmosphereStateTests
         var a = AtmosphereState.Resolve(12f);
 
         Assert.True(a.SunIntensity > 0.9f, $"noon sun should be near peak intensity, got {a.SunIntensity}");
-        Assert.True(a.SunWorldDirection.Z > 0.9f,
-            $"noon sun should point nearly straight up, got {a.SunWorldDirection}");
+        // Apex is ~50° (sin 50° ≈ 0.766), NOT near-zenith: the engine's sun path (a triangle wave with a
+        // constant lateral offset) never reaches overhead, and a zenith sun zeroes N·L on every vertical
+        // surface — the "too dark at midday" bug. See AtmosphereState.PeakSunElevation.
+        Assert.True(a.SunWorldDirection.Z is > 0.7f and < 0.85f,
+            $"noon sun should sit at the ~50° apex, got {a.SunWorldDirection}");
         Assert.True(a.SunColor.X > 0.5f, "noon sun should be bright");
     }
 
@@ -201,10 +204,10 @@ public sealed class AtmosphereStateTests
     }
 
     // --- P2b: windowed band blend (grounded in Sky::FillColorBlend) -------------------------------
-    // The model cross-fades only within the sunrise/sunset windows and holds bands steady between them
-    // (Day held solid through midday is a deliberate simplification of the engine's noon-pivot daytime
-    // cross-fade — see AtmosphereState.SampleBand). These pin that contract: the earlier continuous-lerp
-    // model would instead return a partial sunrise→day blend at 10:00.
+    // The model cross-fades only within the sunrise/sunset windows; between them Day/Night hold solid
+    // UNLESS the FNV High Noon / Midnight peak slots are authored (see the peak-slot tests above — these
+    // 4-band records leave the peaks zero, so the solid segments are pinned here). The earlier
+    // continuous-lerp model would instead return a partial sunrise→day blend at 10:00.
 
     [Fact]
     public void Resolve_MidMorning_HoldsSolidDayBand()
@@ -255,6 +258,88 @@ public sealed class AtmosphereStateTests
         var midnight = AtmosphereState.SampleCloudColor(c, 0f, CleanTiming);
         Assert.Equal(1f / 255f, midnight.X, 3);
         Assert.Equal(40f / 255f, midnight.W, 3);
+    }
+
+    // --- FNV High Noon / Midnight peak slots (6-band NAM0, Sky::FillColorBlend's noon/midnight pivots) ---
+    // An authored peak cross-fades Day↔HighNoon around solar noon and Night↔Midnight around solar
+    // midnight; an all-zero peak is "unused" (fopdoc) and keeps the old solid Day/Night segments — the
+    // 4-band tests above pin that unchanged behavior.
+
+    [Fact]
+    public void Resolve_SolarNoon_PicksAuthoredHighNoonPeak()
+    {
+        // CleanTiming: solar noon = (srB + ssE)/2 = (5+19)/2 = 12 → exactly the High Noon color.
+        var w = WeatherWithAmbient6(
+            new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255),
+            new WeatherRgba(90, 120, 150, 255), new WeatherRgba(2, 3, 4, 255));
+        var a = AtmosphereState.Resolve(12f, w, CleanTiming);
+        AssertColor(90, 120, 150, a.AmbientColor);
+    }
+
+    [Fact]
+    public void Resolve_MidMorning_BlendsDayTowardHighNoon()
+    {
+        // 9.5h is halfway between sunriseEnd (7) and solar noon (12) → Day/HighNoon midpoint, not solid Day.
+        var w = WeatherWithAmbient6(
+            new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255),
+            new WeatherRgba(100, 110, 120, 255), new WeatherRgba(0, 0, 0, 0));
+        var a = AtmosphereState.Resolve(9.5f, w, CleanTiming);
+        AssertColor(150, 160, 170, a.AmbientColor); // lerp(Day, HighNoon, 0.5)
+    }
+
+    [Fact]
+    public void Resolve_SolarMidnight_PicksAuthoredMidnightPeak_AndWrapsContinuously()
+    {
+        // CleanTiming: solar midnight = solar noon + 12 = 24 ≡ 0 → exactly the Midnight color there,
+        // and the 23.99↔0.01 wrap must stay continuous.
+        var w = WeatherWithAmbient6(
+            new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(80, 80, 100, 255),
+            new WeatherRgba(0, 0, 0, 0), new WeatherRgba(2, 2, 4, 255));
+
+        var justBefore = AtmosphereState.Resolve(23.99f, w, CleanTiming).AmbientColor;
+        var justAfter = AtmosphereState.Resolve(0.01f, w, CleanTiming).AmbientColor;
+        Assert.True((justBefore - new Vector3(2 / 255f, 2 / 255f, 4 / 255f)).Length() < 0.02f,
+            "solar midnight must sit on the Midnight peak");
+        Assert.True((justBefore - justAfter).Length() < 0.02f, "midnight wrap must stay continuous");
+
+        // Halfway through the evening night span (19 → 24): Night/Midnight midpoint.
+        var evening = AtmosphereState.Resolve(21.5f, w, CleanTiming).AmbientColor;
+        AssertColor(41, 41, 52, evening); // lerp(Night(80,80,100), Midnight(2,3,4), 0.5)
+    }
+
+    [Fact]
+    public void Resolve_ZeroPeaks_KeepSolidDayAndNight()
+    {
+        // All-zero HighNoon/Midnight = unauthored → identical to the 4-band record at noon and midnight.
+        var four = WeatherWithAmbient(new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255));
+        var six = WeatherWithAmbient6(new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
+            new WeatherRgba(50, 40, 30, 255), new WeatherRgba(5, 5, 8, 255),
+            new WeatherRgba(0, 0, 0, 0), new WeatherRgba(0, 0, 0, 0));
+
+        Assert.Equal(
+            AtmosphereState.Resolve(12f, four, CleanTiming).AmbientColor,
+            AtmosphereState.Resolve(12f, six, CleanTiming).AmbientColor);
+        Assert.Equal(
+            AtmosphereState.Resolve(0f, four, CleanTiming).AmbientColor,
+            AtmosphereState.Resolve(0f, six, CleanTiming).AmbientColor);
+    }
+
+    private static WeatherRecord WeatherWithAmbient6(WeatherRgba sunrise, WeatherRgba day, WeatherRgba sunset,
+        WeatherRgba night, WeatherRgba highNoon, WeatherRgba midnight)
+    {
+        var zero = new WeatherRgba(0, 0, 0, 0);
+        var colors = new WeatherColor[15];
+        for (var i = 0; i < colors.Length; i++)
+        {
+            colors[i] = new WeatherColor(zero, zero, zero, zero);
+        }
+
+        colors[(int)WeatherColorType.Ambient] = new WeatherColor(sunrise, day, sunset, night, highNoon, midnight);
+        return new WeatherRecord { Colors = colors };
     }
 
     private static WeatherRecord WeatherWithAmbient(WeatherRgba sunrise, WeatherRgba day, WeatherRgba sunset,

@@ -59,19 +59,19 @@ float3 AtmosphereLight(float3 N)
         return (0.4 + 0.6 * legacyLambert).xxx;
     }
 
-    // FNV basic SLS lighting, decompile-exact (Sky::UpdateColors, atmosphere_decompiled.txt): the
-    // engine scales the lighting bands by per-category constants before the SLS sum — Sunlight (cat 4)
-    // × fRam8323ca04 = 1.0, Ambient (cat 3) × fRam8323ca10 = 0.3 (both read straight from the MemDebug
-    // binary's .data: 0x8323ca04 = 0x3f800000 = 1.0, 0x8323ca10 = 0x3e99999a = 0.3). The viewer used the
-    // Ambient band at FULL strength — ~3.3× too much fill — which washed out daytime contrast and kept
-    // nights too bright; apply the 0.3 attenuation. Sunlight keeps its 1.0 scale. Net:
-    // finalRGB = BaseMap * (0.3*Ambient + NdotL*Sunlight). pc_basic_sls_shader_disassembly.txt shows the
-    // `mad r1, NdotL, PSLightColor, AmbientColor` sum; HDR/tonemap absorbs values > 1 as the engine does.
-    // Per-game ambient ("fill") scale in uAmbientColor.w: 0.3 = FNV's fRam8323ca10, but the older
-    // ambient-heavier TES4 engines (Oblivion) read far softer, so the host raises it (GameProfile.
-    // AmbientLightScale) to keep vertical/shadow surfaces lit instead of point-lit. Falls back to 0.3 when
-    // the slot is unset (legacy/headless paths), so unchanged callers keep FNV's value.
-    float kAmbientScale = uAmbientColor.w > 0.0001 ? uAmbientColor.w : 0.3;
+    // FNV basic SLS lighting: finalRGB = BaseMap * (Ambient + NdotL*Sunlight), ambient at FULL strength.
+    // pc_basic_sls_shader_disassembly.txt's `mad r1, NdotL, PSLightColor, AmbientColor` has no scale
+    // constant in ANY SLS variant, and Sun::Update stores the NAM0 Ambient band into the light's m_kAmb
+    // unscaled (atmosphere_decompiled.txt:1911). An earlier reading applied a 0.3 "ambient scale" here
+    // (fRam8323ca10) — REFUTED 2026-07-02: that constant is the LIGHTNING-FLASH ambient boost fraction.
+    // Sky::SetColor ADDS 0.3·flashIntensity to the blended band (fadds at atmosphere_decompiled.txt:
+    // 3385-3391, clamped to the weather's Lightning Color bytes) and the flash decays to zero within
+    // seconds (Sky::Update :4365-4371) — it never multiplies the band. Steady-state engine ambient is the
+    // pure time-blended NAM0 Ambient band; the night look is authored INTO the bands (FNV's bright
+    // moonlit Night ambient is vanilla-faithful), so no scale is needed for nights either.
+    // uAmbientColor.w carries GameProfile.AmbientLightScale (engine value 1.0; kept as a per-game knob);
+    // falls back to 1.0 when the slot is unset (legacy/headless paths).
+    float kAmbientScale = uAmbientColor.w > 0.0001 ? uAmbientColor.w : 1.0;
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
     return uAmbientColor.rgb * kAmbientScale + uSunColorLighting.rgb * ndotl;
 }

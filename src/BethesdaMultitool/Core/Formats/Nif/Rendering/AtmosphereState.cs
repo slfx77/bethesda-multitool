@@ -77,9 +77,15 @@ public static class AtmosphereState
     private static readonly Vector3 DayFog = new(0.62f, 0.70f, 0.80f);
     private static readonly Vector3 NightTint = new(0.03f, 0.04f, 0.09f);
 
-    /// <summary>Apex of the analytic sun arc at solar noon, in radians (72°). Capped below the zenith so a
-    /// directional light component survives at midday — see <see cref="SunDirection" />.</summary>
-    private const float PeakSunElevation = 72f * (MathF.PI / 180f);
+    /// <summary>Apex of the analytic sun arc at solar noon, in radians (50°). The engine's sun path is a
+    /// triangle wave with a constant lateral offset — Sun::Update: X sweeps ±cb68 linearly across the day,
+    /// Z = |cb68| − |X|, Y = cb74 constant (atmosphere_decompiled.txt:1859-1895) — so its noon elevation is
+    /// atan(cb68/|cb74|), NOT the zenith; the .data constants aren't in the decompile artifacts, so the
+    /// exact engine apex is open. 50° matches the game's real-world setting (October, ~36°N ⇒ solar noon
+    /// ~45-50°) and restores vertical-surface N·L at midday: at the old 72° apex a wall facing the sun got
+    /// N·L ≤ cos72° = 0.31 and noon walls read darker than 6 PM ones (the reported "too dark at midday");
+    /// at 50° the same wall gets up to cos50° = 0.64.</summary>
+    private const float PeakSunElevation = 50f * (MathF.PI / 180f);
 
     // Twilight (sunrise/sunset) placeholder tints — used by the no-NAM0 palette so a worldspace without
     // authored weather still warms to orange at dawn/dusk instead of fading straight blue→night. Sunrise
@@ -141,7 +147,14 @@ public static class AtmosphereState
             // gated by sun elevation so it only appears when the sun is low (zero at noon → the daytime
             // sky is unchanged), reproducing the warm low-sun horizon glow.
             var horizonBand = BandOr(wc, WeatherColorType.Horizon, hour, srB, srE, ssB, ssE, skyLowerBand);
-            var horizonGlow = Math.Clamp(1f - (sunDir.Z * 1.5f), 0f, 1f);
+            // Glow tracks the sun's PROXIMITY to the horizon (|Z|), peaking at dawn/dusk and fading to
+            // zero both at noon and in deep night. The old `1 - Z*1.5` gate saturated for the whole night
+            // (sun far below ⇒ Z ≈ -1), folding the Horizon band into the dome at full strength after
+            // dark — harmless while the night fold was the dark Night column, but the 6-band blend also
+            // reaches the Midnight column, which weathers author as junk for this category (e.g.
+            // NVWastelandClear Horizon Midnight = (43,200,213) teal) since the engine only shows the
+            // horizon glow around the low sun.
+            var horizonGlow = Math.Clamp(1f - (MathF.Abs(sunDir.Z) * 1.5f), 0f, 1f);
             skyHorizon = Vector3.Lerp(skyLowerBand, horizonBand, horizonGlow * HorizonGlowStrength);
             fogColor = BandOr(wc, WeatherColorType.Fog, hour, srB, srE, ssB, ssE, Vector3.Lerp(NightTint, DayFog, day));
         }
@@ -292,36 +305,55 @@ public static class AtmosphereState
         return i >= 0 && i < w.Colors.Count ? SampleBand(w.Colors[i], hour, srB, srE, ssB, ssE) : fallback;
     }
 
-    // Blends the four NAM0 time bands across the 24h clock, grounded in Sky::FillColorBlend: the colors
-    // cross-fade only WITHIN the sunrise / sunset windows, pivoting at each window's midpoint, and stay
-    // steady between them. A band reads:
-    //   night  for hour outside the sunriseBegin..sunsetEnd daylight span;
+    // Blends the NAM0 time bands across the 24h clock, grounded in Sky::FillColorBlend: the colors
+    // cross-fade only WITHIN the sunrise / sunset windows, pivoting at each window's midpoint. A band reads:
+    //   night→midnight→night  outside the daylight span, pivoting at solar midnight (FNV's Midnight slot);
     //   night→sunrise  over sunriseBegin..sunriseMid, sunrise→day over sunriseMid..sunriseEnd;
-    //   day    over sunriseEnd..sunsetBegin;
+    //   day→highNoon→day  over sunriseEnd..sunsetBegin, pivoting at solar noon (FNV's High Noon slot) —
+    //     this is the engine's "extra daytime slot pivoting at a stored solar-noon time" previously
+    //     simplified to solid Day;
     //   day→sunset over sunsetBegin..sunsetMid, sunset→night over sunsetMid..sunsetEnd.
-    // Night is a single solid color outside the windows, so the midnight wrap is inherently continuous.
-    // Every segment denominator is a window half-width, provably > 0 after NormalizeWindows.
-    //
-    // SIMPLIFICATION vs. the engine (verified against Sky::FillColorBlend): the engine does NOT hold Day
-    // perfectly solid — between the windows it cross-fades the Day band toward a separate daytime slot,
-    // pivoting at a stored solar-noon time, and uses window edges padded out by a constant. That extra
-    // daytime slot is a 5th runtime band index this 4-band (Sunrise/Day/Sunset/Night) NAM0 model can't
-    // represent, and the daytime colors it blends are near-identical, so holding Day steady is a faithful
-    // approximation of the dominant look (the visible sunrise/sunset transitions are reproduced exactly).
+    // FNV authors the two peak slots per fopdoc; an all-zero peak means "unused" and falls back to
+    // Day/Night, which also keeps FO3 (4-band NAM0) and the placeholder palette on the old solid segments.
+    // Every segment denominator is a window half-width, provably > 0 after NormalizeWindows (the peak
+    // pivots are clamped into their spans; degenerate spans fall back to the solid segment).
     private static Vector3 SampleBand(WeatherColor c, float hour, float srB, float srE, float ssB, float ssE)
-        => SampleBandV(ToVec(c.Night), ToVec(c.Sunrise), ToVec(c.Day), ToVec(c.Sunset),
-            hour, srB, srE, ssB, ssE);
+    {
+        var day = ToVec(c.Day);
+        var night = ToVec(c.Night);
+        Vector3? highNoon = IsAuthored(c.HighNoon) ? ToVec(c.HighNoon) : null;
+        Vector3? midnight = IsAuthored(c.Midnight) ? ToVec(c.Midnight) : null;
+        return SampleBandV(night, ToVec(c.Sunrise), day, ToVec(c.Sunset),
+            hour, srB, srE, ssB, ssE, highNoon, midnight);
+    }
+
+    // fopdoc FNV WTHR: a (0,0,0) High Noon / Midnight color is authored-empty — the engine uses Day/Night.
+    private static bool IsAuthored(WeatherRgba c) => c.R != 0 || c.G != 0 || c.B != 0;
 
     // Vector3 form of the time-band blend, shared by the NAM0 path (above) and the placeholder palette.
+    // highNoon/midnight are the optional FNV peak slots; null keeps the segment solid (4-band behavior).
     private static Vector3 SampleBandV(Vector3 night, Vector3 sunrise, Vector3 day, Vector3 sunset,
-        float hour, float srB, float srE, float ssB, float ssE)
+        float hour, float srB, float srE, float ssB, float ssE,
+        Vector3? highNoon = null, Vector3? midnight = null)
     {
         var srMid = (srB + srE) * 0.5f;
         var ssMid = (ssB + ssE) * 0.5f;
+        var solarNoon = (srB + ssE) * 0.5f; // daylight-span midpoint (the engine stores its own noon time)
 
         if (hour < srB || hour >= ssE)
         {
-            return night; // solid night outside the daylight span
+            // Night span [ssE .. srB+24], pivoting at solar midnight: Night → Midnight → Night.
+            var span = (srB + 24f) - ssE;
+            if (midnight is not { } mid || span < 0.2f)
+            {
+                return night; // no authored Midnight (or degenerate span): solid night, the old behavior
+            }
+
+            var h = hour < srB ? hour + 24f : hour; // unwrap onto [ssE, srB+24]
+            var solarMidnight = Math.Clamp(solarNoon + 12f, ssE + 0.05f, srB + 24f - 0.05f);
+            return h < solarMidnight
+                ? Vector3.Lerp(night, mid, (h - ssE) / (solarMidnight - ssE))
+                : Vector3.Lerp(mid, night, (h - solarMidnight) / (srB + 24f - solarMidnight));
         }
 
         if (hour < srMid)
@@ -336,7 +368,16 @@ public static class AtmosphereState
 
         if (hour < ssB)
         {
-            return day; // solid day
+            // Day span, pivoting at solar noon: Day → HighNoon → Day.
+            if (highNoon is not { } hn || ssB - srE < 0.2f)
+            {
+                return day; // no authored High Noon (or degenerate span): solid day, the old behavior
+            }
+
+            var noon = Math.Clamp(solarNoon, srE + 0.05f, ssB - 0.05f);
+            return hour < noon
+                ? Vector3.Lerp(day, hn, (hour - srE) / (noon - srE))
+                : Vector3.Lerp(hn, day, (hour - noon) / (ssB - noon));
         }
 
         if (hour < ssMid)
@@ -361,20 +402,45 @@ public static class AtmosphereState
         return SampleBand4(c, WrapHour(gameHour), srB, srE, ssB, ssE);
     }
 
-    // RGBA twin of SampleBand — identical windowed blend, but keeps the alpha channel (cloud opacity).
+    // RGBA twin of SampleBand — identical windowed blend (incl. the FNV High Noon / Midnight peak slots),
+    // but keeps the alpha channel (cloud opacity). A peak is "authored" if ANY of RGBA is non-zero (alpha
+    // is opacity here, so an authored invisible-at-midnight layer is meaningful).
     private static Vector4 SampleBand4(WeatherColor c, float hour, float srB, float srE, float ssB, float ssE)
     {
         var srMid = (srB + srE) * 0.5f;
         var ssMid = (ssB + ssE) * 0.5f;
+        var solarNoon = (srB + ssE) * 0.5f;
         var night = ToVec4(c.Night);
         var sunrise = ToVec4(c.Sunrise);
         var day = ToVec4(c.Day);
         var sunset = ToVec4(c.Sunset);
 
-        if (hour < srB || hour >= ssE) return night;
+        if (hour < srB || hour >= ssE)
+        {
+            var span = (srB + 24f) - ssE;
+            var m = c.Midnight;
+            if ((m.R | m.G | m.B | m.A) == 0 || span < 0.2f) return night;
+            var mid4 = ToVec4(m);
+            var h = hour < srB ? hour + 24f : hour;
+            var solarMidnight = Math.Clamp(solarNoon + 12f, ssE + 0.05f, srB + 24f - 0.05f);
+            return h < solarMidnight
+                ? Vector4.Lerp(night, mid4, (h - ssE) / (solarMidnight - ssE))
+                : Vector4.Lerp(mid4, night, (h - solarMidnight) / (srB + 24f - solarMidnight));
+        }
+
         if (hour < srMid) return Vector4.Lerp(night, sunrise, (hour - srB) / (srMid - srB));
         if (hour < srE) return Vector4.Lerp(sunrise, day, (hour - srMid) / (srE - srMid));
-        if (hour < ssB) return day;
+        if (hour < ssB)
+        {
+            var hn = c.HighNoon;
+            if ((hn.R | hn.G | hn.B | hn.A) == 0 || ssB - srE < 0.2f) return day;
+            var hn4 = ToVec4(hn);
+            var noon = Math.Clamp(solarNoon, srE + 0.05f, ssB - 0.05f);
+            return hour < noon
+                ? Vector4.Lerp(day, hn4, (hour - srE) / (noon - srE))
+                : Vector4.Lerp(hn4, day, (hour - noon) / (ssB - noon));
+        }
+
         if (hour < ssMid) return Vector4.Lerp(day, sunset, (hour - ssB) / (ssMid - ssB));
         return Vector4.Lerp(sunset, night, (hour - ssMid) / (ssE - ssMid));
     }

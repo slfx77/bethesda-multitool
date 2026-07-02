@@ -101,9 +101,9 @@ public readonly record struct WeatherCloudAlpha(float Sunrise, float Day, float 
 ///     a 24-byte "Time of Day Colors" struct of SIX RGBA colors). FO3 carried only the first four;
 ///     FNV added the solar-noon (<see cref="HighNoon" />) and solar-midnight (<see cref="Midnight" />)
 ///     peaks. <see cref="HighNoon" /> / <see cref="Midnight" /> are frequently authored as zero (the
-///     engine then falls back to Day / Night), so the atmosphere renderer blends only the four primary
-///     bands — holding each steady between the climate's sunrise/sunset windows and cross-fading within
-///     them — and keeps the two peaks available for callers that want them.
+///     engine then falls back to Day / Night). The atmosphere renderer blends all six: Day↔HighNoon
+///     pivoting at solar noon and Night↔Midnight pivoting at solar midnight when the peak is authored,
+///     the four primary bands otherwise (AtmosphereState.SampleBandV).
 /// </summary>
 public sealed record WeatherColor(
     WeatherRgba Sunrise, WeatherRgba Day, WeatherRgba Sunset, WeatherRgba Night,

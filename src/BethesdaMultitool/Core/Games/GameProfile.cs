@@ -102,13 +102,18 @@ public sealed record GameProfile
 
     /// <summary>
     ///     Multiplier on the ambient ("fill") term in the scene lighting sum
-    ///     <c>lit = AmbientLightScale·ambient + saturate(N·L)·sun</c> (objects + terrain). 0.3 is FNV's
-    ///     decompile-exact <c>fRam8323ca10</c>; the older, ambient-heavier TES4-era engines (Oblivion) read
-    ///     far softer — at 0.3 their vertical/shadow surfaces (tree trunks, side-facing leaf cards, walls)
-    ///     collapse to a weak fill and the sun reads like a hard point light. A higher scale lifts the fill so
-    ///     surfaces out of the sun's path stay lit. Bound into <c>uAmbientColor.w</c>; the shader falls back to
-    ///     0.3 when the slot is unset, so unchanged paths keep FNV's value.
+    ///     <c>lit = AmbientLightScale·ambient + saturate(N·L)·sun</c> (objects + terrain). The engine value
+    ///     is 1.0: the SLS pixel shader consumes the ambient register at full strength
+    ///     (pc_basic_sls_shader_disassembly.txt: <c>mad r1, NdotL, PSLightColor, AmbientColor</c> — no scale
+    ///     constant exists in any SLS variant), and Sun::Update stores the NAM0 Ambient band into the sun
+    ///     light's m_kAmb UNSCALED (atmosphere_decompiled.txt:1911). The 0.3 previously used here was a
+    ///     misread of <c>fRam8323ca10</c>, which is actually the LIGHTNING-FLASH ambient boost fraction —
+    ///     Sky::SetColor ADDS <c>0.3·flashIntensity</c> (fadds, clamped to the weather's Lightning Color)
+    ///     and the flash decays to zero within seconds (atmosphere_decompiled.txt:842-846, 3468-3480,
+    ///     4365-4371) — it never multiplies the band. Nights stay correct at 1.0 because FNV authors the
+    ///     night look into the NAM0 bands themselves (bright moonlit Night ambient is vanilla-faithful).
+    ///     Bound into <c>uAmbientColor.w</c>; the shader falls back to 1.0 when the slot is unset.
     /// </summary>
-    public float AmbientLightScale { get; init; } = 0.3f;
+    public float AmbientLightScale { get; init; } = 1.0f;
 }
 

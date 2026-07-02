@@ -75,15 +75,14 @@ float3 AtmosphereLight(float3 N)
         return (0.4 + 0.6 * legacyLambert).xxx;
     }
 
-    // Decompile-exact SLS sum, IDENTICAL to reference.frag.hlsl so terrain and placed meshes shade the
-    // SAME way: lit = 0.3*AmbientColor + NdotL*SunColor. The 0.3 ambient scale (fRam8323ca10 in the
-    // MemDebug .data) was previously missing here while the mesh shader applied it, so at night the meshes
-    // (0.3×ambient) darkened far more than the terrain (full ambient) — the reported imbalance. Applying
-    // the same scale balances them. (`mad r1, NdotL, PSLightColor, AmbientColor`; HDR absorbs > 1.)
-    // Per-game ambient ("fill") scale in uAmbientColor.w (see GameProfile.AmbientLightScale); 0.3 = FNV's
-    // fRam8323ca10. Terrain and objects MUST read the same scale or they re-imbalance (the reason both were
-    // pinned to 0.3). Falls back to 0.3 when the slot is unset so unchanged paths keep FNV's value.
-    float kAmbientScale = uAmbientColor.w > 0.0001 ? uAmbientColor.w : 0.3;
+    // SLS sum, IDENTICAL to reference.frag.hlsl so terrain and placed meshes shade the SAME way:
+    // lit = kAmbientScale*AmbientColor + NdotL*SunColor. The engine value is FULL-strength ambient (1.0):
+    // the old 0.3 "ambient scale" was a misread of fRam8323ca10, which is the LIGHTNING-FLASH ambient
+    // boost fraction (additive, decays to zero — see reference.frag.hlsl's AtmosphereLight for the full
+    // refutation with decompile citations). Terrain and objects MUST read the same uAmbientColor.w
+    // (GameProfile.AmbientLightScale) or they re-imbalance at night — that invariant stands regardless of
+    // the value. Falls back to 1.0 when the slot is unset.
+    float kAmbientScale = uAmbientColor.w > 0.0001 ? uAmbientColor.w : 1.0;
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
     return uAmbientColor.rgb * kAmbientScale + uSunColorLighting.rgb * ndotl;
 }

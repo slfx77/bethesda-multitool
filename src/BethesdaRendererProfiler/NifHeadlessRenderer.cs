@@ -311,8 +311,9 @@ internal static class NifHeadlessRenderer
 
     /// <summary>Binds the REAL <see cref="AtmosphereState" /> lighting (sun + ambient) at
     /// <paramref name="gameHour" /> — the exact constants the live viewer uploads — so the worldspace
-    /// shading path (ambient×0.3 + sun·N·L) is reproduced offscreen. Sky + fog are disabled to isolate
-    /// the surface lighting. Mirrors WorldView3DControl.AtmosphereConstants (9 × float4).</summary>
+    /// shading path (full-strength ambient + sun·N·L, the engine SLS sum) is reproduced offscreen. Sky +
+    /// fog are disabled to isolate the surface lighting. Mirrors WorldView3DControl.AtmosphereConstants
+    /// (9 × float4). uAmbientColor.w stays 0 → the shader's 1.0 fallback (engine value).</summary>
     private static void BindLitAtmosphere(
         ID3D12GraphicsCommandList cmd, int frameIndex, GpuRingBuffer12 ring, float gameHour, Vector3 focus)
     {
