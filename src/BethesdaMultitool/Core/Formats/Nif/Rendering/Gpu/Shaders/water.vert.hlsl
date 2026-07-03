@@ -19,6 +19,7 @@ cbuffer Uniforms : register(b0)
     float4 uLayer2;
     float4 uLayer3;
     uint4 uDepthParams;  // x = scene-depth SRV index, y/z = near/far bits (PS only; here for layout)
+    float4 uRenderOrigin; // xyz = camera-relative render origin (0 on absolute paths); w spare
 };
 
 struct WaterInstance
@@ -51,7 +52,12 @@ VSOutput main(uint vid : SV_VertexID, uint instanceId : SV_InstanceID)
         instance.OriginHeightFootprintX.z);
 
     VSOutput o;
-    o.Position = mul(uViewProj, float4(worldPos, 1.0));
+    // Project CAMERA-RELATIVE (worldPos − uRenderOrigin, against the caller's camera-relative viewProj)
+    // for float32 precision far from the world origin — absolute ~50k-unit coordinates through the
+    // absolute viewProj shimmered the water edge as the camera rotated (view-angle-dependent Z). Same
+    // scheme as the reference pass (fe830cae). vWorldPos stays ABSOLUTE: the PS anchors noise UVs and
+    // the view vector to world space (camera-relative UVs would make ripples swim with the camera).
+    o.Position = mul(uViewProj, float4(worldPos - uRenderOrigin.xyz, 1.0));
     o.vWorldPos = worldPos;
     return o;
 }

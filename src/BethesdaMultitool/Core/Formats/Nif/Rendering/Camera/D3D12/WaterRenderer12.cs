@@ -30,7 +30,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 {
     // viewProj(64) + 3 DNAM colors(48) + camPosTime(16) + noiseParams(16) + surface0/1(32)
     // + 3 layers(48) + depthParams(16)
-    private const uint UniformsByteSize = 240;
+    private const uint UniformsByteSize = 256; // WaterFrameUniforms incl. the trailing RenderOrigin float4
 
     // Sentinel meaning "no resolved NNAM normal map" — the shader then uses a procedural ripple
     // normal so proto/test worldspaces with no water texture still animate.
@@ -261,7 +261,17 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     /// </summary>
     public void SetNifWaterPlanes(IReadOnlyList<NifWaterPlane> planes) => _nifWaterPlanes = planes;
 
-    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
+    /// <summary>IWorldRenderer entry — absolute path (zero render origin).</summary>
+    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder) => Render(viewProj, cylinder, default);
+
+    /// <param name="renderOrigin">
+    ///     The world-space point <paramref name="viewProj" /> treats as its origin (the same value the
+    ///     scene binds as the camera-relative render origin). The VS subtracts it from each water vertex
+    ///     before projection so far-from-origin water keeps float32 depth precision (the absolute path
+    ///     shimmered the water edge as the camera rotated). Absolute callers (top-down, export) use the
+    ///     two-arg overload — a no-op. vWorldPos stays absolute for the PS's noise-UV/view-vector anchoring.
+    /// </param>
+    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder, Vector3 renderOrigin)
     {
         LastStats.Reset();
         if (_waterCells.Count == 0 && _nifWaterPlanes.Count == 0) return 0;
@@ -355,6 +365,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 DepthNear = _depthNear,
                 DepthFar = _depthFar,
                 DepthTieBias = _waterProfile.DepthTieBiasWorldUnits,
+                RenderOrigin = new Vector4(renderOrigin, 0f),
             };
         }
 
@@ -634,6 +645,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         public float DepthNear;
         public float DepthFar;
         public float DepthTieBias;
+        // xyz = camera-relative render origin subtracted in the VS before projection (0 on absolute paths).
+        public Vector4 RenderOrigin;
     }
 }
 

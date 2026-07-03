@@ -400,10 +400,13 @@ public sealed partial class WorldView3DControl
                 Vortice.Direct3D12.ResourceStates.DepthWrite,
                 Vortice.Direct3D12.ResourceStates.PixelShaderResource);
         }
-        // Water renders in ABSOLUTE space (viewProjAbsolute): its ripple UVs need world-anchored XY and
-        // it carries its own absolute camera (uCamPosTime). It still clip-aligns with the camera-relative
-        // terrain/references (same clip position), so layers match; only water keeps its prior precision.
-        var visibleWater = _showWater ? _water?.Render(viewProjAbsolute, cylinder) ?? 0 : 0;
+        // Water projects CAMERA-RELATIVE like terrain/references (same viewProjScene + render origin, VS
+        // subtracts) — the absolute path lost float32 precision far from the origin and the water edge
+        // shimmered/ended at view-angle-dependent Z as the camera rotated. Ripple UVs + the PS view vector
+        // stay world-anchored: vWorldPos is still the absolute position (see water.vert.hlsl).
+        var visibleWater = _showWater
+            ? _water?.Render(viewProjScene, cylinder, referenceRenderOrigin) ?? 0
+            : 0;
         if (waterUsesDepth)
         {
             cmd.ResourceBarrierTransition(depthRes!,

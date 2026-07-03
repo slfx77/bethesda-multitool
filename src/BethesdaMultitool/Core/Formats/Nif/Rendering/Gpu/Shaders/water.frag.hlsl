@@ -32,6 +32,7 @@ cbuffer Uniforms : register(b0)
     float4 uLayer3;
     uint4 uDepthParams;  // x = scene-depth SRV bindless index (0xFFFFFFFF = none), y/z = near/far bits,
                          // w = depth-occlusion tie-break bias (world units, asfloat) — water wins coplanar ties
+    float4 uRenderOrigin; // xyz = camera-relative render origin (VS-only; declared for layout parity)
 };
 
 // Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants (7×float4),
