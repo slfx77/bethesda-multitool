@@ -79,7 +79,17 @@ internal static class RecordFlattener
         result.AddRange(
             records.GenericRecords.Select(r => new FlatRecord(r.FormId, r.RecordType, r.EditorId, r.FullName)));
 
-        return result.OrderBy(r => r.Type).ThenBy(r => r.FormId).ToList();
+        // On the schema-bridge path (non-FNV/FO3 games) world records exist BOTH as typed viewer
+        // collections (Worldspaces/Cells, kept for the 3D viewer) and as schema GenericRecords, so the
+        // same (Type, FormId) printed twice. Collapse duplicates, preferring the row that resolved a
+        // display name / EditorID.
+        return result
+            .GroupBy(r => (r.Type, r.FormId))
+            .Select(g => g
+                .OrderByDescending(r => r.DisplayName is not null)
+                .ThenByDescending(r => r.EditorId is not null)
+                .First())
+            .OrderBy(r => r.Type).ThenBy(r => r.FormId).ToList();
     }
 
     internal record FlatRecord(uint FormId, string Type, string? EditorId, string? DisplayName);
