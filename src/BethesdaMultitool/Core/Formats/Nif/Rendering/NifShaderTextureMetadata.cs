@@ -12,6 +12,13 @@ internal sealed class NifShaderTextureMetadata
     public float? EnvMapScale { get; init; }
     public IReadOnlyList<string?> TextureSlots { get; init; } = [];
 
+    /// <summary>
+    ///     FO4/FO76 external material path (<c>materials\….bgsm</c>/<c>.bgem</c>) from the shader's Name,
+    ///     populated even when the inline texture set supplied a diffuse — the engine gives the material's
+    ///     render state (alpha test/blend, two-sided, specular) priority over the NIF's inline properties.
+    /// </summary>
+    public string? MaterialPath { get; init; }
+
     public string? DiffusePath => GetTextureSlot(0);
     public string? NormalMapPath => GetTextureSlot(1);
     public string? GlowMapPath => GetTextureSlot(2);

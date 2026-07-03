@@ -53,6 +53,37 @@ public class BgsmMaterialTests
         Assert.Null(BgsmMaterial.Parse(data));
     }
 
+    [Fact]
+    public void Parse_Fallout4Bgsm_ReadsAlphaBlockAndTwoSided()
+    {
+        // Mirror the real Vine.BGSM header the FO4 foliage fix depends on: opacity 1, blend disabled,
+        // src/dst 6/7, alpha-test threshold 92, alpha-test enabled, two-sided. The engine gives these
+        // priority over the NIF's inline NiAlphaProperty (which authors 128), so parsing them correctly
+        // is what stops the leaf/wire cards from being over-eroded and backface-culled.
+        var data = BuildBgsm(2, false, 63, "leaf_d.dds", "leaf_n.dds");
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(0x1C), 1f); // opacity
+        data[0x20] = 0; // blend enable
+        data[0x21] = 6; // source blend
+        data[0x25] = 7; // destination blend
+        data[0x29] = 92; // alpha-test threshold
+        data[0x2A] = 1; // alpha-test enable
+        data[0x30] = 1; // two-sided
+
+        var mat = BgsmMaterial.Parse(data);
+
+        Assert.NotNull(mat);
+        Assert.Equal(1f, mat!.Alpha);
+        Assert.False(mat.AlphaBlendEnabled);
+        Assert.Equal(6, mat.SourceBlendMode);
+        Assert.Equal(7, mat.DestinationBlendMode);
+        Assert.Equal(92, mat.AlphaTestThreshold);
+        Assert.True(mat.AlphaTestEnabled);
+        Assert.True(mat.TwoSided);
+        // Texture paths still resolve after the alpha-block reads.
+        Assert.Equal("leaf_d.dds", mat.Diffuse);
+        Assert.Equal("leaf_n.dds", mat.Normal);
+    }
+
     /// <summary>
     ///     Builds a minimal BGSM with the given version, a header of <paramref name="headerLength" />
     ///     zero bytes (so the gradient flag reads 0 → the non-gradient texture-path map, whose first two

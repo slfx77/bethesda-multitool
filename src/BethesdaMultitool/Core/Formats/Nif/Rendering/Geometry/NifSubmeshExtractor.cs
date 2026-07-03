@@ -859,6 +859,7 @@ internal static class NifSubmeshExtractor
         // Vertex Attributes occupy the high 12 bits of the descriptor (see nif.xml BSVertexDesc).
         var attributes = (info.VertexDesc >> 44) & 0xFFF;
         var hasNormal = (attributes & 0x8) != 0;
+        var hasTangent = (attributes & 0x10) != 0;
         var hasUv = (attributes & 0x2) != 0;
         var hasColor = (attributes & 0x20) != 0;
 
@@ -869,10 +870,16 @@ internal static class NifSubmeshExtractor
         // Per-attribute byte offsets within the vertex (descriptor nibbles, in 4-byte units).
         var uvOffset = (int)((info.VertexDesc >> 8) & 0xF) * 4;
         var normalOffset = (int)((info.VertexDesc >> 16) & 0xF) * 4;
+        var tangentOffset = (int)((info.VertexDesc >> 20) & 0xF) * 4;
         var colorOffset = (int)((info.VertexDesc >> 24) & 0xF) * 4;
 
         var positions = new float[info.NumVertices * 3];
         var normals = hasNormal ? new float[info.NumVertices * 3] : null;
+        // The bitangent is stored split: X rides after the position (half/float), Y in the normal's
+        // 4th byte, Z in the tangent's 4th byte — so reconstructing it needs both attributes present.
+        // Without tangents+bitangents the decoder's hasBump gate drops the normal map (no TBN basis).
+        var tangents = hasTangent ? new float[info.NumVertices * 3] : null;
+        var bitangents = hasTangent && hasNormal ? new float[info.NumVertices * 3] : null;
         var uvs = hasUv ? new float[info.NumVertices * 2] : null;
         var colors = hasColor ? new byte[info.NumVertices * 4] : null;
 
@@ -902,6 +909,22 @@ internal static class NifSubmeshExtractor
                 normals[v * 3 + 2] = data[n + 2] / 127.5f - 1f;
             }
 
+            if (tangents != null)
+            {
+                var t = vbase + tangentOffset;
+                tangents[v * 3] = data[t] / 127.5f - 1f;
+                tangents[v * 3 + 1] = data[t + 1] / 127.5f - 1f;
+                tangents[v * 3 + 2] = data[t + 2] / 127.5f - 1f;
+                if (bitangents != null)
+                {
+                    bitangents[v * 3] = fullPrecisionPos
+                        ? BinaryUtils.ReadFloat(data, vbase + 12, be)
+                        : BinaryUtils.HalfToFloat(BinaryUtils.ReadUInt16(data, vbase + 6, be));
+                    bitangents[v * 3 + 1] = data[vbase + normalOffset + 3] / 127.5f - 1f;
+                    bitangents[v * 3 + 2] = data[t + 3] / 127.5f - 1f;
+                }
+            }
+
             if (uvs != null)
             {
                 var u = vbase + uvOffset;
@@ -926,7 +949,8 @@ internal static class NifSubmeshExtractor
             triangles[i] = BinaryUtils.ReadUInt16(data, info.TriangleBufferOffset + i * 2, be);
         }
 
-        var transformed = ApplySkinningOrTransform(positions, normals, null, null, transform, null, false, shapeName);
+        var transformed =
+            ApplySkinningOrTransform(positions, normals, tangents, bitangents, transform, null, false, shapeName);
 
         return new RenderableSubmesh
         {

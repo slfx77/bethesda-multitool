@@ -142,7 +142,11 @@ float4 main(PSInput input) : SV_Target
         {
             float2 xy = normalSample.rg * 2.0 - 1.0;
             mapN = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
-            // BC5/ATI2 carries no alpha → no spec mask (Skyrim+; FNV normal maps are DXT5/DXT1).
+            // BC5/ATI2 carries no alpha: the per-texel mask lives in a separate _s map these games
+            // don't bind yet (TexIndices.zw reserved), so fall back to a uniform mask and let the
+            // material's specular enable/strength (vSpecular.w, from BGSM for FO4/FO76) do the
+            // gating. Skyrim shapes resolve no material specular → vSpecular.w = 0 → gate stays shut.
+            specMask = 1.0;
         }
         else
         {

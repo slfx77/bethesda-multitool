@@ -41,7 +41,16 @@ internal static class NifShaderTexturePropertyReader
                     PropertyType = propBlock.TypeName,
                     ShaderFlags = lsFlags1,
                     ShaderFlags2 = lsFlags2,
-                    TextureSlots = slots
+                    TextureSlots = slots,
+                    // The material's render state (alpha, two-sided, specular) overrides the NIF's inline
+                    // properties, so surface its path even when the inline texture set supplied a diffuse.
+                    // FO4 (130..<155) prefixes a 4-byte "Shader Type" before the Name; FO76 (>= 155) doesn't.
+                    MaterialPath = nif.BsVersion switch
+                    {
+                        >= 155 => ReadMaterialName(data, nif, propBlock.DataOffset),
+                        >= 130 => ReadMaterialName(data, nif, propBlock.DataOffset + 4),
+                        _ => null,
+                    },
                 };
             }
 
@@ -63,7 +72,12 @@ internal static class NifShaderTexturePropertyReader
                 return new NifShaderTextureMetadata
                 {
                     PropertyType = propBlock.TypeName,
-                    TextureSlots = slots
+                    TextureSlots = slots,
+                    // BSEffectShaderProperty has no leading "Shader Type" — the Name (a .bgem path on
+                    // FO4/FO76) sits at the block data offset.
+                    MaterialPath = nif.BsVersion >= 130
+                        ? ReadMaterialName(data, nif, propBlock.DataOffset)
+                        : null,
                 };
             }
 
@@ -371,15 +385,25 @@ internal static class NifShaderTexturePropertyReader
     /// </summary>
     private static List<string?> ReadMaterialNameSlot(byte[] data, NifInfo nif, int nameFieldOffset)
     {
+        var name = ReadMaterialName(data, nif, nameFieldOffset);
+        return name is null ? [] : CreateFixedTextureSlots(name);
+    }
+
+    /// <summary>
+    ///     Reads the shader's NiObjectNET <c>Name</c> string at <paramref name="nameFieldOffset" /> and
+    ///     returns it when it is a <c>.bgsm</c>/<c>.bgem</c> material path, else null.
+    /// </summary>
+    private static string? ReadMaterialName(byte[] data, NifInfo nif, int nameFieldOffset)
+    {
         if (nameFieldOffset < 0 || nameFieldOffset + 4 > data.Length)
         {
-            return [];
+            return null;
         }
 
         var nameIndex = BinaryUtils.ReadInt32(data, nameFieldOffset, nif.IsBigEndian);
         if (nameIndex < 0 || nameIndex >= nif.Strings.Count)
         {
-            return [];
+            return null;
         }
 
         var name = nif.Strings[nameIndex];
@@ -387,10 +411,10 @@ internal static class NifShaderTexturePropertyReader
             (!name.EndsWith(".bgsm", StringComparison.OrdinalIgnoreCase) &&
              !name.EndsWith(".bgem", StringComparison.OrdinalIgnoreCase)))
         {
-            return [];
+            return null;
         }
 
-        return CreateFixedTextureSlots(name);
+        return name;
     }
 
     /// <summary>

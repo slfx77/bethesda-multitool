@@ -82,7 +82,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Bumped 18→19: NiPSysSpawnModifier now spawns child particles on death (decompiled SpawnParticles) — a dying
     // particle bursts MinToSpawn..MaxToSpawn chaos-scattered children (the fountain's splash spray), cascading up
     // to NumSpawnGenerations. Particle counts + positions change for any system with an active spawn modifier.
-    internal const int DecoderVersion = 19;
+    // Bumped 19→20: FO4/FO76 .bgsm/.bgem materials now override the NIF's inline render state (alpha test
+    // threshold/blend, two-sided, specular) and expand their texture slots to real .dds paths (diffuse AND
+    // normal map), and BSTriShape decodes tangents/bitangents (enables the FO4 bump path). The serialized
+    // alpha state, texture paths, and TBN payload all change, so old v19 entries are stale.
+    internal const int DecoderVersion = 20;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

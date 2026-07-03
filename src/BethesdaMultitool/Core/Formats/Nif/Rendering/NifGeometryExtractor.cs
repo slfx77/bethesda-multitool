@@ -402,6 +402,69 @@ internal static class NifGeometryExtractor
                 materialGlossiness = NifBlockParsers.ReadMaterialGlossiness(data, nif, propRefs);
                 specularColor = NifBlockParsers.ReadMaterialSpecularColor(data, nif, propRefs);
 
+                // FO4/FO76 external material (.bgsm/.bgem): the engine gives the material's render state
+                // priority over the NIF's inline NiAlphaProperty/NiStencilProperty — the NIF commonly
+                // authors threshold 128 while the material lowers it (Vine.BGSM = 92) and enables
+                // two-sided, so trusting the inline state alpha-erodes foliage and backface-culls half
+                // its leaf cards. Also expand the material's texture slots to their real .dds paths:
+                // the normal map (slot 1) otherwise never reaches the submesh (the material path rode in
+                // the diffuse slot only) — this is what enables FO4 bump mapping downstream.
+                var materialPath = shaderMetadata?.MaterialPath
+                                   ?? (diffusePath is not null &&
+                                       (diffusePath.EndsWith(".bgsm", StringComparison.OrdinalIgnoreCase) ||
+                                        diffusePath.EndsWith(".bgem", StringComparison.OrdinalIgnoreCase))
+                                       ? diffusePath
+                                       : null);
+                if (materialPath is not null && textureResolver?.TryGetMaterial(materialPath) is { } bgsm)
+                {
+                    if (bgsm.IsEffect)
+                    {
+                        // Effect materials: only apply alpha state the material actually enables — the
+                        // engine blends effect shaders regardless, and the forced-blend default below
+                        // must survive a .bgem that authors neither blend nor test.
+                        if (bgsm.AlphaBlendEnabled || bgsm.AlphaTestEnabled)
+                        {
+                            hasAlphaBlend = bgsm.AlphaBlendEnabled;
+                            hasAlphaTest = bgsm.AlphaTestEnabled;
+                            alphaTestThreshold = bgsm.AlphaTestThreshold;
+                            alphaTestFunction = 4; // GREATER — material thresholding implies greater mode
+                            srcBlendMode = bgsm.SourceBlendMode;
+                            dstBlendMode = bgsm.DestinationBlendMode;
+                        }
+                    }
+                    else
+                    {
+                        hasAlphaBlend = bgsm.AlphaBlendEnabled;
+                        hasAlphaTest = bgsm.AlphaTestEnabled;
+                        alphaTestThreshold = bgsm.AlphaTestThreshold;
+                        alphaTestFunction = 4;
+                        srcBlendMode = bgsm.SourceBlendMode;
+                        dstBlendMode = bgsm.DestinationBlendMode;
+                        if (bgsm.SpecularEnabled && bgsm.SpecularStrength > 0f)
+                        {
+                            var s = Math.Min(bgsm.SpecularStrength, 1f);
+                            specularColor = (bgsm.SpecularColor.X * s, bgsm.SpecularColor.Y * s,
+                                bgsm.SpecularColor.Z * s);
+                            // Smoothness is 0–1 (not an exponent); map to the Blinn-Phong exponent the
+                            // shader expects — rough ≈ 4, mirror-smooth ≈ 128.
+                            var smooth = Math.Clamp(bgsm.SpecularSmoothness, 0f, 1f);
+                            materialGlossiness = 4f + (smooth * smooth * 124f);
+                        }
+                    }
+
+                    isDoubleSided |= bgsm.TwoSided;
+                    materialAlpha = Math.Min(materialAlpha, Math.Min(bgsm.Alpha, 1f));
+                    if (!string.IsNullOrEmpty(bgsm.Diffuse))
+                    {
+                        diffusePath = bgsm.Diffuse;
+                    }
+
+                    if (!string.IsNullOrEmpty(bgsm.Normal))
+                    {
+                        normalMapPath = bgsm.Normal;
+                    }
+                }
+
                 // WaterShaderProperty: placeable water (waterp*, cave/pool/reflecting-pool water) ships
                 // NO diffuse texture — the engine renders it through its dedicated water system. Tag it
                 // with the water-surface sentinel + force alpha-blend so it reads as a see-through water

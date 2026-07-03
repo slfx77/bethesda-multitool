@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Resources;
@@ -18,6 +19,9 @@ internal sealed class NifTextureResolver : IDisposable
     private readonly ConcurrentLazyCache<string, DecodedTexture> _cache;
     private readonly List<INifTextureSource> _sources;
     private readonly Func<string, DecodedTexture?>? _loadTextureOverride;
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, BgsmMaterial?> _materialCache =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public NifTextureResolver(params string[] texturesBsaPaths)
     {
@@ -183,4 +187,16 @@ internal sealed class NifTextureResolver : IDisposable
         var diffuse = MaterialTexturePathResolver.ResolveDiffuseTexturePath(materialPath, _sources);
         return diffuse is null ? null : NifTextureLoader.TryLoadFromSources(diffuse, _sources);
     }
+
+    /// <summary>
+    ///     Loads + parses a FO4/FO76 material file so the geometry extractor can apply its render state
+    ///     (alpha test/blend, two-sided, specular) — which the engine gives priority over the NIF's
+    ///     inline properties — at decode time. Cached per path (nulls too): a cell's shapes reference the
+    ///     same few materials over and over, and each miss walks every archive source.
+    /// </summary>
+    internal BgsmMaterial? TryGetMaterial(string materialPath) =>
+        _materialCache.GetOrAdd(
+            materialPath,
+            static (path, sources) => MaterialTexturePathResolver.ResolveMaterial(path, sources),
+            _sources);
 }

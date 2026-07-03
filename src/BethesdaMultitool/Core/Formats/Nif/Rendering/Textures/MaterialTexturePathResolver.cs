@@ -21,17 +21,27 @@ internal static class MaterialTexturePathResolver
         string materialPath,
         IReadOnlyList<INifTextureSource> sources)
     {
-        byte[]? raw = null;
+        var diffuse = ResolveMaterial(materialPath, sources)?.Diffuse;
+        return string.IsNullOrEmpty(diffuse) ? null : NifTexturePathUtility.Normalize(diffuse);
+    }
+
+    /// <summary>
+    ///     Loads <paramref name="materialPath" /> from the first source that has it and parses it.
+    ///     Returns <c>null</c> when the material is absent or unparseable.
+    /// </summary>
+    internal static BgsmMaterial? ResolveMaterial(
+        string materialPath,
+        IReadOnlyList<INifTextureSource> sources)
+    {
         foreach (var source in sources)
         {
-            raw = source.TryLoadRaw(materialPath);
+            var raw = source.TryLoadRaw(materialPath);
             if (raw is not null)
             {
-                break;
+                return BgsmMaterial.Parse(raw);
             }
         }
 
-        var diffuse = raw is null ? null : BgsmMaterial.Parse(raw)?.Diffuse;
-        return string.IsNullOrEmpty(diffuse) ? null : NifTexturePathUtility.Normalize(diffuse);
+        return null;
     }
 }
