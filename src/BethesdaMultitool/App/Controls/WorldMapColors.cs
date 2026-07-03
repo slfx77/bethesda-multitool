@@ -24,6 +24,7 @@ internal static class WorldMapColors
         PlacedObjectCategory.Effects => "Effects",
         PlacedObjectCategory.Vehicles => "Vehicles",
         PlacedObjectCategory.Traps => "Traps",
+        PlacedObjectCategory.Sky => "Sky",
         _ => category.ToString()
     };
 
@@ -52,6 +53,9 @@ internal static class WorldMapColors
             [PlacedObjectCategory.Plants] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, plantsHue)),
             [PlacedObjectCategory.Npc] = ArgbToColor(FormatRegistry.OklchToArgb(0.72, chroma, npcHue)),
             [PlacedObjectCategory.MapMarker] = Color.FromArgb(255, 255, 255, 255),
+            // Sky-blue for placed sky/glow meshes (DiamondCityGlow). Pinned rather than arc-distributed so
+            // the arc slot count stays in lock-step with the `remaining` array below (a mismatch throws).
+            [PlacedObjectCategory.Sky] = Color.FromArgb(255, 135, 206, 235),
             [PlacedObjectCategory.Unknown] = Color.FromArgb(255, 80, 80, 80)
         };
 

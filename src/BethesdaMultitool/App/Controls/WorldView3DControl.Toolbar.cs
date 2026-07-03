@@ -94,6 +94,12 @@ public sealed partial class WorldView3DControl
         SetShowActivators(ActivatorsCheckBox.IsChecked == true);
     }
 
+    private void SkyMeshesCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetShowSkyMeshes(SkyMeshesCheckBox.IsChecked == true);
+    }
+
     private void SetRenderDistance(float distance)
     {
         _renderDistance = Math.Clamp(distance, MinRenderDistanceCells * _cellSize, MaxRenderDistance);
@@ -167,6 +173,20 @@ public sealed partial class WorldView3DControl
         if (ActivatorsCheckBox is not null && ActivatorsCheckBox.IsChecked != on)
         {
             ActivatorsCheckBox.IsChecked = on;
+        }
+    }
+
+    /// <summary>Sky-category visibility toggle. Default off = placed sky/glow meshes (FO4's Sky\ folder,
+    /// e.g. DiamondCityGlow) hidden — they're atmosphere props that otherwise clutter the scene. Distinct
+    /// from the Skybox toggle, which controls the procedural sky DOME. Render-time filter, no rebuild.</summary>
+    private void SetShowSkyMeshes(bool on)
+    {
+        if (on) _hiddenCategories.Remove(PlacedObjectCategory.Sky);
+        else _hiddenCategories.Add(PlacedObjectCategory.Sky);
+        _references?.SetHiddenCategories(_hiddenCategories);
+        if (SkyMeshesCheckBox is not null && SkyMeshesCheckBox.IsChecked != on)
+        {
+            SkyMeshesCheckBox.IsChecked = on;
         }
     }
 }

@@ -24,5 +24,6 @@ internal enum PlacedObjectCategory
     Item,
     MapMarker,
     Sound,
+    Sky,
     Unknown
 }

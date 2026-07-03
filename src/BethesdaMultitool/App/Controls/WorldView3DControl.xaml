@@ -109,6 +109,10 @@
                           AutomationProperties.Name="Activators"
                           ToolTipService.ToolTip="Show activator objects (levers, terminals, buttons)"
                           Checked="ActivatorsCheckBox_Changed" Unchecked="ActivatorsCheckBox_Changed" />
+                <CheckBox x:Name="SkyMeshesCheckBox" IsChecked="False" Content="Sky meshes"
+                          AutomationProperties.Name="Sky meshes"
+                          ToolTipService.ToolTip="Show placed sky/glow meshes (Sky\ folder, e.g. DiamondCityGlow)"
+                          Checked="SkyMeshesCheckBox_Changed" Unchecked="SkyMeshesCheckBox_Changed" />
                 <CheckBox x:Name="DisabledCheckBox" IsChecked="False" Content="Initially-disabled objects"
                           AutomationProperties.Name="Initially-disabled objects"
                           ToolTipService.ToolTip="Show objects flagged initially-disabled (press 7)"

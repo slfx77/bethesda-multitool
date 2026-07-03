@@ -223,11 +223,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // across ESM reloads like _showDisabled).
     private bool _showMarkers = BethesdaMultitool.Core.EnvironmentVariables.IsEnabled(
         BethesdaMultitool.Core.EnvironmentVariables.Viewer.ShowMarkers);
-    // Placed-object categories hidden in the 3D view. Activators start HIDDEN (user feedback: their
-    // trigger volumes/markers clutter the scene by default; toggle via the Visibility submenu — must
-    // match ActivatorsCheckBox's initial IsChecked). Applied to the reference renderer on pipeline
-    // init and on every toggle. Also drives the 2D top-down overlay via _references.SetHiddenCategories.
-    private readonly HashSet<PlacedObjectCategory> _hiddenCategories = [PlacedObjectCategory.Activator];
+    // Placed-object categories hidden in the 3D view. Activators and Sky meshes start HIDDEN (user
+    // feedback: activator trigger volumes/markers clutter the scene; sky/glow props like DiamondCityGlow
+    // are atmosphere-only) — each must match its Visibility-submenu checkbox's initial IsChecked="False".
+    // Applied to the reference renderer on pipeline init and on every toggle. Also drives the 2D top-down
+    // overlay via _references.SetHiddenCategories.
+    private readonly HashSet<PlacedObjectCategory> _hiddenCategories =
+        [PlacedObjectCategory.Activator, PlacedObjectCategory.Sky];
     // Atmosphere lighting — directional sun + ambient via the shared b3 CB. On by default; when
     // off, the shaders fall back to the legacy flat shade (pixel-identical to the pre-atmosphere look).
     private bool _showLighting = true;

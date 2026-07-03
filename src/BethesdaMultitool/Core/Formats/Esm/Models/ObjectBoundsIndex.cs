@@ -272,10 +272,12 @@ internal static class ObjectBoundsIndex
     {
         var path = modelPath.AsSpan();
 
-        // Strip "meshes\" or "meshes/" prefix
-        if ((path.Length > 7 &&
-             path[..7].Equals("meshes\\", StringComparison.OrdinalIgnoreCase)) ||
-            path[..7].Equals("meshes/", StringComparison.OrdinalIgnoreCase))
+        // Strip "meshes\" or "meshes/" prefix. The length guard must cover BOTH comparisons — a path
+        // shorter than 7 chars (e.g. FO4's "sky\x.nif" placements, or any short model name) would throw
+        // on path[..7] for the second Equals without it.
+        if (path.Length > 7 &&
+            (path[..7].Equals("meshes\\", StringComparison.OrdinalIgnoreCase) ||
+             path[..7].Equals("meshes/", StringComparison.OrdinalIgnoreCase)))
         {
             path = path[7..];
         }
@@ -411,7 +413,7 @@ internal static class ObjectBoundsIndex
 
         if (folder.Equals("sky", StringComparison.OrdinalIgnoreCase))
         {
-            return PlacedObjectCategory.Landscape;
+            return PlacedObjectCategory.Sky;
         }
 
         if (folder.Equals("scol", StringComparison.OrdinalIgnoreCase))
