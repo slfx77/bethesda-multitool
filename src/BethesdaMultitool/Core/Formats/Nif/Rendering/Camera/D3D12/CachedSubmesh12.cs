@@ -16,6 +16,14 @@ internal sealed class CachedSubmesh12
     public required int IndexCount { get; init; }
     public required GpuTextureCache12.Entry Diffuse { get; init; }
     public required GpuTextureCache12.Entry Normal { get; init; }
+
+    /// <summary>
+    ///     FO4/FO76 per-texel specular mask (<c>_s.dds</c>, R channel), or null when the material has
+    ///     none — the shader then leaves specular off for alpha-less (BC5) normal maps instead of
+    ///     applying a uniform mask, which blows out whole scenes.
+    /// </summary>
+    public GpuTextureCache12.Entry? SpecularMap { get; init; }
+
     public required Vector4 AlphaState { get; init; }
     public required Vector4 RenderState { get; init; }
     // Sun specular term (1A): xyz = tint, w = Phong exponent (0 = no specular). Mirrors the
@@ -33,7 +41,7 @@ internal sealed class CachedSubmesh12
             var state = new Vector4(
                 Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
                 IsLeafBillboard ? 1f : 0f, // .y > 0.5 routes the instanced VS to the leaf-billboard branch
-                0f,
+                SpecularMap is not null ? 1f : 0f, // .z > 0.5 = sample TexIndices.z for the spec mask
                 0f);
             if (TexturesReady)
             {
@@ -44,7 +52,7 @@ internal sealed class CachedSubmesh12
             return state;
         }
     }
-    public bool TexturesReady => Diffuse.IsReady && Normal.IsReady;
+    public bool TexturesReady => Diffuse.IsReady && Normal.IsReady && SpecularMap is not { IsReady: false };
     public required bool HasBump { get; init; }
     public required NifAlphaRenderMode AlphaRenderMode { get; init; }
     public required bool AlphaBlend { get; init; }

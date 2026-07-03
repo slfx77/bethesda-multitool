@@ -27,15 +27,20 @@ internal static class MaterialTexturePathResolver
 
     /// <summary>
     ///     Loads <paramref name="materialPath" /> from the first source that has it and parses it.
-    ///     Returns <c>null</c> when the material is absent or unparseable.
+    ///     Returns <c>null</c> when the material is absent or unparseable. The path is normalized
+    ///     first: FO4 shaders commonly bake absolute developer build paths into the material Name
+    ///     (e.g. <c>C:\Projects\Fallout4\Build\PC\Data\materials\…\SDMart1Letters.BGSM</c>) — without
+    ///     peeling to the Data-relative form the archive lookup misses and the material's render
+    ///     state (alpha cutout, two-sided, specular) silently never applies.
     /// </summary>
     internal static BgsmMaterial? ResolveMaterial(
         string materialPath,
         IReadOnlyList<INifTextureSource> sources)
     {
+        var normalized = NifTexturePathUtility.Normalize(materialPath);
         foreach (var source in sources)
         {
-            var raw = source.TryLoadRaw(materialPath);
+            var raw = source.TryLoadRaw(normalized);
             if (raw is not null)
             {
                 return BgsmMaterial.Parse(raw);

@@ -275,7 +275,8 @@ internal sealed class ReferenceMeshDecoder12
                     sub.MaterialGlossiness,
                     specularEnabled,
                     sub.IsLeafBillboard,
-                    alphaState.DepthWritingBlend));
+                    alphaState.DepthWritingBlend,
+                    specularEnabled ? sub.SpecularMapTexturePath : null));
             }
 
             if (submeshes.Count == 0)
@@ -333,7 +334,8 @@ internal sealed class ReferenceMeshDecoder12
                 sub.Glossiness,
                 sub.SpecularEnabled,
                 sub.IsLeafBillboard,
-                sub.DepthWritingBlend));
+                sub.DepthWritingBlend,
+                sub.SpecularMapTexturePath));
         }
 
         return new ReferenceDecodedMeshPayload12(submeshes, decoded.CollisionPositions, decoded.CollisionTriangles);
@@ -366,7 +368,8 @@ internal sealed class ReferenceMeshDecoder12
                 sub.Glossiness,
                 sub.SpecularEnabled,
                 sub.IsLeafBillboard,
-                sub.DepthWritingBlend));
+                sub.DepthWritingBlend,
+                sub.SpecularMapTexturePath));
         }
 
         return new DecodedNifMesh12(submeshes, payload.CollisionPositions, payload.CollisionTriangles);

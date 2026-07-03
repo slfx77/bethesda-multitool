@@ -940,10 +940,47 @@ internal static class NifSubmeshExtractor
             }
         }
 
-        var triangles = new ushort[info.NumTriangles * 3];
+        // BSMeshLODTriShape partitions its triangle buffer into up to three consecutive LOD slices
+        // (LOD0/LOD1/LOD2 sizes trail the block); each slice is a COMPLETE standalone representation
+        // the engine picks by distance, not an additive refinement. Drawing the whole buffer renders
+        // the full-detail mesh AND its simplified LOD copies on top of each other (z-fighting
+        // duplicates). Render the first non-empty slice — the highest-detail representation
+        // (TreeElmFree01: LOD0=1191 full tree; VineHanging05 authors everything in LOD2).
+        var firstTriangle = 0;
+        var triangleCount = info.NumTriangles;
+        if (block.TypeName == "BSMeshLODTriShape" && block.Size >= 12)
+        {
+            var lodOffset = block.DataOffset + block.Size - 12;
+            var lod0 = (int)BinaryUtils.ReadUInt32(data, lodOffset, be);
+            var lod1 = (int)BinaryUtils.ReadUInt32(data, lodOffset + 4, be);
+            var lod2 = (int)BinaryUtils.ReadUInt32(data, lodOffset + 8, be);
+            if (lod0 > 0 || lod1 > 0 || lod2 > 0)
+            {
+                if (lod0 > 0)
+                {
+                    (firstTriangle, triangleCount) = (0, lod0);
+                }
+                else if (lod1 > 0)
+                {
+                    (firstTriangle, triangleCount) = (lod0, lod1);
+                }
+                else
+                {
+                    (firstTriangle, triangleCount) = (lod0 + lod1, lod2);
+                }
+
+                // A malformed partition (sizes exceeding the buffer) falls back to the full buffer.
+                if (firstTriangle + triangleCount > info.NumTriangles)
+                {
+                    (firstTriangle, triangleCount) = (0, info.NumTriangles);
+                }
+            }
+        }
+
+        var triangles = new ushort[triangleCount * 3];
         for (var i = 0; i < triangles.Length; i++)
         {
-            triangles[i] = BinaryUtils.ReadUInt16(data, info.TriangleBufferOffset + i * 2, be);
+            triangles[i] = BinaryUtils.ReadUInt16(data, info.TriangleBufferOffset + (firstTriangle * 3 + i) * 2, be);
         }
 
         var transformed =

@@ -65,13 +65,15 @@ public record WeatherRecord
     public IReadOnlyList<WeatherCloudAlpha> CloudLayerAlphas { get; init; } = [];
 
     /// <summary>
-    ///     QNAM "X Cloud Speeds" (FNV; xEdit wbWeatherCloudSpeed): one byte per cloud layer — the per-layer
-    ///     U-axis scroll rate the engine accumulates in <c>Clouds::Update</c>. Empty when absent.
+    ///     QNAM "X Cloud Speeds": per-layer U-axis scroll rate the engine accumulates in
+    ///     <c>Clouds::Update</c>, normalized to −1‥1 (0 = still). Authored as one signed byte per layer
+    ///     on FNV/FO3/Skyrim and one float per layer on FO4/FO76 — the handler normalizes both forms so
+    ///     the renderer never re-interprets raw bytes. Empty when absent.
     /// </summary>
-    public IReadOnlyList<byte> CloudSpeedsX { get; init; } = [];
+    public IReadOnlyList<float> CloudSpeedsX { get; init; } = [];
 
-    /// <summary>RNAM "Y Cloud Speeds" (FNV): per-layer V-axis scroll rate. Empty when absent.</summary>
-    public IReadOnlyList<byte> CloudSpeedsY { get; init; } = [];
+    /// <summary>RNAM "Y Cloud Speeds": per-layer V-axis scroll rate, normalized like <see cref="CloudSpeedsX" />.</summary>
+    public IReadOnlyList<float> CloudSpeedsY { get; init; } = [];
 
     /// <summary>DATA block (wind speed, sun glare, precipitation timing, flags, lightning color).</summary>
     public WeatherData? Data { get; init; }

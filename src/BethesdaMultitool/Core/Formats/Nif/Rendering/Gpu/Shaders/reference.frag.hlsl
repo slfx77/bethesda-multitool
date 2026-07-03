@@ -142,16 +142,20 @@ float4 main(PSInput input) : SV_Target
         {
             float2 xy = normalSample.rg * 2.0 - 1.0;
             mapN = float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
-            // BC5/ATI2 carries no alpha: the per-texel mask lives in a separate _s map these games
-            // don't bind yet (TexIndices.zw reserved), so fall back to a uniform mask and let the
-            // material's specular enable/strength (vSpecular.w, from BGSM for FO4/FO76) do the
-            // gating. Skyrim shapes resolve no material specular → vSpecular.w = 0 → gate stays shut.
-            specMask = 1.0;
+            // BC5/ATI2 carries no alpha — the per-texel mask lives in the material's _s map,
+            // sampled below when bound. No _s map ⇒ mask stays 0 (a uniform mask blows out scenes).
         }
         else
         {
             mapN = normalSample.rgb * 2.0 - 1.0;
             specMask = normalSample.a; // DXT5 _n.dds alpha = per-texel specular intensity mask
+        }
+
+        // FO4/FO76 specular map (_s.dds): R = per-texel specular mask, replacing the normal-map
+        // alpha that BC5 lacks. Bound at TexIndices.z, flagged by vTextureState.z.
+        if (input.vTextureState.z > 0.5)
+        {
+            specMask = textures[NonUniformResourceIndex(input.vTexIndices.z)].Sample(sDiffuse, input.vTexCoord).r;
         }
 
         mapN.y = -mapN.y; // DirectX convention (Y-down normal maps), matching skin.frag.hlsl.

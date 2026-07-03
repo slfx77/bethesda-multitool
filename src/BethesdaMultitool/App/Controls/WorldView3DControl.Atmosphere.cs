@@ -399,10 +399,11 @@ public sealed partial class WorldView3DControl
         return alphas is not null && layer >= 0 && layer < alphas.Count ? alphas[layer] : null;
     }
 
-    // Per-layer cloud UV drift from the weather's QNAM (X) / RNAM (Y) speed bytes. Read as SIGNED (sbyte)
-    // so 0 = still and the sign gives the drift direction, scaled to a slow UV/sec rate. CloudScrollScale
-    // is the one visual tunable; the per-layer RELATIVE speeds + axes are the data-grounded part (the exact
-    // engine speed constant lives in the binary's data section — Clouds::Update scales the byte by it).
+    // Per-layer cloud UV drift from the weather's QNAM (X) / RNAM (Y) speeds, pre-normalized to −1‥1 by
+    // the parser (signed bytes ÷127 on FNV/FO3/Skyrim, per-layer floats on FO4/FO76), scaled to a slow
+    // UV/sec rate. CloudScrollScale is the one visual tunable; the per-layer RELATIVE speeds + axes are
+    // the data-grounded part (the exact engine speed constant lives in the binary's data section —
+    // Clouds::Update scales the authored value by it).
     // NOTE: FNV weathers in practice OMIT QNAM/RNAM (confirmed: count 0 on every NVWastelandClear*), so the
     // engine drifts clouds at a built-in default speed (Clouds::Update defaults the per-layer byte to 0x33).
     // We reproduce that with DefaultCloudDrift when a layer has no authored speed, so FNV clouds still move.
@@ -411,9 +412,9 @@ public sealed partial class WorldView3DControl
         var hasX = weather is not null && layer < weather.CloudSpeedsX.Count;
         var hasY = weather is not null && layer < weather.CloudSpeedsY.Count;
         if (!hasX && !hasY) return DefaultCloudDrift; // no QNAM/RNAM (typical FNV) -> engine default drift
-        var x = hasX ? (sbyte)weather!.CloudSpeedsX[layer] : (sbyte)0;
-        var y = hasY ? (sbyte)weather!.CloudSpeedsY[layer] : (sbyte)0;
-        return new Vector2(x / 127f, y / 127f) * CloudScrollScale;
+        var x = hasX ? weather!.CloudSpeedsX[layer] : 0f;
+        var y = hasY ? weather!.CloudSpeedsY[layer] : 0f;
+        return new Vector2(x, y) * CloudScrollScale;
     }
 
     private const float CloudScrollScale = 0.010f;                 // UV/sec at full (±127) authored cloud speed

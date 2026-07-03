@@ -86,7 +86,12 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // threshold/blend, two-sided, specular) and expand their texture slots to real .dds paths (diffuse AND
     // normal map), and BSTriShape decodes tangents/bitangents (enables the FO4 bump path). The serialized
     // alpha state, texture paths, and TBN payload all change, so old v19 entries are stale.
-    internal const int DecoderVersion = 20;
+    // Bumped 20→21: (a) BSMeshLODTriShape renders only its first non-empty LOD slice (was the whole
+    // buffer — full-detail + LOD copies z-fighting); (b) SLSF vertex-channel gating (Vertex_Colors /
+    // Vertex_Alpha) neutralizes FO4 wind-weight vertex alpha that discarded tree trunks via the cutout
+    // test; (c) absolute build-path materials now resolve (normalized), changing baked alpha/two-sided
+    // state; (d) new per-submesh SpecularMapTexturePath field in the payload.
+    internal const int DecoderVersion = 21;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -290,6 +295,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(submesh.SpecularEnabled);
         writer.Write(submesh.IsLeafBillboard);
         writer.Write(submesh.DepthWritingBlend);
+        WriteNullableString(writer, submesh.SpecularMapTexturePath, MaxStringBytes);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -344,7 +350,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadSingle(),
             reader.ReadBoolean(),
             reader.ReadBoolean(),
-            reader.ReadBoolean());
+            reader.ReadBoolean(),
+            ReadNullableString(reader, MaxStringBytes));
     }
 
     private static void WriteVector2(BinaryWriter writer, Vector2 value)
@@ -412,4 +419,5 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     float Glossiness = 0f,
     bool SpecularEnabled = false,
     bool IsLeafBillboard = false,
-    bool DepthWritingBlend = false);
+    bool DepthWritingBlend = false,
+    string? SpecularMapTexturePath = null);

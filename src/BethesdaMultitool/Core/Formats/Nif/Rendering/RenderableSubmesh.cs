@@ -44,6 +44,13 @@ internal sealed class RenderableSubmesh
     /// <summary>Normal map texture path resolved from shader properties (slot 1).</summary>
     public string? NormalMapTexturePath { get; set; }
 
+    /// <summary>
+    ///     FO4/FO76 specular map path (<c>_s.dds</c>: R = per-texel specular mask) from the BGSM
+    ///     material (slot 6 on FO4, slot 8 reflectance on FO76). Null for games whose mask rides the
+    ///     normal map's alpha (FNV DXT5) or when the material has no specular texture.
+    /// </summary>
+    public string? SpecularMapTexturePath { get; set; }
+
     /// <summary>Shader property metadata resolved from the source NIF.</summary>
     public NifShaderTextureMetadata? ShaderMetadata { get; init; }
 

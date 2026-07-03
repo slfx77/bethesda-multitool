@@ -266,8 +266,8 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         IReadOnlyList<WeatherColor>? colors = null;
         IReadOnlyList<WeatherColor>? cloudColors = null;
         IReadOnlyList<WeatherCloudAlpha>? cloudAlphas = null;
-        byte[]? cloudSpeedsX = null;
-        byte[]? cloudSpeedsY = null;
+        float[]? cloudSpeedsX = null;
+        float[]? cloudSpeedsY = null;
         IReadOnlyList<float>? fogDistances = null;
         WeatherData? weatherData = null;
 
@@ -354,14 +354,16 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "JNAM" when modernWeather && sub.DataLength >= 16:
                     cloudAlphas = ReadCloudAlphas(subData, record.IsBigEndian, ModernCloudAlphaStride(Context.Game, ReadRecordFormVersion(record)));
                     break;
-                // QNAM/RNAM "X/Y Cloud Speeds" (FNV; xEdit wbWeatherCloudSpeed): one u8 per cloud layer,
-                // the per-axis UV scroll rate. Clouds::Update accumulates layer scroll ∝ this byte × dt, so
-                // each layer drifts at its own speed/direction. Bytes need no endian swap.
+                // QNAM/RNAM "X/Y Cloud Speeds" (xEdit wbWeatherCloudSpeed): the per-layer per-axis UV
+                // scroll rate Clouds::Update accumulates. Layout is game-generation-keyed: FNV/FO3/Skyrim
+                // author ONE SIGNED BYTE per layer; FO4/FO76 author ONE FLOAT per layer — reading FO4's
+                // float bytes as per-layer speeds made every layer race in a nonsense direction. Both
+                // forms normalize to −1‥1 here (0 = still) so the renderer stays layout-agnostic.
                 case "QNAM":
-                    cloudSpeedsX = subData.ToArray();
+                    cloudSpeedsX = ReadCloudSpeeds(subData, record.IsBigEndian, Context.Game);
                     break;
                 case "RNAM":
-                    cloudSpeedsY = subData.ToArray();
+                    cloudSpeedsY = ReadCloudSpeeds(subData, record.IsBigEndian, Context.Game);
                     break;
                 // FNAM "Fog Distances": 6 floats (24 bytes).
                 case "FNAM" when sub.DataLength >= 4:
@@ -513,6 +515,40 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         var wide = formVersion >= 111
             && game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
         return (wide ? 8 : 4) * floatBytes;
+    }
+
+    /// <summary>
+    ///     Reads a QNAM/RNAM per-layer cloud-speed array, normalized to −1‥1 (0 = still). FNV/FO3/Skyrim
+    ///     author one SIGNED byte per layer (÷127); FO4/FO76/Starfield one float per layer. FO4 floats are
+    ///     small (CK-authored ~±0.1), so they're scaled ×10 into the same domain — a visual calibration
+    ///     (the engine's exact scroll constant is unread), but sign + per-layer relative speeds are exact.
+    /// </summary>
+    internal static float[] ReadCloudSpeeds(ReadOnlySpan<byte> data, bool isBigEndian, BethesdaGame game)
+    {
+        var floatForm = game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield
+                        && data.Length >= 4 && data.Length % 4 == 0;
+        if (!floatForm)
+        {
+            var bytes = new float[data.Length];
+            for (var i = 0; i < data.Length; i++)
+            {
+                bytes[i] = (sbyte)data[i] / 127f;
+            }
+
+            return bytes;
+        }
+
+        var speeds = new float[data.Length / 4];
+        for (var i = 0; i < speeds.Length; i++)
+        {
+            var raw = isBigEndian
+                ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data[(i * 4)..])
+                : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(data[(i * 4)..]);
+            var value = BitConverter.UInt32BitsToSingle(raw);
+            speeds[i] = float.IsFinite(value) ? Math.Clamp(value * 10f, -1f, 1f) : 0f;
+        }
+
+        return speeds;
     }
 
     // Reads the JNAM cloud-alpha array: one per-layer <see cref="WeatherCloudAlpha" /> (Sunrise/Day/Sunset/

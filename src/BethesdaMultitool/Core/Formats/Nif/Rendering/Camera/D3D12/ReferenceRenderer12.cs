@@ -983,7 +983,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 sub.AlphaState,
                 sub.RenderState,
                 sub.TextureState,
-                new TexIndexQuad(sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex, 0, 0),
+                new TexIndexQuad(
+                    sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex,
+                    sub.SpecularMap?.BindlessIndex ?? 0, 0),
                 startInstance,
                 Specular: sub.Specular,
                 CameraRight: _leafBillboardRight,
@@ -1109,11 +1111,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             RenderState = draw.RenderState,
             TextureState = draw.TextureState,
             // Bindless TexIndices on the blended draw path. Same convention as the
-            // instanced path: .x = diffuse slot, .y = normal slot.
+            // instanced path: .x = diffuse slot, .y = normal slot, .z = specular mask slot.
             TexIndices = new TexIndexQuad(
                 draw.Submesh.Diffuse.BindlessIndex,
                 draw.Submesh.Normal.BindlessIndex,
-                0,
+                draw.Submesh.SpecularMap?.BindlessIndex ?? 0,
                 0),
             Specular = draw.Specular,
             // Leaf-billboard camera basis (consumed only when TextureState.y marks a leaf submesh, e.g. a

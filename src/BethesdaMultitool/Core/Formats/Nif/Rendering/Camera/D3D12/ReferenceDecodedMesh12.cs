@@ -42,5 +42,9 @@ internal sealed record DecodedSubmesh12(
     // Effects-folder foliage (e.g. NVSeaPlant02): an alpha-blend shape the engine writes depth for. The
     // reference renderer draws it inline before the water pass with a depth-writing blend PSO so water
     // occludes it from above. Persisted in ReferenceDecodedMeshDiskCache12 v10+.
-    bool DepthWritingBlend = false);
+    bool DepthWritingBlend = false,
+    // FO4/FO76 material specular map (_s.dds: R = per-texel specular mask). Without it the shader has
+    // no mask for BC5 normal maps (no alpha channel) and specular is suppressed rather than uniform —
+    // a mask of 1.0 everywhere blows out whole scenes. Persisted in v21+.
+    string? SpecularMapTexturePath = null);
 #endif

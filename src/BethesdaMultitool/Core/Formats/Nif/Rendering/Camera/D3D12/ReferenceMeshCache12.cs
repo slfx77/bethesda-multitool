@@ -734,6 +734,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 var normal = !string.IsNullOrEmpty(sub.NormalMapTexturePath)
                     ? _textureCache.GetOrUpload(sub.NormalMapTexturePath!, isNormalMap: true)
                     : _textureCache.FlatNormal;
+                var specularMap = !string.IsNullOrEmpty(sub.SpecularMapTexturePath)
+                    ? _textureCache.GetOrUpload(sub.SpecularMapTexturePath!)
+                    : null;
 
                 var vertexByteOffset = CheckedByteSize(vertexStarts[i], vertexStride);
                 var vertexByteSize = CheckedByteSize(sub.Vertices.Length, vertexStride);
@@ -756,6 +759,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     IndexCount = sub.Indices.Length,
                     Diffuse = diffuse,
                     Normal = normal,
+                    SpecularMap = specularMap,
                     AlphaState = BuildAlphaState(sub),
                     RenderState = BuildRenderState(sub),
                     Specular = BuildSpecular(sub),

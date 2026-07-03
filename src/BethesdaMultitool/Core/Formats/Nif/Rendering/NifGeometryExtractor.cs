@@ -322,8 +322,11 @@ internal static class NifGeometryExtractor
             // Default true: in practice, both hair and environment NIFs ship with BSShaderFlags2
             // bit 5 (Vertex_Colors) cleared, yet the engine applies vertex colors when present
             // (e.g., rust shading on nv_prospectorsaloon's metal sheets). Treat the flag as
-            // advisory, not gating.
+            // advisory, not gating. (Skyrim+ BSLightingShaderProperty overrides this below — its
+            // SLSF flags ARE authoritative.)
             var useVertexColors = true;
+            var useVertexAlpha = true;
+            string? specularMapPath = null;
             var isDoubleSided = false;
             var hasAlphaBlend = false;
             var hasAlphaTest = false;
@@ -369,6 +372,19 @@ internal static class NifGeometryExtractor
                 {
                     isEyeEnvmap = (shaderFlags & 0x20000u) != 0;
                     envMapScale = resolvedEnvMapScale;
+                }
+
+                // Skyrim+/FO4/FO76 BSLightingShaderProperty declares vertex-channel usage explicitly:
+                // SLSF2_Vertex_Colors (flags2 bit 5) gates the RGB tint and SLSF1_Vertex_Alpha
+                // (flags1 bit 3) gates the alpha channel. FO4 foliage stores WIND WEIGHT in vertex
+                // alpha (trunk / thick branches = 0) with Vertex_Alpha CLEAR — multiplying that
+                // alpha into the cutout test discards the entire trunk (TreeElmFree01) — and ships
+                // non-visual data in RGB with Vertex_Colors clear (VineHanging05 tinting black).
+                if (shaderMetadata is
+                    { PropertyType: "BSLightingShaderProperty", ShaderFlags: { } lsf1, ShaderFlags2: { } lsf2 })
+                {
+                    useVertexColors = (lsf2 & 0x20u) != 0;
+                    useVertexAlpha = (lsf1 & 0x8u) != 0;
                 }
 
                 if (textureResolver != null)
@@ -449,6 +465,10 @@ internal static class NifGeometryExtractor
                             // shader expects — rough ≈ 4, mirror-smooth ≈ 128.
                             var smooth = Math.Clamp(bgsm.SpecularSmoothness, 0f, 1f);
                             materialGlossiness = 4f + (smooth * smooth * 124f);
+                            // Per-texel mask: FO4 SmoothSpec (slot 6) / FO76 reflectance (slot 8).
+                            // Without it the shader keeps specular OFF for BC5 normal maps — a
+                            // uniform mask blows out whole scenes.
+                            specularMapPath = bgsm.GetTexturePath(6) ?? bgsm.GetTexturePath(8);
                         }
                     }
 
@@ -550,6 +570,18 @@ internal static class NifGeometryExtractor
                 submesh.SourceBlockIndex = shapeIndex;
                 submesh.SkyType = skyType;
                 submesh.IsBillboard = billboardShapes?.Contains(shapeIndex) == true;
+                submesh.SpecularMapTexturePath = specularMapPath;
+
+                // SLSF1_Vertex_Alpha clear — the vertex alpha channel is engine data (wind weight),
+                // not opacity. Neutralize it in place so every consumer (GPU alpha test, CPU
+                // rasterizer, GLB export) stops treating it as a fade.
+                if (!useVertexAlpha && submesh.VertexColors is { } vertexColors)
+                {
+                    for (var ci = 3; ci < vertexColors.Length; ci += 4)
+                    {
+                        vertexColors[ci] = 255;
+                    }
+                }
 
                 if (propRefs != null &&
                     submesh.UVs != null &&

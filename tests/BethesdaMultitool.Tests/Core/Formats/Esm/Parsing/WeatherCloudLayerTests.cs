@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
@@ -45,5 +46,32 @@ public class WeatherCloudLayerTests
     {
         Assert.False(MiscEnvironmentHandler.TryCloudLayerIndex(signature, out var layer));
         Assert.Equal(-1, layer);
+    }
+
+    [Fact]
+    public void ReadCloudSpeeds_LegacyBytes_ReadAsSignedFractions()
+    {
+        // FNV/FO3/Skyrim QNAM/RNAM: one signed byte per layer, 0 = still.
+        byte[] data = [0, 127, unchecked((byte)-127), 51];
+
+        var speeds = MiscEnvironmentHandler.ReadCloudSpeeds(data, isBigEndian: false, BethesdaGame.FalloutNewVegas);
+
+        Assert.Equal([0f, 1f, -1f, 51 / 127f], speeds);
+    }
+
+    [Fact]
+    public void ReadCloudSpeeds_Fallout4Floats_ReadPerLayerNotPerByte()
+    {
+        // FO4/FO76 QNAM/RNAM: one float per layer. Reading these bytes as per-layer speeds is what made
+        // every cloud layer race in a nonsense direction. Values are CK-scale (~±0.1), normalized ×10.
+        var data = new byte[8];
+        BitConverter.GetBytes(0.05f).CopyTo(data, 0);
+        BitConverter.GetBytes(-0.02f).CopyTo(data, 4);
+
+        var speeds = MiscEnvironmentHandler.ReadCloudSpeeds(data, isBigEndian: false, BethesdaGame.Fallout4);
+
+        Assert.Equal(2, speeds.Length);
+        Assert.Equal(0.5f, speeds[0], 3);
+        Assert.Equal(-0.2f, speeds[1], 3);
     }
 }
