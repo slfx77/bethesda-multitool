@@ -256,7 +256,10 @@ public sealed partial class WorldView3DControl
             {
                 if (RenderableReference.TryBuild(placement) is not { } r) continue;
                 if (!_showDisabled && r.IsInitiallyDisabled) continue;
-                if (r.IsMarker || r.IsImposter) continue; // hidden in the view by default
+                // Markers are pickable when VISIBLE (the pickable set mirrors the visible set);
+                // imposters are render-only LOD stand-ins and never pickable.
+                if (r.IsMarker && !_showMarkers) continue;
+                if (r.IsImposter) continue;
                 // Broadphase: cheap bounding-sphere reject. Narrowphase: ray vs the OBND-tight
                 // oriented box — the exact box the selection highlight draws — so the pick lands on
                 // the clicked mesh instead of the near edge of an oversized bounding sphere.
@@ -266,8 +269,11 @@ public sealed partial class WorldView3DControl
                 // decode). When the mesh has resolved, use its real local bounds (tight). When it has
                 // NOT, drop to a small prop-sized SelectionFallbackRadius instead of the cull sphere.
                 // Refs WITH an OBND use the tight OBB narrowphase below, so this only affects OBND-less.
+                // An authored all-zero OBND is "no data" in disguise (zero-extent box = unclickable);
+                // route it through the same no-OBND fallback path everywhere below.
+                var usableBounds = placement.Bounds is { IsDegenerate: false } ub ? ub : null;
                 var sphereRadius = r.BoundsRadius;
-                if (placement.Bounds is null)
+                if (usableBounds is null)
                 {
                     if (_references is not null
                         && _references.TryGetMeshLocalRadius(r.MeshId, out var meshRadius) && meshRadius > 0f)
@@ -282,7 +288,7 @@ public sealed partial class WorldView3DControl
                 }
                 if (!RaySphereHit(nearWorld, rayDir, r.BoundsCenter, sphereRadius, out var sphereT,
                         out var sphereInside)) continue;
-                if (placement.Bounds is { } b)
+                if (usableBounds is { } b)
                 {
                     if (RayObbHit(nearWorld, rayDir, b, r.WorldMatrix, out var obbT, out var obbInside))
                     {
@@ -382,9 +388,10 @@ public sealed partial class WorldView3DControl
             return;
         }
 
-        if (placement.Bounds is { } b)
+        if (placement.Bounds is { IsDegenerate: false } b)
         {
             // OBND is the object's local-space AABB; the world matrix (which includes scale) places it.
+            // An authored all-zero OBND draws an invisible point box — fall through to the mesh AABB.
             _selectionHighlight.SetSelection(
                 new Vector3(b.X1, b.Y1, b.Z1),
                 new Vector3(b.X2, b.Y2, b.Z2),

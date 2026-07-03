@@ -260,14 +260,17 @@ internal readonly record struct RenderableReference(
     private static (Vector3 Center, float Radius) ComposeWorldBounds(PlacedReference p, Matrix4x4 world)
     {
         var bounds = p.Bounds;
-        if (bounds is null)
+        if (bounds is null || bounds.IsDegenerate)
         {
-            // No OBND (every Oblivion record, plus some MSTT / runtime-only refs) — use a generous fallback
-            // sphere centered at the REFR position. This radius is TRANSIENT: it only gates the cull until
-            // the mesh resolves, after which _meshLocalRadius supplies the true local bounds. It MUST cover
-            // single-cell architecture (a cathedral's local radius is ~3049): decode only runs for cull
-            // survivors, so an under-sized fallback culls a large mesh before it can decode + self-correct,
-            // leaving it permanently invisible. See NoBoundsFallbackRadius.
+            // No OBND (every Oblivion record, plus some MSTT / runtime-only refs) — or an authored
+            // all-zero OBND, which is "no data" in disguise: a zero-extent sphere would cull the mesh
+            // before it could decode AND give the pick a zero-size target (part9 "zero-(0,0,0)-OBND
+            // objects not clickable"). Use a generous fallback sphere centered at the REFR position.
+            // This radius is TRANSIENT: it only gates the cull until the mesh resolves, after which
+            // _meshLocalRadius supplies the true local bounds. It MUST cover single-cell architecture
+            // (a cathedral's local radius is ~3049): decode only runs for cull survivors, so an
+            // under-sized fallback culls a large mesh before it can decode + self-correct, leaving it
+            // permanently invisible. See NoBoundsFallbackRadius.
             return (new Vector3(p.X, p.Y, p.Z), NoBoundsFallbackRadius);
         }
 
