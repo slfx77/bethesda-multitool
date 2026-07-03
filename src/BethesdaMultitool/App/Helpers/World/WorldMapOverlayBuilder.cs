@@ -428,7 +428,7 @@ internal static class WorldMapOverlayBuilder
     /// </summary>
     private static Dictionary<uint, AlternateTextureSet> BuildAlternateTextureIndex(
         IReadOnlyDictionary<uint, IReadOnlyList<AlternateTextureEntry>> entriesByFormId,
-        IReadOnlyDictionary<uint, TextureSetRecord> textureSets)
+        Dictionary<uint, TextureSetRecord> textureSets)
     {
         var dict = new Dictionary<uint, AlternateTextureSet>();
         if (entriesByFormId.Count == 0)

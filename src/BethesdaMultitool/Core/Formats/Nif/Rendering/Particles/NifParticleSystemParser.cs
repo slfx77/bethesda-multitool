@@ -494,7 +494,7 @@ internal static class NifParticleSystemParser
         var shape = ParticleEmitterShape.Point;
         float width = 0, height = 0, depth = 0, radius = 0;
         var emitterObjectTransform = Matrix4x4.Identity;
-        IReadOnlyList<int> meshIndices = [];
+        List<int> meshIndices = [];
         var emissionAxis = Vector3.UnitZ; // +Z = declination reference for volume emitters (mesh emitter overrides)
 
         switch (block.TypeName)

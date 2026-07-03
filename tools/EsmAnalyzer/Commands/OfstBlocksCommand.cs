@@ -358,7 +358,7 @@ public static class OfstBlocksCommand
 
     // ─── Tile helpers ──────────────────────────────────────────────────────────
 
-    private static List<TileEntry> BuildTileEntries(IReadOnlyList<OfstLayoutEntry> ordered, int tileSize, int tileX,
+    private static List<TileEntry> BuildTileEntries(List<OfstLayoutEntry> ordered, int tileSize, int tileX,
         int tileY)
     {
         var entries = new List<TileEntry>();
@@ -376,7 +376,7 @@ public static class OfstBlocksCommand
         return entries;
     }
 
-    private static TileSummary BuildTileSummary(IReadOnlyList<OfstLayoutEntry> ordered, int tileSize, int tilesX,
+    private static TileSummary BuildTileSummary(List<OfstLayoutEntry> ordered, int tileSize, int tilesX,
         int innerLimit)
     {
         var tileFirstOrder = new Dictionary<int, int>();
@@ -457,7 +457,7 @@ public static class OfstBlocksCommand
         AnsiConsole.Write(table);
     }
 
-    private static void WriteTileCsv(IReadOnlyList<OfstLayoutEntry> ordered, int tileSize, int tilesX,
+    private static void WriteTileCsv(List<OfstLayoutEntry> ordered, int tileSize, int tilesX,
         string? csvPath)
     {
         if (string.IsNullOrWhiteSpace(csvPath))
@@ -483,7 +483,7 @@ public static class OfstBlocksCommand
         AnsiConsole.MarkupLine($"[green]Saved:[/] {Markup.Escape(csvPath)}");
     }
 
-    private static int[,] BuildTileMatrix(IReadOnlyList<TileEntry> tileEntries, int tileSize)
+    private static int[,] BuildTileMatrix(List<TileEntry> tileEntries, int tileSize)
     {
         var matrix = new int[tileSize, tileSize];
         for (var y = 0; y < tileSize; y++)
@@ -527,7 +527,7 @@ public static class OfstBlocksCommand
         return grid;
     }
 
-    private static Table BuildTileEntryTable(IReadOnlyList<TileEntry> tileEntries, int maxEntries)
+    private static Table BuildTileEntryTable(List<TileEntry> tileEntries, int maxEntries)
     {
         var list = new Table().Border(TableBorder.Rounded)
             .AddColumn("Order")

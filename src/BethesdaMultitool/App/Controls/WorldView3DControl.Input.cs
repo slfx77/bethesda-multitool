@@ -339,9 +339,10 @@ public sealed partial class WorldView3DControl
         }
         var next = current >= 0 ? (current + 1) % _pickHitScratch.Count : 0;
 
-        PushSelection(_pickHitScratch[next].Placement);
+        var picked = _pickHitScratch[next].Placement;
+        PushSelection(picked);
         UpdateHighlightFromSelection();
-        InspectObject?.Invoke(this, _selectedReference);
+        InspectObject?.Invoke(this, picked);
     }
 
     /// <summary>

@@ -154,7 +154,7 @@ internal sealed class WeaponProfile : IRecordProfile
                 RecordDetailHelpers.Link("Unequip Sound", KeepZero(TopBySignature(tree, "NAM8")), resolver),
                 // Mod Silenced 3D = the last WMS1 (typed handler overwrites on each occurrence); Dist is unset.
                 RecordDetailHelpers.Link("Mod Silenced 3D",
-                    KeepZero(modSound?.Children.LastOrDefault()), resolver),
+                    KeepZero(modSound is { Children.Count: > 0 } ? modSound.Children[^1] : null), resolver),
                 RecordDetailHelpers.Link("Mod Silenced Dist", null, resolver),
                 RecordDetailHelpers.Link("Mod Silenced 2D", KeepZero(TopBySignature(tree, "WMS2")), resolver),
                 RecordDetailHelpers.Scalar("Mod Variants", ModVariants(tree))

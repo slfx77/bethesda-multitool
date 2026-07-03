@@ -9,6 +9,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 // Serial: these toggle the shared static UnmodeledSubrecordLog.Enabled flag, so they must not run
 // in parallel with other tests that parse records.
 [CollectionDefinition("UnmodeledSubrecordLog", DisableParallelization = true)]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix",
+    Justification = "xUnit [CollectionDefinition] marker type; the 'Collection' suffix is idiomatic for these.")]
 public sealed class UnmodeledSubrecordLogCollection;
 
 /// <summary>

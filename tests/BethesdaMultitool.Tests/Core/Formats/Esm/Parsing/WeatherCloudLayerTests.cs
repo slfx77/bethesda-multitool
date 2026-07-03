@@ -13,17 +13,12 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 public class WeatherCloudLayerTests
 {
     [Theory]
+    // Legacy FO3/FNV layers 0–3
     [InlineData("DNAM", 0)]
     [InlineData("CNAM", 1)]
     [InlineData("ANAM", 2)]
     [InlineData("BNAM", 3)]
-    public void TryCloudLayerIndex_MapsLegacyFalloutLayers(string signature, int expected)
-    {
-        Assert.True(MiscEnvironmentHandler.TryCloudLayerIndex(signature, out var layer));
-        Assert.Equal(expected, layer);
-    }
-
-    [Theory]
+    // Skyrim+ ?0TX scheme
     [InlineData("00TX", 0)]   // 0x30
     [InlineData("10TX", 1)]   // 0x31
     [InlineData("30TX", 3)]   // 0x33
@@ -33,7 +28,7 @@ public class WeatherCloudLayerTests
     [InlineData("A0TX", 17)]  // 0x41
     [InlineData("C0TX", 19)]  // 0x43
     [InlineData("L0TX", 28)]  // 0x4C (last layer)
-    public void TryCloudLayerIndex_MapsSkyrimPlusZeroTxLayers(string signature, int expected)
+    public void TryCloudLayerIndex_MapsLegacyFalloutAndSkyrimPlusZeroTxLayers(string signature, int expected)
     {
         Assert.True(MiscEnvironmentHandler.TryCloudLayerIndex(signature, out var layer));
         Assert.Equal(expected, layer);

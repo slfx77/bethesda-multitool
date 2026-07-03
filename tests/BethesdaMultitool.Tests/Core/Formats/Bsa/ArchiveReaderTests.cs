@@ -77,7 +77,8 @@ public class ArchiveReaderTests
     {
         var ba2 = Path.Combine(Path.GetTempPath(), $"arcrdr_{Guid.NewGuid():N}.ba2");
         var outDir = Path.Combine(Path.GetTempPath(), $"arcrdr_out_{Guid.NewGuid():N}");
-        File.WriteAllBytes(ba2, BuildGnrlBa2(0x4242, "meshes\\clutter\\bottle.nif", NifPayload));
+        await File.WriteAllBytesAsync(ba2, BuildGnrlBa2(0x4242, "meshes\\clutter\\bottle.nif", NifPayload),
+            TestContext.Current.CancellationToken);
         try
         {
             using var reader = ArchiveReader.Open(ba2);
@@ -87,7 +88,7 @@ public class ArchiveReaderTests
 
             var written = Path.Combine(outDir, "meshes\\clutter\\bottle.nif");
             Assert.True(File.Exists(written));
-            Assert.Equal(NifPayload, await File.ReadAllBytesAsync(written));
+            Assert.Equal(NifPayload, await File.ReadAllBytesAsync(written, TestContext.Current.CancellationToken));
         }
         finally
         {

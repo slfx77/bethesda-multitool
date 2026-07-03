@@ -209,10 +209,19 @@ public sealed partial class WorldView3DControl
         if (tiled)
         {
             progress.Report("Writing manifest", totalTiles, totalTiles);
+            string projectionName;
+            if (plan.Elevation >= 89.5f)
+            {
+                projectionName = "Orthographic";
+            }
+            else
+            {
+                projectionName = plan.Elevation > 28f ? "Isometric" : "Trimetric";
+            }
+
             var manifest = new
             {
-                projection = plan.Elevation >= 89.5f ? "Orthographic"
-                    : plan.Elevation > 28f ? "Isometric" : "Trimetric",
+                projection = projectionName,
                 azimuthDeg = plan.Azimuth,
                 elevationDeg = plan.Elevation,
                 tilesWide = plan.Cols, tilesTall = plan.Rows,

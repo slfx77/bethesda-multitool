@@ -447,7 +447,7 @@ public static class SchemaRecordDecoder
 
         switch (repr)
         {
-            case FormIdDef formId:
+            case FormIdDef:
             {
                 var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx);
                 return new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = fid };
@@ -587,8 +587,8 @@ public static class SchemaRecordDecoder
                 var idx = ctx.ReadU32(data, offset);
                 return ($"<lstring #{idx}>", idx, null);
             }
-            case PrimType.ByteArray:
             default:
+                // PrimType.ByteArray and any unmodeled type surface as raw bytes.
                 size = field.FixedSize ?? available;
                 var len = Math.Min(size, Math.Max(available, 0));
                 return ($"<{len} bytes>", data[offset..(offset + len)], null);

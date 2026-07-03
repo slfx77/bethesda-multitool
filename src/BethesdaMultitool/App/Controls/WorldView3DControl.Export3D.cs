@@ -46,8 +46,8 @@ public sealed partial class WorldView3DControl
     ///     Renders one export tile from a prebuilt ortho/iso/tri <paramref name="viewProj" /> + cull
     ///     <paramref name="cylinder" />, honouring <paramref name="opts" />. MUST be called on the UI
     ///     thread (records + submits D3D12 commands); the fence wait + readback run on a worker thread.
-    ///     The caller (<see cref="WorldView3DExportRunner" />) pauses the live render loop first, switches
-    ///     the active worldspace, and re-requests each tile until <see cref="Export3DTile.IsComplete" />.
+    ///     The caller (<see cref="RunProjectionExportAsync" />) runs with the live render loop paused and
+    ///     re-requests each tile until <see cref="Export3DTile.IsComplete" />.
     /// </summary>
     internal async Task<Export3DTile?> RenderProjectionTileAsync(
         Matrix4x4 viewProj, VisibilityCylinder cylinder, Vector3 leafRight, Vector3 leafUp,

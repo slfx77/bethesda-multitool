@@ -147,7 +147,7 @@ internal static class ToftComparisonHelper
     }
 
     private static void ShowCompareDetailIfRequested(ToftCompareContext context,
-        IReadOnlyList<ToftCompareMismatch> mismatches)
+        List<ToftCompareMismatch> mismatches)
     {
         if (!context.CompareDetail)
         {
@@ -176,7 +176,7 @@ internal static class ToftComparisonHelper
         }
     }
 
-    private static void WriteCompareMismatchTable(IReadOnlyList<ToftCompareMismatch> mismatches)
+    private static void WriteCompareMismatchTable(List<ToftCompareMismatch> mismatches)
     {
         if (mismatches.Count == 0)
         {

@@ -44,7 +44,8 @@ public static class SpeedTreeTreeRecordReader
         // SNAM is an array of u32 seeds; the engine uses the per-instance seed, but the first entry is a stable
         // representative for a still render. The decoder may expose the value on the SNAM node itself or its
         // first child (array container).
-        var value = DecodedTreeReader.Int(snam) ?? DecodedTreeReader.Int(snam?.Children.FirstOrDefault());
+        var value = DecodedTreeReader.Int(snam) ??
+                    DecodedTreeReader.Int(snam is { Children.Count: > 0 } ? snam.Children[0] : null);
         return value is { } v and >= 0 ? (uint)v : null;
     }
 }

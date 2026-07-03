@@ -40,7 +40,6 @@ public sealed partial class WorldView3DControl
     // FOV slider bounds (perspective-only). Default 60° matches CameraState.FovYRadians (π/3).
     private const float MinFovDegrees = 30f;
     private const float MaxFovDegrees = 110f;
-    private const float DefaultFovDegrees = 60f;
 
     private bool ProjectionActive => _projectionMode != ProjectionMode.None;
 

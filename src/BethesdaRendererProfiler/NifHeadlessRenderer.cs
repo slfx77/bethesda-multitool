@@ -421,6 +421,7 @@ internal static class NifHeadlessRenderer
         try
         {
             var nif = NifParser.Parse(bytes);
+            if (nif is null) return false;
             // Match the reference/decode path (collectBillboards + treatRootsAsIdentity) so the AABB includes
             // baked particle clouds — otherwise a pure-particle NIF (FXDust) frames to nothing.
             var model = NifGeometryExtractor.Extract(bytes, nif, textureResolver,

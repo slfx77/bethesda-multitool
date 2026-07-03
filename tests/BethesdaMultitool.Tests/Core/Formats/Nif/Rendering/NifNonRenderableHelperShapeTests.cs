@@ -28,7 +28,7 @@ public sealed class NifNonRenderableHelperShapeTests
         return nif;
     }
 
-    private static IReadOnlyList<int> Refs(int count) => Enumerable.Range(1, count).ToList();
+    private static List<int> Refs(int count) => Enumerable.Range(1, count).ToList();
 
     [Fact]
     public void ZeroProperties_OnBsShaderEra_IsHelper()

@@ -259,7 +259,7 @@ public static class OfstPatternCommand
             $"[cyan]WRLD:[/] 0x{worldFormId:X8}  [cyan]Cells:[/] {entryCount:N0}  [cyan]Bounds:[/] {Markup.Escape(boundsText)}");
     }
 
-    private static void WritePatternTable(IReadOnlyList<OfstLayoutEntry> ordered, int limit)
+    private static void WritePatternTable(List<OfstLayoutEntry> ordered, int limit)
     {
         var table = new Table()
             .Border(TableBorder.Rounded)
@@ -287,7 +287,7 @@ public static class OfstPatternCommand
         AnsiConsole.Write(table);
     }
 
-    private static void WritePatternCsv(IReadOnlyList<OfstLayoutEntry> ordered, string? csvPath)
+    private static void WritePatternCsv(List<OfstLayoutEntry> ordered, string? csvPath)
     {
         if (string.IsNullOrWhiteSpace(csvPath))
         {
@@ -327,7 +327,7 @@ public static class OfstPatternCommand
         };
     }
 
-    private static List<DeltaEntry> BuildDeltas(IReadOnlyList<OfstLayoutEntry> ordered, int limit)
+    private static List<DeltaEntry> BuildDeltas(List<OfstLayoutEntry> ordered, int limit)
     {
         var max = limit <= 0 ? ordered.Count - 1 : Math.Min(ordered.Count - 1, limit);
         var deltas = new List<DeltaEntry>(max);
@@ -345,7 +345,7 @@ public static class OfstPatternCommand
         return deltas;
     }
 
-    private static void PrintDeltasHeader(WorldEntries world, IReadOnlyList<OfstLayoutEntry> ordered, int deltaCount)
+    private static void PrintDeltasHeader(WorldEntries world, List<OfstLayoutEntry> ordered, int deltaCount)
     {
         AnsiConsole.MarkupLine(
             $"[cyan]WRLD:[/] 0x{world.WorldFormId:X8}  [cyan]Cells:[/] {ordered.Count:N0}  [cyan]Bounds:[/] {Markup.Escape(world.Context.BoundsText)}");
@@ -356,7 +356,7 @@ public static class OfstPatternCommand
             $"[cyan]Start position:[/] Grid({first.GridX},{first.GridY}) Row/Col({first.Row},{first.Col})");
     }
 
-    private static void WriteDeltaHistogram(IReadOnlyList<DeltaEntry> deltas)
+    private static void WriteDeltaHistogram(List<DeltaEntry> deltas)
     {
         var histogram = deltas
             .GroupBy(d => (d.DeltaX, d.DeltaY))
@@ -401,7 +401,7 @@ public static class OfstPatternCommand
             $"  Up (ΔY>0): {totalUp}  Down (ΔY<0): {totalDown}  Stay Y: {deltas.Count - totalUp - totalDown}");
     }
 
-    private static void WriteDeltaRuns(IReadOnlyList<DeltaEntry> deltas)
+    private static void WriteDeltaRuns(List<DeltaEntry> deltas)
     {
         if (deltas.Count == 0)
         {

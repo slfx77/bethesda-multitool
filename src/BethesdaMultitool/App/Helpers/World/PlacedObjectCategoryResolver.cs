@@ -137,11 +137,17 @@ internal static class PlacedObjectCategoryResolver
 
         // Model (the base object's NIF/SPT path) — prefer the reference's own enriched ModelPath, else
         // resolve via the base FormID. Skip engine marker / imposter pseudo-paths so they don't appear.
-        var modelPath = !string.IsNullOrEmpty(obj.ModelPath)
-            ? obj.ModelPath
-            : worldViewData?.ModelPathIndex.TryGetValue(obj.BaseFormId, out var mp) == true
+        string? modelPath;
+        if (!string.IsNullOrEmpty(obj.ModelPath))
+        {
+            modelPath = obj.ModelPath;
+        }
+        else
+        {
+            modelPath = worldViewData?.ModelPathIndex.TryGetValue(obj.BaseFormId, out var mp) == true
                 ? mp
                 : null;
+        }
         if (!string.IsNullOrEmpty(modelPath) &&
             !RenderableReference.IsMarkerModelPath(modelPath) &&
             !RenderableReference.IsImposterModelPath(modelPath))

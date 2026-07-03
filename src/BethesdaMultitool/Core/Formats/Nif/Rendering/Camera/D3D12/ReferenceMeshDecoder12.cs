@@ -54,6 +54,8 @@ internal sealed class ReferenceMeshDecoder12
     public int TotalMissingModelPaths => Volatile.Read(ref _totalMissingModelPaths);
     public int TotalSkinnedModelPaths => Volatile.Read(ref _totalSkinnedModelPaths);
 
+    /// <summary>Extracts <paramref name="modelPath" /> from the mesh archives and decodes it into a
+    /// <see cref="DecodedNifMesh12" /> (NIF parse or procedural SpeedTree); null when missing or unusable.</summary>
     /// <param name="overrides">
     ///     Optional MODS alternate-texture overrides (shape name → texture paths, case-insensitive).
     ///     When a decoded submesh's <c>ShapeName</c> matches, its diffuse/normal paths are substituted so

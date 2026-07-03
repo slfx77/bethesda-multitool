@@ -20,7 +20,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Presentation.Profiles;
 ///         Two schema quirks: the generator can't descend ARMO's <c>Male → Biped Model</c> group, so MODL
 ///         arrives as a top-level <em>raw</em> node (read its bytes as the model path). DNAM's DR/DT and the
 ///         DATA/BMDT structs decode as ordinary struct children, read and clamped exactly as the typed
-///         <see cref="Handlers.ArmorDefenseData" /> + <see cref="GameStatNormalizer" /> do.
+///         <see cref="Parsing.Handlers.ArmorDefenseData" /> + <see cref="GameStatNormalizer" /> do.
 ///     </para>
 /// </summary>
 internal sealed class ArmorProfile : IRecordProfile

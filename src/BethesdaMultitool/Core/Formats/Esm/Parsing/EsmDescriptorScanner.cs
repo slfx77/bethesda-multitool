@@ -30,6 +30,8 @@ internal sealed record EsmDescriptorScanResult(
 
 internal static class EsmDescriptorScanner
 {
+    /// <summary>Walks every record/GRUP in the plugin (TES3 or TES4+ framing), collecting record
+    /// descriptors, GRUP headers, and a FormID → EditorID map.</summary>
     /// <param name="onBytesScanned">
     ///     Optional progress callback invoked once per top-level record/GRUP with the byte offset consumed
     ///     so far. Fires at top-level granularity only (NOT inside <see cref="ParseGroupRecursive" />, which

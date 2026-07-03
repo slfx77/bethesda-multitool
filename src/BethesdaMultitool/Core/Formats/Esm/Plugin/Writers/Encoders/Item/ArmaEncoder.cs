@@ -112,7 +112,7 @@ public sealed class ArmaEncoder : IRecordEncoder
         // DNAM — armor-defense struct (8 bytes: int16 DR + uint16 Flags + float DT), matching ARMO/ARMA
         // in FNV. Emit when DR or DT is set; Flags (Modulates Voice) is left zero for reconstructed
         // records. Absence is harmless (engine treats it as DR/DT 0).
-        if (arma.DamageResistance != 0 || arma.DamageThreshold != 0f)
+        if (arma.DamageResistance != 0 || MathF.Abs(arma.DamageThreshold) > 0.0001f)
         {
             var dnam = new byte[8];
             BinaryPrimitives.WriteInt16LittleEndian(dnam, (short)arma.DamageResistance);

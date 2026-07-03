@@ -213,8 +213,16 @@ public sealed class BgsmMaterial
         pos += 4;
         SpecularEnabled = specularEnabled;
         SpecularColor = new Vector3(r, g, b);
-        // FO76 stores a scale here but the engine treats enabled specular as strength 1 (fo76utils).
-        SpecularStrength = !specularEnabled ? 0f : isFallout4 ? strength : 1f;
+        if (!specularEnabled)
+        {
+            SpecularStrength = 0f;
+        }
+        else
+        {
+            // FO76 stores a scale here but the engine treats enabled specular as strength 1 (fo76utils).
+            SpecularStrength = isFallout4 ? strength : 1f;
+        }
+
         SpecularSmoothness = smoothness;
 
         // Root-material string + anisotropic-lighting byte sit between specular and emissive.

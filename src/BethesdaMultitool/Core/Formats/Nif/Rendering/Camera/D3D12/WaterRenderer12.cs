@@ -248,9 +248,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     }
 
     /// <summary>Selects the per-game <see cref="WaterProfile" /> (shader variant + tuning) for the loaded
-    /// game. Call before <see cref="Render" /> on each worldspace/interior load. FNV/FO3 resolve to the
-    /// FNV profile (byte-identical); every other game falls back to it until its own water shader is
-    /// reverse-engineered (binary-RE-only policy).</summary>
+    /// game. Call before <see cref="Render(Matrix4x4, VisibilityCylinder, Vector3)" /> on each
+    /// worldspace/interior load. FNV/FO3 resolve to the FNV profile (byte-identical); every other game
+    /// falls back to it until its own water shader is reverse-engineered (binary-RE-only policy).</summary>
     public void SetGame(BethesdaGame game) => _waterProfile = WaterProfile.ForGame(game);
 
     /// <summary>
@@ -264,6 +264,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     /// <summary>IWorldRenderer entry — absolute path (zero render origin).</summary>
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder) => Render(viewProj, cylinder, default);
 
+    /// <summary>Draws the visible cell-water grid + NIF water planes; returns the draw count.</summary>
     /// <param name="renderOrigin">
     ///     The world-space point <paramref name="viewProj" /> treats as its origin (the same value the
     ///     scene binds as the camera-relative render origin). The VS subtracts it from each water vertex

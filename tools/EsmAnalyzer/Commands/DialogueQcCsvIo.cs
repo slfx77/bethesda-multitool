@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text;
 
 namespace EsmAnalyzer.Commands;
@@ -8,6 +9,8 @@ namespace EsmAnalyzer.Commands;
 /// </summary>
 internal static class DialogueQcCsvIo
 {
+    private static readonly SearchValues<char> CharsRequiringQuotes = SearchValues.Create([',', '"', '\r', '\n']);
+
     public static List<string[]> Parse(string text)
     {
         var rows = new List<string[]>();
@@ -104,7 +107,7 @@ internal static class DialogueQcCsvIo
         {
             return "";
         }
-        if (value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) < 0)
+        if (value.AsSpan().IndexOfAny(CharsRequiringQuotes) < 0)
         {
             return value;
         }

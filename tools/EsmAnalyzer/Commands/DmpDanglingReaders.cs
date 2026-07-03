@@ -235,13 +235,14 @@ internal static class DmpDanglingReaders
             var foundInDumps = 1;
             if (iDumps >= 0 && iDumps < parts.Length)
             {
-                int.TryParse(parts[iDumps], out foundInDumps);
+                foundInDumps = int.TryParse(parts[iDumps], out var dumps) ? dumps : 0;
             }
 
             uint baseFid = 0;
-            if (iBaseFid >= 0 && iBaseFid < parts.Length)
+            if (iBaseFid >= 0 && iBaseFid < parts.Length &&
+                DmpDanglingParsing.TryParseHexUInt(parts[iBaseFid], out var parsedBaseFid))
             {
-                DmpDanglingParsing.TryParseHexUInt(parts[iBaseFid], out baseFid);
+                baseFid = parsedBaseFid;
             }
 
             byte baseType = 0;

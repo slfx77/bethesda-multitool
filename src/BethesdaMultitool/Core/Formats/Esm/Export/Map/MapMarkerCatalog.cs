@@ -25,11 +25,11 @@ public readonly record struct MapMarkerFallback(string Glyph, byte R, byte G, by
 public static class MapMarkerCatalog
 {
     private static readonly IReadOnlyList<MapMarkerEntry> Empty = [];
-    private static readonly IReadOnlyList<MapMarkerEntry> FalloutTable = BuildFalloutTable();
-    private static readonly IReadOnlyList<MapMarkerEntry> OblivionTable = BuildOblivionTable();
-    private static readonly IReadOnlyList<MapMarkerEntry> SkyrimTable = BuildSkyrimTable();
-    private static readonly IReadOnlyList<MapMarkerEntry> Fallout4Table = BuildFallout4Table();
-    private static readonly IReadOnlyList<MapMarkerEntry> Fallout76Table = BuildFallout76Table();
+    private static readonly MapMarkerEntry[] FalloutTable = BuildFalloutTable();
+    private static readonly MapMarkerEntry[] OblivionTable = BuildOblivionTable();
+    private static readonly MapMarkerEntry[] SkyrimTable = BuildSkyrimTable();
+    private static readonly MapMarkerEntry[] Fallout4Table = BuildFallout4Table();
+    private static readonly MapMarkerEntry[] Fallout76Table = BuildFallout76Table();
 
     /// <summary>The full dense marker table for <paramref name="game" /> (index == raw value), or an
     ///     empty list for games whose table isn't wired yet (Skyrim/FO4/FO76 — populated with their
@@ -56,7 +56,7 @@ public static class MapMarkerCatalog
     }
 
     // FO3 / FNV (0..14). Reuses the existing glyph/color source so the drawn dot is identical to today.
-    private static IReadOnlyList<MapMarkerEntry> BuildFalloutTable()
+    private static MapMarkerEntry[] BuildFalloutTable()
     {
         (MapMarkerType Type, string Name) [] rows =
         [
@@ -98,7 +98,7 @@ public static class MapMarkerCatalog
     //   11 Oblivion Gate  = world_map_icon_daedric_shrine.dds (the Oblivion "eye"/portal — NOT a shrine)
     //   12 Door           = world_map_icon_door.dds is a goblet dup of Tavern (wrong) → no icon, dot fallback
     // Icons exist for types 1..11; None (0) and Door (12) fall to the glyph/color dot in each row.
-    private static IReadOnlyList<MapMarkerEntry> BuildOblivionTable()
+    private static MapMarkerEntry[] BuildOblivionTable()
     {
         (string Name, string IconKey, string Glyph, byte R, byte G, byte B) [] rows =
         [
@@ -133,7 +133,7 @@ public static class MapMarkerCatalog
     // the discovered *Marker sprites in interface\map.swf and embedded as skyrim_marker_NN.png; the DLC02
     // Solstheim markers (53..59) ship in the Dragonborn archive, so they carry names but no base-game icon
     // (they degrade to a labeled distinct dot). Icons are pre-styled (gray), so this game is NOT tinted.
-    private static IReadOnlyList<MapMarkerEntry> BuildSkyrimTable()
+    private static MapMarkerEntry[] BuildSkyrimTable()
     {
         string[] names =
         [
@@ -166,7 +166,7 @@ public static class MapMarkerCatalog
     // Prydwen, the Castle, Minutemen, Railroad, USS Constitution, Mechanist, Nuka-World, ...) from
     // Interface\Pipboy_MapPage.swf (which carries the complete set). White silhouettes → tinted
     // (EmbeddedTinted). NOTE: FO4 index 0 is Cave, NOT None.
-    private static IReadOnlyList<MapMarkerEntry> BuildFallout4Table()
+    private static MapMarkerEntry[] BuildFallout4Table()
     {
         string[] names =
         [
@@ -202,7 +202,7 @@ public static class MapMarkerCatalog
     // fo76_marker_NNN.png. World-location types 0..99 carry icons (96 of them — Salem/Minutemen/USS
     // Constitution/Vassal are FO4-enum leftovers with no FO76 sprite); runtime types 100..113 (door/quest/
     // player/teammate/camp/event) are names-only (they aren't ESM XMRK markers). White silhouettes → tinted.
-    private static IReadOnlyList<MapMarkerEntry> BuildFallout76Table()
+    private static MapMarkerEntry[] BuildFallout76Table()
     {
         string[] classes =
         [

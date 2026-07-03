@@ -621,23 +621,23 @@ internal static class SptGeometryBuilder
             _placedCenters?.Add(center);
             Leaves.Add(new PlacedLeaf(pos, center, budDir, template, texCoords));
         }
-    }
 
-    /// <summary>True if no already-placed leaf center lies within <paramref name="spacing" /> of
-    /// <paramref name="center" /> on every axis (the engine's axis-aligned cube overlap test).</summary>
-    private static bool HasRoomForLeaf(List<Vector3> placed, Vector3 center, float spacing)
-    {
-        foreach (var p in placed)
+        /// <summary>True if no already-placed leaf center lies within <paramref name="spacing" /> of
+        /// <paramref name="center" /> on every axis (the engine's axis-aligned cube overlap test).</summary>
+        private static bool HasRoomForLeaf(List<Vector3> placed, Vector3 center, float spacing)
         {
-            if (MathF.Abs(center.X - p.X) < spacing &&
-                MathF.Abs(center.Y - p.Y) < spacing &&
-                MathF.Abs(center.Z - p.Z) < spacing)
+            foreach (var p in placed)
             {
-                return false;
+                if (MathF.Abs(center.X - p.X) < spacing &&
+                    MathF.Abs(center.Y - p.Y) < spacing &&
+                    MathF.Abs(center.Z - p.Z) < spacing)
+                {
+                    return false;
+                }
             }
-        }
 
-        return true;
+            return true;
+        }
     }
 
     private static int TruncateSpawnCount(float raw) =>
@@ -1099,8 +1099,6 @@ internal static class SptGeometryBuilder
             _shuffle[index] = (float)Raw();
             return value;
         }
-
-        public float NextFloat() => (float)NextDouble();
 
         // CIdvRandom::GetUniform: min + (float)((double)(max-min) * Next()). The subtract is float, promoted to
         // double for the multiply with the double Next(), the product cast back to float, then added to min.

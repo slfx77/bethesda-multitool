@@ -12,8 +12,8 @@ namespace BethesdaMultitool.Tests.Tools.EsmAnalyzer;
 /// </summary>
 public class VerifyOpenMwFieldsParseTests
 {
-    private static string SampleDump() => string.Join("\n", new[]
-    {
+    private static readonly string[] SampleDumpLines =
+    [
         "Using default (English) font encoding.",
         "Loading TES3 file: \"x.esm\"",
         "Author: Bethesda Softworks",
@@ -51,7 +51,11 @@ public class VerifyOpenMwFieldsParseTests
         "    Blizzard: 1",
         "  Map Color: 16721698",
         "  Sleep List: \"ex_bittercoast_sleep\""
-    });
+    ];
+
+    private static readonly string[] ExpectedRecordTypes = ["GMST", "LTEX", "CELL", "NPC_", "REGN"];
+
+    private static string SampleDump() => string.Join("\n", SampleDumpLines);
 
     [Fact]
     public void ParseRecords_ReadsAllRecordTypes_AndSkipsBanner()
@@ -59,7 +63,7 @@ public class VerifyOpenMwFieldsParseTests
         var records = VerifyOpenMwFields.ParseRecords(SampleDump());
 
         Assert.Equal(5, records.Count);
-        Assert.Equal(new[] { "GMST", "LTEX", "CELL", "NPC_", "REGN" }, records.Select(r => r.Type));
+        Assert.Equal(ExpectedRecordTypes, records.Select(r => r.Type));
     }
 
     [Fact]

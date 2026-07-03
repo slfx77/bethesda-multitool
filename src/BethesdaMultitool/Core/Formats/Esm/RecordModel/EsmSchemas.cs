@@ -49,10 +49,10 @@ public static class EsmSchemas
     /// <summary>
     ///     Whether the schema decode is the <em>primary</em> Records-tab source for a game (it has no
     ///     complete hand-written typed handlers). True for Oblivion/Skyrim/FO4/FO76: the
-    ///     <see cref="Parsing.SchemaDrivenRecordParser" /> produces the base <see cref="RecordCollection" />.
+    ///     <see cref="Parsing.SchemaDrivenRecordParser" /> produces the base <see cref="Models.RecordCollection" />.
     ///     False for FNV/FO3 (and Morrowind): those keep their rich typed handlers as the base and the schema
     ///     only <em>enriches</em> — every record gets a parallel DecodedTree (in
-    ///     <see cref="RecordCollection.DecodedTreesByFormId" />) without disturbing the typed lists. Morrowind
+    ///     <see cref="Models.RecordCollection.DecodedTreesByFormId" />) without disturbing the typed lists. Morrowind
     ///     never reaches this gate (its own <c>Tes3RecordParser</c> returns early) but is typed-primary too.
     /// </summary>
     public static bool IsSchemaPrimary(BethesdaGame game) => game is

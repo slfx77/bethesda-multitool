@@ -320,12 +320,9 @@ internal static class NifSubmeshExtractor
 
         // "Has Triangles" bool exists only since 10.1.0.0; at or below 10.0.1.2 (Oblivion 10.0.1.x) the
         // triangle list follows unconditionally, so reading the bool would eat the first triangle index.
-        if (NifVersions.HasShapeTriangleFlag(binaryVersion))
+        if (NifVersions.HasShapeTriangleFlag(binaryVersion) && (pos + 1 > end || data[pos++] == 0))
         {
-            if (pos + 1 > end || data[pos++] == 0)
-            {
-                return null;
-            }
+            return null;
         }
 
         if (numTriangles == 0 || positions == null)

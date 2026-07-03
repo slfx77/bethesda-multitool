@@ -353,7 +353,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// <summary>
     ///     Sets the camera world-space right/up basis used to re-face SpeedTree leaf cards to the camera
     ///     in the leaf-billboard vertex shader. The host computes it from the inverse view matrix (the
-    ///     same source as <c>SkyBillboardRenderer12</c>) and calls this each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?)" />.
+    ///     same source as <c>SkyBillboardRenderer12</c>) and calls this each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3)" />.
     /// </summary>
     public void SetLeafBillboardBasis(Vector3 cameraRight, Vector3 cameraUp)
     {
@@ -367,7 +367,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     4 sway matrices per frame in <c>BSTreeManager::UpdateWindMatrices</c>, which we approximate with
     ///     a time/position-phased gust). <paramref name="direction" /> is the horizontal wind direction,
     ///     <paramref name="strength" /> the sway amplitude (0 = static), <paramref name="timeSeconds" /> the
-    ///     animation clock. Call each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?)" />.
+    ///     animation clock. Call each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3)" />.
     /// </summary>
     public void SetWind(Vector2 direction, float strength, float timeSeconds)
     {
@@ -690,9 +690,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             {
                 if (alphaDebug)
                 {
+                    var opaquePass = sub.DoubleSided ? "OPAQUE/DoublePso" : "OPAQUE/BackPso";
                     var pass = sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard
                         ? "BLEND"
-                        : "OPAQUE/" + (sub.DoubleSided ? "DoublePso" : "BackPso");
+                        : opaquePass;
                     try
                     {
                         File.AppendAllText(
@@ -811,7 +812,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     /// <summary>
     ///     3D-8: draws the blended (transparent) reference submeshes accumulated by the most recent
-    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?)" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
+    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3)" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
     ///     never paints over transparent meshes. The water pass rebinds <c>PerFrameCbv</c> to its own
     ///     uniforms (and may change topology), so this re-establishes the reference per-frame state
     ///     before issuing the blended draws. The DSV is bound by the frame loop, so blended draws stay
@@ -1050,7 +1051,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     /// <summary>
     ///     Draws the depth-writing blend submeshes (effects-folder foliage the engine marks ZBuffer_Write,
-    ///     e.g. NVSeaPlant02) accumulated by the most recent <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?)" />.
+    ///     e.g. NVSeaPlant02) accumulated by the most recent <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3)" />.
     ///     Unlike <see cref="DrawBlended" /> these run INLINE — after the opaque batches but before the
     ///     water pass — with a depth-WRITING blend PSO, so the water surface occludes them from above
     ///     instead of them painting over it. Sorted back-to-front so overlapping cards blend correctly.

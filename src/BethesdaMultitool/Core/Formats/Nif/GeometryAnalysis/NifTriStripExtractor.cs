@@ -229,12 +229,9 @@ internal static class NifTriStripExtractor
 
         // "Has Points" bool exists only since 10.0.1.3; at or below 10.0.1.2 (Oblivion 10.0.1.0 / 10.0.1.2)
         // the strip points follow the strip lengths unconditionally.
-        if (NifVersions.HasStripPointsFlag(binaryVersion))
+        if (NifVersions.HasStripPointsFlag(binaryVersion) && (pos + 1 > end || data[pos++] == 0))
         {
-            if (pos + 1 > end || data[pos++] == 0)
-            {
-                return null;
-            }
+            return null;
         }
 
         // Read all strip indices
@@ -303,12 +300,9 @@ internal static class NifTriStripExtractor
         }
 
         // "Has Points" bool exists only since 10.0.1.3 (see ExtractStripsSection).
-        if (NifVersions.HasStripPointsFlag(binaryVersion))
+        if (NifVersions.HasStripPointsFlag(binaryVersion) && (pos + 1 > end || data[pos++] == 0))
         {
-            if (pos + 1 > end || data[pos++] == 0)
-            {
-                return null;
-            }
+            return null;
         }
 
         var candidateTriangleWindowCount = 0;
