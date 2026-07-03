@@ -67,6 +67,10 @@
                           AutomationProperties.Name="Nav mesh"
                           ToolTipService.ToolTip="Show the navmesh overlay (press 6)"
                           Checked="NavMeshCheckBox_Changed" Unchecked="NavMeshCheckBox_Changed" />
+                <CheckBox x:Name="CollisionCheckBox" IsChecked="False" Content="Collision mesh"
+                          AutomationProperties.Name="Collision mesh"
+                          ToolTipService.ToolTip="Overlay each object's walk-mode collision mesh as a green wireframe (compare against the rendered meshes)"
+                          Checked="CollisionCheckBox_Changed" Unchecked="CollisionCheckBox_Changed" />
               </StackPanel>
             </Flyout>
           </DropDownButton.Flyout>
@@ -101,7 +105,7 @@
                           AutomationProperties.Name="Editor markers"
                           ToolTipService.ToolTip="Show editor/engine markers (XMarkers, travel/door markers)"
                           Checked="EditorMarkersCheckBox_Changed" Unchecked="EditorMarkersCheckBox_Changed" />
-                <CheckBox x:Name="ActivatorsCheckBox" IsChecked="True" Content="Activators"
+                <CheckBox x:Name="ActivatorsCheckBox" IsChecked="False" Content="Activators"
                           AutomationProperties.Name="Activators"
                           ToolTipService.ToolTip="Show activator objects (levers, terminals, buttons)"
                           Checked="ActivatorsCheckBox_Changed" Unchecked="ActivatorsCheckBox_Changed" />
@@ -109,10 +113,6 @@
                           AutomationProperties.Name="Initially-disabled objects"
                           ToolTipService.ToolTip="Show objects flagged initially-disabled (press 7)"
                           Checked="DisabledCheckBox_Changed" Unchecked="DisabledCheckBox_Changed" />
-                <CheckBox x:Name="CollisionCheckBox" IsChecked="False" Content="Havok collision"
-                          AutomationProperties.Name="Havok collision"
-                          ToolTipService.ToolTip="Overlay each object's walk-mode collision mesh as a green wireframe (compare against the rendered meshes)"
-                          Checked="CollisionCheckBox_Changed" Unchecked="CollisionCheckBox_Changed" />
               </StackPanel>
             </Flyout>
           </DropDownButton.Flyout>
@@ -199,13 +199,15 @@
                 ToolTipService.ToolTip="Rotate view 90° left"
                 AutomationProperties.Name="Rotate view 90 degrees left"
                 Click="RotateLeftButton_Click">
-          <FontIcon Glyph="&#xE7A7;" FontSize="14" />
+          <FontIcon Glyph="&#xE80D;" FontSize="14" /> <!-- RotateMapLeft: curved CCW rotate arrow -->
+
         </Button>
         <Button x:Name="RotateRightButton" Padding="6" MinWidth="0"
                 ToolTipService.ToolTip="Rotate view 90° right"
                 AutomationProperties.Name="Rotate view 90 degrees right"
                 Click="RotateRightButton_Click">
-          <FontIcon Glyph="&#xE7A6;" FontSize="14" />
+          <FontIcon Glyph="&#xE80C;" FontSize="14" /> <!-- RotateMapRight: curved CW rotate arrow -->
+
         </Button>
       </StackPanel>
 

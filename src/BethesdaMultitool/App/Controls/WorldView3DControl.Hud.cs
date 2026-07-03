@@ -117,7 +117,9 @@ public sealed partial class WorldView3DControl
 
     private DispatcherTimer CreateStatusDismissTimer()
     {
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        // Short dismiss: these are transient hints ("Selected object is not a teleport door") — 4 s
+        // read as a lingering error banner (part9 feedback).
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         timer.Tick += (_, _) =>
         {
             _statusDismissTimer?.Stop();
