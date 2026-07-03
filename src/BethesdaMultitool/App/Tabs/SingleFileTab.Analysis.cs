@@ -26,6 +26,24 @@ public sealed partial class SingleFileTab
 {
     private Dictionary<int, DecodedFormData>? _pendingDecodedForms;
 
+    // Monotonic floor for AnalysisProgressBar: the multi-phase load (scan → BA2 localization → typed
+    // parse → coverage) and DMP's ×0.8 scaling report through DIFFERENT sinks whose per-phase
+    // percentages restart low, which made the bar visibly jump backwards. All writers go through
+    // SetAnalysisProgress so the bar only ever advances until the next operation resets it.
+    private double _analysisProgressFloor;
+
+    private void SetAnalysisProgress(double value)
+    {
+        _analysisProgressFloor = Math.Max(_analysisProgressFloor, value);
+        AnalysisProgressBar.Value = _analysisProgressFloor;
+    }
+
+    private void ResetAnalysisProgress()
+    {
+        _analysisProgressFloor = 0;
+        AnalysisProgressBar.Value = 0;
+    }
+
     // Temporary fields to pass save data from AnalyzeSaveFileAsync to the session
     private SaveFile? _pendingSaveData;
 
@@ -68,10 +86,11 @@ public sealed partial class SingleFileTab
                 PcFriendly = true,
                 GenerateEsmReports = true
             };
+            ResetAnalysisProgress(); // extraction is its own operation — restart the monotonic floor
             var progress = new Progress<ExtractionProgress>(p => DispatcherQueue.TryEnqueue(() =>
             {
                 AnalysisProgressBar.IsIndeterminate = false;
-                AnalysisProgressBar.Value = p.PercentComplete;
+                SetAnalysisProgress(p.PercentComplete);
             }));
             var analysisData = _analysisResult;
             var summary = await Task.Run(() => MinidumpExtractor.Extract(filePath, opts, progress, analysisData));
@@ -300,7 +319,7 @@ public sealed partial class SingleFileTab
         var reconProgress = new Progress<(int percent, string phase)>(p =>
             DispatcherQueue.TryEnqueue(() =>
             {
-                AnalysisProgressBar.Value = 80 + p.percent * 0.15;
+                SetAnalysisProgress(80 + p.percent * 0.15);
                 StatusTextBlock.Text = p.phase is "Complete" or "Analysis Complete"
                     ? "Finalizing semantic data..."
                     : p.phase;
@@ -364,7 +383,7 @@ public sealed partial class SingleFileTab
         {
             SetPipelinePhase(AnalysisPipelinePhase.Coverage);
             StatusTextBlock.Text = Strings.Status_RunningCoverageAnalysis;
-            AnalysisProgressBar.Value = 96;
+            SetAnalysisProgress(96);
             _session.CoverageResult = await Task.Run(() =>
                 CoverageAnalyzer.Analyze(_session.AnalysisResult!, _session.Accessor!));
 

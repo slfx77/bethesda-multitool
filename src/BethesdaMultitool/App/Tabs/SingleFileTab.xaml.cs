@@ -525,12 +525,13 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 _ => Strings.Status_StartingAnalysis
             };
 
+            ResetAnalysisProgress();
             var progress = new Progress<AnalysisProgress>(p => DispatcherQueue.TryEnqueue(() =>
             {
                 AnalysisProgressBar.IsIndeterminate = false;
-                AnalysisProgressBar.Value = fileType == AnalysisFileType.Minidump
+                SetAnalysisProgress(fileType == AnalysisFileType.Minidump
                     ? p.PercentComplete * 0.8
-                    : p.PercentComplete;
+                    : p.PercentComplete);
                 StatusTextBlock.Text = SingleFileAnalysisHelper.ResolvePhaseText(p, fileType);
             }));
 
