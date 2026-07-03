@@ -98,6 +98,7 @@ internal static class NifHeadlessRenderer
         GpuTextureCache12? textureCache = null;
         ReferenceMeshCache12? meshCache = null;
         ReferenceRenderer12? references = null;
+        WaterRenderer12? water = null;
         GpuOffscreenSceneTarget12? target = null;
 
         try
@@ -126,6 +127,13 @@ internal static class NifHeadlessRenderer
                 ShowMarkers = true,
                 StreamingThrottled = false, // drain decodes/uploads as fast as possible
             };
+
+            // Water-shader submeshes are DIVERTED out of the reference draw path into flat
+            // NifWaterPlanes (ReferenceMeshCache12 skips them as drawables), so a pure-water NIF
+            // (e.g. FO4 Water\Water1024.nif) draws nothing through ReferenceRenderer12 alone —
+            // 0/0/0 stats and a blank frame that reads as "dropped". Mirror the live viewer
+            // (WorldView3DControl.Frame) by rendering the accumulated planes each frame.
+            water = new WaterRenderer12(gpu, recorder, ring, rootSig, heap, deletion);
 
             // Synthetic 1-cell scene: one REFR at the world origin in grid cell (0,0). A null spatial
             // index makes ReferenceRenderer12 iterate the cell dict directly (cylinder.ContainsCell).
@@ -202,6 +210,8 @@ internal static class NifHeadlessRenderer
                 references.SetLeafBillboardBasis(camRight, camUp);
                 references.SetWind(Vector2.UnitX, 0f, 0f);
                 references.Render(viewProj, cylinder);
+                water.SetNifWaterPlanes(references.NifWaterPlanes);
+                var waterDraws = water.Render(viewProj, cylinder);
                 target.RecordReadback(cmd);
                 recorder.EndFrame();
 
@@ -231,12 +241,18 @@ internal static class NifHeadlessRenderer
                 // it alone saves a blank frame with the mesh withheld. Requiring ReferenceDrawn > 0 waits
                 // for the actual draw. (IsReady flips on success OR failure, so a missing texture still
                 // resolves to a fallback and draws rather than hanging.)
-                if (complete && it > 0 && s.ReferenceDrawn > 0)
+                // Water-only NIFs never increment ReferenceDrawn (their sole submesh is diverted to
+                // a water plane), so also settle once the plane has drawn and nothing else is
+                // pending. texPending==0 guards the mixed case (water + textured submeshes): the
+                // textured part must still reach TexturesReady before we accept the frame.
+                var waterSettled = waterDraws > 0 && s.ReferenceTexturePending == 0 && s.ReferenceMeshMissing == 0;
+                if (complete && it > 0 && (s.ReferenceDrawn > 0 || waterSettled))
                 {
                     drew = true;
                     Console.WriteLine(
                         $"[nif-render] settled at iter {it} (drawn={s.ReferenceDrawn}, " +
-                        $"submeshDraws={s.ReferenceSubmeshDraws}, local radius {localRadius:F0})");
+                        $"submeshDraws={s.ReferenceSubmeshDraws}, waterPlanes={waterDraws}, " +
+                        $"local radius {localRadius:F0})");
                     break;
                 }
                 Thread.Sleep(40); // let background decode/texture-resolve advance before re-rendering
@@ -257,7 +273,8 @@ internal static class NifHeadlessRenderer
                 Console.Error.WriteLine(
                     $"[nif-render] WARNING: reference never drew within {maxIterations} iterations — output " +
                     $"may be blank. last: cells={s.ReferenceCellsVisited} culled={s.ReferenceCulled} " +
-                    $"missing={s.ReferenceMeshMissing} texPending={s.ReferenceTexturePending} drawn={s.ReferenceDrawn}");
+                    $"missing={s.ReferenceMeshMissing} texPending={s.ReferenceTexturePending} " +
+                    $"drawn={s.ReferenceDrawn} waterPlanes={references.NifWaterPlanes.Count}");
             }
 
             var rgba = BgraToRgba(finalBgra);
@@ -285,6 +302,7 @@ internal static class NifHeadlessRenderer
         {
             try { recorder?.WaitForGpuIdle(); } catch { /* best effort */ }
             target?.Dispose();
+            water?.Dispose();
             references?.Dispose();
             meshCache?.Dispose();
             textureCache?.Dispose();
