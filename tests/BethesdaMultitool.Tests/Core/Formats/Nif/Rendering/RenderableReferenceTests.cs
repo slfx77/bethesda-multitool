@@ -314,6 +314,9 @@ public sealed class RenderableReferenceTests
     [InlineData("meshes\\architecture\\strip\\Imposter\\OverpassSectionLo01_Imposter.NIF")] // segment + suffix
     [InlineData("meshes\\foo\\bar_imposter.nif")] // suffix only
     [InlineData("meshes\\architecture\\IMPOSTER\\thing.nif")] // segment, case-insensitive
+    [InlineData("LOD\\Neighborhoods\\Fens\\Fens10_Bld01LOD.nif")] // FO4: LOD segment (no meshes\ prefix) + LOD.nif suffix
+    [InlineData("Meshes\\LOD\\Architecture\\Unique\\LOD_Fake_TallBuilding01.nif")] // FO4: LOD segment, filename lacks the suffix
+    [InlineData("meshes\\architecture\\fens\\Fens10_Bld01LOD.nif")] // FO4: suffix only, no underscore before "LOD"
     public void IsImposterModelPath_Imposters_ReturnTrue(string path)
     {
         Assert.True(RenderableReference.IsImposterModelPath(path));
@@ -323,6 +326,10 @@ public sealed class RenderableReferenceTests
     [InlineData("meshes\\clutter\\composter.nif")] // ends "composter.nif", not "_imposter.nif"
     [InlineData("meshes\\imposters\\x.nif")] // plural segment "imposters" != "imposter"
     [InlineData("meshes\\architecture\\overpasssectionlo01.nif")]
+    [InlineData("meshes\\dlc03\\effects\\dlc03fxghoulgrenadeexplod.nif")] // FNV FX: "explod.nif" is not LOD
+    [InlineData("meshes\\architecture\\jacobstown\\jtownlodge_exterior01.nif")] // "lodge" contains "lod"
+    [InlineData("meshes\\landscapelod\\generated\\x.nif")] // Oblivion: "landscapelod" segment != "lod"
+    [InlineData("distantlod\\wilderness.nif")] // Oblivion: "distantlod" segment != "lod"
     [InlineData(null)]
     [InlineData("")]
     public void IsImposterModelPath_NonImposters_ReturnFalse(string? path)

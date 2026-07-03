@@ -111,6 +111,10 @@ internal readonly record struct RenderableReference(
     ///     full-detail render the whole worldspace is loaded, so every imposter is redundant — they
     ///     are all culled (the real STAT/SCOL geometry remains). Identified by the engine's path
     ///     convention: an <c>imposter</c> folder segment OR a <c>_imposter.nif</c> filename suffix.
+    ///     Also true for FO4-style distant LOD statics (a <c>LOD</c> folder segment, e.g.
+    ///     <c>LOD\Neighborhoods\Fens\Fens10_Bld01LOD.nif</c>, or a <c>*LOD.nif</c> filename) —
+    ///     visible-when-distant stand-ins the engine swaps out for full models, so rendering both
+    ///     z-fights. <c>*explod.nif</c> is excluded: FNV DLC explosion FX meshes end in "explod".
     ///     See memory: viewer_imposter_doubling.
     /// </summary>
     public static bool IsImposterModelPath(string? modelPath)
@@ -119,9 +123,16 @@ internal readonly record struct RenderableReference(
         var segments = modelPath.Split(PathSeparators, StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 0) return false;
         if (segments[^1].EndsWith("_imposter.nif", StringComparison.OrdinalIgnoreCase)) return true;
+        if (segments[^1].EndsWith("lod.nif", StringComparison.OrdinalIgnoreCase) &&
+            !segments[^1].EndsWith("explod.nif", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         foreach (var segment in segments)
         {
             if (segment.Equals("imposter", StringComparison.OrdinalIgnoreCase)) return true;
+            if (segment.Equals("lod", StringComparison.OrdinalIgnoreCase)) return true;
         }
 
         return false;
