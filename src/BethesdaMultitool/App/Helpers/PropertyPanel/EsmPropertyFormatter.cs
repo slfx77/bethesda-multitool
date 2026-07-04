@@ -169,6 +169,7 @@ internal static class EsmPropertyFormatter
         [typeof(SoundRecord)] = "SOUN",
         [typeof(MusicTypeRecord)] = "MUSC",
         [typeof(TextureSetRecord)] = "TXST",
+        [typeof(MaterialSwapRecord)] = "MSWP",
         [typeof(ArmaRecord)] = "ARMA",
         [typeof(WaterRecord)] = "WATR",
         [typeof(BodyPartDataRecord)] = "BPTD",

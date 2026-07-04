@@ -40,6 +40,15 @@ internal sealed class WorldViewData
         new Dictionary<uint, AlternateTextureSet>();
 
     /// <summary>
+    ///     MSWP FormID → its normalized material-swap table (original <c>.bgsm</c> path → replacement).
+    ///     FO4/FO76 per-PLACEMENT re-skins: a placement whose REFR carries <c>XMSP</c> resolves through
+    ///     here at bake time and gets its own mesh-cache variant with the swapped materials' render
+    ///     state applied. Empty for earlier games and save-overlay builders.
+    /// </summary>
+    public IReadOnlyDictionary<uint, IReadOnlyDictionary<string, string>> MaterialSwapsByFormId { get; init; } =
+        new Dictionary<uint, IReadOnlyDictionary<string, string>>();
+
+    /// <summary>
     ///     SpeedTree archive path (<c>trees\&lt;name&gt;.spt</c>) → recorded tree height (TREE OBND
     ///     Z-extent). Lets the procedural <c>.spt</c> geometry generator size each tree from the ESM
     ///     data instead of a constant. Case-insensitive keys.

@@ -311,6 +311,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // Same timing for MODS alternate textures: the placement bake reads this to give each
         // re-skinned base (e.g. billboards) its own textured mesh variant.
         data.RenderCache.AlternateTextureIndex = data.AlternateTexturesByFormId;
+        // And FO4/FO76 MSWP material swaps (REFR XMSP): merged into a placement's alternate-texture
+        // set at bake time so the swapped placement decodes as its own mesh variant.
+        data.RenderCache.MaterialSwapIndex = data.MaterialSwapsByFormId;
         _stressBookmarkApplied = false;
 
         // Tear down any prior pipelines (a second LoadData = switching ESMs) so the texture

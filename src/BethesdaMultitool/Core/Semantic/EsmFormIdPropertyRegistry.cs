@@ -95,6 +95,7 @@ internal static class EsmFormIdPropertyRegistry
         "LockKeyFormId",
         "LoopSoundFormId",
         "MaleVoiceFormId",
+        "MaterialSwapFormId",
         "MeleeBlockSoundFormId",
         "MerchantContainerFormId",
         "ModFormId",

@@ -985,7 +985,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 sub.TextureState,
                 new TexIndexQuad(
                     sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex,
-                    sub.SpecularMap?.BindlessIndex ?? 0, 0),
+                    sub.SpecularMap?.BindlessIndex ?? 0, sub.GradientMap?.BindlessIndex ?? 0),
                 startInstance,
                 Specular: sub.Specular,
                 CameraRight: _leafBillboardRight,
@@ -1110,13 +1110,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             AlphaState = draw.AlphaState,
             RenderState = draw.RenderState,
             TextureState = draw.TextureState,
-            // Bindless TexIndices on the blended draw path. Same convention as the
-            // instanced path: .x = diffuse slot, .y = normal slot, .z = specular mask slot.
+            // Bindless TexIndices on the blended draw path. Same convention as the instanced
+            // path: .x = diffuse, .y = normal, .z = specular mask, .w = gradient palette.
             TexIndices = new TexIndexQuad(
                 draw.Submesh.Diffuse.BindlessIndex,
                 draw.Submesh.Normal.BindlessIndex,
                 draw.Submesh.SpecularMap?.BindlessIndex ?? 0,
-                0),
+                draw.Submesh.GradientMap?.BindlessIndex ?? 0),
             Specular = draw.Specular,
             // Leaf-billboard camera basis (consumed only when TextureState.y marks a leaf submesh, e.g. a
             // baked particle cloud) so the blended-path VS can re-face the quads to the camera.

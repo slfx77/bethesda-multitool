@@ -805,6 +805,15 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
     #endregion
 
+    #region Material Swaps
+
+    /// <summary>
+    ///     Parse all Material Swap (MSWP) records (FO4/FO76 per-placement <c>.bgsm</c> substitutions).
+    /// </summary>
+    internal List<MaterialSwapRecord> ParseMaterialSwaps() => _terrainTextures.ParseMaterialSwaps();
+
+    #endregion
+
     #region Landscape Textures
 
     /// <summary>

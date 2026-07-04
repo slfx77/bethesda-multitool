@@ -128,6 +128,8 @@ public static class EsmParsedRecordTypes
         new("SOUN", nameof(RecordCollection.Sounds)),
         new("MUSC", nameof(RecordCollection.MusicTypes)),
         new("TXST", nameof(RecordCollection.TextureSets)),
+        // FO4/FO76-only; the signature-keyed parse is a no-op for earlier games.
+        new("MSWP", nameof(RecordCollection.MaterialSwaps)),
         new("LTEX", nameof(RecordCollection.LandTextures)),
         new("GRAS", nameof(RecordCollection.Grasses)),
         new("ARMA", nameof(RecordCollection.ArmorAddons)),

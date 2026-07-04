@@ -63,6 +63,11 @@ public record PlacedReference
     /// <summary>Encounter zone FormID (XEZN subrecord / ExtraEncounterZone).</summary>
     public uint? EncounterZoneFormId { get; init; }
 
+    /// <summary>Material swap (MSWP) FormID from the XMSP subrecord. FO4/FO76 only: the 3D viewer
+    /// resolves it to BNAM→SNAM material substitutions and bakes this placement's mesh as its own
+    /// re-skinned variant, so alpha/two-sided/specular flow from the replacement materials.</summary>
+    public uint? MaterialSwapFormId { get; init; }
+
     /// <summary>Lock level from XLOC/ExtraLock.</summary>
     public byte? LockLevel { get; init; }
 

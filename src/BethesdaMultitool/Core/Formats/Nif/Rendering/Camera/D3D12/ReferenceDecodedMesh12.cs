@@ -46,5 +46,9 @@ internal sealed record DecodedSubmesh12(
     // FO4/FO76 material specular map (_s.dds: R = per-texel specular mask). Without it the shader has
     // no mask for BC5 normal maps (no alpha channel) and specular is suppressed rather than uniform —
     // a mask of 1.0 everywhere blows out whole scenes. Persisted in v21+.
-    string? SpecularMapTexturePath = null);
+    string? SpecularMapTexturePath = null,
+    // FO4/FO76 grayscale-to-palette texture + row: the shader replaces diffuse RGB with
+    // palette(u: diffuse.G, v: GradientMapV × vertexColor.R). Persisted in v22+.
+    string? GradientMapTexturePath = null,
+    float GradientMapV = 0f);
 #endif

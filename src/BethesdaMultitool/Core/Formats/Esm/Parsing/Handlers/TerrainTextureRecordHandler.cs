@@ -141,6 +141,95 @@ internal sealed class TerrainTextureRecordHandler(RecordParserContext context) :
 
     #endregion
 
+    #region Material Swaps
+
+    /// <summary>
+    ///     Parse all Material Swap (MSWP) records — FO4/FO76 whole-<c>.bgsm</c> substitutions applied
+    ///     per placement via the REFR <c>XMSP</c> FormID. Unconditional (no game gate): MSWP simply
+    ///     doesn't exist in earlier games, so the signature-keyed record list is empty there.
+    /// </summary>
+    internal List<MaterialSwapRecord> ParseMaterialSwaps()
+    {
+        return ParseRecordList("MSWP", 2048,
+            ParseMaterialSwapFromAccessor,
+            record => new MaterialSwapRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+    }
+
+    private MaterialSwapRecord? ParseMaterialSwapFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new MaterialSwapRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        string? pendingOriginal = null;
+        var swaps = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        // Subrecord shape: repeating BNAM (original material path) → SNAM (replacement path) pairs.
+        // A leading FNAM ("Tree Folder" string) and CNAM may precede the pairs — neither affects the
+        // swap table, so both are skipped. Paths are stored normalized so the decode-time lookup
+        // (keyed on NifTexturePathUtility.Normalize of the NIF's material path) matches directly.
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "BNAM":
+                    // Starts a new pair; an unmatched previous BNAM (no SNAM) is dropped.
+                    var original = EsmStringUtils.ReadNullTermString(subData);
+                    pendingOriginal = string.IsNullOrEmpty(original) ? null : original;
+                    break;
+                case "SNAM" when pendingOriginal is not null:
+                    var replacement = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(replacement))
+                    {
+                        // Indexer, not TryAdd: a later duplicate of the same BNAM wins (engine order).
+                        swaps[MaterialSwapRecord.NormalizeMaterialPath(pendingOriginal)] =
+                            MaterialSwapRecord.NormalizeMaterialPath(replacement);
+                    }
+
+                    pendingOriginal = null;
+                    break;
+            }
+        }
+
+        return new MaterialSwapRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            Swaps = swaps,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    #endregion
+
     #region Landscape Textures
 
     /// <summary>

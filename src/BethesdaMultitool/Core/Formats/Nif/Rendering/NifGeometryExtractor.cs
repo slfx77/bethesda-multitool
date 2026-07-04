@@ -130,7 +130,8 @@ internal static class NifGeometryExtractor
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null,
         bool treatRootsAsIdentity = false,
         bool collectBillboards = false,
-        bool dropBoneAttachedShapes = false)
+        bool dropBoneAttachedShapes = false,
+        IReadOnlyDictionary<string, string>? materialSwaps = null)
     {
         if (nif.Blocks.Count == 0)
         {
@@ -327,6 +328,8 @@ internal static class NifGeometryExtractor
             var useVertexColors = true;
             var useVertexAlpha = true;
             string? specularMapPath = null;
+            string? gradientMapPath = null;
+            var gradientMapV = 0.5f;
             var isDoubleSided = false;
             var hasAlphaBlend = false;
             var hasAlphaTest = false;
@@ -431,6 +434,19 @@ internal static class NifGeometryExtractor
                                         diffusePath.EndsWith(".bgem", StringComparison.OrdinalIgnoreCase))
                                        ? diffusePath
                                        : null);
+
+                // FO4/FO76 MSWP material swap (REFR XMSP): substitute the placement's replacement
+                // material BEFORE reading render state, so alpha/two-sided/specular/gradient and the
+                // texture-slot expansion below all come from the swap target. Normalizing here makes
+                // the lookup match the swap table's pre-normalized keys regardless of the NIF's baked
+                // casing/absolute-build-path form. Covers both the shader-declared MaterialPath and
+                // the raw-.bgsm-in-diffuse fallback, since both merge into this one local.
+                if (materialPath is not null && materialSwaps is not null &&
+                    materialSwaps.TryGetValue(NifTexturePathUtility.Normalize(materialPath), out var swapped))
+                {
+                    materialPath = swapped;
+                }
+
                 if (materialPath is not null && textureResolver?.TryGetMaterial(materialPath) is { } bgsm)
                 {
                     if (bgsm.IsEffect)
@@ -482,6 +498,12 @@ internal static class NifGeometryExtractor
                     if (!string.IsNullOrEmpty(bgsm.Normal))
                     {
                         normalMapPath = bgsm.Normal;
+                    }
+
+                    if (!string.IsNullOrEmpty(bgsm.GradientMap))
+                    {
+                        gradientMapPath = bgsm.GradientMap;
+                        gradientMapV = bgsm.GradientMapV;
                     }
                 }
 
@@ -571,6 +593,8 @@ internal static class NifGeometryExtractor
                 submesh.SkyType = skyType;
                 submesh.IsBillboard = billboardShapes?.Contains(shapeIndex) == true;
                 submesh.SpecularMapTexturePath = specularMapPath;
+                submesh.GradientMapTexturePath = gradientMapPath;
+                submesh.GradientMapV = gradientMapV;
 
                 // SLSF1_Vertex_Alpha clear — the vertex alpha channel is engine data (wind weight),
                 // not opacity. Neutralize it in place so every consumer (GPU alpha test, CPU

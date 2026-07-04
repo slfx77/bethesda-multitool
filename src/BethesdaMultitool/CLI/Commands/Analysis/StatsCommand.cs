@@ -124,6 +124,9 @@ public static class StatsCommand
 
         // Graphics & Audio
         AddIfNonZero(categories, "Graphics & Audio", "TXST", records.TextureSets.Count);
+        // MSWP registered as parsed (EsmParsedRecordTypes) — without a row here its count would
+        // silently disappear from the table on FO4/FO76 files (no longer listed under Unparsed).
+        AddIfNonZero(categories, "Graphics & Audio", "MSWP", records.MaterialSwaps.Count);
         AddIfNonZero(categories, "Graphics & Audio", "SOUN", records.Sounds.Count);
         AddIfNonZero(categories, "Graphics & Audio", "ARMA", records.ArmorAddons.Count);
         AddIfNonZero(categories, "Graphics & Audio", "WATR", records.Water.Count);

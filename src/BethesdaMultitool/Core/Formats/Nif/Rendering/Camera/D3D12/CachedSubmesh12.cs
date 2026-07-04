@@ -24,6 +24,15 @@ internal sealed class CachedSubmesh12
     /// </summary>
     public GpuTextureCache12.Entry? SpecularMap { get; init; }
 
+    /// <summary>
+    ///     FO4/FO76 grayscale-to-palette texture, or null. When set, the shader replaces the diffuse
+    ///     RGB with <c>palette.Sample(u: diffuse.G, v: GradientMapV × vertexColor.R)</c>.
+    /// </summary>
+    public GpuTextureCache12.Entry? GradientMap { get; init; }
+
+    /// <summary>Palette row (V) for the gradient lookup; only meaningful when <see cref="GradientMap" /> is set.</summary>
+    public float GradientMapV { get; init; }
+
     public required Vector4 AlphaState { get; init; }
     public required Vector4 RenderState { get; init; }
     // Sun specular term (1A): xyz = tint, w = Phong exponent (0 = no specular). Mirrors the
@@ -42,7 +51,7 @@ internal sealed class CachedSubmesh12
                 Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
                 IsLeafBillboard ? 1f : 0f, // .y > 0.5 routes the instanced VS to the leaf-billboard branch
                 SpecularMap is not null ? 1f : 0f, // .z > 0.5 = sample TexIndices.z for the spec mask
-                0f);
+                GradientMap is not null ? GradientMapV : -1f); // .w >= 0 = palette row for TexIndices.w
             if (TexturesReady)
             {
                 _textureState = state;
@@ -52,7 +61,8 @@ internal sealed class CachedSubmesh12
             return state;
         }
     }
-    public bool TexturesReady => Diffuse.IsReady && Normal.IsReady && SpecularMap is not { IsReady: false };
+    public bool TexturesReady => Diffuse.IsReady && Normal.IsReady &&
+                                 SpecularMap is not { IsReady: false } && GradientMap is not { IsReady: false };
     public required bool HasBump { get; init; }
     public required NifAlphaRenderMode AlphaRenderMode { get; init; }
     public required bool AlphaBlend { get; init; }

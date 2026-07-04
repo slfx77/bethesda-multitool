@@ -62,9 +62,16 @@ internal sealed class ReferenceMeshDecoder12
     ///     one shared NIF renders per-base textures (e.g. per-vendor billboard ads). The caller keys the
     ///     mesh cache on a variant of the model path so each override set is its own cached mesh.
     /// </param>
+    /// <param name="materialSwaps">
+    ///     Optional FO4/FO76 MSWP material swaps (normalized original → replacement <c>.bgsm</c> path).
+    ///     Applied inside <see cref="NifGeometryExtractor" /> at material-resolution time — before the
+    ///     material's render state is read — so alpha/two-sided/specular/gradient all come from the
+    ///     REPLACEMENT material. Same variant-keyed caching contract as <paramref name="overrides" />.
+    /// </param>
     public DecodedNifMesh12? DecodeMesh(
         string modelPath,
-        IReadOnlyDictionary<string, ShapeTextureOverride>? overrides = null)
+        IReadOnlyDictionary<string, ShapeTextureOverride>? overrides = null,
+        IReadOnlyDictionary<string, string>? materialSwaps = null)
     {
         var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
         var lookupPath = NormalizeModelPath(modelPath);
@@ -186,6 +193,9 @@ internal sealed class ReferenceMeshDecoder12
                     textureResolver: _textureResolver,
                     bindPoseOnly: false,
                     skipSkinning: true,
+                    // MSWP per-placement re-skin: substituted where the extractor resolves each
+                    // shape's .bgsm, so the replacement material's render state flows through.
+                    materialSwaps: materialSwaps,
                     // Placed references get their scene-root world transform from the REFR placement
                     // (RenderableReference.ComposeWorldMatrix). Discard the root node's OWN authored
                     // transform so a non-identity root rotation (e.g. McMarranWalls wallReg at 90°,
@@ -276,7 +286,9 @@ internal sealed class ReferenceMeshDecoder12
                     specularEnabled,
                     sub.IsLeafBillboard,
                     alphaState.DepthWritingBlend,
-                    specularEnabled ? sub.SpecularMapTexturePath : null));
+                    specularEnabled ? sub.SpecularMapTexturePath : null,
+                    sub.GradientMapTexturePath,
+                    sub.GradientMapV));
             }
 
             if (submeshes.Count == 0)
@@ -335,7 +347,9 @@ internal sealed class ReferenceMeshDecoder12
                 sub.SpecularEnabled,
                 sub.IsLeafBillboard,
                 sub.DepthWritingBlend,
-                sub.SpecularMapTexturePath));
+                sub.SpecularMapTexturePath,
+                sub.GradientMapTexturePath,
+                sub.GradientMapV));
         }
 
         return new ReferenceDecodedMeshPayload12(submeshes, decoded.CollisionPositions, decoded.CollisionTriangles);

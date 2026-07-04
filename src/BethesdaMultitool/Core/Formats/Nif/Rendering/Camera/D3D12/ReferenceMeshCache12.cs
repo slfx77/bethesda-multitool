@@ -279,6 +279,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         {
             DecodePath = decodePath,
             Overrides = alternateTextures?.Overrides,
+            MaterialSwaps = alternateTextures?.MaterialSwaps,
             HasVariant = alternateTextures is not null
         };
         // Set evicts LRU entries over capacity, each through onEvicted (the dispose cascade);
@@ -495,13 +496,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // archive identity) — the in-memory decoded LRU still caches them for the session.
         var decodePath = node.DecodePath;
         var overrides = node.Overrides;
+        var materialSwaps = node.MaterialSwaps;
         var persist = !node.HasVariant;
         Interlocked.Increment(ref _activeDecodeTasks);
         var task = Task.Run(() =>
         {
             try
             {
-                var decoded = _decoder.DecodeMesh(decodePath, overrides);
+                var decoded = _decoder.DecodeMesh(decodePath, overrides, materialSwaps);
                 StoreDecodedCache(cacheKey, decoded, persist);
                 return decoded;
             }
@@ -737,6 +739,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 var specularMap = !string.IsNullOrEmpty(sub.SpecularMapTexturePath)
                     ? _textureCache.GetOrUpload(sub.SpecularMapTexturePath!)
                     : null;
+                var gradientMap = !string.IsNullOrEmpty(sub.GradientMapTexturePath)
+                    ? _textureCache.GetOrUpload(sub.GradientMapTexturePath!)
+                    : null;
 
                 var vertexByteOffset = CheckedByteSize(vertexStarts[i], vertexStride);
                 var vertexByteSize = CheckedByteSize(sub.Vertices.Length, vertexStride);
@@ -760,6 +765,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     Diffuse = diffuse,
                     Normal = normal,
                     SpecularMap = specularMap,
+                    GradientMap = gradientMap,
+                    GradientMapV = sub.GradientMapV,
                     AlphaState = BuildAlphaState(sub),
                     RenderState = BuildRenderState(sub),
                     Specular = BuildSpecular(sub),
@@ -958,6 +965,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         /// <summary>MODS alternate-texture overrides (shape name → texture paths) to bake into the
         /// decoded submeshes, or null when this is the mesh's default (non-re-skinned) variant.</summary>
         public IReadOnlyDictionary<string, ShapeTextureOverride>? Overrides { get; init; }
+
+        /// <summary>FO4/FO76 MSWP material swaps (normalized original → replacement <c>.bgsm</c> path)
+        /// to apply during material resolution at decode time, or null when the placement has none.
+        /// Rides the same '#variant' cache key as <see cref="Overrides" /> (via the merged
+        /// <see cref="AlternateTextureSet.VariantKey" />), so each swap decodes as its own mesh.</summary>
+        public IReadOnlyDictionary<string, string>? MaterialSwaps { get; init; }
 
         /// <summary>True when this node is a MODS re-skin variant. Disk persistence is skipped for
         /// variants (the on-disk cache keys on the NIF's archive identity, which is shared across

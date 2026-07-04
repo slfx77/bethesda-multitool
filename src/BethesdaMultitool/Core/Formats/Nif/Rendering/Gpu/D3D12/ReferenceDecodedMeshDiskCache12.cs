@@ -91,7 +91,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Vertex_Alpha) neutralizes FO4 wind-weight vertex alpha that discarded tree trunks via the cutout
     // test; (c) absolute build-path materials now resolve (normalized), changing baked alpha/two-sided
     // state; (d) new per-submesh SpecularMapTexturePath field in the payload.
-    internal const int DecoderVersion = 21;
+    // Bumped 21→22: FO4/FO76 grayscale-to-palette — new per-submesh GradientMapTexturePath +
+    // GradientMapV payload fields (the shader replaces diffuse RGB with the palette lookup; without
+    // the fields, warm v21 meshes keep rendering the lavender authoring base).
+    internal const int DecoderVersion = 22;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -296,6 +299,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(submesh.IsLeafBillboard);
         writer.Write(submesh.DepthWritingBlend);
         WriteNullableString(writer, submesh.SpecularMapTexturePath, MaxStringBytes);
+        WriteNullableString(writer, submesh.GradientMapTexturePath, MaxStringBytes);
+        writer.Write(submesh.GradientMapV);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -351,7 +356,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadBoolean(),
             reader.ReadBoolean(),
             reader.ReadBoolean(),
-            ReadNullableString(reader, MaxStringBytes));
+            ReadNullableString(reader, MaxStringBytes),
+            ReadNullableString(reader, MaxStringBytes),
+            reader.ReadSingle());
     }
 
     private static void WriteVector2(BinaryWriter writer, Vector2 value)
@@ -420,4 +427,6 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     bool SpecularEnabled = false,
     bool IsLeafBillboard = false,
     bool DepthWritingBlend = false,
-    string? SpecularMapTexturePath = null);
+    string? SpecularMapTexturePath = null,
+    string? GradientMapTexturePath = null,
+    float GradientMapV = 0f);

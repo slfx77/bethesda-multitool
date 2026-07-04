@@ -51,6 +51,16 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     /// </summary>
     internal IReadOnlyDictionary<uint, AlternateTextureSet>? AlternateTextureIndex { get; set; }
 
+    /// <summary>
+    ///     MSWP FormID → normalized material-swap table (the owning
+    ///     <see cref="WorldViewData.MaterialSwapsByFormId" />). Set once at LoadData alongside
+    ///     <see cref="AlternateTextureIndex" />. FO4/FO76 placements carrying an XMSP resolve through
+    ///     this at bake time: the swaps merge into the placement's <see cref="AlternateTextureSet" />
+    ///     so its mesh decodes as a distinct variant with the replacement <c>.bgsm</c> render state.
+    ///     Null → no material swaps applied (every game before FO4).
+    /// </summary>
+    internal IReadOnlyDictionary<uint, IReadOnlyDictionary<string, string>>? MaterialSwapIndex { get; set; }
+
     public string ResourceName => nameof(WorldRenderCache);
 
     public Core.Diagnostics.ResourceCategory Category => Core.Diagnostics.ResourceCategory.CpuCache;
@@ -194,6 +204,11 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
 
         var categoryIndex = CategoryIndex;
         var alternateTextureIndex = AlternateTextureIndex;
+        var materialSwapIndex = MaterialSwapIndex;
+        // Interns the merged base-MODS + MSWP set per (base, swap) pair for this cell's bake, so the
+        // hundreds of placements sharing one colorway don't each rebuild an identical set (and the
+        // mesh cache sees one shared VariantKey instance per combination).
+        Dictionary<(uint BaseFormId, uint SwapFormId), AlternateTextureSet?>? mergedSwapSets = null;
         var built = new List<RenderableReference>(placements.Count);
         foreach (var p in placements)
         {
@@ -204,6 +219,26 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
                                     alternateTextureIndex.TryGetValue(p.BaseFormId, out var alt)
                 ? alt
                 : null;
+
+            // FO4/FO76 per-placement material swap (REFR XMSP → MSWP): fold the swap table into the
+            // base's alternate-texture set so the decode applies the replacement .bgsm materials and
+            // the mesh cache keys this placement as its own variant.
+            if (materialSwapIndex is not null && p.MaterialSwapFormId is { } swapFormId &&
+                materialSwapIndex.TryGetValue(swapFormId, out var swaps))
+            {
+                mergedSwapSets ??= [];
+                var key = (p.BaseFormId, swapFormId);
+                if (!mergedSwapSets.TryGetValue(key, out var merged))
+                {
+                    merged = alternateTextures is null
+                        ? AlternateTextureSet.Create([], swaps)
+                        : AlternateTextureSet.Create(alternateTextures.Overrides, swaps);
+                    mergedSwapSets[key] = merged;
+                }
+
+                alternateTextures = merged ?? alternateTextures;
+            }
+
             var renderable = RenderableReference.TryBuild(p, category, alternateTextures);
             if (renderable.HasValue) built.Add(renderable.Value);
         }

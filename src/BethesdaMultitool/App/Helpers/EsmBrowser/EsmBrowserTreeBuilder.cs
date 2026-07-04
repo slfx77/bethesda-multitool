@@ -143,6 +143,8 @@ internal static class EsmBrowserTreeBuilder
         // consumed the types it routed into named categories).
         var graphicsSubs = new List<(string Name, IList Records)>();
         if (result.TextureSets.Count > 0) graphicsSubs.Add(("Texture Sets", result.TextureSets));
+        // FO4/FO76 only — empty (and hidden) for every earlier game.
+        if (result.MaterialSwaps.Count > 0) graphicsSubs.Add(("Material Swaps", result.MaterialSwaps));
         graphicsSubs.AddRange(BuildGenericSubcategories(byType,
             ("Camera Shots", "CAMS"),
             ("Effect Shaders", "EFSH"),

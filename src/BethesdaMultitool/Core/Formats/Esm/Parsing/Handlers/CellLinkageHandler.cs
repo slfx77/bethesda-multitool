@@ -812,6 +812,7 @@ internal static class CellLinkageHandler
             Count = r.Count,
             OwnerFormId = r.OwnerFormId,
             EncounterZoneFormId = r.EncounterZoneFormId,
+            MaterialSwapFormId = r.MaterialSwapFormId,
             LockLevel = r.LockLevel,
             LockKeyFormId = r.LockKeyFormId,
             LockFlags = r.LockFlags,

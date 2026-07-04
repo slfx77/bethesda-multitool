@@ -44,6 +44,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                 Radius = refr.Radius,
                 OwnerFormId = refr.OwnerFormId,
                 EncounterZoneFormId = refr.EncounterZoneFormId,
+                MaterialSwapFormId = refr.MaterialSwapFormId,
                 LockLevel = refr.LockLevel,
                 LockKeyFormId = refr.LockKeyFormId,
                 LockFlags = refr.LockFlags,

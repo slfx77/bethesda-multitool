@@ -550,6 +550,11 @@ internal static class EsmDescriptorScanner
             case "XEZN" when subData.Length == 4:
                 state.EncounterZoneFormId = ReadUInt32(subData, 0, record.IsBigEndian);
                 break;
+            // FO4/FO76 per-placement material swap (MSWP FormID) — re-skins the base's NIF by
+            // substituting whole .bgsm materials (colorway skins, billboard ads).
+            case "XMSP" when subData.Length == 4:
+                state.MaterialSwapFormId = ReadUInt32(subData, 0, record.IsBigEndian);
+                break;
             case "XCNT" when subData.Length >= 4:
                 state.Count = (short)ReadInt32(subData, 0, record.IsBigEndian);
                 break;
@@ -635,6 +640,7 @@ internal static class EsmDescriptorScanner
                 Count = state.Count,
                 OwnerFormId = state.OwnerFormId,
                 EncounterZoneFormId = state.EncounterZoneFormId,
+                MaterialSwapFormId = state.MaterialSwapFormId,
                 LockLevel = state.LockLevel,
                 LockKeyFormId = state.LockKeyFormId,
                 LockFlags = state.LockFlags,
@@ -680,6 +686,7 @@ internal static class EsmDescriptorScanner
         public short? Count { get; set; }
         public uint? OwnerFormId { get; set; }
         public uint? EncounterZoneFormId { get; set; }
+        public uint? MaterialSwapFormId { get; set; }
         public byte? LockLevel { get; set; }
         public uint? LockKeyFormId { get; set; }
         public byte? LockFlags { get; set; }

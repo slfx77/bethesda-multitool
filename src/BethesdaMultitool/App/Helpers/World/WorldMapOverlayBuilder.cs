@@ -112,6 +112,7 @@ internal static class WorldMapOverlayBuilder
             TextureSetsByFormId = textureSetsByFormId,
             AlternateTexturesByFormId = BuildAlternateTextureIndex(
                 semantic.AlternateTexturesByFormId, textureSetsByFormId),
+            MaterialSwapsByFormId = BuildMaterialSwapIndex(semantic.MaterialSwaps),
             WatersByFormId = BuildWaterIndex(semantic.Water),
             WeathersByFormId = BuildWeatherIndex(semantic.Weather),
             ClimatesByFormId = BuildClimateIndex(semantic.Climate),
@@ -284,6 +285,7 @@ internal static class WorldMapOverlayBuilder
             TextureSetsByFormId = textureSetsByFormId,
             AlternateTexturesByFormId = BuildAlternateTextureIndex(
                 suppRecords.AlternateTexturesByFormId, textureSetsByFormId),
+            MaterialSwapsByFormId = BuildMaterialSwapIndex(suppRecords.MaterialSwaps),
             WatersByFormId = BuildWaterIndex(suppRecords.Water),
             WeathersByFormId = BuildWeatherIndex(suppRecords.Weather),
             ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),
@@ -468,6 +470,25 @@ internal static class WorldMapOverlayBuilder
             }
         }
 
+        return dict;
+    }
+
+    /// <summary>
+    ///     Indexes each MSWP record's already-normalized swap table by its FormID for the placement
+    ///     bake (REFR <c>XMSP</c> → swaps). Records with no effective pairs are omitted so the bake's
+    ///     "has a swap" check stays a plain dictionary hit.
+    /// </summary>
+    private static Dictionary<uint, IReadOnlyDictionary<string, string>> BuildMaterialSwapIndex(
+        List<MaterialSwapRecord> records)
+    {
+        var dict = new Dictionary<uint, IReadOnlyDictionary<string, string>>(records.Count);
+        foreach (var r in records)
+        {
+            if (r.Swaps.Count > 0)
+            {
+                dict.TryAdd(r.FormId, r.Swaps);
+            }
+        }
         return dict;
     }
 

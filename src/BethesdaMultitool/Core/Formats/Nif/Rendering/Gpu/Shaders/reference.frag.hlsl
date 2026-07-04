@@ -111,6 +111,20 @@ bool PassAlphaTest(float alpha, float threshold, float functionId)
 float4 main(PSInput input) : SV_Target
 {
     float4 sample = textures[NonUniformResourceIndex(input.vTexIndices.x)].Sample(sDiffuse, input.vTexCoord);
+
+    // FO4/FO76 grayscale-to-palette (vTextureState.w >= 0 = the material's GradientMapV row): the
+    // palette lookup REPLACES the diffuse RGB — the raw base texture is authoring data (FO4's
+    // lavender bricks). u = diffuse GREEN channel, v = row × vertexColor RED (fo76utils
+    // getDiffuseColor_sRGB_G); the vertex RGB must then NOT re-modulate (red was consumed as the
+    // row selector), so it is neutralized here. Alpha is untouched (still drives the cutout).
+    float3 vertexRgb = input.vVertexColor.rgb;
+    if (input.vTextureState.w >= 0.0)
+    {
+        float2 gradUv = float2(sample.g, input.vTextureState.w * input.vVertexColor.r);
+        sample.rgb = textures[NonUniformResourceIndex(input.vTexIndices.w)].Sample(sDiffuse, gradUv).rgb;
+        vertexRgb = 1.0;
+    }
+
     float sampleAlpha = saturate(sample.a * input.vVertexColor.a);
 
     // Alpha-test branch — controlled per-draw so foliage with NiAlphaProperty bit 9 set
@@ -183,9 +197,9 @@ float4 main(PSInput input) : SV_Target
         shade = 1.0; // emissive / full-bright shapes (e.g. glow) — unaffected by scene lighting
     }
 
-    // Vertex color modulates the diffuse — NIFs use it for art-direction tints (e.g. dusty
-    // rocks, painted billboards). Default-white VCLR leaves the texture untouched.
-    float3 lit = sample.rgb * input.vVertexColor.rgb * shade;
+    // Vertex color modulates the diffuse (vertexRgb is pre-neutralized for gradient shapes) —
+    // NIFs use it for art-direction tints (e.g. dusty rocks, painted billboards).
+    float3 lit = sample.rgb * vertexRgb * shade;
 
     // FNV sun specular — grounded in the engine's specular SLS pixel shader (SLS2047.pso):
     //   spec = NormalMap.a * pow(saturate(N·H), shininess); a soft N·L ramp fades it on grazing/

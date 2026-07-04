@@ -29,6 +29,10 @@ public record ExtractedRefrRecord
     /// <summary>XEZN - Encounter zone FormID.</summary>
     public uint? EncounterZoneFormId { get; init; }
 
+    /// <summary>XMSP - Material swap (MSWP) FormID. FO4/FO76 only: re-skins this placement's mesh by
+    /// substituting whole <c>.bgsm</c> materials at decode time.</summary>
+    public uint? MaterialSwapFormId { get; init; }
+
     /// <summary>XLOC - Lock level.</summary>
     public byte? LockLevel { get; init; }
 

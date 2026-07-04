@@ -475,6 +475,7 @@ public sealed class RecordParser
         var musicTypes = _miscEnvironment.ParseMusicTypes();
         var textureSets = _miscEnvironment.ParseTextureSets();
         MergeRuntimeLandTextureSets(textureSets);
+        var materialSwaps = _miscEnvironment.ParseMaterialSwaps();
         var landTextures = _miscEnvironment.ParseLandscapeTextures();
         MergeRuntimeLandTextures(landTextures);
         var grasses = _miscEnvironment.ParseGrass();
@@ -620,6 +621,7 @@ public sealed class RecordParser
             Sounds = sounds,
             MusicTypes = musicTypes,
             TextureSets = textureSets,
+            MaterialSwaps = materialSwaps,
             LandTextures = landTextures,
             Grasses = grasses,
             ArmorAddons = armorAddons,
@@ -660,6 +662,9 @@ public sealed class RecordParser
                 Weather = result.Weather,
                 LandTextures = result.LandTextures,
                 TextureSets = result.TextureSets,
+                // FO4/FO76 are schema-primary, so the viewer's material swaps must ride the bridge
+                // overlay like the other typed world/atmosphere collections or they'd be discarded.
+                MaterialSwaps = result.MaterialSwaps,
                 Water = result.Water,
                 NavMeshes = result.NavMeshes,
                 MapMarkers = result.MapMarkers,

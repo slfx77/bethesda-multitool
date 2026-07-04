@@ -51,6 +51,16 @@ internal sealed class RenderableSubmesh
     /// </summary>
     public string? SpecularMapTexturePath { get; set; }
 
+    /// <summary>
+    ///     FO4/FO76 grayscale-to-palette texture (BGSM slot 3), or null. The shader replaces the
+    ///     diffuse RGB with <c>palette.Sample(u: diffuse.G, v: GradientMapV × vertexColor.R)</c> —
+    ///     without it, palette-tinted assets render their authoring base (FO4's lavender bricks).
+    /// </summary>
+    public string? GradientMapTexturePath { get; set; }
+
+    /// <summary>Palette row for the grayscale-to-palette lookup (0–1); meaningless when the map is null.</summary>
+    public float GradientMapV { get; set; }
+
     /// <summary>Shader property metadata resolved from the source NIF.</summary>
     public NifShaderTextureMetadata? ShaderMetadata { get; init; }
 

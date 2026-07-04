@@ -83,6 +83,17 @@ public sealed class BgsmMaterial
     /// <summary>Specular smoothness (0–8; ≤ 1 in practice — NOT an exponent).</summary>
     public float SpecularSmoothness { get; private set; }
 
+    /// <summary>
+    ///     Grayscale-to-palette texture path (slot 3), or null. When set, the engine REPLACES the
+    ///     diffuse RGB with a palette lookup: <c>palette.Sample(u: diffuse.G, v: GradientMapV ×
+    ///     vertexColor.R)</c> (fo76utils getDiffuseColor_sRGB_G) — rendering the raw diffuse instead
+    ///     shows the authoring base (e.g. FO4's lavender bricks).
+    /// </summary>
+    public string? GradientMap => _paths[3];
+
+    /// <summary>Palette row (V coordinate) for the grayscale-to-palette lookup, 0–1.</summary>
+    public float GradientMapV { get; private set; } = 0.5f;
+
     /// <summary>Emissive (glow) enabled (lighting materials only).</summary>
     public bool EmissiveEnabled { get; private set; }
 
@@ -165,6 +176,15 @@ public sealed class BgsmMaterial
         if (!isEffect)
         {
             material.ReadLightingParams(data, endPos, isFallout4);
+
+            // Grayscale-to-palette row: an EOF-relative float (fo76utils loadBGSMFile), meaningful
+            // only when the gradient slot was populated.
+            var gradOffset = data.Length - (isFallout4 ? 5 : 6);
+            if (material.GradientMap is not null && gradOffset >= 0 && gradOffset + 4 <= data.Length)
+            {
+                material.GradientMapV = Math.Clamp(
+                    BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(gradOffset)), 0f, 1f);
+            }
         }
 
         return material;

@@ -250,6 +250,13 @@ public record RecordCollection
     /// <summary>Parsed Texture Set (TXST) records.</summary>
     public List<TextureSetRecord> TextureSets { get; init; } = [];
 
+    /// <summary>
+    ///     Parsed Material Swap (MSWP) records — FO4/FO76 only, empty for earlier games. Referenced
+    ///     from placements via the REFR <c>XMSP</c> FormID; the 3D viewer applies each record's
+    ///     BNAM→SNAM material substitutions when decoding that placement's mesh.
+    /// </summary>
+    public List<MaterialSwapRecord> MaterialSwaps { get; init; } = [];
+
     /// <summary>Parsed Landscape Texture (LTEX) records.</summary>
     public List<LandscapeTextureRecord> LandTextures { get; init; } = [];
 
@@ -362,7 +369,7 @@ public record RecordCollection
         Lights.Count + Doors.Count + Statics.Count + StaticCollections.Count + Furniture.Count +
         Packages.Count +
         GenericRecords.Count +
-        Sounds.Count + MusicTypes.Count + TextureSets.Count + LandTextures.Count + Grasses.Count + ArmorAddons.Count + Water.Count +
+        Sounds.Count + MusicTypes.Count + TextureSets.Count + MaterialSwaps.Count + LandTextures.Count + Grasses.Count + ArmorAddons.Count + Water.Count +
         BodyPartData.Count + ActorValueInfos.Count + CombatStyles.Count +
         LightingTemplates.Count + NavMeshes.Count + Weather.Count;
 
@@ -472,6 +479,7 @@ public record RecordCollection
             Sounds = MergeList(Sounds, overlay.Sounds, r => r.FormId),
             MusicTypes = MergeList(MusicTypes, overlay.MusicTypes, r => r.FormId),
             TextureSets = MergeList(TextureSets, overlay.TextureSets, r => r.FormId),
+            MaterialSwaps = MergeList(MaterialSwaps, overlay.MaterialSwaps, r => r.FormId),
             LandTextures = MergeList(LandTextures, overlay.LandTextures, r => r.FormId),
             Grasses = MergeList(Grasses, overlay.Grasses, r => r.FormId),
             ArmorAddons = MergeList(ArmorAddons, overlay.ArmorAddons, r => r.FormId),

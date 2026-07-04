@@ -155,7 +155,11 @@ public static class EsmRecordTypes
             ["CDCK"] = new("Caravan Deck", RecordCategory.Item, 0x75),
             ["DEHY"] = new("Dehydration Stage", RecordCategory.GameData, 0x76),
             ["HUNG"] = new("Hunger Stage", RecordCategory.GameData, 0x77),
-            ["SLPD"] = new("Sleep Deprivation Stage", RecordCategory.GameData, 0x78)
+            ["SLPD"] = new("Sleep Deprivation Stage", RecordCategory.GameData, 0x78),
+
+            // Later-game types parsed by the multi-game semantic parser. No FormTypeId: the ids above
+            // come from the FNV PDB ENUM_FORM_ID, which these types postdate.
+            ["MSWP"] = new("Material Swap", RecordCategory.Graphics)
         };
 
     /// <summary>

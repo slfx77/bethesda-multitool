@@ -18,12 +18,23 @@ public readonly record struct ShapeTextureOverride(string? Diffuse, string? Norm
 ///         <c>ModelPath + '#' + VariantKey</c>, so each variant becomes its own cached mesh with the
 ///         overridden textures baked into its submeshes — no per-draw texture swapping needed.
 ///     </para>
+///     <para>
+///         FO4/FO76 additionally re-skin per PLACEMENT via MSWP material swaps (REFR <c>XMSP</c>):
+///         <see cref="MaterialSwaps" /> substitutes whole <c>.bgsm</c> materials by path at decode
+///         time, so alpha/two-sided/specular/gradient state all flow from the replacement material.
+///         Swaps fold into the same <see cref="VariantKey" /> so a swapped placement gets its own
+///         cached mesh variant.
+///     </para>
 /// </summary>
 public sealed class AlternateTextureSet
 {
-    private AlternateTextureSet(IReadOnlyDictionary<string, ShapeTextureOverride> overrides, string variantKey)
+    private AlternateTextureSet(
+        IReadOnlyDictionary<string, ShapeTextureOverride> overrides,
+        IReadOnlyDictionary<string, string>? materialSwaps,
+        string variantKey)
     {
         Overrides = overrides;
+        MaterialSwaps = materialSwaps;
         VariantKey = variantKey;
     }
 
@@ -31,18 +42,30 @@ public sealed class AlternateTextureSet
     public IReadOnlyDictionary<string, ShapeTextureOverride> Overrides { get; }
 
     /// <summary>
-    ///     Stable, content-derived key (FNV-1a over the sorted shape/diffuse/normal tuples). Two sets
-    ///     with the same overrides produce the same key (shared cache entry); any difference produces a
-    ///     different key. Deterministic across runs — no hashing that varies per process.
+    ///     Normalized original material path → replacement path (MSWP BNAM → SNAM), or null when this
+    ///     set carries only shape overrides. Keys/values are pre-normalized to the exact form
+    ///     <c>NifTexturePathUtility.Normalize</c> yields for a NIF's shader material path, so the
+    ///     decode-time lookup is a single dictionary hit.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? MaterialSwaps { get; }
+
+    /// <summary>
+    ///     Stable, content-derived key (FNV-1a over the sorted shape/diffuse/normal tuples plus, when
+    ///     present, an "mswp"-salted run of the sorted material-swap pairs). Two sets with the same
+    ///     content produce the same key (shared cache entry); any difference — including swap-only vs
+    ///     override-only sets — produces a different key. Deterministic across runs — no hashing that
+    ///     varies per process.
     /// </summary>
     public string VariantKey { get; }
 
     /// <summary>
-    ///     Builds a set from resolved per-shape overrides. Returns <c>null</c> when there is nothing to
-    ///     override (no entries, or every entry has both paths null), so callers can treat "no re-skin"
-    ///     as a plain null and keep the fast unchanged-cache-key path.
+    ///     Builds a set from resolved per-shape overrides and/or MSWP material swaps. Returns
+    ///     <c>null</c> when there is nothing to re-skin (no effective overrides AND no swaps), so
+    ///     callers can treat "no re-skin" as a plain null and keep the fast unchanged-cache-key path.
     /// </summary>
-    public static AlternateTextureSet? Create(IEnumerable<KeyValuePair<string, ShapeTextureOverride>> entries)
+    public static AlternateTextureSet? Create(
+        IEnumerable<KeyValuePair<string, ShapeTextureOverride>> entries,
+        IReadOnlyDictionary<string, string>? materialSwaps = null)
     {
         var map = new Dictionary<string, ShapeTextureOverride>(StringComparer.OrdinalIgnoreCase);
         foreach (var (shape, ov) in entries)
@@ -55,7 +78,8 @@ public sealed class AlternateTextureSet
             map[shape] = ov;
         }
 
-        if (map.Count == 0)
+        var swaps = materialSwaps is { Count: > 0 } ? materialSwaps : null;
+        if (map.Count == 0 && swaps is null)
         {
             return null;
         }
@@ -73,7 +97,21 @@ public sealed class AlternateTextureSet
             hash = FnvAppend(hash, ";");
         }
 
-        return new AlternateTextureSet(map, hash.ToString("x16"));
+        if (swaps is not null)
+        {
+            // Literal salt keeps a swap-only set from ever colliding with a shape-override-only set,
+            // and the '>' pair separator is distinct from the override run's '|' for the same reason.
+            hash = FnvAppend(hash, "mswp");
+            foreach (var original in swaps.Keys.OrderBy(static k => k, StringComparer.Ordinal))
+            {
+                hash = FnvAppend(hash, original);
+                hash = FnvAppend(hash, ">");
+                hash = FnvAppend(hash, swaps[original]);
+                hash = FnvAppend(hash, ";");
+            }
+        }
+
+        return new AlternateTextureSet(map, swaps, hash.ToString("x16"));
     }
 
     private static ulong FnvAppend(ulong hash, string s)

@@ -457,6 +457,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // be present before whichever control (2D or 3D) bakes first, or the shared cache would keep a
         // no-override list.
         data.RenderCache.AlternateTextureIndex = data.AlternateTexturesByFormId;
+        // And for FO4/FO76 MSWP material swaps (REFR XMSP) — same bake-before-index hazard.
+        data.RenderCache.MaterialSwapIndex = data.MaterialSwapsByFormId;
         _state.LoadData(data);
         _worldHeightmapDirty = true;
         _currentColorScheme = HeightmapColorScheme.DefaultForGame(data.Game, data.SourceFilePath);
