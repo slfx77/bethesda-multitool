@@ -35,15 +35,17 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     // the placeholder→textured window stays short.
     private const int DefaultMaxUploadsPerFrame = 16;
     private const long DefaultMaxUploadBytesPerFrame = 48L * 1024L * 1024L;
-    // Scales with cores (GC-guarded: half the logical processors, clamped to [2, 8]) — texture
+    // Scales with cores (GC-guarded: half the logical processors, clamped to [2, 12]) — texture
     // resolve (BSA read + DDX→DDS transcode) is the documented streaming-hitch cost and is
     // embarrassingly parallel + off the render thread, so more workers directly multiply throughput.
-    // Half-cores (not full) leaves headroom for mesh decode + render + GC. Env override for profiling.
+    // Half-cores (not full) leaves headroom for mesh decode + render + GC; the 8→12 ceiling raise
+    // matches the decode-worker raise (high-core machines were idling half their cores cold-loading
+    // FO4's texture-heavy Commonwealth). Env override for profiling.
     private static readonly int DefaultMaxConcurrentTextureResolves = ParsePositiveIntEnvironment(
         EnvironmentVariables.Viewer.TextureResolveConcurrency,
-        defaultValue: Math.Clamp(Environment.ProcessorCount / 2, 2, 8),
+        defaultValue: Math.Clamp(Environment.ProcessorCount / 2, 2, 12),
         min: 1,
-        max: 8);
+        max: 12);
 
     // Release each decoded texture payload's CPU mip bytes from the resolver cache once it's on the
     // GPU (default on) — they're dead weight afterward and otherwise accumulate to multi-GB managed

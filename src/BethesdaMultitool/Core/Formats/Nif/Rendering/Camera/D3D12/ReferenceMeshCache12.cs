@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
+using System.Threading.Channels;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.SpeedTree;
@@ -23,12 +24,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private static readonly Logger Log = Logger.Instance;
 
     // Cold NIF conversion allocates heavily and competes with the UI/render thread, so the default
-    // scales with cores but stays GC-guarded: HALF the logical processors, clamped to [2, 8]. This
+    // scales with cores but stays GC-guarded: HALF the logical processors, clamped to [2, 12]. This
     // leaves headroom for the render + UI + GC threads (full-core saturation caused the GC pauses the
-    // old conservative default of 2 was guarding against). Env override for profiling specific machines.
+    // old conservative default of 2 was guarding against). The ceiling rose 8→12 when disk-cache
+    // persists moved off the decode workers onto the background persist writer — a decode slot is now
+    // pure CPU decode, so high-core machines (24+ threads) get the extra workers a cold Commonwealth
+    // load can use. Env override for profiling specific machines.
     private static readonly int DefaultMaxConcurrentDecodeTasks = ParsePositiveIntEnvironment(
         EnvironmentVariables.Viewer.ReferenceDecodeConcurrency,
-        defaultValue: Math.Clamp(Environment.ProcessorCount / 2, 2, 8),
+        defaultValue: Math.Clamp(Environment.ProcessorCount / 2, 2, 12),
         min: 1,
         max: 16);
 
@@ -86,6 +90,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // a fraction of the GPU footprint, so a large byte budget keeps far more meshes warm than residency.
     private readonly LruCache<string, CollisionMesh> _collisionLru;
     private readonly ReferenceDecodedMeshDiskCache12? _persistentDecodedCache;
+    // Disk-persist handoff: decode workers enqueue (path, mesh) and free their slot immediately;
+    // payload serialization + the atomic file write run on the single background writer below
+    // instead of inside the decode task (cold loads were spending decode-worker time on disk I/O).
+    // Bounded: when the writer falls behind, TryWrite fails and the decode worker writes
+    // synchronously — natural backpressure, never a dropped persist.
+    private readonly Channel<(string ModelPath, DecodedNifMesh12? Decoded)>? _persistQueue;
+    private readonly Task? _persistWriterTask;
     private readonly object _decodedCacheLock = new();
     private int _activeDecodeTasks;
     private FrameByteBudget _frameUploadByteBudget;
@@ -117,6 +128,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         _geometryArena = new GpuGeometryArena12(gpu)
             .RegisterWith(Core.Diagnostics.ResourceRegistry.Instance, "reference");
         _persistentDecodedCache = persistentDecodedCache ?? ReferenceDecodedMeshDiskCache12.CreateFromEnvironment();
+        if (_persistentDecodedCache is not null)
+        {
+            _persistQueue = Channel.CreateBounded<(string, DecodedNifMesh12?)>(
+                new BoundedChannelOptions(64) { SingleReader = true });
+            _persistWriterTask = Task.Run(ProcessPersistQueueAsync);
+        }
+
         Capacity = capacity;
         DecodedMeshCacheByteBudget = decodedCacheByteBudget;
         _autoSizeMeshCapacity = autoSizeMeshCapacity;
@@ -298,9 +316,26 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        _persistentDecodedCache?.LogStatistics();
 
         DrainDecodeTasksForDispose();
+
+        // Producers are drained; let the persist writer flush the queued disk writes before the stats
+        // log. Bounded wait — an abandoned tail write just means those meshes re-decode next session.
+        if (_persistQueue is not null)
+        {
+            _persistQueue.Writer.TryComplete();
+            try
+            {
+                _persistWriterTask?.Wait(TimeSpan.FromSeconds(30));
+            }
+            catch (AggregateException ex)
+            {
+                Log.Warn("ReferenceMeshCache12: persist writer faulted during dispose: {0}",
+                    ex.GetBaseException().Message);
+            }
+        }
+
+        _persistentDecodedCache?.LogStatistics();
 
         // Unregisters, then evicts every node LRU-tail-first through onEvicted (Mesh?.Dispose()).
         // Cross-mesh disposal order carries no correctness weight: texture refcount releases are
@@ -599,11 +634,32 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             return;
         }
 
+        // Hand off to the background persist writer so the decode worker's slot frees for the next
+        // mesh. TryWrite fails when the queue is full (writer behind) or completed (disposing) — the
+        // caller then pays for the write itself, which is exactly the pre-queue behavior.
+        if (_persistQueue is not null && _persistQueue.Writer.TryWrite((modelPath, decoded)))
+        {
+            return;
+        }
+
+        PersistDecodedCacheEntry(modelPath, decoded);
+    }
+
+    private async Task ProcessPersistQueueAsync()
+    {
+        await foreach (var (modelPath, decoded) in _persistQueue!.Reader.ReadAllAsync().ConfigureAwait(false))
+        {
+            PersistDecodedCacheEntry(modelPath, decoded);
+        }
+    }
+
+    private void PersistDecodedCacheEntry(string modelPath, DecodedNifMesh12? decoded)
+    {
         try
         {
             var metadata = _meshArchives.GetLookupMetadata(modelPath);
 
-            _persistentDecodedCache.Store(
+            _persistentDecodedCache!.Store(
                 metadata,
                 decoded is null ? null : ReferenceMeshDecoder12.ToPersistentPayload(decoded));
         }
