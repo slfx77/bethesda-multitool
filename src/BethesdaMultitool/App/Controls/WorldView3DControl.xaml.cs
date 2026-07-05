@@ -314,6 +314,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // And FO4/FO76 MSWP material swaps (REFR XMSP): merged into a placement's alternate-texture
         // set at bake time so the swapped placement decodes as its own mesh variant.
         data.RenderCache.MaterialSwapIndex = data.MaterialSwapsByFormId;
+        // Plus the base-record default swaps (FO4-family MODS = bare MSWP FormID) for placements
+        // that carry no XMSP of their own.
+        data.RenderCache.BaseMaterialSwapIndex = data.BaseMaterialSwapsByFormId;
         _stressBookmarkApplied = false;
 
         // Tear down any prior pipelines (a second LoadData = switching ESMs) so the texture

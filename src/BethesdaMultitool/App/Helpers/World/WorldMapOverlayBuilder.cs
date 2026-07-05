@@ -113,6 +113,7 @@ internal static class WorldMapOverlayBuilder
             AlternateTexturesByFormId = BuildAlternateTextureIndex(
                 semantic.AlternateTexturesByFormId, textureSetsByFormId),
             MaterialSwapsByFormId = BuildMaterialSwapIndex(semantic.MaterialSwaps),
+            BaseMaterialSwapsByFormId = semantic.BaseMaterialSwapFormIds,
             WatersByFormId = BuildWaterIndex(semantic.Water),
             WeathersByFormId = BuildWeatherIndex(semantic.Weather),
             ClimatesByFormId = BuildClimateIndex(semantic.Climate),
@@ -286,6 +287,7 @@ internal static class WorldMapOverlayBuilder
             AlternateTexturesByFormId = BuildAlternateTextureIndex(
                 suppRecords.AlternateTexturesByFormId, textureSetsByFormId),
             MaterialSwapsByFormId = BuildMaterialSwapIndex(suppRecords.MaterialSwaps),
+            BaseMaterialSwapsByFormId = suppRecords.BaseMaterialSwapFormIds,
             WatersByFormId = BuildWaterIndex(suppRecords.Water),
             WeathersByFormId = BuildWeatherIndex(suppRecords.Weather),
             ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),

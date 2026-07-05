@@ -49,6 +49,14 @@ internal sealed class WorldViewData
         new Dictionary<uint, IReadOnlyDictionary<string, string>>();
 
     /// <summary>
+    ///     Base-object FormID → its default MSWP FormID (the FO4-family <c>MODS</c> subrecord — a
+    ///     bare Material Swap FormID there). The per-BASE fallback wherever a placement carries no
+    ///     REFR <c>XMSP</c> of its own; XMSP always wins. Empty for earlier games.
+    /// </summary>
+    public IReadOnlyDictionary<uint, uint> BaseMaterialSwapsByFormId { get; init; } =
+        new Dictionary<uint, uint>();
+
+    /// <summary>
     ///     SpeedTree archive path (<c>trees\&lt;name&gt;.spt</c>) → recorded tree height (TREE OBND
     ///     Z-extent). Lets the procedural <c>.spt</c> geometry generator size each tree from the ESM
     ///     data instead of a constant. Case-insensitive keys.

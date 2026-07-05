@@ -367,6 +367,77 @@ public sealed class WorldRenderInfrastructureTests
         };
     }
 
+    [Fact]
+    public void WorldRenderCache_PlacementBake_BaseRecordSwapAppliesWithoutXmsp()
+    {
+        // FO4-family base records carry a default MSWP in MODS (a bare FormID). A placement with no
+        // REFR XMSP of its own must still bake with the base's swap table — this is what gives every
+        // un-overridden billboard/building its authored colorway instead of the shared default.
+        var placement = RenderablePlacement(0x221, 0f, 0f);
+        var cell = new CellRecord
+        {
+            FormId = 0x220,
+            GridX = 0,
+            GridY = 0,
+            PlacedObjects = [placement]
+        };
+        var cache = new WorldRenderCache
+        {
+            BaseMaterialSwapIndex = new Dictionary<uint, uint> { [placement.BaseFormId] = 0x500 },
+            MaterialSwapIndex = new Dictionary<uint, IReadOnlyDictionary<string, string>>
+            {
+                [0x500] = new Dictionary<string, string>
+                {
+                    ["materials\\x\\a.bgsm"] = "materials\\x\\red.bgsm"
+                }
+            }
+        };
+        var candidates = new List<RenderableReference>();
+
+        cache.QueryPlacementCandidates(cell, 0f, 0f, 512f, null, 0f, candidates);
+
+        var reference = Assert.Single(candidates);
+        Assert.NotNull(reference.AlternateTextures?.MaterialSwaps);
+        Assert.Equal("materials\\x\\red.bgsm", reference.AlternateTextures!.MaterialSwaps!["materials\\x\\a.bgsm"]);
+    }
+
+    [Fact]
+    public void WorldRenderCache_PlacementBake_XmspWinsOverBaseRecordSwap()
+    {
+        // A placement's own REFR XMSP must override the base record's default swap (engine rule) —
+        // never merge, never prefer the base.
+        var placement = RenderablePlacement(0x231, 0f, 0f) with { MaterialSwapFormId = 0x501 };
+        var cell = new CellRecord
+        {
+            FormId = 0x230,
+            GridX = 0,
+            GridY = 0,
+            PlacedObjects = [placement]
+        };
+        var cache = new WorldRenderCache
+        {
+            BaseMaterialSwapIndex = new Dictionary<uint, uint> { [placement.BaseFormId] = 0x500 },
+            MaterialSwapIndex = new Dictionary<uint, IReadOnlyDictionary<string, string>>
+            {
+                [0x500] = new Dictionary<string, string>
+                {
+                    ["materials\\x\\a.bgsm"] = "materials\\x\\red.bgsm"
+                },
+                [0x501] = new Dictionary<string, string>
+                {
+                    ["materials\\x\\a.bgsm"] = "materials\\x\\blue.bgsm"
+                }
+            }
+        };
+        var candidates = new List<RenderableReference>();
+
+        cache.QueryPlacementCandidates(cell, 0f, 0f, 512f, null, 0f, candidates);
+
+        var reference = Assert.Single(candidates);
+        Assert.NotNull(reference.AlternateTextures?.MaterialSwaps);
+        Assert.Equal("materials\\x\\blue.bgsm", reference.AlternateTextures!.MaterialSwaps!["materials\\x\\a.bgsm"]);
+    }
+
     private static PlacedReference RenderablePlacement(
         uint formId,
         float x,

@@ -459,6 +459,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         data.RenderCache.AlternateTextureIndex = data.AlternateTexturesByFormId;
         // And for FO4/FO76 MSWP material swaps (REFR XMSP) — same bake-before-index hazard.
         data.RenderCache.MaterialSwapIndex = data.MaterialSwapsByFormId;
+        // Plus the base-record default swaps (FO4-family MODS = bare MSWP FormID).
+        data.RenderCache.BaseMaterialSwapIndex = data.BaseMaterialSwapsByFormId;
         _state.LoadData(data);
         _worldHeightmapDirty = true;
         _currentColorScheme = HeightmapColorScheme.DefaultForGame(data.Game, data.SourceFilePath);

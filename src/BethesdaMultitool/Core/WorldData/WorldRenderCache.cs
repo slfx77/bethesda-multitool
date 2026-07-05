@@ -61,6 +61,14 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     /// </summary>
     internal IReadOnlyDictionary<uint, IReadOnlyDictionary<string, string>>? MaterialSwapIndex { get; set; }
 
+    /// <summary>
+    ///     Base-FormID → default MSWP FormID (the owning
+    ///     <see cref="WorldViewData.BaseMaterialSwapsByFormId" /> — FO4-family base-record
+    ///     <c>MODS</c>). The bake-time fallback for placements with no REFR <c>XMSP</c>; a
+    ///     placement's own XMSP always wins. Null → no base-record swaps (every game before FO4).
+    /// </summary>
+    internal IReadOnlyDictionary<uint, uint>? BaseMaterialSwapIndex { get; set; }
+
     public string ResourceName => nameof(WorldRenderCache);
 
     public Core.Diagnostics.ResourceCategory Category => Core.Diagnostics.ResourceCategory.CpuCache;
@@ -205,6 +213,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         var categoryIndex = CategoryIndex;
         var alternateTextureIndex = AlternateTextureIndex;
         var materialSwapIndex = MaterialSwapIndex;
+        var baseMaterialSwapIndex = BaseMaterialSwapIndex;
         // Interns the merged base-MODS + MSWP set per (base, swap) pair for this cell's bake, so the
         // hundreds of placements sharing one colorway don't each rebuild an identical set (and the
         // mesh cache sees one shared VariantKey instance per combination).
@@ -220,10 +229,19 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
                 ? alt
                 : null;
 
-            // FO4/FO76 per-placement material swap (REFR XMSP → MSWP): fold the swap table into the
-            // base's alternate-texture set so the decode applies the replacement .bgsm materials and
-            // the mesh cache keys this placement as its own variant.
-            if (materialSwapIndex is not null && p.MaterialSwapFormId is { } swapFormId &&
+            // FO4/FO76 material swap: the placement's own REFR XMSP wins; a base record's default
+            // swap (FO4-family MODS = bare MSWP FormID) covers every placement without one. The
+            // winning swap table folds into the base's alternate-texture set so the decode applies
+            // the replacement .bgsm materials and the mesh cache keys this placement as its own
+            // variant.
+            var effectiveSwapFormId = p.MaterialSwapFormId;
+            if (effectiveSwapFormId is null && baseMaterialSwapIndex is not null &&
+                baseMaterialSwapIndex.TryGetValue(p.BaseFormId, out var baseSwapFormId))
+            {
+                effectiveSwapFormId = baseSwapFormId;
+            }
+
+            if (materialSwapIndex is not null && effectiveSwapFormId is { } swapFormId &&
                 materialSwapIndex.TryGetValue(swapFormId, out var swaps))
             {
                 mergedSwapSets ??= [];

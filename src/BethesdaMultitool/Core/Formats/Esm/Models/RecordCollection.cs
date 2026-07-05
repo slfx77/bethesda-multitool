@@ -305,6 +305,15 @@ public record RecordCollection
     public IReadOnlyDictionary<uint, IReadOnlyList<AlternateTextureEntry>> AlternateTexturesByFormId { get; init; } =
         new Dictionary<uint, IReadOnlyList<AlternateTextureEntry>>();
 
+    /// <summary>
+    ///     Base-object FormID → its default Material Swap (MSWP) FormID, from the FO4-family
+    ///     <c>MODS</c> subrecord (a bare FormID there, unlike the FNV/Skyrim alternate-texture
+    ///     array). Applied to every placement of the base that doesn't carry its own REFR
+    ///     <c>XMSP</c> override. Empty for earlier games.
+    /// </summary>
+    public IReadOnlyDictionary<uint, uint> BaseMaterialSwapFormIds { get; init; } =
+        new Dictionary<uint, uint>();
+
     /// <summary>FormID to Editor ID mapping built during parsing.</summary>
     public Dictionary<uint, string> FormIdToEditorId { get; init; } = [];
 
@@ -501,6 +510,9 @@ public record RecordCollection
             AlternateTexturesByFormId = MergeDictionary(
                 new Dictionary<uint, IReadOnlyList<AlternateTextureEntry>>(AlternateTexturesByFormId),
                 new Dictionary<uint, IReadOnlyList<AlternateTextureEntry>>(overlay.AlternateTexturesByFormId)),
+            BaseMaterialSwapFormIds = MergeDictionary(
+                new Dictionary<uint, uint>(BaseMaterialSwapFormIds),
+                new Dictionary<uint, uint>(overlay.BaseMaterialSwapFormIds)),
 
             TotalRecordsProcessed = TotalRecordsProcessed + overlay.TotalRecordsProcessed,
             IsTes3 = IsTes3 || overlay.IsTes3,

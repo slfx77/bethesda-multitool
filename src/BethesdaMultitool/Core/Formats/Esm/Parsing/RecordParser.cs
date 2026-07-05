@@ -522,10 +522,11 @@ public sealed class RecordParser
             containers, keys, notes, weaponMods, sounds, genericRecords,
             cells, worldspaces, modelIndex, phaseSw);
 
-        // Harvest MODS ("Alternate Textures") across every model-bearing base type into a single
-        // base-FormID → entry index. Reuses the raw-subrecord read path (accessor-only), so it's
-        // empty on scan-only loads. Resolved to real TXST texture paths later in the world-view build.
-        var alternateTextures = new AlternateTextureHandler(_context).BuildIndex();
+        // Harvest MODS across every model-bearing base type in one pass (game-keyed payload:
+        // FO3/FNV/Skyrim alternate-texture entries vs the FO4-family default MSWP FormID). Reuses
+        // the raw-subrecord read path (accessor-only), so it's empty on scan-only loads. Resolved
+        // to real TXST texture paths / swap tables later in the world-view build.
+        var modsHarvest = new AlternateTextureHandler(_context).BuildIndex();
 
         progress?.Report((95, "Building lookup tables..."));
 
@@ -636,7 +637,8 @@ public sealed class RecordParser
             Climate = climate,
 
             ModelPathIndex = modelIndex,
-            AlternateTexturesByFormId = alternateTextures,
+            AlternateTexturesByFormId = modsHarvest.AlternateTextures,
+            BaseMaterialSwapFormIds = modsHarvest.BaseMaterialSwapFormIds,
             FormIdToEditorId = new Dictionary<uint, string>(_context.FormIdToEditorId),
             FormIdToDisplayName = _context.BuildFormIdToDisplayNameMap(),
             RuntimeWorldspaceMaps = _context.RuntimeWorldspaceCellMaps != null
@@ -677,6 +679,7 @@ public sealed class RecordParser
                 StaticCollections = result.StaticCollections,
                 ModelPathIndex = result.ModelPathIndex,
                 AlternateTexturesByFormId = result.AlternateTexturesByFormId,
+                BaseMaterialSwapFormIds = result.BaseMaterialSwapFormIds,
                 RuntimeWorldspaceMaps = result.RuntimeWorldspaceMaps,
                 FormIdToEditorId = result.FormIdToEditorId,
                 FormIdToDisplayName = result.FormIdToDisplayName,
