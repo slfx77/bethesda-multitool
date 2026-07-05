@@ -932,42 +932,72 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         var instanceStride = (uint)Marshal.SizeOf<Matrix4x4>();
         var instanceBytes = instanceStride * (uint)totalInstances;
-        // Soft-fail instead of throwing: if the whole instance buffer can't fit this frame, skip the
-        // opaque instanced pass (blended draws + later layers still present) rather than abandoning
-        // the frame and blanking every model. The ring is sized so this only bites the densest
-        // unthrottled top-down windows.
-        if (!_ringBuffer.TryAllocate(frameIndex, instanceBytes + instanceStride - 1, out var instanceAlloc, alignment: 16))
+        // Fast path: one contiguous block holds every batch's world matrices (single bulk memcpy +
+        // one SRV bind, per-batch draws index into it via StartInstance). When a dense frame can't
+        // fit that single allocation, fall back to a per-batch block inside the loop below — the
+        // frame degrades to skipping only the batches that no longer fit instead of dropping the
+        // ENTIRE opaque pass (which read as "the whole city un-renders" on dense downtown frames).
+        var haveSharedBlock = _ringBuffer.TryAllocate(
+            frameIndex, instanceBytes + instanceStride - 1, out var instanceAlloc, alignment: 16);
+        if (haveSharedBlock)
         {
-            LastFrameDrawsTruncated += totalInstances;
-            return;
-        }
-        var instanceByteOffset = AlignUp(instanceAlloc.ByteOffset, instanceStride);
-        var instanceCpuPtr = instanceAlloc.CpuPtr + (int)(instanceByteOffset - instanceAlloc.ByteOffset);
+            var instanceByteOffset = AlignUp(instanceAlloc.ByteOffset, instanceStride);
+            var instanceCpuPtr = instanceAlloc.CpuPtr + (int)(instanceByteOffset - instanceAlloc.ByteOffset);
 
-        var offset = 0;
-        unsafe
-        {
-            // Bulk-copy each batch's world matrices in one memcpy (CollectionsMarshal.AsSpan ->
-            // Span.CopyTo) rather than per-element struct assignment. Only the 64-byte matrix is
-            // copied now; per-batch material moves into the InstanceDraw CBV below.
-            var span = new Span<Matrix4x4>((void*)instanceCpuPtr, totalInstances);
-            foreach (var batchState in activeBatches)
+            var offset = 0;
+            unsafe
             {
-                var worlds = batchState.Instances;
-                if (worlds.Count == 0) continue;
-                CollectionsMarshal.AsSpan(worlds).CopyTo(span.Slice(offset, worlds.Count));
-                offset += worlds.Count;
+                // Bulk-copy each batch's world matrices in one memcpy (CollectionsMarshal.AsSpan ->
+                // Span.CopyTo) rather than per-element struct assignment. Only the 64-byte matrix is
+                // copied now; per-batch material moves into the InstanceDraw CBV below.
+                var span = new Span<Matrix4x4>((void*)instanceCpuPtr, totalInstances);
+                foreach (var batchState in activeBatches)
+                {
+                    var worlds = batchState.Instances;
+                    if (worlds.Count == 0) continue;
+                    CollectionsMarshal.AsSpan(worlds).CopyTo(span.Slice(offset, worlds.Count));
+                    offset += worlds.Count;
+                }
             }
-        }
 
-        var instanceGpuAddress = instanceAlloc.GpuAddress + (instanceByteOffset - instanceAlloc.ByteOffset);
-        BindReferenceInstanceBuffer(cmd, instanceGpuAddress, ref srvBinds, ref srvBindMs);
+            var instanceGpuAddress = instanceAlloc.GpuAddress + (instanceByteOffset - instanceAlloc.ByteOffset);
+            BindReferenceInstanceBuffer(cmd, instanceGpuAddress, ref srvBinds, ref srvBindMs);
+        }
 
         var startInstance = 0u;
         foreach (var batchState in activeBatches)
         {
             var batch = batchState.Instances;
             if (batch.Count == 0) continue;
+
+            var drawStartInstance = startInstance;
+            if (!haveSharedBlock)
+            {
+                // Per-batch fallback block: small (count × 64 B), so it fits where the frame-wide
+                // block could not. Rebind the instance SRV at this batch's base and draw from 0.
+                var batchBytes = instanceStride * (uint)batch.Count;
+                if (!_ringBuffer.TryAllocate(
+                        frameIndex, batchBytes + instanceStride - 1, out var batchAlloc, alignment: 16))
+                {
+                    LastFrameDrawsTruncated += batch.Count;
+                    continue;
+                }
+
+                var batchByteOffset = AlignUp(batchAlloc.ByteOffset, instanceStride);
+                var batchCpuPtr = batchAlloc.CpuPtr + (int)(batchByteOffset - batchAlloc.ByteOffset);
+                unsafe
+                {
+                    var span = new Span<Matrix4x4>((void*)batchCpuPtr, batch.Count);
+                    CollectionsMarshal.AsSpan(batch).CopyTo(span);
+                }
+
+                BindReferenceInstanceBuffer(
+                    cmd,
+                    batchAlloc.GpuAddress + (batchByteOffset - batchAlloc.ByteOffset),
+                    ref srvBinds,
+                    ref srvBindMs);
+                drawStartInstance = 0;
+            }
 
             if (!ReferenceEquals(currentPso, batchState.Pso))
             {
@@ -986,7 +1016,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 new TexIndexQuad(
                     sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex,
                     sub.SpecularMap?.BindlessIndex ?? 0, sub.GradientMap?.BindlessIndex ?? 0),
-                startInstance,
+                drawStartInstance,
                 Specular: sub.Specular,
                 CameraRight: _leafBillboardRight,
                 CameraUp: _leafBillboardUp,
