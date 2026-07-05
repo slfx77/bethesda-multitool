@@ -125,7 +125,8 @@ internal static class NifSubmeshExtractor
             DstBlendMode = dstBlendMode,
             MaterialAlpha = materialAlpha,
             MaterialGlossiness = materialGlossiness,
-            SpecularColor = specularColor
+            SpecularColor = specularColor,
+            IsFarLodFallback = submesh.IsFarLodFallback
         };
     }
 
@@ -948,6 +949,7 @@ internal static class NifSubmeshExtractor
         // (TreeElmFree01: LOD0=1191 full tree; VineHanging05 authors everything in LOD2).
         var firstTriangle = 0;
         var triangleCount = info.NumTriangles;
+        var isFarLodFallback = false;
         if (block.TypeName == "BSMeshLODTriShape" && block.Size >= 12)
         {
             var lodOffset = block.DataOffset + block.Size - 12;
@@ -962,17 +964,23 @@ internal static class NifSubmeshExtractor
                 }
                 else if (lod1 > 0)
                 {
+                    // LOD0 empty: this slice only ever draws at distance in-engine. Flag it so the
+                    // extractor can drop it when the model has real near-content siblings (the
+                    // imposter would z-fight them up close).
                     (firstTriangle, triangleCount) = (lod0, lod1);
+                    isFarLodFallback = true;
                 }
                 else
                 {
                     (firstTriangle, triangleCount) = (lod0 + lod1, lod2);
+                    isFarLodFallback = true;
                 }
 
                 // A malformed partition (sizes exceeding the buffer) falls back to the full buffer.
                 if (firstTriangle + triangleCount > info.NumTriangles)
                 {
                     (firstTriangle, triangleCount) = (0, info.NumTriangles);
+                    isFarLodFallback = false;
                 }
             }
         }
@@ -996,7 +1004,8 @@ internal static class NifSubmeshExtractor
             VertexColors = colors,
             Tangents = transformed.Tangents,
             Bitangents = transformed.Bitangents,
-            BindPosePositions = null
+            BindPosePositions = null,
+            IsFarLodFallback = isFarLodFallback
         };
     }
 

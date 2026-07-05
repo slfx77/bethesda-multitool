@@ -195,6 +195,17 @@ internal sealed class RenderableSubmesh
     /// </summary>
     public bool IsLeafBillboard { get; set; }
 
+    /// <summary>
+    ///     True when this submesh came from a <c>BSMeshLODTriShape</c> whose LOD0 slice is EMPTY, so
+    ///     the far-LOD fallback slice (LOD1/LOD2) was extracted instead. The engine only draws such
+    ///     slices at distance; near the camera the shape contributes nothing. When the model carries
+    ///     any near-content geometry the extractor drops these (they're distant imposters that would
+    ///     z-fight the real meshes — e.g. workshop rubble's LOD2-only floor slab vs its coplanar
+    ///     _Foundation ref); when the WHOLE model is far-slices (VineHanging05 authors everything in
+    ///     LOD2) they're kept so the reference renders at all.
+    /// </summary>
+    public bool IsFarLodFallback { get; init; }
+
     public int VertexCount => Positions.Length / 3;
     public int TriangleCount => Triangles.Length / 3;
 }

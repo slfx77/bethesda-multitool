@@ -631,6 +631,17 @@ internal static class NifGeometryExtractor
             }
         }
 
+        // BSMeshLODTriShape far-slice fallbacks (LOD0 empty → LOD1/LOD2 extracted) are distant
+        // imposters the engine never draws up close. Alongside real near-content siblings they
+        // z-fight it — workshop_Res01ModernRubble02B's LOD2-only floor slab sits exactly coplanar
+        // with its separate _Foundation ref's slab — so drop them. When the WHOLE model is far
+        // slices (VineHanging05 authors everything in LOD2), keep them or the reference vanishes.
+        if (model.Submeshes.Exists(static s => s.IsFarLodFallback) &&
+            model.Submeshes.Exists(static s => !s.IsFarLodFallback))
+        {
+            model.Submeshes.RemoveAll(static s => s.IsFarLodFallback);
+        }
+
         // Bake NiParticleSystem effects (NV whirlwinds, Oblivion Gates, FXDust) into camera-facing quad
         // clouds. Only on the worldspace/reference path (collectBillboards) — the same path that drives the
         // leaf-billboard VS these reuse; NPC/export paths don't render ambient particle systems. Skipped in

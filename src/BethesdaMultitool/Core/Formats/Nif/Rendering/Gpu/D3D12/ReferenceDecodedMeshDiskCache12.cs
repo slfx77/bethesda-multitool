@@ -94,7 +94,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Bumped 21→22: FO4/FO76 grayscale-to-palette — new per-submesh GradientMapTexturePath +
     // GradientMapV payload fields (the shader replaces diffuse RGB with the palette lookup; without
     // the fields, warm v21 meshes keep rendering the lavender authoring base).
-    internal const int DecoderVersion = 22;
+    // Bumped 22→23: BSMeshLODTriShape far-slice fallbacks (LOD0 empty) are now dropped when the model
+    // has near-content siblings — they're distant imposters the engine never draws up close, and they
+    // z-fight coplanar real geometry (workshop rubble's LOD2-only floor slab vs its _Foundation ref).
+    // The decoded submesh SET changes, so v22 entries still carry the stray imposters.
+    internal const int DecoderVersion = 23;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
