@@ -383,7 +383,9 @@ internal sealed class ReferenceMeshDecoder12
                 sub.SpecularEnabled,
                 sub.IsLeafBillboard,
                 sub.DepthWritingBlend,
-                sub.SpecularMapTexturePath));
+                sub.SpecularMapTexturePath,
+                sub.GradientMapTexturePath,
+                sub.GradientMapV));
         }
 
         return new DecodedNifMesh12(submeshes, payload.CollisionPositions, payload.CollisionTriangles);
