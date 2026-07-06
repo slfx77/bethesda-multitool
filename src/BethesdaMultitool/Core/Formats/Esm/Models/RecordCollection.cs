@@ -429,7 +429,7 @@ public record RecordCollection
 
             // World
             Cells = MergeList(Cells, overlay.Cells, r => r.FormId),
-            Worldspaces = MergeList(Worldspaces, overlay.Worldspaces, r => r.FormId),
+            Worldspaces = MergeWorldspaces(Worldspaces, overlay.Worldspaces),
             MapMarkers = MergeList(MapMarkers, overlay.MapMarkers, r => r.FormId),
             LeveledLists = MergeList(LeveledLists, overlay.LeveledLists, r => r.FormId),
 
@@ -936,6 +936,63 @@ public record RecordCollection
     ///     Merges two lists, deduplicating by FormID. Items from <paramref name="overlay" />
     ///     take precedence over items from <paramref name="baseList" /> for the same FormID.
     /// </summary>
+    /// <summary>
+    ///     Worldspace-specific merge. WRLD overrides in a load order are ADDITIVE for children: a
+    ///     DLC's override of Commonwealth carries only ITS added cells, so the generic
+    ///     overlay-wins-wholesale <see cref="MergeList{T}" /> replaced the base game's 36,864-cell
+    ///     record with the DLC's 72-cell override — merged FO4 Data-dir loads rendered a
+    ///     near-empty Commonwealth. The override still wins the record's scalar fields (name,
+    ///     bounds, water), but the two records' cell children are UNIONED by FormID, with the
+    ///     override's version of a colliding cell kept.
+    /// </summary>
+    private static List<WorldspaceRecord> MergeWorldspaces(
+        List<WorldspaceRecord> baseList,
+        List<WorldspaceRecord> overlay)
+    {
+        if (baseList.Count == 0) return new List<WorldspaceRecord>(overlay);
+        if (overlay.Count == 0) return new List<WorldspaceRecord>(baseList);
+
+        var baseByFormId = new Dictionary<uint, WorldspaceRecord>(baseList.Count);
+        foreach (var ws in baseList)
+        {
+            baseByFormId.TryAdd(ws.FormId, ws);
+        }
+
+        var overlayIds = new HashSet<uint>(overlay.Select(w => w.FormId));
+        var merged = new List<WorldspaceRecord>(baseList.Count + overlay.Count);
+        foreach (var ws in baseList)
+        {
+            if (!overlayIds.Contains(ws.FormId))
+            {
+                merged.Add(ws);
+            }
+        }
+
+        foreach (var ws in overlay)
+        {
+            if (!baseByFormId.TryGetValue(ws.FormId, out var baseWs) || baseWs.Cells.Count == 0)
+            {
+                merged.Add(ws);
+                continue;
+            }
+
+            var seen = new HashSet<uint>(ws.Cells.Select(c => c.FormId));
+            var cells = new List<CellRecord>(ws.Cells.Count + baseWs.Cells.Count);
+            cells.AddRange(ws.Cells);
+            foreach (var cell in baseWs.Cells)
+            {
+                if (seen.Add(cell.FormId))
+                {
+                    cells.Add(cell);
+                }
+            }
+
+            merged.Add(ws with { Cells = cells });
+        }
+
+        return merged;
+    }
+
     private static List<T> MergeList<T>(List<T> baseList, List<T> overlay, Func<T, uint> formIdSelector)
     {
         if (baseList.Count == 0) return new List<T>(overlay);
