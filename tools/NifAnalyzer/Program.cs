@@ -33,6 +33,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(GeometryCommands.CreateVerticesCommand());
         rootCommand.Subcommands.Add(GeometryCommands.CreateColorCompareCommand());
         rootCommand.Subcommands.Add(MeshDiagCommands.CreateMeshDiagCommand());
+        rootCommand.Subcommands.Add(RenderPropCommands.CreateAlphaPropsCommand());
         rootCommand.Subcommands.Add(MeshScanCommands.CreateMeshScanCommand());
         rootCommand.Subcommands.Add(VersionCensusCommands.CreateVersionCensusCommand());
         rootCommand.Subcommands.Add(SkinPartitionCommands.CreateSkinPartCommand());

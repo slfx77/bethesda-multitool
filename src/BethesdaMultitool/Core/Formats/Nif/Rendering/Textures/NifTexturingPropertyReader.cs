@@ -43,6 +43,47 @@ internal static class NifTexturingPropertyReader
         return null;
     }
 
+    /// <summary>
+    ///     Reads the TES4-era NiTexturingProperty Apply Mode (a u32 on NIF &lt; 20.1.0.1). Oblivion's
+    ///     renderer repurposes APPLY_HILIGHT (3) / APPLY_HILIGHT2 (4) as the PARALLAX markers — the
+    ///     diffuse texture's alpha channel is a height map for those materials, not coverage.
+    ///     Returns null for FO3+ NIFs (which store a flags ushort there instead) and for legacy
+    ///     Morrowind NIFs (their apply modes keep the original NetImmerse meaning).
+    /// </summary>
+    internal static uint? ReadApplyMode(byte[] data, NifInfo nif, List<int> propertyRefs)
+    {
+        if (!nif.HasInlineStrings || NifVersions.IsLegacyNetImmerse(nif.BinaryVersion))
+        {
+            return null;
+        }
+
+        foreach (var propRef in propertyRefs)
+        {
+            if (propRef < 0 || propRef >= nif.Blocks.Count)
+            {
+                continue;
+            }
+
+            var block = nif.Blocks[propRef];
+            if (block.TypeName != "NiTexturingProperty")
+            {
+                continue;
+            }
+
+            var pos = block.DataOffset;
+            var end = block.DataOffset + block.Size;
+            if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian, nif.HasInlineStrings, nif.BinaryVersion) ||
+                pos + 4 > end)
+            {
+                return null;
+            }
+
+            return BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
+        }
+
+        return null;
+    }
+
     // Walks NiTexturingProperty (NiObjectNET + Flags(ushort) + Texture Count(uint) + Has Base
     // Texture(bool)) to the base map's TexDesc, whose first field is the NiSourceTexture ref.
     // Layout matches NifTextureAnimationEvaluator.TryReadBaseTextureState up to the source ref.

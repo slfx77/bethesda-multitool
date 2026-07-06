@@ -158,6 +158,7 @@ internal static class MeshDiagCommands
         table.AddColumn("Export Alpha");
         table.AddColumn("Double");
         table.AddColumn("Tex Alpha");
+        table.AddColumn("Alpha Detail");
         table.AddColumn("Diffuse");
 
         foreach (var diagnostic in diagnostics)
@@ -171,6 +172,7 @@ internal static class MeshDiagCommands
                 FormatAlphaMode(diagnostic.ExportAlpha.RenderMode),
                 diagnostic.Submesh.IsDoubleSided ? "[green]yes[/]" : "[dim]no[/]",
                 FormatTextureAlpha(diagnostic.TextureAlpha),
+                FormatAlphaDetail(diagnostic.Submesh),
                 Markup.Escape(ShortenPath(diagnostic.Submesh.DiffuseTexturePath)));
         }
 
@@ -292,6 +294,49 @@ internal static class MeshDiagCommands
             NifAlphaRenderMode.Cutout => "[yellow]Cutout[/]",
             _ => "[red]Blend[/]"
         };
+    }
+
+    /// <summary>
+    ///     Compact per-submesh alpha state: authored blend/test bits with src/dst blend modes and
+    ///     threshold, material alpha when sub-1, and the vertex-color alpha range (Oblivion landscape
+    ///     meshes use vertex alpha as a layer-blend mask, which is invisible in the mode columns).
+    /// </summary>
+    private static string FormatAlphaDetail(RenderableSubmesh submesh)
+    {
+        var parts = new List<string>(4);
+        if (submesh.HasAlphaBlend)
+        {
+            parts.Add(FormattableString.Invariant($"blend {submesh.SrcBlendMode}/{submesh.DstBlendMode}"));
+        }
+
+        if (submesh.HasAlphaTest)
+        {
+            parts.Add(FormattableString.Invariant($"test>{submesh.AlphaTestThreshold:0.##} fn{submesh.AlphaTestFunction}"));
+        }
+
+        if (submesh.MaterialAlpha < 1f)
+        {
+            parts.Add(FormattableString.Invariant($"mat {submesh.MaterialAlpha:0.##}"));
+        }
+
+        if (submesh.VertexColors is { Length: >= 4 } colors)
+        {
+            var min = byte.MaxValue;
+            byte max = 0;
+            for (var i = 3; i < colors.Length; i += 4)
+            {
+                var alpha = colors[i];
+                if (alpha < min) min = alpha;
+                if (alpha > max) max = alpha;
+            }
+
+            if (min < byte.MaxValue)
+            {
+                parts.Add(FormattableString.Invariant($"vtxA {min / 255f:0.##}-{max / 255f:0.##}"));
+            }
+        }
+
+        return parts.Count == 0 ? "[dim]-[/]" : Markup.Escape(string.Join(", ", parts));
     }
 
     private static string FormatTextureAlpha(TextureAlphaDiagnostic alpha)

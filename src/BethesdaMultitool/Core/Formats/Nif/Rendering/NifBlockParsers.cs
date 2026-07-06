@@ -349,6 +349,17 @@ internal static class NifBlockParsers
         alphaTestFunction = alphaInfo.AlphaTestFunction;
         srcBlendMode = alphaInfo.SrcBlendMode;
         dstBlendMode = alphaInfo.DstBlendMode;
+
+        // TES4 parallax materials (NiTexturingProperty Apply Mode HILIGHT/HILIGHT2) repurpose the
+        // diffuse alpha channel as a height map, and Oblivion ships them with a blend-enabled
+        // NiAlphaProperty (0x00ED) the engine does not blend with — SEIsland's rock faces rendered
+        // see-through here because the mid-gray height data fed SRC_ALPHA blending. Demote blend for
+        // that combination; alpha-test is left untouched (shipped parallax shapes author test=off).
+        if (hasAlphaBlend &&
+            Textures.NifTexturingPropertyReader.ReadApplyMode(data, nif, propertyRefs) is 3 or 4)
+        {
+            hasAlphaBlend = false;
+        }
     }
 
     internal static float ReadMaterialAlpha(byte[] data, NifInfo nif, List<int> propertyRefs)

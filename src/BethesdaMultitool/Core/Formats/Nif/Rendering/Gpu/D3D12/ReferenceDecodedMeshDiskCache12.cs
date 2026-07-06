@@ -98,7 +98,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // has near-content siblings — they're distant imposters the engine never draws up close, and they
     // z-fight coplanar real geometry (workshop rubble's LOD2-only floor slab vs its _Foundation ref).
     // The decoded submesh SET changes, so v22 entries still carry the stray imposters.
-    internal const int DecoderVersion = 23;
+    // Bumped 23→24: TES4 parallax materials (NiTexturingProperty Apply Mode HILIGHT/HILIGHT2) no
+    // longer alpha-blend — their diffuse alpha is a parallax height map, and blending with it drew
+    // Oblivion rock faces see-through (SEIsland). Warm v23 entries bake the old blend state.
+    internal const int DecoderVersion = 24;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
