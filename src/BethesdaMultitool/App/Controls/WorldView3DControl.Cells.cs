@@ -74,6 +74,9 @@ public sealed partial class WorldView3DControl
         var cellList = cells.ToList();
 
         var activeWorldspaceFormId = GetSelectedWorldspaceFormId(_data);
+        Log.Info(
+            "WorldView3DControl: building cell grid for worldspace[{0}] 0x{1:X8} — {2} gridded cells.",
+            WorldspaceComboBox.SelectedIndex, activeWorldspaceFormId ?? 0, cellList.Count);
         var markers = GetSelectedWorldspaceMarkers(_data, activeWorldspaceFormId);
         _spatialIndex = WorldSpatialIndex.Build(
             _data, cellList, markers, activeWorldspaceFormId, defaultWaterHeight);

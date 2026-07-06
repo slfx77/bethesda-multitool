@@ -77,6 +77,14 @@ internal sealed record RendererProfilerOptions
     /// <summary>Exterior worldspace EditorID to frame for <see cref="CaptureFramePath" /> (e.g. WastelandNV).</summary>
     internal string? CaptureWorldspaceName { get; init; }
 
+    /// <summary>
+    ///     Worldspace EditorID/FullName the 3D control selects at load (sets
+    ///     <c>FALLOUT_VIEWER_WORLDSPACE</c> IN-PROCESS — the WinUI activation path doesn't inherit
+    ///     the launching shell's environment, so the env var alone silently does nothing). Applies
+    ///     to every mode, including the live <c>--duration-seconds</c> profile loop.
+    /// </summary>
+    internal string? WorldspaceName { get; init; }
+
     /// <summary>Weather EditorID to force for the capture (e.g. NVWastelandClear).</summary>
     internal string? CaptureWeatherName { get; init; }
 
@@ -102,6 +110,7 @@ internal sealed record RendererProfilerOptions
           --profile-interval-ms <n>   Aggregate profile interval. Default: 2000.
           --duration-seconds <n>      Exit automatically after the viewer has loaded.
           --stress-scene <name>       Sets FALLOUT_VIEWER_STRESS_SCENE. Default: WastelandNV; use none to disable.
+          --worldspace <name>         Select this worldspace at load (EditorID/FullName; in-process FALLOUT_VIEWER_WORLDSPACE).
           --camera-motion <mode>      static, forward, orbit, or sweep. Default: static.
           --camera-speed <n>          Camera automation speed in world units/sec. Default: 2048.
           --render-distance <cells>   Override the view/render distance in cells. Default: scene default (16).
@@ -155,6 +164,7 @@ internal sealed record RendererProfilerOptions
         float? captureZ = null;
         string? captureFrame = null;
         string? captureWorldspaceName = null;
+        string? worldspaceName = null;
         string? captureWeatherName = null;
         var captureHour = 12f;
         var capturePitchDegrees = 80f;
@@ -360,6 +370,11 @@ internal sealed record RendererProfilerOptions
                     if (error != null) return Fail(out options, error);
                     break;
 
+                case "--worldspace":
+                    worldspaceName = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options, error);
+                    break;
+
                 case "--capture-weather":
                     captureWeatherName = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options, error);
@@ -475,6 +490,7 @@ internal sealed record RendererProfilerOptions
             CaptureZ = captureZ,
             CaptureFramePath = string.IsNullOrWhiteSpace(captureFrame) ? null : Path.GetFullPath(captureFrame),
             CaptureWorldspaceName = captureWorldspaceName,
+            WorldspaceName = worldspaceName,
             CaptureWeatherName = captureWeatherName,
             CaptureHour = captureHour,
             CapturePitchDegrees = capturePitchDegrees

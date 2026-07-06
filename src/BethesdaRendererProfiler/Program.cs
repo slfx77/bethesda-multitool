@@ -80,6 +80,13 @@ public static class Program
             EnvironmentVariables.Set(EnvironmentVariables.Viewer.StressScene, options.StressScene);
         }
 
+        // Set in-process: the WinUI activation path does not inherit the launching shell's
+        // environment, so `FALLOUT_VIEWER_WORLDSPACE=… profiler.exe` silently does nothing.
+        if (!string.IsNullOrWhiteSpace(options.WorldspaceName))
+        {
+            EnvironmentVariables.Set(EnvironmentVariables.Viewer.Worldspace, options.WorldspaceName);
+        }
+
         if (options.EnablePersistentMeshCache)
         {
             EnvironmentVariables.Set(EnvironmentVariables.Viewer.PersistentMeshCache, EnvironmentVariables.Enabled);

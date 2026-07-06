@@ -186,6 +186,20 @@ internal sealed class MainWindow : Window, IDisposable
                 return;
             }
 
+            // Aim the live profile at an explicit landmark when requested (--capture-center-x/y +
+            // optional --capture-z) — the same aim the frame-capture path honors. Without it the
+            // camera sits at the worldspace/stress bookmark, which can land in an empty corner
+            // (the FNV-tuned density finder has no FO4 knowledge), making dense-area profiles
+            // impossible to target headlessly.
+            if (_options.CaptureCenterX is float profileAimX && _options.CaptureCenterY is float profileAimY)
+            {
+                var aimPose = _worldView.Profiler_CameraPose;
+                var aimZ = _options.CaptureZ ?? aimPose.Position.Z;
+                _worldView.Profiler_SetCameraPose(
+                    aimPose with { Position = new System.Numerics.Vector3(profileAimX, profileAimY, aimZ) });
+                Log.Info("Profiler: camera aimed at ({0:0}, {1:0}, {2:0}).", profileAimX, profileAimY, aimZ);
+            }
+
             _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
 
             StartTimedExitIfRequested();

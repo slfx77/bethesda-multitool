@@ -249,6 +249,7 @@ public sealed partial class WorldView3DControl
                 if (string.Equals(ws.EditorId, forced, StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(ws.FullName, forced, StringComparison.OrdinalIgnoreCase))
                 {
+                    Log.Info("WorldView3DControl: forced worldspace '{0}' → [{1}] '{2}'.", forced, i, ws.EditorId);
                     return i;
                 }
             }
@@ -257,9 +258,17 @@ public sealed partial class WorldView3DControl
                 var ws = data.Worldspaces[i];
                 if (ContainsWorldspaceToken(ws.EditorId, forced) || ContainsWorldspaceToken(ws.FullName, forced))
                 {
+                    Log.Info("WorldView3DControl: forced worldspace '{0}' ~→ [{1}] '{2}'.", forced, i, ws.EditorId);
                     return i;
                 }
             }
+
+            // The forced name matched nothing — dump what IS available so headless repro scripts can
+            // see why (merged load orders can leave override records with empty EditorIds).
+            Log.Warn(
+                "WorldView3DControl: forced worldspace '{0}' matched none of [{1}].",
+                forced,
+                string.Join(", ", data.Worldspaces.Select(w => $"{w.EditorId ?? "(null)"}/{w.FullName ?? "(null)"}")));
         }
 
         if (!IsWastelandNvHeavyStressScene())
