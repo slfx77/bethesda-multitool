@@ -2,6 +2,8 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 
@@ -29,12 +31,13 @@ public static class SchemaRecordDecoder
         RecordDef schema,
         IReadOnlyList<RawSubrecord> subrecords,
         bool bigEndian = false,
-        FormIdNameResolver? resolveName = null)
+        FormIdNameResolver? resolveName = null,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         ArgumentNullException.ThrowIfNull(schema);
         ArgumentNullException.ThrowIfNull(subrecords);
 
-        var ctx = new DecodeContext(bigEndian, resolveName);
+        var ctx = new DecodeContext(bigEndian, resolveName, game);
 
         // Map each entry-point signature to the top-level member that consumes it. Arrays map via their
         // element's signature(s); a plain signed member maps directly.
@@ -344,11 +347,21 @@ public static class SchemaRecordDecoder
                     });
                     break;
                 }
+                case UnionDef union when TryDecodeConditionUnion(union, data, offset, limit, ctx, output, out var conditionNode):
+                {
+                    // CTDA deciders resolved from the ALREADY-DECODED siblings: the Function index
+                    // picks each Parameter's numeric-vs-FormID interpretation via the game's
+                    // condition-function table, and the Type flags pick float-vs-GLOB for the
+                    // comparison value. Every variant is 4 bytes.
+                    output.Add(conditionNode);
+                    offset += 4;
+                    break;
+                }
                 case UnionDef union when TryUniformVariantSize(union, out var usize) && offset + usize <= limit:
                 {
                     // An inline value union (e.g. CTDA Comparison Value / Parameter #1) — every variant is the
-                    // same width, so the struct stays aligned whichever one the data is. There is no
-                    // per-function decider yet, so decode the first variant as a representative.
+                    // same width, so the struct stays aligned whichever one the data is. Without a game
+                    // (or for non-condition unions), decode the first variant as a representative.
                     output.Add(DecodeInlineUnion(union, data, offset, limit, ctx));
                     offset += usize;
                     break;
@@ -460,6 +473,116 @@ public static class SchemaRecordDecoder
             default:
                 return RawNode(label, null, data[offset..limit]);
         }
+    }
+
+    /// <summary>
+    ///     Typed CTDA union decode (S2): resolves the condition deciders from the game's
+    ///     condition-function table plus the struct's already-decoded sibling nodes.
+    ///     <c>wbConditionParam1/2Decider</c> classify their 4-byte value as FormID-vs-numeric by the
+    ///     sibling <c>Function</c> index; <c>wbConditionCompValueDecider</c> picks GLOB-vs-float by
+    ///     the sibling <c>Type</c>'s UseGlobal flag (0x04). Any miss (unknown game, missing sibling,
+    ///     short data, unrecognized decider) returns false — the historical Variants[0] decode stays
+    ///     byte-for-byte in effect.
+    /// </summary>
+    private static bool TryDecodeConditionUnion(
+        UnionDef union, byte[] data, int offset, int limit, DecodeContext ctx,
+        List<DecodedNode> siblings, out DecodedNode node)
+    {
+        node = null!;
+        if (ctx.ConditionTable is not { } table || limit - offset < 4)
+        {
+            return false;
+        }
+
+        var label = union.Name ?? "Value";
+        switch (union.DeciderName)
+        {
+            case "wbConditionCompValueDecider":
+            {
+                if (FindSiblingRawValue(siblings, "Type") is not { } typeRaw)
+                {
+                    return false;
+                }
+
+                if ((typeRaw & 0x04) != 0)
+                {
+                    var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx);
+                    node = new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = fid };
+                }
+                else
+                {
+                    var f = ctx.BigEndian
+                        ? BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(offset, 4))
+                        : BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(offset, 4));
+                    node = new DecodedNode
+                    {
+                        Label = label,
+                        Value = f.ToString(CultureInfo.InvariantCulture),
+                        RawValue = f
+                    };
+                }
+
+                return true;
+            }
+            case "wbConditionParam1Decider":
+            case "wbConditionParam2Decider":
+            {
+                if (FindSiblingRawValue(siblings, "Function") is not { } functionRaw)
+                {
+                    return false;
+                }
+
+                var paramIndex = union.DeciderName == "wbConditionParam1Decider" ? 0 : 1;
+                var functionIndex = (ushort)functionRaw;
+                if (table.ClassifyParam(functionIndex, paramIndex) == ConditionParamKind.FormId)
+                {
+                    var (value, raw, fid) = DecodeFormId(data, offset, limit, ctx);
+                    node = new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = fid };
+                }
+                else
+                {
+                    var v = ctx.BigEndian
+                        ? BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset, 4))
+                        : BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, 4));
+                    node = new DecodedNode
+                    {
+                        Label = label,
+                        Value = v.ToString(CultureInfo.InvariantCulture),
+                        RawValue = v
+                    };
+                }
+
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>An already-decoded sibling's numeric raw value by label, searching backwards (the
+    /// decider fields precede the unions they steer in every CTDA layout).</summary>
+    private static long? FindSiblingRawValue(List<DecodedNode> siblings, string label)
+    {
+        for (var i = siblings.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(siblings[i].Label, label, StringComparison.Ordinal) &&
+                siblings[i].RawValue is { } raw)
+            {
+                return raw switch
+                {
+                    byte b => b,
+                    sbyte sb => sb,
+                    ushort us => us,
+                    short s => s,
+                    uint u => u,
+                    int n => n,
+                    long l => l,
+                    _ => null,
+                };
+            }
+        }
+
+        return null;
     }
 
     /// <summary>True when every union variant has the same known fixed width (so decoding any one keeps the
@@ -658,10 +781,20 @@ public static class SchemaRecordDecoder
     }
 
     /// <summary>Endian-aware primitive reads, captured once so the scalar switch stays terse.</summary>
-    private sealed class DecodeContext(bool bigEndian, FormIdNameResolver? resolveName)
+    private sealed class DecodeContext(bool bigEndian, FormIdNameResolver? resolveName, BethesdaGame game)
     {
+        private ConditionFunctionTable? _conditionTable;
+
         public bool BigEndian { get; } = bigEndian;
         public FormIdNameResolver? ResolveName { get; } = resolveName;
+        public BethesdaGame Game { get; } = game;
+
+        /// <summary>The game's condition-function table, or null when the game is unknown
+        /// (unknown → the historical Variants[0] union decode stays in effect).</summary>
+        public ConditionFunctionTable? ConditionTable =>
+            Game == BethesdaGame.Unknown
+                ? null
+                : _conditionTable ??= ConditionFunctionTable.For(Game);
 
         public ushort ReadU16(byte[] d, int o) => BigEndian
             ? BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(o, 2))

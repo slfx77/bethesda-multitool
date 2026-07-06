@@ -66,7 +66,8 @@ internal static class SchemaTreeEnricher
                 }
 
                 // FormID names resolve at display time (same as the schema-primary path), so no resolver here.
-                result[record.FormId] = SchemaRecordDecoder.Decode(def, subs, record.IsBigEndian);
+                result[record.FormId] = SchemaRecordDecoder.Decode(
+                    def, subs, record.IsBigEndian, game: context.Game);
             }
         }
         finally

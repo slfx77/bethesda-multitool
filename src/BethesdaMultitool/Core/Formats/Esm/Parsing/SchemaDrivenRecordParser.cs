@@ -161,7 +161,7 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
         IReadOnlyList<DecodedNode>? tree = null;
         if (_byType.TryGetValue(record.RecordType, out var def))
         {
-            tree = SchemaRecordDecoder.Decode(def, subrecords, record.IsBigEndian);
+            tree = SchemaRecordDecoder.Decode(def, subrecords, record.IsBigEndian, game: _context.Game);
         }
 
         if (!string.IsNullOrEmpty(fullName))
