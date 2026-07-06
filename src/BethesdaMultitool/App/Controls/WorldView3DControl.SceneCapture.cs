@@ -148,7 +148,19 @@ public sealed partial class WorldView3DControl
             }
 
             _terrain?.Render(viewProj, cylinder);
-            _references?.Render(viewProj, cylinder, deferBlended: false, cullViewProj: viewProj);
+            // Defer blended reference submeshes until after water so water never paints over them
+            // (mirrors the live frame / 3D export). cullViewProj == viewProj (absolute coords).
+            _references?.Render(viewProj, cylinder, deferBlended: true, cullViewProj: viewProj);
+            if (_showWater && _water is not null && _references is not null)
+            {
+                // Offscreen target binds no depth SRV — the no-depth water PSO path (same as the
+                // 3D export / top-down overlay); near/far are unused without the SRV soft-fade.
+                _water.SetNifWaterPlanes(_references.NifWaterPlanes);
+                _water.SetSceneDepth(NoDepthSrv, _camera.NearPlane, _camera.FarPlane);
+                _water.Render(viewProj, cylinder);
+            }
+
+            _references?.RenderBlendedDeferred();
 
             target.RecordReadback(cmd);
         }

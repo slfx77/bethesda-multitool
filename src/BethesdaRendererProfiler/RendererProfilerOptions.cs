@@ -61,6 +61,13 @@ internal sealed record RendererProfilerOptions
     internal float? CaptureCenterY { get; init; }
 
     /// <summary>
+    ///     Camera height (world Z) for a perspective <see cref="CaptureFramePath" /> aimed via
+    ///     <see cref="CaptureCenterX" />/<see cref="CaptureCenterY" /> — e.g. hover a few hundred units
+    ///     above a water/lava plane. When unset the framing height from worldspace selection is kept.
+    /// </summary>
+    internal float? CaptureZ { get; init; }
+
+    /// <summary>
     ///     When set, renders ONE live perspective frame (sky dome + sun/moon + scene) to this PNG and exits
     ///     — the sky-verification capture. Honors <see cref="CaptureWorldspaceName" /> /
     ///     <see cref="CaptureWeatherName" /> / <see cref="CaptureHour" /> / <see cref="CapturePitchDegrees" />.
@@ -110,6 +117,7 @@ internal sealed record RendererProfilerOptions
           --capture-worldspace <i>    Target exterior worldspace index i (centered on its centroid) — tests the top-down worldspace sync.
           --capture-center-x <x>      Override the capture window center X (world units). Aims the capture at a landmark.
           --capture-center-y <y>      Override the capture window center Y (world units).
+          --capture-z <z>             Camera height for an aimed perspective --capture-frame (world units).
 
         Examples:
           BethesdaRendererProfiler --input "C:\Games\Fallout New Vegas\Data\FalloutNV.esm" --duration-seconds 60
@@ -144,6 +152,7 @@ internal sealed record RendererProfilerOptions
         int? captureWorldspaceIndex = null;
         float? captureCenterX = null;
         float? captureCenterY = null;
+        float? captureZ = null;
         string? captureFrame = null;
         string? captureWorldspaceName = null;
         string? captureWeatherName = null;
@@ -324,6 +333,23 @@ internal sealed record RendererProfilerOptions
                     captureCenterY = ccy;
                     break;
 
+                case "--capture-z":
+                    if (i + 1 >= args.Length)
+                    {
+                        error = $"{arg} requires a value.";
+                        return Fail(out options, error);
+                    }
+
+                    if (!float.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var ccz) ||
+                        !float.IsFinite(ccz))
+                    {
+                        error = $"{arg} must be a finite number.";
+                        return Fail(out options, error);
+                    }
+
+                    captureZ = ccz;
+                    break;
+
                 case "--capture-frame":
                     captureFrame = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options, error);
@@ -446,6 +472,7 @@ internal sealed record RendererProfilerOptions
             CaptureWorldspaceIndex = captureWorldspaceIndex,
             CaptureCenterX = captureCenterX,
             CaptureCenterY = captureCenterY,
+            CaptureZ = captureZ,
             CaptureFramePath = string.IsNullOrWhiteSpace(captureFrame) ? null : Path.GetFullPath(captureFrame),
             CaptureWorldspaceName = captureWorldspaceName,
             CaptureWeatherName = captureWeatherName,

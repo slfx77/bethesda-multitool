@@ -356,10 +356,24 @@ internal sealed class MainWindow : Window, IDisposable
 
             _worldView.Profiler_SetGameHour(_options.CaptureHour);
 
+            // Aim the camera at an explicit landmark BEFORE the phase-2 settle, so cell/mesh streaming
+            // happens around the target rather than the worldspace bookmark (--capture-center-x/y in
+            // world units; --capture-z overrides the height, e.g. to hover above a lava plane).
+            var movedCamera = false;
+            if (_options.CaptureCenterX is float aimX && _options.CaptureCenterY is float aimY)
+            {
+                var aimPose = _worldView.Profiler_CameraPose;
+                var aimZ = _options.CaptureZ ?? aimPose.Position.Z;
+                _worldView.Profiler_SetCameraPose(
+                    aimPose with { Position = new System.Numerics.Vector3(aimX, aimY, aimZ) });
+                movedCamera = true;
+            }
+
             // Phase 2 — run the loop again so the SELECTED weather's cloud textures stream in + upload to
-            // the GPU before the single (render-loop-paused) capture frame.
+            // the GPU before the single (render-loop-paused) capture frame. A moved camera needs the
+            // longer settle: the target location's cells/meshes start streaming only now.
             _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
-            await Task.Delay(3000);
+            await Task.Delay(movedCamera ? 7000 : 3000);
             _scenario.Dispose();
             _scenario = null;
 
