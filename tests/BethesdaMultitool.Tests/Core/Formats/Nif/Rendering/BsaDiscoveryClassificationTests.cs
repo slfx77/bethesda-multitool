@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using Xunit;
 
@@ -62,6 +63,53 @@ public class BsaDiscoveryClassificationTests
             Assert.Contains(tex, result.TexturesBsaPaths);
             Assert.Empty(result.MeshesBsaPaths);
             Assert.False(result.HasMeshes);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void DiscoverInDirectory_OddlyNamedTexturesArchive_Found()
+    {
+        // The NifConverter tab used a "*Texture*.bsa" filename glob; an archive whose name carries no
+        // "Texture" (e.g. a mod's single "<Mod> - Stuff.bsa") was invisible to it even when it holds
+        // the textures. Content classification must find it.
+        var dir = Directory.CreateTempSubdirectory("bsadisc_odd_").FullName;
+        try
+        {
+            var odd = WriteBsa(dir, "Game - Stuff.bsa", "textures\\a\\foo.dds");
+
+            var result = BsaDiscovery.DiscoverInDirectory(dir);
+
+            Assert.Contains(odd, result.TexturesBsaPaths);
+            Assert.Empty(result.MeshesBsaPaths);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void NifBrowserService_CreateFromBsa_PicksContentClassifiedTextureArchives()
+    {
+        // End-to-end over the tab's auto-detection path: opening a meshes BSA must surface texture
+        // archives by content (including a combined main BSA and an oddly-named textures BSA), not by
+        // the old "*Texture*" filename glob.
+        var dir = Directory.CreateTempSubdirectory("bsadisc_tab_").FullName;
+        try
+        {
+            var meshes = WriteBsa(dir, "Game - Meshes.bsa", "meshes\\a\\foo.nif");
+            var odd = WriteBsa(dir, "Game - Stuff.bsa", "textures\\a\\foo.dds");
+            var main = WriteBsa(dir, "MyMod - Main.bsa", "meshes\\b\\bar.nif", "textures\\b\\bar.dds");
+
+            using var service = NifBrowserService.CreateFromBsa(meshes);
+
+            Assert.Contains(odd, service.TexturePaths);
+            Assert.Contains(main, service.TexturePaths);
+            Assert.DoesNotContain(meshes, service.TexturePaths);
         }
         finally
         {

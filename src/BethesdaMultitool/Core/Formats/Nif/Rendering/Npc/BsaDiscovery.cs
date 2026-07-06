@@ -18,7 +18,17 @@ internal static class BsaDiscovery
     internal static BsaDiscoveryResult Discover(string esmPath)
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(esmPath));
-        if (dir == null || !Directory.Exists(dir))
+        return dir == null ? BsaDiscoveryResult.Empty : DiscoverInDirectory(dir);
+    }
+
+    /// <summary>
+    ///     Content-classifies every archive in <paramref name="dir" /> directly. Entry point for
+    ///     callers that start from a directory or an archive path rather than an ESM (e.g. the
+    ///     NifConverter tab's texture auto-detection).
+    /// </summary>
+    internal static BsaDiscoveryResult DiscoverInDirectory(string dir)
+    {
+        if (!Directory.Exists(dir))
         {
             return BsaDiscoveryResult.Empty;
         }

@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
@@ -369,7 +370,11 @@ internal static class NifExportExtractor
         return new ShapeProperties
         {
             ShaderMetadata = shaderMetadata,
-            DiffusePath = shaderMetadata?.DiffusePath,
+            // Pre-BSShader NIFs (Morrowind/Oblivion) texture through a legacy NiTexturingProperty →
+            // NiSourceTexture chain that ReadShaderMetadata ignores; without this fallback every
+            // TES3/TES4 shape exports untextured. Mirrors NifGeometryExtractor's raster-path rule.
+            DiffusePath = shaderMetadata?.DiffusePath
+                          ?? NifTexturingPropertyReader.ResolveBaseTexturePath(data, nif, propRefs),
             NormalMapPath = shaderMetadata?.NormalMapPath,
             // Self-illuminated (unlit): FO3/FNV BSShaderNoLightingProperty + Skyrim/SE/FO4
             // BSEffectShaderProperty (fire/magic/glow). Mirrors NifGeometryExtractor's emissive rule.

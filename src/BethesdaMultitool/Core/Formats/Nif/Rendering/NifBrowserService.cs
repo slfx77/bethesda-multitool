@@ -4,6 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -169,48 +170,39 @@ internal sealed class NifBrowserService : IDisposable
     #region Private Helpers
 
     /// <summary>
-    ///     Auto-discover <c>*Texture*</c> archives (BSA or BA2) in the same directory as a meshes archive.
+    ///     Auto-discover texture archives (BSA or BA2) in the same directory as a meshes archive,
+    ///     classified by archive content flags/paths (<see cref="BsaDiscovery" />) rather than
+    ///     filename — a combined <c>&lt;Mod&gt; - Main.bsa</c> that packs textures next to its meshes
+    ///     is included too.
     /// </summary>
     private static string[] DiscoverTextureBsas(string bsaPath)
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(bsaPath));
-        if (dir == null || !Directory.Exists(dir)) return [];
+        if (dir == null) return [];
 
-        return Directory.GetFiles(dir, "*Texture*.bsa")
-            .Concat(Directory.GetFiles(dir, "*Texture*.ba2"))
-            .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        return BsaDiscovery.DiscoverInDirectory(dir).TexturesBsaPaths;
     }
 
     /// <summary>
-    ///     Auto-discover texture sources for a directory of NIF files.
-    ///     Looks for texture BSAs or a textures subfolder in the directory and its parent.
+    ///     Auto-discover texture sources for a directory of NIF files: content-classified texture
+    ///     archives in the directory or its parent, then a loose <c>textures</c> subfolder.
     /// </summary>
     private static string[] DiscoverTextureSources(string rootDir)
     {
-        var sources = new List<string>();
-
-        // Check for texture BSAs in same directory or parent
         foreach (var dir in new[] { rootDir, Path.GetDirectoryName(rootDir) })
         {
-            if (dir == null || !Directory.Exists(dir)) continue;
+            if (dir == null) continue;
 
-            var bsas = Directory.GetFiles(dir, "*Texture*.bsa");
-            if (bsas.Length > 0)
+            var textures = BsaDiscovery.DiscoverInDirectory(dir).TexturesBsaPaths;
+            if (textures.Length > 0)
             {
-                sources.AddRange(bsas.OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
-                return sources.ToArray();
+                return textures;
             }
         }
 
         // Check for a textures subdirectory
         var texturesDir = Path.Combine(rootDir, "textures");
-        if (Directory.Exists(texturesDir))
-        {
-            sources.Add(texturesDir);
-        }
-
-        return sources.ToArray();
+        return Directory.Exists(texturesDir) ? [texturesDir] : [];
     }
 
     private static (byte[] Data, NifInfo? Nif) ParseAndConvert(byte[] nifData)
