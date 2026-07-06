@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
@@ -48,7 +49,7 @@ internal sealed class FormUsageIndex
         AddAttachedScriptUses(index, records.Furniture, f => f.FormId, f => f.Script, "Furniture", "Attached script");
         AddPackageUses(index, records.Packages);
         AddActorPackageUses(index, records.Npcs, records.Creatures, records.Packages);
-        AddDialogueConditionUses(index, records.Dialogues);
+        AddDialogueConditionUses(index, records.Dialogues, records.Game);
         AddDialogueTopicUses(index, records.DialogTopics);
 
         return index;
@@ -93,7 +94,8 @@ internal sealed class FormUsageIndex
         }
     }
 
-    private static void AddDialogueConditionUses(FormUsageIndex index, IEnumerable<DialogueRecord> dialogues)
+    private static void AddDialogueConditionUses(
+        FormUsageIndex index, IEnumerable<DialogueRecord> dialogues, BethesdaGame game)
     {
         foreach (var dialogue in dialogues)
         {
@@ -108,13 +110,13 @@ internal sealed class FormUsageIndex
 
             foreach (var cond in dialogue.Conditions)
             {
-                if (cond.Parameter1 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 0))
+                if (cond.Parameter1 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 0, game))
                 {
                     index.Add(cond.Parameter1,
                         new FormUsageReference(sourceFormId, "Dialogue", "Condition reference"));
                 }
 
-                if (cond.Parameter2 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 1))
+                if (cond.Parameter2 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 1, game))
                 {
                     index.Add(cond.Parameter2,
                         new FormUsageReference(sourceFormId, "Dialogue", "Condition reference"));

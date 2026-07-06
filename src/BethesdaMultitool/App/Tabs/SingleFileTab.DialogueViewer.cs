@@ -441,7 +441,8 @@ public sealed partial class SingleFileTab
             : null;
         var rows = DialogueRecordDetailBuilder.BuildRecordDetailRows(
             info, csvSubtitle, ResolveFormName, ResolveSpeakerName, topicEditorId,
-            ResolveEditorId, ResolveQuestVariable);
+            ResolveEditorId, ResolveQuestVariable,
+            _session.SemanticResult?.Game ?? Core.Games.BethesdaGame.FalloutNewVegas);
 
         return DialogueTreeRenderer.BuildDetailPanel(
             rows,
@@ -670,7 +671,8 @@ public sealed partial class SingleFileTab
     private Border BuildTopicDetailPanel(TopicDialogueNode linkedTopic, InfoDialogueNode sourceInfo)
     {
         var rows = DialogueRecordDetailBuilder.BuildTopicDetailRows(
-            linkedTopic, sourceInfo, ResolveFormName, ResolveEditorId);
+            linkedTopic, sourceInfo, ResolveFormName, ResolveEditorId,
+            _session.SemanticResult?.Game ?? Core.Games.BethesdaGame.FalloutNewVegas);
 
         return DialogueTreeRenderer.BuildDetailPanel(
             rows,

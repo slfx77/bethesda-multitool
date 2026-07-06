@@ -1,10 +1,14 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
-using BethesdaMultitool.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
 
 /// <summary>
 ///     Formats parsed INFO conditions and result-script metadata for the dialogue viewer.
+///     Function names and the numeric-vs-FormID parameter split come from the game-keyed
+///     <see cref="ConditionFunctionTable" /> — Oblivion conditions previously rendered through the
+///     FNV table, misnaming every function past index 0x171 and mistyping params past raw id 31.
 /// </summary>
 internal static class DialogueConditionDisplayFormatter
 {
@@ -12,17 +16,11 @@ internal static class DialogueConditionDisplayFormatter
     public static string FormatCondition(
         DialogueCondition condition,
         Func<uint, string> resolveFormName,
-        Func<uint, string>? resolveEditorId = null)
+        Func<uint, string>? resolveEditorId = null,
+        BethesdaGame game = BethesdaGame.FalloutNewVegas)
     {
-        var opcode = (ushort)(0x1000 | condition.FunctionIndex);
-        var function = ScriptFunctionTable.Get(opcode);
-        var functionName = function?.Name ?? $"Func 0x{condition.FunctionIndex:X4}";
-        ScriptParamType? firstParamType = function is not null && function.Params.Length > 0
-            ? function.Params[0].Type
-            : null;
-        ScriptParamType? secondParamType = function is not null && function.Params.Length > 1
-            ? function.Params[1].Type
-            : null;
+        var table = ConditionFunctionTable.For(game);
+        var functionName = table.GetName(condition.FunctionIndex);
 
         // Use EditorID for scripting-style display (bare identifier), fall back to full name
         var resolveParamName = resolveEditorId ?? resolveFormName;
@@ -30,18 +28,12 @@ internal static class DialogueConditionDisplayFormatter
         var parameterParts = new List<string>();
         if (condition.Parameter1 != 0)
         {
-            parameterParts.Add(FormatParameter(
-                firstParamType,
-                condition.Parameter1,
-                resolveParamName));
+            parameterParts.Add(FormatParameter(table, condition, 0, condition.Parameter1, resolveParamName));
         }
 
         if (condition.Parameter2 != 0)
         {
-            parameterParts.Add(FormatParameter(
-                secondParamType,
-                condition.Parameter2,
-                resolveParamName));
+            parameterParts.Add(FormatParameter(table, condition, 1, condition.Parameter2, resolveParamName));
         }
 
         var expression = parameterParts.Count > 0
@@ -78,34 +70,19 @@ internal static class DialogueConditionDisplayFormatter
     ///     Determines whether a condition parameter at the given index (0 or 1) is a FormID reference
     ///     rather than a numeric value.
     /// </summary>
-    public static bool IsFormReference(DialogueCondition condition, int paramIndex)
+    public static bool IsFormReference(
+        DialogueCondition condition,
+        int paramIndex,
+        BethesdaGame game = BethesdaGame.FalloutNewVegas)
     {
-        var opcode = (ushort)(0x1000 | condition.FunctionIndex);
-        var function = ScriptFunctionTable.Get(opcode);
+        var table = ConditionFunctionTable.For(game);
+        var function = table.Get(condition.FunctionIndex);
         if (function == null || paramIndex >= function.Params.Length)
         {
             return false;
         }
 
-        return function.Params[paramIndex].Type switch
-        {
-            ScriptParamType.Char or
-                ScriptParamType.Int or
-                ScriptParamType.Float or
-                ScriptParamType.Axis or
-                ScriptParamType.AnimGroup or
-                ScriptParamType.Sex or
-                ScriptParamType.ScriptVar or
-                ScriptParamType.Stage or
-                ScriptParamType.CrimeType or
-                ScriptParamType.FormType or
-                ScriptParamType.MiscStat or
-                ScriptParamType.VatsValue or
-                ScriptParamType.VatsValueData or
-                ScriptParamType.Alignment or
-                ScriptParamType.CritStage => false,
-            _ => true
-        };
+        return table.ClassifyParam(condition.FunctionIndex, paramIndex) == ConditionParamKind.FormId;
     }
 
     /// <summary>Formats a result script's referenced objects as a comma-separated "name (0xFormID)" list.</summary>
@@ -126,7 +103,9 @@ internal static class DialogueConditionDisplayFormatter
     }
 
     private static string FormatParameter(
-        ScriptParamType? paramType,
+        ConditionFunctionTable table,
+        DialogueCondition condition,
+        int paramIndex,
         uint value,
         Func<uint, string> resolveName)
     {
@@ -135,24 +114,9 @@ internal static class DialogueConditionDisplayFormatter
             return "0";
         }
 
-        return paramType switch
-        {
-            ScriptParamType.Char or
-                ScriptParamType.Int or
-                ScriptParamType.Float or
-                ScriptParamType.Axis or
-                ScriptParamType.AnimGroup or
-                ScriptParamType.Sex or
-                ScriptParamType.ScriptVar or
-                ScriptParamType.Stage or
-                ScriptParamType.CrimeType or
-                ScriptParamType.FormType or
-                ScriptParamType.MiscStat or
-                ScriptParamType.VatsValue or
-                ScriptParamType.VatsValueData or
-                ScriptParamType.Alignment or
-                ScriptParamType.CritStage => value.ToString(),
-            _ => resolveName(value)
-        };
+        // Unknown functions/params classify Numeric — the historical raw-value fallback.
+        return table.ClassifyParam(condition.FunctionIndex, paramIndex) == ConditionParamKind.FormId
+            ? resolveName(value)
+            : value.ToString();
     }
 }

@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Subtitles;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
 
@@ -26,7 +27,8 @@ internal static class DialogueRecordDetailBuilder
         Func<uint?, string> resolveSpeakerName,
         string? topicEditorId = null,
         Func<uint, string>? resolveEditorId = null,
-        Func<uint, uint, string?>? resolveQuestVariable = null)
+        Func<uint, uint, string?>? resolveQuestVariable = null,
+        BethesdaGame game = BethesdaGame.FalloutNewVegas)
     {
         var rows = new List<DetailRow>();
 
@@ -101,11 +103,11 @@ internal static class DialogueRecordDetailBuilder
                 rows.Add(new DetailRow(
                     info.Conditions.Count > 1 ? $"Condition {i + 1}" : "Condition",
                     DialogueConditionDisplayFormatter.FormatCondition(
-                        info.Conditions[i], resolveFormName, resolveEditorId)));
+                        info.Conditions[i], resolveFormName, resolveEditorId, game)));
             }
 
             // Condition Refs — one per line with navigable links
-            var conditionRefs = CollectConditionFormRefs(info.Conditions);
+            var conditionRefs = CollectConditionFormRefs(info.Conditions, game);
             var refIndex = 0;
             foreach (var formId in conditionRefs)
             {
@@ -242,7 +244,8 @@ internal static class DialogueRecordDetailBuilder
         TopicDialogueNode linkedTopic,
         InfoDialogueNode sourceInfo,
         Func<uint, string> resolveFormName,
-        Func<uint, string>? resolveEditorId = null)
+        Func<uint, string>? resolveEditorId = null,
+        BethesdaGame game = BethesdaGame.FalloutNewVegas)
     {
         var rows = new List<DetailRow>();
 
@@ -290,7 +293,7 @@ internal static class DialogueRecordDetailBuilder
                 rows.Add(new DetailRow(
                     allConditions.Count > 1 ? $"Condition {i + 1}" : "Condition",
                     DialogueConditionDisplayFormatter.FormatCondition(
-                        allConditions[i], resolveFormName, resolveEditorId)));
+                        allConditions[i], resolveFormName, resolveEditorId, game)));
             }
         }
 
@@ -380,17 +383,17 @@ internal static class DialogueRecordDetailBuilder
     /// <summary>
     ///     Collects unique FormID references from condition parameters and references.
     /// </summary>
-    private static HashSet<uint> CollectConditionFormRefs(List<DialogueCondition> conditions)
+    private static HashSet<uint> CollectConditionFormRefs(List<DialogueCondition> conditions, BethesdaGame game)
     {
         var refs = new HashSet<uint>();
         foreach (var cond in conditions)
         {
-            if (cond.Parameter1 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 0))
+            if (cond.Parameter1 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 0, game))
             {
                 refs.Add(cond.Parameter1);
             }
 
-            if (cond.Parameter2 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 1))
+            if (cond.Parameter2 != 0 && DialogueConditionDisplayFormatter.IsFormReference(cond, 1, game))
             {
                 refs.Add(cond.Parameter2);
             }

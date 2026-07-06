@@ -27,4 +27,7 @@ public static partial class ScriptFunctionTable
 
         return $"UnknownFunc_0x{opcode:X4}";
     }
+
+    /// <summary>The full table, for the game-keyed <see cref="ScriptFunctionTables" /> facade.</summary>
+    internal static IReadOnlyDictionary<ushort, ScriptFunctionDef> All => _functions;
 }
