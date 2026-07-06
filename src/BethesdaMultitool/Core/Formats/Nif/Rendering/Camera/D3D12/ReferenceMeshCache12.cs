@@ -220,8 +220,21 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     /// </summary>
     public bool StreamingThrottled { get; set; } = true;
 
+    /// <summary>
+    ///     Time-based streaming pace: per-frame allowances × the last frame's duration relative to
+    ///     60fps (see <see cref="Core.Resources.StreamingFrameBudgetScaler" />). Keeps loading
+    ///     throughput frame-rate-independent — a viewer starved to a few FPS by GPU contention
+    ///     (another game running) otherwise streams at a few percent of its normal rate. Updated by
+    ///     <see cref="ResetFrameStats" />; also consumed by the renderer's upload time budget.
+    /// </summary>
+    public double FrameBudgetScale { get; private set; } = 1.0;
+
+    private long _lastFrameTimestamp;
+
     private int EffectiveMaxDecodeStartsPerFrame =>
-        StreamingThrottled ? MaxDecodeStartsPerFrame : int.MaxValue;
+        StreamingThrottled
+            ? Core.Resources.StreamingFrameBudgetScaler.ScaleCount(MaxDecodeStartsPerFrame, FrameBudgetScale)
+            : int.MaxValue;
 
     private int EffectiveMaxConcurrentDecodeTasks =>
         StreamingThrottled ? MaxConcurrentDecodeTasks : Math.Max(MaxConcurrentDecodeTasks, UnthrottledMaxConcurrentDecodeTasks);
@@ -255,8 +268,20 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         FrameCpuDecodedNegativeHits = 0;
         FrameGpuUploads = 0;
         FrameByteBudgetDeferrals = 0;
-        _frameUploadByteBudget = new FrameByteBudget(StreamingThrottled ? MaxUploadBytesPerFrame : long.MaxValue);
-        _textureCache.ResetFrameStats();
+
+        // Self-measured frame duration → the time-based streaming pace for this frame. First frame
+        // (no prior timestamp) stays at 1.0.
+        var now = Stopwatch.GetTimestamp();
+        FrameBudgetScale = _lastFrameTimestamp == 0
+            ? 1.0
+            : Core.Resources.StreamingFrameBudgetScaler.Scale(
+                Stopwatch.GetElapsedTime(_lastFrameTimestamp, now).TotalSeconds);
+        _lastFrameTimestamp = now;
+
+        _frameUploadByteBudget = new FrameByteBudget(StreamingThrottled
+            ? Core.Resources.StreamingFrameBudgetScaler.ScaleBytes(MaxUploadBytesPerFrame, FrameBudgetScale)
+            : long.MaxValue);
+        _textureCache.ResetFrameStats(FrameBudgetScale);
         PruneCompletedDecodeTasks();
     }
 

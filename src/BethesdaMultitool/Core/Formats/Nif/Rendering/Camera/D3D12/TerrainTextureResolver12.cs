@@ -22,6 +22,8 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     private readonly GpuTextureCache12 _textureCache;
     private readonly Dictionary<uint, GpuTextureCache12.Entry> _byLtex = new();
     private readonly BethesdaMultitool.Core.Games.BethesdaGame _game;
+    // Timestamp of the previous ResetFrameStats call (time-based streaming pace; 0 = first frame).
+    private long _lastFrameTimestamp;
 
     public TerrainTextureResolver12(
         GpuDevice12 gpu,
@@ -68,7 +70,16 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     public void ResetFrameStats()
     {
         FrameCacheMisses = 0;
-        _textureCache.ResetFrameStats();
+        // Self-measured frame duration → time-based dispatch pace (StreamingFrameBudgetScaler), so
+        // terrain texture streaming keeps its throughput when the frame rate collapses under GPU
+        // contention. Same pattern as ReferenceMeshCache12.ResetFrameStats.
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        var scale = _lastFrameTimestamp == 0
+            ? 1.0
+            : Core.Resources.StreamingFrameBudgetScaler.Scale(
+                System.Diagnostics.Stopwatch.GetElapsedTime(_lastFrameTimestamp, now).TotalSeconds);
+        _lastFrameTimestamp = now;
+        _textureCache.ResetFrameStats(scale);
     }
 
     /// <summary>

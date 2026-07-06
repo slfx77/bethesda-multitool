@@ -57,6 +57,8 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     private readonly GpuDevice12 _gpu;
     private readonly GpuCommandRecorder12 _recorder;
     private readonly NifGpuTextureResolver? _resolver;
+    // Time-based streaming pace for this frame (StreamingFrameBudgetScaler; set by ResetFrameStats).
+    private double _frameBudgetScale = 1.0;
     private readonly GpuDeletionQueue12? _deletionQueue;
     private readonly GpuDescriptorHeapAllocator12 _heap;
     // Frame-independent fallback/placeholder texture creation (1×1 solids + cold-miss placeholders).
@@ -177,13 +179,16 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     /// <summary>Upload work items handed to the uploader thread but not yet processed.</summary>
     public int PendingUploadDispatch => _uploadDispatcher.PendingCount;
 
-    public void ResetFrameStats()
+    public void ResetFrameStats(double frameBudgetScale = 1.0)
     {
         FrameCompressedUploads = 0;
         FrameRgbaFallbackUploads = 0;
         FrameQueuedUploads = 0;
         FrameUploadBytes = 0;
         FrameQueuedResolves = 0;
+        // Time-based pace (see StreamingFrameBudgetScaler): slow frames earn proportionally larger
+        // dispatch allowances so texture streaming throughput doesn't collapse with the frame rate.
+        _frameBudgetScale = frameBudgetScale;
         PromoteCompletedUploads();
         DrainResolvedPayloads();
         DispatchQueuedUploads();
@@ -377,10 +382,13 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     /// </summary>
     private void DispatchQueuedUploads()
     {
-        var uploadLimit = Math.Max(1, MaxUploadsPerFrame);
+        var uploadLimit = Math.Max(1,
+            Core.Resources.StreamingFrameBudgetScaler.ScaleCount(MaxUploadsPerFrame, _frameBudgetScale));
         // Count stays in the while condition (count exhaustion leaves the next node at the queue
         // FRONT, exactly as before); CanStart gates bytes with the first-item-always rule.
-        var budget = new FrameBudget(uploadLimit, MaxUploadBytesPerFrame);
+        var budget = new FrameBudget(
+            uploadLimit,
+            Core.Resources.StreamingFrameBudgetScaler.ScaleBytes(MaxUploadBytesPerFrame, _frameBudgetScale));
 
         while (_pendingDispatch.Count > 0 && budget.ItemsUsed < uploadLimit)
         {

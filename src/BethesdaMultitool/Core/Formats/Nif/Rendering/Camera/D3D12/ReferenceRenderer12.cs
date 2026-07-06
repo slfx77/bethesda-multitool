@@ -441,7 +441,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var drawn = 0;
         var throttled = _streamingThrottled;
         var uploadBudget = throttled ? MaxNewUploadsPerFrame : int.MaxValue;
-        var uploadTimeBudget = new FrameTimeBudget(MaxUploadMillisecondsPerFrame);
+        // Time-based pace: the wall-clock upload slice grows with the frame's actual duration
+        // (StreamingFrameBudgetScaler, capped 30×) so a viewer starved to a few FPS — e.g. another
+        // game owning the GPU — keeps its loading THROUGHPUT instead of scaling it down with FPS.
+        // A 2ms slice × 30 inside a ≥500ms frame is still a rounding error for that frame's cost.
+        var uploadTimeBudget = new FrameTimeBudget(
+            MaxUploadMillisecondsPerFrame * _meshCache.FrameBudgetScale);
         var cylinderRadius = cylinder.Radius;
         var cylinderX = cylinder.Position.X;
         var cylinderY = cylinder.Position.Y;
