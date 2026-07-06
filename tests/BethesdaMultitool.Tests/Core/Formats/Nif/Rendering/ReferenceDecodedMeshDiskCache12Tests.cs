@@ -40,9 +40,9 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         var metadata = CreateMetadata(64, 1000);
         var payload = CreatePayload();
 
-        cache.Store(metadata, payload);
+        cache.Store(metadata, variantKey: null, payload);
 
-        Assert.True(cache.TryLoad(metadata, out var entry));
+        Assert.True(cache.TryLoad(metadata, variantKey: null, out var entry));
         Assert.False(entry.IsNegative);
         Assert.NotNull(entry.Mesh);
         var mesh = entry.Mesh;
@@ -70,9 +70,9 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
         var metadata = CreateMetadata(null, 1000, false);
 
-        cache.Store(metadata, null);
+        cache.Store(metadata, variantKey: null, payload: null);
 
-        Assert.True(cache.TryLoad(metadata, out var entry));
+        Assert.True(cache.TryLoad(metadata, variantKey: null, out var entry));
         Assert.True(entry.IsNegative);
         Assert.Null(entry.Mesh);
     }
@@ -85,10 +85,10 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         var original = CreateMetadata(64, 1000);
         var changed = CreateMetadata(65, 1000);
 
-        cache.Store(original, CreatePayload());
+        cache.Store(original, variantKey: null, CreatePayload());
 
-        Assert.True(cache.TryLoad(original, out _));
-        Assert.False(cache.TryLoad(changed, out _));
+        Assert.True(cache.TryLoad(original, variantKey: null, out _));
+        Assert.False(cache.TryLoad(changed, variantKey: null, out _));
     }
 
     [Fact]
@@ -97,11 +97,11 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         using var tempDir = new TempDirectory();
         var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
         var metadata = CreateMetadata(64, 1000);
-        cache.Store(metadata, CreatePayload());
+        cache.Store(metadata, variantKey: null, CreatePayload());
         var path = cache.GetCachePath(metadata);
         File.WriteAllBytes(path, [0x42, 0x61, 0x64]);
 
-        Assert.False(cache.TryLoad(metadata, out _));
+        Assert.False(cache.TryLoad(metadata, variantKey: null, out _));
         Assert.False(File.Exists(path));
     }
 
