@@ -305,7 +305,8 @@ public static class Fallout4Schema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "PNAM", Name = "Marker Color" },
                 new FormIdDef { Signature = "SNAM", Name = "Sound - Looping", Targets = ["SNDR"] },
@@ -1767,21 +1768,24 @@ public static class Fallout4Schema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Ambient Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Directional Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color Near" },
                         new FieldDef(PrimType.Float) { Name = "Fog Near" },
@@ -1796,7 +1800,8 @@ public static class Fallout4Schema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color Far" },
                         new FieldDef(PrimType.Float) { Name = "Fog Max" },
@@ -1809,14 +1814,16 @@ public static class Fallout4Schema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color High Near" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color High Far" },
                         new FieldDef(PrimType.Float) { Name = "High Density Scale" },
@@ -2717,7 +2724,8 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Fill/Texture Effect - Color Key 1" },
                                 new FieldDef(PrimType.Float) { Name = "Fill/Texture Effect - Alpha Fade In Time" },
@@ -2733,7 +2741,8 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Edge Effect - Color" },
                                 new FieldDef(PrimType.Float) { Name = "Edge Effect - Alpha Fade In Time" },
@@ -2772,21 +2781,24 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Color Key 1 - Color" },
                                 new StructDef(
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Color Key 2 - Color" },
                                 new StructDef(
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Color Key 3 - Color" },
                                 new FieldDef(PrimType.Float) { Name = "Color Key 1 - Color Alpha" },
@@ -2810,7 +2822,8 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Edge Color" },
                                 new FieldDef(PrimType.Float) { Name = "Explosion Wind Speed" },
@@ -2827,14 +2840,16 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Fill/Texture Effect - Color Key 2" },
                                 new StructDef(
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Fill/Texture Effect - Color Key 3" },
                                 new StructDef(
@@ -2876,7 +2891,8 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Fill/Texture Effect - Color Key 1" },
                                 new FieldDef(PrimType.Float) { Name = "Fill/Texture Effect - Alpha Fade In Time" },
@@ -2892,7 +2908,8 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Edge Effect - Color" },
                                 new FieldDef(PrimType.Float) { Name = "Edge Effect - Alpha Fade In Time" },
@@ -2913,14 +2930,16 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Fill/Texture Effect - Color Key 2" },
                                 new StructDef(
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Fill/Texture Effect - Color Key 3" },
                                 new FieldDef(PrimType.U8) { Name = "Unknown" },
@@ -3534,7 +3553,8 @@ public static class Fallout4Schema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "PNAM", Name = "Marker Color (Unused)", Required = true },
                 new FormIdDef { Signature = "WNAM", Name = "Drinking Water Type", Targets = ["WATR"] },
@@ -3932,7 +3952,8 @@ public static class Fallout4Schema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Color" }
                     ]
@@ -6342,7 +6363,8 @@ public static class Fallout4Schema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Color" }
                     ]
@@ -6741,21 +6763,24 @@ public static class Fallout4Schema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Ambient Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Directional Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color Near" },
                         new FieldDef(PrimType.Float) { Name = "Fog Near" },
@@ -6770,7 +6795,8 @@ public static class Fallout4Schema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color Far" },
                         new FieldDef(PrimType.Float) { Name = "Fog Max" },
@@ -6783,14 +6809,16 @@ public static class Fallout4Schema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color High Near" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color High Far" },
                         new FieldDef(PrimType.Float) { Name = "High Density Scale" },
@@ -9124,7 +9152,8 @@ public static class Fallout4Schema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "FNAM", Name = "Debug Color" },
                 new FieldDef(PrimType.U32) { Signature = "GNAM", Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Trigger Volume"), new FlagMember(1, "Sensor"), new FlagMember(2, "Navmesh Obstacle")]) },
@@ -11198,7 +11227,8 @@ public static class Fallout4Schema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Color" },
                         new FieldDef(PrimType.U32) { Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Unknown 0"), new FlagMember(1, "Can be Carried"), new FlagMember(2, "Unknown 2"), new FlagMember(3, "Flicker"), new FlagMember(4, "Unknown 4"), new FlagMember(5, "Off By Default"), new FlagMember(6, "Unknown 6"), new FlagMember(7, "Pulse"), new FlagMember(8, "Unknown 8"), new FlagMember(9, "Unknown 9"), new FlagMember(10, "Shadow Spotlight"), new FlagMember(11, "Shadow Hemisphere"), new FlagMember(12, "Shadow OmniDirectional"), new FlagMember(13, "Unknown 13"), new FlagMember(14, "NonShadow Spotlight"), new FlagMember(15, "Non Specular"), new FlagMember(16, "Attenuation Only"), new FlagMember(17, "NonShadow Box"), new FlagMember(18, "Ignore Roughness"), new FlagMember(19, "No Rim Lighting"), new FlagMember(20, "Ambient Only"), new FlagMember(21, "Unknown 21")]) },
@@ -13044,7 +13074,8 @@ public static class Fallout4Schema
                                         [
                                             new FieldDef(PrimType.U8) { Name = "Red" },
                                             new FieldDef(PrimType.U8) { Name = "Green" },
-                                            new FieldDef(PrimType.U8) { Name = "Blue" }
+                                            new FieldDef(PrimType.U8) { Name = "Blue" },
+                                            new UnusedDef(1)
                                         ]
                                     ) { Name = "Color" },
                                     new FieldDef(PrimType.S16) { Name = "Template Color Index" }
@@ -17612,7 +17643,8 @@ public static class Fallout4Schema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "RCLR", Name = "Map Color" },
                 new FormIdDef { Signature = "WNAM", Name = "Worldspace", Targets = ["WRLD"] },
@@ -18760,7 +18792,8 @@ public static class Fallout4Schema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "PNAM", Name = "Marker Color (Unused)" },
                 new FieldDef(PrimType.LString) { Signature = "ATTX", Name = "Activate Text Override", FixedSize = 0 },
@@ -20151,7 +20184,8 @@ public static class Fallout4Schema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "PNAM", Name = "Marker Color (Unused)" },
                 new FormIdDef { Signature = "SNAM", Name = "Looping Sound", Targets = ["SNDR"] },
@@ -20556,14 +20590,16 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Shallow Color" },
                                 new StructDef(
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Deep Color" },
                                 new FieldDef(PrimType.Float) { Name = "Color Shallow Range" },
@@ -20576,7 +20612,8 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Underwater Color" },
                                 new FieldDef(PrimType.Float) { Name = "Underwater Fog Amount" },
@@ -20605,7 +20642,8 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Reflection Color" }
                             ]
@@ -20647,14 +20685,16 @@ public static class Fallout4Schema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Light Color" },
                                 new StructDef(
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Dark Color" }
                             ]

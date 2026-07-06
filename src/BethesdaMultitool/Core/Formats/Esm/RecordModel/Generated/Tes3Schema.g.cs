@@ -193,7 +193,8 @@ public static class Tes3Schema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "NAM5", Name = "Region Map Color" },
                 new FieldDef(PrimType.Float) { Signature = "WHGT", Name = "Water Height" },
@@ -203,21 +204,24 @@ public static class Tes3Schema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Ambient Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Sunlight Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color" },
                         new FieldDef(PrimType.Float) { Name = "Fog Density", DefaultValue = 1, FixedSize = 1 }
@@ -370,7 +374,16 @@ public static class Tes3Schema
                 new ArrayDef(
                     new StructDef(
                         [
-                            new RawMemberDef("wbVec3PosRot"),
+                            new StructDef(
+                                [
+                                    new FieldDef(PrimType.Float) { Name = "Position X" },
+                                    new FieldDef(PrimType.Float) { Name = "Position Y" },
+                                    new FieldDef(PrimType.Float) { Name = "Position Z" },
+                                    new FieldDef(PrimType.Float) { Name = "Rotation X" },
+                                    new FieldDef(PrimType.Float) { Name = "Rotation Y" },
+                                    new FieldDef(PrimType.Float) { Name = "Rotation Z" }
+                                ]
+                            ) { Signature = "DODT", Name = "Destination", Required = true },
                             new FieldDef(PrimType.ZString) { Signature = "DNAM", Name = "Cell", FixedSize = 64 }
                         ]
                     ) { Name = "Travel Service" }
@@ -733,7 +746,14 @@ public static class Tes3Schema
                         new FieldDef(PrimType.U32) { Name = "Value" },
                         new FieldDef(PrimType.S32) { Name = "Time", DefaultValue = -1 },
                         new FieldDef(PrimType.U32) { Name = "Radius", DefaultValue = 1000 },
-                        new RawMemberDef("wbByteColors"),
+                        new StructDef(
+                            [
+                                new FieldDef(PrimType.U8) { Name = "Red" },
+                                new FieldDef(PrimType.U8) { Name = "Green" },
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
+                            ]
+                        ) { Name = "Color" },
                         new FieldDef(PrimType.U32) { Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Dynamic"), new FlagMember(1, "Can Carry"), new FlagMember(2, "Negative"), new FlagMember(3, "Flicker"), new FlagMember(4, "Fire"), new FlagMember(5, "Off By Default"), new FlagMember(6, "Flicker Slow"), new FlagMember(7, "Pulse"), new FlagMember(8, "Pulse Slow")]) }
                     ]
                 ) { Signature = "LHDT", Name = "Data", Required = true },
@@ -926,7 +946,16 @@ public static class Tes3Schema
                 new ArrayDef(
                     new StructDef(
                         [
-                            new RawMemberDef("wbVec3PosRot"),
+                            new StructDef(
+                                [
+                                    new FieldDef(PrimType.Float) { Name = "Position X" },
+                                    new FieldDef(PrimType.Float) { Name = "Position Y" },
+                                    new FieldDef(PrimType.Float) { Name = "Position Z" },
+                                    new FieldDef(PrimType.Float) { Name = "Rotation X" },
+                                    new FieldDef(PrimType.Float) { Name = "Rotation Y" },
+                                    new FieldDef(PrimType.Float) { Name = "Rotation Z" }
+                                ]
+                            ) { Signature = "DODT", Name = "Destination", Required = true },
                             new FieldDef(PrimType.ZString) { Signature = "DNAM", Name = "Cell", FixedSize = 64 }
                         ]
                     ) { Name = "Travel Service" }
@@ -1163,7 +1192,16 @@ public static class Tes3Schema
                 new FieldDef(PrimType.U32) { Signature = "NAM9", Name = "Count" },
                 new StructDef(
                     [
-                        new RawMemberDef("wbVec3PosRot"),
+                        new StructDef(
+                            [
+                                new FieldDef(PrimType.Float) { Name = "Position X" },
+                                new FieldDef(PrimType.Float) { Name = "Position Y" },
+                                new FieldDef(PrimType.Float) { Name = "Position Z" },
+                                new FieldDef(PrimType.Float) { Name = "Rotation X" },
+                                new FieldDef(PrimType.Float) { Name = "Rotation Y" },
+                                new FieldDef(PrimType.Float) { Name = "Rotation Z" }
+                            ]
+                        ) { Signature = "DODT", Name = "Position/Rotation" },
                         new FieldDef(PrimType.ZString) { Signature = "DNAM", Name = "Cell" }
                     ]
                 ) { Name = "Teleport Data" },
@@ -1171,7 +1209,16 @@ public static class Tes3Schema
                     []
                 ) { Name = "Lock Data" },
                 new FieldDef(PrimType.U32) { Signature = "DELE", Name = "Deleted", InlineEnum = new EnumDef(null, [new EnumMember(0, "True")]) },
-                new RawMemberDef("wbVec3PosRot")
+                new StructDef(
+                    [
+                        new FieldDef(PrimType.Float) { Name = "Position X" },
+                        new FieldDef(PrimType.Float) { Name = "Position Y" },
+                        new FieldDef(PrimType.Float) { Name = "Position Z" },
+                        new FieldDef(PrimType.Float) { Name = "Rotation X" },
+                        new FieldDef(PrimType.Float) { Name = "Rotation Y" },
+                        new FieldDef(PrimType.Float) { Name = "Rotation Z" }
+                    ]
+                ) { Signature = "DATA", Name = "Reference Data" }
             ]
         ) { Name = "Placed Object" },
         new RecordDef("REGN",
@@ -1198,7 +1245,8 @@ public static class Tes3Schema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "CNAM", Name = "Region Map Color", Required = true },
                 new ArrayDef(

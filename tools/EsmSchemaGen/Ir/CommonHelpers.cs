@@ -125,12 +125,17 @@ public static class CommonHelpers
         };
     }
 
+    // wbByteColors is RGB + 1 unused byte (4 bytes total): xEdit's WATR/DNAM color triplets sit at a
+    // 4-byte stride (Oblivion DATA @44/48/52, FNV DNAM @0x28/0x2C/0x30). The old 3-byte model shifted
+    // every field after the first color — Oblivion's lava Deep Color read (pad,184,29) green instead
+    // of the authored (184,29,12) red.
     private static StructDef ByteColors(IReadOnlyList<WbValue> args)
     {
         return new StructDef([
             new FieldDef(PrimType.U8) { Name = "Red" },
             new FieldDef(PrimType.U8) { Name = "Green" },
-            new FieldDef(PrimType.U8) { Name = "Blue" }
+            new FieldDef(PrimType.U8) { Name = "Blue" },
+            new UnusedDef(1)
         ])
         {
             Signature = SignatureArg(args),

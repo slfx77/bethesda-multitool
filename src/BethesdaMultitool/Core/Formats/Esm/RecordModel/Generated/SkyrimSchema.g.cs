@@ -143,7 +143,8 @@ public static class SkyrimSchema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "PNAM", Name = "Marker Color", Required = true },
                 new FormIdDef { Signature = "SNAM", Name = "Sound - Looping", Targets = ["SNDR"] },
@@ -929,21 +930,24 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Ambient Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Directional Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color Near" },
                         new FieldDef(PrimType.Float) { Name = "Fog Near" },
@@ -958,7 +962,8 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color Far" },
                         new FieldDef(PrimType.Float) { Name = "Fog Max" },
@@ -1470,7 +1475,8 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fill/Texture Effect - Color Key 1" },
                         new FieldDef(PrimType.Float) { Name = "Fill/Texture Effect - Alpha Fade In Time" },
@@ -1486,7 +1492,8 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Edge Effect - Color" },
                         new FieldDef(PrimType.Float) { Name = "Edge Effect - Alpha Fade In Time" },
@@ -1525,21 +1532,24 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Color Key 1 - Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Color Key 2 - Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Color Key 3 - Color" },
                         new FieldDef(PrimType.Float) { Name = "Color Key 1 - Color Alpha" },
@@ -1563,7 +1573,8 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Edge Color" },
                         new FieldDef(PrimType.Float) { Name = "Explosion Wind Speed" },
@@ -1580,14 +1591,16 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fill/Texture Effect - Color Key 2" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fill/Texture Effect - Color Key 3" },
                         new StructDef(
@@ -1933,7 +1946,8 @@ public static class SkyrimSchema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "PNAM", Name = "Marker Color (Unused)" },
                 new FieldDef(PrimType.U16) { Signature = "FNAM", Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Unknown 0"), new FlagMember(1, "Ignored By Sandbox")]) },
@@ -2054,7 +2068,8 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Color" }
                     ]
@@ -3410,7 +3425,8 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Color" }
                     ]
@@ -3708,21 +3724,24 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Ambient Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Directional Color" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color Near" },
                         new FieldDef(PrimType.Float) { Name = "Fog Near" },
@@ -3737,7 +3756,8 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Fog Color Far" },
                         new FieldDef(PrimType.Float) { Name = "Fog Max" },
@@ -4682,7 +4702,8 @@ public static class SkyrimSchema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "FNAM", Name = "Debug Color" },
                 new FieldDef(PrimType.U32) { Signature = "GNAM", Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Trigger Volume"), new FlagMember(1, "Sensor"), new FlagMember(2, "Navmesh Obstacle")]) },
@@ -5515,7 +5536,8 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Color" },
                         new FieldDef(PrimType.U32) { Name = "Flags", InlineFlags = new FlagsDef(null, [new FlagMember(0, "Dynamic"), new FlagMember(1, "Can be Carried"), new FlagMember(2, "Negative"), new FlagMember(3, "Flicker"), new FlagMember(4, "Unknown 4"), new FlagMember(5, "Off By Default"), new FlagMember(6, "Flicker Slow"), new FlagMember(7, "Pulse"), new FlagMember(8, "Pulse Slow"), new FlagMember(9, "Spot Light"), new FlagMember(10, "Shadow Spotlight"), new FlagMember(11, "Shadow Hemisphere"), new FlagMember(12, "Shadow Omnidirectional"), new FlagMember(13, "Portal-strict")]) },
@@ -9084,7 +9106,8 @@ public static class SkyrimSchema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "RCLR", Name = "Map Color" },
                 new FormIdDef { Signature = "WNAM", Name = "Worldspace", Targets = ["WRLD"] },
@@ -9641,7 +9664,8 @@ public static class SkyrimSchema
                     [
                         new FieldDef(PrimType.U8) { Name = "Red" },
                         new FieldDef(PrimType.U8) { Name = "Green" },
-                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                        new UnusedDef(1)
                     ]
                 ) { Signature = "PNAM", Name = "Marker Color (Unused)" },
                 new FieldDef(PrimType.LString) { Signature = "RNAM", Name = "Activate Text Override", FixedSize = 0 },
@@ -9809,21 +9833,24 @@ public static class SkyrimSchema
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Shallow Color" },
                                 new StructDef(
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Deep Color" },
                                 new StructDef(
                                     [
                                         new FieldDef(PrimType.U8) { Name = "Red" },
                                         new FieldDef(PrimType.U8) { Name = "Green" },
-                                        new FieldDef(PrimType.U8) { Name = "Blue" }
+                                        new FieldDef(PrimType.U8) { Name = "Blue" },
+                                        new UnusedDef(1)
                                     ]
                                 ) { Name = "Reflection Color" }
                             ]
@@ -10267,28 +10294,32 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Sunrise" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Day" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Sunset" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Night" }
                     ]
@@ -10299,28 +10330,32 @@ public static class SkyrimSchema
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Sunrise" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Day" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Sunset" },
                         new StructDef(
                             [
                                 new FieldDef(PrimType.U8) { Name = "Red" },
                                 new FieldDef(PrimType.U8) { Name = "Green" },
-                                new FieldDef(PrimType.U8) { Name = "Blue" }
+                                new FieldDef(PrimType.U8) { Name = "Blue" },
+                                new UnusedDef(1)
                             ]
                         ) { Name = "Night" }
                     ]
