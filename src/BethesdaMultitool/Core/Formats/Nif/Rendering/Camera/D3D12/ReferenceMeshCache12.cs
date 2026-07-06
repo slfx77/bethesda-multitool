@@ -436,6 +436,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         StoreDecodedCache(modelPath, decoded);
+        // The decode above also persisted to disk, so if the decoded-LRU entry is later evicted the
+        // node may probe the on-disk cache once more (and hit) instead of re-decoding.
+        node.DecodedCacheMissRecorded = false;
         if (TryResolveFromDecodedCache(modelPath, node, ref uploadBudget, out cachedMesh))
         {
             return cachedMesh;
@@ -455,14 +458,33 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         {
             // Disk load keys on the plain DecodePath's archive identity + the variant discriminator;
             // the in-memory store uses the composite cache key (== modelPath here).
-            if (!TryLoadPersistentDecodedCache(node.DecodePath, node.VariantKey, modelPath, out decoded) &&
-                !node.DecodedCacheMissRecorded)
+            //
+            // Probe the on-disk cache ONCE per node: the probe is real file I/O (key hash + open
+            // attempt), and this resolve runs EVERY frame for every visible not-yet-resident mesh.
+            // A cold dense area (Boston downtown: ~57k unresolved survivors) re-probing per frame
+            // put ~57k file opens INSIDE the render loop — 7-17 s/frame, the "1FPS + nothing
+            // renders" collapse. A mesh absent from the disk cache can only appear there after its
+            // own decode completes, which lands in the in-memory decoded LRU anyway; the flag is
+            // re-armed when a completed decode is consumed, so a later decoded-LRU eviction may
+            // re-probe (and then hit) the disk entry that decode persisted.
+            //
+            // And only LOAD from disk while the frame still has upload budget to consume the payload
+            // immediately (load → GPU upload → resident in this same resolve). When the working set
+            // dwarfs the decoded-LRU byte budget (Boston: ~20k meshes vs 256MB), budget-blind loads
+            // just evicted each other before the next frame's uploads — thousands of disk reads +
+            // full deserializes per frame (the residual 3 s/frame), none of which ever became
+            // resident. Budget-gated, every disk load converts straight into a resident mesh.
+            if (node.DecodedCacheMissRecorded ||
+                uploadBudget <= 0 ||
+                !TryLoadPersistentDecodedCache(node.DecodePath, node.VariantKey, modelPath, out decoded))
             {
-                FrameCpuDecodedCacheMisses++;
-                node.DecodedCacheMissRecorded = true;
-            }
-            if (decoded.Mesh is null && !decoded.IsNegative)
-            {
+                if (!node.DecodedCacheMissRecorded &&
+                    uploadBudget > 0)
+                {
+                    FrameCpuDecodedCacheMisses++;
+                    node.DecodedCacheMissRecorded = true;
+                }
+
                 return false;
             }
         }
