@@ -410,6 +410,9 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             }
         }
 
+        var isPersistentCell = ApplyStructuralCellClassification(
+            record.FormId, cellWorldspace, ref gridX, ref gridY, flags);
+
         var cellRefs = ResolveCellRefs(record, refrByFormId, cellToRefrMap,
             refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry);
 
@@ -438,8 +441,6 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 terrainMeshByGrid.TryGetValue(gridKey, out terrainMesh);
             }
         }
-
-        var isPersistentCell = IsPersistentCellContainer(flags, gridX, gridY, cellWorldspace);
 
         return new CellRecord
         {
@@ -486,14 +487,17 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         var cellRefs = ResolveCellRefs(record, refrByFormId, cellToRefrMap,
             refrOffsetIndex, refrSortedByOffset, runtimeCellMapEntry);
 
-        var isPersistentCell = IsPersistentCellContainer(0, cellGrid?.GridX, cellGrid?.GridY, cellWorldspace);
+        int? gridX = cellGrid?.GridX;
+        int? gridY = cellGrid?.GridY;
+        var isPersistentCell = ApplyStructuralCellClassification(
+            record.FormId, cellWorldspace, ref gridX, ref gridY, flags: 0);
 
         return new CellRecord
         {
             FormId = record.FormId,
             EditorId = Context.GetEditorId(record.FormId),
-            GridX = cellGrid?.GridX,
-            GridY = cellGrid?.GridY,
+            GridX = gridX,
+            GridY = gridY,
             WorldspaceFormId = cellWorldspace > 0 ? cellWorldspace : null,
             WorldspaceAssignmentSource = cellWorldspace > 0 ? "CellGrup" : null,
             PlacedObjects = cellRefs,
@@ -502,6 +506,43 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    /// <summary>
+    ///     Classifies a worldspace cell as the persistent dummy container vs a real exterior cell and
+    ///     normalizes its grid accordingly. The GRUP-structural signal
+    ///     (<see cref="EsmRecordScanResult.PersistentCellContainerFormIds" />) is authoritative when
+    ///     present: a TES4 dummy can carry XCLC (0,0) — keeping it would collide with the real (0,0)
+    ///     cell in the spatial index (SETheFringe) — and a TES4 real exterior cell can omit XCLC,
+    ///     which the engine zero-defaults to grid (0,0) (Toddland's only cell). Structure-less inputs
+    ///     (memory dumps) fall back to the grid-presence heuristic unchanged.
+    /// </summary>
+    private bool ApplyStructuralCellClassification(
+        uint formId, uint cellWorldspace, ref int? gridX, ref int? gridY, byte flags)
+    {
+        var containers = Context.ScanResult.PersistentCellContainerFormIds;
+        if (containers.Count > 0 && cellWorldspace > 0)
+        {
+            if (containers.Contains(formId))
+            {
+                // The engine ignores the dummy's grid; its refs route through the persistent shunt.
+                gridX = null;
+                gridY = null;
+                return true;
+            }
+
+            if (gridX is null || gridY is null)
+            {
+                // Real exterior cell (inside a Type-4/5 block) with no XCLC: the engine's grid
+                // field is zero-initialized, so the cell loads at (0,0).
+                gridX = 0;
+                gridY = 0;
+            }
+
+            return false;
+        }
+
+        return IsPersistentCellContainer(flags, gridX, gridY, cellWorldspace);
     }
 
     private static bool IsPersistentCellContainer(byte flags, int? gridX, int? gridY, uint cellWorldspace)

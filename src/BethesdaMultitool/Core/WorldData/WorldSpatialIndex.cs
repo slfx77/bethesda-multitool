@@ -630,8 +630,15 @@ internal sealed class WorldSpatialIndex
         return (minX, minY, maxX, maxY);
     }
 
-    private static bool PreferGridLookupCell(CellRecord candidate, CellRecord existing)
+    internal static bool PreferGridLookupCell(CellRecord candidate, CellRecord existing)
     {
+        // A worldspace persistent dummy that reached the grid (TES4 dummies can carry XCLC (0,0))
+        // must never evict the real exterior cell, however many refs it holds.
+        if (candidate.IsPersistentCell != existing.IsPersistentCell)
+        {
+            return existing.IsPersistentCell;
+        }
+
         if (candidate.PlacedObjects.Count != existing.PlacedObjects.Count)
         {
             return candidate.PlacedObjects.Count > existing.PlacedObjects.Count;

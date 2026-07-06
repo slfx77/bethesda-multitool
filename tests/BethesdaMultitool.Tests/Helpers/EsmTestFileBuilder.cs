@@ -54,7 +54,14 @@ internal sealed class EsmTestFileBuilder
             EsmFileAnalyzer.BuildAllMaps(parsedRecords, grupHeaders);
 
         var scanResult = EsmDataExtractor.ConvertToScanResult(
-            parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell);
+            parsedRecords, isBigEndian, cellToWorldspace, landToWorldspace, cellToRefr, topicToInfo, landToCell)
+            with
+            {
+                PersistentCellContainerFormIds = EsmFileAnalyzer.BuildPersistentCellContainerSet(
+                    parsedRecords.Where(r => r.Header.Signature == "CELL")
+                        .Select(r => (r.Offset, r.Header.FormId)),
+                    grupHeaders)
+            };
 
         EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, parsedRecords, isBigEndian);
 
@@ -158,7 +165,11 @@ internal sealed class EsmTestFileBuilder
         if (worldspace.PersistentCell != null)
         {
             var cell = worldspace.PersistentCell;
-            var cellRecord = BuildCellRecord(cell.FormId, cell.EditorId, null, null);
+            // TES4 persistent dummies commonly carry XCLC (0,0) (e.g. SETheFringe); later games
+            // omit the grid entirely.
+            var cellRecord = worldspace.PersistentCellHasZeroGridXclc
+                ? BuildCellRecord(cell.FormId, cell.EditorId, 0, 0)
+                : BuildCellRecord(cell.FormId, cell.EditorId, null, null);
             ms.Write(cellRecord);
 
             // Type 8 GRUP (Persistent Children, label = cell FormID)
@@ -215,7 +226,11 @@ internal sealed class EsmTestFileBuilder
     {
         using var ms = new MemoryStream();
 
-        var cellRecord = BuildCellRecord(cell.FormId, cell.EditorId, cell.GridX, cell.GridY, cell.XclcByteCount);
+        // TES4 exterior cells can ship without XCLC (e.g. Toddland's only cell); the block/subblock
+        // GRUPs still position the record structurally.
+        var cellRecord = cell.OmitXclc
+            ? BuildCellRecord(cell.FormId, cell.EditorId, null, null)
+            : BuildCellRecord(cell.FormId, cell.EditorId, cell.GridX, cell.GridY, cell.XclcByteCount);
         ms.Write(cellRecord);
 
         if (cell.PersistentRefs.Count > 0)
@@ -390,6 +405,10 @@ internal sealed class EsmTestFileBuilder
         public required string EditorId { get; init; }
         public string? FullName { get; init; }
         public CellData? PersistentCell { get; init; }
+
+        /// <summary>Write XCLC (0,0) on the persistent dummy cell (TES4 style, e.g. SETheFringe).</summary>
+        public bool PersistentCellHasZeroGridXclc { get; init; }
+
         public List<CellData> ExteriorCells { get; init; } = [];
     }
 
@@ -402,6 +421,9 @@ internal sealed class EsmTestFileBuilder
 
         /// <summary>XCLC byte length: 8 (Fallout 3: X, Y) or 12 (Fallout NV: X, Y, forceHideLand).</summary>
         public int XclcByteCount { get; init; } = 12;
+
+        /// <summary>Write the CELL without any XCLC (TES4 exterior cells can omit it, e.g. Toddland).</summary>
+        public bool OmitXclc { get; init; }
 
         public List<PlacedRefData> PersistentRefs { get; init; } = [];
         public List<PlacedRefData> TemporaryRefs { get; init; } = [];

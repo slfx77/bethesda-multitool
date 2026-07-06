@@ -202,7 +202,10 @@ public static class EsmFileAnalyzer
                 LandToWorldspaceMap = landToWorldspace,
                 CellToRefrMap = cellToRefrMap,
                 TopicToInfoMap = topicToInfoMap,
-                LandToCellMap = landToCellMap
+                LandToCellMap = landToCellMap,
+                PersistentCellContainerFormIds = BuildPersistentCellContainerSet(
+                    mainRecords.Where(r => r.RecordType == "CELL").Select(r => (r.Offset, r.FormId)),
+                    grupHeaders)
             };
 
             // Extract LAND records for heightmap rendering in World tab
@@ -267,6 +270,34 @@ public static class EsmFileAnalyzer
                 logger.Level = previousLevel;
             }
         }
+    }
+
+    /// <summary>
+    ///     CELLs that sit directly under a worldspace's Type-1 World Children GRUP without an enclosing
+    ///     Type-4/5 exterior block — the worldspace persistent-cell containers ("dummy" cells). This is
+    ///     structural, not heuristic: a TES4 dummy can carry XCLC (0,0) (SETheFringe) while a TES4 real
+    ///     exterior cell can omit XCLC entirely (Toddland), so grid presence alone cannot tell them apart.
+    /// </summary>
+    internal static HashSet<uint> BuildPersistentCellContainerSet(
+        IEnumerable<(long Offset, uint FormId)> cellRecords,
+        List<GrupHeaderInfo> grupHeaders)
+    {
+        var worldChildren = new SortedIntervalMap(
+            grupHeaders.Where(g => g.GroupType == 1).ToList());
+        var exteriorBlocks = new SortedIntervalMap(
+            grupHeaders.Where(g => g.GroupType is 4 or 5).ToList());
+
+        var containers = new HashSet<uint>();
+        foreach (var (offset, formId) in cellRecords)
+        {
+            if (worldChildren.FindContainingInterval(offset) >= 0 &&
+                exteriorBlocks.FindContainingInterval(offset) < 0)
+            {
+                containers.Add(formId);
+            }
+        }
+
+        return containers;
     }
 
     /// <summary>

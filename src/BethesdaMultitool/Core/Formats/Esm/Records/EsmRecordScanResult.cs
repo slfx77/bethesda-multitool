@@ -114,6 +114,15 @@ public record EsmRecordScanResult
     public Dictionary<uint, List<uint>> TopicToInfoMap { get; init; } = [];
 
     /// <summary>
+    ///     CELLs sitting directly under a Type-1 World Children GRUP without an enclosing Type-4/5
+    ///     exterior block — the worldspace persistent-cell containers ("dummy" cells), resolved
+    ///     structurally. TES4 dummies can carry XCLC (0,0) while TES4 exterior cells can omit XCLC,
+    ///     so the grid-presence heuristic alone misclassifies both. Empty for structure-less inputs
+    ///     (memory dumps), where the heuristic still applies.
+    /// </summary>
+    public HashSet<uint> PersistentCellContainerFormIds { get; init; } = [];
+
+    /// <summary>
     ///     Statistics by record type.
     /// </summary>
     public Dictionary<string, int> MainRecordCounts => MainRecords
