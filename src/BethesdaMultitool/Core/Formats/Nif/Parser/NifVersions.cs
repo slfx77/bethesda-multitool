@@ -28,6 +28,14 @@ internal static class NifVersions
     /// selects the Morrowind NiTexturingProperty variant (extra Apply Mode field).</summary>
     public static bool IsLegacyNetImmerse(uint binaryVersion) => binaryVersion <= NetImmerse4220;
 
+    /// <summary>TES4-era Gamebryo (post-NetImmerse, up to Oblivion's 20.0.0.5 — spans 10.x and
+    /// 20.0.0.4/5). Oblivion's renderer composes the scene ROOT node's authored transform under the
+    /// REFR placement instead of replacing it: ChorrolLODHouse01's root bakes a −90°-about-X
+    /// Y-up→Z-up correction and the RFN dungeon halls bake 90/180° Z yaws. FO3+ (20.2.0.7) replaces
+    /// the root's world transform, so its identity-root treatment must not apply here.</summary>
+    public static bool IsTes4Era(uint binaryVersion) =>
+        binaryVersion > NetImmerse4220 && binaryVersion <= Gamebryo20005;
+
     /// <summary>NiObjectNET stores Num Extra Data List + refs (since 10.0.1.0); older NIFs have a single
     /// Extra Data ref (until 4.2.2.0).</summary>
     public static bool HasExtraDataList(uint binaryVersion) => binaryVersion >= Gamebryo10010;

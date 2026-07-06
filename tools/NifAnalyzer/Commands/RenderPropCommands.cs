@@ -1,5 +1,6 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Utils;
 using Spectre.Console;
@@ -103,6 +104,72 @@ internal static class RenderPropCommands
                     }
                 }
             }
+        }
+
+        AnsiConsole.Write(table);
+    }
+
+    public static Command CreateNodeXformsCommand()
+    {
+        var command = new Command("nodexforms", "Dump every node/shape block's LOCAL transform via the production parser (TES4-safe)");
+        var fileArg = new Argument<string>("file") { Description = "NIF file path" };
+        command.Arguments.Add(fileArg);
+        command.SetAction(parseResult => NodeXforms(parseResult.GetValue(fileArg)!));
+        return command;
+    }
+
+    private static void NodeXforms(string path)
+    {
+        if (!File.Exists(path))
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", Markup.Escape(path));
+            return;
+        }
+
+        var data = File.ReadAllBytes(path);
+        var nif = NifParser.Parse(data);
+        if (nif == null)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] Failed to parse NIF header.");
+            return;
+        }
+
+        var nodeChildren = new Dictionary<int, List<int>>();
+        var shapeDataMap = new Dictionary<int, int>();
+        var shapePropertyMap = new Dictionary<int, List<int>>();
+        var shapeSkinInstanceMap = new Dictionary<int, int>();
+        NifSceneGraphWalker.ClassifyBlocks(data, nif, nodeChildren, shapeDataMap, shapePropertyMap, shapeSkinInstanceMap);
+
+        var childSet = nodeChildren.Values.SelectMany(c => c).ToHashSet();
+        var table = new Table().Border(TableBorder.Simple);
+        table.AddColumn("Block");
+        table.AddColumn("Type");
+        table.AddColumn("Name");
+        table.AddColumn("Root?");
+        table.AddColumn("Translation");
+        table.AddColumn("Rotation rows (local)");
+        table.AddColumn("Scale");
+
+        for (var i = 0; i < nif.Blocks.Count; i++)
+        {
+            var block = nif.Blocks[i];
+            var isNode = nodeChildren.ContainsKey(i);
+            var isShape = shapeDataMap.ContainsKey(i);
+            if (!isNode && !isShape) continue;
+
+            var m = NifBlockParsers.ParseNiAVObjectTransform(
+                data, block, nif.BsVersion, nif.BinaryVersion, nif.IsBigEndian, nif.HasInlineStrings);
+            var name = NifObjectBlockReader.ReadBlockName(data, block, nif) ?? "-";
+            var scale = new System.Numerics.Vector3(m.M11, m.M12, m.M13).Length();
+            table.AddRow(
+                i.ToString(),
+                block.TypeName,
+                Markup.Escape(name),
+                childSet.Contains(i) ? "[dim]no[/]" : "[yellow]ROOT[/]",
+                FormattableString.Invariant($"({m.M41:0.##}, {m.M42:0.##}, {m.M43:0.##})"),
+                Markup.Escape(FormattableString.Invariant(
+                    $"[{m.M11:0.##} {m.M12:0.##} {m.M13:0.##}] [{m.M21:0.##} {m.M22:0.##} {m.M23:0.##}] [{m.M31:0.##} {m.M32:0.##} {m.M33:0.##}]")),
+                FormattableString.Invariant($"{scale:0.###}"));
         }
 
         AnsiConsole.Write(table);

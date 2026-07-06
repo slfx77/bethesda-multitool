@@ -101,7 +101,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Bumped 23→24: TES4 parallax materials (NiTexturingProperty Apply Mode HILIGHT/HILIGHT2) no
     // longer alpha-blend — their diffuse alpha is a parallax height map, and blending with it drew
     // Oblivion rock faces see-through (SEIsland). Warm v23 entries bake the old blend state.
-    internal const int DecoderVersion = 24;
+    // Bumped 24→25: TES4-era NIFs now apply the scene root's authored transform (Oblivion composes
+    // it under the REFR placement; discarding it rendered ChorrolLODHouse01 sideways and the RFN
+    // dungeon halls at 90/180°). Warm v24 TES4 entries bake identity-root geometry.
+    internal const int DecoderVersion = 25;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

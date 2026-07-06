@@ -394,6 +394,17 @@ internal static class NifSceneGraphWalker
         bool treatRootsAsIdentity = false,
         HashSet<int>? billboardShapes = null)
     {
+        // TES4-era NIFs (Oblivion, 10.x–20.0.0.5) compose the scene root's authored transform UNDER
+        // the REFR placement instead of replacing it — ChorrolLODHouse01's root bakes a −90°X
+        // Y-up→Z-up correction and the RFN dungeon halls bake 90/180° Z yaws; discarding those
+        // renders the meshes sideways/rotated both standalone and placed. The identity-root rule
+        // (see the treatRootsAsIdentity doc note) is decompile-anchored to FO3+/FNV, so it stays
+        // for 20.2.0.7+ (McMarranWalls wallReg / monorail curves must not regress).
+        if (NifVersions.IsTes4Era(nif.BinaryVersion))
+        {
+            treatRootsAsIdentity = false;
+        }
+
         // Find root nodes: nodes that are not children of any other node
         var allChildren = new HashSet<int>();
         foreach (var children in nodeChildren.Values)
