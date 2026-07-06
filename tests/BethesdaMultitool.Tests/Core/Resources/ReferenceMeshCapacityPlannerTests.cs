@@ -13,10 +13,11 @@ public sealed class ReferenceMeshCapacityPlannerTests
     [InlineData(1536, 2048)] // 1536 + 512 = 2048 (boundary)
     // In-band → count + headroom (512).
     [InlineData(5000, 5512)]
-    [InlineData(7431, 7943)] // ~game-wide distinct REFR'd models
-    [InlineData(11776, 12288)] // 11776 + 512 = 12288 (ceiling boundary)
-    // Above the ceiling → clamp to 12288 (bounds corrupt/oversized input).
-    [InlineData(20000, 12288)]
+    [InlineData(7431, 7943)] // ~game-wide distinct REFR'd model PATHS
+    [InlineData(20000, 20512)] // FO4-scale distinct KEYS (paths × material-swap variants)
+    [InlineData(48640, 49152)] // 48640 + 512 = 49152 (ceiling boundary)
+    // Above the ceiling → clamp to 49152 (bounds corrupt/oversized input).
+    [InlineData(100000, 49152)]
     // Negative treated as zero → floor.
     [InlineData(-5, 2048)]
     public void Plan_clamps_count_plus_headroom_between_floor_and_ceiling(int uniqueMeshCount, int expected)

@@ -154,9 +154,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
 
     internal bool TryLoad(
         MeshArchiveLookupMetadata metadata,
+        string? variantKey,
         out ReferenceDecodedMeshDiskCacheEntry12 entry)
     {
-        if (!TryLoadCore(BuildKeyText(metadata), ReadMesh, out var mesh, out var isNegative))
+        if (!TryLoadCore(BuildKeyText(metadata, variantKey), ReadMesh, out var mesh, out var isNegative))
         {
             entry = default;
             return false;
@@ -166,18 +167,28 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         return true;
     }
 
-    internal void Store(MeshArchiveLookupMetadata metadata, ReferenceDecodedMeshPayload12? payload) =>
-        StoreCore(BuildKeyText(metadata), payload, WriteMesh);
+    internal void Store(
+        MeshArchiveLookupMetadata metadata,
+        string? variantKey,
+        ReferenceDecodedMeshPayload12? payload) =>
+        StoreCore(BuildKeyText(metadata, variantKey), payload, WriteMesh);
 
-    internal string GetCachePath(MeshArchiveLookupMetadata metadata) =>
-        GetCachePath(BuildKeyText(metadata));
+    internal string GetCachePath(MeshArchiveLookupMetadata metadata, string? variantKey = null) =>
+        GetCachePath(BuildKeyText(metadata, variantKey));
 
-    private static string BuildKeyText(MeshArchiveLookupMetadata metadata)
+    private static string BuildKeyText(MeshArchiveLookupMetadata metadata, string? variantKey)
     {
         var builder = new StringBuilder(512);
         Append("format", CacheFormatVersion);
         Append("decoder", DecoderVersion);
         Append("path", metadata.NormalizedPath);
+        // Re-skin variant discriminator (AlternateTextureSet.VariantKey — a content hash of the
+        // override + material-swap pairs). Appended only when present so default-variant keys are
+        // byte-identical to the pre-variant-persistence format (no wholesale cache invalidation).
+        if (!string.IsNullOrEmpty(variantKey))
+        {
+            Append("variant", variantKey);
+        }
         Append("found", metadata.Found ? "1" : "0");
         Append("archiveSet", metadata.ArchiveSetIdentity);
         Append("archive", metadata.ArchivePath ?? "");

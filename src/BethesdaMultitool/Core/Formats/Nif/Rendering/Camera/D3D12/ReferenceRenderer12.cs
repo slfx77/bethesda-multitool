@@ -327,23 +327,57 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // Size the resident-mesh LRU to this worldspace's distinct-mesh working set so it holds the
         // whole set rather than thrashing (evict → re-decode → re-upload) when the count exceeds the
         // default cap. No-op when the capacity env knob pins a fixed cap (auto-size off).
-        _meshCache.SetMeshCapacity(
-            Core.Resources.ReferenceMeshCapacityPlanner.Plan(CountUniqueMeshPaths(cells)));
+        var uniqueMeshKeys = CountUniqueMeshKeys(renderCache, cells);
+        var plannedCapacity = Core.Resources.ReferenceMeshCapacityPlanner.Plan(uniqueMeshKeys);
+        Core.Diagnostics.Logger.Instance.Info(
+            "ReferenceRenderer12: {0} distinct mesh keys (paths × re-skin variants) → mesh LRU capacity {1}.",
+            uniqueMeshKeys, plannedCapacity);
+        _meshCache.SetMeshCapacity(plannedCapacity);
     }
 
     // O(total placements), one-time per worldspace load — negligible next to the rest of load.
     // OrdinalIgnoreCase matches the mesh LRU's key comparer so the count tracks real cache keys.
-    private static int CountUniqueMeshPaths(Dictionary<(int gx, int gy), CellRecord> cells)
+    // Counts distinct KEYS, not paths: a re-skinned placement (REFR XMSP / base-record default swap
+    // / FNV alternate textures) decodes as its own `path#variant` cache entry, and on FO4 — where
+    // base-record swaps are ubiquitous — variants can multiply the key space well past the plain
+    // path count. Sizing on paths alone under-provisioned the LRU there, and the resulting evict →
+    // re-decode → re-upload thrash presented as meshes disappearing in dense areas. The (alt-texture
+    // base, swap FormID) pair is a cheap stand-in for the exact VariantKey: it can only OVER-count
+    // (two swaps yielding identical tables), which errs on the safe side for capacity.
+    private static int CountUniqueMeshKeys(
+        global::BethesdaMultitool.WorldRenderCache renderCache,
+        Dictionary<(int gx, int gy), CellRecord> cells)
     {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var altTextureIndex = renderCache.AlternateTextureIndex;
+        var swapIndex = renderCache.MaterialSwapIndex;
+        var baseSwapIndex = renderCache.BaseMaterialSwapIndex;
+        var seen = new HashSet<(string Path, uint AltBase, uint Swap)>();
         foreach (var cell in cells.Values)
         {
             foreach (var placed in cell.PlacedObjects)
             {
-                if (!string.IsNullOrEmpty(placed.ModelPath))
+                if (string.IsNullOrEmpty(placed.ModelPath))
                 {
-                    seen.Add(placed.ModelPath);
+                    continue;
                 }
+
+                var altBase = altTextureIndex is not null && altTextureIndex.ContainsKey(placed.BaseFormId)
+                    ? placed.BaseFormId
+                    : 0u;
+                var swapFormId = placed.MaterialSwapFormId ?? 0u;
+                if (swapFormId == 0 && baseSwapIndex is not null &&
+                    baseSwapIndex.TryGetValue(placed.BaseFormId, out var baseSwap))
+                {
+                    swapFormId = baseSwap;
+                }
+
+                // A swap FormID only creates a variant when it resolves to a real MSWP table.
+                if (swapFormId != 0 && (swapIndex is null || !swapIndex.ContainsKey(swapFormId)))
+                {
+                    swapFormId = 0;
+                }
+
+                seen.Add((placed.ModelPath.ToLowerInvariant(), altBase, swapFormId));
             }
         }
 

@@ -95,7 +95,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // instead of inside the decode task (cold loads were spending decode-worker time on disk I/O).
     // Bounded: when the writer falls behind, TryWrite fails and the decode worker writes
     // synchronously — natural backpressure, never a dropped persist.
-    private readonly Channel<(string ModelPath, DecodedNifMesh12? Decoded)>? _persistQueue;
+    private readonly Channel<(string DecodePath, string? VariantKey, DecodedNifMesh12? Decoded)>? _persistQueue;
     private readonly Task? _persistWriterTask;
     private readonly object _decodedCacheLock = new();
     private int _activeDecodeTasks;
@@ -130,7 +130,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         _persistentDecodedCache = persistentDecodedCache ?? ReferenceDecodedMeshDiskCache12.CreateFromEnvironment();
         if (_persistentDecodedCache is not null)
         {
-            _persistQueue = Channel.CreateBounded<(string, DecodedNifMesh12?)>(
+            _persistQueue = Channel.CreateBounded<(string, string?, DecodedNifMesh12?)>(
                 new BoundedChannelOptions(64) { SingleReader = true });
             _persistWriterTask = Task.Run(ProcessPersistQueueAsync);
         }
@@ -298,11 +298,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         var decodePath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
         // A placement whose base carries MODS alternate textures gets its own cache entry per texture
-        // variant (so a shared NIF — e.g. every billboard — renders its correct per-base textures). The
-        // '#variant' suffix is an in-memory-cache discriminator ONLY: archive lookups, on-disk cache
-        // metadata, decode, and collision all key on the plain decodePath via Node.DecodePath. Disk
-        // persistence is skipped for variants (the on-disk cache keys on the NIF's archive identity, so
-        // two variants of one NIF would otherwise collide there — see Node.HasVariant).
+        // variant (so a shared NIF — e.g. every billboard — renders its correct per-base textures).
+        // Archive lookups, decode, and collision key on the plain decodePath via Node.DecodePath;
+        // the in-memory LRUs and the on-disk cache both discriminate variants (the disk key folds
+        // Node.VariantKey), so a re-skinned mesh warm-loads like any other.
         var cacheKey = alternateTextures is null
             ? decodePath
             : decodePath + "#" + alternateTextures.VariantKey;
@@ -323,7 +322,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             DecodePath = decodePath,
             Overrides = alternateTextures?.Overrides,
             MaterialSwaps = alternateTextures?.MaterialSwaps,
-            HasVariant = alternateTextures is not null
+            HasVariant = alternateTextures is not null,
+            VariantKey = alternateTextures?.VariantKey
         };
         // Set evicts LRU entries over capacity, each through onEvicted (the dispose cascade);
         // the just-inserted node always survives its own Set.
@@ -422,7 +422,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 task.Exception?.GetBaseException().Message ?? "(unknown)");
             node.ResolvedNull = true;
             node.DecodeTask = null;
-            StoreDecodedCache(modelPath, null, persist: false);
+            StoreDecodedCache(modelPath, null);
             return null;
         }
 
@@ -431,11 +431,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         if (decoded is null)
         {
             node.ResolvedNull = true;
-            StoreDecodedCache(modelPath, null, persist: false);
+            StoreDecodedCache(modelPath, null);
             return null;
         }
 
-        StoreDecodedCache(modelPath, decoded, persist: false);
+        StoreDecodedCache(modelPath, decoded);
         if (TryResolveFromDecodedCache(modelPath, node, ref uploadBudget, out cachedMesh))
         {
             return cachedMesh;
@@ -453,9 +453,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         mesh = null;
         if (!TryGetDecodedCache(modelPath, out var decoded))
         {
-            // Variants never consult the on-disk cache (it keys on the NIF's archive identity, shared
-            // across variants). Non-variant load uses the plain DecodePath (== modelPath here).
-            if ((node.HasVariant || !TryLoadPersistentDecodedCache(node.DecodePath, out decoded)) &&
+            // Disk load keys on the plain DecodePath's archive identity + the variant discriminator;
+            // the in-memory store uses the composite cache key (== modelPath here).
+            if (!TryLoadPersistentDecodedCache(node.DecodePath, node.VariantKey, modelPath, out decoded) &&
                 !node.DecodedCacheMissRecorded)
             {
                 FrameCpuDecodedCacheMisses++;
@@ -498,7 +498,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         if (mesh is null)
         {
             node.ResolvedNull = true;
-            StoreDecodedCache(modelPath, null, persist: false);
+            StoreDecodedCache(modelPath, null);
             return true;
         }
 
@@ -551,20 +551,21 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private Task<DecodedNifMesh12?> StartDecodeTask(string cacheKey, Node node)
     {
         // Decode from the plain archive path with the node's MODS overrides (if any) baked into the
-        // submesh texture paths; cache the result under the composite cacheKey. Variants aren't
-        // persisted to disk (their overridden textures would collide with the base under the NIF's
-        // archive identity) — the in-memory decoded LRU still caches them for the session.
+        // submesh texture paths; cache the result under the composite cacheKey. Disk persistence
+        // keys on the plain path's archive identity + the variant discriminator, so re-skinned
+        // variants warm-load like the default mesh.
         var decodePath = node.DecodePath;
+        var variantKey = node.VariantKey;
         var overrides = node.Overrides;
         var materialSwaps = node.MaterialSwaps;
-        var persist = !node.HasVariant;
         Interlocked.Increment(ref _activeDecodeTasks);
         var task = Task.Run(() =>
         {
             try
             {
                 var decoded = _decoder.DecodeMesh(decodePath, overrides, materialSwaps);
-                StoreDecodedCache(cacheKey, decoded, persist);
+                StoreDecodedCache(cacheKey, decoded);
+                StorePersistentDecodedCache(decodePath, variantKey, decoded);
                 return decoded;
             }
             finally
@@ -592,7 +593,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
     }
 
-    private bool TryLoadPersistentDecodedCache(string modelPath, out DecodedCacheValue value)
+    private bool TryLoadPersistentDecodedCache(
+        string decodePath,
+        string? variantKey,
+        string storeKey,
+        out DecodedCacheValue value)
     {
         value = default;
         if (_persistentDecodedCache is null)
@@ -603,14 +608,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // SpeedTree geometry is generated procedurally (cheap, and the algorithm is still being
         // tuned). Never serve it from the on-disk cache, or generator changes / live option tweaks
         // would be masked by a stale entry keyed on the unchanged .spt bytes.
-        if (SpeedTreeModelPath.IsSpt(modelPath))
+        if (SpeedTreeModelPath.IsSpt(decodePath))
         {
             return false;
         }
 
-        var metadata = _meshArchives.GetLookupMetadata(modelPath);
+        var metadata = _meshArchives.GetLookupMetadata(decodePath);
 
-        if (!_persistentDecodedCache.TryLoad(metadata, out var cached))
+        if (!_persistentDecodedCache.TryLoad(metadata, variantKey, out var cached))
         {
             return false;
         }
@@ -618,11 +623,11 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var decoded = cached.IsNegative || cached.Mesh is null
             ? null
             : ReferenceMeshDecoder12.FromPersistentPayload(cached.Mesh);
-        StoreDecodedCache(modelPath, decoded, persist: false);
-        return TryGetDecodedCache(modelPath, out value);
+        StoreDecodedCache(storeKey, decoded);
+        return TryGetDecodedCache(storeKey, out value);
     }
 
-    private void StoreDecodedCache(string modelPath, DecodedNifMesh12? decoded, bool persist = true)
+    private void StoreDecodedCache(string modelPath, DecodedNifMesh12? decoded)
     {
         var byteSize = decoded is null
             ? 1L
@@ -638,14 +643,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             // whose estimate exceeded a (diagnostically) tiny budget.
             _decodedLru.Set(modelPath, value);
         }
-
-        if (persist)
-        {
-            StorePersistentDecodedCache(modelPath, decoded);
-        }
     }
 
-    private void StorePersistentDecodedCache(string modelPath, DecodedNifMesh12? decoded)
+    private void StorePersistentDecodedCache(string decodePath, string? variantKey, DecodedNifMesh12? decoded)
     {
         if (_persistentDecodedCache is null)
         {
@@ -654,7 +654,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         // SpeedTree geometry is regenerated each session (see TryLoadPersistentDecodedCache) — never
         // persist it.
-        if (SpeedTreeModelPath.IsSpt(modelPath))
+        if (SpeedTreeModelPath.IsSpt(decodePath))
         {
             return;
         }
@@ -662,35 +662,37 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         // Hand off to the background persist writer so the decode worker's slot frees for the next
         // mesh. TryWrite fails when the queue is full (writer behind) or completed (disposing) — the
         // caller then pays for the write itself, which is exactly the pre-queue behavior.
-        if (_persistQueue is not null && _persistQueue.Writer.TryWrite((modelPath, decoded)))
+        if (_persistQueue is not null && _persistQueue.Writer.TryWrite((decodePath, variantKey, decoded)))
         {
             return;
         }
 
-        PersistDecodedCacheEntry(modelPath, decoded);
+        PersistDecodedCacheEntry(decodePath, variantKey, decoded);
     }
 
     private async Task ProcessPersistQueueAsync()
     {
-        await foreach (var (modelPath, decoded) in _persistQueue!.Reader.ReadAllAsync().ConfigureAwait(false))
+        await foreach (var (decodePath, variantKey, decoded) in
+                       _persistQueue!.Reader.ReadAllAsync().ConfigureAwait(false))
         {
-            PersistDecodedCacheEntry(modelPath, decoded);
+            PersistDecodedCacheEntry(decodePath, variantKey, decoded);
         }
     }
 
-    private void PersistDecodedCacheEntry(string modelPath, DecodedNifMesh12? decoded)
+    private void PersistDecodedCacheEntry(string decodePath, string? variantKey, DecodedNifMesh12? decoded)
     {
         try
         {
-            var metadata = _meshArchives.GetLookupMetadata(modelPath);
+            var metadata = _meshArchives.GetLookupMetadata(decodePath);
 
             _persistentDecodedCache!.Store(
                 metadata,
+                variantKey,
                 decoded is null ? null : ReferenceMeshDecoder12.ToPersistentPayload(decoded));
         }
         catch (Exception ex)
         {
-            Log.Warn("ReferenceMeshCache12: decoded mesh disk cache write skipped for '{0}': {1}", modelPath, ex.Message);
+            Log.Warn("ReferenceMeshCache12: decoded mesh disk cache write skipped for '{0}': {1}", decodePath, ex.Message);
         }
     }
 
@@ -1053,10 +1055,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         /// <see cref="AlternateTextureSet.VariantKey" />), so each swap decodes as its own mesh.</summary>
         public IReadOnlyDictionary<string, string>? MaterialSwaps { get; init; }
 
-        /// <summary>True when this node is a MODS re-skin variant. Disk persistence is skipped for
-        /// variants (the on-disk cache keys on the NIF's archive identity, which is shared across
-        /// variants and would collide); the in-memory LRUs still de-dupe by the '#variant' cache key.</summary>
+        /// <summary>True when this node is a MODS re-skin variant.</summary>
         public bool HasVariant { get; init; }
+
+        /// <summary>The re-skin's <see cref="AlternateTextureSet.VariantKey" /> (a content hash of
+        /// the override + swap pairs), or null for the default variant. Folded into the on-disk cache
+        /// key so each variant persists its own decode — without it, variants had to skip disk
+        /// persistence entirely and re-decoded from scratch EVERY session; on FO4 (where base-record
+        /// MODS makes swapped placements ubiquitous) that erased most of the warm-load win.</summary>
+        public string? VariantKey { get; init; }
     }
 
     private readonly record struct DecodedCacheValue(
