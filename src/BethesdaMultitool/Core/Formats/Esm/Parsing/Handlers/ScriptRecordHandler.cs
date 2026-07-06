@@ -287,7 +287,8 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
                 script.Variables, script.ReferencedObjects, Context.ResolveFormName,
                 isBigEndian,
                 script.EditorId,
-                ResolveExternalVariable);
+                ResolveExternalVariable,
+                ScriptFunctionTables.For(Context.Game));
             decompiledText = decompiler.Decompile(script.CompiledData);
         }
         catch (Exception ex)

@@ -32,13 +32,14 @@ internal sealed class ScriptShowRenderer : IRecordDisplayRenderer
         {
             lines.Add("");
             lines.Add("[bold]Source (SCTX):[/]");
-            var source = script.SourceText;
-            if (source.Length > 2000)
-            {
-                source = source[..2000] + "\n... (truncated)";
-            }
+            lines.Add(Markup.Escape(Truncate(script.SourceText)));
+        }
 
-            lines.Add(Markup.Escape(source));
+        if (!string.IsNullOrEmpty(script.DecompiledText))
+        {
+            lines.Add("");
+            lines.Add("[bold]Decompiled (SCDA):[/]");
+            lines.Add(Markup.Escape(Truncate(script.DecompiledText)));
         }
 
         var panel = new Panel(string.Join("\n", lines))
@@ -48,5 +49,8 @@ internal sealed class ScriptShowRenderer : IRecordDisplayRenderer
         AnsiConsole.Write(panel);
         return true;
     }
+
+    private static string Truncate(string text) =>
+        text.Length > 2000 ? text[..2000] + "\n... (truncated)" : text;
 }
 

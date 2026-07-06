@@ -19,14 +19,22 @@ namespace BethesdaMultitool.Core.Formats.Esm.Script;
 ///     Optional callback to resolve cross-script variable references.
 ///     Parameters: (FormID of referenced object, variable index) → variable name.
 /// </param>
+/// <param name="functions">
+///     The game's command table (defaults to FNV/FO3). Oblivion bytecode decompiled through the
+///     FNV table mis-names 49 functions and misses every opcode past 0x1171.
+/// </param>
 public sealed class ScriptDecompiler(
     List<ScriptVariableInfo> variables,
     List<uint> referencedObjects,
     Func<uint, string?> resolveFormName,
     bool isBigEndian = false,
     string? scriptName = null,
-    Func<uint, ushort, string?>? resolveExternalVariable = null)
+    Func<uint, ushort, string?>? resolveExternalVariable = null,
+    ScriptFunctionSet? functions = null)
 {
+    private readonly ScriptFunctionSet _functions =
+        functions ?? ScriptFunctionTables.For(Games.BethesdaGame.FalloutNewVegas);
+
     private readonly bool _isBigEndian = isBigEndian;
     private readonly StringBuilder _output = new();
     private readonly string? _scriptName = scriptName;
@@ -60,7 +68,7 @@ public sealed class ScriptDecompiler(
         {
             _varReader = new ScriptVariableReader(
                 variables, referencedObjects, resolveFormName, _isBigEndian, resolveExternalVariable);
-            _exprDecoder = new ScriptExpressionDecoder(_varReader);
+            _exprDecoder = new ScriptExpressionDecoder(_varReader, _functions);
             _stmtDecoder = new ScriptStatementDecoder(_varReader);
             _varReader.ExprDecoder = _exprDecoder;
             _varReader.StmtDecoder = _stmtDecoder;
@@ -323,8 +331,8 @@ public sealed class ScriptDecompiler(
 
     private void HandleFunctionCall(ushort opcode, int paramLen)
     {
-        var funcDef = ScriptFunctionTable.Get(opcode);
-        var funcName = GetFunctionDisplayName(funcDef, opcode);
+        var funcDef = _functions.Get(opcode);
+        var funcName = GetFunctionDisplayName(funcDef, opcode, _functions);
 
         var prefix = _varReader!.ConsumePendingRef();
 
@@ -342,11 +350,12 @@ public sealed class ScriptDecompiler(
             : $"{prefix}{funcName}");
     }
 
-    internal static string GetFunctionDisplayName(ScriptFunctionDef? funcDef, ushort opcode)
+    internal static string GetFunctionDisplayName(
+        ScriptFunctionDef? funcDef, ushort opcode, ScriptFunctionSet functions)
     {
         if (funcDef == null)
         {
-            return ScriptFunctionTable.GetName(opcode);
+            return functions.GetName(opcode);
         }
 
         // GECK scripts use both short and long names interchangeably.

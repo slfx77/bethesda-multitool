@@ -57,6 +57,7 @@ public static class GameProfiles
                 MarkerIconScale = 1.5f, // 32×32 parchment tiles render small at 1.0; match Skyrim's detailed-icon scale
                 // AmbientLightScale: engine default 1.0. The old 0.7 here compensated for the misread
                 // FNV "0.3 ambient scale" baseline (since refuted — see GameProfile.AmbientLightScale).
+                SupportsObscriptDecompilation = true,
                 DefaultLandscapeDiffuse = OblivionDiffuse,
                 DefaultLandscapeNormal = OblivionNormal
             },
@@ -71,6 +72,7 @@ public static class GameProfiles
                 HasMapMarkers = true,
                 MarkerArt = MarkerArtStrategy.EmbeddedTinted,
                 HasWorldspaceDefaultWaterHeight = true,
+                SupportsObscriptDecompilation = true,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             },
@@ -85,6 +87,7 @@ public static class GameProfiles
                 HasMapMarkers = true,
                 MarkerArt = MarkerArtStrategy.EmbeddedTinted,
                 HasWorldspaceDefaultWaterHeight = true,
+                SupportsObscriptDecompilation = true,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
                 DefaultLandscapeNormal = FalloutNormal
             },

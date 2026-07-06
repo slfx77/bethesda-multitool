@@ -301,7 +301,13 @@ public sealed class RecordParser
         QuestScriptEnricher.BuildRuntimeScriptMappings(
             _context, _scripts, npcs, creatures, containers, activators, doors, furniture);
 
-        var scripts = typedForViewerOnly ? new List<ScriptRecord>() : _scripts.ParseScripts();
+        // Obscript games keep their script parse (+ decompilation via the game's command table)
+        // even on the schema-primary path — the schema decode has no script pipeline, so unlike the
+        // other typed collections these are NOT discarded by the merge (Oblivion previously
+        // surfaced no scripts at all).
+        var parseScripts = !typedForViewerOnly ||
+                           Games.GameProfiles.For(_context.Game).SupportsObscriptDecompilation;
+        var scripts = parseScripts ? _scripts.ParseScripts() : new List<ScriptRecord>();
         Logger.Instance.Debug(
             $"  [Semantic] Trees/text: {phaseSw.Elapsed} (Notes: {notes.Count}, Books: {books.Count}, Terminals: {terminals.Count}, Scripts: {scripts.Count})");
 
@@ -683,6 +689,10 @@ public sealed class RecordParser
                 RuntimeWorldspaceMaps = result.RuntimeWorldspaceMaps,
                 FormIdToEditorId = result.FormIdToEditorId,
                 FormIdToDisplayName = result.FormIdToDisplayName,
+                // Obscript games (Oblivion) run the script parse on this path too — the schema
+                // decode has no script/decompile pipeline, so the typed scripts must ride the
+                // bridge or the game surfaces none.
+                Scripts = result.Scripts,
             };
         }
 

@@ -6,12 +6,14 @@ namespace BethesdaMultitool.Core.Formats.Esm.Script;
 /// </summary>
 internal sealed class ScriptExpressionDecoder
 {
+    private readonly ScriptFunctionSet _functions;
     private readonly ScriptVariableReader _varReader;
 
-    /// <summary>Creates the expression decoder using the given variable-name reader.</summary>
-    public ScriptExpressionDecoder(ScriptVariableReader varReader)
+    /// <summary>Creates the expression decoder using the given variable-name reader and command table.</summary>
+    public ScriptExpressionDecoder(ScriptVariableReader varReader, ScriptFunctionSet? functions = null)
     {
         _varReader = varReader;
+        _functions = functions ?? ScriptFunctionTables.For(Games.BethesdaGame.FalloutNewVegas);
     }
 
     /// <summary>
@@ -233,8 +235,8 @@ internal sealed class ScriptExpressionDecoder
         var callParamLen = reader.ReadUInt16();
         var callEnd = reader.Position + callParamLen;
 
-        var funcDef = ScriptFunctionTable.Get(opcode);
-        var funcName = ScriptDecompiler.GetFunctionDisplayName(funcDef, opcode);
+        var funcDef = _functions.Get(opcode);
+        var funcName = ScriptDecompiler.GetFunctionDisplayName(funcDef, opcode, _functions);
         var prefix = _varReader.ConsumePendingRef();
 
         // If callParamLen is 0, there are no parameters (no paramCount field)

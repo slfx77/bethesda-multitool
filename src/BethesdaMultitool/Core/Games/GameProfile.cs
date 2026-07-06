@@ -70,6 +70,15 @@ public sealed record GameProfile
     public bool HasWorldspaceDefaultWaterHeight { get; init; }
 
     /// <summary>
+    ///     True when this game's SCPT records carry inline Obscript bytecode our decompiler (with the
+    ///     game's command table from <c>ScriptFunctionTables</c>) can decompile: Oblivion, FO3, FNV.
+    ///     Skyrim+ compile to external Papyrus <c>.pex</c> instead. On the schema-primary parse path
+    ///     (Oblivion) this flag keeps <c>ParseScripts()</c> running even though the other typed
+    ///     collections are viewer-only.
+    /// </summary>
+    public bool SupportsObscriptDecompilation { get; init; }
+
+    /// <summary>
     ///     Engine-default landscape diffuse texture (the <c>SDefaultLandDiffuseTexture</c> ini value),
     ///     bound for a quadrant whose LAND has no BTXT. Game-keyed: binding another game's path loads
     ///     nothing and the base renders white.
