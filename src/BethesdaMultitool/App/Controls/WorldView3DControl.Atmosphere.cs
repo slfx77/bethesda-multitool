@@ -630,8 +630,12 @@ public sealed partial class WorldView3DControl
         // Per-game moon disc sizes (fraction of the billboard radius → world half-extent). Prefer the
         // engine-exact size read from the loaded ESM's GMSTs (iMasserSize/iSecundaSize ÷ fSunXExtreme —
         // mod-aware), falling back to the per-game SkyMoonProfile default when the GMSTs are absent
-        // (Morrowind TES3, DMP/save without a settings table).
-        var primaryFraction = _data?.MoonPrimaryHalfSizeFraction ?? moonProfile.PrimaryHalfSizeFraction;
+        // (Morrowind TES3, DMP/save without a settings table). FO4/FO76's single moon is the SECUNDA
+        // slot, so its size comes from iSecundaSize (the secondary GMST fraction).
+        var primaryGmstFraction = moonProfile.PrimaryUsesSecundaSize
+            ? _data?.MoonSecondaryHalfSizeFraction
+            : _data?.MoonPrimaryHalfSizeFraction;
+        var primaryFraction = primaryGmstFraction ?? moonProfile.PrimaryHalfSizeFraction;
         var secondaryFraction = _data?.MoonSecondaryHalfSizeFraction ?? moonProfile.SecondaryHalfSizeFraction;
         var moonHalf = SkyBillboardRenderer12.Radius * primaryFraction;
         var moon2Half = SkyBillboardRenderer12.Radius * secondaryFraction;

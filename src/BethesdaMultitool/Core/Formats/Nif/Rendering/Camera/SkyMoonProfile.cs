@@ -12,9 +12,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 ///         Texture paths are *candidates* probed against the loaded game's own archives (first existing
 ///         wins), so the wrong game's asset can never be drawn even when two games share a file name. Asset
 ///         names were verified against each retail archive (Morrowind.bsa, Oblivion/Skyrim Textures BSAs,
-///         FO4/FO76 *Textures*.ba2): Morrowind moons live at <c>textures\tx_*_full.dds</c>; Oblivion,
-///         Skyrim, FO4 and FO76 all use the Creation slot <c>textures\sky\masser_full.dds</c> /
-///         <c>secunda_full.dds</c> (FO4/FO76 ship both assets but render only the primary); FO3/FNV use
+///         FO4/FO76 *Textures*.ba2): Morrowind moons live at <c>textures\tx_*_full.dds</c>; Oblivion and
+///         Skyrim use the Creation slots <c>textures\sky\masser_full.dds</c> / <c>secunda_full.dds</c>;
+///         FO4/FO76 ship both leftover Skyrim sets but the engine's single moon is the SECUNDA artwork
+///         (the small white-gray disc — matched against an in-game FO4 screenshot); FO3/FNV use
 ///         <c>textures\sky\skymoonfull.dds</c>.
 ///     </para>
 ///     <para>
@@ -47,6 +48,13 @@ public sealed record SkyMoonProfile
 
     /// <summary>Fallback second-moon half-extent (fraction of the billboard radius).</summary>
     public float SecondaryHalfSizeFraction { get; init; }
+
+    /// <summary>
+    ///     True when this game's PRIMARY (only) moon is drawn from the Secunda asset slot, so the
+    ///     runtime GMST size read should take <c>iSecundaSize</c> rather than <c>iMasserSize</c>.
+    ///     FO4/FO76: the engine's single moon is the Secunda artwork; Masser is the unused leftover.
+    /// </summary>
+    public bool PrimaryUsesSecundaSize { get; init; }
 
     /// <summary>Primary moon's sky orbit (distinct from <see cref="SecondaryOrbit" /> so two moons don't
     /// share an arc). Single-moon games use only this.</summary>
@@ -199,19 +207,22 @@ public sealed record SkyMoonProfile
             PeriodHours: 24.5f, PhaseOffsetTurns: 0.18f, MaxAltitudeDeg: 58f, PeakAzimuthDeg: 62f, AzSwingDeg: 30f),
     };
 
-    // FO4/FO76: single moon drawn from the Creation Masser slot — VANILLA-FAITHFUL: Bethesda reuses
-    // Skyrim's Masser artwork as the Fallout 4 moon (verified 2026-07-06: the FO4 BA2s ship the full
-    // Masser_*/Secunda_* phase sets and NO other moon asset, and FO4's own Masser_full.DDS *is* the
-    // red-brown TES art — the in-game "Mars moon" the modding community re-textures). The complete
-    // 8-texture phase set ships, and the engine cycles phases, so per-phase textures are wired here
-    // (same token names as Morrowind's). Fallback size; runtime GMSTs override.
+    // FO4/FO76: single moon drawn from the Creation SECUNDA slot. The FO4 BA2s ship ONLY the Skyrim
+    // Masser_*/Secunda_* sets (full name-table sweep — no Moon_full/other moon asset exists), and the
+    // in-game night sky shows the small white-gray cratered disc + soft halo that is exactly FO4's
+    // Secunda_full.DDS artwork (user in-game screenshot matched against the extracted texture
+    // 2026-07-06). Masser is the unused leftover of the pair — drawing it rendered the red-brown TES
+    // "Mars moon". The complete 8-texture secunda phase set ships and the engine cycles phases.
+    // Fallback size = FO4's shipped GMSTs (iSecundaSize 75 / fSunXExtreme 600 = 0.125); the runtime
+    // GMST read overrides, taking iSecundaSize for the primary via PrimaryUsesSecundaSize.
     private static readonly SkyMoonProfile FalloutCreation = new()
     {
         MoonCount = 1,
-        PrimaryTextureCandidates = CreationMasser,
-        PrimaryHalfSizeFraction = 0.100f,
+        PrimaryTextureCandidates = CreationSecunda,
+        PrimaryHalfSizeFraction = 0.125f,
+        PrimaryUsesSecundaSize = true,
         PrimaryOrbit = SingleNightlyOrbit,
-        PrimaryPhaseTexturePattern = @"textures\sky\masser_{0}.dds",
+        PrimaryPhaseTexturePattern = @"textures\sky\secunda_{0}.dds",
         PhaseTokens = MorrowindPhaseTokens,
     };
 

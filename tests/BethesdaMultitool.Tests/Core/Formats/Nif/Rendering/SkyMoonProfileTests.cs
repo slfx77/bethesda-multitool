@@ -76,6 +76,24 @@ public sealed class SkyMoonProfileTests
         Assert.Contains(profile.SecondaryTextureCandidates, p => p.Contains("tx_secunda", System.StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData(BethesdaGame.Fallout4)]
+    [InlineData(BethesdaGame.Fallout76)]
+    public void ForGame_FalloutCreation_DrawsTheSecundaSlot(BethesdaGame game)
+    {
+        // FO4/FO76 ship both leftover Skyrim moon sets, but the engine's single moon is the SECUNDA
+        // artwork — the small white-gray disc (in-game FO4 screenshot matched Secunda_full.DDS);
+        // Masser is the red-brown unused half of the pair. The GMST size read must follow the slot.
+        var profile = SkyMoonProfile.ForGame(game);
+
+        Assert.Contains(profile.PrimaryTextureCandidates,
+            p => p.Contains("secunda", System.StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(profile.PrimaryTextureCandidates,
+            p => p.Contains("masser", System.StringComparison.OrdinalIgnoreCase));
+        Assert.True(profile.PrimaryUsesSecundaSize, $"{game} moon size must come from iSecundaSize");
+        Assert.Equal(@"textures\sky\secunda_full.dds", profile.PhaseTexturePath(secondary: false, 4));
+    }
+
     [Fact]
     public void None_DrawsNoMoon()
     {
