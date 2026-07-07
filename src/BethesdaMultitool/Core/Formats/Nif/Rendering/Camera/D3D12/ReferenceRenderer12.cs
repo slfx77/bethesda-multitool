@@ -445,9 +445,42 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     no-op. The CPU cull below stays in ABSOLUTE space (uses <c>r.WorldMatrix</c>, not the folded
     ///     copy) — only the GPU upload is shifted.
     /// </param>
+    /// <summary>
+    ///     Camera pose key for the translation-TOLERANT cull cache. When supplied, the cached cull
+    ///     survivors stay valid while the camera drifts up to <see cref="CullPositionSlack" /> from
+    ///     the establishment position with an unchanged view basis/FOV/aspect — instead of requiring
+    ///     a byte-identical viewProj, which NEVER matches while walking (the far plane is recomputed
+    ///     from |camera.Z| every frame, so the old exact compare re-culled ~100k candidates per walk
+    ///     frame). The establishment cull widens every bound by the slack so the survivor set is a
+    ///     SUPERSET of the exact set for any camera inside the slack box.
+    /// </summary>
+    public readonly record struct CullCameraPose(Vector3 Forward, float FovYRadians, float Aspect);
+
+    /// <summary>Max camera drift (world units, Chebyshev) the tolerant cull cache absorbs.</summary>
+    private const float CullPositionSlack = 512f;
+
+    /// <summary>
+    ///     Tolerant-mode debounce for the mesh-bounds generation: a NEW mesh resolve tightens cull
+    ///     spheres, which the exact path treats as an immediate invalidation — but during active
+    ///     streaming that means a re-cull EVERY frame (each frame resolves something), which is
+    ///     precisely the 6-7ms/frame cost this cache exists to kill. Bounds tightening is a visual
+    ///     nicety (edge refs pop in with the corrected sphere), not a safety property — the widened
+    ///     establishment cull keeps everything already visible — so the tolerant path refreshes for
+    ///     it at most once per this many frames (~0.5s at 60fps).
+    /// </summary>
+    private const int CullStreamingRefreshFrames = 30;
+
+    private CullCameraPose? _cullCachePose;
+    private Vector3 _cullCachePosition;
+    private float _cullCacheRadius;
+    private int _framesSinceCull;
+
+    /// <summary>Bumped on every fresh cull — identifies the survivor-set generation (batch reuse keys on it).</summary>
+    private int _cullEpoch;
+
     public int Render(
         Matrix4x4 viewProj, VisibilityCylinder cylinder, bool deferBlended, Matrix4x4? cullViewProj = null,
-        Vector3 renderOrigin = default)
+        Vector3 renderOrigin = default, CullCameraPose? cullCameraPose = null)
     {
         ReferencesDrawnLastFrame = 0;
         LastFrameDrawsTruncated = 0;
@@ -517,17 +550,26 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // The cull (per-cell broadphase + per-REFR filter/sphere/frustum tests) is reused from the
         // previous frame when the camera pose, the mesh-bounds generation (the count of resolved
         // meshes — each new resolve can tighten a cull sphere), and the visibility filters are ALL
-        // unchanged. The viewProj is byte-identical frame-to-frame for a still camera, so equality is
-        // exact. This skips re-testing ~15k candidates on static / settled frames (profiler fix #4);
-        // active streaming keeps re-culling (cheap relative to decode) until the working set settles.
+        // unchanged. With a CullCameraPose the compare is translation-TOLERANT (see the type docs):
+        // same basis/FOV/aspect + drift under CullPositionSlack reuses the widened establishment
+        // cull, so walking a straight line stops re-testing ~100k candidates per frame. Without a
+        // pose (top-down / capture paths) the compare stays byte-exact on the viewProj.
+        var tolerant = cullCameraPose is not null;
+        _framesSinceCull++;
+        var meshBoundsCurrent = _cullCacheMeshRadiusCount == _meshLocalRadius.Count
+                                || (tolerant && _framesSinceCull < CullStreamingRefreshFrames);
         var cullCacheValid =
             _cullCacheValid
-            && _cullCacheViewProj == cullFrustumSource
-            && _cullCacheCylinder == cylinder
-            && _cullCacheMeshRadiusCount == _meshLocalRadius.Count
+            && meshBoundsCurrent
             && _cullCacheShowMarkers == ShowMarkers
             && _cullCacheShowImposters == ShowImposters
-            && _cullCacheShowDisabled == ShowInitiallyDisabled;
+            && _cullCacheShowDisabled == ShowInitiallyDisabled
+            && (tolerant
+                ? _cullCachePose is not null
+                  && _cullCachePose.Value == cullCameraPose!.Value
+                  && _cullCacheRadius == cylinder.Radius
+                  && ChebyshevWithin(cylinder.Position, _cullCachePosition, CullPositionSlack)
+                : _cullCacheViewProj == cullFrustumSource && _cullCacheCylinder == cylinder);
 
         if (cullCacheValid)
         {
@@ -540,18 +582,27 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         {
             var cullStarted = StartTiming();
             _cachedCullSurvivors.Clear();
-            var smallPropCutoff = cylinderRadius * SmallPropDistanceFraction;
+            // Tolerant mode widens every cull bound by the drift slack so the survivor set is a
+            // SUPERSET of the exact set for any camera position within CullPositionSlack of the
+            // establishment position: √2× for the square footprint's corner reach, √3× for the 3D
+            // frustum drift, 1× for the per-axis Chebyshev test and the small-prop LOD ring.
+            var driftSlack = tolerant ? CullPositionSlack : 0f;
+            var frustumSlack = tolerant ? CullPositionSlack * 1.7321f : 0f;
+            var cullCylinder = tolerant
+                ? new VisibilityCylinder(cylinder.Position, cylinder.Radius + CullPositionSlack)
+                : cylinder;
+            var smallPropCutoff = (cylinderRadius * SmallPropDistanceFraction) + driftSlack;
             var smallPropCutoffSq = smallPropCutoff * smallPropCutoff;
-            foreach (var cell in EnumerateVisibleCells(cylinder))
+            foreach (var cell in EnumerateVisibleCells(cullCylinder))
             {
                 _cullCandidateScratch.Clear();
                 var totalPlacements = _renderCache.QueryPlacementCandidates(
                     cell,
                     cylinderX,
                     cylinderY,
-                    cylinderRadius * SquareBroadphaseFactor, // reach the square footprint's corners; exact test trims
+                    (cylinderRadius * SquareBroadphaseFactor) + (driftSlack * 1.41422f), // corner reach + drift
                     broadphaseFrustum,
-                    FrustumCullMargin,
+                    FrustumCullMargin + frustumSlack,
                     _cullCandidateScratch);
                 if (totalPlacements == 0 || _cullCandidateScratch.Count == 0) continue;
 
@@ -615,7 +666,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // Include the same FrustumCullMargin the frustum test uses, so a reference whose OBND
                     // bounds underestimate its real extent (or whose center sits just outside the square)
                     // is not dropped at the cylinder edge a frame before its true mesh radius resolves.
-                    var maxDist = cylinderRadius + cullRadius + FrustumCullMargin;
+                    var maxDist = cylinderRadius + cullRadius + FrustumCullMargin + driftSlack;
                     // Square ("Dist") footprint: reject iff the object falls outside the half-extent box
                     // along either axis (Chebyshev), so references load as a square matching the terrain/
                     // grid footprint instead of a circle.
@@ -631,7 +682,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     }
                     if (!rejected && hasFrustum)
                     {
-                        rejected = !frustum.IntersectsSphere(cullCenter, cullRadius + FrustumCullMargin);
+                        rejected = !frustum.IntersectsSphere(cullCenter, cullRadius + FrustumCullMargin + frustumSlack);
                     }
                     if (rejected) culled++;
                     else _cachedCullSurvivors.Add(r);
@@ -641,9 +692,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
             // Snapshot the cache key. MeshRadiusCount is captured BEFORE the resolve pass (below) adds
             // this frame's newly-resolved radii, so the next frame re-culls iff a new mesh resolved.
+            _cullEpoch++;
+            _framesSinceCull = 0;
             _cullCacheValid = true;
             _cullCacheViewProj = cullFrustumSource;
             _cullCacheCylinder = cylinder;
+            _cullCachePose = cullCameraPose;
+            _cullCachePosition = cylinder.Position;
+            _cullCacheRadius = cylinder.Radius;
             _cullCacheMeshRadiusCount = _meshLocalRadius.Count;
             _cullCacheShowMarkers = ShowMarkers;
             _cullCacheShowImposters = ShowImposters;
@@ -654,6 +710,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
 
         // === Resolve + batch pass (always runs — decoded meshes stream in across frames) ===
+        // Exact (unwidened) small-prop LOD cutoff for the tolerant refilter below — the
+        // establishment cull's cutoff carries the drift slack, so the survivor cache holds a ring
+        // of distance-LOD'd clutter that must not reach the batch/draw stage.
+        var exactSmallPropCutoff = cylinderRadius * SmallPropDistanceFraction;
+        var exactSmallPropCutoffSq = exactSmallPropCutoff * exactSmallPropCutoff;
         var meshStarted = StartTiming();
         for (var si = 0; si < _cachedCullSurvivors.Count; si++)
         {
@@ -681,23 +742,54 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 mesh = _meshCache.GetOrUpload(
                     r.ModelPath, ref uploadBudget, pdx * pdx + pdy * pdy, r.AlternateTextures);
                 _resolvedMeshesThisFrame[r.MeshId] = mesh;
+                if (mesh is not null)
+                {
+                    // Record the resident mesh's true local radius so the NEXT frame's cull uses
+                    // real geometry extent for this MeshId. A new key here grows
+                    // _meshLocalRadius.Count, which refreshes the cull cache (immediately in exact
+                    // mode, debounced in tolerant mode) so the tighter bounds are applied. Once per
+                    // unique MeshId per frame — per-REFR it was ~2ms of redundant dictionary writes
+                    // at 50k survivors.
+                    _meshLocalRadius[r.MeshId] = mesh.LocalBoundsRadius;
+                    _meshLocalBounds[r.MeshId] = (mesh.LocalBoundsMin, mesh.LocalBoundsMax);
+                }
             }
             if (mesh is null)
             {
                 missingMeshes++;
                 continue;
             }
-            // Record the resident mesh's true local radius so the NEXT frame's cull uses real
-            // geometry extent for this MeshId. A new key here grows _meshLocalRadius.Count, which
-            // invalidates the cull cache next frame so the tighter bounds are applied.
-            _meshLocalRadius[r.MeshId] = mesh.LocalBoundsRadius;
-            _meshLocalBounds[r.MeshId] = (mesh.LocalBoundsMin, mesh.LocalBoundsMax);
             // Placed water planes need no textures — emit them as soon as the mesh resolves, once per
             // REFR (the seen-set dedups the per-frame resolve). Transforms the mesh-local water AABB(s)
             // by this placement's world matrix into world-space footprints for WaterRenderer12.
             if (mesh.WaterPlanesLocal.Count > 0 && _nifWaterPlaneSeen.Add(r.FormId))
             {
                 AccumulateNifWaterPlanes(r.WorldMatrix, mesh.WaterPlanesLocal);
+            }
+
+            // Tolerant-cull refilter: the widened survivor cache is a SUPERSET (drift slack pushed
+            // ~30% extra refs through at 512u), so re-test each survivor against THIS frame's exact
+            // bounds — footprint, small-prop distance LOD, frustum, mirroring the establishment
+            // cull's resident-mesh branch without the drift slack — before spending batch/draw cost
+            // on it. Placed after GetOrUpload so off-frustum refs keep streaming (turning the camera
+            // reveals them without a stall); ~1-2ms of sphere tests replaces the 6-7ms full re-cull
+            // the old exact cache ran per moving frame — and the drawn set stays exact, so there is
+            // no extra batch/instance/GPU work either.
+            if (tolerant && hasFrustum)
+            {
+                var scaleBasis = new Vector3(r.WorldMatrix.M11, r.WorldMatrix.M12, r.WorldMatrix.M13);
+                var refilterRadius = mesh.LocalBoundsRadius * scaleBasis.Length();
+                var refilterCenter = r.WorldMatrix.Translation;
+                var rdx = MathF.Abs(refilterCenter.X - cylinder.Position.X);
+                var rdy = MathF.Abs(refilterCenter.Y - cylinder.Position.Y);
+                var reach = cylinderRadius + refilterRadius + FrustumCullMargin;
+                if (rdx > reach || rdy > reach ||
+                    (_enableDistanceLod && refilterRadius < SmallPropLodRadius
+                                        && (rdx * rdx) + (rdy * rdy) > exactSmallPropCutoffSq) ||
+                    !frustum.IntersectsSphere(refilterCenter, refilterRadius + FrustumCullMargin))
+                {
+                    continue;
+                }
             }
             var texturesReady = mesh.TexturesReady;
             if (!texturesReady)
@@ -889,6 +981,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _disposed = true;
         _pipelines.Dispose();
     }
+
+    // Per-axis drift bound for the tolerant cull cache (see CullCameraPose).
+    private static bool ChebyshevWithin(Vector3 a, Vector3 b, float slack)
+        => MathF.Abs(a.X - b.X) < slack
+           && MathF.Abs(a.Y - b.Y) < slack
+           && MathF.Abs(a.Z - b.Z) < slack;
 
     private IEnumerable<CellRecord> EnumerateVisibleCells(VisibilityCylinder cylinder)
     {

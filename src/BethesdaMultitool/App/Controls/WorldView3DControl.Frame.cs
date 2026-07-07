@@ -16,6 +16,10 @@ public sealed partial class WorldView3DControl
     private float? _windStrength;
     private static readonly Vector2 WindDirection = Vector2.Normalize(new Vector2(0.82f, 0.57f));
 
+    // Translation-tolerant cull cache kill-switch (FALLOUT_VIEWER_TOLERANT_CULL=0 → exact compare).
+    private static readonly bool TolerantCullEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.TolerantCull) != "0";
+
     private static float ParseWindStrength()
     {
         var raw = EnvironmentVariables.Get(EnvironmentVariables.Viewer.SpeedTreeWind);
@@ -370,10 +374,20 @@ public sealed partial class WorldView3DControl
         // camera-relative clip position as terrain/water (which still subtract uCameraOrigin in-shader) but
         // with far better float32 precision — killing coplanar Z-fighting on distant architecture.
         var referenceRenderOrigin = cameraRelative ? _camera.Position : Vector3.Zero;
+        // Perspective path passes the camera pose so the cull cache is translation-TOLERANT: the
+        // far plane above is recomputed from |camera.Z| every frame, so the old byte-exact viewProj
+        // compare NEVER matched while walking and re-culled ~100k candidates per frame. Ortho /
+        // projection modes keep the exact compare (their viewProj is genuinely stable when idle).
+        // FALLOUT_VIEWER_TOLERANT_CULL=0 reverts to the exact compare (perf A/B + escape hatch).
+        Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12.CullCameraPose? cullPose =
+            projectionActive || !TolerantCullEnabled
+                ? null
+                : new Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12.CullCameraPose(
+                    _camera.Forward, _camera.FovYRadians, aspect);
         var visibleReferences = _showReferences
             ? _references?.Render(
                   viewProjScene, cylinder, deferBlended: true, cullViewProj: viewProjAbsolute,
-                  renderOrigin: referenceRenderOrigin) ?? 0
+                  renderOrigin: referenceRenderOrigin, cullCameraPose: cullPose) ?? 0
             : 0;
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesEnd);
         var referencesMs = ElapsedMilliseconds(segmentStarted);

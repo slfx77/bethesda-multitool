@@ -81,6 +81,10 @@ internal static class EnvironmentVariables
         public const string DisableReferenceFrustum = "FALLOUT_VIEWER_DISABLE_REFERENCE_FRUSTUM";
         public const string ReferenceDistanceLod = "FALLOUT_VIEWER_REFERENCE_DISTANCE_LOD";
 
+        /// <summary>Translation-tolerant reference cull cache (default ON for the perspective camera).
+        /// Set to "0" to revert to the exact viewProj compare — perf A/B lever + escape hatch.</summary>
+        public const string TolerantCull = "FALLOUT_VIEWER_TOLERANT_CULL";
+
         /// <summary>Camera-relative rendering for the scene (terrain/references/water). DEFAULT ON;
         /// set to "0" to disable and render in absolute world space (the pre-fix behavior, for A/B
         /// comparison). Eliminates the float-precision "wobble" at worldspace edges by shifting scene
