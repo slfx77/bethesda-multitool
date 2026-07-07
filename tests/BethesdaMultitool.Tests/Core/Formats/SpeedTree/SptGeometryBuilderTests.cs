@@ -299,12 +299,14 @@ public class SptGeometryBuilderTests
         // the per-leaf wind weight (a [0.15,1] blend factor for the leaf-billboard VS sway), shared by a
         // leaf's four corners, so it is asserted separately from the offset math under test here.
         // Card size = cardScale·Corner1 with cardScale = treeSizeMid = Float2006·10 (×10 engine world scale).
-        // Vertex order follows the ENGINE's texcoord winding (CLeafGeometry::Update): (L,B), (L,T),
-        // (R,T), (R,B) — up the left edge first — so rotated atlas packings orient correctly.
+        // Vertex order follows the ENGINE's zip (BSTreeModel::CreateLeafGeometry pairs texcoord j with
+        // CLeafGeometry::Update corner slot (j+2)&3): pairs 0..3 land on (L,B), (R,B), (R,T), (L,T) —
+        // around the quad. Seed 1 picks the ODD doubled-entry here (authored pivot 0.25 → x0=−50, x1=150);
+        // the EVEN variant would flip the pivot (x0=−150, x1=50).
         AssertOffsetXy(offsets, 0, -50f, -300f);
-        AssertOffsetXy(offsets, 1, -50f, 100f);
+        AssertOffsetXy(offsets, 1, 150f, -300f);
         AssertOffsetXy(offsets, 2, 150f, 100f);
-        AssertOffsetXy(offsets, 3, 150f, -300f);
+        AssertOffsetXy(offsets, 3, -50f, 100f);
         var windWeight = offsets[2];
         Assert.InRange(windWeight, 0.15f, 1f);
         Assert.Equal(windWeight, offsets[5], 4);
@@ -329,17 +331,18 @@ public class SptGeometryBuilderTests
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
         var uvs = result.Submeshes.Single(s => s.ShapeName == "spt:leaves").UVs!;
-        // The builder flips V (v → 1−v) on the .spt's leaf UVs: they use a bottom-left texture origin
-        // (SpeedTree RT / Gamebryo GL sampler) and our rasterizer samples top-left, so without the flip each
-        // card grabbed the wrong atlas region (the squared-edge bug). U is unchanged; V is mirrored, so the
-        // parsed 0.9 → 0.1 and 0.1 → 0.9.
-        Assert.Equal(0.75f, uvs[0], 4);
+        // The builder flips V (v → 1−v) on the .spt's leaf UVs (the shipped composite DDS is V-flipped
+        // vs the token-10002 table; the engine's own mechanism is SetTextureCoords' global vSign=−1),
+        // so the parsed 0.9 → 0.1 and 0.1 → 0.9. Seed 1 picks the ODD doubled-entry, which additionally
+        // U-mirrors the pairs (u of pairs 0↔1 and 2↔3 swap, v's stay — SetTextureCoords' second entry):
+        // pair0.u = parsed pair1's 0.25, pair1.u = parsed pair0's 0.75, and likewise for pairs 2/3.
+        Assert.Equal(0.25f, uvs[0], 4);
         Assert.Equal(0.1f, uvs[1], 4);
-        Assert.Equal(0.25f, uvs[2], 4);
+        Assert.Equal(0.75f, uvs[2], 4);
         Assert.Equal(0.1f, uvs[3], 4);
-        Assert.Equal(0.25f, uvs[4], 4);
+        Assert.Equal(0.75f, uvs[4], 4);
         Assert.Equal(0.9f, uvs[5], 4);
-        Assert.Equal(0.75f, uvs[6], 4);
+        Assert.Equal(0.25f, uvs[6], 4);
         Assert.Equal(0.9f, uvs[7], 4);
     }
 

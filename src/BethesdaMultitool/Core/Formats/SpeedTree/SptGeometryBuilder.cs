@@ -427,7 +427,7 @@ internal static class SptGeometryBuilder
         }
 
         // Per candidate, in CIdvBranch::Compute / ComputeBud / MakeLeaf draw order (verified vs the live trace):
-        //   frac · budReach(Eval, forceDraw) · budSpin(-180,180) · [IsBlossom] · template(NextInt) · RoomForLeaf
+        //   frac · budReach(Eval, forceDraw) · budSpin(-180,180) · [IsBlossom] · template(doubled pick) · RoomForLeaf
         //   · [on accept: 2 GetUniform draws]. Every draw advances the ONE shared RNG, so the next terminal
         //   branch stays aligned — deferring budSpin / RoomForLeaf / the on-accept draws was the residual gap.
         var (branchOrigin, _, _) = SampleAlong(rings, 0f);
@@ -448,20 +448,29 @@ internal static class SptGeometryBuilder
             var budFrame = frame.MultiplyLocal(BranchFrame.FromAxisAngle(Vector3.UnitX, budSpinDeg / DegPerRad));
             budFrame = budFrame.MultiplyLocal(BranchFrame.FixedAngleRotate(LeafBudDeclinationDeg));
 
-            // IsBlossom gates on the leaf's RAW percent along its branch (the frac the bud spawned at),
-            // not the [6010,6011]-remapped template parameter — CIdvBranch::IsBlossom reads the node's
-            // own percent when blossom level is 0 (the common authored value; the ancestor walk for
-            // level ≠ 0 is unimplemented — the 360 decompile's level gate is ambiguous, see the
-            // adversarial-review notes).
+            // IsBlossom gates on the leaf's RAW percent along its branch (the frac the bud spawned at).
+            // SETTLED by the PC x86 decompile (FUN_00b13b50 agrees with the 360 text): the blossomLevel
+            // ancestor walk is DEAD CODE — the gate runs it only when level==0, and the walk's own bound
+            // (level <= 1) then breaks before the pointer ever advances, reading the node's own percent;
+            // level != 0 skips the walk and uses the passed percent. Both paths = the bud's raw percent.
             var useBlossom = blossomTemplates is { Count: > 0 } && ShouldUseBlossom(frac, model, rng);
             var pool = useBlossom ? blossomTemplates! : leafTemplates;
-            var templateIndex = pool[rng.NextInt(pool.Count)];
+
+            // The engine picks from the DOUBLED entry list: the list partition pushes entries 2i and 2i+1
+            // for every map i, and MakeLeaf draws trunc(GetUniform(0, K)) % (2·maps) over it — K = 1e6 for
+            // the leaf pool but 1e5 for the blossom pool (360 literals 0x412E8480…/0x40F86A00…). Same
+            // single draw either way, so the RNG stream matches; the low bit picks the H-mirror variant:
+            // EVEN = authored UVs + pivot.x flipped (CLeafGeometry::Update), ODD = U-mirrored UVs +
+            // authored pivot (CLeafGeometry::SetTextureCoords' second entry).
+            var doubledIndex = (int)rng.Range(0f, useBlossom ? 100_000f : 1_000_000f) % (pool.Count * 2);
+            var templateIndex = pool[doubledIndex / 2];
+            var oddVariant = doubledIndex % 2 == 1;
             var template = model.Leaves[templateIndex];
             var texCoords = templateIndex < model.LeafTextureCoords.Count
                 ? model.LeafTextureCoords[templateIndex]
                 : SptLeafTextureCoords.FullAtlas;
 
-            placer.TryPlace(rng, pos, branchOrigin, budFrame, template, texCoords, budReach);
+            placer.TryPlace(rng, pos, branchOrigin, budFrame, template, texCoords, budReach, oddVariant);
         }
     }
 
@@ -509,10 +518,14 @@ internal static class SptGeometryBuilder
 
             // Card width/height = cardScale·Corner1 (CSpeedTreeRT::Compute L3679, the size MID not the random
             // draw). CLeafGeometry::Update splits it around Corner0 rather than as a symmetric half-size.
+            // The doubled H-mirror variants: EVEN entries keep authored UVs but flip pivot.x (Update's
+            // even-parity `1 − pivot.x`); ODD entries keep the authored pivot but U-mirror the UV pairs
+            // (SetTextureCoords' second entry). Neither variant is "authored UVs + authored pivot".
             var width = cardScale * template.Corner1.X;
             var height = cardScale * template.Corner1.Y;
-            var x0 = -template.Corner0.X * width;
-            var x1 = (1f - template.Corner0.X) * width;
+            var pivotX = leaf.OddVariant ? template.Corner0.X : 1f - template.Corner0.X;
+            var x0 = -pivotX * width;
+            var x1 = (1f - pivotX) * width;
             var y0 = -template.Corner0.Y * height;
             var y1 = (1f - template.Corner0.Y) * height;
 
@@ -536,17 +549,21 @@ internal static class SptGeometryBuilder
             // Token-10002 leaf UVs need v→1−v against the SHIPPED composite atlases: the compiled DDS
             // is stored V-flipped relative to the .spt's UV table (verified against
             // treedogwoodleavessu.dds — flower in the top half, leaves in the bottom, while the .spt
-            // leaf quads span V∈[0,0.5]). Adversarial-review note: the flip alone was NOT sufficient —
-            // the pair→corner winding below was rotated vs the engine's, which is what actually
-            // produced the square/sliced leaf cards; both are needed.
+            // leaf quads span V∈[0,0.5]). The engine's own mechanism is SetTextureCoords' global
+            // vSign=−1 (equivalent to 1−v under wrap sampling). ODD doubled-entries additionally get
+            // the U-mirrored pair set (u of pairs 0↔1 and 2↔3 swapped, v's in place).
             var uv = FlipTexCoordV(leaf.TextureCoords);
+            if (leaf.OddVariant)
+            {
+                uv = MirrorTexCoordU(uv);
+            }
             var center = leaf.Center;
             var budDir = leaf.BudDir;
 
             // MakeLeaf's lighting normal: lerp(outward-from-branch-origin, bud direction, texture
             // variance [token 4002]), normalized — the per-leaf normal the STLEAF shaders consume as v1.
-            // (The engine walks blossomLevel ancestors for the origin; level 0 — the common authored
-            // value — is the leaf's own branch.) Replaces the invented up-dominant "canopy normal".
+            // The origin is the leaf's own branch base (the IsBlossom-style ancestor walk is dead code in
+            // both binaries). Replaces the invented up-dominant "canopy normal".
             var variance = Math.Clamp(template.Size, 0f, 1f);
             var outward = SafeNormalize(center - leaf.BranchOrigin, budDir);
             var normal = SafeNormalize(Vector3.Lerp(outward, budDir, variance), Vector3.UnitZ);
@@ -602,7 +619,7 @@ internal static class SptGeometryBuilder
         public List<PlacedLeaf> Leaves { get; } = [];
 
         public void TryPlace(SptRandom rng, Vector3 pos, Vector3 branchOrigin, BranchFrame budFrame,
-            SptLeaf template, SptLeafTextureCoords texCoords, float budReach)
+            SptLeaf template, SptLeafTextureCoords texCoords, float budReach, bool oddVariant)
         {
             var budDir = budFrame.Direction;
             var center = pos + budDir * budReach;
@@ -630,7 +647,7 @@ internal static class SptGeometryBuilder
             _ = rng.Range(-0.1f, 0.1f);
 
             _placedCenters?.Add(center);
-            Leaves.Add(new PlacedLeaf(pos, branchOrigin, center, budDir, template, texCoords));
+            Leaves.Add(new PlacedLeaf(pos, branchOrigin, center, budDir, template, texCoords, oddVariant));
         }
 
         /// <summary>True if no already-placed leaf center lies within <paramref name="spacing" /> of
@@ -799,10 +816,11 @@ internal static class SptGeometryBuilder
         var p11 = center + right * x1 + up * y1;
         var p01 = center + right * x0 + up * y1;
 
-        // UV pair → corner pairing is the ENGINE's winding: CLeafGeometry::Update builds corners in the
-        // order (L,B), (L,T), (R,T), (R,B) against texcoord pairs 0..3 — i.e. up the LEFT edge first.
-        // SpeedTree atlases pack many leaf images ROTATED, so the previous (LB,RB,RT,LT) assumption
-        // rendered those maps sliced sideways across the card ("cut off strangely, square edges").
+        // UV pair → corner pairing is the ENGINE's zip: BSTreeModel::CreateLeafGeometry gives vertex j
+        // texcoord pair j and corner slot (j+2)&3 from CLeafGeometry::Update's table, whose clean PC x86
+        // decompile orders slots (R,T), (L,T), (L,B), (R,B). Net: pair0→LB, pair1→RB, pair2→RT, pair3→LT
+        // — around the quad, not up an edge. (Round-1 pinned (LB,LT,RT,RB) from the damaged 360 text;
+        // that mirrored every map across the LB–RT diagonal.)
         if (billboard)
         {
             // Encode the card as center (tangent) + signed 2D card-space offset (bitangent) so the GPU
@@ -811,18 +829,18 @@ internal static class SptGeometryBuilder
             // bitangent.z = per-leaf wind weight (a [0,1] blend factor, NOT a size — ApplyHeightScale
             // leaves it untouched), consumed by the VS's wind sway.
             var v00b = buf.Add(p00, normal, uv[0], center, new Vector3(x0, y0, windWeight));
-            var v01b = buf.Add(p01, normal, uv[1], center, new Vector3(x0, y1, windWeight));
+            var v10b = buf.Add(p10, normal, uv[1], center, new Vector3(x1, y0, windWeight));
             var v11b = buf.Add(p11, normal, uv[2], center, new Vector3(x1, y1, windWeight));
-            var v10b = buf.Add(p10, normal, uv[3], center, new Vector3(x1, y0, windWeight));
+            var v01b = buf.Add(p01, normal, uv[3], center, new Vector3(x0, y1, windWeight));
             buf.Triangle(v00b, v10b, v11b);
             buf.Triangle(v00b, v11b, v01b);
             return;
         }
 
         var v00 = buf.Add(p00, normal, uv[0]);
-        var v01 = buf.Add(p01, normal, uv[1]);
+        var v10 = buf.Add(p10, normal, uv[1]);
         var v11 = buf.Add(p11, normal, uv[2]);
-        var v10 = buf.Add(p10, normal, uv[3]);
+        var v01 = buf.Add(p01, normal, uv[3]);
         buf.Triangle(v00, v10, v11);
         buf.Triangle(v00, v11, v01);
     }
@@ -867,6 +885,14 @@ internal static class SptGeometryBuilder
         new Vector2(uv.Corner1.X, 1f - uv.Corner1.Y),
         new Vector2(uv.Corner2.X, 1f - uv.Corner2.Y),
         new Vector2(uv.Corner3.X, 1f - uv.Corner3.Y));
+
+    /// <summary>The ODD doubled-entry UV set from <c>CLeafGeometry::SetTextureCoords</c>: the u components
+    /// of pairs 0↔1 and 2↔3 swap while every v stays in place — the horizontal mirror of the leaf map.</summary>
+    private static SptLeafTextureCoords MirrorTexCoordU(SptLeafTextureCoords uv) => new(
+        new Vector2(uv.Corner1.X, uv.Corner0.Y),
+        new Vector2(uv.Corner0.X, uv.Corner1.Y),
+        new Vector2(uv.Corner3.X, uv.Corner2.Y),
+        new Vector2(uv.Corner2.X, uv.Corner3.Y));
 
     // Gravity/bend with PRECOMPUTED slot values: the per-ring slot evals (slot 1 bend gain, slot 8 roll) are
     // drawn in the ring loop so they advance the shared RNG in the engine's exact order (see GenerateBranch's
@@ -1042,7 +1068,7 @@ internal static class SptGeometryBuilder
     /// Geometry is built from these afterward by <see cref="EmitPlacedLeaves" />.</summary>
     private readonly record struct PlacedLeaf(
         Vector3 Pos, Vector3 BranchOrigin, Vector3 Center, Vector3 BudDir, SptLeaf Template,
-        SptLeafTextureCoords TextureCoords);
+        SptLeafTextureCoords TextureCoords, bool OddVariant);
 
     /// <summary>
     ///     SpeedTree's <c>CIdvRandom</c>/<c>Random</c> uniform generator: a Park-Miller 16807 LCG with a
@@ -1131,9 +1157,6 @@ internal static class SptGeometryBuilder
             Trace.Uniform(stateBefore, min, max, result);
             return result;
         }
-
-        public int NextInt(int exclusiveMax) =>
-            exclusiveMax <= 0 ? 0 : (int)Range(0f, 1_000_000f) % exclusiveMax;
 
         // Random::Raw: Park-Miller 16807 via Schrage; identical to the engine's `state*16807 - hi*Modulus`
         // (since 16807*Quotient + Remainder == Modulus and the result fits in int32, the engine's overflowing
