@@ -197,23 +197,29 @@ internal static class SptGeometryBuilder
         // s5(radius) · s2 · s6@0(base taper) · s0×2(noise) · s6@0 · s3@0 · s8@0(roll) = 9 grav + spin + 2 noise.
         //
         // slot 4 = length, slot 5 = radius (both ×treeSize). The engine has NO child-length clamp — limbs are
-        // MEANT to be far longer than the (stubby) trunk — so only the radius is clamped to ≤ 0.85× the sampled
+        // MEANT to be far longer than the (stubby) trunk — so only the radius is clamped against the sampled
         // parent ring radius at the attachment.
         var length = MathF.Max(0.01f, Eval(s, 4, parentT, rand, forceDraw: true) * treeSize); // LEAD (pre-spin)
         var spinDeg = rng.Range(-180f, 180f);
         var declMean = Eval(s, 7, parentT, rand, forceDraw: true);
         var bendGain = Eval(s, 1, parentT, rand, forceDraw: true); // constant per branch; per-ring bend gain
         var radius = MathF.Max(0.005f, Eval(s, 5, parentT, rand, forceDraw: true) * treeSize);
-        if (radius > parentRadius * 0.85f)
+        _ = Eval(s, 2, parentT, rand, forceDraw: true);                       // s2 (flex factor; drawn for parity)
+
+        // Child-radius clamp (CIdvBranch::Compute 360 L2067-2072 = PC FUN_00b11050, both agree): the engine
+        // tests the BASE radius — scale·slot6(0), the FIRST s6@0 draw — against 0.85·parent, and on trigger
+        // COLLAPSES the radius SCALE to the clamped value, so every ring becomes 0.85·parent·slot6(t).
+        // (Round-1 clamped the bare scale, over-clamping whenever slot6(0) < 1.) The ring-0 radius then uses
+        // the SECOND s6@0 draw (L2154), not the clamp draw.
+        var clampTaper = MathF.Max(0f, Eval(s, 6, 0f, rand, forceDraw: true)); // s6@0 draw 1 (clamp eval)
+        if (parentRadius > 0f && radius * clampTaper > parentRadius * 0.85f)
         {
             radius = parentRadius * 0.85f;
         }
 
-        _ = Eval(s, 2, parentT, rand, forceDraw: true);                       // s2 (flex factor; drawn for parity)
-        var baseTaper = MathF.Max(0f, Eval(s, 6, 0f, rand, forceDraw: true)); // ring-0 radius taper
         var noise0B = ScaledVariance(s, 0, 0f, rand);
         var noise0A = ScaledVariance(s, 0, 0f, rand);
-        _ = Eval(s, 6, 0f, rand, forceDraw: true);                            // s6@0 (segment length; parity)
+        var baseTaper = MathF.Max(0f, Eval(s, 6, 0f, rand, forceDraw: true)); // s6@0 draw 2 → ring-0 radius
         _ = Eval(s, 3, 0f, rand, forceDraw: true);                            // s3@0 (flex factor; parity)
         var roll0 = s.Count > 8 && s[8] is not null
             ? -(Eval(s, 8, 0f, rand, forceDraw: true) - 0.5f) * 2f
@@ -252,13 +258,13 @@ internal static class SptGeometryBuilder
         for (var r = 1; r < numRings; r++)
         {
             var t = r / (float)(numRings - 1);
-            // The engine evaluates the per-ring splines (and spaces the rings) at LINEAR t, not a warped
-            // t^Float6014: CIdvBranch::Compute L2235-2244 computes the ring param once (fStack_518) and uses
-            // it for BOTH the segment length and every CIdvBezierSpline::Evaluate/ScaledVariance. Verified
-            // vs the live trace — the trunk's slot-0 noise amplitude across rings is the slot-0 curve sampled
-            // at t=ring/(R-1): 0, 0.212, 0.336, 0.412, 0.461, 0.493, 0.511, 0.520, 0.520 (×Header.Z=50). The
-            // old t^Float6014 warp collapsed every early ring's param to ≈0, zeroing the curl noise and
-            // bending the whole loft off the engine's path.
+            // The engine's ring param is pow(r/(R−1), exponent) — CIdvBranch::Compute computes it once
+            // (360 L2235-2244 powf; PC FUN_00b11050 confirms) and uses it for BOTH the segment length and
+            // every per-ring Evaluate/ScaledVariance. But the exponent (SIdvBranchInfo+0x24) is a DEAD
+            // parameter in the .spt era: the ctor defaults it to 1.0 and NO branch token writes it
+            // (SIdvBranchInfo::Parse maps 6008..6017 exhaustively — 6013/6014 are the bark U/V texture
+            // tilings, NOT an exponent, which is what the old t^Float6014 warp misread). pow(t,1) = t,
+            // so linear it is — consistent with the live-trace slot-0 amplitudes at t=ring/(R−1).
             var pathT = t;
             var pathDistance = pathT * length;
 

@@ -73,15 +73,18 @@ public sealed record SptBranch
     /// <summary>Nine spline slots; any may be null if the stored string was not a valid BezierSpline.</summary>
     public IReadOnlyList<SptBezierSpline?> Splines { get; init; } = new SptBezierSpline?[9];
 
-    public uint UInt6008 { get; init; }
-    public uint UInt6009 { get; init; }
-    public float Float6010 { get; init; }
-    public float Float6011 { get; init; }
-    public float Float6012 { get; init; }
-    public float Float6013 { get; init; }
-    public float Float6014 { get; init; }
-    public bool Bool6015 { get; init; }
-    public bool Bool6016 { get; init; }
+    // Scalar tokens land at SIdvBranchInfo+0x00..+0x1D in Parse order (decompiled 360
+    // SIdvBranchInfo::Parse; the +0x20/+0x24 scalars — including CIdvBranch::Compute's
+    // ring-spacing pow() exponent — have NO tokens and keep their ctor defaults).
+    public uint UInt6008 { get; init; }   // +0x00 verts per ring − 1
+    public uint UInt6009 { get; init; }   // +0x04 ring count − 1
+    public float Float6010 { get; init; } // +0x08 child/leaf spawn range start
+    public float Float6011 { get; init; } // +0x0C child/leaf spawn range end
+    public float Float6012 { get; init; } // +0x10 child frequency scale
+    public float Float6013 { get; init; } // +0x14 bark texture U tiling (wraps around the ring)
+    public float Float6014 { get; init; } // +0x18 bark texture V tiling (repeats along the branch)
+    public bool Bool6015 { get; init; }   // +0x1C absolute-U-tiling flag
+    public bool Bool6016 { get; init; }   // +0x1D absolute-V-tiling flag
 }
 
 /// <summary>One leaf card (tokens 0x3EF..0x3F0 inside the 0x3F1 collection).</summary>
