@@ -118,9 +118,10 @@ public sealed partial class WorldView3DControl
         _moonTexIndex = Resolve(paths.Moon);
         _moonSecundaTexIndex = Resolve(paths.Secunda);
 
-        // Per-phase moon textures (Morrowind ships 8 per moon). Other games have no per-phase pattern, so
-        // every entry resolves to NoTexture and RenderSkyBillboards falls back to the full-moon index. Cheap
-        // (cached by the resolver); re-resolved with the rest of the sky set.
+        // Per-phase moon textures (Morrowind ships 8 per moon; FO4/FO76 ship 8 in the reused Creation
+        // masser slot). Games with no per-phase pattern resolve every entry to NoTexture and
+        // RenderSkyBillboards falls back to the full-moon index. Cheap (cached by the resolver);
+        // re-resolved with the rest of the sky set.
         var moonForPhases = MoonProfile;
         for (var i = 0; i < MoonSky.PhaseCount; i++)
         {

@@ -124,6 +124,8 @@ public sealed record SkyMoonProfile
 
     // Morrowind ships 8 per-phase textures per moon (tx_masser_<token>.dds / tx_secunda_<token>.dds),
     // in waxing→full→waning order; phase 0 = new, 4 = full (the phase-anchor day is calibrated in M5).
+    // The Creation engines reuse the SAME token names (sky\masser_<token>.dds), so FO4's moon shares
+    // this list.
     private static readonly string[] MorrowindPhaseTokens =
         ["new", "one_wax", "half_wax", "three_wax", "full", "three_wan", "half_wan", "one_wan"];
 
@@ -197,14 +199,20 @@ public sealed record SkyMoonProfile
             PeriodHours: 24.5f, PhaseOffsetTurns: 0.18f, MaxAltitudeDeg: 58f, PeakAzimuthDeg: 62f, AzSwingDeg: 30f),
     };
 
-    // FO4/FO76: single moon drawn from the Creation Masser slot (the Boston/Appalachia moon reuses the
-    // Skyrim slot name; the secunda asset ships but is not rendered). Fallback; runtime GMSTs override.
+    // FO4/FO76: single moon drawn from the Creation Masser slot — VANILLA-FAITHFUL: Bethesda reuses
+    // Skyrim's Masser artwork as the Fallout 4 moon (verified 2026-07-06: the FO4 BA2s ship the full
+    // Masser_*/Secunda_* phase sets and NO other moon asset, and FO4's own Masser_full.DDS *is* the
+    // red-brown TES art — the in-game "Mars moon" the modding community re-textures). The complete
+    // 8-texture phase set ships, and the engine cycles phases, so per-phase textures are wired here
+    // (same token names as Morrowind's). Fallback size; runtime GMSTs override.
     private static readonly SkyMoonProfile FalloutCreation = new()
     {
         MoonCount = 1,
         PrimaryTextureCandidates = CreationMasser,
         PrimaryHalfSizeFraction = 0.100f,
         PrimaryOrbit = SingleNightlyOrbit,
+        PrimaryPhaseTexturePattern = @"textures\sky\masser_{0}.dds",
+        PhaseTokens = MorrowindPhaseTokens,
     };
 
     /// <summary>The moon configuration for the loaded game. Unknown/Starfield → <see cref="None" />.</summary>
