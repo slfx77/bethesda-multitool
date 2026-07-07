@@ -885,6 +885,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     private IEnumerable<CellRecord> EnumerateVisibleCells(VisibilityCylinder cylinder)
     {
+        // Nearest cell first. The resolve pass consumes the per-frame upload + disk-load budget in
+        // enumeration order, and the spatial query returns row-major scan order — so a cold dense
+        // area streamed in from the top-left corner of the visible square while the meshes right in
+        // front of the camera waited their turn. Distance-sorting the cells makes streaming radiate
+        // out from the camera, and gives a shared mesh its NEAREST instance's decode-queue priority
+        // (the per-MeshId priority is captured on first sighting).
         if (_spatialIndex is not null)
         {
             _spatialIndex.QueryCellsInRadius(
@@ -892,6 +898,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 -cylinder.Position.Y,
                 cylinder.Radius,
                 _candidateCells);
+            var camCanvas = new Vector2(cylinder.Position.X, -cylinder.Position.Y);
+            _candidateCells.Sort((a, b) =>
+                Vector2.DistanceSquared(a.CenterCanvas, camCanvas)
+                    .CompareTo(Vector2.DistanceSquared(b.CenterCanvas, camCanvas)));
             foreach (var candidate in _candidateCells)
             {
                 yield return candidate.Cell;
@@ -899,12 +909,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             yield break;
         }
 
+        var matches = new List<(float DistSq, CellRecord Cell)>();
         foreach (var (key, cell) in _cells!)
         {
             if (cylinder.ContainsCell(key.gx, key.gy))
             {
-                yield return cell;
+                var dx = (key.gx + 0.5f) * WorldGridConstants.CellSize - cylinder.Position.X;
+                var dy = (key.gy + 0.5f) * WorldGridConstants.CellSize - cylinder.Position.Y;
+                matches.Add((dx * dx + dy * dy, cell));
             }
+        }
+
+        matches.Sort(static (a, b) => a.DistSq.CompareTo(b.DistSq));
+        foreach (var (_, cell) in matches)
+        {
+            yield return cell;
         }
     }
 

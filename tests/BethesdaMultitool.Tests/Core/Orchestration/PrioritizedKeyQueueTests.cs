@@ -37,15 +37,52 @@ public sealed class PrioritizedKeyQueueTests
     }
 
     [Fact]
-    public void Duplicate_keys_are_rejected_and_the_first_priority_wins()
+    public void Duplicate_keys_are_not_re_added_but_a_lower_priority_promotes()
     {
         var queue = new PrioritizedKeyQueue<string>(StringComparer.OrdinalIgnoreCase);
         Assert.True(queue.Enqueue("Key", 50f));
-        Assert.False(queue.Enqueue("key", 1f)); // would jump the queue if honored
+        // Not NEWLY enqueued (returns false), but the nearer priority is honored — the camera
+        // approaching a far-sighted mesh must not leave it parked behind the far-field backlog.
+        Assert.False(queue.Enqueue("key", 1f));
+        Assert.Equal(1, queue.Count);
 
         queue.Enqueue("other", 10f);
         Assert.True(queue.TryDequeue(out var first));
-        Assert.Equal("other", first);
+        // The promoted entry carries the spelling passed at promote time — equal under the comparer.
+        Assert.Equal("key", first, ignoreCase: true);
+        Assert.True(queue.TryDequeue(out var second));
+        Assert.Equal("other", second);
+        // The superseded 50f entry is a stale duplicate — it must not dequeue "Key" a second time.
+        Assert.False(queue.TryDequeue(out _));
+        Assert.Equal(0, queue.Count);
+    }
+
+    [Fact]
+    public void Re_enqueueing_with_a_higher_priority_never_demotes()
+    {
+        var queue = new PrioritizedKeyQueue<string>();
+        Assert.True(queue.Enqueue("k", 1f));
+        Assert.False(queue.Enqueue("k", 100f));
+
+        queue.Enqueue("mid", 10f);
+        Assert.True(queue.TryDequeue(out var first));
+        Assert.Equal("k", first);
+    }
+
+    [Fact]
+    public void Key_re_enqueued_after_dequeue_is_not_shadowed_by_its_stale_entry()
+    {
+        var queue = new PrioritizedKeyQueue<string>();
+        queue.Enqueue("k", 50f);
+        queue.Enqueue("k", 1f);           // promote — leaves a stale 50f heap entry behind
+        Assert.True(queue.TryDequeue(out _)); // consumes the live 1f entry
+
+        // Fresh membership generation for the same key; the leftover 50f entry must be skipped
+        // (not mistaken for the live one) and the new 25f entry must dequeue exactly once.
+        Assert.True(queue.Enqueue("k", 25f));
+        Assert.True(queue.TryDequeue(out var key));
+        Assert.Equal("k", key);
+        Assert.False(queue.TryDequeue(out _));
     }
 
     [Fact]

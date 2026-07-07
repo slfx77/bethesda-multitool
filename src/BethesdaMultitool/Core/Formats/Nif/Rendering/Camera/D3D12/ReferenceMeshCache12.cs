@@ -530,10 +530,22 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     private void QueueDecode(string modelPath, Node node, float priority)
     {
-        if (node.DecodeTask is not null ||
-            node.DecodeQueued ||
-            node.ResolvedNull ||
-            !_decodeQueue.Enqueue(modelPath, priority))
+        if (node.DecodeTask is not null || node.ResolvedNull)
+        {
+            return;
+        }
+
+        if (node.DecodeQueued)
+        {
+            // Re-offer the current distance every frame the mesh stays visible: the queue promotes
+            // the key when this priority is nearer (lazy decrease-key), so a mesh first sighted at
+            // the far edge does not stay parked behind the whole far-field backlog as the camera
+            // approaches it.
+            _decodeQueue.Enqueue(modelPath, priority);
+            return;
+        }
+
+        if (!_decodeQueue.Enqueue(modelPath, priority))
         {
             return;
         }

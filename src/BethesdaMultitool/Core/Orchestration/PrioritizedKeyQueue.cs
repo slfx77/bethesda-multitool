@@ -7,58 +7,77 @@ namespace BethesdaMultitool.Core.Orchestration;
 ///     enqueue order (a monotonic sequence number breaks ties, so FIFO stability is guaranteed
 ///     rather than incidental).
 ///     <para>
-///         A key already queued is not re-enqueued and keeps its first-enqueued priority. Not
-///         thread-safe — owner-thread use only, like the queues it replaces.
+///         Re-enqueueing a queued key with a LOWER priority promotes it (lazy decrease-key: the
+///         old entry stays in the heap and is skipped on dequeue). This keeps distances live as
+///         the camera moves — a mesh first sighted at the far edge is re-offered nearer every
+///         frame it stays visible, so it stops waiting behind the whole far-field backlog.
+///         Re-enqueueing at an equal/higher priority is a no-op (the queue never demotes).
+///         Not thread-safe — owner-thread use only, like the queues it replaces.
 ///     </para>
 /// </summary>
 internal sealed class PrioritizedKeyQueue<TKey>
     where TKey : notnull
 {
     private readonly PriorityQueue<TKey, (float Priority, long Sequence)> _queue = new();
-    private readonly HashSet<TKey> _queued;
+    private readonly Dictionary<TKey, float> _bestPriority;
     private long _sequence;
 
     public PrioritizedKeyQueue(IEqualityComparer<TKey>? comparer = null)
     {
-        _queued = comparer is null ? [] : new HashSet<TKey>(comparer);
+        _bestPriority = comparer is null ? [] : new Dictionary<TKey, float>(comparer);
     }
 
-    public int Count => _queued.Count;
+    public int Count => _bestPriority.Count;
 
     /// <summary>
-    ///     Enqueues <paramref name="key" /> at <paramref name="priority" /> (lower dequeues first)
-    ///     unless it is already queued — the first-enqueued priority wins. Returns true when newly
-    ///     enqueued.
+    ///     Enqueues <paramref name="key" /> at <paramref name="priority" /> (lower dequeues first).
+    ///     A queued key is promoted when the new priority is strictly lower, otherwise unchanged.
+    ///     Returns true only when the key was NEWLY enqueued (not on promotion).
     /// </summary>
     public bool Enqueue(TKey key, float priority = 0f)
     {
-        if (!_queued.Add(key))
+        if (_bestPriority.TryGetValue(key, out var existing))
         {
+            if (priority >= existing)
+            {
+                return false;
+            }
+
+            // Lazy decrease-key: record the better priority and push a second heap entry; the
+            // superseded entry is skipped at dequeue time (its priority no longer matches).
+            _bestPriority[key] = priority;
+            _queue.Enqueue(key, (priority, _sequence++));
             return false;
         }
 
+        _bestPriority[key] = priority;
         _queue.Enqueue(key, (priority, _sequence++));
         return true;
     }
 
-    /// <summary>Dequeues the lowest-priority key (FIFO among equals).</summary>
+    /// <summary>Dequeues the lowest-priority key (FIFO among equals), skipping superseded entries.</summary>
     public bool TryDequeue(out TKey key)
     {
-        if (_queue.TryDequeue(out key!, out _))
+        while (_queue.TryDequeue(out key!, out var entry))
         {
-            _queued.Remove(key);
-            return true;
+            // Only the entry carrying the key's CURRENT best priority is live; entries left behind
+            // by a promotion (or by a full dequeue + later re-enqueue cycle) are stale duplicates.
+            if (_bestPriority.TryGetValue(key, out var best) && best == entry.Priority)
+            {
+                _bestPriority.Remove(key);
+                return true;
+            }
         }
 
         key = default!;
         return false;
     }
 
-    public bool Contains(TKey key) => _queued.Contains(key);
+    public bool Contains(TKey key) => _bestPriority.ContainsKey(key);
 
     public void Clear()
     {
         _queue.Clear();
-        _queued.Clear();
+        _bestPriority.Clear();
     }
 }
