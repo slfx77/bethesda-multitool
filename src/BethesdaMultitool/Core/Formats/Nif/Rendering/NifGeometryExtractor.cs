@@ -473,6 +473,20 @@ internal static class NifGeometryExtractor
                             srcBlendMode = bgsm.SourceBlendMode;
                             dstBlendMode = bgsm.DestinationBlendMode;
                         }
+
+                        // Scene-light two classes of effect material the blanket effect-shader
+                        // emissive otherwise renders full-bright at night:
+                        //  • "Effect Lighting" — the material explicitly asks to be lit;
+                        //  • decals (HitTechStain.BGEM on HitExtAStainsWall2x2 authors effect-
+                        //    lighting OFF + decal ON) — in-engine these read dark at night only
+                        //    because the global night imagespace/tonemap dims unlit surfaces too,
+                        //    which this viewer doesn't model. A decal is a surface overlay, so
+                        //    shading it with the scene is the faithful approximation; genuinely
+                        //    glowing effects (fires, beams) are not decals and stay emissive.
+                        if (bgsm.EffectLightingEnabled || bgsm.Decal)
+                        {
+                            isEmissive = false;
+                        }
                     }
                     else
                     {

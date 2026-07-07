@@ -102,6 +102,29 @@ public class BgsmMaterialTests
         Assert.False(mat.TwoSided); // neighbor byte untouched — offsets don't bleed
     }
 
+    [Fact]
+    public void Parse_Fallout4Bgem_ReadsEffectLightingAndInfluence()
+    {
+        // FO4 BGEM tail (fo76utils loadBGEMFile): after the texture-path table, a 6-byte bool block
+        // whose byte[1] = Effect Lighting, then base color (4 floats), falloff params (4 floats),
+        // and the lighting influence float. The non-gradient FO4 BGEM path map (0x000514F0) reads
+        // FIVE strings, so five paths pad the table.
+        var head = BuildBgsm(2, true, 63, "fx_d.dds", "grad.dds", "", "", "");
+        using var ms = new MemoryStream();
+        ms.Write(head);
+        ms.Write(new byte[] { 0, 1, 0, 0, 0, 0 }); // bools: [1] = effect lighting ON
+        Span<byte> floats = stackalloc byte[36];    // base color (16) + falloff (16) + influence (4)
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[32..], 0.75f);
+        ms.Write(floats);
+
+        var mat = BgsmMaterial.Parse(ms.ToArray());
+
+        Assert.NotNull(mat);
+        Assert.True(mat!.IsEffect);
+        Assert.True(mat.EffectLightingEnabled);
+        Assert.Equal(0.75f, mat.LightingInfluence, 3);
+    }
+
     /// <summary>
     ///     Builds a minimal BGSM with the given version, a header of <paramref name="headerLength" />
     ///     zero bytes (so the gradient flag reads 0 → the non-gradient texture-path map, whose first two

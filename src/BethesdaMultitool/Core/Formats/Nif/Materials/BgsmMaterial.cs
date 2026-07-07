@@ -101,6 +101,21 @@ public sealed class BgsmMaterial
     /// <summary>Palette row (V coordinate) for the grayscale-to-palette lookup, 0–1.</summary>
     public float GradientMapV { get; private set; } = 0.5f;
 
+    /// <summary>
+    ///     BGEM "Effect Lighting" (effect materials only): the effect shader IS lit by the scene like
+    ///     a lighting shader — set on world-overlay effects (wall stains/streaks, decal grime). When
+    ///     clear, the effect is self-lit (glows, beams). Byte 1 of the 6-byte block that follows the
+    ///     texture-path table (fo76utils loadBGEMFile: flags at position−5 after the +6 skip).
+    /// </summary>
+    public bool EffectLightingEnabled { get; private set; }
+
+    /// <summary>
+    ///     BGEM lighting influence (0–1, effect materials only): how strongly scene lighting affects
+    ///     the effect when <see cref="EffectLightingEnabled" />. Trails the base-color + falloff
+    ///     floats (fo76utils loadBGEMFile). 1 when unread.
+    /// </summary>
+    public float LightingInfluence { get; private set; } = 1f;
+
     /// <summary>Emissive (glow) enabled (lighting materials only).</summary>
     public bool EmissiveEnabled { get; private set; }
 
@@ -180,7 +195,11 @@ public sealed class BgsmMaterial
         var material = new BgsmMaterial(version, isEffect);
         material.ReadAlphaBlock(data);
         var endPos = material.ReadTexturePaths(data, pos, texturePathMap);
-        if (!isEffect)
+        if (isEffect)
+        {
+            material.ReadEffectParams(data, endPos, isFallout4, version);
+        }
+        else
         {
             material.ReadLightingParams(data, endPos, isFallout4);
 
@@ -277,6 +296,47 @@ public sealed class BgsmMaterial
         EmissiveColor = new Vector3(
             ReadClamped01(data, pos + 1), ReadClamped01(data, pos + 5), ReadClamped01(data, pos + 9));
         EmissiveScale = Math.Clamp(BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos + 13)), 0f, 8f);
+    }
+
+    /// <summary>
+    ///     Reads the effect (.bgem) parameter block that follows the texture-path table (fo76utils
+    ///     loadBGEMFile). FO76 (v20+) prefixes it with glass-refraction (v21+: enable u8 → 5 floats,
+    ///     v22+ one more) and an env-scale pair (enable u8 + f32); FO4 (v2) has neither. Both then
+    ///     skip 6 bytes whose byte[1] is <see cref="EffectLightingEnabled" />, followed by base color
+    ///     (4 floats), falloff params (4 floats), and <see cref="LightingInfluence" /> (1 float).
+    ///     Best-effort: leaves defaults on a short/odd buffer rather than failing the whole parse.
+    /// </summary>
+    private void ReadEffectParams(byte[] data, int pos, bool isFallout4, byte version)
+    {
+        if (!isFallout4)
+        {
+            if (version >= 21 && pos < data.Length && data[pos++] != 0)
+            {
+                pos += version >= 22 ? 24 : 20; // glass refraction floats
+            }
+
+            if (pos >= data.Length)
+            {
+                return;
+            }
+
+            pos += 1 + 4; // env-map enable byte + scale float (or 4 skipped bytes when disabled)
+        }
+
+        pos += 6;
+        if (pos > data.Length)
+        {
+            return;
+        }
+
+        EffectLightingEnabled = data[pos - 5] != 0;
+
+        // base color (RGB + scale) 16 bytes, falloff params 16 bytes, then lighting influence.
+        var influenceOffset = pos + 32;
+        if (influenceOffset + 4 <= data.Length)
+        {
+            LightingInfluence = ReadClamped01(data, influenceOffset);
+        }
     }
 
     private static float ReadClamped01(byte[] data, int pos) =>

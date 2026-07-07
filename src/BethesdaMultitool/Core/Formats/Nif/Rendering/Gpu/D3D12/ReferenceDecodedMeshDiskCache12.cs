@@ -107,7 +107,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Bumped 25→26: new per-submesh IsDecal payload field (BGSM decal byte / shader-flags bits
     // 26-27) — decal overlays draw with a depth-biased PSO instead of z-fighting their backing
     // surface. Warm v25 entries lack the field.
-    internal const int DecoderVersion = 26;
+    // Bumped 26→27: BGEM effect materials with Effect Lighting or the decal byte are now
+    // scene-lit instead of blanket-emissive (FO4 wall stains glowed against night-dark walls).
+    // The baked IsEmissive changes, so v26 entries keep the glow.
+    internal const int DecoderVersion = 27;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
