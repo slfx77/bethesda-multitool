@@ -24,66 +24,124 @@ public sealed partial class WorldView3DControl
     private const int WalkCapsuleRingSamples = 8;
 
     /// <summary>
+    ///     One walk-capsule candidate: a placed reference whose XY footprint can overlap the capsule,
+    ///     with the placement matrix + inverse hoisted out of the per-sample loop (they are per-REF
+    ///     constants). <see cref="Collision" /> null = cold mesh → per-sample OBND box fallback.
+    /// </summary>
+    private readonly record struct GroundCandidate(
+        PlacedReference Placement,
+        CollisionMesh? Collision,
+        Matrix4x4 World,
+        Matrix4x4 InverseWorld);
+
+    // Scratch candidate lists (walk-mode is single-threaded on the UI/frame path).
+    private readonly List<GroundCandidate> _groundCandidates = new(64);
+    private readonly List<GroundCandidate> _ceilingCandidates = new(32);
+
+    /// <summary>
     ///     Capsule-aware ground sample for walk mode: the HIGHEST ground height under the player's
     ///     footprint — the center plus a ring at <see cref="WalkCapsuleRadius" />. A real player has
     ///     width, so taking the max means the camera rides over thin seams instead of falling through a
     ///     single point that slips between two surfaces. Returns <c>null</c> only when neither terrain
     ///     nor an object sits under ANY sample (camera off the loaded grid), preserving
-    ///     <c>SnapToGround</c>'s off-edge no-op. Reuses the single-point <see cref="SampleGroundHeight" />
-    ///     for each sample, so terrain + warm-mesh triangle raycasts apply at every footprint point.
+    ///     <c>SnapToGround</c>'s off-edge no-op.
+    ///     <para>
+    ///         Perf shape: ONE pass over the 3×3 cell neighborhood builds the few candidates whose XY
+    ///         footprint can overlap the capsule (matrix + inverse hoisted per candidate); the 9 samples
+    ///         then raycast candidates only. The previous shape re-iterated EVERY placement in 9 cells
+    ///         per sample — at downtown density (~2,000 placements/cell) that was ~160k filter passes
+    ///         and up to thousands of matrix inverts per frame, a multi-ms walk-mode-only tax.
+    ///     </para>
     /// </summary>
     private float? SampleGroundHeightCapsule(float worldX, float worldY)
     {
-        var best = SampleGroundHeight(worldX, worldY);
+        if (_cellGridLookup is null) return null;
+        BuildRaycastCandidates(worldX, worldY, includeColdObnd: true, _groundCandidates);
+
+        var best = SampleGroundAt(worldX, worldY, _groundCandidates);
         for (var i = 0; i < WalkCapsuleRingSamples; i++)
         {
             var angle = MathF.Tau * i / WalkCapsuleRingSamples;
-            var h = SampleGroundHeight(
+            var h = SampleGroundAt(
                 worldX + (MathF.Cos(angle) * WalkCapsuleRadius),
-                worldY + (MathF.Sin(angle) * WalkCapsuleRadius));
+                worldY + (MathF.Sin(angle) * WalkCapsuleRadius),
+                _groundCandidates);
             if (h is { } v && (best is null || v > best)) best = v;
         }
 
         return best;
     }
 
-    private float? SampleGroundHeight(float worldX, float worldY)
+    /// <summary>
+    ///     Single-point ground sample = max(terrain height, highest placed-object surface at/below the
+    ///     eye). Warm meshes raycast against real collision triangles (rotation/scale exact); cold
+    ///     meshes fall back to the rotation-ignoring OBND box top, gated by the same "at/below the eye"
+    ///     rule so it never yanks the camera onto a roof.
+    /// </summary>
+    private float? SampleGroundAt(float worldX, float worldY, List<GroundCandidate> candidates)
     {
-        if (_cellGridLookup is null) return null;
-        var terrain = TerrainHeightSampler.Sample(_cellGridLookup, worldX, worldY, _data?.RenderCache, _cellSize);
+        var terrain = TerrainHeightSampler.Sample(_cellGridLookup!, worldX, worldY, _data?.RenderCache, _cellSize);
 
-        // Real downward triangle raycast so walk mode rides ON the actual surface of placed meshes
-        // (floors, walkways, rocks, roofs) instead of their axis-aligned bounding box — rotation is
-        // respected, and a roof ABOVE the eye is never grabbed because the ray starts at the eye and
-        // casts down. Ground = max(terrain, highest object surface at/below the eye).
-        var objectHit = RaycastObjectGround(worldX, worldY, _camera.Position.Z);
+        var eyeZ = _camera.Position.Z;
+        var origin = new Vector3(worldX, worldY, eyeZ + GroundRaycastEpsUp);
+        var down = new Vector3(0f, 0f, -1f);
+
+        float? objectHit = null;
+        foreach (var c in candidates)
+        {
+            float? hit;
+            if (c.Collision is not null)
+            {
+                // Warm mesh: exact triangle raycast (down-ray → hits are at/below the eye by construction).
+                var localOrigin = Vector3.Transform(origin, c.InverseWorld);
+                var localDir = Vector3.TransformNormal(down, c.InverseWorld);
+                hit = c.Collision.RaycastNearest(localOrigin, localDir, out var tLocal)
+                    ? Vector3.Transform(localOrigin + localDir * tLocal, c.World).Z
+                    : null;
+            }
+            else
+            {
+                var p = c.Placement;
+                var b = p.Bounds!; // cold candidates are only admitted with bounds
+                var scale = p.Scale > 0f ? p.Scale : 1f;
+                if (worldX < p.X + b.X1 * scale || worldX > p.X + b.X2 * scale ||
+                    worldY < p.Y + b.Y1 * scale || worldY > p.Y + b.Y2 * scale)
+                {
+                    continue;
+                }
+
+                var top = p.Z + b.Z2 * scale;
+                hit = top <= eyeZ + GroundRaycastEpsUp ? top : null;
+            }
+
+            if (hit is { } h && (objectHit is null || h > objectHit)) objectHit = h;
+        }
+
         if (terrain is { } t) return objectHit is { } m && m > t ? m : t;
         return objectHit; // null only when neither terrain nor an object sits under the camera
     }
 
     /// <summary>
-    ///     Casts a ray straight down from just above the eye and returns the world Z of the highest
-    ///     placed-object surface at/below the eye under (<paramref name="worldX" />,
-    ///     <paramref name="worldY" />), or <c>null</c> when nothing is hit. Scans the camera's cell and
-    ///     its 8 neighbors (a ref whose origin sits in an adjacent cell can still overlap the camera
-    ///     footprint). Warm meshes raycast against real triangles; cold meshes fall back to the OBND box
-    ///     for that frame. Only called once per frame in walk mode (<c>SnapToGround</c>).
+    ///     Scans the camera's cell and its 8 neighbors ONCE, collecting the placements whose XY
+    ///     footprint can overlap the walk capsule around (<paramref name="centerX" />,
+    ///     <paramref name="centerY" />). The overlap gate is a rotation-safe circumradius derived from
+    ///     the scaled OBND (plus capsule radius and slack), so a rotated footprint can't be culled
+    ///     wrongly; warm meshes without OBND stay ungated (rare). Placement matrix + inverse are
+    ///     computed here, once per candidate, instead of per capsule sample.
     /// </summary>
-    private float? RaycastObjectGround(float worldX, float worldY, float eyeZ)
+    private void BuildRaycastCandidates(float centerX, float centerY, bool includeColdObnd, List<GroundCandidate> into)
     {
-        if (_cellGridLookup is null) return null;
-        var gx = (int)MathF.Floor(worldX / _cellSize);
-        var gy = (int)MathF.Floor(worldY / _cellSize);
+        into.Clear();
+        var gx = (int)MathF.Floor(centerX / _cellSize);
+        var gy = (int)MathF.Floor(centerY / _cellSize);
+        // Ring reach + eye slack + a safety pad for OBNDs that under-cover their collision mesh.
+        var reach = WalkCapsuleRadius + GroundRaycastEpsUp + 64f;
 
-        var origin = new Vector3(worldX, worldY, eyeZ + GroundRaycastEpsUp);
-        var down = new Vector3(0f, 0f, -1f);
-
-        float? best = null;
         for (var dy = -1; dy <= 1; dy++)
         {
             for (var dx = -1; dx <= 1; dx++)
             {
-                if (!_cellGridLookup.TryGetValue((gx + dx, gy + dy), out var cell)) continue;
+                if (!_cellGridLookup!.TryGetValue((gx + dx, gy + dy), out var cell)) continue;
                 foreach (var p in cell.PlacedObjects)
                 {
                     if (string.IsNullOrEmpty(p.ModelPath)) continue;
@@ -93,47 +151,43 @@ public sealed partial class WorldView3DControl
                         RenderableReference.IsImposterModelPath(p.ModelPath) ||
                         RenderableReference.IsLodDuplicateBaseEditorId(p.BaseEditorId)) continue;
 
-                    var hit = TryRaycastReferenceGround(p, origin, down, eyeZ);
-                    if (hit is { } h && (best is null || h > best)) best = h;
+                    CollisionMesh? collision = null;
+                    if (_referenceMeshCache12 is not null)
+                    {
+                        _referenceMeshCache12.TryGetCollisionMesh(p.ModelPath!, out collision);
+                    }
+
+                    if (collision is null && (!includeColdObnd || p.Bounds is null))
+                    {
+                        continue; // nothing raycastable for this candidate
+                    }
+
+                    if (p.Bounds is { } b)
+                    {
+                        var scale = p.Scale > 0f ? p.Scale : 1f;
+                        var rx = MathF.Max(MathF.Abs(b.X1), MathF.Abs(b.X2)) * scale;
+                        var ry = MathF.Max(MathF.Abs(b.Y1), MathF.Abs(b.Y2)) * scale;
+                        var r = MathF.Sqrt((rx * rx) + (ry * ry)) + reach; // rotation-safe circumradius
+                        var ddx = centerX - p.X;
+                        var ddy = centerY - p.Y;
+                        if ((ddx * ddx) + (ddy * ddy) > r * r) continue;
+                    }
+
+                    var world = Matrix4x4.Identity;
+                    var inverse = Matrix4x4.Identity;
+                    if (collision is not null)
+                    {
+                        world = PlacedReferenceTransform.ComposeWorldMatrix(
+                            p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
+                        if (!Matrix4x4.Invert(world, out inverse)) continue;
+                    }
+
+                    into.Add(new GroundCandidate(p, collision, world, inverse));
                 }
             }
         }
-
-        return best;
     }
 
-    /// <summary>
-    ///     Intersects the world-space down-ray with one placed reference. Transforms the ray into the
-    ///     mesh's local space (inverting the placement world matrix — rotation/scale exact), raycasts
-    ///     the cached collision triangles, then maps the local hit point back to world to read its Z.
-    ///     Falls back to the rotation-ignoring OBND box top when the collision mesh isn't cached yet.
-    /// </summary>
-    private float? TryRaycastReferenceGround(PlacedReference p, Vector3 worldOrigin, Vector3 worldDir, float eyeZ)
-    {
-        if (_referenceMeshCache12 is not null &&
-            _referenceMeshCache12.TryGetCollisionMesh(p.ModelPath!, out var collision) &&
-            collision is not null)
-        {
-            // Warm mesh: exact triangle raycast. Already constrained to the down-ray → at/below the eye.
-            return RaycastReferenceCollisionWorldZ(p, collision, worldOrigin, worldDir);
-        }
-
-        // Cold-mesh fallback: axis-aligned OBND box top placed at the ref origin (rotation ignored),
-        // gated by the same "at/below the eye" rule so it never yanks the camera onto a roof.
-        if (p.Bounds is not { } b) return null;
-        var scale = p.Scale > 0f ? p.Scale : 1f;
-        if (worldOrigin.X < p.X + b.X1 * scale || worldOrigin.X > p.X + b.X2 * scale) return null;
-        if (worldOrigin.Y < p.Y + b.Y1 * scale || worldOrigin.Y > p.Y + b.Y2 * scale) return null;
-        var top = p.Z + b.Z2 * scale;
-        return top <= eyeZ + GroundRaycastEpsUp ? top : null;
-    }
-
-    /// <summary>
-    ///     Transforms a world ray into one ref's mesh-local space (inverting the placement world
-    ///     matrix — rotation/scale exact), raycasts the cached collision triangles, and maps the hit
-    ///     point back to a world Z. Shared by the down-ray (ground) and up-ray (ceiling) samplers.
-    ///     Returns null when the placement matrix is non-invertible or the ray misses.
-    /// </summary>
     /// <summary>
     ///     Resolves a model path to its cached walk-mode collision mesh for the debug overlay (null when
     ///     not warm yet). Reads <see cref="_referenceMeshCache12" /> live because the overlay renderer is
@@ -141,19 +195,6 @@ public sealed partial class WorldView3DControl
     /// </summary>
     private CollisionMesh? ResolveCollisionMesh(string modelPath)
         => _referenceMeshCache12 is { } cache && cache.TryGetCollisionMesh(modelPath, out var mesh) ? mesh : null;
-
-    private static float? RaycastReferenceCollisionWorldZ(
-        PlacedReference p, CollisionMesh collision, Vector3 worldOrigin, Vector3 worldDir)
-    {
-        var world = PlacedReferenceTransform.ComposeWorldMatrix(p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
-        if (!Matrix4x4.Invert(world, out var inv)) return null;
-
-        var localOrigin = Vector3.Transform(worldOrigin, inv);
-        var localDir = Vector3.TransformNormal(worldDir, inv);
-        if (!collision.RaycastNearest(localOrigin, localDir, out var tLocal)) return null;
-
-        return Vector3.Transform(localOrigin + localDir * tLocal, world).Z;
-    }
 
     /// <summary>
     ///     Walk-mode ceiling lookup for jumps: returns the world Z of the nearest placed-object surface
@@ -165,36 +206,24 @@ public sealed partial class WorldView3DControl
     private float? SampleCeilingHeight(float worldX, float worldY)
     {
         if (_cellGridLookup is null) return null;
-        var eyeZ = _camera.Position.Z;
-        var gx = (int)MathF.Floor(worldX / _cellSize);
-        var gy = (int)MathF.Floor(worldY / _cellSize);
+        // Same one-pass candidate build as the ground capsule (warm collision meshes only — a
+        // not-yet-streamed mesh simply yields no ceiling that frame), so dense cells aren't
+        // re-iterated per call.
+        BuildRaycastCandidates(worldX, worldY, includeColdObnd: false, _ceilingCandidates);
 
+        var eyeZ = _camera.Position.Z;
         var origin = new Vector3(worldX, worldY, eyeZ);
         var up = new Vector3(0f, 0f, 1f);
 
         float? best = null; // lowest surface strictly above the eye
-        for (var dy = -1; dy <= 1; dy++)
+        foreach (var c in _ceilingCandidates)
         {
-            for (var dx = -1; dx <= 1; dx++)
-            {
-                if (!_cellGridLookup.TryGetValue((gx + dx, gy + dy), out var cell)) continue;
-                foreach (var p in cell.PlacedObjects)
-                {
-                    if (string.IsNullOrEmpty(p.ModelPath)) continue;
-                    if (!_showDisabled && p.IsInitiallyDisabled) continue;
-                    if (p.RecordType is "ACHR" or "ACRE") continue; // skinned actors carry no static collision
-                    if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||
-                        RenderableReference.IsImposterModelPath(p.ModelPath) ||
-                        RenderableReference.IsLodDuplicateBaseEditorId(p.BaseEditorId)) continue;
+            var localOrigin = Vector3.Transform(origin, c.InverseWorld);
+            var localDir = Vector3.TransformNormal(up, c.InverseWorld);
+            if (!c.Collision!.RaycastNearest(localOrigin, localDir, out var tLocal)) continue;
 
-                    if (_referenceMeshCache12 is null ||
-                        !_referenceMeshCache12.TryGetCollisionMesh(p.ModelPath!, out var collision) ||
-                        collision is null) continue;
-
-                    var hit = RaycastReferenceCollisionWorldZ(p, collision, origin, up);
-                    if (hit is { } h && h > eyeZ && (best is null || h < best)) best = h;
-                }
-            }
+            var h = Vector3.Transform(localOrigin + localDir * tLocal, c.World).Z;
+            if (h > eyeZ && (best is null || h < best)) best = h;
         }
 
         return best;
