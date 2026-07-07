@@ -168,6 +168,12 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             ["SunPower"] = ReadFloat(d, 16, isBigEndian),
             ["ReflectivityAmount"] = ReadFloat(d, 20, isBigEndian),
             ["FresnelAmount"] = ReadFloat(d, 24, isBigEndian),
+            // Wind/scroll (@0-15/@28-35) feed the noise scroll like FNV's DNAM layer fields; the WATR
+            // fog distances (@36/@40) are Oblivion's depth-fade analog (the WATER000.pso FogParam).
+            ["NoiseLayer1WindSpeed"] = ReadFloat(d, 0, isBigEndian),
+            ["NoiseLayer1WindDir"] = ReadFloat(d, 4, isBigEndian),
+            ["DepthFalloffStart"] = ReadFloat(d, 36, isBigEndian),
+            ["DepthFalloffEnd"] = ReadFloat(d, 40, isBigEndian),
             ["ShallowColor"] = Color(d, 44),
             ["DeepColor"] = Color(d, 48),
             ["ReflectionColor"] = Color(d, 52),

@@ -51,8 +51,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     // _pso: depth-test variant (DSV bound, hardware depth test) used when no scene-depth SRV is
     // available. _psoDepthSample: depth-test OFF (no DSV) used when the host hands us the scene
     // depth as an SRV — occlusion is then done in-shader via the sampled depth (FNV WATER000 path).
+    // The Oblivion pair is the same HLSL compiled with OBLIVION_WATER (view-angle body + single sun
+    // specular — see WaterShaderVariant.OblivionWater000), selected by the profile at draw time.
     private readonly ID3D12PipelineState _pso;
     private readonly ID3D12PipelineState _psoDepthSample;
+    private readonly ID3D12PipelineState _psoOblivion;
+    private readonly ID3D12PipelineState _psoOblivionDepthSample;
 
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _waterCells = new();
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _visibleWaterScratch = new();
@@ -152,6 +156,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             RenderTargetWriteMask = D12.ColorWriteEnable.All,
         };
 
+        var psOblivionBytecode = CompileEmbeddedShader(
+            "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("OBLIVION_WATER", "1"));
+
         var psoDesc = new GraphicsPipelineStateDescription
         {
             RootSignature = rootSignature.RootSignature,
@@ -168,6 +175,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             SampleMask = uint.MaxValue,
         };
         _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        psoDesc.PixelShader = psOblivionBytecode;
+        _psoOblivion = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        psoDesc.PixelShader = psBytecode;
 
         // Depth-sample variant: no hardware depth test and no DSV bound, so the scene depth buffer
         // can be read as an SRV during this pass. Occlusion is done in the shader (discard where the
@@ -181,6 +191,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         };
         psoDesc.DepthStencilFormat = Format.Unknown;
         _psoDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        psoDesc.PixelShader = psOblivionBytecode;
+        _psoOblivionDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
     public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
@@ -386,7 +398,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         // With a scene-depth SRV the host has unbound the DSV + transitioned depth to
         // PIXEL_SHADER_RESOURCE, so use the no-depth-test PSO (occlusion is done in-shader).
         // Otherwise the DSV is still bound → use the hardware-depth-test PSO.
-        cmd.SetPipelineState(_depthBindlessIndex != NoNormalMap ? _psoDepthSample : _pso);
+        var oblivionVariant = _waterProfile.ShaderVariant == WaterShaderVariant.OblivionWater000;
+        cmd.SetPipelineState(_depthBindlessIndex != NoNormalMap
+            ? (oblivionVariant ? _psoOblivionDepthSample : _psoDepthSample)
+            : (oblivionVariant ? _psoOblivion : _pso));
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, srvAlloc.Gpu);
@@ -415,6 +430,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _persistentSrvs.Dispose();
         _pso.Dispose();
         _psoDepthSample.Dispose();
+        _psoOblivion.Dispose();
+        _psoOblivionDepthSample.Dispose();
     }
 
     private int GatherVisibleWater(VisibilityCylinder cylinder)
@@ -560,7 +577,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     // the compile fails X3596 and the whole D3D12 backend init aborts.
     private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
 
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
+    private static byte[] CompileEmbeddedShader(
+        string name, string entryPoint, string profile, params ShaderMacro[] defines)
     {
         var assembly = Assembly.GetExecutingAssembly();
         var resourceName = assembly.GetManifestResourceNames()
@@ -580,7 +598,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 
         var result = Compiler.Compile(
             source,
-            Array.Empty<ShaderMacro>(),
+            defines,
             include: null!,
             entryPoint,
             sourceName: name,

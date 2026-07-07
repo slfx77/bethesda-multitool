@@ -4,22 +4,25 @@ using BethesdaMultitool.Core.Games;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
 /// <summary>
-///     The shader path the water renderer compiles + selects for a game. Currently every game shares
-///     <see cref="FnvWater000" /> — a documented, decompilation-grounded outcome, not a stopgap. The FNV
-///     PC <c>WATER000.pso</c> pixel shader and Skyrim's <c>BSWaterShader</c> (disassembled from
-///     <c>Skyrim - Shaders.bsa</c> → <c>shaders001.fxp</c>; see
-///     <c>tools/GhidraProject/skyrim_water_pixel_shader_decompiled.txt</c>) are the SAME shader on their
-///     RT-free path: identical Shallow→Deep body, Schlick fresnel, dual sun/sky specular and reflection
-///     math. Skyrim's extras (reflection cubemap, refraction RT, displacement simulation) are render-target
-///     / simulation features the viewer cannot reproduce for any game. So per-game water fidelity is the
-///     correct per-game WATR DNAM parse (the colors + scalars), NOT a different RT-free shader. This enum
-///     stays as the extension point for a future game whose RT-free water genuinely diverges.
+///     The shader path the water renderer compiles + selects for a game. FNV's <c>WATER000.pso</c> and
+///     Skyrim's <c>BSWaterShader</c> (disassembled from <c>Skyrim - Shaders.bsa</c> →
+///     <c>shaders001.fxp</c>; see <c>tools/GhidraProject/skyrim_water_pixel_shader_decompiled.txt</c>)
+///     are the SAME shader on their RT-free path — identical Shallow→Deep body, Schlick fresnel, dual
+///     sun/sky specular — so FO3/Skyrim(+) share <see cref="FnvWater000" /> and their per-game fidelity
+///     is the WATR DNAM parse. Oblivion's <c>WATER000.pso</c> genuinely DIVERGES
+///     (<c>tools/GhidraProject/oblivion_water_pixel_shader_decompiled.txt</c>): the body blends
+///     Deep→Shallow by view angle (N·V) rather than the depth column, and the specular is a single sun
+///     glint — hence its own variant.
 /// </summary>
 public enum WaterShaderVariant
 {
-    /// <summary>The RT-free <c>BSWaterShader</c> math (FNV PC <c>WATER000.pso</c>), shared by every game —
-    /// Skyrim's RT-free water is the same shader (RE-confirmed), differing only in its WATR DNAM data.</summary>
+    /// <summary>The RT-free <c>BSWaterShader</c> math (FNV PC <c>WATER000.pso</c>) — FO3/FNV/Skyrim+,
+    /// and the fallback for games without their own decompiled water shader.</summary>
     FnvWater000,
+
+    /// <summary>Oblivion's <c>WATER000.pso</c> on the RT-free path: view-angle (N·V) Deep→Shallow body,
+    /// single sun specular. Compiled from the same HLSL with the <c>OBLIVION_WATER</c> define.</summary>
+    OblivionWater000,
 }
 
 /// <summary>
@@ -84,15 +87,28 @@ public sealed record WaterProfile
     };
 
     /// <summary>
-    ///     The water profile for the loaded game. Every game currently resolves to <see cref="Fnv" /> —
-    ///     the RT-free <c>BSWaterShader</c> math is shared (FNV/FO3 ship the identical <c>WATER000</c> set;
-    ///     Skyrim's water is the same shader on its RT-free path, RE-confirmed — see
-    ///     <see cref="WaterShaderVariant" />). Per-game fidelity comes from the per-game WATR DNAM parse,
-    ///     not from this profile. Kept as a switch (not a constant) so a future game whose RT-free water
-    ///     genuinely diverges can return its own profile here.
+    ///     Oblivion's profile — its <c>WATER000.pso</c> was disassembled from
+    ///     <c>shaderpackage019.sdp</c> (identical bytes in 009/013/017) and diverges from the shared
+    ///     RT-free math, so it gets its own shader variant. The renderer-side tuning matches FNV's:
+    ///     Oblivion has no NNAM (the engine scrolls the <c>textures\water\water00-31.dds</c> sequence),
+    ///     so the noise tile/bias values only feed the shared procedural/normal fallback paths.
+    /// </summary>
+    public static readonly WaterProfile Oblivion = Fnv with
+    {
+        ShaderVariant = WaterShaderVariant.OblivionWater000,
+    };
+
+    /// <summary>
+    ///     The water profile for the loaded game. FNV/FO3 ship the identical <c>WATER000</c> set and
+    ///     Skyrim's RT-free water is the same shader (RE-confirmed — see
+    ///     <see cref="WaterShaderVariant" />), so they resolve to <see cref="Fnv" />, as does every game
+    ///     without its own decompiled water shader (binary-RE-only policy). Oblivion's shader genuinely
+    ///     diverges and resolves to <see cref="Oblivion" />. Per-game color/scalar fidelity comes from
+    ///     the per-game WATR data parse either way.
     /// </summary>
     public static WaterProfile ForGame(BethesdaGame game) => game switch
     {
+        BethesdaGame.Oblivion => Oblivion,
         _ => Fnv,
     };
 }

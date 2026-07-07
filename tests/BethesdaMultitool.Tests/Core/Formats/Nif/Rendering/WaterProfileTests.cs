@@ -30,22 +30,34 @@ public class WaterProfileTests
     }
 
     [Theory]
-    [InlineData(BethesdaGame.Oblivion)]
     [InlineData(BethesdaGame.Skyrim)]
     [InlineData(BethesdaGame.Fallout4)]
     [InlineData(BethesdaGame.Fallout76)]
     [InlineData(BethesdaGame.Morrowind)]
     [InlineData(BethesdaGame.Starfield)]
     [InlineData(BethesdaGame.Unknown)]
-    public void AllGames_ShareTheRtFreeWater000Shader(BethesdaGame game)
+    public void GamesWithoutTheirOwnDecompiledShader_ShareTheRtFreeWater000Shader(BethesdaGame game)
     {
-        // Every game resolves to the shared RT-free WATER000 shader. For Skyrim this is RE-confirmed
+        // These games resolve to the shared RT-free WATER000 shader. For Skyrim this is RE-confirmed
         // (its BSWaterShader reduces to the same RT-free math; see skyrim_water_pixel_shader_decompiled.txt)
         // — per-game fidelity is the WATR DNAM parse, not a different shader. Others have no own shader
         // source and fall back (binary-RE-only: no guessing).
         var profile = WaterProfile.ForGame(game);
         Assert.Same(WaterProfile.Fnv, profile);
         Assert.Equal(WaterShaderVariant.FnvWater000, profile.ShaderVariant);
+    }
+
+    [Fact]
+    public void Oblivion_UsesItsOwnDecompiledShaderVariant()
+    {
+        // Oblivion's WATER000.pso genuinely diverges from the shared RT-free math (view-angle body,
+        // single sun specular — see oblivion_water_pixel_shader_decompiled.txt), so it is the one
+        // game with its own variant. Renderer-side tuning stays the FNV set (Oblivion has no NNAM).
+        var profile = WaterProfile.ForGame(BethesdaGame.Oblivion);
+        Assert.Same(WaterProfile.Oblivion, profile);
+        Assert.Equal(WaterShaderVariant.OblivionWater000, profile.ShaderVariant);
+        Assert.Equal(WaterProfile.Fnv.NoiseTilingWorldUnits, profile.NoiseTilingWorldUnits);
+        Assert.Equal(WaterProfile.Fnv.DepthTieBiasWorldUnits, profile.DepthTieBiasWorldUnits);
     }
 
     [Fact]

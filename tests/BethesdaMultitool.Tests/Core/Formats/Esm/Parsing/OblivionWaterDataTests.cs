@@ -14,9 +14,13 @@ public sealed class OblivionWaterDataTests
     private static byte[] BuildOblivionData()
     {
         var d = new byte[102];
+        BitConverter.GetBytes(15f).CopyTo(d, 0);      // Wind Velocity
+        BitConverter.GetBytes(90f).CopyTo(d, 4);      // Wind Direction
         BitConverter.GetBytes(50f).CopyTo(d, 16);     // SunPower
         BitConverter.GetBytes(0.5f).CopyTo(d, 20);    // Reflectivity
         BitConverter.GetBytes(0.025f).CopyTo(d, 24);  // Fresnel
+        BitConverter.GetBytes(27852.8f).CopyTo(d, 36); // Fog Near
+        BitConverter.GetBytes(163840f).CopyTo(d, 40);  // Fog Far
         // wbByteColors are a byte sequence R,G,B,A.
         d[44] = 0x10; d[45] = 0x20; d[46] = 0x30; d[47] = 0xFF; // Shallow
         d[48] = 0x40; d[49] = 0x50; d[50] = 0x60; d[51] = 0xFF; // Deep
@@ -32,6 +36,13 @@ public sealed class OblivionWaterDataTests
         Assert.Equal(50f, Assert.IsType<float>(props["SunPower"]), 4);
         Assert.Equal(0.5f, Assert.IsType<float>(props["ReflectivityAmount"]), 4);
         Assert.Equal(0.025f, Assert.IsType<float>(props["FresnelAmount"]), 4);
+
+        // Wind (@0/@4) feeds the noise scroll; the WATR fog distances (@36/@40) are Oblivion's
+        // depth-fade analog (WATER000.pso FogParam) under the shared DepthFalloff keys.
+        Assert.Equal(15f, Assert.IsType<float>(props["NoiseLayer1WindSpeed"]), 4);
+        Assert.Equal(90f, Assert.IsType<float>(props["NoiseLayer1WindDir"]), 4);
+        Assert.Equal(27852.8f, Assert.IsType<float>(props["DepthFalloffStart"]), 1);
+        Assert.Equal(163840f, Assert.IsType<float>(props["DepthFalloffEnd"]), 1);
 
         // Packed R | G<<8 | B<<16 — the form WaterAppearance.ExtractColor expects.
         Assert.Equal(0x00_30_20_10u, Assert.IsType<uint>(props["ShallowColor"]));

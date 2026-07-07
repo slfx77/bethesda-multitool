@@ -2,6 +2,13 @@
 // disassembled from Data/Shaders/shaderpackage019.sdp with fxc /dumpbin. Full analysis +
 // raw disassembly: tools/GhidraProject/water_pc_pixel_shader_decompiled.txt.
 //
+// OBLIVION_WATER (compile-time define) selects Oblivion's WATER000.pso math where it genuinely
+// diverges (tools/GhidraProject/oblivion_water_pixel_shader_decompiled.txt): the body color blends
+// Deep→Shallow by the VIEW ANGLE (N·V), not the depth column, and the specular is a single
+// sun glint (no sky-glint term). Everything else (Schlick fresnel with F0 = WATR Fresnel Amount,
+// ReflectionColor × Reflectivity on the RT-free path, distance fog) is shared. The FNV permutation
+// is textually unchanged when the define is absent.
+//
 // The engine shader composites: reflection RT, refraction RT, a depth-map water-column factor,
 // a single NNAM normal tap, a Schlick fresnel, a dual sun/sky specular, and distance fog. Our
 // viewer has no reflection/refraction/depth render targets, so we reproduce the engine's RT-free
@@ -248,9 +255,16 @@ float4 main(PSInput input) : SV_Target
 
     float ndotv = saturate(dot(N, V));
 
+#if OBLIVION_WATER
+    // Oblivion body color: lerp(Deep, Shallow, N·V) — the view ANGLE picks the body tint
+    // (grazing = deep, top-down = shallow); Oblivion's PS has no depth-column body term and no
+    // body sun modulation (sun enters via the specular only).
+    float3 body = lerp(uDeep.rgb, uShallow.rgb, ndotv);
+#else
     // FNV body color: lerp(Shallow, Deep, depthT), softly lit by the key light.
     float3 body = lerp(uShallow.rgb, uDeep.rgb, depthT);
     body *= lerp(0.6, 1.0, saturate(dot(N, sunDir)));
+#endif
 
     // Reflected view vector — used for both the sky-reflection tint and the sun specular below.
     float3 R = reflect(-V, N);
@@ -268,10 +282,17 @@ float4 main(PSInput input) : SV_Target
     float F = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
     float3 color = lerp(body, refl, saturate(F));
 
+#if OBLIVION_WATER
+    // Oblivion single specular: pow(dot(reflect(-V,N), SunDir), Sun Power) × SunColor — no
+    // sky-glint term in WATER000.pso.
+    float sunSpec = pow(saturate(dot(R, sunDir)), specExp);
+    color += sunSpec * sunCol;
+#else
     // FNV dual specular: sharp sun glint off the reflected view vector + a fixed sky-glint term.
     float sunSpec = pow(saturate(dot(R, sunDir)), specExp);
     float skyGlint = pow(saturate(dot(float2(N.x, N.z), float2(-0.57, 0.82))), 100.0);
     color += (sunSpec + skyGlint) * sunCol;
+#endif
 
     float alpha = lerp(0.6, 0.95, saturate(F));
     return float4(ApplyFog(saturate(color), input.vWorldPos), alpha);
