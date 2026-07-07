@@ -49,6 +49,78 @@ public sealed class AtmosphereStateTests
     }
 
     [Fact]
+    public void Resolve_PrefersDalcDirectionalAmbient_OverNam0AmbientRow()
+    {
+        // FO4 authors the NAM0 Ambient row near-black at night (CommonwealthClear Night = (2,2,2))
+        // and lights exteriors from the DALC directional-ambient cube instead (night mean ≈
+        // (18,26,34)). When the weather carries a DirectionalAmbient, it must win over the row —
+        // sourcing ambient from NAM0 rendered FO4 nights pitch black.
+        var black = new WeatherRgba(2, 2, 2, 255);
+        var nam0 = new WeatherColor(black, black, black, black);
+        var dalcNight = new WeatherRgba(18, 26, 34, 255);
+        var weather = new WeatherRecord
+        {
+            // Ambient is NAM0 category 3 — fill 0..3 so the index resolves.
+            Colors = [nam0, nam0, nam0, nam0],
+            DirectionalAmbient = new WeatherColor(dalcNight, dalcNight, dalcNight, dalcNight)
+        };
+
+        var midnight = AtmosphereState.Resolve(0f, weather, CleanTiming);
+
+        Assert.Equal(18f / 255f, midnight.AmbientColor.X, 3);
+        Assert.Equal(26f / 255f, midnight.AmbientColor.Y, 3);
+        Assert.Equal(34f / 255f, midnight.AmbientColor.Z, 3);
+    }
+
+    [Fact]
+    public void Resolve_ModernWeatherAtNight_HandsDirectionalToTheMoon()
+    {
+        // Skyrim+/FO4: once the sun is fully down, the scene's directional light aims at the moon,
+        // colored by the NAM0 Sunlight NIGHT band (CommonwealthClear: (53,70,87)). Gated on the
+        // weather carrying DALC — the modern-weather marker.
+        var moonBlue = new WeatherRgba(53, 70, 87, 255);
+        var sunlight = new WeatherColor(moonBlue, new WeatherRgba(225, 225, 225, 255), moonBlue, moonBlue);
+        var gray = new WeatherRgba(64, 64, 64, 255);
+        var filler = new WeatherColor(gray, gray, gray, gray);
+        var dalc = new WeatherRgba(18, 26, 34, 255);
+        var weather = new WeatherRecord
+        {
+            Colors = [filler, filler, filler, filler, sunlight],
+            DirectionalAmbient = new WeatherColor(dalc, dalc, dalc, dalc)
+        };
+        var moonDir = Vector3.Normalize(new Vector3(0.2f, 0.3f, 0.8f));
+
+        var midnight = AtmosphereState.Resolve(0f, weather, CleanTiming, moonlightDirection: moonDir);
+
+        Assert.Equal(moonDir.X, midnight.SunWorldDirection.X, 4);
+        Assert.Equal(moonDir.Z, midnight.SunWorldDirection.Z, 4);
+        Assert.Equal(53f / 255f, midnight.SunColor.X, 3);
+        Assert.Equal(87f / 255f, midnight.SunColor.Z, 3);
+        // Sun-keyed consumers (specular scale, moon-billboard fade) must still read "night".
+        Assert.Equal(0f, midnight.SunIntensity);
+    }
+
+    [Fact]
+    public void Resolve_MoonlightIgnored_WithoutDalc_AndBelowHorizon()
+    {
+        // FNV/FO3 weathers carry no DALC — their decompile-grounded ambient-only night must not
+        // gain a moon directional. And a set moon (Z ≤ 0) never lights the scene.
+        var gray = new WeatherRgba(64, 64, 64, 255);
+        var filler = new WeatherColor(gray, gray, gray, gray);
+        var fnvLike = new WeatherRecord { Colors = [filler, filler, filler, filler, filler] };
+
+        var noDalc = AtmosphereState.Resolve(0f, fnvLike, CleanTiming,
+            moonlightDirection: Vector3.UnitZ);
+        Assert.Equal(Vector3.Zero, noDalc.SunColor);
+
+        var dalc = new WeatherRgba(18, 26, 34, 255);
+        var modern = fnvLike with { DirectionalAmbient = new WeatherColor(dalc, dalc, dalc, dalc) };
+        var moonSet = AtmosphereState.Resolve(0f, modern, CleanTiming,
+            moonlightDirection: new Vector3(0.7f, 0.7f, -0.2f));
+        Assert.Equal(Vector3.Zero, moonSet.SunColor);
+    }
+
+    [Fact]
     public void Resolve_LightingDisabled_ZeroesSunButKeepsSky()
     {
         var a = AtmosphereState.Resolve(12f, lightingEnabled: false);

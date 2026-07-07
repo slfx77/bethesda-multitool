@@ -75,6 +75,18 @@ public record WeatherRecord
     /// <summary>RNAM "Y Cloud Speeds": per-layer V-axis scroll rate, normalized like <see cref="CloudSpeedsX" />.</summary>
     public IReadOnlyList<float> CloudSpeedsY { get; init; } = [];
 
+    /// <summary>
+    ///     DALC "Directional Ambient Lighting Colors" reduced to the per-time-band MEAN of the
+    ///     six-direction ambient cube (X±/Y±/Z±). Skyrim+ engines light exteriors from this cube,
+    ///     NOT the NAM0 Ambient row — FO4 authors that row near-black (CommonwealthClear Night =
+    ///     (2,2,2) vs its DALC night mean ≈ (18,26,34)), so sourcing ambient from NAM0 rendered
+    ///     FO4 nights pitch black. One DALC subrecord per time band (Skyrim 4; FO4/FO76 8 at form
+    ///     version 111+ — the 4 base bands + interpolation aids, same order as NAM0). Null when
+    ///     the record carries no DALC (FO3/FNV always). Directional (full-cube) shading is a
+    ///     possible future upgrade; the mean is the single-ambient reduction.
+    /// </summary>
+    public WeatherColor? DirectionalAmbient { get; init; }
+
     /// <summary>DATA block (wind speed, sun glare, precipitation timing, flags, lightning color).</summary>
     public WeatherData? Data { get; init; }
 

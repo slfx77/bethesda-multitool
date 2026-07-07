@@ -271,6 +271,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         var cloudLayers = new SortedDictionary<int, string>();
         IReadOnlyList<WeatherColor>? colors = null;
         IReadOnlyList<WeatherColor>? cloudColors = null;
+        List<WeatherRgba>? directionalAmbientBands = null;
         IReadOnlyList<WeatherCloudAlpha>? cloudAlphas = null;
         float[]? cloudSpeedsX = null;
         float[]? cloudSpeedsY = null;
@@ -371,6 +372,15 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "RNAM":
                     cloudSpeedsY = ReadCloudSpeeds(subData, record.IsBigEndian, Context.Game);
                     break;
+                // DALC "Directional Ambient Lighting Colors" (xEdit wbAmbientColors): six RGBA byte
+                // colors (X+/X−/Y+/Y−/Z+/Z−) + specular RGBA + fresnel float — ONE SUBRECORD PER
+                // TIME BAND, in NAM0 band order (Skyrim 4; FO4/FO76 8 at form version 111+).
+                // Skyrim+ engines light exteriors from this cube, not the NAM0 Ambient row; each
+                // band reduces to the directions' mean for the single-ambient atmosphere.
+                // Structural — no FO3/FNV record carries DALC.
+                case "DALC" when sub.DataLength >= 24:
+                    (directionalAmbientBands ??= []).Add(ReadDirectionalAmbientMean(subData, record.IsBigEndian));
+                    break;
                 // FNAM "Fog Distances": 6 floats (24 bytes).
                 case "FNAM" when sub.DataLength >= 4:
                     fogDistances = ReadFogDistances(subData, record.IsBigEndian);
@@ -392,6 +402,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             // cloud dome shape to the ordinal-th layer.
             CloudLayerTextures = cloudLayers.Count == 0 ? [] : cloudLayers.Values.ToList(),
             Colors = colors ?? [],
+            DirectionalAmbient = BuildDirectionalAmbient(directionalAmbientBands),
             CloudColors = cloudColors ?? [],
             CloudLayerAlphas = cloudAlphas ?? [],
             CloudSpeedsX = cloudSpeedsX ?? [],
@@ -627,6 +638,39 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         }
 
         return 6;
+    }
+
+    // One DALC band → the arithmetic mean of its six direction colors (X+/X−/Y+/Y−/Z+/Z−, the
+    // first 24 bytes; the trailing specular + fresnel are not read). The mean is the single-color
+    // reduction of the engine's ambient cube — Bethesda authors up-facing directions dimmer (the
+    // sun already lights those) and down/occluded faces brighter, so the mean tracks the overall
+    // authored ambient level per band.
+    internal static WeatherRgba ReadDirectionalAmbientMean(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        int r = 0, g = 0, b = 0;
+        for (var i = 0; i < 6; i++)
+        {
+            var c = ReadRgba(data.Slice(i * 4, 4), isBigEndian);
+            r += c.R;
+            g += c.G;
+            b += c.B;
+        }
+
+        return new WeatherRgba((byte)(r / 6), (byte)(g / 6), (byte)(b / 6), 255);
+    }
+
+    // Assembles the per-band DALC means into a WeatherColor in NAM0 band order (Sunrise/Day/
+    // Sunset/Night; FO4's four extra interpolation-aid bands are ignored, like the colors). The
+    // HighNoon/Midnight peaks are left unauthored so the band blend falls back to Day/Night.
+    private static WeatherColor? BuildDirectionalAmbient(List<WeatherRgba>? bands)
+    {
+        if (bands is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        WeatherRgba Band(int i) => bands[Math.Min(i, bands.Count - 1)];
+        return new WeatherColor(Band(0), Band(1), Band(2), Band(3));
     }
 
     private static WeatherRgba ReadRgba(ReadOnlySpan<byte> band, bool isBigEndian)

@@ -116,7 +116,8 @@ public static class AtmosphereState
         float gameHour,
         WeatherRecord? weather = null,
         ClimateTiming? climate = null,
-        bool lightingEnabled = true)
+        bool lightingEnabled = true,
+        Vector3? moonlightDirection = null)
     {
         var hour = WrapHour(gameHour);
         var (srB, srE, ssB, ssE) = NormalizeWindows(climate ?? ClimateTiming.Default);
@@ -172,6 +173,16 @@ public static class AtmosphereState
             fogColor = SampleBandV(NightTint, TwilightFog, DayFog, TwilightFog, hour, srB, srE, ssB, ssE);
         }
 
+        // Skyrim+/FO4 light exteriors from the weather's DALC directional-ambient cube, not the
+        // NAM0 "Ambient" row — FO4 authors that row near-black (CommonwealthClear Night = (2,2,2)
+        // vs its DALC night mean ≈ (18,26,34)), which rendered FO4 nights pitch black. The parse
+        // reduces the six-direction cube to its per-band mean; when present it wins over the NAM0
+        // row / placeholder. FO3/FNV weathers carry no DALC, so their ambient is unchanged.
+        if (weather?.DirectionalAmbient is { } ambientCube)
+        {
+            ambient = SampleBand(ambientCube, hour, srB, srE, ssB, ssE);
+        }
+
         // Fade the directional sun colour by the daylight fraction. GROUNDED in Sky::UpdateColors
         // (atmosphere_decompiled.txt): the engine modulates the Sunlight (cat 4) colour by a daylight
         // factor (sky+0x100), so the directional vanishes as the sun sets. This fixes BOTH night bugs with
@@ -183,6 +194,23 @@ public static class AtmosphereState
         // (`mad NdotL, PSLightColor, Ambient`) — the fade is baked into PSLightColor here, as the engine does.
         var sunColor = lightingEnabled ? sunColorBase * day : Vector3.Zero;
         var sunIntensity = lightingEnabled ? day : 0f;
+
+        // Moonlit night directional (Skyrim+/FO4-family): once the sun is fully down the engine
+        // hands the scene's directional light to the MOON, colored by the NAM0 Sunlight NIGHT band
+        // (CommonwealthClear authors (53,70,87) — dim blue moonlight; the abrupt sun→moon handover
+        // at the window edge is engine behavior — Skyrim's visible night "shadow flip"). Without
+        // this, the DALC ambient alone leaves FO4 nights reading near-black. Gated on the weather
+        // carrying DALC (the modern-weather marker — FNV/FO3 keep their decompile-grounded
+        // ambient-only nights) and on the moon being above the horizon. sunColorBase already
+        // samples the NIGHT Sunlight column at night hours. SunIntensity stays 0 so sun-keyed
+        // consumers (specular scale, moon-billboard fade, cloud daylight tint) are unaffected.
+        if (lightingEnabled && day <= 0f &&
+            moonlightDirection is { Z: > 0f } moonDir &&
+            weather?.DirectionalAmbient is not null)
+        {
+            sunDir = Vector3.Normalize(moonDir);
+            sunColor = sunColorBase;
+        }
 
         // Distance fog (grounded in Sky::UpdateFog): the engine blends day↔night near/far/power by the
         // daylight fraction — the same windowed factor as the colors — reading the WTHR FNAM floats

@@ -110,8 +110,17 @@ public sealed partial class WorldView3DControl
         // overlay passes its own lighting-enabled flag as enableLighting with _showLighting left true).
         var gameHour = gameHourOverride ?? _gameHour;
         var lightingOn = enableLighting && _showLighting;
+        // Night directional: pass the primary moon's sky direction so Resolve can hand the scene
+        // light from the sun to the MOON once the sun is fully down (modern weathers only — the
+        // handover is gated on the weather carrying DALC). Same orbit the moon billboard draws on,
+        // so night N·L shading matches the visible moon position.
+        System.Numerics.Vector3? moonlight = MoonProfile.HasMoon
+            ? BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.MoonSky.ComputeMoonDirection(
+                MoonProfile.PrimaryOrbit, gameHour, _gameDay)
+            : null;
         var resolved = AtmosphereState.Resolve(
-            gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: lightingOn);
+            gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: lightingOn,
+            moonlightDirection: moonlight);
         // Camera-relative: the scene VS subtract CameraOrigin from each world vertex and the camera
         // sits at the origin, so the shader's "camera position" (used by fog distance + specular view dir)
         // is 0 and CameraOrigin carries the real camera pos. Absolute mode (top-down capture / flag off)

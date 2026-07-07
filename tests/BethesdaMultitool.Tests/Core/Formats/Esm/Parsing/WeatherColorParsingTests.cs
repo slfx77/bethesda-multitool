@@ -40,6 +40,30 @@ public class WeatherColorParsingTests
     }
 
     [Fact]
+    public void ReadDirectionalAmbientMean_AveragesTheSixDirectionsOnly()
+    {
+        // One DALC band: six direction colors (X+/X−/Y+/Y−/Z+/Z−) + specular RGBA + fresnel float
+        // (32 bytes, the FO4 layout). The mean must cover ONLY the six directions — folding the
+        // trailing specular in would skew every band bright.
+        var data = new byte[32];
+        for (var d = 0; d < 6; d++)
+        {
+            data[d * 4 + 0] = (byte)((d + 1) * 6);  // R: 6..36  → mean 21
+            data[d * 4 + 1] = (byte)((d + 1) * 12); // G: 12..72 → mean 42
+            data[d * 4 + 2] = (byte)((d + 1) * 18); // B: 18..108 → mean 63
+            data[d * 4 + 3] = 0xFF;
+        }
+
+        data[24] = 255; // specular R — must not participate
+        data[25] = 255;
+        data[26] = 255;
+
+        var mean = MiscEnvironmentHandler.ReadDirectionalAmbientMean(data, false);
+
+        Assert.Equal(new WeatherRgba(21, 42, 63, 255), mean);
+    }
+
+    [Fact]
     public void ReadWeatherColors_SixBands_Uses24ByteStride()
     {
         var colors = MiscEnvironmentHandler.ReadWeatherColors(BuildCategoryBuffer(2, 6), false, 6);
