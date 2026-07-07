@@ -118,8 +118,19 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
                 + uCameraRight.xyz * (input.aBitangent.x * scale)
                 + uCameraUp.xyz    * (input.aBitangent.y * scale),
             1.0);
-        // STLEAF shaders light each billboard from the per-leaf normal/leaf-base data, not a fixed up vector.
-        o.vWorldNormal = normalize(mul((float3x3)world, input.aNormal));
+        // STLEAF per-corner normal puff (PC STLEAF000.vso: N = normalize(normalize(cornerDir) ·
+        // LeafLighting.y + leafNormal)): each corner's normal leans outward along its card offset,
+        // so the card shades like a rounded leaf cluster instead of a flat plate. uCameraRight.w
+        // carries the LeafLighting.y adjust (0 = flat per-leaf normal). Pivot corners can sit at a
+        // zero offset — guard the normalize.
+        float3 leafN = normalize(mul((float3x3)world, input.aNormal));
+        float2 cornerOff = input.aBitangent.xy;
+        if (uCameraRight.w > 0.0 && dot(cornerOff, cornerOff) > 1e-8)
+        {
+            float3 cornerDir = normalize(uCameraRight.xyz * cornerOff.x + uCameraUp.xyz * cornerOff.y);
+            leafN = normalize(leafN + cornerDir * uCameraRight.w);
+        }
+        o.vWorldNormal = leafN;
     }
     else
     {

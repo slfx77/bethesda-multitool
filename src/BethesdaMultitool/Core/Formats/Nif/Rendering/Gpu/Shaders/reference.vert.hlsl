@@ -110,6 +110,14 @@ VSOutput main(VSInput input)
     // Uniform scale only — pass the normal through the world rotation (3x3 sub-matrix). For
     // non-uniform scale we'd want the inverse-transpose, but Bethesda REFR.Scale is uniform.
     o.vWorldNormal = mul((float3x3)uWorld, input.aNormal);
+    // STLEAF per-corner normal puff for leaf cards on the blended path — same formula as
+    // reference_instanced.vert.hlsl (uCameraRight.w = LeafLighting.y adjust); inert for the
+    // emissive baked particle clouds that also take this branch.
+    if (uTextureState.y > 0.5 && uCameraRight.w > 0.0 && dot(input.aBitangent.xy, input.aBitangent.xy) > 1e-8)
+    {
+        float3 cornerDir = normalize(uCameraRight.xyz * input.aBitangent.x + uCameraUp.xyz * input.aBitangent.y);
+        o.vWorldNormal = normalize(normalize(o.vWorldNormal) + cornerDir * uCameraRight.w);
+    }
     o.vTexCoord = input.aTexCoord;
     o.vVertexColor = input.aVertexColor;
     o.vTangent = mul((float3x3)uWorld, input.aTangent);

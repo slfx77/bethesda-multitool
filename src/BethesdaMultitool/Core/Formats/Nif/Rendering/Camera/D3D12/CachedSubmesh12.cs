@@ -49,7 +49,10 @@ internal sealed class CachedSubmesh12
 
             var state = new Vector4(
                 Normal.NormalDecodeMode == GpuNormalDecodeMode.Bc5ReconstructZ ? 1f : 0f,
-                IsLeafBillboard ? 1f : 0f, // .y > 0.5 routes the instanced VS to the leaf-billboard branch
+                // .y > 0.5 routes the instanced VS to the leaf-billboard branch; 2 additionally marks
+                // an ALPHA-TESTED leaf card (SPT leaves — the PS boosts test alpha by texture LOD to
+                // undo mip alpha decay; baked particle clouds are blends and stay at 1).
+                IsLeafBillboard ? (AlphaTest ? 2f : 1f) : 0f,
                 SpecularMap is not null ? 1f : 0f, // .z > 0.5 = sample TexIndices.z for the spec mask
                 GradientMap is not null ? GradientMapV : -1f); // .w >= 0 = palette row for TexIndices.w
             if (TexturesReady)
