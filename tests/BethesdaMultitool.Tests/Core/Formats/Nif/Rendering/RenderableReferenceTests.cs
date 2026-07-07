@@ -351,4 +351,43 @@ public sealed class RenderableReferenceTests
         Assert.True(RenderableReference.TryBuild(imposter)!.Value.IsImposter);
         Assert.False(RenderableReference.TryBuild(full)!.Value.IsImposter);
     }
+
+    [Theory]
+    // FO4-era LOD-duplicate statics: the base STAT's EditorID carries the marker; its MODL is the
+    // NORMAL full-detail mesh (only MNAM points at LOD\*.nif), so the path checks can't catch it.
+    [InlineData("MetalIntCeilingA1x1Mid01_LOD")]
+    [InlineData("MetalIntCeilingA1x1Mid01Dam01_lod")] // case-insensitive
+    public void IsLodDuplicateBaseEditorId_LodDuplicates_ReturnTrue(string editorId)
+    {
+        Assert.True(RenderableReference.IsLodDuplicateBaseEditorId(editorId));
+    }
+
+    [Theory]
+    [InlineData("MetalIntCeilingA1x1Mid01")] // the real sibling STAT
+    [InlineData("BldWindowLODGlow01")] // contains "LOD" but no _LOD suffix
+    [InlineData(null)]
+    [InlineData("")]
+    public void IsLodDuplicateBaseEditorId_NormalBases_ReturnFalse(string? editorId)
+    {
+        Assert.False(RenderableReference.IsLodDuplicateBaseEditorId(editorId));
+    }
+
+    [Fact]
+    public void TryBuild_LodDuplicateBaseEditorId_SetsIsImposter()
+    {
+        // Fallout4.esm 0x00240506 MetalIntCeilingA1x1Mid01_LOD: a visible-when-distant duplicate ref
+        // whose MODL is the SAME full-detail NIF as the real 0x000E6316 placement — drawing both
+        // z-fights the ceiling. The base EditorID is the only stable signal (model path is normal).
+        var lodDuplicate = new PlacedReference
+        {
+            FormId = 0x1, BaseFormId = 0x00240506, RecordType = "REFR",
+            BaseEditorId = "MetalIntCeilingA1x1Mid01_LOD",
+            ModelPath = "Architecture\\Buildings\\Metal\\MetalIntCeilingA1x1Mid01.nif",
+            X = 0f, Y = 0f, Z = 0f, Scale = 1f
+        };
+        var real = lodDuplicate with { BaseFormId = 0x000E6316, BaseEditorId = "MetalIntCeilingA1x1Mid01" };
+
+        Assert.True(RenderableReference.TryBuild(lodDuplicate)!.Value.IsImposter);
+        Assert.False(RenderableReference.TryBuild(real)!.Value.IsImposter);
+    }
 }

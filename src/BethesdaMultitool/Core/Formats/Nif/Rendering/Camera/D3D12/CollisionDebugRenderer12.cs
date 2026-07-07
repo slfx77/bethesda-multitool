@@ -169,7 +169,8 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
                 if (!ShowDisabled && p.IsInitiallyDisabled) continue;
                 if (p.RecordType is "ACHR" or "ACRE") continue; // skinned actors carry no static collision
                 if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||
-                    RenderableReference.IsImposterModelPath(p.ModelPath)) continue;
+                    RenderableReference.IsImposterModelPath(p.ModelPath) ||
+                    RenderableReference.IsLodDuplicateBaseEditorId(p.BaseEditorId)) continue;
 
                 var mesh = CollisionResolver(p.ModelPath!);
                 if (mesh is null) continue;

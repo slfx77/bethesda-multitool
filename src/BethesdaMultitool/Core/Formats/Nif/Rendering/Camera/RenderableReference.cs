@@ -139,6 +139,21 @@ internal readonly record struct RenderableReference(
     }
 
     /// <summary>
+    ///     True when the placement's BASE record is an FO4-era LOD-duplicate static: a STAT whose
+    ///     EditorID ends in <c>_LOD</c> (e.g. <c>MetalIntCeilingA1x1Mid01_LOD</c>). Its MODL is the
+    ///     SAME full-detail mesh as its normal sibling STAT — only its MNAM carries the real
+    ///     <c>LOD\*.nif</c> — and Bethesda places it as an extra visible-when-distant ref purely to
+    ///     seed distant-LOD generation, coincident with the real ref (Fallout4.esm: 29 such STATs,
+    ///     225 refs). Drawing it double-renders the full mesh on top of itself (z-fighting). The
+    ///     model PATH is the normal mesh, so <see cref="IsImposterModelPath" /> cannot catch these;
+    ///     the EditorID suffix is the stable marker (no <c>*_LOD</c> STATs exist in the FNV or
+    ///     Skyrim SE masters — verified by header sweep 2026-07-06).
+    /// </summary>
+    public static bool IsLodDuplicateBaseEditorId(string? baseEditorId)
+        => !string.IsNullOrEmpty(baseEditorId) &&
+           baseEditorId.EndsWith("_LOD", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     ///     Builds a <see cref="RenderableReference" /> from a <see cref="PlacedReference" />.
     ///     Returns <c>null</c> for ACHR/ACRE (skinned actors — deferred to v4), refs without a
     ///     resolved model path, or refs the renderer cannot place (e.g. NaN coordinates).
@@ -182,7 +197,8 @@ internal readonly record struct RenderableReference(
             MeshId: meshId,
             IsInitiallyDisabled: placement.IsInitiallyDisabled,
             IsMarker: IsMarkerModelPath(placement.ModelPath),
-            IsImposter: IsImposterModelPath(placement.ModelPath),
+            IsImposter: IsImposterModelPath(placement.ModelPath) ||
+                        IsLodDuplicateBaseEditorId(placement.BaseEditorId),
             Category: category,
             AlternateTextures: alternateTextures);
     }

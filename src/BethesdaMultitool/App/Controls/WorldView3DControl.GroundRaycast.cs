@@ -90,7 +90,8 @@ public sealed partial class WorldView3DControl
                     if (!_showDisabled && p.IsInitiallyDisabled) continue;
                     if (p.RecordType is "ACHR" or "ACRE") continue; // skinned actors carry no static collision
                     if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||
-                        RenderableReference.IsImposterModelPath(p.ModelPath)) continue;
+                        RenderableReference.IsImposterModelPath(p.ModelPath) ||
+                        RenderableReference.IsLodDuplicateBaseEditorId(p.BaseEditorId)) continue;
 
                     var hit = TryRaycastReferenceGround(p, origin, down, eyeZ);
                     if (hit is { } h && (best is null || h > best)) best = h;
@@ -183,7 +184,8 @@ public sealed partial class WorldView3DControl
                     if (!_showDisabled && p.IsInitiallyDisabled) continue;
                     if (p.RecordType is "ACHR" or "ACRE") continue; // skinned actors carry no static collision
                     if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||
-                        RenderableReference.IsImposterModelPath(p.ModelPath)) continue;
+                        RenderableReference.IsImposterModelPath(p.ModelPath) ||
+                        RenderableReference.IsLodDuplicateBaseEditorId(p.BaseEditorId)) continue;
 
                     if (_referenceMeshCache12 is null ||
                         !_referenceMeshCache12.TryGetCollisionMesh(p.ModelPath!, out var collision) ||
