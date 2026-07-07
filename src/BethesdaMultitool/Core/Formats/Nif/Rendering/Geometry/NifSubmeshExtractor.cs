@@ -941,14 +941,21 @@ internal static class NifSubmeshExtractor
             }
         }
 
-        // BSMeshLODTriShape partitions its triangle buffer into up to three consecutive LOD slices
-        // (LOD0/LOD1/LOD2 sizes trail the block); each slice is a COMPLETE standalone representation
-        // the engine picks by distance, not an additive refinement. Drawing the whole buffer renders
-        // the full-detail mesh AND its simplified LOD copies on top of each other (z-fighting
-        // duplicates). Render the first non-empty slice — the highest-detail representation
-        // (TreeElmFree01: LOD0=1191 full tree; VineHanging05 authors everything in LOD2).
-        var firstTriangle = 0;
-        var triangleCount = info.NumTriangles;
+        // BSMeshLODTriShape partitions its triangle buffer into up to three consecutive LOD SEGMENTS
+        // (sizes trail the block). Full detail draws ALL segments (NifSkope bsshape.cpp
+        // updateLodLevel draws the cumulative prefix; fo76utils reads the whole buffer) — the
+        // segments are COMPLEMENTARY geometry sets, not alternate whole-mesh representations:
+        // WoodCrate03 keeps its outer bracing boards only in segment 2 (segment 0 alone loses 28%
+        // of the crate), and workshop_Res01ModernRubble02B:18 authors the BULK of its rubble in
+        // segment 2 (208-of-6658-tri segment 0). The earlier "first non-empty slice" model
+        // amputated those. Two data-verified exceptions survive from the alternates era:
+        //  • an EXACT-COPY segment — AABB matching an earlier segment within ~2% with no more
+        //    triangles (MetalIntCeilingA1x1Mid01's LOD2 is a coplanar coarse copy of its LOD0
+        //    panel; drawing both z-fights) — is skipped;
+        //  • a shape whose content is entirely PAST segment 0 (lod0 == 0) is a far stand-in the
+        //    engine never draws up close (the rubble's L2-only floor slab, coplanar with its
+        //    separate _Foundation ref) — flagged IsFarLodFallback for the sibling-drop rule.
+        var triangleRanges = new List<(int First, int Count)> { (0, info.NumTriangles) };
         var isFarLodFallback = false;
         if (block.TypeName == "BSMeshLODTriShape" && block.Size >= 12)
         {
@@ -956,39 +963,47 @@ internal static class NifSubmeshExtractor
             var lod0 = (int)BinaryUtils.ReadUInt32(data, lodOffset, be);
             var lod1 = (int)BinaryUtils.ReadUInt32(data, lodOffset + 4, be);
             var lod2 = (int)BinaryUtils.ReadUInt32(data, lodOffset + 8, be);
-            if (lod0 > 0 || lod1 > 0 || lod2 > 0)
+            var lodSum = lod0 + lod1 + lod2;
+            // A malformed partition (sizes exceeding the buffer) falls back to the full buffer.
+            if ((lod0 > 0 || lod1 > 0 || lod2 > 0) && lodSum <= info.NumTriangles)
             {
-                if (lod0 > 0)
+                var segments = new List<(int First, int Count)>(4);
+                var start = 0;
+                foreach (var count in new[] { lod0, lod1, lod2 })
                 {
-                    (firstTriangle, triangleCount) = (0, lod0);
-                }
-                else if (lod1 > 0)
-                {
-                    // LOD0 empty: this slice only ever draws at distance in-engine. Flag it so the
-                    // extractor can drop it when the model has real near-content siblings (the
-                    // imposter would z-fight them up close).
-                    (firstTriangle, triangleCount) = (lod0, lod1);
-                    isFarLodFallback = true;
-                }
-                else
-                {
-                    (firstTriangle, triangleCount) = (lod0 + lod1, lod2);
-                    isFarLodFallback = true;
+                    if (count > 0)
+                    {
+                        segments.Add((start, count));
+                    }
+
+                    start += count;
                 }
 
-                // A malformed partition (sizes exceeding the buffer) falls back to the full buffer.
-                if (firstTriangle + triangleCount > info.NumTriangles)
+                // An unpartitioned tail beyond the LOD sum is real geometry — treat as one more segment.
+                if (lodSum < info.NumTriangles)
                 {
-                    (firstTriangle, triangleCount) = (0, info.NumTriangles);
-                    isFarLodFallback = false;
+                    segments.Add((lodSum, info.NumTriangles - lodSum));
                 }
+
+                triangleRanges = SelectLodSegments(segments, data, info.TriangleBufferOffset, be, positions);
+                isFarLodFallback = lod0 == 0;
             }
         }
 
-        var triangles = new ushort[triangleCount * 3];
-        for (var i = 0; i < triangles.Length; i++)
+        var triangleCount = 0;
+        foreach (var (_, count) in triangleRanges)
         {
-            triangles[i] = BinaryUtils.ReadUInt16(data, info.TriangleBufferOffset + (firstTriangle * 3 + i) * 2, be);
+            triangleCount += count;
+        }
+
+        var triangles = new ushort[triangleCount * 3];
+        var w = 0;
+        foreach (var (first, count) in triangleRanges)
+        {
+            for (var i = 0; i < count * 3; i++)
+            {
+                triangles[w++] = BinaryUtils.ReadUInt16(data, info.TriangleBufferOffset + (first * 3 + i) * 2, be);
+            }
         }
 
         var transformed =
@@ -1007,6 +1022,77 @@ internal static class NifSubmeshExtractor
             BindPosePositions = null,
             IsFarLodFallback = isFarLodFallback
         };
+    }
+
+    /// <summary>
+    ///     Chooses which BSMeshLODTriShape triangle segments to draw. All segments are kept
+    ///     (complementary geometry — see the call site) EXCEPT exact-copy segments: a later segment
+    ///     whose AABB matches an already-kept segment within ~2% of its extents while adding no more
+    ///     triangles is a coarser coplanar duplicate of the same geometry (the ceiling-panel case)
+    ///     and would z-fight it. Deliberately narrow: TreeElmFree01's coarse LOD1 crown copy has a
+    ///     ~25% smaller AABB and is kept (harmless extra alpha cards inside dense foliage, and
+    ///     NifSkope draws it too); WoodCrate03's bracing boards extend past the LOD0 box and are kept.
+    /// </summary>
+    private static List<(int First, int Count)> SelectLodSegments(
+        List<(int First, int Count)> segments,
+        byte[] data,
+        int triangleBufferOffset,
+        bool be,
+        float[] positions)
+    {
+        var kept = new List<(int First, int Count)>(segments.Count);
+        var keptBounds = new List<(Vector3 Min, Vector3 Max)>(segments.Count);
+        foreach (var segment in segments)
+        {
+            var bounds = SegmentBounds(segment, data, triangleBufferOffset, be, positions);
+            var isExactCopy = false;
+            for (var k = 0; k < kept.Count; k++)
+            {
+                if (segment.Count <= kept[k].Count && BoundsMatch(bounds, keptBounds[k]))
+                {
+                    isExactCopy = true;
+                    break;
+                }
+            }
+
+            if (!isExactCopy)
+            {
+                kept.Add(segment);
+                keptBounds.Add(bounds);
+            }
+        }
+
+        return kept;
+    }
+
+    private static (Vector3 Min, Vector3 Max) SegmentBounds(
+        (int First, int Count) segment, byte[] data, int triangleBufferOffset, bool be, float[] positions)
+    {
+        var min = new Vector3(float.PositiveInfinity);
+        var max = new Vector3(float.NegativeInfinity);
+        for (var i = 0; i < segment.Count * 3; i++)
+        {
+            var vi = BinaryUtils.ReadUInt16(data, triangleBufferOffset + (segment.First * 3 + i) * 2, be);
+            if (vi * 3 + 2 >= positions.Length)
+            {
+                continue; // malformed index — bounds stay conservative
+            }
+
+            var p = new Vector3(positions[vi * 3], positions[vi * 3 + 1], positions[vi * 3 + 2]);
+            min = Vector3.Min(min, p);
+            max = Vector3.Max(max, p);
+        }
+
+        return (min, max);
+    }
+
+    // AABBs "match" when every face lies within 2% of the reference's largest extent — tight enough
+    // that only true re-tessellations of the same surface qualify (ceiling LOD2 differs by 0.5%).
+    private static bool BoundsMatch((Vector3 Min, Vector3 Max) a, (Vector3 Min, Vector3 Max) b)
+    {
+        var extent = Vector3.Max(b.Max - b.Min, a.Max - a.Min);
+        var tolerance = MathF.Max(MathF.Max(extent.X, extent.Y), MathF.Max(extent.Z, 1f)) * 0.02f;
+        return (a.Min - b.Min).Length() <= tolerance && (a.Max - b.Max).Length() <= tolerance;
     }
 
     private static (
