@@ -299,10 +299,12 @@ public class SptGeometryBuilderTests
         // the per-leaf wind weight (a [0.15,1] blend factor for the leaf-billboard VS sway), shared by a
         // leaf's four corners, so it is asserted separately from the offset math under test here.
         // Card size = cardScale·Corner1 with cardScale = treeSizeMid = Float2006·10 (×10 engine world scale).
+        // Vertex order follows the ENGINE's texcoord winding (CLeafGeometry::Update): (L,B), (L,T),
+        // (R,T), (R,B) — up the left edge first — so rotated atlas packings orient correctly.
         AssertOffsetXy(offsets, 0, -50f, -300f);
-        AssertOffsetXy(offsets, 1, 150f, -300f);
+        AssertOffsetXy(offsets, 1, -50f, 100f);
         AssertOffsetXy(offsets, 2, 150f, 100f);
-        AssertOffsetXy(offsets, 3, -50f, 100f);
+        AssertOffsetXy(offsets, 3, 150f, -300f);
         var windWeight = offsets[2];
         Assert.InRange(windWeight, 0.15f, 1f);
         Assert.Equal(windWeight, offsets[5], 4);
@@ -342,21 +344,21 @@ public class SptGeometryBuilderTests
     }
 
     [Fact]
-    public void Build_LeafBillboards_CarryUpDominantCanopyNormalForShaderLighting()
+    public void Build_LeafBillboards_CarryMakeLeafLightingNormal()
     {
         var model = MakeSingleLevelLeafModel(leafFrequency: 1f);
 
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
-        // The leaf lighting normal is the soft CANOPY normal: up-dominant (the canopy is lit primarily from
-        // above) with a gentle outward lean for volume. Regressing to a blend of the RAW world-space outward
-        // vector (the units bug) collapses the normal to horizontal (Z≈0), which makes every shadow-side
-        // billboard render BLACK under the shader's saturate(N·L) lighting — the bug this guards against.
+        // The leaf lighting normal is CIdvBranch::MakeLeaf's: lerp(outward-from-branch-origin,
+        // bud direction, texture variance), normalized — the per-leaf normal the engine's STLEAF
+        // shaders consume. For this fixture (a single vertical branch with the leaf near its top),
+        // outward-from-origin points up-hemisphere, so the normal must be unit length with Z > 0.
+        // The previous pin asserted an invented up-DOMINANT "canopy normal" (adversarial review:
+        // that constant blend has no engine counterpart).
         var normal = ReadVector3(result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Normals!, 0);
         Assert.InRange(normal.Length(), 0.99f, 1.01f);
-        Assert.True(normal.Z > 0.7f, $"leaf normal should be up-dominant, was {normal}");
-        Assert.True(normal.Z >= MathF.Sqrt(normal.X * normal.X + normal.Y * normal.Y),
-            $"Z should dominate the horizontal magnitude, was {normal}");
+        Assert.True(normal.Z > 0f, $"outward-from-origin normal on a vertical branch should point up-hemisphere, was {normal}");
     }
 
     [Fact]
@@ -478,7 +480,10 @@ public class SptGeometryBuilderTests
             General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
             Branches =
             [
-                MakeBranch(1f, 0.02f, 4f, 3, 1)
+                // Spawn window (0.8, 1): IsBlossom gates on the bud's RAW percent along its branch
+                // (the engine's percentAlongBranch), so the buds must genuinely sit beyond the 0.75
+                // blossom-distance threshold — a remapped template parameter no longer qualifies.
+                MakeBranch(1f, 0.02f, 4f, 3, 1) with { Float6010 = 0.8f, Float6011 = 1f }
             ],
             Leaves =
             [
