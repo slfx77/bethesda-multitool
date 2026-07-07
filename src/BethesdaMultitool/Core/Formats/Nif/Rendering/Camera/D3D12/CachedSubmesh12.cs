@@ -97,5 +97,16 @@ internal sealed class CachedSubmesh12
     ///     depth-biased PSO variant so the decal wins the depth tie instead of z-fighting.
     /// </summary>
     public bool IsDecal { get; init; }
+
+    /// <summary>BGEM effect tint (base color × scale) multiplied into the source texture RGB;
+    /// (1,1,1) for non-effect materials so the shader term is a no-op.</summary>
+    public Vector3 EffectTint { get; init; } = Vector3.One;
+
+    /// <summary>BGEM |N·V| opacity falloff (startAngle, stopAngle, startOpacity, stopOpacity);
+    /// only consumed when <see cref="HasEffectFalloff" />.</summary>
+    public Vector4 EffectFalloffParams { get; init; }
+
+    /// <summary>True when the effect material enables the view-angle opacity falloff.</summary>
+    public bool HasEffectFalloff { get; init; }
 }
 #endif

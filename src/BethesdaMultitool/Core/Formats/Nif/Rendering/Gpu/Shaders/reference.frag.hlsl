@@ -90,6 +90,8 @@ struct PSInput
     nointerpolation uint4  vTexIndices  : TEXCOORD8;
     float3 vWorldPos    : TEXCOORD9;
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent (0 = none)
+    nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
+    nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
     bool   IsFrontFace  : SV_IsFrontFace;
 };
 
@@ -124,6 +126,12 @@ float4 main(PSInput input) : SV_Target
         sample.rgb = textures[NonUniformResourceIndex(input.vTexIndices.w)].Sample(sDiffuse, gradUv).rgb;
         vertexRgb = 1.0;
     }
+
+    // BGEM effect tint (fo76utils getDiffuseColor_Effect): rgb ×= baseColor × baseColorScale.
+    // (1,1,1) for every non-effect material, so this is a no-op outside effect shapes. Without it
+    // (and the falloff below) crossed-plane mist blobs rendered full-white on every plane and
+    // additively clipped whole scenes.
+    sample.rgb *= input.vEffectTint.rgb;
 
     float sampleAlpha = saturate(sample.a * input.vVertexColor.a);
 
@@ -187,6 +195,19 @@ float4 main(PSInput input) : SV_Target
             float3x3 TBN = float3x3(T, B, normal);
             normal = normalize(mul(mapN, TBN));
         }
+    }
+
+    // BGEM view-angle falloff (fo76utils getDiffuseColor_Effect): opacity ramps
+    // startOpacity→stopOpacity as |N·V| crosses startAngle→stopAngle (cosines; a negative span
+    // works through the same lerp-t formula). This is what fades an effect plane out at grazing
+    // view angles — the term that keeps a crossed-plane mist blob's side planes invisible.
+    if (input.vEffectTint.w > 0.5)
+    {
+        float3 viewDir = normalize(uCameraPosFogPower.xyz - input.vWorldPos);
+        float nv = abs(dot(normal, viewDir));
+        float span = input.vEffectFalloff.y - input.vEffectFalloff.x;
+        float t = (span * span < 1e-8) ? 0.5 : saturate((nv - input.vEffectFalloff.x) / span);
+        sampleAlpha = saturate(sampleAlpha * lerp(input.vEffectFalloff.z, input.vEffectFalloff.w, t));
     }
 
     // Shared atmosphere lighting (rgb). Lighting-off path inside AtmosphereLight reproduces the

@@ -70,6 +70,20 @@ internal sealed class RenderableSubmesh
     /// </summary>
     public bool IsDecal { get; set; }
 
+    /// <summary>
+    ///     Effect-shader color tint: BGEM base color × base color scale, multiplied into the source
+    ///     texture RGB (fo76utils getDiffuseColor_Effect). (1,1,1) for non-effect materials.
+    /// </summary>
+    public (float R, float G, float B) EffectTint { get; set; } = (1f, 1f, 1f);
+
+    /// <summary>
+    ///     Effect view-angle falloff (BGEM): opacity ramps StartOpacity→StopOpacity as |N·V| crosses
+    ///     StartAngle→StopAngle (both stored as cosines). Null when the material has no falloff —
+    ///     the term that fades effect planes at grazing angles; without it crossed-plane mist blobs
+    ///     render every plane at full opacity (blinding additive blooms).
+    /// </summary>
+    public (float StartAngle, float StopAngle, float StartOpacity, float StopOpacity)? EffectFalloff { get; set; }
+
     /// <summary>Shader property metadata resolved from the source NIF.</summary>
     public NifShaderTextureMetadata? ShaderMetadata { get; init; }
 

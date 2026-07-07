@@ -317,6 +317,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // Plus the base-record default swaps (FO4-family MODS = bare MSWP FormID) for placements
         // that carry no XMSP of their own.
         data.RenderCache.BaseMaterialSwapIndex = data.BaseMaterialSwapsByFormId;
+        // And the base-record MODC color remaps (FO4-family gradient-palette row overrides —
+        // shipping-crate colorways).
+        data.RenderCache.BaseColorRemapIndex = data.BaseColorRemapsByFormId;
+        if (data.BaseColorRemapsByFormId.Count > 0)
+        {
+            Log.Info("WorldView3DControl: {0} base-record MODC color remaps.", data.BaseColorRemapsByFormId.Count);
+        }
         _stressBookmarkApplied = false;
 
         // Tear down any prior pipelines (a second LoadData = switching ESMs) so the texture

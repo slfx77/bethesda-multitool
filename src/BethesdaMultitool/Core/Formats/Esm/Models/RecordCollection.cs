@@ -314,6 +314,15 @@ public record RecordCollection
     public IReadOnlyDictionary<uint, uint> BaseMaterialSwapFormIds { get; init; } =
         new Dictionary<uint, uint>();
 
+    /// <summary>
+    ///     Base-object FormID → its <c>MODC</c> "Color Remapping Index" (0–1), FO4-family only. The
+    ///     engine overrides a grayscale-to-palette material's <c>GradientMapV</c> row with this
+    ///     per-base float (fo76utils render.cpp) — it is how one crate NIF + one BGSM yields the
+    ///     Gray/Yellow/Blue shipping-crate colorways. Empty for earlier games.
+    /// </summary>
+    public IReadOnlyDictionary<uint, float> BaseColorRemapIndices { get; init; } =
+        new Dictionary<uint, float>();
+
     /// <summary>FormID to Editor ID mapping built during parsing.</summary>
     public Dictionary<uint, string> FormIdToEditorId { get; init; } = [];
 
@@ -513,6 +522,9 @@ public record RecordCollection
             BaseMaterialSwapFormIds = MergeDictionary(
                 new Dictionary<uint, uint>(BaseMaterialSwapFormIds),
                 new Dictionary<uint, uint>(overlay.BaseMaterialSwapFormIds)),
+            BaseColorRemapIndices = MergeDictionary(
+                new Dictionary<uint, float>(BaseColorRemapIndices),
+                new Dictionary<uint, float>(overlay.BaseColorRemapIndices)),
 
             TotalRecordsProcessed = TotalRecordsProcessed + overlay.TotalRecordsProcessed,
             IsTes3 = IsTes3 || overlay.IsTes3,

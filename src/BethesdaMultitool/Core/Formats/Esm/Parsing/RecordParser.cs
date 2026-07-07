@@ -645,6 +645,7 @@ public sealed class RecordParser
             ModelPathIndex = modelIndex,
             AlternateTexturesByFormId = modsHarvest.AlternateTextures,
             BaseMaterialSwapFormIds = modsHarvest.BaseMaterialSwapFormIds,
+            BaseColorRemapIndices = modsHarvest.BaseColorRemapIndices,
             FormIdToEditorId = new Dictionary<uint, string>(_context.FormIdToEditorId),
             FormIdToDisplayName = _context.BuildFormIdToDisplayNameMap(),
             RuntimeWorldspaceMaps = _context.RuntimeWorldspaceCellMaps != null
@@ -686,6 +687,7 @@ public sealed class RecordParser
                 ModelPathIndex = result.ModelPathIndex,
                 AlternateTexturesByFormId = result.AlternateTexturesByFormId,
                 BaseMaterialSwapFormIds = result.BaseMaterialSwapFormIds,
+                BaseColorRemapIndices = result.BaseColorRemapIndices,
                 RuntimeWorldspaceMaps = result.RuntimeWorldspaceMaps,
                 FormIdToEditorId = result.FormIdToEditorId,
                 FormIdToDisplayName = result.FormIdToDisplayName,

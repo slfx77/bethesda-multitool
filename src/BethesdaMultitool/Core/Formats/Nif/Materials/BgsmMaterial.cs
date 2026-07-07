@@ -116,6 +116,33 @@ public sealed class BgsmMaterial
     /// </summary>
     public float LightingInfluence { get; private set; } = 1f;
 
+    /// <summary>
+    ///     BGEM view-angle falloff enabled (effect materials only): opacity ramps between
+    ///     <see cref="FalloffStartOpacity" /> and <see cref="FalloffStopOpacity" /> as |N·V| crosses
+    ///     the start/stop angles — what fades an effect plane out at grazing view angles. The engine
+    ///     term whose absence rendered crossed-plane mist blobs at FULL opacity on every plane
+    ///     (blinding white blooms).
+    /// </summary>
+    public bool FalloffEnabled { get; private set; }
+
+    /// <summary>Effect base color RGB (0–1 each); multiplies the source texture (effect materials only).</summary>
+    public Vector3 BaseColor { get; private set; } = Vector3.One;
+
+    /// <summary>Effect base color scale (0–8); multiplies <see cref="BaseColor" />.</summary>
+    public float BaseColorScale { get; private set; } = 1f;
+
+    /// <summary>Falloff start angle — cos(angle) where the opacity ramp begins (fo76utils falloffParams[0]).</summary>
+    public float FalloffStartAngle { get; private set; } = 1f;
+
+    /// <summary>Falloff stop angle — cos(angle) where the ramp ends (falloffParams[1]).</summary>
+    public float FalloffStopAngle { get; private set; }
+
+    /// <summary>Opacity at/inside the start angle (falloffParams[2]).</summary>
+    public float FalloffStartOpacity { get; private set; } = 1f;
+
+    /// <summary>Opacity at/beyond the stop angle (falloffParams[3]).</summary>
+    public float FalloffStopOpacity { get; private set; }
+
     /// <summary>Emissive (glow) enabled (lighting materials only).</summary>
     public bool EmissiveEnabled { get; private set; }
 
@@ -330,8 +357,27 @@ public sealed class BgsmMaterial
         }
 
         EffectLightingEnabled = data[pos - 5] != 0;
+        FalloffEnabled = (data[pos - 4] | data[pos - 3]) != 0;
 
-        // base color (RGB + scale) 16 bytes, falloff params 16 bytes, then lighting influence.
+        // Base color (RGB + scale) 16 bytes, falloff params 16 bytes, then lighting influence —
+        // the terms the engine multiplies into every effect fragment (fo76utils
+        // getDiffuseColor_Effect): rgb ×= baseColor × scale; alpha ×= the |N·V| falloff ramp.
+        if (pos + 16 <= data.Length)
+        {
+            BaseColor = new Vector3(
+                ReadClamped01(data, pos), ReadClamped01(data, pos + 4), ReadClamped01(data, pos + 8));
+            BaseColorScale = Math.Clamp(
+                BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos + 12)), 0f, 8f);
+        }
+
+        if (pos + 32 <= data.Length)
+        {
+            FalloffStartAngle = ReadClamped01(data, pos + 16);
+            FalloffStopAngle = ReadClamped01(data, pos + 20);
+            FalloffStartOpacity = ReadClamped01(data, pos + 24);
+            FalloffStopOpacity = ReadClamped01(data, pos + 28);
+        }
+
         var influenceOffset = pos + 32;
         if (influenceOffset + 4 <= data.Length)
         {

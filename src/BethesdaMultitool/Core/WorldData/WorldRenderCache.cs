@@ -69,6 +69,15 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     /// </summary>
     internal IReadOnlyDictionary<uint, uint>? BaseMaterialSwapIndex { get; set; }
 
+    /// <summary>
+    ///     Base-FormID → <c>MODC</c> color-remap index (the owning
+    ///     <see cref="WorldViewData.BaseColorRemapsByFormId" />, FO4-family). Folded into the
+    ///     placement's <see cref="AlternateTextureSet" /> at bake time so the decode overrides the
+    ///     material's gradient-palette row and the mesh cache keys the colorway as its own variant.
+    ///     Null → no color remaps (every game before FO4).
+    /// </summary>
+    internal IReadOnlyDictionary<uint, float>? BaseColorRemapIndex { get; set; }
+
     public string ResourceName => nameof(WorldRenderCache);
 
     public Core.Diagnostics.ResourceCategory Category => Core.Diagnostics.ResourceCategory.CpuCache;
@@ -214,9 +223,11 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         var alternateTextureIndex = AlternateTextureIndex;
         var materialSwapIndex = MaterialSwapIndex;
         var baseMaterialSwapIndex = BaseMaterialSwapIndex;
-        // Interns the merged base-MODS + MSWP set per (base, swap) pair for this cell's bake, so the
-        // hundreds of placements sharing one colorway don't each rebuild an identical set (and the
-        // mesh cache sees one shared VariantKey instance per combination).
+        var baseColorRemapIndex = BaseColorRemapIndex;
+        // Interns the merged base-MODS + MSWP + MODC set per (base, swap) pair for this cell's bake,
+        // so the hundreds of placements sharing one colorway don't each rebuild an identical set
+        // (and the mesh cache sees one shared VariantKey instance per combination). The MODC remap
+        // is a function of the base FormID, so the (base, swap) key stays unique per combination.
         Dictionary<(uint BaseFormId, uint SwapFormId), AlternateTextureSet?>? mergedSwapSets = null;
         var built = new List<RenderableReference>(placements.Count);
         foreach (var p in placements)
@@ -233,7 +244,8 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
             // swap (FO4-family MODS = bare MSWP FormID) covers every placement without one. The
             // winning swap table folds into the base's alternate-texture set so the decode applies
             // the replacement .bgsm materials and the mesh cache keys this placement as its own
-            // variant.
+            // variant. The base's MODC color remap (gradient-palette row override — shipping-crate
+            // colorways) rides the same set, and alone is enough to create one.
             var effectiveSwapFormId = p.MaterialSwapFormId;
             if (effectiveSwapFormId is null && baseMaterialSwapIndex is not null &&
                 baseMaterialSwapIndex.TryGetValue(p.BaseFormId, out var baseSwapFormId))
@@ -241,16 +253,26 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
                 effectiveSwapFormId = baseSwapFormId;
             }
 
-            if (materialSwapIndex is not null && effectiveSwapFormId is { } swapFormId &&
-                materialSwapIndex.TryGetValue(swapFormId, out var swaps))
+            IReadOnlyDictionary<string, string>? swaps = null;
+            if (materialSwapIndex is not null && effectiveSwapFormId is { } swapFormId)
+            {
+                materialSwapIndex.TryGetValue(swapFormId, out swaps);
+            }
+
+            float? colorRemap = baseColorRemapIndex is not null &&
+                                baseColorRemapIndex.TryGetValue(p.BaseFormId, out var remap)
+                ? remap
+                : null;
+
+            if (swaps is not null || colorRemap is not null)
             {
                 mergedSwapSets ??= [];
-                var key = (p.BaseFormId, swapFormId);
+                var key = (p.BaseFormId, effectiveSwapFormId ?? 0u);
                 if (!mergedSwapSets.TryGetValue(key, out var merged))
                 {
                     merged = alternateTextures is null
-                        ? AlternateTextureSet.Create([], swaps)
-                        : AlternateTextureSet.Create(alternateTextures.Overrides, swaps);
+                        ? AlternateTextureSet.Create([], swaps, colorRemap)
+                        : AlternateTextureSet.Create(alternateTextures.Overrides, swaps, colorRemap);
                     mergedSwapSets[key] = merged;
                 }
 

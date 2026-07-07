@@ -76,4 +76,20 @@ public sealed class AlternateTextureSetTests
         Assert.True(set!.Overrides.TryGetValue("bb04:13", out var ov));
         Assert.Equal("textures\\ads\\ultraluxe.dds", ov.Diffuse);
     }
+
+    [Fact]
+    public void Create_ColorRemapAlone_CreatesDistinctSharedVariants()
+    {
+        // FO4 MODC colorways: a bare color-remap index must create a variant (the shipping-crate
+        // STATs carry MODC with no MSWP and no shape overrides), identical values must share one
+        // cached mesh, and different rows (Blue 0.6875 vs Yellow 0.3125) must not collide.
+        var blue = AlternateTextureSet.Create([], null, 0.6875f);
+        var blueAgain = AlternateTextureSet.Create([], null, 0.6875f);
+        var yellow = AlternateTextureSet.Create([], null, 0.3125f);
+
+        Assert.NotNull(blue);
+        Assert.Equal(0.6875f, blue!.GradientMapVOverride);
+        Assert.Equal(blue.VariantKey, blueAgain!.VariantKey);
+        Assert.NotEqual(blue.VariantKey, yellow!.VariantKey);
+    }
 }

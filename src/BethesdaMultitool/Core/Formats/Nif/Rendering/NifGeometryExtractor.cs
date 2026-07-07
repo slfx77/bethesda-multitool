@@ -343,6 +343,8 @@ internal static class NifGeometryExtractor
             var isEyeEnvmap = false;
             var envMapScale = 0f;
             var isDecal = false;
+            var effectTint = (R: 1f, G: 1f, B: 1f);
+            (float, float, float, float)? effectFalloff = null;
             SkyObjectType? skyType = null;
             List<int>? propRefs = null;
             if (shapePropertyMap.TryGetValue(shapeIndex, out propRefs))
@@ -487,6 +489,23 @@ internal static class NifGeometryExtractor
                         {
                             isEmissive = false;
                         }
+
+                        // The effect-fragment terms the engine multiplies into every pixel
+                        // (fo76utils getDiffuseColor_Effect): rgb ×= baseColor × scale, and — when
+                        // falloff is enabled — alpha ramps by |N·V| between the start/stop angles.
+                        // Without these, crossed-plane mist blobs (MistLargeRoundDusty01) rendered
+                        // every plane at full white opacity and additively clipped whole scenes.
+                        var tintScale = Math.Min(bgsm.BaseColorScale, 1f);
+                        effectTint = (
+                            bgsm.BaseColor.X * tintScale,
+                            bgsm.BaseColor.Y * tintScale,
+                            bgsm.BaseColor.Z * tintScale);
+                        if (bgsm.FalloffEnabled)
+                        {
+                            effectFalloff = (
+                                bgsm.FalloffStartAngle, bgsm.FalloffStopAngle,
+                                bgsm.FalloffStartOpacity, bgsm.FalloffStopOpacity);
+                        }
                     }
                     else
                     {
@@ -621,6 +640,8 @@ internal static class NifGeometryExtractor
                 submesh.GradientMapTexturePath = gradientMapPath;
                 submesh.GradientMapV = gradientMapV;
                 submesh.IsDecal = isDecal;
+                submesh.EffectTint = effectTint;
+                submesh.EffectFalloff = effectFalloff;
 
                 // SLSF1_Vertex_Alpha clear — the vertex alpha channel is engine data (wind weight),
                 // not opacity. Neutralize it in place so every consumer (GPU alpha test, CPU

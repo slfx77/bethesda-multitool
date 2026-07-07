@@ -31,10 +31,12 @@ public sealed class AlternateTextureSet
     private AlternateTextureSet(
         IReadOnlyDictionary<string, ShapeTextureOverride> overrides,
         IReadOnlyDictionary<string, string>? materialSwaps,
+        float? gradientMapVOverride,
         string variantKey)
     {
         Overrides = overrides;
         MaterialSwaps = materialSwaps;
+        GradientMapVOverride = gradientMapVOverride;
         VariantKey = variantKey;
     }
 
@@ -50,22 +52,31 @@ public sealed class AlternateTextureSet
     public IReadOnlyDictionary<string, string>? MaterialSwaps { get; }
 
     /// <summary>
+    ///     FO4-family <c>MODC</c> "Color Remapping Index" (0–1): overrides a grayscale-to-palette
+    ///     material's <c>GradientMapV</c> palette row at decode time (fo76utils render.cpp) — the
+    ///     engine's mechanism for coloring shared-mesh variants (shipping-crate colorways). Null =
+    ///     no override (the material's baked row applies).
+    /// </summary>
+    public float? GradientMapVOverride { get; }
+
+    /// <summary>
     ///     Stable, content-derived key (FNV-1a over the sorted shape/diffuse/normal tuples plus, when
-    ///     present, an "mswp"-salted run of the sorted material-swap pairs). Two sets with the same
-    ///     content produce the same key (shared cache entry); any difference — including swap-only vs
-    ///     override-only sets — produces a different key. Deterministic across runs — no hashing that
-    ///     varies per process.
+    ///     present, an "mswp"-salted run of the sorted material-swap pairs and a "modc"-salted color
+    ///     remap index). Two sets with the same content produce the same key (shared cache entry);
+    ///     any difference — including swap-only vs override-only sets — produces a different key.
+    ///     Deterministic across runs — no hashing that varies per process.
     /// </summary>
     public string VariantKey { get; }
 
     /// <summary>
-    ///     Builds a set from resolved per-shape overrides and/or MSWP material swaps. Returns
-    ///     <c>null</c> when there is nothing to re-skin (no effective overrides AND no swaps), so
-    ///     callers can treat "no re-skin" as a plain null and keep the fast unchanged-cache-key path.
+    ///     Builds a set from resolved per-shape overrides, MSWP material swaps, and/or a MODC color
+    ///     remap. Returns <c>null</c> when there is nothing to re-skin, so callers can treat "no
+    ///     re-skin" as a plain null and keep the fast unchanged-cache-key path.
     /// </summary>
     public static AlternateTextureSet? Create(
         IEnumerable<KeyValuePair<string, ShapeTextureOverride>> entries,
-        IReadOnlyDictionary<string, string>? materialSwaps = null)
+        IReadOnlyDictionary<string, string>? materialSwaps = null,
+        float? gradientMapVOverride = null)
     {
         var map = new Dictionary<string, ShapeTextureOverride>(StringComparer.OrdinalIgnoreCase);
         foreach (var (shape, ov) in entries)
@@ -79,7 +90,7 @@ public sealed class AlternateTextureSet
         }
 
         var swaps = materialSwaps is { Count: > 0 } ? materialSwaps : null;
-        if (map.Count == 0 && swaps is null)
+        if (map.Count == 0 && swaps is null && gradientMapVOverride is null)
         {
             return null;
         }
@@ -111,7 +122,14 @@ public sealed class AlternateTextureSet
             }
         }
 
-        return new AlternateTextureSet(map, swaps, hash.ToString("x16"));
+        if (gradientMapVOverride is { } remap)
+        {
+            // Exact-bits fold: identical MODC values share one variant, any difference splits it.
+            hash = FnvAppend(hash, "modc");
+            hash = FnvAppend(hash, BitConverter.SingleToUInt32Bits(remap).ToString("x8"));
+        }
+
+        return new AlternateTextureSet(map, swaps, gradientMapVOverride, hash.ToString("x16"));
     }
 
     private static ulong FnvAppend(ulong hash, string s)

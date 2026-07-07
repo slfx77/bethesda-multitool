@@ -71,7 +71,8 @@ internal sealed class ReferenceMeshDecoder12
     public DecodedNifMesh12? DecodeMesh(
         string modelPath,
         IReadOnlyDictionary<string, ShapeTextureOverride>? overrides = null,
-        IReadOnlyDictionary<string, string>? materialSwaps = null)
+        IReadOnlyDictionary<string, string>? materialSwaps = null,
+        float? gradientMapVOverride = null)
     {
         var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
         var lookupPath = NormalizeModelPath(modelPath);
@@ -288,8 +289,20 @@ internal sealed class ReferenceMeshDecoder12
                     alphaState.DepthWritingBlend,
                     specularEnabled ? sub.SpecularMapTexturePath : null,
                     sub.GradientMapTexturePath,
-                    sub.GradientMapV,
-                    sub.IsDecal));
+                    // FO4-family MODC: the base record's Color Remapping Index overrides the
+                    // material's gradient-palette row (fo76utils render.cpp) — the engine's
+                    // shared-mesh colorway mechanism. One crate BGSM bakes V=1.0 (the red row);
+                    // Gray/Yellow/Blue come from per-STAT MODC. Only meaningful when the material
+                    // actually has a gradient map.
+                    gradientMapVOverride is { } remapV && sub.GradientMapTexturePath is not null
+                        ? remapV
+                        : sub.GradientMapV,
+                    sub.IsDecal,
+                    new Vector3(sub.EffectTint.R, sub.EffectTint.G, sub.EffectTint.B),
+                    sub.EffectFalloff is { } falloff
+                        ? new Vector4(falloff.StartAngle, falloff.StopAngle, falloff.StartOpacity, falloff.StopOpacity)
+                        : default,
+                    HasEffectFalloff: sub.EffectFalloff is not null));
             }
 
             if (submeshes.Count == 0)
@@ -351,7 +364,10 @@ internal sealed class ReferenceMeshDecoder12
                 sub.SpecularMapTexturePath,
                 sub.GradientMapTexturePath,
                 sub.GradientMapV,
-                sub.IsDecal));
+                sub.IsDecal,
+                sub.EffectTint,
+                sub.EffectFalloffParams,
+                sub.HasEffectFalloff));
         }
 
         return new ReferenceDecodedMeshPayload12(submeshes, decoded.CollisionPositions, decoded.CollisionTriangles);
@@ -388,7 +404,10 @@ internal sealed class ReferenceMeshDecoder12
                 sub.SpecularMapTexturePath,
                 sub.GradientMapTexturePath,
                 sub.GradientMapV,
-                sub.IsDecal));
+                sub.IsDecal,
+                sub.EffectTint,
+                sub.EffectFalloffParams,
+                sub.HasEffectFalloff));
         }
 
         return new DecodedNifMesh12(submeshes, payload.CollisionPositions, payload.CollisionTriangles);

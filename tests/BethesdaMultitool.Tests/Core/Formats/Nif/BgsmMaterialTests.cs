@@ -103,18 +103,28 @@ public class BgsmMaterialTests
     }
 
     [Fact]
-    public void Parse_Fallout4Bgem_ReadsEffectLightingAndInfluence()
+    public void Parse_Fallout4Bgem_ReadsEffectLightingTintAndFalloff()
     {
         // FO4 BGEM tail (fo76utils loadBGEMFile): after the texture-path table, a 6-byte bool block
-        // whose byte[1] = Effect Lighting, then base color (4 floats), falloff params (4 floats),
-        // and the lighting influence float. The non-gradient FO4 BGEM path map (0x000514F0) reads
+        // ([1] = Effect Lighting, [2]|[3] = falloff enabled), then base color RGB + scale (4 floats),
+        // falloff params (4 floats: startAngle/stopAngle/startOpacity/stopOpacity), and the lighting
+        // influence float. Values mirror AmbBeamMistRoundDusty.BGEM — the terms whose absence
+        // rendered mist blobs blinding white. The non-gradient FO4 BGEM path map (0x000514F0) reads
         // FIVE strings, so five paths pad the table.
         var head = BuildBgsm(2, true, 63, "fx_d.dds", "grad.dds", "", "", "");
         using var ms = new MemoryStream();
         ms.Write(head);
-        ms.Write(new byte[] { 0, 1, 0, 0, 0, 0 }); // bools: [1] = effect lighting ON
+        ms.Write(new byte[] { 0, 1, 1, 0, 0, 0 }); // bools: effect lighting ON, falloff ON
         Span<byte> floats = stackalloc byte[36];    // base color (16) + falloff (16) + influence (4)
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[32..], 0.75f);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[..4], 0.478f);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[4..8], 0.478f);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[8..12], 0.478f);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[12..16], 0.75f);  // scale
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[16..20], 0.98481f); // start angle
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[20..24], 0.17365f); // stop angle
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[24..28], 1f);       // start opacity
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[28..32], 0f);       // stop opacity
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[32..], 0.95f);      // influence
         ms.Write(floats);
 
         var mat = BgsmMaterial.Parse(ms.ToArray());
@@ -122,7 +132,14 @@ public class BgsmMaterialTests
         Assert.NotNull(mat);
         Assert.True(mat!.IsEffect);
         Assert.True(mat.EffectLightingEnabled);
-        Assert.Equal(0.75f, mat.LightingInfluence, 3);
+        Assert.True(mat.FalloffEnabled);
+        Assert.Equal(0.478f, mat.BaseColor.X, 3);
+        Assert.Equal(0.75f, mat.BaseColorScale, 3);
+        Assert.Equal(0.98481f, mat.FalloffStartAngle, 4);
+        Assert.Equal(0.17365f, mat.FalloffStopAngle, 4);
+        Assert.Equal(1f, mat.FalloffStartOpacity, 3);
+        Assert.Equal(0f, mat.FalloffStopOpacity, 3);
+        Assert.Equal(0.95f, mat.LightingInfluence, 3);
     }
 
     /// <summary>

@@ -53,5 +53,11 @@ internal sealed record DecodedSubmesh12(
     float GradientMapV = 0f,
     // Decal (BGSM decal byte / shader-flags bits 26-27): coplanar overlay geometry drawn with a
     // depth-biased PSO so it wins the depth tie against its backing surface. Persisted in v24+.
-    bool IsDecal = false);
+    bool IsDecal = false,
+    // BGEM effect terms (fo76utils getDiffuseColor_Effect): rgb tint = baseColor × scale;
+    // FalloffParams = (startAngle, stopAngle, startOpacity, stopOpacity) — an |N·V| opacity ramp,
+    // enabled when HasFalloff. Persisted in v28+ (without them, mist blobs render blinding white).
+    Vector3 EffectTint = default,
+    Vector4 EffectFalloffParams = default,
+    bool HasEffectFalloff = false);
 #endif

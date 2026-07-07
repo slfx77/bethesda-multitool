@@ -461,6 +461,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         data.RenderCache.MaterialSwapIndex = data.MaterialSwapsByFormId;
         // Plus the base-record default swaps (FO4-family MODS = bare MSWP FormID).
         data.RenderCache.BaseMaterialSwapIndex = data.BaseMaterialSwapsByFormId;
+        // And the base-record MODC color remaps (FO4-family gradient-palette row overrides).
+        data.RenderCache.BaseColorRemapIndex = data.BaseColorRemapsByFormId;
         _state.LoadData(data);
         _worldHeightmapDirty = true;
         _currentColorScheme = HeightmapColorScheme.DefaultForGame(data.Game, data.SourceFilePath);

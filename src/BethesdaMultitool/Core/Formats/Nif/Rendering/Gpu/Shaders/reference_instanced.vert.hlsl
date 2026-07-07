@@ -41,6 +41,11 @@ cbuffer InstanceDraw : register(b1)
     // position by a per-vertex weight; we approximate the engine's 4 sway matrices with a time- and
     // world-position-phased gust (see reference_instanced.vert.hlsl leaf branch).
     float4 uWind;
+    // BGEM effect terms: uEffectTint.rgb multiplies the source texture (baseColor × scale);
+    // .w > 0.5 enables the |N·V| opacity falloff in uEffectFalloff =
+    // (startAngle, stopAngle, startOpacity, stopOpacity).
+    float4 uEffectTint;
+    float4 uEffectFalloff;
 };
 
 // Per-instance data is now JUST the world matrix (64 bytes). Everything else is per-batch.
@@ -70,6 +75,8 @@ struct VSOutput
     nointerpolation uint4  vTexIndices  : TEXCOORD8;
     float3 vWorldPos    : TEXCOORD9;  // world-space position for per-pixel distance fog
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent
+    nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
+    nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
 };
 
 VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
@@ -133,5 +140,7 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
     o.vTextureState = uTextureState;
     o.vTexIndices = uTexIndices;
     o.vSpecular = uSpecular;
+    o.vEffectTint = uEffectTint;
+    o.vEffectFalloff = uEffectFalloff;
     return o;
 }

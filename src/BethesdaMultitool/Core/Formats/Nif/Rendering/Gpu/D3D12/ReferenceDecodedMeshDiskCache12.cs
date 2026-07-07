@@ -110,7 +110,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Bumped 26→27: BGEM effect materials with Effect Lighting or the decal byte are now
     // scene-lit instead of blanket-emissive (FO4 wall stains glowed against night-dark walls).
     // The baked IsEmissive changes, so v26 entries keep the glow.
-    internal const int DecoderVersion = 27;
+    // Bumped 27→28: (a) BSMeshLODTriShape segments are drawn as the full cumulative set (they are
+    // COMPLEMENTARY geometry, not alternates — first-slice-only amputated WoodCrate03's boards and
+    // 97% of workshop rubble), with exact-copy segments suppressed; (b) new per-submesh BGEM
+    // effect-tint + |N·V| falloff payload fields (blinding mist fix). Geometry AND payload change.
+    internal const int DecoderVersion = 28;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -329,6 +333,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         WriteNullableString(writer, submesh.GradientMapTexturePath, MaxStringBytes);
         writer.Write(submesh.GradientMapV);
         writer.Write(submesh.IsDecal);
+        WriteVector3(writer, submesh.EffectTint);
+        WriteVector4(writer, submesh.EffectFalloffParams);
+        writer.Write(submesh.HasEffectFalloff);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -387,6 +394,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             ReadNullableString(reader, MaxStringBytes),
             ReadNullableString(reader, MaxStringBytes),
             reader.ReadSingle(),
+            reader.ReadBoolean(),
+            ReadVector3(reader),
+            ReadVector4(reader),
             reader.ReadBoolean());
     }
 
@@ -459,4 +469,7 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     string? SpecularMapTexturePath = null,
     string? GradientMapTexturePath = null,
     float GradientMapV = 0f,
-    bool IsDecal = false);
+    bool IsDecal = false,
+    Vector3 EffectTint = default,
+    Vector4 EffectFalloffParams = default,
+    bool HasEffectFalloff = false);

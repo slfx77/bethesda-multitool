@@ -45,6 +45,11 @@ cbuffer PerDraw : register(b1)
     // when uTextureState.y marks a leaf submesh — used by baked particle clouds drawn on the blended path.
     float4 uCameraRight;
     float4 uCameraUp;
+    // BGEM effect terms: uEffectTint.rgb multiplies the source texture (baseColor × scale);
+    // .w > 0.5 enables the |N·V| opacity falloff in uEffectFalloff =
+    // (startAngle, stopAngle, startOpacity, stopOpacity), all stored as cosines/opacities.
+    float4 uEffectTint;
+    float4 uEffectFalloff;
 };
 
 struct VSInput
@@ -71,6 +76,8 @@ struct VSOutput
     nointerpolation uint4  vTexIndices  : TEXCOORD8;
     float3 vWorldPos    : TEXCOORD9;  // world-space position for per-pixel distance fog
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent
+    nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
+    nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
 };
 
 VSOutput main(VSInput input)
@@ -112,5 +119,7 @@ VSOutput main(VSInput input)
     o.vTextureState = uTextureState;
     o.vTexIndices = uTexIndices;
     o.vSpecular = uSpecular;
+    o.vEffectTint = uEffectTint;
+    o.vEffectFalloff = uEffectFalloff;
     return o;
 }

@@ -57,6 +57,14 @@ internal sealed class WorldViewData
         new Dictionary<uint, uint>();
 
     /// <summary>
+    ///     Base-object FormID → its <c>MODC</c> "Color Remapping Index" (0–1, FO4-family). Overrides
+    ///     a grayscale-to-palette material's <c>GradientMapV</c> row at decode time — the engine's
+    ///     shared-mesh colorway mechanism (shipping crates). Empty for earlier games.
+    /// </summary>
+    public IReadOnlyDictionary<uint, float> BaseColorRemapsByFormId { get; init; } =
+        new Dictionary<uint, float>();
+
+    /// <summary>
     ///     SpeedTree archive path (<c>trees\&lt;name&gt;.spt</c>) → recorded tree height (TREE OBND
     ///     Z-extent). Lets the procedural <c>.spt</c> geometry generator size each tree from the ESM
     ///     data instead of a constant. Case-insensitive keys.

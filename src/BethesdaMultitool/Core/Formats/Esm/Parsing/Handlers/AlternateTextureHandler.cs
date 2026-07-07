@@ -52,6 +52,7 @@ internal sealed class AlternateTextureHandler(RecordParserContext context) : Rec
     {
         var alternateTextures = new Dictionary<uint, IReadOnlyList<AlternateTextureEntry>>();
         var baseMaterialSwaps = new Dictionary<uint, uint>();
+        var colorRemapIndices = new Dictionary<uint, float>();
         var modsIsSwapFormId = Context.Game
             is BethesdaGame.Fallout4
             or BethesdaGame.Fallout76
@@ -63,14 +64,25 @@ internal sealed class AlternateTextureHandler(RecordParserContext context) : Rec
             {
                 if (modsIsSwapFormId)
                 {
-                    if (TryReadSwapFormId(mods, out var swapFormId))
+                    if (mods.ModsPayload is not null && TryReadSwapFormId(mods, out var swapFormId))
                     {
                         baseMaterialSwaps[mods.FormId] = swapFormId;
                     }
+
+                    // MODC "Color Remapping Index": the engine OVERRIDES a grayscale-to-palette
+                    // material's GradientMapV row with this per-base float (fo76utils render.cpp
+                    // 1061/1726 — clamp(f,0,1) becomes the palette V). This is how FO4 colors its
+                    // shared-mesh variants: ShippingCrate01Gray/Yellow/02Blue are ONE crate NIF +
+                    // ONE BGSM (baked V=1.0 = the red row) + per-STAT MODC 0.5625/0.3125/0.6875.
+                    // Without it every colorway samples the material's baked row (all-red crates).
+                    if (mods.ColorRemapIndex is { } remap)
+                    {
+                        colorRemapIndices[mods.FormId] = Math.Clamp(remap, 0f, 1f);
+                    }
                 }
-                else
+                else if (mods.ModsPayload is not null)
                 {
-                    var entries = AlternateTextureParser.Parse(mods.Payload, mods.IsBigEndian);
+                    var entries = AlternateTextureParser.Parse(mods.ModsPayload, mods.IsBigEndian);
                     if (entries.Count > 0)
                     {
                         alternateTextures[mods.FormId] = entries;
@@ -79,7 +91,7 @@ internal sealed class AlternateTextureHandler(RecordParserContext context) : Rec
             }
         }
 
-        return new ModsHarvest(alternateTextures, baseMaterialSwaps);
+        return new ModsHarvest(alternateTextures, baseMaterialSwaps, colorRemapIndices);
     }
 
     /// <summary>
@@ -90,14 +102,14 @@ internal sealed class AlternateTextureHandler(RecordParserContext context) : Rec
     private static bool TryReadSwapFormId(ModsRecord mods, out uint swapFormId)
     {
         swapFormId = 0;
-        if (mods.Payload.Length != 4)
+        if (mods.ModsPayload is not { Length: 4 })
         {
             return false;
         }
 
         swapFormId = mods.IsBigEndian
-            ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(mods.Payload)
-            : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(mods.Payload);
+            ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(mods.ModsPayload)
+            : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(mods.ModsPayload);
         return swapFormId != 0;
     }
 
@@ -111,27 +123,43 @@ internal sealed class AlternateTextureHandler(RecordParserContext context) : Rec
 
         var (data, dataSize) = recordData.Value;
 
+        byte[]? modsPayload = null;
+        float? colorRemap = null;
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
-            if (sub.Signature != "MODS")
+            switch (sub.Signature)
             {
-                continue;
-            }
+                case "MODS" when sub.DataLength > 0:
+                    modsPayload = data.AsSpan(sub.DataOffset, sub.DataLength).ToArray();
+                    break;
+                // MODC "Color Remapping Index" — one float (xEdit wbGenericModel; FO4-family).
+                case "MODC" when sub.DataLength >= 4:
+                    var raw = record.IsBigEndian
+                        ? System.Buffers.Binary.BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(sub.DataOffset, 4))
+                        : System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(sub.DataOffset, 4));
+                    if (float.IsFinite(raw))
+                    {
+                        colorRemap = raw;
+                    }
 
-            var payload = data.AsSpan(sub.DataOffset, sub.DataLength).ToArray();
-            return payload.Length > 0 ? new ModsRecord(record.FormId, payload, record.IsBigEndian) : null;
+                    break;
+            }
         }
 
-        return null;
+        return modsPayload is not null || colorRemap is not null
+            ? new ModsRecord(record.FormId, modsPayload, colorRemap, record.IsBigEndian)
+            : null;
     }
 
-    private sealed record ModsRecord(uint FormId, byte[] Payload, bool IsBigEndian);
+    private sealed record ModsRecord(uint FormId, byte[]? ModsPayload, float? ColorRemapIndex, bool IsBigEndian);
 }
 
 /// <summary>
-///     The one-pass <c>MODS</c> harvest result: FO3/FNV/Skyrim alternate-texture entries and the
-///     FO4-family base-record default Material Swap FormIDs (one of the two is empty per game).
+///     The one-pass <c>MODS</c>/<c>MODC</c> harvest result: FO3/FNV/Skyrim alternate-texture
+///     entries, the FO4-family base-record default Material Swap FormIDs, and the FO4-family
+///     per-base Color Remapping Indices (gradient-palette row overrides).
 /// </summary>
 internal sealed record ModsHarvest(
     Dictionary<uint, IReadOnlyList<AlternateTextureEntry>> AlternateTextures,
-    Dictionary<uint, uint> BaseMaterialSwapFormIds);
+    Dictionary<uint, uint> BaseMaterialSwapFormIds,
+    Dictionary<uint, float> BaseColorRemapIndices);

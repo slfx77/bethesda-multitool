@@ -22,10 +22,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 {
     private const uint PerFrameByteSize = 64;
-    private const uint PerDrawByteSize = 176;
+    private const uint PerDrawByteSize = 208;
     // 3 float4 (material) + uint4 (tex indices) + uint base + uint3 pad + float4 specular
-    // + float4 camRight + float4 camUp (leaf billboard basis) = 128 bytes.
-    private const uint InstanceDrawByteSize = 144;
+    // + float4 camRight + float4 camUp (leaf billboard basis) + float4 wind
+    // + float4 effect tint + float4 effect falloff = 176 bytes.
+    private const uint InstanceDrawByteSize = 176;
     private const float FrustumCullMargin = 512f;
 
     // Cold mesh realization is render-thread work. By DEFAULT there is no per-frame COUNT cap: the
@@ -1084,7 +1085,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 Specular: sub.Specular,
                 CameraRight: _leafBillboardRight,
                 CameraUp: _leafBillboardUp,
-                Wind: _wind);
+                Wind: _wind,
+                EffectTint: new Vector4(sub.EffectTint, sub.HasEffectFalloff ? 1f : 0f),
+                EffectFalloff: sub.EffectFalloffParams);
             if (!_ringBuffer.TryAllocate(frameIndex, InstanceDrawByteSize, out var instanceDrawAlloc, GpuRingBuffer12.CbAlignment))
             {
                 LastFrameDrawsTruncated += batch.Count;
@@ -1218,6 +1221,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // baked particle cloud) so the blended-path VS can re-face the quads to the camera.
             CameraRight = _leafBillboardRight,
             CameraUp = _leafBillboardUp,
+            EffectTint = new Vector4(draw.Submesh.EffectTint, draw.Submesh.HasEffectFalloff ? 1f : 0f),
+            EffectFalloff = draw.Submesh.EffectFalloffParams,
         };
         // Allocate before mutating PSO state so a soft-fail leaves the command list consistent.
         if (!_ringBuffer.TryAllocate(frameIndex, PerDrawByteSize, out var perDrawAlloc, GpuRingBuffer12.CbAlignment))
@@ -1297,9 +1302,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // in reference.vert.hlsl.
         public Vector4 Specular;
         // Camera world-space right/up for per-card leaf billboards (baked particle clouds on the blended
-        // path). Only read when TextureState.y marks a leaf submesh; brings this to 176 bytes.
+        // path). Only read when TextureState.y marks a leaf submesh.
         public Vector4 CameraRight;
         public Vector4 CameraUp;
+        // BGEM effect terms (uEffectTint / uEffectFalloff): rgb tint + falloff-enabled flag in .w,
+        // then the |N·V| opacity ramp params. Brings this to 208 bytes.
+        public Vector4 EffectTint;
+        public Vector4 EffectFalloff;
     }
 
     /// <summary>
@@ -1327,8 +1336,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // Identical across every batch in a frame; only read by leaf submeshes.
         Vector4 CameraRight = default,
         Vector4 CameraUp = default,
-        // SpeedTree wind (uWind: xy = direction, z = strength, w = time); brings this to 144 bytes.
-        Vector4 Wind = default);
+        // SpeedTree wind (uWind: xy = direction, z = strength, w = time).
+        Vector4 Wind = default,
+        // BGEM effect terms (uEffectTint / uEffectFalloff); brings this to 176 bytes.
+        Vector4 EffectTint = default,
+        Vector4 EffectFalloff = default);
 
     /// <summary>
     ///     Packed 4-uint TexIndices field. C# has no <c>uint4</c> primitive, so we lay out
