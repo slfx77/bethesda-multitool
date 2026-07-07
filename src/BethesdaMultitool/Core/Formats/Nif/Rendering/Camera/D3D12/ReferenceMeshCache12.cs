@@ -309,6 +309,16 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         if (_meshLru.TryGet(cacheKey, out var existing))
         {
             var resolved = ResolveExisting(cacheKey, existing, ref uploadBudget);
+            // An unresolved node with no in-memory payload, no running decode, and no negative
+            // verdict needs (re-)queueing: either its payload was evicted from the decoded LRU
+            // after its decode/disk-load completed, or it's still waiting in the queue (the call
+            // then just re-offers the current distance for the decrease-key promotion).
+            if (resolved is null && !existing.ResolvedNull && !existing.DecodedCacheAvailable &&
+                existing.DecodeTask is null)
+            {
+                QueueDecode(cacheKey, existing, priority);
+            }
+
             StartQueuedDecodes();
             return resolved;
         }
@@ -322,6 +332,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             DecodePath = decodePath,
             Overrides = alternateTextures?.Overrides,
             MaterialSwaps = alternateTextures?.MaterialSwaps,
+            GradientMapVOverride = alternateTextures?.GradientMapVOverride,
             HasVariant = alternateTextures is not null,
             VariantKey = alternateTextures?.VariantKey
         };
@@ -456,37 +467,24 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         mesh = null;
         if (!TryGetDecodedCache(modelPath, out var decoded))
         {
-            // Disk load keys on the plain DecodePath's archive identity + the variant discriminator;
-            // the in-memory store uses the composite cache key (== modelPath here).
-            //
-            // Probe the on-disk cache ONCE per node: the probe is real file I/O (key hash + open
-            // attempt), and this resolve runs EVERY frame for every visible not-yet-resident mesh.
-            // A cold dense area (Boston downtown: ~57k unresolved survivors) re-probing per frame
-            // put ~57k file opens INSIDE the render loop — 7-17 s/frame, the "1FPS + nothing
-            // renders" collapse. A mesh absent from the disk cache can only appear there after its
-            // own decode completes, which lands in the in-memory decoded LRU anyway; the flag is
-            // re-armed when a completed decode is consumed, so a later decoded-LRU eviction may
-            // re-probe (and then hit) the disk entry that decode persisted.
-            //
-            // And only LOAD from disk while the frame still has upload budget to consume the payload
-            // immediately (load → GPU upload → resident in this same resolve). When the working set
-            // dwarfs the decoded-LRU byte budget (Boston: ~20k meshes vs 256MB), budget-blind loads
-            // just evicted each other before the next frame's uploads — thousands of disk reads +
-            // full deserializes per frame (the residual 3 s/frame), none of which ever became
-            // resident. Budget-gated, every disk load converts straight into a resident mesh.
-            if (node.DecodedCacheMissRecorded ||
-                uploadBudget <= 0 ||
-                !TryLoadPersistentDecodedCache(node.DecodePath, node.VariantKey, modelPath, out decoded))
+            // NO disk I/O on this path — it runs every frame for every visible unresolved mesh, and
+            // a disk-cache load (probe + read + deserialize) is milliseconds. The DECODE WORKER
+            // checks the on-disk cache before decoding (StartDecodeTask), so returning false routes
+            // the node through the decode queue and the load happens off-thread at the same
+            // nearest-first priority as decodes. The predecessors of this design both collapsed
+            // dense areas: per-frame inline probes cost 7-17 s/frame (57k file opens), and the
+            // budget-gated inline load that replaced them drip-fed downtown at a handful of meshes
+            // per frame ("assets stream in very slowly"). The flag below re-arms whenever a fresh
+            // payload lands, so eviction of this node's decoded-LRU entry re-queues it (via the
+            // caller's DecodedCacheAvailable gate) instead of wedging.
+            node.DecodedCacheAvailable = false;
+            if (!node.DecodedCacheMissRecorded)
             {
-                if (!node.DecodedCacheMissRecorded &&
-                    uploadBudget > 0)
-                {
-                    FrameCpuDecodedCacheMisses++;
-                    node.DecodedCacheMissRecorded = true;
-                }
-
-                return false;
+                FrameCpuDecodedCacheMisses++;
+                node.DecodedCacheMissRecorded = true;
             }
+
+            return false;
         }
 
         FrameCpuDecodedCacheHits++;
@@ -592,12 +590,23 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var variantKey = node.VariantKey;
         var overrides = node.Overrides;
         var materialSwaps = node.MaterialSwaps;
+        var gradientMapVOverride = node.GradientMapVOverride;
         Interlocked.Increment(ref _activeDecodeTasks);
         var task = Task.Run(() =>
         {
             try
             {
-                var decoded = _decoder.DecodeMesh(decodePath, overrides, materialSwaps);
+                // Warm path first: the on-disk decoded cache. Loading here (worker thread, decode-
+                // queue priority) instead of inline in the render loop's resolve is what lets a
+                // dense warm area stream in at full disk speed without costing frame time. The
+                // load already stores into the in-memory decoded LRU; returning its mesh matches
+                // the decode contract (null = negative entry ⇒ ResolvedNull downstream).
+                if (TryLoadPersistentDecodedCache(decodePath, variantKey, cacheKey, out var cached))
+                {
+                    return cached.IsNegative ? null : cached.Mesh;
+                }
+
+                var decoded = _decoder.DecodeMesh(decodePath, overrides, materialSwaps, gradientMapVOverride);
                 StoreDecodedCache(cacheKey, decoded);
                 StorePersistentDecodedCache(decodePath, variantKey, decoded);
                 return decoded;
@@ -902,7 +911,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     IsBillboard = sub.IsBillboard,
                     IsLeafBillboard = sub.IsLeafBillboard,
                     DepthWritingBlend = sub.DepthWritingBlend,
-                    IsDecal = sub.IsDecal
+                    IsDecal = sub.IsDecal,
+                    // default(Vector3) = a pre-effect-fields payload (or a caller that skipped the
+                    // arg); black would tint everything out, so normalize to the no-op white.
+                    EffectTint = sub.EffectTint == default ? Vector3.One : sub.EffectTint,
+                    EffectFalloffParams = sub.EffectFalloffParams,
+                    HasEffectFalloff = sub.HasEffectFalloff
                 });
             }
             catch (Exception ex)
@@ -1089,6 +1103,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         /// Rides the same '#variant' cache key as <see cref="Overrides" /> (via the merged
         /// <see cref="AlternateTextureSet.VariantKey" />), so each swap decodes as its own mesh.</summary>
         public IReadOnlyDictionary<string, string>? MaterialSwaps { get; init; }
+
+        /// <summary>FO4-family MODC gradient-palette row override (0–1) applied at decode to
+        /// grayscale-to-palette materials, or null. Rides the same variant cache key.</summary>
+        public float? GradientMapVOverride { get; init; }
 
         /// <summary>True when this node is a MODS re-skin variant.</summary>
         public bool HasVariant { get; init; }
