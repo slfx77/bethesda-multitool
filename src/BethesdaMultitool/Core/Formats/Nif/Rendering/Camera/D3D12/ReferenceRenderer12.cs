@@ -783,7 +783,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     continue;
                 }
 
-                var pso = sub.DoubleSided ? _pipelines.OpaqueDoublePso : _pipelines.OpaqueBackPso;
+                var pso = (sub.DoubleSided, sub.IsDecal) switch
+                {
+                    (true, true) => _pipelines.OpaqueDoubleDecalPso,
+                    (true, false) => _pipelines.OpaqueDoublePso,
+                    (false, true) => _pipelines.OpaqueBackDecalPso,
+                    (false, false) => _pipelines.OpaqueBackPso
+                };
                 var batch = _opaqueBatches.GetOrCreate(sub, pso);
                 // Only the world matrix is per-instance. Material/texture state
                 // (AlphaState/RenderState/TextureState + bindless TexIndices) is identical
@@ -1119,7 +1125,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var pso = _pipelines.GetBlendPipeline(
                 draw.Submesh.SrcBlendMode,
                 draw.Submesh.DstBlendMode,
-                draw.Submesh.DoubleSided);
+                draw.Submesh.DoubleSided,
+                draw.Submesh.IsDecal);
             if (!DrawBlendedSubmesh(
                 cmd,
                 frameIndex,
@@ -1163,7 +1170,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var pso = _pipelines.GetBlendDepthWritePipeline(
                 draw.Submesh.SrcBlendMode,
                 draw.Submesh.DstBlendMode,
-                draw.Submesh.DoubleSided);
+                draw.Submesh.DoubleSided,
+                draw.Submesh.IsDecal);
             if (!DrawBlendedSubmesh(
                 cmd,
                 frameIndex,

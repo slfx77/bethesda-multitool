@@ -104,7 +104,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // Bumped 24→25: TES4-era NIFs now apply the scene root's authored transform (Oblivion composes
     // it under the REFR placement; discarding it rendered ChorrolLODHouse01 sideways and the RFN
     // dungeon halls at 90/180°). Warm v24 TES4 entries bake identity-root geometry.
-    internal const int DecoderVersion = 25;
+    // Bumped 25→26: new per-submesh IsDecal payload field (BGSM decal byte / shader-flags bits
+    // 26-27) — decal overlays draw with a depth-biased PSO instead of z-fighting their backing
+    // surface. Warm v25 entries lack the field.
+    internal const int DecoderVersion = 26;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -322,6 +325,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         WriteNullableString(writer, submesh.SpecularMapTexturePath, MaxStringBytes);
         WriteNullableString(writer, submesh.GradientMapTexturePath, MaxStringBytes);
         writer.Write(submesh.GradientMapV);
+        writer.Write(submesh.IsDecal);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -379,7 +383,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadBoolean(),
             ReadNullableString(reader, MaxStringBytes),
             ReadNullableString(reader, MaxStringBytes),
-            reader.ReadSingle());
+            reader.ReadSingle(),
+            reader.ReadBoolean());
     }
 
     private static void WriteVector2(BinaryWriter writer, Vector2 value)
@@ -450,4 +455,5 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     bool DepthWritingBlend = false,
     string? SpecularMapTexturePath = null,
     string? GradientMapTexturePath = null,
-    float GradientMapV = 0f);
+    float GradientMapV = 0f,
+    bool IsDecal = false);

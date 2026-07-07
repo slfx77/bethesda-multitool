@@ -79,9 +79,27 @@ public class BgsmMaterialTests
         Assert.Equal(92, mat.AlphaTestThreshold);
         Assert.True(mat.AlphaTestEnabled);
         Assert.True(mat.TwoSided);
+        // The decal byte was untouched (0) — not a decal.
+        Assert.False(mat.Decal);
         // Texture paths still resolve after the alpha-block reads.
         Assert.Equal("leaf_d.dds", mat.Diffuse);
         Assert.Equal("leaf_n.dds", mat.Normal);
+    }
+
+    [Fact]
+    public void Parse_Fallout4Bgsm_ReadsDecalByte()
+    {
+        // Decal byte @0x2F (fo76utils loadBGSMFile: u32 z-write/z-test/SSR @0x2B, u8 decal, u8
+        // two-sided). Grime/crack overlay materials set it; the renderer keys a depth-biased PSO
+        // off the flag so the overlay stops z-fighting its backing surface.
+        var data = BuildBgsm(2, false, 63, "grime_d.dds", "grime_n.dds");
+        data[0x2F] = 1;
+
+        var mat = BgsmMaterial.Parse(data);
+
+        Assert.NotNull(mat);
+        Assert.True(mat!.Decal);
+        Assert.False(mat.TwoSided); // neighbor byte untouched — offsets don't bleed
     }
 
     /// <summary>

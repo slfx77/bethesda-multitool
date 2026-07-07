@@ -90,5 +90,12 @@ internal sealed class CachedSubmesh12
     ///     PSO, so water occludes it from above instead of it painting over the surface.
     /// </summary>
     public bool DepthWritingBlend { get; init; }
+
+    /// <summary>
+    ///     True for decal overlay geometry (BGSM decal byte / shader-flags bits 26-27 — grime,
+    ///     cracks, posters authored coplanar with their backing surface). The renderer selects a
+    ///     depth-biased PSO variant so the decal wins the depth tie instead of z-fighting.
+    /// </summary>
+    public bool IsDecal { get; init; }
 }
 #endif

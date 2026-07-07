@@ -50,5 +50,8 @@ internal sealed record DecodedSubmesh12(
     // FO4/FO76 grayscale-to-palette texture + row: the shader replaces diffuse RGB with
     // palette(u: diffuse.G, v: GradientMapV × vertexColor.R). Persisted in v22+.
     string? GradientMapTexturePath = null,
-    float GradientMapV = 0f);
+    float GradientMapV = 0f,
+    // Decal (BGSM decal byte / shader-flags bits 26-27): coplanar overlay geometry drawn with a
+    // depth-biased PSO so it wins the depth tie against its backing surface. Persisted in v24+.
+    bool IsDecal = false);
 #endif

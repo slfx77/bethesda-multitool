@@ -71,6 +71,13 @@ public sealed class BgsmMaterial
     /// <summary>Two-sided (backface culling disabled) — set on most foliage/wire materials.</summary>
     public bool TwoSided { get; private set; }
 
+    /// <summary>
+    ///     Decal — coplanar overlay geometry (grime, cracks, posters) the engine draws with a depth
+    ///     bias over the surface underneath. Byte 0x2F in the common header (fo76utils loadBGSMFile:
+    ///     u32 z-write/z-test/SSR, u8 decal, u8 two-sided), identical in BGSM v2/v20+ and BGEM.
+    /// </summary>
+    public bool Decal { get; private set; }
+
     /// <summary>Specular lighting enabled (lighting materials only).</summary>
     public bool SpecularEnabled { get; private set; }
 
@@ -194,7 +201,7 @@ public sealed class BgsmMaterial
     ///     Reads the alpha/cull block from the fixed common header (identical layout in BGSM v2, BGSM
     ///     v20+, and BGEM per fo76utils loadBGSMFile): opacity f32 @0x1C, blend enable u8 @0x20, source
     ///     blend u32 @0x21, destination blend u32 @0x25, alpha-test threshold u8 @0x29, alpha-test enable
-    ///     u8 @0x2A, then (skipping z-write/z-test/SSR u32 @0x2B and decal u8 @0x2F) two-sided u8 @0x30.
+    ///     u8 @0x2A, then (skipping z-write/z-test/SSR u32 @0x2B) decal u8 @0x2F and two-sided u8 @0x30.
     /// </summary>
     private void ReadAlphaBlock(byte[] data)
     {
@@ -204,6 +211,7 @@ public sealed class BgsmMaterial
         DestinationBlendMode = (byte)(BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x25)) & 15);
         AlphaTestThreshold = data[0x29];
         AlphaTestEnabled = data[0x2A] != 0;
+        Decal = data[0x2F] != 0;
         TwoSided = data[0x30] != 0;
     }
 

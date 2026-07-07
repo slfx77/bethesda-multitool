@@ -61,6 +61,15 @@ internal sealed class RenderableSubmesh
     /// <summary>Palette row for the grayscale-to-palette lookup (0–1); meaningless when the map is null.</summary>
     public float GradientMapV { get; set; }
 
+    /// <summary>
+    ///     True when the material marks this shape a decal — coplanar overlay geometry (grime,
+    ///     cracks, posters) the engine draws with a depth bias over the surface underneath. Sources:
+    ///     the BGSM/BGEM decal byte (FO4/FO76 material files) and shader-flags bits 26/27
+    ///     (Decal / Dynamic_Decal — same bit positions in FO3/FNV BSShaderFlags and Skyrim+ SLSF1).
+    ///     Without the bias these shapes z-fight their backing surface.
+    /// </summary>
+    public bool IsDecal { get; set; }
+
     /// <summary>Shader property metadata resolved from the source NIF.</summary>
     public NifShaderTextureMetadata? ShaderMetadata { get; init; }
 

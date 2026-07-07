@@ -41,6 +41,10 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             depthWriteEnabled: true);
         OpaqueDoublePso = CreatePipelineState(instancedVsBytecode, _psBytecode, doubleSided: true, blendAttachment: null,
             depthWriteEnabled: true);
+        OpaqueBackDecalPso = CreatePipelineState(instancedVsBytecode, _psBytecode, doubleSided: false,
+            blendAttachment: null, depthWriteEnabled: true, decal: true);
+        OpaqueDoubleDecalPso = CreatePipelineState(instancedVsBytecode, _psBytecode, doubleSided: true,
+            blendAttachment: null, depthWriteEnabled: true, decal: true);
     }
 
     /// <summary>Instanced opaque PSO with back-face culling (single-sided submeshes).</summary>
@@ -49,9 +53,15 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     /// <summary>Instanced opaque PSO with no culling (double-sided submeshes).</summary>
     public ID3D12PipelineState OpaqueDoublePso { get; }
 
-    public ID3D12PipelineState GetBlendPipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided)
+    /// <summary>Depth-biased variant of <see cref="OpaqueBackPso" /> for decal overlay submeshes.</summary>
+    public ID3D12PipelineState OpaqueBackDecalPso { get; }
+
+    /// <summary>Depth-biased variant of <see cref="OpaqueDoublePso" /> for decal overlay submeshes.</summary>
+    public ID3D12PipelineState OpaqueDoubleDecalPso { get; }
+
+    public ID3D12PipelineState GetBlendPipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided, bool decal = false)
     {
-        var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided);
+        var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal);
         if (_blendPsos.TryGetValue(key, out var existing))
         {
             return existing;
@@ -69,7 +79,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             RenderTargetWriteMask = D12.ColorWriteEnable.All
         };
 
-        var pso = CreatePipelineState(_blendedVsBytecode, _psBytecode, doubleSided, rtBlend, depthWriteEnabled: false);
+        var pso = CreatePipelineState(_blendedVsBytecode, _psBytecode, doubleSided, rtBlend, depthWriteEnabled: false,
+            decal);
         _blendPsos[key] = pso;
         return pso;
     }
@@ -80,9 +91,10 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     ///     The renderer draws these inline BEFORE the water pass so the water surface occludes them from
     ///     above — which a no-depth blend (drawn after water) can't do.
     /// </summary>
-    public ID3D12PipelineState GetBlendDepthWritePipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided)
+    public ID3D12PipelineState GetBlendDepthWritePipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided,
+        bool decal = false)
     {
-        var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided);
+        var key = new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal);
         if (_blendDepthWritePsos.TryGetValue(key, out var existing))
         {
             return existing;
@@ -100,7 +112,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             RenderTargetWriteMask = D12.ColorWriteEnable.All
         };
 
-        var pso = CreatePipelineState(_blendedVsBytecode, _psBytecode, doubleSided, rtBlend, depthWriteEnabled: true);
+        var pso = CreatePipelineState(_blendedVsBytecode, _psBytecode, doubleSided, rtBlend, depthWriteEnabled: true,
+            decal);
         _blendDepthWritePsos[key] = pso;
         return pso;
     }
@@ -110,7 +123,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         byte[] psBytecode,
         bool doubleSided,
         D12.RenderTargetBlendDescription? blendAttachment,
-        bool depthWriteEnabled)
+        bool depthWriteEnabled,
+        bool decal = false)
     {
         var rasterizer = new D12.RasterizerDescription
         {
@@ -121,6 +135,17 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             // Antialias triangle edges on the multisampled scene RT (no-op when scene isn't MSAA).
             MultisampleEnable = _gpu.SceneSampleCount > 1,
         };
+
+        if (decal)
+        {
+            // Decal overlays are authored coplanar with their backing surface; bias them TOWARD the
+            // camera so they win the depth tie. Reversed-Z (GreaterEqual, near→1) means "closer" is a
+            // LARGER depth value, so the bias is positive. Small relative to the navmesh overlay's
+            // 2000/2.0 — a decal must only clear its own backing wall, not float over nearby props.
+            rasterizer.DepthBias = 64;
+            rasterizer.DepthBiasClamp = 0f;
+            rasterizer.SlopeScaledDepthBias = 1f;
+        }
 
         var depth = new D12.DepthStencilDescription
         {
@@ -218,10 +243,12 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             pso.Dispose();
         }
         _blendDepthWritePsos.Clear();
+        OpaqueDoubleDecalPso.Dispose();
+        OpaqueBackDecalPso.Dispose();
         OpaqueDoublePso.Dispose();
         OpaqueBackPso.Dispose();
     }
 
-    private readonly record struct BlendPipelineKey(byte SrcBlendMode, byte DstBlendMode, bool DoubleSided);
+    private readonly record struct BlendPipelineKey(byte SrcBlendMode, byte DstBlendMode, bool DoubleSided, bool Decal);
 }
 #endif

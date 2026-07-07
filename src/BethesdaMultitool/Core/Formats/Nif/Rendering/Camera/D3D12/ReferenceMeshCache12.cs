@@ -901,7 +901,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     LocalBoundsCenter = sub.LocalBoundsCenter,
                     IsBillboard = sub.IsBillboard,
                     IsLeafBillboard = sub.IsLeafBillboard,
-                    DepthWritingBlend = sub.DepthWritingBlend
+                    DepthWritingBlend = sub.DepthWritingBlend,
+                    IsDecal = sub.IsDecal
                 });
             }
             catch (Exception ex)

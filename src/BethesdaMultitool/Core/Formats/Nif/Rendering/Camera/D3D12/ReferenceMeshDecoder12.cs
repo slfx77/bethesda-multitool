@@ -288,7 +288,8 @@ internal sealed class ReferenceMeshDecoder12
                     alphaState.DepthWritingBlend,
                     specularEnabled ? sub.SpecularMapTexturePath : null,
                     sub.GradientMapTexturePath,
-                    sub.GradientMapV));
+                    sub.GradientMapV,
+                    sub.IsDecal));
             }
 
             if (submeshes.Count == 0)
@@ -349,7 +350,8 @@ internal sealed class ReferenceMeshDecoder12
                 sub.DepthWritingBlend,
                 sub.SpecularMapTexturePath,
                 sub.GradientMapTexturePath,
-                sub.GradientMapV));
+                sub.GradientMapV,
+                sub.IsDecal));
         }
 
         return new ReferenceDecodedMeshPayload12(submeshes, decoded.CollisionPositions, decoded.CollisionTriangles);
@@ -385,7 +387,8 @@ internal sealed class ReferenceMeshDecoder12
                 sub.DepthWritingBlend,
                 sub.SpecularMapTexturePath,
                 sub.GradientMapTexturePath,
-                sub.GradientMapV));
+                sub.GradientMapV,
+                sub.IsDecal));
         }
 
         return new DecodedNifMesh12(submeshes, payload.CollisionPositions, payload.CollisionTriangles);

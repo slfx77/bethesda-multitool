@@ -342,6 +342,7 @@ internal static class NifGeometryExtractor
             var specularColor = (R: 0f, G: 0f, B: 0f);
             var isEyeEnvmap = false;
             var envMapScale = 0f;
+            var isDecal = false;
             SkyObjectType? skyType = null;
             List<int>? propRefs = null;
             if (shapePropertyMap.TryGetValue(shapeIndex, out propRefs))
@@ -375,6 +376,15 @@ internal static class NifGeometryExtractor
                 {
                     isEyeEnvmap = (shaderFlags & 0x20000u) != 0;
                     envMapScale = resolvedEnvMapScale;
+                }
+
+                // Decal / Dynamic_Decal — bits 26/27 in both the FO3/FNV BSShaderFlags
+                // (Decal_Single_Pass / Dynamic_Decal_Single_Pass) and the Skyrim+/FO4 SLSF1 enum.
+                // The engine draws these coplanar overlays (grime, cracks, posters) with a depth
+                // bias; the renderer keys a biased PSO off this flag.
+                if (shaderMetadata?.ShaderFlags is uint decalFlags && (decalFlags & 0x0C000000u) != 0)
+                {
+                    isDecal = true;
                 }
 
                 // Skyrim+/FO4/FO76 BSLightingShaderProperty declares vertex-channel usage explicitly:
@@ -489,6 +499,7 @@ internal static class NifGeometryExtractor
                     }
 
                     isDoubleSided |= bgsm.TwoSided;
+                    isDecal |= bgsm.Decal;
                     materialAlpha = Math.Min(materialAlpha, Math.Min(bgsm.Alpha, 1f));
                     if (!string.IsNullOrEmpty(bgsm.Diffuse))
                     {
@@ -595,6 +606,7 @@ internal static class NifGeometryExtractor
                 submesh.SpecularMapTexturePath = specularMapPath;
                 submesh.GradientMapTexturePath = gradientMapPath;
                 submesh.GradientMapV = gradientMapV;
+                submesh.IsDecal = isDecal;
 
                 // SLSF1_Vertex_Alpha clear — the vertex alpha channel is engine data (wind weight),
                 // not opacity. Neutralize it in place so every consumer (GPU alpha test, CPU
