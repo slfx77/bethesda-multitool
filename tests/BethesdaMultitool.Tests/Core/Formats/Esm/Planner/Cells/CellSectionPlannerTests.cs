@@ -209,13 +209,72 @@ public sealed class CellSectionPlannerTests
             [navm],
             [],
             new HashSet<uint> { 0x000ABCDE },
-            new FormIdAllocator());
+            new FormIdAllocator(),
+            emitMasterCellNavmAugmentation: true);
 
         var cellPlan = Assert.Single(result.CellsByFormId.Values);
         var planForNavm = Assert.Single(cellPlan.TemporaryChildren);
         Assert.Equal("NAVM", planForNavm.Type);
         Assert.Equal(RecordDisposition.New, planForNavm.Disposition);
         Assert.Equal(0x01000800u, planForNavm.FormId);
+    }
+
+    [Fact]
+    public void Master_Cell_Navm_Is_Fully_Suppressed_When_Augmentation_Disabled()
+    {
+        // The gate must suppress the NAVM RECORD, not just its NAVI row. A NAVM emitted
+        // into a master cell without a NAVI entry (and without the TES4 ESM flag, which
+        // Tes4HeaderBuilder ties to this option) null-derefs NavMeshInfoMap on cell entry.
+        var navm = new NavMeshRecord
+        {
+            FormId = 0xAA000001,
+            CellFormId = 0x000ABCDE,
+            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])]
+        };
+
+        var result = CellSectionPlanner.Plan(
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            [new CellRecord { FormId = 0x000ABCDE }],
+            [navm],
+            [],
+            new HashSet<uint> { 0x000ABCDE },
+            new FormIdAllocator(),
+            emitMasterCellNavmAugmentation: false);
+
+        var cellPlan = Assert.Single(result.CellsByFormId.Values);
+        Assert.Empty(cellPlan.TemporaryChildren);
+        Assert.Empty(result.NavmEntries);
+        Assert.Empty(result.NavmSourceToEmitted);
+    }
+
+    [Fact]
+    public void New_Cell_Navm_Survives_When_Augmentation_Disabled()
+    {
+        // The gate is scoped to MASTER cells; brand-new proto cells keep their navmeshes
+        // (and their NAVI rows) regardless.
+        var dmpCell = new CellRecord { FormId = 0x01000801, EditorId = "NewCell", Flags = 0x01 };
+        var navm = new NavMeshRecord
+        {
+            FormId = 0xAA000001,
+            CellFormId = 0x01000801,
+            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])]
+        };
+
+        var result = CellSectionPlanner.Plan(
+            new Dictionary<uint, PcEsmCellContext>(),
+            new Dictionary<uint, ParsedMainRecord>(),
+            [dmpCell],
+            [navm],
+            [],
+            new HashSet<uint>(),
+            new FormIdAllocator(),
+            emitMasterCellNavmAugmentation: false);
+
+        var cellPlan = Assert.Single(result.CellsByFormId.Values);
+        var planForNavm = Assert.Single(cellPlan.TemporaryChildren);
+        Assert.Equal("NAVM", planForNavm.Type);
+        Assert.Single(result.NavmEntries);
     }
 
     private static PcEsmCellContext MakeInteriorContext(uint cellFormId)

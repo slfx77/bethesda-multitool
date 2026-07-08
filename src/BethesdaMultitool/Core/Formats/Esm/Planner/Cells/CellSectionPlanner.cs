@@ -54,7 +54,23 @@ public sealed class CellSectionPlanner
         // to emission and the engine destroys one of them with a "Cell will be destroyed"
         // warning. After reconciliation: one DmpOverride entry per coord-match, keyed on
         // master's FormID with proto's placement data attached.
-        catalog = CoordBasedCellPairingPass.Reconcile(catalog, masterRecordsByFormId);
+        catalog = CoordBasedCellPairingPass.Reconcile(
+            catalog, masterRecordsByFormId, out var protoToMasterCellAlias);
+
+        // Coord-paired proto cells re-keyed to master FormIDs — their NAVMs must follow the
+        // alias or they orphan (never attach as children while NAVI rows still emit).
+        uint EffectiveCellFormId(uint cellFormId)
+            => protoToMasterCellAlias.TryGetValue(cellFormId, out var master) ? master : cellFormId;
+
+        if (!emitMasterCellNavmAugmentation)
+        {
+            // Suppress master-cell NAVM records too, not only their NAVI rows: an emitted NAVM
+            // with no NAVI row in an un-ESM-flagged plugin null-derefs NavMeshInfoMap on entry.
+            // Post-alias, so folded proto cells count as the master cells they now are.
+            dmpNavmeshes = dmpNavmeshes
+                .Where(navm => !masterContexts.ContainsKey(EffectiveCellFormId(navm.CellFormId)))
+                .ToList();
+        }
 
         var dispositionEngine = new CellDispositionEngine([new DefaultCellDispositionPolicy()]);
         var decisions = dispositionEngine.Decide(catalog);
@@ -62,7 +78,7 @@ public sealed class CellSectionPlanner
         var allocations = childAllocator.AllocateAll(catalog, dmpNavmeshes, masterFormIds);
         var worldspaceCatalog = WorldspaceCatalog.Build(catalog, dmpWorldspaces, masterFormIds);
 
-        // Group NAVMs by parent cell once so per-cell walks are cheap.
+        // Group NAVMs by (alias-resolved) parent cell once so per-cell walks are cheap.
         var navmsByCell = new Dictionary<uint, List<NavMeshRecord>>();
         foreach (var navm in dmpNavmeshes)
         {
@@ -71,10 +87,11 @@ public sealed class CellSectionPlanner
                 continue;
             }
 
-            if (!navmsByCell.TryGetValue(navm.CellFormId, out var list))
+            var effectiveCellFormId = EffectiveCellFormId(navm.CellFormId);
+            if (!navmsByCell.TryGetValue(effectiveCellFormId, out var list))
             {
                 list = [];
-                navmsByCell[navm.CellFormId] = list;
+                navmsByCell[effectiveCellFormId] = list;
             }
 
             list.Add(navm);
@@ -84,10 +101,10 @@ public sealed class CellSectionPlanner
         var (worldspaces, worldspaceSourceToEmitted) =
             BuildWorldspacePlans(worldspaceCatalog, allocator);
 
-        var navmEntries = BuildNavmEntries(
+        var navmEntries = PlannedNavmEntryBuilder.Build(
             dmpCells, dmpNavmeshes, allocations.NavmSourceToEmitted,
             allocations.CellSourceToEmitted, worldspaceSourceToEmitted,
-            masterContexts, emitMasterCellNavmAugmentation);
+            masterContexts, emitMasterCellNavmAugmentation, protoToMasterCellAlias);
 
         return new CellSectionResult
         {
@@ -101,106 +118,7 @@ public sealed class CellSectionPlanner
         };
     }
 
-    /// <summary>
-    ///     Build the PlannedNavmEntry list the writer hands to NavInfoMapBuilder so master's
-    ///     NAVI gets extended with NVMI/NVCI rows pointing at our new NAVM FormIDs. Without
-    ///     this the FNV runtime null-derefs at FalloutNV+0x0069E09A during plugin load when
-    ///     NavMeshInfoMap tries to resolve a new NAVM FormID. Mirrors the legacy emission
-    ///     pattern in PluginBuilder around line 3021.
-    /// </summary>
-    private static ImmutableArray<PlannedNavmEntry> BuildNavmEntries(
-        IReadOnlyList<CellRecord> dmpCells,
-        IReadOnlyList<NavMeshRecord> dmpNavmeshes,
-        ImmutableDictionary<uint, uint> navmSourceToEmitted,
-        ImmutableDictionary<uint, uint> cellSourceToEmitted,
-        ImmutableDictionary<uint, uint> worldspaceSourceToEmitted,
-        IReadOnlyDictionary<uint, PcEsmCellContext> masterContexts,
-        bool emitMasterCellNavmAugmentation)
-    {
-        if (navmSourceToEmitted.IsEmpty)
-        {
-            return ImmutableArray<PlannedNavmEntry>.Empty;
-        }
 
-        var cellsByFormId = new Dictionary<uint, CellRecord>(dmpCells.Count);
-        foreach (var cell in dmpCells)
-        {
-            cellsByFormId[cell.FormId] = cell;
-        }
-
-        var builder = ImmutableArray.CreateBuilder<PlannedNavmEntry>(navmSourceToEmitted.Count);
-        foreach (var navm in dmpNavmeshes)
-        {
-            if (!navmSourceToEmitted.TryGetValue(navm.FormId, out var emittedNavmFormId))
-            {
-                continue; // Master-resident NAVM or filtered out by CellChildAllocator.
-            }
-
-            if (!cellsByFormId.TryGetValue(navm.CellFormId, out var parentCell))
-            {
-                continue; // Orphan NAVM — no parent cell captured. Skip rather than crash.
-            }
-
-            // Master-cell NAVM augmentation (default on). Emit the proto's NAVM for an
-            // overridden master cell so NPCs pathfind on the reshaped layout. The planner
-            // never copies master's own NAVMs (KeepMaster NAVMs are not emitted — see
-            // PlanCellSectionBuilder.EncodeNavm); engine RE proves they load from master via
-            // the cell's TESForm file-list merge (memory/navm_engine_load_mechanism.md), so no
-            // verbatim-preservation cascade is needed. Flag gates the master-cell case for
-            // rollback only.
-            if (!emitMasterCellNavmAugmentation && masterContexts.ContainsKey(navm.CellFormId))
-            {
-                continue;
-            }
-
-            // LocationFormId: interior cells use the cell FormID; exterior cells use the
-            // parent worldspace FormID. For new worldspaces we must use the EMITTED FormID
-            // (post-allocation), otherwise NavMeshInfoMap setup at FalloutNV+0x0069DFDC
-            // looks up a non-existent FormID and crashes. Matches legacy logic in
-            // PluginBuilder around line 3000.
-            //
-            // Cell FormIDs follow the same emitted-FormID rule: if Pass 0 reallocated
-            // the parent cell (proto FormID didn't match a master cell), the runtime
-            // sees the cell at its emitted FormID, not its source.
-            uint locationFid;
-            if (parentCell.IsInterior)
-            {
-                locationFid = cellSourceToEmitted.TryGetValue(parentCell.FormId, out var emittedCellFid)
-                    ? emittedCellFid
-                    : parentCell.FormId;
-            }
-            else if (parentCell.WorldspaceFormId is { } srcWrldId
-                     && worldspaceSourceToEmitted.TryGetValue(srcWrldId, out var emittedWrldId))
-            {
-                locationFid = emittedWrldId;
-            }
-            else if (parentCell.WorldspaceFormId is { } masterWrldId)
-            {
-                locationFid = masterWrldId;
-            }
-            else
-            {
-                locationFid = cellSourceToEmitted.TryGetValue(parentCell.FormId, out var emittedCellFid)
-                    ? emittedCellFid
-                    : parentCell.FormId;
-            }
-
-            var nvvxBytes = navm.RawSubrecords
-                .FirstOrDefault(s => s.Signature == "NVVX").Bytes ?? [];
-
-            builder.Add(new PlannedNavmEntry
-            {
-                NavmFormId = emittedNavmFormId,
-                LocationFormId = locationFid,
-                IsInterior = parentCell.IsInterior,
-                GridX = parentCell.IsInterior ? 0 : parentCell.GridX ?? 0,
-                GridY = parentCell.IsInterior ? 0 : parentCell.GridY ?? 0,
-                NvvxBytes = nvvxBytes,
-            });
-        }
-
-        return builder.ToImmutable();
-    }
 
     private static ImmutableDictionary<uint, CellPlan> BuildCellPlans(
         IReadOnlyList<(CellCatalogEntry Entry, Disposition.DispositionDecision Decision)> decisions,

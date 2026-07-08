@@ -99,8 +99,8 @@ public sealed class EsmPlanner
             return Empty(coverage, masterPath);
         }
 
-        var decisions = _disposition.Decide(catalog);
-        var sourceToEmitted = _allocation.AllocateAll(decisions);
+        var decisions = EngineMarkerAliasPass.Apply(_disposition.Decide(catalog), out var markerAliases);
+        var sourceToEmitted = _allocation.AllocateAll(decisions).AddRange(markerAliases);
 
         // No phantom-master invariant at this layer: the top-level FormIdPlanner allocates
         // for EVERY DmpNew regardless of whether the source FormID happens to be in master

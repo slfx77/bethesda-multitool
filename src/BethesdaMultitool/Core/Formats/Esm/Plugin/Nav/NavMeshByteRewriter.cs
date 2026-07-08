@@ -95,7 +95,14 @@ internal static class NavMeshByteRewriter
             }
             result.Add(new EncodedSubrecord(sub.Signature, bytes));
         }
-        return result;
+
+        // Final stage: upgrade the proto-format record shape to retail FNV (subrecord
+        // order, NVER value, 24-byte DATA with derived counts, synthesized NVGD). The
+        // retail engine's sequential NAVM loader rejects the proto shape, which fails the
+        // owning cell's temp-children stream and silently skips the cell's InitItem — the
+        // Gomorrah attach AV family. Runs last so DATA count derivation sees the final
+        // NVEX/NVTR contents.
+        return NavMeshRetailFormatNormalizer.Normalize(result);
     }
 
     private static void PatchNvexEntries(byte[] bytes, IReadOnlyDictionary<uint, uint> rewrites)

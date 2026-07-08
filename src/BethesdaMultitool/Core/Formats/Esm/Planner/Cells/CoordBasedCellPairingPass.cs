@@ -31,8 +31,23 @@ internal static class CoordBasedCellPairingPass
         IReadOnlyList<CellCatalogEntry> catalog,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
     {
+        return Reconcile(catalog, masterRecordsByFormId, out _);
+    }
+
+    /// <summary>
+    ///     Variant that also reports the proto→master cell FormID aliases produced by the
+    ///     folds. NAVMs (and any other child keyed by the proto cell FormID) must re-key
+    ///     through this map or they orphan — the folded plan entry is keyed on master's
+    ///     FormID, so children looked up under the proto FormID never attach.
+    /// </summary>
+    public static IReadOnlyList<CellCatalogEntry> Reconcile(
+        IReadOnlyList<CellCatalogEntry> catalog,
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
+        out Dictionary<uint, uint> protoToMasterCellAlias)
+    {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(masterRecordsByFormId);
+        protoToMasterCellAlias = [];
 
         // Build a (worldspace, gridX, gridY) → master CELL FormID index from the catalog's
         // MasterOnly entries. Skip cells without a worldspace context (interiors / unresolved).
@@ -96,6 +111,11 @@ internal static class CoordBasedCellPairingPass
                 DmpModel = entry.DmpModel,
             };
             foldedDmpIndices.Add(i);
+
+            if (entry.DmpModel.FormId != 0 && entry.DmpModel.FormId != masterEntry.CellFormId)
+            {
+                protoToMasterCellAlias[entry.DmpModel.FormId] = masterEntry.CellFormId;
+            }
         }
 
         if (foldedDmpIndices.Count == 0)
