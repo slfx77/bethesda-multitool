@@ -402,15 +402,16 @@ internal static class NifGeometryExtractor
                     useVertexAlpha = (lsf1 & 0x8u) != 0;
                 }
 
-                if (textureResolver != null)
-                {
-                    // Fall back to a legacy NiTexturingProperty base map (e.g. effects\ambient\
-                    // fxvulturesNV.nif) when no BSShader* property supplied a diffuse path — without
-                    // this the mesh resolves no texture and renders as the 1x1 white pixel.
-                    diffusePath = shaderMetadata?.DiffusePath
-                                  ?? NifTexturingPropertyReader.ResolveBaseTexturePath(data, nif, propRefs);
-                    normalMapPath = shaderMetadata?.NormalMapPath;
-                }
+                // Fall back to a legacy NiTexturingProperty base map (e.g. effects\ambient\
+                // fxvulturesNV.nif) when no BSShader* property supplied a diffuse path — without
+                // this the mesh resolves no texture and renders as the 1x1 white pixel.
+                // Populated regardless of textureResolver: it is a pure string read, and callers
+                // WITHOUT a resolver (the sky-dome NIF loader) still need the baked paths — the
+                // resolver-gated version left TES4 sky shapes (SEStars.NIF) pathless, so Shivering
+                // Isles rendered the generic star fallback instead of its purple SESky* layers.
+                diffusePath = shaderMetadata?.DiffusePath
+                              ?? NifTexturingPropertyReader.ResolveBaseTexturePath(data, nif, propRefs);
+                normalMapPath = shaderMetadata?.NormalMapPath;
 
                 // NiStencilProperty DrawMode: DRAW_BOTH (3) = double-sided (no backface culling)
                 isDoubleSided = NifBlockParsers.ReadIsDoubleSided(data, nif, propRefs);
