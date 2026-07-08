@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
+using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using Xunit;
 using CellRecord = BethesdaMultitool.Core.Formats.Esm.Models.Records.World.CellRecord;
 
@@ -32,8 +33,12 @@ public sealed class PlanCellSectionBuilderParityTests
     }
 
     [Fact]
-    public void Single_Interior_KeepMaster_Cell_Matches_Legacy()
+    public void Single_Interior_KeepMaster_Cell_With_No_Children_Is_Suppressed()
     {
+        // A master-anchored cell with no surviving children is a byte-identical (ITM)
+        // override: zero information, but it would make this plugin the cell's winning
+        // file and risk the master's temporary children in-game (Doc Mitchell's-house
+        // blanking class). It must not emit at all.
         var (master, context) = MakeInteriorCellMaster(0x000ABCDE);
         var cellPlan = new CellPlan
         {
@@ -59,22 +64,12 @@ public sealed class PlanCellSectionBuilderParityTests
             CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan)
         };
 
+        var stats = new ConversionPipelineStats();
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
-            plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
+            plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions(), stats);
 
-        var legacyBundle = new CellOverrideBundle
-        {
-            CellFormId = 0x000ABCDE,
-            Context = context,
-            CellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(master),
-            PersistentChildRecords = [],
-            VwdChildRecords = [],
-            TemporaryChildRecords = []
-        };
-        var legacyBytes = CellGrupBuilder.BuildCellSection(
-            [legacyBundle], new Dictionary<uint, ParsedMainRecord>());
-
-        Assert.Equal(legacyBytes, plannerBytes);
+        Assert.Null(plannerBytes);
+        Assert.Equal(1, stats.DropReasonCounts["cell.itm-override-suppressed"]);
     }
 
     [Fact]
@@ -119,7 +114,9 @@ public sealed class PlanCellSectionBuilderParityTests
 
         var plan = MakeEmptyPlan() with
         {
-            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan)
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan),
+            // The ref's base must be resolvable or the dangling-base guard drops the ref.
+            EmittedFormIds = ImmutableHashSet.Create(0x000ABCDFu, 0x01000801u)
         };
 
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
@@ -129,7 +126,7 @@ public sealed class PlanCellSectionBuilderParityTests
         var subs = RefrEncoder.EncodeNewPlacedReference(placed);
         Assert.NotEmpty(subs.Subrecords);
         var legacyChildBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
-            "REFR", 0x01000801u, 0u, subs.Subrecords);
+            "REFR", 0x01000801u, 0x400u, subs.Subrecords); // persistent-bucket ref carries flag 0x400
 
         var legacyBundle = new CellOverrideBundle
         {
@@ -208,6 +205,173 @@ public sealed class PlanCellSectionBuilderParityTests
             [legacyBundle], new Dictionary<uint, ParsedMainRecord>());
 
         Assert.Equal(legacyBytes, plannerBytes);
+    }
+
+    [Fact]
+    public void New_Placed_Ref_With_Runtime_Dynamic_Base_Is_Dropped()
+    {
+        // 0xFFxxxxxx bases are engine-created runtime clones (leveled spawns); they can
+        // never resolve from a plugin file. Emitting the ref dangling tears the cell down
+        // at load, so the guard drops it and the cell emits with no children.
+        var stats = new ConversionPipelineStats();
+        var bytes = BuildSectionWithSinglePlacedRef(
+            baseFormId: 0xFF000B78, recordType: "ACHR", stats: stats);
+
+        // Dropping the only child leaves an ITM cell override, which is suppressed too.
+        Assert.Null(bytes);
+        Assert.Equal(1, stats.DropReasonCounts["refr.dangling-base"]);
+        Assert.Equal(1, stats.SkippedByType["ACHR"]);
+        Assert.Equal(1, stats.DropReasonCounts["cell.itm-override-suppressed"]);
+    }
+
+    [Fact]
+    public void New_Placed_Ref_With_Phantom_Master_Base_Is_Dropped()
+    {
+        // Proto FormIDs in the master range that the final master cut resolve to nothing
+        // at load — the phantom-master crash class. Same drop as runtime-dynamic bases.
+        var stats = new ConversionPipelineStats();
+        var bytes = BuildSectionWithSinglePlacedRef(
+            baseFormId: 0x0013D2F0, recordType: "REFR", stats: stats);
+
+        Assert.Null(bytes);
+        Assert.Equal(1, stats.DropReasonCounts["refr.dangling-base"]);
+    }
+
+    [Fact]
+    public void New_Placed_Ref_With_Engine_Reserved_Base_Is_Kept()
+    {
+        // Sub-0x800 bases (DoorMarker, RoomMarker, XMarkerHeading, …) are EXE-baked, not
+        // authored in any ESM; dropping refs to them corrupts the cell's reference graph.
+        var placed = new PlacedReference
+        {
+            FormId = 0x01000801,
+            BaseFormId = 0x0000001F,
+            RecordType = "REFR",
+            IsPersistent = true
+        };
+
+        var bytes = BuildSectionWithSinglePlacedRef(placed);
+
+        var subs = RefrEncoder.EncodeNewPlacedReference(placed);
+        var expectedChild = PluginRecordByteBuilder.BuildNewRecordBytes(
+            "REFR", 0x01000801u, 0x400u, subs.Subrecords); // persistent-bucket ref carries flag 0x400
+        Assert.Equal(BuildExpectedCellOnlySection(persistentChildren: [expectedChild]), bytes);
+    }
+
+    [Fact]
+    public void New_Placed_Ref_Base_Is_Remapped_Through_Source_To_Emitted_Map()
+    {
+        // A base pointing at another planner-allocated record must emit the EMITTED
+        // FormID, not the proto source FormID (which would dangle).
+        var placed = new PlacedReference
+        {
+            FormId = 0x01000801,
+            BaseFormId = 0xAA000010,
+            RecordType = "REFR",
+            IsPersistent = true
+        };
+
+        var bytes = BuildSectionWithSinglePlacedRef(
+            placed,
+            sourceToEmitted: ImmutableDictionary<uint, uint>.Empty.Add(0xAA000010, 0x01000900),
+            emittedFormIds: ImmutableHashSet.Create(0x01000801u, 0x01000900u));
+
+        var subs = RefrEncoder.EncodeNewPlacedReference(placed with { BaseFormId = 0x01000900 });
+        var expectedChild = PluginRecordByteBuilder.BuildNewRecordBytes(
+            "REFR", 0x01000801u, 0x400u, subs.Subrecords); // persistent-bucket ref carries flag 0x400
+        Assert.Equal(BuildExpectedCellOnlySection(persistentChildren: [expectedChild]), bytes);
+    }
+
+    [Fact]
+    public void New_Achr_With_Wrong_Master_Base_Type_Is_Dropped()
+    {
+        // ACHR must point at NPC_; a master base of any other type is the
+        // base-type-mismatch class (the v20.5 ANAM/Robot lesson, placed-ref edition).
+        var stats = new ConversionPipelineStats();
+        var bytes = BuildSectionWithSinglePlacedRef(
+            baseFormId: 0x000ABCDE, recordType: "ACHR", stats: stats); // Base = the CELL master.
+
+        Assert.Null(bytes);
+        Assert.Equal(1, stats.DropReasonCounts["refr.base-type-mismatch"]);
+    }
+
+    private static byte[]? BuildSectionWithSinglePlacedRef(
+        uint baseFormId, string recordType, ConversionPipelineStats? stats = null)
+    {
+        var placed = new PlacedReference
+        {
+            FormId = 0x01000801,
+            BaseFormId = baseFormId,
+            RecordType = recordType,
+            IsPersistent = true
+        };
+        return BuildSectionWithSinglePlacedRef(placed, stats: stats);
+    }
+
+    private static byte[]? BuildSectionWithSinglePlacedRef(
+        PlacedReference placed,
+        ImmutableDictionary<uint, uint>? sourceToEmitted = null,
+        ImmutableHashSet<uint>? emittedFormIds = null,
+        ConversionPipelineStats? stats = null)
+    {
+        var (master, context) = MakeInteriorCellMaster(0x000ABCDE);
+        var childPlan = new RecordPlan
+        {
+            Type = placed.RecordType,
+            Disposition = RecordDisposition.New,
+            FormId = placed.FormId,
+            Model = placed,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
+        var cellPlan = new CellPlan
+        {
+            CellFormId = 0x000ABCDE,
+            CellRecordPlan = new RecordPlan
+            {
+                Type = "CELL",
+                Disposition = RecordDisposition.KeepMaster,
+                FormId = 0x000ABCDE,
+                Master = master,
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+            },
+            Context = context,
+            PersistentChildren = ImmutableArray.Create(childPlan),
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty
+        };
+
+        var plan = MakeEmptyPlan() with
+        {
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(0x000ABCDE, cellPlan),
+            SourceToEmittedFormId = sourceToEmitted ?? ImmutableDictionary<uint, uint>.Empty,
+            EmittedFormIds = emittedFormIds ?? ImmutableHashSet.Create(placed.FormId)
+        };
+
+        return PlanCellSectionBuilder.BuildCellSection(
+            plan,
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = master },
+            new PluginBuildOptions(),
+            stats);
+    }
+
+    private static byte[]? BuildExpectedCellOnlySection(List<byte[]>? persistentChildren = null)
+    {
+        var (master, context) = MakeInteriorCellMaster(0x000ABCDE);
+        var legacyBundle = new CellOverrideBundle
+        {
+            CellFormId = 0x000ABCDE,
+            Context = context,
+            CellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(master),
+            PersistentChildRecords = persistentChildren ?? [],
+            VwdChildRecords = [],
+            TemporaryChildRecords = []
+        };
+        return CellGrupBuilder.BuildCellSection(
+            [legacyBundle], new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = master });
     }
 
     private static EmitPlan MakeEmptyPlan()
