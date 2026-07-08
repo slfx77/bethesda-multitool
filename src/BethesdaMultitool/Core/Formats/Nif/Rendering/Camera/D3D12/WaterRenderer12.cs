@@ -347,7 +347,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         // Per-frame CB (b0) — viewProj + DNAM colors + (camera pos, elapsed time) for the
         // procedural ripple/Fresnel/specular shading.
         var elapsedSeconds = (float)Stopwatch.GetElapsedTime(_startTimestamp).TotalSeconds;
-        var perFrameAlloc = _ringBuffer.Allocate(frameIndex, UniformsByteSize, GpuRingBuffer12.CbAlignment);
+        if (!_ringBuffer.TryAllocate(frameIndex, UniformsByteSize, out var perFrameAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            // Frame ring slot exhausted by the earlier scene passes (dense whole-map views). Skip
+            // the water pass this frame — the next frame retries — instead of throwing, which
+            // killed the whole render loop (the water pass runs LAST, so it hits the wall first).
+            LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
+            return 0;
+        }
         var surface = _appearance?.Surface ?? BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterSurfaceParams.Default;
         unsafe
         {

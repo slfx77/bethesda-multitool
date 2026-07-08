@@ -98,7 +98,7 @@ internal static class EnvironmentVariables
         /// stay clip-aligned either way.</summary>
         public const string CameraRelative = "FALLOUT_VIEWER_CAMERA_RELATIVE";
 
-        /// <summary>Per-frame upload-heap ring-buffer size in MEGABYTES (default 64). Shared by every D3D12 renderer's per-draw CBs; raise if a very dense top-down render reports "frame slot exhausted".</summary>
+        /// <summary>Per-frame upload-heap ring-buffer size in MEGABYTES (default 128). Shared by every D3D12 renderer's per-draw CBs; raise if a very dense whole-map view drops draws (every consumer soft-fails instead of throwing).</summary>
         public const string RingBufferMegabytes = "FALLOUT_VIEWER_RING_BUFFER_MB";
 
         /// <summary>When 1, renders engine marker objects (XMarker/heading, map/travel markers, etc.) that are hidden by default to match the game.</summary>

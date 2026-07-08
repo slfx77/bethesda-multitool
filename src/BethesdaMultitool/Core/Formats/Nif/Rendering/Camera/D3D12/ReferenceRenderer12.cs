@@ -554,7 +554,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var frameIndex = _recorder.FrameIndex;
 
         var segmentStarted = StartTiming();
-        var perFrameAlloc = _ringBuffer.Allocate(frameIndex, PerFrameByteSize, GpuRingBuffer12.CbAlignment);
+        // Soft-fail on ring exhaustion (dense whole-map frames): skip the reference pass this
+        // frame instead of throwing and killing the render loop. Zeroing the deferred CBV makes
+        // RenderBlendedDeferred a no-op too (its state would otherwise be stale this frame).
+        if (!_ringBuffer.TryAllocate(frameIndex, PerFrameByteSize, out var perFrameAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            _deferredPerFrameCbvAddress = 0;
+            return 0;
+        }
         unsafe { *(Matrix4x4*)perFrameAlloc.CpuPtr = viewProj; }
         _deferredPerFrameCbvAddress = perFrameAlloc.GpuAddress;
         _deferredFrameIndex = frameIndex;
@@ -1062,7 +1069,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// </summary>
     public void RenderBlendedDeferred()
     {
-        if (_blendedDraws.Count == 0) return;
+        // Address 0 = the opaque pass skipped this frame (ring exhaustion) — nothing valid to bind.
+        if (_blendedDraws.Count == 0 || _deferredPerFrameCbvAddress == 0) return;
         var cmd = _recorder.CommandList;
 
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);

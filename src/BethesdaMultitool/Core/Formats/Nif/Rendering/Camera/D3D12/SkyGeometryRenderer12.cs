@@ -302,7 +302,11 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
             ScrollMode = new Vector4(scroll, mode, 0f),
             TexIndex = texIndex,
         };
-        var cbAlloc = _ringBuffer.Allocate(frameIndex, SkyGeoConstants.ByteSize, GpuRingBuffer12.CbAlignment);
+        // Soft-fail on ring exhaustion — drop this sky mesh for the frame rather than throwing.
+        if (!_ringBuffer.TryAllocate(frameIndex, SkyGeoConstants.ByteSize, out var cbAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            return;
+        }
         unsafe { *(SkyGeoConstants*)cbAlloc.CpuPtr = constants; }
 
         cmd.SetPipelineState(mode switch { 1 => _psoStars, 2 => _psoClouds, _ => _psoGradient });

@@ -20,6 +20,11 @@ public sealed partial class WorldView3DControl
     private static readonly bool TolerantCullEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.TolerantCull) != "0";
 
+    // Render-loop failure tolerance: skip + retry on transient frame failures, detach only when
+    // they persist (see the OnRendering catch block).
+    private const int MaxConsecutiveRenderFailures = 3;
+    private int _consecutiveRenderFailures;
+
     // Grid pitch for the snapped camera-relative render origin (see sceneRenderOrigin). One FNV
     // cell; fixed across games — it's a precision/stability trade, not a world-structure quantity.
     private const float RenderOriginGridSize = 4096f;
@@ -80,19 +85,32 @@ public sealed partial class WorldView3DControl
         try
         {
             RenderFrameD3D12();
+            _consecutiveRenderFailures = 0;
         }
         catch (Exception ex)
         {
-            Log.Warn("WorldView3DControl: render frame failed, detaching loop:\n{0}", ex);
-            // Drain any pending D3D12 validation messages BEFORE detaching — the next-frame
-            // pump won't get a chance. No-op unless FALLOUT_VIEWER_D3D12_DEBUG=1.
+            // Tolerate TRANSIENT failures (e.g. a one-off resource spike) by skipping the frame and
+            // retrying: a single exception used to detach the loop permanently, freezing the viewer
+            // on what was often a recoverable condition (a whole-map frame exhausting the upload
+            // ring). Persistent failures (device removed, real bugs) still detach after a few
+            // frames instead of spamming the log at vsync.
+            _consecutiveRenderFailures++;
+            Log.Warn("WorldView3DControl: render frame failed ({0}/{1}):\n{2}",
+                _consecutiveRenderFailures, MaxConsecutiveRenderFailures, ex);
+            // Drain any pending D3D12 validation messages while we still can — if this ends in a
+            // detach the next-frame pump won't get a chance. No-op unless FALLOUT_VIEWER_D3D12_DEBUG=1.
             try { _gpu12?.PumpDebugMessages(); }
             catch (Exception pumpEx) { Log.Warn("PumpDebugMessages on render-frame failure threw: {0}", pumpEx.Message); }
             // If the GPU device was removed (TDR / page fault — the usual "crash with no cause"),
             // attribute it. No-op when the device is fine. Needs FALLOUT_VIEWER_DRED=1 for breadcrumbs.
             try { _gpu12?.LogDeviceRemovedDiagnostics("render-frame"); }
             catch (Exception dredEx) { Log.Warn("LogDeviceRemovedDiagnostics on render-frame failure threw: {0}", dredEx.Message); }
-            DetachRenderLoop();
+            if (_consecutiveRenderFailures >= MaxConsecutiveRenderFailures)
+            {
+                Log.Warn("WorldView3DControl: {0} consecutive render failures — detaching loop.",
+                    _consecutiveRenderFailures);
+                DetachRenderLoop();
+            }
         }
     }
 

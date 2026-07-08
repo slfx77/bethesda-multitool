@@ -185,7 +185,11 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
 
         var frameIndex = _recorder.FrameIndex;
         var cmd = _recorder.CommandList;
-        var alloc = _ringBuffer.Allocate(frameIndex, BillboardConstants.ByteSize, GpuRingBuffer12.CbAlignment);
+        // Soft-fail on ring exhaustion — drop this billboard for the frame rather than throwing.
+        if (!_ringBuffer.TryAllocate(frameIndex, BillboardConstants.ByteSize, out var alloc, GpuRingBuffer12.CbAlignment))
+        {
+            return;
+        }
         unsafe { *(BillboardConstants*)alloc.CpuPtr = c; }
 
         cmd.SetPipelineState(pso);

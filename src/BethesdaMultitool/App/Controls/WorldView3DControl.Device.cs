@@ -47,13 +47,14 @@ public sealed partial class WorldView3DControl
             if (_gpu12 is null) return false;
 
             _commandRecorder12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12(_gpu12);
-            // 64 MB per frame slot (env-overridable). Shared by every renderer's per-draw CBs. The
-            // live view is frustum+cylinder culled so it stays well under this, but the unthrottled
-            // top-down overlay can render a very dense window in one pass; 64 MB gives ~262 k
-            // 256-byte allocations of headroom (4× the prior 16 MB) before TryAllocate degrades
-            // gracefully (stops adding draws, presents what fit) rather than abandoning the frame.
+            // 128 MB per frame slot (env-overridable). Shared by every renderer's per-draw CBs and
+            // the reference instance uploads. A whole-map perspective view (max render distance,
+            // most of the worldspace visible) genuinely fills 64 MB — user-reported frame-slot
+            // exhaustion — so the default doubled; every consumer additionally soft-fails
+            // (TryAllocate: stops adding draws, presents what fit) rather than abandoning the frame.
+            // Upload heaps are system-memory-backed, so slots × 128 MB is cheap headroom.
             var ringMegabytes = EnvironmentVariables.GetClampedInt(
-                EnvironmentVariables.Viewer.RingBufferMegabytes, defaultValue: 64, min: 16, max: 512);
+                EnvironmentVariables.Viewer.RingBufferMegabytes, defaultValue: 128, min: 16, max: 512);
             _ringBuffer12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuRingBuffer12(
                 _gpu12,
                 BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuCommandRecorder12.FramesInFlight,

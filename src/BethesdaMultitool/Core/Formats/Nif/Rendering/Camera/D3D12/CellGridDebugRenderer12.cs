@@ -245,7 +245,12 @@ internal sealed class CellGridDebugRenderer12
         }
         WriteVertexBytes(vbAlloc.CpuPtr, vbByteCount);
 
-        var cbAlloc = _ringBuffer.Allocate(frameIndex, UniformsByteSize, GpuRingBuffer12.CbAlignment);
+        // Same soft-fail as the vertex block above — non-essential overlay, retry next frame.
+        if (!_ringBuffer.TryAllocate(frameIndex, UniformsByteSize, out var cbAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
+            return 0;
+        }
         var uniforms = new CellGridUniforms
         {
             ViewProj = viewProj,
@@ -258,7 +263,11 @@ internal sealed class CellGridDebugRenderer12
         // so the result should be pixel-identical to the direct-draw path.
         // Args alignment: D3D12 requires 4-byte alignment for indirect arg buffers; the
         // struct's natural alignment of 4 suffices.
-        var argAlloc = _ringBuffer.Allocate(frameIndex, 16, alignment: 4);
+        if (!_ringBuffer.TryAllocate(frameIndex, 16, out var argAlloc, alignment: 4))
+        {
+            LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
+            return 0;
+        }
         unsafe
         {
             *(DrawArguments*)argAlloc.CpuPtr = new DrawArguments(

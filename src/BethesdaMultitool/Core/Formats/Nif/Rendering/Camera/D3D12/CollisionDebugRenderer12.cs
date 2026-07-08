@@ -197,7 +197,11 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
 
         WriteVertexBytes(vbAlloc.CpuPtr, vbByteCount);
 
-        var cbAlloc = _ringBuffer.Allocate(frameIndex, UniformsByteSize, GpuRingBuffer12.CbAlignment);
+        // Same soft-fail as the vertex block above — non-essential overlay, retry next frame.
+        if (!_ringBuffer.TryAllocate(frameIndex, UniformsByteSize, out var cbAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            return 0;
+        }
         var uniforms = new CollisionUniforms
         {
             ViewProj = viewProj,

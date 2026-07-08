@@ -48,12 +48,13 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private const double MaxMeshBuildMillisecondsPerFrame = 3.0;
 
     // Async cell build runs off the render thread, but it still allocates enough to compete with
-    // mesh decode and trigger visible GC pauses. Default 4 (was 2): with MaxBuildStartsPerFrame
-    // tracking this, ~4 cells/frame begin building instead of 2, so the terrain edge backlog at a
-    // zoomed-out camera clears about twice as fast. Tune via env (down on GC-bound machines, up to 16).
+    // mesh decode and trigger visible GC pauses. Default scales gently with cores (cores/4, clamped
+    // 4..8): terrain builds are the binding constraint on whole-map fills (~4 workers × 100-250ms
+    // per cell), so high-core machines get a bit more parallelism while staying GC-guarded. Tune
+    // via env (down on GC-bound machines, up to 16).
     private static readonly int MaxConcurrentBuildTasks = ParsePositiveIntEnvironment(
         EnvironmentVariables.Viewer.TerrainBuildConcurrency,
-        defaultValue: 4,
+        defaultValue: Math.Clamp(Environment.ProcessorCount / 4, 4, 8),
         min: 1,
         max: 16);
 
@@ -218,8 +219,18 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     /// </summary>
     public bool StreamingThrottled { get; set; } = true;
 
+    // Time-based pace (StreamingFrameBudgetScaler): per-frame allowances are calibrated for 60fps,
+    // so a heavy whole-map frame (10-20fps once thousands of cells draw) otherwise collapses the
+    // fill rate exactly when the most cells are pending — the "terrain loads slower and slower the
+    // further out it gets" compounding crawl. Scaling by measured frame duration keeps the fill
+    // THROUGHPUT constant; the reference streaming path already paces this way.
+    private double _frameBudgetScale = 1.0;
+    private long _lastFrameTimestamp;
+
     private int EffectiveMaxBuildStartsPerFrame =>
-        StreamingThrottled ? MaxBuildStartsPerFrame : int.MaxValue;
+        StreamingThrottled
+            ? Core.Resources.StreamingFrameBudgetScaler.ScaleCount(MaxBuildStartsPerFrame, _frameBudgetScale)
+            : int.MaxValue;
 
     private int EffectiveMaxConcurrentBuildTasks =>
         StreamingThrottled ? MaxConcurrentBuildTasks : Math.Max(MaxConcurrentBuildTasks, UnthrottledMaxConcurrentBuildTasks);
@@ -371,19 +382,38 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         LastStats.Reset();
         _textureResolver.ResetFrameStats();
 
+        // Self-measured frame duration → this frame's time-based streaming scale. A back-to-back
+        // second call in the same frame (depth prepass) measures ~0 and floors at 1.0 — allowances
+        // never shrink below the 60fps calibration.
+        var nowTimestamp = Stopwatch.GetTimestamp();
+        _frameBudgetScale = _lastFrameTimestamp == 0
+            ? 1.0
+            : Core.Resources.StreamingFrameBudgetScaler.Scale(
+                Stopwatch.GetElapsedTime(_lastFrameTimestamp, nowTimestamp).TotalSeconds);
+        _lastFrameTimestamp = nowTimestamp;
+
         var cmd = _recorder.CommandList;
         var frameIndex = _recorder.FrameIndex;
 
         var segmentStarted = StartTiming();
 
-        // Per-frame CB (b0) — viewProj.
-        var perFrameAlloc = _ringBuffer.Allocate(frameIndex, PerFrameByteSize, GpuRingBuffer12.CbAlignment);
+        // Per-frame CB (b0) — viewProj. Soft-fail on ring exhaustion (dense whole-map frames):
+        // skip the terrain pass this frame instead of throwing and killing the render loop.
+        if (!_ringBuffer.TryAllocate(frameIndex, PerFrameByteSize, out var perFrameAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
+            return 0;
+        }
         unsafe { *(Matrix4x4*)perFrameAlloc.CpuPtr = viewProj; }
 
         // Per-mode CB (b2): x = show diffuse textures (1/0), y = diffuse UV scale (formerly in the
         // per-quadrant CB, now per-frame since every cell uses the same scale), z = apply VCLR tint
         // (1/0), w = padding. textures off + vclr on reproduces the old VCLR-only debug look.
-        var perModeAlloc = _ringBuffer.Allocate(frameIndex, PerModeByteSize, GpuRingBuffer12.CbAlignment);
+        if (!_ringBuffer.TryAllocate(frameIndex, PerModeByteSize, out var perModeAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
+            return 0;
+        }
         unsafe
         {
             *(Vector4*)perModeAlloc.CpuPtr = new Vector4(
@@ -460,7 +490,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         PruneCompletedBuildTasks();
         var throttled = StreamingThrottled;
         var uploadBudget = throttled ? MaxNewUploadsPerFrame : int.MaxValue;
-        var uploadTimeBudget = new FrameTimeBudget(MaxMeshBuildMillisecondsPerFrame);
+        // Wall-clock build/upload slice, scaled by the measured frame duration (see
+        // _frameBudgetScale): a fixed 3ms inside a 100ms whole-map frame was a 3% duty cycle,
+        // throttling the fill hardest exactly when the frame is busiest.
+        var uploadTimeBudget = new FrameTimeBudget(MaxMeshBuildMillisecondsPerFrame * _frameBudgetScale);
         var vertexStride = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
         const uint blendWeightStride = 64; // SlotVectors (4) × sizeof(Vector4)
         var drawn = 0;

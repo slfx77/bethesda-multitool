@@ -220,7 +220,11 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
     private void DrawPass(
         ID3D12GraphicsCommandList cmd, int frameIndex, Matrix4x4 viewProj, Vector4 color, ID3D12PipelineState pso)
     {
-        var cbAlloc = _ringBuffer.Allocate(frameIndex, UniformsByteSize, GpuRingBuffer12.CbAlignment);
+        // Soft-fail on ring exhaustion — skip this overlay pass for the frame rather than throwing.
+        if (!_ringBuffer.TryAllocate(frameIndex, UniformsByteSize, out var cbAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            return;
+        }
         unsafe { *(NavMeshUniforms*)cbAlloc.CpuPtr = new NavMeshUniforms { ViewProj = viewProj, Color = color }; }
 
         cmd.SetPipelineState(pso);
