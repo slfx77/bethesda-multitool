@@ -46,25 +46,51 @@ public sealed class EspAssemblerDispatchTests
     }
 
     [Fact]
-    public void Planner_And_Legacy_Produce_Equal_Bytes_For_KeepMaster_Cell()
+    public void Planner_And_Legacy_Produce_Equal_Bytes_For_KeepMaster_Cell_With_Child()
     {
         // Build the same one-cell scenario through both writers and assert byte equality.
         // This is the load-bearing invariant: the dispatch shim is safe to enable.
+        // The cell carries one new placed ref — a master-anchored cell with NO children is
+        // an ITM override that the planner intentionally suppresses (see
+        // PlanCellSectionBuilderParityTests.Single_Interior_KeepMaster_Cell_With_No_Children_Is_Suppressed).
         var cellFormId = 0x000ABCDEu;
         var (master, context) = MakeInteriorCellMaster(cellFormId);
+
+        var placed = new BethesdaMultitool.Core.Formats.Esm.Models.World.PlacedReference
+        {
+            FormId = 0x01000801,
+            BaseFormId = 0x0000001F, // Engine-reserved (RoomMarker) — survives base validation.
+            RecordType = "REFR",
+            IsPersistent = true
+        };
+        var childSubs = BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World
+            .RefrEncoder.EncodeNewPlacedReference(placed);
+        var childBytes = BethesdaMultitool.Core.Formats.Esm.Plugin.Output
+            .PluginRecordByteBuilder.BuildNewRecordBytes(
+                "REFR", placed.FormId, 0x400u, childSubs.Subrecords); // persistent-bucket flag
 
         var legacyBundle = new CellOverrideBundle
         {
             CellFormId = cellFormId,
             Context = context,
             CellRecordBytes = CellGrupBuilder.ReconstructRecordBytes(master),
-            PersistentChildRecords = [],
+            PersistentChildRecords = [childBytes],
             VwdChildRecords = [],
             TemporaryChildRecords = []
         };
         var legacyBytes = CellGrupBuilder.BuildCellSection(
             [legacyBundle], new Dictionary<uint, ParsedMainRecord>());
 
+        var childPlan = new RecordPlan
+        {
+            Type = "REFR",
+            Disposition = RecordDisposition.New,
+            FormId = placed.FormId,
+            Model = placed,
+            References = ImmutableArray<ResolvedRef>.Empty,
+            ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+            Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        };
         var cellPlan = new CellPlan
         {
             CellFormId = cellFormId,
@@ -79,14 +105,15 @@ public sealed class EspAssemblerDispatchTests
                 Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
             },
             Context = context,
-            PersistentChildren = ImmutableArray<RecordPlan>.Empty,
+            PersistentChildren = ImmutableArray.Create(childPlan),
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
             TemporaryChildren = ImmutableArray<RecordPlan>.Empty
         };
 
         var plan = MakeEmptyPlan() with
         {
-            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cellFormId, cellPlan)
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(cellFormId, cellPlan),
+            EmittedFormIds = ImmutableHashSet.Create(placed.FormId)
         };
 
         var plannerBytes = PlanCellSectionBuilder.BuildCellSection(

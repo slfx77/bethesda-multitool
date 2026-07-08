@@ -4,6 +4,18 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 ///     Main record header (24 bytes for FNV).
 ///     Layout: Signature(4) + DataSize(4) + Flags(4) + FormId(4) + Timestamp(4) + VcsInfo(2) + Version(2)
 /// </summary>
+/// <remarks>
+///     ⚠ The trailing field NAMES are historically transposed relative to the engine's
+///     semantics, and the parser/writer both use this mapping (so master bytes round-trip):
+///     <see cref="VcsInfo" /> occupies header offset 20, which the FNV runtime reads as the
+///     record's FORM VERSION (retail FNV records carry 15 here); <see cref="Version" />
+///     occupies offset 22, the second version-control word (retail carries small VC values
+///     or 0). Any code SYNTHESIZING a header from scratch must put
+///     <c>Tes4HeaderBuilder.RecordVersion</c> into <see cref="VcsInfo" /> — records shipping
+///     0 at offset 20 are "form version 0" to the engine and are mishandled by the
+///     ESM-flagged load path (v95 uninitialized-forms class). Renaming the fields is a
+///     follow-up; every initializer and test fixture would need the swap applied.
+/// </remarks>
 public record MainRecordHeader
 {
     public required string Signature { get; init; }

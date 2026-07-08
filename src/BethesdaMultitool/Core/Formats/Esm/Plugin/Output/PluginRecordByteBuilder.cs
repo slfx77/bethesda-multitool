@@ -42,6 +42,10 @@ internal static class PluginRecordByteBuilder
             ? EsmRecordCompression.CompressConvertedRecordData(subBytes)
             : subBytes;
 
+        // VcsInfo occupies header offset 20 = the engine's FORM VERSION slot (see
+        // MainRecordHeader remarks). Shipping 0 there made the runtime treat every new
+        // record as form-version 0 and skip initialization under the ESM-flagged load
+        // path (raw FormIDs left in extra-data pointer slots -> the Gomorrah AV class).
         var header = new MainRecordHeader
         {
             Signature = signature,
@@ -49,8 +53,8 @@ internal static class PluginRecordByteBuilder
             Flags = flags,
             FormId = formId,
             Timestamp = 0,
-            VcsInfo = 0,
-            Version = Tes4HeaderBuilder.RecordVersion
+            VcsInfo = Tes4HeaderBuilder.RecordVersion,
+            Version = 0
         };
 
         using var stream = new MemoryStream();
@@ -82,11 +86,13 @@ internal static class PluginRecordByteBuilder
             ? EsmRecordCompression.CompressConvertedRecordData(subrecordBytes)
             : subrecordBytes;
 
+        // Keep the master's trailing header words verbatim: VcsInfo (offset 20) is the
+        // engine's form-version slot and already carries 15 from the master parse;
+        // Version (offset 22) is a version-control word the engine ignores.
         var header = esmRecord.Header with
         {
             DataSize = (uint)bodyBytes.Length,
-            Flags = flags,
-            Version = Tes4HeaderBuilder.RecordVersion
+            Flags = flags
         };
 
         using var stream = new MemoryStream();

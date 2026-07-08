@@ -128,9 +128,14 @@ public class Tes4HeaderBuilderTests
     public void Build_HeaderVersion_Is0x000F()
     {
         var bytes = BuildSimple();
-        // Version field lives at bytes 22–23 (little-endian uint16).
-        var version = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(22, 2));
-        Assert.Equal(Tes4HeaderBuilder.RecordVersion, version);
+        // The engine's FORM VERSION lives at bytes 20-21 (retail FNV TES4 carries 15
+        // there); bytes 22-23 are the second version-control word (retail: 0). The
+        // earlier assertion had these transposed — form-version-0 records are mishandled
+        // by the ESM-flagged load path (v95 uninitialized-forms class).
+        var formVersion = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(20, 2));
+        var vcs2 = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(22, 2));
+        Assert.Equal(Tes4HeaderBuilder.RecordVersion, formVersion);
+        Assert.Equal(0, vcs2);
     }
 
     [Fact]

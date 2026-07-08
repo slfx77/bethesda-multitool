@@ -26,7 +26,9 @@ internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
         IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId,
         FormIdAllocator allocator,
         IReadOnlyDictionary<uint, NewWorldspaceEntry>? newWorldspacesByDmpFormId,
-        EmitPlan? emitPlan = null)
+        EmitPlan? emitPlan = null,
+        MasterRecordIndex? masterRecordIndex = null,
+        CellSectionBuildResult? prebuiltPlannerCellSection = null)
     {
         var optionsForBuild = options with { MasterFileSize = masterFileSize };
 
@@ -68,12 +70,22 @@ internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
         // NAVM / NAVI / WRLD-with-cells). Per-record opt-in is incoherent here — the
         // cell tree is structurally atomic — so a single sentinel ("CELL") activates
         // the whole pipeline.
-        var cellSectionBytes = options.PlannerEnabledRecordTypes.Contains("CELL") && emitPlan is not null
-            ? PlanCellSectionBuilder.BuildCellSection(emitPlan, pcRecordsByFormId, options)
+        // The planner section is normally prebuilt by PluginBuilder (so NAVI rows can be
+        // filtered to actually-written NAVMs before assembly); the fallback build here
+        // serves direct callers/tests only.
+        var plannerRouted = options.PlannerEnabledRecordTypes.Contains("CELL") && emitPlan is not null;
+        var plannerSection = plannerRouted
+            ? prebuiltPlannerCellSection
+              ?? PlanCellSectionBuilder.BuildCellSectionCore(emitPlan!, pcRecordsByFormId, options, stats, masterRecordIndex)
+            : null;
+        var cellSectionBytes = plannerRouted
+            ? plannerSection!.SectionBytes
             : CellGrupBuilder.BuildCellSection(bundles, pcRecordsByFormId, newWorldspacesByDmpFormId);
 
         var nextObjectId = allocator.HasAllocations ? allocator.NextObjectId : 0x800u;
-        var tes4 = Tes4HeaderBuilder.Build(optionsForBuild, (uint)stats.RecordsEmitted, nextObjectId);
+        var tes4 = Tes4HeaderBuilder.Build(
+            optionsForBuild, (uint)stats.RecordsEmitted, nextObjectId,
+            plannerSection?.OverriddenChildFormIds);
 
         using var stream = new MemoryStream();
         stream.Write(tes4);

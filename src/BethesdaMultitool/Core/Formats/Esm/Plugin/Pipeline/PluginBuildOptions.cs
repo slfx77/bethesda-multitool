@@ -65,6 +65,24 @@ public sealed record PluginBuildOptions
     public bool EmitMasterCellNavmAugmentation { get; init; } = true;
 
     /// <summary>
+    ///     Diagnostic: suppress NAVM record emission inside cell bundles while keeping the
+    ///     TES4 ESM flag and everything else unchanged (unlike turning off
+    ///     <see cref="EmitMasterCellNavmAugmentation" />, which also clears the flag). Used
+    ///     to bisect crash classes where the navmesh records themselves are the suspect —
+    ///     the Gomorrah01 attach AV bisect: that cell holds the plugin's only proto NAVMs.
+    ///     NAVI rows follow automatically since they're built from actually-emitted NAVMs.
+    /// </summary>
+    public bool DiagnosticSkipCellNavm { get; init; }
+
+    /// <summary>
+    ///     Diagnostic: suppress NEW (plugin-allocated FormID) placed-ref emission inside
+    ///     cell bundles — master overrides, carries, and disabled-removals still emit.
+    ///     Second knob of the Gomorrah01 attach-AV bisect (new refs are the last content
+    ///     class distinguishing the crashing cell from working ones).
+    /// </summary>
+    public bool DiagnosticSkipCellNewRefs { get; init; }
+
+    /// <summary>
     ///     Starting local FormID for newly-allocated records. Defaults to 0x800 to match the
     ///     GECK convention that local IDs below 0x800 are reserved for the engine.
     /// </summary>

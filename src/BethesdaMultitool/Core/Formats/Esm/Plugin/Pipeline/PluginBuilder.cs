@@ -16,6 +16,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Subrecords;
+using BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
@@ -648,8 +649,31 @@ public sealed class PluginBuilder
             // Those entries are stale because the planner allocated different FormIDs. Use
             // the planner's NavmEntries when CELL is planner-routed, the legacy list otherwise.
             var cellPlannerRouted = inputs.Options.PlannerEnabledRecordTypes.Contains("CELL");
+
+            // Planner route: build the cell section FIRST so NAVI rows come from NAVMs that
+            // were actually written — a planned NAVM whose bundle got suppressed must not get
+            // an NVMI row (dangling entries null-deref NavMeshInfoMap at load).
+            CellSectionBuildResult? plannerCellSection = null;
+            if (cellPlannerRouted && _emitPlan is not null)
+            {
+                plannerCellSection = PlanCellSectionBuilder.BuildCellSectionCore(
+                    _emitPlan, pcRecordsByFormId, inputs.Options, stats, masterIndex,
+                    _dmpBaseFormIdToRecordType);
+                var planned = _emitPlan.NavmEntries.Length;
+                var written = _emitPlan.NavmEntries.Count(
+                    e => plannerCellSection.EmittedNavmFormIds.Contains(e.NavmFormId));
+                if (written != planned)
+                {
+                    _sink.Warn("Merging cell children",
+                        $"{planned - written:N0} planned NAVM(s) were not written (suppressed cells); " +
+                        "their NAVI rows are filtered.",
+                        code: "navi.plan-emit-divergence");
+                }
+            }
+
             var naviSource = cellPlannerRouted && _emitPlan is not null
                 ? _emitPlan.NavmEntries
+                    .Where(e => plannerCellSection!.EmittedNavmFormIds.Contains(e.NavmFormId))
                     .Select(e => new NewNavmEntry(e.NavmFormId, e.LocationFormId, e.IsInterior,
                         (short)e.GridX, (short)e.GridY, e.NvvxBytes.Length > 0 ? e.NvvxBytes : null))
                     .ToList()
@@ -688,7 +712,9 @@ public sealed class PluginBuilder
                 pcRecordsByFormId,
                 allocator,
                 _newWorldspacesForCellPipeline,
-                _emitPlan);
+                _emitPlan,
+                masterIndex,
+                plannerCellSection);
             await File.WriteAllBytesAsync(inputs.OutputEspPath, outputBytes, ct);
             stats.OutputBytes = outputBytes.LongLength;
             _sink.OnPhaseEnd("Writing ESP", stats);
@@ -4173,7 +4199,7 @@ public sealed class PluginBuilder
         return true;
     }
 
-    private static bool MapMarkerDiffersFromMaster(PlacedReference placed, ParsedMainRecord masterRecord)
+    internal static bool MapMarkerDiffersFromMaster(PlacedReference placed, ParsedMainRecord masterRecord)
     {
         if (!placed.IsMapMarker)
         {
@@ -4781,96 +4807,49 @@ public sealed class PluginBuilder
     {
         remapped = placedForEmit;
 
-        if (string.IsNullOrEmpty(placed.BaseEditorId))
+        if (_masterStemToFormIdsByType is null)
         {
             return false;
         }
 
-        // Determine which master base-record types are valid candidates. ACHR/ACRE are
-        // strict (NPC_/CREA only). REFR is more permissive: the prototype base FormID is
-        // often not preserved in the DMP as a typed record (e.g., SCOL definitions don't
-        // survive the runtime-memory round-trip), so we cannot rely on the typed DMP
-        // collections to tell us "this REFR points at a SCOL." Fall back to scanning every
-        // REFR-eligible base type's stem index and accept a hit only when exactly one
-        // type produces exactly one candidate.
-        var candidateTypes = placed.RecordType switch
-        {
-            "ACHR" => (IReadOnlyList<string>)["NPC_"],
-            "ACRE" => ["CREA"],
-            "REFR" => _dmpBaseFormIdToRecordType is not null
-                      && _dmpBaseFormIdToRecordType.TryGetValue(placedForEmit.BaseFormId, out var typedHit)
-                ? [typedHit]
-                : RefrBaseEligibleTypes.Except(["NPC_", "CREA"]).ToList(),
-            _ => Array.Empty<string>()
-        };
+        var rescue = ReferenceBaseRemapper.TryRescueBaseByEditorIdStem(
+            placed.RecordType, placedForEmit.BaseFormId, placed.BaseEditorId,
+            _masterStemToFormIdsByType, _dmpBaseFormIdToRecordType);
 
-        if (candidateTypes.Count == 0)
+        switch (rescue.Outcome)
         {
-            return false;
+            case ReferenceBaseRemapper.StemRescueOutcome.Ambiguous:
+                stats.IncrementDropReason("refr.editorid-remap-ambiguous");
+                _sink.Decision("Merging cell children",
+                    $"Refusing EditorID-stem remap for new ref 0x{placed.FormId:X8} base " +
+                    $"0x{placedForEmit.BaseFormId:X8} \"{placed.BaseEditorId}\" — stem matches " +
+                    $"{rescue.AmbiguousCount} master {rescue.AmbiguousType} records, ambiguous.",
+                    placed.RecordType, placed.FormId, "refr.editorid-remap-ambiguous");
+                return false;
+
+            case ReferenceBaseRemapper.StemRescueOutcome.CrossTypeAmbiguous:
+                stats.IncrementDropReason("refr.editorid-remap-ambiguous");
+                _sink.Decision("Merging cell children",
+                    $"Refusing EditorID-stem remap for new ref 0x{placed.FormId:X8} base " +
+                    $"0x{placedForEmit.BaseFormId:X8} \"{placed.BaseEditorId}\" — stem matches " +
+                    $"master records in {rescue.CrossTypes!.Count} different types " +
+                    $"({string.Join(", ", rescue.CrossTypes)}); cross-type ambiguity.",
+                    placed.RecordType, placed.FormId, "refr.editorid-remap-ambiguous");
+                return false;
+
+            case ReferenceBaseRemapper.StemRescueOutcome.Rescued:
+                stats.IncrementDropReason("refr.editorid-remap");
+                _sink.Decision("Merging cell children",
+                    $"Remapped new ref 0x{placed.FormId:X8} base 0x{placedForEmit.BaseFormId:X8} " +
+                    $"\"{placed.BaseEditorId}\" → master {rescue.WinningType} 0x{rescue.WinningFormId:X8} by " +
+                    "EditorID-stem fallback.",
+                    placed.RecordType, placed.FormId, "refr.editorid-remap");
+                remapped = placedForEmit with { BaseFormId = rescue.WinningFormId };
+                return true;
+
+            default:
+                return false;
         }
-
-        var hits = new List<(string Type, uint FormId)>();
-        var anyAmbiguous = false;
-        var ambiguousType = string.Empty;
-        var ambiguousCount = 0;
-
-        foreach (var t in candidateTypes)
-        {
-            var match = TryFindMasterBaseByEditorIdStem(
-                placed.BaseEditorId, t, out var ambiguous, out var candidates);
-            if (ambiguous)
-            {
-                anyAmbiguous = true;
-                ambiguousType = t;
-                ambiguousCount = candidates!.Count;
-                break;
-            }
-
-            if (match is not null)
-            {
-                hits.Add((t, match.Value));
-            }
-        }
-
-        if (anyAmbiguous)
-        {
-            stats.IncrementDropReason("refr.editorid-remap-ambiguous");
-            _sink.Decision("Merging cell children",
-                $"Refusing EditorID-stem remap for new ref 0x{placed.FormId:X8} base " +
-                $"0x{placedForEmit.BaseFormId:X8} \"{placed.BaseEditorId}\" — stem matches " +
-                $"{ambiguousCount} master {ambiguousType} records, ambiguous.",
-                placed.RecordType, placed.FormId, "refr.editorid-remap-ambiguous");
-            return false;
-        }
-
-        if (hits.Count == 0)
-        {
-            return false;
-        }
-
-        if (hits.Count > 1)
-        {
-            stats.IncrementDropReason("refr.editorid-remap-ambiguous");
-            _sink.Decision("Merging cell children",
-                $"Refusing EditorID-stem remap for new ref 0x{placed.FormId:X8} base " +
-                $"0x{placedForEmit.BaseFormId:X8} \"{placed.BaseEditorId}\" — stem matches " +
-                $"master records in {hits.Count} different types " +
-                $"({string.Join(", ", hits.Select(h => h.Type))}); cross-type ambiguity.",
-                placed.RecordType, placed.FormId, "refr.editorid-remap-ambiguous");
-            return false;
-        }
-
-        var (winningType, winningFormId) = hits[0];
-
-        stats.IncrementDropReason("refr.editorid-remap");
-        _sink.Decision("Merging cell children",
-            $"Remapped new ref 0x{placed.FormId:X8} base 0x{placedForEmit.BaseFormId:X8} " +
-            $"\"{placed.BaseEditorId}\" → master {winningType} 0x{winningFormId:X8} by " +
-            "EditorID-stem fallback.",
-            placed.RecordType, placed.FormId, "refr.editorid-remap");
-
-        remapped = placedForEmit with { BaseFormId = winningFormId };
-        return true;
     }
 
     private PlacedReference RemapNewPlacedActorBase(
@@ -5458,9 +5437,9 @@ public sealed class PluginBuilder
     ///     Mitchell's house where the DMP captures only DOOR/ACHR/FURN and master statics
     ///     would otherwise be wiped.
     /// </summary>
-    private static HashSet<string> ComputeDmpCapturedBaseTypes(
+    internal static HashSet<string> ComputeDmpCapturedBaseTypes(
         IReadOnlyList<PlacedReference> placedObjects,
-        Dictionary<uint, ParsedMainRecord> pcRecordsByFormId)
+        IReadOnlyDictionary<uint, ParsedMainRecord> pcRecordsByFormId)
     {
         var result = new HashSet<string>(StringComparer.Ordinal);
         foreach (var placed in placedObjects)

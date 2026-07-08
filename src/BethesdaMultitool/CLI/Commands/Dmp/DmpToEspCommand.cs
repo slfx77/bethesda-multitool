@@ -166,6 +166,23 @@ public static class DmpToEspCommand
         };
         command.Options.Add(plannerTypesOpt);
 
+        var diagSkipCellNavmOpt = new Option<bool>("--diag-skip-cell-navm")
+        {
+            Description =
+                "Diagnostic: suppress NAVM record emission inside cell bundles while keeping " +
+                "the TES4 ESM flag and everything else unchanged. Bisects crash classes where " +
+                "the proto navmesh records are the suspect."
+        };
+        command.Options.Add(diagSkipCellNavmOpt);
+
+        var diagSkipCellNewRefsOpt = new Option<bool>("--diag-skip-cell-new-refs")
+        {
+            Description =
+                "Diagnostic: suppress NEW placed-ref emission inside cell bundles (master " +
+                "overrides/carries still emit). Second knob of the interior attach-AV bisect."
+        };
+        command.Options.Add(diagSkipCellNewRefsOpt);
+
         command.SetAction(async (parseResult, ct) =>
         {
             var dmp = parseResult.GetValue(dmpArg)!;
@@ -186,6 +203,8 @@ public static class DmpToEspCommand
             var replaceCellTemporaries = parseResult.GetValue(replaceCellTemporariesOpt);
             var recoverGaps = parseResult.GetValue(recoverGapsOpt);
             var emitMasterCellNavmAugmentation = !parseResult.GetValue(noMasterCellNavmAugmentationOpt);
+            var diagSkipCellNavm = parseResult.GetValue(diagSkipCellNavmOpt);
+            var diagSkipCellNewRefs = parseResult.GetValue(diagSkipCellNewRefsOpt);
             var cellAuthorityPath = parseResult.GetValue(cellAuthorityOpt);
             var skipWorldspaceArgs = parseResult.GetValue(skipWorldspaceOpt) ?? [];
             var skipWorldspaceFormIds = ParseHexFormIdSet(skipWorldspaceArgs);
@@ -199,7 +218,8 @@ public static class DmpToEspCommand
             await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose,
                 secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, overrideVanilla,
                 disableRefrEditorIdRemap, replaceCellTemporaries, recoverGaps, emitMasterCellNavmAugmentation,
-                cellAuthorityPath, skipWorldspaceFormIds, skipRecordTypes, plannerTypes, ct);
+                diagSkipCellNavm, diagSkipCellNewRefs, cellAuthorityPath, skipWorldspaceFormIds, skipRecordTypes,
+                plannerTypes, ct);
         });
 
         return command;
@@ -224,6 +244,8 @@ public static class DmpToEspCommand
         bool replaceCellTemporaries,
         bool recoverGaps,
         bool emitMasterCellNavmAugmentation,
+        bool diagnosticSkipCellNavm,
+        bool diagnosticSkipCellNewRefs,
         string? cellAuthorityPath,
         HashSet<uint> skipWorldspaceFormIds,
         HashSet<string> skipRecordTypes,
@@ -285,6 +307,8 @@ public static class DmpToEspCommand
             ReplaceCellTemporariesOnOverride = replaceCellTemporaries,
             RecoverGaps = recoverGaps,
             EmitMasterCellNavmAugmentation = emitMasterCellNavmAugmentation,
+            DiagnosticSkipCellNavm = diagnosticSkipCellNavm,
+            DiagnosticSkipCellNewRefs = diagnosticSkipCellNewRefs,
             CellWorldspaceAuthority = authorityLoad.CellToWorldspace,
             CellMetadataAuthority = authorityLoad.Cells,
             CellReferenceParentAuthority = authorityLoad.RefToCell,

@@ -27,7 +27,11 @@ public static class Tes4HeaderBuilder
     ///     The next free local FormID. For plugins that only emit overrides, leave at a safe
     ///     stub value (e.g., 0x800) since GECK won't allocate from this until the user adds new records.
     /// </param>
-    public static byte[] Build(PluginBuildOptions options, uint numRecords, uint nextObjectId)
+    public static byte[] Build(
+        PluginBuildOptions options,
+        uint numRecords,
+        uint nextObjectId,
+        IReadOnlyCollection<uint>? overriddenCellChildFormIds = null)
     {
         // Build subrecord stream first so we know its size.
         using var subrecordStream = new MemoryStream();
@@ -51,6 +55,16 @@ public static class Tes4HeaderBuilder
             // size which is non-canonical and triggers an FNVEdit warning.
             SubrecordEncoder.WriteStringSubrecord(subrecordWriter, "MAST", options.MasterFileName);
             WriteMasterDataPlaceholder(subrecordWriter);
+
+            // ONAM: required in ESM-flagged files — the FO3/FNV runtime consults this list
+            // to apply overrides of cell-child records (REFR/ACHR/ACRE/PGRE/PMIS/LAND/NAVM);
+            // without it those overrides are mishandled at load (why xEdit's "ESMify" adds
+            // ONAM). Sorted ascending, XXXX-extended when the array exceeds 64KB.
+            if (options.EmitMasterCellNavmAugmentation
+                && overriddenCellChildFormIds is { Count: > 0 })
+            {
+                WriteOnam(subrecordWriter, overriddenCellChildFormIds);
+            }
         }
 
         var subrecordBytes = subrecordStream.ToArray();
@@ -71,8 +85,10 @@ public static class Tes4HeaderBuilder
             Flags = options.EmitMasterCellNavmAugmentation ? 0x00000001u : 0u,
             FormId = 0,
             Timestamp = 0,
-            VcsInfo = 0,
-            Version = RecordVersion
+            // VcsInfo = header offset 20 = the engine's form-version slot (retail TES4
+            // headers carry 15 there); see MainRecordHeader remarks for the naming trap.
+            VcsInfo = RecordVersion,
+            Version = 0
         };
         RecordHeaderProcessor.WriteRecordHeader(recordStream, header);
         recordStream.Write(subrecordBytes);
@@ -87,6 +103,19 @@ public static class Tes4HeaderBuilder
         SubrecordEncoder.WriteUInt32(data, 4, numRecords);
         SubrecordEncoder.WriteUInt32(data, 8, nextObjectId);
         SubrecordEncoder.WriteSubrecord(writer, "HEDR", data);
+    }
+
+    private static void WriteOnam(BinaryWriter writer, IReadOnlyCollection<uint> formIds)
+    {
+        var sorted = formIds.ToArray();
+        Array.Sort(sorted);
+        var data = new byte[sorted.Length * 4];
+        for (var i = 0; i < sorted.Length; i++)
+        {
+            SubrecordEncoder.WriteUInt32(data, i * 4, sorted[i]);
+        }
+
+        SubrecordEncoder.WriteSubrecord(writer, "ONAM", data);
     }
 
     private static void WriteMasterDataPlaceholder(BinaryWriter writer)
