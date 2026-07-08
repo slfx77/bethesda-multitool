@@ -430,6 +430,63 @@ public class SptGeometryBuilderTests
         };
     }
 
+    [Fact]
+    public void Build_TrunkNoise_RestoringPullBoundsLean()
+    {
+        // Japanesemaple-class trunk: many rings × large slot-0 angular noise. Without the restoring
+        // pull the per-ring noise random-walks the stem into a visible lean; with it the walk
+        // saturates, so the tip stays near the vertical axis across seeds.
+        foreach (var seed in new uint[] { 1, 7, 1234, 99999 })
+        {
+            var result = SptGeometryBuilder.Build(MakeVerticalNoisyTrunkModel(12f, rings: 25), seed, BillboardOptions());
+            var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
+            var (tipXy, height) = TrunkTipOffset(bark);
+            Assert.True(tipXy < height * 0.30f,
+                $"seed {seed}: trunk tip drifted {tipXy:0.#} off-axis over height {height:0.#}");
+        }
+    }
+
+    [Fact]
+    public void Build_TrunkNoise_RestoringPullKeepsCharacter()
+    {
+        // The pull must BOUND the walk, not pin the stem dead-straight: a noisy trunk still ends
+        // measurably off the axis (per-ring character survives).
+        var result = SptGeometryBuilder.Build(MakeVerticalNoisyTrunkModel(12f, rings: 25), 7, BillboardOptions());
+        var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
+        var (tipXy, height) = TrunkTipOffset(bark);
+        Assert.True(tipXy > height * 0.005f,
+            $"trunk tip pinned to the axis (offset {tipXy:0.##} over height {height:0.#}) — over-restored");
+    }
+
+    /// <summary>A childless VERTICAL trunk (slot 7 = −90° declination, like real trees) whose slot-0
+    /// noise ramps to ±<paramref name="noiseVarianceDeg" /> along the stem.</summary>
+    private static SptModel MakeVerticalNoisyTrunkModel(float noiseVarianceDeg, uint rings)
+    {
+        var branch = MakeBranch(1f, 0.02f, 0f, 4, rings - 1);
+        var slots = (SptBezierSpline?[])branch.Splines;
+        slots[0] = new SptBezierSpline { Header = new Vector3(0f, 1f, noiseVarianceDeg) };
+        slots[7] = new SptBezierSpline { Header = new Vector3(-90f, -90f, 0f) };
+        return new SptModel
+        {
+            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
+            Branches = [branch],
+            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 }
+        };
+    }
+
+    /// <summary>The highest bark vertex's horizontal distance from the trunk base axis, plus the trunk height.</summary>
+    private static (float TipXy, float Height) TrunkTipOffset(RenderableSubmesh bark)
+    {
+        var tip = Vector3.Zero;
+        foreach (var i in Enumerable.Range(0, bark.Positions.Length / 3))
+        {
+            var v = ReadVector3(bark.Positions, i);
+            if (v.Z > tip.Z) tip = v;
+        }
+
+        return (MathF.Sqrt(tip.X * tip.X + tip.Y * tip.Y), tip.Z);
+    }
+
     private static SptModel MakeSingleLevelLeafModel(
         float length = 1f,
         float leafFrequency = 1f,

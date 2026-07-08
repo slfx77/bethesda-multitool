@@ -69,8 +69,15 @@ internal static class SptGeometryBuilder
     /// noise. Because the builder's RNG noise-sign sequence is not the engine's exact one, the trunk's per-ring
     /// noise random-walks into a lean (the lopsided canopy) on trees with a large slot-0 scale + many rings
     /// (sugarmaple/japanesemaple). Damping keeps gentle trunk character while holding the stem upright like the
-    /// engine; branches keep full noise. Does NOT touch the RNG draw sequence — only the applied angle.</summary>
-    private const float TrunkNoiseDamping = 0.3f;
+    /// engine; branches keep full noise. Does NOT touch the RNG draw sequence — only the applied angle.
+    /// Relaxed 0.3 → 0.6 once <see cref="TrunkRestoreRate" /> bounds the walk (blunt damping alone left
+    /// japanesemaple's 25-ring ±10° trunk visibly leaning).</summary>
+    private const float TrunkNoiseDamping = 0.6f;
+
+    /// <summary>Per-ring proportional pull of the trunk's growth direction back toward vertical (fraction of
+    /// the accumulated declination corrected each ring). Bounds the noise random-walk at a fixed amplitude
+    /// (~perRingNoise/rate) instead of letting it integrate over tall trunks. Trunk only; 0 disables.</summary>
+    private const float TrunkRestoreRate = 0.12f;
 
     public static NifRenderableModel Build(SptModel model, uint seed, SptGeometryOptions? options = null)
     {
@@ -281,12 +288,19 @@ internal static class SptGeometryBuilder
             frame = ApplyGravity(previousFrame, rollContribution, bendGain);
             // The per-ring slot-0 noise compounds on the previous ring (a random walk) and ApplyGravity has no
             // restoring pull near vertical (its weight → 0 at 0° declination), so on a tall trunk with a big
-            // slot-0 scale and many rings (sugarmaple/japanesemaple: 24 rings × ±10°) the stem drifts into a
-            // visible lean — the lopsided canopy. The engine stays upright because its exact noise-sign
-            // sequence differs from ours (we are not bit-exact); damp ONLY the trunk's accumulating noise so it
-            // keeps gentle character without the random-walk lean. Child branches (level > 0) keep full noise.
+            // slot-0 scale and many rings (japanesemaple: 25 rings × ±10°) the stem drifts into a visible
+            // lean — the lopsided canopy. The engine stays upright because its exact noise-sign sequence
+            // differs from ours (we are not bit-exact). Two trunk-only correctives (child branches keep full
+            // noise): damp the per-ring noise, and pull the frame back toward vertical by a fixed fraction of
+            // its accumulated declination each ring — the walk then saturates at a bounded amplitude
+            // (~perRingNoise/TrunkRestoreRate) instead of integrating, while per-ring character survives.
+            // Pure frame math; no RNG draws touched, so the engine-aligned draw sequence is preserved.
             var trunkNoiseScale = level == 0 ? TrunkNoiseDamping : 1f;
             frame = frame.MultiplyLocal(BranchFrame.RotateTwoAngles(noiseA * trunkNoiseScale, noiseB * trunkNoiseScale));
+            if (level == 0)
+            {
+                frame = RestoreTowardVertical(frame, TrunkRestoreRate);
+            }
 
             previousDistance = pathDistance;
 
@@ -912,6 +926,23 @@ internal static class SptGeometryBuilder
         var axis = Vector3.Cross(dir, Vector3.UnitZ);
         return axis.LengthSquared() > 1e-10f && MathF.Abs(bendDeg) > 1e-6f
             ? frame.MultiplyWorld(BranchFrame.FromAxisAngle(axis, bendDeg / DegPerRad))
+            : frame;
+    }
+
+    /// <summary>Rotates the frame's growth direction back toward world-up by <paramref name="rate" /> of its
+    /// current declination (a proportional restoring pull — the trunk's noise random-walk saturates at
+    /// ~perRingNoise/rate instead of integrating into a lean). The pull fades linearly to ZERO at 45°
+    /// declination: only the near-vertical drift the noise walk causes is corrected, while genuinely
+    /// authored leans/curves (diagonal or twisted trunks) are left untouched. Identity at vertical.</summary>
+    private static BranchFrame RestoreTowardVertical(BranchFrame frame, float rate)
+    {
+        var dir = frame.Direction;
+        var declDeg = MathF.Acos(Math.Clamp(Vector3.Dot(dir, Vector3.UnitZ), -1f, 1f)) * DegPerRad;
+        var nearVerticalWeight = MathF.Max(0f, 1f - declDeg / 45f);
+        var axis = Vector3.Cross(dir, Vector3.UnitZ);
+        var correctDeg = declDeg * rate * nearVerticalWeight;
+        return axis.LengthSquared() > 1e-10f && correctDeg > 1e-6f
+            ? frame.MultiplyWorld(BranchFrame.FromAxisAngle(axis, correctDeg / DegPerRad))
             : frame;
     }
 
