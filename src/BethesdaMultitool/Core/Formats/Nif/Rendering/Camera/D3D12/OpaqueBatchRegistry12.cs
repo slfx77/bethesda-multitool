@@ -41,6 +41,7 @@ internal sealed class OpaqueBatchRegistry12
         foreach (var batch in _activeBatches)
         {
             batch.Instances.Clear();
+            batch.InstanceBounds.Clear();
         }
         _activeBatches.Clear();
 
@@ -96,9 +97,22 @@ internal sealed class OpaqueBatchState(CachedSubmesh12 submesh, ID3D12PipelineSt
     public CachedSubmesh12 Submesh { get; } = submesh;
     public ID3D12PipelineState Pso { get; } = pso;
 
-    /// <summary>Per-instance world matrices for this batch (the only per-instance data;
+    /// <summary>Per-instance world matrices for this batch (the only per-instance GPU data;
     /// material/texture state is per-batch and lives in the InstanceDraw CBV at draw time).</summary>
     public List<Matrix4x4> Instances { get; } = new(16);
+
+    /// <summary>
+    ///     Per-instance ABSOLUTE cull sphere (xyz = world center, w = radius), parallel to
+    ///     <see cref="Instances" />. The tolerant cull batches a WIDENED survivor superset; the draw
+    ///     pass re-tests each instance against the current frame's exact bounds using these — which
+    ///     is also what lets a frozen (reused) batch stay exact while the camera drifts.
+    /// </summary>
+    public List<Vector4> InstanceBounds { get; } = new(16);
+
+    /// <summary>Instances that passed this frame's exact cull in the shared-block copy pass
+    /// (== Instances.Count when the refilter is inactive). Set by DrawOpaqueBatches.</summary>
+    public int FrameDrawCount { get; set; }
+
     public int LastTouchedFrame { get; set; }
 }
 #endif

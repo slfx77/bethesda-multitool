@@ -100,6 +100,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private readonly object _decodedCacheLock = new();
     private int _activeDecodeTasks;
     private FrameByteBudget _frameUploadByteBudget;
+    // Accumulated-upload-TIME pacer (milliseconds of actual UploadDecodedMesh work this frame).
+    // Replaces the renderer's wall-clock deadline, which was measured from frame start and so
+    // expired before the resolve loop ever REACHED far-cell survivors (~20-30ms of iteration at
+    // 100k survivors) — far meshes with ready payloads could never start an upload, starving the
+    // fill by distance ("assets stream in very slowly downtown", and frozen batch-reuse fills).
+    private double _frameUploadMsBudget;
+    private double _frameUploadMsConsumed;
     // When true, LoadData resizes _meshLru to the worldspace's working set (default). False when the
     // FALLOUT_VIEWER_REFERENCE_MESH_CAPACITY env knob pins a fixed cap for eviction-cascade stress gates.
     private readonly bool _autoSizeMeshCapacity;
@@ -144,7 +151,14 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 "ReferenceMeshLru",
                 ResourceCategory.GpuResident,
                 maxEntries: capacity,
-                onEvicted: static (_, node) => node.Mesh?.Dispose(),
+                onEvicted: (_, node) =>
+                {
+                    node.Mesh?.Dispose();
+                    // Any eviction invalidates frozen (reused) reference batches: their instance
+                    // lists key on CachedSubmesh12 objects whose GPU buffers just entered the
+                    // deletion queue. The renderer compares this against its build snapshot.
+                    EvictionGeneration++;
+                },
                 comparer: StringComparer.OrdinalIgnoreCase)
             .RegisterWith(ResourceRegistry.Instance, "reference-meshes");
         _decodedLru = new LruCache<string, DecodedCacheValue>(
@@ -185,6 +199,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
     public int Capacity { get; }
     public int Count => _meshLru.Count;
+
+    /// <summary>
+    ///     Bumped on every resident-mesh eviction (LRU overflow, capacity shrink, dispose cascade).
+    ///     Batch reuse keys on it: a frozen batch built under an older generation may reference
+    ///     evicted GPU buffers and must rebuild. Render-thread only, like the LRU it mirrors.
+    /// </summary>
+    public int EvictionGeneration { get; private set; }
 
     /// <summary>
     ///     Resizes the resident-mesh LRU to <paramref name="capacity" /> (raising holds more; lowering
@@ -281,9 +302,20 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         _frameUploadByteBudget = new FrameByteBudget(StreamingThrottled
             ? Core.Resources.StreamingFrameBudgetScaler.ScaleBytes(MaxUploadBytesPerFrame, FrameBudgetScale)
             : long.MaxValue);
+        _frameUploadMsBudget = StreamingThrottled
+            ? UploadMillisecondsPerFrame * FrameBudgetScale
+            : double.MaxValue;
+        _frameUploadMsConsumed = 0;
         _textureCache.ResetFrameStats(FrameBudgetScale);
         PruneCompletedDecodeTasks();
     }
+
+    /// <summary>
+    ///     Per-frame budget of ACTUAL mesh-upload milliseconds (scaled by <see cref="FrameBudgetScale" />
+    ///     when throttled; see the <c>_frameUploadMsConsumed</c> field notes). Set by the renderer from
+    ///     its FALLOUT_VIEWER_REFERENCE_UPLOAD_MS_PER_FRAME knob.
+    /// </summary>
+    public double UploadMillisecondsPerFrame { get; set; } = 2.0;
 
     public CachedNifMesh12? GetOrUpload(
         string modelPath,
@@ -508,13 +540,22 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             FrameByteBudgetDeferrals++;
             return true;
         }
+        // Accumulated-upload-time gate (same first-unit rule): paces real upload WORK per frame.
+        // Deliberately not a wall-clock deadline — see the _frameUploadMsConsumed field notes.
+        if (_frameUploadByteBudget.Count > 0 && _frameUploadMsConsumed >= _frameUploadMsBudget)
+        {
+            FrameByteBudgetDeferrals++;
+            return true;
+        }
 
         uploadBudget--;
         FrameGpuUploads++;
         _frameUploadByteBudget.Record(decoded.ByteSize);
         // Upload + collision keying use the plain archive path (collision geometry is texture-
         // independent, so all variants of a NIF share one collision entry keyed on DecodePath).
+        var uploadStarted = Stopwatch.GetTimestamp();
         mesh = UploadDecodedMesh(node.DecodePath, decoded.Mesh);
+        _frameUploadMsConsumed += Stopwatch.GetElapsedTime(uploadStarted).TotalMilliseconds;
         if (mesh is null)
         {
             node.ResolvedNull = true;

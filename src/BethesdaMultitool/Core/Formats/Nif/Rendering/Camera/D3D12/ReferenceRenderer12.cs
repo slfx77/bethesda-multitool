@@ -318,8 +318,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _renderCache = renderCache;
         _cells = cells;
         _spatialIndex = spatialIndex;
-        // The reference set + spatial index changed — the cached cull survivors are stale.
+        // The reference set + spatial index changed — the cached cull survivors are stale, and so
+        // are any frozen batches built from them.
         _cullCacheValid = false;
+        _lastBuildValid = false;
         // Drop the accumulated NIF water planes so they don't leak across worldspace loads. Cleared
         // (not reallocated) so the reference the host handed WaterRenderer12 stays valid.
         _nifWaterPlanes.Clear();
@@ -388,7 +390,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// <summary>
     ///     Sets the camera world-space right/up basis used to re-face SpeedTree leaf cards to the camera
     ///     in the leaf-billboard vertex shader. The host computes it from the inverse view matrix (the
-    ///     same source as <c>SkyBillboardRenderer12</c>) and calls this each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3)" />.
+    ///     same source as <c>SkyBillboardRenderer12</c>) and calls this each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?)" />.
     /// </summary>
     public void SetLeafBillboardBasis(Vector3 cameraRight, Vector3 cameraUp)
     {
@@ -402,7 +404,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     4 sway matrices per frame in <c>BSTreeManager::UpdateWindMatrices</c>, which we approximate with
     ///     a time/position-phased gust). <paramref name="direction" /> is the horizontal wind direction,
     ///     <paramref name="strength" /> the sway amplitude (0 = static), <paramref name="timeSeconds" /> the
-    ///     animation clock. Call each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3)" />.
+    ///     animation clock. Call each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?)" />.
     /// </summary>
     public void SetWind(Vector2 direction, float strength, float timeSeconds)
     {
@@ -413,6 +415,86 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // top-down overlay, which has no water pass.
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
         => Render(viewProj, cylinder, deferBlended: false);
+
+    /// <summary>
+    ///     Camera pose key for the translation-TOLERANT cull cache — see the
+    ///     <c>cullCameraPose</c> parameter docs on the main <c>Render</c> overload.
+    /// </summary>
+    public readonly record struct CullCameraPose(Vector3 Forward, float FovYRadians, float Aspect);
+
+    /// <summary>Max camera drift (world units, Chebyshev) the tolerant cull cache absorbs.</summary>
+    private const float CullPositionSlack = 512f;
+
+    /// <summary>
+    ///     Tolerant-mode debounce for the mesh-bounds generation: a NEW mesh resolve tightens cull
+    ///     spheres, which the exact path treats as an immediate invalidation — but during active
+    ///     streaming that means a re-cull EVERY frame (each frame resolves something), which is
+    ///     precisely the 6-7ms/frame cost this cache exists to kill. Bounds tightening is a visual
+    ///     nicety (edge refs pop in with the corrected sphere), not a safety property — the widened
+    ///     establishment cull keeps everything already visible — so the tolerant path refreshes for
+    ///     it at most once per this many frames (~0.5s at 60fps).
+    /// </summary>
+    private const int CullStreamingRefreshFrames = 30;
+
+    private CullCameraPose? _cullCachePose;
+    private Vector3 _cullCachePosition;
+    private float _cullCacheRadius;
+    private int _framesSinceCull;
+
+    /// <summary>Bumped on every fresh cull — identifies the survivor-set generation (batch reuse keys on it).</summary>
+    private int _cullEpoch;
+
+    // === Batch reuse on quiesced frames ===
+    // When the cull cache hit, the render origin (snapped by the host) is unchanged, and the LAST
+    // build frame streamed nothing (quiescent: every mesh + texture resolved, zero uploads/misses,
+    // hence zero evictions mid-build), the resolve+batch pass is skipped wholesale and the frozen
+    // batches re-draw. Safety rails: any resident-mesh eviction bumps the cache's
+    // EvictionGeneration (frozen batches reference CachedSubmesh12 GPU buffers), and the draw pass
+    // re-tests every instance against the current exact frustum (PassesExactCull), so a frozen
+    // WIDENED batch stays visually exact while the camera drifts inside the cull slack.
+    private static readonly bool BatchReuseEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.BatchReuse) != "0";
+
+    /// <summary>
+    ///     Ceiling on consecutive reuse frames (~1s at 60fps). Reuse frames never call GetOrUpload,
+    ///     so a background decode that completes AFTER the build (e.g. one of the perpetually
+    ///     retrying unresolvable meshes finally succeeding) has no path into the frozen batches;
+    ///     the periodic rebuild reissues every survivor's resolve, picks up anything that landed,
+    ///     and re-freezes. Also throttles the steady-state decode-retry churn of permanently
+    ///     missing meshes from per-frame to once per rebuild.
+    /// </summary>
+    private const int BatchReuseMaxFrames = 60;
+
+    /// <summary>
+    ///     Consecutive QUIET build frames (no uploads, no cache misses, no pending textures)
+    ///     required before reuse engages. A single quiet frame is not proof the scene finished
+    ///     filling — decode waves have sub-second lulls, and freezing on one stalled the fill at
+    ///     ~80% (drawn froze while 12k meshes were still decoding). A half-second streak is.
+    /// </summary>
+    private const int QuietBuildStreakFrames = 30;
+
+    private bool _lastBuildValid;
+    private int _framesSinceBuild;
+    private int _quietBuildStreak;
+    private int _lastBuildCullEpoch;
+    private Vector3 _lastBuildRenderOrigin;
+    private bool _lastBuildQuiesced;
+    private int _lastBuildEvictionGen;
+    private int _lastBuildDrawn;
+    private int _lastBuildMissing;
+    private int _lastBuildTexturePending;
+
+    // True while the CURRENT batch content came from a widened (tolerant) cull — the draw pass
+    // must then apply the per-instance exact refilter. Set on build frames, carried across reuse.
+    private bool _batchesWidened;
+
+    // Current frame's exact cull context for PassesExactCull (set every Render before the draws).
+    private Frustum _frameFrustum;
+    private bool _frameRefilterActive;
+    private float _frameCylinderX;
+    private float _frameCylinderY;
+    private float _frameCylinderRadius;
+    private float _frameSmallPropCutoffSq;
 
     /// <summary>
     ///     Draws the visible reference submeshes for this frame — opaque always, blended either inline or
@@ -445,39 +527,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     no-op. The CPU cull below stays in ABSOLUTE space (uses <c>r.WorldMatrix</c>, not the folded
     ///     copy) — only the GPU upload is shifted.
     /// </param>
-    /// <summary>
+    /// <param name="cullCameraPose">
     ///     Camera pose key for the translation-TOLERANT cull cache. When supplied, the cached cull
     ///     survivors stay valid while the camera drifts up to <see cref="CullPositionSlack" /> from
     ///     the establishment position with an unchanged view basis/FOV/aspect — instead of requiring
     ///     a byte-identical viewProj, which NEVER matches while walking (the far plane is recomputed
     ///     from |camera.Z| every frame, so the old exact compare re-culled ~100k candidates per walk
     ///     frame). The establishment cull widens every bound by the slack so the survivor set is a
-    ///     SUPERSET of the exact set for any camera inside the slack box.
-    /// </summary>
-    public readonly record struct CullCameraPose(Vector3 Forward, float FovYRadians, float Aspect);
-
-    /// <summary>Max camera drift (world units, Chebyshev) the tolerant cull cache absorbs.</summary>
-    private const float CullPositionSlack = 512f;
-
-    /// <summary>
-    ///     Tolerant-mode debounce for the mesh-bounds generation: a NEW mesh resolve tightens cull
-    ///     spheres, which the exact path treats as an immediate invalidation — but during active
-    ///     streaming that means a re-cull EVERY frame (each frame resolves something), which is
-    ///     precisely the 6-7ms/frame cost this cache exists to kill. Bounds tightening is a visual
-    ///     nicety (edge refs pop in with the corrected sphere), not a safety property — the widened
-    ///     establishment cull keeps everything already visible — so the tolerant path refreshes for
-    ///     it at most once per this many frames (~0.5s at 60fps).
-    /// </summary>
-    private const int CullStreamingRefreshFrames = 30;
-
-    private CullCameraPose? _cullCachePose;
-    private Vector3 _cullCachePosition;
-    private float _cullCacheRadius;
-    private int _framesSinceCull;
-
-    /// <summary>Bumped on every fresh cull — identifies the survivor-set generation (batch reuse keys on it).</summary>
-    private int _cullEpoch;
-
+    ///     SUPERSET of the exact set for any camera inside the slack box; the draw passes re-test
+    ///     each instance against the current exact bounds, so the drawn set stays exact.
+    /// </param>
     public int Render(
         Matrix4x4 viewProj, VisibilityCylinder cylinder, bool deferBlended, Matrix4x4? cullViewProj = null,
         Vector3 renderOrigin = default, CullCameraPose? cullCameraPose = null)
@@ -485,6 +544,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ReferencesDrawnLastFrame = 0;
         LastFrameDrawsTruncated = 0;
         LastStats.Reset();
+        // Hand the cache its per-frame upload-time allowance BEFORE ResetFrameStats snapshots it.
+        _meshCache.UploadMillisecondsPerFrame = MaxUploadMillisecondsPerFrame;
         _meshCache.ResetFrameStats();
         if (_cells is null || _cells.Count == 0 || _renderCache is null) return 0;
 
@@ -509,12 +570,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var drawn = 0;
         var throttled = _streamingThrottled;
         var uploadBudget = throttled ? MaxNewUploadsPerFrame : int.MaxValue;
-        // Time-based pace: the wall-clock upload slice grows with the frame's actual duration
-        // (StreamingFrameBudgetScaler, capped 30×) so a viewer starved to a few FPS — e.g. another
-        // game owning the GPU — keeps its loading THROUGHPUT instead of scaling it down with FPS.
-        // A 2ms slice × 30 inside a ≥500ms frame is still a rounding error for that frame's cost.
-        var uploadTimeBudget = new FrameTimeBudget(
-            MaxUploadMillisecondsPerFrame * _meshCache.FrameBudgetScale);
         var cylinderRadius = cylinder.Radius;
         var cylinderX = cylinder.Position.X;
         var cylinderY = cylinder.Position.Y;
@@ -541,11 +596,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         int submeshDraws = 0;
         int srvBinds = 0;
 
-        _opaqueBatches.Begin();
-        _blendedDraws.Clear();
-        _depthWritingBlendDraws.Clear();
-        _resolvedMeshesThisFrame.Clear();
-
         // === Cull pass (or cache reuse) ===
         // The cull (per-cell broadphase + per-REFR filter/sphere/frustum tests) is reused from the
         // previous frame when the camera pose, the mesh-bounds generation (the count of resolved
@@ -570,6 +620,25 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                   && _cullCacheRadius == cylinder.Radius
                   && ChebyshevWithin(cylinder.Position, _cullCachePosition, CullPositionSlack)
                 : _cullCacheViewProj == cullFrustumSource && _cullCacheCylinder == cylinder);
+
+        // === Batch reuse decision ===
+        // cullCacheValid ⇒ no re-cull this frame ⇒ _cullEpoch is stable, so an epoch match means
+        // the frozen batches were built from exactly the survivor set this frame would iterate.
+        _framesSinceBuild++;
+        var reuseBatches = BatchReuseEnabled && cullCacheValid
+                           && _lastBuildValid
+                           && _framesSinceBuild < BatchReuseMaxFrames
+                           && _lastBuildCullEpoch == _cullEpoch
+                           && _lastBuildRenderOrigin == renderOrigin
+                           && _lastBuildQuiesced
+                           && _lastBuildEvictionGen == _meshCache.EvictionGeneration;
+        if (!reuseBatches)
+        {
+            _opaqueBatches.Begin();
+            _blendedDraws.Clear();
+            _depthWritingBlendDraws.Clear();
+            _resolvedMeshesThisFrame.Clear();
+        }
 
         if (cullCacheValid)
         {
@@ -709,14 +778,31 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _cullCacheCulled = culled;
         }
 
-        // === Resolve + batch pass (always runs — decoded meshes stream in across frames) ===
-        // Exact (unwidened) small-prop LOD cutoff for the tolerant refilter below — the
-        // establishment cull's cutoff carries the drift slack, so the survivor cache holds a ring
-        // of distance-LOD'd clutter that must not reach the batch/draw stage.
+        // === Resolve + batch pass (skipped wholesale on batch-reuse frames) ===
+        // Exact (unwidened) small-prop LOD cutoff for the draw passes' per-instance refilter — the
+        // tolerant establishment cull's cutoff carries the drift slack, so the batches hold a ring
+        // of distance-LOD'd clutter that must not survive the draw-time exact cull.
         var exactSmallPropCutoff = cylinderRadius * SmallPropDistanceFraction;
         var exactSmallPropCutoffSq = exactSmallPropCutoff * exactSmallPropCutoff;
+        _frameFrustum = frustum;
+        _frameCylinderX = cylinderX;
+        _frameCylinderY = cylinderY;
+        _frameCylinderRadius = cylinderRadius;
+        _frameSmallPropCutoffSq = exactSmallPropCutoffSq;
         var meshStarted = StartTiming();
-        for (var si = 0; si < _cachedCullSurvivors.Count; si++)
+        if (reuseBatches)
+        {
+            // Frozen batches re-draw as-is; only what the camera moves needs refreshing — blended
+            // draw distances (their back-to-front sort) and billboard facing matrices. Streaming
+            // counters carry over from the build frame (quiescent by definition of reuse).
+            drawn = _lastBuildDrawn;
+            referencesWithReadyMesh = _lastBuildDrawn;
+            missingMeshes = _lastBuildMissing;
+            texturePending = _lastBuildTexturePending;
+            RefreshBlendedDraws(cylinder.Position, renderOrigin);
+        }
+        var survivorsToResolve = reuseBatches ? 0 : _cachedCullSurvivors.Count;
+        for (var si = 0; si < survivorsToResolve; si++)
         {
             var r = _cachedCullSurvivors[si];
             // 4-pre Item B — per-frame memoized resolve. First sighting of a MeshId
@@ -726,14 +812,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // cull-loop's mesh-lookup cost ~3× steady-state.
             if (!_resolvedMeshesThisFrame.TryGetValue(r.MeshId, out var mesh))
             {
-                // Stop *starting* new GPU uploads once the per-frame time budget is spent;
-                // GetOrUpload still queues background decodes and returns already-resident
-                // meshes, so the remainder simply appears over the next frame(s). Skipped when
-                // unthrottled (overlay) so one pass uploads everything that has decoded.
-                if (throttled && uploadBudget > 0 && uploadTimeBudget.IsExpired)
-                {
-                    uploadBudget = 0;
-                }
+                // Upload pacing lives in the mesh cache: an accumulated-upload-TIME budget
+                // (UploadMillisecondsPerFrame × FrameBudgetScale) plus the byte budget. Both defer
+                // rather than fail — the remainder simply appears over the next frame(s). NOT a
+                // wall-clock deadline here: measured from frame start it expired before this loop
+                // reached far-cell survivors, so distant ready payloads could never start.
                 // Nearest-first decode priority: squared XY distance from the view point, so a
                 // dense area's foreground meshes decode before its far edge (the queue persists
                 // across frames). Cheap — only computed on the first sighting of each MeshId.
@@ -767,30 +850,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 AccumulateNifWaterPlanes(r.WorldMatrix, mesh.WaterPlanesLocal);
             }
 
-            // Tolerant-cull refilter: the widened survivor cache is a SUPERSET (drift slack pushed
-            // ~30% extra refs through at 512u), so re-test each survivor against THIS frame's exact
-            // bounds — footprint, small-prop distance LOD, frustum, mirroring the establishment
-            // cull's resident-mesh branch without the drift slack — before spending batch/draw cost
-            // on it. Placed after GetOrUpload so off-frustum refs keep streaming (turning the camera
-            // reveals them without a stall); ~1-2ms of sphere tests replaces the 6-7ms full re-cull
-            // the old exact cache ran per moving frame — and the drawn set stays exact, so there is
-            // no extra batch/instance/GPU work either.
-            if (tolerant && hasFrustum)
-            {
-                var scaleBasis = new Vector3(r.WorldMatrix.M11, r.WorldMatrix.M12, r.WorldMatrix.M13);
-                var refilterRadius = mesh.LocalBoundsRadius * scaleBasis.Length();
-                var refilterCenter = r.WorldMatrix.Translation;
-                var rdx = MathF.Abs(refilterCenter.X - cylinder.Position.X);
-                var rdy = MathF.Abs(refilterCenter.Y - cylinder.Position.Y);
-                var reach = cylinderRadius + refilterRadius + FrustumCullMargin;
-                if (rdx > reach || rdy > reach ||
-                    (_enableDistanceLod && refilterRadius < SmallPropLodRadius
-                                        && (rdx * rdx) + (rdy * rdy) > exactSmallPropCutoffSq) ||
-                    !frustum.IntersectsSphere(refilterCenter, refilterRadius + FrustumCullMargin))
-                {
-                    continue;
-                }
-            }
             var texturesReady = mesh.TexturesReady;
             if (!texturesReady)
             {
@@ -813,6 +872,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // is 0 on the absolute paths, so relWorldMatrix == r.WorldMatrix there (fold is a no-op).
             var relWorldMatrix = r.WorldMatrix;
             relWorldMatrix.Translation -= renderOrigin;
+            // Absolute per-instance cull sphere, stored alongside each opaque instance so the draw
+            // pass can re-test it against the current frame's EXACT bounds (the tolerant cull
+            // batches a widened superset; see PassesExactCull). Mirrors the establishment cull's
+            // resident-mesh branch: sphere at the placement point, mesh radius × uniform scale.
+            var boundsScaleBasis = new Vector3(r.WorldMatrix.M11, r.WorldMatrix.M12, r.WorldMatrix.M13);
+            var instanceBounds = new Vector4(
+                r.WorldMatrix.Translation, mesh.LocalBoundsRadius * boundsScaleBasis.Length());
             var alphaDebug = AlphaDebugFilter != null
                 && !string.IsNullOrEmpty(r.ModelPath)
                 && r.ModelPath.Contains(AlphaDebugFilter, StringComparison.OrdinalIgnoreCase)
@@ -860,7 +926,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         sub.AlphaState,
                         sub.RenderState,
                         sub.TextureState,
-                        sub.Specular);
+                        sub.Specular,
+                        r.WorldMatrix);
                     // Depth-writing blend foliage (e.g. NVSeaPlant02) draws inline BEFORE the water pass so
                     // water occludes it from above; everything else defers to after water. Billboards keep
                     // the deferred path — they need per-frame camera-facing matrices and aren't occluders.
@@ -884,12 +951,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     (false, false) => _pipelines.OpaqueBackPso
                 };
                 var batch = _opaqueBatches.GetOrCreate(sub, pso);
-                // Only the world matrix is per-instance. Material/texture state
+                // Only the world matrix (+ its cull sphere) is per-instance. Material/texture state
                 // (AlphaState/RenderState/TextureState + bindless TexIndices) is identical
                 // across the whole batch — it comes from the submesh, which IS the batch key
                 // — so it is uploaded once per batch via the InstanceDraw CBV at draw time
                 // instead of being copied into every instance record.
                 batch.Instances.Add(relWorldMatrix);
+                batch.InstanceBounds.Add(instanceBounds);
                 anySubmeshDrawn = true;
             }
 
@@ -899,6 +967,42 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 drawn++;
             }
         }
+
+        if (!reuseBatches)
+        {
+            // Build snapshot for the next frame's reuse decision. Quiescence == a sustained streak
+            // of builds that streamed NOTHING: every RESOLVABLE survivor's mesh + textures are in,
+            // zero GPU uploads, zero cache misses — which also means zero LRU Sets, hence zero
+            // evictions mid-build, so the frozen batches cannot reference freed buffers (belt: the
+            // EvictionGeneration compare). missingMeshes is deliberately NOT in the gate: dense
+            // spots hold thousands of permanently unresolvable meshes (miss ≈ 10-20k at FO4
+            // downtown) that never reach zero and contribute nothing to the batches; a late
+            // resolve lands via the periodic BatchReuseMaxFrames rebuild instead.
+            // "Quiet" additionally requires the decode PIPELINE to be empty — not just zero
+            // uploads this frame. A freeze that begins while decodes are still in flight strands
+            // their payloads outside the frozen batches (a settle-gated capture caught a whole
+            // storefront missing that way). With upload pacing no longer reach-starved, the
+            // pipeline genuinely drains at steady state (decodeReq/active/queued all 0), so this
+            // does not dead-lock reuse the way it would have before that fix.
+            var buildQuiet = texturePending == 0
+                             && _meshCache.FrameGpuUploads == 0 && _meshCache.FrameCacheMisses == 0
+                             && _meshCache.FrameDecodeRequests == 0 && _meshCache.FrameDecodeStarts == 0
+                             && _meshCache.FrameActiveDecodes == 0;
+            _quietBuildStreak = buildQuiet ? _quietBuildStreak + 1 : 0;
+            _lastBuildValid = true;
+            _framesSinceBuild = 0;
+            _lastBuildCullEpoch = _cullEpoch;
+            _lastBuildRenderOrigin = renderOrigin;
+            _lastBuildEvictionGen = _meshCache.EvictionGeneration;
+            _lastBuildQuiesced = _quietBuildStreak >= QuietBuildStreakFrames;
+            _lastBuildDrawn = referencesWithReadyMesh;
+            _lastBuildMissing = missingMeshes;
+            _lastBuildTexturePending = texturePending;
+            _batchesWidened = tolerant;
+        }
+        // The draw passes apply the per-instance exact cull whenever the batches hold a widened
+        // (tolerant) survivor set — on build AND reuse frames — so the drawn set is always exact.
+        _frameRefilterActive = _batchesWidened && hasFrustum;
         meshUploadMs = ElapsedMilliseconds(meshStarted);
 
         ID3D12PipelineState? currentPso = null;
@@ -950,7 +1054,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     /// <summary>
     ///     3D-8: draws the blended (transparent) reference submeshes accumulated by the most recent
-    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3)" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
+    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?)" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
     ///     never paints over transparent meshes. The water pass rebinds <c>PerFrameCbv</c> to its own
     ///     uniforms (and may change topology), so this re-establishes the reference per-frame state
     ///     before issuing the blended draws. The DSV is bound by the frame loop, so blended draws stay
@@ -1102,6 +1206,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // ENTIRE opaque pass (which read as "the whole city un-renders" on dense downtown frames).
         var haveSharedBlock = _ringBuffer.TryAllocate(
             frameIndex, instanceBytes + instanceStride - 1, out var instanceAlloc, alignment: 16);
+        var refilter = _frameRefilterActive;
         if (haveSharedBlock)
         {
             var instanceByteOffset = AlignUp(instanceAlloc.ByteOffset, instanceStride);
@@ -1110,16 +1215,36 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var offset = 0;
             unsafe
             {
-                // Bulk-copy each batch's world matrices in one memcpy (CollectionsMarshal.AsSpan ->
-                // Span.CopyTo) rather than per-element struct assignment. Only the 64-byte matrix is
-                // copied now; per-batch material moves into the InstanceDraw CBV below.
+                // Copy each batch's world matrices into the shared block. Exact-cull mode (top-down
+                // / kill-switch): one bulk memcpy per batch, all instances draw. Widened (tolerant)
+                // mode: per-instance copy gated by PassesExactCull, so only the instances inside
+                // THIS frame's exact bounds reach the GPU — the batches hold the cull-slack
+                // superset (and, on reuse frames, the frozen build's superset).
                 var span = new Span<Matrix4x4>((void*)instanceCpuPtr, totalInstances);
                 foreach (var batchState in activeBatches)
                 {
                     var worlds = batchState.Instances;
-                    if (worlds.Count == 0) continue;
-                    CollectionsMarshal.AsSpan(worlds).CopyTo(span.Slice(offset, worlds.Count));
-                    offset += worlds.Count;
+                    if (worlds.Count == 0)
+                    {
+                        batchState.FrameDrawCount = 0;
+                        continue;
+                    }
+                    if (!refilter)
+                    {
+                        CollectionsMarshal.AsSpan(worlds).CopyTo(span.Slice(offset, worlds.Count));
+                        offset += worlds.Count;
+                        batchState.FrameDrawCount = worlds.Count;
+                        continue;
+                    }
+                    var worldSpan = CollectionsMarshal.AsSpan(worlds);
+                    var boundsSpan = CollectionsMarshal.AsSpan(batchState.InstanceBounds);
+                    var batchStart = offset;
+                    for (var i = 0; i < worldSpan.Length; i++)
+                    {
+                        if (!PassesExactCull(in boundsSpan[i])) continue;
+                        span[offset++] = worldSpan[i];
+                    }
+                    batchState.FrameDrawCount = offset - batchStart;
                 }
             }
 
@@ -1134,6 +1259,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             if (batch.Count == 0) continue;
 
             var drawStartInstance = startInstance;
+            int drawCount;
             if (!haveSharedBlock)
             {
                 // Per-batch fallback block: small (count × 64 B), so it fits where the frame-wide
@@ -1151,8 +1277,24 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 unsafe
                 {
                     var span = new Span<Matrix4x4>((void*)batchCpuPtr, batch.Count);
-                    CollectionsMarshal.AsSpan(batch).CopyTo(span);
+                    if (!refilter)
+                    {
+                        CollectionsMarshal.AsSpan(batch).CopyTo(span);
+                        drawCount = batch.Count;
+                    }
+                    else
+                    {
+                        var worldSpan = CollectionsMarshal.AsSpan(batch);
+                        var boundsSpan = CollectionsMarshal.AsSpan(batchState.InstanceBounds);
+                        drawCount = 0;
+                        for (var i = 0; i < worldSpan.Length; i++)
+                        {
+                            if (!PassesExactCull(in boundsSpan[i])) continue;
+                            span[drawCount++] = worldSpan[i];
+                        }
+                    }
                 }
+                if (drawCount == 0) continue;
 
                 BindReferenceInstanceBuffer(
                     cmd,
@@ -1160,6 +1302,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     ref srvBinds,
                     ref srvBindMs);
                 drawStartInstance = 0;
+            }
+            else
+            {
+                drawCount = batchState.FrameDrawCount;
+                if (drawCount == 0) continue;
             }
 
             if (!ReferenceEquals(currentPso, batchState.Pso))
@@ -1198,12 +1345,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var drawStarted = StartTiming();
             cmd.IASetVertexBuffers(0, batchState.Submesh.VertexBufferView);
             cmd.IASetIndexBuffer(batchState.Submesh.IndexBufferView);
-            cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)batch.Count, 0, 0, 0);
+            cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)drawCount, 0, 0, 0);
             drawCallMs += ElapsedMilliseconds(drawStarted);
-            startInstance += (uint)batch.Count;
+            startInstance += (uint)drawCount;
             submeshDraws++;
             LastStats.ReferenceInstancedDraws++;
-            LastStats.ReferenceInstances += batch.Count;
+            LastStats.ReferenceInstances += drawCount;
         }
 
         LastStats.ReferenceBatches = activeBatchCount;
@@ -1249,7 +1396,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     /// <summary>
     ///     Draws the depth-writing blend submeshes (effects-folder foliage the engine marks ZBuffer_Write,
-    ///     e.g. NVSeaPlant02) accumulated by the most recent <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3)" />.
+    ///     e.g. NVSeaPlant02) accumulated by the most recent <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?)" />.
     ///     Unlike <see cref="DrawBlended" /> these run INLINE — after the opaque batches but before the
     ///     water pass — with a depth-WRITING blend PSO, so the water surface occludes them from above
     ///     instead of them painting over it. Sorted back-to-front so overlapping cards blend correctly.
@@ -1482,6 +1629,71 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         return rs;
     }
 
+    /// <summary>
+    ///     Batch-reuse frames keep the frozen blended draw lists but must refresh what the camera
+    ///     moves: every entry's sort distance (back-to-front order stays correct across in-cell
+    ///     drift) and, for billboards, the camera-facing world matrix. Everything else on the entry
+    ///     is placement/material state that reuse guarantees unchanged.
+    /// </summary>
+    private void RefreshBlendedDraws(Vector3 cameraPosition, Vector3 renderOrigin)
+    {
+        RefreshBlendedDrawList(_blendedDraws, cameraPosition, renderOrigin);
+        RefreshBlendedDrawList(_depthWritingBlendDraws, cameraPosition, renderOrigin);
+    }
+
+    private static void RefreshBlendedDrawList(
+        List<BlendedReferenceDraw> draws, Vector3 cameraPosition, Vector3 renderOrigin)
+    {
+        var span = CollectionsMarshal.AsSpan(draws);
+        for (var i = 0; i < span.Length; i++)
+        {
+            ref var draw = ref span[i];
+            var worldCenter = Vector3.Transform(draw.Submesh.LocalBoundsCenter, draw.SourceWorld);
+            var world = draw.Submesh.IsBillboard
+                ? BuildBillboardWorld(
+                    draw.Submesh.LocalBoundsCenter, draw.SourceWorld, worldCenter, cameraPosition,
+                    renderOrigin)
+                : draw.World;
+            draw = draw with
+            {
+                World = world,
+                DistanceSquared = Vector3.DistanceSquared(worldCenter, cameraPosition)
+            };
+        }
+    }
+
+    /// <summary>
+    ///     Per-instance exact cull for the draw passes, mirroring the establishment cull's
+    ///     resident-mesh tests WITHOUT the tolerant drift slack: square footprint reach, small-prop
+    ///     distance LOD, frustum sphere. The batches hold the widened survivor superset; this keeps
+    ///     the actually-drawn set exact for the CURRENT camera every frame — including on frozen
+    ///     (reused) batches, where it is what makes camera drift inside the cull slack artifact-free.
+    /// </summary>
+    private bool PassesExactCull(in Vector4 bounds)
+    {
+        var rdx = MathF.Abs(bounds.X - _frameCylinderX);
+        var rdy = MathF.Abs(bounds.Y - _frameCylinderY);
+        var reach = _frameCylinderRadius + bounds.W + FrustumCullMargin;
+        if (rdx > reach || rdy > reach)
+        {
+            return false;
+        }
+
+        if (_enableDistanceLod && bounds.W < SmallPropLodRadius
+                               && (rdx * rdx) + (rdy * rdy) > _frameSmallPropCutoffSq)
+        {
+            return false;
+        }
+
+        return _frameFrustum.IntersectsSphere(
+            new Vector3(bounds.X, bounds.Y, bounds.Z), bounds.W + FrustumCullMargin);
+    }
+
+    /// <param name="SourceWorld">
+    ///     The ABSOLUTE placement world matrix, kept so batch-reuse frames can refresh what the
+    ///     camera moves without re-resolving the reference: the back-to-front sort distance and,
+    ///     for billboards, the camera-facing <paramref name="World" /> matrix.
+    /// </param>
     private readonly record struct BlendedReferenceDraw(
         Matrix4x4 World,
         CachedSubmesh12 Submesh,
@@ -1489,7 +1701,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         Vector4 AlphaState,
         Vector4 RenderState,
         Vector4 TextureState,
-        Vector4 Specular);
+        Vector4 Specular,
+        Matrix4x4 SourceWorld);
 }
 #endif
 

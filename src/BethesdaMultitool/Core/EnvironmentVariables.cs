@@ -85,6 +85,12 @@ internal static class EnvironmentVariables
         /// Set to "0" to revert to the exact viewProj compare — perf A/B lever + escape hatch.</summary>
         public const string TolerantCull = "FALLOUT_VIEWER_TOLERANT_CULL";
 
+        /// <summary>Reference batch reuse on quiesced frames (default ON): when the cull cache hit,
+        /// the render origin is unchanged, and the last build streamed nothing, the per-frame
+        /// resolve+batch pass is skipped and the frozen batches are re-drawn (with a per-instance
+        /// exact cull at draw time). Set to "0" to rebuild every frame — perf A/B + escape hatch.</summary>
+        public const string BatchReuse = "FALLOUT_VIEWER_BATCH_REUSE";
+
         /// <summary>Camera-relative rendering for the scene (terrain/references/water). DEFAULT ON;
         /// set to "0" to disable and render in absolute world space (the pre-fix behavior, for A/B
         /// comparison). Eliminates the float-precision "wobble" at worldspace edges by shifting scene
