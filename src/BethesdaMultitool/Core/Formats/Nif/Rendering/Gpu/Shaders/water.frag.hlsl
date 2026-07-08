@@ -281,7 +281,17 @@ float4 main(PSInput input) : SV_Target
 
     // FNV Schlick fresnel: F0 + (1-F0)*(1-NdotV)^5, F0 = FresnelAmount. Reflection over body.
     float F = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
-    float3 color = lerp(body, refl, saturate(F));
+#if OBLIVION_WATER
+    // VarAmounts.z — the engine's runtime fresnel FLOOR (max(VarAmounts.z, Schlick), WATER000
+    // asm 139). Its WATR/GMST source is unrecovered from the constant-setup side, so 0.85 is
+    // CALIBRATED against in-game oracles: Oblivion water is reflection-dominated and largely
+    // opaque everywhere (IC daylight + sunset mirror shots, 2026-07-07 user captures); only the
+    // shore band and near-top-down angles read through. Floors both the color lerp and the alpha.
+    float fresneled = max(0.85, saturate(F));
+#else
+    float fresneled = saturate(F);
+#endif
+    float3 color = lerp(body, refl, fresneled);
 
 #if OBLIVION_WATER
     // Oblivion single specular: pow(dot(reflect(-V,N), SunDir), Sun Power) × SunColor — no
@@ -297,12 +307,10 @@ float4 main(PSInput input) : SV_Target
 
 #if OBLIVION_WATER
     // Oblivion WATER000 shore alpha (pkg019 asm 139-173; def c13=(0.25,-0.2,-0.55), c12.x=1/0.35):
-    //   fresA     = max(VarAmounts.z, F)            — runtime fresnel floor, ALPHA only (color lerp
-    //                                                 above uses the unfloored Schlick); 0 = pure Schlick
-    //   alphaBase = lerp(0.25, fresA, depth)
+    //   alphaBase = lerp(0.25, max(VarAmounts.z, F), depth)
     //   s         = saturate(1 − (depth − 0.2)/0.35)
     //   alpha     = alphaBase · (1 − s³)            — 0 below 0.2 column, cubic shore fade to 0.55,
-    //                                                 then ≈fresnel (clear top-down, opaque grazing)
+    //                                                 then ≈floored fresnel (largely opaque + reflective)
     // The engine's DepthMap is a dedicated 0..1 water-depth target; the WATR fog distances canNOT
     // normalize it (DefaultWater's fog Near = −8192 would put the SHORELINE at depthT ≈ 0.89), so
     // the alpha depth uses the raw column over a fixed range — 512 world units puts the engine's
@@ -310,7 +318,7 @@ float4 main(PSInput input) : SV_Target
     // Without a scene-depth SRV there is no column (the N·V proxy is unrelated and zero at grazing
     // angles, which would erase the surface) — fall back to deep-water behavior (aDepth = 1).
     float aDepth = (depthIndex == 0xFFFFFFFFu) ? 1.0 : saturate(column / 512.0);
-    float alphaBase = lerp(0.25, saturate(F), aDepth);
+    float alphaBase = lerp(0.25, fresneled, aDepth);
     float shoreS = saturate(1.0 - (aDepth - 0.2) * 2.857143);
     float alpha = alphaBase * (1.0 - shoreS * shoreS * shoreS);
 #else

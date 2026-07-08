@@ -105,7 +105,7 @@
                           AutomationProperties.Name="Editor markers"
                           ToolTipService.ToolTip="Show editor/engine markers (XMarkers, travel/door markers)"
                           Checked="EditorMarkersCheckBox_Changed" Unchecked="EditorMarkersCheckBox_Changed" />
-                <CheckBox x:Name="ActivatorsCheckBox" IsChecked="False" Content="Activators"
+                <CheckBox x:Name="ActivatorsCheckBox" IsChecked="True" Content="Activators"
                           AutomationProperties.Name="Activators"
                           ToolTipService.ToolTip="Show activator objects (levers, terminals, buttons)"
                           Checked="ActivatorsCheckBox_Changed" Unchecked="ActivatorsCheckBox_Changed" />
