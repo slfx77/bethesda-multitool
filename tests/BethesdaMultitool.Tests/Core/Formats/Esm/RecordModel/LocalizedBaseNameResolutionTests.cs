@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
@@ -11,6 +11,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     topic display name (DIAL). This asserts almost no display name is a raw index. Skipped when the real
 ///     game plugin is absent (env-gated, like the parity tests).
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class LocalizedBaseNameResolutionTests
 {
     [Theory]
@@ -18,9 +19,10 @@ public class LocalizedBaseNameResolutionTests
     [InlineData(@"E:\SteamLibrary\SteamApps\common\Fallout 4\Data\Fallout4.esm")]
     public async Task LocalizedDisplayNames_ResolveCleanly(string esm)
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(File.Exists(esm), $"Localized plugin not found: {esm}");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm, cancellationToken: TestContext.Current.CancellationToken);
 
         var total = 0;

@@ -438,6 +438,12 @@ dotnet test -p:CollectCoverage=false
 - `SkipAnalyzers=true` — Disables SonarAnalyzer + Roslynator during build. Saves 5-15s. Use for fast iteration; omit for CI/lint passes.
 - `CollectCoverage=false` — Required: coverage collection hangs without this flag.
 
+### Test Discipline: Synthetic Data Only
+
+Tests use synthetic byte fixtures by default. Tests that require real game data (retail masters, BSAs, dumps) are OPT-IN behind `RUN_BUCKET_B=1` via `BucketBTestGuard.SkipUnlessEnabled()` — never auto-enabled by detecting installed games. The default suite must stay fast (~1-2 min) everywhere.
+
+Every real-asset test class additionally MUST carry `[Collection(SequentialIntegrationGroup.Name)]` and load masters via `RealAssetEsmCache.LoadAsync` (never dispose the returned result — the cache owns it). Without this, xUnit runs the multi-GB parses in parallel and the suite thrashes RAM until it never finishes. A full `RUN_BUCKET_B=1` sweep takes ~10 min and is for when the relevant code (semantic loader, schema decode, profiles) changes.
+
 ### CI/CD
 
 CI: `.github/workflows/build-and-test.yml` — builds Release + runs tests with code coverage on Windows, then cross-platform CLI build on Ubuntu.

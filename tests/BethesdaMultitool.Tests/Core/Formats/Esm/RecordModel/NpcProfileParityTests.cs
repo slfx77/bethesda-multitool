@@ -3,7 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Presentation;
 using BethesdaMultitool.Core.Formats.Esm.Presentation.Profiles;
 using BethesdaMultitool.Core.Games;
-using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
@@ -16,6 +16,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     engine reproduces FNV's curated display before it is rolled out to the other games (and, later,
 ///     before FNV's live display is switched to it). Skipped when no FNV plugin is available.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class NpcProfileParityTests
 {
     private static string? ResolveFalloutNvEsm()
@@ -38,10 +39,11 @@ public class NpcProfileParityTests
     public async Task NpcProfile_Reproduces_BuildNpc_Exactly_For_Fnv()
     {
         var esm = ResolveFalloutNvEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         // One resolver instance for both sides — parity is about the profile reproducing the builder, not

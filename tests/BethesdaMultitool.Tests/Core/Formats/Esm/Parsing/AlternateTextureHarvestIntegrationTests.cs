@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
@@ -10,6 +10,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 ///     TXSTs — that difference is exactly what makes each billboard render its own vendor ad instead of
 ///     one shared default. Skipped when no FNV plugin is available.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class AlternateTextureHarvestIntegrationTests
 {
     private static string? ResolveFalloutNvEsm()
@@ -32,10 +33,11 @@ public class AlternateTextureHarvestIntegrationTests
     public async Task Fnv_HarvestsBillboardAlternateTextures_WithDistinctTxstPerBase()
     {
         var esm = ResolveFalloutNvEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         var index = result.Records.AlternateTexturesByFormId;

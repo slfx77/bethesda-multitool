@@ -1,5 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
-using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
@@ -11,15 +11,17 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     member-array-symbol resolution + union support, a condition exposes Type / Comparison Value / Function
 ///     / Parameter #1 / #2. Env-gated.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class ConditionDecodeTests
 {
     [Theory]
     [InlineData(@"E:\SteamLibrary\SteamApps\common\Oblivion\Data\Oblivion.esm")]
     public async Task Conditions_DecodeStructurally(string esm)
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(File.Exists(esm), $"Not found: {esm}");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm, cancellationToken: TestContext.Current.CancellationToken);
 
         // A condition node has the signature CTDA and the structural members; collect them across every

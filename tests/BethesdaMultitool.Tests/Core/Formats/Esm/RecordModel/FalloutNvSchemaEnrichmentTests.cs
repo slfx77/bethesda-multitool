@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
@@ -11,6 +11,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     it must carry the same rich, labeled blocks the other games' GenericRecords do. Skipped when no FNV
 ///     plugin is available.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class FalloutNvSchemaEnrichmentTests
 {
     private static string? ResolveFalloutNvEsm()
@@ -33,10 +34,11 @@ public class FalloutNvSchemaEnrichmentTests
     public async Task Fnv_KeepsTypedNpcs_AndGainsDecodedTreeSubstrate()
     {
         var esm = ResolveFalloutNvEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         // 1. No regression: FNV still reads through its rich typed handlers (the schema did NOT take over).

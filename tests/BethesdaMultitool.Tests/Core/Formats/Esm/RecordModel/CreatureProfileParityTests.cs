@@ -3,7 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Presentation;
 using BethesdaMultitool.Core.Formats.Esm.Presentation.Profiles;
 using BethesdaMultitool.Core.Games;
-using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
@@ -15,6 +15,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     produces (reading the typed CreatureRecord) — all six sections, every label/value/link. Skipped when no
 ///     FNV plugin is available.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class CreatureProfileParityTests
 {
     private static string? ResolveFalloutNvEsm()
@@ -37,10 +38,11 @@ public class CreatureProfileParityTests
     public async Task CreatureProfile_Reproduces_BuildCreature_Exactly_For_Fnv()
     {
         var esm = ResolveFalloutNvEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         var resolver = new FormIdResolver(result.Records.FormIdToEditorId, result.Records.FormIdToDisplayName);

@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -24,6 +25,7 @@ public class Tes3NifStructureProbe
     [Fact]
     public void RootCollisionNode_GeometryIsExcludedFromRendering()
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(File.Exists(Bsa), "Morrowind.bsa not present (dev-machine-only asset).");
 
         using var extractor = new BsaExtractor(Bsa);

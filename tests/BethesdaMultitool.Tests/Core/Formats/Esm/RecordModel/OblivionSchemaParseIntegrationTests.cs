@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
@@ -10,6 +10,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     This is the "reads properly in the GUI" guarantee at the data layer — the GUI consumes the same
 ///     <c>RecordCollection</c>. Skipped when Oblivion.esm isn't installed.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class OblivionSchemaParseIntegrationTests
 {
     private static string? ResolveOblivionEsm()
@@ -28,10 +29,11 @@ public class OblivionSchemaParseIntegrationTests
     public async Task Oblivion_Npcs_Are_SchemaDecoded_With_Rich_Blocks()
     {
         var esm = ResolveOblivionEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Oblivion.esm not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         var npcs = result.Records.GenericRecords.Where(r => r.RecordType == "NPC_").ToList();
@@ -57,10 +59,11 @@ public class OblivionSchemaParseIntegrationTests
     public async Task Oblivion_Dialogue_Is_Surfaced_For_The_Dialogue_Tab()
     {
         var esm = ResolveOblivionEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Oblivion.esm not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         // DIAL topics and INFO responses must be built game-aware so the Dialogue tab has data.

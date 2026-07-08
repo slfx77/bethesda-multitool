@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
@@ -12,6 +12,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     TES3 dialogue is positional (INFO follows its DIAL in file order) and string-keyed (the ONAM speaker
 ///     is an NPC editor id), which this exercises. Skipped when Morrowind.esm isn't installed.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class Tes3SchemaParseIntegrationTests
 {
     private static string? ResolveMorrowindEsm()
@@ -34,10 +35,11 @@ public class Tes3SchemaParseIntegrationTests
     public async Task Morrowind_Npcs_Are_SchemaDecoded_With_Rich_Blocks()
     {
         var esm = ResolveMorrowindEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Morrowind.esm not found (set BETHESDA_TEST_DATA_ROOT or install Morrowind).");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         var npcs = result.Records.GenericRecords.Where(r => r.RecordType == "NPC_").ToList();
@@ -59,10 +61,11 @@ public class Tes3SchemaParseIntegrationTests
     public async Task Morrowind_Dialogue_Is_Surfaced_For_The_Dialogue_Tab()
     {
         var esm = ResolveMorrowindEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Morrowind.esm not found (set BETHESDA_TEST_DATA_ROOT or install Morrowind).");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         // DIAL topics and INFO responses must be built so the Dialogue tab has data.

@@ -29,6 +29,12 @@ namespace BethesdaMultitool.Tests.Helpers;
 ///         guard exists to contain inherited real-asset debt, not to
 ///         enable new real-asset tests.
 ///     </para>
+///     <para>
+///         Any real-asset test that does exist must pair this guard with
+///         <see cref="SequentialIntegrationGroup" /> and load masters via
+///         <see cref="RealAssetEsmCache" /> — ungated full-master parses
+///         running in parallel exhaust RAM and stall the whole suite.
+///     </para>
 /// </summary>
 internal static class BucketBTestGuard
 {

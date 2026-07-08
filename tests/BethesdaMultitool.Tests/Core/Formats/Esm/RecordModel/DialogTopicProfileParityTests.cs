@@ -3,7 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Presentation;
 using BethesdaMultitool.Core.Formats.Esm.Presentation.Profiles;
 using BethesdaMultitool.Core.Games;
-using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
@@ -16,6 +16,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     the runtime-only fields (Responses / Journal Index / Dummy Prompt) are 0 / 0 / null on both. Skipped
 ///     when no FNV plugin is available.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class DialogTopicProfileParityTests
 {
     private static string? ResolveFalloutNvEsm()
@@ -38,10 +39,11 @@ public class DialogTopicProfileParityTests
     public async Task DialogTopicProfile_Reproduces_BuildDialogTopic_For_Fnv()
     {
         var esm = ResolveFalloutNvEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         var resolver = new FormIdResolver(result.Records.FormIdToEditorId, result.Records.FormIdToDisplayName);

@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
@@ -11,6 +11,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     names and response text live in external .STRINGS/.ILSTRINGS tables, so these assertions also
 ///     prove the loader joins those. Skipped when Skyrim.esm isn't installed.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class SkyrimSchemaParseIntegrationTests
 {
     private static string? ResolveSkyrimEsm()
@@ -34,10 +35,11 @@ public class SkyrimSchemaParseIntegrationTests
     public async Task Skyrim_Npcs_Are_SchemaDecoded_With_Rich_Blocks()
     {
         var esm = ResolveSkyrimEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Skyrim.esm not found (set BETHESDA_TEST_DATA_ROOT or install Skyrim).");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         var npcs = result.Records.GenericRecords.Where(r => r.RecordType == "NPC_").ToList();
@@ -61,10 +63,11 @@ public class SkyrimSchemaParseIntegrationTests
     public async Task Skyrim_Dialogue_Is_Surfaced_For_The_Dialogue_Tab()
     {
         var esm = ResolveSkyrimEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Skyrim.esm not found (set BETHESDA_TEST_DATA_ROOT or install Skyrim).");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm!, cancellationToken: TestContext.Current.CancellationToken);
 
         // DIAL topics and INFO responses must be built game-aware so the Dialogue tab has data.

@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Completeness;
@@ -12,6 +13,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Completeness;
 ///     oracle (tools/EsmSchemaGen) supplies the expected structure for each gap when fixing them.
 ///     Skipped when the game master isn't present (set BETHESDA_TEST_DATA_ROOT or have Sample/ESM).
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class SubrecordCompletenessTests
 {
     // Calibrated to the current count, then ratcheted DOWN as records get fully modeled (never up). FNV
@@ -45,6 +47,7 @@ public class SubrecordCompletenessTests
     public void Fnv_Master_Has_No_New_Unmodeled_Subrecord_Shapes()
     {
         var esm = ResolveEsm("FalloutNV.esm", Path.Combine("Sample", "ESM", "pc_final", "FalloutNV.esm"));
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or place it under Sample/ESM/pc_final).");
 
@@ -67,6 +70,7 @@ public class SubrecordCompletenessTests
     public void Skyrim_Master_Has_No_New_Unmodeled_Subrecord_Shapes()
     {
         var esm = ResolveSkyrimEsm();
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null,
             "Skyrim.esm not found (set BETHESDA_TEST_DATA_ROOT or install Skyrim LE).");
 

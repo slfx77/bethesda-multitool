@@ -1,5 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
-using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
@@ -10,15 +10,17 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.RecordModel;
 ///     entries are the entire point of the record — came back as opaque bytes. Expanding the helper into the
 ///     12-byte struct (Level u16 / unused / Reference FormID / Count u16 / tail) fixed it. Env-gated.
 /// </summary>
+[Collection(SequentialIntegrationGroup.Name)]
 public class LeveledListDecodeTests
 {
     [Theory]
     [InlineData(@"E:\SteamLibrary\SteamApps\common\Oblivion\Data\Oblivion.esm")]
     public async Task LeveledLists_DecodeEntriesStructurally(string esm)
     {
+        BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(File.Exists(esm), $"Not found: {esm}");
 
-        using var result = await SemanticFileLoader.LoadAsync(
+        var result = await RealAssetEsmCache.LoadAsync(
             esm, cancellationToken: TestContext.Current.CancellationToken);
 
         var leveled = result.Records.GenericRecords
