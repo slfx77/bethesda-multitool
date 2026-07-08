@@ -18,6 +18,7 @@ internal sealed record MasterRecordIndex
     public required Dictionary<string, Dictionary<string, List<uint>>> StemToFormIdsByType { get; init; }
     public required Dictionary<uint, MasterChildLocation> ChildLocations { get; init; }
     public required Dictionary<uint, uint> RefToCell { get; init; }
+    public required Dictionary<uint, List<uint>> RefsByCell { get; init; }
     public required Dictionary<uint, List<uint>> NavmsByCell { get; init; }
     public required Dictionary<uint, List<uint>> LandsByCell { get; init; }
     public required Dictionary<uint, PcEsmCellContext> CellContexts { get; init; }
@@ -49,6 +50,7 @@ internal sealed record MasterRecordIndex
             StemToFormIdsByType = BuildStemLookup(editorIdsByType),
             ChildLocations = childLocations,
             RefToCell = BuildChildRecordToCellIndex(childLocations),
+            RefsByCell = BuildRefsByCellIndex(childLocations),
             NavmsByCell = BuildChildRecordByCellIndex(childLocations, "NAVM"),
             LandsByCell = BuildChildRecordByCellIndex(childLocations, "LAND"),
             CellContexts = PcEsmCellContextIndex.Build(records.ToList(), grupHeaders)
@@ -178,6 +180,30 @@ internal sealed record MasterRecordIndex
         return childLocations
             .Where(kvp => kvp.Value.RecordType is "REFR" or "ACHR" or "ACRE")
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.CellFormId);
+    }
+
+    private static Dictionary<uint, List<uint>> BuildRefsByCellIndex(
+        IReadOnlyDictionary<uint, MasterChildLocation> childLocations)
+    {
+        var refsByCell = new Dictionary<uint, List<uint>>();
+
+        foreach (var (formId, location) in childLocations)
+        {
+            if (location.RecordType is not ("REFR" or "ACHR" or "ACRE"))
+            {
+                continue;
+            }
+
+            if (!refsByCell.TryGetValue(location.CellFormId, out var list))
+            {
+                list = [];
+                refsByCell[location.CellFormId] = list;
+            }
+
+            list.Add(formId);
+        }
+
+        return refsByCell;
     }
 
     private static Dictionary<uint, List<uint>> BuildChildRecordByCellIndex(

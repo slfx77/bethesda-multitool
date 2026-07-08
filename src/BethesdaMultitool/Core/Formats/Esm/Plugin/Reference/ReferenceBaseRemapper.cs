@@ -27,6 +27,89 @@ internal static class ReferenceBaseRemapper
         };
     }
 
+    /// <summary>Outcome of the EditorID-stem base rescue.</summary>
+    public enum StemRescueOutcome
+    {
+        NoMatch,
+        Ambiguous,
+        CrossTypeAmbiguous,
+        Rescued
+    }
+
+    /// <summary>Result of <see cref="TryRescueBaseByEditorIdStem" />.</summary>
+    public sealed record StemRescueResult(
+        StemRescueOutcome Outcome,
+        string? WinningType = null,
+        uint WinningFormId = 0,
+        string? AmbiguousType = null,
+        int AmbiguousCount = 0,
+        IReadOnlyList<string>? CrossTypes = null);
+
+    /// <summary>
+    ///     Last-chance re-pairing of a NEW placed ref whose proto base FormID is neither in
+    ///     master nor freshly emitted: look up the DMP-captured base EditorID's normalized
+    ///     stem in the per-type master stem index and accept only a unique same-type hit
+    ///     (e.g. SCOLParkingLotChunk03 → master SCOLParkingLotChunk03b). ACHR/ACRE are
+    ///     strict (NPC_/CREA); REFR narrows via the DMP typed index when it knows the base's
+    ///     type, else scans every non-actor eligible type and refuses cross-type ambiguity.
+    /// </summary>
+    public static StemRescueResult TryRescueBaseByEditorIdStem(
+        string placedRecordType,
+        uint baseFormId,
+        string? baseEditorId,
+        Dictionary<string, Dictionary<string, List<uint>>> stemLookup,
+        IReadOnlyDictionary<uint, string>? dmpBaseFormIdToRecordType)
+    {
+        if (string.IsNullOrEmpty(baseEditorId))
+        {
+            return new StemRescueResult(StemRescueOutcome.NoMatch);
+        }
+
+        var candidateTypes = placedRecordType switch
+        {
+            "ACHR" => (IReadOnlyList<string>)["NPC_"],
+            "ACRE" => ["CREA"],
+            "REFR" => dmpBaseFormIdToRecordType is not null
+                      && dmpBaseFormIdToRecordType.TryGetValue(baseFormId, out var typedHit)
+                ? [typedHit]
+                : RefrBaseEligibleTypes.Except(["NPC_", "CREA"]).ToList(),
+            _ => Array.Empty<string>()
+        };
+
+        if (candidateTypes.Count == 0)
+        {
+            return new StemRescueResult(StemRescueOutcome.NoMatch);
+        }
+
+        var hits = new List<(string Type, uint FormId)>();
+        foreach (var candidateType in candidateTypes)
+        {
+            var match = TryFindMasterBaseByEditorIdStem(
+                stemLookup, baseEditorId, candidateType, out var ambiguous, out var candidates);
+            if (ambiguous)
+            {
+                return new StemRescueResult(
+                    StemRescueOutcome.Ambiguous,
+                    AmbiguousType: candidateType,
+                    AmbiguousCount: candidates!.Count);
+            }
+
+            if (match is not null)
+            {
+                hits.Add((candidateType, match.Value));
+            }
+        }
+
+        return hits.Count switch
+        {
+            0 => new StemRescueResult(StemRescueOutcome.NoMatch),
+            1 => new StemRescueResult(StemRescueOutcome.Rescued, hits[0].Type, hits[0].FormId),
+            _ => new StemRescueResult(
+                StemRescueOutcome.CrossTypeAmbiguous,
+                CrossTypes: hits.Select(h => h.Type).ToList())
+        };
+    }
+
     /// <summary>Builds a map from every base record's FormID to its 4-character type across the DMP record collection.</summary>
     public static Dictionary<uint, string> BuildDmpBaseFormIdToRecordType(RecordCollection dmpRecords)
     {
