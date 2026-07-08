@@ -375,6 +375,64 @@ public class CellGrupBuilderTests
         Assert.Null(bytes);
     }
 
+    [Fact]
+    public void BuildCellSection_WrldAnchor_StripsOfstOffsetTable()
+    {
+        // The master WRLD carries OFST: per-file byte offsets into the MASTER. The FNV
+        // runtime consults each ESM-flagged file's own OFST as the exterior-cell fast
+        // path, so a master OFST cloned into this plugin makes the engine seek THIS file
+        // at master offsets and every loaded exterior cell fails temporary-data load.
+        const uint wrldFormId = 0x60;
+        var ofstData = new byte[70_000]; // >64KB so the XXXX-extended path is exercised too
+        ofstData.AsSpan().Fill(0xAB);
+        var wrldRecord = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader { Signature = "WRLD", FormId = wrldFormId, Version = 0x000F },
+            Subrecords =
+            [
+                new ParsedSubrecord { Signature = "EDID", Data = "TestWrld\0"u8.ToArray() },
+                new ParsedSubrecord { Signature = "OFST", Data = ofstData }
+            ]
+        };
+        var pcRecords = new Dictionary<uint, ParsedMainRecord> { [wrldFormId] = wrldRecord };
+
+        var bundle = new CellOverrideBundle
+        {
+            CellFormId = 0xC0,
+            Context = MakeExteriorContext(0xC0, wrldFormId, 0x1234, 0x5678),
+            CellRecordBytes = MakeMinimalCellBytes(0xC0),
+            PersistentChildRecords = [],
+            TemporaryChildRecords = [MakeMinimalRefrRecord(0xC1)]
+        };
+
+        var bytes = CellGrupBuilder.BuildCellSection([bundle], pcRecords)!;
+        Assert.NotNull(bytes);
+
+        // Neither the OFST signature nor its XXXX size-extension prefix may survive.
+        Assert.Equal(-1, IndexOfSignature(bytes, "OFST"));
+        Assert.Equal(-1, IndexOfSignature(bytes, "XXXX"));
+
+        // The anchor's dataSize must reflect the strip: EDID (6 + 9) only.
+        var wrldOffset = IndexOfSignature(bytes, "WRLD", searchFrom: 24); // skip top GRUP label
+        Assert.True(wrldOffset >= 0);
+        var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(wrldOffset + 4, 4));
+        Assert.Equal(15u, dataSize);
+    }
+
+    private static int IndexOfSignature(byte[] bytes, string signature, int searchFrom = 0)
+    {
+        for (var i = searchFrom; i + 4 <= bytes.Length; i++)
+        {
+            if (bytes[i] == signature[0] && bytes[i + 1] == signature[1]
+                && bytes[i + 2] == signature[2] && bytes[i + 3] == signature[3])
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
     private static byte[] MakeMinimalCellBytes(uint cellFormId)
     {
         var cell = new ParsedMainRecord

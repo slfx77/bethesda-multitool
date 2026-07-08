@@ -42,6 +42,19 @@ public sealed record CellOverrideBundle
 public static class CellGrupBuilder
 {
     /// <summary>
+    ///     Subrecords stripped from master WRLD anchor clones. OFST is the worldspace's
+    ///     per-file cell offset table: byte offsets into the file the record was READ from.
+    ///     The FNV runtime consults each master-flagged file's own OFST as the fast path for
+    ///     exterior cell lookup (TESWorldSpace.cpp — decompile-verified), so a master OFST
+    ///     copied into this plugin makes the engine seek THIS file at the master's offsets
+    ///     and every loaded exterior cell fails with "CELLS: Failed to load temporary data".
+    ///     With OFST absent the engine falls back to scanning the file's world children
+    ///     groups. xEdit likewise removes OFST from saved plugins.
+    /// </summary>
+    private static readonly IReadOnlySet<string> WrldAnchorStripSubrecords =
+        new HashSet<string>(StringComparer.Ordinal) { "OFST" };
+
+    /// <summary>
     ///     Build the full cell section of the plugin body — top-level CELL GRUP for interior
     ///     bundles plus a single top-level WRLD GRUP wrapping every affected worldspace.
     ///     Returns null when there are no bundles to emit.
@@ -159,7 +172,7 @@ public static class CellGrupBuilder
         if (pcRecordsByFormId.TryGetValue(wrldFormId, out var wrldRecord)
             && wrldRecord.Header.Signature == "WRLD")
         {
-            wrldAnchorBytes = ReconstructRecordBytes(wrldRecord);
+            wrldAnchorBytes = ReconstructRecordBytes(wrldRecord, WrldAnchorStripSubrecords);
             emittedWrldFormId = wrldFormId;
         }
         else if (newWorldspacesByDmpFormId is not null

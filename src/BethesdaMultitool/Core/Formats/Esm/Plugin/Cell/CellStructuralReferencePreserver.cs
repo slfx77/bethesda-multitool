@@ -325,6 +325,16 @@ internal static class CellStructuralReferencePreserver
         var groupType = masterChildLocations.TryGetValue(masterRef.Header.FormId, out var location)
             ? location.GroupType
             : GetDefaultChildGroupType(masterRef);
+
+        // The record's persistent flag always wins over the location lookup: a
+        // persistent-flagged record in a Temporary Children GRUP is a format-invariant
+        // violation xEdit refuses to save (and the lookup has a known rare edge case —
+        // master NelsonBarracks01's persistent pair resolved to the temp bucket).
+        if ((masterRef.Header.Flags & 0x00000400u) != 0)
+        {
+            groupType = 8;
+        }
+
         switch (groupType)
         {
             case 8:
