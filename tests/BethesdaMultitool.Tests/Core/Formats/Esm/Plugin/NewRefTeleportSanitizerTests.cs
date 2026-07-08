@@ -125,9 +125,12 @@ public class NewRefTeleportSanitizerTests
         Assert.Equal(0x01000801u, ReadFormIdSubrecord(replacementRef, "NAME"));
         Assert.Equal(sourceRefFormId, ReadFormIdSubrecord(replacementRef, "XTEL"));
 
-        var deletedStatic = SingleRecordFromBytes(buckets.Temporary.Single());
-        Assert.Equal(0x00105D49u, deletedStatic.Header.FormId);
-        Assert.True(deletedStatic.Header.IsDeleted);
+        var removedStatic = SingleRecordFromBytes(buckets.Temporary.Single());
+        Assert.Equal(0x00105D49u, removedStatic.Header.FormId);
+        // Removal is expressed as undelete-and-disable (Initially Disabled flag), not a
+        // deleted-flag stub — deleted refs are FNV's classic referenced-form crash source.
+        Assert.False(removedStatic.Header.IsDeleted);
+        Assert.Equal(0x800u, removedStatic.Header.Flags & 0x800u);
     }
 
     [Fact]

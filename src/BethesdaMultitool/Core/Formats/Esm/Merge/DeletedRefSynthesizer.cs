@@ -19,15 +19,19 @@ public sealed record DeletedRefBundle
 /// <summary>
 ///     For cells in <see cref="CellMergeMode.LoadedReplacement" /> mode, computes the set
 ///     difference between the master ESM's refs in a cell and the DMP's refs in the same cell,
-///     and emits a deletion-flag override (record header flag <c>0x00000020</c>) for each ref
-///     that's in the master but not in the DMP and isn't kept by the preservation filter. This
-///     implements the "wipeout" semantics from the user's spec.
-///     Per xEdit convention, a deleted override has a minimal subrecord stream — just the EDID
-///     copied verbatim from the master record. The compressed flag is cleared on output.
+///     and removes each ref that's in the master but not in the DMP and isn't kept by the
+///     preservation filter — via the community-standard "UNDELETE AND DISABLE" pattern: a
+///     full master-clone override with the Initially Disabled record flag (0x800) instead of
+///     a deletion-flag (0x20) stub. Deleted references are FNV's most notorious crash source
+///     (any surviving master content that still references a deleted form faults); a disabled
+///     override achieves the same in-game removal (invisible, no collision) while every
+///     FormID keeps resolving. Gomorrah01 concentrated all 790 of the plugin's deletion
+///     stubs and was the one interior that crashed on attach — the bisect that motivated
+///     this switch.
 /// </summary>
 public static class DeletedRefSynthesizer
 {
-    private const uint DeletedFlag = 0x00000020;
+    private const uint InitiallyDisabledFlag = 0x00000800;
     private const uint CompressedFlag = 0x00040000;
     private const uint PersistentFlag = 0x00000400;
 
@@ -37,10 +41,19 @@ public static class DeletedRefSynthesizer
     /// <param name="masterRefsInCell">All master ESM REFR/ACHR/ACRE records belonging to this cell.</param>
     /// <param name="dmpFormIdsInCell">Set of FormIDs the DMP has for refs in this cell.</param>
     /// <param name="preserveMissingRef">Optional predicate for missing master refs that must not be deleted.</param>
+    /// <param name="useHardDeletion">
+    ///     Optional predicate selecting refs that get a true deleted-flag stub instead of the
+    ///     disabled-override default. Render-culling markers (room bounds / portals /
+    ///     occlusion planes) REQUIRE hard deletion: the engine's room-portal culling graph
+    ///     honors initially-disabled markers (in-game verified — disabled markers re-broke
+    ///     the Gomorrah occlusion the v89 tombstones had fixed), and nothing references
+    ///     culling markers, so deleting them is safe from the referenced-form crash class.
+    /// </param>
     public static DeletedRefBundle Synthesize(
         IEnumerable<ParsedMainRecord> masterRefsInCell,
         ISet<uint> dmpFormIdsInCell,
-        Func<ParsedMainRecord, bool>? preserveMissingRef = null)
+        Func<ParsedMainRecord, bool>? preserveMissingRef = null,
+        Func<ParsedMainRecord, bool>? useHardDeletion = null)
     {
         var persistent = new List<byte[]>();
         var temporary = new List<byte[]>();
@@ -57,7 +70,9 @@ public static class DeletedRefSynthesizer
                 continue;
             }
 
-            var bytes = BuildDeletedOverride(masterRef);
+            var bytes = useHardDeletion?.Invoke(masterRef) == true
+                ? BuildHardDeletedStub(masterRef)
+                : BuildDeletedOverride(masterRef);
             if ((masterRef.Header.Flags & PersistentFlag) != 0)
             {
                 persistent.Add(bytes);
@@ -76,13 +91,12 @@ public static class DeletedRefSynthesizer
     }
 
     /// <summary>
-    ///     Build a single deleted-flag override record from its master source.
+    ///     True deleted-flag stub (header flag 0x20, minimal EDID-only payload) — reserved
+    ///     for render-culling markers, which must not exist AT ALL for the engine to skip
+    ///     them when building the room-portal culling graph.
     /// </summary>
-    private static byte[] BuildDeletedOverride(ParsedMainRecord masterRef)
+    private static byte[] BuildHardDeletedStub(ParsedMainRecord masterRef)
     {
-        // Subrecord stream: just the master's EDID, if present. xEdit shows deleted overrides
-        // with their EDID for human identification — a totally-empty payload also works but is
-        // less helpful in the editor.
         using var subStream = new MemoryStream();
         var edid = masterRef.Subrecords.FirstOrDefault(s => s.Signature == "EDID");
         if (edid is not null)
@@ -92,12 +106,10 @@ public static class DeletedRefSynthesizer
         }
 
         var subBytes = subStream.ToArray();
-
         var header = masterRef.Header with
         {
             DataSize = (uint)subBytes.Length,
-            Flags = (masterRef.Header.Flags & ~CompressedFlag) | DeletedFlag,
-            Version = Tes4HeaderBuilder.RecordVersion
+            Flags = (masterRef.Header.Flags & ~CompressedFlag) | DeletedRecordFlag
         };
 
         using var stream = new MemoryStream();
@@ -105,5 +117,28 @@ public static class DeletedRefSynthesizer
         stream.Write(subBytes);
         return stream.ToArray();
     }
+
+    private const uint DeletedRecordFlag = 0x00000020;
+
+    /// <summary>
+    ///     Build a single "undeleted + initially disabled" override from its master source:
+    ///     the full master record clone (XEMI stripped — the emittance link is eager-resolved
+    ///     under ESM load and was an AV source) with the Initially Disabled flag added. The
+    ///     ref exists and resolves at runtime but never renders, collides, or processes.
+    /// </summary>
+    private static byte[] BuildDeletedOverride(ParsedMainRecord masterRef)
+    {
+        var bytes = Plugin.Cell.CellGrupBuilder.ReconstructRecordBytes(
+            masterRef, DisabledOverrideStripSubrecords);
+
+        // ReconstructRecordBytes already cleared the compressed flag; add Initially Disabled.
+        var flags = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(
+            bytes.AsSpan(8, 4), (flags & ~CompressedFlag) | InitiallyDisabledFlag);
+        return bytes;
+    }
+
+    private static readonly IReadOnlySet<string> DisabledOverrideStripSubrecords =
+        new HashSet<string>(StringComparer.Ordinal) { "XEMI" };
 }
 

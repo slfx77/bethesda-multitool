@@ -43,8 +43,36 @@ public class DeletedRefSynthesizerTests
 
         var bytes = bundle.Temporary[0];
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
-        Assert.Equal(DeletedFlag, flags & DeletedFlag);
+        // Removal is expressed as UNDELETE-AND-DISABLE (community-standard crash-safe
+        // pattern): Initially Disabled flag set, NO deleted flag, compression cleared.
+        Assert.Equal(0x800u, flags & 0x800u);
+        Assert.Equal(0u, flags & DeletedFlag);
         Assert.Equal(0u, flags & CompressedFlag);
+    }
+
+    [Fact]
+    public void Synthesize_HardDeletionPredicate_EmitsTrueDeletedStubForCullingMarkers()
+    {
+        // Render-culling markers must be HARD-deleted (flag 0x20): the engine's room-portal
+        // culling graph honors initially-disabled markers (in-game verified), so a disabled
+        // override would re-break interior occlusion. Ordinary removals stay disabled.
+        var markerRef = MakeRef(0x500, false, "RoomMarkerDoomed");
+        var ordinaryRef = MakeRef(0x501, false, "OrdinaryDoomed");
+
+        var bundle = DeletedRefSynthesizer.Synthesize(
+            [markerRef, ordinaryRef],
+            new HashSet<uint>(),
+            preserveMissingRef: null,
+            useHardDeletion: r => r.Header.FormId == 0x500);
+
+        Assert.Equal(2, bundle.Temporary.Count);
+        var byId = bundle.Temporary.ToDictionary(
+            b => BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(12, 4)),
+            b => BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(8, 4)));
+        Assert.Equal(0x20u, byId[0x500] & 0x20u);   // marker: true deletion
+        Assert.Equal(0u, byId[0x500] & 0x800u);
+        Assert.Equal(0x800u, byId[0x501] & 0x800u); // ordinary: disabled override
+        Assert.Equal(0u, byId[0x501] & 0x20u);
     }
 
     [Fact]
