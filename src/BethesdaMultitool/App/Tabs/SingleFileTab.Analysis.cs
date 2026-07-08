@@ -452,8 +452,10 @@ public sealed partial class SingleFileTab
         {
             var semanticResult = _session.SemanticResult;
 
-            // Merge load order records so DLC content appears in the browser
-            var loadOrderRecords = _session.LoadOrder.BuildMergedRecords();
+            // Merge load order records so DLC content appears in the browser. An ESM/ESP primary owns
+            // global mod index 0, so TES4-family entries rebase their master references against it.
+            var loadOrderRecords = _session.LoadOrder.BuildMergedRecords(
+                _session.IsEsmFile ? Path.GetFileName(_session.FilePath) : null);
             if (loadOrderRecords != null)
                 semanticResult = loadOrderRecords.MergeWith(semanticResult);
 

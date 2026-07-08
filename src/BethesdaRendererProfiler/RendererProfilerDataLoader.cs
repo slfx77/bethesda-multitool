@@ -27,7 +27,12 @@ internal static class RendererProfilerDataLoader
         {
             progress?.Report($"Loading {loadOrderPaths.Count} load-order source(s)...");
             var loadOrder = await LoadSourceSetAsync(loadOrderPaths, progress, cancellationToken);
-            var loadOrderRecords = loadOrder.BuildMergedRecords();
+            // An ESM/ESP primary owns global mod index 0, so TES4-family load-order sources rebase
+            // their master references against it (a DMP primary keeps raw runtime FormIDs instead).
+            var loadOrderRecords = loadOrder.BuildMergedRecords(
+                primary.FileType == AnalysisFileType.EsmFile
+                    ? Path.GetFileName(primary.FilePath)
+                    : null);
             if (loadOrderRecords is not null)
             {
                 semantic = loadOrderRecords.MergeWith(semantic);

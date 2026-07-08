@@ -20,6 +20,7 @@ internal static class EsmFormIdPropertyRegistry
         "AssociatedItem",
         "AttackLoopSoundFormId",
         "BaseFormId",
+        "BaseMaterialSwapFormIds",
         "BoltSoundFormId",
         "CastingSoundFormId",
         "CategoryFormId",
@@ -168,6 +169,10 @@ internal static class EsmFormIdPropertyRegistry
 
     private static readonly HashSet<string> FormIdKeyedDictionaryNames = new(StringComparer.Ordinal)
     {
+        "AlternateTexturesByFormId",
+        "BaseColorRemapIndices",
+        "BaseMaterialSwapFormIds",
+        "DecodedTreesByFormId",
         "FormIdToDisplayName",
         "FormIdToEditorId",
         "ModelPathIndex",

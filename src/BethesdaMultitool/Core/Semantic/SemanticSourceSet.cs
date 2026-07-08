@@ -31,9 +31,21 @@ internal sealed class SemanticSourceSet
         return merged;
     }
 
-    /// <summary>Merges every source's records into one collection in load order.</summary>
-    public RecordCollection? BuildMergedRecords()
+    /// <summary>
+    ///     Merges every source's records into one collection in load order.
+    ///     <paramref name="primaryFileName" /> names the externally-merged primary plugin (global mod
+    ///     index 0) when this set supplements one — TES4-family sources' FormIDs are then rebased so
+    ///     their master references resolve against it (see <see cref="Tes4LoadOrderFormIdMapper" />).
+    /// </summary>
+    public RecordCollection? BuildMergedRecords(string? primaryFileName = null)
     {
+        // TES4-family plugins carry file-local mod indices in their FormID high bytes (every DLC's own
+        // records are raw 0x01xxxxxx) — rebase them into shared load-order slots so unrelated records
+        // from different DLCs stop colliding while cross-file overrides keep folding together.
+        var tes4Mapper = Tes4LoadOrderFormIdMapper.TryCreate(
+            Sources.Select(source => source.FilePath).ToList(),
+            primaryFileName);
+
         RecordCollection? merged = null;
         for (var i = 0; i < Sources.Count; i++)
         {
@@ -42,6 +54,11 @@ internal sealed class SemanticSourceSet
             // keeps the unstamped 0x00-prefixed range; later sources get 0x01, 0x02, … (see
             // Tes3LoadOrderNamespacer).
             var records = Tes3LoadOrderNamespacer.Namespaced(Sources[i].Records, i);
+            if (tes4Mapper is not null)
+            {
+                records = tes4Mapper.Namespaced(records, Sources[i].FilePath);
+            }
+
             merged = merged == null ? records : merged.MergeWith(records);
         }
 

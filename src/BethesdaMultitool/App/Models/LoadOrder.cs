@@ -46,9 +46,18 @@ internal sealed class LoadOrder : IDisposable
     ///     Builds a single RecordCollection by merging all loaded entry records in load order.
     ///     Later entries override earlier ones for duplicate FormIDs.
     ///     Returns null if no entries have records.
+    ///     <paramref name="primaryFileName" /> names the session's externally-merged primary plugin
+    ///     (global mod index 0) so TES4-family entries' master references rebase against it.
     /// </summary>
-    public RecordCollection? BuildMergedRecords()
+    public RecordCollection? BuildMergedRecords(string? primaryFileName = null)
     {
+        // TES4-family plugins carry file-local mod indices in their FormID high bytes (every DLC's own
+        // records are raw 0x01xxxxxx); rebase them into shared load-order slots so unrelated records
+        // from different plugins stop colliding on merge (see Tes4LoadOrderFormIdMapper).
+        var tes4Mapper = Tes4LoadOrderFormIdMapper.TryCreate(
+            Entries.Select(entry => entry.FilePath).ToList(),
+            primaryFileName);
+
         RecordCollection? merged = null;
         for (var i = 0; i < Entries.Count; i++)
         {
@@ -60,6 +69,11 @@ internal sealed class LoadOrder : IDisposable
             // Load Order is supplementary to the externally-loaded primary file, which holds the unstamped
             // 0x00 range, so entries start at index 1 to stay clear of it (see Tes3LoadOrderNamespacer).
             records = Tes3LoadOrderNamespacer.Namespaced(records, i + 1);
+            if (tes4Mapper is not null)
+            {
+                records = tes4Mapper.Namespaced(records, Entries[i].FilePath);
+            }
+
             merged = merged == null ? records : merged.MergeWith(records);
         }
 

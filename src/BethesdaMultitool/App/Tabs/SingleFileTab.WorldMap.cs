@@ -94,8 +94,10 @@ public sealed partial class SingleFileTab
             var primaryWorldspaceIds = semantic.Worldspaces.Select(w => w.FormId).ToHashSet();
             var primaryCellIds = semantic.Cells.Select(c => c.FormId).ToHashSet();
 
-            // Merge load order records so DLC worldspaces appear on the map.
-            var loadOrderRecords = _session.LoadOrder.BuildMergedRecords();
+            // Merge load order records so DLC worldspaces appear on the map. An ESM/ESP primary owns
+            // global mod index 0, so TES4-family entries rebase their master references against it.
+            var loadOrderRecords = _session.LoadOrder.BuildMergedRecords(
+                _session.IsEsmFile ? Path.GetFileName(_session.FilePath) : null);
             if (loadOrderRecords != null)
             {
                 // Precedence is type-aware: an opened ESM/ESP is the base the Load Order layers on top
