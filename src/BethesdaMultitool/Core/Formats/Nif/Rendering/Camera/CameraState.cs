@@ -89,6 +89,20 @@ internal sealed class CameraState
     public Matrix4x4 GetViewMatrixCameraRelative() =>
         Matrix4x4.CreateLookAt(Vector3.Zero, Forward, Up);
 
+    /// <summary>
+    ///     View matrix relative to an arbitrary origin: the eye sits at <c>Position − origin</c>.
+    ///     Generalizes <see cref="GetViewMatrixCameraRelative" /> (which is <c>origin == Position</c>)
+    ///     so the render origin can be SNAPPED to a coarse grid: scene vertices are shifted by
+    ///     <c>-origin</c>, keeping coordinates small (fp32-precise) while the origin — and with it
+    ///     every instance world matrix — stays bit-stable as the camera drifts inside a grid cell.
+    ///     <c>GetViewMatrixRelativeTo(o) × (worldPos − o)</c> equals <c>GetViewMatrix() × worldPos</c>.
+    /// </summary>
+    public Matrix4x4 GetViewMatrixRelativeTo(Vector3 origin)
+    {
+        var eye = Position - origin;
+        return Matrix4x4.CreateLookAt(eye, eye + Forward, Up);
+    }
+
     /// <summary>Builds the perspective projection for the given aspect ratio (reversed-Z applied).</summary>
     public Matrix4x4 GetProjectionMatrix(float aspectRatio) =>
         Matrix4x4.CreatePerspectiveFieldOfView(FovYRadians, aspectRatio, NearPlane, FarPlane) * ReverseZ;

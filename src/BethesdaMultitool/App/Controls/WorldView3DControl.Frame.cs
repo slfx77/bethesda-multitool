@@ -20,6 +20,15 @@ public sealed partial class WorldView3DControl
     private static readonly bool TolerantCullEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.TolerantCull) != "0";
 
+    // Grid pitch for the snapped camera-relative render origin (see sceneRenderOrigin). One FNV
+    // cell; fixed across games — it's a precision/stability trade, not a world-structure quantity.
+    private const float RenderOriginGridSize = 4096f;
+
+    private static Vector3 SnapToRenderOriginGrid(Vector3 position) => new(
+        RenderOriginGridSize * MathF.Floor(position.X / RenderOriginGridSize),
+        RenderOriginGridSize * MathF.Floor(position.Y / RenderOriginGridSize),
+        RenderOriginGridSize * MathF.Floor(position.Z / RenderOriginGridSize));
+
     private static float ParseWindStrength()
     {
         var raw = EnvironmentVariables.Get(EnvironmentVariables.Viewer.SpeedTreeWind);
@@ -106,7 +115,7 @@ public sealed partial class WorldView3DControl
     private void BindAtmosphereConstants(
         Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex, bool enableFog = true,
         bool enableLighting = true, bool cameraRelative = false, Vector3? shadingCameraPosOverride = null,
-        float? gameHourOverride = null)
+        float? gameHourOverride = null, Vector3? cameraOriginOverride = null)
     {
         // The top-down overlay drives lighting from the 2D map's own time-of-day, passed via
         // gameHourOverride; the live perspective path uses the 3D control's _gameHour. enableLighting is
@@ -125,15 +134,18 @@ public sealed partial class WorldView3DControl
         var resolved = AtmosphereState.Resolve(
             gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: lightingOn,
             moonlightDirection: moonlight);
-        // Camera-relative: the scene VS subtract CameraOrigin from each world vertex and the camera
-        // sits at the origin, so the shader's "camera position" (used by fog distance + specular view dir)
-        // is 0 and CameraOrigin carries the real camera pos. Absolute mode (top-down capture / flag off)
-        // keeps the camera position in CameraPosFogPower and a zero origin.
+        // Camera-relative: the scene VS subtract CameraOrigin from each world vertex, so the shader's
+        // "camera position" (used by fog distance + specular view dir) must sit in that SAME shifted
+        // space: camera − origin. The live frame passes the grid-SNAPPED scene origin via
+        // cameraOriginOverride (so the shading camera is the in-cell offset, not zero); with no
+        // override the origin is the exact camera position and the shading camera collapses to zero.
+        // Absolute mode (top-down capture / flag off) keeps the camera position in CameraPosFogPower
+        // and a zero origin.
         // shadingCameraPosOverride: the ortho projection modes pass their (far-off) eye position so the
         // specular view vector reads as parallel; ortho is always absolute (camera-relative off there).
-        var cameraOrigin = cameraRelative ? _camera.Position : Vector3.Zero;
+        var cameraOrigin = cameraOriginOverride ?? (cameraRelative ? _camera.Position : Vector3.Zero);
         var shadingCameraPos = shadingCameraPosOverride
-            ?? (cameraRelative ? Vector3.Zero : _camera.Position);
+            ?? (cameraRelative ? _camera.Position - cameraOrigin : _camera.Position);
         // Per-game ambient fill scale (uAmbientColor.w): FNV's 0.3 is too dark for the ambient-heavier
         // TES4-era engines, so Oblivion etc. raise it (see GameProfile.AmbientLightScale).
         var ambientScale = BethesdaMultitool.Core.Games.GameProfiles
@@ -269,6 +281,13 @@ public sealed partial class WorldView3DControl
         VisibilityCylinder cylinder;
         Vector3 orthoEye = default;
         bool cameraRelative;
+        // Camera-relative render origin for the WHOLE scene (terrain/references/water + the b3 CB).
+        // Snapped to a coarse grid rather than the exact camera position: within a grid cell the
+        // origin — and with it every CPU-folded reference world matrix — is bit-stable, which lets
+        // the batch/instance build be reused across frames instead of re-folding ~60k matrices per
+        // frame. Precision holds: scene coordinates stay within ~2 grid cells of the origin, where
+        // fp32 ULP ≈ 2.4e-4 world units (the z-fight case this path fixed sat at ~52k units).
+        Vector3 sceneRenderOrigin = default;
         if (projectionActive)
         {
             // Orthographic / isometric / trimetric: the shared OrthoViewProjBuilder owns the matrices.
@@ -300,7 +319,10 @@ public sealed partial class WorldView3DControl
             cameraRelative = !string.Equals(
                 EnvironmentVariables.Get(EnvironmentVariables.Viewer.CameraRelative), "0", StringComparison.Ordinal);
             viewProjAbsolute = _camera.GetViewMatrix() * proj;
-            viewProjScene = cameraRelative ? _camera.GetViewMatrixCameraRelative() * proj : viewProjAbsolute;
+            sceneRenderOrigin = cameraRelative ? SnapToRenderOriginGrid(_camera.Position) : Vector3.Zero;
+            viewProjScene = cameraRelative
+                ? _camera.GetViewMatrixRelativeTo(sceneRenderOrigin) * proj
+                : viewProjAbsolute;
             // Sky ALWAYS uses the translation-free view (independent of the camera-relative scene toggle):
             // the dome is camera-centered, so its only correct frame is one with the camera at the origin.
             viewProjSky = _camera.GetViewMatrixCameraRelative() * proj;
@@ -337,7 +359,8 @@ public sealed partial class WorldView3DControl
         // and feed the ortho eye as the shading camera position so the specular view vector is parallel.
         BindAtmosphereConstants(
             cmd, recorder.FrameIndex, enableFog: !projectionActive, cameraRelative: cameraRelative,
-            shadingCameraPosOverride: projectionActive ? orthoEye : null);
+            shadingCameraPosOverride: projectionActive ? orthoEye : null,
+            cameraOriginOverride: cameraRelative ? sceneRenderOrigin : null);
 
         // Sky FIRST — gradient + clouds + stars into the cleared color target (depth OFF, so terrain
         // overwrites it via the normal depth pass; OFF ⇒ the flat dark-blue clear shows), then the
@@ -368,12 +391,14 @@ public sealed partial class WorldView3DControl
         // this, camera-relative rendering culls everything except a narrow cone from the origin
         // (objects only visible facing one direction). When camera-relative is off the two matrices
         // are equal, so this is a no-op then.
-        // renderOrigin MUST equal the CameraOrigin bound in the atmosphere CB above (line: cameraOrigin =
-        // cameraRelative ? _camera.Position : Zero): the reference VS no longer subtracts uCameraOrigin, so
-        // the renderer folds this origin into each world matrix on the CPU instead. That yields the same
-        // camera-relative clip position as terrain/water (which still subtract uCameraOrigin in-shader) but
-        // with far better float32 precision — killing coplanar Z-fighting on distant architecture.
-        var referenceRenderOrigin = cameraRelative ? _camera.Position : Vector3.Zero;
+        // renderOrigin MUST equal the CameraOrigin bound in the atmosphere CB above (the snapped
+        // sceneRenderOrigin): the reference VS no longer subtracts uCameraOrigin, so the renderer
+        // folds this origin into each world matrix on the CPU instead. That yields the same
+        // camera-relative clip position as terrain/water (which still subtract uCameraOrigin
+        // in-shader) but with far better float32 precision — killing coplanar Z-fighting on distant
+        // architecture. Snapping keeps the folded matrices bit-stable within a grid cell (batch
+        // reuse) at no precision cost (offsets stay within ~2 cells of the origin).
+        var referenceRenderOrigin = sceneRenderOrigin;
         // Perspective path passes the camera pose so the cull cache is translation-TOLERANT: the
         // far plane above is recomputed from |camera.Z| every frame, so the old byte-exact viewProj
         // compare NEVER matched while walking and re-culled ~100k candidates per frame. Ortho /
