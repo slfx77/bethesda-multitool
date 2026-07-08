@@ -27,7 +27,9 @@ internal sealed class ReferenceDecodedTextureDiskCache12 : DiskBlobCache
     // when the set of paths that resolve changes — a cached negative ("not found") would otherwise mask
     // a newly-resolvable path. v2: FO4/FO76 .bgsm/.bgem materials now resolve in the GPU path and
     // absolute "…\Data\…" build paths are peeled, so pre-fix negative entries must be discarded.
-    internal const int DecoderVersion = 2;
+    // v3: BC4U/BC5U/DX10(BC1-BC7) DDS headers now parse into native BCn payloads; cached v2 entries
+    // hold the uncompressed-RGBA fallback, which for BC5 normal maps lacks the ReconstructZ mode.
+    internal const int DecoderVersion = 3;
 
     private const int MaxMipLevels = 24;
     private const int MaxMipBytes = 128 * 1024 * 1024;

@@ -14,6 +14,16 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed class NifGpuTextureResolver : IDisposable
 {
+    /// <summary>
+    ///     Cache-key suffix requesting an ALPHA-WEIGHTED mip rebuild of the texture (foliage/leaf
+    ///     atlases whose shipped mips average leaf color with the atlas background — see
+    ///     <see cref="AlphaWeightedMipChainBuilder" />). Appended to the texture path by the consumer
+    ///     (e.g. <c>"textures\trees\leaves\x.dds" + LeafAtlasMipsSuffix</c>) so the variant keys its own
+    ///     cache entries end-to-end (resolver cache, persistent disk cache, GPU texture cache); the
+    ///     suffix is stripped here before the archive lookup.
+    /// </summary>
+    internal const string LeafAtlasMipsSuffix = "|leafmips";
+
     private static readonly Logger Log = Logger.Instance;
 
     /// <summary>
@@ -101,10 +111,25 @@ internal sealed class NifGpuTextureResolver : IDisposable
         return builder.ToString();
     }
 
-    /// <summary>Resolves a texture path to a GPU payload, normalizing the path and caching the decoded result.</summary>
+    /// <summary>Resolves a texture path to a GPU payload, normalizing the path and caching the decoded result.
+    /// A trailing <see cref="LeafAtlasMipsSuffix" /> marker survives as part of the cache key but is
+    /// stripped for path normalization (and later for the archive lookup).</summary>
     public GpuTexturePayload? GetTexture(string texturePath)
     {
-        return _cache.GetOrCreate(NifTexturePathUtility.Normalize(texturePath));
+        return _cache.GetOrCreate(NormalizeKey(texturePath));
+    }
+
+    /// <summary>Normalizes the path portion of a texture cache key, preserving a trailing
+    /// <see cref="LeafAtlasMipsSuffix" /> variant marker outside the normalization.</summary>
+    private static string NormalizeKey(string texturePath)
+    {
+        if (texturePath.EndsWith(LeafAtlasMipsSuffix, StringComparison.Ordinal))
+        {
+            var clean = texturePath[..^LeafAtlasMipsSuffix.Length];
+            return string.Concat(NifTexturePathUtility.Normalize(clean), LeafAtlasMipsSuffix);
+        }
+
+        return NifTexturePathUtility.Normalize(texturePath);
     }
 
     /// <summary>
@@ -154,7 +179,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
     /// </summary>
     public void Release(string texturePath)
     {
-        _cache.Release(NifTexturePathUtility.Normalize(texturePath), keepNegative: true);
+        _cache.Release(NormalizeKey(texturePath), keepNegative: true);
     }
 
     private ConcurrentLazyCache<string, GpuTexturePayload> CreateCache() =>
@@ -168,14 +193,20 @@ internal sealed class NifGpuTextureResolver : IDisposable
 
     private GpuTexturePayload? LoadTexture(string path)
     {
+        // The leaf-atlas marker is part of the cache key (distinct resolver/disk/GPU entries per
+        // variant) but not of the archive path — strip it before any source lookup.
+        var leafAtlasMips = path.EndsWith(LeafAtlasMipsSuffix, StringComparison.Ordinal);
+        var sourcePath = leafAtlasMips ? path[..^LeafAtlasMipsSuffix.Length] : path;
+
         if (_loadTextureOverride is not null)
         {
-            return _loadTextureOverride(path);
+            return _loadTextureOverride(sourcePath);
         }
 
         // Persistent disk cache (default on): on warm runs this returns the already-transcoded
         // payload (DDX→DDS LZX + untile + parse skipped entirely). Negatives are cached too, so a
-        // missing texture isn't re-searched across the BSAs each session.
+        // missing texture isn't re-searched across the BSAs each session. The marker-inclusive key
+        // keeps rebuilt-mip payloads separate from the same texture's pass-through decode.
         if (_persistentCache is not null)
         {
             var keyText = string.Concat(_sourceSetIdentity, "|", path);
@@ -184,15 +215,15 @@ internal sealed class NifGpuTextureResolver : IDisposable
                 return cachedPayload;
             }
 
-            var loaded = LoadTextureUncached(path);
+            var loaded = LoadTextureUncached(sourcePath, leafAtlasMips);
             _persistentCache.Store(keyText, loaded);
             return loaded;
         }
 
-        return LoadTextureUncached(path);
+        return LoadTextureUncached(sourcePath, leafAtlasMips);
     }
 
-    private GpuTexturePayload? LoadTextureUncached(string path)
+    private GpuTexturePayload? LoadTextureUncached(string path, bool leafAtlasMips = false)
     {
         // Fallout 4 / Fallout 76 shapes point at a .bgsm/.bgem material under materials\ instead of an
         // inline texture set; the material's diffuse path is the real texture. The CPU NifTextureResolver
@@ -201,10 +232,10 @@ internal sealed class NifGpuTextureResolver : IDisposable
         if (path.EndsWith(".bgsm", StringComparison.Ordinal) || path.EndsWith(".bgem", StringComparison.Ordinal))
         {
             var materialDiffuse = MaterialTexturePathResolver.ResolveDiffuseTexturePath(path, _sources);
-            return materialDiffuse is null ? null : TryLoadFromSources(materialDiffuse);
+            return materialDiffuse is null ? null : TryLoadFromSources(materialDiffuse, leafAtlasMips);
         }
 
-        var texture = TryLoadFromSources(path);
+        var texture = TryLoadFromSources(path, leafAtlasMips);
         if (texture != null)
         {
             return texture;
@@ -214,7 +245,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
         // (.tga / .bmp) while archives store the compiled .dds — fall back to the .dds variant.
         if (NifTexturePathUtility.TrySwapToDdsExtension(path, out var ddsSwapped))
         {
-            texture = TryLoadFromSources(ddsSwapped);
+            texture = TryLoadFromSources(ddsSwapped, leafAtlasMips);
             if (texture != null)
             {
                 return texture;
@@ -227,10 +258,10 @@ internal sealed class NifGpuTextureResolver : IDisposable
         }
 
         var ddxPath = string.Concat(path.AsSpan(0, path.Length - 4), ".ddx");
-        return TryLoadFromSources(ddxPath);
+        return TryLoadFromSources(ddxPath, leafAtlasMips);
     }
 
-    private GpuTexturePayload? TryLoadFromSources(string path)
+    private GpuTexturePayload? TryLoadFromSources(string path, bool leafAtlasMips = false)
     {
         foreach (var source in _sources)
         {
@@ -240,7 +271,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
                 continue;
             }
 
-            var texture = DecodeRawTexture(rawData, path);
+            var texture = DecodeRawTexture(rawData, path, leafAtlasMips);
             if (texture is not null)
             {
                 return texture;
@@ -250,9 +281,28 @@ internal sealed class NifGpuTextureResolver : IDisposable
         return null;
     }
 
-    private static GpuTexturePayload? DecodeRawTexture(byte[] rawData, string path)
+    private static GpuTexturePayload? DecodeRawTexture(byte[] rawData, string path, bool leafAtlasMips = false)
     {
         var ddsData = NifTextureLoader.ConvertDdxIfNeeded(rawData);
+
+        // Leaf atlases skip the BCn pass-through: their shipped mips average foliage color with the
+        // atlas background (white for the Oblivion dogwood/maple composites), which washes distant
+        // canopies toward the background color. Decode to RGBA and rebuild the chain alpha-weighted.
+        if (leafAtlasMips)
+        {
+            var leafDecoded = DdsTextureDecoder.Decode(ddsData);
+            if (leafDecoded is not null)
+            {
+                var rebuilt = new DecodedTexture
+                {
+                    MipLevels = AlphaWeightedMipChainBuilder.Build(
+                        leafDecoded.Pixels, leafDecoded.Width, leafDecoded.Height)
+                };
+                return GpuTexturePayload.FromRgba(rebuilt);
+            }
+            // Undecodable as RGBA → fall through to the standard path (better polluted mips than none).
+        }
+
         var compressed = DdsGpuTexturePayloadParser.Parse(ddsData);
         if (compressed is not null)
         {

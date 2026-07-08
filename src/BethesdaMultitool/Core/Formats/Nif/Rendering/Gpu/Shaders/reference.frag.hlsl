@@ -13,6 +13,7 @@
 Texture2D    textures[]   : register(t0, space1);
 SamplerState sDiffuse     : register(s0); // wrap, anisotropic (set in C#)
 SamplerState sNormalMap   : register(s1); // wrap, anisotropic (set in C#)
+SamplerState sPalette     : register(s2); // CLAMP, linear — grayscale-to-palette lookup only
 
 cbuffer PerFrame : register(b0) { float4x4 uViewProj; }
 
@@ -122,8 +123,13 @@ float4 main(PSInput input) : SV_Target
     float3 vertexRgb = input.vVertexColor.rgb;
     if (input.vTextureState.w >= 0.0)
     {
+        // CLAMP sampler + explicit mip 0 (fo76utils getPixelBC_Inline(u, v, 0)): GradientMapV is
+        // commonly exactly 1.0 (bottom palette row) — a wrap sampler wraps v=1.0 back to row 0,
+        // which shipped palettes fill with a rainbow hue strip. And the dependent UV (u = diffuse
+        // green) has garbage screen-space derivatives, so implicit-mip Sample would blend palette
+        // rows together through the mip chain.
         float2 gradUv = float2(sample.g, input.vTextureState.w * input.vVertexColor.r);
-        sample.rgb = textures[NonUniformResourceIndex(input.vTexIndices.w)].Sample(sDiffuse, gradUv).rgb;
+        sample.rgb = textures[NonUniformResourceIndex(input.vTexIndices.w)].SampleLevel(sPalette, gradUv, 0).rgb;
         vertexRgb = 1.0;
     }
 
@@ -144,6 +150,26 @@ float4 main(PSInput input) : SV_Target
     // discards, while the low vertex-color alpha stays a soft underwater fade applied to outAlpha —
     // testing the modulated alpha would push the whole leaf below the threshold and blank the plant.
     float testAlpha = (input.vAlphaState.w > 0.5) ? sample.a : sampleAlpha;
+
+    // Alpha-tested leaf cards (vTextureState.y == 2, SPT leaves): boost the tested alpha by the
+    // sampled mip level (Castaño alpha-coverage compensation). Pre-averaged DDS mips shrink the
+    // leaf mask's alpha with distance, so a fixed threshold eats the canopy from a few cells out —
+    // distant trees dissolved to "dead" skeletons. lod≈0 up close ⇒ no change; blend alpha
+    // (outAlpha) is untouched. The 0.25 FLOOR is load-bearing: without it, high-mip texels whose
+    // alpha is mostly averaged BACKGROUND (sparse sprays like dogwood: alpha ~0.1-0.2) also get
+    // boosted past the threshold and the whole card renders solid in the atlas's background color
+    // (white for the dogwood composite — the "mostly flowers" regression). Only texels that still
+    // carry real leaf coverage (> 0.25) are rescued.
+    if (input.vTextureState.y > 1.5)
+    {
+        float leafLod = textures[NonUniformResourceIndex(input.vTexIndices.x)]
+            .CalculateLevelOfDetail(sDiffuse, input.vTexCoord);
+        if (testAlpha > 0.25)
+        {
+            testAlpha = saturate(testAlpha * (1.0 + leafLod * 0.25));
+        }
+    }
+
     if (!PassAlphaTest(testAlpha, input.vAlphaState.x, input.vAlphaState.y)) discard;
 
     float3 normal = normalize(input.vWorldNormal);
@@ -212,7 +238,14 @@ float4 main(PSInput input) : SV_Target
 
     // Shared atmosphere lighting (rgb). Lighting-off path inside AtmosphereLight reproduces the
     // legacy `0.4 + 0.6*lambert` scalar exactly, so the OFF state is pixel-identical to before.
+    // SpeedTree leaf cards need NO special lighting branch here: the engine's STLEAF chain is
+    // o1 = dimmer × (Ambient + Diff·saturate(N·L)·SunDimmer) — the per-corner puffed normal comes
+    // from the leaf-billboard VS, and the per-leaf canopy-depth dimmer (CIdvBranch::MakeLeaf's
+    // LeafVertexColorHelp product) is baked into the vertex color, which multiplies into `lit`
+    // below exactly like the engine's packed-attribute frc. (An earlier wrap-lighting stand-in
+    // lived here while the dimmer was missing.)
     float3 shade = AtmosphereLight(normal);
+
     if (input.vRenderState.w > 0.5)
     {
         shade = 1.0; // emissive / full-bright shapes (e.g. glow) — unaffected by scene lighting

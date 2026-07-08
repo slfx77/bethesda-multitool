@@ -10,7 +10,8 @@ internal enum GpuTexturePayloadFormat
     BC2,
     BC3,
     BC4,
-    BC5
+    BC5,
+    BC7
 }
 
 /// <summary>Whether the shader must reconstruct the Z component of a normal map (BC5 stores only X/Y).</summary>
@@ -47,7 +48,8 @@ internal sealed record GpuTexturePayload(
     public int BytesPerBlock => Format switch
     {
         GpuTexturePayloadFormat.BC1 or GpuTexturePayloadFormat.BC4 => 8,
-        GpuTexturePayloadFormat.BC2 or GpuTexturePayloadFormat.BC3 or GpuTexturePayloadFormat.BC5 => 16,
+        GpuTexturePayloadFormat.BC2 or GpuTexturePayloadFormat.BC3 or GpuTexturePayloadFormat.BC5
+            or GpuTexturePayloadFormat.BC7 => 16,
         _ => 0
     };
 

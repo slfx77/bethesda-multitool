@@ -171,6 +171,25 @@ internal sealed class GpuRootSignature12 : IDisposable
                 float.MaxValue,
                 ShaderVisibility.Pixel,
                 0),
+            // s2: linear CLAMP — the FO4/FO76 grayscale-to-palette lookup. Palette rows are selected
+            // by v = GradientMapV × vertexColor.R, and GradientMapV is commonly exactly 1.0 (bottom
+            // row): the wrap samplers above would wrap v=1.0 back to row 0, which in shipped palettes
+            // is a rainbow hue strip (ShippingCrates01Grad_d.dds) — the engine clamps
+            // (fo76utils getPixelBC).
+            new StaticSamplerDescription(
+                2,
+                Filter.MinMagMipLinear,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Clamp,
+                0f,
+                1,
+                ComparisonFunction.Never,
+                StaticBorderColor.OpaqueBlack,
+                0f,
+                float.MaxValue,
+                ShaderVisibility.Pixel,
+                0),
         };
 
         // Vortice convenience: CreateRootSignature(RootSignatureDescription1) does the
