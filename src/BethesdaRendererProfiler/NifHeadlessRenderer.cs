@@ -38,18 +38,30 @@ internal static class NifHeadlessRenderer
         string? outPng = null;
         var size = 512;
         string? bgSpec = null;
+        string? leafTextureOverride = null; // --leaf-texture: SPT leaf atlas (the TREE ICON stand-in)
+        float? leafDimming = null;   // --leaf-dimming: TREE CNAM LeafDimmingValue stand-in (0..1)
+        float? branchDimming = null; // --branch-dimming: TREE CNAM BranchDimmingValue stand-in (0..1)
         float? litHour = null; // when set, bind real AtmosphereState lighting (sun+ambient) at this hour
+        var azimuthDeg = 315f; // camera azimuth; override with --yaw to view a specific face
 
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
                 case "--render-nif": nifPath = Next(args, ref i); break;
+                case "--leaf-texture": leafTextureOverride = Next(args, ref i); break;
+                case "--leaf-dimming":
+                    leafDimming = float.TryParse(Next(args, ref i), out var ld) ? ld : null;
+                    break;
+                case "--branch-dimming":
+                    branchDimming = float.TryParse(Next(args, ref i), out var bd) ? bd : null;
+                    break;
                 case "--archive" or "--bsa": meshArchive = Next(args, ref i); break;
                 case "--out" or "-o": outPng = Next(args, ref i); break;
                 case "--size": _ = int.TryParse(Next(args, ref i), out size); break;
                 case "--bg": bgSpec = Next(args, ref i); break;
                 case "--lit": litHour = float.TryParse(Next(args, ref i), out var h) ? h : 13f; break;
+                case "--yaw": azimuthDeg = float.TryParse(Next(args, ref i), out var az) ? az : 315f; break;
                 case "--textures-bsa" or "--textures-archive":
                     // Consume following tokens until the next flag.
                     while (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
@@ -117,10 +129,37 @@ internal static class NifHeadlessRenderer
             var textureResolver = new NifTextureResolver(texArr);
             var gpuTextureResolver = new NifGpuTextureResolver(texArr);
             textureCache = new GpuTextureCache12(gpu, recorder, heap, gpuTextureResolver, deletion);
+            // --leaf-texture: stand-in for the TREE record's ICON leaf atlas (the engine's leaf-texture
+            // source; ESM-less renders otherwise miss the dev-era .spt material and leaves render white).
+            // Keyed by both path shapes the decoder may look up.
+            Dictionary<string, string>? leafTextures = null;
+            if (!string.IsNullOrWhiteSpace(leafTextureOverride))
+            {
+                leafTextures = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [nifPath!] = leafTextureOverride!,
+                    ["trees\\" + Path.GetFileName(nifPath!)] = leafTextureOverride!,
+                };
+            }
+
+            // --leaf-dimming/--branch-dimming: TREE CNAM canopy-depth dimming stand-ins for ESM-less
+            // renders (the engine applies these per tree via CSpeedTreeRT::Set{Leaf,Branch}DimmingScalar).
+            Dictionary<string, SpeedTreeDimming>? dimming = null;
+            if (leafDimming is not null || branchDimming is not null)
+            {
+                var pair = new SpeedTreeDimming(leafDimming ?? 0f, branchDimming ?? 0f);
+                dimming = new Dictionary<string, SpeedTreeDimming>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [nifPath!] = pair,
+                    ["trees\\" + Path.GetFileName(nifPath!)] = pair,
+                };
+            }
+
             meshCache = new ReferenceMeshCache12(
                 gpu, meshArchives, textureResolver, textureCache, deletion,
                 capacity: 2048, decodedCacheByteBudget: 256L * 1024 * 1024,
-                autoSizeMeshCapacity: false, speedTreeHeights: null, speedTreeLeafTextures: null);
+                autoSizeMeshCapacity: false, speedTreeHeights: null, speedTreeLeafTextures: leafTextures,
+                speedTreeDimming: dimming);
             references = new ReferenceRenderer12(gpu, recorder, ring, rootSig, heap, meshCache)
             {
                 ShowInitiallyDisabled = true,
@@ -182,10 +221,10 @@ internal static class NifHeadlessRenderer
                 // Prefer the extracted AABB center+radius; fall back to origin + the resolved local radius.
                 var focus = frameRadius > 1f ? frameCenter : Vector3.Zero;
                 var halfHeight = (frameRadius > 1f ? frameRadius : localRadius) * 1.1f;
-                // 3/4 view (NW azimuth, ~30° elevation) — reads form better than flat top-down.
-                var viewProj = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg: 315f, elevationDeg: 30f,
+                // 3/4 view (default NW azimuth, ~30° elevation) — reads form better than flat top-down.
+                var viewProj = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg: azimuthDeg, elevationDeg: 30f,
                     orthoHalfHeight: halfHeight, aspect: 1f);
-                var (camRight, camUp) = OrthoViewProjBuilder.CameraBasis(315f, 30f);
+                var (camRight, camUp) = OrthoViewProjBuilder.CameraBasis(azimuthDeg, 30f);
                 // Cull cylinder centred at the REFR origin (world 0,0,0 — cell (0,0)) with a radius that
                 // reaches the framed geometry, so ContainsCell(0,0) + the per-REFR sphere both pass.
                 var cullRadius = MathF.Max((focus.Length() + halfHeight) * 1.5f, 4096f);

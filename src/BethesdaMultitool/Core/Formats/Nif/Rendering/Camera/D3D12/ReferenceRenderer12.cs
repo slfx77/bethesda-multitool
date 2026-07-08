@@ -84,8 +84,25 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // Camera world-space right/up for per-card SpeedTree leaf billboards, set each frame by the host
     // (WorldView3DControl) from the inverse view matrix — same source as the sky billboards. Defaults to
     // the world basis so leaves still render sanely if the host never sets it.
-    private Vector4 _leafBillboardRight = new(1f, 0f, 0f, 0f);
+    // NOTE: _leafBillboardRight.W is NOT padding — it carries the STLEAF LeafLighting.y per-corner
+    // normal-puff strength to both VSes as uCameraRight.w. Zeroing it flattens leaf shading.
+    private Vector4 _leafBillboardRight = new(1f, 0f, 0f, LeafLightingAdjust);
     private Vector4 _leafBillboardUp = new(0f, 0f, 1f, 0f);
+
+    // STLEAF's LeafLighting.y (PC STLEAF000.vso c17.y): scales the per-corner outward lean of each
+    // leaf-card normal so the card shades as a rounded cluster instead of a flat plate. It is a
+    // runtime engine constant (absent from the shader's def block), so the default is visually
+    // calibrated; FALLOUT_VIEWER_SPT_LEAF_LIGHTING overrides it for tuning (clamped 0..2).
+    private static readonly float LeafLightingAdjust = ReadLeafLightingAdjust();
+
+    private static float ReadLeafLightingAdjust()
+    {
+        var raw = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SPT_LEAF_LIGHTING");
+        return float.TryParse(raw, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v)
+            ? Math.Clamp(v, 0f, 2f)
+            : 0.5f;
+    }
     // SpeedTree wind: xy = horizontal wind direction, z = strength (0 = static), w = time (seconds).
     // Set per frame by WorldView3DControl; default strength 0 so non-viewer paths render trees static.
     private Vector4 _wind;
@@ -394,7 +411,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// </summary>
     public void SetLeafBillboardBasis(Vector3 cameraRight, Vector3 cameraUp)
     {
-        _leafBillboardRight = new Vector4(cameraRight, 0f);
+        // .W = LeafLighting.y normal-puff strength (see the field comment) — must survive every update.
+        _leafBillboardRight = new Vector4(cameraRight, LeafLightingAdjust);
         _leafBillboardUp = new Vector4(cameraUp, 0f);
     }
 

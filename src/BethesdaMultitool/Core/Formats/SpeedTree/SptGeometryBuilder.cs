@@ -117,18 +117,32 @@ internal static class SptGeometryBuilder
         var treeSizeMid = (model.General.Float2006 > 1e-3f ? model.General.Float2006 : opt.TrunkHeight) * EngineWorldScale;
         var placer = new LeafPlacer(treeSizeMid, leafSpacing, placementMode);
 
+        // Canopy-depth dimming (CIdvBranch::MakeLeaf / BuildCrossSection): interior leaves and bark near the
+        // trunk base are darkened toward (1 − dimmingScalar). The enable flag + leaf scalar are .spt tokens
+        // 3009/3010 (SIdvLeafInfo +0/+4, ctor defaults true/1.0); in-game BOTH scalars are overridden from
+        // TREE CNAM via TESObjectTREE::Get{Leaf,Branch}Dimming → CSpeedTreeRT::Set{Leaf,Branch}DimmingScalar.
+        // Branch dimming has NO .spt token (SIdvLeafInfo::Parse never writes +8) — without a CNAM value it
+        // stays 0 (neutral).
+        var dimming = new TreeDimming(
+            (model.LeafTable?.Byte3009 ?? 1) != 0,
+            Math.Clamp(opt.LeafDimming ?? model.LeafTable?.Float3010 ?? 1f, 0f, 1f),
+            Math.Clamp(opt.BranchDimming ?? 0f, 0f, 1f));
+
         var levels = Math.Min(model.Branches.Count, Math.Max(1, opt.MaxLevels));
         if (model.Branches.Count > 0)
         {
             // Root trunk: identity 3x3 frame; parentRadius starts large so the trunk's own radius is not clamped.
+            // The trunk's vertex-color helps are 0 (CIdvBranch::LeafVertexColorHelp base case; CTreeEngine's
+            // root Compute passes help = 0).
             GenerateBranch(model, 0, levels, 0f, Vector3.Zero, BranchFrame.Identity,
-                parentRadius: float.MaxValue, treeSize, opt, rng, rand, collectedBranches, placer, seed);
+                parentRadius: float.MaxValue, treeSize, opt, rng, rand, collectedBranches, placer, seed,
+                dimming, leafHelp: 0f, barkHelp: 0f);
         }
 
         // The engine never renders the raw skeleton: CTreeEngine::Compute lofts every branch, then
         // BuildBranchLods decimates them into the rendered LOD mesh. Reproduce LOD0 here — keep the
         // highest-"volume" branches until their cumulative volume reaches the .spt's near fraction.
-        EmitDecimatedBranches(collectedBranches, model.Lod, bark);
+        EmitDecimatedBranches(collectedBranches, model.Lod, bark, dimming);
 
         // Emit the accepted leaf cards' geometry (no RNG — every draw happened inline during the loft).
         EmitPlacedLeaves(placer.Leaves, treeSizeMid, opt, leafGroups);
@@ -181,7 +195,7 @@ internal static class SptGeometryBuilder
         SptModel model, int level, int levels, float parentT, Vector3 basePos, BranchFrame parentFrame,
         float parentRadius, float treeSize, SptGeometryOptions opt, SptRandom rng,
         Func<float, float, float> rand, List<CollectedBranch> collected, LeafPlacer placer,
-        uint branchSeed)
+        uint branchSeed, TreeDimming dimming, float leafHelp, float barkHelp)
     {
         if (level >= levels || level >= model.Branches.Count)
         {
@@ -319,7 +333,7 @@ internal static class SptGeometryBuilder
             importance += Vector3.Distance(rings[i].Pos, rings[i + 1].Pos) * (rings[i].Radius + rings[i + 1].Radius);
         }
 
-        collected.Add(new CollectedBranch(rings, vertsPerRing, importance));
+        collected.Add(new CollectedBranch(rings, vertsPerRing, importance, barkHelp, level == 0));
 
         // A branch at level L spawns children at L+1. The LAST .spt branch record is the leaf-stub
         // TEMPLATE — never lofted as a tube; when a branch's child level would be that terminal record,
@@ -330,11 +344,11 @@ internal static class SptGeometryBuilder
         if (level + 1 < terminalRecord && level + 1 < levels)
         {
             SpawnChildren(model, level, levels, branch, rings, length, treeSize, opt, rng, rand, collected,
-                placer, branchSeed);
+                placer, branchSeed, dimming, leafHelp, barkHelp);
         }
         else
         {
-            SpawnLeaves(branch, rings, length, treeSize, model, rng, placer);
+            SpawnLeaves(branch, rings, length, treeSize, model, rng, placer, dimming, leafHelp);
         }
     }
 
@@ -342,7 +356,7 @@ internal static class SptGeometryBuilder
         SptModel model, int level, int levels, SptBranch branch, List<BranchRing> rings,
         float length, float treeSize, SptGeometryOptions opt, SptRandom rng,
         Func<float, float, float> rand, List<CollectedBranch> collected, LeafPlacer placer,
-        uint branchSeed)
+        uint branchSeed, TreeDimming dimming, float leafHelp, float barkHelp)
     {
         // Child count = (Float6012 / treeSize) · length  (CIdvBranch::Compute L1305; = Float6012·Eval(slot4)).
         // No density multiplier — the engine has none. The cap only bounds the vertex budget (the engine's
@@ -380,8 +394,19 @@ internal static class SptGeometryBuilder
             rng.Reseed(childSeed);
             _ = rng.Range(0f, 100f);
 
+            // Vertex-color help composition (CIdvBranch::Compute L2435-2438 + this+4 store at L2016): the
+            // child's help = lerp(parentHelp, 1, spawnT). The LEAF walk (LeafVertexColorHelp) recomposes
+            // this chain WITHOUT squaring; the BARK help passed down to Compute is additionally SQUARED
+            // when the spawning branch's level < 2 (trunk + first-level limbs).
+            var childLeafHelp = spawnT * (1f - leafHelp) + leafHelp;
+            var childBarkHelp = spawnT * (1f - barkHelp) + barkHelp;
+            if (level < 2)
+            {
+                childBarkHelp *= childBarkHelp;
+            }
+
             GenerateBranch(model, level + 1, levels, spawnT, cpos, cframe, parentAttachRadius, treeSize, opt, rng, rand,
-                collected, placer, childSeed);
+                collected, placer, childSeed, dimming, childLeafHelp, childBarkHelp);
         }
     }
 
@@ -389,7 +414,7 @@ internal static class SptGeometryBuilder
 
     private static void SpawnLeaves(
         SptBranch branch, List<BranchRing> rings, float length, float treeSize,
-        SptModel model, SptRandom rng, LeafPlacer placer)
+        SptModel model, SptRandom rng, LeafPlacer placer, TreeDimming dimming, float leafHelp)
     {
         if (model.Leaves.Count == 0 || rings.Count == 0)
         {
@@ -490,7 +515,21 @@ internal static class SptGeometryBuilder
                 ? model.LeafTextureCoords[templateIndex]
                 : SptLeafTextureCoords.FullAtlas;
 
-            placer.TryPlace(rng, pos, branchOrigin, budFrame, template, texCoords, budReach, oddVariant);
+            // Canopy-depth dimmer (CIdvBranch::MakeLeaf L3241-3247 + ×255 quantization at L3264): the
+            // leaf's tip-proximity e = lerp(help(branch), 1, spawnT) is CUBED, then the color scalar =
+            // e³ + (1−e³)·(1−leafDimming) — leaves at branch tips of the outer canopy stay 1.0, interior
+            // leaves darken toward (1 − leafDimming). Baked into the card's vertex color; the STLEAF
+            // shaders multiply the whole lit result by it (the frc of the packed rock-index attribute).
+            var dimmerByte = (byte)255;
+            if (dimming.Enabled && dimming.LeafScalar > 0f)
+            {
+                var e = spawnT * (1f - leafHelp) + leafHelp;
+                e = e * e * e;
+                var dimmer = e + (1f - e) * (1f - dimming.LeafScalar);
+                dimmerByte = (byte)Math.Clamp((int)(dimmer * 255f), 0, 255);
+            }
+
+            placer.TryPlace(rng, pos, branchOrigin, budFrame, template, texCoords, budReach, oddVariant, dimmerByte);
         }
     }
 
@@ -593,7 +632,7 @@ internal static class SptGeometryBuilder
                 // One card per leaf, encoded as center + signed offset; the GPU re-faces it to the camera per
                 // frame.
                 var (bbRight, bbUp) = BuildFrame(budDir);
-                AddLeafCard(buffer, center, bbRight, bbUp, normal, uv, x0, x1, y0, y1,
+                AddLeafCard(buffer, center, bbRight, bbUp, normal, uv, x0, x1, y0, y1, leaf.Dimmer,
                     billboard: true, windWeight: windWeight);
                 continue;
             }
@@ -602,16 +641,16 @@ internal static class SptGeometryBuilder
             {
                 var faceDir = SafeNormalize(face, Vector3.UnitZ);
                 var (fRight, fUp) = BuildFrame(faceDir);
-                AddLeafCard(buffer, center, fRight, fUp, normal, uv, x0, x1, y0, y1);
+                AddLeafCard(buffer, center, fRight, fUp, normal, uv, x0, x1, y0, y1, leaf.Dimmer);
                 continue;
             }
 
             // Static fallback: crossed pair gives volume from any angle (the engine re-faces leaves in-shader).
             var (right, up) = BuildFrame(budDir);
-            AddLeafCard(buffer, center, right, up, normal, uv, x0, x1, y0, y1);
+            AddLeafCard(buffer, center, right, up, normal, uv, x0, x1, y0, y1, leaf.Dimmer);
             if (opt.CrossedLeafCards)
             {
-                AddLeafCard(buffer, center, budDir, up, right, uv, x0, x1, y0, y1);
+                AddLeafCard(buffer, center, budDir, up, right, uv, x0, x1, y0, y1, leaf.Dimmer);
             }
         }
     }
@@ -639,7 +678,7 @@ internal static class SptGeometryBuilder
         public List<PlacedLeaf> Leaves { get; } = [];
 
         public void TryPlace(SptRandom rng, Vector3 pos, Vector3 branchOrigin, BranchFrame budFrame,
-            SptLeaf template, SptLeafTextureCoords texCoords, float budReach, bool oddVariant)
+            SptLeaf template, SptLeafTextureCoords texCoords, float budReach, bool oddVariant, byte dimmer)
         {
             var budDir = budFrame.Direction;
             var center = pos + budDir * budReach;
@@ -667,7 +706,7 @@ internal static class SptGeometryBuilder
             _ = rng.Range(-0.1f, 0.1f);
 
             _placedCenters?.Add(center);
-            Leaves.Add(new PlacedLeaf(pos, branchOrigin, center, budDir, template, texCoords, oddVariant));
+            Leaves.Add(new PlacedLeaf(pos, branchOrigin, center, budDir, template, texCoords, oddVariant, dimmer));
         }
 
         /// <summary>True if no already-placed leaf center lies within <paramref name="spacing" /> of
@@ -700,7 +739,8 @@ internal static class SptGeometryBuilder
     ///     <c>numLods ≥ 2</c>, else 1.0 = keep all). Without a <c>.spt</c> LOD section the ctor default near
     ///     = 1.0, so every branch is kept (no decimation), matching the engine.
     /// </summary>
-    private static void EmitDecimatedBranches(List<CollectedBranch> branches, SptLodInfo? lod, MeshBuffer bark)
+    private static void EmitDecimatedBranches(
+        List<CollectedBranch> branches, SptLodInfo? lod, MeshBuffer bark, TreeDimming dimming)
     {
         if (branches.Count == 0)
         {
@@ -753,13 +793,32 @@ internal static class SptGeometryBuilder
             int[]? prevRing = null;
             foreach (var ring in b.Rings)
             {
-                prevRing = EmitRing(bark, ring.Pos, ring.Frame, ring.Radius, b.VertsPerRing, ring.PathT, prevRing);
+                // Bark vertex dimming (CIdvBranch::BuildCrossSection L2582-2590): d = lerp(help, 1, t),
+                // squared on the trunk (the flag'd square; children carry the level<2-squared help
+                // instead), then color = d·branchDim + (1 − branchDim). Neutral (255) when no CNAM
+                // BranchDimming value reached us.
+                var dimmerByte = (byte)255;
+                if (dimming.BranchScalar > 0f)
+                {
+                    var d = ring.PathT * (1f - b.BarkHelp) + b.BarkHelp;
+                    if (b.IsTrunk)
+                    {
+                        d *= d;
+                    }
+
+                    var dim = d * dimming.BranchScalar + (1f - dimming.BranchScalar);
+                    dimmerByte = (byte)Math.Clamp((int)(dim * 255f), 0, 255);
+                }
+
+                prevRing = EmitRing(bark, ring.Pos, ring.Frame, ring.Radius, b.VertsPerRing, ring.PathT, prevRing,
+                    dimmerByte);
             }
         }
     }
 
     private static int[]? EmitRing(
-        MeshBuffer bark, Vector3 center, BranchFrame frame, float radius, int radial, float v, int[]? prevRing)
+        MeshBuffer bark, Vector3 center, BranchFrame frame, float radius, int radial, float v, int[]? prevRing,
+        byte dimmer)
     {
         if (!bark.CanAdd(radial + 1))
         {
@@ -772,7 +831,8 @@ internal static class SptGeometryBuilder
             var a = MathF.Tau * (k % radial) / radial;
             var normal = SafeNormalize(frame.Y * MathF.Sin(a) + frame.Z * MathF.Cos(a), frame.Y);
             var vertex = center + normal * radius;
-            ring[k] = bark.Add(vertex, normal, new Vector2(k / (float)radial, v * 2f));
+            ring[k] = bark.Add(vertex, normal, new Vector2(k / (float)radial, v * 2f), Vector3.Zero, Vector3.Zero,
+                dimmer);
         }
 
         if (prevRing is not null)
@@ -829,7 +889,7 @@ internal static class SptGeometryBuilder
 
     private static void AddLeafCard(
         MeshBuffer buf, Vector3 center, Vector3 right, Vector3 up, Vector3 normal, SptLeafTextureCoords uv,
-        float x0, float x1, float y0, float y1, bool billboard = false, float windWeight = 0f)
+        float x0, float x1, float y0, float y1, byte dimmer, bool billboard = false, float windWeight = 0f)
     {
         var p00 = center + right * x0 + up * y0;
         var p10 = center + right * x1 + up * y0;
@@ -837,10 +897,11 @@ internal static class SptGeometryBuilder
         var p01 = center + right * x0 + up * y1;
 
         // UV pair → corner pairing is the ENGINE's zip: BSTreeModel::CreateLeafGeometry gives vertex j
-        // texcoord pair j and corner slot (j+2)&3 from CLeafGeometry::Update's table, whose clean PC x86
-        // decompile orders slots (R,T), (L,T), (L,B), (R,B). Net: pair0→LB, pair1→RB, pair2→RT, pair3→LT
-        // — around the quad, not up an edge. (Round-1 pinned (LB,LT,RT,RB) from the damaged 360 text;
-        // that mirrored every map across the LB–RT diagonal.)
+        // texcoord pair j and corner slot (j+2)&3 from CLeafGeometry::Update's table — pairs walk AROUND
+        // the quad, not up an edge. The table's corner slots read with SCREEN-up "T": under our world-up
+        // card frame (v→1−v flipped atlas) that lands pair0→LT, pair1→RT, pair2→RB, pair3→LB. (Round-2
+        // pinned the vertical mirror of this — pair0→LB — from reading the slot offsets in texture-v-down
+        // convention; every leaf image rendered upside-down, obvious in the viewer's isometric mode.)
         if (billboard)
         {
             // Encode the card as center (tangent) + signed 2D card-space offset (bitangent) so the GPU
@@ -848,19 +909,19 @@ internal static class SptGeometryBuilder
             // the shader). The baked positions still hold a real 3D quad for bounds + the CPU still path.
             // bitangent.z = per-leaf wind weight (a [0,1] blend factor, NOT a size — ApplyHeightScale
             // leaves it untouched), consumed by the VS's wind sway.
-            var v00b = buf.Add(p00, normal, uv[0], center, new Vector3(x0, y0, windWeight));
-            var v10b = buf.Add(p10, normal, uv[1], center, new Vector3(x1, y0, windWeight));
-            var v11b = buf.Add(p11, normal, uv[2], center, new Vector3(x1, y1, windWeight));
-            var v01b = buf.Add(p01, normal, uv[3], center, new Vector3(x0, y1, windWeight));
+            var v00b = buf.Add(p00, normal, uv[3], center, new Vector3(x0, y0, windWeight), dimmer);
+            var v10b = buf.Add(p10, normal, uv[2], center, new Vector3(x1, y0, windWeight), dimmer);
+            var v11b = buf.Add(p11, normal, uv[1], center, new Vector3(x1, y1, windWeight), dimmer);
+            var v01b = buf.Add(p01, normal, uv[0], center, new Vector3(x0, y1, windWeight), dimmer);
             buf.Triangle(v00b, v10b, v11b);
             buf.Triangle(v00b, v11b, v01b);
             return;
         }
 
-        var v00 = buf.Add(p00, normal, uv[0]);
-        var v10 = buf.Add(p10, normal, uv[1]);
-        var v11 = buf.Add(p11, normal, uv[2]);
-        var v01 = buf.Add(p01, normal, uv[3]);
+        var v00 = buf.Add(p00, normal, uv[3], Vector3.Zero, Vector3.Zero, dimmer);
+        var v10 = buf.Add(p10, normal, uv[2], Vector3.Zero, Vector3.Zero, dimmer);
+        var v11 = buf.Add(p11, normal, uv[1], Vector3.Zero, Vector3.Zero, dimmer);
+        var v01 = buf.Add(p01, normal, uv[0], Vector3.Zero, Vector3.Zero, dimmer);
         buf.Triangle(v00, v10, v11);
         buf.Triangle(v00, v11, v01);
     }
@@ -1034,7 +1095,7 @@ internal static class SptGeometryBuilder
     /// lowest-"volume" branches before any vertices are produced (see <see cref="EmitDecimatedBranches" />).
     /// <paramref name="Importance" /> = <c>CIdvBranch::ComputeVolume</c> = Σ segLen·(rᵢ+rᵢ₊₁).</summary>
     private readonly record struct CollectedBranch(
-        IReadOnlyList<BranchRing> Rings, int VertsPerRing, float Importance);
+        IReadOnlyList<BranchRing> Rings, int VertsPerRing, float Importance, float BarkHelp, bool IsTrunk);
 
     /// <summary>
     ///     Column-major 3x3 branch frame matching the runtime ring matrix. Column X is the branch growth
@@ -1105,7 +1166,12 @@ internal static class SptGeometryBuilder
     /// Geometry is built from these afterward by <see cref="EmitPlacedLeaves" />.</summary>
     private readonly record struct PlacedLeaf(
         Vector3 Pos, Vector3 BranchOrigin, Vector3 Center, Vector3 BudDir, SptLeaf Template,
-        SptLeafTextureCoords TextureCoords, bool OddVariant);
+        SptLeafTextureCoords TextureCoords, bool OddVariant, byte Dimmer);
+
+    /// <summary>Per-tree canopy-depth dimming parameters (SIdvLeafInfo +0/+4/+8): enabled = .spt token 3009,
+    /// leaf scalar = TREE CNAM LeafDimming (fallback token 3010), branch scalar = TREE CNAM BranchDimming
+    /// (no .spt source — 0/neutral without a record).</summary>
+    private readonly record struct TreeDimming(bool Enabled, float LeafScalar, float BranchScalar);
 
     /// <summary>
     ///     SpeedTree's <c>CIdvRandom</c>/<c>Random</c> uniform generator: a Park-Miller 16807 LCG with a
@@ -1222,7 +1288,9 @@ internal static class SptGeometryBuilder
         private readonly List<float> _uvs = [];
         private readonly List<float> _tangents = [];
         private readonly List<float> _bitangents = [];
+        private readonly List<byte> _colors = [];
         private bool _hasTangents;
+        private bool _hasDimming;
         private readonly List<ushort> _indices = [];
 
         public int VertexCount => _positions.Count / 3;
@@ -1230,12 +1298,15 @@ internal static class SptGeometryBuilder
         public bool CanAdd(int verts) => VertexCount + verts <= MaxVertices;
 
         public int Add(Vector3 position, Vector3 normal, Vector2 uv) =>
-            Add(position, normal, uv, Vector3.Zero, Vector3.Zero);
+            Add(position, normal, uv, Vector3.Zero, Vector3.Zero, 255);
 
         /// <summary>Adds a vertex carrying the leaf-billboard payload in the tangent/bitangent slots:
         /// <paramref name="tangent" /> = the card center (pivot), <paramref name="bitangent" /> = the
-        /// signed 2D card-space corner offset. The GPU leaf-billboard VS rebuilds the quad from these.</summary>
-        public int Add(Vector3 position, Vector3 normal, Vector2 uv, Vector3 tangent, Vector3 bitangent)
+        /// signed 2D card-space corner offset. The GPU leaf-billboard VS rebuilds the quad from these.
+        /// <paramref name="dimmer" /> = the canopy-depth dimming scalar (engine ×255 quantization), baked
+        /// as the vertex color the pixel shader multiplies into the lit result.</summary>
+        public int Add(Vector3 position, Vector3 normal, Vector2 uv, Vector3 tangent, Vector3 bitangent,
+            byte dimmer)
         {
             var index = VertexCount;
             _positions.Add(position.X);
@@ -1252,9 +1323,18 @@ internal static class SptGeometryBuilder
             _bitangents.Add(bitangent.X);
             _bitangents.Add(bitangent.Y);
             _bitangents.Add(bitangent.Z);
+            _colors.Add(dimmer);
+            _colors.Add(dimmer);
+            _colors.Add(dimmer);
+            _colors.Add(255);
             if (tangent != Vector3.Zero || bitangent != Vector3.Zero)
             {
                 _hasTangents = true;
+            }
+
+            if (dimmer != 255)
+            {
+                _hasDimming = true;
             }
 
             return index;
@@ -1288,6 +1368,11 @@ internal static class SptGeometryBuilder
                 // emitted when leaves actually populated them, so bark stays tangent-free as before.
                 Tangents = _hasTangents ? [.. _tangents] : null,
                 Bitangents = _hasTangents ? [.. _bitangents] : null,
+                // Canopy-depth dimming rides the vertex color (the engine bakes the CBillboardLeaf /
+                // BuildCrossSection dimmer into the leaf/bark vertex streams); only emitted when some
+                // vertex actually dims, so undimmed trees carry no color arrays.
+                VertexColors = _hasDimming ? [.. _colors] : null,
+                UseVertexColors = _hasDimming,
                 DiffuseTexturePath = diffuse,
                 NormalMapTexturePath = normalMap,
                 IsDoubleSided = doubleSided,

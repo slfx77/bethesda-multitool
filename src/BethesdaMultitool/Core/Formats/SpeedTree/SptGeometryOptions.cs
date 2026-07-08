@@ -73,6 +73,21 @@ public sealed record SptGeometryOptions
     /// </summary>
     public string? LeafTextureOverride { get; init; }
 
+    /// <summary>
+    ///     Leaf canopy-depth dimming scalar OVERRIDING the <c>.spt</c>'s token 3010 — the engine sources it
+    ///     from the <c>TREE</c> record's CNAM (LeafDimmingValue) via
+    ///     <c>TESObjectTREE::GetLeafDimming → CSpeedTreeRT::SetLeafDimmingScalar</c>. 0 = no dimming,
+    ///     1 = interior leaves darken fully with canopy depth. Null → the .spt token (default 1.0).
+    /// </summary>
+    public float? LeafDimming { get; init; }
+
+    /// <summary>
+    ///     Branch/bark dimming scalar from the <c>TREE</c> record's CNAM (BranchDimmingValue) via
+    ///     <c>CSpeedTreeRT::SetBranchDimmingScalar</c>. The <c>.spt</c> has NO token for it
+    ///     (<c>SIdvLeafInfo::Parse</c> never writes +8), so null → 0 (neutral bark).
+    /// </summary>
+    public float? BranchDimming { get; init; }
+
     public static SptGeometryOptions Default { get; } = new();
 
     /// <summary>

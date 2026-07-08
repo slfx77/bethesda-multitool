@@ -36,6 +36,10 @@ internal sealed class ReferenceMeshDecoder12
     // authoritative leaf texture; the .spt's own dev-era material often never shipped).
     private readonly IReadOnlyDictionary<string, string>? _speedTreeLeafTextures;
 
+    // archive-path (trees\<name>.spt) → the TREE record's CNAM dimming pair (the engine's canopy-depth
+    // darkening inputs, CSpeedTreeRT::Set{Leaf,Branch}DimmingScalar).
+    private readonly IReadOnlyDictionary<string, SpeedTreeDimming>? _speedTreeDimming;
+
     private int _totalMissingModelPaths;
     private int _totalSkinnedModelPaths;
 
@@ -43,12 +47,14 @@ internal sealed class ReferenceMeshDecoder12
         MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         IReadOnlyDictionary<string, float>? speedTreeHeights,
-        IReadOnlyDictionary<string, string>? speedTreeLeafTextures)
+        IReadOnlyDictionary<string, string>? speedTreeLeafTextures,
+        IReadOnlyDictionary<string, SpeedTreeDimming>? speedTreeDimming = null)
     {
         _meshArchives = meshArchives;
         _textureResolver = textureResolver;
         _speedTreeHeights = speedTreeHeights;
         _speedTreeLeafTextures = speedTreeLeafTextures;
+        _speedTreeDimming = speedTreeDimming;
     }
 
     public int TotalMissingModelPaths => Volatile.Read(ref _totalMissingModelPaths);
@@ -123,11 +129,23 @@ internal sealed class ReferenceMeshDecoder12
                 string? leafTexture = null;
                 _speedTreeLeafTextures?.TryGetValue(lookupPath, out leafTexture);
 
+                // TREE CNAM canopy-depth dimming: the engine overrides the .spt's leaf-dimming token with
+                // the record's LeafDimmingValue and supplies BranchDimmingValue (which has no .spt source).
+                float? leafDimming = null;
+                float? branchDimming = null;
+                if (_speedTreeDimming is not null && _speedTreeDimming.TryGetValue(lookupPath, out var dim))
+                {
+                    leafDimming = dim.Leaf;
+                    branchDimming = dim.Branch;
+                }
+
                 var seed = spt.General.Token2005 != 0 ? spt.General.Token2005 : StableSeed(lookupPath);
                 var sptOptions = SptGeometryOptions.FromEnvironment() with
                 {
                     TargetHeight = targetHeight,
                     LeafTextureOverride = leafTexture,
+                    LeafDimming = leafDimming,
+                    BranchDimming = branchDimming,
                     // The live D3D12 viewer re-faces each leaf card to the camera per frame in the
                     // leaf-billboard vertex shader, so emit GPU billboard cards (center + offset).
                     LeafBillboard = true,

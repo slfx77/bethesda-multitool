@@ -118,7 +118,9 @@ public sealed partial class WorldView3DControl
                 // Data-driven SpeedTree sizing: each .spt tree is scaled to its TREE-record OBND height.
                 speedTreeHeights: _data?.SpeedTreeHeights,
                 // Authoritative leaf atlas from the TREE record's ICON (the .spt's dev material often never shipped).
-                speedTreeLeafTextures: _data?.SpeedTreeLeafTextures);
+                speedTreeLeafTextures: _data?.SpeedTreeLeafTextures,
+                // TREE CNAM canopy-depth dimming (leaf + branch scalars) — engine-applied per tree.
+                speedTreeDimming: _data?.SpeedTreeDimming);
             _references = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12.ReferenceRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12,
                 _cbvSrvUavHeap12, _referenceMeshCache12)

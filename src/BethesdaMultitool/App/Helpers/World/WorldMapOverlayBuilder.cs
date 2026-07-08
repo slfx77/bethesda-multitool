@@ -88,6 +88,7 @@ internal static class WorldMapOverlayBuilder
             ModelPathIndex = modelPathIndex,
             SpeedTreeHeights = BuildSpeedTreeHeights(semantic),
             SpeedTreeLeafTextures = BuildSpeedTreeLeafTextures(semantic),
+            SpeedTreeDimming = BuildSpeedTreeDimming(semantic),
             CategoryIndex = categoryIndex,
             Resolver = semantic.CreateResolver(),
             MapMarkers = semantic.MapMarkers,
@@ -262,6 +263,7 @@ internal static class WorldMapOverlayBuilder
             ModelPathIndex = modelPathIndex,
             SpeedTreeHeights = BuildSpeedTreeHeights(suppRecords),
             SpeedTreeLeafTextures = BuildSpeedTreeLeafTextures(suppRecords),
+            SpeedTreeDimming = BuildSpeedTreeDimming(suppRecords),
             CategoryIndex = categoryIndex,
             Resolver = resolver,
             MapMarkers = suppRecords.MapMarkers,
@@ -359,6 +361,31 @@ internal static class WorldMapOverlayBuilder
             if (SpeedTreeTreeRecordReader.ResolveLeafIcon(record.Fields, record.DecodedTree) is { } leaf)
             {
                 map[SpeedTreeModelPath.ToArchivePath(modelPath)] = leaf;
+            }
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    ///     Map each SpeedTree <c>.spt</c> archive path → the TREE record's CNAM dimming pair — the engine's
+    ///     canopy-depth darkening inputs (<c>CSpeedTreeRT::Set{Leaf,Branch}DimmingScalar</c>, applied per
+    ///     tree before Compute). Without these the generator falls back to the <c>.spt</c>'s token-3010
+    ///     leaf default and neutral bark.
+    /// </summary>
+    private static Dictionary<string, SpeedTreeDimming> BuildSpeedTreeDimming(RecordCollection semantic)
+    {
+        var map = new Dictionary<string, SpeedTreeDimming>(StringComparer.OrdinalIgnoreCase);
+        foreach (var record in semantic.GenericRecords)
+        {
+            if (record.ModelPath is not { } modelPath || !SpeedTreeModelPath.IsSpt(modelPath))
+            {
+                continue;
+            }
+
+            if (SpeedTreeTreeRecordReader.ResolveDimming(record.Fields, record.DecodedTree) is { } dimming)
+            {
+                map[SpeedTreeModelPath.ToArchivePath(modelPath)] = dimming;
             }
         }
 

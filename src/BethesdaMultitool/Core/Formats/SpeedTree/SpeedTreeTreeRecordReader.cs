@@ -31,6 +31,38 @@ public static class SpeedTreeTreeRecordReader
         return SpeedTreeTexturePath.IconToLeafPath(DecodedTreeReader.Str(iconNode));
     }
 
+    /// <summary>
+    ///     The TREE record's CNAM dimming pair (LeafDimmingValue / BranchDimmingValue) — the engine's
+    ///     canopy-depth darkening inputs, pushed per tree via <c>CSpeedTreeRT::Set{Leaf,Branch}DimmingScalar</c>.
+    ///     The typed path stores CNAM as a schema-decoded field dictionary (<c>SubrecordSchemaView.Raw</c>);
+    ///     Oblivion/TES4 records expose it as DecodedTree children named per the xEdit-derived schema.
+    ///     Null when the record carries no readable CNAM.
+    /// </summary>
+    public static SpeedTreeDimming? ResolveDimming(
+        IReadOnlyDictionary<string, object?>? fields, IReadOnlyList<DecodedNode>? decodedTree)
+    {
+        if (fields is not null && fields.TryGetValue("CNAM", out var typed) &&
+            typed is Dictionary<string, object?> cnam)
+        {
+            return new SpeedTreeDimming(
+                ReadFloat(cnam, "LeafDimmingValue"),
+                ReadFloat(cnam, "BranchDimmingValue"));
+        }
+
+        var cnamNode = decodedTree is null ? null : DecodedTreeReader.TopBySignature(decodedTree, "CNAM");
+        if (cnamNode is null)
+        {
+            return null;
+        }
+
+        var leaf = DecodedTreeReader.Float(DecodedTreeReader.ChildByLabel(cnamNode, "Leaf Dimming Value"));
+        var branch = DecodedTreeReader.Float(DecodedTreeReader.ChildByLabel(cnamNode, "Branch Dimming Value"));
+        return leaf is null && branch is null ? null : new SpeedTreeDimming(leaf ?? 0f, branch ?? 0f);
+    }
+
+    private static float ReadFloat(Dictionary<string, object?> fields, string name) =>
+        fields.TryGetValue(name, out var v) && v is float f ? f : 0f;
+
     /// <summary>The TREE record's first SpeedTree seed (SNAM array) from the schema-decoded tree, or null.
     /// The typed <c>Fields["SNAM"]</c> path is handled by callers; this only covers the DecodedTree case.</summary>
     public static uint? ResolveFirstSeed(IReadOnlyList<DecodedNode>? decodedTree)

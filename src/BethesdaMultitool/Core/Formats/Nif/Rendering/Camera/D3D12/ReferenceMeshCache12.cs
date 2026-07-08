@@ -123,13 +123,15 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         ReferenceDecodedMeshDiskCache12? persistentDecodedCache = null,
         bool autoSizeMeshCapacity = true,
         IReadOnlyDictionary<string, float>? speedTreeHeights = null,
-        IReadOnlyDictionary<string, string>? speedTreeLeafTextures = null)
+        IReadOnlyDictionary<string, string>? speedTreeLeafTextures = null,
+        IReadOnlyDictionary<string, SpeedTreeDimming>? speedTreeDimming = null)
     {
         if (capacity <= 0)
             throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be > 0.");
 
         _meshArchives = meshArchives;
-        _decoder = new ReferenceMeshDecoder12(meshArchives, textureResolver, speedTreeHeights, speedTreeLeafTextures);
+        _decoder = new ReferenceMeshDecoder12(meshArchives, textureResolver, speedTreeHeights, speedTreeLeafTextures,
+            speedTreeDimming);
         _textureCache = textureCache;
         _deletionQueue = deletionQueue;
         _geometryArena = new GpuGeometryArena12(gpu)
@@ -894,11 +896,21 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 {
                     diffuse = _textureCache.WhitePixel;
                 }
+                else if (string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal))
+                {
+                    diffuse = _textureCache.WaterSurface;
+                }
                 else
                 {
-                    diffuse = string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal)
-                        ? _textureCache.WaterSurface
-                        : _textureCache.GetOrUpload(sub.DiffuseTexturePath!);
+                    // Alpha-tested SpeedTree leaf cards request the ALPHA-WEIGHTED-MIPS variant of their
+                    // atlas: the shipped DDS mips average foliage color with the atlas background (white
+                    // for the Oblivion dogwood/maple composites), washing distant canopies toward the
+                    // background color — the engine never hits those mips (distant trees are billboard
+                    // imposters). The suffix keys a separate cache entry end-to-end.
+                    var diffusePath = sub.IsLeafBillboard && sub.AlphaTest
+                        ? sub.DiffuseTexturePath + NifGpuTextureResolver.LeafAtlasMipsSuffix
+                        : sub.DiffuseTexturePath!;
+                    diffuse = _textureCache.GetOrUpload(diffusePath);
                 }
                 var normal = !string.IsNullOrEmpty(sub.NormalMapTexturePath)
                     ? _textureCache.GetOrUpload(sub.NormalMapTexturePath!, isNormalMap: true)

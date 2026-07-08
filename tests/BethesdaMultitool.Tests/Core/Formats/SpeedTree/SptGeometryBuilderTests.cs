@@ -300,8 +300,10 @@ public class SptGeometryBuilderTests
         // leaf's four corners, so it is asserted separately from the offset math under test here.
         // Card size = cardScale·Corner1 with cardScale = treeSizeMid = Float2006·10 (×10 engine world scale).
         // Vertex order follows the ENGINE's zip (BSTreeModel::CreateLeafGeometry pairs texcoord j with
-        // CLeafGeometry::Update corner slot (j+2)&3): pairs 0..3 land on (L,B), (R,B), (R,T), (L,T) —
-        // around the quad. Seed 1 picks the ODD doubled-entry here (authored pivot 0.25 → x0=−50, x1=150);
+        // CLeafGeometry::Update corner slot (j+2)&3): pairs 0..3 land on (L,T), (R,T), (R,B), (L,B) —
+        // around the quad, read with SCREEN-up "T" under the v→1−v flipped atlas (the earlier
+        // texture-v-down reading mirrored every leaf image vertically — upside-down leaves in iso view).
+        // Seed 1 picks the ODD doubled-entry here (authored pivot 0.25 → x0=−50, x1=150);
         // the EVEN variant would flip the pivot (x0=−150, x1=50).
         AssertOffsetXy(offsets, 0, -50f, -300f);
         AssertOffsetXy(offsets, 1, 150f, -300f);
@@ -334,16 +336,17 @@ public class SptGeometryBuilderTests
         // The builder flips V (v → 1−v) on the .spt's leaf UVs (the shipped composite DDS is V-flipped
         // vs the token-10002 table; the engine's own mechanism is SetTextureCoords' global vSign=−1),
         // so the parsed 0.9 → 0.1 and 0.1 → 0.9. Seed 1 picks the ODD doubled-entry, which additionally
-        // U-mirrors the pairs (u of pairs 0↔1 and 2↔3 swap, v's stay — SetTextureCoords' second entry):
-        // pair0.u = parsed pair1's 0.25, pair1.u = parsed pair0's 0.75, and likewise for pairs 2/3.
+        // U-mirrors the pairs (u of pairs 0↔1 and 2↔3 swap, v's stay — SetTextureCoords' second entry).
+        // Vertices emit in geometric order LB, RB, RT, LT and the engine zip assigns pairs 0..3 to
+        // corners (L,T), (R,T), (R,B), (L,B) — so the buffer order is pair3, pair2, pair1, pair0.
         Assert.Equal(0.25f, uvs[0], 4);
-        Assert.Equal(0.1f, uvs[1], 4);
+        Assert.Equal(0.9f, uvs[1], 4);
         Assert.Equal(0.75f, uvs[2], 4);
-        Assert.Equal(0.1f, uvs[3], 4);
+        Assert.Equal(0.9f, uvs[3], 4);
         Assert.Equal(0.75f, uvs[4], 4);
-        Assert.Equal(0.9f, uvs[5], 4);
+        Assert.Equal(0.1f, uvs[5], 4);
         Assert.Equal(0.25f, uvs[6], 4);
-        Assert.Equal(0.9f, uvs[7], 4);
+        Assert.Equal(0.1f, uvs[7], 4);
     }
 
     [Fact]

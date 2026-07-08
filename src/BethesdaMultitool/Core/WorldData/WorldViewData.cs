@@ -78,6 +78,13 @@ internal sealed class WorldViewData
     /// </summary>
     public Dictionary<string, string> SpeedTreeLeafTextures { get; init; } = [];
 
+    /// <summary>
+    ///     SpeedTree archive path (<c>trees\&lt;name&gt;.spt</c>) → the TREE record's CNAM dimming pair
+    ///     (LeafDimmingValue / BranchDimmingValue), the engine's canopy-depth darkening inputs applied
+    ///     per tree via <c>CSpeedTreeRT::Set{Leaf,Branch}DimmingScalar</c>. Case-insensitive keys.
+    /// </summary>
+    public Dictionary<string, BethesdaMultitool.Core.Formats.SpeedTree.SpeedTreeDimming> SpeedTreeDimming { get; init; } = [];
+
     public required Dictionary<uint, PlacedObjectCategory> CategoryIndex { get; init; }
     public required FormIdResolver Resolver { get; init; }
     public required List<PlacedReference> MapMarkers { get; init; }
