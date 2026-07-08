@@ -437,7 +437,7 @@ public record RecordCollection
             Spells = MergeList(Spells, overlay.Spells, r => r.FormId),
 
             // World
-            Cells = MergeList(Cells, overlay.Cells, r => r.FormId),
+            Cells = MergeCells(Cells, overlay.Cells),
             Worldspaces = MergeWorldspaces(Worldspaces, overlay.Worldspaces),
             MapMarkers = MergeList(MapMarkers, overlay.MapMarkers, r => r.FormId),
             LeveledLists = MergeList(LeveledLists, overlay.LeveledLists, r => r.FormId),
@@ -988,9 +988,28 @@ public record RecordCollection
                 continue;
             }
 
+            // Same child-merge semantics as MergeCells: a cell present in both files folds via
+            // MergeCellPair (base LAND/REFRs survive an override that doesn't re-ship them). This
+            // list is what consumers that never call RelinkWorldspaceCells read (ws.Cells), so it
+            // must not keep the bare override instances.
+            var baseCellsByFormId = new Dictionary<uint, CellRecord>(baseWs.Cells.Count);
+            foreach (var cell in baseWs.Cells)
+            {
+                if (cell.FormId != 0)
+                {
+                    baseCellsByFormId.TryAdd(cell.FormId, cell);
+                }
+            }
+
             var seen = new HashSet<uint>(ws.Cells.Select(c => c.FormId));
             var cells = new List<CellRecord>(ws.Cells.Count + baseWs.Cells.Count);
-            cells.AddRange(ws.Cells);
+            foreach (var cell in ws.Cells)
+            {
+                cells.Add(cell.FormId != 0 && baseCellsByFormId.TryGetValue(cell.FormId, out var baseCell)
+                    ? MergeCellPair(baseCell, cell)
+                    : cell);
+            }
+
             foreach (var cell in baseWs.Cells)
             {
                 if (seen.Add(cell.FormId))
@@ -1003,6 +1022,122 @@ public record RecordCollection
         }
 
         return merged;
+    }
+
+    /// <summary>
+    ///     Merges cell lists with engine load-order semantics. A CELL override record in a later file
+    ///     carries only that file's header fields plus the children it adds or changes — cell CHILDREN
+    ///     merge across files, they are not replaced. FO4's DLCs re-ship CELL headers for thousands of
+    ///     Commonwealth cells (precombine/previs regeneration) with no LAND and none of the base REFRs;
+    ///     whole-record replacement therefore erased the terrain and objects of every overridden cell
+    ///     (the missing downtown-Boston rectangle when all DLC ESMs are loaded).
+    /// </summary>
+    private static List<CellRecord> MergeCells(List<CellRecord> baseList, List<CellRecord> overlay)
+    {
+        if (baseList.Count == 0) return new List<CellRecord>(overlay);
+        if (overlay.Count == 0) return new List<CellRecord>(baseList);
+
+        // Later duplicates within one overlay win, mirroring MergeList's last-wins list order.
+        // FormId 0 marks synthetic cells (DMP virtual buckets) — never collide those.
+        var overlayByFormId = new Dictionary<uint, CellRecord>(overlay.Count);
+        foreach (var cell in overlay)
+        {
+            if (cell.FormId != 0)
+            {
+                overlayByFormId[cell.FormId] = cell;
+            }
+        }
+
+        var merged = new List<CellRecord>(baseList.Count + overlay.Count);
+        var consumed = new HashSet<uint>();
+        foreach (var baseCell in baseList)
+        {
+            if (baseCell.FormId != 0 && overlayByFormId.TryGetValue(baseCell.FormId, out var overrideCell))
+            {
+                merged.Add(MergeCellPair(baseCell, overrideCell));
+                consumed.Add(baseCell.FormId);
+            }
+            else
+            {
+                merged.Add(baseCell);
+            }
+        }
+
+        foreach (var cell in overlay)
+        {
+            // Skip only the single dictionary-winning instance of a consumed FormID; a stray duplicate
+            // with the same FormID would be dropped too, which is the same de-dup MergeList applies.
+            if (cell.FormId == 0 || !consumed.Contains(cell.FormId))
+            {
+                merged.Add(cell);
+            }
+        }
+
+        return merged;
+    }
+
+    /// <summary>
+    ///     Folds one CELL override onto its base record: override header fields win where present,
+    ///     while children (placed references, LAND heightmap/visual data) merge — base children
+    ///     survive unless the override re-ships them (per-REFR override by FormID).
+    /// </summary>
+    private static CellRecord MergeCellPair(CellRecord baseCell, CellRecord overrideCell)
+    {
+        List<PlacedReference> placed;
+        if (baseCell.PlacedObjects.Count == 0)
+        {
+            placed = overrideCell.PlacedObjects;
+        }
+        else if (overrideCell.PlacedObjects.Count == 0)
+        {
+            placed = baseCell.PlacedObjects;
+        }
+        else
+        {
+            var overriddenRefs = new HashSet<uint>(overrideCell.PlacedObjects
+                .Where(r => r.FormId != 0)
+                .Select(r => r.FormId));
+            placed = new List<PlacedReference>(baseCell.PlacedObjects.Count + overrideCell.PlacedObjects.Count);
+            placed.AddRange(baseCell.PlacedObjects.Where(r => r.FormId == 0 || !overriddenRefs.Contains(r.FormId)));
+            placed.AddRange(overrideCell.PlacedObjects);
+        }
+
+        var linkedCells = overrideCell.LinkedCellFormIds;
+        if (baseCell.LinkedCellFormIds.Count > 0)
+        {
+            linkedCells = overrideCell.LinkedCellFormIds
+                .Concat(baseCell.LinkedCellFormIds)
+                .Distinct()
+                .ToList();
+        }
+
+        return overrideCell with
+        {
+            EditorId = overrideCell.EditorId ?? baseCell.EditorId,
+            FullName = overrideCell.FullName ?? baseCell.FullName,
+            GridX = overrideCell.GridX ?? baseCell.GridX,
+            GridY = overrideCell.GridY ?? baseCell.GridY,
+            WorldspaceFormId = overrideCell.WorldspaceFormId ?? baseCell.WorldspaceFormId,
+            CellWorldSize = overrideCell.CellWorldSize != 0f ? overrideCell.CellWorldSize : baseCell.CellWorldSize,
+            WaterHeight = overrideCell.WaterHeight ?? baseCell.WaterHeight,
+            EncounterZoneFormId = overrideCell.EncounterZoneFormId ?? baseCell.EncounterZoneFormId,
+            MusicTypeFormId = overrideCell.MusicTypeFormId ?? baseCell.MusicTypeFormId,
+            AcousticSpaceFormId = overrideCell.AcousticSpaceFormId ?? baseCell.AcousticSpaceFormId,
+            ImageSpaceFormId = overrideCell.ImageSpaceFormId ?? baseCell.ImageSpaceFormId,
+            LightingTemplateFormId = overrideCell.LightingTemplateFormId ?? baseCell.LightingTemplateFormId,
+            LightingTemplateInheritanceFlags =
+                overrideCell.LightingTemplateInheritanceFlags ?? baseCell.LightingTemplateInheritanceFlags,
+            LightingData = overrideCell.LightingData ?? baseCell.LightingData,
+            RadiationRegionFormIds = overrideCell.RadiationRegionFormIds.Count > 0
+                ? overrideCell.RadiationRegionFormIds
+                : baseCell.RadiationRegionFormIds,
+            PlacedObjects = placed,
+            LinkedCellFormIds = linkedCells,
+            Heightmap = overrideCell.Heightmap ?? baseCell.Heightmap,
+            LandVisualData = overrideCell.LandVisualData ?? baseCell.LandVisualData,
+            RuntimeTerrainMesh = overrideCell.RuntimeTerrainMesh ?? baseCell.RuntimeTerrainMesh,
+            HasPersistentObjects = overrideCell.HasPersistentObjects || baseCell.HasPersistentObjects,
+        };
     }
 
     private static List<T> MergeList<T>(List<T> baseList, List<T> overlay, Func<T, uint> formIdSelector)
