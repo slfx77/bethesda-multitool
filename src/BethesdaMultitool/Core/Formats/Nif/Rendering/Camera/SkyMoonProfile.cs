@@ -89,8 +89,9 @@ public sealed record SkyMoonProfile
     /// <summary>True when this engine draws a second moon (Secunda).</summary>
     public bool HasSecondMoon => MoonCount >= 2;
 
-    /// <summary>True when the game ships distinct per-phase moon textures (only Morrowind, verified). Other
-    /// games reuse the single full-moon texture for every phase.</summary>
+    /// <summary>True when the game ships distinct per-phase moon textures (Morrowind, Oblivion — both
+    /// moons — and FO4/76's secunda, all archive-verified). Skyrim shades phases in-shader and FO3/FNV
+    /// have a static moon, so those reuse the single full-moon texture for every phase.</summary>
     public bool HasPerPhaseTextures => PrimaryPhaseTexturePattern is not null && PhaseTokens.Count == MoonSky.PhaseCount;
 
     /// <summary>The per-phase texture path for a moon at <paramref name="phaseIndex" /> (0..7), or null when
@@ -171,11 +172,19 @@ public sealed record SkyMoonProfile
         // (NOT the old 0.225, which rendered the moons gigantic in-viewer) for the no-GameSettings case.
         PrimaryHalfSizeFraction = 0.125f,
         SecondaryHalfSizeFraction = 0.069f,
-        // Two distinct arcs (no per-phase textures → full moon every phase). Seeded; calibrate if needed.
+        // Two distinct arcs. Seeded; calibrate if needed.
         PrimaryOrbit = new MoonSky.MoonOrbit(
             PeriodHours: 24f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 70f, PeakAzimuthDeg: 95f, AzSwingDeg: 22f),
         SecondaryOrbit = new MoonSky.MoonOrbit(
             PeriodHours: 24.6f, PhaseOffsetTurns: 0.16f, MaxAltitudeDeg: 54f, PeakAzimuthDeg: 60f, AzSwingDeg: 28f),
+        // Oblivion ships the full 8-texture phase set for BOTH moons (sky\masser_<token>.dds /
+        // sky\secunda_<token>.dds — archive-verified) with the same token names Morrowind/FO4 use.
+        // Phase length comes from the active climate's TNAM (ClimateTiming.MoonPhaseDays) at the
+        // consumption site; PhaseLengthDays is the no-climate fallback.
+        PrimaryPhaseTexturePattern = @"textures\sky\masser_{0}.dds",
+        SecondaryPhaseTexturePattern = @"textures\sky\secunda_{0}.dds",
+        PhaseTokens = MorrowindPhaseTokens,
+        PhaseLengthDays = MoonSky.MorrowindPhaseLengthDays,
     };
 
     // A plain nightly arc for the single-moon Fallout games (no second moon, no per-phase textures).

@@ -619,11 +619,16 @@ public sealed partial class WorldView3DControl
         var secundaDir = MoonSky.ComputeMoonDirection(moonProfile.SecondaryOrbit, _gameHour, _gameDay);
         var moonFade = Math.Clamp(1f - (atmo.SunIntensity * 1.4f), 0f, 1f);
 
-        // Phase texture per moon. Morrowind swaps among its 8 per-phase textures by the day-driven phase
-        // index; other games have no per-phase art so PhaseTextureOrFull returns the full-moon texture.
-        // Secunda's phase is offset from Masser's so the two moons aren't locked to the same phase.
-        var masserPhase = MoonSky.PhaseIndex(_gameDay, moonProfile.PhaseLengthDays);
-        var secundaPhase = MoonSky.PhaseIndex(_gameDay, moonProfile.PhaseLengthDays, moonProfile.SecondaryPhaseOffsetDays);
+        // Phase texture per moon. Morrowind + Oblivion swap among their 8 per-phase textures by the
+        // day-driven phase index; games without per-phase art fall through to the full-moon texture in
+        // PhaseTextureOrFull. Secunda's phase is offset from Masser's so the moons aren't phase-locked.
+        // Phase length prefers the active climate's TNAM value (TESClimate::GetMoonPhaseDays) over the
+        // profile fallback — Oblivion's climates author it per-region.
+        var phaseLengthDays = _currentClimateTiming.MoonPhaseDays > 0
+            ? _currentClimateTiming.MoonPhaseDays
+            : moonProfile.PhaseLengthDays;
+        var masserPhase = MoonSky.PhaseIndex(_gameDay, phaseLengthDays);
+        var secundaPhase = MoonSky.PhaseIndex(_gameDay, phaseLengthDays, moonProfile.SecondaryPhaseOffsetDays);
         var moonTex = PhaseTextureOrFull(_moonPhaseTexIndices, masserPhase, _moonTexIndex);
         var secundaTex = PhaseTextureOrFull(_moonSecundaPhaseTexIndices, secundaPhase, _moonSecundaTexIndex);
 

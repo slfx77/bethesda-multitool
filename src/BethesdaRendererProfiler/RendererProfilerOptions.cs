@@ -91,6 +91,10 @@ internal sealed record RendererProfilerOptions
     /// <summary>Time-of-day (0..24) for the capture. Default 12 (noon).</summary>
     internal float CaptureHour { get; init; } = 12f;
 
+    /// <summary>Day of the lunar cycle for the capture — drives the moon phase + orbit position
+    /// (Profiler_SetGameDay). Default 0.</summary>
+    internal float CaptureDay { get; init; }
+
     /// <summary>Camera pitch in degrees for the capture; positive looks UP (90 ≈ straight up at the sky).</summary>
     internal float CapturePitchDegrees { get; init; } = 80f;
 
@@ -127,6 +131,7 @@ internal sealed record RendererProfilerOptions
           --capture-center-x <x>      Override the capture window center X (world units). Aims the capture at a landmark.
           --capture-center-y <y>      Override the capture window center Y (world units).
           --capture-z <z>             Camera height for an aimed perspective --capture-frame (world units).
+          --capture-day <n>           Day of the lunar cycle for the capture (moon phase + orbit). Default 0.
 
         Examples:
           BethesdaRendererProfiler --input "C:\Games\Fallout New Vegas\Data\FalloutNV.esm" --duration-seconds 60
@@ -167,6 +172,7 @@ internal sealed record RendererProfilerOptions
         string? worldspaceName = null;
         string? captureWeatherName = null;
         var captureHour = 12f;
+        var captureDay = 0f;
         var capturePitchDegrees = 80f;
 
         for (var i = 0; i < args.Length; i++)
@@ -389,6 +395,15 @@ internal sealed record RendererProfilerOptions
                     captureHour = (float)hour;
                     break;
 
+                case "--capture-day":
+                    if (!TryReadNonNegativeDouble(args, ref i, arg, out var day, out error))
+                    {
+                        return Fail(out options, error);
+                    }
+
+                    captureDay = (float)day;
+                    break;
+
                 // Pitch can be negative (look down), so read the value directly rather than via RequireValue.
                 case "--capture-pitch":
                     if (i + 1 >= args.Length)
@@ -493,6 +508,7 @@ internal sealed record RendererProfilerOptions
             WorldspaceName = worldspaceName,
             CaptureWeatherName = captureWeatherName,
             CaptureHour = captureHour,
+            CaptureDay = captureDay,
             CapturePitchDegrees = capturePitchDegrees
         };
         error = null;

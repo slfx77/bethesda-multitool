@@ -369,6 +369,7 @@ internal sealed class MainWindow : Window, IDisposable
             }
 
             _worldView.Profiler_SetGameHour(_options.CaptureHour);
+            _worldView.Profiler_SetGameDay(_options.CaptureDay);
 
             // Aim the camera at an explicit landmark BEFORE the phase-2 settle, so cell/mesh streaming
             // happens around the target rather than the worldspace bookmark (--capture-center-x/y in

@@ -41,18 +41,22 @@ public static class AtmosphereState
         float SunriseBeginHour,
         float SunriseEndHour,
         float SunsetBeginHour,
-        float SunsetEndHour)
+        float SunsetEndHour,
+        int MoonPhaseDays = 0)
     {
-        /// <summary>Fallout's default day: sunrise ~06:00, sunset ~18:00.</summary>
+        /// <summary>Fallout's default day: sunrise ~06:00, sunset ~18:00 (no climate moon phase length).</summary>
         public static ClimateTiming Default => new(5.5f, 6.5f, 18.0f, 19.0f);
 
         /// <summary>Build timing from a CLMT TNAM block. Byte→hours = value × 1/6 (10-minute units) —
         /// CONFIRMED by the decompile: <c>Sky::GetSunriseBegin</c> reads <c>climate+0x60</c> and scales by
-        /// <c>0.16666667</c>. Returns <see cref="Default" /> for a null block.</summary>
+        /// <c>0.16666667</c>. The phase-length byte masks its low 6 bits (TESClimate::GetMoonPhaseDays —
+        /// the top 2 bits are the Masser/Secunda enable flags); 0 = climate carries no phase length and
+        /// the moon profile's fallback applies. Returns <see cref="Default" /> for a null block.</summary>
         public static ClimateTiming FromClimateData(ClimateTimingData? d) =>
             d is null
                 ? Default
-                : new(d.SunriseBegin / 6f, d.SunriseEnd / 6f, d.SunsetBegin / 6f, d.SunsetEnd / 6f);
+                : new(d.SunriseBegin / 6f, d.SunriseEnd / 6f, d.SunsetBegin / 6f, d.SunsetEnd / 6f,
+                    d.MoonPhaseLength & 0x3F);
     }
 
     /// <summary>The resolved per-frame atmosphere the GPU constant buffer mirrors.</summary>
