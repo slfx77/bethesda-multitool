@@ -159,6 +159,7 @@ public sealed partial class WorldView3DControl
         _rootSignature12?.Dispose(); _rootSignature12 = null;
         _cbvSrvUavHeap12?.Dispose(); _cbvSrvUavHeap12 = null;
         _depthSrv = null; // its slot lived in the heap just disposed; reallocate on the next surface
+        _captureDepthSrv = null; // same heap — the capture-depth slot dies with it too
 
         _ringBuffer12?.Dispose(); _ringBuffer12 = null;
         _surface12?.Dispose(); _surface12 = null;

@@ -179,6 +179,7 @@ float4 main(PSInput input) : SV_Target
     // PSO, so occlusion is done here). Falls back to a view-angle proxy when no depth SRV is set.
     uint depthIndex = uDepthParams.x;
     float depthT;
+    float column = 0.0; // raw water column in world units (only meaningful when depth is sampled)
     if (depthIndex == 0xFFFFFFFFu)
     {
         depthT = saturate(dot(float3(0, 0, 1), V));
@@ -190,7 +191,7 @@ float4 main(PSInput input) : SV_Target
         float sceneNdc = gWaterTextures[NonUniformResourceIndex(depthIndex)].Load(int3((int2)input.Position.xy, 0)).r;
         float sceneDist = LinearizeDepth(sceneNdc, near, far);
         float waterDist = LinearizeDepth(input.Position.z, near, far);
-        float column = sceneDist - waterDist;     // >0: water over a floor; <0: geometry occludes
+        column = sceneDist - waterDist;           // >0: water over a floor; <0: geometry occludes
         // 3D-2 tie-break: bias the occlusion test toward KEEPING the water (uDepthParams.w world units) so
         // a shoreline where water and terrain are ~coplanar (column ≈ 0 ± sub-ULP depth noise) resolves to
         // water instead of flickering. The bias is tiny vs DepthFalloff, so genuinely occluded water
@@ -294,6 +295,26 @@ float4 main(PSInput input) : SV_Target
     color += (sunSpec + skyGlint) * sunCol;
 #endif
 
+#if OBLIVION_WATER
+    // Oblivion WATER000 shore alpha (pkg019 asm 139-173; def c13=(0.25,-0.2,-0.55), c12.x=1/0.35):
+    //   fresA     = max(VarAmounts.z, F)            — runtime fresnel floor, ALPHA only (color lerp
+    //                                                 above uses the unfloored Schlick); 0 = pure Schlick
+    //   alphaBase = lerp(0.25, fresA, depth)
+    //   s         = saturate(1 − (depth − 0.2)/0.35)
+    //   alpha     = alphaBase · (1 − s³)            — 0 below 0.2 column, cubic shore fade to 0.55,
+    //                                                 then ≈fresnel (clear top-down, opaque grazing)
+    // The engine's DepthMap is a dedicated 0..1 water-depth target; the WATR fog distances canNOT
+    // normalize it (DefaultWater's fog Near = −8192 would put the SHORELINE at depthT ≈ 0.89), so
+    // the alpha depth uses the raw column over a fixed range — 512 world units puts the engine's
+    // 0.2..0.55 fade band at ~100..280 units of water, calibrated against in-game shorelines.
+    // Without a scene-depth SRV there is no column (the N·V proxy is unrelated and zero at grazing
+    // angles, which would erase the surface) — fall back to deep-water behavior (aDepth = 1).
+    float aDepth = (depthIndex == 0xFFFFFFFFu) ? 1.0 : saturate(column / 512.0);
+    float alphaBase = lerp(0.25, saturate(F), aDepth);
+    float shoreS = saturate(1.0 - (aDepth - 0.2) * 2.857143);
+    float alpha = alphaBase * (1.0 - shoreS * shoreS * shoreS);
+#else
     float alpha = lerp(0.6, 0.95, saturate(F));
+#endif
     return float4(ApplyFog(saturate(color), input.vWorldPos), alpha);
 }

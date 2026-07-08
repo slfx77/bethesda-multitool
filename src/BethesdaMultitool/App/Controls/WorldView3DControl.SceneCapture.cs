@@ -17,6 +17,32 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class WorldView3DControl
 {
+    // Bindless SRV slot for the CAPTURE target's depth (distinct from _depthSrv, which views the live
+    // swap-chain depth). Allocated once, SRV rewritten per capture — captures are sequential (each
+    // waits its frame fence), so rewriting in place never races an in-flight read.
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation? _captureDepthSrv;
+
+    /// <summary>Allocates (once) and rewrites the R32_Float SRV over the capture target's D32_Float
+    /// depth so the water shader can column-depth fade in headless captures (mirrors EnsureDepthSrv).</summary>
+    private bool TryEnsureCaptureDepthSrv(GpuOffscreenSceneTarget12 target)
+    {
+        if (_gpu12 is null || _cbvSrvUavHeap12 is null)
+        {
+            return false;
+        }
+
+        _captureDepthSrv ??= _cbvSrvUavHeap12.AllocatePersistent();
+        var srvDesc = new Vortice.Direct3D12.ShaderResourceViewDescription
+        {
+            Format = Vortice.DXGI.Format.R32_Float,
+            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
+            Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default,
+            Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 },
+        };
+        _gpu12.Device.CreateShaderResourceView(target.DepthResource, srvDesc, _captureDepthSrv.Value.Cpu);
+        return true;
+    }
+
     /// <summary>Profiler hook: select the exterior worldspace whose EditorID matches <paramref name="name" />
     /// (case-insensitive). Returns false when no worldspace matches. Setting the combo index drives the
     /// normal selection path (cell load + camera framing).</summary>
@@ -153,11 +179,32 @@ public sealed partial class WorldView3DControl
             _references?.Render(viewProj, cylinder, deferBlended: true, cullViewProj: viewProj);
             if (_showWater && _water is not null && _references is not null)
             {
-                // Offscreen target binds no depth SRV — the no-depth water PSO path (same as the
-                // 3D export / top-down overlay); near/far are unused without the SRV soft-fade.
                 _water.SetNifWaterPlanes(_references.NifWaterPlanes);
-                _water.SetSceneDepth(NoDepthSrv, _camera.NearPlane, _camera.FarPlane);
+                // Bind the offscreen depth as an R32_Float SRV (mirrors the live frame's swap-chain
+                // depth SRV, Frame.cs) so the water shader computes the REAL column-depth fade —
+                // Oblivion's shore alpha is depth-driven and invisible on the proxy path. MSAA depth
+                // can't be a plain Texture2D SRV → fall back to the proxy (view-angle) fade.
+                var captureUsesDepth = !target.IsMsaa && TryEnsureCaptureDepthSrv(target);
+                _water.SetSceneDepth(
+                    captureUsesDepth ? _captureDepthSrv!.Value.BindlessIndex : NoDepthSrv,
+                    _camera.NearPlane, _camera.FarPlane);
+                if (captureUsesDepth)
+                {
+                    target.BindColorOnly(cmd); // depth leaves the OM while it's a shader resource
+                    cmd.ResourceBarrierTransition(target.DepthResource,
+                        Vortice.Direct3D12.ResourceStates.DepthWrite,
+                        Vortice.Direct3D12.ResourceStates.PixelShaderResource);
+                }
+
                 _water.Render(viewProj, cylinder);
+
+                if (captureUsesDepth)
+                {
+                    cmd.ResourceBarrierTransition(target.DepthResource,
+                        Vortice.Direct3D12.ResourceStates.PixelShaderResource,
+                        Vortice.Direct3D12.ResourceStates.DepthWrite);
+                    target.Rebind(cmd); // restore depth for the blended-deferred pass below
+                }
             }
 
             _references?.RenderBlendedDeferred();

@@ -53,6 +53,17 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     /// <summary>Pixel height of the target.</summary>
     public int Height { get; }
 
+    /// <summary>True when the scene targets are multisampled (depth can't be a plain Texture2D SRV).</summary>
+    public bool IsMsaa { get; }
+
+    /// <summary>
+    ///     The D32_Float depth texture, exposed so the capture path can bind it as an R32_Float SRV
+    ///     for the water shader's real column-depth fade (mirrors the live frame's swap-chain depth
+    ///     SRV). Only valid as an SRV when <see cref="IsMsaa" /> is false; the caller owns the
+    ///     DepthWrite ↔ PixelShaderResource transitions around the water draw.
+    /// </summary>
+    public ID3D12Resource DepthResource => _depthTex;
+
     public GpuOffscreenSceneTarget12(GpuDevice12 gpu, int width, int height)
     {
         _gpu = gpu;
@@ -61,6 +72,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         Height = height;
         var device = gpu.Device;
         var msaa = sampleCount > 1;
+        IsMsaa = msaa;
 
         _colorTex = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None,
@@ -122,6 +134,13 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         cmd.RSSetViewport(new Viewport(0, 0, Width, Height, 0f, 1f));
         cmd.RSSetScissorRect(Width, Height);
     }
+
+    /// <summary>Re-binds the color target WITHOUT the depth target and without clearing — used while
+    /// the depth texture is transitioned to a shader resource for the water depth-fade pass.</summary>
+    public void BindColorOnly(ID3D12GraphicsCommandList cmd) => cmd.OMSetRenderTargets(_rtvHandle);
+
+    /// <summary>Re-binds color + depth without clearing (restores the targets after the water pass).</summary>
+    public void Rebind(ID3D12GraphicsCommandList cmd) => cmd.OMSetRenderTargets(_rtvHandle, _dsvHandle);
 
     /// <summary>
     ///     Records the color → readback-buffer copy (transitioning the color target to
