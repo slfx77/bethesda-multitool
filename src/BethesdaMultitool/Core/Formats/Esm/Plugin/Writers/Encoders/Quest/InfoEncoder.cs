@@ -103,11 +103,7 @@ public sealed class InfoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("QSTI", info.QuestFormId.Value));
         }
 
-        if (info.TopicFormId.HasValue)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TPIC", info.TopicFormId.Value));
-        }
-
+        // TPIC deliberately NOT emitted — see EncodeNew; no shipped INFO carries it.
         if (info.PreviousInfo.HasValue
             && info.PreviousInfo.Value != 0
             && info.PreviousInfo.Value != 0xFFFFFFFF
@@ -144,10 +140,10 @@ public sealed class InfoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ANAM", info.SpeakerFormId.Value));
         }
 
-        if (info.Difficulty != 0)
-        {
-            subs.Add(NewRecordSubrecords.EncodeUInt32Subrecord("DNAM", info.Difficulty));
-        }
+        // DNAM (Speech Challenge) deliberately NOT emitted: retail FNV expresses skill
+        // checks via CTDA conditions — the entire master carries 3 DNAMs and the DLCs
+        // zero, while the proto capture yielded "Very Easy" on 2,701 INFOs (pre-release
+        // field noise). Stamping challenges onto ordinary lines corrupts topic handling.
     }
 
     /// <summary>
@@ -226,22 +222,25 @@ public sealed class InfoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("QSTI", info.QuestFormId.Value));
         }
 
-        if (info.TopicFormId.HasValue)
+        // TPIC deliberately NOT emitted: zero shipped INFO records (master or any DLC)
+        // carry it, the GECK ignores it, and it occupied exactly the slot where dependent
+        // plugins put PNAM — structurally alien data in the engine's INFO reader.
+
+        // PNAM (previous-INFO link) is MANDATORY on every dependent-plugin INFO — it is
+        // the linked-list anchor the engine uses to insert plugin INFOs into a topic's
+        // runtime list. Shipped-DLC convention (DeadMoney et al., byte-verified): PNAM is
+        // always present right after QSTI; 0x00000000 marks a chain head (many heads per
+        // topic GRUP are normal — one per quest chain), otherwise it names the previous
+        // plugin-local INFO. Runtime sentinels (0xFFFFFFFF) and self-references coerce to
+        // chain-head zero. Omitting PNAM entirely left every INFO unanchored and broke
+        // topic-info insertion game-wide (the v98 "can't talk to any NPC" class).
+        var previousInfo = info.PreviousInfo ?? 0;
+        if (previousInfo == 0xFFFFFFFF || previousInfo == info.FormId)
         {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TPIC", info.TopicFormId.Value));
+            previousInfo = 0;
         }
 
-        // PNAM (previous info FormID): emit only when the value looks like a real reference.
-        // 0x00000000 and 0xFFFFFFFF are sentinel "no previous" markers in runtime memory; emitting
-        // those would trigger "Could not find previous info" at load time and break the dialog
-        // chain walk. Self-references (PNAM == self) would also loop the runtime.
-        if (info.PreviousInfo.HasValue
-            && info.PreviousInfo.Value != 0
-            && info.PreviousInfo.Value != 0xFFFFFFFF
-            && info.PreviousInfo.Value != info.FormId)
-        {
-            subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("PNAM", info.PreviousInfo.Value));
-        }
+        subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("PNAM", previousInfo));
 
         // NAME (Add Topics) appears EARLY in xEdit's FNV INFO definition — before responses,
         // not at the end. Moving it late produces FNVEdit "unexpected NAME" errors and the
@@ -344,10 +343,10 @@ public sealed class InfoEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("ANAM", info.SpeakerFormId.Value));
         }
 
-        if (info.Difficulty != 0)
-        {
-            subs.Add(NewRecordSubrecords.EncodeUInt32Subrecord("DNAM", info.Difficulty));
-        }
+        // DNAM (Speech Challenge) deliberately NOT emitted: retail FNV expresses skill
+        // checks via CTDA conditions — the entire master carries 3 DNAMs and the DLCs
+        // zero, while the proto capture yielded "Very Easy" on 2,701 INFOs (pre-release
+        // field noise). Stamping challenges onto ordinary lines corrupts topic handling.
     }
 
     internal static void EmitResultScriptBlock(

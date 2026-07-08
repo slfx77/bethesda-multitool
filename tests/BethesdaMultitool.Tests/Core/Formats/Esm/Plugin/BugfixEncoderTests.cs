@@ -656,30 +656,38 @@ public class BugfixEncoderTests
     }
 
     // ====================================================================================
-    // InfoEncoder defensive PNAM filtering
+    // InfoEncoder mandatory PNAM emission (DLC-verified linked-list anchor)
     // ====================================================================================
 
-    // PNAM (previous-info FormID pointer) is omitted for three sentinel values that the
-    // engine cannot resolve: 0 (no link), 0xFFFFFFFF (the "unset" marker), and a
-    // self-reference (would loop forever). Any other value rides through verbatim.
+    // PNAM is MANDATORY on every dependent-plugin INFO — shipped DLCs carry it on 100%
+    // of their INFOs, with 0x00000000 marking a chain head. Runtime sentinels
+    // (0xFFFFFFFF) and self-references coerce to the chain-head zero; any other value
+    // rides through verbatim. Omitting PNAM left every INFO unanchored and broke
+    // topic-info insertion game-wide (the v98 "can't talk to any NPC" class).
     [Theory]
-    [InlineData(0u, null)] // no link
-    [InlineData(0xFFFFFFFFu, null)] // sentinel "unset"
-    [InlineData(0x800u, null)] // self-reference (FormId == PreviousInfo)
+    [InlineData(0u, 0u)] // chain head
+    [InlineData(0xFFFFFFFFu, 0u)] // runtime "unset" sentinel → chain head
+    [InlineData(0x800u, 0u)] // self-reference (FormId == PreviousInfo) → chain head
     [InlineData(0x12345u, 0x12345u)] // valid link → PNAM emits with that FormID
-    public void InfoEncoder_EncodeNew_PreviousInfoPnamEmissionPolicy(uint previousInfo, uint? expectedPnamFormId)
+    public void InfoEncoder_EncodeNew_PreviousInfoPnamEmissionPolicy(uint previousInfo, uint expectedPnamFormId)
     {
         var info = new DialogueRecord { FormId = 0x800, PreviousInfo = previousInfo };
         var encoded = InfoEncoder.EncodeNew(info);
 
-        if (expectedPnamFormId is null)
-        {
-            Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "PNAM");
-        }
-        else
-        {
-            var pnam = Assert.Single(encoded.Subrecords, s => s.Signature == "PNAM");
-            Assert.Equal(expectedPnamFormId.Value, BinaryPrimitives.ReadUInt32LittleEndian(pnam.Bytes));
-        }
+        var pnam = Assert.Single(encoded.Subrecords, s => s.Signature == "PNAM");
+        Assert.Equal(expectedPnamFormId, BinaryPrimitives.ReadUInt32LittleEndian(pnam.Bytes));
+    }
+
+    [Fact]
+    public void InfoEncoder_EncodeNew_NoPreviousInfo_EmitsChainHeadPnamAndNoTpicOrDnam()
+    {
+        var info = new DialogueRecord { FormId = 0x800, TopicFormId = 0xC8, Difficulty = 1 };
+        var encoded = InfoEncoder.EncodeNew(info);
+
+        var pnam = Assert.Single(encoded.Subrecords, s => s.Signature == "PNAM");
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(pnam.Bytes));
+        // No shipped INFO carries TPIC; DNAM speech challenges are proto-capture noise.
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "TPIC");
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "DNAM");
     }
 }

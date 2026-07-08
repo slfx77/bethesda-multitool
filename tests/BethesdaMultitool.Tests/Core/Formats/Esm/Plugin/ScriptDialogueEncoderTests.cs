@@ -168,7 +168,7 @@ public class ScriptDialogueEncoderTests
     }
 
     [Fact]
-    public void DialEncoder_EncodeNew_AllOptionals_EmitsFullQstiPnamTnam()
+    public void DialEncoder_EncodeNew_AllOptionals_CanonicalOrderNoTnam()
     {
         var dial = new DialogTopicRecord
         {
@@ -182,27 +182,37 @@ public class ScriptDialogueEncoderTests
 
         var encoded = DialEncoder.EncodeNew(dial);
 
-        Assert.Contains(encoded.Subrecords, s => s.Signature == "FULL");
+        // xEdit-canonical FNV order: EDID, QSTI, FULL, PNAM, DATA — DATA last, QSTI
+        // before FULL. The engine's sequential DIAL reader misparses any other order
+        // (FNVEdit: "unexpected (or out of order) subrecord").
+        var signatures = encoded.Subrecords.Select(s => s.Signature).ToList();
+        Assert.Equal(["EDID", "QSTI", "FULL", "PNAM", "DATA"], signatures);
+
         var qsti = Assert.Single(encoded.Subrecords, s => s.Signature == "QSTI");
         Assert.Equal(0x100u, BinaryPrimitives.ReadUInt32LittleEndian(qsti.Bytes));
 
         var pnam = Assert.Single(encoded.Subrecords, s => s.Signature == "PNAM");
         Assert.Equal(1.5f, BinaryPrimitives.ReadSingleLittleEndian(pnam.Bytes));
 
-        var tnam = Assert.Single(encoded.Subrecords, s => s.Signature == "TNAM");
-        Assert.Equal(0x200u, BinaryPrimitives.ReadUInt32LittleEndian(tnam.Bytes));
+        // FNV DIAL has no TNAM; the captured speaker link is dropped with a warning.
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "TNAM");
+        Assert.Contains(encoded.Warnings, w => w.Contains("TNAM"));
     }
 
     [Fact]
-    public void DialEncoder_EncodeNew_OmitsOptionalsWhenAbsent()
+    public void DialEncoder_EncodeNew_MinimalTopic_EmitsRequiredPnamWithGeckDefault()
     {
         var dial = new DialogTopicRecord { FormId = 0x900, EditorId = "Topic" };
         var encoded = DialEncoder.EncodeNew(dial);
 
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "FULL");
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "QSTI");
-        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "PNAM");
         Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "TNAM");
+
+        // PNAM is REQUIRED per xEdit (default 50); DATA must be the last subrecord.
+        var pnam = Assert.Single(encoded.Subrecords, s => s.Signature == "PNAM");
+        Assert.Equal(50f, BinaryPrimitives.ReadSingleLittleEndian(pnam.Bytes));
+        Assert.Equal("DATA", encoded.Subrecords[^1].Signature);
     }
 
     // ====================================================================================

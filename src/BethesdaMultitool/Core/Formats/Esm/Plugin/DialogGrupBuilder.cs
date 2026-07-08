@@ -242,6 +242,7 @@ internal static class DialogGrupBuilder
         var droppedConditions = 0;
         var remappedCtdaParameters = 0;
         var droppedNoQstiInfos = 0;
+        var droppedUnboundMasterTopicInfos = 0;
         var infoSourceToAllocated = new Dictionary<uint, uint>();
         var audioBindings = new List<EmittedDialogueAudioBinding>();
         foreach (var topic in newTopics)
@@ -271,6 +272,13 @@ internal static class DialogGrupBuilder
             BinaryPrimitives.WriteUInt32LittleEndian(childLabel, newDialId);
             var childrenPos = WriteGrupHeader(stream, childLabel, 7);
 
+            // PNAM chain state: per topic GRUP, per quest. Shipped-DLC convention
+            // (byte-verified against every FNV DLC): each quest's INFOs form a linked list
+            // anchored at PNAM=0, subsequent entries naming the previous plugin-local INFO.
+            // The proto's captured PreviousInfo values are unreliable post-remap, so chains
+            // are computed at emission time from actual emitted FormIDs.
+            var lastEmittedInfoByQuest = new Dictionary<uint, uint>();
+
             foreach (var info in infosForDial)
             {
                 var newInfoId = ResolvePreallocatedInfoId(info, infoFormIdMap, allocator);
@@ -287,6 +295,13 @@ internal static class DialogGrupBuilder
                     continue;
                 }
 
+                patched = patched with
+                {
+                    PreviousInfo = lastEmittedInfoByQuest.TryGetValue(patched.QuestFormId.Value, out var prevInfo)
+                        ? prevInfo
+                        : 0u
+                };
+
                 var infoEncoded = InfoEncoder.EncodeNew(patched, validFormIds, dialogRemapTable);
                 if (infoEncoded.Subrecords.Count == 0)
                 {
@@ -300,6 +315,7 @@ internal static class DialogGrupBuilder
                 stats.IncrementEmitted("INFO");
                 stats.NewRecordsEmitted++;
                 emittedInfos++;
+                lastEmittedInfoByQuest[patched.QuestFormId.Value] = newInfoId;
                 if (info.FormId != 0 && info.FormId != newInfoId)
                 {
                     infoSourceToAllocated[info.FormId] = newInfoId;
@@ -343,6 +359,9 @@ internal static class DialogGrupBuilder
             BinaryPrimitives.WriteUInt32LittleEndian(childLabel, masterDialId);
             var childrenPos = WriteGrupHeader(stream, childLabel, 7);
 
+            // Same per-quest PNAM chain construction as the new-DIAL loop above.
+            var lastEmittedInfoByQuest = new Dictionary<uint, uint>();
+
             foreach (var info in infosForDial)
             {
                 var newInfoId = ResolvePreallocatedInfoId(info, infoFormIdMap, allocator);
@@ -355,6 +374,30 @@ internal static class DialogGrupBuilder
                     stats.IncrementSkipped("INFO");
                     continue;
                 }
+
+                // INFOs attached to MASTER system topics (GREETING etc.) are evaluated for
+                // EVERY speaker in the game. Proto INFOs whose conditions reference quest
+                // variables that don't translate get those conditions REMOVED by the
+                // engine at load ("Unable to find variableID..."), turning them into
+                // near-unconditional greetings that hijack vanilla NPCs (Sunny greeting
+                // with Gomorrah gambler lines; conversation menus breaking game-wide).
+                // Require a hard speaker binding: a GetIsID/GetIsVoiceType condition or an
+                // explicit speaker link. Unbound INFOs are dropped — proto content that
+                // can't be safely scoped has no business inside a shared master topic.
+                if (!HasSpeakerBindingCondition(patched))
+                {
+                    droppedUnboundMasterTopicInfos++;
+                    stats.IncrementSkipped("INFO");
+                    stats.IncrementDropReason("info.master-topic-unbound");
+                    continue;
+                }
+
+                patched = patched with
+                {
+                    PreviousInfo = lastEmittedInfoByQuest.TryGetValue(patched.QuestFormId.Value, out var prevInfo)
+                        ? prevInfo
+                        : 0u
+                };
 
                 var infoEncoded = InfoEncoder.EncodeNew(patched, validFormIds, dialogRemapTable);
                 if (infoEncoded.Subrecords.Count == 0)
@@ -369,6 +412,7 @@ internal static class DialogGrupBuilder
                 stats.IncrementEmitted("INFO");
                 stats.NewRecordsEmitted++;
                 emittedInfos++;
+                lastEmittedInfoByQuest[patched.QuestFormId.Value] = newInfoId;
                 if (info.FormId != 0 && info.FormId != newInfoId)
                 {
                     infoSourceToAllocated[info.FormId] = newInfoId;
@@ -403,8 +447,11 @@ internal static class DialogGrupBuilder
             $"Extended {extendedAnchorQstiCount:N0} master-DIAL QSTI binding(s) so the engine knows " +
             "new quests speak master topics. " +
             $"Dropped {droppedUnavailableMasterDialInfos:N0} INFO(s) with unavailable master-DIAL TPIC, " +
-            $"{droppedOrphanInfos:N0} orphan INFO(s), and {droppedNoQstiInfos:N0} INFO(s) with no QSTI " +
-            "(engine refuses topic-info inserts when QSTI is missing). " +
+            $"{droppedOrphanInfos:N0} orphan INFO(s), {droppedNoQstiInfos:N0} INFO(s) with no QSTI " +
+            "(engine refuses topic-info inserts when QSTI is missing), and " +
+            $"{droppedUnboundMasterTopicInfos:N0} master-topic INFO(s) without a hard speaker binding " +
+            "(GetIsID/GetIsVoiceType/ANAM — unbound proto INFOs hijack vanilla NPC greetings once the " +
+            "engine strips their unresolvable conditions). " +
             $"Synthesized {synthesizedReturnLinks:N0} terminal INFO root-return topic link(s). " +
             $"Sanitized {sanitizedFieldCount:N0} unresolvable " +
             $"cross-record FormID reference(s); dropped {droppedConditions:N0} CTDA condition(s) " +
@@ -794,19 +841,41 @@ internal static class DialogGrupBuilder
         using var subStream = new MemoryStream();
         using (var subWriter = new BinaryWriter(subStream, System.Text.Encoding.Latin1, true))
         {
-            // Find the last existing QSTI position; insert new QSTIs immediately after.
-            // If no QSTI exists, append at the end of the subrecord stream.
-            var lastQstiIndex = -1;
+            // Canonical FNV DIAL order is EDID, QSTI*, FULL, PNAM, TDUM?, DATA — the added
+            // quest links must land in the QSTI block. Insert after the last existing QSTI;
+            // when the master topic has none (GREETING etc. on some masters), insert right
+            // after EDID. Appending at the end put QSTI after DATA, which FNVEdit flags as
+            // out-of-order and the engine's sequential DIAL reader misparses (wrong-greeting
+            // class).
+            var insertAfter = -1;
             for (var i = masterDialRecord.Subrecords.Count - 1; i >= 0; i--)
             {
                 if (masterDialRecord.Subrecords[i].Signature == "QSTI")
                 {
-                    lastQstiIndex = i;
+                    insertAfter = i;
                     break;
                 }
             }
 
-            var insertAfter = lastQstiIndex < 0 ? masterDialRecord.Subrecords.Count - 1 : lastQstiIndex;
+            if (insertAfter < 0)
+            {
+                for (var i = 0; i < masterDialRecord.Subrecords.Count; i++)
+                {
+                    if (masterDialRecord.Subrecords[i].Signature == "EDID")
+                    {
+                        insertAfter = i;
+                        break;
+                    }
+                }
+            }
+
+            if (insertAfter < 0)
+            {
+                foreach (var qsti in extraQstis)
+                {
+                    SubrecordEncoder.WriteFormIdSubrecord(subWriter, "QSTI", qsti);
+                }
+            }
 
             for (var i = 0; i < masterDialRecord.Subrecords.Count; i++)
             {
@@ -866,6 +935,42 @@ internal static class DialogGrupBuilder
     ///     Delegates CTDA condition filtering (Reference dangle + Parameter1/Parameter2
     ///     dangle for function-aware FormID params) to <see cref="ConditionSanitizer.Filter" />.
     /// </summary>
+    /// <summary>FNV condition function: GetIsID (parameter 1 = base NPC/creature form).</summary>
+    private const ushort GetIsIdFunctionIndex = 72;
+
+    /// <summary>FNV condition function: GetQuestVariable (quest + script variable index).</summary>
+    private const ushort GetQuestVariableFunctionIndex = 79;
+
+    /// <summary>FNV condition function: GetVariable-style scripted lookup (variable index).</summary>
+    private const ushort GetVariableFunctionIndex = 449;
+
+    /// <summary>
+    ///     True when the INFO is safe to attach under a shared MASTER topic (GREETING etc.),
+    ///     which the engine evaluates for every actor in the game. Two requirements:
+    ///     a hard per-actor binding — explicit speaker link (ANAM) or a GetIsID condition
+    ///     naming a specific base actor (voice-type bindings are NOT sufficient: voice types
+    ///     are shared across many vanilla NPCs) — and NO quest-variable conditions, because
+    ///     our proto variable-index translation is unreliable and the engine strips
+    ///     unresolvable conditions at load ("Unable to find variableID..."), widening the
+    ///     INFO's audience to everyone sharing the remaining conditions.
+    /// </summary>
+    private static bool HasSpeakerBindingCondition(DialogueRecord info)
+    {
+        if (info.Conditions.Any(condition =>
+                condition.FunctionIndex is GetQuestVariableFunctionIndex or GetVariableFunctionIndex))
+        {
+            return false;
+        }
+
+        if (info.SpeakerFormId is > 0)
+        {
+            return true;
+        }
+
+        return info.Conditions.Any(condition =>
+            condition.FunctionIndex == GetIsIdFunctionIndex && condition.Parameter1 != 0);
+    }
+
     private static DialogueRecord SanitizeInfoReferences(
         DialogueRecord info,
         uint newInfoId,

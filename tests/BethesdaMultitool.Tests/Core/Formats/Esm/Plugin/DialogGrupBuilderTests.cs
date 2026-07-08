@@ -35,6 +35,9 @@ public sealed class DialogGrupBuilderTests
             FormId = 0x00133FCB,
             TopicFormId = masterGoodbyeDial,
             QuestFormId = masterQuest,
+            // Master-topic INFOs must be hard speaker-bound (GetIsID) or the builder
+            // drops them — unbound proto INFOs hijack vanilla NPC greetings.
+            Conditions = [new DialogueCondition { FunctionIndex = 72, Parameter1 = masterQuest }],
             Responses =
             [
                 new DialogueResponse
@@ -127,6 +130,8 @@ public sealed class DialogGrupBuilderTests
             FormId = 0x00133BBB,
             TopicFormId = masterDial,
             QuestFormId = runtimeQuestId,
+            // Master-topic INFOs require a hard speaker binding to survive the builder.
+            Conditions = [new DialogueCondition { FunctionIndex = 72, Parameter1 = emittedQuestId }],
             Responses = [new DialogueResponse { Text = "Hi.", ResponseNumber = 1 }]
         };
         var remap = new Dictionary<uint, uint> { [runtimeQuestId] = emittedQuestId };
