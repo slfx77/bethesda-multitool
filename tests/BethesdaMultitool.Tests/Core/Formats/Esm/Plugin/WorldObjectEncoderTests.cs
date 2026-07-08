@@ -359,15 +359,17 @@ public class WorldObjectEncoderTests
         var anam = Assert.Single(encoded.Subrecords, s => s.Signature == "ANAM");
         Assert.Equal([0x07], anam.Bytes);
 
+        // xEdit-canonical menu item order: ITXT, RNAM (required result-TEXT string),
+        // ANAM (required flags byte).
         var sigs = encoded.Subrecords
             .Where(s => s.Signature is "ITXT" or "ANAM" or "RNAM")
             .Select(s => s.Signature)
             .ToList();
-        Assert.Equal(["ITXT", "ANAM", "RNAM"], sigs);
+        Assert.Equal(["ITXT", "RNAM", "ANAM"], sigs);
     }
 
     [Fact]
-    public void TermEncoder_EncodeNew_MenuItemEmitsItxtAndRnamPair()
+    public void TermEncoder_EncodeNew_MenuItemEmitsRequiredStringRnamAndTnamSubmenu()
     {
         var term = new TerminalRecord
         {
@@ -380,20 +382,25 @@ public class WorldObjectEncoderTests
             ]
         };
 
-        var encoded = TermEncoder.EncodeNew(term);
+        var encoded = TermEncoder.EncodeNew(term, validFormIds: new HashSet<uint> { 0xABC, 0xDEF });
 
         var itxts = encoded.Subrecords.Where(s => s.Signature == "ITXT").ToList();
         var rnams = encoded.Subrecords.Where(s => s.Signature == "RNAM").ToList();
 
         Assert.Equal(2, itxts.Count);
+        // RNAM is a required per-item Result Text STRING (xEdit wbStringKC), not a link.
+        // The previous encoding wrote a 4-byte FormID here — FNVEdit flagged every
+        // terminal with "unused data in RNAM - Result Text".
         Assert.Equal(2, rnams.Count);
+        Assert.All(rnams, r => Assert.Equal([0], r.Bytes)); // empty null-terminated string
 
-        Assert.Equal(0xABCu, BinaryPrimitives.ReadUInt32LittleEndian(rnams[0].Bytes));
-        Assert.Equal(0xDEFu, BinaryPrimitives.ReadUInt32LittleEndian(rnams[1].Bytes));
+        // Sub-menu links go in TNAM.
+        var tnam = Assert.Single(encoded.Subrecords, s => s.Signature == "TNAM");
+        Assert.Equal(0xDEFu, BinaryPrimitives.ReadUInt32LittleEndian(tnam.Bytes));
     }
 
     [Fact]
-    public void TermEncoder_EncodeNew_MenuItemWithoutLinkWarns()
+    public void TermEncoder_EncodeNew_MenuItemWithoutActionEmitsRequiredEmptyScriptBlock()
     {
         var term = new TerminalRecord
         {
@@ -401,17 +408,18 @@ public class WorldObjectEncoderTests
             EditorId = "Terminal",
             MenuItems =
             [
-                new TerminalMenuItem { Text = "Detonate" } // no ResultScript or SubTerminal
+                new TerminalMenuItem { Text = "Detonate" } // no script, no sub-menu
             ]
         };
 
         var encoded = TermEncoder.EncodeNew(term);
 
-        // ITXT still emitted, but no RNAM, and one warning surfaces.
+        // The embedded script block is required per item — an empty SCHR satisfies it.
         Assert.Contains(encoded.Subrecords, s => s.Signature == "ITXT");
-        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "RNAM");
-        Assert.Single(encoded.Warnings);
-        Assert.Contains("has neither embedded script bytecode nor an external link", encoded.Warnings[0]);
+        Assert.Contains(encoded.Subrecords, s => s.Signature == "RNAM");
+        var schr = Assert.Single(encoded.Subrecords, s => s.Signature == "SCHR");
+        Assert.Equal(0, schr.Bytes[18]); // IsCompiled = 0
+        Assert.Empty(encoded.Warnings);
     }
 
     [Fact]
@@ -652,8 +660,9 @@ public class WorldObjectEncoderTests
         Assert.Equal(new byte[] { 0x10, 0x20, 0x30, 0x40 }, scda.Bytes);
 
         Assert.Contains(encoded.Subrecords, s => s.Signature == "SCTX");
-        // RNAM should NOT be emitted when embedded script is present.
-        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "RNAM");
+        // RNAM (result-text string) is required per item and coexists with the script.
+        var rnam = Assert.Single(encoded.Subrecords, s => s.Signature == "RNAM");
+        Assert.Equal([0], rnam.Bytes);
     }
 
     [Fact]
@@ -683,35 +692,37 @@ public class WorldObjectEncoderTests
     }
 
     [Fact]
-    public void TermEncoder_EncodeNew_NextSeparatorBetweenMenuItems()
+    public void TermEncoder_EncodeNew_NoNextSeparatorAndPerItemRequiredSubrecords()
     {
+        // FNV TERM has no NEXT separator (that was a fopdoc-ism); items are delimited by
+        // each ITXT. Every item carries the required RNAM string + ANAM + script block.
         var term = new TerminalRecord
         {
             FormId = 0x700,
             EditorId = "T",
             MenuItems =
             [
-                new TerminalMenuItem { Text = "A", ResultScript = 0x1 },
-                new TerminalMenuItem { Text = "B", ResultScript = 0x2 },
-                new TerminalMenuItem { Text = "C", ResultScript = 0x3 }
+                new TerminalMenuItem { Text = "A" },
+                new TerminalMenuItem { Text = "B" },
+                new TerminalMenuItem { Text = "C" }
             ]
         };
 
         var encoded = TermEncoder.EncodeNew(term);
 
-        // Two NEXT separators expected — one after items A and B, none after the last (C).
-        var nextCount = encoded.Subrecords.Count(s => s.Signature == "NEXT");
-        Assert.Equal(2, nextCount);
+        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "NEXT");
 
         var sigs = encoded.Subrecords
-            .Where(s => s.Signature is "ITXT" or "RNAM" or "NEXT")
+            .Where(s => s.Signature is "ITXT" or "RNAM" or "ANAM" or "SCHR")
             .Select(s => s.Signature)
             .ToList();
-        Assert.Equal(["ITXT", "RNAM", "NEXT", "ITXT", "RNAM", "NEXT", "ITXT", "RNAM"], sigs);
+        Assert.Equal(
+            ["ITXT", "RNAM", "ANAM", "SCHR", "ITXT", "RNAM", "ANAM", "SCHR", "ITXT", "RNAM", "ANAM", "SCHR"],
+            sigs);
     }
 
     [Fact]
-    public void TermEncoder_EncodeNew_EmbeddedScriptTakesPrecedenceOverRnam()
+    public void TermEncoder_EncodeNew_EmbeddedScriptCoexistsWithRequiredRnam()
     {
         var term = new TerminalRecord
         {
@@ -731,16 +742,17 @@ public class WorldObjectEncoderTests
         var encoded = TermEncoder.EncodeNew(term);
 
         Assert.Contains(encoded.Subrecords, s => s.Signature == "SCHR");
-        Assert.DoesNotContain(encoded.Subrecords, s => s.Signature == "RNAM");
+        Assert.Contains(encoded.Subrecords, s => s.Signature == "RNAM");
     }
 
     // ====================================================================================
     // TERM menu-item CTDA conditions (+ CIS1/CIS2 string parameters)
-    // Conditions emit between ITXT and the result-script block per fopdoc.
+    // Conditions emit AFTER the embedded script block per xEdit (wbEmbeddedScriptReq
+    // then wbConditions).
     // ====================================================================================
 
     [Fact]
-    public void TermEncoder_EncodeNew_ConditionEmittedBetweenItxtAndRnam()
+    public void TermEncoder_EncodeNew_ConditionEmittedAfterRnamAndScript()
     {
         var term = new TerminalRecord
         {
@@ -751,7 +763,6 @@ public class WorldObjectEncoderTests
                 new TerminalMenuItem
                 {
                     Text = "Login",
-                    ResultScript = 0x111,
                     Conditions =
                     [
                         new DialogueCondition
@@ -770,10 +781,10 @@ public class WorldObjectEncoderTests
         var encoded = TermEncoder.EncodeNew(term);
 
         var sigs = encoded.Subrecords
-            .Where(s => s.Signature is "ITXT" or "CTDA" or "RNAM")
+            .Where(s => s.Signature is "ITXT" or "CTDA" or "RNAM" or "SCHR")
             .Select(s => s.Signature)
             .ToList();
-        Assert.Equal(["ITXT", "CTDA", "RNAM"], sigs);
+        Assert.Equal(["ITXT", "RNAM", "SCHR", "CTDA"], sigs);
     }
 
     [Fact]
@@ -888,7 +899,7 @@ public class WorldObjectEncoderTests
             .Where(s => s.Signature is "CTDA" or "CIS1" or "CIS2" or "RNAM")
             .Select(s => s.Signature)
             .ToList();
-        Assert.Equal(["CTDA", "CIS1", "RNAM"], sigs);
+        Assert.Equal(["RNAM", "CTDA", "CIS1"], sigs);
 
         var cis1 = Assert.Single(encoded.Subrecords, s => s.Signature == "CIS1");
         // Null-terminated Latin-1 string.
@@ -933,7 +944,7 @@ public class WorldObjectEncoderTests
     }
 
     [Fact]
-    public void TermEncoder_EncodeNew_ConditionsPrecedeEmbeddedScriptBlock()
+    public void TermEncoder_EncodeNew_EmbeddedScriptBlockPrecedesConditions()
     {
         var term = new TerminalRecord
         {
@@ -956,7 +967,7 @@ public class WorldObjectEncoderTests
             .Where(s => s.Signature is "ITXT" or "CTDA" or "SCHR" or "SCDA")
             .Select(s => s.Signature)
             .ToList();
-        Assert.Equal(["ITXT", "CTDA", "SCHR", "SCDA"], sigs);
+        Assert.Equal(["ITXT", "SCHR", "SCDA", "CTDA"], sigs);
     }
 
     [Fact]

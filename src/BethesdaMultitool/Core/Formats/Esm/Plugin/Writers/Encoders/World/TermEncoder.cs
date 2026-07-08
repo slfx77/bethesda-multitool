@@ -11,8 +11,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 ///     Encodes a <see cref="TerminalRecord" /> (TERM) as PC-format subrecord bytes.
 ///     Emits EDID + OBND? + FULL? + MODL? + SCRI? + DESC? + SNAM? + PNAM? +
 ///     DNAM(4B Difficulty + Flags + ServerType + Unused) +
-///     per menu item: ITXT + (RNAM or embedded SCHR+SCDA?+SCTX?+SCRO*+SCRV*) + NEXT separator.
-///     Override path is a no-op.
+///     per menu item (xEdit-canonical): ITXT + RNAM(required string) + ANAM(required) +
+///     TNAM?(sub-menu) + embedded SCHR+SCDA?+SCTX?+SCRO*+SCRV*(required) + CTDA*.
+///     FNV has no NEXT separator. Override path is a no-op.
 ///     DNAM layout per PDB TERMINAL_DATA (4 bytes):
 ///     byte Difficulty(0) + byte Flags(1) + byte ServerType(2) + byte Unused(3).
 ///     Embedded scripts use the same on-disk pattern as INFO result scripts (see InfoEncoder).
@@ -111,16 +112,53 @@ public sealed class TermEncoder : IRecordEncoder
         IReadOnlySet<uint>? validFormIds = null,
         IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
-        // ITXT — menu-item display text (may be empty if model only carries linkage).
+        _ = isLast; // Retained for signature stability; FNV has no NEXT separator.
+
+        // xEdit-canonical FNV menu item: ITXT, RNAM (required STRING "Result Text"),
+        // ANAM (required flags byte), INAM?, TNAM? (sub-menu TERM link), embedded script
+        // block (required — SCHR always present), then CTDA conditions. The previous
+        // emission wrote RNAM as a 4-byte FormID link (FNVEdit: "unused data in RNAM"),
+        // put CTDAs before the script, added a NEXT separator FNV doesn't define, and
+        // made ANAM/RNAM/SCHR conditional — FNVEdit flagged every terminal as
+        // out-of-order and the engine's sequential reader misparsed the items.
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ITXT", item.Text ?? string.Empty));
 
-        if (item.ActionType.HasValue)
+        // No result text is captured in proto terminals; an empty string satisfies the
+        // required-subrecord contract.
+        subs.Add(NewRecordSubrecords.EncodeStringSubrecord("RNAM", string.Empty));
+
+        subs.Add(NewRecordSubrecords.EncodeByteSubrecord("ANAM", item.ActionType ?? 0));
+
+        if (item.SubTerminal.HasValue)
         {
-            subs.Add(NewRecordSubrecords.EncodeByteSubrecord("ANAM", item.ActionType.Value));
+            var resolved = FormIdReferenceResolver.Resolve(item.SubTerminal.Value, validFormIds, remapTable);
+            if (resolved.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("TNAM", resolved.Value));
+            }
+            else
+            {
+                warnings.Add(
+                    $"TERM 0x{termFormId:X8} menu item '{item.Text ?? "(empty)"}' sub-menu link " +
+                    $"0x{item.SubTerminal.Value:X8} does not resolve — dropped.");
+            }
         }
 
-        // CTDA conditions (with optional CIS1/CIS2 string params) come between ITXT and the
-        // result-script block per fopdoc. Conditions filter when the menu item is visible.
+        if (item.ResultScript.HasValue
+            && item.CompiledData is not { Length: > 0 } && string.IsNullOrEmpty(item.SourceText))
+        {
+            warnings.Add(
+                $"TERM 0x{termFormId:X8} menu item '{item.Text ?? "(empty)"}' carries an external " +
+                $"result-script link 0x{item.ResultScript.Value:X8}; FNV terminals only support " +
+                "embedded result scripts — item emitted with an empty script block.");
+        }
+
+        // Embedded script block is REQUIRED per item — emit an empty SCHR when the proto
+        // captured no bytecode/source.
+        EmitEmbeddedScriptBlock(subs, item, validFormIds, remapTable);
+
+        // CTDA conditions (with optional CIS1/CIS2 string params) come AFTER the script
+        // block. Conditions filter when the menu item is visible.
         foreach (var condition in item.Conditions)
         {
             subs.Add(new EncodedSubrecord("CTDA", InfoEncoder.BuildCtdaSubrecord(condition)));
@@ -133,38 +171,6 @@ public sealed class TermEncoder : IRecordEncoder
             {
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
             }
-        }
-
-        if (item.CompiledData is { Length: > 0 } || !string.IsNullOrEmpty(item.SourceText))
-        {
-            // Embedded result-script block — same SCHR/SCDA/SCTX/SCRO/SCRV layout as INFO.
-            EmitEmbeddedScriptBlock(subs, item, validFormIds, remapTable);
-        }
-        else
-        {
-            // External link via RNAM. ResultScript takes precedence when both are present.
-            // The RNAM target must resolve through the alias table the same way SCROs do —
-            // proto-only result scripts that the converter has reallocated would otherwise
-            // dangle.
-            var linkFormId = item.ResultScript ?? item.SubTerminal;
-            if (linkFormId.HasValue)
-            {
-                var resolved = FormIdReferenceResolver.Resolve(linkFormId.Value, validFormIds, remapTable)
-                               ?? linkFormId.Value;
-                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("RNAM", resolved));
-            }
-            else
-            {
-                warnings.Add(
-                    $"TERM 0x{termFormId:X8} menu item '{item.Text ?? "(empty)"}' has neither embedded " +
-                    "script bytecode nor an external link — item emitted with no action.");
-            }
-        }
-
-        // NEXT separator after every menu item except the last. Mirrors fopdoc convention.
-        if (!isLast)
-        {
-            subs.Add(new EncodedSubrecord("NEXT", []));
         }
     }
 
