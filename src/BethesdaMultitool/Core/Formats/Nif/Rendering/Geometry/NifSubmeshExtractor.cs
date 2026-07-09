@@ -952,9 +952,13 @@ internal static class NifSubmeshExtractor
         //  • an EXACT-COPY segment — AABB matching an earlier segment within ~2% with no more
         //    triangles (MetalIntCeilingA1x1Mid01's LOD2 is a coplanar coarse copy of its LOD0
         //    panel; drawing both z-fights) — is skipped;
-        //  • a shape whose content is entirely PAST segment 0 (lod0 == 0) is a far stand-in the
-        //    engine never draws up close (the rubble's L2-only floor slab, coplanar with its
-        //    separate _Foundation ref) — flagged IsFarLodFallback for the sibling-drop rule.
+        //  • a shape whose declared content is entirely in the LAST segment (lod0 == 0 AND
+        //    lod1 == 0) is a far stand-in the engine never draws up close (the rubble's L2-only
+        //    floor slab, coplanar with its separate _Foundation ref) — flagged IsFarLodFallback
+        //    for the sibling-drop rule. LOD1 content is NEAR geometry: FO4's DLC03 pines author
+        //    every needle card as (0, N, 0) — L1_TreeRedPineFull01 is (0, 1259, 0) — and the
+        //    engine draws them at point-blank range; the earlier lod0==0 flag amputated every
+        //    needle off Far Harbor's trees because the plain-BSTriShape trunk was a near sibling.
         var triangleRanges = new List<(int First, int Count)> { (0, info.NumTriangles) };
         var isFarLodFallback = false;
         if (block.TypeName == "BSMeshLODTriShape" && block.Size >= 12)
@@ -986,7 +990,10 @@ internal static class NifSubmeshExtractor
                 }
 
                 triangleRanges = SelectLodSegments(segments, data, info.TriangleBufferOffset, be, positions);
-                isFarLodFallback = lod0 == 0;
+                // Far-only = the declared partition puts EVERYTHING in the last (LOD2) segment and
+                // covers the whole buffer (an unpartitioned tail is near geometry, so its presence
+                // clears the flag).
+                isFarLodFallback = lod0 == 0 && lod1 == 0 && lodSum == info.NumTriangles;
             }
         }
 

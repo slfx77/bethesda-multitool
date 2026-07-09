@@ -118,7 +118,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // EnvironmentMapScale + EnvironmentMapSmoothness payload fields (BGSM slot 4 reflections; the
     // _s map is now also kept for specular-disabled materials that reflect). Warm v28 entries
     // would keep FO4 metal/gloss matte.
-    internal const int DecoderVersion = 29;
+    // Bumped 29→30: BSMeshLODTriShape far-only classification narrowed to LOD2-only partitions
+    // (lod0 == 0 AND lod1 == 0 covering the whole buffer). The old lod0==0 flag amputated LOD1-only
+    // shapes next to near siblings — every needle card on FO4 Far Harbor's pines ((0, N, 0)
+    // partitions). Warm v29 entries bake needle-less trees.
+    internal const int DecoderVersion = 30;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
