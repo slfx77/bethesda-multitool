@@ -87,6 +87,27 @@ public sealed partial class WorldView3DControl
     /// <summary>Profiler hook: set the time-of-day (0..24) that drives the sun arc, daylight, and sky colors.</summary>
     internal void Profiler_SetGameHour(float hour) => _gameHour = hour;
 
+    /// <summary>
+    ///     Profiler hook: true once reference streaming has quiesced — no queued/active mesh decodes, no
+    ///     pending texture resolves/uploads, and no submesh withheld waiting on its textures. Captures that
+    ///     fire on a fixed delay instead race cold texture resolution (e.g. the first-touch alpha-weighted
+    ///     leaf-atlas mip rebuilds) and bake placeholder-white leaf cards into the frame.
+    /// </summary>
+    internal bool Profiler_IsReferenceStreamingQuiesced
+    {
+        get
+        {
+            var s = _references?.LastStats;
+            return s is not null &&
+                   s.ReferenceTexturePending == 0 &&
+                   s.ReferenceGpuUploads == 0 &&
+                   s.ReferenceQueuedDecodes == 0 &&
+                   s.ReferenceActiveDecodes == 0 &&
+                   s.ReferenceTexturePendingResolves == 0 &&
+                   s.ReferenceTexturePendingUploads == 0;
+        }
+    }
+
     /// <summary>Profiler hook: set the day of the lunar cycle that drives the moon phase + orbit position
     /// (for headless night-sky captures used to calibrate the two-moon model against OpenMW).</summary>
     internal void Profiler_SetGameDay(float day) => _gameDay = day;

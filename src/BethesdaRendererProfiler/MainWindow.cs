@@ -386,9 +386,23 @@ internal sealed class MainWindow : Window, IDisposable
 
             // Phase 2 — run the loop again so the SELECTED weather's cloud textures stream in + upload to
             // the GPU before the single (render-loop-paused) capture frame. A moved camera needs the
-            // longer settle: the target location's cells/meshes start streaming only now.
+            // longer settle: the target location's cells/meshes start streaming only now. The fixed delay
+            // alone races cold texture resolution (first-touch leaf-atlas mip rebuilds bake placeholder-
+            // white cards into the capture), so afterwards poll reference-streaming quiescence while the
+            // scenario keeps driving frames — time-boxed so a permanently-missing asset can't hang us.
             _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
             await Task.Delay(movedCamera ? 7000 : 3000);
+            var quiesceWaitMs = 0;
+            while (quiesceWaitMs < 20000 && !_worldView.Profiler_IsReferenceStreamingQuiesced)
+            {
+                await Task.Delay(250);
+                quiesceWaitMs += 250;
+            }
+
+            if (quiesceWaitMs > 0)
+            {
+                Console.WriteLine($"[Capture] reference streaming quiesced after +{quiesceWaitMs} ms.");
+            }
             _scenario.Dispose();
             _scenario = null;
 
