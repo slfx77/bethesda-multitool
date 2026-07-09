@@ -142,6 +142,70 @@ public class BgsmMaterialTests
         Assert.Equal(0.95f, mat.LightingInfluence, 3);
     }
 
+    [Fact]
+    public void Parse_Fallout4Bgsm_ReadsEnvironmentMapAndScale()
+    {
+        // FO4 environment mapping (fo76utils loadBGSMFile): enable byte @57 gates the f32 scale @58;
+        // the final EnvironmentMapScale = min(envScale × RAW specular strength, 8) — computed from
+        // the strength AS READ, before the specular-enable normalization. The FO4 non-gradient path
+        // map routes file entry 4 into slot 4 (env map); entry 2 is the _s specular map (slot 6).
+        // The map reads NINE entries, so all nine pad the table (empties keep offsets aligned).
+        var head = BuildBgsm(
+            2, false, 63,
+            "metal_d.dds", "metal_n.dds", "metal_s.dds", "",
+            "shared/cubemaps/mipblur_defaultoutside1.dds", "", "", "", "");
+        head[57] = 1;
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(head.AsSpan(58), 1.5f);
+
+        using var ms = new MemoryStream();
+        ms.Write(head);
+        ms.Write(new byte[15]); // FO4 enable-flag block between the path table and specular
+        ms.WriteByte(0);        // specular ENABLE off — env mapping must still survive
+        Span<byte> floats = stackalloc byte[20]; // specular RGB + strength + smoothness
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[..4], 0.8f);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[4..8], 0.9f);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[8..12], 1.0f);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[12..16], 2.0f); // raw strength
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[16..], 0.6f);   // smoothness
+        ms.Write(floats);
+
+        var mat = BgsmMaterial.Parse(ms.ToArray());
+
+        Assert.NotNull(mat);
+        Assert.Equal("shared/cubemaps/mipblur_defaultoutside1.dds", mat!.EnvironmentMap);
+        Assert.Equal("metal_s.dds", mat.GetTexturePath(6));
+        Assert.Equal(3.0f, mat.EnvironmentMapScale, 3); // min(1.5 × 2.0, 8)
+        Assert.False(mat.SpecularEnabled);
+        Assert.Equal(0f, mat.SpecularStrength); // enable off zeroes strength AFTER the env product
+        Assert.Equal(0.6f, mat.SpecularSmoothness, 3);
+    }
+
+    [Fact]
+    public void Parse_Fallout4Bgsm_EnvironmentMapDisabledByte_ScaleStaysZero()
+    {
+        // Enable byte @57 clear ⇒ the scale float is ignored and the term stays off even when a
+        // slot-4 path is present (matching fo76utils, which only reads @58 when @57 is set).
+        var head = BuildBgsm(
+            2, false, 63,
+            "metal_d.dds", "metal_n.dds", "metal_s.dds", "",
+            "shared/cubemaps/mipblur_defaultoutside1.dds", "", "", "", "");
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(head.AsSpan(58), 1.5f);
+
+        using var ms = new MemoryStream();
+        ms.Write(head);
+        ms.Write(new byte[15]);
+        ms.WriteByte(1); // specular enabled
+        Span<byte> floats = stackalloc byte[20];
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[12..16], 2.0f);
+        ms.Write(floats);
+
+        var mat = BgsmMaterial.Parse(ms.ToArray());
+
+        Assert.NotNull(mat);
+        Assert.Equal(0f, mat!.EnvironmentMapScale);
+        Assert.Equal("shared/cubemaps/mipblur_defaultoutside1.dds", mat.EnvironmentMap);
+    }
+
     /// <summary>
     ///     Builds a minimal BGSM with the given version, a header of <paramref name="headerLength" />
     ///     zero bytes (so the gradient flag reads 0 → the non-gradient texture-path map, whose first two

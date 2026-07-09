@@ -281,6 +281,11 @@ internal sealed class ReferenceMeshDecoder12
 
                 var specularColor = new Vector3(sub.SpecularColor.R, sub.SpecularColor.G, sub.SpecularColor.B);
                 var specularEnabled = ComputeSpecularEnabled(sub);
+                // The env term needs the _s map (mask + per-texel smoothness) even when the
+                // specular ENABLE flag is clear — fo76utils computes envMapScale from the raw
+                // strength before zeroing disabled specular.
+                var hasEnvMap = !string.IsNullOrEmpty(sub.EnvironmentMapTexturePath) &&
+                                sub.EnvironmentMapScale > 0f;
 
                 submeshes.Add(new DecodedSubmesh12(
                     GpuMeshUploader.BuildVertices(sub),
@@ -305,7 +310,7 @@ internal sealed class ReferenceMeshDecoder12
                     specularEnabled,
                     sub.IsLeafBillboard,
                     alphaState.DepthWritingBlend,
-                    specularEnabled ? sub.SpecularMapTexturePath : null,
+                    specularEnabled || hasEnvMap ? sub.SpecularMapTexturePath : null,
                     sub.GradientMapTexturePath,
                     // FO4-family MODC: the base record's Color Remapping Index overrides the
                     // material's gradient-palette row (fo76utils render.cpp) — the engine's
@@ -320,7 +325,10 @@ internal sealed class ReferenceMeshDecoder12
                     sub.EffectFalloff is { } falloff
                         ? new Vector4(falloff.StartAngle, falloff.StopAngle, falloff.StartOpacity, falloff.StopOpacity)
                         : default,
-                    HasEffectFalloff: sub.EffectFalloff is not null));
+                    HasEffectFalloff: sub.EffectFalloff is not null,
+                    EnvironmentMapTexturePath: hasEnvMap ? sub.EnvironmentMapTexturePath : null,
+                    EnvironmentMapScale: hasEnvMap ? sub.EnvironmentMapScale : 0f,
+                    EnvironmentMapSmoothness: hasEnvMap ? sub.EnvironmentMapSmoothness : 0f));
             }
 
             if (submeshes.Count == 0)
@@ -385,7 +393,10 @@ internal sealed class ReferenceMeshDecoder12
                 sub.IsDecal,
                 sub.EffectTint,
                 sub.EffectFalloffParams,
-                sub.HasEffectFalloff));
+                sub.HasEffectFalloff,
+                sub.EnvironmentMapTexturePath,
+                sub.EnvironmentMapScale,
+                sub.EnvironmentMapSmoothness));
         }
 
         return new ReferenceDecodedMeshPayload12(submeshes, decoded.CollisionPositions, decoded.CollisionTriangles);
@@ -425,7 +436,10 @@ internal sealed class ReferenceMeshDecoder12
                 sub.IsDecal,
                 sub.EffectTint,
                 sub.EffectFalloffParams,
-                sub.HasEffectFalloff));
+                sub.HasEffectFalloff,
+                sub.EnvironmentMapTexturePath,
+                sub.EnvironmentMapScale,
+                sub.EnvironmentMapSmoothness));
         }
 
         return new DecodedNifMesh12(submeshes, payload.CollisionPositions, payload.CollisionTriangles);

@@ -114,7 +114,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // COMPLEMENTARY geometry, not alternates — first-slice-only amputated WoodCrate03's boards and
     // 97% of workshop rubble), with exact-copy segments suppressed; (b) new per-submesh BGEM
     // effect-tint + |N·V| falloff payload fields (blinding mist fix). Geometry AND payload change.
-    internal const int DecoderVersion = 28;
+    // Bumped 28→29: FO4 cubemap environment mapping — new per-submesh EnvironmentMapTexturePath +
+    // EnvironmentMapScale + EnvironmentMapSmoothness payload fields (BGSM slot 4 reflections; the
+    // _s map is now also kept for specular-disabled materials that reflect). Warm v28 entries
+    // would keep FO4 metal/gloss matte.
+    internal const int DecoderVersion = 29;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -336,6 +340,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         WriteVector3(writer, submesh.EffectTint);
         WriteVector4(writer, submesh.EffectFalloffParams);
         writer.Write(submesh.HasEffectFalloff);
+        WriteNullableString(writer, submesh.EnvironmentMapTexturePath, MaxStringBytes);
+        writer.Write(submesh.EnvironmentMapScale);
+        writer.Write(submesh.EnvironmentMapSmoothness);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -397,7 +404,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadBoolean(),
             ReadVector3(reader),
             ReadVector4(reader),
-            reader.ReadBoolean());
+            reader.ReadBoolean(),
+            ReadNullableString(reader, MaxStringBytes),
+            reader.ReadSingle(),
+            reader.ReadSingle());
     }
 
     private static void WriteVector2(BinaryWriter writer, Vector2 value)
@@ -472,4 +482,7 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     bool IsDecal = false,
     Vector3 EffectTint = default,
     Vector4 EffectFalloffParams = default,
-    bool HasEffectFalloff = false);
+    bool HasEffectFalloff = false,
+    string? EnvironmentMapTexturePath = null,
+    float EnvironmentMapScale = 0f,
+    float EnvironmentMapSmoothness = 0f);

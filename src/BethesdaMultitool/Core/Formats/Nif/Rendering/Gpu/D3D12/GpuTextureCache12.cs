@@ -577,7 +577,12 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             var width = (uint)payload.Width;
             var height = (uint)payload.Height;
             var mipCount = (ushort)payload.MipCount;
-            if (width == 0 || height == 0 || mipCount == 0)
+            var arraySize = (ushort)Math.Max(payload.ArraySize, 1);
+            // Total subresources = mips × array slices; payload.MipLevels is already laid out in
+            // D3D12 subresource order (arraySlice-major — face 0's chain, then face 1's, …).
+            var subresourceCount = mipCount * arraySize;
+            if (width == 0 || height == 0 || mipCount == 0 ||
+                subresourceCount != payload.MipLevels.Count)
             {
                 throw new InvalidOperationException("Degenerate texture payload.");
             }
@@ -585,7 +590,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             var dxgiFormat = GpuTextureFormatHelpers12.ToDxgiFormat(payload.Format);
             var desc = ResourceDescription.Texture2D(
                 dxgiFormat, width, height,
-                arraySize: 1, mipLevels: mipCount,
+                arraySize: arraySize, mipLevels: mipCount,
                 sampleCount: 1, sampleQuality: 0,
                 ResourceFlags.None);
 
@@ -600,11 +605,11 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                 ResourceStates.Common,
                 optimizedClearValue: null);
 
-            var footprints = new PlacedSubresourceFootPrint[mipCount];
-            var numRows = new uint[mipCount];
-            var rowSize = new ulong[mipCount];
+            var footprints = new PlacedSubresourceFootPrint[subresourceCount];
+            var numRows = new uint[subresourceCount];
+            var rowSize = new ulong[subresourceCount];
             _gpu.Device.GetCopyableFootprints(
-                desc, firstSubresource: 0, numSubresources: mipCount, baseOffset: 0,
+                desc, firstSubresource: 0, numSubresources: (uint)subresourceCount, baseOffset: 0,
                 footprints, numRows, rowSize, out var totalBytes);
 
             staging = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
@@ -618,7 +623,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             staging.Map(0, &cpuPtr).CheckError();
             try
             {
-                for (var mip = 0; mip < mipCount; mip++)
+                for (var mip = 0; mip < subresourceCount; mip++)
                 {
                     var level = payload.MipLevels[mip];
                     if (level.Bytes.Length == 0 || level.Width == 0 || level.Height == 0)
@@ -656,16 +661,18 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             var copyFenceValue = _copyUploadQueue.Submit(
                 list =>
                 {
-                    for (uint mip = 0; mip < mipCount; mip++)
+                    for (uint sub = 0; sub < subresourceCount; sub++)
                     {
-                        var srcLoc = new TextureCopyLocation(stagingResource, footprints[mip]);
-                        var dstLoc = new TextureCopyLocation(textureResource, mip);
+                        var srcLoc = new TextureCopyLocation(stagingResource, footprints[sub]);
+                        var dstLoc = new TextureCopyLocation(textureResource, sub);
                         list.CopyTextureRegion(dstLoc, 0, 0, 0, srcLoc);
                     }
                 },
                 new IDisposable[] { stagingResource });
 
-            var srvDesc = GpuTextureFormatHelpers12.MakeSrvDesc(mipCount, dxgiFormat);
+            var srvDesc = payload.IsCubemap
+                ? GpuTextureFormatHelpers12.MakeCubeSrvDesc(mipCount, dxgiFormat)
+                : GpuTextureFormatHelpers12.MakeSrvDesc(mipCount, dxgiFormat);
             _completedUploads.Enqueue(new CompletedUpload(
                 cacheKey, texture, srvDesc, payload.Format, payload.NormalDecodeMode,
                 payload.ByteSize, payload.IsCompressed, copyFenceValue));
@@ -841,6 +848,13 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         public GpuNormalDecodeMode NormalDecodeMode { get; private set; }
 
         public bool IsResident { get; private set; }
+
+        /// <summary>
+        ///     True once the resident texture is a TextureCube SRV (six-face environment map).
+        ///     Cold placeholders are 2D, so consumers gating a cube-sampling shader term on this
+        ///     never index a mismatched descriptor dimension.
+        /// </summary>
+        public bool IsCubemap => SrvDesc.ViewDimension == ShaderResourceViewDimension.TextureCube;
 
         /// <summary>GPU bytes of the resident texture (0 while a placeholder). Feeds diagnostics.</summary>
         internal long ByteSize { get; private set; }

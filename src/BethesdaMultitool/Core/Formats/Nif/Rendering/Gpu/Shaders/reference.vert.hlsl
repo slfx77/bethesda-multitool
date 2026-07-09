@@ -50,6 +50,9 @@ cbuffer PerDraw : register(b1)
     // (startAngle, stopAngle, startOpacity, stopOpacity), all stored as cosines/opacities.
     float4 uEffectTint;
     float4 uEffectFalloff;
+    // FO4 cubemap environment mapping: x = cube bindless slot (< 0 = none/not yet resident),
+    // y = envMapScale (fo76utils envScale × specular strength), z = material smoothness 0–1.
+    float4 uEnvMap;
 };
 
 struct VSInput
@@ -78,6 +81,7 @@ struct VSOutput
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent
     nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
+    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness
 };
 
 VSOutput main(VSInput input)
@@ -129,5 +133,6 @@ VSOutput main(VSInput input)
     o.vSpecular = uSpecular;
     o.vEffectTint = uEffectTint;
     o.vEffectFalloff = uEffectFalloff;
+    o.vEnvMap = uEnvMap;
     return o;
 }

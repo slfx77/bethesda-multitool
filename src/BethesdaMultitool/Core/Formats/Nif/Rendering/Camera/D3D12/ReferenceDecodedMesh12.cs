@@ -59,5 +59,11 @@ internal sealed record DecodedSubmesh12(
     // enabled when HasFalloff. Persisted in v28+ (without them, mist blobs render blinding white).
     Vector3 EffectTint = default,
     Vector4 EffectFalloffParams = default,
-    bool HasEffectFalloff = false);
+    bool HasEffectFalloff = false,
+    // FO4 cubemap environment mapping (BGSM slot 4): the shader adds cube(reflect(V,N)) ×
+    // EnvironmentMapScale × _s.R × g(N·V), mip-selected by smoothness × _s.G. Persisted in v29+
+    // (without them, FO4 metal/gloss reads matte).
+    string? EnvironmentMapTexturePath = null,
+    float EnvironmentMapScale = 0f,
+    float EnvironmentMapSmoothness = 0f);
 #endif

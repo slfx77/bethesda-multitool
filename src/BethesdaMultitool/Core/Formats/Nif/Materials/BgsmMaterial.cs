@@ -5,9 +5,9 @@
 //
 // Beyond texture paths, the render-state fields the engine gives material priority over the NIF's
 // inline properties are decoded: the alpha block (opacity, blend enable + modes, test enable +
-// threshold), two-sided, and — for lighting materials — specular color/strength/smoothness and
-// emissive. Remaining physical params (UV tiling, env-map, decal, wrinkles, BGEM effect params)
-// are intentionally skipped.
+// threshold), two-sided, and — for lighting materials — specular color/strength/smoothness,
+// emissive, and environment mapping (cubemap slot 4 + scale). Remaining physical params (UV
+// tiling, wrinkles, some BGEM effect params) are intentionally skipped.
 
 using System.Buffers.Binary;
 using System.Numerics;
@@ -100,6 +100,23 @@ public sealed class BgsmMaterial
 
     /// <summary>Palette row (V coordinate) for the grayscale-to-palette lookup, 0–1.</summary>
     public float GradientMapV { get; private set; } = 0.5f;
+
+    /// <summary>
+    ///     Environment/cubemap texture path (slot 4 — e.g. FO4's
+    ///     <c>shared\cubemaps\mipblur_defaultoutside1.dds</c>), or null. Nearly every FO4 metal/gloss
+    ///     material sets it; without the reflection term those surfaces read as matte diffuse.
+    /// </summary>
+    public string? EnvironmentMap => _paths[4];
+
+    /// <summary>
+    ///     Environment-map reflection strength (lighting materials only): fo76utils loadBGSMFile's
+    ///     <c>envMapScale = min(envScale × specular strength, 8)</c>, where envScale is the FO4
+    ///     f32 @58 gated on the enable byte @57 (FO76: constant 1.0) and the strength is the RAW
+    ///     value read from the specular block — the engine keeps the product even when the specular
+    ///     ENABLE flag is clear (fo76utils zeroes specularColor[3] only after computing this). 0 =
+    ///     environment mapping off.
+    /// </summary>
+    public float EnvironmentMapScale { get; private set; }
 
     /// <summary>
     ///     BGEM "Effect Lighting" (effect materials only): the effect shader IS lit by the scene like
@@ -228,7 +245,22 @@ public sealed class BgsmMaterial
         }
         else
         {
-            material.ReadLightingParams(data, endPos, isFallout4);
+            // Environment-map scale prefix (fo76utils loadBGSMFile): FO4 = f32 @58 when the enable
+            // byte @57 is set; FO76 = constant 1.0 (its BGSM path map carries no envmap slot, so the
+            // scale only matters if a slot-4 path ever appears). Combined with the raw specular
+            // strength inside ReadLightingParams.
+            var envScale = 0f;
+            if (!isFallout4)
+            {
+                envScale = 1f;
+            }
+            else if (data.Length >= 62 && data[57] != 0)
+            {
+                envScale = Math.Clamp(
+                    BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(58)), 0f, 8f);
+            }
+
+            material.ReadLightingParams(data, endPos, isFallout4, envScale);
 
             // Grayscale-to-palette row: an EOF-relative float (fo76utils loadBGSMFile), meaningful
             // only when the gradient slot was populated.
@@ -268,7 +300,7 @@ public sealed class BgsmMaterial
     ///     the root-material string + 1 aniso byte, u8 emit enable → f32×4 emissive color RGB + scale.
     ///     Best-effort: leaves defaults on a short/odd buffer rather than failing the whole parse.
     /// </summary>
-    private void ReadLightingParams(byte[] data, int pos, bool isFallout4)
+    private void ReadLightingParams(byte[] data, int pos, bool isFallout4, float envScale)
     {
         pos += isFallout4 ? 15 : 24;
         if (pos + 21 > data.Length)
@@ -285,6 +317,9 @@ public sealed class BgsmMaterial
         pos += 16;
         var smoothness = Math.Clamp(BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos)), 0f, 8f);
         pos += 4;
+        // The RAW strength as read — fo76utils computes envMapScale before the specular-enable
+        // normalization below, so a specular-disabled material can still reflect.
+        EnvironmentMapScale = Math.Min(envScale * strength, 8f);
         SpecularEnabled = specularEnabled;
         SpecularColor = new Vector3(r, g, b);
         if (!specularEnabled)

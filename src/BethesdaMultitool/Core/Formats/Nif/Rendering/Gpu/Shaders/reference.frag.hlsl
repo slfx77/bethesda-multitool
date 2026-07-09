@@ -11,9 +11,14 @@
 // space1 so the unbounded array doesn't collide with the legacy terrain/water SRV table
 // or the reference instance root SRV in space0.
 Texture2D    textures[]   : register(t0, space1);
+// space2 ALIASES the same bindless heap slots as space1 (both ranges start at the table head in
+// GpuRootSignature12) — a slot holding a TextureCube SRV (FO4 environment maps) is indexed here
+// with the SAME bindless index the 2D array uses elsewhere. Only index a slot through this
+// declaration when the C# side has confirmed the promoted descriptor IS a cube (vEnvMap.x >= 0).
+TextureCube  cubemaps[]   : register(t0, space2);
 SamplerState sDiffuse     : register(s0); // wrap, anisotropic (set in C#)
 SamplerState sNormalMap   : register(s1); // wrap, anisotropic (set in C#)
-SamplerState sPalette     : register(s2); // CLAMP, linear — grayscale-to-palette lookup only
+SamplerState sPalette     : register(s2); // CLAMP, linear — palette + cubemap lookups
 
 cbuffer PerFrame : register(b0) { float4x4 uViewProj; }
 
@@ -93,6 +98,7 @@ struct PSInput
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent (0 = none)
     nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
+    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness
     bool   IsFrontFace  : SV_IsFrontFace;
 };
 
@@ -182,6 +188,9 @@ float4 main(PSInput input) : SV_Target
     // SLS2047.pso — the engine's specular SLS variant). Captured here from the same sample the bump
     // uses; 0 ⇒ no specular (the default when there's no normal map, or for alpha-less BC5).
     float specMask = 0.0;
+    // FO4 _s GREEN channel: per-texel smoothness multiplier (fo76utils drawPixel_FO4:
+    // smoothness = material smoothness × _s.G). 1 when no _s map is bound.
+    float specSmoothScale = 1.0;
     if (input.vRenderState.y > 0.5)
     {
         float4 normalSample = textures[NonUniformResourceIndex(input.vTexIndices.y)].Sample(sNormalMap, input.vTexCoord);
@@ -200,10 +209,13 @@ float4 main(PSInput input) : SV_Target
         }
 
         // FO4/FO76 specular map (_s.dds): R = per-texel specular mask, replacing the normal-map
-        // alpha that BC5 lacks. Bound at TexIndices.z, flagged by vTextureState.z.
+        // alpha that BC5 lacks; G = per-texel smoothness (feeds the env-map term's gloss/mip).
+        // Bound at TexIndices.z, flagged by vTextureState.z.
         if (input.vTextureState.z > 0.5)
         {
-            specMask = textures[NonUniformResourceIndex(input.vTexIndices.z)].Sample(sDiffuse, input.vTexCoord).r;
+            float2 specSample = textures[NonUniformResourceIndex(input.vTexIndices.z)].Sample(sDiffuse, input.vTexCoord).rg;
+            specMask = specSample.r;
+            specSmoothScale = specSample.g;
         }
 
         mapN.y = -mapN.y; // DirectX convention (Y-down normal maps), matching skin.frag.hlsl.
@@ -276,6 +288,40 @@ float4 main(PSInput input) : SV_Target
         float ndotl = dot(normal, uSunDirIntensity.xyz);
         if (ndotl <= 0.2) spec *= max(ndotl + 0.5, 0.0);
         lit += uSunColorLighting.rgb * (spec * uSunDirIntensity.w);
+    }
+
+    // FO4 cubemap environment reflections — the dominant "shiny" term for FO4 metal/gloss
+    // (BGSM slot 4 + fEnvironmentMappingMaskScale). Grounded in fo76utils drawPixel_FO4 /
+    // calculateLighting_FO4: e = cube(reflect(V,N)) at mip (1−smoothness)·maxMip, with
+    // smoothness = material smoothness × _s.G; the term adds e · envMapScale · specLevel · g,
+    // where specLevel = _s.R (the same per-texel mask specular uses) and
+    // g = N·V / (N·V + kEnv − N·V·kEnv), kEnv = (1−smoothness)²/2. Gates: scene lighting on,
+    // normal map + _s map bound (fo76utils draws NO env term without textureS), non-emissive,
+    // and a PROMOTED TextureCube descriptor (vEnvMap.x stays −1 until the cube is GPU-resident,
+    // so this never indexes a 2D descriptor through the cube alias). The world-space reflection
+    // vector samples the cube directly — the engine's own shaders rely on D3D cube hardware with
+    // no axis swizzle, so the shipped faces are authored against exactly this convention.
+    // fo76utils multiplies by a constant envColor = 1.0 (its renders are always-day); this viewer
+    // modulates by the scene shade factor instead — a labeled stand-in pending an FO4
+    // BSLightingShader decompile — so night metal doesn't reflect a daylight cube at full strength.
+    if (uSunColorLighting.w >= 0.5 && input.vRenderState.y > 0.5 && input.vTextureState.z > 0.5 &&
+        input.vRenderState.w <= 0.5 && input.vEnvMap.x >= 0.0 && input.vEnvMap.y > 0.0 &&
+        specMask > 0.0)
+    {
+        float3 V = normalize(uCameraPosFogPower.xyz - input.vWorldPos);
+        float smoothness = saturate(input.vEnvMap.z * specSmoothScale);
+        uint cubeSlot = (uint)input.vEnvMap.x;
+        float cubeW, cubeH;
+        uint cubeMips;
+        cubemaps[NonUniformResourceIndex(cubeSlot)].GetDimensions(0, cubeW, cubeH, cubeMips);
+        float3 reflectDir = reflect(-V, normal);
+        float3 env = cubemaps[NonUniformResourceIndex(cubeSlot)]
+            .SampleLevel(sPalette, reflectDir, (1.0 - smoothness) * max((float)cubeMips - 1.0, 0.0)).rgb;
+        float nDotV = abs(dot(normal, V));
+        float rEnv = 1.0 - min(smoothness, 0.999);
+        float kEnv = rEnv * rEnv * 0.5;
+        float gEnv = nDotV / (nDotV + kEnv - nDotV * kEnv);
+        lit += env * saturate(shade) * (input.vEnvMap.y * specMask * gEnv);
     }
 
     float outAlpha = input.vAlphaState.w > 0.5

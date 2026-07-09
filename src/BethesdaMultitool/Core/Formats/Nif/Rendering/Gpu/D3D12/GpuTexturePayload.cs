@@ -27,14 +27,22 @@ internal sealed record GpuTextureMipPayload(
     int Height,
     byte[] Bytes);
 
-/// <summary>A texture ready for GPU upload: its format, dimensions, and full mip chain.</summary>
+/// <summary>
+///     A texture ready for GPU upload: its format, dimensions, and full mip chain. For cubemaps
+///     (<see cref="ArraySize" /> = 6) <see cref="MipLevels" /> holds the six faces' chains
+///     face-major (face 0 mip 0..N, face 1 mip 0..N, …) — the same order as both the DDS file
+///     layout and D3D12's subresource indexing (mip + arraySlice × mipLevels).
+/// </summary>
 internal sealed record GpuTexturePayload(
     GpuTexturePayloadFormat Format,
     int Width,
     int Height,
-    IReadOnlyList<GpuTextureMipPayload> MipLevels)
+    IReadOnlyList<GpuTextureMipPayload> MipLevels,
+    int ArraySize = 1)
 {
-    public int MipCount => MipLevels.Count;
+    public int MipCount => MipLevels.Count / Math.Max(ArraySize, 1);
+
+    public bool IsCubemap => ArraySize == 6;
 
     public bool IsCompressed => Format != GpuTexturePayloadFormat.Rgba8;
 

@@ -111,6 +111,22 @@ internal sealed class CachedNifMesh12 : IDisposable
         {
             _textureCache.Release(submesh.Diffuse);
             _textureCache.Release(submesh.Normal);
+            // The optional material maps hold GetOrUpload references too — skipping them leaked
+            // their entries (and bindless slots) on every mesh eviction since the v21/v22 fields.
+            if (submesh.SpecularMap is { } specularMap)
+            {
+                _textureCache.Release(specularMap);
+            }
+
+            if (submesh.GradientMap is { } gradientMap)
+            {
+                _textureCache.Release(gradientMap);
+            }
+
+            if (submesh.EnvMap is { } envMap)
+            {
+                _textureCache.Release(envMap);
+            }
         }
     }
 }

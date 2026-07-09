@@ -33,6 +33,31 @@ internal sealed class CachedSubmesh12
     /// <summary>Palette row (V) for the gradient lookup; only meaningful when <see cref="GradientMap" /> is set.</summary>
     public float GradientMapV { get; init; }
 
+    /// <summary>
+    ///     FO4 environment cubemap (BGSM slot 4), or null. The shader adds
+    ///     <c>cube(reflect(V,N)) × EnvMapScale × _s.R × g(N·V)</c> once the entry has promoted to
+    ///     a real TextureCube — see <see cref="EnvMapState" />.
+    /// </summary>
+    public GpuTextureCache12.Entry? EnvMap { get; init; }
+
+    /// <summary>fo76utils envMapScale (envScale × raw specular strength, clamped to 8).</summary>
+    public float EnvMapScale { get; init; }
+
+    /// <summary>Material specular smoothness 0–1 (cube mip + geometry-term input).</summary>
+    public float EnvMapSmoothness { get; init; }
+
+    /// <summary>
+    ///     Per-draw env-map constants (uEnvMap): x = cube bindless slot, y = scale, z = smoothness.
+    ///     x stays −1 until the entry is RESIDENT as a TextureCube — cold placeholders are 2D SRVs,
+    ///     and indexing one through the shader's cube alias would read a mismatched descriptor.
+    ///     Deliberately NOT cached: per-frame CB fills re-read it so promotion lands (same pattern
+    ///     as the bindless indices on frozen batches).
+    /// </summary>
+    public Vector4 EnvMapState =>
+        EnvMap is { IsResident: true, IsCubemap: true } env
+            ? new Vector4(env.BindlessIndex, EnvMapScale, EnvMapSmoothness, 0f)
+            : new Vector4(-1f, 0f, 0f, 0f);
+
     public required Vector4 AlphaState { get; init; }
     public required Vector4 RenderState { get; init; }
     // Sun specular term (1A): xyz = tint, w = Phong exponent (0 = no specular). Mirrors the
@@ -65,7 +90,8 @@ internal sealed class CachedSubmesh12
         }
     }
     public bool TexturesReady => Diffuse.IsReady && Normal.IsReady &&
-                                 SpecularMap is not { IsReady: false } && GradientMap is not { IsReady: false };
+                                 SpecularMap is not { IsReady: false } && GradientMap is not { IsReady: false } &&
+                                 EnvMap is not { IsReady: false };
     public required bool HasBump { get; init; }
     public required NifAlphaRenderMode AlphaRenderMode { get; init; }
     public required bool AlphaBlend { get; init; }

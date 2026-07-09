@@ -29,7 +29,10 @@ internal sealed class ReferenceDecodedTextureDiskCache12 : DiskBlobCache
     // absolute "…\Data\…" build paths are peeled, so pre-fix negative entries must be discarded.
     // v3: BC4U/BC5U/DX10(BC1-BC7) DDS headers now parse into native BCn payloads; cached v2 entries
     // hold the uncompressed-RGBA fallback, which for BC5 normal maps lacks the ReconstructZ mode.
-    internal const int DecoderVersion = 3;
+    // v4: cubemap payloads (FO4 environment maps) — the serialized format gains ArraySize and
+    // writes MipCount × ArraySize levels (v3 wrote MipCount then iterated ALL levels, which would
+    // desync on a 6-face payload).
+    internal const int DecoderVersion = 4;
 
     private const int MaxMipLevels = 24;
     private const int MaxMipBytes = 128 * 1024 * 1024;
@@ -94,6 +97,8 @@ internal sealed class ReferenceDecodedTextureDiskCache12 : DiskBlobCache
         writer.Write((int)payload.Format);
         writer.Write(payload.Width);
         writer.Write(payload.Height);
+        ValidateRange(payload.ArraySize, 1, 6, "ArraySize");
+        writer.Write(payload.ArraySize);
         ValidateRange(payload.MipCount, 1, MaxMipLevels, "MipCount");
         writer.Write(payload.MipCount);
         foreach (var level in payload.MipLevels)
@@ -116,7 +121,8 @@ internal sealed class ReferenceDecodedTextureDiskCache12 : DiskBlobCache
 
         var width = ReadInt32(reader, 1, MaxDimension);
         var height = ReadInt32(reader, 1, MaxDimension);
-        var mipCount = ReadInt32(reader, 1, MaxMipLevels);
+        var arraySize = ReadInt32(reader, 1, 6);
+        var mipCount = ReadInt32(reader, 1, MaxMipLevels) * arraySize;
         var levels = new List<GpuTextureMipPayload>(mipCount);
         for (var i = 0; i < mipCount; i++)
         {
@@ -132,6 +138,6 @@ internal sealed class ReferenceDecodedTextureDiskCache12 : DiskBlobCache
             levels.Add(new GpuTextureMipPayload(w, h, bytes));
         }
 
-        return new GpuTexturePayload((GpuTexturePayloadFormat)formatValue, width, height, levels);
+        return new GpuTexturePayload((GpuTexturePayloadFormat)formatValue, width, height, levels, arraySize);
     }
 }

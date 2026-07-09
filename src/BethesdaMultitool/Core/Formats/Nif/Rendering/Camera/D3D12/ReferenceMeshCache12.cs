@@ -921,6 +921,12 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                 var gradientMap = !string.IsNullOrEmpty(sub.GradientMapTexturePath)
                     ? _textureCache.GetOrUpload(sub.GradientMapTexturePath!)
                     : null;
+                // FO4 environment cubemap (nearly always the shared mipblur_defaultoutside1.dds —
+                // one texture serving thousands of materials). The env shader term stays off until
+                // the entry promotes to a real TextureCube (see CachedSubmesh12.EnvMapState).
+                var envMap = !string.IsNullOrEmpty(sub.EnvironmentMapTexturePath) && sub.EnvironmentMapScale > 0f
+                    ? _textureCache.GetOrUpload(sub.EnvironmentMapTexturePath!)
+                    : null;
 
                 var vertexByteOffset = CheckedByteSize(vertexStarts[i], vertexStride);
                 var vertexByteSize = CheckedByteSize(sub.Vertices.Length, vertexStride);
@@ -946,6 +952,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     SpecularMap = specularMap,
                     GradientMap = gradientMap,
                     GradientMapV = sub.GradientMapV,
+                    EnvMap = envMap,
+                    EnvMapScale = sub.EnvironmentMapScale,
+                    EnvMapSmoothness = sub.EnvironmentMapSmoothness,
                     AlphaState = BuildAlphaState(sub),
                     RenderState = BuildRenderState(sub),
                     Specular = BuildSpecular(sub),

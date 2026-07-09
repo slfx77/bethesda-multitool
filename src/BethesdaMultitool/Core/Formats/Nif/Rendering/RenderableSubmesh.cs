@@ -62,6 +62,27 @@ internal sealed class RenderableSubmesh
     public float GradientMapV { get; set; }
 
     /// <summary>
+    ///     FO4 environment/cubemap texture (BGSM slot 4 — typically
+    ///     <c>shared\cubemaps\mipblur_defaultoutside1.dds</c>), or null. The shader adds
+    ///     <c>cube(reflect(V,N)) × EnvironmentMapScale × _s.R × g(N·V)</c> — the dominant FO4
+    ///     "shiny" term; without it metal/gloss reads as matte diffuse.
+    /// </summary>
+    public string? EnvironmentMapTexturePath { get; set; }
+
+    /// <summary>
+    ///     Environment reflection strength: fo76utils <c>min(envScale × specular strength, 8)</c>.
+    ///     0 disables the term. Distinct from the FNV eye-cubemap <see cref="EnvMapScale" />.
+    /// </summary>
+    public float EnvironmentMapScale { get; set; }
+
+    /// <summary>
+    ///     Material specular smoothness (0–1) for the env term's gloss: selects the cube mip
+    ///     ((1−smoothness)·maxMip) and the geometry factor, per-texel modulated by the
+    ///     <c>_s</c> map's G channel in the shader (fo76utils drawPixel_FO4).
+    /// </summary>
+    public float EnvironmentMapSmoothness { get; set; }
+
+    /// <summary>
     ///     True when the material marks this shape a decal — coplanar overlay geometry (grime,
     ///     cracks, posters) the engine draws with a depth bias over the surface underneath. Sources:
     ///     the BGSM/BGEM decal byte (FO4/FO76 material files) and shader-flags bits 26/27

@@ -26,6 +26,26 @@ internal static class GpuTextureFormatHelpers12
         };
     }
 
+    /// <summary>
+    ///     TextureCube SRV over a 6-slice texture array. The shader reads it through the aliased
+    ///     <c>TextureCube cubemaps[] : register(t0, space2)</c> bindless range (same heap slots as
+    ///     the 2D array — the descriptor's view dimension is what makes the slot a cube).
+    /// </summary>
+    internal static ShaderResourceViewDescription MakeCubeSrvDesc(ushort mipCount, Format format)
+    {
+        return new ShaderResourceViewDescription
+        {
+            Format = format,
+            ViewDimension = ShaderResourceViewDimension.TextureCube,
+            Shader4ComponentMapping = ShaderComponentMapping.Default,
+            TextureCube = new TextureCubeShaderResourceView
+            {
+                MipLevels = mipCount,
+                MostDetailedMip = 0,
+            }
+        };
+    }
+
     internal static Format ToDxgiFormat(GpuTexturePayloadFormat format) => format switch
     {
         GpuTexturePayloadFormat.Rgba8 => Format.R8G8B8A8_UNorm,

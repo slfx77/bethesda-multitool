@@ -121,8 +121,23 @@ internal sealed class GpuRootSignature12 : IDisposable
             Flags = DescriptorRangeFlags.DescriptorsVolatile,
             OffsetInDescriptorsFromTableStart = 0,
         };
+        // Second unbounded range ALIASING the same heap slots as space 1, declared in HLSL as
+        // `TextureCube cubemaps[] : register(t0, space2)`. A descriptor heap is typeless — the SRV
+        // written into a slot decides the view dimension, so a slot holding a TextureCube SRV
+        // (environment maps) is indexed through this alias with the SAME bindless index while every
+        // other slot keeps sampling through the 2D array. Overlapping ranges are legal under
+        // DescriptorsVolatile; shaders must only index a slot through the matching declaration.
+        var bindlessCubemaps = new DescriptorRange1
+        {
+            RangeType = DescriptorRangeType.ShaderResourceView,
+            NumDescriptors = uint.MaxValue,
+            BaseShaderRegister = 0,
+            RegisterSpace = 2,
+            Flags = DescriptorRangeFlags.DescriptorsVolatile,
+            OffsetInDescriptorsFromTableStart = 0,
+        };
         var bindlessTable = new RootParameter1(
-            new RootDescriptorTable1(bindlessTextures),
+            new RootDescriptorTable1(bindlessTextures, bindlessCubemaps),
             ShaderVisibility.All);
 
         // Slot 5: reference instance structured buffer root SRV. It lives at t8, space 0 so

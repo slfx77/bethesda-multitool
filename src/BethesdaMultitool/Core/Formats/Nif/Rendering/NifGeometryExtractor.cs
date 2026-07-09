@@ -20,6 +20,13 @@ internal static class NifGeometryExtractor
     public const string RootTransformKey = "__root__";
 
     /// <summary>
+    ///     The engine's default environment cubemap, substituted when a material enables
+    ///     environment mapping without shipping a slot-4 path (fo76utils render.cpp's
+    ///     defaultEnvMap). The texture resolver prefixes <c>textures\</c> like every material path.
+    /// </summary>
+    private const string DefaultEnvironmentCubemapPath = @"shared\cubemaps\mipblur_defaultoutside1.dds";
+
+    /// <summary>
     ///     Extracts the full skeleton hierarchy including parent-child bone links.
     ///     Used for skeleton-only debug visualization.
     /// </summary>
@@ -330,6 +337,9 @@ internal static class NifGeometryExtractor
             string? specularMapPath = null;
             string? gradientMapPath = null;
             var gradientMapV = 0.5f;
+            string? environmentMapPath = null;
+            var environmentMapScale = 0f;
+            var environmentMapSmoothness = 0f;
             var isDoubleSided = false;
             var hasAlphaBlend = false;
             var hasAlphaTest = false;
@@ -530,6 +540,26 @@ internal static class NifGeometryExtractor
                             // uniform mask blows out whole scenes.
                             specularMapPath = bgsm.GetTexturePath(6) ?? bgsm.GetTexturePath(8);
                         }
+
+                        // FO4 cubemap environment mapping (slot 4 + scale): the dominant "shiny"
+                        // term for metal/gloss materials (2,381 of FO4's 6,616 BGSMs enable it).
+                        // The scale already folds in the RAW specular strength (fo76utils computes
+                        // it before the specular-enable normalization), so a specular-DISABLED
+                        // material can still reflect — which is why the _s mask is requested here
+                        // independently of the specular block above (the shader masks the env term
+                        // by _s.R and mods smoothness by _s.G; fo76utils draws no env term without
+                        // textureS). A handful of materials enable the term with an EMPTY slot 4 —
+                        // the engine (and fo76utils render.cpp) substitutes the default outdoor
+                        // cube for those.
+                        if (bgsm.EnvironmentMapScale > 0f)
+                        {
+                            environmentMapPath = string.IsNullOrEmpty(bgsm.EnvironmentMap)
+                                ? DefaultEnvironmentCubemapPath
+                                : bgsm.EnvironmentMap;
+                            environmentMapScale = bgsm.EnvironmentMapScale;
+                            environmentMapSmoothness = Math.Clamp(bgsm.SpecularSmoothness, 0f, 1f);
+                            specularMapPath ??= bgsm.GetTexturePath(6) ?? bgsm.GetTexturePath(8);
+                        }
                     }
 
                     isDoubleSided |= bgsm.TwoSided;
@@ -640,6 +670,9 @@ internal static class NifGeometryExtractor
                 submesh.SpecularMapTexturePath = specularMapPath;
                 submesh.GradientMapTexturePath = gradientMapPath;
                 submesh.GradientMapV = gradientMapV;
+                submesh.EnvironmentMapTexturePath = environmentMapPath;
+                submesh.EnvironmentMapScale = environmentMapScale;
+                submesh.EnvironmentMapSmoothness = environmentMapSmoothness;
                 submesh.IsDecal = isDecal;
                 submesh.EffectTint = effectTint;
                 submesh.EffectFalloff = effectFalloff;

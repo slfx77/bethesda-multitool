@@ -22,11 +22,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 {
     private const uint PerFrameByteSize = 64;
-    private const uint PerDrawByteSize = 208;
+    private const uint PerDrawByteSize = 224;
     // 3 float4 (material) + uint4 (tex indices) + uint base + uint3 pad + float4 specular
     // + float4 camRight + float4 camUp (leaf billboard basis) + float4 wind
-    // + float4 effect tint + float4 effect falloff = 176 bytes.
-    private const uint InstanceDrawByteSize = 176;
+    // + float4 effect tint + float4 effect falloff + float4 env map = 192 bytes.
+    private const uint InstanceDrawByteSize = 192;
     private const float FrustumCullMargin = 512f;
 
     // Cold mesh realization is render-thread work. By DEFAULT there is no per-frame COUNT cap: the
@@ -1358,7 +1358,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 CameraUp: _leafBillboardUp,
                 Wind: _wind,
                 EffectTint: new Vector4(sub.EffectTint, sub.HasEffectFalloff ? 1f : 0f),
-                EffectFalloff: sub.EffectFalloffParams);
+                EffectFalloff: sub.EffectFalloffParams,
+                // Re-read every frame (like the bindless indices) so a cube promoted after the
+                // batch froze still lands — EnvMapState flips from −1 to the slot on residency.
+                EnvMap: sub.EnvMapState);
             if (!_ringBuffer.TryAllocate(frameIndex, InstanceDrawByteSize, out var instanceDrawAlloc, GpuRingBuffer12.CbAlignment))
             {
                 LastFrameDrawsTruncated += batch.Count;
@@ -1494,6 +1497,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             CameraUp = _leafBillboardUp,
             EffectTint = new Vector4(draw.Submesh.EffectTint, draw.Submesh.HasEffectFalloff ? 1f : 0f),
             EffectFalloff = draw.Submesh.EffectFalloffParams,
+            EnvMap = draw.Submesh.EnvMapState,
         };
         // Allocate before mutating PSO state so a soft-fail leaves the command list consistent.
         if (!_ringBuffer.TryAllocate(frameIndex, PerDrawByteSize, out var perDrawAlloc, GpuRingBuffer12.CbAlignment))
@@ -1577,9 +1581,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         public Vector4 CameraRight;
         public Vector4 CameraUp;
         // BGEM effect terms (uEffectTint / uEffectFalloff): rgb tint + falloff-enabled flag in .w,
-        // then the |N·V| opacity ramp params. Brings this to 208 bytes.
+        // then the |N·V| opacity ramp params.
         public Vector4 EffectTint;
         public Vector4 EffectFalloff;
+        // FO4 cubemap environment mapping (uEnvMap): x = cube bindless slot (−1 until the cube
+        // texture is resident), y = envMapScale, z = material smoothness. Brings this to 224 bytes.
+        public Vector4 EnvMap;
     }
 
     /// <summary>
@@ -1609,9 +1616,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         Vector4 CameraUp = default,
         // SpeedTree wind (uWind: xy = direction, z = strength, w = time).
         Vector4 Wind = default,
-        // BGEM effect terms (uEffectTint / uEffectFalloff); brings this to 176 bytes.
+        // BGEM effect terms (uEffectTint / uEffectFalloff).
         Vector4 EffectTint = default,
-        Vector4 EffectFalloff = default);
+        Vector4 EffectFalloff = default,
+        // FO4 cubemap environment mapping (uEnvMap: x = cube slot or −1, y = scale,
+        // z = smoothness); brings this to 192 bytes.
+        Vector4 EnvMap = default);
 
     /// <summary>
     ///     Packed 4-uint TexIndices field. C# has no <c>uint4</c> primitive, so we lay out
