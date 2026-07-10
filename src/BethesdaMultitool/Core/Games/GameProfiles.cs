@@ -9,7 +9,7 @@ namespace BethesdaMultitool.Core.Games;
 public static class GameProfiles
 {
     // Engine-default landscape textures (the SDefaultLandDiffuseTexture ini value). FO3/FNV share the
-    // FNV path, which is also the fallback for games without a verified default (Morrowind/Starfield).
+    // FNV path, which is also the fallback for games without a verified default (Starfield).
     private const string FalloutDiffuse = @"textures\landscape\DirtWasteland01.dds";
     private const string FalloutNormal = @"textures\landscape\DirtWasteland01_N.dds";
     private const string CommonwealthDiffuse = @"textures\landscape\ground\CommonwealthDefault01_d.dds";
@@ -18,6 +18,13 @@ public static class GameProfiles
     private const string SkyrimNormal = @"textures\landscape\Dirt01_n.dds";
     private const string OblivionDiffuse = @"textures\landscape\TerrainHDDirt01.dds";
     private const string OblivionNormal = @"textures\landscape\TerrainHDDirt01_n.dds";
+    // Morrowind hardcodes its default (no ini setting): "_land_default.tga" is embedded in
+    // Morrowind.exe at 0x3A7750 beside the LandTexture error strings ("Land (%i, %i) unable to load
+    // texture idx %i"), used for VTEX index 0 / unresolvable texture indices. The BSA ships the asset
+    // as textures\_land_default.dds (the engine's .tga references resolve to .dds — standard
+    // Morrowind behavior the texture loaders already handle). No normal: the 2002 fixed-function
+    // renderer predates normal mapping, so terrain has none.
+    private const string MorrowindDiffuse = @"textures\_land_default.dds";
 
     private static readonly GameProfile UnknownProfile = new()
     {
@@ -41,8 +48,8 @@ public static class GameProfiles
                 GroupHeaderSize = 0,
                 HasRecordVersionTrailer = false,
                 MasterFileHints = ["Morrowind"],
-                DefaultLandscapeDiffuse = FalloutDiffuse,
-                DefaultLandscapeNormal = FalloutNormal
+                DefaultLandscapeDiffuse = MorrowindDiffuse,
+                DefaultLandscapeNormal = string.Empty
             },
             [BethesdaGame.Oblivion] = new()
             {

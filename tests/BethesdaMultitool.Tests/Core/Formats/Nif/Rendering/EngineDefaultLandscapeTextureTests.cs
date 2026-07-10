@@ -16,7 +16,6 @@ public class EngineDefaultLandscapeTextureTests
     [Theory]
     [InlineData(BethesdaGame.FalloutNewVegas)]
     [InlineData(BethesdaGame.Fallout3)]
-    [InlineData(BethesdaGame.Morrowind)] // not mapped → FNV fallback (no regression)
     [InlineData(BethesdaGame.Starfield)]
     [InlineData(BethesdaGame.Unknown)]
     public void DiffuseFor_UnmappedOrFnvFamily_UsesFnvDefault(BethesdaGame game)
@@ -34,6 +33,10 @@ public class EngineDefaultLandscapeTextureTests
     [InlineData(BethesdaGame.Skyrim, @"textures\landscape\Dirt01.dds", @"textures\landscape\Dirt01_n.dds")]
     [InlineData(BethesdaGame.Oblivion, @"textures\landscape\TerrainHDDirt01.dds",
         @"textures\landscape\TerrainHDDirt01_n.dds")]
+    // Morrowind hardcodes "_land_default.tga" (string in Morrowind.exe @ 0x3A7750, beside the
+    // LandTexture error strings); the BSA ships it as .dds. No normal — the 2002 fixed-function
+    // renderer predates normal mapping.
+    [InlineData(BethesdaGame.Morrowind, @"textures\_land_default.dds", "")]
     public void DiffuseAndNormalFor_MappedGames_UseGameSpecificDefault(BethesdaGame game, string diffuse, string normal)
     {
         Assert.Equal(diffuse, EngineDefaultLandscapeTexture.DiffuseFor(game));
