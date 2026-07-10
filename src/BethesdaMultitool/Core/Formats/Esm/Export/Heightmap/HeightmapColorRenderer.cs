@@ -1,4 +1,4 @@
-using ImageMagick;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
 
@@ -287,49 +287,20 @@ internal static class HeightmapColorRenderer
 
     #endregion
 
-    #region PNG Writing (adapted from EsmAnalyzer)
+    #region PNG Writing
 
     /// <summary>
-    ///     Saves a grayscale image (8-bit) to PNG.
+    ///     Saves a grayscale image (8-bit) to PNG. Delegates to <see cref="PngWriter" /> — one encoder,
+    ///     one set of encode settings (this used to be a copy-pasted twin).
     /// </summary>
-    internal static void SaveGrayscale(byte[] pixels, int width, int height, string path)
-    {
-        var settings = new MagickReadSettings
-        {
-            Width = (uint)width,
-            Height = (uint)height,
-            Format = MagickFormat.Gray,
-            Depth = 8
-        };
-
-        using var image = new MagickImage(pixels, settings);
-        WritePngViaStream(image, path);
-    }
+    internal static void SaveGrayscale(byte[] pixels, int width, int height, string path) =>
+        PngWriter.SaveGrayscale(pixels, width, height, path);
 
     /// <summary>
-    ///     Saves an RGB image (24-bit) to PNG.
+    ///     Saves an RGB image (24-bit) to PNG. Delegates to <see cref="PngWriter" />.
     /// </summary>
-    internal static void SaveRgb(byte[] pixels, int width, int height, string path)
-    {
-        var settings = new MagickReadSettings
-        {
-            Width = (uint)width,
-            Height = (uint)height,
-            Format = MagickFormat.Rgb,
-            Depth = 8
-        };
-
-        using var image = new MagickImage(pixels, settings);
-        WritePngViaStream(image, path);
-    }
-
-    // Magick.NET's path-based Write goes through native fopen, which fails on Windows paths >= MAX_PATH (260).
-    // Routing through FileStream lets .NET 6+ apply its long-path handling transparently.
-    private static void WritePngViaStream(MagickImage image, string path)
-    {
-        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
-        image.Write(stream, MagickFormat.Png);
-    }
+    internal static void SaveRgb(byte[] pixels, int width, int height, string path) =>
+        PngWriter.SaveRgb(pixels, width, height, path);
 
     #endregion
 }
