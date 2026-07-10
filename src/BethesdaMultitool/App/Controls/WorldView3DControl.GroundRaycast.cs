@@ -150,6 +150,16 @@ public sealed partial class WorldView3DControl
                     if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||
                         RenderableReference.IsImposterModelPath(p.ModelPath) ||
                         RenderableReference.IsLodDuplicateBaseEditorId(p.BaseEditorId)) continue;
+                    // Doors are passable in walk mode: the viewer can't open them, so colliding with a
+                    // shut door slab either blocks the doorway or — because the capsule rides the
+                    // HIGHEST surface — walks the camera up the slab to the ceiling. Treat every door
+                    // as open (excluded from ground AND ceiling candidates); the door FRAME is a
+                    // separate static and still collides normally.
+                    if (_data?.CategoryIndex.TryGetValue(p.BaseFormId, out var category) == true &&
+                        category == PlacedObjectCategory.Door)
+                    {
+                        continue;
+                    }
 
                     CollisionMesh? collision = null;
                     if (_referenceMeshCache12 is not null)

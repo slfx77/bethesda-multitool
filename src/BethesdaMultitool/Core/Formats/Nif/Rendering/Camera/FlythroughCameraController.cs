@@ -61,6 +61,20 @@ internal sealed class FlythroughCameraController
     private bool _airborne;
     private float _verticalVelocity;
 
+    // Grounded-Z easing state: false → the next grounded frame sets Z directly (mode switch /
+    // teleport), so the camera never glides from a stale height across the map.
+    private bool _walkZSettled;
+
+    // Exponential approach rate (1/s) for grounded elevation changes: stairs/kerbs raise the target
+    // eye height in discrete jumps, and hard-snapping to it teleported the view ("going up stairs
+    // feels unnatural"). ~12/s closes 70% of a step in ~100 ms — fast enough to track slopes at run
+    // speed, slow enough that a step reads as stepping UP rather than a cut.
+    private const float WalkStepSmoothingRate = 12f;
+
+    // Grounded downward gap (world units) beyond which the camera FALLS (gravity) instead of easing
+    // down: walking off a ledge should drop, not glide. Comfortably above the tallest stair step.
+    private const float WalkFallThreshold = 48f;
+
     public FlythroughCameraController(CameraState camera)
     {
         _camera = camera;
@@ -80,7 +94,8 @@ internal sealed class FlythroughCameraController
             // Leaving any in-progress jump behind on a mode switch.
             _airborne = false;
             _verticalVelocity = 0f;
-            if (_mode == CameraMode.Walk) SnapToGround();
+            _walkZSettled = false; // entering walk seats the camera directly, no glide
+            if (_mode == CameraMode.Walk) SnapToGround(0f);
         }
     }
 
@@ -260,7 +275,7 @@ internal sealed class FlythroughCameraController
 
         if (!_airborne)
         {
-            SnapToGround();
+            SnapToGround(deltaSeconds);
             return;
         }
 
@@ -292,6 +307,7 @@ internal sealed class FlythroughCameraController
                 newZ = floor;
                 _airborne = false;
                 _verticalVelocity = 0f;
+                _walkZSettled = true; // landed exactly at the floor — no post-landing glide
             }
         }
 
@@ -299,18 +315,42 @@ internal sealed class FlythroughCameraController
     }
 
     /// <summary>
-    ///     Snap the camera's Z to <c>groundHeight + EyeHeight</c>. No-op when no sampler is
-    ///     set or the sampler reports an unknown height (e.g. camera outside the worldspace
-    ///     grid). In that case the camera's existing Z is preserved so the user doesn't get
-    ///     teleported to Z=0 if they walk off the edge of the loaded terrain.
+    ///     Grounded walk-mode Z: eases the camera toward <c>groundHeight + EyeHeight</c>
+    ///     (frame-rate-independent exponential approach — see <see cref="WalkStepSmoothingRate" />)
+    ///     so stairs/kerbs read as stepping up instead of a snap cut. A downward gap beyond
+    ///     <see cref="WalkFallThreshold" /> hands off to gravity (walking off a ledge FALLS). The
+    ///     first grounded frame after a mode switch/teleport (<see cref="_walkZSettled" /> false, or
+    ///     <paramref name="deltaSeconds" /> 0) seats the camera directly. No-op when no sampler is
+    ///     set or the height is unknown (camera off the loaded grid) — the existing Z is preserved
+    ///     so walking off the edge never teleports to Z=0.
     /// </summary>
-    private void SnapToGround()
+    private void SnapToGround(float deltaSeconds)
     {
         if (GroundHeightSampler is not { } sampler) return;
         var pos = _camera.Position;
-        var ground = sampler(pos.X, pos.Y);
-        if (ground is float h)
-            _camera.Position = new Vector3(pos.X, pos.Y, h + EyeHeight);
+        if (sampler(pos.X, pos.Y) is not float ground) return;
+        var target = ground + EyeHeight;
+
+        if (!_walkZSettled || deltaSeconds <= 0f)
+        {
+            _walkZSettled = true;
+            _camera.Position = new Vector3(pos.X, pos.Y, target);
+            return;
+        }
+
+        if (target < pos.Z - WalkFallThreshold)
+        {
+            // Ledge: let gravity take it from here (UpdateWalkVertical integrates the fall and
+            // lands on the floor below) instead of gliding down at the easing rate.
+            _airborne = true;
+            _verticalVelocity = 0f;
+            return;
+        }
+
+        var blend = 1f - MathF.Exp(-WalkStepSmoothingRate * deltaSeconds);
+        var newZ = pos.Z + ((target - pos.Z) * blend);
+        if (MathF.Abs(target - newZ) < 0.05f) newZ = target; // settle exactly, no asymptotic crawl
+        _camera.Position = new Vector3(pos.X, pos.Y, newZ);
     }
 }
 #endif
