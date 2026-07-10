@@ -36,7 +36,7 @@ using BethesdaMultitool.Core.Recovery;
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 
 /// <summary>
-///     Orchestrator that converts an Xbox 360 DMP into a PC plugin ESP using a base
+///     Orchestrator that converts an Xbox 360 DMP into a PC plugin ESM using a base
 ///     FalloutNV.esm as the source of subrecord data the DMP doesn't carry.
 ///     Pipeline:
 ///     1. Load PC ESM (raw + semantic) and index FormIDs.
@@ -46,7 +46,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 ///     4. Merge cell-children: for each DMP cell that maps to a PC ESM cell, classify
 ///     the merge mode (persistent-only vs has-temporary), encode REFR/ACHR/ACRE
 ///     overrides, and bundle by parent cell.
-///     5. Assemble ESP: TES4 header + top-level GRUPs + CELL hierarchy with cell-children
+///     5. Assemble ESM: TES4 header + top-level GRUPs + CELL hierarchy with cell-children
 ///     overrides.
 ///     6. Optionally validate by re-parsing.
 /// </summary>
@@ -269,10 +269,10 @@ public sealed class PluginBuilder
     }
 
     /// <summary>
-    ///     Run the conversion pipeline. The output is a plugin ESP file at
-    ///     <see cref="DmpToEspInputs.OutputEspPath" /> on success.
+    ///     Run the conversion pipeline. The output is a plugin ESM file at
+    ///     <see cref="DmpToEsmInputs.OutputEsmPath" /> on success.
     /// </summary>
-    public async Task<PluginBuildResult> BuildAsync(DmpToEspInputs inputs, CancellationToken ct = default)
+    public async Task<PluginBuildResult> BuildAsync(DmpToEsmInputs inputs, CancellationToken ct = default)
     {
         var stats = new ConversionPipelineStats();
         var sw = Stopwatch.StartNew();
@@ -424,7 +424,7 @@ public sealed class PluginBuilder
 
             // Asset-rename pass: rewrite record paths in-place when fuzzy resolution
             // matches a differently-named asset in an indexed Data folder. Runs BEFORE
-            // encoding so the output ESP carries the unified paths. No-op when the user
+            // encoding so the output ESM carries the unified paths. No-op when the user
             // didn't configure rename folders.
             TryApplyAssetRenames(dmpRecords, inputs.Options, ct);
 
@@ -578,6 +578,28 @@ public sealed class PluginBuilder
             // emit dialogue-audio bindings keyed on the (voicetype_edid, dial_edid, resp_num)
             // triple — the asset packer uses these to bridge build-era FormID drift in the
             // dialogue-audio CSV.
+
+            // Feed the planner's new-record allocations into the dialogue remap. Under
+            // --planner-types all, new proto QUST/NPC_/CREA/… records are emitted by PlanWriter
+            // (BuildGrupForType), which returns BEFORE the legacy TrackNewRecordSourceAlias call —
+            // so their source→emitted mappings live only in _emitPlan.SourceToEmittedFormId, and
+            // DialogGrupBuilder can't resolve an INFO's QSTI/ANAM to a proto quest/NPC → the
+            // reference is nulled → the whole INFO is dropped (droppedNoQstiInfos), the Ulysses /
+            // Gomorrah-greeter "force-greets but has no dialogue" regression the ESM eager-load
+            // surfaces. DialogPlannerRemapAugmentation merges only records the planner actually
+            // emits (skipping allocated-but-unemitted orphans) and leaves DIAL/INFO to
+            // DialogGrupBuilder, which allocates their real FormIDs itself.
+            if (_emitPlan is not null)
+            {
+                DialogPlannerRemapAugmentation.Merge(
+                    _emitPlan.SourceToEmittedFormId,
+                    emitted => _emitPlan.RecordIndexByEmittedFormId.TryGetValue(emitted, out var recordIndex)
+                        ? _emitPlan.Records[recordIndex].Type
+                        : null,
+                    _newRecordSourceToAllocated,
+                    _newRecordSourceToAllocatedType);
+            }
+
             var voiceTypeEditorIdsByFormId = BuildVoiceTypeEditorIdLookup(pcRecordsByFormId, dmpRecords);
             var npcVoiceTypeByNpcFormId = BuildNpcVoiceTypeLookup(dmpRecords, _newRecordSourceToAllocated);
             // Quest source-FormID → EDID lookup, unifying master + DMP quests. Needed by
@@ -590,6 +612,14 @@ public sealed class PluginBuilder
             if (_masterChildFormIds is not null)
             {
                 dialogAdditionalValidFormIds = dialogAdditionalValidFormIds.Concat(_masterChildFormIds);
+            }
+
+            // Every planner-emitted FormID (new plugin records + retained master records) is live —
+            // union it so a dialogue reference to a planner-owned record isn't zeroed by the
+            // validator. Complements the remap merge above (which fixes source→emitted translation).
+            if (_emitPlan is not null)
+            {
+                dialogAdditionalValidFormIds = dialogAdditionalValidFormIds.Concat(_emitPlan.EmittedFormIds);
             }
 
             var dialogResult = DialogGrupBuilder.BuildDialogSection(
@@ -702,8 +732,8 @@ public sealed class PluginBuilder
             ct.ThrowIfCancellationRequested();
 
             // Phase 5: assemble TES4 + top-level GRUPs + cell-children GRUP and write output.
-            _sink.OnPhaseStart("Writing ESP", null);
-            var outputBytes = new EspAssembler(_encoderRegistry).Assemble(
+            _sink.OnPhaseStart("Writing ESM", null);
+            var outputBytes = new EsmAssembler(_encoderRegistry).Assemble(
                 inputs.Options,
                 pcEsmFileInfo.Length,
                 stats,
@@ -715,9 +745,9 @@ public sealed class PluginBuilder
                 _emitPlan,
                 masterIndex,
                 plannerCellSection);
-            await File.WriteAllBytesAsync(inputs.OutputEspPath, outputBytes, ct);
+            await File.WriteAllBytesAsync(inputs.OutputEsmPath, outputBytes, ct);
             stats.OutputBytes = outputBytes.LongLength;
-            _sink.OnPhaseEnd("Writing ESP", stats);
+            _sink.OnPhaseEnd("Writing ESM", stats);
 
             // Phase 6 (optional): validate by re-parsing + semantic check.
             string? validationReport = null;
@@ -736,8 +766,8 @@ public sealed class PluginBuilder
                 if (semantic.ErrorCount > 0)
                 {
                     _sink.Warn("Validating output",
-                        $"Semantic validation surfaced {semantic.ErrorCount:N0} error(s) — ESP may crash at load.",
-                        "ESP", 0, "semantic.errors");
+                        $"Semantic validation surfaced {semantic.ErrorCount:N0} error(s) — ESM may crash at load.",
+                        "ESM", 0, "semantic.errors");
                 }
 
                 validationReport = $"{roundTrip}\n\n{semantic.Report}";
@@ -764,7 +794,7 @@ public sealed class PluginBuilder
                     $"{totalPhantom:N0} pre-allocated placed ref(s) across {phantomByCell.Count:N0} DMP " +
                     "cell(s) were NOT emitted — packages referencing them dangle (actor warps to a " +
                     "missing destination).",
-                    "ESP", 0, "phantom.preallocated-unemitted");
+                    "ESM", 0, "phantom.preallocated-unemitted");
                 foreach (var (cellFid, count) in phantomByCell.OrderByDescending(kv => kv.Value).Take(40))
                 {
                     var inMaster = _masterFormIds?.Contains(cellFid) == true;
@@ -782,7 +812,7 @@ public sealed class PluginBuilder
             {
                 Success = true,
                 Stats = stats,
-                OutputPath = inputs.OutputEspPath,
+                OutputPath = inputs.OutputEsmPath,
                 ValidationReport = validationReport,
                 NewRecordSourceToAllocated = new Dictionary<uint, uint>(_newRecordSourceToAllocated),
                 EmittedDialogueAudioBindings = dialogResult.AudioBindings
@@ -1238,7 +1268,7 @@ public sealed class PluginBuilder
         IReadOnlyList<ParsedMainRecord> pcRecords,
         RecordCollection dmpRecords,
         FormIdAllocator allocator,
-        DmpToEspInputs inputs,
+        DmpToEsmInputs inputs,
         IReadOnlyDictionary<uint, PcEsmCellContext> masterCellContexts,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
     {
@@ -1419,7 +1449,7 @@ public sealed class PluginBuilder
         // emission and the legacy path below is bypassed. The plan was built upfront in
         // BuildAsync (BuildPlannerStateIfEnabled); we just dispatch to PlanWriter here.
         // "CELL" is the cell-hierarchy sentinel — that key activates the whole cell
-        // pipeline (CELL/REFR/ACHR/ACRE/LAND/NAVM/NAVI) through EspAssembler instead of
+        // pipeline (CELL/REFR/ACHR/ACRE/LAND/NAVM/NAVI) through EsmAssembler instead of
         // through this top-level dispatch.
         if (options.PlannerEnabledRecordTypes.Contains(recordType) && recordType != "CELL")
         {
@@ -1448,7 +1478,7 @@ public sealed class PluginBuilder
 
         // Per-FormID dedup: the DMP scanner can pick up the same record twice (e.g. when the
         // dump contains both an in-memory GMST master and a duplicate GRUP snapshot). Emitting
-        // both yields "ESP contains 481 duplicate FormID(s)" — the engine then resolves only
+        // both yields "ESM contains 481 duplicate FormID(s)" — the engine then resolves only
         // one and may bind ACRE/ACHR base pointers to the wrong copy, causing crashes.
         var emittedFormIds = new HashSet<uint>();
 
