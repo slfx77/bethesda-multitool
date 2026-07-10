@@ -13,6 +13,7 @@ internal sealed record MapExport3DRequest(
     bool ShowTerrain,
     bool ShowMeshes,
     bool ShowWater,
+    bool ShowTrees,
     bool ShowActivators,
     bool ShowMarkers,
     bool ShowDisabled,
@@ -50,8 +51,8 @@ public sealed partial class MapExport3DDialog : ContentDialog
     internal MapExport3DDialog(
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
         float worldMinZ, float worldMaxZ, int maxTileDim, int maxImageDim,
-        bool showTerrain, bool showMeshes, bool showWater, bool showActivators, bool showMarkers,
-        bool showDisabled, bool showNavMesh, bool showCollision, bool showGrid,
+        bool showTerrain, bool showMeshes, bool showWater, bool showTrees, bool showActivators,
+        bool showMarkers, bool showDisabled, bool showNavMesh, bool showCollision, bool showGrid,
         bool enableLighting, bool enableFog)
     {
         InitializeComponent();
@@ -72,6 +73,7 @@ public sealed partial class MapExport3DDialog : ContentDialog
         TerrainCheckBox.IsChecked = showTerrain;
         MeshesCheckBox.IsChecked = showMeshes;
         WaterCheckBox.IsChecked = showWater;
+        TreesCheckBox.IsChecked = showTrees;
         ActivatorsCheckBox.IsChecked = showActivators;
         MarkersCheckBox.IsChecked = showMarkers;
         DisabledCheckBox.IsChecked = showDisabled;
@@ -99,6 +101,7 @@ public sealed partial class MapExport3DDialog : ContentDialog
         ShowTerrain: TerrainCheckBox.IsChecked == true,
         ShowMeshes: MeshesCheckBox.IsChecked == true,
         ShowWater: WaterCheckBox.IsChecked == true,
+        ShowTrees: TreesCheckBox.IsChecked == true,
         ShowActivators: ActivatorsCheckBox.IsChecked == true,
         ShowMarkers: MarkersCheckBox.IsChecked == true,
         ShowDisabled: DisabledCheckBox.IsChecked == true,

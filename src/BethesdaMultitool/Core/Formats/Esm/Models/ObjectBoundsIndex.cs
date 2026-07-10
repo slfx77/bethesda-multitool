@@ -202,7 +202,11 @@ internal static class ObjectBoundsIndex
             {
                 "MSTT" => PlacedObjectCategory.Static,
                 "TACT" => PlacedObjectCategory.Activator,
-                "TREE" => PlacedObjectCategory.Plants,
+                // TREE is the engine-authoritative tree identity: covers every Gamebryo .spt tree
+                // (Oblivion/FO3/FNV MODLs are bare names like "\WastelandShrub01.spt" with no folder
+                // segment, so path logic can never classify them) and TREE-record NIF trees in
+                // Skyrim/FO4. Distinct from Plants so the viewer's Trees toggle is meaningful.
+                "TREE" => PlacedObjectCategory.Tree,
                 "ADDN" => PlacedObjectCategory.Effects,
                 "CAMS" => PlacedObjectCategory.Effects,
                 "ANIO" => PlacedObjectCategory.Effects,
@@ -295,6 +299,14 @@ internal static class ObjectBoundsIndex
         // Strip named DLC folder prefixes (FO3 assets reused in FNV)
         path = StripNamedDlcPrefix(path);
 
+        // Trees: match a whole "trees" segment ANYWHERE in the path, not just the first folder —
+        // Skyrim/FO4/FO76 ship their STAT-based NIF trees under landscape\trees\, which first-segment
+        // matching filed as Landscape (whole-segment, so architecture\treehouse.nif stays put).
+        if (ContainsWholeSegment(path, "trees"))
+        {
+            return PlacedObjectCategory.Tree;
+        }
+
         // Find the first path segment
         var sepIndex = path.IndexOfAny('\\', '/');
         if (sepIndex <= 0)
@@ -316,8 +328,7 @@ internal static class ObjectBoundsIndex
             return PlacedObjectCategory.Landscape;
         }
 
-        if (folder.Equals("trees", StringComparison.OrdinalIgnoreCase) ||
-            folder.Equals("plants", StringComparison.OrdinalIgnoreCase) ||
+        if (folder.Equals("plants", StringComparison.OrdinalIgnoreCase) ||
             folder.Equals("shrubs", StringComparison.OrdinalIgnoreCase) ||
             folder.Equals("flowers", StringComparison.OrdinalIgnoreCase) ||
             folder.Equals("cactus", StringComparison.OrdinalIgnoreCase) ||
@@ -427,6 +438,34 @@ internal static class ObjectBoundsIndex
         }
 
         return null;
+    }
+
+    /// <summary>
+    ///     True when the path contains <paramref name="segment" /> as a WHOLE path segment (bounded
+    ///     by <c>\</c> / <c>/</c> or the string ends): <c>landscape\trees\x.nif</c> matches
+    ///     <c>trees</c>; <c>architecture\treehouse.nif</c> does not.
+    /// </summary>
+    private static bool ContainsWholeSegment(ReadOnlySpan<char> path, string segment)
+    {
+        var start = 0;
+        while (start <= path.Length - segment.Length)
+        {
+            var idx = path[start..].IndexOf(segment, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+            {
+                return false;
+            }
+            var s = start + idx;
+            var e = s + segment.Length;
+            var boundedLeft = s == 0 || path[s - 1] == '\\' || path[s - 1] == '/';
+            var boundedRight = e == path.Length || path[e] == '\\' || path[e] == '/';
+            if (boundedLeft && boundedRight)
+            {
+                return true;
+            }
+            start = s + 1;
+        }
+        return false;
     }
 
     /// <summary>

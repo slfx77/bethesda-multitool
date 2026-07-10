@@ -100,6 +100,12 @@ public sealed partial class WorldView3DControl
         SetShowSkyMeshes(SkyMeshesCheckBox.IsChecked == true);
     }
 
+    private void TreesCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetShowTrees(TreesCheckBox.IsChecked == true);
+    }
+
     private void SetRenderDistance(float distance)
     {
         _renderDistance = Math.Clamp(distance, MinRenderDistanceCells * _cellSize, MaxRenderDistance);
@@ -187,6 +193,21 @@ public sealed partial class WorldView3DControl
         if (SkyMeshesCheckBox is not null && SkyMeshesCheckBox.IsChecked != on)
         {
             SkyMeshesCheckBox.IsChecked = on;
+        }
+    }
+
+    /// <summary>Tree-category visibility toggle. Default on. Covers ALL tree kinds through the one
+    /// reference funnel — Gamebryo .spt SpeedTrees (TREE records) and Skyrim/FO4 NIF trees (TREE
+    /// records + landscape\trees\ statics). Render-time filter before the resolve/decode pass, so
+    /// trees hidden before streaming never decode or upload.</summary>
+    private void SetShowTrees(bool on)
+    {
+        if (on) _hiddenCategories.Remove(PlacedObjectCategory.Tree);
+        else _hiddenCategories.Add(PlacedObjectCategory.Tree);
+        _references?.SetHiddenCategories(_hiddenCategories);
+        if (TreesCheckBox is not null && TreesCheckBox.IsChecked != on)
+        {
+            TreesCheckBox.IsChecked = on;
         }
     }
 }

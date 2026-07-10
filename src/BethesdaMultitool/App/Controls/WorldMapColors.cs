@@ -25,6 +25,7 @@ internal static class WorldMapColors
         PlacedObjectCategory.Vehicles => "Vehicles",
         PlacedObjectCategory.Traps => "Traps",
         PlacedObjectCategory.Sky => "Sky",
+        PlacedObjectCategory.Tree => "Trees",
         _ => category.ToString()
     };
 
@@ -56,6 +57,9 @@ internal static class WorldMapColors
             // Sky-blue for placed sky/glow meshes (DiamondCityGlow). Pinned rather than arc-distributed so
             // the arc slot count stays in lock-step with the `remaining` array below (a mismatch throws).
             [PlacedObjectCategory.Sky] = Color.FromArgb(255, 135, 206, 235),
+            // Trees: darker forest green next to Plants' 0.72/0.22/140 so the two vegetation layers
+            // read as siblings but stay distinguishable. Pinned for the same arc-lock-step reason.
+            [PlacedObjectCategory.Tree] = ArgbToColor(FormatRegistry.OklchToArgb(0.55, 0.18, 145.0)),
             [PlacedObjectCategory.Unknown] = Color.FromArgb(255, 80, 80, 80)
         };
 

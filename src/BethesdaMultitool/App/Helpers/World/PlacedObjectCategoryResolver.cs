@@ -57,6 +57,7 @@ internal static class PlacedObjectCategoryResolver
                 PlacedObjectCategory.Container => "Containers",
                 PlacedObjectCategory.Item => "Items",
                 PlacedObjectCategory.Sky => "Sky",
+                PlacedObjectCategory.Tree => "Trees",
                 _ => "Other"
             };
         }

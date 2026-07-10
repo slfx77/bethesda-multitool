@@ -113,6 +113,10 @@
                           AutomationProperties.Name="Sky meshes"
                           ToolTipService.ToolTip="Show placed sky/glow meshes (Sky\ folder, e.g. DiamondCityGlow)"
                           Checked="SkyMeshesCheckBox_Changed" Unchecked="SkyMeshesCheckBox_Changed" />
+                <CheckBox x:Name="TreesCheckBox" IsChecked="True" Content="Trees"
+                          AutomationProperties.Name="Trees"
+                          ToolTipService.ToolTip="Show trees (SpeedTree .spt and NIF trees; hiding before load also skips decoding them)"
+                          Checked="TreesCheckBox_Changed" Unchecked="TreesCheckBox_Changed" />
                 <CheckBox x:Name="DisabledCheckBox" IsChecked="False" Content="Initially-disabled objects"
                           AutomationProperties.Name="Initially-disabled objects"
                           ToolTipService.ToolTip="Show objects flagged initially-disabled (press 7)"

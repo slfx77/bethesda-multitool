@@ -62,6 +62,7 @@ public sealed partial class WorldView3DControl
             worldMinX, worldMaxX, worldMinY, worldMaxY, worldMinZ, worldMaxZ,
             Export3DMaxTileDimension, Export3DMaxImageDimension,
             showTerrain: _showTerrain, showMeshes: _showReferences, showWater: _showWater,
+            showTrees: !_hiddenCategories.Contains(PlacedObjectCategory.Tree),
             showActivators: !_hiddenCategories.Contains(PlacedObjectCategory.Activator),
             showMarkers: _showMarkers, showDisabled: _showDisabled, showNavMesh: _showNavMesh,
             showCollision: _showCollision, showGrid: _showWireframe,
@@ -76,6 +77,8 @@ public sealed partial class WorldView3DControl
         var hidden = new HashSet<PlacedObjectCategory>(_hiddenCategories);
         if (req.ShowActivators) hidden.Remove(PlacedObjectCategory.Activator);
         else hidden.Add(PlacedObjectCategory.Activator);
+        if (req.ShowTrees) hidden.Remove(PlacedObjectCategory.Tree);
+        else hidden.Add(PlacedObjectCategory.Tree);
 
         var opts = new Export3DOptions(
             ShowTerrain: req.ShowTerrain, ShowReferences: req.ShowMeshes, ShowWater: req.ShowWater,

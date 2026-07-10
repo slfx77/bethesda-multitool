@@ -69,6 +69,7 @@
         <CheckBox x:Name="TerrainCheckBox" Content="Terrain" />
         <CheckBox x:Name="MeshesCheckBox" Content="Meshes (placed objects)" />
         <CheckBox x:Name="WaterCheckBox" Content="Water" />
+        <CheckBox x:Name="TreesCheckBox" Content="Trees" />
         <CheckBox x:Name="ActivatorsCheckBox" Content="Activators" />
         <CheckBox x:Name="MarkersCheckBox" Content="Editor markers" />
         <CheckBox x:Name="DisabledCheckBox" Content="Initially-disabled objects" />
