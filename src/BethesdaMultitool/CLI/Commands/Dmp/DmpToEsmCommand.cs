@@ -11,11 +11,11 @@ using Spectre.Console;
 namespace BethesdaMultitool.CLI.Commands.Dmp;
 
 /// <summary>
-///     CLI command for running the DMP→ESP plugin conversion pipeline. Same engine as the
+///     CLI command for running the DMP→ESM plugin conversion pipeline. Same engine as the
 ///     WinUI tab — reads an Xbox 360 memory dump, merges its records into a PC plugin
 ///     authored against the provided master ESM.
 /// </summary>
-public static class DmpToEspCommand
+public static class DmpToEsmCommand
 {
     public static Command Create()
     {
@@ -27,7 +27,7 @@ public static class DmpToEspCommand
         };
         var outputOpt = new Option<string>("-o", "--output")
         {
-            Description = "Output ESP path",
+            Description = "Output ESM path",
             Required = true
         };
         var authorOpt = new Option<string?>("--author") { Description = "Plugin author metadata" };
@@ -35,7 +35,7 @@ public static class DmpToEspCommand
         var compressOpt = new Option<bool>("--compress") { Description = "Compress record bodies (zlib)" };
         var validateOpt = new Option<bool>("--validate")
         {
-            Description = "Re-parse the output ESP to validate structure",
+            Description = "Re-parse the output ESM to validate structure",
             DefaultValueFactory = _ => true
         };
         var verboseOpt = new Option<bool>("--verbose")
@@ -55,8 +55,8 @@ public static class DmpToEspCommand
         };
         var packAssetsOpt = new Option<string?>("--pack-assets")
         {
-            Description = "Output BSA path. When set, after the ESP is written the converter scans " +
-                          "the ESP + DMP for referenced assets, resolves them against --secondary-data / " +
+            Description = "Output BSA path. When set, after the ESM is written the converter scans " +
+                          "the ESM + DMP for referenced assets, resolves them against --secondary-data / " +
                           "--secondary-data-360 folders, and packs the missing ones into this BSA."
         };
         var writeMissingListOpt = new Option<bool>("--write-missing-list")
@@ -67,7 +67,7 @@ public static class DmpToEspCommand
         var dialogueAudioCsvOpt = new Option<string[]>("--dialogue-audio-csv")
         {
             Description = "Repeatable: Bethesda Audio Transcriber CSV export used to add dialogue voice " +
-                          "audio/lip requests for INFO records present in the ESP/DMP. Use with " +
+                          "audio/lip requests for INFO records present in the ESM/DMP. Use with " +
                           "--pack-assets and a --secondary-data folder containing the audio."
         };
         var overrideVanillaOpt = new Option<bool>("--override-vanilla")
@@ -104,16 +104,18 @@ public static class DmpToEspCommand
                           "cells emit their proto NAVMs regardless. Enable only for NVCI-reconstruction work."
         };
 
-        var recoverLeveledSpawnsOpt = new Option<bool>("--recover-leveled-spawns")
+        var noRecoverLeveledSpawnsOpt = new Option<bool>("--no-recover-leveled-spawns")
         {
-            Description = "Recover placed actors (ACHR/ACRE) whose base is a runtime clone (0xFF) — the " +
-                          "generic leveled-spawn crowd otherwise dropped — by re-pointing the base to the " +
-                          "actor's captured ExtraLeveledCreature template (a type-compatible NPC_/CREA, " +
-                          "master or captured-proto). Off by default; the re-pointed actor is a fixed " +
-                          "instance (no re-leveling). Run `dmp leveled-spawn-census` first to gauge yield."
+            Description = "Disable leveled-spawn recovery. By default, placed actors (ACHR/ACRE) whose " +
+                          "base is a runtime clone (0xFF) — the generic leveled-spawn crowd — are " +
+                          "recovered by re-pointing the base to the actor's captured ExtraLeveledCreature " +
+                          "template (a type-compatible NPC_/CREA, master or captured-proto). The re-pointed " +
+                          "actor is a fixed instance (no re-leveling). Pass this for a bare-master baseline. " +
+                          "Run `dmp leveled-spawn-census` to gauge recovery yield."
         };
 
-        var command = new Command("to-esp", "Convert a DMP to a PC plugin ESP overlay against a master ESM");
+        var command = new Command("to-esm", "Convert a DMP to a PC plugin ESM overlay against a master ESM");
+        command.Aliases.Add("to-esp"); // back-compat: was 'to-esp' before the output became ESM-flagged
         command.Arguments.Add(dmpArg);
         command.Options.Add(pcEsmOpt);
         command.Options.Add(outputOpt);
@@ -132,14 +134,14 @@ public static class DmpToEspCommand
         command.Options.Add(replaceCellTemporariesOpt);
         command.Options.Add(recoverGapsOpt);
         command.Options.Add(emitMasterCellNavmAugmentationOpt);
-        command.Options.Add(recoverLeveledSpawnsOpt);
+        command.Options.Add(noRecoverLeveledSpawnsOpt);
 
         var cellAuthorityOpt = new Option<string?>("--cell-authority")
         {
             Description =
                 "Optional corpus-derived CELL metadata authority JSON (built with " +
                 "`dmp build-cell-authority`). Applied to parsed cells before grouping so cells " +
-                "land under the correct WRLD in the output ESP. Defaults to " +
+                "land under the correct WRLD in the output ESM. Defaults to " +
                 "data/cell_worldspace_authority.json next to the executable if it exists."
         };
         command.Options.Add(cellAuthorityOpt);
@@ -171,7 +173,7 @@ public static class DmpToEspCommand
                 "two-pass planner instead of legacy emission. Use 'all' for every ported " +
                 "encoder. Empty (default) = legacy emission for every type. CELL is a valid " +
                 "token; opting it in activates the planner's cell-hierarchy writer via " +
-                "EspAssembler dispatch.",
+                "EsmAssembler dispatch.",
             AllowMultipleArgumentsPerToken = true,
         };
         command.Options.Add(plannerTypesOpt);
@@ -213,7 +215,7 @@ public static class DmpToEspCommand
             var replaceCellTemporaries = parseResult.GetValue(replaceCellTemporariesOpt);
             var recoverGaps = parseResult.GetValue(recoverGapsOpt);
             var emitMasterCellNavmAugmentation = parseResult.GetValue(emitMasterCellNavmAugmentationOpt);
-            var recoverLeveledSpawns = parseResult.GetValue(recoverLeveledSpawnsOpt);
+            var recoverLeveledSpawns = !parseResult.GetValue(noRecoverLeveledSpawnsOpt);
             var diagSkipCellNavm = parseResult.GetValue(diagSkipCellNavmOpt);
             var diagSkipCellNewRefs = parseResult.GetValue(diagSkipCellNewRefsOpt);
             var cellAuthorityPath = parseResult.GetValue(cellAuthorityOpt);
@@ -356,16 +358,16 @@ public static class DmpToEspCommand
             AnsiConsole.MarkupLine("[yellow]Recover gaps:[/] enabled (experimental, opt-in)");
         }
 
-        if (recoverLeveledSpawns)
+        if (!recoverLeveledSpawns)
         {
-            AnsiConsole.MarkupLine("[yellow]Leveled-spawn recovery:[/] enabled (0xFF actors re-pointed to captured base)");
+            AnsiConsole.MarkupLine("[yellow]Leveled-spawn recovery:[/] disabled via --no-recover-leveled-spawns (bare-master baseline)");
         }
 
-        var inputs = new DmpToEspInputs
+        var inputs = new DmpToEsmInputs
         {
             DmpPath = dmpPath,
             PcEsmPath = pcEsmPath,
-            OutputEspPath = outputPath,
+            OutputEsmPath = outputPath,
             Options = options
         };
 
@@ -429,7 +431,7 @@ public static class DmpToEspCommand
             }
 
             // If --pack-assets was provided, run the asset packer against the freshly-
-            // written ESP. The baseline data folder is derived from the master ESM's
+            // written ESM. The baseline data folder is derived from the master ESM's
             // location (FNV PC Data\).
             if (!string.IsNullOrEmpty(packAssetsBsaPath))
             {
@@ -444,7 +446,7 @@ public static class DmpToEspCommand
             {
                 AnsiConsole.MarkupLine(
                     "[yellow]Note:[/] --dialogue-audio-csv was provided without --pack-assets; " +
-                    "the CSV Text column was still used to backfill INFO response text in the ESP, " +
+                    "the CSV Text column was still used to backfill INFO response text in the ESM, " +
                     "but voice audio files were not packed into a BSA.");
             }
         }
@@ -594,7 +596,7 @@ public static class DmpToEspCommand
     }
 
     private static async Task RunAssetPackingAsync(
-        string espPath,
+        string esmPath,
         string dmpPath,
         string pcEsmPath,
         string[] secondaryDataFolders,
@@ -634,7 +636,7 @@ public static class DmpToEspCommand
 
         var options = new AssetPackingOptions
         {
-            ConvertedEspPath = espPath,
+            ConvertedEsmPath = esmPath,
             DmpPath = dmpPath,
             BaselineDataFolder = baselineDataFolder,
             SecondaryDataFolders = secondaries,

@@ -5,7 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 
 /// <summary>
-///     Options controlling plugin ESP construction from a DMP + base ESM.
+///     Options controlling plugin ESM construction from a DMP + base ESM.
 /// </summary>
 public sealed record PluginBuildOptions
 {
@@ -76,17 +76,17 @@ public sealed record PluginBuildOptions
     ///     (<c>LeveledCreatureOriginalBaseFormId</c>, else <c>LeveledCreatureTemplateFormId</c>),
     ///     resolved through <c>SourceToEmittedFormId</c> and accepted only if it lands on a
     ///     type-compatible <c>NPC_</c> (ACHR) / <c>CREA</c> (ACRE) base — master or captured-proto.
-    ///     Default <c>false</c>.
+    ///     Default <c>true</c> (opt out with <c>--no-recover-leveled-spawns</c>).
     ///
     ///     Trade-off: the re-pointed base is the crash-time resolved template, so the actor is a
     ///     fixed instance (no re-leveling); this faithfully reconstructs the captured scene, which
     ///     is the goal (populate cells the runtime showed inhabited). A leveled-list
     ///     (<c>LVLN/LVLC</c>) candidate is never emitted as an actor base — xEdit-invalid for
     ///     ACHR/ACRE — so the existing base-type validation rejects it and we fall through to the
-    ///     other pointer or drop. Ships OFF by default so the volume of re-populated temporary
-    ///     actors can be A/B-tested in-game before becoming standard.
+    ///     other pointer or drop. Ships ON by default: the re-populated crowd was A/B-tested
+    ///     in-game (Gomorrah01 29→65 ACHR, cold coc stable). Opt out for a bare-master baseline.
     /// </summary>
-    public bool RecoverLeveledSpawnActors { get; init; }
+    public bool RecoverLeveledSpawnActors { get; init; } = true;
 
     /// <summary>
     ///     Diagnostic: suppress NAVM record emission inside cell bundles while keeping the
@@ -116,7 +116,7 @@ public sealed record PluginBuildOptions
     ///     Asset-rename pass. When non-empty (and <see cref="AssetRenameBaselineFolder" />
     ///     is set), <c>PluginBuilder.BuildAsync</c> resolves every record-sourced asset path
     ///     against these folders before encoding. Paths that fuzzy-match to a differently-
-    ///     named asset get their record field rewritten in-place so the output ESP carries
+    ///     named asset get their record field rewritten in-place so the output ESM carries
     ///     the matched filename. Mirror the same folders passed to <c>AssetPackingService</c>.
     /// </summary>
     public IReadOnlyList<SecondaryDataFolder> AssetRenameSecondaryFolders { get; init; } = [];
@@ -130,7 +130,7 @@ public sealed record PluginBuildOptions
     /// <summary>
     ///     If true, the rename pass consults the secondary folders before the baseline,
     ///     mirroring <c>AssetPackingOptions.OverrideVanillaBaseline</c>. Use both flags
-    ///     together so the rewritten ESP fields and the packed BSA agree on which secondary
+    ///     together so the rewritten ESM fields and the packed BSA agree on which secondary
     ///     path wins. Defaults to false.
     /// </summary>
     public bool AssetRenameOverrideVanilla { get; init; }
@@ -196,7 +196,7 @@ public sealed record PluginBuildOptions
     ///     Experimental opt-in: scan uncovered DMP gaps for validated raw ESM records and
     ///     RTTI-backed runtime forms, then promote only candidates that existing semantic
     ///     readers can consume safely. Browser/audit discovery is separate; this switch
-    ///     changes DMP→ESP parse inputs and is off by default.
+    ///     changes DMP→ESM parse inputs and is off by default.
     /// </summary>
     public bool RecoverGaps { get; init; }
 
@@ -214,7 +214,7 @@ public sealed record PluginBuildOptions
     ///     Diagnostic: top-level record-type signatures (e.g. "STAT", "NPC_", "WEAP")
     ///     that the converter should skip entirely. The DMP-parsed records for these
     ///     types get dropped from EnumerateModelsByType, so neither overrides nor new
-    ///     records of that type appear in the output ESP. Master's records remain in
+    ///     records of that type appear in the output ESM. Master's records remain in
     ///     effect via per-FormID merge for overrides; new records simply aren't emitted.
     ///     Used to bisect crashes that point at a specific record type.
     /// </summary>
