@@ -73,11 +73,13 @@ public sealed class AtmosphereStateTests
     }
 
     [Fact]
-    public void Resolve_ModernWeatherAtNight_HandsDirectionalToTheMoon()
+    public void Resolve_ModernWeatherAtNight_KeepsTheEngineDirectionalPath()
     {
-        // Skyrim+/FO4: once the sun is fully down, the scene's directional light aims at the moon,
-        // colored by the NAM0 Sunlight NIGHT band (CommonwealthClear: (53,70,87)). Gated on the
-        // weather carrying DALC — the modern-weather marker.
+        // FO4-family (DALC weather): the directional light follows FO4 Sun::Update's CONTINUOUS
+        // 24h path — no sun→moon handover exists in the engine (the round-11 hard flip to the moon
+        // billboard was refuted by the decompile). At night the light keeps the NAM0 Sunlight NIGHT
+        // band color (CommonwealthClear (53,70,87)) UNSCALED, and its elevation is floored at
+        // fSunShadowMinAngle (unit z ≥ 30·π/180 ≈ 0.5236) so it never grazes the horizon.
         var moonBlue = new WeatherRgba(53, 70, 87, 255);
         var sunlight = new WeatherColor(moonBlue, new WeatherRgba(225, 225, 225, 255), moonBlue, moonBlue);
         var gray = new WeatherRgba(64, 64, 64, 255);
@@ -88,23 +90,51 @@ public sealed class AtmosphereStateTests
             Colors = [filler, filler, filler, filler, sunlight],
             DirectionalAmbient = new WeatherColor(dalc, dalc, dalc, dalc)
         };
-        var moonDir = Vector3.Normalize(new Vector3(0.2f, 0.3f, 0.8f));
 
-        var midnight = AtmosphereState.Resolve(0f, weather, CleanTiming, moonlightDirection: moonDir);
+        // moonlightDirection is deliberately ignored for lighting now — pass one to prove it.
+        var midnight = AtmosphereState.Resolve(0f, weather, CleanTiming,
+            moonlightDirection: Vector3.Normalize(new Vector3(0.9f, 0.1f, 0.1f)));
 
-        Assert.Equal(moonDir.X, midnight.SunWorldDirection.X, 4);
-        Assert.Equal(moonDir.Z, midnight.SunWorldDirection.Z, 4);
         Assert.Equal(53f / 255f, midnight.SunColor.X, 3);
         Assert.Equal(87f / 255f, midnight.SunColor.Z, 3);
+        Assert.True(midnight.SunWorldDirection.Z >= 0.52f,
+            $"night directional must stay above the shadow floor, got {midnight.SunWorldDirection}");
+        Assert.Equal(1f, midnight.SunWorldDirection.Length(), 3);
         // Sun-keyed consumers (specular scale, moon-billboard fade) must still read "night".
         Assert.Equal(0f, midnight.SunIntensity);
     }
 
     [Fact]
-    public void Resolve_MoonlightIgnored_WithoutDalc_AndBelowHorizon()
+    public void Resolve_Fo4DirectionalPath_IsContinuousAcrossDusk_AndNearOverheadAtNoon()
     {
-        // FNV/FO3 weathers carry no DALC — their decompile-grounded ambient-only night must not
-        // gain a moon directional. And a set moon (Z ≤ 0) never lights the scene.
+        // Sun::Update: the day leg spans sunriseMid−1h .. sunsetMid+1h (fSunAlphaTransTime=2h) and the
+        // night leg wraps continuously — there is NO discontinuity at the dusk edge (the user-visible
+        // "snap to the moon" came from the old hard handover). Apex check: at noon the path
+        // (0, fSunYExtreme=25, fSunXExtreme=400) normalizes to z ≈ 0.998 (≈86°) — NOT the FNV 50°.
+        var before = AtmosphereState.Fo4SunPathDirection(18.999f, 5f, 7f, 17f, 19f); // dusk edge = 19
+        var after = AtmosphereState.Fo4SunPathDirection(19.001f, 5f, 7f, 17f, 19f);
+        Assert.True(Vector3.Distance(before, after) < 0.01f,
+            $"directional must be continuous across dusk: {before} vs {after}");
+
+        var noon = AtmosphereState.Fo4SunPathDirection(12f, 5f, 7f, 17f, 19f);
+        Assert.True(noon.Z > 0.99f, $"FO4 noon sun is near-overhead, got {noon}");
+
+        // Deep night: the wrapped leg re-crosses the zenith at solar midnight-ish, and the
+        // fSunShadowMinAngle floor keeps the light WELL above the horizon at every hour. The engine
+        // renormalizes AFTER flooring z, so at the path extremes (x=±fSunXExtreme) the unit z lands at
+        // 0.5236/√(1²+0.0625²+0.5236²) ≈ 0.463 — the effective minimum elevation (~27.6°).
+        for (var h = 0f; h < 24f; h += 0.5f)
+        {
+            var d = AtmosphereState.Fo4SunPathDirection(h, 5f, 7f, 17f, 19f);
+            Assert.True(d.Z >= 0.45f, $"hour {h}: z {d.Z} fell below the shadow floor");
+        }
+    }
+
+    [Fact]
+    public void Resolve_FnvNightStaysAmbientOnly_WithoutDalc()
+    {
+        // FNV/FO3 weathers carry no DALC — their decompile-grounded ambient-only night is unchanged:
+        // the directional colour fades to zero with the daylight fraction.
         var gray = new WeatherRgba(64, 64, 64, 255);
         var filler = new WeatherColor(gray, gray, gray, gray);
         var fnvLike = new WeatherRecord { Colors = [filler, filler, filler, filler, filler] };
@@ -112,12 +142,6 @@ public sealed class AtmosphereStateTests
         var noDalc = AtmosphereState.Resolve(0f, fnvLike, CleanTiming,
             moonlightDirection: Vector3.UnitZ);
         Assert.Equal(Vector3.Zero, noDalc.SunColor);
-
-        var dalc = new WeatherRgba(18, 26, 34, 255);
-        var modern = fnvLike with { DirectionalAmbient = new WeatherColor(dalc, dalc, dalc, dalc) };
-        var moonSet = AtmosphereState.Resolve(0f, modern, CleanTiming,
-            moonlightDirection: new Vector3(0.7f, 0.7f, -0.2f));
-        Assert.Equal(Vector3.Zero, moonSet.SunColor);
     }
 
     [Fact]

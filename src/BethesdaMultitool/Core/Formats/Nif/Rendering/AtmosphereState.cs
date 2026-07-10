@@ -187,33 +187,38 @@ public static class AtmosphereState
             ambient = SampleBand(ambientCube, hour, srB, srE, ssB, ssE);
         }
 
-        // Fade the directional sun colour by the daylight fraction. GROUNDED in Sky::UpdateColors
-        // (atmosphere_decompiled.txt): the engine modulates the Sunlight (cat 4) colour by a daylight
-        // factor (sky+0x100), so the directional vanishes as the sun sets. This fixes BOTH night bugs with
-        // NO direction hack: (1) at night day=0 ⇒ the directional is 0 ⇒ a below-horizon sun vector can no
-        // longer light mesh undersides; (2) `day` is CONTINUOUS and 0 at both window edges (srB, ssE), so
-        // there is no sudden dark↔bright step at the night boundaries (the earlier zenith-direction hack
-        // caused that step — a 90° swing in N·L). The NAM0 night Sunlight band is thus correctly suppressed
-        // at night instead of lighting the scene. The shader stays decompile-faithful
-        // (`mad NdotL, PSLightColor, Ambient`) — the fade is baked into PSLightColor here, as the engine does.
-        var sunColor = lightingEnabled ? sunColorBase * day : Vector3.Zero;
+        // Directional light color + direction, per engine family:
+        //
+        // FO4-family (weather carries DALC — the modern-weather marker): DECOMPILE-GROUNDED in FO4
+        // Sun::Update (tools/GhidraProject/fo4_lighting_decompiled.txt) — the scene's directional light
+        // follows ONE CONTINUOUS 24-hour path; there is NO sun→moon handover and no dusk snap:
+        //   * horizontal x runs +1→−1 across the "day leg" (sunriseMid−1h .. sunsetMid+1h, the
+        //     fSunAlphaTransTime=2h padding) and wraps −1→+1 across the night leg — continuous at
+        //     both edges (the night light re-crosses the zenith ~1am, which reads as moonlight);
+        //   * position = (x·fSunXExtreme, fSunYExtreme, |fSunXExtreme|−|x·fSunXExtreme|) — a
+        //     triangle-wave arc, near-overhead at noon (defaults 400/25 → apex ≈ 86°);
+        //   * the normalized z is FLOORED at fSunShadowMinAngle(30°)·DEG_TO_RAD — the light (and its
+        //     shadows) never drops below ~31° elevation. The engine compares the unit-vector z against
+        //     radians verbatim; reproduced exactly.
+        //   * the color is the UNSCALED NAM0 Sunlight band — the night rows carry the authored
+        //     moonlight blue (CommonwealthClear (53,70,87)); the engine never multiplies it by a
+        //     daylight factor (day/night look = band authoring). The previous hard flip to the moon
+        //     billboard's direction at day==0 was the round-11 stand-in — it caused the user-visible
+        //     "lighting snaps to the moon" and is refuted by the decompile.
+        //
+        // FO3/FNV (no DALC): unchanged — Sky::UpdateColors modulates the Sunlight colour by the
+        // daylight factor (atmosphere_decompiled.txt), so the directional fades out at night and the
+        // ambient-only night stands (both grounded in the FNV S3 audit).
+        Vector3 sunColor;
         var sunIntensity = lightingEnabled ? day : 0f;
-
-        // Moonlit night directional (Skyrim+/FO4-family): once the sun is fully down the engine
-        // hands the scene's directional light to the MOON, colored by the NAM0 Sunlight NIGHT band
-        // (CommonwealthClear authors (53,70,87) — dim blue moonlight; the abrupt sun→moon handover
-        // at the window edge is engine behavior — Skyrim's visible night "shadow flip"). Without
-        // this, the DALC ambient alone leaves FO4 nights reading near-black. Gated on the weather
-        // carrying DALC (the modern-weather marker — FNV/FO3 keep their decompile-grounded
-        // ambient-only nights) and on the moon being above the horizon. sunColorBase already
-        // samples the NIGHT Sunlight column at night hours. SunIntensity stays 0 so sun-keyed
-        // consumers (specular scale, moon-billboard fade, cloud daylight tint) are unaffected.
-        if (lightingEnabled && day <= 0f &&
-            moonlightDirection is { Z: > 0f } moonDir &&
-            weather?.DirectionalAmbient is not null)
+        if (lightingEnabled && weather?.DirectionalAmbient is not null)
         {
-            sunDir = Vector3.Normalize(moonDir);
+            sunDir = Fo4SunPathDirection(hour, srB, srE, ssB, ssE);
             sunColor = sunColorBase;
+        }
+        else
+        {
+            sunColor = lightingEnabled ? sunColorBase * day : Vector3.Zero;
         }
 
         // Distance fog (grounded in Sky::UpdateFog): the engine blends day↔night near/far/power by the
@@ -325,6 +330,41 @@ public static class AtmosphereState
             MathF.Sin(azimuth) * cosEl,
             MathF.Sin(elevation));
         return Vector3.Normalize(dir);
+    }
+
+    // --- FO4-family directional-light path (Sun::Update, fo4_lighting_decompiled.txt) ------------------
+    // Engine defaults read from the Fallout4.exe image (SettingT statics; see the audit notes):
+    // fSunXExtreme=400, fSunYExtreme=25, fSunAlphaTransTime=2h, fSunShadowMinAngle=30(°),
+    // fSunShadowScale=0. The light traverses a triangle-wave arc continuously over the full 24 hours
+    // (day leg between the padded sunrise/sunset midpoints, night leg wrapping back), and its unit z
+    // is floored at fSunShadowMinAngle·DEG_TO_RAD — the engine compares the unit-vector component
+    // against radians verbatim (≈ sin θ for small angles), reproduced exactly.
+    private const float Fo4SunXExtreme = 400f;
+    private const float Fo4SunYExtreme = 25f;
+    private const float Fo4SunAlphaTransTimeHours = 2f;
+    private const float Fo4SunShadowMinAngleDegrees = 30f;
+
+    internal static Vector3 Fo4SunPathDirection(float hour, float srB, float srE, float ssB, float ssE)
+    {
+        var dayStart = ((srB + srE) * 0.5f) - (Fo4SunAlphaTransTimeHours * 0.5f);
+        var dayEnd = ((ssB + ssE) * 0.5f) + (Fo4SunAlphaTransTimeHours * 0.5f);
+        float x;
+        if (hour >= dayStart && hour <= dayEnd)
+        {
+            x = 1f - ((hour - dayStart) / (dayEnd - dayStart)) * 2f;      // +1 at dawn → −1 at dusk
+        }
+        else
+        {
+            var sinceDusk = hour > dayEnd ? hour - dayEnd : (hour + 24f) - dayEnd;
+            x = (sinceDusk / (24f - (dayEnd - dayStart))) * 2f - 1f;      // −1 at dusk → +1 at dawn
+        }
+
+        var px = x * Fo4SunXExtreme;
+        var p = new Vector3(px, Fo4SunYExtreme, MathF.Abs(Fo4SunXExtreme) - MathF.Abs(px));
+        p = p.LengthSquared() > 1e-6f ? Vector3.Normalize(p) : Vector3.UnitZ;
+        // Engine: z += fSunShadowScale·DEG_TO_RAD (default 0), then floor at fSunShadowMinAngle·DEG_TO_RAD.
+        p.Z = MathF.Max(p.Z, Fo4SunShadowMinAngleDegrees * (MathF.PI / 180f));
+        return Vector3.Normalize(p);
     }
 
     // --- WTHR NAM0 time-band sampling (Sky::FillColorBlend) -------------------------------------------
