@@ -122,7 +122,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // (lod0 == 0 AND lod1 == 0 covering the whole buffer). The old lod0==0 flag amputated LOD1-only
     // shapes next to near siblings — every needle card on FO4 Far Harbor's pines ((0, N, 0)
     // partitions). Warm v29 entries bake needle-less trees.
-    internal const int DecoderVersion = 30;
+    // Bumped 30→31: Morrowind NiBSAnimationNode/NiBSParticleNode subtrees are now walked as scene
+    // nodes and AvoidNode hulls excluded (5f74a54c) — the decoded submesh SET changes for TES3 NIFs
+    // (in_lava_1024 gains its three magma shapes and drops the white avoid hull). Warm v30 entries
+    // kept serving the pre-fix decode, which is why the GUI still showed white lava after the fix.
+    internal const int DecoderVersion = 31;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
