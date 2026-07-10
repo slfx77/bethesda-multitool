@@ -29,8 +29,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 {
     // viewProj(64) + 3 DNAM colors(48) + camPosTime(16) + noiseParams(16) + surface0/1(32)
-    // + 3 layers(48) + depthParams(16)
-    private const uint UniformsByteSize = 256; // WaterFrameUniforms incl. the trailing RenderOrigin float4
+    // + 3 layers(48) + depthParams(16) + renderOrigin(16) + 3 FO4 float4s(48)
+    private const uint UniformsByteSize = 304; // WaterFrameUniforms incl. the trailing FO4 constants
 
     // Sentinel meaning "no resolved NNAM normal map" — the shader then uses a procedural ripple
     // normal so proto/test worldspaces with no water texture still animate.
@@ -52,11 +52,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     // available. _psoDepthSample: depth-test OFF (no DSV) used when the host hands us the scene
     // depth as an SRV — occlusion is then done in-shader via the sampled depth (FNV WATER000 path).
     // The Oblivion pair is the same HLSL compiled with OBLIVION_WATER (view-angle body + single sun
-    // specular — see WaterShaderVariant.OblivionWater000), selected by the profile at draw time.
+    // specular — see WaterShaderVariant.OblivionWater000), and the FO4 pair with FO4_WATER (the
+    // disassembled BSWaterShader math — see WaterShaderVariant.Fo4Water); both selected by the
+    // profile at draw time.
     private readonly ID3D12PipelineState _pso;
     private readonly ID3D12PipelineState _psoDepthSample;
     private readonly ID3D12PipelineState _psoOblivion;
     private readonly ID3D12PipelineState _psoOblivionDepthSample;
+    private readonly ID3D12PipelineState _psoFo4;
+    private readonly ID3D12PipelineState _psoFo4DepthSample;
 
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _waterCells = new();
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _visibleWaterScratch = new();
@@ -158,6 +162,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 
         var psOblivionBytecode = CompileEmbeddedShader(
             "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("OBLIVION_WATER", "1"));
+        var psFo4Bytecode = CompileEmbeddedShader(
+            "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("FO4_WATER", "1"));
 
         var psoDesc = new GraphicsPipelineStateDescription
         {
@@ -177,6 +183,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psOblivionBytecode;
         _psoOblivion = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        psoDesc.PixelShader = psFo4Bytecode;
+        _psoFo4 = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psBytecode;
 
         // Depth-sample variant: no hardware depth test and no DSV bound, so the scene depth buffer
@@ -193,6 +201,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _psoDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psOblivionBytecode;
         _psoOblivionDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        psoDesc.PixelShader = psFo4Bytecode;
+        _psoFo4DepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
     public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
@@ -369,7 +379,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 NoiseIndex = _noiseBindlessIndex,
                 NoiseTiling = _waterProfile.NoiseTilingWorldUnits,
                 NoiseScale = surface.NoiseScale,
-                NoisePad1 = 0,
+                WaterOpacity = surface.Opacity,
                 Surface0 = new Vector4(surface.NormalsUvScale, surface.FresnelAmount, surface.ReflectivityAmount, surface.Shininess),
                 // .w carries the lava flag (OBLIV-2): 1 = render as emissive, Fresnel-free lava (Oblivion
                 // Deadlands lava planes) instead of reflective water. Was an unused spare.
@@ -386,6 +396,16 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 DepthFar = _depthFar,
                 DepthTieBias = _waterProfile.DepthTieBiasWorldUnits,
                 RenderOrigin = new Vector4(renderOrigin, 0f),
+                // FO4-only constants (see WaterShaderVariant.Fo4Water); zero-defaults for other games.
+                Fo4Spec = new Vector4(
+                    surface.SunSpecularMagnitude, surface.SiltAmount, surface.ShallowAlpha, surface.DeepAlpha),
+                Fo4Ranges = new Vector4(
+                    surface.ColorShallowRange, surface.ColorDeepRange,
+                    surface.AlphaShallowRange, surface.AlphaDeepRange),
+                Fo4DarkSilt = ColorToVector4(_appearance?.DarkSilt, Vector3.Zero) with
+                {
+                    W = surface.DepthAmount,
+                },
             };
         }
 
@@ -405,10 +425,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         // With a scene-depth SRV the host has unbound the DSV + transitioned depth to
         // PIXEL_SHADER_RESOURCE, so use the no-depth-test PSO (occlusion is done in-shader).
         // Otherwise the DSV is still bound → use the hardware-depth-test PSO.
-        var oblivionVariant = _waterProfile.ShaderVariant == WaterShaderVariant.OblivionWater000;
-        cmd.SetPipelineState(_depthBindlessIndex != NoNormalMap
-            ? (oblivionVariant ? _psoOblivionDepthSample : _psoDepthSample)
-            : (oblivionVariant ? _psoOblivion : _pso));
+        var depthSample = _depthBindlessIndex != NoNormalMap;
+        cmd.SetPipelineState(_waterProfile.ShaderVariant switch
+        {
+            WaterShaderVariant.OblivionWater000 => depthSample ? _psoOblivionDepthSample : _psoOblivion,
+            WaterShaderVariant.Fo4Water => depthSample ? _psoFo4DepthSample : _psoFo4,
+            _ => depthSample ? _psoDepthSample : _pso,
+        });
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, srvAlloc.Gpu);
@@ -439,6 +462,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _psoDepthSample.Dispose();
         _psoOblivion.Dispose();
         _psoOblivionDepthSample.Dispose();
+        _psoFo4.Dispose();
+        _psoFo4DepthSample.Dispose();
     }
 
     private int GatherVisibleWater(VisibilityCylinder cylinder)
@@ -657,7 +682,9 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         public uint NoiseIndex;
         public uint NoiseTiling;
         public float NoiseScale; // DNAM fNoiseScale @96; shader reads asfloat(uNoiseParams.z)
-        public uint NoisePad1;
+        // WATR ANAM Opacity/100 (Oblivion VarAmounts.z fresnel/alpha floor; decompiled
+        // FUN_004ed660 = ANAM byte / 100). Shader reads asfloat(uNoiseParams.w).
+        public float WaterOpacity;
         // Engine-faithful WATR DNAM shading params (see WaterSurfaceParams).
         public Vector4 Surface0; // NormalsUvScale, FresnelAmount, ReflectivityAmount, Shininess
         public Vector4 Surface1; // SunPower, DepthFalloffStart, DepthFalloffEnd, spare
@@ -673,6 +700,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         public float DepthTieBias;
         // xyz = camera-relative render origin subtracted in the VS before projection (0 on absolute paths).
         public Vector4 RenderOrigin;
+        // FO4_WATER-only constants (appended so every other variant's offsets are untouched):
+        // Fo4Spec = (Sun Specular Magnitude, Silt Amount, Shallow Alpha, Deep Alpha);
+        // Fo4Ranges = (Color Shallow/Deep Range, Alpha Shallow/Deep Range) in world units;
+        // Fo4DarkSilt = DNAM silt Dark Color (the FO4 PS's unshadowed ambient add).
+        public Vector4 Fo4Spec;
+        public Vector4 Fo4Ranges;
+        public Vector4 Fo4DarkSilt;
     }
 }
 

@@ -36,7 +36,33 @@ public sealed record WaterSurfaceParams(
     // DNAM fNoiseScale (@96). Per the MemDebug decompile (ISNOISENORMALMAP.pso + WaterShader RE) this is
     // the noise-map detail scale: the noise repeats ~NoiseScale times across each NormalsUvScale world-tile,
     // so the effective ripple wavelength ≈ NormalsUvScale / NoiseScale. Engine default 1.0; real water ~13.
-    float NoiseScale = 1f)
+    float NoiseScale = 1f,
+    // WATR ANAM Opacity / 100. Oblivion feeds this into VarAmounts.z — the fresnel/alpha FLOOR of its
+    // water shader (decompiled: FUN_00499570 filler, FUN_004ed660 getter = ANAM byte / 100, and the
+    // console "set water opacity" handler writes the same global). Vanilla Oblivion: DefaultWater = 100,
+    // dungeon/sewer/oil = 85. Only the Oblivion shader variant consumes it; 1.0 when ANAM is absent.
+    float Opacity = 1f,
+    // ---- FO4-only DNAM fields (WaterShaderVariant.Fo4Water; defaults keep every other game's
+    // params byte-identical — see tools/GhidraProject/fo4_water_pixel_shader_decompiled.txt). ----
+    // Sun Specular Magnitude @104 — the FO4 specular amplitude (pairs with SunPower = Sun Specular
+    // Power @100 as the normalized-Blinn exponent).
+    float SunSpecularMagnitude = 0f,
+    // Silt Amount @188 — stands in for the engine's gloss-map input to the transmission/backscatter
+    // sigmoid (labeled stand-in until BSWaterShader::SetupMaterial is decompiled).
+    float SiltAmount = 0f,
+    // Shallow/Deep Alpha @20/@24 + their column ranges @28/@32 (world units): the authored
+    // alpha-by-water-depth ramp the engine bakes into its water LUT; the FO4 shader evaluates it
+    // analytically from the sampled scene-depth column.
+    float ShallowAlpha = 1f,
+    float DeepAlpha = 1f,
+    float AlphaShallowRange = 0f,
+    float AlphaDeepRange = 0f,
+    // Color Shallow/Deep Range @12/@16 — multipliers of DepthAmount for the Shallow→Deep color ramp.
+    float ColorShallowRange = 0f,
+    float ColorDeepRange = 0f,
+    // Depth Amount @0 — the world-unit water column at which the FO4 depth ramps saturate (the
+    // color/alpha ranges above multiply it; retail authors those ≈1.0).
+    float DepthAmount = 0f)
 {
     /// <summary>Fallback when a record has no full 196-byte DNAM (proto/test water, or a worldspace whose
     /// WATR didn't resolve). These are the engine's shipped <c>NVCleanWater</c> preset values (FormID
@@ -80,7 +106,10 @@ public sealed record WaterAppearance(
     string? NoiseTexture,
     WaterSurfaceParams Surface,
     bool CausesDamage = false,
-    bool IsLava = false)
+    bool IsLava = false,
+    // FO4 DNAM Silt "Dark Color" @196 — the FO4 water shader's unshadowed ambient-add term
+    // (its PS adds this constant to the accumulated sun/point lighting before the body multiply).
+    (byte R, byte G, byte B)? DarkSilt = null)
 {
     /// <summary>
     ///     Builds appearance from a <see cref="WaterRecord" />. Returns null when the record is
@@ -103,7 +132,15 @@ public sealed record WaterAppearance(
         var appearance = FromVisualProperties(water.VisualProperties, water.NoiseTexture);
         if (appearance is not null)
         {
-            return appearance with { CausesDamage = causesDamage, IsLava = isLava };
+            // ANAM is Required in shipped WATRs, so a raw 0 means the subrecord was absent
+            // (proto/partial records) — keep the fully-floored default rather than a 0 floor.
+            var opacity = water.Opacity > 0 ? water.Opacity / 100f : 1f;
+            return appearance with
+            {
+                CausesDamage = causesDamage,
+                IsLava = isLava,
+                Surface = appearance.Surface with { Opacity = opacity },
+            };
         }
 
         // No usable DATA/DNAM colors. The shipping Oblivion lava planes (OblivionCitadelLavaPlane,
@@ -148,7 +185,8 @@ public sealed record WaterAppearance(
         var s = shallow ?? deep!.Value;
         var d = deep ?? shallow!.Value;
         var r = reflection ?? s;
-        return new WaterAppearance(s, d, r, noiseTexture, ExtractSurface(props));
+        return new WaterAppearance(s, d, r, noiseTexture, ExtractSurface(props),
+            DarkSilt: ExtractColor(props, "DarkSiltColor"));
     }
 
     /// <summary>
@@ -170,7 +208,16 @@ public sealed record WaterAppearance(
             Layer1: ExtractLayer(props, "NoiseLayer1", def.Layer1),
             Layer2: ExtractLayer(props, "NoiseLayer2", def.Layer2),
             Layer3: ExtractLayer(props, "NoiseLayer3", def.Layer3),
-            NoiseScale: ExtractFloat(props, "NoiseScale", def.NoiseScale));
+            NoiseScale: ExtractFloat(props, "NoiseScale", def.NoiseScale),
+            SunSpecularMagnitude: ExtractFloat(props, "SunSpecularMagnitude", def.SunSpecularMagnitude),
+            SiltAmount: ExtractFloat(props, "SiltAmount", def.SiltAmount),
+            ShallowAlpha: ExtractFloat(props, "ShallowAlpha", def.ShallowAlpha),
+            DeepAlpha: ExtractFloat(props, "DeepAlpha", def.DeepAlpha),
+            AlphaShallowRange: ExtractFloat(props, "AlphaShallowRange", def.AlphaShallowRange),
+            AlphaDeepRange: ExtractFloat(props, "AlphaDeepRange", def.AlphaDeepRange),
+            ColorShallowRange: ExtractFloat(props, "ColorShallowRange", def.ColorShallowRange),
+            ColorDeepRange: ExtractFloat(props, "ColorDeepRange", def.ColorDeepRange),
+            DepthAmount: ExtractFloat(props, "DepthAmount", def.DepthAmount));
     }
 
     private static WaterNoiseLayer ExtractLayer(

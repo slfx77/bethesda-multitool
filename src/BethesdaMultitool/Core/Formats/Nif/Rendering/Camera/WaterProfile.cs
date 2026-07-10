@@ -23,6 +23,14 @@ public enum WaterShaderVariant
     /// <summary>Oblivion's <c>WATER000.pso</c> on the RT-free path: view-angle (N·V) Deep→Shallow body,
     /// single sun specular. Compiled from the same HLSL with the <c>OBLIVION_WATER</c> define.</summary>
     OblivionWater000,
+
+    /// <summary>FO4's <c>BSWaterShader</c> (D3D11 ps_5_0, disassembled from
+    /// <c>Fallout4 - Shaders.ba2</c> → <c>ShadersFX\Shaders011.fxp</c> group 5; see
+    /// <c>tools/GhidraProject/fo4_water_pixel_shader_decompiled.txt</c>): Oren-Nayar sun diffuse +
+    /// transmission/backscatter, normalized Kelemen/Schlick Blinn specular (F0 = 0.2), analytic
+    /// Shallow→Deep color/alpha ramps by water column (the engine's baked depth LUT), reflection ×
+    /// lighting composite. Compiled from the same HLSL with the <c>FO4_WATER</c> define.</summary>
+    Fo4Water,
 }
 
 /// <summary>
@@ -99,6 +107,19 @@ public sealed record WaterProfile
     };
 
     /// <summary>
+    ///     Fallout 4's profile — its <c>BSWaterShader</c> pixel shader was disassembled from the
+    ///     shipped D3D11 bytecode (<c>Shaders011.fxp</c>) and genuinely diverges from the FNV-family
+    ///     RT-free math (Oren-Nayar diffuse, normalized Kelemen/Schlick specular, depth-LUT body), so
+    ///     it gets its own shader variant. Renderer-side tuning stays FNV's: FO4's noise layers carry
+    ///     their own DNAM wind/amplitude values and its NAM2 noise texture rides the same NNAM slot.
+    ///     FO76 is NOT routed here until its water shader is verified against FO4's (binary-RE-only).
+    /// </summary>
+    public static readonly WaterProfile Fallout4 = Fnv with
+    {
+        ShaderVariant = WaterShaderVariant.Fo4Water,
+    };
+
+    /// <summary>
     ///     The water profile for the loaded game. FNV/FO3 ship the identical <c>WATER000</c> set and
     ///     Skyrim's RT-free water is the same shader (RE-confirmed — see
     ///     <see cref="WaterShaderVariant" />), so they resolve to <see cref="Fnv" />, as does every game
@@ -109,6 +130,7 @@ public sealed record WaterProfile
     public static WaterProfile ForGame(BethesdaGame game) => game switch
     {
         BethesdaGame.Oblivion => Oblivion,
+        BethesdaGame.Fallout4 => Fallout4,
         _ => Fnv,
     };
 }

@@ -114,6 +114,33 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "DNAM" when Context.Game == BethesdaGame.Skyrim && sub.DataLength >= 52:
                     visualProps = ReadSkyrimWaterData(subData, record.IsBigEndian);
                     break;
+                // FO4 WATR DNAM (xEdit wbDefinitionsFO4, 201 bytes; layout byte-verified against retail
+                // Fallout4.esm — ExtLakeQuannapowittWater etc.): Fog block (Depth Amount@0, Shallow@4/
+                // Deep@8 byte-colors, color ranges@12/16, alphas@20/24 + ranges@28/32, underwater@36..),
+                // Physical (Normal Magnitude@52, Reflectivity@64, Fresnel@68, Reflection color@96),
+                // Specular (Sun Specular Power@100 / Magnitude@104), Noise (3 layers grouped BY FIELD:
+                // WindDir@128.., WindSpeed@140.., Amplitude@152.., UVScale@164..), Silt (Amount@188,
+                // Light@192/Dark@196 colors), SSR bool@200. Game-gated: the length overlaps no other
+                // game's DNAM, but the field layout is FO4's alone.
+                case "DNAM" when Context.Game == BethesdaGame.Fallout4 && sub.DataLength >= 200:
+                    visualProps = ReadFallout4WaterData(subData, record.IsBigEndian);
+                    break;
+                // FO4 has no NNAM — its per-layer noise/normal textures ship as NAM2/NAM3/NAM4 zstrings
+                // (layer 1 first, usually all three identical). Surface layer 1 as the noise texture,
+                // stripping the "data\" prefix FO4 authors so the texture cache resolves it like any
+                // other "textures\..." path.
+                case "NAM2" when Context.Game == BethesdaGame.Fallout4 && noiseTexture is null:
+                {
+                    var nam2 = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(nam2))
+                    {
+                        noiseTexture = nam2.StartsWith("data\\", StringComparison.OrdinalIgnoreCase)
+                            ? nam2[5..]
+                            : nam2;
+                    }
+
+                    break;
+                }
                 case "DNAM" when sub.DataLength == 196:
                 {
                     if (SubrecordSchemaView.TryRead("DNAM", "WATR", subData, record.IsBigEndian) is { } v)
@@ -227,6 +254,56 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         Add(props, d, "NoiseLayer2AmpScale", 188, isBigEndian);
         Add(props, d, "NoiseLayer3AmpScale", 192, isBigEndian);
         return props;
+    }
+
+    // FO4 WATR DNAM (201 bytes; see the game-gated case above for the layout provenance). The shared
+    // canonical keys (ShallowColor/DeepColor/ReflectionColor, ReflectivityAmount, FresnelAmount,
+    // SunPower, NoiseLayerN*) feed the same WaterAppearance decode as every other game; the FO4-only
+    // keys (alpha/color depth ranges, Sun Specular Magnitude, silt) drive the FO4 water shader variant
+    // (WaterShaderVariant.Fo4Water — tools/GhidraProject/fo4_water_pixel_shader_decompiled.txt).
+    internal static Dictionary<string, object?> ReadFallout4WaterData(ReadOnlySpan<byte> d, bool isBigEndian)
+    {
+        static uint Color(ReadOnlySpan<byte> d, int off) =>
+            (uint)(d[off] | (d[off + 1] << 8) | (d[off + 2] << 16));
+
+        return new Dictionary<string, object?>
+        {
+            // Depth Amount = the world-unit water column at which the depth ramps saturate (scales
+            // with the body: IntTroughWater 18, ExtPuddleWater 290, ExtLakeQuannapowittWater 1087);
+            // the color/alpha "ranges" below are multipliers of it (retail authors them ≈1.0).
+            ["DepthAmount"] = ReadFloat(d, 0, isBigEndian),
+            ["ShallowColor"] = Color(d, 4),
+            ["DeepColor"] = Color(d, 8),
+            ["ReflectionColor"] = Color(d, 96),
+            ["ColorShallowRange"] = ReadFloat(d, 12, isBigEndian),
+            ["ColorDeepRange"] = ReadFloat(d, 16, isBigEndian),
+            ["ShallowAlpha"] = ReadFloat(d, 20, isBigEndian),
+            ["DeepAlpha"] = ReadFloat(d, 24, isBigEndian),
+            ["AlphaShallowRange"] = ReadFloat(d, 28, isBigEndian),
+            ["AlphaDeepRange"] = ReadFloat(d, 32, isBigEndian),
+            ["NormalMagnitude"] = ReadFloat(d, 52, isBigEndian),
+            ["ReflectivityAmount"] = ReadFloat(d, 64, isBigEndian),
+            ["FresnelAmount"] = ReadFloat(d, 68, isBigEndian),
+            // Sun Specular Power/Magnitude: the FO4 shader's Blinn exponent + amplitude sources
+            // (engine feeds them through the gloss pipeline; the DNAM values are the authored analogs).
+            ["SunPower"] = ReadFloat(d, 100, isBigEndian),
+            ["SunSpecularMagnitude"] = ReadFloat(d, 104, isBigEndian),
+            ["NoiseLayer1WindDir"] = ReadFloat(d, 128, isBigEndian),
+            ["NoiseLayer2WindDir"] = ReadFloat(d, 132, isBigEndian),
+            ["NoiseLayer3WindDir"] = ReadFloat(d, 136, isBigEndian),
+            ["NoiseLayer1WindSpeed"] = ReadFloat(d, 140, isBigEndian),
+            ["NoiseLayer2WindSpeed"] = ReadFloat(d, 144, isBigEndian),
+            ["NoiseLayer3WindSpeed"] = ReadFloat(d, 148, isBigEndian),
+            ["NoiseLayer1AmpScale"] = ReadFloat(d, 152, isBigEndian),
+            ["NoiseLayer2AmpScale"] = ReadFloat(d, 156, isBigEndian),
+            ["NoiseLayer3AmpScale"] = ReadFloat(d, 160, isBigEndian),
+            ["NoiseLayer1UVScale"] = ReadFloat(d, 164, isBigEndian),
+            ["NoiseLayer2UVScale"] = ReadFloat(d, 168, isBigEndian),
+            ["NoiseLayer3UVScale"] = ReadFloat(d, 172, isBigEndian),
+            ["SiltAmount"] = ReadFloat(d, 188, isBigEndian),
+            ["LightSiltColor"] = Color(d, 192),
+            ["DarkSiltColor"] = Color(d, 196),
+        };
     }
 
     #endregion

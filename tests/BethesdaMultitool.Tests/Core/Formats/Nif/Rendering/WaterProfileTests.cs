@@ -31,7 +31,6 @@ public class WaterProfileTests
 
     [Theory]
     [InlineData(BethesdaGame.Skyrim)]
-    [InlineData(BethesdaGame.Fallout4)]
     [InlineData(BethesdaGame.Fallout76)]
     [InlineData(BethesdaGame.Morrowind)]
     [InlineData(BethesdaGame.Starfield)]
@@ -56,6 +55,20 @@ public class WaterProfileTests
         var profile = WaterProfile.ForGame(BethesdaGame.Oblivion);
         Assert.Same(WaterProfile.Oblivion, profile);
         Assert.Equal(WaterShaderVariant.OblivionWater000, profile.ShaderVariant);
+        Assert.Equal(WaterProfile.Fnv.NoiseTilingWorldUnits, profile.NoiseTilingWorldUnits);
+        Assert.Equal(WaterProfile.Fnv.DepthTieBiasWorldUnits, profile.DepthTieBiasWorldUnits);
+    }
+
+    [Fact]
+    public void Fallout4_UsesItsOwnDecompiledShaderVariant()
+    {
+        // FO4's BSWaterShader was disassembled from the shipped D3D11 bytecode (Shaders011.fxp group 5;
+        // fo4_water_pixel_shader_decompiled.txt) and genuinely diverges (Oren-Nayar diffuse, normalized
+        // Kelemen/Schlick specular, depth-LUT body) — its own variant. FO76 stays on the FNV fallback
+        // until its shader is verified against FO4's (binary-RE-only: no assumed identity).
+        var profile = WaterProfile.ForGame(BethesdaGame.Fallout4);
+        Assert.Same(WaterProfile.Fallout4, profile);
+        Assert.Equal(WaterShaderVariant.Fo4Water, profile.ShaderVariant);
         Assert.Equal(WaterProfile.Fnv.NoiseTilingWorldUnits, profile.NoiseTilingWorldUnits);
         Assert.Equal(WaterProfile.Fnv.DepthTieBiasWorldUnits, profile.DepthTieBiasWorldUnits);
     }

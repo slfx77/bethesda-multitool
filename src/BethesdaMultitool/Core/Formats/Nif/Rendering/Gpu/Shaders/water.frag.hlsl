@@ -31,7 +31,8 @@ cbuffer Uniforms : register(b0)
     float4 uDeep;        // rgb in 0..1   (DNAM DeepColor    / FNV c3)
     float4 uReflection;  // rgb in 0..1   (DNAM ReflectionColor / FNV c4)
     float4 uCamPosTime;  // xyz = camera world pos (FNV EyePos c1), w = elapsed seconds
-    uint4 uNoiseParams;  // x = NNAM bindless index (0xFFFFFFFF = none), y = world units/tile
+    uint4 uNoiseParams;  // x = NNAM bindless index (0xFFFFFFFF = none), y = world units/tile,
+                         // z = fNoiseScale bits, w = WATR ANAM opacity/100 bits (Oblivion VarAmounts.z)
     float4 uSurface0;    // NormalsUvScale, FresnelAmount(=F0), ReflectivityAmount, Shininess(spec exp)
     float4 uSurface1;    // SunPower, DepthFalloffStart, DepthFalloffEnd, w = lava flag (1 = emissive lava)
     float4 uLayer1;      // per noise layer: UvScale, WindDirDeg, WindSpeed, AmpScale
@@ -40,6 +41,13 @@ cbuffer Uniforms : register(b0)
     uint4 uDepthParams;  // x = scene-depth SRV bindless index (0xFFFFFFFF = none), y/z = near/far bits,
                          // w = depth-occlusion tie-break bias (world units, asfloat) — water wins coplanar ties
     float4 uRenderOrigin; // xyz = camera-relative render origin (VS-only; declared for layout parity)
+    // ---- FO4_WATER-only constants (appended at the end so every other variant's offsets are
+    // untouched; sourced from the FO4 WATR DNAM — see WaterShaderVariant.Fo4Water). ----
+    float4 uFo4Spec;     // x = Sun Specular Magnitude, y = Silt Amount, z = Shallow Alpha, w = Deep Alpha
+    float4 uFo4Ranges;   // x/y = Color Shallow/Deep Range, z/w = Alpha Shallow/Deep Range
+                         //       (multipliers of Depth Amount; retail authors them ≈1.0)
+    float4 uFo4DarkSilt; // rgb = DNAM silt Dark Color (the FO4 PS's unshadowed ambient add),
+                         // w = DNAM Depth Amount (world-unit column at which the depth ramps saturate)
 };
 
 // Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants (7×float4),
@@ -256,6 +264,98 @@ float4 main(PSInput input) : SV_Target
 
     float ndotv = saturate(dot(N, V));
 
+#if FO4_WATER
+    // ==== FO4 BSWaterShader (ps_5_0, Shaders011.fxp group 5) — engine-exact math per
+    // tools/GhidraProject/fo4_water_pixel_shader_decompiled.txt; asm line refs = g5_ps_00000001.asm.
+    // Engine-generated inputs get labeled stand-ins: the composited displacement-normal texture is
+    // our 3-layer scroll (N above), the depth→color LUT is evaluated analytically, the reflection
+    // cubemap is the sky-gradient CB read, the shadow cascade term is 1 (no viewer shadow pass yet),
+    // and the point-light loop is empty (hook for the placed-lights overhaul).
+    float satNL = saturate(dot(N, sunDir));
+
+    // Body color — the engine's t15 LUT bakes the DNAM Shallow→Deep ramp over normalized depth
+    // (vertex-painted in-engine; DNAM Depth Amount scales it to world units — trough 18, lake 1087,
+    // with the "range" fields as ≈1.0 multipliers). Evaluate from the real water column when scene
+    // depth is bound, else a grazing-angle proxy.
+    // The ramps are evaluated in GAMMA space: the engine PS decodes its LUT coordinate through
+    // pow(x, 1/2.2) (asm 65-67 — the vertex-painted depth is gamma-decoded before the t15 sample),
+    // so equal LUT steps are gamma-depth steps. A linear column/DepthAmount ramp under-responds in
+    // shallow water (DepthAmount is the body's full authored depth — ocean 3007), reading far too
+    // translucent over shelves.
+    float fo4RampUnits = max(uFo4DarkSilt.w, 1.0);
+    float colT = (depthIndex == 0xFFFFFFFFu)
+        ? 1.0 - ndotv
+        : pow(saturate(column / max(fo4RampUnits * uFo4Ranges.y, 1.0)), 0.454545);
+    float3 body = lerp(uShallow.rgb, uDeep.rgb, colT);
+
+    // Oren-Nayar sun diffuse (asm 110-132) — engine constants 0.57/0.09/0.45/0.5 exactly.
+    // σ (roughness) is per-material in-engine (1 − cb2[11].x via the gloss pipeline); LABELED
+    // STAND-IN 0.2 until BSWaterShader::SetupMaterial is decompiled.
+    const float kFo4Sigma = 0.2;
+    float a2 = kFo4Sigma * kFo4Sigma;
+    float onA = 1.0 - 0.5 * a2 / (a2 + 0.57);
+    float onB = 0.45 * a2 / (a2 + 0.09);
+    float vdotn = dot(V, N);
+    float ldotn = dot(sunDir, N);
+    float sinTan = sqrt(saturate((1.0 - vdotn * vdotn) * (1.0 - ldotn * ldotn)))
+        / max(max(vdotn, ldotn), 1e-3);
+    float cosPhi = max(dot(V - N * vdotn, sunDir - N * ldotn), 0.0);
+    float3 acc = satNL * (onA + onB * cosPhi * sinTan) * sunCol;
+
+    // Transmission/backscatter (asm 134-143): sun shining through the surface toward the eye,
+    // gated by a sigmoid roughness mask. The sigmoid input is the gloss-map term in-engine;
+    // the DNAM Silt Amount stands in (labeled).
+    float back = 3.0 - 3.0 / (1.0 + exp(8.65591 * (2.0 * (1.0 - saturate(uFo4Spec.y)) - 1.0)));
+    acc += saturate(dot(V, -sunDir)) * pow(1.0 - ndotv, 0.01) * satNL * back * sunCol;
+
+    // Wrap-lighting residual (asm 149-155): light beyond the direct N·L term, tinted by the body.
+    // The wrap factor is a per-frame engine constant (cb1[7].x); LABELED default 0.5.
+    const float kFo4Wrap = 0.5;
+    acc += max(saturate((ldotn + kFo4Wrap) / (kFo4Wrap + 1.0)) - satNL, 0.0) * sunCol * body;
+
+    // DNAM silt Dark Color = the unshadowed ambient add (asm 283: lighting = acc + cb2[3].yzw).
+    float3 lighting = acc + uFo4DarkSilt.rgb;
+
+    // Specular (asm 157-195): normalized Blinn-Phong ((e+2)/2π · (N·H)^e), Cook-Torrance-style
+    // visibility min(2(N·H)min(N·L,N·V)/(V·H), 1)/(N·V), Schlick fresnel with the engine's literal
+    // F0 = 0.2, ×0.25 energy factor, firefly clamp 15. Exponent = DNAM Sun Specular Power
+    // (uSurface1.x), amplitude = DNAM Sun Specular Magnitude (uFo4Spec.x) — the authored analogs of
+    // the engine's gloss-map-driven exponent/amplitude (labeled).
+    float3 H = normalize(V + sunDir);
+    float ndoth = saturate(dot(N, H));
+    float vdoth = saturate(dot(V, H));
+    float fo4SpecExp = max(uSurface1.x, 1.0);
+    float blinn = pow(ndoth, fo4SpecExp) * (fo4SpecExp + 2.0) * 0.159155;
+    float vis = min(2.0 * ndoth * min(satNL, ndotv) / max(vdoth, 1e-4), 1.0) / max(ndotv, 1e-4);
+    float fres5 = pow(1.0 - vdoth, 5.0);
+    float fres = min(fres5 + 0.2 * (1.0 - fres5), 1.0);
+    float spec = min(vis * fres * blinn * 0.25, 15.0) * uFo4Spec.x * satNL;
+
+    // Composite (asm 309-314): the reflection is multiplied by the SAME lighting as the body
+    // (engine: cube·gloss·global × (lighting) + body·lighting + spec). RT-free reflection source =
+    // sky gradient by the reflected ray (as the other variants), scaled by DNAM Reflectivity.
+    float3 Rf = reflect(-V, N);
+    float3 reflSky = uSkyTopSkyEnabled.w > 0.5
+        ? lerp(uSkyHorizon.rgb, uSkyTopSkyEnabled.rgb, saturate(Rf.z))
+        : uReflection.rgb;
+    float3 fo4Color = body * lighting + reflSky * reflectivity * lighting + spec * sunCol;
+
+    // Alpha: the engine draws the surface near-opaque and gets its "translucency" from the tinted
+    // REFRACTION composite; RT-free, the DNAM Shallow→Deep alpha ramp stands in as framebuffer
+    // coverage, evaluated in the same gamma-depth domain as the color ramp (shorelines still fade
+    // where authored — ShallowAlpha is 0 on most exterior FO4 waters). The coverage is then FLOORED
+    // by the surface's Schlick fresnel (the PS's literal F0 = 0.2): at grazing angles the surface
+    // mirrors regardless of water depth — transmission scales by (1−F) — so distant water reads
+    // opaque while looking straight down at a shallow shelf still shows the (tinted) bottom.
+    float aT = (depthIndex == 0xFFFFFFFFu)
+        ? 1.0 - ndotv
+        : pow(saturate(column / max(fo4RampUnits * uFo4Ranges.w, 1.0)), 0.454545);
+    float fo4Alpha = lerp(saturate(uFo4Spec.z), saturate(uFo4Spec.w), aT);
+    float fo4SurfF = 0.2 + 0.8 * pow(1.0 - ndotv, 5.0);
+    fo4Alpha = max(fo4Alpha, fo4SurfF);
+    return float4(ApplyFog(saturate(fo4Color), input.vWorldPos), fo4Alpha);
+#else
+
 #if OBLIVION_WATER
     // Oblivion body color: lerp(Deep, Shallow, N·V) — the view ANGLE picks the body tint
     // (grazing = deep, top-down = shallow); Oblivion's PS has no depth-column body term and no
@@ -283,11 +383,11 @@ float4 main(PSInput input) : SV_Target
     float F = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
 #if OBLIVION_WATER
     // VarAmounts.z — the engine's runtime fresnel FLOOR (max(VarAmounts.z, Schlick), WATER000
-    // asm 139). Its WATR/GMST source is unrecovered from the constant-setup side, so 0.85 is
-    // CALIBRATED against in-game oracles: Oblivion water is reflection-dominated and largely
-    // opaque everywhere (IC daylight + sunset mirror shots, 2026-07-07 user captures); only the
-    // shore band and near-top-down angles read through. Floors both the color lerp and the alpha.
-    float fresneled = max(0.85, saturate(F));
+    // asm 139). DECOMPILE-RESOLVED (Oblivion.exe FUN_00499570 fills the global; FUN_004ed660 is
+    // the getter; the console "set water opacity" handler FUN_0050d8e0 writes the same slot):
+    // VarAmounts.z = WATR ANAM Opacity / 100 — per water type. Vanilla: DefaultWater 100 (fully
+    // floored/opaque), dungeon/sewer/oil waters 85. Floors both the color lerp and the alpha.
+    float fresneled = max(asfloat(uNoiseParams.w), saturate(F));
 #else
     float fresneled = saturate(F);
 #endif
@@ -325,4 +425,5 @@ float4 main(PSInput input) : SV_Target
     float alpha = lerp(0.6, 0.95, saturate(F));
 #endif
     return float4(ApplyFog(saturate(color), input.vWorldPos), alpha);
+#endif // !FO4_WATER
 }
