@@ -59,7 +59,8 @@ public sealed partial class WorldView3DControl
         var (worldMinZ, worldMaxZ) = ComputeGridZExtent(cells) ?? (Export3DFallbackMinZ, Export3DFallbackMaxZ);
 
         var dialog = new MapExport3DDialog(
-            worldMinX, worldMaxX, worldMinY, worldMaxY, worldMinZ, worldMaxZ, Export3DMaxTileDimension,
+            worldMinX, worldMaxX, worldMinY, worldMaxY, worldMinZ, worldMaxZ,
+            Export3DMaxTileDimension, Export3DMaxImageDimension,
             showTerrain: _showTerrain, showMeshes: _showReferences, showWater: _showWater,
             showActivators: !_hiddenCategories.Contains(PlacedObjectCategory.Activator),
             showMarkers: _showMarkers, showDisabled: _showDisabled, showNavMesh: _showNavMesh,
@@ -85,7 +86,12 @@ public sealed partial class WorldView3DControl
 
         var plan = MapExport3DPlanner.Plan(
             req.Mode, req.DirectionQuadrant, worldMinX, worldMaxX, worldMinY, worldMaxY,
-            worldMinZ, worldMaxZ, req.Scale, req.Tiled, Export3DMaxTileDimension);
+            worldMinZ, worldMaxZ, req.Scale, req.Tiled, Export3DMaxTileDimension, Export3DMaxImageDimension);
+
+        // Per-tile PNGs + manifest only when the user asked for tiles AND there is more than one
+        // (a one-tile "tiled" run stays a single basePath PNG, as before). A non-tiled run whose grid
+        // exceeds one tile is an internal render detail — stitched into a single PNG.
+        var tiledOutput = req.Tiled && (plan.Cols * plan.Rows) > 1;
 
         var wsIdx = WorldspaceComboBox.SelectedIndex;
         var wsName = _data.Worldspaces is { } wss && wsIdx >= 0 && wsIdx < wss.Count
@@ -107,7 +113,8 @@ public sealed partial class WorldView3DControl
         try
         {
             _commandRecorder12?.WaitForGpuIdle();
-            await RunProjectionExportAsync(plan, opts, file.Path, worldMaxZ - worldMinZ, progress, progress.Cts.Token);
+            await RunProjectionExportAsync(
+                plan, opts, file.Path, worldMaxZ - worldMinZ, tiledOutput, progress, progress.Cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -125,7 +132,7 @@ public sealed partial class WorldView3DControl
     }
 
     private async Task RunProjectionExportAsync(
-        Export3DPlan plan, Export3DOptions opts, string basePath, float zSpan,
+        Export3DPlan plan, Export3DOptions opts, string basePath, float zSpan, bool tiledOutput,
         ExportProgressController progress, CancellationToken ct)
     {
         var (basisRight, basisUp) = OrthoViewProjBuilder.CameraBasis(plan.Azimuth, plan.Elevation);
@@ -139,9 +146,13 @@ public sealed partial class WorldView3DControl
         if (string.IsNullOrEmpty(ext)) ext = ".png";
 
         var totalTiles = plan.Cols * plan.Rows;
-        var tiled = totalTiles > 1;
         var manifestTiles = new List<object>();
         var tileIndex = 0;
+        // Single-PNG output: render into one RGBA buffer, tile by tile (the grid is an internal
+        // consequence of the per-tile GPU target cap). Pre-cleared to transparent — the same clear an
+        // empty rendered frame carries — so empty tiles can simply be skipped. 16384² = 1 GiB, inside
+        // the managed-array ceiling; a cancel mid-run discards the buffer without a partial PNG.
+        var stitched = tiledOutput ? null : new byte[(long)plan.ImageWidth * plan.ImageHeight * 4];
 
         for (var tj = 0; tj < plan.Rows; tj++)
         {
@@ -149,7 +160,7 @@ public sealed partial class WorldView3DControl
             {
                 ct.ThrowIfCancellationRequested();
                 tileIndex++;
-                progress.Report(tiled ? "Rendering tile" : "Rendering", tileIndex, totalTiles);
+                progress.Report(totalTiles > 1 ? "Rendering tile" : "Rendering", tileIndex, totalTiles);
                 await Task.Yield();
 
                 var viewProj = OrthoViewProjBuilder.BuildViewProjTile(
@@ -182,21 +193,42 @@ public sealed partial class WorldView3DControl
                 }
                 if (tile is null) continue;
 
-                // Skip empty tiles in a tiled run: most of a worldspace's bounding-box grid covers ocean /
-                // void with nothing rendered, so the tile is a single uniform clear color. Writing those
-                // produced thousands of blank PNGs. A tile with ANY geometry has ≥2 distinct pixels.
-                // (The single-image, non-tiled case always saves — even an empty frame is the result.)
-                if (tiled && IsUniformTile(tile.Bgra))
+                // Skip empty tiles: most of a worldspace's bounding-box grid covers ocean / void with
+                // nothing rendered, so the tile is a single uniform clear color. In a tiled run writing
+                // those produced thousands of blank PNGs; in stitch mode the buffer is pre-cleared to
+                // the same transparent clear, so the slot is already correct. A tile with ANY geometry
+                // has ≥2 distinct pixels. (A 1×1 non-tiled export always saves at the end regardless —
+                // even an empty frame is the result.)
+                var w = tile.Width;
+                var h = tile.Height;
+                var bgra = tile.Bgra;
+                if (stitched is { } image)
+                {
+                    var col = ti;
+                    var row = tj;
+                    // Uniform-clear scan + B↔R swap + row copy are pure CPU over a ~16 MB buffer —
+                    // keep them off the UI thread.
+                    await Task.Run(() =>
+                    {
+                        if (IsUniformTile(bgra) && bgra.Length >= 4
+                            && bgra[0] == 0 && bgra[1] == 0 && bgra[2] == 0 && bgra[3] == 0)
+                        {
+                            return; // empty tile — the pre-cleared slot already matches
+                        }
+                        ExportTileStitcher.CopyTile(
+                            BgraToRgba(bgra), w, h, image, plan.ImageWidth, plan.ImageHeight, col, row);
+                    }, ct);
+                    continue;
+                }
+
+                if (IsUniformTile(bgra))
                 {
                     continue;
                 }
 
-                progress.Report(tiled ? "Saving tile" : "Saving", tileIndex, totalTiles);
-                var rgba = BgraToRgba(tile.Bgra);
-                var w = tile.Width;
-                var h = tile.Height;
-                var tilePath = tiled ? Path.Combine(dir, $"{name}_r{tj}_c{ti}{ext}") : basePath;
-                await Task.Run(() => PngWriter.SaveRgba(rgba, w, h, tilePath), ct);
+                progress.Report("Saving tile", tileIndex, totalTiles);
+                var tilePath = Path.Combine(dir, $"{name}_r{tj}_c{ti}{ext}");
+                await Task.Run(() => PngWriter.SaveRgba(BgraToRgba(bgra), w, h, tilePath), ct);
 
                 manifestTiles.Add(new
                 {
@@ -206,7 +238,18 @@ public sealed partial class WorldView3DControl
             }
         }
 
-        if (tiled)
+        if (stitched is { } finalImage)
+        {
+            // One PNG at the planned size — the picker's placeholder at basePath is overwritten.
+            // Saving ~1 GiB of RGBA takes seconds even at the tuned encode settings; keep it off the
+            // UI thread and report it so the wait is explained.
+            progress.Report("Saving", totalTiles, totalTiles);
+            await Task.Run(
+                () => PngWriter.SaveRgba(finalImage, plan.ImageWidth, plan.ImageHeight, basePath), ct);
+            return;
+        }
+
+        if (tiledOutput)
         {
             progress.Report("Writing manifest", totalTiles, totalTiles);
             string projectionName;

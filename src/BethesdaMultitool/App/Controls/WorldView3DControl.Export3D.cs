@@ -23,8 +23,17 @@ namespace BethesdaMultitool;
 public sealed partial class WorldView3DControl
 {
     /// <summary>Per-tile offscreen edge cap. Tiling delivers resolution beyond this; one MSAA target at
-    /// this size is the memory ceiling per tile. Matches the top-down overlay's conservative bound.</summary>
+    /// this size is the memory ceiling per tile (~160 MiB at 4× MSAA; the 1-sample path additionally
+    /// supersamples 2×, so raising this risks exceeding the D3D12 16384 texture limit). Matches the
+    /// top-down overlay's conservative bound. This is NOT the output-size cap — see
+    /// <see cref="Export3DMaxImageDimension" />.</summary>
     private const int Export3DMaxTileDimension = 2048;
+
+    /// <summary>Long-edge cap for a NON-tiled export's single output PNG, rendered internally tiled
+    /// and stitched (<see cref="Core.Formats.Nif.Rendering.Camera.ExportTileStitcher" />). 16384
+    /// matches <see cref="WorldMapExporter" />'s non-tiled cap; the stitched RGBA buffer at this size
+    /// is 1 GiB (managed-array ceiling would allow ~23k). Tiled exports have no overall cap.</summary>
+    private const int Export3DMaxImageDimension = 16384;
 
     // Reused across export tiles (all the same size); separate from the top-down overlay target so the
     // two don't fight over dimensions. Disposed in DisposeRenderResources via DisposeExport3DTarget().

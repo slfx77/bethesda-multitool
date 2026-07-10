@@ -31,7 +31,7 @@ internal static class MapExport3DPlanner
         ProjectionMode mode, int directionQuadrant,
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
         float worldMinZ, float worldMaxZ,
-        float scale, bool tiled, int maxTileDim)
+        float scale, bool tiled, int maxTileDim, int maxImageDim)
     {
         var azimuth = OrthoViewProjBuilder.AzimuthDegFor(mode, directionQuadrant);
         var elevation = OrthoViewProjBuilder.ElevationDegFor(mode);
@@ -65,25 +65,28 @@ internal static class MapExport3DPlanner
         var wantH = Math.Max(1, (int)MathF.Ceiling(2f * halfH * pxPerUnit));
         var wantW = Math.Max(1, (int)MathF.Round(wantH * aspect0));
 
+        // Two DISTINCT caps: maxTileDim bounds the per-tile GPU render target (an MSAA offscreen
+        // memory ceiling — it is NOT an output-size limit), while maxImageDim bounds the output image
+        // of a non-tiled export. A non-tiled export larger than one tile is rendered internally tiled
+        // and stitched to a single PNG by the caller; conflating the two caps used to collapse every
+        // real non-tiled export to a maxTileDim-long-edge thumbnail. A tiled export writes per-tile
+        // PNGs + a manifest and has no overall image cap.
         var cap = Math.Max(1, maxTileDim);
-        int cols, rows;
-        if (tiled)
+        if (!tiled)
         {
-            cols = Math.Max(1, (wantW + cap - 1) / cap);
-            rows = Math.Max(1, (wantH + cap - 1) / cap);
-        }
-        else
-        {
-            cols = rows = 1;
-            // Single image: cap the long edge to one tile, scaling BOTH axes so the aspect is preserved
-            // (capping each axis independently would square a wide worldspace).
-            if (wantW > cap || wantH > cap)
+            // Single image: cap the long edge, scaling BOTH axes so the aspect is preserved (capping
+            // each axis independently would square a wide worldspace). Never below one tile. Tile
+            // rounding below can overshoot the cap by up to cols−1 px — harmless for a CPU-side image.
+            var imageCap = Math.Max(cap, maxImageDim);
+            if (wantW > imageCap || wantH > imageCap)
             {
-                var s = cap / (float)Math.Max(wantW, wantH);
+                var s = imageCap / (float)Math.Max(wantW, wantH);
                 wantW = Math.Max(1, (int)MathF.Round(wantW * s));
                 wantH = Math.Max(1, (int)MathF.Round(wantH * s));
             }
         }
+        var cols = Math.Max(1, (wantW + cap - 1) / cap);
+        var rows = Math.Max(1, (wantH + cap - 1) / cap);
 
         // Uniform tile pixel size (the off-center frustum splits the clip into equal cells), capped per
         // tile; the final image is exactly cols·tileW × rows·tileH.

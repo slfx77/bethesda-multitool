@@ -25,7 +25,7 @@ public sealed class MapExport3DPlannerTests
         var plan = MapExport3DPlanner.Plan(
             ProjectionMode.Orthographic, 0,
             worldMinX: 0f, worldMaxX: 8192f, worldMinY: 0f, worldMaxY: 4096f,
-            worldMinZ: 0f, worldMaxZ: 1000f, scale: 1f, tiled: false, maxTileDim: 16384);
+            worldMinZ: 0f, worldMaxZ: 1000f, scale: 1f, tiled: false, maxTileDim: 16384, maxImageDim: 16384);
 
         Assert.Equal(4096f, plan.Focus.X, 1);
         Assert.Equal(2048f, plan.Focus.Y, 1);
@@ -44,7 +44,7 @@ public sealed class MapExport3DPlannerTests
     {
         var plan = MapExport3DPlanner.Plan(
             ProjectionMode.Orthographic, 0,
-            0f, 40_000f, 0f, 24_000f, 0f, 4096f, scale: 1f, tiled: true, maxTileDim: 2048);
+            0f, 40_000f, 0f, 24_000f, 0f, 4096f, scale: 1f, tiled: true, maxTileDim: 2048, maxImageDim: 16384);
 
         Assert.True(plan.Cols > 1 && plan.Rows > 1, "a large area at 1× must tile");
         Assert.True(plan.TileWidth <= 2048 && plan.TileHeight <= 2048, "tiles must fit the cap");
@@ -53,18 +53,60 @@ public sealed class MapExport3DPlannerTests
     }
 
     [Fact]
-    public void NonTiled_CapsLongEdgePreservingAspect()
+    public void Tiled_HasNoOverallImageCap()
     {
-        // Wide area, single image: the long edge caps to one tile and the aspect is preserved (not
-        // squashed to a square by capping each axis independently).
+        // Tiled output is per-tile PNGs + manifest — maxImageDim must not shrink it.
         var plan = MapExport3DPlanner.Plan(
             ProjectionMode.Orthographic, 0,
-            0f, 40_000f, 0f, 24_000f, 0f, 4096f, scale: 1f, tiled: false, maxTileDim: 2048);
+            0f, 120_000f, 0f, 120_000f, 0f, 4096f, scale: 1f, tiled: true, maxTileDim: 2048, maxImageDim: 16384);
+
+        Assert.True(plan.ImageWidth > 16_384, "tiled export must keep the full wanted resolution");
+    }
+
+    [Fact]
+    public void NonTiled_UnderOneTile_StaysSingleTile()
+    {
+        // Small worldspace: fits one GPU tile — 1×1 grid, no internal tiling, exactly as before.
+        var plan = MapExport3DPlanner.Plan(
+            ProjectionMode.Orthographic, 0,
+            0f, 4000f, 0f, 3000f, 0f, 1000f, scale: 1f, tiled: false, maxTileDim: 2048, maxImageDim: 16384);
 
         Assert.Equal(1, plan.Cols);
         Assert.Equal(1, plan.Rows);
         Assert.True(plan.ImageWidth <= 2048 && plan.ImageHeight <= 2048);
-        // 40000:24000 ≈ 1.667 — must survive the cap.
+    }
+
+    [Fact]
+    public void NonTiled_BeyondOneTile_TilesInternallyUpToImageCap()
+    {
+        // THE regression (2026-07-09 note): a non-tiled export used to collapse to a 2048px-long-edge
+        // thumbnail because the per-tile GPU cap doubled as the output cap. It must now keep full
+        // resolution via an internal grid — this area wants 20000×12000 px at 1×, under the 16384
+        // image cap after long-edge scaling.
+        var plan = MapExport3DPlanner.Plan(
+            ProjectionMode.Orthographic, 0,
+            0f, 40_000f, 0f, 24_000f, 0f, 4096f, scale: 1f, tiled: false, maxTileDim: 2048, maxImageDim: 16384);
+
+        Assert.True(plan.Cols > 1 && plan.Rows > 1, "output beyond one GPU tile must grid internally");
+        Assert.True(plan.TileWidth <= 2048 && plan.TileHeight <= 2048, "tiles must fit the GPU cap");
+        Assert.Equal(plan.Cols * plan.TileWidth, plan.ImageWidth);
+        Assert.Equal(plan.Rows * plan.TileHeight, plan.ImageHeight);
+        // Long edge capped to maxImageDim (uniform tile rounding may overshoot by < Cols px).
+        Assert.InRange(Math.Max(plan.ImageWidth, plan.ImageHeight), 2049, 16_384 + plan.Cols);
+        // 40000:24000 ≈ 1.667 — the aspect must survive the cap.
         Assert.InRange(plan.ImageWidth / (float)plan.ImageHeight, 1.6f, 1.74f);
+    }
+
+    [Fact]
+    public void NonTiled_ImageCapNeverDropsBelowOneTile()
+    {
+        // A misconfigured maxImageDim below the tile cap must clamp up, not shrink tiles.
+        var plan = MapExport3DPlanner.Plan(
+            ProjectionMode.Orthographic, 0,
+            0f, 40_000f, 0f, 24_000f, 0f, 4096f, scale: 1f, tiled: false, maxTileDim: 2048, maxImageDim: 512);
+
+        Assert.Equal(1, plan.Cols);
+        Assert.Equal(1, plan.Rows);
+        Assert.True(plan.ImageWidth <= 2048 && plan.ImageHeight <= 2048);
     }
 }

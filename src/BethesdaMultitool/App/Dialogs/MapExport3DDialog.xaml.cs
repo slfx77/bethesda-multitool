@@ -44,11 +44,12 @@ public sealed partial class MapExport3DDialog : ContentDialog
     private readonly float _worldMinZ;
     private readonly float _worldMaxZ;
     private readonly int _maxTileDim;
+    private readonly int _maxImageDim;
     private float _scale = 1f;
 
     internal MapExport3DDialog(
         float worldMinX, float worldMaxX, float worldMinY, float worldMaxY,
-        float worldMinZ, float worldMaxZ, int maxTileDim,
+        float worldMinZ, float worldMaxZ, int maxTileDim, int maxImageDim,
         bool showTerrain, bool showMeshes, bool showWater, bool showActivators, bool showMarkers,
         bool showDisabled, bool showNavMesh, bool showCollision, bool showGrid,
         bool enableLighting, bool enableFog)
@@ -61,6 +62,7 @@ public sealed partial class MapExport3DDialog : ContentDialog
         _worldMinZ = worldMinZ;
         _worldMaxZ = worldMaxZ;
         _maxTileDim = Math.Max(1, maxTileDim);
+        _maxImageDim = Math.Max(1, maxImageDim);
 
         ProjectionComboBox.Items.Add("Orthographic (top-down)");
         ProjectionComboBox.Items.Add("Isometric");
@@ -141,15 +143,28 @@ public sealed partial class MapExport3DDialog : ContentDialog
     {
         if (OutputSizeText is null || DirectionComboBox is null) return;
 
+        var tiled = TiledCheckBox.IsChecked == true;
         var plan = MapExport3DPlanner.Plan(
             SelectedMode, SelectedDirectionQuadrant,
             _worldMinX, _worldMaxX, _worldMinY, _worldMaxY, _worldMinZ, _worldMaxZ,
-            _scale, TiledCheckBox.IsChecked == true, _maxTileDim);
+            _scale, tiled, _maxTileDim, _maxImageDim);
 
         var pxPerCell = (int)Math.Round(MapExport3DPlanner.BaseScalePxPerUnit * _scale * 4096f);
-        var tileNote = plan.Cols * plan.Rows > 1
-            ? $" — {plan.Cols}×{plan.Rows} tiles ({plan.Cols * plan.Rows} PNGs + manifest)"
-            : " — single image";
+        var totalTiles = plan.Cols * plan.Rows;
+        string tileNote;
+        if (tiled && totalTiles > 1)
+        {
+            tileNote = $" — {plan.Cols}×{plan.Rows} tiles ({totalTiles} PNGs + manifest)";
+        }
+        else if (totalTiles > 1)
+        {
+            // Non-tiled beyond the per-tile GPU cap: rendered internally tiled, stitched to one PNG.
+            tileNote = $" — single image (stitched from {plan.Cols}×{plan.Rows} tiles)";
+        }
+        else
+        {
+            tileNote = " — single image";
+        }
         OutputSizeText.Text =
             $"Output: {plan.ImageWidth} × {plan.ImageHeight} px (~{pxPerCell} px/cell at {_scale:0.##}×){tileNote}";
     }
