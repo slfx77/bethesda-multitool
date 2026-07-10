@@ -52,6 +52,27 @@ public sealed class EsmLoadOrderAndRebaseTests : IDisposable
     }
 
     [Fact]
+    public async Task ResolveDirectoryAsync_resolves_tes3_headers_and_masters()
+    {
+        // Regression: EsmParser.ParseFileHeader is TES4-only, so a Morrowind Data Files directory
+        // resolved EMPTY ("No ESM/ESP sources found") — every TES3 header read returned null.
+        var bloodmoon = WriteTes3Esm("Bloodmoon.esm", "Morrowind.esm");
+        var morrowind = WriteTes3Esm("Morrowind.esm");
+        var tribunal = WriteTes3Esm("Tribunal.esm", "Morrowind.esm");
+
+        var ordered = await EsmLoadOrderResolver.ResolveDirectoryAsync(
+            _tempDir,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            [morrowind, bloodmoon, tribunal],
+            ordered.Select(file => file.FilePath).ToList());
+        var bloodmoonHeader = ordered.Single(f => f.FileName == "Bloodmoon.esm").Header;
+        Assert.Equal(["Morrowind.esm"], bloodmoonHeader.Masters);
+        Assert.Equal(1.3f, bloodmoonHeader.Version, 2);
+    }
+
+    [Fact]
     public void Mapper_flattens_plugin_local_and_master_formids_to_base_formids()
     {
         var descriptor = new EsmLoadOrderFile(
@@ -517,6 +538,50 @@ public sealed class EsmLoadOrderAndRebaseTests : IDisposable
         BinaryPrimitives.WriteUInt32LittleEndian(hedr.AsSpan(4), 1);
         BinaryPrimitives.WriteUInt32LittleEndian(hedr.AsSpan(8), 0x800);
         return hedr;
+    }
+
+    private string WriteTes3Esm(string fileName, params string[] masters)
+    {
+        var path = Path.Combine(_tempDir, fileName);
+        File.WriteAllBytes(path, BuildHeaderOnlyTes3Esm(masters));
+        return path;
+    }
+
+    /// <summary>
+    ///     Synthetic TES3 (Morrowind) header-only plugin: 16-byte record header (sig + u32 dataSize +
+    ///     u32 + u32 flags), subrecords with u32 sizes (8-byte headers, unlike TES4's u16). HEDR is the
+    ///     full 300 bytes (version, fileType, author[32], description[256], record count); masters are
+    ///     MAST zstring + DATA u64 pairs.
+    /// </summary>
+    private static byte[] BuildHeaderOnlyTes3Esm(params string[] masters)
+    {
+        var hedr = new byte[300];
+        BinaryPrimitives.WriteSingleLittleEndian(hedr, 1.3f);
+        BinaryPrimitives.WriteUInt32LittleEndian(hedr.AsSpan(4), 1);
+        Encoding.ASCII.GetBytes("test", hedr.AsSpan(8, 4)); // author, NUL-padded
+
+        var subrecords = new List<(string Signature, byte[] Data)> { ("HEDR", hedr) };
+        foreach (var master in masters)
+        {
+            subrecords.Add(("MAST", Encoding.ASCII.GetBytes(master + "\0")));
+            subrecords.Add(("DATA", new byte[8]));
+        }
+
+        var dataSize = subrecords.Sum(subrecord => 8 + subrecord.Data.Length);
+        var data = new byte[16 + dataSize];
+        Encoding.ASCII.GetBytes("TES3", data.AsSpan(0, 4));
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(4), (uint)dataSize);
+
+        var offset = 16;
+        foreach (var (signature, bytes) in subrecords)
+        {
+            Encoding.ASCII.GetBytes(signature, data.AsSpan(offset, 4));
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset + 4), (uint)bytes.Length);
+            bytes.CopyTo(data.AsSpan(offset + 8));
+            offset += 8 + bytes.Length;
+        }
+
+        return data;
     }
 }
 
