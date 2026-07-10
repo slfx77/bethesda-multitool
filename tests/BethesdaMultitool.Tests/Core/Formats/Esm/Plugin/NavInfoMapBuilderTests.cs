@@ -12,13 +12,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 public class NavInfoMapBuilderTests
 {
     [Fact]
-    public void Master_cell_navm_augmentation_is_enabled_by_default()
+    public void Master_cell_navm_augmentation_is_disabled_by_default()
     {
-        // When a master cell is overridden for new content, the proto's NAVM rides along by
-        // default. Engine RE (memory/navm_engine_load_mechanism.md) proves master's own NAVMs
-        // survive the override via the cell's TESForm file-list merge, so no verbatim copy is
-        // emitted. Guards against silently reverting the default flip back to off.
-        Assert.True(new PluginBuildOptions().EmitMasterCellNavmAugmentation);
+        // Flipped OFF: our reconstructed NAVMs carry empty NVCI door-links (BuildNvci) and
+        // shadow master's complete navmeshes in an overridden master interior, which
+        // null-derefs the cross-cell TeleportDoorSearch graph on a cold coc (Gomorrah01 —
+        // memory/gomorrah_coc_navmesh_and_npc_drops.md). Master's own NAVMs load via the
+        // cell file-list merge and are strictly better. Guards against reverting the flip.
+        Assert.False(new PluginBuildOptions().EmitMasterCellNavmAugmentation);
     }
 
     [Fact]

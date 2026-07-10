@@ -49,20 +49,44 @@ public sealed record PluginBuildOptions
     ///     When a master cell is already being overridden because the DMP captured new
     ///     content (new placed refs / captured terrain), also emit the proto-authored
     ///     NAVM(s) the DMP captured for that cell so NPCs pathfind on the reshaped layout.
-    ///     Default <c>true</c>.
+    ///     Default <c>false</c> — proven harmful in-game (see below); opt in only for new
+    ///     (non-master) cells, which are emitted regardless of this flag.
     ///
-    ///     This does NOT copy master's existing NAVM records into our plugin and does NOT
-    ///     create navmesh-only cell overrides. Decompilation of the engine load path
-    ///     (<c>NavMesh::Load</c> resolves its parent cell from the DATA subrecord FormID;
-    ///     <c>TESObjectCELL::LoadAllTempData</c> iterates the cell's entire TESForm
-    ///     file-list and merges every file's Temporary Children — see
-    ///     memory/navm_engine_load_mechanism.md) proves master's navmeshes survive an
-    ///     override on their own, so the old verbatim-preservation cascade (which ballooned
-    ///     v63 to 34 MB and crashed at load) is unnecessary. The NAVI override carrying
-    ///     master's full NVMI/NVCI set plus our new entries is still required and is built
-    ///     independently of NAVM-record emission.
+    ///     DISABLED BY DEFAULT because our reconstructed NAVMs carry EMPTY NVCI door-link
+    ///     arrays (<c>NavInfoMapBuilder.BuildNvci</c>), and degenerate captures (6-7 vertex
+    ///     stubs) besides. When emitted into an overridden MASTER interior they shadow the
+    ///     master's own complete NAVMs (which load via the cell file-list merge — see
+    ///     memory/navm_engine_load_mechanism.md and gomorrah_coc_navmesh_and_npc_drops) and
+    ///     the engine null-derefs building the cross-cell TeleportDoorSearch / NavMeshInfoMap
+    ///     parent-space graph on a cold <c>coc</c> into that cell (Gomorrah01, confirmed
+    ///     fixed by suppressing them). Master's navmeshes are strictly better than our
+    ///     reconstructions until NVCI door-link reconstruction exists, so master cells keep
+    ///     theirs and we emit nothing. Re-enable only after NVCI is reconstructed.
+    ///
+    ///     Independent of the ESM/master flag — that is tied to the presence of cell-child
+    ///     overrides (see <see cref="Output.Tes4HeaderBuilder" />), not to this option.
     /// </summary>
-    public bool EmitMasterCellNavmAugmentation { get; init; } = true;
+    public bool EmitMasterCellNavmAugmentation { get; init; }
+
+    /// <summary>
+    ///     Recover placed actors (ACHR/ACRE) whose base is a runtime-dynamic clone
+    ///     (<c>BaseFormId &gt;= 0xFF000000</c>) — the generic leveled-spawn crowd the planner
+    ///     otherwise drops as <c>refr.dangling-base</c> — by re-pointing the base to the actor's
+    ///     captured <c>ExtraLeveledCreature</c> pointer
+    ///     (<c>LeveledCreatureOriginalBaseFormId</c>, else <c>LeveledCreatureTemplateFormId</c>),
+    ///     resolved through <c>SourceToEmittedFormId</c> and accepted only if it lands on a
+    ///     type-compatible <c>NPC_</c> (ACHR) / <c>CREA</c> (ACRE) base — master or captured-proto.
+    ///     Default <c>false</c>.
+    ///
+    ///     Trade-off: the re-pointed base is the crash-time resolved template, so the actor is a
+    ///     fixed instance (no re-leveling); this faithfully reconstructs the captured scene, which
+    ///     is the goal (populate cells the runtime showed inhabited). A leveled-list
+    ///     (<c>LVLN/LVLC</c>) candidate is never emitted as an actor base — xEdit-invalid for
+    ///     ACHR/ACRE — so the existing base-type validation rejects it and we fall through to the
+    ///     other pointer or drop. Ships OFF by default so the volume of re-populated temporary
+    ///     actors can be A/B-tested in-game before becoming standard.
+    /// </summary>
+    public bool RecoverLeveledSpawnActors { get; init; }
 
     /// <summary>
     ///     Diagnostic: suppress NAVM record emission inside cell bundles while keeping the

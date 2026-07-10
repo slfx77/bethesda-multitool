@@ -59,9 +59,10 @@ public static class Tes4HeaderBuilder
             // ONAM: required in ESM-flagged files — the FO3/FNV runtime consults this list
             // to apply overrides of cell-child records (REFR/ACHR/ACRE/PGRE/PMIS/LAND/NAVM);
             // without it those overrides are mishandled at load (why xEdit's "ESMify" adds
-            // ONAM). Sorted ascending, XXXX-extended when the array exceeds 64KB.
-            if (options.EmitMasterCellNavmAugmentation
-                && overriddenCellChildFormIds is { Count: > 0 })
+            // ONAM). Tied to the presence of cell-child overrides, NOT to navmesh augmentation
+            // (they were coupled until the ESM flag was decoupled below). Sorted ascending,
+            // XXXX-extended when the array exceeds 64KB.
+            if (overriddenCellChildFormIds is { Count: > 0 })
             {
                 WriteOnam(subrecordWriter, overriddenCellChildFormIds);
             }
@@ -74,15 +75,15 @@ public static class Tes4HeaderBuilder
         {
             Signature = "TES4",
             DataSize = (uint)subrecordBytes.Length,
-            // ESM/master flag (0x00000001) is set ONLY when the plugin carries navmesh edits
-            // (master-cell NAVM augmentation + the NAVI override). FNV/FO3 require any plugin with
-            // navmesh edits to be ESM-flagged or the NavMeshInfoMap desyncs (fopdoc NAVI; GECK
-            // Bethsoft_Tutorial_Navmesh). But the ESM flag (especially with a .esm extension)
-            // makes the engine EAGER-load/init this plugin's overrides during master setup, which
-            // races our cell-override ref init and AVs the AI thread (Doc Mitchell). So when we
-            // emit NO navmesh edits, we leave the plugin as a plain ESP (deferred load) — no flag
-            // needed, no eager-init race. Tie the flag to the one thing that actually requires it.
-            Flags = options.EmitMasterCellNavmAugmentation ? 0x00000001u : 0u,
+            // ESM/master flag (0x00000001) is set whenever the plugin overrides master
+            // cell-child records (REFR/ACHR/ACRE/LAND/NAVM/…). The FO3/FNV runtime only
+            // honours cell-child overrides — and their ONAM list — from ESM-flagged masters;
+            // a plain ESP's interior overrides route through a fragile deferred path. This
+            // was previously tied to navmesh augmentation, but the two are independent: the
+            // program needs the flag for NPC skin-tone + map-marker edits regardless of
+            // navmesh, and (proven in-game) the earlier eager-init AV was the now-fixed
+            // dangling-base class, not the flag itself. No overrides → plain ESP, no flag.
+            Flags = overriddenCellChildFormIds is { Count: > 0 } ? 0x00000001u : 0u,
             FormId = 0,
             Timestamp = 0,
             // VcsInfo = header offset 20 = the engine's form-version slot (retail TES4

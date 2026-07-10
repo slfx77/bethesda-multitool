@@ -123,11 +123,23 @@ internal static class PlannedPlacedRefEncoder
 
         if (!IsValidPlacedBase(child.Type, baseFormId, context, out var knownBaseRecordType))
         {
+            // Leveled-spawn recovery: a runtime-dynamic (0xFF) clone base never resolves, but the
+            // actor's captured ExtraLeveledCreature pointer names the concrete NPC_/CREA the engine
+            // spawned it from. Re-point the base to that (validated type-compatible, resolved
+            // through SourceToEmittedFormId) so the ambient leveled crowd is emitted, not dropped.
+            if (context.Options.RecoverLeveledSpawnActors
+                && child.Type is "ACHR" or "ACRE"
+                && placed.BaseFormId >= 0xFF000000u
+                && TryRecoverLeveledSpawnBase(placed, child.Type, context, out var recoveredBase))
+            {
+                context.Stats?.IncrementDropReason("refr.leveled-recovered");
+                baseFormId = recoveredBase;
+            }
             // Last-chance EditorID-stem rescue (legacy parity): a proto base absent from
             // master may still stem-match a renamed master record of the same kind
             // (SCOLParkingLotChunk03 → SCOLParkingLotChunk03b). Only unknown bases are
             // rescue-eligible; type mismatches against a known master record are not.
-            if (knownBaseRecordType is null
+            else if (knownBaseRecordType is null
                 && baseFormId < 0xFF000000u
                 && context.Options.EnableRefrBaseEditorIdRemap
                 && context.MasterIndex is not null
@@ -386,6 +398,58 @@ internal static class PlannedPlacedRefEncoder
                || context.ValidFormIds.Contains(formId)
                || formId < 0x800u
                || RuntimeStateRecordPolicy.EngineFormIds.Contains(formId);
+    }
+
+    /// <summary>
+    ///     Runtime-dynamic (0xFF) leveled-spawn recovery: the actor's captured
+    ///     <see cref="PlacedReference.LeveledCreatureOriginalBaseFormId" /> (preferred), else
+    ///     <see cref="PlacedReference.LeveledCreatureTemplateFormId" />, names the concrete base
+    ///     the engine spawned it from. Accept the first candidate that resolves (through
+    ///     <c>SourceToEmittedFormId</c>) to a type-compatible NPC_/CREA base.
+    /// </summary>
+    private static bool TryRecoverLeveledSpawnBase(
+        PlacedReference placed,
+        string placedRecordType,
+        CellChildEncodeContext context,
+        out uint recoveredFormId)
+    {
+        return TryLeveledCandidate(placed.LeveledCreatureOriginalBaseFormId, placedRecordType, context, out recoveredFormId)
+               || TryLeveledCandidate(placed.LeveledCreatureTemplateFormId, placedRecordType, context, out recoveredFormId);
+    }
+
+    private static bool TryLeveledCandidate(
+        uint? candidate,
+        string placedRecordType,
+        CellChildEncodeContext context,
+        out uint recoveredFormId)
+    {
+        recoveredFormId = 0;
+        if (candidate is not { } source || source == 0 || source >= 0xFF000000u)
+        {
+            return false;
+        }
+
+        var resolved = context.Plan.SourceToEmittedFormId.TryGetValue(source, out var emitted) ? emitted : source;
+
+        // IsValidPlacedBase enforces CanPlacedRecordUseBaseType for master bases, so a master
+        // LVLN/LVLC candidate is rejected here and we fall through to the other pointer.
+        if (!IsValidPlacedBase(placedRecordType, resolved, context, out var knownBaseRecordType))
+        {
+            return false;
+        }
+
+        // Emitted (captured-proto) bases pass IsValidPlacedBase without a type check — verify the
+        // captured base type is actor-compatible so we never re-point an actor at a non-actor base.
+        if (knownBaseRecordType is null
+            && !(context.DmpBaseTypes is { } dmpTypes
+                 && dmpTypes.TryGetValue(source, out var dmpType)
+                 && ReferenceBaseRemapper.CanPlacedRecordUseBaseType(placedRecordType, dmpType)))
+        {
+            return false;
+        }
+
+        recoveredFormId = resolved;
+        return true;
     }
 
     /// <summary>

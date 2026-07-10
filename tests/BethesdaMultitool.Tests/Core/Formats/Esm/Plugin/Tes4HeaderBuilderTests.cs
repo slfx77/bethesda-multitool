@@ -85,20 +85,17 @@ public class Tes4HeaderBuilderTests
     }
 
     [Fact]
-    public void Build_FlagsClear_WhenNoNavmAugmentation()
+    public void Build_FlagsClear_WhenNoCellOverrides()
     {
-        // The ESM/master flag is tied to navmesh augmentation: with augmentation OFF the
-        // plugin carries no navmesh edits, so it stays a plain ESP (deferred load, no
-        // eager-init race). This is the playability config.
+        // The ESM/master flag is tied to the presence of cell-child overrides, NOT to
+        // navmesh augmentation (they were decoupled once the flag proved needed for
+        // skin-tone/map-marker edits independent of navmesh). With no overridden cell
+        // children the plugin stays a plain ESP.
         var bytes = Tes4HeaderBuilder.Build(
-            new PluginBuildOptions
-            {
-                MasterFileName = "FalloutNV.esm",
-                MasterFileSize = 100,
-                EmitMasterCellNavmAugmentation = false
-            },
+            new PluginBuildOptions { MasterFileName = "FalloutNV.esm", MasterFileSize = 100 },
             0,
-            0x800);
+            0x800,
+            overriddenCellChildFormIds: null);
 
         // Header flags live at bytes 8–11 (little-endian uint32).
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
@@ -106,19 +103,20 @@ public class Tes4HeaderBuilderTests
     }
 
     [Fact]
-    public void Build_FlagsSet_WhenNavmAugmentationEnabled()
+    public void Build_FlagsSet_WhenCellOverridesPresent()
     {
-        // With master-cell navmesh augmentation ON the plugin emits NAVM/NAVI edits, which
-        // FNV requires to ride on an ESM-flagged plugin or the NavMeshInfoMap desyncs.
+        // Any overridden cell-child records require an ESM-flagged master + ONAM so the
+        // FO3/FNV runtime applies them correctly — independent of navmesh augmentation.
         var bytes = Tes4HeaderBuilder.Build(
             new PluginBuildOptions
             {
                 MasterFileName = "FalloutNV.esm",
                 MasterFileSize = 100,
-                EmitMasterCellNavmAugmentation = true
+                EmitMasterCellNavmAugmentation = false // decoupled: does NOT gate the flag
             },
             0,
-            0x800);
+            0x800,
+            overriddenCellChildFormIds: [0x0001A1F3u, 0x0001A1F4u]);
 
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
         Assert.Equal(0x00000001u, flags & 0x00000001u); // master flag set

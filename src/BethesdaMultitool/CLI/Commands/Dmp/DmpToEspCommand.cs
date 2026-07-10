@@ -94,14 +94,23 @@ public static class DmpToEspCommand
                           "runtime TESForm structs, then promote only candidates existing semantic readers " +
                           "can consume safely. Off by default."
         };
-        var noMasterCellNavmAugmentationOpt = new Option<bool>("--no-master-cell-navm-augmentation")
+        var emitMasterCellNavmAugmentationOpt = new Option<bool>("--emit-master-cell-navm-augmentation")
         {
-            Description = "Disable emitting DMP-captured proto NAVMs into overridden master cells. " +
-                          "Augmentation is ON by default: when a master cell is already overridden " +
-                          "(new refs / captured terrain) the proto's navmesh rides along so NPCs " +
-                          "pathfind on the reshaped layout. Master's own NAVMs are NOT copied — engine " +
-                          "RE proves they load from master via the cell file-list merge. Pass this to " +
-                          "suppress master-cell NAVM emission for rollback."
+            Description = "Opt in to emitting DMP-captured proto NAVMs into overridden master cells. " +
+                          "OFF by default: our reconstructed NAVMs carry empty NVCI door-links and " +
+                          "shadow master's complete navmeshes, which null-derefs the cross-cell " +
+                          "TeleportDoorSearch graph on a cold coc (Gomorrah01). Master's own NAVMs " +
+                          "load via the cell file-list merge and are strictly better. New (non-master) " +
+                          "cells emit their proto NAVMs regardless. Enable only for NVCI-reconstruction work."
+        };
+
+        var recoverLeveledSpawnsOpt = new Option<bool>("--recover-leveled-spawns")
+        {
+            Description = "Recover placed actors (ACHR/ACRE) whose base is a runtime clone (0xFF) — the " +
+                          "generic leveled-spawn crowd otherwise dropped — by re-pointing the base to the " +
+                          "actor's captured ExtraLeveledCreature template (a type-compatible NPC_/CREA, " +
+                          "master or captured-proto). Off by default; the re-pointed actor is a fixed " +
+                          "instance (no re-leveling). Run `dmp leveled-spawn-census` first to gauge yield."
         };
 
         var command = new Command("to-esp", "Convert a DMP to a PC plugin ESP overlay against a master ESM");
@@ -122,7 +131,8 @@ public static class DmpToEspCommand
         command.Options.Add(disableRefrEditorIdRemapOpt);
         command.Options.Add(replaceCellTemporariesOpt);
         command.Options.Add(recoverGapsOpt);
-        command.Options.Add(noMasterCellNavmAugmentationOpt);
+        command.Options.Add(emitMasterCellNavmAugmentationOpt);
+        command.Options.Add(recoverLeveledSpawnsOpt);
 
         var cellAuthorityOpt = new Option<string?>("--cell-authority")
         {
@@ -202,7 +212,8 @@ public static class DmpToEspCommand
             var disableRefrEditorIdRemap = parseResult.GetValue(disableRefrEditorIdRemapOpt);
             var replaceCellTemporaries = parseResult.GetValue(replaceCellTemporariesOpt);
             var recoverGaps = parseResult.GetValue(recoverGapsOpt);
-            var emitMasterCellNavmAugmentation = !parseResult.GetValue(noMasterCellNavmAugmentationOpt);
+            var emitMasterCellNavmAugmentation = parseResult.GetValue(emitMasterCellNavmAugmentationOpt);
+            var recoverLeveledSpawns = parseResult.GetValue(recoverLeveledSpawnsOpt);
             var diagSkipCellNavm = parseResult.GetValue(diagSkipCellNavmOpt);
             var diagSkipCellNewRefs = parseResult.GetValue(diagSkipCellNewRefsOpt);
             var cellAuthorityPath = parseResult.GetValue(cellAuthorityOpt);
@@ -218,8 +229,8 @@ public static class DmpToEspCommand
             await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose,
                 secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, overrideVanilla,
                 disableRefrEditorIdRemap, replaceCellTemporaries, recoverGaps, emitMasterCellNavmAugmentation,
-                diagSkipCellNavm, diagSkipCellNewRefs, cellAuthorityPath, skipWorldspaceFormIds, skipRecordTypes,
-                plannerTypes, ct);
+                recoverLeveledSpawns, diagSkipCellNavm, diagSkipCellNewRefs, cellAuthorityPath,
+                skipWorldspaceFormIds, skipRecordTypes, plannerTypes, ct);
         });
 
         return command;
@@ -244,6 +255,7 @@ public static class DmpToEspCommand
         bool replaceCellTemporaries,
         bool recoverGaps,
         bool emitMasterCellNavmAugmentation,
+        bool recoverLeveledSpawns,
         bool diagnosticSkipCellNavm,
         bool diagnosticSkipCellNewRefs,
         string? cellAuthorityPath,
@@ -307,6 +319,7 @@ public static class DmpToEspCommand
             ReplaceCellTemporariesOnOverride = replaceCellTemporaries,
             RecoverGaps = recoverGaps,
             EmitMasterCellNavmAugmentation = emitMasterCellNavmAugmentation,
+            RecoverLeveledSpawnActors = recoverLeveledSpawns,
             DiagnosticSkipCellNavm = diagnosticSkipCellNavm,
             DiagnosticSkipCellNewRefs = diagnosticSkipCellNewRefs,
             CellWorldspaceAuthority = authorityLoad.CellToWorldspace,
@@ -341,6 +354,11 @@ public static class DmpToEspCommand
         if (recoverGaps)
         {
             AnsiConsole.MarkupLine("[yellow]Recover gaps:[/] enabled (experimental, opt-in)");
+        }
+
+        if (recoverLeveledSpawns)
+        {
+            AnsiConsole.MarkupLine("[yellow]Leveled-spawn recovery:[/] enabled (0xFF actors re-pointed to captured base)");
         }
 
         var inputs = new DmpToEspInputs
@@ -382,6 +400,14 @@ public static class DmpToEspCommand
                     $"placed refs={s.PromotedGapPlacedRefs:N0}, audit/skipped={s.SkippedGapCandidates:N0}");
             }
             AnsiConsole.MarkupLine($"  Output: {s.OutputBytes:N0} bytes in {s.Elapsed.TotalSeconds:F2}s");
+
+            var leveledRecovered = s.DropReasonCounts.GetValueOrDefault("refr.leveled-recovered");
+            if (recoverLeveledSpawns || leveledRecovered > 0)
+            {
+                var stillDangling = s.DropReasonCounts.GetValueOrDefault("refr.dangling-base");
+                AnsiConsole.MarkupLine(
+                    $"  Leveled-spawn recovery: recovered={leveledRecovered:N0}, still-dropped={stillDangling:N0}");
+            }
 
             if (s.Scols.TotalParsed > 0)
             {
