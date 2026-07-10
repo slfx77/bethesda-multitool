@@ -12,7 +12,13 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 internal static class NifSceneGraphWalker
 {
     internal static readonly HashSet<string> NodeTypes =
-        ["NiNode", "NiBillboardNode", "BSFadeNode", "BSMultiBoundNode", "BSOrderedNode", "BSLeafAnimNode"];
+    [
+        "NiNode", "NiBillboardNode", "BSFadeNode", "BSMultiBoundNode", "BSOrderedNode", "BSLeafAnimNode",
+        // Morrowind-era Bethesda NiNode subclasses (nif.xml module BSLegacy). Without these the
+        // subtree is never walked as scene nodes — e.g. i\in_lava_1024.nif roots its renderable
+        // magma shapes under NiBSAnimationNode, which left the lava untextured/misplaced.
+        "NiBSAnimationNode", "NiBSParticleNode"
+    ];
 
     internal static readonly HashSet<string> ShapeTypes =
     [
@@ -34,12 +40,15 @@ internal static class NifSceneGraphWalker
     ///     and build the scene graph structure.
     /// </summary>
     /// <summary>
-    ///     Collision-geometry container nodes whose descendant shapes are physics hulls, not renderable
+    ///     Non-rendered container nodes whose descendant shapes are engine metadata, not renderable
     ///     geometry. Morrowind/older NIFs put a simplified collision mesh under a <c>RootCollisionNode</c>
-    ///     (NiNode layout); the engine never draws it. We must skip those shapes — otherwise the
-    ///     untextured collision hull renders as white panels / a dark blob over the real mesh.
+    ///     and AI-avoidance volumes under an <c>AvoidNode</c> (both NiNode layout); the engine never
+    ///     draws either. We must skip those shapes — otherwise the untextured hull renders as white
+    ///     panels / a dark blob over the real mesh (in_lava_1024's AvoidNode shape sat right on the
+    ///     lava surface). NOTE: exclusion-only today — if TES3 walk-mode collision ever extracts
+    ///     RootCollisionNode hulls, AvoidNode must NOT feed it (avoid ≠ collide).
     /// </summary>
-    internal static readonly HashSet<string> CollisionNodeTypes = ["RootCollisionNode"];
+    internal static readonly HashSet<string> CollisionNodeTypes = ["RootCollisionNode", "AvoidNode"];
 
     internal static void ClassifyBlocks(byte[] data, NifInfo nif,
         Dictionary<int, List<int>> nodeChildren, Dictionary<int, int> shapeDataMap,
