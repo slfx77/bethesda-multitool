@@ -108,6 +108,7 @@ public sealed partial class WorldView3DControl
 
         ulong fenceValue;
         bool isComplete;
+        bool isFullySettled;
         var prevShowDisabled = _references!.ShowInitiallyDisabled;
         var prevRefThrottled = _references.StreamingThrottled;
         var prevTerrainThrottled = _terrain!.StreamingThrottled;
@@ -199,6 +200,12 @@ public sealed partial class WorldView3DControl
             }
 
             isComplete = TopDownStreamingComplete() && !ceilingNeedsAnotherPass;
+            // Strict variant for one-shot consumers (2D map EXPORT tiles): also waits out the
+            // texture-withheld window. The live overlay keeps keying on the loose IsComplete —
+            // a pinned ReferenceTexturePending would make it re-render forever.
+            isFullySettled = StreamingQuiescence.IsQuiesced(
+                    _references.LastStats, _terrain.LastStats, strict: true)
+                && !ceilingNeedsAnotherPass;
             _gpu12.PumpDebugMessages();
         }
         catch (Exception ex)
@@ -242,7 +249,7 @@ public sealed partial class WorldView3DControl
                 ? NifSpriteRenderer.Downsample(ssBytes, ssWidth, ssHeight, supersample)
                 : ssBytes;
             return new TopDownRender(pixels, finalW, finalH,
-                worldMinX, worldMaxX, worldMinY, worldMaxY, isComplete);
+                worldMinX, worldMaxX, worldMinY, worldMaxY, isComplete, isFullySettled);
         });
         _topDownReadbackTask = readbackTask;
         try
@@ -275,17 +282,8 @@ public sealed partial class WorldView3DControl
     ///         re-requesting forever.
     ///     </para>
     /// </summary>
-    private bool TopDownStreamingComplete()
-    {
-        var t = _terrain!.LastStats;
-        var r = _references!.LastStats;
-        return t.NewUploads == 0
-            && r.ReferenceGpuUploads == 0
-            && r.ReferenceQueuedDecodes == 0
-            && r.ReferenceActiveDecodes == 0
-            && r.ReferenceTexturePendingResolves == 0
-            && r.ReferenceTexturePendingUploads == 0;
-    }
+    private bool TopDownStreamingComplete() =>
+        StreamingQuiescence.IsQuiesced(_references!.LastStats, _terrain!.LastStats, strict: false);
 
     /// <summary>Blocks until <paramref name="fence" /> reaches <paramref name="value" />. Safe to
     /// call off the UI thread (fence read + event are thread-safe). The fence is a parameter, not

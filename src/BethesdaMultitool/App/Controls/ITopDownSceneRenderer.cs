@@ -67,6 +67,13 @@ internal interface ITopDownSceneRenderer
 ///     A completed top-down render: BGRA pixels (<see cref="Width" /> × <see cref="Height" />, tightly
 ///     packed) covering the world rectangle [<see cref="WorldMinX" />,<see cref="WorldMaxX" />] ×
 ///     [<see cref="WorldMinY" />,<see cref="WorldMaxY" />] (world north-Y).
+///     <para>
+///         <see cref="IsComplete" /> is the LOOSE gate ("nothing actively streaming") — the live
+///         overlay's re-request key, which must converge even in regions with permanently-missing
+///         assets. <see cref="IsFullySettled" /> is the STRICT export gate (additionally no submesh
+///         withheld on pending textures, <see cref="StreamingQuiescence" />) — callers keying on it
+///         MUST time-box their loop.
+///     </para>
 /// </summary>
 internal sealed record TopDownRender(
     byte[] Bgra,
@@ -76,4 +83,5 @@ internal sealed record TopDownRender(
     float WorldMaxX,
     float WorldMinY,
     float WorldMaxY,
-    bool IsComplete);
+    bool IsComplete,
+    bool IsFullySettled);

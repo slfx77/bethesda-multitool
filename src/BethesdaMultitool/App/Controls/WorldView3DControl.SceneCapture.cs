@@ -93,20 +93,8 @@ public sealed partial class WorldView3DControl
     ///     fire on a fixed delay instead race cold texture resolution (e.g. the first-touch alpha-weighted
     ///     leaf-atlas mip rebuilds) and bake placeholder-white leaf cards into the frame.
     /// </summary>
-    internal bool Profiler_IsReferenceStreamingQuiesced
-    {
-        get
-        {
-            var s = _references?.LastStats;
-            return s is not null &&
-                   s.ReferenceTexturePending == 0 &&
-                   s.ReferenceGpuUploads == 0 &&
-                   s.ReferenceQueuedDecodes == 0 &&
-                   s.ReferenceActiveDecodes == 0 &&
-                   s.ReferenceTexturePendingResolves == 0 &&
-                   s.ReferenceTexturePendingUploads == 0;
-        }
-    }
+    internal bool Profiler_IsReferenceStreamingQuiesced =>
+        _references?.LastStats is { } s && StreamingQuiescence.IsQuiesced(s, terrain: null, strict: true);
 
     /// <summary>Profiler hook: set the day of the lunar cycle that drives the moon phase + orbit position
     /// (for headless night-sky captures used to calibrate the two-moon model against OpenMW).</summary>
@@ -123,6 +111,15 @@ public sealed partial class WorldView3DControl
     {
         if (!CanRenderProjectionExport) return null; // D3D12 + scene renderers ready
         if (pixelWidth <= 0 || pixelHeight <= 0) return null;
+
+        // This is a RAW capture primitive with no internal settle gate — the caller owns letting
+        // streaming quiesce (time-boxed) first. Surface the contract violation instead of silently
+        // baking withheld/placeholder content into the frame.
+        if (!Profiler_IsReferenceStreamingQuiesced)
+        {
+            Log.Warn("Profiler_CaptureSceneAsync: reference streaming has NOT quiesced — " +
+                     "the capture may contain withheld submeshes / placeholder textures.");
+        }
 
         var w = Math.Clamp(pixelWidth, 1, Export3DMaxTileDimension);
         var h = Math.Clamp(pixelHeight, 1, Export3DMaxTileDimension);

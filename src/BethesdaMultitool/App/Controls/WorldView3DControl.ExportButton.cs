@@ -178,16 +178,33 @@ public sealed partial class WorldView3DControl
                                  + MathF.Abs(zSpan) + (2f * _cellSize);
                 var cylinder = OrthoViewProjBuilder.BuildCoverCylinder(tileCenter, tileRadius);
 
-                // Re-request until streaming settles so the export captures the fully-loaded scene.
-                const int maxIterations = 80; // ~4s/tile cap so a region with missing assets can't hang
+                // Re-request until streaming FULLY settles (strict: no submesh withheld on pending
+                // textures) so the export captures the fully-loaded scene. The re-renders are what
+                // drive streaming — the live loop is detached, so a pure delay-poll would spin on
+                // frozen stats. Wall-clock time box (profiler evidence: heavy scenes need up to ~20s;
+                // the old 80-iteration ≈4s cap silently shipped half-streamed tiles) because
+                // permanently-missing textures can pin the strict counter.
                 Export3DTile? tile = null;
-                for (var it = 0; it < maxIterations; it++)
+                var settleTimer = System.Diagnostics.Stopwatch.StartNew();
+                while (true)
                 {
                     ct.ThrowIfCancellationRequested();
                     tile = await RenderProjectionTileAsync(
                         viewProj, cylinder, basisRight, basisUp, shadingEye,
                         plan.TileWidth, plan.TileHeight, opts, ct);
-                    if (tile is null || tile.IsComplete) break;
+                    if (tile is null || tile.IsFullySettled) break;
+                    if (settleTimer.Elapsed >= StreamingQuiescence.DefaultSettleTimeout)
+                    {
+                        Log.Warn(
+                            "3D export: tile {0}/{1} saved before streaming fully settled " +
+                            "({2:F0}s time box; complete={3}) — some meshes/textures may be missing.",
+                            tileIndex, totalTiles,
+                            StreamingQuiescence.DefaultSettleTimeout.TotalSeconds, tile.IsComplete);
+                        progress.Report(
+                            $"Tile {tileIndex}/{totalTiles}: streaming timed out — exporting as-is",
+                            tileIndex, totalTiles);
+                        break;
+                    }
                     progress.Report($"Loading meshes (tile {tileIndex}/{totalTiles})", tileIndex, totalTiles);
                     await Task.Delay(50, ct);
                 }

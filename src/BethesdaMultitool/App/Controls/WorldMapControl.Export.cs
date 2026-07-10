@@ -297,7 +297,7 @@ public sealed partial class WorldMapControl
 
     /// <summary>
     ///     Renders one export tile's rendered-meshes overlay: a top-down 3D render of the tile's world
-    ///     rect, re-requested until streaming settles (<see cref="TopDownRender.IsComplete" />) so the
+    ///     rect, re-requested until streaming settles (<see cref="TopDownRender.IsFullySettled" />) so the
     ///     export captures the fully-loaded scene rather than a half-streamed frame. The render dimension
     ///     is clamped internally by the provider; the bitmap is later drawn into the tile's full world
     ///     rect (upscaled if the provider capped it). Returns null on provider failure.
@@ -315,9 +315,14 @@ public sealed partial class WorldMapControl
         var worldMinY = tgy0 * _cellSize;       // world north-Y
         var worldMaxY = (tgy1 + 1) * _cellSize;
 
-        const int maxIterations = 40; // ~2s/tile cap so a region with permanently-missing meshes can't hang
+        // Re-request until streaming FULLY settles (strict gate: no submesh withheld on pending
+        // textures — the loose IsComplete let tiles ship with placeholder-white leaf cards). The
+        // re-renders drive streaming, so this must stay a render→check→delay loop. Wall-clock
+        // time box (the old 40-iteration ≈2s cap silently accepted half-streamed tiles; heavy
+        // scenes need up to ~20s) because permanently-missing textures pin the strict counter.
         TopDownRender? render = null;
-        for (var i = 0; i < maxIterations; i++)
+        var settleTimer = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
         {
             ct.ThrowIfCancellationRequested();
             render = await provider.RenderTopDownAsync(
@@ -327,7 +332,19 @@ public sealed partial class WorldMapControl
                 hiddenCategories: hiddenCategories,
                 enableLighting: _hillshadeLightingEnabled, gameHour: _gameHour,
                 interiorCellFormId: null, ct); // export is exterior worldspace tiles only
-            if (render is null || render.IsComplete) break;
+            if (render is null || render.IsFullySettled) break;
+            if (settleTimer.Elapsed >= StreamingQuiescence.DefaultSettleTimeout)
+            {
+                BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
+                    "Map export: mesh overlay tile {0}/{1} rendered before streaming fully settled " +
+                    "({2:F0}s time box; complete={3}) — some meshes/textures may be missing.",
+                    tileIndex, totalTiles,
+                    StreamingQuiescence.DefaultSettleTimeout.TotalSeconds, render.IsComplete);
+                progress.Report(
+                    $"Tile {tileIndex}/{totalTiles}: streaming timed out — exporting as-is",
+                    tileIndex, totalTiles);
+                break;
+            }
             progress.Report($"Loading meshes (tile {tileIndex}/{totalTiles})", tileIndex, totalTiles);
             await Task.Delay(50, ct); // let background mesh/texture decode advance before re-rendering
         }

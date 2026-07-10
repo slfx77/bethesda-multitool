@@ -392,16 +392,19 @@ internal sealed class MainWindow : Window, IDisposable
             // scenario keeps driving frames — time-boxed so a permanently-missing asset can't hang us.
             _scenario = Renderer3DScenario.Start(_worldView, DispatcherQueue, _options);
             await Task.Delay(movedCamera ? 7000 : 3000);
-            var quiesceWaitMs = 0;
-            while (quiesceWaitMs < 20000 && !_worldView.Profiler_IsReferenceStreamingQuiesced)
-            {
-                await Task.Delay(250);
-                quiesceWaitMs += 250;
-            }
+            // Pure delay-polling is valid here because the scenario keeps driving frames (stats only
+            // advance when frames render). Time-boxed: a permanently-missing asset can pin the counter.
+            var quiesceTimer = System.Diagnostics.Stopwatch.StartNew();
+            var quiesced = await StreamingQuiescence.PollAsync(
+                () => _worldView.Profiler_IsReferenceStreamingQuiesced,
+                StreamingQuiescence.DefaultSettleTimeout, TimeSpan.FromMilliseconds(250));
 
-            if (quiesceWaitMs > 0)
+            if (quiesceTimer.ElapsedMilliseconds >= 250)
             {
-                Console.WriteLine($"[Capture] reference streaming quiesced after +{quiesceWaitMs} ms.");
+                Console.WriteLine(quiesced
+                    ? $"[Capture] reference streaming quiesced after +{quiesceTimer.ElapsedMilliseconds} ms."
+                    : $"[Capture] reference streaming did NOT quiesce within " +
+                      $"{StreamingQuiescence.DefaultSettleTimeout.TotalSeconds:F0}s — capturing anyway.");
             }
             _scenario.Dispose();
             _scenario = null;

@@ -477,11 +477,7 @@ internal static class NifHeadlessRenderer
     }
 
     private static bool StreamingComplete(WorldRenderStats r) =>
-        r.ReferenceGpuUploads == 0
-        && r.ReferenceQueuedDecodes == 0
-        && r.ReferenceActiveDecodes == 0
-        && r.ReferenceTexturePendingResolves == 0
-        && r.ReferenceTexturePendingUploads == 0;
+        StreamingQuiescence.IsQuiesced(r, terrain: null, strict: false);
 
     private static void WaitForFence(ID3D12Fence fence, ulong value)
     {

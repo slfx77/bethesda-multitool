@@ -56,7 +56,7 @@ public sealed partial class WorldView3DControl
     ///     <paramref name="cylinder" />, honouring <paramref name="opts" />. MUST be called on the UI
     ///     thread (records + submits D3D12 commands); the fence wait + readback run on a worker thread.
     ///     The caller (<see cref="RunProjectionExportAsync" />) runs with the live render loop paused and
-    ///     re-requests each tile until <see cref="Export3DTile.IsComplete" />.
+    ///     re-requests each tile until <see cref="Export3DTile.IsFullySettled" /> (time-boxed).
     /// </summary>
     internal async Task<Export3DTile?> RenderProjectionTileAsync(
         Matrix4x4 viewProj, VisibilityCylinder cylinder, Vector3 leafRight, Vector3 leafUp,
@@ -95,6 +95,7 @@ public sealed partial class WorldView3DControl
 
         ulong fenceValue;
         bool isComplete;
+        bool isFullySettled;
         var prevShowDisabled = _references!.ShowInitiallyDisabled;
         var prevRefThrottled = _references.StreamingThrottled;
         var prevTerrainThrottled = _terrain!.StreamingThrottled;
@@ -167,7 +168,14 @@ public sealed partial class WorldView3DControl
             }
 
             fenceValue = recorder.LastSubmittedFenceValue;
-            isComplete = TopDownStreamingComplete();
+            // Gate only on the layers THIS render drew: a disabled layer's LastStats is stale (frozen
+            // from the last live frame, since the live loop is detached during export) and could either
+            // wedge the settle loop or falsely pass it. Strict additionally waits out the
+            // texture-withheld window (ReferenceTexturePending) so no submesh is missing from the PNG.
+            var refStats = opts.ShowReferences ? _references.LastStats : null;
+            var terrainStats = opts.ShowTerrain ? _terrain.LastStats : null;
+            isComplete = StreamingQuiescence.IsQuiesced(refStats, terrainStats, strict: false);
+            isFullySettled = StreamingQuiescence.IsQuiesced(refStats, terrainStats, strict: true);
             _gpu12.PumpDebugMessages();
         }
         catch (Exception ex)
@@ -203,7 +211,7 @@ public sealed partial class WorldView3DControl
                 var pixels = supersample > 1
                     ? NifSpriteRenderer.Downsample(ssBytes, ssWidth, ssHeight, supersample)
                     : ssBytes;
-                return new Export3DTile(pixels, finalW, finalH, isComplete);
+                return new Export3DTile(pixels, finalW, finalH, isComplete, isFullySettled);
             }, ct);
         }
         catch (OperationCanceledException)
@@ -228,5 +236,7 @@ internal sealed record Export3DOptions(
     IReadOnlyCollection<PlacedObjectCategory> HiddenCategories);
 
 /// <summary>One rendered export tile: BGRA pixels (<see cref="Width" />×<see cref="Height" />, tightly
-/// packed). <see cref="IsComplete" /> is false while meshes/textures are still streaming — re-request.</summary>
-internal sealed record Export3DTile(byte[] Bgra, int Width, int Height, bool IsComplete);
+/// packed). <see cref="IsComplete" /> is false while meshes/textures are still ACTIVELY streaming;
+/// <see cref="IsFullySettled" /> additionally requires no submesh withheld on pending textures
+/// (<see cref="StreamingQuiescence" /> strict mode) — the export gate, which must be time-boxed.</summary>
+internal sealed record Export3DTile(byte[] Bgra, int Width, int Height, bool IsComplete, bool IsFullySettled);
