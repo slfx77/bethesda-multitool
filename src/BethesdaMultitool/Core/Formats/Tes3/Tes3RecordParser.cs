@@ -260,6 +260,27 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
         Dictionary<(int, int), Tes3LandDraft> landByGrid,
         Dictionary<int, uint> ltexIndexToFormId)
     {
+        // Destination lookup for door teleports (the "Links to" line): TES3 doors name interior
+        // targets by cell NAME (DNAM) and imply exterior targets by DODT position — both resolve to
+        // the synthetic cell FormIDs assigned at parse, so this pre-pass must cover ALL drafts before
+        // any reference resolves (a door can point at a cell parsed later in the file).
+        var interiorCellsByName = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+        var exteriorCellsByGrid = new Dictionary<(int GridX, int GridY), uint>();
+        foreach (var draft in drafts)
+        {
+            if (draft.IsInterior)
+            {
+                if (!string.IsNullOrEmpty(draft.Name))
+                {
+                    interiorCellsByName.TryAdd(draft.Name!, draft.FormId);
+                }
+            }
+            else
+            {
+                exteriorCellsByGrid.TryAdd((draft.GridX, draft.GridY), draft.FormId);
+            }
+        }
+
         var cells = new List<CellRecord>(drafts.Count);
         foreach (var draft in drafts)
         {
@@ -293,7 +314,9 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
                     RotX = r.RotX,
                     RotY = r.RotY,
                     RotZ = r.RotZ,
-                    Scale = r.Scale
+                    Scale = r.Scale,
+                    DestinationCellFormId = ResolveTeleportDestination(
+                        r, interiorCellsByName, exteriorCellsByGrid)
                 });
             }
 
@@ -337,6 +360,37 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
         }
 
         return cells;
+    }
+
+    /// <summary>
+    ///     Resolves a door reference's teleport destination to the target cell's synthetic FormID:
+    ///     DNAM names an interior cell (exact NAME match, case-insensitive like the engine's cell
+    ///     lookup); otherwise a DODT position implies an exterior cell via the 8192-unit grid. Null
+    ///     when the reference isn't a teleport door or the target cell isn't in this file (a plugin
+    ///     can door into a master's cell — resolvable only after merge, not per-file).
+    /// </summary>
+    internal static uint? ResolveTeleportDestination(
+        Tes3RefDraft r,
+        Dictionary<string, uint> interiorCellsByName,
+        Dictionary<(int GridX, int GridY), uint> exteriorCellsByGrid)
+    {
+        if (r.DestinationCellName is { Length: > 0 } destName &&
+            interiorCellsByName.TryGetValue(destName, out var byName))
+        {
+            return byName;
+        }
+
+        if (r.HasTeleportDestination)
+        {
+            var gridX = (int)MathF.Floor(r.DestX / MorrowindCellWorldSize);
+            var gridY = (int)MathF.Floor(r.DestY / MorrowindCellWorldSize);
+            if (exteriorCellsByGrid.TryGetValue((gridX, gridY), out var byGrid))
+            {
+                return byGrid;
+            }
+        }
+
+        return null;
     }
 
     // Morrowind's land texturing is a flat 16×16 grid of land-texture indices (no TES4-style alpha

@@ -15,6 +15,19 @@ internal sealed class Tes3RefDraft
     public float RotY { get; set; }
     public float RotZ { get; set; }
     public float Scale { get; set; } = 1.0f;
+
+    /// <summary>True when the reference carries a DODT door-teleport destination position.</summary>
+    public bool HasTeleportDestination { get; set; }
+
+    /// <summary>DODT destination position (world coords). For exterior destinations (no
+    /// <see cref="DestinationCellName" />) the target cell derives from these via the 8192 grid.</summary>
+    public float DestX { get; set; }
+
+    /// <inheritdoc cref="DestX" />
+    public float DestY { get; set; }
+
+    /// <summary>DNAM destination cell NAME — present only when the door leads to an interior cell.</summary>
+    public string? DestinationCellName { get; set; }
 }
 
 /// <summary>
@@ -125,6 +138,17 @@ internal static class Tes3CellParser
                 reference.RotX = c.ReadFloat();
                 reference.RotY = c.ReadFloat();
                 reference.RotZ = c.ReadFloat();
+                break;
+            // Door teleport: DODT = destination pos xyz + rot xyz (24 bytes); DNAM = destination
+            // cell NAME, present only for interior destinations (exterior targets resolve from the
+            // DODT coords via the cell grid). These drive the map viewer's "Links to" line.
+            case "DODT" when span.Length >= 24:
+                reference.HasTeleportDestination = true;
+                reference.DestX = c.ReadFloat();
+                reference.DestY = c.ReadFloat();
+                break;
+            case "DNAM":
+                reference.DestinationCellName = c.ReadRemainingString();
                 break;
         }
     }

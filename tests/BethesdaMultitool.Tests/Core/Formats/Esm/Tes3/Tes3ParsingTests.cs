@@ -203,6 +203,79 @@ public class Tes3ParsingTests
         Assert.Equal("ex_bittercoast_sleep", Field(fields, "SleepCreature"));
     }
 
+    [Fact]
+    public void CellParser_ReadsDoorTeleportDestination()
+    {
+        // A door reference carrying DODT (destination pos+rot) and DNAM (interior cell name) —
+        // the inputs for the map viewer's "Links to" line, previously dropped by the TES3 parser.
+        var stream = new List<byte>();
+        AppendSub(stream, "NAME", "Seyda Neen\0"u8.ToArray());
+        AppendSub(stream, "DATA", CellHeader(flags: 0, gridX: -2, gridY: -9));
+        AppendSub(stream, "FRMR", [1, 0, 0, 0]);
+        AppendSub(stream, "NAME", "ex_nord_door_01\0"u8.ToArray());
+        AppendSub(stream, "DODT", DoorDestination(x: 100f, y: 200f));
+        AppendSub(stream, "DNAM", "Seyda Neen, Arrille's Tradehouse\0"u8.ToArray());
+        AppendSub(stream, "DATA", new byte[24]);
+        var data = stream.ToArray();
+
+        var draft = Tes3CellParser.Parse(data, data.Length, formId: 0x10, offset: 0);
+
+        var reference = Assert.Single(draft.References);
+        Assert.True(reference.HasTeleportDestination);
+        Assert.Equal(100f, reference.DestX);
+        Assert.Equal(200f, reference.DestY);
+        Assert.Equal("Seyda Neen, Arrille's Tradehouse", reference.DestinationCellName);
+    }
+
+    [Fact]
+    public void ResolveTeleportDestination_InteriorByName_ExteriorByGrid()
+    {
+        var byName = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Seyda Neen, Arrille's Tradehouse"] = 0x2000,
+        };
+        var byGrid = new Dictionary<(int GridX, int GridY), uint> { [(-2, -10)] = 0x3000 };
+
+        // DNAM wins, case-insensitive like the engine's cell lookup.
+        Assert.Equal(0x2000u, Tes3RecordParser.ResolveTeleportDestination(
+            new Tes3RefDraft { DestinationCellName = "seyda neen, ARRILLE'S tradehouse" },
+            byName, byGrid));
+
+        // No DNAM (exterior destination): the DODT position implies the cell via the 8192 grid —
+        // x=-12000 → floor(-12000/8192) = -2; y=-76000 → floor(-76000/8192) = -10.
+        Assert.Equal(0x3000u, Tes3RecordParser.ResolveTeleportDestination(
+            new Tes3RefDraft { HasTeleportDestination = true, DestX = -12000f, DestY = -76000f },
+            byName, byGrid));
+
+        // Unknown DNAM (e.g. the cell lives in a master this file doesn't contain) falls back to
+        // the DODT grid when present; a plain non-door reference resolves to nothing.
+        Assert.Equal(0x3000u, Tes3RecordParser.ResolveTeleportDestination(
+            new Tes3RefDraft
+            {
+                DestinationCellName = "Not In This File",
+                HasTeleportDestination = true, DestX = -12000f, DestY = -76000f,
+            },
+            byName, byGrid));
+        Assert.Null(Tes3RecordParser.ResolveTeleportDestination(new Tes3RefDraft(), byName, byGrid));
+    }
+
+    private static byte[] CellHeader(int flags, int gridX, int gridY)
+    {
+        var data = new byte[12];
+        BinaryPrimitives.WriteInt32LittleEndian(data, flags);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(4), gridX);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(8), gridY);
+        return data;
+    }
+
+    private static byte[] DoorDestination(float x, float y)
+    {
+        var data = new byte[24]; // pos xyz + rot xyz
+        BinaryPrimitives.WriteSingleLittleEndian(data, x);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(4), y);
+        return data;
+    }
+
     private static object? Field(IReadOnlyList<Tes3SubrecordDecoder.Field> fields, string name)
     {
         return fields.First(f => f.Name == name).Value;
