@@ -85,7 +85,8 @@ public sealed partial class WorldView3DControl
         var appearance = GetSelectedWaterAppearance(_data);
         var noiseIndex = _textureResolver12?.ResolveNormalMapBindlessIndex(appearance?.NoiseTexture);
         _cellGrid?.LoadData(cellList, _spatialIndex);
-        if (ComputeGridZExtent(cellList) is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
+        _worldZExtent = ComputeGridZExtent(cellList);
+        if (_worldZExtent is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, noiseIndex);
@@ -153,7 +154,8 @@ public sealed partial class WorldView3DControl
         var cellList = new List<CellRecord> { interior };
 
         _cellGrid?.LoadData(cellList, _spatialIndex);
-        if (ComputeGridZExtent(cellList) is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
+        _worldZExtent = ComputeGridZExtent(cellList);
+        if (_worldZExtent is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
         _water?.LoadData(_cellGridLookup, worldspaceDefaultWaterHeight: null, _spatialIndex);
@@ -161,6 +163,14 @@ public sealed partial class WorldView3DControl
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
         if (_collisionDebug is not null) { _collisionDebug.LoadData(_spatialIndex); _collisionDebug.ShowDisabled = _showDisabled; }
     }
+
+    /// <summary>
+    ///     Z extent of the loaded grid (from <see cref="ComputeGridZExtent" />), captured at grid build
+    ///     (exterior AND interior paths, so it can't go stale switching between them) for the ortho cull
+    ///     radius's terrain-relief parallax term (<see cref="BuildProjectionViewProj" />). Null when the
+    ///     grid has no finite placed-object Z — the relief term then drops to zero.
+    /// </summary>
+    private (float zMin, float zMax)? _worldZExtent;
 
     /// <summary>
     ///     Computes the vertical (Z) extent the cell-grid walls should span for the loaded cells,

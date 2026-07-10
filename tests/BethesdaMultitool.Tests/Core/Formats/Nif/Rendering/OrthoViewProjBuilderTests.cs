@@ -214,4 +214,84 @@ public sealed class OrthoViewProjBuilderTests
         Assert.Equal(2000f, cyl.Position.Y, 3);
         Assert.Equal(5000f, cyl.Radius, 3);
     }
+
+    // ── CoverRadius: ground footprint + terrain-relief parallax ────────────────────────────────
+
+    private const float CellSize = 4096f;
+
+    /// <summary>The pre-relief formula: visible rectangle's ground-footprint diagonal + 2 cells slack.</summary>
+    private static float FlatFootprintRadius(float halfH, float aspect, float elevationDeg)
+    {
+        var halfW = halfH * MathF.Max(aspect, 1e-4f);
+        var sinEl = MathF.Max(MathF.Sin(elevationDeg * (MathF.PI / 180f)), 0.1f);
+        var groundHalfH = halfH / sinEl;
+        return MathF.Sqrt((halfW * halfW) + (groundHalfH * groundHalfH)) + (2f * CellSize);
+    }
+
+    [Theory]
+    [InlineData(90f)]
+    [InlineData(30f)]
+    [InlineData(25.65891f)]
+    public void CoverRadius_NoRelief_MatchesFlatFootprintFormula(float elevationDeg)
+    {
+        var radius = OrthoViewProjBuilder.CoverRadius(
+            2048f, 1.6f, elevationDeg, CellSize, reliefAboveFocus: 0f, reliefBelowFocus: 0f);
+        Assert.Equal(FlatFootprintRadius(2048f, 1.6f, elevationDeg), radius, 1);
+    }
+
+    [Fact]
+    public void CoverRadius_TopDown_IgnoresRelief()
+    {
+        // cot(90°) is a tiny negative in float — the clamp must make top-down EXACTLY parallax-free,
+        // so the orthographic mode's radius (and its streamed set) is unchanged by this feature.
+        var flat = OrthoViewProjBuilder.CoverRadius(2048f, 1f, 90f, CellSize, 0f, 0f);
+        var withRelief = OrthoViewProjBuilder.CoverRadius(2048f, 1f, 90f, CellSize, 30_000f, 30_000f);
+        Assert.Equal(flat, withRelief);
+    }
+
+    [Fact]
+    public void CoverRadius_TiltedRelief_CoversOnScreenPeak()
+    {
+        // THE regression (2026-07-09 note): a peak Δz above the focus plane stays on screen while its
+        // horizontal distance toward the camera reaches halfH/sin(el) + Δz·cot(el) — beyond the flat
+        // footprint radius, so its whole cell culled while visible. Build that worst-case point (bottom
+        // screen edge, camera side), prove it renders inside NDC, and assert the old radius missed it
+        // while the relief-aware radius covers it. az 0 puts the camera due north, so the point's
+        // Chebyshev distance from the focus equals its straight-line distance — no diagonal discount.
+        const float az = 0f, el = 30f, halfH = 2048f, aspect = 1f, dz = 8000f;
+        var focus = Vector3.Zero;
+        var sinEl = MathF.Sin(el * (MathF.PI / 180f));
+        var cotEl = MathF.Cos(el * (MathF.PI / 180f)) / sinEl;
+        var d = (halfH / sinEl) + (dz * cotEl) - 2f; // 2 units inside the bottom screen edge
+        var peak = new Vector3(0f, d, dz); // toward the camera (north), Δz above the focus plane
+
+        var vp = OrthoViewProjBuilder.BuildViewProj(focus, az, el, halfH, aspect);
+        var ndc = Ndc(vp, peak);
+        Assert.InRange(ndc.X, -0.01f, 0.01f);
+        Assert.InRange(ndc.Y, -1f, -0.98f); // on screen, at the bottom edge
+
+        var oldRadius = OrthoViewProjBuilder.CoverRadius(halfH, aspect, el, CellSize, 0f, 0f);
+        var newRadius = OrthoViewProjBuilder.CoverRadius(halfH, aspect, el, CellSize, dz, 0f);
+        Assert.True(d > oldRadius, $"bug demo: on-screen peak at {d:F0} must lie OUTSIDE the flat radius {oldRadius:F0}");
+        Assert.True(d < newRadius, $"fix: relief-aware radius {newRadius:F0} must cover the on-screen peak at {d:F0}");
+    }
+
+    [Fact]
+    public void CoverRadius_UsesLargerOfAboveAndBelowRelief()
+    {
+        // Valleys at the top screen edge are the mirror case of peaks at the bottom — both directions
+        // extend the reach, and a stale focus.Z is absorbed by taking the max.
+        var above = OrthoViewProjBuilder.CoverRadius(2048f, 1f, 30f, CellSize, 8000f, 0f);
+        var below = OrthoViewProjBuilder.CoverRadius(2048f, 1f, 30f, CellSize, 0f, 8000f);
+        Assert.Equal(above, below);
+    }
+
+    [Fact]
+    public void CoverRadius_ReliefReach_IsCappedAt16Cells()
+    {
+        // Extreme relief must not stream half the map: the parallax reach saturates at 16 cells.
+        var flat = OrthoViewProjBuilder.CoverRadius(2048f, 1f, 30f, CellSize, 0f, 0f);
+        var capped = OrthoViewProjBuilder.CoverRadius(2048f, 1f, 30f, CellSize, 1_000_000f, 0f);
+        Assert.Equal(flat + (16f * CellSize), capped, 1);
+    }
 }

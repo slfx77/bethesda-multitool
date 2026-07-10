@@ -255,15 +255,17 @@ public sealed partial class WorldView3DControl
         var elevation = OrthoViewProjBuilder.ElevationDegFor(_projectionMode);
         var viewProj = OrthoViewProjBuilder.BuildViewProj(_projectionFocus, azimuth, elevation, _orthoHalfHeight, aspect);
 
-        // Cull radius covers the visible rectangle's GROUND footprint diagonal plus a couple cells of
-        // slack. The vertical screen half-extent is a view-space distance; in a tilted (iso/tri) view it
-        // projects onto the ground as halfHeight / sin(elevation) — up to ~2× at 30°. Using the raw
-        // view-space half-height under-sized the cull circle, so the down-screen corners fell outside it
-        // and were culled ("bottom corners cut off"). Project it onto the ground for the cull extent.
-        var halfW = _orthoHalfHeight * MathF.Max(aspect, 1e-4f);
-        var sinEl = MathF.Sin(elevation * (MathF.PI / 180f));
-        var groundHalfH = _orthoHalfHeight / MathF.Max(sinEl, 0.1f);
-        var radius = MathF.Sqrt((halfW * halfW) + (groundHalfH * groundHalfH)) + (2f * _cellSize);
+        // Cull radius = ground-footprint diagonal + terrain-relief parallax + slack — see
+        // OrthoViewProjBuilder.CoverRadius for the geometry. The relief term is measured from the focus
+        // plane to the loaded grid's Z extent: in a tilted (iso/tri) view a peak Δz above the focus
+        // leans Δz·cot(el) toward the camera while still on screen, so without it high terrain culled
+        // at cell granularity while visible (worst zoomed-in with the summit in the lower half of the
+        // frame). Top-down is parallax-free and keeps the flat footprint radius.
+        var (reliefUp, reliefDown) = _worldZExtent is { } zext
+            ? (zext.zMax - _projectionFocus.Z, _projectionFocus.Z - zext.zMin)
+            : (0f, 0f);
+        var radius = OrthoViewProjBuilder.CoverRadius(
+            _orthoHalfHeight, aspect, elevation, _cellSize, reliefUp, reliefDown);
         cylinder = OrthoViewProjBuilder.BuildCoverCylinder(_projectionFocus, radius);
         eye = OrthoViewProjBuilder.EyePosition(_projectionFocus, azimuth, elevation);
         return viewProj;

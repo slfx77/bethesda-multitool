@@ -222,6 +222,40 @@ internal static class OrthoViewProjBuilder
         return (right, up);
     }
 
+    /// <summary>Cap (in cells) on the relief parallax reach of <see cref="CoverRadius" /> so extreme
+    /// relief can't balloon the streamed set — a documented clip risk only past ~16·cellSize·tan(el)
+    /// of relief above/below the focus (Skyrim's ~30k-unit range stays under it at iso/tri).</summary>
+    private const float MaxReliefReachCells = 16f;
+
+    /// <summary>
+    ///     Cull-cylinder radius covering everything an ortho frame can see, from three terms:
+    ///     (1) the visible rectangle's GROUND-footprint diagonal — the vertical screen half-extent is a
+    ///     view-space distance that projects onto the ground as halfHeight / sin(elevation), up to ~2×
+    ///     at iso 30°; (2) terrain-relief parallax — a point Δz above the focus plane stays on screen
+    ///     until its horizontal distance toward the camera reaches Δz·cot(elevation) PAST the footprint
+    ///     edge (bottom screen edge: −halfH = −d·sin(el) + Δz·cos(el) ⇒ d = halfH/sin(el) + Δz·cot(el);
+    ///     cot 30° ≈ 1.73), so tilted views need extra XY reach for peaks/valleys leaning in — the same
+    ///     compensation the 3D export's tile radius applies via its |zSpan| term — capped at
+    ///     <see cref="MaxReliefReachCells" /> cells; (3) two cells of drift slack. Top-down has no
+    ///     parallax (cot clamps to 0), so the radius reduces exactly to the flat footprint formula.
+    /// </summary>
+    public static float CoverRadius(
+        float orthoHalfHeight, float aspect, float elevationDeg, float cellSize,
+        float reliefAboveFocus, float reliefBelowFocus)
+    {
+        var halfW = orthoHalfHeight * MathF.Max(aspect, 1e-4f);
+        var el = elevationDeg * (MathF.PI / 180f);
+        var sinEl = MathF.Max(MathF.Sin(el), 0.1f);
+        var groundHalfH = orthoHalfHeight / sinEl;
+        var footprint = MathF.Sqrt((halfW * halfW) + (groundHalfH * groundHalfH)) + (2f * cellSize);
+
+        // cos(90°) in float is a tiny negative — clamp so top-down is parallax-free by construction.
+        var cotEl = MathF.Max(MathF.Cos(el) / sinEl, 0f);
+        var relief = MathF.Max(MathF.Max(reliefAboveFocus, reliefBelowFocus), 0f);
+        var reliefReach = MathF.Min(relief * cotEl, MaxReliefReachCells * cellSize);
+        return footprint + reliefReach;
+    }
+
     /// <summary>
     ///     Covering visibility cylinder centered on the focus with a world-space radius.
     ///     <see cref="VisibilityCylinder" /> is an XY-circle cull (camera-orientation-independent), so a
