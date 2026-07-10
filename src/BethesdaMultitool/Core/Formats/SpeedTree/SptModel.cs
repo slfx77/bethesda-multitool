@@ -81,18 +81,24 @@ public sealed record SptBranch
     public float Float6010 { get; init; } // +0x08 child/leaf spawn range start
     public float Float6011 { get; init; } // +0x0C child/leaf spawn range end
     public float Float6012 { get; init; } // +0x10 child frequency scale
-    public float Float6013 { get; init; } // +0x14 bark texture U tiling (wraps around the ring)
-    public float Float6014 { get; init; } // +0x18 bark texture V tiling (repeats along the branch)
-    public bool Bool6015 { get; init; }   // +0x1C absolute-U-tiling flag
-    public bool Bool6016 { get; init; }   // +0x1D absolute-V-tiling flag
+    // Bark texture tilings + their "absolute" flags (SIdvBranchInfo ctor defaults 1.0 / 1.0 / true / false):
+    // flag set → the tiling is consumed raw (repeats per revolution / per unit path); clear → the engine
+    // scales it by radius·2π (U) or branch length/tree size (V) at CIdvBranch::Compute L2051-2062.
+    public float Float6013 { get; init; } = 1f; // +0x14 bark U tiling
+    public float Float6014 { get; init; } = 1f; // +0x18 bark V tiling
+    public bool Bool6015 { get; init; } = true; // +0x1C absolute-U flag
+    public bool Bool6016 { get; init; }         // +0x1D absolute-V flag
 }
 
 /// <summary>One leaf card (tokens 0x3EF..0x3F0 inside the 0x3F1 collection).</summary>
 public sealed record SptLeaf
 {
     public byte Type { get; init; }          // 4000
-    public Vector3 Position { get; init; }   // 4001
-    public float Size { get; init; }         // 4002
+    // 4001 = the per-leaf SIZE BASE vector (MakeLeaf adds the ±4002 jitter to it and CLeafGeometry
+    // scales the card extents by the result). Every shipped .spt authors (1,1,1); default to that so
+    // synthetic models without the token keep unit-scaled cards.
+    public Vector3 Position { get; init; } = Vector3.One;
+    public float Size { get; init; }         // 4002 (size jitter bound; also the lighting-normal lerp t)
     public string? Material { get; init; }   // 4003 (dev-machine .tga path in shipped files)
     public Vector3 Corner0 { get; init; }    // 4004
     public Vector3 Corner1 { get; init; }    // 4005
@@ -122,7 +128,9 @@ public readonly record struct SptLeafTextureCoords(Vector2 Corner0, Vector2 Corn
 /// <summary>General leaf-table parameters (tokens 3001..3010), mapped to <c>SIdvLeafInfo</c>.</summary>
 public sealed record SptLeafTable
 {
-    public uint UInt3001 { get; init; }   // +0x2c: blossom branch-depth/ancestor mode
+    // +0x2c: blossom gate anchor mode (SIdvLeafInfo ctor default 1; 0 = gate on the leaf-bearing
+    // BRANCH's spawn fraction, non-zero = gate on the bud's own percent).
+    public uint UInt3001 { get; init; } = 1;
     public float Float3002 { get; init; } // +0x28: blossom probability
     public byte Byte3003 { get; init; }
     public float Float3004 { get; init; }

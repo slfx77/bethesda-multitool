@@ -1,0 +1,111 @@
+using BethesdaMultitool.Core.Formats.SpeedTree;
+using Xunit;
+
+namespace BethesdaMultitool.Tests.Core.Formats.SpeedTree;
+
+/// <summary>
+///     Pins the engine leaf-wind driver formulas (FNV FUN_006658b0 ≡ Oblivion FUN_0055e060;
+///     see tools/GhidraProject/speedtree_wind_design.md + speedtree_oblivion_wind_decompiled.txt).
+///     Both engines share <c>swayFac(k) = k·sway·0.5 + (1−k)</c>; only the fLeaf* setting values
+///     differ per game.
+/// </summary>
+public sealed class SpeedTreeWindRigTests
+{
+    private static SpeedTreeWindRig TickedRig(SpeedTreeWindProfile profile, float strength, int frames = 120)
+    {
+        var rig = new SpeedTreeWindRig { Profile = profile };
+        for (var i = 0; i <= frames; i++)
+        {
+            rig.Tick(strength, i * (1f / 30f));
+        }
+        return rig;
+    }
+
+    [Fact]
+    public void SwayFactor_AtInfluenceOne_IsHalfSway()
+    {
+        // FNV compiled defaults (k=1): swayFac = sway/2 — the two rival formulas coincide here.
+        Assert.Equal(0.75f, SpeedTreeWindProfile.SwayFactor(1f, 1.5f), 6);
+        Assert.Equal(0f, SpeedTreeWindProfile.SwayFactor(1f, 0f), 6);
+    }
+
+    [Fact]
+    public void SwayFactor_AtLowInfluence_IsNearlySteady()
+    {
+        // Oblivion's shipped k=0.01: amount ≈ S regardless of gustiness (H1 — the (1−k) term
+        // is present in both binaries; H2 (k·sway/2 → dead leaves) is decompile-refuted).
+        Assert.Equal(0.99f, SpeedTreeWindProfile.SwayFactor(0.01f, 0f), 6);
+        Assert.Equal(1.00f, SpeedTreeWindProfile.SwayFactor(0.01f, 2f), 6);
+    }
+
+    [Fact]
+    public void SwayFactor_AboveOne_GoesNegativeInCalm()
+    {
+        // Oblivion fLeafRustleSpeedSwayInfluence = 1.5: at low sway the factor is negative —
+        // the rustle phase timer legitimately runs backwards (authentic engine behavior).
+        Assert.True(SpeedTreeWindProfile.SwayFactor(1.5f, 0.2f) < 0f);
+        Assert.True(SpeedTreeWindProfile.SwayFactor(1.5f, 2f) > 0f);
+    }
+
+    [Fact]
+    public void Tick_ZeroStrength_IsPerfectlyStatic()
+    {
+        foreach (var profile in new[] { SpeedTreeWindProfile.FalloutNewVegas, SpeedTreeWindProfile.Oblivion })
+        {
+            var rig = TickedRig(profile, 0f);
+            Assert.Equal(0f, rig.RockAmount);
+            Assert.Equal(0f, rig.RustleAmount);
+        }
+    }
+
+    [Fact]
+    public void Tick_FnvProfile_AmountsPulseWithinSwayBounds()
+    {
+        var rig = new SpeedTreeWindRig { Profile = SpeedTreeWindProfile.FalloutNewVegas };
+        const float s = 0.196f; // FNV clear-weather wind byte 50 / 255
+        var min = float.MaxValue;
+        var max = float.MinValue;
+        for (var i = 0; i <= 3000; i++)
+        {
+            rig.Tick(s, i * (1f / 30f));
+            min = MathF.Min(min, rig.RockAmount);
+            max = MathF.Max(max, rig.RockAmount);
+        }
+
+        // amount = S·sway/2, sway = |sin|+|cos| ∈ [0, √2·…] ⊂ [0, 2] → amount ∈ [0, S], and over
+        // 100 s the oscillator must actually traverse a wide band (gust pulsing).
+        Assert.InRange(min, 0f, s * 0.4f);
+        Assert.InRange(max, s * 0.6f, s);
+        Assert.True(max - min > s * 0.3f, $"expected pulsing, got [{min}, {max}]");
+    }
+
+    [Fact]
+    public void Tick_OblivionProfile_AmountIsSteadyNearStrength()
+    {
+        var rig = new SpeedTreeWindRig { Profile = SpeedTreeWindProfile.Oblivion };
+        const float s = 0.098f; // Oblivion "Clear" wind byte 25 / 255
+        var min = float.MaxValue;
+        var max = float.MinValue;
+        for (var i = 0; i <= 3000; i++)
+        {
+            rig.Tick(s, i * (1f / 30f));
+            min = MathF.Min(min, rig.RockAmount);
+            max = MathF.Max(max, rig.RockAmount);
+        }
+
+        // amount = S·(0.99 + 0.005·sway) ∈ [0.990·S, 1.000·S] — steady, unmodulated.
+        Assert.InRange(min, s * 0.989f, s * 1.001f);
+        Assert.InRange(max, s * 0.989f, s * 1.001f);
+    }
+
+    [Fact]
+    public void Tick_FnvProfile_RockPhaseAdvancesFasterThanOblivion()
+    {
+        // fLeafRockTimeScale 2.0 (FNV) vs 1.0 with 0.85-influence sway modulation (Oblivion):
+        // FNV's rock phase must accumulate meaningfully faster at equal strength.
+        var fnv = TickedRig(SpeedTreeWindProfile.FalloutNewVegas, 0.15f, frames: 900);
+        var oblivion = TickedRig(SpeedTreeWindProfile.Oblivion, 0.15f, frames: 900);
+        Assert.True(fnv.RockPhase > oblivion.RockPhase * 1.3f,
+            $"FNV {fnv.RockPhase} vs Oblivion {oblivion.RockPhase}");
+    }
+}

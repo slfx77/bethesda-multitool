@@ -100,7 +100,10 @@ internal static class SpeedTreeRenderCommands
             {
                 var model = SptFile.Parse(bytes);
                 treeByPath.TryGetValue(archivePath, out var treeMeta);
-                var opt = SptGeometryOptions.FromEnvironment() with { TargetHeight = treeMeta?.TargetHeight };
+                var opt = SptGeometryOptions.FromEnvironment() with
+                {
+                    TargetHeight = treeMeta?.TargetHeight,
+                };
                 var seed = treeMeta?.Seed ?? model.General.Token2005;
                 var renderable = SptGeometryBuilder.Build(model, seed, opt);
                 var bark = renderable.Submeshes.FirstOrDefault(s => s.ShapeName == "spt:bark");
@@ -134,6 +137,7 @@ internal static class SpeedTreeRenderCommands
     }
 
     /// <summary>Enumerate <c>(archivePath, name, bytes)</c> for every <c>.spt</c> in a BSA or directory.</summary>
+
     private static List<(string ArchivePath, string Name, byte[] Bytes)>? EnumerateSptItems(string? bsa, string? dir)
     {
         var items = new List<(string ArchivePath, string Name, byte[] Bytes)>();
@@ -255,7 +259,10 @@ internal static class SpeedTreeRenderCommands
         var elR = elevation * (float)Math.PI / 180f;
         var camDir = new System.Numerics.Vector3(
             (float)(Math.Cos(azR) * Math.Cos(elR)), (float)(Math.Sin(azR) * Math.Cos(elR)), (float)Math.Sin(elR));
-        var baseOpt = SptGeometryOptions.FromEnvironment() with { LeafFaceDirection = camDir };
+        var baseOpt = SptGeometryOptions.FromEnvironment() with
+        {
+            LeafFaceDirection = camDir,
+        };
 
         int ok = 0, fail = 0, textured = 0, bbDumped = 0;
         foreach (var (archivePath, name, bytes) in items.OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase))

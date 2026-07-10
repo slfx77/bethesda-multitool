@@ -108,14 +108,21 @@ internal static class SptGeometryBuilder
         // (ComputeBud → MakeLeaf → RoomForLeaf), NOT in a deferred pass. RoomForLeaf and its TWO on-accept
         // GetUniform draws advance the shared RNG between terminal branches, so deferring them desynced every
         // later branch (the residual leaf-count gap). The placer holds the ONE global RoomForLeaf list plus
-        // the accepted leaves. Card spacing/size are data-driven: spacing factor + placement mode from the
-        // .spt leaf table (token 3007 / 3008, SIdvLeafInfo::Parse; default 0.5 / mode 2); the card SIZE uses
-        // the tree-size MID (Float2006, token 2006), NOT the per-instance random draw — CTreeEngine::Compute
-        // sets leaf[+0x48] = mid·Corner1 (runtime-verified), so only mid-vs-draw matters for density.
+        // the accepted leaves. Spacing factor + placement mode come from the .spt leaf table (tokens
+        // 3007 / 3008, SIdvLeafInfo::Parse → +0x20 / +0x0C; ctor defaults 0.5 / mode 2).
+        //
+        // The per-map spacing SIZE is Corner1 (token 4005) × the tree-size MID: CTreeEngine::Compute
+        // overwrites the parsed Corner2 default at map[+0x48/+0x4C] with sizeMid·Corner1 before generation
+        // (FNV 360 L3679; Oblivion FUN_007a45f0 — identical formula, both binaries). Shipped .spts author
+        // Corner2 ≡ Corner1·Float2006, so on Oblivion (host size = authored size) the overwrite is a no-op,
+        // while FNV's ×10 host size scales it — the "era difference" is only the host's tree size. Because
+        // spacing shares the loft's own sizeMid, it stays consistent with our geometry units by construction.
         var leafSpacing = model.LeafTable?.Float3007 ?? DefaultLeafSpacingFactor;
         var placementMode = model.LeafTable?.UInt3008 ?? 2u;
         var treeSizeMid = (model.General.Float2006 > 1e-3f ? model.General.Float2006 : opt.TrunkHeight) * EngineWorldScale;
-        var placer = new LeafPlacer(treeSizeMid, leafSpacing, placementMode);
+        // BSTreeModel::InitFromBase sets SetNumLeafRockingGroups(2) when the tree has < 4 leaf
+        // maps, else 1 — the rock group is part of each leaf's LeafBase/phase slot (wind rock/rustle).
+        var placer = new LeafPlacer(leafSpacing, treeSizeMid, placementMode, model.Leaves.Count < 4 ? 2 : 1);
 
         // Canopy-depth dimming (CIdvBranch::MakeLeaf / BuildCrossSection): interior leaves and bark near the
         // trunk base are darkened toward (1 − dimmingScalar). The enable flag + leaf scalar are .spt tokens
@@ -145,7 +152,7 @@ internal static class SptGeometryBuilder
         EmitDecimatedBranches(collectedBranches, model.Lod, bark, dimming);
 
         // Emit the accepted leaf cards' geometry (no RNG — every draw happened inline during the loft).
-        EmitPlacedLeaves(placer.Leaves, treeSizeMid, opt, leafGroups);
+        EmitPlacedLeaves(placer.Leaves, treeSizeMid, model, opt, leafGroups);
 
         var submeshes = new List<RenderableSubmesh>(4);
         if (bark.VertexCount > 0)
@@ -333,7 +340,21 @@ internal static class SptGeometryBuilder
             importance += Vector3.Distance(rings[i].Pos, rings[i + 1].Pos) * (rings[i].Radius + rings[i + 1].Radius);
         }
 
-        collected.Add(new CollectedBranch(rings, vertsPerRing, importance, barkHelp, level == 0));
+        // Bark UV tilings (CIdvBranch::Compute 360 L2051-2062 → the p0/p1 of BuildCrossSection's UV
+        // triple; the p2 U-twist term is DEAD — SIdvBranchInfo ctor zeroes [8] and no token writes it):
+        //   U tile = 6013 raw when the absolute-U flag (6015) is set, else 6013 × radiusScale × 2π
+        //            (repeats per unit of circumference);
+        //   V tile = 6014 raw when the absolute-V flag (6016) is set, else 6014 × (length / treeSize)
+        //            (repeats scale with the branch's relative length → uniform bark density).
+        // The callee then emits u = aroundFrac × Utile, v = (pathT + barkHelp) × Vtile — the same
+        // cumulative-spawn-fraction "help" the vertex-color dimming composes rides in as the V base.
+        var barkUTile = branch.Bool6015 ? branch.Float6013 : branch.Float6013 * radius * MathF.Tau;
+        var barkVTile = branch.Bool6016
+            ? branch.Float6014
+            : branch.Float6014 * (treeSize > 0f ? length / treeSize : 1f);
+
+        collected.Add(new CollectedBranch(rings, vertsPerRing, importance, barkHelp, level == 0,
+            barkUTile, barkVTile));
 
         // A branch at level L spawns children at L+1. The LAST .spt branch record is the leaf-stub
         // TEMPLATE — never lofted as a tube; when a branch's child level would be that terminal record,
@@ -348,7 +369,7 @@ internal static class SptGeometryBuilder
         }
         else
         {
-            SpawnLeaves(branch, rings, length, treeSize, model, rng, placer, dimming, leafHelp);
+            SpawnLeaves(branch, rings, length, treeSize, model, rng, placer, dimming, leafHelp, parentT);
         }
     }
 
@@ -414,7 +435,8 @@ internal static class SptGeometryBuilder
 
     private static void SpawnLeaves(
         SptBranch branch, List<BranchRing> rings, float length, float treeSize,
-        SptModel model, SptRandom rng, LeafPlacer placer, TreeDimming dimming, float leafHelp)
+        SptModel model, SptRandom rng, LeafPlacer placer, TreeDimming dimming, float leafHelp,
+        float branchSpawnT)
     {
         if (model.Leaves.Count == 0 || rings.Count == 0)
         {
@@ -493,12 +515,16 @@ internal static class SptGeometryBuilder
             var budFrame = frame.MultiplyLocal(BranchFrame.FromAxisAngle(Vector3.UnitX, budSpinDeg / DegPerRad));
             budFrame = budFrame.MultiplyLocal(BranchFrame.FixedAngleRotate(LeafBudDeclinationDeg));
 
-            // IsBlossom gates on the leaf's RAW percent along its branch (the frac the bud spawned at).
-            // SETTLED by the PC x86 decompile (FUN_00b13b50 agrees with the 360 text): the blossomLevel
-            // ancestor walk is DEAD CODE — the gate runs it only when level==0, and the walk's own bound
-            // (level <= 1) then breaks before the pointer ever advances, reading the node's own percent;
-            // level != 0 skips the walk and uses the passed percent. Both paths = the bud's raw percent.
-            var useBlossom = blossomTemplates is { Count: > 0 } && ShouldUseBlossom(frac, model, rng);
+            // IsBlossom's percent is ANCHOR-dependent (token 3001 = SIdvLeafInfo+0x2C, ctor default 1):
+            // anchor != 0 gates on the bud's own raw percent along its branch, but anchor == 0 runs the
+            // node walk whose loop bound is dead (breaks on iteration 1) yet whose SUBSTITUTION is live —
+            // percent = the leaf-bearing BRANCH's spawn fraction on ITS parent (node[+4], Oblivion
+            // FUN_0078f600). Verified draw-for-draw vs the TreeDogwoodSU trace (3001=0): the engine skips
+            // the gate draw for whole low-spawned branches (6382 gate draws vs our old 7502), and the
+            // blossom rate among gated candidates is exactly weight=0.23 (1426/6382).
+            var anchor = model.LeafTable?.UInt3001 ?? 1;
+            var gatePercent = anchor == 0 ? branchSpawnT : frac;
+            var useBlossom = blossomTemplates is { Count: > 0 } && ShouldUseBlossom(gatePercent, model, rng);
             var pool = useBlossom ? blossomTemplates! : leafTemplates;
 
             // The engine picks from the DOUBLED entry list: the list partition pushes entries 2i and 2i+1
@@ -511,6 +537,14 @@ internal static class SptGeometryBuilder
             var templateIndex = pool[doubledIndex / 2];
             var oddVariant = doubledIndex % 2 == 1;
             var template = model.Leaves[templateIndex];
+
+            // RoomForLeaf spaces by the picked map's OWN entry: the pool lists hold doubled GLOBAL map
+            // indices (Oblivion pool builder FUN_00791870 pushes 2i / 2i+1 partitioned by the map's
+            // blossom flag), and MakeLeaf passes picked/2 straight into RoomForLeaf (FUN_007919d0 →
+            // FUN_0078fd30, which reads map[+0x48/+0x4C] = sizeMid·Corner1). The earlier "pool-local
+            // alias" reading of FNV L3233 was a misdecompile — iStack_120 held the pool VALUE, not the
+            // pool slot; the placed leaf also stores the doubled GLOBAL index at leaf[+0x40] (the LOD
+            // pair-merge pass re-reads it >>1 against the global table).
             var texCoords = templateIndex < model.LeafTextureCoords.Count
                 ? model.LeafTextureCoords[templateIndex]
                 : SptLeafTextureCoords.FullAtlas;
@@ -529,12 +563,20 @@ internal static class SptGeometryBuilder
                 dimmerByte = (byte)Math.Clamp((int)(dimmer * 255f), 0, 255);
             }
 
-            placer.TryPlace(rng, pos, branchOrigin, budFrame, template, texCoords, budReach, oddVariant, dimmerByte);
+            placer.TryPlace(rng, pos, branchOrigin, budFrame, template, texCoords, budReach,
+                doubledIndex, oddVariant, dimmerByte);
         }
+
+        // CIdvBranch::Compute clears the mode-1 RoomForLeaf list once a leaf-spawning branch finishes
+        // (L2476-2483) — the rejection scope is per branch, not per tree.
+        placer.EndBranchScope();
     }
 
     private static bool ShouldUseBlossom(float branchParam, SptModel model, SptRandom rng)
     {
+        // Gate = percent > threshold(token 3000, SIdvLeafInfo+0x24) AND uniform(0,1) <= weight
+        // (token 3002, +0x28); ctor defaults 0.75 / 0.8. The draw is UNCONDITIONAL once past the
+        // threshold (Oblivion FUN_0078f600) — short-circuiting weight >= 1 would desync the RNG stream.
         var threshold = model.LeafSize > 0f ? model.LeafSize : DefaultBlossomThreshold;
         if (branchParam <= threshold)
         {
@@ -542,8 +584,7 @@ internal static class SptGeometryBuilder
         }
 
         var probability = model.LeafTable?.Float3002 ?? DefaultBlossomProbability;
-        probability = Math.Clamp(probability, 0f, 1f);
-        return probability >= 1f || rng.Range(0f, 1f) <= probability;
+        return rng.Range(0f, 1f) <= Math.Clamp(probability, 0f, 1f);
     }
 
     /// <summary>
@@ -553,11 +594,21 @@ internal static class SptGeometryBuilder
     ///     SFVFLeafVertex blend factor, carried in the billboard card's bitangent.z).
     /// </summary>
     private static void EmitPlacedLeaves(
-        List<PlacedLeaf> leaves, float cardScale, SptGeometryOptions opt, Dictionary<string, MeshBuffer> leafGroups)
+        List<PlacedLeaf> leaves, float cardScale, SptModel model, SptGeometryOptions opt,
+        Dictionary<string, MeshBuffer> leafGroups)
     {
         if (leaves.Count == 0)
         {
             return;
+        }
+
+        // BSTreeModel::CreateLeafGeometry pairwise-strcmps the .spt leaf-map material names (0x8249C0F0
+        // L634-656): any mismatch selects the card-local (u_j, v_{3−j}) texcoord path in AddLeafCard.
+        var cardVerticalSwap = false;
+        for (var i = 1; i < model.Leaves.Count && !cardVerticalSwap; i++)
+        {
+            cardVerticalSwap = !string.Equals(model.Leaves[i].Material, model.Leaves[0].Material,
+                StringComparison.Ordinal);
         }
 
         var zMin = float.MaxValue;
@@ -573,15 +624,22 @@ internal static class SptGeometryBuilder
         foreach (var leaf in leaves)
         {
             var template = leaf.Template;
+            // Wind-matrix lerp weight (rides in the packed attribute's FRACTION; the rock/rustle
+            // phase slot is the integer part). The canopy-height ramp is a stand-in until v2 ports
+            // the engine's branch-level ramp (ComputeVertexWeight — design doc B.3); the v1
+            // rock/rustle path does not consume it.
             var windWeight = 0.15f + 0.85f * Math.Clamp((leaf.Pos.Z - zMin) / zRange, 0f, 1f);
 
             // Card width/height = cardScale·Corner1 (CSpeedTreeRT::Compute L3679, the size MID not the random
-            // draw). CLeafGeometry::Update splits it around Corner0 rather than as a symmetric half-size.
+            // draw), further scaled by the leaf's own size scalar: MakeLeaf stores token-4001 base + the
+            // on-accept jitter draw (±token 4002) per leaf, and CLeafGeometry::Update multiplies the corner
+            // extents by it (the `s` in ±px·w·s). Shipped maps author 4001=(1,1,1), so this is 1 ± jitter.
+            // CLeafGeometry::Update splits the size around Corner0 rather than as a symmetric half-size.
             // The doubled H-mirror variants: EVEN entries keep authored UVs but flip pivot.x (Update's
             // even-parity `1 − pivot.x`); ODD entries keep the authored pivot but U-mirror the UV pairs
             // (SetTextureCoords' second entry). Neither variant is "authored UVs + authored pivot".
-            var width = cardScale * template.Corner1.X;
-            var height = cardScale * template.Corner1.Y;
+            var width = cardScale * template.Corner1.X * MathF.Max(0.05f, template.Position.X + leaf.SizeJitter);
+            var height = cardScale * template.Corner1.Y * MathF.Max(0.05f, template.Position.Y + leaf.SizeJitter);
             var pivotX = leaf.OddVariant ? template.Corner0.X : 1f - template.Corner0.X;
             var x0 = -pivotX * width;
             var x1 = (1f - pivotX) * width;
@@ -633,7 +691,7 @@ internal static class SptGeometryBuilder
                 // frame.
                 var (bbRight, bbUp) = BuildFrame(budDir);
                 AddLeafCard(buffer, center, bbRight, bbUp, normal, uv, x0, x1, y0, y1, leaf.Dimmer,
-                    billboard: true, windWeight: windWeight);
+                    cardVerticalSwap, billboard: true, windWeight: windWeight, slotBase: leaf.SlotBase);
                 continue;
             }
 
@@ -641,16 +699,16 @@ internal static class SptGeometryBuilder
             {
                 var faceDir = SafeNormalize(face, Vector3.UnitZ);
                 var (fRight, fUp) = BuildFrame(faceDir);
-                AddLeafCard(buffer, center, fRight, fUp, normal, uv, x0, x1, y0, y1, leaf.Dimmer);
+                AddLeafCard(buffer, center, fRight, fUp, normal, uv, x0, x1, y0, y1, leaf.Dimmer, cardVerticalSwap);
                 continue;
             }
 
             // Static fallback: crossed pair gives volume from any angle (the engine re-faces leaves in-shader).
             var (right, up) = BuildFrame(budDir);
-            AddLeafCard(buffer, center, right, up, normal, uv, x0, x1, y0, y1, leaf.Dimmer);
+            AddLeafCard(buffer, center, right, up, normal, uv, x0, x1, y0, y1, leaf.Dimmer, cardVerticalSwap);
             if (opt.CrossedLeafCards)
             {
-                AddLeafCard(buffer, center, budDir, up, right, uv, x0, x1, y0, y1, leaf.Dimmer);
+                AddLeafCard(buffer, center, budDir, up, right, uv, x0, x1, y0, y1, leaf.Dimmer, cardVerticalSwap);
             }
         }
     }
@@ -659,26 +717,47 @@ internal static class SptGeometryBuilder
     ///     Inline leaf placer: reproduces CIdvBranch::MakeLeaf's RoomForLeaf rejection + its two on-accept RNG
     ///     draws DURING the loft, so each terminal branch's leaf draws advance the ONE shared RNG before the
     ///     next branch generates (a deferred pass desynced every later branch — the residual leaf-count gap).
-    ///     Holds the single global RoomForLeaf list (CTreeEngine+0x84+0x10) and the accepted leaves; geometry
-    ///     is emitted afterward by <see cref="EmitPlacedLeaves" />.
+    ///     REJECTION SCOPE is mode-dependent: placement mode 1 tests the list the engine CLEARS after every
+    ///     leaf-spawning branch (CIdvBranch::Compute L2476-2483 / Oblivion FUN_007925b0 tail erase), so
+    ///     big-card leaves only reject against SAME-BRANCH siblings; mode 2 tests the caller's tree-global
+    ///     list that is never cleared during the loft. Oracle (TreeDogwoodSU OBSE dump + trace, re-read
+    ///     against the decompiled accept stream): the engine's LOD0 = 126 leaf-pool + 1077 blossom-pool
+    ///     cards from 6076/1426 picks — the dump NIF's two leaf shapes are LOD0/LOD1 lists (the LOD1 285
+    ///     comes from the pair-merge LOD builder FUN_007a3940, which we intentionally do not model).
+    ///     Geometry is emitted afterward by <see cref="EmitPlacedLeaves" />.
     /// </summary>
     private sealed class LeafPlacer
     {
         private readonly List<Vector3>? _placedCenters; // RoomForLeaf rejection list; null when mode 0
-        private readonly float _cardScale;
+        private readonly bool _perBranchScope;          // mode 1: engine clears the list per spawning branch
         private readonly float _spacingFactor;
+        private readonly float _treeSizeMid;
+        private readonly int _numRockGroups;
 
-        public LeafPlacer(float cardScale, float spacingFactor, uint placementMode)
+        public LeafPlacer(float spacingFactor, float treeSizeMid, uint placementMode, int numRockGroups)
         {
-            _cardScale = cardScale;
             _spacingFactor = spacingFactor;
+            _treeSizeMid = treeSizeMid;
+            _numRockGroups = Math.Max(1, numRockGroups);
             _placedCenters = placementMode != 0 ? [] : null;
+            _perBranchScope = placementMode == 1;
+        }
+
+        /// <summary>End-of-branch hook (CIdvBranch::Compute L2476-2483): mode 1 clears its rejection list
+        /// after every leaf-spawning branch, so the next branch's leaves start with an empty scope.</summary>
+        public void EndBranchScope()
+        {
+            if (_perBranchScope)
+            {
+                _placedCenters?.Clear();
+            }
         }
 
         public List<PlacedLeaf> Leaves { get; } = [];
 
         public void TryPlace(SptRandom rng, Vector3 pos, Vector3 branchOrigin, BranchFrame budFrame,
-            SptLeaf template, SptLeafTextureCoords texCoords, float budReach, bool oddVariant, byte dimmer)
+            SptLeaf template, SptLeafTextureCoords texCoords, float budReach,
+            int doubledIndex, bool oddVariant, byte dimmer)
         {
             var budDir = budFrame.Direction;
             var center = pos + budDir * budReach;
@@ -686,11 +765,13 @@ internal static class SptGeometryBuilder
             var accepted = true;
             if (_placedCenters is not null)
             {
-                // RoomForLeaf: reject if any placed leaf is within max(w,h)·factor on ALL THREE axes. Card size
-                // = cardScale·Corner1 (the size MID); half-extent = that × the leaf table's spacing factor.
-                var width = _cardScale * template.Corner1.X;
-                var height = _cardScale * template.Corner1.Y;
-                var spacing = MathF.Max(width, height) * _spacingFactor;
+                // RoomForLeaf: reject if any placed leaf is within max(sx,sy)·factor on ALL THREE axes
+                // (strict inequalities; Oblivion FUN_0078fd30 = FNV 360 L3348-3385). The size pair is the
+                // picked map's +0x48/+0x4C, which CTreeEngine::Compute set to Corner1(token 4005)·sizeMid
+                // — the SAME sizeMid our loft scales geometry by, so spacing and positions share units.
+                // (The .spt-parsed Corner2 default ≡ Corner1·Float2006 only matches when the host size is
+                // the authored size; our loft is Float2006·EngineWorldScale, so Corner1·_treeSizeMid.)
+                var spacing = MathF.Max(template.Corner1.X, template.Corner1.Y) * _treeSizeMid * _spacingFactor;
                 accepted = HasRoomForLeaf(_placedCenters, center, spacing);
                 rng.Trace?.Leaf(_placedCenters.Count, spacing, accepted);
             }
@@ -700,13 +781,22 @@ internal static class SptGeometryBuilder
                 return;
             }
 
-            // On accept the engine's MakeLeaf draws two more uniforms (leaf scale GetUniform(0,1e4) + tilt
-            // GetUniform(-0.1,0.1), 0xB13F8E / 0xB141C2) — consumed here purely to keep the shared RNG aligned.
-            _ = rng.Range(0f, 10000f);
-            _ = rng.Range(-0.1f, 0.1f);
+            // On accept the engine's MakeLeaf draws two more uniforms (Oblivion FUN_007919d0 L1518+1552,
+            // same shape in the FNV 360 text): the rock-angle pick GetUniform(0,1e4), then the per-leaf
+            // SIZE JITTER GetUniform(−4002, +4002) whose value is ADDED to the token-4001 size base and
+            // stored on the leaf — CLeafGeometry::Update multiplies the card extents by that scalar.
+            // (The GetUniform state advance is bounds-independent, so the stream stays aligned either
+            // way — but the VALUE sizes the card, previously discarded with invented ±0.1 bounds.)
+            // The 1e4 draw IS the leaf's rocking-group pick (MakeLeaf: ftol(uniform(0,1e4)) %
+            // numRockGroups) — the group joins the doubled map index in the LeafBase phase slot
+            // the STLEAF wind math reads (design doc A.5: cardSlot = (texIdx·nRock + rock)·4 + corner).
+            var rockGroup = (int)rng.Range(0f, 10000f) % _numRockGroups;
+            var slotBase = (doubledIndex * _numRockGroups + rockGroup) % 12;
+            var sizeJitter = rng.Range(-template.Size, template.Size);
 
             _placedCenters?.Add(center);
-            Leaves.Add(new PlacedLeaf(pos, branchOrigin, center, budDir, template, texCoords, oddVariant, dimmer));
+            Leaves.Add(new PlacedLeaf(pos, branchOrigin, center, budDir, template, texCoords, oddVariant, dimmer,
+                sizeJitter, slotBase));
         }
 
         /// <summary>True if no already-placed leaf center lies within <paramref name="spacing" /> of
@@ -810,15 +900,19 @@ internal static class SptGeometryBuilder
                     dimmerByte = (byte)Math.Clamp((int)(dim * 255f), 0, 255);
                 }
 
-                prevRing = EmitRing(bark, ring.Pos, ring.Frame, ring.Radius, b.VertsPerRing, ring.PathT, prevRing,
-                    dimmerByte);
+                // Bark UVs (CIdvBranch::BuildCrossSection vertex loop, 360 L2601-2605):
+                //   u = aroundFrac × Utile (the p2·path twist term is dead — ctor-zeroed, token-less)
+                //   v = (pathT + barkHelp) × Vtile (help = the cumulative spawn fraction, so V roughly
+                //       continues up parent→child chains).
+                prevRing = EmitRing(bark, ring.Pos, ring.Frame, ring.Radius, b.VertsPerRing,
+                    (ring.PathT + b.BarkHelp) * b.BarkVTile, b.BarkUTile, prevRing, dimmerByte);
             }
         }
     }
 
     private static int[]? EmitRing(
-        MeshBuffer bark, Vector3 center, BranchFrame frame, float radius, int radial, float v, int[]? prevRing,
-        byte dimmer)
+        MeshBuffer bark, Vector3 center, BranchFrame frame, float radius, int radial, float v, float uTile,
+        int[]? prevRing, byte dimmer)
     {
         if (!bark.CanAdd(radial + 1))
         {
@@ -831,7 +925,7 @@ internal static class SptGeometryBuilder
             var a = MathF.Tau * (k % radial) / radial;
             var normal = SafeNormalize(frame.Y * MathF.Sin(a) + frame.Z * MathF.Cos(a), frame.Y);
             var vertex = center + normal * radius;
-            ring[k] = bark.Add(vertex, normal, new Vector2(k / (float)radial, v * 2f), Vector3.Zero, Vector3.Zero,
+            ring[k] = bark.Add(vertex, normal, new Vector2(k / (float)radial * uTile, v), Vector3.Zero, Vector3.Zero,
                 dimmer);
         }
 
@@ -889,19 +983,37 @@ internal static class SptGeometryBuilder
 
     private static void AddLeafCard(
         MeshBuffer buf, Vector3 center, Vector3 right, Vector3 up, Vector3 normal, SptLeafTextureCoords uv,
-        float x0, float x1, float y0, float y1, byte dimmer, bool billboard = false, float windWeight = 0f)
+        float x0, float x1, float y0, float y1, byte dimmer, bool cardVerticalSwap,
+        bool billboard = false, float windWeight = 0f, int slotBase = 0)
     {
         var p00 = center + right * x0 + up * y0;
         var p10 = center + right * x1 + up * y0;
         var p11 = center + right * x1 + up * y1;
         var p01 = center + right * x0 + up * y1;
 
-        // UV pair → corner pairing is the ENGINE's zip: BSTreeModel::CreateLeafGeometry gives vertex j
-        // texcoord pair j and corner slot (j+2)&3 from CLeafGeometry::Update's table — pairs walk AROUND
-        // the quad, not up an edge. The table's corner slots read with SCREEN-up "T": under our world-up
-        // card frame (v→1−v flipped atlas) that lands pair0→LT, pair1→RT, pair2→RB, pair3→LB. (Round-2
-        // pinned the vertical mirror of this — pair0→LB — from reading the slot offsets in texture-v-down
-        // convention; every leaf image rendered upside-down, obvious in the viewer's isometric mode.)
+        // UV pair → corner pairing (BSTreeModel::CreateLeafGeometry): vertex j takes corner slot (j+2)&3
+        // from CLeafGeometry::Update's table — the spatial walk LB, RB, RT, LT — and texcoord pair j
+        // VERBATIM, except when the .spt's leaf-map material names are NOT all identical (the pairwise
+        // strcmp at 0x8249C0F0 L634-656): then vertex j gets (u_j, v_{3−j}) — a card-local vertical swap
+        // (L869-878). For the axis-aligned rectangles shipped .spts author, the swapped form equals full
+        // pair reversal, which is why the dogwood-class (multi-map) trees pinned the "vertical mirror";
+        // single-map trees take the verbatim path.
+        Vector2 uvLB, uvRB, uvRT, uvLT;
+        if (cardVerticalSwap)
+        {
+            uvLB = new Vector2(uv[0].X, uv[3].Y);
+            uvRB = new Vector2(uv[1].X, uv[2].Y);
+            uvRT = new Vector2(uv[2].X, uv[1].Y);
+            uvLT = new Vector2(uv[3].X, uv[0].Y);
+        }
+        else
+        {
+            uvLB = uv[0];
+            uvRB = uv[1];
+            uvRT = uv[2];
+            uvLT = uv[3];
+        }
+
         if (billboard)
         {
             // Encode the card as center (tangent) + signed 2D card-space offset (bitangent) so the GPU
@@ -909,19 +1021,23 @@ internal static class SptGeometryBuilder
             // the shader). The baked positions still hold a real 3D quad for bounds + the CPU still path.
             // bitangent.z = per-leaf wind weight (a [0,1] blend factor, NOT a size — ApplyHeightScale
             // leaves it untouched), consumed by the VS's wind sway.
-            var v00b = buf.Add(p00, normal, uv[3], center, new Vector3(x0, y0, windWeight), dimmer);
-            var v10b = buf.Add(p10, normal, uv[2], center, new Vector3(x1, y0, windWeight), dimmer);
-            var v11b = buf.Add(p11, normal, uv[1], center, new Vector3(x1, y1, windWeight), dimmer);
-            var v01b = buf.Add(p01, normal, uv[0], center, new Vector3(x0, y1, windWeight), dimmer);
+            // bitangent.z packs the engine's STLEAF v3.z: integer = the LeafBase phase slot
+            // (slotBase·4 + the engine's (j+2)&3 corner slot for our LB,RB,RT,LT emission order),
+            // fraction = the wind-matrix lerp weight (v2's matrix path; unread by the v1 rock/rustle).
+            var wf = Math.Clamp(windWeight, 0f, 0.995f);
+            var v00b = buf.Add(p00, normal, uvLB, center, new Vector3(x0, y0, slotBase * 4 + 2 + wf), dimmer);
+            var v10b = buf.Add(p10, normal, uvRB, center, new Vector3(x1, y0, slotBase * 4 + 3 + wf), dimmer);
+            var v11b = buf.Add(p11, normal, uvRT, center, new Vector3(x1, y1, slotBase * 4 + 0 + wf), dimmer);
+            var v01b = buf.Add(p01, normal, uvLT, center, new Vector3(x0, y1, slotBase * 4 + 1 + wf), dimmer);
             buf.Triangle(v00b, v10b, v11b);
             buf.Triangle(v00b, v11b, v01b);
             return;
         }
 
-        var v00 = buf.Add(p00, normal, uv[3], Vector3.Zero, Vector3.Zero, dimmer);
-        var v10 = buf.Add(p10, normal, uv[2], Vector3.Zero, Vector3.Zero, dimmer);
-        var v11 = buf.Add(p11, normal, uv[1], Vector3.Zero, Vector3.Zero, dimmer);
-        var v01 = buf.Add(p01, normal, uv[0], Vector3.Zero, Vector3.Zero, dimmer);
+        var v00 = buf.Add(p00, normal, uvLB, Vector3.Zero, Vector3.Zero, dimmer);
+        var v10 = buf.Add(p10, normal, uvRB, Vector3.Zero, Vector3.Zero, dimmer);
+        var v11 = buf.Add(p11, normal, uvRT, Vector3.Zero, Vector3.Zero, dimmer);
+        var v01 = buf.Add(p01, normal, uvLT, Vector3.Zero, Vector3.Zero, dimmer);
         buf.Triangle(v00, v10, v11);
         buf.Triangle(v00, v11, v01);
     }
@@ -1095,7 +1211,8 @@ internal static class SptGeometryBuilder
     /// lowest-"volume" branches before any vertices are produced (see <see cref="EmitDecimatedBranches" />).
     /// <paramref name="Importance" /> = <c>CIdvBranch::ComputeVolume</c> = Σ segLen·(rᵢ+rᵢ₊₁).</summary>
     private readonly record struct CollectedBranch(
-        IReadOnlyList<BranchRing> Rings, int VertsPerRing, float Importance, float BarkHelp, bool IsTrunk);
+        IReadOnlyList<BranchRing> Rings, int VertsPerRing, float Importance, float BarkHelp, bool IsTrunk,
+        float BarkUTile, float BarkVTile);
 
     /// <summary>
     ///     Column-major 3x3 branch frame matching the runtime ring matrix. Column X is the branch growth
@@ -1162,11 +1279,12 @@ internal static class SptGeometryBuilder
 
     /// <summary>An ACCEPTED leaf card (RoomForLeaf passed during the loft): the bud attach point (Pos, for
     /// canopy-height wind), the owning branch's base origin (for the MakeLeaf lighting normal), the card
-    /// center + facing direction, and which template / atlas UVs it uses.
+    /// center + facing direction, which template / atlas UVs it uses, and the on-accept size jitter
+    /// (MakeLeaf's GetUniform(−4002, +4002), added to the token-4001 size base at emission).
     /// Geometry is built from these afterward by <see cref="EmitPlacedLeaves" />.</summary>
     private readonly record struct PlacedLeaf(
         Vector3 Pos, Vector3 BranchOrigin, Vector3 Center, Vector3 BudDir, SptLeaf Template,
-        SptLeafTextureCoords TextureCoords, bool OddVariant, byte Dimmer);
+        SptLeafTextureCoords TextureCoords, bool OddVariant, byte Dimmer, float SizeJitter, int SlotBase);
 
     /// <summary>Per-tree canopy-depth dimming parameters (SIdvLeafInfo +0/+4/+8): enabled = .spt token 3009,
     /// leaf scalar = TREE CNAM LeafDimming (fallback token 3010), branch scalar = TREE CNAM BranchDimming

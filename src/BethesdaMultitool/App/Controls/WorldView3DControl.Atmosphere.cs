@@ -680,6 +680,8 @@ public sealed partial class WorldView3DControl
         // Null-guard _data — the handler can early-fire during XAML load before LoadData runs.
         if (_data is null) return;
         _selectedWeather = sel.IsClimateDefault ? _climateDefaultWeather : sel.Weather;
+        // Wind: nothing to do — auto mode reads this weather's wind byte next frame, and an explicit
+        // "Override wind" pin deliberately survives weather changes.
     }
 
     private void LightingPanel_TimeChanged(object? sender, double hour)

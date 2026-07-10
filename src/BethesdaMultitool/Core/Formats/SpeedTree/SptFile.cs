@@ -327,8 +327,8 @@ public static class SptFile
 
         var splines = new SptBezierSpline?[9];
         uint u6008 = 0, u6009 = 0;
-        float f6010 = 0, f6011 = 0, f6012 = 0, f6013 = 0, f6014 = 0;
-        bool b6015 = false, b6016 = false;
+        float f6010 = 0, f6011 = 0, f6012 = 0, f6013 = 1f, f6014 = 1f;
+        bool b6015 = true, b6016 = false; // SIdvBranchInfo ctor defaults (bark tiling raw-U / scaled-V)
 
         var token = c.ReadToken();
         while (token != EndBranch)

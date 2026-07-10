@@ -6,6 +6,15 @@
 cbuffer PerFrame : register(b0)
 {
     float4x4 uViewProj;
+#ifdef SHADOW_CARD_LIGHT_FACING
+    // Sun-shadow pass only: the leaf-card billboard basis, PERPENDICULAR TO THE LIGHT. A card that
+    // faces the camera can be edge-on to the sun and rasterize nothing into the shadow map — leaf
+    // shadows then vanish at the camera pitches where the two directions disagree. Facing the
+    // LIGHT keeps the cast footprint present and stable at every camera angle (the engine's own
+    // trees are solid geometry, so any billboard shadow is an approximation either way).
+    float4 uShadowCardRight;
+    float4 uShadowCardUp;
+#endif
 };
 
 // Shared atmosphere CB (b3). References no longer read uCameraOrigin here: the render origin is folded
@@ -36,10 +45,9 @@ cbuffer InstanceDraw : register(b1)
     // as SkyBillboardRenderer12). Only read when uTextureState.y marks a leaf submesh.
     float4 uCameraRight;
     float4 uCameraUp;
-    // SpeedTree wind: xy = horizontal wind direction, z = strength (0 disables), w = time (seconds).
-    // The STLEAF/STB vertex shaders displace each vertex toward a per-frame wind-matrix-transformed
-    // position by a per-vertex weight; we approximate the engine's 4 sway matrices with a time- and
-    // world-position-phased gust (see reference_instanced.vert.hlsl leaf branch).
+    // SpeedTree leaf rock/rustle (engine STLEAF model — tools/GhidraProject/speedtree_wind_design.md):
+    // x = rockAmount (RockParams.x), y = rockPhase (RockParams.y), z = rustleAmount, w = rustlePhase.
+    // The engine's RockParams.z/RustleParams.z scalars are constructor-1.0 and omitted. All-zero = static.
     float4 uWind;
     // BGEM effect terms: uEffectTint.rgb multiplies the source texture (baseColor × scale);
     // .w > 0.5 enables the |N·V| opacity falloff in uEffectFalloff =
@@ -100,28 +108,34 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
         float3 worldCenter = worldCenterAbs.xyz;
         float scale = length(float3(world[0].x, world[0].y, world[0].z)); // uniform REFR scale
 
-        // SpeedTree wind sway. The STLEAF/STB VS does windedPos = lerp(pos, WindMatrix[idx]*pos,
-        // windWeight); the engine builds 4 time-animated two-angle sway matrices per frame
-        // (BSTreeManager::UpdateWindMatrices). We approximate that with a single gust whose phase varies
-        // by absolute world position (so leaves sway out of sync) and by time (uWind.w), displacing the
-        // card center along the horizontal wind direction (uWind.xy). Amplitude = strength (uWind.z) ×
-        // per-leaf weight (aBitangent.z, height up the canopy) × card half-size (∝ tree size) × REFR
-        // scale, so big trees sway more than bushes. uWind.z = 0 leaves the tree static.
-        float windWeight = input.aBitangent.z;
-        float sizeProxy = max(abs(input.aBitangent.x), abs(input.aBitangent.y));
-        // Phase seed must stay anchored to the ABSOLUTE world position (so a fixed leaf sways with a
-        // stable per-world-position phase as the camera moves). worldCenterAbs is now camera-relative
-        // (world matrix is CPU-folded), so add uCameraOrigin — still bound in b3 — back to recover it.
-        float3 worldCenterWorld = worldCenterAbs.xyz + uCameraOrigin.xyz;
-        float phase = uWind.w * 0.7 + dot(worldCenterWorld, float3(0.03, 0.027, 0.05));
-        float gust = sin(phase) + 0.25 * sin(phase * 2.9 + 1.7);
-        worldCenter += float3(uWind.x, uWind.y, 0.0) * (gust * uWind.z * windWeight * sizeProxy * scale);
+        // SpeedTree leaf ROCK/RUSTLE — the engine STLEAF vertex math, ported verbatim from the
+        // PC STLEAF000-003.vso disasm (design doc A.6). aBitangent.z packs the engine's v3.z:
+        // integer = the LeafBase phase slot (0..47, per-corner), fraction = the wind-matrix lerp
+        // weight (unconsumed in v1 — the 4 wind matrices are the deferred v2). Each corner slot
+        // lands a slightly different phase (Δ = π/48), the authentic per-card shear.
+        //   rock   = in-plane spin of the card offset;
+        //   rustle = yaw of the billboard basis about the tree's up axis.
+        float slot = floor(input.aBitangent.z);
+        float phase = slot * (1.0 / 48.0);
+        float rockA   = uWind.x * sin(3.14159265 * (phase + uWind.y));
+        float rustleA = uWind.z * sin(3.14159265 * (phase + uWind.w));
+        float sK, cK; sincos(rockA, sK, cK);
+        float sR, cR; sincos(rustleA, sR, cR);
+        float2 c  = input.aBitangent.xy * scale;
+        float2 ck = float2(cK * c.x - sK * c.y, sK * c.x + cK * c.y);
+#ifdef SHADOW_CARD_LIGHT_FACING
+        float3 cardRight = uShadowCardRight.xyz; // light-perpendicular basis (see PerFrame)
+        float3 cardUp    = uShadowCardUp.xyz;
+#else
+        float3 cardRight = uCameraRight.xyz;
+        float3 cardUp    = uCameraUp.xyz;
+#endif
+        float3 Rr = float3(cR * cardRight.x - sR * cardRight.y,
+                           sR * cardRight.x + cR * cardRight.y, cardRight.z);
+        float3 Ur = float3(cR * cardUp.x - sR * cardUp.y,
+                           sR * cardUp.x + cR * cardUp.y, cardUp.z);
 
-        worldPos = float4(
-            worldCenter
-                + uCameraRight.xyz * (input.aBitangent.x * scale)
-                + uCameraUp.xyz    * (input.aBitangent.y * scale),
-            1.0);
+        worldPos = float4(worldCenter + Rr * ck.x + Ur * ck.y, 1.0);
         // STLEAF per-corner normal puff (PC STLEAF000.vso: N = normalize(normalize(cornerDir) ·
         // LeafLighting.y + leafNormal)): each corner's normal leans outward along its card offset,
         // so the card shades like a rounded leaf cluster instead of a flat plate. uCameraRight.w

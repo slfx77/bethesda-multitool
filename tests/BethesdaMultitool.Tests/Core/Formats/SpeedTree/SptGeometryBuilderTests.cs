@@ -295,25 +295,25 @@ public class SptGeometryBuilderTests
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
 
         var offsets = result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Bitangents!;
-        // bitangent.xy = the card corner offset (Corner0 pivot + Corner1 size). bitangent.z now carries
-        // the per-leaf wind weight (a [0.15,1] blend factor for the leaf-billboard VS sway), shared by a
-        // leaf's four corners, so it is asserted separately from the offset math under test here.
-        // Card size = cardScale·Corner1 with cardScale = treeSizeMid = Float2006·10 (×10 engine world scale).
+        // bitangent.xy = the card corner offset (Corner0 pivot + Corner1 size). bitangent.z packs the
+        // engine's STLEAF v3.z: INTEGER = the LeafBase phase slot (slotBase·4 + the (j+2)&3 corner slot
+        // for our LB,RB,RT,LT emission order → corner slots 2,3,0,1), FRACTION = the wind-matrix lerp
+        // weight. Card size = cardScale·Corner1 with cardScale = treeSizeMid = Float2006·10.
         // Vertex order follows the ENGINE's zip (BSTreeModel::CreateLeafGeometry pairs texcoord j with
-        // CLeafGeometry::Update corner slot (j+2)&3): pairs 0..3 land on (L,T), (R,T), (R,B), (L,B) —
-        // around the quad, read with SCREEN-up "T" under the v→1−v flipped atlas (the earlier
-        // texture-v-down reading mirrored every leaf image vertically — upside-down leaves in iso view).
-        // Seed 1 picks the ODD doubled-entry here (authored pivot 0.25 → x0=−50, x1=150);
-        // the EVEN variant would flip the pivot (x0=−150, x1=50).
+        // CLeafGeometry::Update corner slot (j+2)&3). Seed 1 picks the ODD doubled-entry here
+        // (authored pivot 0.25 → x0=−50, x1=150); the EVEN variant would flip the pivot.
         AssertOffsetXy(offsets, 0, -50f, -300f);
         AssertOffsetXy(offsets, 1, 150f, -300f);
         AssertOffsetXy(offsets, 2, 150f, 100f);
         AssertOffsetXy(offsets, 3, -50f, 100f);
-        var windWeight = offsets[2];
-        Assert.InRange(windWeight, 0.15f, 1f);
-        Assert.Equal(windWeight, offsets[5], 4);
-        Assert.Equal(windWeight, offsets[8], 4);
-        Assert.Equal(windWeight, offsets[11], 4);
+        var slotBase = (int)MathF.Floor(offsets[2] / 4f) * 4;
+        Assert.InRange(slotBase, 0, 44);
+        // Corner slots walk (j+2)&3 = 2,3,0,1 off the shared slot base; the shared fraction = weight.
+        var windWeight = offsets[2] - (slotBase + 2);
+        Assert.InRange(windWeight, 0.149f, 0.996f); // 0.15..0.995 modulo fp32 slot-add round-off
+        Assert.Equal(slotBase + 3 + windWeight, offsets[5], 3);
+        Assert.Equal(slotBase + 0 + windWeight, offsets[8], 3);
+        Assert.Equal(slotBase + 1 + windWeight, offsets[11], 3);
     }
 
     [Fact]
@@ -337,8 +337,58 @@ public class SptGeometryBuilderTests
         // vs the token-10002 table; the engine's own mechanism is SetTextureCoords' global vSign=−1),
         // so the parsed 0.9 → 0.1 and 0.1 → 0.9. Seed 1 picks the ODD doubled-entry, which additionally
         // U-mirrors the pairs (u of pairs 0↔1 and 2↔3 swap, v's stay — SetTextureCoords' second entry).
-        // Vertices emit in geometric order LB, RB, RT, LT and the engine zip assigns pairs 0..3 to
-        // corners (L,T), (R,T), (R,B), (L,B) — so the buffer order is pair3, pair2, pair1, pair0.
+        // This fixture has ONE leaf map, so BSTreeModel::CreateLeafGeometry's identical-material path
+        // applies: vertex j takes pair j VERBATIM — buffer order LB, RB, RT, LT gets pairs 0..3.
+        Assert.Equal(0.25f, uvs[0], 4);
+        Assert.Equal(0.1f, uvs[1], 4);
+        Assert.Equal(0.75f, uvs[2], 4);
+        Assert.Equal(0.1f, uvs[3], 4);
+        Assert.Equal(0.75f, uvs[4], 4);
+        Assert.Equal(0.9f, uvs[5], 4);
+        Assert.Equal(0.25f, uvs[6], 4);
+        Assert.Equal(0.9f, uvs[7], 4);
+    }
+
+    [Fact]
+    public void Build_LeafCardUvs_DistinctLeafMapsApplyCardVerticalSwap()
+    {
+        // Two leaf maps with DIFFERENT material names: BSTreeModel::CreateLeafGeometry's pairwise
+        // strcmp (0x8249C0F0 L634-656) then routes every card through the (u_j, v_{3−j}) texcoord
+        // path (L869-878) — for rectangular pair layouts, the vertical mirror of the verbatim zip.
+        // Both maps share the same coords/corners so the pin holds whichever template the pick draws.
+        var uv = new SptLeafTextureCoords(
+            new Vector2(0.75f, 0.9f),
+            new Vector2(0.25f, 0.9f),
+            new Vector2(0.25f, 0.1f),
+            new Vector2(0.75f, 0.1f));
+        var model = MakeSingleLevelLeafModel(
+            leafFrequency: 1f,
+            leafTextureCoords: [uv, uv],
+            corner0: new Vector3(0.5f, 0.5f, 0f),
+            corner1: new Vector3(0.1f, 0.2f, 0f)) with
+        {
+            Leaves =
+            [
+                new SptLeaf
+                {
+                    Material = @"C:\x\OakFoliage.dds",
+                    Corner0 = new Vector3(0.5f, 0.5f, 0f),
+                    Corner1 = new Vector3(0.1f, 0.2f, 0f)
+                },
+                new SptLeaf
+                {
+                    Material = @"C:\x\OakBlossom.dds",
+                    Corner0 = new Vector3(0.5f, 0.5f, 0f),
+                    Corner1 = new Vector3(0.1f, 0.2f, 0f)
+                }
+            ]
+        };
+
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
+
+        var uvs = result.Submeshes.Single(s => s.ShapeName == "spt:leaves").UVs!;
+        // Same flipped/odd-mirrored pairs as the single-map pin, but zipped (u_j, v_{3−j}):
+        // LB=(u0,v3), RB=(u1,v2), RT=(u2,v1), LT=(u3,v0) — the vertical mirror.
         Assert.Equal(0.25f, uvs[0], 4);
         Assert.Equal(0.9f, uvs[1], 4);
         Assert.Equal(0.75f, uvs[2], 4);
@@ -392,16 +442,18 @@ public class SptGeometryBuilderTests
     }
 
     /// <summary>
-    ///     <c>CIdvBranch::RoomForLeaf</c> (360 0x829753D8) + <c>MakeLeaf</c> reject a candidate against ONE
-    ///     global leaf-manager array (<c>CTreeEngine+0x84+0x10</c>), not a per-branch list — confirmed by the
-    ///     runtime oracle (WastelandShrub: per-branch scoping over-spawned 404 cards vs the engine's 53; global
-    ///     rejection yields 62). So mode 0 disables rejection (all 4 candidates kept) and BOTH non-zero modes
-    ///     reject globally (the mode-2 "scope" is per-tree-instance, which collapses to global for a single
-    ///     built tree) → 1 card survives the cluster.
+    ///     <c>CIdvBranch::MakeLeaf</c>'s RoomForLeaf scope is MODE-dependent: mode 0 disables rejection
+    ///     (all 4 candidates kept); mode 1 tests the list <c>CIdvBranch::Compute</c> CLEARS after every
+    ///     leaf-spawning branch (FNV 360 L2476-2483; Oblivion FUN_007925b0 tail erase of the
+    ///     &amp;DAT_00b429fc vector) → one card survives PER BRANCH (this fixture spawns leaves on
+    ///     2 branches → 2); mode 2 tests the never-cleared caller-provided list → one card per TREE
+    ///     (Oblivion FUN_007919d0: mode 1 → the global cleared list, mode 2 → param_8). (An earlier
+    ///     reading pinned both modes global off a mode-2 WastelandShrub oracle — right for mode 2,
+    ///     wrong for mode 1.)
     /// </summary>
     [Theory]
     [InlineData(0u, 4)]
-    [InlineData(1u, 1)]
+    [InlineData(1u, 2)]
     [InlineData(2u, 1)]
     public void Build_RoomForLeaf_HonorsPlacementMode(uint placementMode, int expectedLeaves)
     {
@@ -531,7 +583,18 @@ public class SptGeometryBuilderTests
                 MakeBranch(1f, 0.01f, 2f, 3, 1),
                 MakeBranch(0f, 0.005f, 0f, 3, 1)
             ],
-            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.5f, 0.5f, 0f) }],
+            // RoomForLeaf spacing = Corner1 (token 4005) × treeSizeMid × factor — CTreeEngine::Compute
+            // overwrites the map's +0x48/+0x4C with sizeMid·Corner1 before generation (FNV 360 L3679 /
+            // Oblivion FUN_007a45f0), which RoomForLeaf then reads. Here Corner1=50 × sizeMid(100·10) ×
+            // factor(1) = 50 000: huge, so the candidate cluster rejects down to one card per scope.
+            Leaves =
+            [
+                new SptLeaf
+                {
+                    Material = @"C:\x\OakFoliage.dds",
+                    Corner1 = new Vector3(50f, 50f, 0f)
+                }
+            ],
             LeafTable = new SptLeafTable { Float3007 = 1f, UInt3008 = placementMode }
         };
     }
