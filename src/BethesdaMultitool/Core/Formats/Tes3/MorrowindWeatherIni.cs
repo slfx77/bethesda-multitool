@@ -177,6 +177,10 @@ internal static class MorrowindWeatherIni
         {
             FormId = ClimateFormId,
             EditorId = "MorrowindIniClimate",
+            // Engine-hardcoded sun assets (strings in Morrowind.exe beside their "Sun texture not
+            // found" errors: Textures\tx_sun_05.tga + tx_sun_flash_grey_05.tga); the BSA ships .dds.
+            SunTexture = @"textures\tx_sun_05.dds",
+            SunGlareTexture = @"textures\tx_sun_flash_grey_05.dds",
             Timing = new ClimateTimingData(
                 Hours(sunriseTime), Hours(sunriseTime + sunriseDuration),
                 Hours(sunsetTime), Hours(sunsetTime + sunsetDuration),

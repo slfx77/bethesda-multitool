@@ -157,26 +157,47 @@ public sealed partial class WorldView3DControl
 
         if (_skyGeometry is null) return;
         _skyGeometry.Clear();
-        if (_textureResolver12 is null || _meshArchives is null ||
-            climate?.ModelPath is not string modl || string.IsNullOrWhiteSpace(modl))
+        if (_textureResolver12 is null || _meshArchives is null)
         {
             return;
         }
 
-        // The climate MODL is the stars dome (e.g. "Sky\Stars.nif"); the engine draws its sibling clouds
-        // dome from the same sky directory. The atmosphere gradient is the renderer's fallback dome (so it
-        // works for every game), so only the textured stars + clouds NIFs are loaded here.
-        var skyDir = Path.GetDirectoryName(modl.Replace('/', '\\')) ?? string.Empty;
         var layers = new List<SkyGeometryLayer>();
-        AddSkyNifLayers(layers, modl, weather);
-        AddSkyNifLayers(layers, Path.Combine(skyDir, "Clouds.nif"), weather);
+        if (_data?.Game == BethesdaMultitool.Core.Games.BethesdaGame.Morrowind)
+        {
+            // Morrowind's sky set is ENGINE-HARDCODED, not climate-authored — the NIF names sit in
+            // Morrowind.exe beside their "Failed to load sky stars/clouds" error strings:
+            // sky_night_01/02.nif are the stars domes (02 ships with the expansions — missing files
+            // skip cleanly) and sky_clouds_01.nif is the cloud dome, retextured per weather from the
+            // INI's Cloud Texture (already carried on the synthetic weather's CloudLayerTextures).
+            // sky_atmosphere.nif (the vertex-tinted gradient dome) is deliberately NOT loaded: the
+            // renderer's own gradient dome already draws the resolved sky colors.
+            AddSkyNifLayers(layers, "sky_night_01.nif", weather);
+            AddSkyNifLayers(layers, "sky_night_02.nif", weather);
+            AddSkyNifLayers(layers, "sky_clouds_01.nif", weather);
+        }
+        else if (climate?.ModelPath is string modl && !string.IsNullOrWhiteSpace(modl))
+        {
+            // The climate MODL is the stars dome (e.g. "Sky\Stars.nif"); the engine draws its sibling
+            // clouds dome from the same sky directory. The atmosphere gradient is the renderer's
+            // fallback dome (so it works for every game), so only the textured stars + clouds NIFs
+            // are loaded here.
+            var skyDir = Path.GetDirectoryName(modl.Replace('/', '\\')) ?? string.Empty;
+            AddSkyNifLayers(layers, modl, weather);
+            AddSkyNifLayers(layers, Path.Combine(skyDir, "Clouds.nif"), weather);
+        }
+        else
+        {
+            return;
+        }
 
         if (_skyDiag)
         {
             var cloudTex = weather?.CloudLayerTextures is { Count: > 0 } ct ? string.Join(", ", ct) : "(none)";
             Log.Info(string.Format(System.Globalization.CultureInfo.InvariantCulture,
                 "[SkyGeo] game={0} climate={1} modl='{2}' weather={3} cloudTex=[{4}] => layers: {5} stars, {6} clouds (of {7} total)",
-                _data?.Game, climate?.EditorId, modl, weather?.EditorId ?? "(default)", cloudTex,
+                _data?.Game, climate?.EditorId, climate?.ModelPath ?? "(game-keyed)",
+                weather?.EditorId ?? "(default)", cloudTex,
                 layers.Count(l => l.Type == SkyObjectType.Stars),
                 layers.Count(l => l.Type == SkyObjectType.Clouds), layers.Count));
         }
@@ -202,6 +223,10 @@ public sealed partial class WorldView3DControl
         if (string.IsNullOrEmpty(shapeName)) return null;
         if (shapeName.Contains("Cloud", StringComparison.OrdinalIgnoreCase)) return SkyObjectType.Clouds;
         if (shapeName.Contains("Star", StringComparison.OrdinalIgnoreCase)) return SkyObjectType.Stars;
+        // Morrowind's stars domes are named sky_night_01/02 ("Tri sky_night_01 0") — the engine's
+        // own error string calls them "sky stars". Gated (like the rest of this method) to shapes
+        // with no SkyShaderProperty type, so shader-typed games are unaffected.
+        if (shapeName.Contains("Night", StringComparison.OrdinalIgnoreCase)) return SkyObjectType.Stars;
         return null;
     }
 
