@@ -32,7 +32,6 @@ public class WaterProfileTests
     [Theory]
     [InlineData(BethesdaGame.Skyrim)]
     [InlineData(BethesdaGame.Fallout76)]
-    [InlineData(BethesdaGame.Morrowind)]
     [InlineData(BethesdaGame.Starfield)]
     [InlineData(BethesdaGame.Unknown)]
     public void GamesWithoutTheirOwnDecompiledShader_ShareTheRtFreeWater000Shader(BethesdaGame game)
@@ -71,6 +70,21 @@ public class WaterProfileTests
         Assert.Equal(WaterShaderVariant.Fo4Water, profile.ShaderVariant);
         Assert.Equal(WaterProfile.Fnv.NoiseTilingWorldUnits, profile.NoiseTilingWorldUnits);
         Assert.Equal(WaterProfile.Fnv.DepthTieBiasWorldUnits, profile.DepthTieBiasWorldUnits);
+    }
+
+    [Fact]
+    public void Morrowind_UsesTheFixedFunctionAnimatedSurfaceVariant()
+    {
+        // Morrowind is fixed-function — there is no water pixel shader to decompile; the engine's
+        // surface IS Morrowind.ini [Water] data: water00-31.dds cycling at SurfaceFPS=12, World
+        // Alpha=0.75 (docs/research/morrowind_atmosphere_water_model.md). The tile size reads
+        // SurfaceTileCount=10 per 8192-unit cell (TO-CONFIRM vs an OpenMW render oracle).
+        var profile = WaterProfile.ForGame(BethesdaGame.Morrowind);
+        Assert.Same(WaterProfile.Morrowind, profile);
+        Assert.Equal(WaterShaderVariant.MorrowindWater, profile.ShaderVariant);
+        Assert.Equal(12f, profile.SurfaceFrameFps);
+        Assert.Equal(0.75f, profile.SurfaceAlpha);
+        Assert.Equal(819u, profile.NoiseTilingWorldUnits);
     }
 
     [Fact]

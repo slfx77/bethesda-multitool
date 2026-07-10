@@ -61,6 +61,13 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private readonly ID3D12PipelineState _psoOblivionDepthSample;
     private readonly ID3D12PipelineState _psoFo4;
     private readonly ID3D12PipelineState _psoFo4DepthSample;
+    private readonly ID3D12PipelineState _psoMorrowind;
+    private readonly ID3D12PipelineState _psoMorrowindDepthSample;
+
+    // Morrowind surface animation: the bindless indices of textures\water\water00-31.dds, resolved
+    // by the host at load; Render picks the frame from elapsed time × the profile's SurfaceFrameFps
+    // and passes it in the NNAM slot (the MorrowindWater shader samples it as a tiled diffuse).
+    private uint[]? _morrowindSurfaceFrames;
 
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _waterCells = new();
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _visibleWaterScratch = new();
@@ -164,6 +171,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("OBLIVION_WATER", "1"));
         var psFo4Bytecode = CompileEmbeddedShader(
             "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("FO4_WATER", "1"));
+        var psMorrowindBytecode = CompileEmbeddedShader(
+            "water.frag.hlsl", "main", "ps_5_1", new ShaderMacro("MORROWIND_WATER", "1"));
 
         var psoDesc = new GraphicsPipelineStateDescription
         {
@@ -185,6 +194,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _psoOblivion = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psFo4Bytecode;
         _psoFo4 = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        psoDesc.PixelShader = psMorrowindBytecode;
+        _psoMorrowind = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psBytecode;
 
         // Depth-sample variant: no hardware depth test and no DSV bound, so the scene depth buffer
@@ -203,6 +214,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _psoOblivionDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psFo4Bytecode;
         _psoFo4DepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        psoDesc.PixelShader = psMorrowindBytecode;
+        _psoMorrowindDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
     public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
@@ -274,6 +287,16 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     /// worldspace/interior load. FNV/FO3 resolve to the FNV profile (byte-identical); every other game
     /// falls back to it until its own water shader is reverse-engineered (binary-RE-only policy).</summary>
     public void SetGame(BethesdaGame game) => _waterProfile = WaterProfile.ForGame(game);
+
+    /// <summary>
+    ///     Supplies the bindless indices of Morrowind's animated surface frames
+    ///     (<c>textures\water\water00–31.dds</c>), resolved by the host at worldspace load.
+    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, Vector3)" /> cycles them at the profile's
+    ///     <see cref="WaterProfile.SurfaceFrameFps" />. Null/empty → the MorrowindWater shader falls
+    ///     back to the profile's flat default tint. No-op for other games' profiles.
+    /// </summary>
+    public void SetMorrowindSurfaceFrames(uint[]? frameBindlessIndices) =>
+        _morrowindSurfaceFrames = frameBindlessIndices;
 
     /// <summary>
     ///     Supplies the world-space water planes detected on placed-reference NIFs (cave/pool water).
@@ -366,6 +389,20 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             return 0;
         }
         var surface = _appearance?.Surface ?? BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterSurfaceParams.Default;
+        // MorrowindWater repurposes the NNAM slot as the CURRENT animated diffuse frame (the FF
+        // engine cycles water00-31 at SurfaceFPS) and the opacity slot as [Water] World Alpha —
+        // TES3 has no WATR records, so nothing else feeds these.
+        var noiseIndex = _noiseBindlessIndex;
+        var waterOpacity = surface.Opacity;
+        if (_waterProfile.ShaderVariant == WaterShaderVariant.MorrowindWater)
+        {
+            waterOpacity = _waterProfile.SurfaceAlpha;
+            if (_morrowindSurfaceFrames is { Length: > 0 } frames)
+            {
+                var frame = (int)(elapsedSeconds * _waterProfile.SurfaceFrameFps) % frames.Length;
+                noiseIndex = frames[frame];
+            }
+        }
         unsafe
         {
             *(WaterFrameUniforms*)perFrameAlloc.CpuPtr = new WaterFrameUniforms
@@ -376,10 +413,10 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 Reflection = ColorToVector4(_appearance?.Reflection, _waterProfile.DefaultReflection),
                 CamPosTime = new Vector4(cylinder.Position, elapsedSeconds),
                 // x = NNAM bindless index (NoNormalMap → procedural ripple); y = world units/tile.
-                NoiseIndex = _noiseBindlessIndex,
+                NoiseIndex = noiseIndex,
                 NoiseTiling = _waterProfile.NoiseTilingWorldUnits,
                 NoiseScale = surface.NoiseScale,
-                WaterOpacity = surface.Opacity,
+                WaterOpacity = waterOpacity,
                 Surface0 = new Vector4(surface.NormalsUvScale, surface.FresnelAmount, surface.ReflectivityAmount, surface.Shininess),
                 // .w carries the lava flag (OBLIV-2): 1 = render as emissive, Fresnel-free lava (Oblivion
                 // Deadlands lava planes) instead of reflective water. Was an unused spare.
@@ -430,6 +467,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         {
             WaterShaderVariant.OblivionWater000 => depthSample ? _psoOblivionDepthSample : _psoOblivion,
             WaterShaderVariant.Fo4Water => depthSample ? _psoFo4DepthSample : _psoFo4,
+            WaterShaderVariant.MorrowindWater => depthSample ? _psoMorrowindDepthSample : _psoMorrowind,
             _ => depthSample ? _psoDepthSample : _pso,
         });
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
@@ -464,6 +502,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _psoOblivionDepthSample.Dispose();
         _psoFo4.Dispose();
         _psoFo4DepthSample.Dispose();
+        _psoMorrowind.Dispose();
+        _psoMorrowindDepthSample.Dispose();
     }
 
     private int GatherVisibleWater(VisibilityCylinder cylinder)

@@ -220,6 +220,30 @@ float4 main(PSInput input) : SV_Target
         return float4(ApplyFog(saturate(lava * pulse * 1.3), input.vWorldPos), 1.0);
     }
 
+#if MORROWIND_WATER
+    // ==== Morrowind fixed-function water — NetImmerse 4.0.0.2 has no water pixel shader to port:
+    // the engine draws an animated tiled diffuse plane (Morrowind.ini [Water]: water00-31.dds
+    // cycling at SurfaceFPS; see docs/research/morrowind_atmosphere_water_model.md). The CPU side
+    // selects the CURRENT frame and passes its bindless index in uNoiseParams.x; uNoiseParams.y is
+    // the world-units-per-tile ([Water] SurfaceTileCount, TO-CONFIRM vs an OpenMW oracle); alpha is
+    // [Water] World Alpha in uNoiseParams.w. No fresnel/reflection/specular — the optional
+    // [PixelWater] terrain-reflection path is a follow-up. The shared depth block above still
+    // discards occluded fragments, and ApplyFog recedes distant water into the weather haze.
+    float mwTile = max((float)uNoiseParams.y, 1.0);
+    float2 mwUv = input.vWorldPos.xy / mwTile;
+    float3 mwTex = (noiseIndex == 0xFFFFFFFFu)
+        ? uShallow.rgb
+        : gWaterTextures[NonUniformResourceIndex(noiseIndex)].Sample(gWaterSampler, mwUv).rgb;
+    if (lit)
+    {
+        // The FF pipeline vertex-lights the plane (N = +Z) with scene sun + ambient. The exact
+        // vanilla light composition is a LABELED STAND-IN pending an exe pass; flat sun·N.z +
+        // ambient keeps the surface tracking time-of-day like the rest of the scene.
+        mwTex *= saturate(uAmbientColor.rgb + sunCol * saturate(sunDir.z));
+    }
+    return float4(ApplyFog(saturate(mwTex), input.vWorldPos), saturate(asfloat(uNoiseParams.w)));
+#endif
+
     // FNV distance fade of ripples: full within 4096 world units, -> 0 at 8192.
     float noiseFade = saturate((8192.0 - distXY) / 4096.0);
 

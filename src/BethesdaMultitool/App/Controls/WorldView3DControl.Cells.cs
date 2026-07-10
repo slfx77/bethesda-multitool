@@ -89,10 +89,38 @@ public sealed partial class WorldView3DControl
         if (_worldZExtent is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
+        _water?.SetMorrowindSurfaceFrames(ResolveMorrowindWaterFrames());
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, noiseIndex);
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
         if (_collisionDebug is not null) { _collisionDebug.LoadData(_spatialIndex); _collisionDebug.ShowDisabled = _showDisabled; }
+    }
+
+    /// <summary>
+    ///     Resolves the bindless indices of Morrowind's 32 animated water-surface frames
+    ///     (<c>textures\water\water00–31.dds</c>, the <c>[Water] SurfaceTexture/SurfaceFrameCount</c>
+    ///     cycle) for <c>WaterShaderVariant.MorrowindWater</c>. Null for every other game — the
+    ///     renderer ignores the frames unless the Morrowind profile is active. GetOrUpload returns a
+    ///     valid placeholder-backed index immediately, so missing frames simply drop out of the cycle.
+    /// </summary>
+    private uint[]? ResolveMorrowindWaterFrames()
+    {
+        if (_data?.Game != BethesdaMultitool.Core.Games.BethesdaGame.Morrowind || _textureResolver12 is null)
+        {
+            return null;
+        }
+
+        const int frameCount = 32; // [Water] SurfaceFrameCount
+        var frames = new List<uint>(frameCount);
+        for (var i = 0; i < frameCount; i++)
+        {
+            if (_textureResolver12.ResolveDiffuseBindlessIndex($@"textures\water\water{i:D2}.dds") is uint idx)
+            {
+                frames.Add(idx);
+            }
+        }
+
+        return frames.Count > 0 ? frames.ToArray() : null;
     }
 
     /// <summary>
@@ -158,6 +186,7 @@ public sealed partial class WorldView3DControl
         if (_worldZExtent is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
+        _water?.SetMorrowindSurfaceFrames(ResolveMorrowindWaterFrames());
         _water?.LoadData(_cellGridLookup, worldspaceDefaultWaterHeight: null, _spatialIndex);
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);

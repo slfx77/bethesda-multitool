@@ -31,6 +31,14 @@ public enum WaterShaderVariant
     /// Shallow→Deep color/alpha ramps by water column (the engine's baked depth LUT), reflection ×
     /// lighting composite. Compiled from the same HLSL with the <c>FO4_WATER</c> define.</summary>
     Fo4Water,
+
+    /// <summary>Morrowind's fixed-function water — NetImmerse 4.0.0.2 predates water pixel shaders,
+    /// so there is nothing to disassemble: the engine draws an animated tiled diffuse plane
+    /// (<c>Morrowind.ini [Water]</c>: <c>textures\water\water00–31.dds</c> cycling at
+    /// <c>SurfaceFPS=12</c>, surface opacity <c>World Alpha=0.75</c>). Compiled from the same HLSL
+    /// with the <c>MORROWIND_WATER</c> define; the optional <c>[PixelWater]</c> terrain-reflection
+    /// path is a follow-up. Derivation: <c>docs/research/morrowind_atmosphere_water_model.md</c>.</summary>
+    MorrowindWater,
 }
 
 /// <summary>
@@ -62,6 +70,15 @@ public sealed record WaterProfile
     /// <summary>Depth-sample occlusion tie-break (world units) so a shoreline where water and terrain are
     /// ~coplanar resolves in the water's favour instead of z-fighting (3D-2). Tiny vs the DepthFalloff.</summary>
     public float DepthTieBiasWorldUnits { get; init; }
+
+    /// <summary>Frames/second of the <see cref="WaterShaderVariant.MorrowindWater" /> surface-texture
+    /// cycle (<c>[Water] SurfaceFPS</c>). 0 for every other variant (no frame cycle).</summary>
+    public float SurfaceFrameFps { get; init; }
+
+    /// <summary>Surface opacity of the <see cref="WaterShaderVariant.MorrowindWater" /> plane
+    /// (<c>[Water] World Alpha</c>). Unused by the shader-variant games (their alpha is derived
+    /// in-shader from fresnel/depth ramps).</summary>
+    public float SurfaceAlpha { get; init; }
 
     /// <summary>Fallback Shallow/Deep/Reflection tints when the worldspace has no resolvable WATR
     /// appearance (DNAM colors).</summary>
@@ -120,6 +137,21 @@ public sealed record WaterProfile
     };
 
     /// <summary>
+    ///     Morrowind's profile — fixed-function animated diffuse plane per <c>Morrowind.ini [Water]</c>
+    ///     (see <see cref="WaterShaderVariant.MorrowindWater" />). The tile size reads
+    ///     <c>SurfaceTileCount=10</c> as tiles per 8192-unit cell (819 world units/tile) — a plausible
+    ///     reading of the INI, flagged TO-CONFIRM against an OpenMW render oracle in the derivation
+    ///     doc. The default tint doubles as the no-texture fallback (Vvardenfell ocean green-blue).
+    /// </summary>
+    public static readonly WaterProfile Morrowind = Fnv with
+    {
+        ShaderVariant = WaterShaderVariant.MorrowindWater,
+        NoiseTilingWorldUnits = 819,  // [Water] SurfaceTileCount=10 per 8192 cell — TO-CONFIRM vs oracle
+        SurfaceFrameFps = 12f,        // [Water] SurfaceFPS=12
+        SurfaceAlpha = 0.75f,         // [Water] World Alpha=0.75
+    };
+
+    /// <summary>
     ///     The water profile for the loaded game. FNV/FO3 ship the identical <c>WATER000</c> set and
     ///     Skyrim's RT-free water is the same shader (RE-confirmed — see
     ///     <see cref="WaterShaderVariant" />), so they resolve to <see cref="Fnv" />, as does every game
@@ -129,6 +161,7 @@ public sealed record WaterProfile
     /// </summary>
     public static WaterProfile ForGame(BethesdaGame game) => game switch
     {
+        BethesdaGame.Morrowind => Morrowind,
         BethesdaGame.Oblivion => Oblivion,
         BethesdaGame.Fallout4 => Fallout4,
         _ => Fnv,
