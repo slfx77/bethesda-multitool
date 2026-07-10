@@ -178,6 +178,40 @@ public class SptGeometryBuilderTests
     }
 
     [Fact]
+    public void Build_FrondGate_GatedLevelsLoftNoBark_LeavesPersist()
+    {
+        // CIdvBranch::Compute (all three binaries): with the 13000 section enabled, branches at
+        // level >= frondLevel still GENERATE (same RNG; their leaves persist in the pools) but are
+        // destroyed instead of linked — no bark tube, no LOD ranking. Bethesda never renders fronds.
+        SptModel MakeModel(SptFrond? frond) => new()
+        {
+            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
+            Branches =
+            [
+                MakeBranch(1f, 0.02f, 2.6f, 3, 1),
+                MakeBranch(0.5f, 0.01f, 2.6f, 3, 1) with { Float6011 = 1f },
+                MakeLeafyBranch(),
+                new SptBranch()
+            ],
+            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.01f) }],
+            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 },
+            Frond = frond
+        };
+
+        var ungated = SptGeometryBuilder.Build(MakeModel(null), 1, BillboardOptions());
+        var gated = SptGeometryBuilder.Build(MakeModel(new SptFrond { Enabled = true, Level = 1 }), 1, BillboardOptions());
+        var disabled = SptGeometryBuilder.Build(MakeModel(new SptFrond { Enabled = false, Level = 1 }), 1, BillboardOptions());
+
+        var ungatedBark = ungated.Submeshes.Single(s => s.ShapeName == "spt:bark").Positions.Length;
+        var gatedBark = gated.Submeshes.Single(s => s.ShapeName == "spt:bark").Positions.Length;
+        Assert.Equal(RingVertexCount(3) * 2 * 3, gatedBark);            // trunk tube only (2 rings × 3+1 verts × xyz)
+        Assert.True(gatedBark < ungatedBark, "frond gate removed no bark");
+        Assert.Equal(CountLeafQuads(ungated), CountLeafQuads(gated));   // accepted leaves persist
+        Assert.Equal(ungatedBark,
+            disabled.Submeshes.Single(s => s.ShapeName == "spt:bark").Positions.Length); // disabled = no gate
+    }
+
+    [Fact]
     public void Build_ChildSpawn_SamplesByCumulativeBranchDistance()
     {
         var root = MakeBranch(1f, 0.001f, 1f, 3, 2,
@@ -486,11 +520,13 @@ public class SptGeometryBuilderTests
     }
 
     [Fact]
-    public void Build_TrunkNoise_RestoringPullBoundsLean()
+    public void Build_TrunkNoise_WalkStaysBounded()
     {
-        // Japanesemaple-class trunk: many rings × large slot-0 angular noise. Without the restoring
-        // pull the per-ring noise random-walks the stem into a visible lean; with it the walk
-        // saturates, so the tip stays near the vertical axis across seeds.
+        // Japanesemaple-class trunk: many rings × large slot-0 angular noise, applied UNDAMPED like the
+        // engine (the old trunk-only damping/restoring correctives were deleted once the ApplyGravity
+        // reference vector was corrected to world-DOWN — the engine has no restoring term, and with the
+        // correct bend sign the trace-exact noise keeps real trunks upright). The two-angle walk still
+        // stays visually bounded across seeds.
         foreach (var seed in new uint[] { 1, 7, 1234, 99999 })
         {
             var result = SptGeometryBuilder.Build(MakeVerticalNoisyTrunkModel(12f, rings: 25), seed, BillboardOptions());
@@ -502,15 +538,52 @@ public class SptGeometryBuilderTests
     }
 
     [Fact]
-    public void Build_TrunkNoise_RestoringPullKeepsCharacter()
+    public void Build_TrunkNoise_CharacterSurvives()
     {
-        // The pull must BOUND the walk, not pin the stem dead-straight: a noisy trunk still ends
-        // measurably off the axis (per-ring character survives).
+        // A noisy trunk must still end measurably off the axis — per-ring character is real geometry,
+        // not smoothed away.
         var result = SptGeometryBuilder.Build(MakeVerticalNoisyTrunkModel(12f, rings: 25), 7, BillboardOptions());
         var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
         var (tipXy, height) = TrunkTipOffset(bark);
         Assert.True(tipXy > height * 0.005f,
-            $"trunk tip pinned to the axis (offset {tipXy:0.##} over height {height:0.#}) — over-restored");
+            $"trunk tip pinned to the axis (offset {tipXy:0.##} over height {height:0.#})");
+    }
+
+    [Fact]
+    public void Build_ApplyGravity_NegativeRollCurlsBranchUpward()
+    {
+        // CIdvBranch::Compute measures the bend angle FROM WORLD-DOWN and rotates about cross(dir, DOWN)
+        // (Oblivion .data 0x00B2B724 = (0,0,-1); 360 agrees). With slot-8 evaluating above 0.5 the roll
+        // contribution -(s8-0.5)*2 is negative and a horizontal limb must curl UP, never dive below its
+        // spawn height (the pre-derivation port bent the opposite way - the sprawl defect).
+        var branch = MakeBranch(1f, 0.02f, 0f, 4, 24);
+        var slots = (SptBezierSpline?[])branch.Splines;
+        slots[1] = new SptBezierSpline { Header = new Vector3(1f, 1f, 0f) };  // bend gain 1
+        slots[7] = new SptBezierSpline { Header = new Vector3(0f, 0f, 0f) };  // horizontal spawn
+        slots[8] = new SptBezierSpline { Header = new Vector3(1f, 1f, 0f) };  // s8 = 1 -> roll = -1
+        var model = new SptModel
+        {
+            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
+            Branches = [branch],
+            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 }
+        };
+
+        var result = SptGeometryBuilder.Build(model, 7, BillboardOptions());
+        var bark = result.Submeshes.Single(s => s.ShapeName == "spt:bark");
+        var (tip, baseZ) = (Vector3.Zero, float.MaxValue);
+        var maxRadial = 0f;
+        foreach (var i in Enumerable.Range(0, bark.Positions.Length / 3))
+        {
+            var v = ReadVector3(bark.Positions, i);
+            maxRadial = MathF.Max(maxRadial, MathF.Sqrt(v.X * v.X + v.Y * v.Y));
+            if (v.Z > tip.Z) tip = v;
+            baseZ = MathF.Min(baseZ, v.Z);
+        }
+
+        Assert.True(tip.Z > maxRadial * 0.5f,
+            $"limb did not curl upward (tipZ {tip.Z:0.##} vs radial reach {maxRadial:0.##})");
+        Assert.True(baseZ > -maxRadial * 0.25f,
+            $"limb dove below its spawn plane (minZ {baseZ:0.##} vs radial reach {maxRadial:0.##})");
     }
 
     /// <summary>A childless VERTICAL trunk (slot 7 = −90° declination, like real trees) whose slot-0

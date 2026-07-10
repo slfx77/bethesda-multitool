@@ -22,6 +22,29 @@ internal static class SpeedTreeTokens
     public const uint LodLevel = 7002;     // 0x1B5A
     public const uint EndLodLevel = 7003;  // 0x1B5B
     public const uint LodLeafData = 7004;  // 0x1B5C
+    // Post-tree frond section (CFrondEngine::Parse — 360 0x82978CA8 == Oblivion FUN_0079f1e0, dispatched
+    // by CSpeedTreeRT::LoadTree's post-tree token loop on token 13000). Branches at level >= FrondLevel
+    // when enabled still GENERATE (identical RNG; their placed leaves persist) but are destroyed instead
+    // of linked as children — no bark tube, no BuildBranchLods ranking — and Bethesda's BSTreeModel never
+    // consumes frond geometry, so gated levels are invisible in-game.
+    public const uint BeginFrondInfo = 13000;    // 0x32C8
+    public const uint EndFrondInfo = 13001;      // 0x32C9 — section terminator
+    public const uint FrondLevel = 13002;        // 0x32CA — int → CFrondEngine+0x38 (ctor default 1)
+    public const uint FrondInt13003 = 13003;     // 0x32CB — int → +0x28
+    public const uint FrondInt13004 = 13004;     // 0x32CC — int → +0x2C
+    public const uint FrondProfile = 13005;      // 0x32CD — BezierSpline string → SetProfile
+    public const uint FrondInt13006 = 13006;     // 0x32CE — int → +0x34
+    public const uint FrondEnabled = 13007;      // 0x32CF — ONE raw byte → +0x3C (ctor default 0 = disabled)
+    public const uint FrondBladeList = 13008;    // 0x32D0 — count + per-blade sub-stream (14001-terminated)
+    public const uint FrondInt13009 = 13009;     // 0x32D1 — int → +0x50
+    public const uint FrondFloat13010 = 13010;   // 0x32D2 — float → +0x54
+    public const uint FrondFloat13013 = 13013;   // 0x32D5 — floats 13010..13013 → +0x54..+0x60
+    public const uint FrondBladeEnd = 14001;     // 0x36B1 — per-blade sub-stream terminator
+    public const uint FrondBladeTexture = 14002; // 0x36B2 — string; 14003..14006 = floats
+    public const uint FrondBladeFloat3 = 14006;  // 0x36B6
+    public const uint FrondInt14007 = 14007;     // 0x36B7 — int → +0x64
+    public const uint FrondInt14008 = 14008;     // 0x36B8 — int → +0x68
+
     public const uint BeginTextureCoordInfo = 10000; // 0x2710 — parsed after EndFile by CSpeedTreeRT::LoadTree
     public const uint EndTextureCoordInfo = 10001;   // 0x2711
     public const uint LeafTextureCoords = 10002;     // 0x2712 — count + 8 floats per leaf texture

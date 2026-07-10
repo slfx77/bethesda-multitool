@@ -27,6 +27,30 @@ public sealed record SptModel
     /// <summary>Post-tree branch-LOD parameters (token 9001 section). Null when the <c>.spt</c> omits the
     /// section, in which case the engine's constructor defaults apply (no LOD0 decimation).</summary>
     public SptLodInfo? Lod { get; init; }
+
+    /// <summary>Post-tree frond parameters (token 13000 section → <c>CFrondEngine::Parse</c>). Null when
+    /// the <c>.spt</c> omits the section — the <c>CFrondEngine</c> ctor default is DISABLED, so branch
+    /// levels are only frond-gated when a section explicitly enables fronds.</summary>
+    public SptFrond? Frond { get; init; }
+}
+
+/// <summary>
+///     Frond parameters from the post-tree 13000 section (<c>CFrondEngine::Parse</c> — 360 0x82978CA8 ==
+///     Oblivion FUN_0079f1e0; both binaries agree). When <see cref="Enabled" />, every branch at
+///     <c>level &gt;= <see cref="Level" /></c> is frond-gated in <c>CIdvBranch::Compute</c>: the branch (and
+///     its whole subtree) still GENERATES — identical RNG draws, and its placed leaves persist in the
+///     global pools — but the object is destroyed instead of being linked into the parent's child vector
+///     (360 CIdvBranch::Compute L2447-2462), so it lofts no bark tube and never enters
+///     <c>BuildBranchLods</c>' volume ranking. Its rings feed CFrondEngine guides instead, and Bethesda's
+///     <c>BSTreeModel::CreateGeometry</c> never consumes frond geometry — gated levels are invisible in-game.
+/// </summary>
+public sealed record SptFrond
+{
+    /// <summary>Token 13007 → <c>CFrondEngine+0x3C</c> (byte). Ctor default false.</summary>
+    public bool Enabled { get; init; }
+
+    /// <summary>Token 13002 → <c>CFrondEngine+0x38</c>: first frond-gated branch level. Ctor default 1.</summary>
+    public int Level { get; init; } = 1;
 }
 
 /// <summary>
@@ -48,6 +72,17 @@ public sealed record SptLodInfo
 
     /// <summary>Token 9008 → <c>+0xdc</c>: far-LOD keep fraction. Ctor default 0.5.</summary>
     public float BranchFarFraction { get; init; } = 0.5f;
+
+    /// <summary>Token 9013 → <c>+0xe8</c>: upper bound of the per-branch demotion draw in
+    /// <c>BuildBranchLods</c> (<c>u = GetUniform(0, this)</c>; sort key zeroed when
+    /// <c>(1−u)·v + u·max &lt; 0</c>). Ctor default 0 = no demotion (draws still happen, from a private
+    /// <c>Reseed(-1)</c> RNG — never the tree stream).</summary>
+    public float BranchDemotionRandomness { get; init; }
+
+    /// <summary>Token 9014 → <c>+0xec</c>: guarantee fraction — branches with volume &gt;
+    /// <c>max·(1−this)</c> skip the demotion draw and are front-inserted ahead of the sorted rest.
+    /// Ctor default 0.05.</summary>
+    public float BranchGuaranteeFraction { get; init; } = 0.05f;
 }
 
 /// <summary>Section 1002 (general) parameters.</summary>

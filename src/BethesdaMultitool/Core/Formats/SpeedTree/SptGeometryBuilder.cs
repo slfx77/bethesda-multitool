@@ -65,20 +65,6 @@ internal static class SptGeometryBuilder
     /// by token 3002.</summary>
     private const float DefaultBlossomProbability = 0.8f;
 
-    /// <summary>Damping applied ONLY to the trunk's (recursion level 0) accumulating per-ring slot-0 angular
-    /// noise. Because the builder's RNG noise-sign sequence is not the engine's exact one, the trunk's per-ring
-    /// noise random-walks into a lean (the lopsided canopy) on trees with a large slot-0 scale + many rings
-    /// (sugarmaple/japanesemaple). Damping keeps gentle trunk character while holding the stem upright like the
-    /// engine; branches keep full noise. Does NOT touch the RNG draw sequence — only the applied angle.
-    /// Relaxed 0.3 → 0.6 once <see cref="TrunkRestoreRate" /> bounds the walk (blunt damping alone left
-    /// japanesemaple's 25-ring ±10° trunk visibly leaning).</summary>
-    private const float TrunkNoiseDamping = 0.6f;
-
-    /// <summary>Per-ring proportional pull of the trunk's growth direction back toward vertical (fraction of
-    /// the accumulated declination corrected each ring). Bounds the noise random-walk at a fixed amplitude
-    /// (~perRingNoise/rate) instead of letting it integrate over tall trunks. Trunk only; 0 disables.</summary>
-    private const float TrunkRestoreRate = 0.12f;
-
     public static NifRenderableModel Build(SptModel model, uint seed, SptGeometryOptions? options = null)
     {
         var opt = options ?? SptGeometryOptions.FromEnvironment();
@@ -307,21 +293,7 @@ internal static class SptGeometryBuilder
             var delta = pathDistance - previousDistance;
             pos += previousFrame.Direction * delta;
             frame = ApplyGravity(previousFrame, rollContribution, bendGain);
-            // The per-ring slot-0 noise compounds on the previous ring (a random walk) and ApplyGravity has no
-            // restoring pull near vertical (its weight → 0 at 0° declination), so on a tall trunk with a big
-            // slot-0 scale and many rings (japanesemaple: 25 rings × ±10°) the stem drifts into a visible
-            // lean — the lopsided canopy. The engine stays upright because its exact noise-sign sequence
-            // differs from ours (we are not bit-exact). Two trunk-only correctives (child branches keep full
-            // noise): damp the per-ring noise, and pull the frame back toward vertical by a fixed fraction of
-            // its accumulated declination each ring — the walk then saturates at a bounded amplitude
-            // (~perRingNoise/TrunkRestoreRate) instead of integrating, while per-ring character survives.
-            // Pure frame math; no RNG draws touched, so the engine-aligned draw sequence is preserved.
-            var trunkNoiseScale = level == 0 ? TrunkNoiseDamping : 1f;
-            frame = frame.MultiplyLocal(BranchFrame.RotateTwoAngles(noiseA * trunkNoiseScale, noiseB * trunkNoiseScale));
-            if (level == 0)
-            {
-                frame = RestoreTowardVertical(frame, TrunkRestoreRate);
-            }
+            frame = frame.MultiplyLocal(BranchFrame.RotateTwoAngles(noiseA, noiseB));
 
             previousDistance = pathDistance;
 
@@ -353,8 +325,17 @@ internal static class SptGeometryBuilder
             ? branch.Float6014
             : branch.Float6014 * (treeSize > 0f ? length / treeSize : 1f);
 
-        collected.Add(new CollectedBranch(rings, vertsPerRing, importance, barkHelp, level == 0,
-            barkUTile, barkVTile));
+        // Frond gate (CIdvBranch::Compute head, all three binaries: 360 L1996, Oblivion FUN_007925b0
+        // L613, FNV PC FUN_00b11050): when the .spt's 13000 section enables fronds, branches at
+        // level >= frondLevel still generate fully — same draws, and their placed leaves persist —
+        // but the engine destroys them instead of linking them as children (360 L2447-2462), so they
+        // loft no bark tube and never enter BuildBranchLods' volume ranking. Bethesda's BSTreeModel
+        // never consumes frond geometry, so the gated levels are simply invisible in-game.
+        if (model.Frond is not { Enabled: true } frond || level < frond.Level)
+        {
+            collected.Add(new CollectedBranch(rings, vertsPerRing, importance, barkHelp, level == 0,
+                barkUTile, barkVTile));
+        }
 
         // A branch at level L spawns children at L+1. The LAST .spt branch record is the leaf-stub
         // TEMPLATE — never lofted as a tube; when a branch's child level would be that terminal record,
@@ -848,22 +829,50 @@ internal static class SptGeometryBuilder
         }
         else
         {
+            // CTreeEngine::BuildBranchLods (360 0x82989890, decompiled): rank ALL linked branches (frond-
+            // gated ones were never linked), then
+            //   1. split out a GUARANTEED set: volume > max·(1 − guaranteeFraction)   [token 9014, ctor 0.05]
+            //   2. per remaining branch draw u = GetUniform(0, demotionRandomness)    [token 9013, ctor 0]
+            //      and zero its sort key when (1−u)·v + u·max < 0 (only reachable for negative 9013);
+            //      the draw comes from a PRIVATE Reseed(-1) = time-seeded RNG — never the tree stream, and
+            //      nondeterministic in-engine, so a fixed-seed stand-in is as engine-faithful as any run
+            //   3. sort both sets by key, front-insert the guaranteed set (one-by-one, so its order
+            //      reverses), then keep branches in order until cumulative REAL volume reaches
+            //      fraction·total (the crossing branch is kept).
+            // The sort comparator direction is inferred DESCENDING (LOD0 visually keeps trunk + main limbs;
+            // ascending would keep twigs first).
             var total = 0f;
+            var max = 0f;
             foreach (var b in branches)
             {
                 total += b.Importance;
+                max = MathF.Max(max, b.Importance);
             }
 
-            // BuildBranchLods (L3864-3961) accumulates branches until cumulative volume reaches the fraction.
-            // The engine walks a partitioned flat order (high-volume branches first); we approximate with a
-            // strict volume-descending sort, which keeps the trunk + main limbs and drops the small twigs.
-            // NOTE: this is the closest visual match, NOT the engine's exact order — the exact flat order over
-            // our current branch generation over-keeps (the generated branch volumes don't yet match the
-            // engine's), so closing the residual count gap is a branch-GENERATION fidelity task, not a
-            // decimation one. Always keeps at least the single most-important branch so a tree never vanishes.
-            var ordered = branches.OrderByDescending(b => b.Importance).ToList();
+            var demotion = lod?.BranchDemotionRandomness ?? 0f;
+            var guaranteeThreshold = max * (1f - (lod?.BranchGuaranteeFraction ?? 0.05f));
+            var demotionRng = new SptRandom(uint.MaxValue);
+            var guaranteed = new List<CollectedBranch>();
+            var rest = new List<(CollectedBranch Branch, float Key)>();
+            foreach (var b in branches)
+            {
+                if (b.Importance > guaranteeThreshold)
+                {
+                    guaranteed.Add(b);
+                    continue;
+                }
+
+                var u = demotionRng.Range(0f, demotion);
+                var key = (1f - u) * b.Importance + u * max < 0f ? 0f : b.Importance;
+                rest.Add((b, key));
+            }
+
+            // Ascending = the engine's descending guaranteed sort reversed by its per-item insert-at-begin.
+            var ordered = guaranteed.OrderBy(b => b.Importance)
+                .Concat(rest.OrderByDescending(r => r.Key).Select(r => r.Branch));
+
             var target = total * keepFraction;
-            var selected = new List<CollectedBranch>(ordered.Count);
+            var selected = new List<CollectedBranch>(branches.Count);
             var cumulative = 0f;
             foreach (var b in ordered)
             {
@@ -1094,32 +1103,29 @@ internal static class SptGeometryBuilder
     // Gravity/bend with PRECOMPUTED slot values: the per-ring slot evals (slot 1 bend gain, slot 8 roll) are
     // drawn in the ring loop so they advance the shared RNG in the engine's exact order (see GenerateBranch's
     // per-ring loft block); this only applies them. rollContribution = -(slot8Eval - 0.5)·2 (0 when no slot 8).
+    //
+    // CIdvBranch::Compute per-ring bend (360 L2261-2274, symbolized; Oblivion FUN_007925b0 L842-874 agrees):
+    // the engine's reference vector is world-DOWN — Oblivion .data 0x00B2B724 = (0, 0, −1), growth basis
+    // 0x00B2B718 = (1, 0, 0) — so the angle is measured FROM DOWN (180° − declination) and the axis is
+    // cross(dir, DOWN):
+    //   RotateAxisFromIdentity(roll(s8) · bendGain(s1) · AngleBetween(dir, DOWN) · weight,
+    //                          normalize(cross(dir, DOWN)))
+    //   weight = 1 − |90° − angle| / 90°  (symmetric — same value from either pole).
+    // With the typically-negative s8 roll the engine curls limbs UPWARD; measuring from UP (the pre-derivation
+    // port) flipped the bend, arcing them down and out (vine maple bark dove to −0.28·height below origin and
+    // spread 0.72·height radially where the engine stays above ground at 0.43·height — the sprawl defect).
+    // The engine has NO trunk restoring/damping term: with the bend sign correct, trace-exact noise draws
+    // hold trunks upright on their own (japanesemaple/sugarmaple/willowoak render-verified), so the old
+    // trunk-only correctives are deleted.
     private static BranchFrame ApplyGravity(BranchFrame frame, float rollContribution, float bendGain)
     {
         var dir = frame.Direction;
-        var declDeg = MathF.Acos(Math.Clamp(Vector3.Dot(dir, Vector3.UnitZ), -1f, 1f)) * DegPerRad;
-        var weight = 1f - MathF.Abs(90f - declDeg) * 0.011111111f;
-        var bendDeg = rollContribution * bendGain * declDeg * weight;
-        var axis = Vector3.Cross(dir, Vector3.UnitZ);
+        var angleDeg = MathF.Acos(Math.Clamp(Vector3.Dot(dir, -Vector3.UnitZ), -1f, 1f)) * DegPerRad;
+        var weight = 1f - MathF.Abs(90f - angleDeg) * 0.011111111f;
+        var bendDeg = rollContribution * bendGain * angleDeg * weight;
+        var axis = Vector3.Cross(dir, -Vector3.UnitZ);
         return axis.LengthSquared() > 1e-10f && MathF.Abs(bendDeg) > 1e-6f
             ? frame.MultiplyWorld(BranchFrame.FromAxisAngle(axis, bendDeg / DegPerRad))
-            : frame;
-    }
-
-    /// <summary>Rotates the frame's growth direction back toward world-up by <paramref name="rate" /> of its
-    /// current declination (a proportional restoring pull — the trunk's noise random-walk saturates at
-    /// ~perRingNoise/rate instead of integrating into a lean). The pull fades linearly to ZERO at 45°
-    /// declination: only the near-vertical drift the noise walk causes is corrected, while genuinely
-    /// authored leans/curves (diagonal or twisted trunks) are left untouched. Identity at vertical.</summary>
-    private static BranchFrame RestoreTowardVertical(BranchFrame frame, float rate)
-    {
-        var dir = frame.Direction;
-        var declDeg = MathF.Acos(Math.Clamp(Vector3.Dot(dir, Vector3.UnitZ), -1f, 1f)) * DegPerRad;
-        var nearVerticalWeight = MathF.Max(0f, 1f - declDeg / 45f);
-        var axis = Vector3.Cross(dir, Vector3.UnitZ);
-        var correctDeg = declDeg * rate * nearVerticalWeight;
-        return axis.LengthSquared() > 1e-10f && correctDeg > 1e-6f
-            ? frame.MultiplyWorld(BranchFrame.FromAxisAngle(axis, correctDeg / DegPerRad))
             : frame;
     }
 

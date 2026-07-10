@@ -73,6 +73,7 @@ public static class SptFile
 
         var leafTextureCoords = ParseTrailingTextureCoordInfo(data, c.Position);
         var lod = ParseTrailingLodInfo(data, c.Position);
+        var frond = ParseTrailingFrondInfo(data, c.Position);
 
         return new SptModel
         {
@@ -84,6 +85,7 @@ public static class SptFile
             LeafTable = leafTable,
             Wind = wind,
             Lod = lod,
+            Frond = frond,
         };
     }
 
@@ -92,6 +94,8 @@ public static class SptFile
     private const uint LodNumBranchLods = 9007;   // 0x232F -> +0x70
     private const uint LodBranchFar = 9008;       // 0x2330 -> +0xdc
     private const uint LodBranchNear = 9012;      // 0x2334 -> +0xe0 (LOD0)
+    private const uint LodBranchDemotion = 9013;  // 0x2335 -> +0xe8 (BuildBranchLods demotion draw bound)
+    private const uint LodBranchGuarantee = 9014; // 0x2336 -> +0xec (guaranteed-keep threshold fraction)
 
     /// <summary>
     ///     Scan the post-tree region for the branch-LOD sub-section and recover the LOD0 keep fraction the
@@ -116,7 +120,7 @@ public static class SptFile
             }
 
             int? numLods = (int)num;
-            float? near = null, far = null;
+            float? near = null, far = null, demotion = null, guarantee = null;
             var pos = offset + 8;
             var terminated = false;
             // Walk (token, value) pairs to the section terminator; ignore tokens we don't model.
@@ -142,6 +146,12 @@ public static class SptFile
                     case LodBranchNear:
                         near = BinaryUtils.ReadFloatLE(data, pos + 4);
                         break;
+                    case LodBranchDemotion:
+                        demotion = BinaryUtils.ReadFloatLE(data, pos + 4);
+                        break;
+                    case LodBranchGuarantee:
+                        guarantee = BinaryUtils.ReadFloatLE(data, pos + 4);
+                        break;
                 }
 
                 pos += 8;
@@ -149,12 +159,110 @@ public static class SptFile
 
             if (terminated && near is not null)
             {
+                var defaults = new SptLodInfo();
                 return new SptLodInfo
                 {
                     NumBranchLods = numLods.Value,
                     BranchNearFraction = near.Value,
-                    BranchFarFraction = far ?? new SptLodInfo().BranchFarFraction,
+                    BranchFarFraction = far ?? defaults.BranchFarFraction,
+                    BranchDemotionRandomness = demotion ?? defaults.BranchDemotionRandomness,
+                    BranchGuaranteeFraction = guarantee ?? defaults.BranchGuaranteeFraction,
                 };
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Scan the post-tree region for the frond section (token 13000 → <c>CFrondEngine::Parse</c>) and
+    ///     recover the enabled flag + gate level. Only 13002/13007 are modeled; every other frond token is
+    ///     skipped by its known payload shape, and the candidate is abandoned (scan continues) on anything
+    ///     malformed — a matching uint inside another payload is possible. Returns null when no well-formed
+    ///     section exists (the <c>CFrondEngine</c> ctor default is then DISABLED).
+    /// </summary>
+    private static SptFrond? ParseTrailingFrondInfo(byte[] data, int startOffset)
+    {
+        for (var offset = startOffset; offset <= data.Length - 4; offset++)
+        {
+            if (BinaryUtils.ReadUInt32LE(data, offset) != BeginFrondInfo)
+            {
+                continue;
+            }
+
+            try
+            {
+                var c = new SptCursor(data, offset + 4);
+                var enabled = false;
+                var level = new SptFrond().Level;
+                var token = c.ReadToken();
+                // 2048 tokens bounds the walk far above any real section (blade lists included).
+                for (var guard = 0; token != EndFrondInfo; guard++)
+                {
+                    if (guard > 2048)
+                    {
+                        throw new InvalidDataException("SPT: runaway frond section.");
+                    }
+
+                    switch (token)
+                    {
+                        case FrondLevel:
+                            level = (int)c.ReadToken();
+                            break;
+                        case FrondEnabled:
+                            enabled = c.ReadByte() != 0;
+                            break;
+                        case FrondInt13003 or FrondInt13004 or FrondInt13006 or FrondInt13009
+                            or FrondInt14007 or FrondInt14008 or (>= FrondFloat13010 and <= FrondFloat13013):
+                            c.ReadToken();
+                            break;
+                        case FrondProfile:
+                            c.ReadString();
+                            break;
+                        case FrondBladeList:
+                            var blades = c.ReadToken();
+                            if (blades > 64)
+                            {
+                                throw new InvalidDataException("SPT: implausible frond blade count.");
+                            }
+
+                            for (var b = 0; b < blades; b++)
+                            {
+                                var sub = c.ReadToken(); // per-blade begin marker
+                                sub = c.ReadToken();
+                                while (sub != FrondBladeEnd)
+                                {
+                                    if (sub == FrondBladeTexture)
+                                    {
+                                        c.ReadString();
+                                    }
+                                    else if (sub is > FrondBladeTexture and <= FrondBladeFloat3)
+                                    {
+                                        c.ReadFloat();
+                                    }
+                                    else
+                                    {
+                                        throw new InvalidDataException(
+                                            $"SPT: unknown frond blade token 0x{sub:X}.");
+                                    }
+
+                                    sub = c.ReadToken();
+                                }
+                            }
+
+                            break;
+                        default:
+                            throw new InvalidDataException($"SPT: unknown frond token 0x{token:X}.");
+                    }
+
+                    token = c.ReadToken();
+                }
+
+                return new SptFrond { Enabled = enabled, Level = level };
+            }
+            catch (InvalidDataException)
+            {
+                // False match inside another payload — keep scanning for a well-formed section.
             }
         }
 

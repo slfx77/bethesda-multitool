@@ -18,6 +18,7 @@ public static class SpeedTreeCommands
         command.Subcommands.Add(SpeedTreeRenderCommands.CreateRenderAllCommand());
         command.Subcommands.Add(SpeedTreeRenderCommands.CreateSurveyCommand());
         command.Subcommands.Add(SpeedTreeLeafDebugCommand.Create());
+        command.Subcommands.Add(SpeedTreeMeshStatsCommand.Create());
         return command;
     }
 
@@ -130,11 +131,22 @@ public static class SpeedTreeCommands
         if (model.Lod is { } lod)
         {
             Console.WriteLine(string.Create(ci,
-                $"[LOD] numBranchLods={lod.NumBranchLods} branchNear(LOD0)={lod.BranchNearFraction} branchFar={lod.BranchFarFraction}"));
+                $"[LOD] numBranchLods={lod.NumBranchLods} branchNear(LOD0)={lod.BranchNearFraction} branchFar={lod.BranchFarFraction}" +
+                $" demotion(9013)={lod.BranchDemotionRandomness} guarantee(9014)={lod.BranchGuaranteeFraction}"));
         }
         else
         {
             Console.WriteLine("[LOD] (no section — engine defaults: 6 levels, near 1.0 = keep all)");
+        }
+
+        if (model.Frond is { } frond)
+        {
+            var gateNote = frond.Enabled ? "  (branches at level >= gate level loft NO bark tube)" : "";
+            Console.WriteLine(string.Create(ci, $"[Frond] enabled={frond.Enabled} level={frond.Level}{gateNote}"));
+        }
+        else
+        {
+            Console.WriteLine("[Frond] (no section — engine default: disabled)");
         }
 
         return 0;

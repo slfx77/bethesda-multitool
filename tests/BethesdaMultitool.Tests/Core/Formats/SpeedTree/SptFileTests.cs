@@ -160,6 +160,39 @@ public class SptFileTests
         Assert.Null(SptFile.TryParse(Encoding.ASCII.GetBytes("this is not a speedtree file at all")));
     }
 
+    [Fact]
+    public void Parse_FrondSection_ReadsEnabledAndLevel()
+    {
+        // Post-tree 13000 section (CFrondEngine::Parse): 13002 = level (int), 13007 = enabled (ONE byte);
+        // other tokens skipped by payload shape; 13001 terminates.
+        var buf = new List<byte>();
+        buf.AddRange(BuildLeafTableOnlySpt((3007u, 0.5f)));
+        buf.AddRange(BitConverter.GetBytes(13000u));
+        buf.AddRange(BitConverter.GetBytes(13002u));
+        buf.AddRange(BitConverter.GetBytes(2u));       // frond level 2
+        buf.AddRange(BitConverter.GetBytes(13003u));
+        buf.AddRange(BitConverter.GetBytes(4u));       // skipped int
+        buf.AddRange(BitConverter.GetBytes(13007u));
+        buf.Add(1);                                    // enabled byte
+        buf.AddRange(BitConverter.GetBytes(13010u));
+        buf.AddRange(BitConverter.GetBytes(0.25f));    // skipped float
+        buf.AddRange(BitConverter.GetBytes(13001u));
+
+        var model = SptFile.Parse([.. buf]);
+
+        Assert.NotNull(model.Frond);
+        Assert.True(model.Frond!.Enabled);
+        Assert.Equal(2, model.Frond.Level);
+    }
+
+    [Fact]
+    public void Parse_NoFrondSection_DefaultsDisabled()
+    {
+        var model = SptFile.Parse(BuildLeafTableOnlySpt((3007u, 0.5f)));
+
+        Assert.Null(model.Frond); // CFrondEngine ctor default: disabled
+    }
+
     private static string? ResolveShrub()
     {
         foreach (var rel in ShrubCandidates)
