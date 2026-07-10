@@ -16,7 +16,8 @@
     <PackageVersion Include="System.CommandLine" Version="2.0.8" />
 
     <!-- Image / model / GPU -->
-    <PackageVersion Include="Magick.NET-Q16-AnyCPU" Version="14.13.1" />
+    <!-- 14.14.0 fixes CVE-2026-49219 / GHSA-xcjm-wqff-m669 (policy-bypass file read via symlink). -->
+    <PackageVersion Include="Magick.NET-Q16-AnyCPU" Version="14.14.0" />
     <!-- Pure-managed BCn decoder (BC1-7 + BC6H) for DX10-header DDS (FO4/FO76). ImageSharp-free base
          package; 2.2.0 matches the transitive version the DDXConv submodule's BCnEncoder.Net.ImageSharp
          pulls in (its 1.1.2 wrapper depends on base 2.2.0). -->
