@@ -100,7 +100,7 @@
     <value>OK</value>
   </data>
   <data name="Button_Analyze.Content" xml:space="preserve">
-    <value>Analyze</value>
+    <value>Load</value>
   </data>
   <data name="Button_Extract.Content" xml:space="preserve">
     <value>Extract Files</value>

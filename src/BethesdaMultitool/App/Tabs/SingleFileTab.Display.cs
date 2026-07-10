@@ -245,6 +245,9 @@ public sealed partial class SingleFileTab
             _pipelinePhase, MinidumpPathTextBox.Text, OutputPathTextBox.Text, _analysisResult != null);
         AnalyzeButton.IsEnabled = analyzeEnabled;
         ExtractButton.IsEnabled = extractEnabled;
+        // Load-order selection is allowed BEFORE a file is loaded (staged, applied by the Load run)
+        // but not while a pipeline phase is active — mid-run the session is being torn down/reopened.
+        LoadOrderButton.IsEnabled = _pipelinePhase == AnalysisPipelinePhase.Idle;
     }
 
     private void UpdateOutputPathFromInput(string inputPath)

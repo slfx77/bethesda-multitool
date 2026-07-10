@@ -10,10 +10,20 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class SingleFileTab
 {
+    // Pre-analyze load-order selection, staged on the TAB — never on _session.LoadOrder:
+    // AnalyzeButton_Click calls _session.Open() mid-run, whose Dispose() wipes LoadOrder, so
+    // anything written there before the Load run is silently destroyed. The stash is applied after
+    // the session reopens (before the first tab populate) and SURVIVES the run, so re-Loading the
+    // same or a different primary reuses the last selection. Kept in sync with post-analyze dialog
+    // Apply/Clear All so a cleared selection can't resurrect on the next Load.
+    private List<LoadOrderEntry>? _pendingLoadOrderEntries;
+    private string? _pendingSubtitleCsvPath;
+
     private async void LoadOrderButton_Click(object sender, RoutedEventArgs e)
     {
         if (!_session.IsAnalyzed)
         {
+            await ShowPreAnalyzeLoadOrderDialogAsync();
             return;
         }
 
@@ -35,6 +45,8 @@ public sealed partial class SingleFileTab
             case LoadOrderDialogAction.Cancel:
                 return;
             case LoadOrderDialogAction.ClearAll:
+                _pendingLoadOrderEntries = null;
+                _pendingSubtitleCsvPath = null;
                 _session.LoadOrder.Dispose();
                 await OnLoadOrderChanged();
                 return;
@@ -43,6 +55,9 @@ public sealed partial class SingleFileTab
         var csvPath = dialogResult.SubtitleCsvPath?.Trim();
         var hasEntries = dialogResult.Entries.Count > 0;
         var hasCsv = !string.IsNullOrEmpty(csvPath) && File.Exists(csvPath);
+        // Mirror the applied selection into the stash so a later re-Load keeps it.
+        _pendingLoadOrderEntries = hasEntries ? dialogResult.Entries.ToList() : null;
+        _pendingSubtitleCsvPath = hasCsv ? csvPath : null;
         if (!hasEntries && !hasCsv)
         {
             return;
@@ -84,6 +99,73 @@ public sealed partial class SingleFileTab
             SetPipelinePhase(AnalysisPipelinePhase.Idle);
             AnalysisProgressBar.IsIndeterminate = false;
         }
+    }
+
+    /// <summary>
+    ///     Pre-analyze "Load Order..." click: pick + reorder files WITHOUT loading anything — the
+    ///     dialog's Apply only stages the selection (instant), and the Load run applies it after the
+    ///     session opens. Eagerly calling ApplyAsync here would parse multi-GB masters into a
+    ///     LoadOrder that _session.Open() is about to dispose.
+    /// </summary>
+    private async Task ShowPreAnalyzeLoadOrderDialogAsync()
+    {
+        var workingEntries = LoadOrderDialogService.CreateWorkingEntries(
+            _pendingLoadOrderEntries ?? Enumerable.Empty<LoadOrderEntry>());
+        var dialogResult = await LoadOrderDialogService.ShowAsync(
+            XamlRoot,
+            workingEntries,
+            new LoadOrderDialogOptions
+            {
+                Title = "Load Order",
+                IntroText = "Files later in the list override records from earlier files. " +
+                            "They load together with the primary file when you click Load.",
+                AllowSubtitleCsv = true,
+                SubtitleCsvPath = _pendingSubtitleCsvPath,
+                PrimaryFilePath = MinidumpPathTextBox.Text
+            });
+
+        switch (dialogResult.Action)
+        {
+            case LoadOrderDialogAction.Cancel:
+                return;
+            case LoadOrderDialogAction.ClearAll:
+                _pendingLoadOrderEntries = null;
+                _pendingSubtitleCsvPath = null;
+                UpdateLoadOrderStatusText();
+                return;
+        }
+
+        var csvPath = dialogResult.SubtitleCsvPath?.Trim();
+        _pendingLoadOrderEntries = dialogResult.Entries.Count > 0 ? dialogResult.Entries.ToList() : null;
+        _pendingSubtitleCsvPath = !string.IsNullOrEmpty(csvPath) && File.Exists(csvPath) ? csvPath : null;
+        UpdateLoadOrderStatusText();
+    }
+
+    /// <summary>
+    ///     Applies the staged pre-analyze selection to the (freshly reopened) session's LoadOrder.
+    ///     Called by AnalyzeButton_Click AFTER _session.Open (which wiped the previous LoadOrder) and
+    ///     BEFORE the first tab populate — populates read _session.LoadOrder at populate time, so the
+    ///     first Data Browser / World Map build sees the merged view without a second rebuild. The
+    ///     entries are re-filtered against the FINAL primary path (the dialog only dedups against the
+    ///     textbox at add time; the user can change the primary afterwards).
+    /// </summary>
+    private async Task ApplyPendingLoadOrderAsync(string primaryFilePath)
+    {
+        if (_pendingLoadOrderEntries is not { Count: > 0 } && _pendingSubtitleCsvPath is null)
+        {
+            return;
+        }
+
+        StatusTextBlock.Text = "Loading load order data...";
+        var entries = (_pendingLoadOrderEntries ?? [])
+            .Where(entry => !string.Equals(entry.FilePath, primaryFilePath, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        await LoadOrderDialogService.ApplyAsync(
+            _session.LoadOrder,
+            entries,
+            _pendingSubtitleCsvPath,
+            status => DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = status));
+        UpdateLoadOrderStatusText();
     }
 
     private async Task OnLoadOrderChanged()
@@ -129,7 +211,20 @@ public sealed partial class SingleFileTab
         var lo = _session.LoadOrder;
         if (!lo.HasData)
         {
-            LoadOrderStatusText.Text = "";
+            // Nothing applied to the session — surface the staged pre-analyze selection instead so
+            // the footer confirms the pick before the Load run applies it.
+            var pending = new List<string>();
+            if (_pendingLoadOrderEntries is { Count: > 0 } p)
+            {
+                pending.Add($"{p.Count} file{(p.Count == 1 ? "" : "s")}");
+            }
+
+            if (_pendingSubtitleCsvPath != null)
+            {
+                pending.Add("+ subtitles");
+            }
+
+            LoadOrderStatusText.Text = pending.Count > 0 ? $"{string.Join(" ", pending)} (pending)" : "";
             return;
         }
 

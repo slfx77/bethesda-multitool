@@ -210,7 +210,9 @@ internal static class LoadOrderDialogService
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
             },
-            PrimaryButtonText = "Load",
+            // "Apply", not "Load": the main file button is now labeled "Load" and this dialog opens
+            // from a "Load Order..." button — a third "Load" affordance would be ambiguous.
+            PrimaryButtonText = "Apply",
             SecondaryButtonText = hasExistingData ? "Clear All" : null,
             CloseButtonText = "Cancel",
             XamlRoot = xamlRoot,

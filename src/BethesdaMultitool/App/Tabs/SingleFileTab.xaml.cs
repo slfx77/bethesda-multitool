@@ -571,6 +571,12 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 await RunSemanticParsePipelineAsync(artifacts.EsmFileBuffer, profile, refreshCarvedFiles: false);
             }
 
+            // Apply any pre-analyze load-order selection now: AFTER _session.Open above (which
+            // disposed the previous LoadOrder — entries staged earlier would have been wiped) and
+            // BEFORE AutoPopulateCurrentTabAsync (populates read _session.LoadOrder at populate
+            // time, so the first build sees the merged view without a double rebuild).
+            await ApplyPendingLoadOrderAsync(filePath);
+
             if (fileType != AnalysisFileType.SaveFile)
             {
                 profile?.Time("Carved file list", RefreshCarvedFilesList);
@@ -616,7 +622,6 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 await RunCoverageAnalysisAsync();
             }
 
-            LoadOrderButton.Visibility = Visibility.Visible;
             StatusTextBlock.Text = SingleFileAnalysisHelper.BuildCompletionStatus(_session, _allCarvedFiles);
             profile?.Log(filePath);
         }
