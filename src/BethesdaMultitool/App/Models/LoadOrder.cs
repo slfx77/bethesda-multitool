@@ -49,19 +49,30 @@ internal sealed class LoadOrder : IDisposable
     ///     <paramref name="primaryFileName" /> names the session's externally-merged primary plugin
     ///     (global mod index 0) so TES4-family entries' master references rebase against it.
     /// </summary>
-    public RecordCollection? BuildMergedRecords(string? primaryFileName = null)
+    public RecordCollection? BuildMergedRecords(string? primaryFileName = null) =>
+        BuildMergedRecordsFrom([.. Entries], primaryFileName);
+
+    /// <summary>
+    ///     Snapshot-based variant for WORKER threads: <see cref="Entries" /> is an
+    ///     ObservableCollection the UI thread mutates, so callers snapshot it on the UI thread
+    ///     (<c>Entries.ToList()</c>) and run this allocation-heavy merge/rebase off-thread — it costs
+    ///     seconds with a DLC-sized load order and used to hard-freeze the UI from the data-browser
+    ///     and world-map populates.
+    /// </summary>
+    public static RecordCollection? BuildMergedRecordsFrom(
+        IReadOnlyList<LoadOrderEntry> entries, string? primaryFileName = null)
     {
         // TES4-family plugins carry file-local mod indices in their FormID high bytes (every DLC's own
         // records are raw 0x01xxxxxx); rebase them into shared load-order slots so unrelated records
         // from different plugins stop colliding on merge (see Tes4LoadOrderFormIdMapper).
         var tes4Mapper = Tes4LoadOrderFormIdMapper.TryCreate(
-            Entries.Select(entry => entry.FilePath).ToList(),
+            entries.Select(entry => entry.FilePath).ToList(),
             primaryFileName);
 
         RecordCollection? merged = null;
-        for (var i = 0; i < Entries.Count; i++)
+        for (var i = 0; i < entries.Count; i++)
         {
-            var records = Entries[i].Records;
+            var records = entries[i].Records;
             if (records == null) continue;
 
             // TES3 plugins carry only file-local synthetic FormIDs; stamp each entry with a load index so
@@ -71,7 +82,7 @@ internal sealed class LoadOrder : IDisposable
             records = Tes3LoadOrderNamespacer.Namespaced(records, i + 1);
             if (tes4Mapper is not null)
             {
-                records = tes4Mapper.Namespaced(records, Entries[i].FilePath);
+                records = tes4Mapper.Namespaced(records, entries[i].FilePath);
             }
 
             merged = merged == null ? records : merged.MergeWith(records);

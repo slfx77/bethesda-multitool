@@ -87,54 +87,69 @@ public sealed partial class SingleFileTab
                 return;
             }
 
-            // Snapshot the primary's own worldspaces AND cells before merging supplementary Load-Order
-            // records. A DMP must show only the worldspaces + cells it captured; Load-Order ESM records are
-            // merged in for base-record/terrain/asset data but the ESM's worldspaces (picker) and cells
-            // (grid/list) are filtered back out below — only what the dump captured is shown.
-            var primaryWorldspaceIds = semantic.Worldspaces.Select(w => w.FormId).ToHashSet();
-            var primaryCellIds = semantic.Cells.Select(c => c.FormId).ToHashSet();
-
-            // Merge load order records so DLC worldspaces appear on the map. An ESM/ESP primary owns
-            // global mod index 0, so TES4-family entries rebase their master references against it.
-            var loadOrderRecords = _session.LoadOrder.BuildMergedRecords(
-                _session.IsEsmFile ? Path.GetFileName(_session.FilePath) : null);
-            if (loadOrderRecords != null)
-            {
-                // Precedence is type-aware: an opened ESM/ESP is the base the Load Order layers on top
-                // of (later wins → ESP edits apply); an opened DMP/save is the runtime truth and wins
-                // over the Load Order. MergeList unions by FormID either way, so DLC/new worldspaces
-                // still appear.
-                semantic = _session.IsEsmFile
-                    ? semantic.MergeWith(loadOrderRecords)
-                    : loadOrderRecords.MergeWith(semantic);
-
-                // Re-link cells to worldspaces against the MERGED cell list so overridden/added cells
-                // reach the viewer (which reads ws.Cells), not each worldspace's pre-merge cells. Then
-                // resolve placed-object meshes against the merged base set so a ref that places a base
-                // defined in another loaded plugin (e.g. Bloodmoon's Fort Frostmoth placing Morrowind
-                // Imperial-fort statics, or a TES4 mod placing a vanilla static) gets its ModelPath
-                // instead of rendering "missing" — per-source parse enrichment can't see other plugins.
-                semantic.RelinkWorldspaceCells().ResolvePlacedModels();
-
-                // For a memory-dump primary, hide both the worldspaces AND the cells the dump didn't
-                // capture: the ESM is merged in only so dumped objects can resolve their base
-                // models/textures, not to gap-fill the cell grid/list. Re-link again AFTER filtering so
-                // each worldspace's Cells reflects the trimmed (captured-only) set. (Order matters.)
-                if (!_session.IsEsmFile && !_session.IsSaveFile)
-                {
-                    semantic = semantic
-                        .WithWorldspacesFilteredTo(primaryWorldspaceIds)
-                        .WithCellsFilteredTo(primaryCellIds);
-                    semantic.RelinkWorldspaceCells().ResolvePlacedModels();
-                }
-            }
+            // Snapshot UI-thread-owned state before going off-thread: LoadOrder.Entries is a
+            // UI-mutated ObservableCollection, so the allocation-heavy merge below must work from a
+            // snapshot — it used to run right here on the UI thread and hard-froze the map populate
+            // for seconds with a DLC-sized load order.
+            var loadOrderEntries = _session.LoadOrder.Entries.ToList();
+            var primaryFileName = _session.IsEsmFile ? Path.GetFileName(_session.FilePath) : null;
+            var isEsmFile = _session.IsEsmFile;
+            var isSaveFile = _session.IsSaveFile;
+            var filePath = _session.FilePath;
 
             WorldMapStatusText.Text = Strings.Status_BuildingWorldIndex;
 
-            // Build world data on background thread
-            var filePath = _session.FilePath;
+            // Merge the load order + build world data on a background thread.
             var esmWorldData = await Task.Run(() =>
-                WorldMapOverlayBuilder.BuildFromRecords(semantic, filePath));
+            {
+                var records = semantic;
+
+                // Snapshot the primary's own worldspaces AND cells before merging supplementary
+                // Load-Order records. A DMP must show only the worldspaces + cells it captured;
+                // Load-Order ESM records are merged in for base-record/terrain/asset data but the
+                // ESM's worldspaces (picker) and cells (grid/list) are filtered back out below —
+                // only what the dump captured is shown.
+                var primaryWorldspaceIds = records.Worldspaces.Select(w => w.FormId).ToHashSet();
+                var primaryCellIds = records.Cells.Select(c => c.FormId).ToHashSet();
+
+                // Merge load order records so DLC worldspaces appear on the map. An ESM/ESP primary
+                // owns global mod index 0, so TES4-family entries rebase master references against it.
+                var loadOrderRecords = LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFileName);
+                if (loadOrderRecords != null)
+                {
+                    // Precedence is type-aware: an opened ESM/ESP is the base the Load Order layers on
+                    // top of (later wins → ESP edits apply); an opened DMP/save is the runtime truth
+                    // and wins over the Load Order. MergeList unions by FormID either way, so DLC/new
+                    // worldspaces still appear.
+                    records = isEsmFile
+                        ? records.MergeWith(loadOrderRecords)
+                        : loadOrderRecords.MergeWith(records);
+
+                    // Re-link cells to worldspaces against the MERGED cell list so overridden/added
+                    // cells reach the viewer (which reads ws.Cells), not each worldspace's pre-merge
+                    // cells. Then resolve placed-object meshes against the merged base set so a ref
+                    // that places a base defined in another loaded plugin (e.g. Bloodmoon's Fort
+                    // Frostmoth placing Morrowind Imperial-fort statics, or a TES4 mod placing a
+                    // vanilla static) gets its ModelPath instead of rendering "missing" — per-source
+                    // parse enrichment can't see other plugins.
+                    records.RelinkWorldspaceCells().ResolvePlacedModels();
+
+                    // For a memory-dump primary, hide both the worldspaces AND the cells the dump
+                    // didn't capture: the ESM is merged in only so dumped objects can resolve their
+                    // base models/textures, not to gap-fill the cell grid/list. Re-link again AFTER
+                    // filtering so each worldspace's Cells reflects the trimmed (captured-only) set.
+                    // (Order matters.)
+                    if (!isEsmFile && !isSaveFile)
+                    {
+                        records = records
+                            .WithWorldspacesFilteredTo(primaryWorldspaceIds)
+                            .WithCellsFilteredTo(primaryCellIds);
+                        records.RelinkWorldspaceCells().ResolvePlacedModels();
+                    }
+                }
+
+                return WorldMapOverlayBuilder.BuildFromRecords(records, filePath);
+            });
             cancellationToken.ThrowIfCancellationRequested();
             if (!IsCurrentWorldMapLoad(loadGeneration))
             {

@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -29,6 +30,16 @@ internal sealed record DialogueNavLocation(
     uint? SpeakerFilter) : UnifiedNavLocation;
 
 /// <summary>
+///     A FormID-indexed record node plus its parent chain, captured while the index build walks the
+///     tree — navigation's parent lookup is O(1) instead of an O(all-records) reference scan over
+///     every type group's children.
+/// </summary>
+internal readonly record struct FormIdNodeEntry(
+    EsmBrowserNode Node,
+    EsmBrowserNode Category,
+    EsmBrowserNode Type);
+
+/// <summary>
 ///     Navigation: unified back/forward history across all tabs, and FormID link navigation.
 /// </summary>
 public sealed partial class SingleFileTab
@@ -37,8 +48,12 @@ public sealed partial class SingleFileTab
     private readonly Stack<UnifiedNavLocation> _unifiedBackStack = new();
     private readonly Stack<UnifiedNavLocation> _unifiedForwardStack = new();
     private Task? _formIdBuildTask;
-    private Dictionary<uint, EsmBrowserNode>? _formIdNodeIndex;
+    private Dictionary<uint, FormIdNodeEntry>? _formIdNodeIndex;
     private bool _isNavigating;
+
+    /// <summary>Suppresses <c>EsmSearchBox_TextChanged</c> during programmatic Text sets (the
+    /// deep-target filter jump) so the debounced handler doesn't re-filter and stomp the selection.</summary>
+    private bool _suppressSearchTextChanged;
 
     /// <summary>
     ///     Invalidation token for in-flight index builds. ResetNavigation bumps it; a build
@@ -79,7 +94,7 @@ public sealed partial class SingleFileTab
             _flatListBuilt = true;
         }
 
-        var index = new Dictionary<uint, EsmBrowserNode>();
+        var index = new Dictionary<uint, FormIdNodeEntry>();
 
         foreach (var category in tree)
         {
@@ -105,7 +120,9 @@ public sealed partial class SingleFileTab
                         uint.TryParse(record.FormIdHex.AsSpan(2), System.Globalization.NumberStyles.HexNumber, null,
                             out var formId))
                     {
-                        index.TryAdd(formId, record);
+                        // The walk is already at the parent chain — capture it so navigation never
+                        // has to search for it.
+                        index.TryAdd(formId, new FormIdNodeEntry(record, category, typeNode));
                     }
                 }
             }
@@ -295,10 +312,26 @@ public sealed partial class SingleFileTab
 
         if (_formIdNodeIndex == null)
         {
-            // Wait for background index build if still in progress
+            // Wait for the background index build WITH visible feedback: on a huge merged tree the
+            // build walks every record and this wait is long — it used to read as a hang because the
+            // populate's finally block had just cleared the status text the build set.
             if (_formIdBuildTask != null)
             {
-                await _formIdBuildTask;
+                ParseProgressBar.Visibility = Visibility.Visible;
+                ParseProgressBar.IsIndeterminate = true;
+                ParseStatusText.Text = Strings.Status_BuildingNavIndex;
+                StatusTextBlock.Text = Strings.Status_BuildingNavIndex;
+                try
+                {
+                    await _formIdBuildTask;
+                }
+                finally
+                {
+                    ParseProgressBar.Visibility = Visibility.Collapsed;
+                    ParseProgressBar.IsIndeterminate = false;
+                    ParseStatusText.Text = "";
+                    StatusTextBlock.Text = "";
+                }
             }
 
             // Fallback: build synchronously if background didn't run. Safe to evaluate
@@ -317,7 +350,7 @@ public sealed partial class SingleFileTab
             }
         }
 
-        if (_formIdNodeIndex == null || !_formIdNodeIndex.TryGetValue(formId, out var targetNode))
+        if (_formIdNodeIndex == null || !_formIdNodeIndex.TryGetValue(formId, out var entry))
         {
             // Show brief status for records not in the data browser tree
             SelectedRecordTitle.Text = $"Record 0x{formId:X8} is not available in Records";
@@ -325,7 +358,7 @@ public sealed partial class SingleFileTab
         }
 
         _isNavigating = true;
-        await SelectAndScrollToNodeAsync(targetNode);
+        await SelectAndScrollToNodeAsync(entry.Node);
         _isNavigating = false;
     }
 
@@ -383,42 +416,56 @@ public sealed partial class SingleFileTab
             RebuildTreeViewFromSource();
         }
 
-        // Find the target's parent chain in the data model
+        // Find the target's parent chain: O(1) via the FormID index when available (the index build
+        // captured Category/Type alongside each node) — the fallback full scan re-walked EVERY type
+        // group's children on the UI thread per navigation.
         if (_esmBrowserTree == null) return;
 
         EsmBrowserNode? parentCategory = null;
         EsmBrowserNode? parentType = null;
-
-        // Snapshot each level under its collection lock — the background _formIdBuildTask
-        // (and the search pre-load) populate these same ObservableCollections concurrently;
-        // a lock-free enumeration/Contains during their Adds is a torn-read GC hole.
-#pragma warning disable S3267 // Nested loop with break - LINQ impractical here
-        foreach (var category in _esmBrowserTree)
+        if (target.FormIdHex != null &&
+            uint.TryParse(target.FormIdHex.AsSpan(2), System.Globalization.NumberStyles.HexNumber, null,
+                out var targetFormId) &&
+            _formIdNodeIndex?.TryGetValue(targetFormId, out var indexEntry) == true &&
+            ReferenceEquals(indexEntry.Node, target))
         {
-            List<EsmBrowserNode> typeNodes;
-            lock (category.Children)
-            {
-                typeNodes = [.. category.Children];
-            }
+            parentCategory = indexEntry.Category;
+            parentType = indexEntry.Type;
+        }
 
-            foreach (var typeNode in typeNodes)
+        if (parentCategory == null || parentType == null)
+        {
+            // Snapshot each level under its collection lock — the background _formIdBuildTask
+            // (and the search pre-load) populate these same ObservableCollections concurrently;
+            // a lock-free enumeration/Contains during their Adds is a torn-read GC hole.
+#pragma warning disable S3267 // Nested loop with break - LINQ impractical here
+            foreach (var category in _esmBrowserTree)
+            {
+                List<EsmBrowserNode> typeNodes;
+                lock (category.Children)
+                {
+                    typeNodes = [.. category.Children];
+                }
+
+                foreach (var typeNode in typeNodes)
 #pragma warning restore S3267
-            {
-                bool containsTarget;
-                lock (typeNode.Children)
                 {
-                    containsTarget = typeNode.Children.Contains(target);
+                    bool containsTarget;
+                    lock (typeNode.Children)
+                    {
+                        containsTarget = typeNode.Children.Contains(target);
+                    }
+
+                    if (containsTarget)
+                    {
+                        parentCategory = category;
+                        parentType = typeNode;
+                        break;
+                    }
                 }
 
-                if (containsTarget)
-                {
-                    parentCategory = category;
-                    parentType = typeNode;
-                    break;
-                }
+                if (parentCategory != null) break;
             }
-
-            if (parentCategory != null) break;
         }
 
         if (parentCategory == null || parentType == null) return;
@@ -474,6 +521,18 @@ public sealed partial class SingleFileTab
             _pendingTreeLoads.Remove(typeTreeNode);
             var (allChildren, loadedCount) = pending;
             var targetDataIndex = allChildren.IndexOf(target);
+
+            // Deep target: realizing tens of thousands of prefix TreeViewNodes into an expanded
+            // WinUI TreeView effectively freezes the app for the duration (every Add resyncs the
+            // control's flat list, and Task.Yield only pumps between batches). Jump via the
+            // existing search filter instead — the target renders immediately in a ≤200-node
+            // filtered tree; clearing the search box restores the full tree.
+            if (targetDataIndex > MaxRealizedPrefixNodes && target.FormIdHex is { } formIdHex)
+            {
+                JumpToNodeViaFilter(target, formIdHex);
+                return;
+            }
+
             var loadUntil = targetDataIndex >= 0
                 ? Math.Min(targetDataIndex + 50, allChildren.Count)
                 : allChildren.Count;
@@ -559,6 +618,51 @@ public sealed partial class SingleFileTab
 
             await Task.Delay(100);
             EsmTreeView.UpdateLayout();
+        }
+    }
+
+    /// <summary>Realize-to-target ceiling for <see cref="SelectAndScrollToNodeAsync" />: ~2k node
+    /// Adds stay comfortably sub-second; past it the WinUI flat-list resync cost is user-visible and
+    /// growing, so deeper targets take the filtered-tree jump instead.</summary>
+    private const int MaxRealizedPrefixNodes = 2_000;
+
+    /// <summary>
+    ///     Lands on a record too deep in its type group to realize scroll context for: applies the
+    ///     FormID as the search filter (so the tree shows just the target ± a handful of matches,
+    ///     realized instantly) and selects it. The query stays visible in the search box — clearing
+    ///     it restores the full tree, same as any search.
+    /// </summary>
+    private void JumpToNodeViaFilter(EsmBrowserNode target, string formIdHex)
+    {
+        // Programmatic Text set: suppress the TextChanged debounce so it doesn't re-filter (and
+        // stomp the selection) 250ms later.
+        _suppressSearchTextChanged = true;
+        EsmSearchBox.Text = formIdHex;
+        _suppressSearchTextChanged = false;
+        _currentSearchQuery = formIdHex;
+        FilterAndRebuildTreeView(formIdHex);
+
+        // The filtered tree is ≤200 wrapper nodes around the SAME EsmBrowserNode instances.
+        foreach (var rootNode in EsmTreeView.RootNodes)
+        {
+            foreach (var typeNode in rootNode.Children)
+            {
+                foreach (var recordNode in typeNode.Children)
+                {
+                    if (!ReferenceEquals(recordNode.Content, target))
+                    {
+                        continue;
+                    }
+
+                    EsmTreeView.SelectedNode = recordNode;
+                    EsmTreeView.UpdateLayout();
+                    if (EsmTreeView.ContainerFromNode(recordNode) is UIElement container)
+                    {
+                        container.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = true });
+                    }
+                    return;
+                }
+            }
         }
     }
 

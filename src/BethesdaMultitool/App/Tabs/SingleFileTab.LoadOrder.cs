@@ -176,6 +176,7 @@ public sealed partial class SingleFileTab
         DataBrowserContent.Visibility = Visibility.Collapsed;
         DataBrowserPlaceholder.Visibility = Visibility.Visible;
         _esmBrowserTree = null;
+        _populateDataBrowserTask = null; // next populate must rebuild with the new load order
 
         // Invalidate the FormID nav index alongside the tree it indexes — a stale index full of
         // old-tree nodes would let NavigateToFormId skip awaiting the new build and walk the new

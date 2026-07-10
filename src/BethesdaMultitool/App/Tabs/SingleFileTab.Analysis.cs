@@ -439,7 +439,26 @@ public sealed partial class SingleFileTab
         }
     }
 
-    private async Task PopulateDataBrowserAsync()
+    /// <summary>
+    ///     In-flight data-browser populate, for single-flighting. "View in Records" switches to the
+    ///     Records tab (whose SelectionChanged auto-populate fires) and then calls
+    ///     <see cref="PopulateDataBrowserAsync" /> itself because the tree is still null — without
+    ///     this, the two concurrent builds doubled seconds of work AND raced last-writer-wins on
+    ///     _esmBrowserTree/_formIdNodeIndex, so the FormID index could reference nodes from the
+    ///     losing tree and the navigation silently no-op'd after the wait.
+    /// </summary>
+    private Task? _populateDataBrowserTask;
+
+    private Task PopulateDataBrowserAsync()
+    {
+        if (_populateDataBrowserTask is { IsCompleted: false } inFlight) return inFlight;
+        if (_esmBrowserTree != null) return Task.CompletedTask; // already built for this session state
+        var task = PopulateDataBrowserCoreAsync();
+        _populateDataBrowserTask = task;
+        return task;
+    }
+
+    private async Task PopulateDataBrowserCoreAsync()
     {
         if (_session.SemanticResult == null) return;
 
@@ -450,16 +469,15 @@ public sealed partial class SingleFileTab
 
         try
         {
-            var semanticResult = _session.SemanticResult;
+            var primaryResult = _session.SemanticResult;
 
-            // Merge load order records so DLC content appears in the browser. An ESM/ESP primary owns
-            // global mod index 0, so TES4-family entries rebase their master references against it.
-            var loadOrderRecords = _session.LoadOrder.BuildMergedRecords(
-                _session.IsEsmFile ? Path.GetFileName(_session.FilePath) : null);
-            if (loadOrderRecords != null)
-                semanticResult = loadOrderRecords.MergeWith(semanticResult);
-
+            // Snapshot UI-thread-owned state HERE: LoadOrder.Entries is a UI-mutated
+            // ObservableCollection and the resolver getter enumerates it, so neither may be touched
+            // from the worker below.
+            var primaryFileName = _session.IsEsmFile ? Path.GetFileName(_session.FilePath) : null;
+            var loadOrderEntries = _session.LoadOrder.Entries.ToList();
             var resolver = _session.EffectiveResolver ?? _session.Resolver;
+            var recoverableGaps = _session.AnalysisResult?.RecoverableGapCandidates;
 
             // Progress callback for status updates
             var progress = new Progress<string>(status =>
@@ -469,27 +487,35 @@ public sealed partial class SingleFileTab
                     StatusTextBlock.Text = status;
                 }));
 
-            // Build tree and lookup indexes on a background thread
-            var (tree, placements, usageIndex, factionMembers, raceLookup) = await Task.Run(() =>
+            // Build the merged view + tree + lookup indexes on a background thread. The load-order
+            // merge/rebase used to run on the UI thread before the Task.Run — seconds of hard freeze
+            // with a DLC-sized load order, doubled by the pre-single-flight double populate.
+            var (tree, placements, usageIndex, factionMembers, raceLookup, semanticResult) =
+                await Task.Run(() =>
             {
+                // Merge load order records so DLC content appears in the browser. An ESM/ESP primary
+                // owns global mod index 0, so TES4-family entries rebase master references against it.
+                var loadOrderRecords = LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFileName);
+                var merged = loadOrderRecords != null
+                    ? loadOrderRecords.MergeWith(primaryResult)
+                    : primaryResult;
+
                 ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
-                var builtTree = EsmBrowserTreeBuilder.BuildTree(semanticResult, resolver);
-                EsmBrowserTreeBuilder.AppendRecoverableGapCategory(
-                    builtTree,
-                    _session.AnalysisResult?.RecoverableGapCandidates);
+                var builtTree = EsmBrowserTreeBuilder.BuildTree(merged, resolver);
+                EsmBrowserTreeBuilder.AppendRecoverableGapCategory(builtTree, recoverableGaps);
 
                 // Build reverse placement index for Count (base FormID → world placements)
-                var placementIndex = semanticResult.BuildBaseToPlacementsMap();
+                var placementIndex = merged.BuildBaseToPlacementsMap();
 
                 // Build reverse usage index for GECK-style Use (scripts, lists, containers, packages)
-                var formUsageIndex = FormUsageIndex.Build(semanticResult);
+                var formUsageIndex = FormUsageIndex.Build(merged);
 
                 // Build reverse faction index (faction FormID → NPC/creature members)
-                var factionIndex = semanticResult.BuildFactionMembersIndex();
+                var factionIndex = merged.BuildFactionMembersIndex();
 
                 // Build race lookup for FaceGen slider computation in property panels
-                var races = semanticResult.Races.Count > 0
-                    ? (IReadOnlyDictionary<uint, RaceRecord>)semanticResult.Races
+                var races = merged.Races.Count > 0
+                    ? (IReadOnlyDictionary<uint, RaceRecord>)merged.Races
                         .DistinctBy(r => r.FormId)
                         .ToDictionary(r => r.FormId)
                     : null;
@@ -497,7 +523,7 @@ public sealed partial class SingleFileTab
                 ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
                 EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
 
-                return (builtTree, placementIndex, formUsageIndex, factionIndex, races);
+                return (builtTree, placementIndex, formUsageIndex, factionIndex, races, merged);
             });
 
             _esmBrowserTree = tree;
@@ -543,7 +569,13 @@ public sealed partial class SingleFileTab
             ParseProgressBar.Visibility = Visibility.Collapsed;
             ParseProgressBar.IsIndeterminate = false;
             ParseStatusText.Text = "";
-            StatusTextBlock.Text = "";
+            // The background nav-index build owns StatusTextBlock past this method's end (it sets
+            // "Building navigation index…" above and clears it itself when done) — blanket-clearing
+            // here erased that status instantly, leaving the long index wait with no feedback.
+            if (_formIdBuildTask is null or { IsCompleted: true })
+            {
+                StatusTextBlock.Text = "";
+            }
         }
     }
 

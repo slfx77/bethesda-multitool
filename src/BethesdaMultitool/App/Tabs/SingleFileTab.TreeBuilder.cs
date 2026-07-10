@@ -371,6 +371,8 @@ public sealed partial class SingleFileTab
 
     private async void EsmSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (_suppressSearchTextChanged) return; // programmatic set — JumpToNodeViaFilter filters itself
+
         var query = EsmSearchBox.Text?.Trim() ?? "";
 
         if (_esmBrowserTree == null || _esmBrowserTree.Count == 0)

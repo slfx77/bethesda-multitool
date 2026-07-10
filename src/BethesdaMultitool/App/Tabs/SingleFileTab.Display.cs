@@ -494,6 +494,9 @@ public sealed partial class SingleFileTab
         EsmTreeView.RootNodes.Clear();
         _flatListBuilt = false;
         _esmBrowserTree = null;
+        // Detach the single-flight handle so the next populate starts fresh instead of returning a
+        // build made for the state this reset just tore down.
+        _populateDataBrowserTask = null;
         _placementIndex = null;
         _factionMembersIndex = null;
         _raceLookup = null;
