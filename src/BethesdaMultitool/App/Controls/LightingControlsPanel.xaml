@@ -6,17 +6,22 @@
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <!-- Shared lighting flyout used by both the 3D viewer and the 2D world map. The host drops this
-       control straight into its toolbar; it renders its own DropDownButton. Fog + Weather rows can be
-       hidden per host (the 2D map drives only the hillshade light direction). -->
+       control straight into its toolbar; it renders its own DropDownButton. The flyout is split into
+       a "Lighting" section (toggles + time of day) and a "Weather" section (weather type + wind);
+       rows can be hidden per host (the 2D map drives only the hillshade light direction). -->
   <DropDownButton AutomationProperties.Name="Lighting menu"
-                  ToolTipService.ToolTip="Lighting — on/off, time of day, weather">
+                  ToolTipService.ToolTip="Lighting — toggles, time of day, weather, wind">
     <StackPanel Orientation="Horizontal" Spacing="6">
       <FontIcon Glyph="&#xE706;" FontSize="14" />
       <TextBlock Text="Lighting" />
     </StackPanel>
     <DropDownButton.Flyout>
       <Flyout>
-        <StackPanel Spacing="10" MinWidth="260">
+        <StackPanel Spacing="10" MinWidth="280">
+
+          <!-- ============================== Lighting ============================== -->
+          <TextBlock Text="Lighting" FontWeight="SemiBold"
+                     AutomationProperties.HeadingLevel="Level2" />
           <ToggleSwitch x:Name="LightingToggle" IsOn="True" Header="Lighting"
                         OnContent="On" OffContent="Off"
                         AutomationProperties.Name="Lighting"
@@ -27,14 +32,46 @@
                         AutomationProperties.Name="Fog"
                         ToolTipService.ToolTip="Toggle distance fog (press 0)"
                         Toggled="FogToggle_Changed" />
-          <Grid>
+          <ToggleSwitch x:Name="ShadowsToggle" IsOn="True" Header="Sun shadows"
+                        OnContent="On" OffContent="Off"
+                        AutomationProperties.Name="Sun shadows"
+                        ToolTipService.ToolTip="Toggle the directional sun shadow map (needs Lighting on)"
+                        Toggled="ShadowsToggle_Changed" />
+          <Grid x:Name="ShadowDistanceRow" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Time of day" FontWeight="SemiBold" />
-            <TextBlock Grid.Column="1" x:Name="TimeValueText" FontWeight="SemiBold"
+            <TextBlock Grid.Column="0" Text="Shadow distance" FontWeight="SemiBold" />
+            <TextBlock Grid.Column="1" x:Name="ShadowDistanceValueText" FontWeight="SemiBold"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          </Grid>
+          <Slider x:Name="ShadowDistanceSlider" Minimum="1" Maximum="17" StepFrequency="1" Value="4"
+                  AutomationProperties.Name="Shadow distance"
+                  ToolTipService.ToolTip="Sun-shadow coverage radius in cells (max = unlimited). Smaller = sharper shadows; larger reaches further from the camera."
+                  ValueChanged="ShadowDistanceSlider_ValueChanged" />
+          <ToggleSwitch x:Name="SkyboxToggle" IsOn="True" Header="Skybox"
+                        OnContent="On" OffContent="Off"
+                        AutomationProperties.Name="Skybox"
+                        ToolTipService.ToolTip="Show the sky (press 9)"
+                        Toggled="SkyboxToggle_Changed" />
+          <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Time of day" FontWeight="SemiBold"
+                       VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" x:Name="TimeValueText" FontWeight="SemiBold"
+                       VerticalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <NumberBox Grid.Column="2" x:Name="TimeStepper" Minimum="0" Maximum="24"
+                       SmallChange="1" LargeChange="6" Value="12" Width="120"
+                       SpinButtonPlacementMode="Inline"
+                       AutomationProperties.Name="Time of day hours"
+                       ToolTipService.ToolTip="Time of day in hours (0–24) — step or type; synced with the slider"
+                       ValueChanged="TimeStepper_ValueChanged" />
           </Grid>
           <Slider x:Name="TimeSlider" Minimum="0" Maximum="24" StepFrequency="0.1" Value="12"
                   AutomationProperties.Name="Time of day"
@@ -53,12 +90,32 @@
                   AutomationProperties.Name="Day"
                   ToolTipService.ToolTip="Day of the lunar cycle — drives the moon phase + sky position"
                   ValueChanged="DaySlider_ValueChanged" />
-          <TextBlock x:Name="WeatherHeader" Text="Weather" FontWeight="SemiBold" />
+
+          <!-- ============================== Weather ============================== -->
+          <Border x:Name="WeatherSeparator" Height="1" Margin="0,2,0,2"
+                  Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+          <TextBlock x:Name="WeatherHeader" Text="Weather" FontWeight="SemiBold"
+                     AutomationProperties.HeadingLevel="Level2" />
           <ComboBox x:Name="WeatherComboBox" HorizontalAlignment="Stretch"
                     SelectionChanged="WeatherComboBox_SelectionChanged"
                     AutomationProperties.Name="Weather"
-                    ToolTipService.ToolTip="Weather — drives the sky / ambient / sun / fog colors"
+                    ToolTipService.ToolTip="Weather — drives the sky / ambient / sun / fog colors, and the wind speed"
                     PlaceholderText="Weather" />
+          <Grid x:Name="WindRow" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <CheckBox Grid.Column="0" x:Name="WindOverrideCheck" Content="Override wind" MinWidth="0"
+                      VerticalAlignment="Center"
+                      ToolTipService.ToolTip="Unchecked: wind follows the selected weather (wind speed ÷ 255; 0 indoors). Checked: use the slider value."
+                      Checked="WindOverrideCheck_Changed" Unchecked="WindOverrideCheck_Changed" />
+            <Slider Grid.Column="1" x:Name="WindSpeedSlider" Minimum="0" Maximum="1"
+                    StepFrequency="0.01" IsEnabled="False" VerticalAlignment="Center"
+                    AutomationProperties.Name="Wind speed"
+                    ToolTipService.ToolTip="SpeedTree wind strength on the engine scale (weather wind-speed byte ÷ 255; ~0.1 breeze, ~0.4 storm)"
+                    ValueChanged="WindSpeedSlider_ValueChanged" />
+          </Grid>
         </StackPanel>
       </Flyout>
     </DropDownButton.Flyout>

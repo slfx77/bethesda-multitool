@@ -241,6 +241,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // Distance fog (weather-driven) — terrain/reference/water recede toward the WTHR fog color over the
     // FNAM near→far range. On by default; off ⇒ no fog (so distant cells stay crisp for inspection).
     private bool _showFog = true;
+    // Sun shadows — the directional shadow map pass (reference batches cast onto terrain +
+    // references). On by default when lighting is on; off ⇒ pixel-identical to the pre-shadow
+    // renderer. Env kill-switch FALLOUT_VIEWER_SHADOWS=0 overrides the toggle.
+    private bool _showShadows = true;
 
     // Active worldspace's cell-edge size in world units (4096 Fallout-family, 8192 Morrowind). Set from
     // WorldViewData.CellWorldSize on every cell-grid build; drives camera framing, picking, render

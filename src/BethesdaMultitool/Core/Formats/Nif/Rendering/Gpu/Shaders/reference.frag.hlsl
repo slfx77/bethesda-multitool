@@ -19,6 +19,7 @@ TextureCube  cubemaps[]   : register(t0, space2);
 SamplerState sDiffuse     : register(s0); // wrap, anisotropic (set in C#)
 SamplerState sNormalMap   : register(s1); // wrap, anisotropic (set in C#)
 SamplerState sPalette     : register(s2); // CLAMP, linear — palette + cubemap lookups
+SamplerState sShadowPoint : register(s3); // CLAMP, point — sun-shadow-map depth taps (PCF)
 
 cbuffer PerFrame : register(b0) { float4x4 uViewProj; }
 
@@ -34,6 +35,10 @@ cbuffer Atmosphere : register(b3)
     float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
     float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = time
     float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
+    float4 uCameraOrigin;       // xyz = camera-relative render origin (VS-consumed; layout parity)
+    // Sun shadow map (appended — earlier shaders declare only the prefix above, layout-safe).
+    float4x4 uShadowMatrix;     // origin-relative world → shadow clip (xy ±1, z reversed 0..1)
+    float4 uShadowParams;       // x = enabled, y = texel UV size, z = depth bias, w = SRV slot
 };
 
 // Engine distance fog (grounded in Sky::UpdateFog): a linear near→far ramp toward the resolved fog
@@ -52,12 +57,62 @@ float3 ApplyFog(float3 color, float3 worldPos)
     return lerp(color, uFogColorFogEnabled.rgb, f);
 }
 
+// Sun-shadow visibility for an (origin-relative) world position — 1 = fully lit, 0 = fully
+// occluded. Samples the directional shadow map the frame's own reference batches were replayed
+// into (ShadowMapRenderer12) with a 3x3 PCF kernel of point taps. uShadowParams.x gates the whole
+// path: OFF returns 1.0, keeping the scene pixel-identical to the pre-shadow renderer. Positions
+// outside the map's ortho footprint (coverage edge) are lit — the map only covers the near field.
+float ShadowFactor(float3 worldPos)
+{
+    if (uShadowParams.x < 0.5)
+    {
+        return 1.0;
+    }
+
+    // Ortho light projection: w == 1, no perspective divide. Reversed-Z: stored depth GROWS
+    // toward the light, so "an occluder exists" reads as stored > pixelDepth + bias.
+    float4 clip = mul(uShadowMatrix, float4(worldPos, 1.0));
+    float2 uv = float2(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
+    if (min(uv.x, uv.y) < 0.0 || max(uv.x, uv.y) > 1.0 || clip.z <= 0.0 || clip.z >= 1.0)
+    {
+        return 1.0;
+    }
+
+    uint slot = (uint)uShadowParams.w;
+    float reference = clip.z + uShadowParams.z;
+    float texel = uShadowParams.y;
+    // 3x3 tent of BILINEAR comparison taps: each GatherRed pulls the tap's 2x2 texel quad and the
+    // four COMPARE RESULTS are blended by the sub-texel fraction (percentage-closer filtering in
+    // the proper order — filter the comparisons, never the depths). A plain point-compare box
+    // showed the map's raw texels as hard blocks in walk mode; this melts them into a smooth
+    // ~3-texel penumbra.
+    float2 texelPos = uv / texel - 0.5;
+    float2 f = frac(texelPos);
+    float2 gatherBase = (floor(texelPos) + 0.5) * texel;
+    float lit = 0.0;
+    [unroll]
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        [unroll]
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            float4 quad = textures[NonUniformResourceIndex(slot)]
+                .GatherRed(sShadowPoint, gatherBase + float2(dx, dy) * texel);
+            // Gather quad order (v grows downward): x=(0,+1) y=(+1,+1) z=(+1,0) w=(0,0).
+            float4 vis = 1.0 - step(reference.xxxx, quad);
+            lit += lerp(lerp(vis.w, vis.z, f.x), lerp(vis.x, vis.y, f.x), f.y);
+        }
+    }
+    return lit / 9.0;
+}
+
 // Per-pixel light factor (rgb) for a world-space normal. When lighting is disabled
 // (uSunColorLighting.w == 0) this returns the EXACT legacy flat shade — scalar 0.4 + 0.6*lambert
 // against the old fixed sun — so toggling lighting off is pixel-identical to the pre-atmosphere
-// viewer. Enabled: colored ambient + sun·(N·L), energy-bounded so a fully sunlit surface lands near
-// the legacy max (~1.0) instead of blowing out. (Placeholder sun curve; P2b grounds it in decompile.)
-float3 AtmosphereLight(float3 N)
+// viewer. Enabled: colored ambient + sun·(N·L)·sunShadow (shadow = 1.0 whenever the shadow pass
+// is off, preserving the exact pre-shadow output), energy-bounded so a fully sunlit surface lands
+// near the legacy max (~1.0) instead of blowing out.
+float3 AtmosphereLight(float3 N, float sunShadow)
 {
     if (uSunColorLighting.w < 0.5)
     {
@@ -79,7 +134,7 @@ float3 AtmosphereLight(float3 N)
     // falls back to 1.0 when the slot is unset (legacy/headless paths).
     float kAmbientScale = uAmbientColor.w > 0.0001 ? uAmbientColor.w : 1.0;
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
-    return uAmbientColor.rgb * kAmbientScale + uSunColorLighting.rgb * ndotl;
+    return uAmbientColor.rgb * kAmbientScale + uSunColorLighting.rgb * (ndotl * sunShadow);
 }
 
 struct PSInput
@@ -256,7 +311,10 @@ float4 main(PSInput input) : SV_Target
     // LeafVertexColorHelp product) is baked into the vertex color, which multiplies into `lit`
     // below exactly like the engine's packed-attribute frc. (An earlier wrap-lighting stand-in
     // lived here while the dimmer was missing.)
-    float3 shade = AtmosphereLight(normal);
+    // Sun-shadow visibility, computed once per pixel and shared by the diffuse sun term (inside
+    // AtmosphereLight) and the specular sun term below. 1.0 when lighting or shadows are off.
+    float sunShadow = uSunColorLighting.w >= 0.5 ? ShadowFactor(input.vWorldPos) : 1.0;
+    float3 shade = AtmosphereLight(normal, sunShadow);
 
     if (input.vRenderState.w > 0.5)
     {
@@ -287,7 +345,8 @@ float4 main(PSInput input) : SV_Target
         // SLS2047 soft ramp: below N·L 0.2, scale by (N·L + 0.5) (→ 0 by N·L −0.5); full above.
         float ndotl = dot(normal, uSunDirIntensity.xyz);
         if (ndotl <= 0.2) spec *= max(ndotl + 0.5, 0.0);
-        lit += uSunColorLighting.rgb * (spec * uSunDirIntensity.w);
+        // Specular is pure sun light, so the sun shadow gates it too (×1.0 when shadows are off).
+        lit += uSunColorLighting.rgb * (spec * uSunDirIntensity.w * sunShadow);
     }
 
     // FO4 cubemap environment reflections — the dominant "shiny" term for FO4 metal/gloss

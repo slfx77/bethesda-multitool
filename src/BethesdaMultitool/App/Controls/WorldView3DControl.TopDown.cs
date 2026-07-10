@@ -144,8 +144,10 @@ public sealed partial class WorldView3DControl
                 // (reference.frag). Fog stays OFF (the 2D map has no fog control), but lighting follows
                 // the 2D map's lighting toggle + its time-of-day (gameHourOverride) so the overlay's
                 // directional sun/ambient match the map's hillshade. Lighting off ⇒ flat legacy shade.
+                // enableShadows off: the top-down overlay records no shadow pass (and drives its own
+                // hour), so the live view's cached map would be stale/mismatched here.
                 BindAtmosphereConstants(cmd, recorder.FrameIndex, enableFog: false,
-                    enableLighting: enableLighting, gameHourOverride: gameHour);
+                    enableLighting: enableLighting, gameHourOverride: gameHour, enableShadows: false);
 
                 target.Bind(cmd);
                 _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs

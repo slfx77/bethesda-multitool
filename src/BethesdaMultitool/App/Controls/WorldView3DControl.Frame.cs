@@ -10,15 +10,61 @@ namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
-    // SpeedTree leaf-wind animation clock + cached strength (env FALLOUT_VIEWER_SPT_WIND, 0 = static).
-    // A fixed gentle diagonal wind direction; the per-leaf weight + position phasing do the rest.
+    // SpeedTree leaf-wind animation clock + strength. Engine model (Sky::UpdateWind): S = the active
+    // weather's wind-speed byte / 255, forced 0 in interiors — so by default wind FOLLOWS the same
+    // weather selection that drives clouds/lighting. _windStrength is a MANUAL OVERRIDE: null = auto
+    // (weather-driven); set via the lighting panel's "Override wind" row or the FALLOUT_VIEWER_SPT_WIND
+    // env var.
     private float _windClockSeconds;
     private float? _windStrength;
+    private bool _windEnvChecked;
     private static readonly Vector2 WindDirection = Vector2.Normalize(new Vector2(0.82f, 0.57f));
 
     // Translation-tolerant cull cache kill-switch (FALLOUT_VIEWER_TOLERANT_CULL=0 → exact compare).
     private static readonly bool TolerantCullEnabled =
         EnvironmentVariables.Get(EnvironmentVariables.Viewer.TolerantCull) != "0";
+
+    // Sun shadow map (directional shadows: reference batches cast onto terrain + references).
+    // Lazily created on the first shadow-enabled frame; disposed with the D3D12 backend
+    // (DisposeD3D12Backend). Kill-switch FALLOUT_VIEWER_SHADOWS=0; UI toggle in the lighting flyout.
+    private Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12? _shadowMap;
+    private static readonly bool ShadowsEnvEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.Shadows) != "0";
+
+    // The directional-light direction resolved by the LAST BindAtmosphereConstants call — the
+    // frame-end shadow pass fits the light frustum around it (same frame, same resolve).
+    private Vector3 _lastResolvedSunDirection = new(0.5f, 0.5f, 1f);
+    private Vector4 _lastBoundShadowParams; // diagnostics: what the last b3 upload carried
+
+    // Shadow coverage half-extent from the lighting flyout's "Shadow distance" slider, in CELLS
+    // (null = Unlimited → the full render distance). Smaller = sharper shadows (texel density is
+    // 2·radius/resolution). FALLOUT_VIEWER_SHADOW_RADIUS (world units) overrides it headless.
+    private float? _shadowDistanceCells = 4f;
+    private static readonly float? ShadowRadiusEnvOverride = ParseShadowRadiusEnvOverride();
+
+    // Monotonic tick folded into the shadow key while the captured casters include WIND-ANIMATED
+    // leaf cards: the map then re-renders every frame so canopy shadows sway with the trees
+    // instead of freezing into a slideshow. _shadowAnimatedActive gates the transition log.
+    private int _shadowAnimationTick;
+    private bool _shadowAnimatedActive;
+
+    private static float? ParseShadowRadiusEnvOverride()
+    {
+        var raw = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ShadowRadius);
+        return float.TryParse(raw, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0f
+            ? v
+            : null;
+    }
+
+    // Coverage half-extent for the sun shadow map: the slider (or its headless env override),
+    // clamped to the render distance, plus the key's center-snap margin so geometry stays covered
+    // while the camera walks between key re-snaps.
+    private float ResolveShadowRadius()
+    {
+        var sliderWorld = _shadowDistanceCells is float cells ? cells * _cellSize : float.MaxValue;
+        return MathF.Min(_renderDistance, ShadowRadiusEnvOverride ?? sliderWorld) + SunShadowMath.CenterSnap;
+    }
 
     // Render-loop failure tolerance: skip + retry on transient frame failures, detach only when
     // they persist (see the OnRendering catch block).
@@ -34,14 +80,15 @@ public sealed partial class WorldView3DControl
         RenderOriginGridSize * MathF.Floor(position.Y / RenderOriginGridSize),
         RenderOriginGridSize * MathF.Floor(position.Z / RenderOriginGridSize));
 
-    private static float ParseWindStrength()
+    // Env override for the wind strength; null (the default) = follow the active weather's wind byte.
+    private static float? ParseWindStrength()
     {
         var raw = EnvironmentVariables.Get(EnvironmentVariables.Viewer.SpeedTreeWind);
         return !string.IsNullOrWhiteSpace(raw) &&
                float.TryParse(raw, System.Globalization.NumberStyles.Float,
                    System.Globalization.CultureInfo.InvariantCulture, out var v)
             ? Math.Clamp(v, 0f, 5f)
-            : 0.12f;
+            : null;
     }
 
     private void AttachRenderLoop()
@@ -133,7 +180,7 @@ public sealed partial class WorldView3DControl
     private void BindAtmosphereConstants(
         Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex, bool enableFog = true,
         bool enableLighting = true, bool cameraRelative = false, Vector3? shadingCameraPosOverride = null,
-        float? gameHourOverride = null, Vector3? cameraOriginOverride = null)
+        float? gameHourOverride = null, Vector3? cameraOriginOverride = null, bool enableShadows = true)
     {
         // The top-down overlay drives lighting from the 2D map's own time-of-day, passed via
         // gameHourOverride; the live perspective path uses the 3D control's _gameHour. enableLighting is
@@ -152,6 +199,9 @@ public sealed partial class WorldView3DControl
         var resolved = AtmosphereState.Resolve(
             gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: lightingOn,
             moonlightDirection: moonlight);
+        // Stash the frame's directional-light direction for the frame-end shadow pass (the map is
+        // fitted around this direction; see RecordSunShadowPass).
+        _lastResolvedSunDirection = resolved.SunWorldDirection;
         // Camera-relative: the scene VS subtract CameraOrigin from each world vertex, so the shader's
         // "camera position" (used by fog distance + specular view dir) must sit in that SAME shifted
         // space: camera − origin. The live frame passes the grid-SNAPPED scene origin via
@@ -168,10 +218,23 @@ public sealed partial class WorldView3DControl
         // TES4-era engines, so Oblivion etc. raise it (see GameProfile.AmbientLightScale).
         var ambientScale = BethesdaMultitool.Core.Games.GameProfiles
             .For(_data?.Game ?? BethesdaMultitool.Core.Games.BethesdaGame.Unknown).AmbientLightScale;
+        // Sun-shadow sampling constants: the rendered map's light matrix (with this frame's render
+        // origin folded in) + packed params. Disabled (zero) until the map has content, when the
+        // caller opts out (ortho export / top-down), or when the toggle / env kill-switch is off —
+        // the shader's ShadowFactor then returns 1.0 and the scene is pixel-identical to before.
+        var shadowMatrix = Matrix4x4.Identity;
+        var shadowParams = Vector4.Zero;
+        if (enableShadows && lightingOn && _showShadows && ShadowsEnvEnabled &&
+            _shadowMap is { HasContent: true } shadowMap)
+        {
+            (shadowMatrix, shadowParams) = shadowMap.GetSampleConstants(cameraOrigin);
+        }
+        _lastBoundShadowParams = shadowParams;
         var constants = AtmosphereConstants.From(
             resolved, gameHour, shadingCameraPos, lightingEnabled: lightingOn ? 1f : 0f,
             skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f, time: 0f,
-            cameraOrigin: cameraOrigin, ambientScale: ambientScale);
+            cameraOrigin: cameraOrigin, ambientScale: ambientScale,
+            shadowMatrix: shadowMatrix, shadowParams: shadowParams);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
@@ -194,11 +257,17 @@ public sealed partial class WorldView3DControl
         public Vector4 Params;             // x = gameHour, y = fogNear, z = fogFar, w = time
         public Vector4 CameraPosFogPower;  // xyz = camera world pos (0 in camera-relative mode), w = fog power
         // Camera-relative render origin the scene VS subtract from each world vertex before
-        // projection (0 when camera-relative is off). Appended last; the PS shaders that read this CB
-        // declare only the prefix they use, so this 9th float4 is layout-safe for them.
+        // projection (0 when camera-relative is off). The PS shaders that read this CB
+        // declare only the prefix they use, so fields appended after their prefix are layout-safe.
         public Vector4 CameraOrigin;       // xyz = render origin (= camera world pos), w unused
+        // Sun shadow map (appended after CameraOrigin — same append-safe contract). The matrix maps
+        // origin-relative world positions (the PS's vWorldPos space) into shadow clip; ShadowParams
+        // packs (enabled, texel UV size, normalized depth bias, bindless SRV slot). Enabled == 0
+        // short-circuits the shader's ShadowFactor to 1.0, keeping the scene pixel-identical.
+        public Matrix4x4 ShadowMatrix;
+        public Vector4 ShadowParams;
 
-        public const uint ByteSize = 9 * 16;
+        public const uint ByteSize = 14 * 16;
 
         public static AtmosphereConstants From(
             AtmosphereState.Resolved a,
@@ -209,7 +278,9 @@ public sealed partial class WorldView3DControl
             float fogEnabled,
             float time,
             Vector3 cameraOrigin,
-            float ambientScale = 0.3f) => new()
+            float ambientScale = 0.3f,
+            Matrix4x4 shadowMatrix = default,
+            Vector4 shadowParams = default) => new()
             {
                 SunDirIntensity = new Vector4(a.SunWorldDirection, a.SunIntensity),
                 SunColorLighting = new Vector4(a.SunColor, lightingEnabled),
@@ -221,7 +292,83 @@ public sealed partial class WorldView3DControl
                 Params = new Vector4(gameHour, a.FogNear, a.FogFar, time),
                 CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
                 CameraOrigin = new Vector4(cameraOrigin, 0f),
+                ShadowMatrix = shadowMatrix,
+                ShadowParams = shadowParams,
             };
+    }
+
+    /// <summary>
+    ///     Re-renders the sun shadow map when its cache key changed: fits the light's ortho frustum
+    ///     around the camera (SunShadowMath), binds the shadow DSV, replays the frame's captured
+    ///     reference draws depth-only, and draws the resident terrain cells (terrain casts too —
+    ///     hillsides shade valleys). Must be recorded AFTER the reference pass (the replay uses
+    ///     this frame's ring-buffer CB addresses) and after every screen-target draw (it rebinds the
+    ///     OM targets + viewport without restoring them). The map rendered here is sampled from the
+    ///     NEXT frame on via the atmosphere CB. While the captured casters include wind-animated
+    ///     leaf cards, the key ticks every frame so canopy shadows sway instead of freezing.
+    /// </summary>
+    private void RecordSunShadowPass(
+        Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, Vector3 renderOrigin, Vector3 sceneCenter)
+    {
+        var terrainCasts = _showTerrain && _terrain is not null;
+        if (_shadowMap is null || _references is null || (!_references.HasShadowDraws && !terrainCasts))
+        {
+            return; // nothing to cast (or a degenerate frame) — keep the previous map + key
+        }
+
+        var animated = _references.ShadowDrawsIncludeAnimatedLeaves;
+        var tick = animated ? unchecked(++_shadowAnimationTick) : 0;
+        var radius = ResolveShadowRadius();
+        var contentVersion = HashCode.Combine(
+            _references.BatchContentVersion, _terrain?.ContentVersion ?? 0, tick);
+        var key = SunShadowMath.BuildKey(_lastResolvedSunDirection, sceneCenter, radius, contentVersion);
+        if (!_shadowMap.NeedsRender(key))
+        {
+            return;
+        }
+
+        var frustum = SunShadowMath.BuildLightFrustum(
+            _lastResolvedSunDirection, sceneCenter, renderOrigin, radius, _shadowMap.Resolution);
+        // One line per DISCRETE map render keeps logs quiet; the wind-driven continuous mode would
+        // log at frame rate, so it logs once per activation instead.
+        if (!animated)
+        {
+            _shadowAnimatedActive = false;
+            Log.Info("[Shadow] rendering map: draws={0} radius={1:0} dir=({2:0.00},{3:0.00},{4:0.00}) origin=({5:0},{6:0},{7:0})",
+                _references.ShadowDrawCount, radius,
+                _lastResolvedSunDirection.X, _lastResolvedSunDirection.Y, _lastResolvedSunDirection.Z,
+                renderOrigin.X, renderOrigin.Y, renderOrigin.Z);
+        }
+        else if (!_shadowAnimatedActive)
+        {
+            _shadowAnimatedActive = true;
+            Log.Info("[Shadow] continuous re-render engaged (wind-animated foliage in view): draws={0} radius={1:0}",
+                _references.ShadowDrawCount, radius);
+        }
+
+        _shadowMap.BeginRender(cmd);
+        var drewReferences = _references.RenderShadowDepth(frustum);
+        var drewTerrain = false;
+        if (terrainCasts)
+        {
+            // Same cylinder footprint the main pass streamed, clamped to the shadow coverage —
+            // draws only RESIDENT cells (the designed back-to-back RenderInternal double-call).
+            var terrainRadius = MathF.Min(radius, _renderDistance);
+            drewTerrain = _terrain!.RenderShadowDepth(
+                frustum.ViewProj, new VisibilityCylinder(sceneCenter, terrainRadius)) > 0;
+        }
+
+        if (drewReferences || drewTerrain)
+        {
+            _shadowMap.EndRender(cmd, key, frustum, renderOrigin);
+        }
+        else
+        {
+            // Nothing drew (ring exhaustion / nothing resident): the map was cleared but holds no
+            // scene — transition it back WITHOUT publishing the key, so sampling stays on the old
+            // constants (a cleared map reads fully lit either way) and the next frame retries.
+            _shadowMap.EndRenderEmpty(cmd);
+        }
     }
 
     private void RenderFrameD3D12()
@@ -364,10 +511,46 @@ public sealed partial class WorldView3DControl
                 Vector3.Normalize(new Vector3(invViewForLeaves.M21, invViewForLeaves.M22, invViewForLeaves.M23)));
         }
 
-        // SpeedTree leaf wind: sway each leaf card this frame (model recovered from STLEAF/STB shaders +
-        // BSTreeManager::UpdateWindMatrices). Strength 0 (env FALLOUT_VIEWER_SPT_WIND=0) keeps trees static.
-        _windStrength ??= ParseWindStrength();
-        _references?.SetWind(WindDirection, _windStrength.Value, _windClockSeconds);
+        // SpeedTree leaf wind (model recovered from STLEAF/STB shaders + BSTreeManager::UpdateWindMatrices).
+        // Engine-faithful default: S = the ACTIVE WEATHER's wind-speed byte / 255 (the same record that
+        // drives clouds/lighting; Sky::UpdateWind), forced 0 in interiors and when no weather resolves.
+        // The lighting panel's "Override wind" row / FALLOUT_VIEWER_SPT_WIND set a manual override.
+        if (!_windEnvChecked)
+        {
+            _windEnvChecked = true;
+            var envWind = ParseWindStrength();
+            if (envWind is not null)
+            {
+                _windStrength = Math.Clamp(envWind.Value, 0f, 1f);
+                LightingPanel.SeedWindOverride(_windStrength.Value); // reflect in the Weather section UI
+            }
+        }
+        var weatherWind = _selectedInterior is not null
+            ? 0f
+            : ((_selectedWeather ?? _climateDefaultWeather)?.Data?.WindSpeed ?? 0) / 255f;
+        var effectiveWind = _windStrength ?? weatherWind;
+        // In auto mode, keep the (disabled) wind slider showing the weather-driven value. We're on the
+        // UI thread (CompositionTarget.Rendering); the panel never raises events for display updates.
+        if (_windStrength is null)
+        {
+            LightingPanel.SetWindSpeedDisplay(weatherWind);
+        }
+        _references?.SetWindProfile(Core.Formats.SpeedTree.SpeedTreeWindProfile.For(
+            _data?.Game ?? BethesdaMultitool.Core.Games.BethesdaGame.Unknown));
+        _references?.SetWind(WindDirection, effectiveWind, _windClockSeconds);
+
+        // Sun shadows: arm the reference renderer's shadow-draw capture BEFORE its render pass so
+        // this frame's instanced draws are recorded for the frame-end shadow replay. The CB bound
+        // below samples the PREVIOUS render of the map (one frame of latency, hidden by the cache);
+        // the map itself re-renders at the end of this frame only when its key changed.
+        var shadowsActive = ShadowsEnvEnabled && _showShadows && _showLighting && !projectionActive &&
+                            _selectedInterior is null && _references is not null && _showReferences;
+        if (shadowsActive)
+        {
+            _shadowMap ??= new Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12(
+                _gpu12!, _cbvSrvUavHeap12!);
+            _references!.ArmShadowCapture();
+        }
 
         // Resolve + upload the shared atmosphere CB (b3) once per frame, bound for the whole scene.
         // Terrain/reference/water read it for directional + ambient lighting; the sky/fog flags drive
@@ -501,6 +684,15 @@ public sealed partial class WorldView3DControl
         // Selection outline, drawn last + depth-disabled so it stays visible on top of everything
         // (no-op when nothing is selected).
         _selectionHighlight?.Render(viewProjAbsolute);
+
+        // Sun-shadow depth pass — recorded LAST (nothing after it draws to the screen targets, so
+        // the shadow DSV/viewport need no restore). Replays this frame's captured reference batches
+        // from the light's view; skipped entirely while the cache key (sun dir, snapped camera,
+        // content version) is unchanged, so a settled scene records zero shadow work.
+        if (shadowsActive)
+        {
+            RecordSunShadowPass(cmd, referenceRenderOrigin, _camera.Position);
+        }
 
         segmentStarted = StartProfileTimestamp();
         var totalCells = _terrain?.CellCount ?? _cellGrid?.CellCount ?? 0;

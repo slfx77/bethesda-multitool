@@ -107,6 +107,10 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     // by the 2D map's top-down overlay to lay down terrain depth so placed references are occluded
     // by the ground without painting terrain color over the 2D map's own terrain layer.
     private readonly ID3D12PipelineState _depthOnlyPso;
+    // Sun-shadow variant: depth-only like above but single-sample (the shadow map is never MSAA),
+    // no culling (back faces of grazing slopes must still occlude), and negatively depth-biased
+    // for the reversed-Z acne fix — matching the reference renderer's shadow PSOs.
+    private readonly ID3D12PipelineState _shadowDepthPso;
     // Per-worldspace LAND grid resolution. Defaults to 33×33 (Fallout/Oblivion/Skyrim + runtime DMP);
     // a Morrowind worldspace load bumps this to 65×65. The shared index buffer + scratch arrays are
     // rebuilt in LoadData when the grid size changes, and DrawCell issues _indexCount per cell.
@@ -169,6 +173,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
 
         (_pso, _depthOnlyPso) = TerrainPipelineFactory12.BuildPipelineStates(
             gpu, rootSignature, vsBytecode, psBytecode, TerrainInputElements);
+        _shadowDepthPso = TerrainPipelineFactory12.BuildShadowPipelineState(
+            gpu, rootSignature, vsBytecode, TerrainInputElements);
 
         _sharedIndexData = TerrainMeshBuilder.BuildSharedIndexBufferData();
     }
@@ -187,6 +193,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             _deletionQueue.EnqueueDispose(_sharedIndexBuffer);
         }
+        _shadowDepthPso.Dispose();
         _depthOnlyPso.Dispose();
         _pso.Dispose();
     }
@@ -368,6 +375,21 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     /// </summary>
     public int RenderDepthOnly(Matrix4x4 viewProj, VisibilityCylinder cylinder)
         => RenderInternal(viewProj, cylinder, _depthOnlyPso);
+
+    /// <summary>Bumped whenever a terrain cell mesh becomes newly GPU-resident — part of the sun
+    /// shadow map's cache key, so streamed-in hills re-render the map (terrain CASTS shadows).</summary>
+    public int ContentVersion { get; private set; }
+
+    /// <summary>
+    ///     Sun-shadow depth pass: draws the RESIDENT terrain cells into the (already bound) shadow
+    ///     map from the light's view with the 1-sample no-cull shadow PSO — terrain casts shadows
+    ///     onto itself and onto placed references (hillsides shading valleys). Recorded back-to-back
+    ///     with the main pass in the same frame (a designed double-call — see the frame-budget note
+    ///     in <see cref="RenderInternal" />); the cylinder should already match the main pass's, so
+    ///     no extra cell streaming is triggered.
+    /// </summary>
+    public int RenderShadowDepth(Matrix4x4 lightViewProj, VisibilityCylinder cylinder)
+        => RenderInternal(lightViewProj, cylinder, _shadowDepthPso);
 
     private int RenderInternal(Matrix4x4 viewProj, VisibilityCylinder cylinder, ID3D12PipelineState pso)
     {
@@ -635,6 +657,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             if (builtSync is null) return null;
             uploadBudget--;
             LastStats.NewUploads++;
+            unchecked { ContentVersion++; } // new resident cell → sun shadow map re-renders
             return builtSync;
         }
 
@@ -661,6 +684,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             }
             uploadBudget--;
             LastStats.NewUploads++;
+            unchecked { ContentVersion++; } // new resident cell → sun shadow map re-renders
             return entry;
         }
 

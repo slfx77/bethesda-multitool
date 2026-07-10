@@ -98,6 +98,18 @@ internal static class EnvironmentVariables
         /// stay clip-aligned either way.</summary>
         public const string CameraRelative = "FALLOUT_VIEWER_CAMERA_RELATIVE";
 
+        /// <summary>Sun shadow map kill-switch: set to "0" to disable the directional shadow pass
+        /// entirely (default ON; also toggleable per-session in the lighting flyout). OFF renders
+        /// pixel-identical to the pre-shadow viewer. Companion knob:
+        /// <c>FALLOUT_VIEWER_SHADOW_RES</c> (map dimension, default 4096).</summary>
+        public const string Shadows = "FALLOUT_VIEWER_SHADOWS";
+
+        /// <summary>HEADLESS override for the shadow coverage half-extent, in WORLD UNITS (unset =
+        /// the lighting flyout's "Shadow distance" slider, default 4 cells). Smaller = sharper
+        /// (texel density is 2·radius/resolution); the radius is always clamped to the render
+        /// distance.</summary>
+        public const string ShadowRadius = "FALLOUT_VIEWER_SHADOW_RADIUS";
+
         /// <summary>Per-frame upload-heap ring-buffer size in MEGABYTES (default 128). Shared by every D3D12 renderer's per-draw CBs; raise if a very dense whole-map view drops draws (every consumer soft-fails instead of throwing).</summary>
         public const string RingBufferMegabytes = "FALLOUT_VIEWER_RING_BUFFER_MB";
 
@@ -114,9 +126,10 @@ internal static class EnvironmentVariables
         /// The only host-side tree knob — branch/leaf geometry is fully derived from the .spt + decompile.</summary>
         public const string SpeedTreeHeightScale = "FALLOUT_VIEWER_SPT_HEIGHT_SCALE";
 
-        /// <summary>SpeedTree leaf-wind sway strength (default 0.12; 0 disables, trees render static).
-        /// The leaf-billboard VS sways each card by this × per-leaf weight × card size (model recovered
-        /// from STLEAF/STB shaders + BSTreeManager::UpdateWindMatrices). Live-tunable; .spt isn't cached.</summary>
+        /// <summary>SpeedTree leaf-wind strength MANUAL OVERRIDE on the engine scale (weather wind-speed
+        /// byte / 255; 0 = static). UNSET (the default) = engine-faithful auto: wind follows the viewer's
+        /// active weather record, forced 0 in interiors (Sky::UpdateWind). Drives the leaf rock/rustle
+        /// model recovered from the STLEAF shaders + BSTreeManager::UpdateWindMatrices.</summary>
         public const string SpeedTreeWind = "FALLOUT_VIEWER_SPT_WIND";
 
         public const string TextureResolveConcurrency = "FALLOUT_VIEWER_TEXTURE_RESOLVE_CONCURRENCY";

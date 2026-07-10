@@ -165,77 +165,167 @@ public sealed partial class WorldView3DControl
 
         ulong fenceValue;
         var recorder = _commandRecorder12!;
-        recorder.BeginFrame();
-        try
+        // Sun shadows in captures: the shadow map is rendered at the END of a frame and sampled by
+        // the NEXT one (ShadowMapRenderer12's replay-this-frame/sample-next-frame contract), and the
+        // profiler typically sets the hour right before capturing — so a single one-shot frame would
+        // sample a stale (wrong-sun) or empty map. When shadows are active, record one extra PRIME
+        // frame first: identical scene recording minus the readback, whose frame-end shadow pass
+        // renders the map for the CURRENT sun; the real capture then samples it.
+        var captureShadows = ShadowsEnvEnabled && _showShadows && _showLighting &&
+                             _selectedInterior is null && _references is not null && _showReferences;
+        for (var pass = captureShadows ? 0 : 1; pass < 2; pass++)
         {
-            var cmd = recorder.CommandList;
-            _deletionQueue12!.Tick();
-            _ringBuffer12!.ResetFrame();
-            _cbvSrvUavHeap12!.BeginFrame(recorder.FrameIndex);
-            _gpu12!.PumpDebugMessages();
-
-            cmd.SetDescriptorHeaps(1, new[] { _cbvSrvUavHeap12.Heap });
-            cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
-
-            // Live-frame atmosphere (perspective defaults: fog + lighting on, no ortho overrides).
-            BindAtmosphereConstants(cmd, recorder.FrameIndex, cameraRelative: false);
-            target.Bind(cmd);
-
-            // Sky FIRST (gradient + sun/moon billboards), then the scene over it — same order as the live
-            // frame. EnsureSkyTexturesResolved (inside RenderSky) uploads the climate/weather textures on
-            // this open command list.
-            if (_showSky)
+            var isPrime = pass == 0;
+            recorder.BeginFrame();
+            try
             {
-                // Offscreen capture uses an absolute viewProj, so center the dome on the camera position
-                // (the prior behavior). Jitter is a live-motion artifact and irrelevant to a static capture.
-                RenderSky(viewProj, _camera.Position);
-            }
+                var cmd = recorder.CommandList;
+                _deletionQueue12!.Tick();
+                _ringBuffer12!.ResetFrame();
+                _cbvSrvUavHeap12!.BeginFrame(recorder.FrameIndex);
+                _gpu12!.PumpDebugMessages();
 
-            _terrain?.Render(viewProj, cylinder);
-            // Defer blended reference submeshes until after water so water never paints over them
-            // (mirrors the live frame / 3D export). cullViewProj == viewProj (absolute coords).
-            _references?.Render(viewProj, cylinder, deferBlended: true, cullViewProj: viewProj);
-            if (_showWater && _water is not null && _references is not null)
-            {
-                _water.SetNifWaterPlanes(_references.NifWaterPlanes);
-                // Bind the offscreen depth as an R32_Float SRV (mirrors the live frame's swap-chain
-                // depth SRV, Frame.cs) so the water shader computes the REAL column-depth fade —
-                // Oblivion's shore alpha is depth-driven and invisible on the proxy path. MSAA depth
-                // can't be a plain Texture2D SRV → fall back to the proxy (view-angle) fade.
-                var captureUsesDepth = !target.IsMsaa && TryEnsureCaptureDepthSrv(target);
-                _water.SetSceneDepth(
-                    captureUsesDepth ? _captureDepthSrv!.Value.BindlessIndex : NoDepthSrv,
-                    _camera.NearPlane, _camera.FarPlane);
-                if (captureUsesDepth)
+                cmd.SetDescriptorHeaps(1, new[] { _cbvSrvUavHeap12.Heap });
+                cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
+
+                if (captureShadows)
                 {
-                    target.BindColorOnly(cmd); // depth leaves the OM while it's a shader resource
-                    cmd.ResourceBarrierTransition(target.DepthResource,
-                        Vortice.Direct3D12.ResourceStates.DepthWrite,
-                        Vortice.Direct3D12.ResourceStates.PixelShaderResource);
+                    _shadowMap ??= new Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12(
+                        _gpu12!, _cbvSrvUavHeap12!);
+                    _references!.ArmShadowCapture();
                 }
 
-                _water.Render(viewProj, cylinder);
+                // Live-frame atmosphere (perspective defaults: fog + lighting on, no ortho overrides).
+                BindAtmosphereConstants(cmd, recorder.FrameIndex, cameraRelative: false);
+                target.Bind(cmd);
 
-                if (captureUsesDepth)
+                // Sky FIRST (gradient + sun/moon billboards), then the scene over it — same order as the live
+                // frame. EnsureSkyTexturesResolved (inside RenderSky) uploads the climate/weather textures on
+                // this open command list.
+                if (_showSky)
                 {
-                    cmd.ResourceBarrierTransition(target.DepthResource,
-                        Vortice.Direct3D12.ResourceStates.PixelShaderResource,
-                        Vortice.Direct3D12.ResourceStates.DepthWrite);
-                    target.Rebind(cmd); // restore depth for the blended-deferred pass below
+                    // Offscreen capture uses an absolute viewProj, so center the dome on the camera position
+                    // (the prior behavior). Jitter is a live-motion artifact and irrelevant to a static capture.
+                    RenderSky(viewProj, _camera.Position);
+                }
+
+                _terrain?.Render(viewProj, cylinder);
+                // Defer blended reference submeshes until after water so water never paints over them
+                // (mirrors the live frame / 3D export). cullViewProj == viewProj (absolute coords).
+                _references?.Render(viewProj, cylinder, deferBlended: true, cullViewProj: viewProj);
+                if (_showWater && _water is not null && _references is not null)
+                {
+                    _water.SetNifWaterPlanes(_references.NifWaterPlanes);
+                    // Bind the offscreen depth as an R32_Float SRV (mirrors the live frame's swap-chain
+                    // depth SRV, Frame.cs) so the water shader computes the REAL column-depth fade —
+                    // Oblivion's shore alpha is depth-driven and invisible on the proxy path. MSAA depth
+                    // can't be a plain Texture2D SRV → fall back to the proxy (view-angle) fade.
+                    var captureUsesDepth = !target.IsMsaa && TryEnsureCaptureDepthSrv(target);
+                    _water.SetSceneDepth(
+                        captureUsesDepth ? _captureDepthSrv!.Value.BindlessIndex : NoDepthSrv,
+                        _camera.NearPlane, _camera.FarPlane);
+                    if (captureUsesDepth)
+                    {
+                        target.BindColorOnly(cmd); // depth leaves the OM while it's a shader resource
+                        cmd.ResourceBarrierTransition(target.DepthResource,
+                            Vortice.Direct3D12.ResourceStates.DepthWrite,
+                            Vortice.Direct3D12.ResourceStates.PixelShaderResource);
+                    }
+
+                    _water.Render(viewProj, cylinder);
+
+                    if (captureUsesDepth)
+                    {
+                        cmd.ResourceBarrierTransition(target.DepthResource,
+                            Vortice.Direct3D12.ResourceStates.PixelShaderResource,
+                            Vortice.Direct3D12.ResourceStates.DepthWrite);
+                        target.Rebind(cmd); // restore depth for the blended-deferred pass below
+                    }
+                }
+
+                _references?.RenderBlendedDeferred();
+
+                // Frame-end shadow pass, same as the live loop (render origin 0 — this capture path
+                // is absolute). On the real pass it usually no-ops (key unchanged since the prime).
+                if (captureShadows)
+                {
+                    Log.Info("[Capture] shadow state pass={0}: mapHasContent={1} shadowDraws={2} boundParams=({3},{4:0.00000},{5:0.00000},{6})",
+                        isPrime ? "prime" : "real", _shadowMap!.HasContent, _references!.ShadowDrawCount,
+                        _lastBoundShadowParams.X, _lastBoundShadowParams.Y,
+                        _lastBoundShadowParams.Z, _lastBoundShadowParams.W);
+                    RecordSunShadowPass(cmd, Vector3.Zero, _camera.Position);
+                }
+
+                if (!isPrime)
+                {
+                    target.RecordReadback(cmd);
                 }
             }
-
-            _references?.RenderBlendedDeferred();
-
-            target.RecordReadback(cmd);
-        }
-        finally
-        {
-            recorder.EndFrame();
+            finally
+            {
+                recorder.EndFrame();
+            }
         }
 
         fenceValue = recorder.LastSubmittedFenceValue;
         _gpu12!.PumpDebugMessages();
+
+        // Shadow-map diagnostics: env FALLOUT_VIEWER_SHADOW_DUMP=1 → read the map back after the
+        // capture and log its occupancy (nonzero texels, depth range, bounding box). Distinguishes
+        // "replay wrote nothing" from "sampling misses the content" without a GPU debugger.
+        if (captureShadows && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SHADOW_DUMP") == "1" &&
+            _shadowMap is { HasContent: true } dumpMap)
+        {
+            recorder.BeginFrame();
+            Vortice.Direct3D12.ID3D12Resource? dumpBuffer = null;
+            uint dumpPitch = 0;
+            try
+            {
+                dumpBuffer = dumpMap.RecordDiagnosticReadback(recorder.CommandList, out dumpPitch);
+            }
+            finally
+            {
+                recorder.EndFrame();
+            }
+
+            WaitForFrameFence(_gpu12.FrameFence, recorder.LastSubmittedFenceValue);
+            unsafe
+            {
+                void* p = null;
+                dumpBuffer!.Map(0, &p).CheckError();
+                try
+                {
+                    var res = dumpMap.Resolution;
+                    long nonZero = 0;
+                    float maxV = 0f, minNz = float.MaxValue;
+                    int minX = int.MaxValue, minY = int.MaxValue, maxX = -1, maxY = -1;
+                    for (var y = 0; y < res; y++)
+                    {
+                        var row = (float*)((byte*)p + (long)y * dumpPitch);
+                        for (var x = 0; x < res; x++)
+                        {
+                            var v = row[x];
+                            if (v <= 0f) continue;
+                            nonZero++;
+                            if (v > maxV) maxV = v;
+                            if (v < minNz) minNz = v;
+                            if (x < minX) minX = x;
+                            if (x > maxX) maxX = x;
+                            if (y < minY) minY = y;
+                            if (y > maxY) maxY = y;
+                        }
+                    }
+
+                    Log.Info("[ShadowDump] res={0} nonZero={1} ({2:0.000}%) range=[{3:0.00000},{4:0.00000}] bbox=({5},{6})-({7},{8})",
+                        res, nonZero, 100.0 * nonZero / ((long)res * res), minNz, maxV, minX, minY, maxX, maxY);
+                }
+                finally
+                {
+                    dumpBuffer.Unmap(0, null);
+                    dumpBuffer.Dispose();
+                }
+            }
+        }
 
         var frameFence = _gpu12.FrameFence;
         return await Task.Run(() =>

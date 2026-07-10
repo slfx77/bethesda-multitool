@@ -138,5 +138,54 @@ internal static class TerrainPipelineFactory12
 
         return (pso, depthOnlyPso);
     }
+
+    /// <summary>
+    ///     Sun-shadow depth PSO: like the depth-only variant but always SINGLE-sample (the shadow
+    ///     map is never MSAA regardless of the scene), cull NONE (a grazing sun sees the back faces
+    ///     of slopes — culling them leaks light through hills), and a NEGATIVE depth bias (reversed-Z
+    ///     stores larger values nearer the light, so the acne fix pushes stored depth SMALLER).
+    ///     Mirrors <c>ReferencePipelineFactory12.CreateShadowPipelineState</c>.
+    /// </summary>
+    public static ID3D12PipelineState BuildShadowPipelineState(
+        GpuDevice12 gpu,
+        GpuRootSignature12 rootSignature,
+        byte[] vsBytecode,
+        InputElementDescription[] inputElements)
+    {
+        var rasterizer = new D12.RasterizerDescription
+        {
+            FillMode = D12.FillMode.Solid,
+            CullMode = D12.CullMode.None,
+            FrontCounterClockwise = true,
+            DepthClipEnable = true,
+            DepthBias = -1000,
+            DepthBiasClamp = 0f,
+            SlopeScaledDepthBias = -2f,
+        };
+
+        var depth = new D12.DepthStencilDescription
+        {
+            DepthEnable = true,
+            DepthWriteMask = D12.DepthWriteMask.All,
+            DepthFunc = ComparisonFunction.GreaterEqual, // reversed-Z, same as the scene PSOs
+            StencilEnable = false,
+        };
+
+        var psoDesc = new GraphicsPipelineStateDescription
+        {
+            RootSignature = rootSignature.RootSignature,
+            VertexShader = vsBytecode,
+            BlendState = D12.BlendDescription.Opaque,
+            RasterizerState = rasterizer,
+            DepthStencilState = depth,
+            InputLayout = new InputLayoutDescription(inputElements),
+            PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
+            RenderTargetFormats = Array.Empty<Format>(),
+            DepthStencilFormat = Format.D32_Float,
+            SampleDescription = new SampleDescription(1, 0),
+            SampleMask = uint.MaxValue,
+        };
+        return gpu.Device.CreateGraphicsPipelineState(psoDesc);
+    }
 }
 #endif

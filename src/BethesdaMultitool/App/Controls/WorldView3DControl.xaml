@@ -37,9 +37,14 @@
         <local:LightingControlsPanel x:Name="LightingPanel"
                                      LightingToggled="LightingPanel_LightingToggled"
                                      FogToggled="LightingPanel_FogToggled"
+                                     ShadowsToggled="LightingPanel_ShadowsToggled"
+                                     ShadowDistanceChanged="LightingPanel_ShadowDistanceChanged"
+                                     SkyboxToggled="LightingPanel_SkyboxToggled"
                                      TimeChanged="LightingPanel_TimeChanged"
                                      DayChanged="LightingPanel_DayChanged"
-                                     WeatherChanged="LightingPanel_WeatherChanged" />
+                                     WeatherChanged="LightingPanel_WeatherChanged"
+                                     WindOverrideChanged="LightingPanel_WindOverrideChanged"
+                                     WindSpeedChanged="LightingPanel_WindSpeedChanged" />
 
         <!-- Layers: cell grid / terrain textures / vertex colors / nav-mesh.
              "Terrain textures" and "Vertex colors" are independent terrain shader toggles. -->
@@ -97,10 +102,6 @@
                           AutomationProperties.Name="Water"
                           ToolTipService.ToolTip="Show water surfaces (press 3)"
                           Checked="WaterCheckBox_Changed" Unchecked="WaterCheckBox_Changed" />
-                <CheckBox x:Name="SkyboxToggle" IsChecked="True" Content="Skybox"
-                          AutomationProperties.Name="Skybox"
-                          ToolTipService.ToolTip="Show the sky (press 9)"
-                          Checked="SkyboxToggle_Changed" Unchecked="SkyboxToggle_Changed" />
                 <CheckBox x:Name="EditorMarkersCheckBox" IsChecked="False" Content="Editor markers"
                           AutomationProperties.Name="Editor markers"
                           ToolTipService.ToolTip="Show editor/engine markers (XMarkers, travel/door markers)"

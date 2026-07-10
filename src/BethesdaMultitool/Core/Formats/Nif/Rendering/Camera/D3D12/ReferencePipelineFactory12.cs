@@ -45,6 +45,17 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             blendAttachment: null, depthWriteEnabled: true, decal: true);
         OpaqueDoubleDecalPso = CreatePipelineState(instancedVsBytecode, _psBytecode, doubleSided: true,
             blendAttachment: null, depthWriteEnabled: true, decal: true);
+
+        // Sun-shadow depth pass: the instanced VS replayed against the light's viewProj into a
+        // depth-only target — compiled as the SHADOW_CARD_LIGHT_FACING variant, whose extended b0
+        // carries a light-perpendicular leaf-card basis (camera-facing cards can be edge-on to the
+        // sun and cast nothing). Opaque batches need no pixel shader at all; alpha-tested batches
+        // (foliage/leaf cards) run a minimal PS that discards the transparent cutout texels.
+        var shadowVsBytecode = CompileEmbeddedShader("reference_instanced.vert.hlsl", "main", "vs_5_1",
+            new ShaderMacro("SHADOW_CARD_LIGHT_FACING", "1"));
+        var shadowPsBytecode = CompileEmbeddedShader("shadow.frag.hlsl", "main", "ps_5_1");
+        ShadowOpaquePso = CreateShadowPipelineState(shadowVsBytecode, psBytecode: null);
+        ShadowAlphaTestPso = CreateShadowPipelineState(shadowVsBytecode, shadowPsBytecode);
     }
 
     /// <summary>Instanced opaque PSO with back-face culling (single-sided submeshes).</summary>
@@ -58,6 +69,12 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
     /// <summary>Depth-biased variant of <see cref="OpaqueDoublePso" /> for decal overlay submeshes.</summary>
     public ID3D12PipelineState OpaqueDoubleDecalPso { get; }
+
+    /// <summary>Depth-only shadow-pass PSO for opaque batches (instanced VS, no pixel shader).</summary>
+    public ID3D12PipelineState ShadowOpaquePso { get; }
+
+    /// <summary>Depth-only shadow-pass PSO for alpha-tested batches (cutout discard PS).</summary>
+    public ID3D12PipelineState ShadowAlphaTestPso { get; }
 
     public ID3D12PipelineState GetBlendPipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided, bool decal = false)
     {
@@ -190,7 +207,54 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         return _gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
+    /// <summary>
+    ///     Depth-only PSO for the sun-shadow pass: no render targets, single-sample D32 depth
+    ///     (the shadow map is never MSAA regardless of the scene's sample count), no culling
+    ///     (single-sided planes must still occlude from the light's side), and a NEGATIVE
+    ///     rasterizer depth bias — reversed-Z stores larger values nearer the light, so pushing
+    ///     the stored depth away from the light (the acne fix) means biasing it SMALLER.
+    /// </summary>
+    private ID3D12PipelineState CreateShadowPipelineState(byte[] vsBytecode, byte[]? psBytecode)
+    {
+        var rasterizer = new D12.RasterizerDescription
+        {
+            FillMode = D12.FillMode.Solid,
+            CullMode = D12.CullMode.None,
+            FrontCounterClockwise = true,
+            DepthClipEnable = true,
+            DepthBias = -1000,
+            DepthBiasClamp = 0f,
+            SlopeScaledDepthBias = -2f,
+        };
+
+        var depth = new D12.DepthStencilDescription
+        {
+            DepthEnable = true,
+            DepthWriteMask = D12.DepthWriteMask.All,
+            DepthFunc = ComparisonFunction.GreaterEqual, // reversed-Z, same as the scene PSOs
+            StencilEnable = false,
+        };
+
+        var psoDesc = new GraphicsPipelineStateDescription
+        {
+            RootSignature = _rootSignature.RootSignature,
+            VertexShader = vsBytecode,
+            PixelShader = psBytecode,
+            BlendState = D12.BlendDescription.Opaque,
+            RasterizerState = rasterizer,
+            DepthStencilState = depth,
+            InputLayout = new InputLayoutDescription(GpuMeshBufferFactory12.InputElements),
+            PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
+            RenderTargetFormats = Array.Empty<Format>(),
+            DepthStencilFormat = Format.D32_Float,
+            SampleDescription = new SampleDescription(1, 0),
+            SampleMask = uint.MaxValue,
+        };
+        return _gpu.Device.CreateGraphicsPipelineState(psoDesc);
+    }
+
+    private static byte[] CompileEmbeddedShader(
+        string name, string entryPoint, string profile, params ShaderMacro[] macros)
     {
         var assembly = Assembly.GetExecutingAssembly();
         var resourceName = assembly.GetManifestResourceNames()
@@ -207,7 +271,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
         var result = Compiler.Compile(
             source,
-            Array.Empty<ShaderMacro>(),
+            macros,
             include: null!,
             entryPoint,
             sourceName: name,
@@ -243,6 +307,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             pso.Dispose();
         }
         _blendDepthWritePsos.Clear();
+        ShadowAlphaTestPso.Dispose();
+        ShadowOpaquePso.Dispose();
         OpaqueDoubleDecalPso.Dispose();
         OpaqueBackDecalPso.Dispose();
         OpaqueDoublePso.Dispose();

@@ -158,6 +158,7 @@ public sealed partial class WorldView3DControl
         // Drain pending deletions now that the GPU is idle — anything queued is safe to release.
         _deletionQueue12?.Dispose(); _deletionQueue12 = null;
         _rootSignature12?.Dispose(); _rootSignature12 = null;
+        _shadowMap?.Dispose(); _shadowMap = null; // its SRV slot lives in the heap disposed next
         _cbvSrvUavHeap12?.Dispose(); _cbvSrvUavHeap12 = null;
         _depthSrv = null; // its slot lived in the heap just disposed; reallocate on the next surface
         _captureDepthSrv = null; // same heap — the capture-depth slot dies with it too

@@ -205,6 +205,24 @@ internal sealed class GpuRootSignature12 : IDisposable
                 float.MaxValue,
                 ShaderVisibility.Pixel,
                 0),
+            // s3: point CLAMP — the sun-shadow-map depth taps. PCF compares each texel's stored
+            // depth individually, so the taps must be unfiltered (a linear fetch would average
+            // depth across a silhouette edge before the compare and smear occluders); clamp keeps
+            // out-of-footprint taps from wrapping to the far side of the map.
+            new StaticSamplerDescription(
+                3,
+                Filter.MinMagMipPoint,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Clamp,
+                0f,
+                1,
+                ComparisonFunction.Never,
+                StaticBorderColor.OpaqueBlack,
+                0f,
+                float.MaxValue,
+                ShaderVisibility.Pixel,
+                0),
         };
 
         // Vortice convenience: CreateRootSignature(RootSignatureDescription1) does the

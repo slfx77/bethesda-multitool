@@ -52,16 +52,43 @@ public sealed partial class WorldView3DControl
         _showLighting = isOn;
     }
 
-    private void SkyboxToggle_Changed(object sender, RoutedEventArgs e)
+    private void LightingPanel_SkyboxToggled(object? sender, bool isOn)
     {
         if (_initializing) return;
-        _showSky = SkyboxToggle.IsChecked == true;
+        _showSky = isOn;
+    }
+
+    private void LightingPanel_WindOverrideChanged(object? sender, bool isOn)
+    {
+        if (_initializing) return;
+        // On: pin the slider's current value as the wind strength; off: follow the active weather
+        // (the render loop reads the weather wind byte each frame — see Frame.cs).
+        _windStrength = isOn ? (float)Math.Clamp(LightingPanel.WindSpeed, 0, 1) : null;
+    }
+
+    private void LightingPanel_WindSpeedChanged(object? sender, double windSpeed)
+    {
+        if (_initializing) return;
+        _windStrength = (float)Math.Clamp(windSpeed, 0, 1);
     }
 
     private void LightingPanel_FogToggled(object? sender, bool isOn)
     {
         if (_initializing) return;
         _showFog = isOn;
+    }
+
+    private void LightingPanel_ShadowsToggled(object? sender, bool isOn)
+    {
+        if (_initializing) return;
+        _showShadows = isOn;
+    }
+
+    private void LightingPanel_ShadowDistanceChanged(object? sender, double cells)
+    {
+        if (_initializing) return;
+        // PositiveInfinity = the slider's "Unlimited" stop → coverage follows the render distance.
+        _shadowDistanceCells = double.IsPositiveInfinity(cells) ? null : (float)cells;
     }
 
     private void NavMeshCheckBox_Changed(object sender, RoutedEventArgs e)

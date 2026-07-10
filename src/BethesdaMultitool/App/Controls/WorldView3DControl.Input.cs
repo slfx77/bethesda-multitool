@@ -36,7 +36,7 @@ public sealed partial class WorldView3DControl
                 else if (e.Key == VirtualKey.Number6) SetShowNavMesh(!_showNavMesh);
                 else if (e.Key == VirtualKey.Number7) SetShowDisabled(!_showDisabled);
                 else if (e.Key == VirtualKey.Number8) LightingPanel.LightingEnabled = !_showLighting;
-                else if (e.Key == VirtualKey.Number9) SkyboxToggle.IsChecked = !_showSky;
+                else if (e.Key == VirtualKey.Number9) LightingPanel.SkyboxEnabled = !_showSky;
                 else if (e.Key == VirtualKey.Number0) LightingPanel.FogEnabled = !_showFog;
                 else if (e.Key == VirtualKey.F)
                     _controller.Mode = _controller.Mode == CameraMode.Walk ? CameraMode.Fly : CameraMode.Walk;

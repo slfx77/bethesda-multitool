@@ -74,6 +74,46 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // them from above. Separate from _blendedDraws, which defers to after the water pass.
     private readonly List<BlendedReferenceDraw> _depthWritingBlendDraws = new(64);
 
+    // Sun-shadow pass replay list: one entry per instanced opaque draw recorded this frame (VB/IB
+    // views + the frame's ring-buffer InstanceDraw-CB / instance-SRV GPU addresses), captured at
+    // main-draw time and replayed by RenderShadowDepth with the depth-only shadow PSOs. Armed by
+    // the host once per frame (ArmShadowCapture) and consumed within that SAME host frame — the
+    // captured ring addresses are only valid inside the frame that allocated them. Decals are
+    // excluded (coplanar overlays would double-cast onto their backing surface); blended draws
+    // don't cast (matching the engine's shadow-caster set).
+    private readonly List<ShadowDraw> _shadowDraws = new(512);
+    private bool _shadowCaptureArmed;
+
+    private readonly record struct ShadowDraw(
+        VertexBufferView VertexBufferView, IndexBufferView IndexBufferView, int IndexCount,
+        ulong PerDrawCbAddress, ulong InstanceSrvAddress, int DrawCount, bool AlphaTested);
+
+    /// <summary>Bumped whenever the opaque batches are REBUILT (a new cull/build pass ran, i.e.
+    /// the drawable content may have changed). Part of the shadow map's cache key, so streamed-in
+    /// geometry re-renders the map while a settled scene never does.</summary>
+    public int BatchContentVersion { get; private set; }
+
+    /// <summary>True when this frame's draw pass captured at least one shadow-caster draw.</summary>
+    public bool HasShadowDraws => _shadowDraws.Count > 0;
+
+    /// <summary>Number of shadow-caster draws captured this frame (diagnostics).</summary>
+    public int ShadowDrawCount => _shadowDraws.Count;
+
+    /// <summary>True when this frame's captured shadow casters include WIND-ANIMATED leaf cards —
+    /// the host then re-renders the map every frame (a cached map freezes the swaying canopy's
+    /// shadow into a slideshow that only advances on camera/sun changes).</summary>
+    public bool ShadowDrawsIncludeAnimatedLeaves { get; private set; }
+
+    /// <summary>Arms the shadow-draw capture for the frame about to be rendered (clears the prior
+    /// list). Must be followed by <see cref="RenderShadowDepth" /> within the same host frame when
+    /// the map is re-rendered; the addresses go stale with the frame's ring allocations.</summary>
+    public void ArmShadowCapture()
+    {
+        _shadowDraws.Clear();
+        ShadowDrawsIncludeAnimatedLeaves = false;
+        _shadowCaptureArmed = true;
+    }
+
     // TEMP transparency diagnostic — set FALLOUT_VIEWER_ALPHA_DEBUG=<path-substring> (e.g. "maniasm25")
     // to append each matching mesh's per-submesh alpha classification + actual render pass to
     // %TEMP%\alpha_debug.txt (once per mesh). Tells us whether a "transparent" mesh is genuinely in the
@@ -90,9 +130,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private Vector4 _leafBillboardUp = new(0f, 0f, 1f, 0f);
 
     // STLEAF's LeafLighting.y (PC STLEAF000.vso c17.y): scales the per-corner outward lean of each
-    // leaf-card normal so the card shades as a rounded cluster instead of a flat plate. It is a
-    // runtime engine constant (absent from the shader's def block), so the default is visually
-    // calibrated; FALLOUT_VIEWER_SPT_LEAF_LIGHTING overrides it for tuning (clamped 0..2).
+    // leaf-card normal so the card shades as a rounded cluster instead of a flat plate. Engine value
+    // recovered from the FNV 360 MemDebug: SpeedTreeLeafShader::UpdatePipelineForInstance (Fn_82AA14D8)
+    // fills a float4 shaped (0, y, 0, 0) — matching the VS's .yyyy-only consumption at every STLEAF
+    // site — with y = 0.4 (0x3ECCCCCD) on the standard shader path (mode global == 9) and 0 on the
+    // reduced path. The c17 binding is via the serialized shader-package constant map (not a name
+    // string), so the register pairing is one inference step; FALLOUT_VIEWER_SPT_LEAF_LIGHTING
+    // overrides it for tuning (clamped 0..2).
     private static readonly float LeafLightingAdjust = ReadLeafLightingAdjust();
 
     private static float ReadLeafLightingAdjust()
@@ -101,11 +145,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         return float.TryParse(raw, System.Globalization.NumberStyles.Float,
             System.Globalization.CultureInfo.InvariantCulture, out var v)
             ? Math.Clamp(v, 0f, 2f)
-            : 0.5f;
+            : 0.4f;
     }
-    // SpeedTree wind: xy = horizontal wind direction, z = strength (0 = static), w = time (seconds).
-    // Set per frame by WorldView3DControl; default strength 0 so non-viewer paths render trees static.
+    // SpeedTree leaf wind uniform: (rockAmount, rockPhase, rustleAmount, rustlePhase) — see SetWind.
+    // Default all-zero so non-viewer paths (captures, exports, headless) render trees static.
     private Vector4 _wind;
+    private readonly Core.Formats.SpeedTree.SpeedTreeWindRig _windRig = new();
     private readonly List<global::BethesdaMultitool.WorldSpatialCell> _candidateCells = new();
 
     // Candidates returned by the per-cell spatial broadphase before exact sphere/frustum cull.
@@ -418,16 +463,30 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     /// <summary>
     ///     Sets the SpeedTree wind state used by the leaf-billboard vertex shader to sway leaf cards
-    ///     (recovered model: <c>windedPos = lerp(pos, WindMatrix·pos, windWeight)</c>; the engine animates
-    ///     4 sway matrices per frame in <c>BSTreeManager::UpdateWindMatrices</c>, which we approximate with
-    ///     a time/position-phased gust). <paramref name="direction" /> is the horizontal wind direction,
-    ///     <paramref name="strength" /> the sway amplitude (0 = static), <paramref name="timeSeconds" /> the
-    ///     animation clock. Call each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?)" />.
+    ///     Engine leaf rock/rustle (BSTreeManager::UpdateWindMatrices + SpeedTreeLeafShader
+    ///     wind timers, ported in <see cref="Core.Formats.SpeedTree.SpeedTreeWindRig" />). The
+    ///     shader-facing uWind packs (rockAmount, rockPhase, rustleAmount, rustlePhase) — both
+    ///     engine <c>RockParams.z</c>/<c>RustleParams.z</c> scalars are constructor-1.0, so they
+    ///     need no uniform. <paramref name="direction" /> is unused by the engine model (the
+    ///     oscillators are axis-aligned; kept for signature stability); <paramref name="strength" />
+    ///     = the weather wind-speed byte / 255 (0 = perfectly static);
+    ///     <paramref name="timeSeconds" /> the animation clock. Call each frame before
+    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?)" />.
     /// </summary>
     public void SetWind(Vector2 direction, float strength, float timeSeconds)
     {
-        _wind = new Vector4(direction.X, direction.Y, strength, timeSeconds);
+        _ = direction;
+        _windRig.Tick(strength, timeSeconds);
+        _wind = new Vector4(_windRig.RockAmount, _windRig.RockPhase, _windRig.RustleAmount, _windRig.RustlePhase);
     }
+
+    /// <summary>
+    ///     Per-game <c>fLeaf*</c> wind settings for the rig (Oblivion ships them as esm GMSTs with
+    ///     values that change behavior — steady amounts, slower rock; FNV/FO3 run compiled
+    ///     defaults). Idempotent; call whenever the loaded game is known.
+    /// </summary>
+    public void SetWindProfile(Core.Formats.SpeedTree.SpeedTreeWindProfile profile)
+        => _windRig.Profile = profile;
 
     // IWorldRenderer entry point — draws opaque + blended inline (no deferral). Used by the 2D
     // top-down overlay, which has no water pass.
@@ -663,6 +722,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _blendedDraws.Clear();
             _depthWritingBlendDraws.Clear();
             _resolvedMeshesThisFrame.Clear();
+            unchecked { BatchContentVersion++; } // content may change → shadow map re-renders
         }
 
         if (cullCacheValid)
@@ -1105,6 +1165,81 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         LastStats.ReferenceDrawCallMilliseconds += drawCallMs;
     }
 
+    // CPU mirror of the shadow VS variant's extended PerFrame cbuffer (SHADOW_CARD_LIGHT_FACING):
+    // the light viewProj plus the light-perpendicular leaf-card billboard basis.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ShadowPerFrameConstants
+    {
+        public Matrix4x4 ViewProj;
+        public Vector4 CardRight;
+        public Vector4 CardUp;
+        public const uint ByteSize = 64 + 32;
+    }
+
+    /// <summary>
+    ///     Replays this frame's captured opaque draws into the (already bound) shadow-map depth
+    ///     target from the light's view. The host binds the shadow DSV/viewport first
+    ///     (<c>ShadowMapRenderer12.BeginRender</c>); this method only sets its own per-frame CB
+    ///     (the light viewProj + leaf-card basis at b0), the depth-only PSOs, and each draw's
+    ///     captured InstanceDraw-CB / instance-SRV addresses — all frame-local ring allocations,
+    ///     so it MUST run in the same host frame that captured them (see
+    ///     <see cref="ArmShadowCapture" />). Returns false (drawing nothing) when there is nothing
+    ///     to replay.
+    /// </summary>
+    public bool RenderShadowDepth(in SunShadowMath.LightFrustum frustum)
+    {
+        _shadowCaptureArmed = false;
+        if (_shadowDraws.Count == 0) return false;
+
+        var cmd = _recorder.CommandList;
+        if (!_ringBuffer.TryAllocate(
+                _recorder.FrameIndex, ShadowPerFrameConstants.ByteSize, out var perFrameAlloc,
+                GpuRingBuffer12.CbAlignment))
+        {
+            return false; // ring exhausted — keep the previous map (the host skips EndRender)
+        }
+
+        unsafe
+        {
+            *(ShadowPerFrameConstants*)perFrameAlloc.CpuPtr = new ShadowPerFrameConstants
+            {
+                ViewProj = frustum.ViewProj,
+                CardRight = new Vector4(frustum.CardRight, 0f),
+                CardUp = new Vector4(frustum.CardUp, 0f),
+            };
+        }
+        cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
+        cmd.SetGraphicsRootDescriptorTable(
+            GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
+
+        ID3D12PipelineState? currentPso = null;
+        ulong currentInstanceAddress = 0;
+        foreach (var draw in _shadowDraws)
+        {
+            var pso = draw.AlphaTested ? _pipelines.ShadowAlphaTestPso : _pipelines.ShadowOpaquePso;
+            if (!ReferenceEquals(currentPso, pso))
+            {
+                cmd.SetPipelineState(pso);
+                currentPso = pso;
+            }
+
+            if (draw.InstanceSrvAddress != currentInstanceAddress)
+            {
+                cmd.SetGraphicsRootShaderResourceView(
+                    (uint)GpuRootSignature12.Slots.ReferenceInstanceSrv, draw.InstanceSrvAddress);
+                currentInstanceAddress = draw.InstanceSrvAddress;
+            }
+
+            cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerDrawCbv, draw.PerDrawCbAddress);
+            cmd.IASetVertexBuffers(0, draw.VertexBufferView);
+            cmd.IASetIndexBuffer(draw.IndexBufferView);
+            cmd.DrawIndexedInstanced((uint)draw.IndexCount, (uint)draw.DrawCount, 0, 0, 0);
+        }
+
+        return true;
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -1225,6 +1360,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         var instanceStride = (uint)Marshal.SizeOf<Matrix4x4>();
         var instanceBytes = instanceStride * (uint)totalInstances;
+        // Instance-SRV GPU address currently bound at t8 — captured per shadow draw so the shadow
+        // replay can rebind exactly what each draw's uInstanceBase indexes into (the shared block,
+        // or a per-batch fallback block).
+        ulong boundInstanceAddress = 0;
         // Fast path: one contiguous block holds every batch's world matrices (single bulk memcpy +
         // one SRV bind, per-batch draws index into it via StartInstance). When a dense frame can't
         // fit that single allocation, fall back to a per-batch block inside the loop below — the
@@ -1276,6 +1415,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
             var instanceGpuAddress = instanceAlloc.GpuAddress + (instanceByteOffset - instanceAlloc.ByteOffset);
             BindReferenceInstanceBuffer(cmd, instanceGpuAddress, ref srvBinds, ref srvBindMs);
+            boundInstanceAddress = instanceGpuAddress;
         }
 
         var startInstance = 0u;
@@ -1322,11 +1462,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 }
                 if (drawCount == 0) continue;
 
-                BindReferenceInstanceBuffer(
-                    cmd,
-                    batchAlloc.GpuAddress + (batchByteOffset - batchAlloc.ByteOffset),
-                    ref srvBinds,
-                    ref srvBindMs);
+                var batchInstanceAddress = batchAlloc.GpuAddress + (batchByteOffset - batchAlloc.ByteOffset);
+                BindReferenceInstanceBuffer(cmd, batchInstanceAddress, ref srvBinds, ref srvBindMs);
+                boundInstanceAddress = batchInstanceAddress;
                 drawStartInstance = 0;
             }
             else
@@ -1375,6 +1513,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             cmd.IASetVertexBuffers(0, batchState.Submesh.VertexBufferView);
             cmd.IASetIndexBuffer(batchState.Submesh.IndexBufferView);
             cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)drawCount, 0, 0, 0);
+            if (_shadowCaptureArmed && !sub.IsDecal)
+            {
+                // Record this draw for the frame-end shadow replay: the ring-buffer CB just bound
+                // (uInstanceBase et al.) + the t8 instance block it indexes stay valid until the
+                // frame's allocations are recycled, i.e. exactly the replay window.
+                _shadowDraws.Add(new ShadowDraw(
+                    sub.VertexBufferView, sub.IndexBufferView, sub.IndexCount,
+                    instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount, sub.AlphaTest));
+                if (sub.IsLeafBillboard && (_wind.X != 0f || _wind.Z != 0f))
+                {
+                    // Swaying canopy in the map → the host re-renders it every frame (rock/rustle
+                    // AMOUNTS gate motion; the phases advance regardless).
+                    ShadowDrawsIncludeAnimatedLeaves = true;
+                }
+            }
             drawCallMs += ElapsedMilliseconds(drawStarted);
             startInstance += (uint)drawCount;
             submeshDraws++;
