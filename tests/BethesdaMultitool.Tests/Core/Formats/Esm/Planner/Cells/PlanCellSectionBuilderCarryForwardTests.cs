@@ -99,7 +99,11 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
         var (section, _) = BuildSection(
             dmpCell,
-            children: [(MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9)]);
+            children:
+            [
+                KeeperNewChild(),
+                (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9),
+            ]);
 
         Assert.NotNull(section);
         var records = WalkChildRecords(section);
@@ -166,7 +170,11 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
 
         var (section, _) = BuildSection(
             dmpCell,
-            children: [(MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9)],
+            children:
+            [
+                KeeperNewChild(),
+                (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9),
+            ],
             includeExtraStatTemp: true);
 
         Assert.NotNull(section);
@@ -204,6 +212,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             dmpCell,
             children:
             [
+                KeeperNewChild(),
                 (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, capturedRefr), 9),
                 (MakeChildPlan("ACHR", RecordDisposition.Override, MasterTempAchrId, capturedActor), 9),
             ],
@@ -243,6 +252,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
             dmpCell,
             children:
             [
+                KeeperNewChild(),
                 (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, capturedRefr), 9),
                 (MakeChildPlan("ACHR", RecordDisposition.Override, MasterPersistentAchrId, capturedActor), 8),
             ],
@@ -254,6 +264,109 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
                                       && r.GroupType == 8 && !r.Deleted);
     }
 
+    [Fact]
+    public void Interior_Cell_Override_Is_Filed_At_Engine_Formula_Block_And_Subblock()
+    {
+        // Interior CELL overrides must be filed at the engine's FormID-derived block/sub-block
+        // (block = fid%10, sub = (fid%100)/10), NOT the master's flat labels — otherwise the
+        // engine's scan-fallback descend predicate skips our GRUPs and never finds the cell
+        // (temp children never stream → crash / empty interior). CellId 0x000ABCDE →
+        // low 0x0ABCDE = 703710 → block 0, sub 1.
+        const uint low = CellId & 0xFFFFFFu;
+        var expectedBlock = low % 10;          // 0
+        var expectedSub = low % 100 / 10;      // 1
+
+        var captured = new PlacedReference
+        {
+            FormId = MasterTempRefId, BaseFormId = MasterStatBaseId,
+            RecordType = "REFR", IsPersistent = false
+        };
+        var dmpCell = new CellRecord { FormId = CellId, PlacedObjects = [captured] };
+
+        var (section, _) = BuildSection(
+            dmpCell,
+            children:
+            [
+                KeeperNewChild(),
+                (MakeChildPlan("REFR", RecordDisposition.Override, MasterTempRefId, captured), 9),
+            ]);
+
+        Assert.NotNull(section);
+
+        // Walk to the interior block (type 2) and sub-block (type 3) GRUP labels.
+        var (block, sub) = FindInteriorBlockSubLabels(section!);
+        Assert.Equal(expectedBlock, block);
+        Assert.Equal(expectedSub, sub);
+    }
+
+    private static (uint Block, uint Sub) FindInteriorBlockSubLabels(byte[] section)
+    {
+        uint block = uint.MaxValue, sub = uint.MaxValue;
+        var pos = 0;
+        while (pos + 24 <= section.Length)
+        {
+            var sig = Encoding.ASCII.GetString(section, pos, 4);
+            if (sig == "GRUP")
+            {
+                var label = BinaryPrimitives.ReadUInt32LittleEndian(section.AsSpan(pos + 8, 4));
+                var type = BinaryPrimitives.ReadInt32LittleEndian(section.AsSpan(pos + 12, 4));
+                if (type == 2) { block = label; }
+                else if (type == 3) { sub = label; }
+                pos += 24;
+                continue;
+            }
+
+            pos += 24 + (int)BinaryPrimitives.ReadUInt32LittleEndian(section.AsSpan(pos + 4, 4));
+        }
+
+        return (block, sub);
+    }
+
+    private static List<string>? FindCellRecordSubrecords(byte[] section, uint cellFormId)
+    {
+        var pos = 0;
+        while (pos + 24 <= section.Length)
+        {
+            var sig = Encoding.ASCII.GetString(section, pos, 4);
+            if (sig == "GRUP")
+            {
+                pos += 24;
+                continue;
+            }
+
+            var dataSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(section.AsSpan(pos + 4, 4));
+            var formId = BinaryPrimitives.ReadUInt32LittleEndian(section.AsSpan(pos + 12, 4));
+            if (sig == "CELL" && formId == cellFormId)
+            {
+                var subs = new List<string>();
+                var q = pos + 24;
+                var end = q + dataSize;
+                while (q + 6 <= end)
+                {
+                    subs.Add(Encoding.ASCII.GetString(section, q, 4));
+                    q += 6 + BinaryPrimitives.ReadUInt16LittleEndian(section.AsSpan(q + 4, 2));
+                }
+
+                return subs;
+            }
+
+            pos += 24 + dataSize;
+        }
+
+        return null;
+    }
+
+    // A genuine NEW proto child so the interior cell clears the "no new content" stability
+    // gate (an ESM interior override is only emitted when it carries new records the master
+    // lacks). Its base is a master STAT so it passes base validation.
+    private const uint KeeperNewRefId = 0x01000901;
+
+    private static (RecordPlan Plan, int Bucket) KeeperNewChild() =>
+        (MakeChildPlan("REFR", RecordDisposition.New, KeeperNewRefId, new PlacedReference
+        {
+            FormId = KeeperNewRefId, BaseFormId = MasterStatBaseId, RecordType = "REFR", IsPersistent = false
+        }), 9);
+
     // ---- fixture plumbing ----------------------------------------------------------
 
     private (byte[]? Section, ConversionPipelineStats Stats) BuildSection(
@@ -264,7 +377,15 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
         bool includeExtraStatTemp = false,
         bool includeTempActors = false)
     {
-        var masterCell = MakeMasterRecord("CELL", CellId);
+        var masterCell = MakeMasterRecord("CELL", CellId) with
+        {
+            Subrecords =
+            [
+                new ParsedSubrecord { Signature = "EDID", Data = "Cell\0"u8.ToArray() },
+                new ParsedSubrecord { Signature = "DATA", Data = [0x01] }, // interior flag byte
+                new ParsedSubrecord { Signature = "XCLL", Data = new byte[40] }, // interior lighting
+            ]
+        };
         var masterTempRef = MakeMasterRefRecord(MasterTempRefId, MasterStatBaseId);
         var masterDoorRef = MakeMasterRefRecord(MasterDoorRefId, MasterStatBaseId);
         var masterFurnRef = MakeMasterRefRecord(MasterFurnRefId, MasterFurnBaseId);

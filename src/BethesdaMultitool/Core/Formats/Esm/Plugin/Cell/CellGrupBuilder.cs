@@ -222,29 +222,45 @@ public static class CellGrupBuilder
         int blockGroupType,
         int subblockGroupType)
     {
-        // Group by block label, then by subblock label. Keys are the raw 4-byte arrays
-        // converted to uint32 for stable hashing.
+        // INTERIOR cells (block group type 2) are filed at the engine's FormID-derived
+        // block/sub-block position — block = (fid & 0xFFFFFF) % 10, sub-block =
+        // ((fid & 0xFFFFFF) % 100) / 10 — NOT the master's copied labels. Decompile- +
+        // runtime-verified (block_formula.txt FUN_005441b0/FUN_00544210; CellAttachTrace):
+        // the base master stores ~all its interior cells at a flat block 0 / sub 0 and finds
+        // them only via its cached fast-seek offset. A dependent plugin's override, once it
+        // clobbers that shared offset, is located by the engine's SCAN fallback, whose descend
+        // predicate (FUN_00543df0) accepts a block/sub GRUP only when its label equals the
+        // formula. Copying the master's flat 0/0 labels makes the scan skip our GRUPs and never
+        // find the cell → temp children never stream → crash / empty interior. Every shipped
+        // FNV DLC files its interior overrides at the formula position for exactly this reason
+        // (e.g. OWB's 000E6A6E at block 0 / sub 5 = the formula). Exteriors (type 4) keep their
+        // master block/sub labels — that path is FormID-agnostic and their coords are canonical.
+        var useInteriorFormula = blockGroupType == 2;
+
+        byte[] BlockLabelFor(CellOverrideBundle b) =>
+            useInteriorFormula ? LabelBytes((b.CellFormId & 0xFFFFFFu) % 10) : b.Context.BlockLabel!;
+        byte[] SubblockLabelFor(CellOverrideBundle b) =>
+            useInteriorFormula ? LabelBytes((b.CellFormId & 0xFFFFFFu) % 100 / 10) : b.Context.SubblockLabel!;
+
+        // Group by block label, then by subblock label.
         var byBlock = bundles
-            .Where(b => b.Context.BlockLabel is { Length: 4 } && b.Context.SubblockLabel is { Length: 4 })
-            .GroupBy(b => BinaryPrimitives.ReadUInt32LittleEndian(b.Context.BlockLabel!))
+            .Where(b => useInteriorFormula
+                || (b.Context.BlockLabel is { Length: 4 } && b.Context.SubblockLabel is { Length: 4 }))
+            .GroupBy(b => BinaryPrimitives.ReadUInt32LittleEndian(BlockLabelFor(b)))
             .OrderBy(g => g.Key);
 
         foreach (var blockGroup in byBlock)
         {
-            var representative = blockGroup.First();
-            var blockLabel = representative.Context.BlockLabel!;
-
+            var blockLabel = BlockLabelFor(blockGroup.First());
             var blockPos = WriteGrupHeader(stream, blockLabel, blockGroupType);
 
             var bySubblock = blockGroup
-                .GroupBy(b => BinaryPrimitives.ReadUInt32LittleEndian(b.Context.SubblockLabel!))
+                .GroupBy(b => BinaryPrimitives.ReadUInt32LittleEndian(SubblockLabelFor(b)))
                 .OrderBy(g => g.Key);
 
             foreach (var subblockGroup in bySubblock)
             {
-                var subblockRep = subblockGroup.First();
-                var subblockLabel = subblockRep.Context.SubblockLabel!;
-
+                var subblockLabel = SubblockLabelFor(subblockGroup.First());
                 var subblockPos = WriteGrupHeader(stream, subblockLabel, subblockGroupType);
 
                 foreach (var bundle in subblockGroup.OrderBy(b => b.CellFormId))
@@ -257,6 +273,13 @@ public static class CellGrupBuilder
 
             RecordHeaderProcessor.FinalizeGrupSize(stream, blockPos);
         }
+    }
+
+    private static byte[] LabelBytes(uint value)
+    {
+        var b = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(b, value);
+        return b;
     }
 
     /// <summary>

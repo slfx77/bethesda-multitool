@@ -310,6 +310,22 @@ internal static class PlanCellSectionBuilder
                 continue;
             }
 
+            // INTERIOR stability gate: an ESM interior CELL override routes the cell through
+            // the engine's FRAGILE master seek/scan attach path (decompile- + runtime-proven:
+            // the master's temp-load scan is position-dependent and fails non-deterministically
+            // when a plugin becomes an extra defining file — the Vault11c crash, confirmed to
+            // vanish when this plugin is disabled). The DMP is a full memory snapshot that
+            // captured refs for every cell the player merely VISITED, so without this gate we
+            // override unchanged base/DLC interiors (position-only or carry overrides) and
+            // destabilize them for nothing. Only override an interior when we have genuinely
+            // NEW proto records the master lacks (e.g. Gomorrah01's proto placements); a
+            // visited-but-unchanged interior is left entirely to the master.
+            if (isMasterAnchored && cellPlan.Context.IsInterior && state.GenuineNewCount == 0)
+            {
+                context.Stats?.IncrementDropReason("cell.interior-no-new-content-suppressed");
+                continue;
+            }
+
             // LAND and NAVM both live in Temporary Children; LAND first, then NAVM, then
             // placed refs (vanilla master layout).
             var landPrefix = new List<byte[]>();
@@ -408,6 +424,11 @@ internal static class PlanCellSectionBuilder
             }
 
             state.GenuineChildCount++;
+            if (child.Disposition == RecordDisposition.New)
+            {
+                state.GenuineNewCount++;
+            }
+
             switch (routeGroupType)
             {
                 case 8:

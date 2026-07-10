@@ -44,6 +44,15 @@ internal sealed class CellEncodeState
     /// <summary>Of the genuine children, how many are NAVM records.</summary>
     public int GenuineNavmCount { get; set; }
 
+    /// <summary>
+    ///     Genuine children that are NEW (plugin-range FormID) records — proto content the
+    ///     master lacks. An interior cell with zero of these is a visited-but-unchanged base
+    ///     cell we needn't (and mustn't) override: an ESM interior override routes the cell
+    ///     through the engine's fragile master seek/scan attach path, so overriding cells we
+    ///     have no new content for only destabilizes base/DLC interiors (e.g. Vault11c).
+    /// </summary>
+    public int GenuineNewCount { get; set; }
+
     /// <summary>Emitted FormIDs of this cell's NAVM children (discarded on suppression).</summary>
     public List<uint> EmittedNavmFormIds { get; } = [];
 }
