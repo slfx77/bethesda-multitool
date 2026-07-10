@@ -25,6 +25,22 @@ internal static class WorldMapOverlayBuilder
     /// </summary>
     public static WorldViewData BuildFromRecords(RecordCollection semantic, string? sourceFilePath)
     {
+        var game = DetectGame(sourceFilePath);
+
+        // Morrowind authors its entire weather/sky model in Morrowind.ini rather than WTHR/CLMT
+        // records — synthesize record equivalents from the install's INI (vanilla-Clear fallback)
+        // so the atmosphere, the weather picker, and captures work through the same plumbing as
+        // every other game. See docs/research/morrowind_atmosphere_water_model.md.
+        var weatherRecords = semantic.Weather;
+        var climateRecords = semantic.Climate;
+        if (game == BethesdaGame.Morrowind && weatherRecords.Count == 0)
+        {
+            var (mwWeathers, mwClimate) =
+                Core.Formats.Tes3.MorrowindWeatherIni.SynthesizeFromInstall(sourceFilePath);
+            weatherRecords = mwWeathers;
+            climateRecords = [mwClimate];
+        }
+
         var (boundsIndex, categoryIndex) = ObjectBoundsIndex.BuildCombined(semantic);
         var modelPathIndex = ObjectBoundsIndex.BuildModelPathIndex(semantic);
 
@@ -101,7 +117,7 @@ internal static class WorldMapOverlayBuilder
             HeightmapMinCellX = hmMinX,
             HeightmapMaxCellY = hmMaxY,
             SourceFilePath = sourceFilePath,
-            Game = DetectGame(sourceFilePath),
+            Game = game,
             MoonPrimaryHalfSizeFraction = moonPrimarySize,
             MoonSecondaryHalfSizeFraction = moonSecondarySize,
             SpawnIndex = spawnIndex,
@@ -117,9 +133,9 @@ internal static class WorldMapOverlayBuilder
             BaseMaterialSwapsByFormId = semantic.BaseMaterialSwapFormIds,
             BaseColorRemapsByFormId = semantic.BaseColorRemapIndices,
             WatersByFormId = BuildWaterIndex(semantic.Water),
-            WeathersByFormId = BuildWeatherIndex(semantic.Weather),
-            ClimatesByFormId = BuildClimateIndex(semantic.Climate),
-            AllWeathers = BuildAllWeathers(semantic.Weather)
+            WeathersByFormId = BuildWeatherIndex(weatherRecords),
+            ClimatesByFormId = BuildClimateIndex(climateRecords),
+            AllWeathers = BuildAllWeathers(weatherRecords)
         };
     }
 
