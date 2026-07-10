@@ -3,7 +3,7 @@ using System.ComponentModel;
 namespace BethesdaMultitool;
 
 /// <summary>
-///     One row in the DMP→ESP converter's secondary data folders list. Holds the folder
+///     One row in the DMP→ESM converter's secondary data folders list. Holds the folder
 ///     path plus an auto-detected (user-editable) flag for whether the folder contains
 ///     Xbox 360 format assets that need on-the-fly conversion when packed into the BSA.
 /// </summary>

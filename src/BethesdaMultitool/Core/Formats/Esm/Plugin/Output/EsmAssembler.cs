@@ -9,7 +9,7 @@ using BethesdaMultitool.Core.Formats.Esm.Reporting;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 
-internal sealed class EspAssembler(RecordEncoderRegistry encoderRegistry)
+internal sealed class EsmAssembler(RecordEncoderRegistry encoderRegistry)
 {
     /// <summary>
     ///     Concatenates TES4, emitted top-level GRUPs, and the cell hierarchy into final ESP bytes.

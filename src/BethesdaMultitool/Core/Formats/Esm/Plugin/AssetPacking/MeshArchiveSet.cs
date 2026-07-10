@@ -11,7 +11,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 ///     FaceGen verification tools).
 ///
 ///     A thin facade over the same <see cref="DataFolderIndex" /> + <see cref="DataFolderResolver" />
-///     the DMP→ESP conversion uses, so there is a single asset-resolution implementation. It owns the
+///     the DMP→ESM conversion uses, so there is a single asset-resolution implementation. It owns the
 ///     consumer-specific pieces that don't belong in the generic resolver: construction from an
 ///     explicit ordered archive-path list, the decoded-mesh disk-cache identity/metadata
 ///     (<see cref="ArchiveSetIdentity" /> / <see cref="GetLookupMetadata" />), and the

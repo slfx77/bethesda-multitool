@@ -7,7 +7,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 
 /// <summary>
 ///     Pins the override-path policy for script-bearing record types (QUST, SCPT).
-///     The DMP-to-ESP pipeline must NOT silently replace a master quest's SCRI pointer
+///     The DMP-to-ESM pipeline must NOT silently replace a master quest's SCRI pointer
 ///     or rewrite a master script's bytecode just because the runtime capture differs
 ///     from master — at minimum because the FNV runtime captures observable state, not
 ///     authoritative bytecode, and any swap reaches load-bearing dialogue scripts

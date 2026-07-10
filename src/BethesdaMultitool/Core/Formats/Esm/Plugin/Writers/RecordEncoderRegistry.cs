@@ -64,7 +64,7 @@ public sealed class RecordEncoderRegistry
     ///     and are routed through the cell-children pipeline rather than top-level emission.
     ///     Still deferred:
     ///     - NAVI — global pathfinding lookup table; master FNV.esm's NAVI covers every vanilla
-    ///       navmesh, and the DMP→ESP pipeline emits NAVM records as overrides of master,
+    ///       navmesh, and the DMP→ESM pipeline emits NAVM records as overrides of master,
     ///       never as new. Omitting NAVI is therefore safe under current scope. Full NAVI
     ///       support would require reverse-engineering NVMI/NVCI binary layout (undocumented)
     ///       and recovering potentially-uninitialized engine state from the DMP. Revisit only
@@ -100,7 +100,7 @@ public sealed class RecordEncoderRegistry
             new RcctEncoder(),
             new FlorEncoder(),
             // SCPT MUST be registered before any record type that carries a SCRI subrecord
-            // (NPC_, CREA, QUST, ACTI, etc.). EspAssembler emits GRUPs in registration order,
+            // (NPC_, CREA, QUST, ACTI, etc.). EsmAssembler emits GRUPs in registration order,
             // and the FNV engine resolves SCRI inline during load — forward references to a
             // SCPT GRUP that hasn't been read yet log "MASTERFILE: Unable to find script (X)
             // on owner object (Y)" and null the script binding. Vanilla FalloutNV.esm has

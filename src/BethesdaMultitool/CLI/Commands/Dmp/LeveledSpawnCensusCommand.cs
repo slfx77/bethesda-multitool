@@ -9,7 +9,7 @@ namespace BethesdaMultitool.CLI.Commands.Dmp;
 /// <summary>
 ///     Read-only feasibility census for leveled-spawn actor recovery. Enumerates the placed
 ///     actors (ACHR/ACRE) whose base is a runtime-dynamic clone (<c>BaseFormId &gt;= 0xFF000000</c>)
-///     — the population the DMP→ESP planner drops as <c>refr.dangling-base</c> — and reports how
+///     — the population the DMP→ESM planner drops as <c>refr.dangling-base</c> — and reports how
 ///     many carry a captured <c>ExtraLeveledCreature</c> pointer
 ///     (<see cref="PlacedReference.LeveledCreatureOriginalBaseFormId" /> /
 ///     <see cref="PlacedReference.LeveledCreatureTemplateFormId" />) that resolves, through the

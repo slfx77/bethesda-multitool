@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Media;
 namespace BethesdaMultitool;
 
 /// <summary>
-///     ListView row view-model for an entry in the DMP→ESP conversion progress log.
+///     ListView row view-model for an entry in the DMP→ESM conversion progress log.
 ///     Immutable: a new entry is created per emitted event; the ListView's ItemsSource is
 ///     replaced wholesale on each batch tick rather than mutated in place.
 /// </summary>

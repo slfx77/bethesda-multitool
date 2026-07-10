@@ -12,7 +12,7 @@ public enum ConversionEventSeverity
 }
 
 /// <summary>
-///     A single observable event emitted by the DMP→ESP conversion pipeline.
+///     A single observable event emitted by the DMP→ESM conversion pipeline.
 /// </summary>
 public sealed record ConversionProgressEvent
 {

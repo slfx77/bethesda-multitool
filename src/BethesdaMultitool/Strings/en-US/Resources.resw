@@ -79,8 +79,8 @@
   <data name="Nav_Repacker.Content" xml:space="preserve">
     <value>Game Repacker</value>
   </data>
-  <data name="Nav_DmpToEspConverter.Content" xml:space="preserve">
-    <value>DMP to ESP Converter</value>
+  <data name="Nav_DmpToEsmConverter.Content" xml:space="preserve">
+    <value>DMP to ESM Converter</value>
   </data>
 
   <!-- ===== Common Buttons ===== -->

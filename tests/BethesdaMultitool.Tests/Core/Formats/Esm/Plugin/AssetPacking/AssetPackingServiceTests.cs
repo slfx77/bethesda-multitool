@@ -16,7 +16,7 @@ public class AssetPackingServiceTests
     {
         var options = new AssetPackingOptions
         {
-            ConvertedEspPath = Path.Combine(Path.GetTempPath(), $"nonexistent-{Guid.NewGuid():N}.esp"),
+            ConvertedEsmPath = Path.Combine(Path.GetTempPath(), $"nonexistent-{Guid.NewGuid():N}.esp"),
             BaselineDataFolder = Path.GetTempPath(),
             SecondaryDataFolders = [],
             OutputBsaPath = Path.Combine(Path.GetTempPath(), $"out-{Guid.NewGuid():N}.bsa")
@@ -37,7 +37,7 @@ public class AssetPackingServiceTests
     {
         var options = new AssetPackingOptions
         {
-            ConvertedEspPath = Path.Combine(Path.GetTempPath(), $"nonexistent-{Guid.NewGuid():N}.esp"),
+            ConvertedEsmPath = Path.Combine(Path.GetTempPath(), $"nonexistent-{Guid.NewGuid():N}.esp"),
             BaselineDataFolder = Path.GetTempPath(),
             SecondaryDataFolders = [],
             OutputBsaPath = Path.Combine(Path.GetTempPath(), $"out-{Guid.NewGuid():N}.bsa")

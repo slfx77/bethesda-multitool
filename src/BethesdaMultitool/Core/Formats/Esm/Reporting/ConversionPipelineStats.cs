@@ -1,7 +1,7 @@
 namespace BethesdaMultitool.Core.Formats.Esm.Reporting;
 
 /// <summary>
-///     Running totals for a DMP→ESP conversion pipeline run.
+///     Running totals for a DMP→ESM conversion pipeline run.
 /// </summary>
 public sealed class ConversionPipelineStats
 {
@@ -20,7 +20,7 @@ public sealed class ConversionPipelineStats
     public int PromotedGapPlacedRefs { get; set; }
     public int SkippedGapCandidates { get; set; }
 
-    /// <summary>Per-record-type counts of records emitted to the output ESP.</summary>
+    /// <summary>Per-record-type counts of records emitted to the output ESM.</summary>
     public Dictionary<string, int> EmittedByType { get; } = new(StringComparer.Ordinal);
 
     /// <summary>Per-record-type counts of records skipped (not yet supported in v1).</summary>

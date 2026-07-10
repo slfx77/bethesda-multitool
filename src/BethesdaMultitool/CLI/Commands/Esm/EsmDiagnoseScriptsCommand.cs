@@ -13,7 +13,7 @@ public static class EsmDiagnoseScriptsCommand
     public static Command CreateDiagnoseScriptsCommand()
     {
         var command = new Command("diagnose-scripts", "Generate targeted dialogue/package script diagnostics");
-        var inputArg = new Argument<string>("esm-input") { Description = "Path to ESM/ESP file" };
+        var inputArg = new Argument<string>("esm-input") { Description = "Path to ESM/ESM file" };
         var actorOpt = new Option<string[]>("--actor")
         {
             Description = "Actor FormID, EditorID fragment, or display-name fragment to diagnose",
@@ -26,7 +26,7 @@ public static class EsmDiagnoseScriptsCommand
         };
         var sourceDmpOpt = new Option<string?>("--source-dmp")
         {
-            Description = "Optional source DMP used to compare runtime script refs/result scripts against the generated ESP"
+            Description = "Optional source DMP used to compare runtime script refs/result scripts against the generated ESM"
         };
         var pcEsmOpt = new Option<string?>("--pc-esm")
         {

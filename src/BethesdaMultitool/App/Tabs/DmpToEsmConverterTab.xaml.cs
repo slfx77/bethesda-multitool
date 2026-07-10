@@ -16,11 +16,11 @@ using WinRT.Interop;
 namespace BethesdaMultitool;
 
 /// <summary>
-///     GUI tab that runs the DMP→ESP conversion pipeline. Layout: file inputs on the left,
+///     GUI tab that runs the DMP→ESM conversion pipeline. Layout: file inputs on the left,
 ///     virtualized progress event log on the right. Settings (plugin metadata, validation
 ///     options, compression) live in a slide-out drawer.
 /// </summary>
-public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHasSettingsDrawer
+public sealed partial class DmpToEsmConverterTab : UserControl, IDisposable, IHasSettingsDrawer
 {
     private const int LogBatchTickMs = 50;
     private const int LogMaxBatchSize = 250;
@@ -36,7 +36,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
     private AssetPackingResult? _lastAssetPackingResult;
     private PluginBuildResult? _lastResult;
 
-    public DmpToEspConverterTab()
+    public DmpToEsmConverterTab()
     {
         InitializeComponent();
         _logDrainTimer = new DispatcherTimer
@@ -163,9 +163,9 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
     private async void BrowseOutputButton_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FileSavePicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
-        picker.FileTypeChoices.Add("Plugin file", new List<string> { ".esp" });
+        picker.FileTypeChoices.Add("Plugin file", new List<string> { ".esm" });
 
-        var defaultName = "DmpToEspOutput";
+        var defaultName = "DmpToEsmOutput";
         if (!string.IsNullOrEmpty(DmpPathTextBox.Text))
         {
             defaultName = Path.GetFileNameWithoutExtension(DmpPathTextBox.Text);
@@ -177,7 +177,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         var file = await picker.PickSaveFileAsync();
         if (file != null)
         {
-            OutputEspTextBox.Text = file.Path;
+            OutputEsmTextBox.Text = file.Path;
         }
     }
 
@@ -186,16 +186,16 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         // The folder list and output BSA path are always visible — the checkbox now
         // only controls whether the packer runs on Convert. Still suggest a default
         // BSA path the first time the user enables packing if one isn't set.
-        if (OutputBsaTextBox is null || OutputEspTextBox is null)
+        if (OutputBsaTextBox is null || OutputEsmTextBox is null)
         {
             return; // Fires once during InitializeComponent before sibling controls exist.
         }
 
         if (PackAssetsCheckBox.IsChecked == true &&
             string.IsNullOrEmpty(OutputBsaTextBox.Text) &&
-            !string.IsNullOrEmpty(OutputEspTextBox.Text))
+            !string.IsNullOrEmpty(OutputEsmTextBox.Text))
         {
-            OutputBsaTextBox.Text = Path.ChangeExtension(OutputEspTextBox.Text, ".bsa");
+            OutputBsaTextBox.Text = Path.ChangeExtension(OutputEsmTextBox.Text, ".bsa");
         }
     }
 
@@ -264,9 +264,9 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         picker.FileTypeChoices.Add("BSA archive", new List<string> { ".bsa" });
 
         var defaultName = "PrototypeAssets";
-        if (!string.IsNullOrEmpty(OutputEspTextBox.Text))
+        if (!string.IsNullOrEmpty(OutputEsmTextBox.Text))
         {
-            defaultName = Path.GetFileNameWithoutExtension(OutputEspTextBox.Text);
+            defaultName = Path.GetFileNameWithoutExtension(OutputEsmTextBox.Text);
         }
 
         picker.SuggestedFileName = defaultName;
@@ -357,7 +357,7 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
     private void UpdateButtonStates()
     {
         var hasDmp = !string.IsNullOrEmpty(DmpPathTextBox.Text) && File.Exists(DmpPathTextBox.Text);
-        var hasOutput = !string.IsNullOrEmpty(OutputEspTextBox.Text);
+        var hasOutput = !string.IsNullOrEmpty(OutputEsmTextBox.Text);
         var running = _cts != null && !_cts.IsCancellationRequested;
 
         ConvertButton.IsEnabled = hasDmp && hasOutput && _isPcDataValid && !running;
@@ -368,12 +368,12 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
     {
         var dmpPath = DmpPathTextBox.Text;
         var pcEsmPath = Path.Combine(PcDataDirTextBox.Text, "FalloutNV.esm");
-        var outputPath = OutputEspTextBox.Text;
+        var outputPath = OutputEsmTextBox.Text;
 
         var pcEsmFileSize = new FileInfo(pcEsmPath).Length;
 
         // v22 asset-rename: when the user has configured secondary data folders for asset
-        // packing, reuse them for the pre-encode rename pass so the output ESP carries
+        // packing, reuse them for the pre-encode rename pass so the output ESM carries
         // unified paths for assets that survived under different names. Baseline = the
         // PC Data folder containing FalloutNV.esm.
         var renameFolders = PackAssetsCheckBox.IsChecked == true
@@ -426,21 +426,21 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         ConversionProgressBar.Visibility = Visibility.Visible;
         _logDrainTimer.Start();
 
-        var inputs = new DmpToEspInputs
+        var inputs = new DmpToEsmInputs
         {
             DmpPath = dmpPath,
             PcEsmPath = pcEsmPath,
-            OutputEspPath = outputPath,
+            OutputEsmPath = outputPath,
             Options = options
         };
-        var job = new DmpToEspConversionJob(
+        var job = new DmpToEsmConversionJob(
             inputs,
             PackAssetsCheckBox.IsChecked == true,
             BuildAssetPackingOptions(outputPath));
 
         try
         {
-            var service = new DmpToEspConversionJobService();
+            var service = new DmpToEsmConversionJobService();
             var result = await service.RunAsync(job, sink, _cts.Token);
             _lastResult = result.ConversionResult;
             _lastAssetPackingResult = result.AssetPackingResult;
@@ -628,12 +628,12 @@ public sealed partial class DmpToEspConverterTab : UserControl, IDisposable, IHa
         ResultSummaryBorder.Visibility = Visibility.Visible;
     }
 
-    private AssetPackingOptions? BuildAssetPackingOptions(string outputEspPath)
+    private AssetPackingOptions? BuildAssetPackingOptions(string outputEsmPath)
     {
         var secondaries = SnapshotSecondaryFolders();
         return new AssetPackingOptions
         {
-            ConvertedEspPath = outputEspPath,
+            ConvertedEsmPath = outputEsmPath,
             DmpPath = string.IsNullOrEmpty(DmpPathTextBox.Text) ? null : DmpPathTextBox.Text,
             BaselineDataFolder = PcDataDirTextBox.Text,
             SecondaryDataFolders = secondaries,

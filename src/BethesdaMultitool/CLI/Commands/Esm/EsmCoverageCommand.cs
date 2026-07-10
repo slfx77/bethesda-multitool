@@ -9,7 +9,7 @@ public static class EsmCoverageCommand
     public static Command CreateCoverageCommand()
     {
         var command = new Command("coverage", "Report how completely the parser models each record/subrecord type (CSV + Markdown)");
-        var inputArg = new Argument<string>("esm-input") { Description = "Path to ESM/ESP file" };
+        var inputArg = new Argument<string>("esm-input") { Description = "Path to ESM/ESM file" };
         var outputOpt = new Option<string>("--output")
         {
             Description = "Output directory for coverage CSV/Markdown reports",
@@ -36,7 +36,7 @@ public static class EsmCoverageCommand
         var baselineArg = new Argument<string>("baseline-dir")
             { Description = "Baseline coverage directory, usually vanilla FalloutNV.esm" };
         var candidateArg = new Argument<string>("candidate-dir")
-            { Description = "Candidate coverage directory, usually generated ESP output" };
+            { Description = "Candidate coverage directory, usually generated ESM output" };
         var outputOpt = new Option<string>("--output")
         {
             Description = "Output directory for comparison reports",

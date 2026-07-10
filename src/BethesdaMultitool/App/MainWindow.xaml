@@ -90,10 +90,10 @@
           </NavigationViewItem.Icon>
         </NavigationViewItem>
 
-        <!--  DMP to ESP Converter  -->
+        <!--  DMP to ESM Converter  -->
         <NavigationViewItem
-          x:Uid="Nav_DmpToEspConverter"
-          Tag="DmpToEspConverter">
+          x:Uid="Nav_DmpToEsmConverter"
+          Tag="DmpToEsmConverter">
           <NavigationViewItem.Icon>
             <FontIcon Glyph="&#xE74E;" />
           </NavigationViewItem.Icon>
@@ -174,8 +174,8 @@
               x:Name="RepackerTabContent"
               VerticalAlignment="Stretch"
               Visibility="Collapsed" />
-            <tabs:DmpToEspConverterTab
-              x:Name="DmpToEspConverterTabContent"
+            <tabs:DmpToEsmConverterTab
+              x:Name="DmpToEsmConverterTabContent"
               VerticalAlignment="Stretch"
               Visibility="Collapsed" />
             <tabs:DiagnosticsTab

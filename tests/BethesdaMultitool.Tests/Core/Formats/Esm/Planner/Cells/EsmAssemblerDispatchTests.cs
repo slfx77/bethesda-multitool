@@ -11,19 +11,19 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 
 /// <summary>
-///     Verifies the EspAssembler dispatch shim. We don't construct a full EspAssembler
+///     Verifies the EsmAssembler dispatch shim. We don't construct a full EsmAssembler
 ///     instance (it requires a registry + many other dependencies); instead we test the
 ///     core invariant via the same builders the assembler delegates to: when "CELL" is
 ///     opted into the planner, PlanCellSectionBuilder.BuildCellSection must produce
 ///     byte-identical output to legacy CellGrupBuilder.BuildCellSection when fed
 ///     equivalent inputs.
 /// </summary>
-public sealed class EspAssemblerDispatchTests
+public sealed class EsmAssemblerDispatchTests
 {
     [Fact]
     public void Legacy_Path_When_Cell_Not_In_PlannerEnabledRecordTypes()
     {
-        // With no "CELL" opt-in, EspAssembler should keep calling legacy.
+        // With no "CELL" opt-in, EsmAssembler should keep calling legacy.
         // This test pins the dispatch logic: the condition is a contains-check.
         var options = new PluginBuildOptions
         {

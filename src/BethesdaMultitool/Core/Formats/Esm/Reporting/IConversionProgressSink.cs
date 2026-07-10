@@ -1,7 +1,7 @@
 namespace BethesdaMultitool.Core.Formats.Esm.Reporting;
 
 /// <summary>
-///     Sink for events emitted by the DMP→ESP conversion pipeline.
+///     Sink for events emitted by the DMP→ESM conversion pipeline.
 ///     Implementations must be safe to call from any thread.
 /// </summary>
 public interface IConversionProgressSink

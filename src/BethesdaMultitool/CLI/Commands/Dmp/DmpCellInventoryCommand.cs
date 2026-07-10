@@ -137,7 +137,7 @@ internal static class DmpCellInventoryCommand
 
         // PC ESM authority: when a reference plugin is provided, load its GRUP hierarchy once.
         // The cell→worldspace map resolves authored cell ownership, and the ref→cell map lets
-        // inventory reporting mirror dmp-to-esp's master-parent handling for existing refs.
+        // inventory reporting mirror dmp-to-esm's master-parent handling for existing refs.
         var pcAuthority = await LoadPcEsmCellAuthorityAsync(pcEsmPath, cancellationToken);
 
         // Corpus-derived authority JSON: covers cells the shipped PC ESM lacks (e.g. cut

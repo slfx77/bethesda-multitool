@@ -4,14 +4,14 @@ using BethesdaMultitool.Core.Formats.Esm.Reporting;
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 
 /// <summary>
-///     Outcome of a DMP→ESP conversion run.
+///     Outcome of a DMP→ESM conversion run.
 /// </summary>
 public sealed record PluginBuildResult
 {
     public required bool Success { get; init; }
     public required ConversionPipelineStats Stats { get; init; }
 
-    /// <summary>Path of the written ESP, or null if the run failed before write.</summary>
+    /// <summary>Path of the written ESM, or null if the run failed before write.</summary>
     public string? OutputPath { get; init; }
 
     /// <summary>Error message, set when <see cref="Success" /> is false.</summary>
@@ -21,11 +21,11 @@ public sealed record PluginBuildResult
     public string? ValidationReport { get; init; }
 
     /// <summary>
-    ///     Source-DMP FormID → emitted-ESP FormID alias map. Captures every new record the
+    ///     Source-DMP FormID → emitted-ESM FormID alias map. Captures every new record the
     ///     converter allocated a fresh FormID for (the source key may be a runtime FormID,
     ///     a master-EditorID-aliased FormID, etc.). Consumers like the asset packer use it
     ///     to remap CSV-shaped voice paths (which reference source FormIDs) onto the
-    ///     engine's lookup path (which uses the emitted ESP FormID).
+    ///     engine's lookup path (which uses the emitted ESM FormID).
     /// </summary>
     public IReadOnlyDictionary<uint, uint> NewRecordSourceToAllocated { get; init; } =
         new Dictionary<uint, uint>();

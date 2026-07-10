@@ -4,7 +4,7 @@ using BethesdaMultitool.Core.Formats.Esm.Reporting;
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 
 /// <summary>
-///     Public orchestration entrypoint for DMP-to-ESP conversion. The pipeline owns the
+///     Public orchestration entrypoint for DMP-to-ESM conversion. The pipeline owns the
 ///     composed conversion services; legacy <see cref="PluginBuilder" /> remains as the
 ///     lower-level implementation while the remaining emission stages are extracted.
 /// </summary>
@@ -22,8 +22,8 @@ public sealed class PluginConversionPipeline
 #pragma warning restore CS0618
     }
 
-    /// <summary>Runs the full DMP-to-ESP conversion, writing the plugin to the path in <paramref name="inputs" />.</summary>
-    public Task<PluginBuildResult> BuildAsync(DmpToEspInputs inputs, CancellationToken ct = default)
+    /// <summary>Runs the full DMP-to-ESM conversion, writing the plugin to the path in <paramref name="inputs" />.</summary>
+    public Task<PluginBuildResult> BuildAsync(DmpToEsmInputs inputs, CancellationToken ct = default)
     {
         return _builder.BuildAsync(inputs, ct);
     }

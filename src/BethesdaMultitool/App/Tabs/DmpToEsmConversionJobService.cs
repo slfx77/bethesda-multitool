@@ -8,25 +8,25 @@ using BethesdaMultitool.Core.Formats.Esm.Reporting;
 
 namespace BethesdaMultitool;
 
-/// <summary>Inputs for a DMP-to-ESP conversion run plus whether (and how) to pack assets into a BSA.</summary>
-internal sealed record DmpToEspConversionJob(
-    DmpToEspInputs Inputs,
+/// <summary>Inputs for a DMP-to-ESM conversion run plus whether (and how) to pack assets into a BSA.</summary>
+internal sealed record DmpToEsmConversionJob(
+    DmpToEsmInputs Inputs,
     bool PackAssets,
     AssetPackingOptions? AssetPackingOptions);
 
 /// <summary>Output of a conversion job: the plugin build result and the optional asset-packing result.</summary>
-internal sealed record DmpToEspConversionJobResult(
+internal sealed record DmpToEsmConversionJobResult(
     PluginBuildResult ConversionResult,
     AssetPackingResult? AssetPackingResult);
 
 /// <summary>
-///     Runs DMP-to-ESP conversion and optional asset packing away from the WinUI
+///     Runs DMP-to-ESM conversion and optional asset packing away from the WinUI
 ///     code-behind. The tab remains responsible for UI state and file pickers only.
 /// </summary>
-internal sealed class DmpToEspConversionJobService
+internal sealed class DmpToEsmConversionJobService
 {
-    public async Task<DmpToEspConversionJobResult> RunAsync(
-        DmpToEspConversionJob job,
+    public async Task<DmpToEsmConversionJobResult> RunAsync(
+        DmpToEsmConversionJob job,
         IConversionProgressSink sink,
         CancellationToken cancellationToken)
     {
@@ -47,7 +47,7 @@ internal sealed class DmpToEspConversionJobService
                 cancellationToken).ConfigureAwait(false);
         }
 
-        return new DmpToEspConversionJobResult(conversion, packing);
+        return new DmpToEsmConversionJobResult(conversion, packing);
     }
 
     private static async Task<AssetPackingResult?> RunAssetPackingAsync(
@@ -58,7 +58,7 @@ internal sealed class DmpToEspConversionJobService
     {
         if (conversionResult.OutputPath is null)
         {
-            sink.Warn("AssetPacking", "Skipping asset packing — no ESP output path");
+            sink.Warn("AssetPacking", "Skipping asset packing — no ESM output path");
             return null;
         }
 
@@ -82,7 +82,7 @@ internal sealed class DmpToEspConversionJobService
             return null;
         }
 
-        options = options with { ConvertedEspPath = conversionResult.OutputPath };
+        options = options with { ConvertedEsmPath = conversionResult.OutputPath };
         return await Task.Run(
             () => AssetPackingService.PackAsync(options, sink, cancellationToken),
             cancellationToken).ConfigureAwait(false);

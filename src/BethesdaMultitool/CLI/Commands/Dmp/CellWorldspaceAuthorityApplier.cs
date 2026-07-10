@@ -40,7 +40,7 @@ internal static class CellWorldspaceAuthorityApplier
     /// <summary>
     ///     Applies authoritative CELL metadata to the semantic record model and rebuilds
     ///     worldspace child lists so reports and map views see the same ownership that
-    ///     DMP to ESP conversion uses.
+    ///     DMP to ESM conversion uses.
     /// </summary>
     public static CellWorldspaceAuthorityApplyResult Apply(
         RecordCollection records,

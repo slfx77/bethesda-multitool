@@ -21,7 +21,7 @@ public sealed record SecondaryDataFolder
 public sealed record AssetPackingOptions
 {
     /// <summary>Path to the converted ESP whose record fields will be scanned.</summary>
-    public required string ConvertedEspPath { get; init; }
+    public required string ConvertedEsmPath { get; init; }
 
     /// <summary>
     ///     Optional path to the source DMP. When set, <c>RuntimeBufferStringExtractor</c>

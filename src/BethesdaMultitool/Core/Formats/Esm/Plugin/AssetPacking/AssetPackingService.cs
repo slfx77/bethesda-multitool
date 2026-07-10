@@ -52,9 +52,9 @@ public sealed class AssetPackingService
         try
         {
             // 1) Parse the converted ESP back into a RecordCollection.
-            sink.Info("AssetPacking", $"Loading converted ESP: {Path.GetFileName(options.ConvertedEspPath)}");
+            sink.Info("AssetPacking", $"Loading converted ESM: {Path.GetFileName(options.ConvertedEsmPath)}");
             using var espResult = await SemanticFileLoader
-                .LoadAsync(options.ConvertedEspPath, cancellationToken: cancellationToken)
+                .LoadAsync(options.ConvertedEsmPath, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             // 2) Collect every referenced asset path.
@@ -72,7 +72,7 @@ public sealed class AssetPackingService
                         options.NewRecordSourceToAllocatedFormIds.Count > 0
                             ? options.NewRecordSourceToAllocatedFormIds
                             : null,
-                        Path.GetFileName(options.ConvertedEspPath),
+                        Path.GetFileName(options.ConvertedEsmPath),
                         options.EmittedDialogueAudioBindings.Count > 0
                             ? options.EmittedDialogueAudioBindings
                             : null)

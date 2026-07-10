@@ -240,7 +240,7 @@ public sealed partial class MainWindow : Window
         if (DdxConverterTabContent.Visibility == Visibility.Visible) return DdxConverterTabContent;
         if (BsaExtractorTabContent.Visibility == Visibility.Visible) return BsaExtractorTabContent;
         if (RepackerTabContent.Visibility == Visibility.Visible) return RepackerTabContent;
-        if (DmpToEspConverterTabContent.Visibility == Visibility.Visible) return DmpToEspConverterTabContent;
+        if (DmpToEsmConverterTabContent.Visibility == Visibility.Visible) return DmpToEsmConverterTabContent;
         return null;
     }
 
@@ -257,7 +257,7 @@ public sealed partial class MainWindow : Window
             DdxConverterTabContent.CloseSettingsDrawer();
             BsaExtractorTabContent.CloseSettingsDrawer();
             RepackerTabContent.CloseSettingsDrawer();
-            DmpToEspConverterTabContent.CloseSettingsDrawer();
+            DmpToEsmConverterTabContent.CloseSettingsDrawer();
 
             // Hide all content
             SingleFileTabContent.Visibility = Visibility.Collapsed;
@@ -266,7 +266,7 @@ public sealed partial class MainWindow : Window
             DdxConverterTabContent.Visibility = Visibility.Collapsed;
             BsaExtractorTabContent.Visibility = Visibility.Collapsed;
             RepackerTabContent.Visibility = Visibility.Collapsed;
-            DmpToEspConverterTabContent.Visibility = Visibility.Collapsed;
+            DmpToEsmConverterTabContent.Visibility = Visibility.Collapsed;
             DiagnosticsTabContent.Visibility = Visibility.Collapsed;
 
             // Clear status bar when switching tabs
@@ -296,8 +296,8 @@ public sealed partial class MainWindow : Window
                 case "Repacker":
                     RepackerTabContent.Visibility = Visibility.Visible;
                     break;
-                case "DmpToEspConverter":
-                    DmpToEspConverterTabContent.Visibility = Visibility.Visible;
+                case "DmpToEsmConverter":
+                    DmpToEsmConverterTabContent.Visibility = Visibility.Visible;
                     break;
                 case "Diagnostics":
                     DiagnosticsTabContent.Visibility = Visibility.Visible;

@@ -64,7 +64,7 @@ public class BsaWriterFlagsTests
     [Fact]
     public void CreateWithAutoFlags_FullPluginBsa_UsesDlcMainLayout()
     {
-        // The exact mix our DMP→ESP pipeline produces for a real build.
+        // The exact mix our DMP→ESM pipeline produces for a real build.
         using var writer = BsaWriter.CreateWithAutoFlags([
             "meshes\\armor\\foo.nif",
             "textures\\armor\\foo.dds",
