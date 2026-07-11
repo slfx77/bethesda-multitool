@@ -27,6 +27,28 @@ internal static class NifGeometryExtractor
     private const string DefaultEnvironmentCubemapPath = @"shared\cubemaps\mipblur_defaultoutside1.dds";
 
     /// <summary>
+    ///     Env-gated shape-drop diagnostic (<c>FALLOUT_VIEWER_NIF_DROP_DIAG=1</c>): every heuristic
+    ///     that removes a shape from the render set logs the shape name + reason. The heuristics are
+    ///     otherwise silent, so a mesh missing parts (e.g. HeliosOne_SolarTower) can't be attributed
+    ///     to a specific rule without this.
+    /// </summary>
+    private static readonly bool DropDiagnosticsEnabled =
+        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_NIF_DROP_DIAG") == "1";
+
+    private static void LogShapeDrop(byte[] data, NifInfo nif, int shapeIndex, string reason)
+    {
+        if (!DropDiagnosticsEnabled)
+        {
+            return;
+        }
+
+        var name = shapeIndex >= 0 && shapeIndex < nif.Blocks.Count
+            ? NifBlockParsers.ReadBlockName(data, nif.Blocks[shapeIndex], nif) ?? "<unnamed>"
+            : "<out-of-range>";
+        Console.WriteLine($"[nif-drop] block {shapeIndex} '{name}': {reason}");
+    }
+
+    /// <summary>
     ///     Extracts the full skeleton hierarchy including parent-child bone links.
     ///     Used for skeleton-only debug visualization.
     /// </summary>
@@ -160,7 +182,11 @@ internal static class NifGeometryExtractor
         {
             foreach (var idx in excludeBlockIndices)
             {
-                shapeDataMap.Remove(idx);
+                if (shapeDataMap.Remove(idx))
+                {
+                    LogShapeDrop(data, nif, idx, "excluded (NiVisController-hidden subtree)");
+                }
+
                 shapePropertyMap.Remove(idx);
                 shapeSkinInstanceMap.Remove(idx);
             }
@@ -175,6 +201,7 @@ internal static class NifGeometryExtractor
             .ToList();
         foreach (var idx in hiddenShapes)
         {
+            LogShapeDrop(data, nif, idx, "hidden (NiAVObject APP_CULLED flag)");
             shapeDataMap.Remove(idx);
             shapePropertyMap.Remove(idx);
             shapeSkinInstanceMap.Remove(idx);
@@ -209,6 +236,7 @@ internal static class NifGeometryExtractor
                     .ToList();
                 foreach (var idx in toRemove)
                 {
+                    LogShapeDrop(data, nif, idx, $"filtered (does not match shape filter '{filterShapeName}')");
                     shapeDataMap.Remove(idx);
                     shapePropertyMap.Remove(idx);
                     shapeSkinInstanceMap.Remove(idx);
@@ -229,6 +257,7 @@ internal static class NifGeometryExtractor
         {
             foreach (var (idx, _) in lodShapeNames.Where(s => IsLodShape(s.name)))
             {
+                LogShapeDrop(data, nif, idx, "embedded LOD (name contains '_lod' and non-LOD siblings exist)");
                 shapeDataMap.Remove(idx);
                 shapePropertyMap.Remove(idx);
                 shapeSkinInstanceMap.Remove(idx);
@@ -275,6 +304,7 @@ internal static class NifGeometryExtractor
                     .ToList();
                 foreach (var idx in boneAttached)
                 {
+                    LogShapeDrop(data, nif, idx, "bone-attached proxy (unskinned shape parented to a skin bone)");
                     shapeDataMap.Remove(idx);
                     shapePropertyMap.Remove(idx);
                     shapeSkinInstanceMap.Remove(idx);
@@ -379,6 +409,8 @@ internal static class NifGeometryExtractor
                 if (shaderMetadata is { PropertyType: "BSLightingShaderProperty", ShaderFlags: { } lsRefract }
                     && (lsRefract & 0x18000u) != 0)
                 {
+                    LogShapeDrop(data, nif, shapeIndex,
+                        "refraction plane (SLSF1_Refraction / SLSF1_Fire_Refraction)");
                     continue;
                 }
 
@@ -730,6 +762,15 @@ internal static class NifGeometryExtractor
         if (model.Submeshes.Exists(static s => s.IsFarLodFallback) &&
             model.Submeshes.Exists(static s => !s.IsFarLodFallback))
         {
+            if (DropDiagnosticsEnabled)
+            {
+                foreach (var far in model.Submeshes.Where(static s => s.IsFarLodFallback))
+                {
+                    LogShapeDrop(data, nif, far.SourceBlockIndex,
+                        "far-LOD fallback (BSMeshLODTriShape far slice with near siblings)");
+                }
+            }
+
             model.Submeshes.RemoveAll(static s => s.IsFarLodFallback);
         }
 
