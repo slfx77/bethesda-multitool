@@ -485,7 +485,7 @@ internal sealed class SkyGeometryLayer
 {
     public required float[] Positions { get; init; } // xyz * vertexCount
     public float[]? Uvs { get; init; }               // uv * vertexCount (null -> 0,0)
-    public byte[]? VertexColors { get; init; }       // RGBA * vertexCount; alpha = baked horizon fade (null -> opaque)
+    public byte[]? VertexColors { get; set; }        // RGBA * vertexCount; alpha = baked horizon fade (null -> opaque; settable so Morrowind's synthesized fog fade can attach one)
     public required ushort[] Indices { get; init; }
     public SkyObjectType Type { get; init; }
     public uint TextureIndex { get; init; }

@@ -167,14 +167,41 @@ public sealed partial class WorldView3DControl
         {
             // Morrowind's sky set is ENGINE-HARDCODED, not climate-authored — the NIF names sit in
             // Morrowind.exe beside their "Failed to load sky stars/clouds" error strings:
-            // sky_night_01/02.nif are the stars domes (02 ships with the expansions — missing files
-            // skip cleanly) and sky_clouds_01.nif is the cloud dome, retextured per weather from the
-            // INI's Cloud Texture (already carried on the synthetic weather's CloudLayerTextures).
-            // sky_atmosphere.nif (the vertex-tinted gradient dome) is deliberately NOT loaded: the
-            // renderer's own gradient dome already draws the resolved sky colors.
-            AddSkyNifLayers(layers, "sky_night_01.nif", weather);
+            // sky_night_01/02.nif are the stars domes and sky_clouds_01.nif is the cloud dome,
+            // retextured per weather from the INI's Cloud Texture (already carried on the synthetic
+            // weather's CloudLayerTextures). sky_atmosphere.nif (the vertex-tinted gradient dome) is
+            // deliberately NOT loaded: the renderer's own gradient dome already draws the resolved
+            // sky colors.
+            //
+            // The night domes are ALTERNATES, not layers: both carry the same seven constellation/
+            // nebula shapes (Mage/Warrior/Thief + star field + 3 nebulae) with slightly different
+            // geometry — 02 is Bloodmoon's replacement night sky (it ships in Bloodmoon.bsa with the
+            // _02 nebula textures). Drawing both stacks two near-identical star fields a few degrees
+            // apart and every star doubles, so load 02 and fall back to 01 only when it's absent.
+            var beforeNight = layers.Count;
             AddSkyNifLayers(layers, "sky_night_02.nif", weather);
+            if (layers.Count == beforeNight)
+            {
+                AddSkyNifLayers(layers, "sky_night_01.nif", weather);
+            }
+
             AddSkyNifLayers(layers, "sky_clouds_01.nif", weather);
+
+            // Morrowind fogs its sky domes with linear distance fog, and the cloud cap's shape
+            // encodes its own horizon fade: rim vertices sit ~3.4× farther than the zenith (|p|
+            // ≈ 1004 vs 292), so in-engine the rim dissolves into the horizon haze while overhead
+            // stays clear. The mesh carries NO baked fade (vertex alpha is 255 everywhere, unlike
+            // FNV's cloud caps), so without fog the dome ends in a hard horizontal edge against
+            // the gradient. Synthesize the fog fade into the vertex alpha the shader already
+            // multiplies. Stars keep their authored look — the night domes are near-spherical, so
+            // engine fog barely grades them.
+            foreach (var layer in layers)
+            {
+                if (layer.Type == SkyObjectType.Clouds)
+                {
+                    SynthesizeCloudHorizonFade(layer);
+                }
+            }
         }
         else if (climate?.ModelPath is string modl && !string.IsNullOrWhiteSpace(modl))
         {
@@ -213,6 +240,62 @@ public sealed partial class WorldView3DControl
     // ground per-game cloud diagnoses (which NIF, how many sky-typed submeshes, which cloud layers resolve).
     private static readonly bool _skyDiag =
         Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SKY_DIAG") == "1";
+
+    // Fraction of the cloud dome's authored distance range where the horizon fog fade begins
+    // (fade runs over the outer 40% — full alpha above ~12° elevation, dissolved at the ~5° rim).
+    // TO-CONFIRM (stand-in): the engine's fog start/end for the sky pass hasn't been decompiled;
+    // this matches the vanilla look of clouds melting into the horizon haze. Refine against an
+    // OpenMW hour sweep if the band reads too wide/narrow.
+    private const float CloudHorizonFogStartFraction = 0.6f;
+
+    // Bakes Morrowind's sky fog into a cloud layer's vertex alpha: linear fade by authored vertex
+    // distance (the engine fogs the sky domes; the shallow cloud cap's rim is ~3.4× farther than
+    // its zenith, so distance IS the horizon fade profile). Mutates the layer's color array in
+    // place (freshly extracted per load, so nothing else holds it).
+    private static void SynthesizeCloudHorizonFade(SkyGeometryLayer layer)
+    {
+        var pos = layer.Positions;
+        var vertexCount = pos.Length / 3;
+        if (vertexCount == 0) return;
+
+        var minDist = float.MaxValue;
+        var maxDist = float.MinValue;
+        var dists = new float[vertexCount];
+        for (var v = 0; v < vertexCount; v++)
+        {
+            var x = pos[v * 3];
+            var y = pos[(v * 3) + 1];
+            var z = pos[(v * 3) + 2];
+            var d = MathF.Sqrt((x * x) + (y * y) + (z * z));
+            dists[v] = d;
+            minDist = MathF.Min(minDist, d);
+            maxDist = MathF.Max(maxDist, d);
+        }
+
+        var range = maxDist - minDist;
+        if (range <= 1e-3f) return; // spherical layer — fog wouldn't grade it
+
+        var fogStart = minDist + (range * CloudHorizonFogStartFraction);
+        var fogSpan = MathF.Max(maxDist - fogStart, 1e-3f);
+
+        var colors = layer.VertexColors;
+        if (colors is null)
+        {
+            colors = new byte[vertexCount * 4];
+            Array.Fill(colors, (byte)255);
+            layer.VertexColors = colors;
+        }
+
+        for (var v = 0; v < vertexCount; v++)
+        {
+            var fade = Math.Clamp((maxDist - dists[v]) / fogSpan, 0f, 1f);
+            var a = (v * 4) + 3;
+            if (a < colors.Length)
+            {
+                colors[a] = (byte)(colors[a] * fade);
+            }
+        }
+    }
 
     // Classifies a sky-dome shape by NAME, for pre-SkyShaderProperty NIFs (Oblivion's clouds.nif "CloudDome"
     // + stars.nif "Stars" shapes, NIF 20.0.0.4) that carry no Sky Object Type. Returns null for shapes that
