@@ -129,7 +129,7 @@ internal static class SptGeometryBuilder
             // root Compute passes help = 0).
             GenerateBranch(model, 0, levels, 0f, Vector3.Zero, BranchFrame.Identity,
                 parentRadius: float.MaxValue, treeSize, opt, rng, rand, collectedBranches, placer, seed,
-                dimming, leafHelp: 0f, barkHelp: 0f, windRaw: 1f);
+                dimming, leafHelp: 0f, barkHelp: 0f, inheritedRaw: 1f);
         }
 
         // The engine never renders the raw skeleton: CTreeEngine::Compute lofts every branch, then
@@ -185,26 +185,17 @@ internal static class SptGeometryBuilder
     // ---- Branch loft (port of CIdvBranch::Compute) --------------------------------------
 
     /// <summary>
-    ///     The engine's RAW per-vertex wind weight along a branch (design doc B.3, windLevel = 1):
-    ///     below the wind level everything is rigid (raw 1); AT the wind level the branch ramps
-    ///     <c>raw = 1 − t</c> (<c>CIdvBranch::ComputeVertexWeight</c>, a·b ≈ t); deeper levels ramp from
-    ///     the raw INHERITED at their spawn point toward full articulation at the tip
-    ///     (<c>ComputeHighLevelVertexWeight</c>: <c>raw = inherited·(1 − t)</c>). The shader consumes
-    ///     <c>1 − raw</c> (the store convention of <c>AddVertexWind</c>/<c>InitLods</c>) as the wind-matrix
-    ///     lerp weight.
+    ///     Wind level: the first branch recursion level that responds to the wind matrices
+    ///     (<c>CTreeEngine+0xf0</c>, ctor default <b>1</b> — the ctor writes <c>this[0x3c] = 1</c>; no
+    ///     shipped <c>.spt</c> token overrides it). Below this level branches are rigid under the sway.
     /// </summary>
-    private static float WindRawAt(int level, float windRawBase, float t) => level switch
-    {
-        0 => 1f,
-        1 => 1f - t,
-        _ => windRawBase * (1f - t),
-    };
+    private const int WindLevel = 1;
 
     private static void GenerateBranch(
         SptModel model, int level, int levels, float parentT, Vector3 basePos, BranchFrame parentFrame,
         float parentRadius, float treeSize, SptGeometryOptions opt, SptRandom rng,
         Func<float, float, float> rand, List<CollectedBranch> collected, LeafPlacer placer,
-        uint branchSeed, TreeDimming dimming, float leafHelp, float barkHelp, float windRaw)
+        uint branchSeed, TreeDimming dimming, float leafHelp, float barkHelp, float inheritedRaw)
     {
         if (level >= levels || level >= model.Branches.Count)
         {
@@ -234,7 +225,10 @@ internal static class SptGeometryBuilder
         var declMean = Eval(s, 7, parentT, rand, forceDraw: true);
         var bendGain = Eval(s, 1, parentT, rand, forceDraw: true); // constant per branch; per-ring bend gain
         var radius = MathF.Max(0.005f, Eval(s, 5, parentT, rand, forceDraw: true) * treeSize);
-        _ = Eval(s, 2, parentT, rand, forceDraw: true);                       // s2 (flex factor; drawn for parity)
+        // s2 = the per-branch WIND-FLEX response (dVar13 = Eval(slot2, parentT), 360 Compute L2032-2033),
+        // the constant factor of the vertex-wind weight b = windFlex·Eval(slot3, pathT). Authored ~0 on
+        // stiff plants (WastelandShrub01 slot2 = 0) → no wind-matrix sway. Was drawn-and-discarded.
+        var windFlex = MathF.Max(0f, Eval(s, 2, parentT, rand, forceDraw: true));
 
         // Child-radius clamp (CIdvBranch::Compute 360 L2067-2072 = PC FUN_00b11050, both agree): the engine
         // tests the BASE radius — scale·slot6(0), the FIRST s6@0 draw — against 0.85·parent, and on trigger
@@ -250,7 +244,7 @@ internal static class SptGeometryBuilder
         var noise0B = ScaledVariance(s, 0, 0f, rand);
         var noise0A = ScaledVariance(s, 0, 0f, rand);
         var baseTaper = MathF.Max(0f, Eval(s, 6, 0f, rand, forceDraw: true)); // s6@0 draw 2 → ring-0 radius
-        _ = Eval(s, 3, 0f, rand, forceDraw: true);                            // s3@0 (flex factor; parity)
+        var s3Base = Eval(s, 3, 0f, rand, forceDraw: true);                   // s3@0 → ring-0 flex response
         var roll0 = s.Count > 8 && s[8] is not null
             ? -(Eval(s, 8, 0f, rand, forceDraw: true) - 0.5f) * 2f
             : 0f;                                                             // s8@0 (roll)
@@ -275,9 +269,10 @@ internal static class SptGeometryBuilder
         frame = ApplyGravity(frame, roll0, bendGain); // ring-0 gravity bend (L2171)
 
         var pos = basePos;
+        var ring0Raw = RingWindRaw(level, inheritedRaw, 0f, windFlex * s3Base);
         var rings = new List<BranchRing>(numRings)
         {
-            new(pos, frame, 0f, MathF.Max(0.01f, radius * baseTaper), 0f),
+            new(pos, frame, 0f, MathF.Max(0.01f, radius * baseTaper), 0f, ring0Raw),
         };
         var previousDistance = 0f;
         var previousFrame = frame;
@@ -299,7 +294,7 @@ internal static class SptGeometryBuilder
             var pathDistance = pathT * length;
 
             var taper = MathF.Max(0f, Eval(s, 6, pathT, rand, forceDraw: true)); // s6
-            _ = Eval(s, 3, pathT, rand, forceDraw: true);                        // s3 (flex factor; parity)
+            var s3 = Eval(s, 3, pathT, rand, forceDraw: true);                   // s3 → per-ring flex response
             var rollContribution = s.Count > 8 && s[8] is not null
                 ? -(Eval(s, 8, pathT, rand, forceDraw: true) - 0.5f) * 2f
                 : 0f;                                                            // s8 roll
@@ -316,7 +311,8 @@ internal static class SptGeometryBuilder
             // Ring radius = base radius × slot-6 taper. No fraction floor — the engine lets the taper reach 0
             // at the tip; only a tiny absolute epsilon guards against degenerate rings.
             var ringRadius = MathF.Max(0.01f, radius * taper);
-            rings.Add(new BranchRing(pos, frame, pathDistance, ringRadius, pathT));
+            var ringRaw = RingWindRaw(level, inheritedRaw, pathT, windFlex * s3);
+            rings.Add(new BranchRing(pos, frame, pathDistance, ringRadius, pathT, ringRaw));
             previousFrame = frame;
         }
 
@@ -362,12 +358,11 @@ internal static class SptGeometryBuilder
         if (level + 1 < terminalRecord && level + 1 < levels)
         {
             SpawnChildren(model, level, levels, branch, rings, length, treeSize, opt, rng, rand, collected,
-                placer, branchSeed, dimming, leafHelp, barkHelp, windRaw);
+                placer, branchSeed, dimming, leafHelp, barkHelp);
         }
         else
         {
-            SpawnLeaves(branch, rings, length, treeSize, model, rng, placer, dimming, leafHelp, parentT,
-                level, windRaw);
+            SpawnLeaves(branch, rings, length, treeSize, model, rng, placer, dimming, leafHelp, parentT);
         }
     }
 
@@ -375,7 +370,7 @@ internal static class SptGeometryBuilder
         SptModel model, int level, int levels, SptBranch branch, List<BranchRing> rings,
         float length, float treeSize, SptGeometryOptions opt, SptRandom rng,
         Func<float, float, float> rand, List<CollectedBranch> collected, LeafPlacer placer,
-        uint branchSeed, TreeDimming dimming, float leafHelp, float barkHelp, float windRaw)
+        uint branchSeed, TreeDimming dimming, float leafHelp, float barkHelp)
     {
         // Child count = (Float6012 / treeSize) · length  (CIdvBranch::Compute L1305; = Float6012·Eval(slot4)).
         // No density multiplier — the engine has none. The cap only bounds the vertex budget (the engine's
@@ -409,7 +404,7 @@ internal static class SptGeometryBuilder
 
             var frac = Math.Clamp(rng.Range(min, max), 0f, 1f);
             var spawnT = SpawnTemplateParam(frac, start, end);
-            var (cpos, cframe, parentAttachRadius) = SampleAlong(rings, frac);
+            var (cpos, cframe, parentAttachRadius, childInheritedRaw) = SampleAlong(rings, frac);
             rng.Reseed(childSeed);
             _ = rng.Range(0f, 100f);
 
@@ -424,11 +419,10 @@ internal static class SptGeometryBuilder
                 childBarkHelp *= childBarkHelp;
             }
 
-            // The child inherits this branch's raw wind weight at its attachment point (B.3: the lerped
-            // per-ring +0x44 at the spawn row — our raw is the same analytic ramp, evaluated directly).
-            var childWindRaw = WindRawAt(level, windRaw, frac);
+            // The child inherits this branch's interpolated per-ring raw wind weight at its attachment
+            // point (CIdvBranch::Compute L2405-2408 lerps the parent's row +0x44 at the spawn segment).
             GenerateBranch(model, level + 1, levels, spawnT, cpos, cframe, parentAttachRadius, treeSize, opt, rng, rand,
-                collected, placer, childSeed, dimming, childLeafHelp, childBarkHelp, childWindRaw);
+                collected, placer, childSeed, dimming, childLeafHelp, childBarkHelp, childInheritedRaw);
         }
     }
 
@@ -437,7 +431,7 @@ internal static class SptGeometryBuilder
     private static void SpawnLeaves(
         SptBranch branch, List<BranchRing> rings, float length, float treeSize,
         SptModel model, SptRandom rng, LeafPlacer placer, TreeDimming dimming, float leafHelp,
-        float branchSpawnT, int level, float windRaw)
+        float branchSpawnT)
     {
         if (model.Leaves.Count == 0 || rings.Count == 0)
         {
@@ -498,12 +492,12 @@ internal static class SptGeometryBuilder
         //   frac · budReach(Eval, forceDraw) · budSpin(-180,180) · [IsBlossom] · template(doubled pick) · RoomForLeaf
         //   · [on accept: 2 GetUniform draws]. Every draw advances the ONE shared RNG, so the next terminal
         //   branch stays aligned — deferring budSpin / RoomForLeaf / the on-accept draws was the residual gap.
-        var (branchOrigin, _, _) = SampleAlong(rings, 0f);
+        var (branchOrigin, _, _, _) = SampleAlong(rings, 0f);
         for (var i = 0; i < count; i++)
         {
             var frac = Math.Clamp(rng.Range(start, end), 0f, 1f);
             var spawnT = SpawnTemplateParam(frac, start, end);
-            var (pos, frame, _) = SampleAlong(rings, frac);
+            var (pos, frame, _, leafRaw) = SampleAlong(rings, frac);
 
             // budReach = the terminal stub's length spline (slot 4 = struct +0x60, ComputeBud L2793), ALWAYS
             // drawn; a SMALL twig step off the bough, not the leaf-card size.
@@ -564,10 +558,10 @@ internal static class SptGeometryBuilder
                 dimmerByte = (byte)Math.Clamp((int)(dimmer * 255f), 0, 255);
             }
 
-            // The leaf's wind-matrix lerp weight = the spawning branch's weight at its attachment t
-            // (B.3: ComputeBud → MakeLeaf pass the interpolated row weight down to CBillboardLeaf+0x44;
-            // the shader consumes 1 − raw).
-            var leafWindWeight = Math.Clamp(1f - WindRawAt(level, windRaw, frac), 0f, 1f);
+            // The leaf's wind-matrix lerp weight = 1 − the spawning branch's interpolated per-ring raw
+            // at the leaf's attachment (ComputeBud → MakeLeaf carry the row +0x44 down to CBillboardLeaf;
+            // the STLEAF shader lerps toward the wind-matrix position by 1 − raw). Small on stiff plants.
+            var leafWindWeight = Math.Clamp(1f - leafRaw, 0f, 1f);
             placer.TryPlace(rng, pos, branchOrigin, budFrame, template, texCoords, budReach,
                 doubledIndex, oddVariant, dimmerByte, leafWindWeight);
         }
@@ -971,21 +965,23 @@ internal static class SptGeometryBuilder
         return ring;
     }
 
-    private static (Vector3 Pos, BranchFrame Frame, float Radius) SampleAlong(List<BranchRing> rings, float frac)
+    private static (Vector3 Pos, BranchFrame Frame, float Radius, float WindRaw) SampleAlong(
+        List<BranchRing> rings, float frac)
     {
         if (rings.Count == 0)
         {
-            return (Vector3.Zero, BranchFrame.Identity, 0f);
+            return (Vector3.Zero, BranchFrame.Identity, 0f, 1f);
         }
 
         // CIdvBranch::FillBranch receives frac * branchLength, then searches each ring's stored
         // cumulative distance field (+0x40) and returns the lower ring plus a local interpolation factor.
         // Position is interpolated between ring centers, but the binary passes the lower ring's stored
-        // matrix to child branches / ComputeBud rather than interpolating orientation.
+        // matrix to child branches / ComputeBud rather than interpolating orientation. The per-ring wind
+        // raw (+0x44) is interpolated the way CIdvBranch::Compute lerps it for a child/leaf spawn point.
         var targetDistance = Math.Clamp(frac, 0f, 1f) * rings[^1].Distance;
         if (targetDistance <= rings[0].Distance)
         {
-            return (rings[0].Pos, rings[0].Frame, rings[0].Radius);
+            return (rings[0].Pos, rings[0].Frame, rings[0].Radius, rings[0].WindRaw);
         }
 
         for (var i = 1; i < rings.Count; i++)
@@ -1001,10 +997,11 @@ internal static class SptGeometryBuilder
             var lt = span > 1e-6f ? (targetDistance - lower.Distance) / span : 0f;
             var pos = Vector3.Lerp(lower.Pos, upper.Pos, lt);
             var radius = MathF.Max(0f, lower.Radius + (upper.Radius - lower.Radius) * lt);
-            return (pos, lower.Frame, radius);
+            var windRaw = lower.WindRaw + (upper.WindRaw - lower.WindRaw) * lt;
+            return (pos, lower.Frame, radius, windRaw);
         }
 
-        return (rings[^1].Pos, rings[^1].Frame, rings[^1].Radius);
+        return (rings[^1].Pos, rings[^1].Frame, rings[^1].Radius, rings[^1].WindRaw);
     }
 
     private static void AddLeafCard(
@@ -1231,7 +1228,35 @@ internal static class SptGeometryBuilder
         return dot < 0 ? null : barkPath[..dot] + "_n" + barkPath[dot..];
     }
 
-    private readonly record struct BranchRing(Vector3 Pos, BranchFrame Frame, float Distance, float Radius, float PathT);
+    private readonly record struct BranchRing(
+        Vector3 Pos, BranchFrame Frame, float Distance, float Radius, float PathT, float WindRaw);
+
+    /// <summary>
+    ///     The engine's RAW per-ring wind weight (<c>CIdvBranch</c> row +0x44), the store convention the
+    ///     STLEAF shader reads as <c>1 − raw</c> for its wind-matrix lerp. Decompile-exact (360
+    ///     <c>ComputeVertexWeight</c> 0x82975DF8 / <c>ComputeHighLevelVertexWeight</c> 0x82975E48):
+    ///     <list type="bullet">
+    ///       <item>level &lt; <see cref="WindLevel" />: <c>raw = 1</c> (rigid — no sway).</item>
+    ///       <item>level == <see cref="WindLevel" />: <c>raw = 1 − a·b</c>, with <c>a = pathT</c> and
+    ///         <c>b = flexResponse = Eval(slot2, parentT)·Eval(slot3, pathT)</c>.</item>
+    ///       <item>level &gt; <see cref="WindLevel" />: <c>raw = inherited·(1 − flexResponse)</c> (the child
+    ///         inherits its parent's interpolated ring raw and articulates further by the flex response).</item>
+    ///     </list>
+    ///     <c>flexResponse</c> is the slot-2 (per-branch, at the spawn param) × slot-3 (per-ring) product —
+    ///     the branch's wind flexibility. Both were previously drawn-and-discarded; treating them as ≡ 1
+    ///     (the old <c>a·b ≈ t</c> approximation) over-swayed low-flex plants ~20× (e.g. FNV
+    ///     WastelandShrub01 authors slot2 = 0 → the engine keeps it rigid under the matrices).
+    /// </summary>
+    private static float RingWindRaw(int level, float inheritedRaw, float pathT, float flexResponse)
+    {
+        var b = Math.Clamp(flexResponse, 0f, 1f);
+        if (level < WindLevel)
+        {
+            return 1f;
+        }
+
+        return Math.Clamp(level == WindLevel ? 1f - pathT * b : inheritedRaw * (1f - b), 0f, 1f);
+    }
 
     /// <summary>A fully-lofted branch held back from emission so the LOD decimation can drop the
     /// lowest-"volume" branches before any vertices are produced (see <see cref="EmitDecimatedBranches" />).

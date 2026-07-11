@@ -72,6 +72,9 @@ internal static class SpeedTreeMeshStatsCommand
         var opt = SptGeometryOptions.FromEnvironment() with
         {
             TargetHeight = treeMeta?.TargetHeight,
+            // Match the viewer's GPU leaf path so the per-leaf wind weight packs into aBitangent.z
+            // (the non-billboard fallback bakes flat quads and carries no wind data).
+            LeafBillboard = true,
         };
         var seed = treeMeta?.Seed ?? model.General.Token2005;
         var renderable = SptGeometryBuilder.Build(model, seed, opt);
@@ -84,6 +87,7 @@ internal static class SpeedTreeMeshStatsCommand
         var barkMax = new Vector3(float.MinValue);
         var barkTris = 0;
         var centers = new List<Vector3>();
+        var windWeights = new List<float>();
         foreach (var sub in renderable.Submeshes)
         {
             var tris = sub.Triangles.Length / 3;
@@ -117,6 +121,14 @@ internal static class SpeedTreeMeshStatsCommand
                     }
 
                     centers.Add(c / unique.Count);
+
+                    // Wind-matrix lerp weight rides in the packed aBitangent.z FRACTION (integer =
+                    // matrixSlot·48 + phaseSlot). Read one per card from its first vertex.
+                    if (sub.Bitangents is { } bt)
+                    {
+                        var packed = bt[unique.Min() * 3 + 2];
+                        windWeights.Add(packed - MathF.Floor(packed));
+                    }
                 }
             }
         }
@@ -128,6 +140,16 @@ internal static class SpeedTreeMeshStatsCommand
             $"  model bounds  x[{renderable.MinX:F1},{renderable.MaxX:F1}] y[{renderable.MinY:F1},{renderable.MaxY:F1}] z[{totalMinZ:F1},{totalMaxZ:F1}] height={height:F1}"));
         Console.WriteLine(string.Create(ci,
             $"  bark          tris={barkTris} x[{barkMin.X:F1},{barkMax.X:F1}] y[{barkMin.Y:F1},{barkMax.Y:F1}] z[{barkMin.Z:F1},{barkMax.Z:F1}]"));
+
+        if (windWeights.Count > 0)
+        {
+            var ww = windWeights.OrderBy(w => w).ToArray();
+            var mean = windWeights.Average();
+            Console.WriteLine(string.Create(ci,
+                $"  leaf wind wt  count={ww.Length} min={ww[0]:F3} mean={mean:F3} p50={ww[ww.Length / 2]:F3} " +
+                $"p95={ww[Math.Min(ww.Length - 1, 19 * ww.Length / 20)]:F3} max={ww[^1]:F3}  " +
+                $"(0 = rigid under the sway matrices; high = full canopy sway)"));
+        }
 
         if (centers.Count > 0 && height > 0f)
         {

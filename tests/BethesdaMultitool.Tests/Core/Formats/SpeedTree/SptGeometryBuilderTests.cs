@@ -211,36 +211,39 @@ public class SptGeometryBuilderTests
             disabled.Submeshes.Single(s => s.ShapeName == "spt:bark").Positions.Length); // disabled = no gate
     }
 
-    [Fact]
-    public void Build_WindWeights_RampWithBranchLevel()
+    [Theory]
+    [InlineData(0f, 0f, 0.002f)]     // zero slot-2 flex → rigid under the matrices (WastelandShrub01 case)
+    [InlineData(0.3f, 0.05f, 0.31f)] // real flex → positive weight bounded by t·slot2·slot3 ≈ 0.3
+    public void Build_WindWeights_ScaleWithSlot2Slot3Flex(float slot2Flex, float minMaxWeight, float maxWeightCap)
     {
-        // Design doc B.3 (windLevel = 1): trunk-spawned geometry is rigid (weight 0); leaves on
-        // level >= 1 branches carry weight = 1 − raw > 0, ramping toward 1 at branch tips. The weight
-        // rides in the packed aBitangent.z fraction.
+        // Decompile-exact (ComputeVertexWeight 0x82975DF8): the wind-matrix weight at windLevel(=1) is
+        // a·b = t · Eval(slot2, parentT) · Eval(slot3, t). Slot 2 (per-branch) and slot 3 (per-ring) are
+        // the wind-flex response — authored ~0 on stiff plants, which keeps them rigid under the sway
+        // matrices. Approximating a·b ≈ t (dropping both flex splines) over-swayed low-flex plants ~20×.
+        var leafy = MakeLeafyBranch();
+        var slots = (SptBezierSpline?[])leafy.Splines;
+        slots[2] = new SptBezierSpline { Header = new Vector3(slot2Flex, slot2Flex, 0f) }; // constant flex
+        slots[3] = new SptBezierSpline { Header = new Vector3(0f, 1f, 0f) };               // ramps 0→1 with t
         var model = new SptModel
         {
             General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
-            Branches =
-            [
-                MakeBranch(1f, 0.02f, 2.6f, 3, 1),
-                MakeLeafyBranch(),
-                new SptBranch()
-            ],
+            Branches = [MakeBranch(1f, 0.02f, 2.6f, 3, 1), leafy, new SptBranch()],
             Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.01f) }],
             LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 }
         };
 
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
         var offsets = result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Bitangents!;
-        var sawPositive = false;
+        var maxWeight = 0f;
         for (var v = 2; v < offsets.Length; v += 3)
         {
             var weight = offsets[v] - MathF.Floor(offsets[v]);
-            Assert.InRange(weight, 0f, 0.996f);
-            sawPositive |= weight > 0f;
+            Assert.InRange(weight, 0f, maxWeightCap); // never exceeds the t·flex product
+            maxWeight = MathF.Max(maxWeight, weight);
         }
 
-        Assert.True(sawPositive, "level-1 leaves must carry a nonzero wind-matrix weight");
+        Assert.True(maxWeight >= minMaxWeight,
+            $"expected peak leaf wind weight ≥ {minMaxWeight}, got {maxWeight}");
     }
 
     [Fact]
