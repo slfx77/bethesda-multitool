@@ -60,11 +60,23 @@ internal static class TerrainCellCpuBuilder
         int gridSize)
     {
         // Morrowind: paint the flat 16×16 land-texture grid per vertex (shaped via shader bilinear
-        // interp), not the lossy 4-quadrant collapse. No ATXT alpha layers, so neighbor edge blending
-        // doesn't apply here.
+        // interp), not the lossy 4-quadrant collapse. The north/east edge vertices belong to the
+        // NEIGHBOR cell's first texture square (the land grid is continuous across cells), so the
+        // border quads blend cross-cell exactly like interior square boundaries — without the
+        // neighbor grids the edge clamps solid and every cell boundary renders as a hard seam.
         if (cell.LandVisualData?.VtexTextureFormIds is { Length: > 0 } vtexGrid)
         {
-            return CellTerrainTextureSet.Project(CellLayerWeightTable.BuildFromVtexGrid(gridSize, vtexGrid));
+            uint[]? eastV = null, northV = null, northEastV = null;
+            if (cells is not null)
+            {
+                eastV = NeighborVtexGrid(cells, key.gx + 1, key.gy);
+                northV = NeighborVtexGrid(cells, key.gx, key.gy + 1);
+                northEastV = NeighborVtexGrid(cells, key.gx + 1, key.gy + 1);
+            }
+
+            return CellTerrainTextureSet.Project(CellLayerWeightTable.BuildFromVtexGrid(
+                gridSize, vtexGrid,
+                eastVtexFormIds: eastV, northVtexFormIds: northV, northEastVtexFormIds: northEastV));
         }
 
         var layers = cell.LandVisualData?.TextureLayers;
@@ -95,6 +107,12 @@ internal static class TerrainCellCpuBuilder
 
         return CellTerrainTextureSet.Project(table);
     }
+
+    private static uint[]? NeighborVtexGrid(
+        Dictionary<(int gx, int gy), CellRecord> cells, int gx, int gy)
+        => cells.TryGetValue((gx, gy), out var neighbor)
+            ? neighbor.LandVisualData?.VtexTextureFormIds
+            : null;
 
     private static IReadOnlyList<LandTextureLayer>? NeighborLayers(
         Dictionary<(int gx, int gy), CellRecord> cells, int gx, int gy)

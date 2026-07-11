@@ -294,8 +294,18 @@ public sealed class CellLayerWeightTable
     ///         to the mesh's south-origin rows), so the VTEX row is taken south-origin to track world Y.
     ///         If Morrowind terrain textures render north/south-mirrored, flip the <c>row</c> mapping.
     ///     </para>
+    ///     <para>
+    ///         A boundary vertex belongs to the NEXT texture square (floor semantics) — which at the
+    ///         cell's north/east edges lives in the neighbor cell. Pass the east/north/north-east
+    ///         neighbors' VTEX grids so those edge vertices take the neighbor's first row/column and the
+    ///         border quad blends across cells exactly like an interior square boundary (the land grid
+    ///         is continuous across cells in-engine). Each border's transition lives in the west/south
+    ///         cell's edge quad, so no border double-blends. Without a neighbor grid the row/col clamps
+    ///         to this cell's last square (solid to the edge — the prior behavior).
+    ///     </para>
     /// </summary>
-    public static CellLayerWeightTable BuildFromVtexGrid(int gridSize, uint[] vtexFormIds, int vtexSize = 16)
+    public static CellLayerWeightTable BuildFromVtexGrid(int gridSize, uint[] vtexFormIds, int vtexSize = 16,
+        uint[]? eastVtexFormIds = null, uint[]? northVtexFormIds = null, uint[]? northEastVtexFormIds = null)
     {
         var table = new CellLayerWeightTable(gridSize);
         var last = gridSize - 1;
@@ -304,14 +314,33 @@ public sealed class CellLayerWeightTable
             return table;
         }
 
+        var squares = vtexSize * vtexSize;
+        var east = eastVtexFormIds?.Length >= squares ? eastVtexFormIds : null;
+        var north = northVtexFormIds?.Length >= squares ? northVtexFormIds : null;
+        var northEast = northEastVtexFormIds?.Length >= squares ? northEastVtexFormIds : null;
+
         for (var vy = 0; vy < gridSize; vy++)
         {
             var meshRow = last - vy; // table north edge → mesh south-origin row
-            var row = Math.Min(vtexSize - 1, meshRow * vtexSize / last);
+            var row = meshRow * vtexSize / last; // == vtexSize only on the north edge row
             for (var vx = 0; vx < gridSize; vx++)
             {
-                var col = Math.Min(vtexSize - 1, vx * vtexSize / last);
-                table.At(vx, vy).Add(vtexFormIds[row * vtexSize + col], 1f);
+                var col = vx * vtexSize / last; // == vtexSize only on the east edge column
+                var (grid, r, c) = (row >= vtexSize, col >= vtexSize) switch
+                {
+                    (true, true) => (northEast, 0, 0),
+                    (true, false) => (north, 0, col),
+                    (false, true) => (east, row, 0),
+                    _ => ((uint[]?)vtexFormIds, row, col),
+                };
+                if (grid is null)
+                {
+                    grid = vtexFormIds;
+                    r = Math.Min(row, vtexSize - 1);
+                    c = Math.Min(col, vtexSize - 1);
+                }
+
+                table.At(vx, vy).Add(grid[(r * vtexSize) + c], 1f);
             }
         }
 
