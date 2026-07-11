@@ -411,6 +411,16 @@ public static class DmpToEsmCommand
                     $"  Leveled-spawn recovery: recovered={leveledRecovered:N0}, still-dropped={stillDangling:N0}");
             }
 
+            if (verbose && s.DropReasonCounts.Count > 0)
+            {
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[bold]Drop-reason breakdown[/] (descending):");
+                foreach (var (code, count) in s.DropReasonCounts.OrderByDescending(kv => kv.Value))
+                {
+                    AnsiConsole.MarkupLine($"  {count,8:N0}  {code.EscapeMarkup()}");
+                }
+            }
+
             if (s.Scols.TotalParsed > 0)
             {
                 AnsiConsole.WriteLine();

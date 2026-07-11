@@ -28,6 +28,7 @@ public static class DmpCommand
         command.Subcommands.Add(DmpCellAuthorityBuildCommand.Create());
         command.Subcommands.Add(DmpFormTypeCensusCommand.Create());
         command.Subcommands.Add(LeveledSpawnCensusCommand.Create());
+        command.Subcommands.Add(ActorLedgerCommand.Create());
         command.Subcommands.Add(DmpGapInventoryCommand.Create());
         command.Subcommands.Add(BuffersCommand.Create());
         command.Subcommands.Add(CoverageCommand.Create());
