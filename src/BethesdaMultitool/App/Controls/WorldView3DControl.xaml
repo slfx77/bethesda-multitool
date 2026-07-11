@@ -38,7 +38,6 @@
                                      LightingToggled="LightingPanel_LightingToggled"
                                      FogToggled="LightingPanel_FogToggled"
                                      ShadowsToggled="LightingPanel_ShadowsToggled"
-                                     ShadowDistanceChanged="LightingPanel_ShadowDistanceChanged"
                                      SkyboxToggled="LightingPanel_SkyboxToggled"
                                      TimeChanged="LightingPanel_TimeChanged"
                                      DayChanged="LightingPanel_DayChanged"
@@ -118,6 +117,10 @@
                           AutomationProperties.Name="Trees"
                           ToolTipService.ToolTip="Show trees (SpeedTree .spt and NIF trees; hiding before load also skips decoding them)"
                           Checked="TreesCheckBox_Changed" Unchecked="TreesCheckBox_Changed" />
+                <CheckBox x:Name="EffectsCheckBox" IsChecked="True" Content="Effect meshes"
+                          AutomationProperties.Name="Effect meshes"
+                          ToolTipService.ToolTip="Show placed effect meshes (Effects\ folder: mist, dust, glows, ambient FX)"
+                          Checked="EffectsCheckBox_Changed" Unchecked="EffectsCheckBox_Changed" />
                 <CheckBox x:Name="DisabledCheckBox" IsChecked="False" Content="Initially-disabled objects"
                           AutomationProperties.Name="Initially-disabled objects"
                           ToolTipService.ToolTip="Show objects flagged initially-disabled (press 7)"

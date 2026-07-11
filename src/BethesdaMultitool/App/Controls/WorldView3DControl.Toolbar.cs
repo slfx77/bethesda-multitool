@@ -84,13 +84,6 @@ public sealed partial class WorldView3DControl
         _showShadows = isOn;
     }
 
-    private void LightingPanel_ShadowDistanceChanged(object? sender, double cells)
-    {
-        if (_initializing) return;
-        // PositiveInfinity = the slider's "Unlimited" stop → coverage follows the render distance.
-        _shadowDistanceCells = double.IsPositiveInfinity(cells) ? null : (float)cells;
-    }
-
     private void NavMeshCheckBox_Changed(object sender, RoutedEventArgs e)
     {
         if (_initializing) return;
@@ -131,6 +124,12 @@ public sealed partial class WorldView3DControl
     {
         if (_initializing) return;
         SetShowTrees(TreesCheckBox.IsChecked == true);
+    }
+
+    private void EffectsCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetShowEffects(EffectsCheckBox.IsChecked == true);
     }
 
     private void SetRenderDistance(float distance)
@@ -235,6 +234,21 @@ public sealed partial class WorldView3DControl
         if (TreesCheckBox is not null && TreesCheckBox.IsChecked != on)
         {
             TreesCheckBox.IsChecked = on;
+        }
+    }
+
+    /// <summary>Effects-category visibility toggle. Default on. Placed effect meshes (the Effects\
+    /// folder: mist sheets, dust, glows, ambient FX planes) — real atmosphere in the scene, but the
+    /// first thing to hide when inspecting the geometry they hover over. Render-time filter through
+    /// the same per-category funnel as trees/activators (no cache rebuild).</summary>
+    private void SetShowEffects(bool on)
+    {
+        if (on) _hiddenCategories.Remove(PlacedObjectCategory.Effects);
+        else _hiddenCategories.Add(PlacedObjectCategory.Effects);
+        _references?.SetHiddenCategories(_hiddenCategories);
+        if (EffectsCheckBox is not null && EffectsCheckBox.IsChecked != on)
+        {
+            EffectsCheckBox.IsChecked = on;
         }
     }
 }

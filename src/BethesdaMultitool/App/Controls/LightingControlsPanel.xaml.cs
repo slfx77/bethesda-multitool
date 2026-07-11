@@ -17,16 +17,14 @@ namespace BethesdaMultitool;
 public sealed partial class LightingControlsPanel : UserControl
 {
     private bool _suppressWeatherSelectionEvent;
-    private bool _suppressTimeSync;
     private bool _suppressWindEvents;
 
     public LightingControlsPanel()
     {
         InitializeComponent();
-        UpdateTimeValueText();
+        UpdateTimeSegments(TimeSlider.Value);
+        SelectTimeSegment(minutes: false); // hours selected by default
         UpdateDayValueText();
-        UpdateShadowDistanceValueText(
-            ShadowDistanceSlider.Value >= ShadowDistanceSlider.Maximum, ShadowDistanceSlider.Value);
     }
 
     /// <summary>Raised when the Lighting toggle changes. Argument is the new on/off state.</summary>
@@ -37,11 +35,6 @@ public sealed partial class LightingControlsPanel : UserControl
 
     /// <summary>Raised when the Sun-shadows toggle changes. Argument is the new on/off state.</summary>
     public event EventHandler<bool>? ShadowsToggled;
-
-    /// <summary>Raised when the Shadow-distance slider changes. Argument is the coverage radius in
-    /// CELLS, or <see cref="double.PositiveInfinity" /> when the slider sits at its "Unlimited"
-    /// maximum (coverage then follows the render distance).</summary>
-    public event EventHandler<double>? ShadowDistanceChanged;
 
     /// <summary>Raised when the Skybox toggle changes. Argument is the new on/off state.</summary>
     public event EventHandler<bool>? SkyboxToggled;
@@ -133,18 +126,12 @@ public sealed partial class LightingControlsPanel : UserControl
         set => FogToggle.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>Whether the Sun-shadows toggle + distance rows are shown (default true; the 2D map
-    /// hides them — the shadow pass only exists in the 3D scene).</summary>
+    /// <summary>Whether the Sun-shadows toggle row is shown (default true; the 2D map hides it —
+    /// the shadow pass only exists in the 3D scene).</summary>
     public bool ShowShadows
     {
         get => ShadowsToggle.Visibility == Visibility.Visible;
-        set
-        {
-            var vis = value ? Visibility.Visible : Visibility.Collapsed;
-            ShadowsToggle.Visibility = vis;
-            ShadowDistanceRow.Visibility = vis;
-            ShadowDistanceSlider.Visibility = vis;
-        }
+        set => ShadowsToggle.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Whether the Skybox toggle row is shown (default true; the 2D map hides it —
@@ -227,20 +214,6 @@ public sealed partial class LightingControlsPanel : UserControl
     private void ShadowsToggle_Changed(object sender, RoutedEventArgs e) =>
         ShadowsToggled?.Invoke(this, ShadowsToggle.IsOn);
 
-    private void ShadowDistanceSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
-    {
-        // Parse-time early fire (markup Value="4"): read Maximum off the sender and null-guard the
-        // value text, which may not be name-connected yet (same hazard as TimeStepper above).
-        if (sender is not Slider slider || ShadowDistanceValueText is null) return;
-        var unlimited = e.NewValue >= slider.Maximum;
-        UpdateShadowDistanceValueText(unlimited, e.NewValue);
-        ShadowDistanceChanged?.Invoke(this, unlimited ? double.PositiveInfinity : e.NewValue);
-    }
-
-    /// <summary>Shows the slider value ("4 cells" / "Unlimited" at the max stop).</summary>
-    private void UpdateShadowDistanceValueText(bool unlimited, double cells) =>
-        ShadowDistanceValueText.Text = unlimited ? "Unlimited" : $"{(int)cells} cells";
-
     private void SkyboxToggle_Changed(object sender, RoutedEventArgs e) =>
         SkyboxToggled?.Invoke(this, SkyboxToggle.IsOn);
 
@@ -260,40 +233,88 @@ public sealed partial class LightingControlsPanel : UserControl
 
     private void TimeSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
-        UpdateTimeValueText();
-        // Keep the stepper in lock-step (guard against the NumberBox → slider echo).
-        if (!_suppressTimeSync)
-        {
-            _suppressTimeSync = true;
-            TimeStepper.Value = Math.Round(e.NewValue, 1);
-            _suppressTimeSync = false;
-        }
-
+        UpdateTimeSegments(e.NewValue);
         TimeChanged?.Invoke(this, e.NewValue);
     }
 
-    private void TimeStepper_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    // ---- Segmented HH:MM stepper ----------------------------------------------------------------
+    // The selected segment (hours or minutes) is what the chevron RepeatButtons — and Up/Down on a
+    // focused segment — step. Minutes wrap 0↔59 WITHOUT carrying into the hour (deliberate: fine
+    // minute nudges must not yank the scene across an hour boundary); hours wrap 0↔23. The slider
+    // stays the canonical value: stepping writes TimeSlider.Value, which raises TimeChanged and
+    // refreshes the segment text, so hosts see one unified time source.
+
+    private bool _minutesSegmentSelected;
+
+    private void HourSegment_Click(object sender, RoutedEventArgs e) => SelectTimeSegment(minutes: false);
+
+    private void MinuteSegment_Click(object sender, RoutedEventArgs e) => SelectTimeSegment(minutes: true);
+
+    private void TimeUpButton_Click(object sender, RoutedEventArgs e) => StepSelectedTimeField(+1);
+
+    private void TimeDownButton_Click(object sender, RoutedEventArgs e) => StepSelectedTimeField(-1);
+
+    /// <summary>Up/Down on a FOCUSED segment selects and steps that segment directly (keyboard
+    /// parity with click-then-chevron).</summary>
+    private void TimeSegment_KeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
     {
-        if (_suppressTimeSync) return;
-        // NaN = the user cleared the text box; ignore until a real value arrives.
-        if (double.IsNaN(args.NewValue)) return;
-        // Parse-time early fire: the markup Value="12" applies while TimeSlider (declared later in
-        // the XAML) is still null — a throw here surfaces as a XamlParseException on NumberBox.Value
-        // and crashes the whole control. The slider's own markup Value matches, so skipping is safe.
-        if (TimeSlider is null) return;
-        _suppressTimeSync = true;
-        TimeSlider.Value = Math.Clamp(args.NewValue, 0, 24); // fires TimeChanged via the slider
-        _suppressTimeSync = false;
+        var isMinutes = ReferenceEquals(sender, MinuteSegment);
+        if (e.Key == Windows.System.VirtualKey.Up)
+        {
+            SelectTimeSegment(isMinutes);
+            StepSelectedTimeField(+1);
+            e.Handled = true;
+        }
+        else if (e.Key == Windows.System.VirtualKey.Down)
+        {
+            SelectTimeSegment(isMinutes);
+            StepSelectedTimeField(-1);
+            e.Handled = true;
+        }
     }
 
-    /// <summary>Formats the 0–24h slider value as HH:MM (24:00 wraps to 00:00).</summary>
-    private void UpdateTimeValueText()
+    /// <summary>Marks the segment the chevrons drive with an accent underline (constant border
+    /// thickness in markup, so selection never shifts layout).</summary>
+    private void SelectTimeSegment(bool minutes)
     {
-        var v = TimeSlider.Value;
-        var totalMinutes = (int)Math.Round(v * 60.0);
+        _minutesSegmentSelected = minutes;
+        if (HourSegment is null || MinuteSegment is null) return; // parse-time early fire
+        var accent = Application.Current.Resources.TryGetValue("AccentFillColorDefaultBrush", out var brush)
+            ? brush as Microsoft.UI.Xaml.Media.Brush
+            : null;
+        var transparent = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        HourSegment.BorderBrush = minutes ? transparent : accent ?? transparent;
+        MinuteSegment.BorderBrush = minutes ? accent ?? transparent : transparent;
+    }
+
+    private void StepSelectedTimeField(int direction)
+    {
+        if (TimeSlider is null) return; // parse-time early fire
+        var totalMinutes = (int)Math.Round(TimeSlider.Value * 60.0);
         var hours = (totalMinutes / 60) % 24;
         var minutes = totalMinutes % 60;
-        TimeValueText.Text = $"{hours:00}:{minutes:00}";
+        if (_minutesSegmentSelected)
+        {
+            minutes = (minutes + direction + 60) % 60; // rolls 59↔0; the hour is untouched
+        }
+        else
+        {
+            hours = (hours + direction + 24) % 24;
+        }
+
+        TimeSlider.Value = hours + (minutes / 60.0); // fires TimeChanged + UpdateTimeSegments
+    }
+
+    /// <summary>Reflects an hour value (0–24 fractional; 24:00 wraps to 00:00) on the HH / MM
+    /// segment faces.</summary>
+    private void UpdateTimeSegments(double hourValue)
+    {
+        if (HourSegment is null || MinuteSegment is null) return; // parse-time early fire
+        var totalMinutes = (int)Math.Round(hourValue * 60.0);
+        var hours = (totalMinutes / 60) % 24;
+        var minutes = totalMinutes % 60;
+        HourSegment.Content = $"{hours:00}";
+        MinuteSegment.Content = $"{minutes:00}";
     }
 
     private void DaySlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)

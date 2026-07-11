@@ -35,21 +35,8 @@
           <ToggleSwitch x:Name="ShadowsToggle" IsOn="True" Header="Sun shadows"
                         OnContent="On" OffContent="Off"
                         AutomationProperties.Name="Sun shadows"
-                        ToolTipService.ToolTip="Toggle the directional sun shadow map (needs Lighting on)"
+                        ToolTipService.ToolTip="Toggle the directional sun shadows (cascaded — sharp near the camera, reaching the full draw distance)"
                         Toggled="ShadowsToggle_Changed" />
-          <Grid x:Name="ShadowDistanceRow" ColumnSpacing="8">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Shadow distance" FontWeight="SemiBold" />
-            <TextBlock Grid.Column="1" x:Name="ShadowDistanceValueText" FontWeight="SemiBold"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-          </Grid>
-          <Slider x:Name="ShadowDistanceSlider" Minimum="1" Maximum="17" StepFrequency="1" Value="4"
-                  AutomationProperties.Name="Shadow distance"
-                  ToolTipService.ToolTip="Sun-shadow coverage radius in cells (max = unlimited). Smaller = sharper shadows; larger reaches further from the camera."
-                  ValueChanged="ShadowDistanceSlider_ValueChanged" />
           <ToggleSwitch x:Name="SkyboxToggle" IsOn="True" Header="Skybox"
                         OnContent="On" OffContent="Off"
                         AutomationProperties.Name="Skybox"
@@ -63,15 +50,38 @@
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="Time of day" FontWeight="SemiBold"
                        VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" x:Name="TimeValueText" FontWeight="SemiBold"
-                       VerticalAlignment="Center"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <NumberBox Grid.Column="2" x:Name="TimeStepper" Minimum="0" Maximum="24"
-                       SmallChange="1" LargeChange="6" Value="12" Width="120"
-                       SpinButtonPlacementMode="Inline"
-                       AutomationProperties.Name="Time of day hours"
-                       ToolTipService.ToolTip="Time of day in hours (0–24) — step or type; synced with the slider"
-                       ValueChanged="TimeStepper_ValueChanged" />
+            <!-- Segmented HH:MM stepper (replaces a NumberBox whose inline spin chrome squeezed the
+                 text so thin the clear-x overlapped it). Click hours or minutes to select the field
+                 — the accent underline marks it — then the chevrons (or Up/Down on the focused
+                 segment) step ONLY that field. Minutes wrap 0↔59 WITHOUT carrying into the hour;
+                 hours wrap 0↔23. Coarse setting stays on the slider below. -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+              <Button x:Name="HourSegment" Content="12" MinWidth="40" Padding="8,4"
+                      FontWeight="SemiBold" BorderThickness="0,0,0,2" BorderBrush="Transparent"
+                      AutomationProperties.Name="Hours"
+                      ToolTipService.ToolTip="Select the hours field — the arrows then step it (wraps 0–23)"
+                      Click="HourSegment_Click" KeyDown="TimeSegment_KeyDown" />
+              <TextBlock Text=":" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0" />
+              <Button x:Name="MinuteSegment" Content="00" MinWidth="40" Padding="8,4"
+                      FontWeight="SemiBold" BorderThickness="0,0,0,2" BorderBrush="Transparent"
+                      AutomationProperties.Name="Minutes"
+                      ToolTipService.ToolTip="Select the minutes field — the arrows then step it (wraps 0–59 without changing the hour)"
+                      Click="MinuteSegment_Click" KeyDown="TimeSegment_KeyDown" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Vertical" VerticalAlignment="Center" Spacing="2">
+              <RepeatButton x:Name="TimeUpButton" MinWidth="30" Padding="6,2"
+                            AutomationProperties.Name="Step time up"
+                            ToolTipService.ToolTip="Step the selected time field up (hold to repeat)"
+                            Click="TimeUpButton_Click">
+                <FontIcon Glyph="&#xE70E;" FontSize="10" />
+              </RepeatButton>
+              <RepeatButton x:Name="TimeDownButton" MinWidth="30" Padding="6,2"
+                            AutomationProperties.Name="Step time down"
+                            ToolTipService.ToolTip="Step the selected time field down (hold to repeat)"
+                            Click="TimeDownButton_Click">
+                <FontIcon Glyph="&#xE70D;" FontSize="10" />
+              </RepeatButton>
+            </StackPanel>
           </Grid>
           <Slider x:Name="TimeSlider" Minimum="0" Maximum="24" StepFrequency="0.1" Value="12"
                   AutomationProperties.Name="Time of day"
