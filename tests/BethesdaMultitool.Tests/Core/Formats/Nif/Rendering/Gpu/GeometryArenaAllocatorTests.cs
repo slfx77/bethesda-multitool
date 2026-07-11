@@ -98,11 +98,27 @@ public sealed class GeometryArenaAllocatorTests
     }
 
     [Fact]
-    public void AllocationLargerThanBlock_Throws()
+    public void AllocationLargerThanBlock_GetsADedicatedBlock_SizedToTheAllocation()
     {
+        // Monolithic meshes (RepBay.NIF ~25 MB vs the 16 MB standard block) must not fail —
+        // they get a dedicated block exactly as large as the aligned allocation.
         var arena = new GeometryArenaAllocator(64);
+        arena.Allocate(16); // block 0 (standard)
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => arena.Allocate(65)); // 65 → 80 > 64
+        var big = arena.Allocate(100); // 100 → 112 > 64 → dedicated block
+        Assert.Equal(1, big.BlockIndex);
+        Assert.Equal(0L, big.Offset);
+        Assert.Equal(112L, big.AlignedSize);
+        Assert.Equal(64L, arena.BlockSizeOf(0));
+        Assert.Equal(112L, arena.BlockSizeOf(1));
+
+        // Freed dedicated space is reusable: the next same-sized request first-fits into it
+        // instead of committing another oversized block.
+        arena.Free(big);
+        var reused = arena.Allocate(112);
+        Assert.Equal(1, reused.BlockIndex);
+        Assert.Equal(0L, reused.Offset);
+        Assert.Equal(2, arena.BlockCount);
     }
 
     [Fact]

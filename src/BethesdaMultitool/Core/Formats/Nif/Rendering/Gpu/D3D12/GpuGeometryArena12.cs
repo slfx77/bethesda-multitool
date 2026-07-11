@@ -20,7 +20,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposable
 {
-    /// <summary>16 MB per block — comfortably larger than any single reference mesh, few blocks.</summary>
+    /// <summary>16 MB per standard block. A handful of monolithic meshes exceed it (RepBay.NIF and
+    /// B29_RiseAnim.NIF run ~25 MB) — those get a dedicated block sized to the allocation.</summary>
     public const long DefaultBlockSize = 16L * 1024L * 1024L;
 
     private const int RegionAlignment = 16;
@@ -29,14 +30,13 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     private readonly GeometryArenaAllocator _allocator;
     private readonly List<ID3D12Resource> _blockResources = new();
     private readonly List<IntPtr> _blockPointers = new();
-    private readonly long _blockSize;
+    private long _committedBytes;
     private ResourceRegistration? _registration;
     private bool _disposed;
 
     public GpuGeometryArena12(GpuDevice12 gpu, long blockSize = DefaultBlockSize)
     {
         _gpu = gpu;
-        _blockSize = blockSize;
         _allocator = new GeometryArenaAllocator(blockSize, RegionAlignment);
     }
 
@@ -54,7 +54,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     /// </summary>
     public ResourceStats GetStats() => new()
     {
-        EstimatedBytes = _blockResources.Count * _blockSize,
+        EstimatedBytes = _committedBytes,
         EntryCount = _blockResources.Count,
     };
 
@@ -144,10 +144,13 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     {
         while (_blockResources.Count < _allocator.BlockCount)
         {
+            // Per-block size: standard blocks share _blockSize; an oversized mesh's dedicated
+            // block is exactly as large as the allocation that forced it.
+            var blockBytes = _allocator.BlockSizeOf(_blockResources.Count);
             var resource = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
                 HeapProperties.UploadHeapProperties,
                 HeapFlags.None,
-                ResourceDescription.Buffer((ulong)_allocator.BlockSize),
+                ResourceDescription.Buffer((ulong)blockBytes),
                 ResourceStates.GenericRead,
                 optimizedClearValue: null);
 
@@ -155,6 +158,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
             resource.Map(0, &mapped).CheckError();
             _blockResources.Add(resource);
             _blockPointers.Add((IntPtr)mapped);
+            _committedBytes += blockBytes;
         }
     }
 

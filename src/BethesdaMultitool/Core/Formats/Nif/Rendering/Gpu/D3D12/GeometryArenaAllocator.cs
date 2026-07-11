@@ -17,6 +17,7 @@ internal sealed class GeometryArenaAllocator
     private readonly long _blockSize;
     private readonly int _alignment;
     private readonly List<List<FreeSpan>> _blocks = new();
+    private readonly List<long> _blockSizes = new();
     private long _allocatedBytes;
 
     /// <summary>Creates an arena that sub-allocates spans from fixed-size blocks.</summary>
@@ -39,16 +40,22 @@ internal sealed class GeometryArenaAllocator
     /// <summary>Blocks created so far. Grows when an allocation does not fit any existing block.</summary>
     public int BlockCount => _blocks.Count;
 
-    /// <summary>Usable bytes per block.</summary>
+    /// <summary>Usable bytes per STANDARD block (oversized allocations get larger dedicated blocks).</summary>
     public long BlockSize => _blockSize;
+
+    /// <summary>Actual usable bytes of block <paramref name="blockIndex" /> — the standard size, or
+    /// the allocation size that forced a dedicated oversized block.</summary>
+    public long BlockSizeOf(int blockIndex) => _blockSizes[blockIndex];
 
     /// <summary>Currently-allocated (not freed) bytes across all blocks, including alignment padding.</summary>
     public long AllocatedBytes => _allocatedBytes;
 
     /// <summary>
     ///     Reserves <paramref name="size" /> bytes (rounded up to the alignment). Uses the first
-    ///     existing block with room; if none has room, appends a new block. Throws if the aligned
-    ///     size exceeds a single block.
+    ///     existing block with room; if none has room, appends a new block — standard-sized, or a
+    ///     DEDICATED larger block when the aligned size exceeds the standard size (monolithic
+    ///     meshes like RepBay.NIF run ~25 MB against the 16 MB standard block). Dedicated blocks
+    ///     join the normal free-list pool, so their space is reusable once the big mesh is freed.
     /// </summary>
     public ArenaAllocation Allocate(long size)
     {
@@ -56,11 +63,6 @@ internal sealed class GeometryArenaAllocator
             throw new ArgumentOutOfRangeException(nameof(size), "Must be > 0.");
 
         var alignedSize = AlignUp(size, _alignment);
-        if (alignedSize > _blockSize)
-            throw new ArgumentOutOfRangeException(
-                nameof(size),
-                $"Allocation of {size}B (aligned {alignedSize}B) exceeds arena block size {_blockSize}B.");
-
         for (var b = 0; b < _blocks.Count; b++)
         {
             if (TryAllocateInBlock(b, alignedSize, out var offset))
@@ -71,7 +73,9 @@ internal sealed class GeometryArenaAllocator
         }
 
         // No existing block had room → append a fresh, fully-free block and allocate at its front.
-        _blocks.Add(new List<FreeSpan> { new(0, _blockSize) });
+        var newBlockSize = Math.Max(_blockSize, alignedSize);
+        _blocks.Add(new List<FreeSpan> { new(0, newBlockSize) });
+        _blockSizes.Add(newBlockSize);
         var blockIndex = _blocks.Count - 1;
         TryAllocateInBlock(blockIndex, alignedSize, out var newOffset);
         _allocatedBytes += alignedSize;
