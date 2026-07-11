@@ -212,6 +212,38 @@ public class SptGeometryBuilderTests
     }
 
     [Fact]
+    public void Build_WindWeights_RampWithBranchLevel()
+    {
+        // Design doc B.3 (windLevel = 1): trunk-spawned geometry is rigid (weight 0); leaves on
+        // level >= 1 branches carry weight = 1 − raw > 0, ramping toward 1 at branch tips. The weight
+        // rides in the packed aBitangent.z fraction.
+        var model = new SptModel
+        {
+            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
+            Branches =
+            [
+                MakeBranch(1f, 0.02f, 2.6f, 3, 1),
+                MakeLeafyBranch(),
+                new SptBranch()
+            ],
+            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.01f) }],
+            LeafTable = new SptLeafTable { Float3007 = 0.5f, UInt3008 = 0 }
+        };
+
+        var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
+        var offsets = result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Bitangents!;
+        var sawPositive = false;
+        for (var v = 2; v < offsets.Length; v += 3)
+        {
+            var weight = offsets[v] - MathF.Floor(offsets[v]);
+            Assert.InRange(weight, 0f, 0.996f);
+            sawPositive |= weight > 0f;
+        }
+
+        Assert.True(sawPositive, "level-1 leaves must carry a nonzero wind-matrix weight");
+    }
+
+    [Fact]
     public void Build_ChildSpawn_SamplesByCumulativeBranchDistance()
     {
         var root = MakeBranch(1f, 0.001f, 1f, 3, 2,
@@ -340,14 +372,22 @@ public class SptGeometryBuilderTests
         AssertOffsetXy(offsets, 1, 150f, -300f);
         AssertOffsetXy(offsets, 2, 150f, 100f);
         AssertOffsetXy(offsets, 3, -50f, 100f);
-        var slotBase = (int)MathF.Floor(offsets[2] / 4f) * 4;
+        // Packed integer = 48·windMatrixIndex + slotBase·4 + cornerSlot; fraction = the wind-matrix
+        // lerp weight (design doc B.3). This single-level model spawns its leaves from the TRUNK
+        // (level 0 = below the wind level), so the authentic weight is exactly 0 — rigid under the
+        // sway matrices, like the engine.
+        var packed = (int)MathF.Floor(offsets[2]);
+        var windIdx = packed / 48;
+        Assert.InRange(windIdx, 0, 3);
+        var slotBase = packed % 48 / 4 * 4;
         Assert.InRange(slotBase, 0, 44);
-        // Corner slots walk (j+2)&3 = 2,3,0,1 off the shared slot base; the shared fraction = weight.
-        var windWeight = offsets[2] - (slotBase + 2);
-        Assert.InRange(windWeight, 0.149f, 0.996f); // 0.15..0.995 modulo fp32 slot-add round-off
-        Assert.Equal(slotBase + 3 + windWeight, offsets[5], 3);
-        Assert.Equal(slotBase + 0 + windWeight, offsets[8], 3);
-        Assert.Equal(slotBase + 1 + windWeight, offsets[11], 3);
+        var windWeight = offsets[2] - packed;
+        Assert.Equal(0f, windWeight);
+        // Corner slots walk (j+2)&3 = 2,3,0,1 off the shared base.
+        var cardBase = packed - 2;
+        Assert.Equal(cardBase + 3 + windWeight, offsets[5], 3);
+        Assert.Equal(cardBase + 0 + windWeight, offsets[8], 3);
+        Assert.Equal(cardBase + 1 + windWeight, offsets[11], 3);
     }
 
     [Fact]

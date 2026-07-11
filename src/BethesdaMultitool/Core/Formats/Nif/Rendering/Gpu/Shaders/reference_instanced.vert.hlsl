@@ -15,6 +15,13 @@ cbuffer PerFrame : register(b0)
     float4 uShadowCardRight;
     float4 uShadowCardUp;
 #endif
+    // SpeedTree wind v2 — the 4 slow whole-canopy sway matrices (BSTreeManager::UpdateWindMatrices →
+    // SpeedTreeShader::SetMatrixRotation: YawPitchRoll(0.61·S·sinOsc, 0.61·S·cosOsc, 0) — small tilts
+    // about the tree's model-space horizontal axes). Each leaf lerps its MODEL-space card center
+    // toward the tilted position by its per-vertex weight (design doc B.2: orig + (M·orig − orig)·w).
+    // Only read when uWindMatrixValid (InstanceDraw) is set, so a stale/short PerFrame CB from a
+    // caller that doesn't upload them can never deform geometry.
+    float4x4 uWindMatrices[4];
 };
 
 // Shared atmosphere CB (b3). References no longer read uCameraOrigin here: the render origin is folded
@@ -44,7 +51,10 @@ cbuffer InstanceDraw : register(b1)
     // CPU zero-fills it for static submeshes, so the add below is a no-op until an animated
     // submesh writes a real offset.
     float2 uUvScroll;
-    uint   uInstanceDrawPad;
+    // Nonzero when this frame's PerFrame CB carries live uWindMatrices (the wind-v2 sway layer).
+    // Repurposes the former pad — every pre-v2 writer zero-fills it, so the sway path stays inert
+    // against renderers that never upload the matrices.
+    uint   uWindMatrixValid;
     float4 uSpecular; // xyz = specular tint, w = Phong exponent (0 = no specular highlight)
     // Camera world-space basis for per-card leaf billboards (from the inverse view matrix, same source
     // as SkyBillboardRenderer12). Only read when uTextureState.y marks a leaf submesh.
@@ -109,18 +119,39 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
         // center, scaled by the instance's uniform REFR scale. (SpeedTree builds leaf cards CPU-side as
         // flat 2D offsets around a center and re-faces them to the camera each frame — CLeafGeometry; we
         // do that same transform here in the VS.)
-        float4 worldCenterAbs = mul(world, float4(input.aTangent, 1.0)); // world is CPU-folded camera-relative
+        // aBitangent.z packs the engine's STLEAF v3.z, widened for the wind-matrix slot:
+        // integer = LeafBase phase slot (0..47, per-corner) + 48·windMatrixIndex (0..3);
+        // fraction = the wind-matrix lerp weight (design doc B.3, 1 − raw).
+        float packedSlot = floor(input.aBitangent.z);
+        float windWeight = frac(input.aBitangent.z);
+        float slot = fmod(packedSlot, 48.0);
+        int windIdx = (int)(packedSlot * (1.0 / 48.0));
+
+        // Wind v2 — the slow whole-canopy sway: lerp the MODEL-space card center toward its
+        // wind-matrix-tilted position by the per-leaf weight (CLeafGeometry::ComputeWindEffect /
+        // the STLEAF dp4 rows: orig + (M·orig − orig)·w). Applying the matrix to the CENTER only
+        // (the card corners rebuild world-side below) is the design doc's sanctioned near-equivalent:
+        // for ≤0.61 rad tilts and card-sized offsets the corner error is sub-centimeter.
+        // The shadow variant skips it: its PerFrame CB does not carry the matrices, and a static
+        // shadow under a gently swaying canopy is imperceptible.
+        float3 modelCenter = input.aTangent;
+#ifndef SHADOW_CARD_LIGHT_FACING
+        if (uWindMatrixValid != 0)
+        {
+            float3 swayed = mul(uWindMatrices[windIdx], float4(modelCenter, 1.0)).xyz;
+            modelCenter = lerp(modelCenter, swayed, windWeight);
+        }
+#endif
+
+        float4 worldCenterAbs = mul(world, float4(modelCenter, 1.0)); // world is CPU-folded camera-relative
         float3 worldCenter = worldCenterAbs.xyz;
         float scale = length(float3(world[0].x, world[0].y, world[0].z)); // uniform REFR scale
 
         // SpeedTree leaf ROCK/RUSTLE — the engine STLEAF vertex math, ported verbatim from the
-        // PC STLEAF000-003.vso disasm (design doc A.6). aBitangent.z packs the engine's v3.z:
-        // integer = the LeafBase phase slot (0..47, per-corner), fraction = the wind-matrix lerp
-        // weight (unconsumed in v1 — the 4 wind matrices are the deferred v2). Each corner slot
-        // lands a slightly different phase (Δ = π/48), the authentic per-card shear.
+        // PC STLEAF000-003.vso disasm (design doc A.6). Each corner slot lands a slightly
+        // different phase (Δ = π/48), the authentic per-card shear.
         //   rock   = in-plane spin of the card offset;
         //   rustle = yaw of the billboard basis about the tree's up axis.
-        float slot = floor(input.aBitangent.z);
         float phase = slot * (1.0 / 48.0);
         float rockA   = uWind.x * sin(3.14159265 * (phase + uWind.y));
         float rustleA = uWind.z * sin(3.14159265 * (phase + uWind.w));

@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace BethesdaMultitool.Core.Formats.SpeedTree;
 
 /// <summary>
@@ -30,7 +32,13 @@ public sealed class SpeedTreeWindRig
     /// <summary>Per-game <c>fLeaf*</c> setting values. Swap when the loaded game changes.</summary>
     public SpeedTreeWindProfile Profile { get; set; } = SpeedTreeWindProfile.FalloutNewVegas;
 
+    // The tilt scale each oscillator's sin/cos pair is multiplied by before becoming a wind-matrix
+    // yaw/pitch angle — the 0.61 literal in BSTreeManager::UpdateWindMatrices (both binaries).
+    private const float MatrixTiltScale = 0.61f;
+
     private readonly float[] _matrixTimes = new float[4];
+    private readonly Matrix4x4[] _windMatrices =
+        [Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.Identity];
     private float _foldStrength;
     private float _rockTime;
     private float _rustleTime;
@@ -48,6 +56,16 @@ public sealed class SpeedTreeWindRig
 
     /// <inheritdoc cref="RockPhase" />
     public float RustlePhase => _rustleTime;
+
+    /// <summary>
+    ///     The wind matrix for slot <paramref name="index" /> (0..3) — the slow whole-canopy sway layer.
+    ///     <c>SpeedTreeShader::SetMatrixRotation</c> (PC FUN_00bb2fc0, tail calls byte-verified to
+    ///     <c>D3DXMatrixRotationYawPitchRoll(yaw = 0.61·S·sinOsc, pitch = 0.61·S·cosOsc, roll = 0)</c>) —
+    ///     a pure rotation about the two model-space horizontal axes (Gamebryo trees are Z-up), i.e. a
+    ///     small trunk tilt around the tree origin. Vertices lerp toward the tilted position by their
+    ///     per-vertex wind weight. Identity while S = 0 (a perfectly static tree).
+    /// </summary>
+    public Matrix4x4 WindMatrix(int index) => _windMatrices[index];
 
     /// <summary>
     ///     Advance the oscillators to <paramref name="timeSeconds" /> at wind strength
@@ -77,6 +95,13 @@ public sealed class SpeedTreeWindRig
             {
                 sway = MathF.Abs(a) + MathF.Abs(b);
             }
+
+            // System.Numerics CreateFromYawPitchRoll shares D3DX's roll→pitch→yaw application order,
+            // so this IS D3DXMatrixRotationYawPitchRoll(0.61·S·a, 0.61·S·b, 0) — sans the engine's
+            // upload transpose, which our HLSL mul() convention doesn't need.
+            _windMatrices[i] = s > 0f
+                ? Matrix4x4.CreateFromYawPitchRoll(MatrixTiltScale * s * a, MatrixTiltScale * s * b, 0f)
+                : Matrix4x4.Identity;
         }
 
         _foldStrength = s;

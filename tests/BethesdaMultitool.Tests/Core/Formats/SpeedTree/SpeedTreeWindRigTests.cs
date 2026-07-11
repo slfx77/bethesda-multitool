@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using Xunit;
 
@@ -55,7 +56,36 @@ public sealed class SpeedTreeWindRigTests
             var rig = TickedRig(profile, 0f);
             Assert.Equal(0f, rig.RockAmount);
             Assert.Equal(0f, rig.RustleAmount);
+            for (var i = 0; i < 4; i++)
+            {
+                Assert.Equal(Matrix4x4.Identity, rig.WindMatrix(i)); // calm = byte-static sway layer
+            }
         }
+    }
+
+    [Fact]
+    public void Tick_WindMatrices_AreBoundedYawPitchTilts()
+    {
+        // SpeedTreeShader::SetMatrixRotation (PC FUN_00bb2fc0 → D3DXMatrixRotationYawPitchRoll):
+        // yaw = 0.61·S·sinOsc, pitch = 0.61·S·cosOsc, roll = 0 — a pure rotation (no translation)
+        // whose combined tilt of the up axis stays within the two angle bounds.
+        var rig = TickedRig(SpeedTreeWindProfile.FalloutNewVegas, 0.4f);
+        var maxAngle = 0.61f * 0.4f;
+        var anyNonIdentity = false;
+        for (var i = 0; i < 4; i++)
+        {
+            var m = rig.WindMatrix(i);
+            Assert.Equal(0f, m.M41);
+            Assert.Equal(0f, m.M42);
+            Assert.Equal(0f, m.M43);
+            anyNonIdentity |= m != Matrix4x4.Identity;
+            var up = Vector3.TransformNormal(Vector3.UnitZ, m);
+            Assert.Equal(1f, up.Length(), 3);
+            var tilt = MathF.Acos(Math.Clamp(Vector3.Dot(up, Vector3.UnitZ), -1f, 1f));
+            Assert.True(tilt <= 2f * maxAngle + 1e-3f, $"matrix {i} tilt {tilt} exceeds the yaw+pitch bound");
+        }
+
+        Assert.True(anyNonIdentity, "expected live sway matrices at S = 0.4");
     }
 
     [Fact]

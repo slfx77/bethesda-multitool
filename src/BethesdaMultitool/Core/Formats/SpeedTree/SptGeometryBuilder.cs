@@ -129,7 +129,7 @@ internal static class SptGeometryBuilder
             // root Compute passes help = 0).
             GenerateBranch(model, 0, levels, 0f, Vector3.Zero, BranchFrame.Identity,
                 parentRadius: float.MaxValue, treeSize, opt, rng, rand, collectedBranches, placer, seed,
-                dimming, leafHelp: 0f, barkHelp: 0f);
+                dimming, leafHelp: 0f, barkHelp: 0f, windRaw: 1f);
         }
 
         // The engine never renders the raw skeleton: CTreeEngine::Compute lofts every branch, then
@@ -184,11 +184,27 @@ internal static class SptGeometryBuilder
 
     // ---- Branch loft (port of CIdvBranch::Compute) --------------------------------------
 
+    /// <summary>
+    ///     The engine's RAW per-vertex wind weight along a branch (design doc B.3, windLevel = 1):
+    ///     below the wind level everything is rigid (raw 1); AT the wind level the branch ramps
+    ///     <c>raw = 1 − t</c> (<c>CIdvBranch::ComputeVertexWeight</c>, a·b ≈ t); deeper levels ramp from
+    ///     the raw INHERITED at their spawn point toward full articulation at the tip
+    ///     (<c>ComputeHighLevelVertexWeight</c>: <c>raw = inherited·(1 − t)</c>). The shader consumes
+    ///     <c>1 − raw</c> (the store convention of <c>AddVertexWind</c>/<c>InitLods</c>) as the wind-matrix
+    ///     lerp weight.
+    /// </summary>
+    private static float WindRawAt(int level, float windRawBase, float t) => level switch
+    {
+        0 => 1f,
+        1 => 1f - t,
+        _ => windRawBase * (1f - t),
+    };
+
     private static void GenerateBranch(
         SptModel model, int level, int levels, float parentT, Vector3 basePos, BranchFrame parentFrame,
         float parentRadius, float treeSize, SptGeometryOptions opt, SptRandom rng,
         Func<float, float, float> rand, List<CollectedBranch> collected, LeafPlacer placer,
-        uint branchSeed, TreeDimming dimming, float leafHelp, float barkHelp)
+        uint branchSeed, TreeDimming dimming, float leafHelp, float barkHelp, float windRaw)
     {
         if (level >= levels || level >= model.Branches.Count)
         {
@@ -346,11 +362,12 @@ internal static class SptGeometryBuilder
         if (level + 1 < terminalRecord && level + 1 < levels)
         {
             SpawnChildren(model, level, levels, branch, rings, length, treeSize, opt, rng, rand, collected,
-                placer, branchSeed, dimming, leafHelp, barkHelp);
+                placer, branchSeed, dimming, leafHelp, barkHelp, windRaw);
         }
         else
         {
-            SpawnLeaves(branch, rings, length, treeSize, model, rng, placer, dimming, leafHelp, parentT);
+            SpawnLeaves(branch, rings, length, treeSize, model, rng, placer, dimming, leafHelp, parentT,
+                level, windRaw);
         }
     }
 
@@ -358,7 +375,7 @@ internal static class SptGeometryBuilder
         SptModel model, int level, int levels, SptBranch branch, List<BranchRing> rings,
         float length, float treeSize, SptGeometryOptions opt, SptRandom rng,
         Func<float, float, float> rand, List<CollectedBranch> collected, LeafPlacer placer,
-        uint branchSeed, TreeDimming dimming, float leafHelp, float barkHelp)
+        uint branchSeed, TreeDimming dimming, float leafHelp, float barkHelp, float windRaw)
     {
         // Child count = (Float6012 / treeSize) · length  (CIdvBranch::Compute L1305; = Float6012·Eval(slot4)).
         // No density multiplier — the engine has none. The cap only bounds the vertex budget (the engine's
@@ -407,8 +424,11 @@ internal static class SptGeometryBuilder
                 childBarkHelp *= childBarkHelp;
             }
 
+            // The child inherits this branch's raw wind weight at its attachment point (B.3: the lerped
+            // per-ring +0x44 at the spawn row — our raw is the same analytic ramp, evaluated directly).
+            var childWindRaw = WindRawAt(level, windRaw, frac);
             GenerateBranch(model, level + 1, levels, spawnT, cpos, cframe, parentAttachRadius, treeSize, opt, rng, rand,
-                collected, placer, childSeed, dimming, childLeafHelp, childBarkHelp);
+                collected, placer, childSeed, dimming, childLeafHelp, childBarkHelp, childWindRaw);
         }
     }
 
@@ -417,7 +437,7 @@ internal static class SptGeometryBuilder
     private static void SpawnLeaves(
         SptBranch branch, List<BranchRing> rings, float length, float treeSize,
         SptModel model, SptRandom rng, LeafPlacer placer, TreeDimming dimming, float leafHelp,
-        float branchSpawnT)
+        float branchSpawnT, int level, float windRaw)
     {
         if (model.Leaves.Count == 0 || rings.Count == 0)
         {
@@ -544,8 +564,12 @@ internal static class SptGeometryBuilder
                 dimmerByte = (byte)Math.Clamp((int)(dimmer * 255f), 0, 255);
             }
 
+            // The leaf's wind-matrix lerp weight = the spawning branch's weight at its attachment t
+            // (B.3: ComputeBud → MakeLeaf pass the interpolated row weight down to CBillboardLeaf+0x44;
+            // the shader consumes 1 − raw).
+            var leafWindWeight = Math.Clamp(1f - WindRawAt(level, windRaw, frac), 0f, 1f);
             placer.TryPlace(rng, pos, branchOrigin, budFrame, template, texCoords, budReach,
-                doubledIndex, oddVariant, dimmerByte);
+                doubledIndex, oddVariant, dimmerByte, leafWindWeight);
         }
 
         // CIdvBranch::Compute clears the mode-1 RoomForLeaf list once a leaf-spawning branch finishes
@@ -571,8 +595,8 @@ internal static class SptGeometryBuilder
     /// <summary>
     ///     Emit geometry for the leaves the <see cref="LeafPlacer" /> accepted during the loft (RoomForLeaf
     ///     rejection + the on-accept RNG draws already happened inline, in CIdvBranch::MakeLeaf order). Card
-    ///     size = cardScale·Corner1 split around Corner0; per-leaf wind weight ramps with canopy height (the
-    ///     SFVFLeafVertex blend factor, carried in the billboard card's bitangent.z).
+    ///     size = cardScale·Corner1 split around Corner0; the per-leaf wind-matrix weight + matrix slot
+    ///     (design doc B.3) ride in the billboard card's packed bitangent.z.
     /// </summary>
     private static void EmitPlacedLeaves(
         List<PlacedLeaf> leaves, float cardScale, SptModel model, SptGeometryOptions opt,
@@ -592,24 +616,14 @@ internal static class SptGeometryBuilder
                 StringComparison.Ordinal);
         }
 
-        var zMin = float.MaxValue;
-        var zMax = float.MinValue;
-        foreach (var l in leaves)
-        {
-            if (l.Pos.Z < zMin) zMin = l.Pos.Z;
-            if (l.Pos.Z > zMax) zMax = l.Pos.Z;
-        }
-
-        var zRange = MathF.Max(1e-3f, zMax - zMin);
-
         foreach (var leaf in leaves)
         {
             var template = leaf.Template;
             // Wind-matrix lerp weight (rides in the packed attribute's FRACTION; the rock/rustle
-            // phase slot is the integer part). The canopy-height ramp is a stand-in until v2 ports
-            // the engine's branch-level ramp (ComputeVertexWeight — design doc B.3); the v1
-            // rock/rustle path does not consume it.
-            var windWeight = 0.15f + 0.85f * Math.Clamp((leaf.Pos.Z - zMin) / zRange, 0f, 1f);
+            // phase slot is the integer part): the engine's branch-level ramp evaluated at the leaf's
+            // spawn point (ComputeVertexWeight/ComputeHighLevelVertexWeight — design doc B.3),
+            // replacing the old canopy-height stand-in.
+            var windWeight = leaf.WindWeight;
 
             // Card width/height = cardScale·Corner1 (CSpeedTreeRT::Compute L3679, the size MID not the random
             // draw), further scaled by the leaf's own size scalar: MakeLeaf stores token-4001 base + the
@@ -672,7 +686,8 @@ internal static class SptGeometryBuilder
                 // frame.
                 var (bbRight, bbUp) = BuildFrame(budDir);
                 AddLeafCard(buffer, center, bbRight, bbUp, normal, uv, x0, x1, y0, y1, leaf.Dimmer,
-                    cardVerticalSwap, billboard: true, windWeight: windWeight, slotBase: leaf.SlotBase);
+                    cardVerticalSwap, billboard: true, windWeight: windWeight, slotBase: leaf.SlotBase,
+                    windMatrixIndex: leaf.WindMatrixIndex);
                 continue;
             }
 
@@ -738,7 +753,7 @@ internal static class SptGeometryBuilder
 
         public void TryPlace(SptRandom rng, Vector3 pos, Vector3 branchOrigin, BranchFrame budFrame,
             SptLeaf template, SptLeafTextureCoords texCoords, float budReach,
-            int doubledIndex, bool oddVariant, byte dimmer)
+            int doubledIndex, bool oddVariant, byte dimmer, float windWeight)
         {
             var budDir = budFrame.Direction;
             var center = pos + budDir * budReach;
@@ -776,8 +791,10 @@ internal static class SptGeometryBuilder
             var sizeJitter = rng.Range(-template.Size, template.Size);
 
             _placedCenters?.Add(center);
+            // Wind-matrix slot: the same rocking-group draw is the leaf's wind group (CBillboardLeaf+0x48);
+            // CLeafGeometry::InitLods maps it to a matrix as group % numMatrices(=4).
             Leaves.Add(new PlacedLeaf(pos, branchOrigin, center, budDir, template, texCoords, oddVariant, dimmer,
-                sizeJitter, slotBase));
+                sizeJitter, slotBase, windWeight, rockGroup % 4));
         }
 
         /// <summary>True if no already-placed leaf center lies within <paramref name="spacing" /> of
@@ -993,7 +1010,7 @@ internal static class SptGeometryBuilder
     private static void AddLeafCard(
         MeshBuffer buf, Vector3 center, Vector3 right, Vector3 up, Vector3 normal, SptLeafTextureCoords uv,
         float x0, float x1, float y0, float y1, byte dimmer, bool cardVerticalSwap,
-        bool billboard = false, float windWeight = 0f, int slotBase = 0)
+        bool billboard = false, float windWeight = 0f, int slotBase = 0, int windMatrixIndex = 0)
     {
         var p00 = center + right * x0 + up * y0;
         var p10 = center + right * x1 + up * y0;
@@ -1030,14 +1047,17 @@ internal static class SptGeometryBuilder
             // the shader). The baked positions still hold a real 3D quad for bounds + the CPU still path.
             // bitangent.z = per-leaf wind weight (a [0,1] blend factor, NOT a size — ApplyHeightScale
             // leaves it untouched), consumed by the VS's wind sway.
-            // bitangent.z packs the engine's STLEAF v3.z: integer = the LeafBase phase slot
-            // (slotBase·4 + the engine's (j+2)&3 corner slot for our LB,RB,RT,LT emission order),
-            // fraction = the wind-matrix lerp weight (v2's matrix path; unread by the v1 rock/rustle).
+            // bitangent.z packs the engine's STLEAF v3.z, widened for the wind-matrix slot: integer =
+            // the LeafBase phase slot (slotBase·4 + the engine's (j+2)&3 corner slot for our
+            // LB,RB,RT,LT emission order, 0..47) + 48·windMatrixIndex (0..3 → packed 0..191, exact in
+            // fp32), fraction = the wind-matrix lerp weight. The VS splits: idx = packed/48,
+            // slot = packed%48, weight = frac.
             var wf = Math.Clamp(windWeight, 0f, 0.995f);
-            var v00b = buf.Add(p00, normal, uvLB, center, new Vector3(x0, y0, slotBase * 4 + 2 + wf), dimmer);
-            var v10b = buf.Add(p10, normal, uvRB, center, new Vector3(x1, y0, slotBase * 4 + 3 + wf), dimmer);
-            var v11b = buf.Add(p11, normal, uvRT, center, new Vector3(x1, y1, slotBase * 4 + 0 + wf), dimmer);
-            var v01b = buf.Add(p01, normal, uvLT, center, new Vector3(x0, y1, slotBase * 4 + 1 + wf), dimmer);
+            var mtx = windMatrixIndex * 48;
+            var v00b = buf.Add(p00, normal, uvLB, center, new Vector3(x0, y0, mtx + slotBase * 4 + 2 + wf), dimmer);
+            var v10b = buf.Add(p10, normal, uvRB, center, new Vector3(x1, y0, mtx + slotBase * 4 + 3 + wf), dimmer);
+            var v11b = buf.Add(p11, normal, uvRT, center, new Vector3(x1, y1, mtx + slotBase * 4 + 0 + wf), dimmer);
+            var v01b = buf.Add(p01, normal, uvLT, center, new Vector3(x0, y1, mtx + slotBase * 4 + 1 + wf), dimmer);
             buf.Triangle(v00b, v10b, v11b);
             buf.Triangle(v00b, v11b, v01b);
             return;
@@ -1290,7 +1310,8 @@ internal static class SptGeometryBuilder
     /// Geometry is built from these afterward by <see cref="EmitPlacedLeaves" />.</summary>
     private readonly record struct PlacedLeaf(
         Vector3 Pos, Vector3 BranchOrigin, Vector3 Center, Vector3 BudDir, SptLeaf Template,
-        SptLeafTextureCoords TextureCoords, bool OddVariant, byte Dimmer, float SizeJitter, int SlotBase);
+        SptLeafTextureCoords TextureCoords, bool OddVariant, byte Dimmer, float SizeJitter, int SlotBase,
+        float WindWeight, int WindMatrixIndex);
 
     /// <summary>Per-tree canopy-depth dimming parameters (SIdvLeafInfo +0/+4/+8): enabled = .spt token 3009,
     /// leaf scalar = TREE CNAM LeafDimming (fallback token 3010), branch scalar = TREE CNAM BranchDimming
