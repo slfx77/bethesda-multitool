@@ -108,9 +108,13 @@ public sealed partial class WorldView3DControl
                 capacity: BethesdaMultitool.Core.EnvironmentVariables.GetClampedInt(
                     BethesdaMultitool.Core.EnvironmentVariables.Viewer.ReferenceMeshCapacity,
                     defaultValue: 2048, min: 8, max: 65_536),
+                // Default SCALES WITH SYSTEM RAM (the decoded payloads are CPU memory) — see
+                // AdaptiveMemoryDefaults; the env knob still pins it for eviction stress gates.
                 decodedCacheByteBudget: BethesdaMultitool.Core.EnvironmentVariables.GetClampedLong(
                     BethesdaMultitool.Core.EnvironmentVariables.Viewer.ReferenceDecodedCacheMegabytes,
-                    defaultValue: 256, min: 4, max: 8_192) * 1024L * 1024L,
+                    defaultValue: BethesdaMultitool.Core.Resources.AdaptiveMemoryDefaults.DecodedMeshCacheMegabytes(
+                        BethesdaMultitool.Core.Resources.AdaptiveMemoryDefaults.SystemMemoryMb),
+                    min: 4, max: 8_192) * 1024L * 1024L,
                 // Auto-size the resident-mesh cap to each worldspace's working set UNLESS the capacity
                 // knob is explicitly set (then honor the pinned value — used by eviction stress gates).
                 autoSizeMeshCapacity: BethesdaMultitool.Core.EnvironmentVariables.Get(
