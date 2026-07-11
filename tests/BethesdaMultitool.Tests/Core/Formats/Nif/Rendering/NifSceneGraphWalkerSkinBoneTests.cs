@@ -81,7 +81,9 @@ public sealed class NifSceneGraphWalkerSkinBoneTests
 
     private static (byte[] data, NifInfo nif) BuildNif(params (string type, byte[] payload)[] blocks)
     {
-        var nif = new NifInfo { IsBigEndian = false, BlockCount = blocks.Length };
+        // The SkinInstance fixtures encode the modern layout (Skin Partition ref present, since
+        // 10.1.0.101) — declare the FNV-era version so the version-gated parser picks it.
+        var nif = new NifInfo { IsBigEndian = false, BlockCount = blocks.Length, BinaryVersion = 0x14020007 };
         using var ms = new MemoryStream();
         var offsets = new int[blocks.Length];
         for (var i = 0; i < blocks.Length; i++)

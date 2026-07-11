@@ -11,12 +11,14 @@ namespace BethesdaMultitool.Core.Formats.Nif.Parser;
 internal static class NifVersions
 {
     public const uint NetImmerse4002 = 0x04000002; // Morrowind / Freedom Force
+    public const uint NetImmerse4210 = 0x04020100; // 4.2.1.0: NiSkinData gains the Has Vertex Weights byte
     public const uint NetImmerse4220 = 0x04020200; // last NetImmerse: Velocity, single Extra Data ref, pre-Group-ID geometry, 32-bit bools
     public const uint Gamebryo10010 = 0x0A000100;  // 10.0.1.0: Collision Object ref + Extra Data List replace the legacy fields here
     public const uint Gamebryo10012 = 0x0A000102;  // 10.0.1.2: first version carrying a BSStreamHeader (still no User Version)
     public const uint Gamebryo10013 = 0x0A000103;  // 10.0.1.3: NiTriStripsData gains the "Has Points" bool
     public const uint Gamebryo10018 = 0x0A000108;  // 10.0.1.8: the Header User Version field is added here
     public const uint Gamebryo10100 = 0x0A010000;  // 10.1.0.0: lower bound of the Gamebryo BSStreamHeader version range
+    public const uint Gamebryo101101 = 0x0A010065; // 10.1.0.101: NiSkinInstance gains the Skin Partition ref
     public const uint Gamebryo101114 = 0x0A010072; // NiGeometryData.Group ID is added here
     public const uint Gamebryo10200 = 0x0A020000;  // Oblivion 10.2.0.0 (first without the per-block legacy word)
     public const uint Gamebryo20004 = 0x14000004;  // Oblivion 20.0.0.4 (upper bound of the Gamebryo BSStreamHeader range)
@@ -82,6 +84,20 @@ internal static class NifVersions
     /// Blocks follows Version (and the optional BSStreamHeader) directly; reading a User Version there
     /// would shift the whole header by 4 bytes and desync the block table.</summary>
     public static bool HasUserVersion(uint binaryVersion) => binaryVersion >= Gamebryo10018;
+
+    /// <summary>NiSkinInstance carries a Skin Partition ref between Data and Skeleton Root (since
+    /// 10.1.0.101). Morrowind's 4.0.0.2 layout is Data + Skeleton Root + Num Bones directly — reading
+    /// the ref there consumes Skeleton Root as the partition and bones[0] as Num Bones.</summary>
+    public static bool HasSkinInstancePartitionRef(uint binaryVersion) => binaryVersion >= Gamebryo101101;
+
+    /// <summary>NiSkinData carries a Skin Partition ref right after Num Bones (4.0.0.2 – 10.1.0.0);
+    /// later versions moved the partition ref onto NiSkinInstance.</summary>
+    public static bool HasSkinDataPartitionRef(uint binaryVersion) =>
+        binaryVersion >= NetImmerse4002 && binaryVersion <= Gamebryo10100;
+
+    /// <summary>NiSkinData writes a Has Vertex Weights byte before the per-bone list (since 4.2.1.0);
+    /// Morrowind 4.0.0.2 has no byte and ALWAYS stores weights.</summary>
+    public static bool HasSkinDataVertexWeightsFlag(uint binaryVersion) => binaryVersion >= NetImmerse4210;
 
     /// <summary>Whether a BSStreamHeader (BS Version + Author/Process/Export/Max-Filepath ExportStrings)
     /// sits between Num Blocks and the block-types table. Implements nif.xml's <c>#BSSTREAMHEADER#</c>

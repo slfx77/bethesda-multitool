@@ -91,7 +91,7 @@ internal static class NifShapeSkinningDataBuilder
         bool be)
     {
         var skinBlock = nif.Blocks[skinInstanceBlockIndex];
-        return NifSkinBlockParser.ParseNiSkinInstance(data, skinBlock, be);
+        return NifSkinBlockParser.ParseNiSkinInstance(data, skinBlock, be, nif.BinaryVersion);
     }
 
     private static bool TryParseSkinData(
@@ -113,7 +113,7 @@ internal static class NifShapeSkinningDataBuilder
             return false;
         }
 
-        skinData = NifSkinBlockParser.ParseNiSkinData(data, skinDataBlock, be);
+        skinData = NifSkinBlockParser.ParseNiSkinData(data, skinDataBlock, be, nif.BinaryVersion);
         return skinData?.Bones.Length > 0;
     }
 

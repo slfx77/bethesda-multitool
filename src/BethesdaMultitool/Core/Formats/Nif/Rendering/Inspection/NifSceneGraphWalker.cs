@@ -349,7 +349,7 @@ internal static class NifSceneGraphWalker
                 continue;
             }
 
-            var skin = NifSkinningExtractor.ParseNiSkinInstance(data, nif.Blocks[skinRef], nif.IsBigEndian);
+            var skin = NifSkinningExtractor.ParseNiSkinInstance(data, nif.Blocks[skinRef], nif.IsBigEndian, nif.BinaryVersion);
             if (skin is null)
             {
                 continue;

@@ -37,14 +37,15 @@ internal static class NifSkinningExtractor
     internal static NifSkinInstanceData? ParseNiSkinInstance(
         byte[] data,
         BlockInfo block,
-        bool be)
+        bool be,
+        uint binaryVersion)
     {
-        return NifSkinBlockParser.ParseNiSkinInstance(data, block, be);
+        return NifSkinBlockParser.ParseNiSkinInstance(data, block, be, binaryVersion);
     }
 
-    internal static NifSkinData? ParseNiSkinData(byte[] data, BlockInfo block, bool be)
+    internal static NifSkinData? ParseNiSkinData(byte[] data, BlockInfo block, bool be, uint binaryVersion)
     {
-        return NifSkinBlockParser.ParseNiSkinData(data, block, be);
+        return NifSkinBlockParser.ParseNiSkinData(data, block, be, binaryVersion);
     }
 
     internal static (int BoneIdx, float Weight)[][] BuildPerVertexInfluences(

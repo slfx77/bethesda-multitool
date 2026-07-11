@@ -47,24 +47,35 @@ internal static class NifSkinBlockParser
     }
 
     /// <summary>
-    ///     Parse NiSkinInstance or BSDismemberSkinInstance to extract skeleton linkage.
+    ///     Parse NiSkinInstance or BSDismemberSkinInstance to extract skeleton linkage. The Skin
+    ///     Partition ref between Data and Skeleton Root exists only since 10.1.0.101
+    ///     (<see cref="NifVersions.HasSkinInstancePartitionRef" />) — Morrowind's 4.0.0.2 layout goes
+    ///     Data + Skeleton Root + Num Bones directly, and reading the ref there shifted the whole
+    ///     bone list by one field.
     /// </summary>
     internal static NifSkinInstanceData? ParseNiSkinInstance(
         byte[] data,
         BlockInfo block,
-        bool be)
+        bool be,
+        uint binaryVersion)
     {
+        var hasPartitionRef = NifVersions.HasSkinInstancePartitionRef(binaryVersion);
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
-        if (pos + 16 > end)
+        if (pos + (hasPartitionRef ? 16 : 12) > end)
         {
             return null;
         }
 
         var dataRef = BinaryUtils.ReadInt32(data, pos, be);
         pos += 4;
-        var skinPartitionRef = BinaryUtils.ReadInt32(data, pos, be);
-        pos += 4;
+        var skinPartitionRef = -1;
+        if (hasPartitionRef)
+        {
+            skinPartitionRef = BinaryUtils.ReadInt32(data, pos, be);
+            pos += 4;
+        }
+
         var skeletonRootRef = BinaryUtils.ReadInt32(data, pos, be);
         pos += 4;
         var numBones = BinaryUtils.ReadUInt32(data, pos, be);
@@ -93,8 +104,13 @@ internal static class NifSkinBlockParser
 
     /// <summary>
     ///     Parse NiSkinData block: overall transform, per-bone inverse bind pose, and vertex weights.
+    ///     Two version-gated fields (misreading either shifts the whole bone list): a Skin Partition
+    ///     ref after Num Bones exists 4.0.0.2–10.1.0.0 (<see cref="NifVersions.HasSkinDataPartitionRef" />
+    ///     — Morrowind HAS it; later versions moved it onto NiSkinInstance), and the Has Vertex Weights
+    ///     byte exists only since 4.2.1.0 (<see cref="NifVersions.HasSkinDataVertexWeightsFlag" /> —
+    ///     Morrowind has no byte and always stores weights).
     /// </summary>
-    internal static NifSkinData? ParseNiSkinData(byte[] data, BlockInfo block, bool be)
+    internal static NifSkinData? ParseNiSkinData(byte[] data, BlockInfo block, bool be, uint binaryVersion)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -113,13 +129,32 @@ internal static class NifSkinBlockParser
 
         var numBones = BinaryUtils.ReadUInt32(data, pos, be);
         pos += 4;
-        if (numBones > 500 || pos + 1 > end)
+        if (numBones > 500)
         {
             return null;
         }
 
-        var hasVertexWeights = data[pos] != 0;
-        pos += 1;
+        if (NifVersions.HasSkinDataPartitionRef(binaryVersion))
+        {
+            if (pos + 4 > end)
+            {
+                return null;
+            }
+
+            pos += 4; // Skin Partition ref — linkage only, unused here
+        }
+
+        var hasVertexWeights = true;
+        if (NifVersions.HasSkinDataVertexWeightsFlag(binaryVersion))
+        {
+            if (pos + 1 > end)
+            {
+                return null;
+            }
+
+            hasVertexWeights = data[pos] != 0;
+            pos += 1;
+        }
 
         var bones = new NifBoneSkinInfo[(int)numBones];
         for (var boneIndex = 0; boneIndex < numBones; boneIndex++)

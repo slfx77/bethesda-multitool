@@ -57,7 +57,8 @@ internal static class NifSkinningDiagnostics
         var skinInstance = NifSkinBlockParser.ParseNiSkinInstance(
             data,
             nif.Blocks[skinInstanceIndex],
-            nif.IsBigEndian);
+            nif.IsBigEndian,
+            nif.BinaryVersion);
         if (skinInstance == null ||
             skinInstance.DataRef < 0 ||
             skinInstance.DataRef >= nif.Blocks.Count ||
@@ -69,7 +70,8 @@ internal static class NifSkinningDiagnostics
         var skinData = NifSkinBlockParser.ParseNiSkinData(
             data,
             nif.Blocks[skinInstance.DataRef],
-            nif.IsBigEndian);
+            nif.IsBigEndian,
+            nif.BinaryVersion);
         if (skinData == null || skinData.Bones.Length == 0)
         {
             return null;
