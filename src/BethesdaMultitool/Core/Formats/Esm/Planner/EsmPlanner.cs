@@ -55,6 +55,11 @@ public sealed class EsmPlanner
     ///     to master records always resolve.
     /// </param>
     /// <param name="masterPath">Master ESM path for plan metadata.</param>
+    /// <param name="masterRefFormIds">
+    ///     Master placed-ref FormIDs (the <c>MasterRecordIndex.RefToCell</c> key set). When
+    ///     supplied, the cell-section planner settles each cell's merge mode at plan time
+    ///     (<see cref="Cells.CellPlan.Mode" />); when null the writer computes it.
+    /// </param>
     public EmitPlan Build(
         IReadOnlyList<ParsedMainRecord> masterRecords,
         RecordCollection dmpRecords,
@@ -64,7 +69,10 @@ public sealed class EsmPlanner
         IReadOnlyDictionary<uint, PcEsmCellContext>? masterCellContexts = null,
         IReadOnlyDictionary<uint, ParsedMainRecord>? masterRecordsByFormId = null,
         FormIdAllocator? cellChildAllocator = null,
-        bool emitMasterCellNavmAugmentation = false)
+        bool emitMasterCellNavmAugmentation = false,
+        IReadOnlySet<uint>? masterRefFormIds = null,
+        bool replaceCellTemporariesOnOverride = false,
+        CellVerdictInputs? cellVerdictInputs = null)
     {
         var coverage = enabledTypes.ToImmutableHashSet(StringComparer.Ordinal);
 
@@ -91,7 +99,8 @@ public sealed class EsmPlanner
         var cellSection = enabledTypes.Contains("CELL")
             ? RunCellSection(
                 dmpRecords, masterFormIds, masterCellContexts, masterRecordsByFormId,
-                cellChildAllocator, emitMasterCellNavmAugmentation)
+                cellChildAllocator, emitMasterCellNavmAugmentation,
+                masterRefFormIds, replaceCellTemporariesOnOverride)
             : null;
 
         if (catalog.Count == 0 && cellSection is null)
@@ -160,6 +169,21 @@ public sealed class EsmPlanner
             };
         }
 
+        // Phase F: per-ref emit/drop verdicts. Runs AFTER top-level allocation because a
+        // ref's base may resolve through a top-level-planner-allocated record (e.g. a
+        // recovered leveled-spawn actor pointing at a planner-emitted proto NPC_).
+        if (cellVerdictInputs is { } verdictInputs
+            && masterRecordsByFormId is not null
+            && !plan.CellsByFormId.IsEmpty)
+        {
+            plan = plan with
+            {
+                CellsByFormId = CellChildVerdictPlanner.Apply(
+                    plan.CellsByFormId, masterRecordsByFormId,
+                    sourceToEmitted, emittedFormIds, verdictInputs),
+            };
+        }
+
         return plan;
     }
 
@@ -169,7 +193,9 @@ public sealed class EsmPlanner
         IReadOnlyDictionary<uint, PcEsmCellContext>? masterCellContexts,
         IReadOnlyDictionary<uint, ParsedMainRecord>? masterRecordsByFormId,
         FormIdAllocator? cellChildAllocator,
-        bool emitMasterCellNavmAugmentation)
+        bool emitMasterCellNavmAugmentation,
+        IReadOnlySet<uint>? masterRefFormIds,
+        bool replaceCellTemporariesOnOverride)
     {
         if (masterCellContexts is null || masterRecordsByFormId is null || cellChildAllocator is null)
         {
@@ -184,7 +210,9 @@ public sealed class EsmPlanner
             dmpRecords.Worldspaces,
             masterFormIds,
             cellChildAllocator,
-            emitMasterCellNavmAugmentation);
+            emitMasterCellNavmAugmentation,
+            masterRefFormIds,
+            replaceCellTemporariesOnOverride);
     }
 
     private static ImmutableHashSet<uint> BuildEmittedFormIds(

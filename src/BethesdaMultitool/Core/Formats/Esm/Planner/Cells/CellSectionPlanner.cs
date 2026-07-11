@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
@@ -32,7 +33,9 @@ public sealed class CellSectionPlanner
         IReadOnlyList<WorldspaceRecord> dmpWorldspaces,
         IReadOnlySet<uint> masterFormIds,
         FormIdAllocator allocator,
-        bool emitMasterCellNavmAugmentation = false)
+        bool emitMasterCellNavmAugmentation = false,
+        IReadOnlySet<uint>? masterRefFormIds = null,
+        bool replaceCellTemporariesOnOverride = false)
     {
         ArgumentNullException.ThrowIfNull(masterContexts);
         ArgumentNullException.ThrowIfNull(masterRecordsByFormId);
@@ -97,7 +100,9 @@ public sealed class CellSectionPlanner
             list.Add(navm);
         }
 
-        var cells = BuildCellPlans(decisions, navmsByCell, allocations, masterFormIds);
+        var cells = BuildCellPlans(
+            decisions, navmsByCell, allocations, masterFormIds,
+            masterRefFormIds, replaceCellTemporariesOnOverride);
         var (worldspaces, worldspaceSourceToEmitted) =
             BuildWorldspacePlans(worldspaceCatalog, allocator);
 
@@ -124,7 +129,9 @@ public sealed class CellSectionPlanner
         IReadOnlyList<(CellCatalogEntry Entry, Disposition.DispositionDecision Decision)> decisions,
         IReadOnlyDictionary<uint, List<NavMeshRecord>> navmsByCell,
         CellChildAllocator.AllocationResult allocations,
-        IReadOnlySet<uint> masterFormIds)
+        IReadOnlySet<uint> masterFormIds,
+        IReadOnlySet<uint>? masterRefFormIds,
+        bool replaceCellTemporariesOnOverride)
     {
         var cells = ImmutableDictionary.CreateBuilder<uint, CellPlan>();
 
@@ -136,6 +143,8 @@ public sealed class CellSectionPlanner
             }
 
             var context = entry.MasterContext ?? SynthesizeContext(entry);
+            var (mode, dropRenderCullingMarkers) = PlanMergeMode(
+                entry, context, masterRefFormIds, replaceCellTemporariesOnOverride);
             var (persistent, vwd, temporary) = BuildChildPlans(entry, navmsByCell, allocations, masterFormIds);
             // DmpNew cells whose proto FormID isn't in master get a fresh plugin-range
             // FormID in Pass 0 of the allocator. Use that emitted ID as the cell's plan
@@ -168,10 +177,49 @@ public sealed class CellSectionPlanner
                 VwdChildren = vwd,
                 TemporaryChildren = temporary,
                 ParentWorldspaceFormId = context.WorldspaceFormId,
+                Mode = mode,
+                DropRenderCullingMarkers = dropRenderCullingMarkers,
             });
         }
 
         return cells.ToImmutable();
+    }
+
+    /// <summary>
+    ///     Settle the cell's merge-mode + render-culling-marker policy at plan time (the
+    ///     writer previously derived both). Master cells classify via
+    ///     <see cref="CellMerger.Classify" /> (any non-persistent master-resident capture ⇒
+    ///     LoadedReplacement; persistent-only ⇒ PersistentOnly); brand-new cells emit all
+    ///     their children unconditionally (LoadedReplacement semantics). Returns null Mode
+    ///     when the master ref set wasn't supplied — the writer's transitional fallback
+    ///     (<c>CellDecisionFallback</c>) then computes both.
+    /// </summary>
+    private static (CellMergeMode? Mode, bool DropRenderCullingMarkers) PlanMergeMode(
+        CellCatalogEntry entry,
+        PcEsmCellContext context,
+        IReadOnlySet<uint>? masterRefFormIds,
+        bool replaceCellTemporariesOnOverride)
+    {
+        if (masterRefFormIds is null)
+        {
+            return (null, false);
+        }
+
+        var isMasterAnchored = entry.MasterRecord is not null;
+        var mode = !isMasterAnchored
+            ? CellMergeMode.LoadedReplacement
+            : entry.DmpModel is null
+                ? CellMergeMode.Skip
+                : CellMerger.Classify(entry.DmpModel, masterRefFormIds);
+
+        // Replaced interiors drop captured render-culling markers (their final-game bounds
+        // mis-cull the proto layout) unless the diagnostic replace-temporaries mode is on.
+        var dropRenderCullingMarkers = isMasterAnchored
+            && context.IsInterior
+            && mode == CellMergeMode.LoadedReplacement
+            && !replaceCellTemporariesOnOverride;
+
+        return (mode, dropRenderCullingMarkers);
     }
 
     /// <summary>

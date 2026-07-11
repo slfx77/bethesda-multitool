@@ -495,7 +495,7 @@ public sealed class PluginBuilder
             // the option set is empty (the default), so the legacy pipeline runs unchanged.
             BuildPlannerStateIfEnabled(
                 pcRecordsList, dmpRecords, allocator, inputs,
-                cellContexts, pcRecordsByFormId);
+                cellContexts, pcRecordsByFormId, masterIndex);
 
             // Phase 3: top-level record merging (GMST, GLOB, WEAP, …).
             _sink.OnPhaseStart("Merging top-level records", null);
@@ -712,7 +712,8 @@ public sealed class PluginBuilder
                 && pcRecordsByFormId.TryGetValue(NavInfoMapBuilder.MasterNaviFormId, out var masterNavi)
                 && masterNavi.Header.Signature == "NAVI")
             {
-                var naviOverrideBytes = NavInfoMapBuilder.BuildNaviOverride(masterNavi, naviSource, inputs.Options);
+                var naviOverrideBytes = NavInfoMapBuilder.BuildNaviOverride(
+                    masterNavi, naviSource, inputs.Options, plannerCellSection?.NavmConnectivityByFormId);
                 AppendOrCreateTopLevelRecord(grupBytesByType, "NAVI", naviOverrideBytes);
                 _sink.Info("Merging cell children",
                     $"Emitted NAVI override with {naviSource.Count:N0} new NVMI+NVCI entry pair(s) " +
@@ -1270,7 +1271,8 @@ public sealed class PluginBuilder
         FormIdAllocator allocator,
         DmpToEsmInputs inputs,
         IReadOnlyDictionary<uint, PcEsmCellContext> masterCellContexts,
-        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
+        MasterRecordIndex masterIndex)
     {
         _emitPlan = null;
         _planWriter = null;
@@ -1352,7 +1354,18 @@ public sealed class PluginBuilder
             masterCellContexts: masterCellContexts,
             masterRecordsByFormId: masterRecordsByFormId,
             cellChildAllocator: allocator,
-            emitMasterCellNavmAugmentation: inputs.Options.EmitMasterCellNavmAugmentation);
+            emitMasterCellNavmAugmentation: inputs.Options.EmitMasterCellNavmAugmentation,
+            masterRefFormIds: new HashSet<uint>(masterIndex.RefToCell.Keys),
+            replaceCellTemporariesOnOverride: inputs.Options.ReplaceCellTemporariesOnOverride,
+            cellVerdictInputs: new BethesdaMultitool.Core.Formats.Esm.Planner.Cells.CellVerdictInputs
+            {
+                MasterIndex = masterIndex,
+                DmpBaseTypes = _dmpBaseFormIdToRecordType,
+                RecoverLeveledSpawnActors = inputs.Options.RecoverLeveledSpawnActors,
+                EnableRefrBaseEditorIdRemap = inputs.Options.EnableRefrBaseEditorIdRemap,
+                DiagnosticSkipCellNewRefs = inputs.Options.DiagnosticSkipCellNewRefs,
+                DiagnosticSkipCellNavm = inputs.Options.DiagnosticSkipCellNavm,
+            });
 
         _planWriter = new BethesdaMultitool.Core.Formats.Esm.PlannedWriter.PlanWriter(registry);
 

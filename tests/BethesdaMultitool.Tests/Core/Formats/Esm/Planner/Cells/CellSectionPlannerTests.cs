@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
+using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
@@ -275,6 +276,127 @@ public sealed class CellSectionPlannerTests
         var planForNavm = Assert.Single(cellPlan.TemporaryChildren);
         Assert.Equal("NAVM", planForNavm.Type);
         Assert.Single(result.NavmEntries);
+    }
+
+    [Fact]
+    public void Plan_Without_MasterRefFormIds_Leaves_Mode_Null()
+    {
+        var dmpCell = new CellRecord { FormId = 0x000ABCDE, EditorId = "TestCell" };
+
+        var result = CellSectionPlanner.Plan(
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            [dmpCell],
+            [],
+            [],
+            new HashSet<uint> { 0x000ABCDE },
+            new FormIdAllocator());
+
+        var cellPlan = Assert.Single(result.CellsByFormId.Values);
+        Assert.Null(cellPlan.Mode);
+        Assert.False(cellPlan.DropRenderCullingMarkers);
+    }
+
+    [Fact]
+    public void Plan_Settles_PersistentOnly_Mode_For_Persistent_Master_Capture()
+    {
+        // One master-resident PERSISTENT ref, no temporaries ⇒ PersistentOnly; a sparse
+        // capture never turns on the replaced-interior marker drop.
+        var masterRef = new PlacedReference
+        {
+            FormId = 0x000A0001, BaseFormId = 0x000ABCDF, RecordType = "REFR", IsPersistent = true
+        };
+        var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [masterRef] };
+
+        var result = CellSectionPlanner.Plan(
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            [dmpCell],
+            [],
+            [],
+            new HashSet<uint> { 0x000ABCDE, 0x000A0001 },
+            new FormIdAllocator(),
+            masterRefFormIds: new HashSet<uint> { 0x000A0001 });
+
+        var cellPlan = Assert.Single(result.CellsByFormId.Values);
+        Assert.Equal(CellMergeMode.PersistentOnly, cellPlan.Mode);
+        Assert.False(cellPlan.DropRenderCullingMarkers);
+    }
+
+    [Fact]
+    public void Plan_Settles_LoadedReplacement_And_Interior_Marker_Drop()
+    {
+        // A non-persistent master-resident capture makes the snapshot authoritative
+        // (LoadedReplacement); replaced master INTERIORS drop render-culling markers.
+        var masterRef = new PlacedReference
+        {
+            FormId = 0x000A0001, BaseFormId = 0x000ABCDF, RecordType = "REFR", IsPersistent = false
+        };
+        var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [masterRef] };
+
+        var result = CellSectionPlanner.Plan(
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            [dmpCell],
+            [],
+            [],
+            new HashSet<uint> { 0x000ABCDE, 0x000A0001 },
+            new FormIdAllocator(),
+            masterRefFormIds: new HashSet<uint> { 0x000A0001 });
+
+        var cellPlan = Assert.Single(result.CellsByFormId.Values);
+        Assert.Equal(CellMergeMode.LoadedReplacement, cellPlan.Mode);
+        Assert.True(cellPlan.DropRenderCullingMarkers);
+    }
+
+    [Fact]
+    public void Plan_Marker_Drop_Respects_ReplaceCellTemporaries_Diagnostic()
+    {
+        var masterRef = new PlacedReference
+        {
+            FormId = 0x000A0001, BaseFormId = 0x000ABCDF, RecordType = "REFR", IsPersistent = false
+        };
+        var dmpCell = new CellRecord { FormId = 0x000ABCDE, PlacedObjects = [masterRef] };
+
+        var result = CellSectionPlanner.Plan(
+            new Dictionary<uint, PcEsmCellContext> { [0x000ABCDE] = MakeInteriorContext(0x000ABCDE) },
+            new Dictionary<uint, ParsedMainRecord> { [0x000ABCDE] = MakeCellMaster(0x000ABCDE) },
+            [dmpCell],
+            [],
+            [],
+            new HashSet<uint> { 0x000ABCDE, 0x000A0001 },
+            new FormIdAllocator(),
+            masterRefFormIds: new HashSet<uint> { 0x000A0001 },
+            replaceCellTemporariesOnOverride: true);
+
+        var cellPlan = Assert.Single(result.CellsByFormId.Values);
+        Assert.Equal(CellMergeMode.LoadedReplacement, cellPlan.Mode);
+        Assert.False(cellPlan.DropRenderCullingMarkers);
+    }
+
+    [Fact]
+    public void Plan_Settles_LoadedReplacement_For_New_Cell_Without_Marker_Drop()
+    {
+        // Brand-new (non-master-anchored) cells emit all children unconditionally and
+        // never drop markers (the drop is a replaced-master-interior policy).
+        var dmpCell = new CellRecord
+        {
+            FormId = 0x01000801, EditorId = "NewCell", WorldspaceFormId = 0x0000003C, GridX = 1, GridY = 1
+        };
+
+        var result = CellSectionPlanner.Plan(
+            new Dictionary<uint, PcEsmCellContext>(),
+            new Dictionary<uint, ParsedMainRecord>(),
+            [dmpCell],
+            [],
+            [],
+            new HashSet<uint>(),
+            new FormIdAllocator(),
+            masterRefFormIds: new HashSet<uint>());
+
+        var cellPlan = Assert.Single(result.CellsByFormId.Values);
+        Assert.Equal(CellMergeMode.LoadedReplacement, cellPlan.Mode);
+        Assert.False(cellPlan.DropRenderCullingMarkers);
     }
 
     private static PcEsmCellContext MakeInteriorContext(uint cellFormId)

@@ -5,10 +5,10 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
 /// <summary>Where a master child record lives: its parent cell FormID, child-GRUP type, and record type.</summary>
-internal sealed record MasterChildLocation(uint CellFormId, int GroupType, string RecordType);
+public sealed record MasterChildLocation(uint CellFormId, int GroupType, string RecordType);
 
 /// <summary>Prebuilt lookup tables over the master ESM's records (by FormID, type, editor ID, cell, etc.) for fast conversion-time queries.</summary>
-internal sealed record MasterRecordIndex
+public sealed record MasterRecordIndex
 {
     public required IReadOnlyList<ParsedMainRecord> Records { get; init; }
     public required Dictionary<uint, ParsedMainRecord> RecordsByFormId { get; init; }

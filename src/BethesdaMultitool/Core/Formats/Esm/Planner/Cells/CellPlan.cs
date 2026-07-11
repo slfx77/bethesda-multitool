@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
@@ -54,4 +55,49 @@ public sealed record CellPlan
 
     /// <summary>FormID of the parent worldspace; null for interior cells.</summary>
     public uint? ParentWorldspaceFormId { get; init; }
+
+    // --- Planner-settled emission decisions (populated across the writer→planner refactor).
+    //     Null / empty / default means "not yet planned"; the writer falls back to computing
+    //     until the corresponding stage lands, at which point it reads these instead. ---
+
+    /// <summary>
+    ///     Binary cell-merge classification (PersistentOnly vs LoadedReplacement vs Skip) the writer
+    ///     used to derive per-ref preservation. Null until the mode-planning stage populates it.
+    /// </summary>
+    public CellMergeMode? Mode { get; init; }
+
+    /// <summary>
+    ///     True when captured render-culling markers (room/portal/occlusion/multibound) must be
+    ///     dropped in this replaced interior. Derived from <see cref="Mode" /> + context.
+    /// </summary>
+    public bool DropRenderCullingMarkers { get; init; }
+
+    /// <summary>
+    ///     The planner's cell-emission verdict: true = emit this cell's bundle, false = suppress
+    ///     (ITM / interior-no-new-content / navmesh-only). Null until the gate-planning stage
+    ///     computes it from the per-ref verdicts.
+    /// </summary>
+    public bool? Emits { get; init; }
+
+    /// <summary>
+    ///     Stat code for a planned suppression (<c>cell.itm-override-suppressed</c> /
+    ///     <c>cell.interior-no-new-content-suppressed</c>); null when <see cref="Emits" />
+    ///     is true or unplanned.
+    /// </summary>
+    public string? SuppressReason { get; init; }
+
+    /// <summary>
+    ///     True when the planned genuine children are navmeshes only — the writer must
+    ///     discard the NAVM prefix (a navmesh-only master-cell override transfers
+    ///     temp-children ownership for nothing) before the ITM suppression applies.
+    /// </summary>
+    public bool NavmOnlySuppressed { get; init; }
+
+    /// <summary>
+    ///     Per-placed-ref emit/drop verdicts keyed by child <c>RecordPlan.FormId</c>. Empty until
+    ///     the per-ref-verdict stage populates it; the writer then serializes verdicts instead of
+    ///     re-deriving base resolution / recovery / drops / bucketing.
+    /// </summary>
+    public ImmutableDictionary<uint, PlacedRefDecision> RefDecisions { get; init; } =
+        ImmutableDictionary<uint, PlacedRefDecision>.Empty;
 }

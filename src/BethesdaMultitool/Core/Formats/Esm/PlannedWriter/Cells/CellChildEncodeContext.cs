@@ -1,6 +1,8 @@
+using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
+using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
@@ -34,6 +36,14 @@ internal sealed class CellEncodeState
     public required bool IsMasterAnchored { get; init; }
     public required bool IsInterior { get; init; }
     public required bool DropRenderCullingMarkers { get; init; }
+
+    /// <summary>
+    ///     Planner-settled per-ref verdicts for this cell (keyed by child FormID). Empty when
+    ///     the verdict pass didn't run — the writer's transitional decision chain then owns
+    ///     each ref's fate.
+    /// </summary>
+    public ImmutableDictionary<uint, PlacedRefDecision> RefDecisions { get; init; } =
+        ImmutableDictionary<uint, PlacedRefDecision>.Empty;
 
     /// <summary>Master ref FormIDs covered by an emitted override in this cell.</summary>
     public HashSet<uint> CoveredMasterRefFormIds { get; } = [];

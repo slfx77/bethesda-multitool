@@ -1,0 +1,57 @@
+namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
+
+/// <summary>
+///     The planner's emit-or-drop verdict for one placed reference (REFR/ACHR/ACRE) inside a cell.
+///     Produced by <c>CellSectionPlanner</c> so the writer never re-derives base resolution,
+///     leveled-spawn recovery, marker drops, or bucketing — it just serializes the verdict.
+/// </summary>
+public enum PlacedRefEmitVerdict
+{
+    /// <summary>Emit this ref. <see cref="PlacedRefDecision.FinalBaseFormId" /> and
+    /// <see cref="PlacedRefDecision.TargetGroupType" /> carry the resolved base + bucket.</summary>
+    Emit,
+
+    /// <summary>Do not emit this ref. <see cref="PlacedRefDecision.DropReason" /> records why.</summary>
+    Drop,
+}
+
+/// <summary>
+///     Per-placed-ref decision the planner settles upfront: whether the ref emits, its final NAME
+///     base FormID (after SourceToEmittedFormId remap, leveled-spawn recovery, and EditorID-stem
+///     rescue), and the child GRUP bucket it routes into (8 persistent / 9 temporary / 10 VWD).
+///     Keyed by the child <c>RecordPlan.FormId</c> in <c>CellPlan.RefDecisions</c>.
+/// </summary>
+public sealed record PlacedRefDecision
+{
+    /// <summary>Emit or drop.</summary>
+    public required PlacedRefEmitVerdict Verdict { get; init; }
+
+    /// <summary>
+    ///     Drop-reason stat code (e.g. <c>refr.dangling-base</c>); null when emitted. A null
+    ///     reason on a Drop verdict means "silently not emitted" (e.g. override without a
+    ///     master record) — the writer skips the stats counters for those, matching legacy.
+    /// </summary>
+    public string? DropReason { get; init; }
+
+    /// <summary>
+    ///     Additional stat code incremented alongside the verdict: a recovery marker on Emit
+    ///     (<c>refr.leveled-recovered</c> / <c>refr.editorid-remap</c>) or the ambiguity
+    ///     marker on Drop (<c>refr.editorid-remap-ambiguous</c>).
+    /// </summary>
+    public string? AuxStatCode { get; init; }
+
+    /// <summary>
+    ///     Final NAME base FormID for an emitted NEW ref, after remap/recovery/rescue. 0 when the
+    ///     ref is an Override (its base rides the merged master record) or dropped.
+    /// </summary>
+    public uint FinalBaseFormId { get; init; }
+
+    /// <summary>Child GRUP group-type the ref routes into: 8 persistent, 9 temporary, 10 VWD.</summary>
+    public int TargetGroupType { get; init; }
+
+    /// <summary>
+    ///     True when this Override ref must mark its master FormID "covered" so the carry-forward
+    ///     pass doesn't re-emit the master copy (the <c>actor.temp-override-suppressed-esm</c> path).
+    /// </summary>
+    public bool MarksMasterCovered { get; init; }
+}

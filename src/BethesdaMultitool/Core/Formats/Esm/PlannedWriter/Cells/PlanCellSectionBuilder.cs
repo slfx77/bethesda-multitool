@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -74,18 +73,21 @@ internal static class PlanCellSectionBuilder
         var bundles = ConvertCellsToBundles(plan, context, out var emittedNavmFormIds);
         if (bundles.Count == 0)
         {
-            return new CellSectionBuildResult(null, emittedNavmFormIds, ImmutableHashSet<uint>.Empty);
+            return new CellSectionBuildResult(null, emittedNavmFormIds,
+                ImmutableHashSet<uint>.Empty, ImmutableDictionary<uint, NavmConnectivity>.Empty);
         }
 
         SanitizeNavmNvexInBundles(bundles, emittedNavmFormIds, masterByFormId);
         DeletedRefLinkStripper.Apply(bundles, stats);
 
+        // Emitted-navmesh NVEX/NVDP connectivity → NVCI reconstruction (post-sanitize; empty NVCI beside live links null-derefs the cross-cell A*).
+        var navmConnectivity = NavmConnectivityExtractor.Extract(bundles, validFormIds);
         var newWorldspaces = BuildNewWorldspaces(plan, options);
 
         var sectionBytes = CellGrupBuilder.BuildCellSection(
             bundles, masterByFormId, newWorldspacesByDmpFormId: newWorldspaces);
         return new CellSectionBuildResult(
-            sectionBytes, emittedNavmFormIds, CollectOverriddenChildFormIds(bundles));
+            sectionBytes, emittedNavmFormIds, CollectOverriddenChildFormIds(bundles), navmConnectivity);
     }
 
     /// <summary>
@@ -264,17 +266,16 @@ internal static class PlanCellSectionBuilder
 
             var isMasterAnchored = cellPlan.CellRecordPlan.Master is not null;
             var dmpCell = cellPlan.CellRecordPlan.Model as CellRecord;
-            var mode = ResolveMergeMode(isMasterAnchored, dmpCell, context);
+            var (mode, dropRenderCullingMarkers) =
+                CellDecisionFallback.Resolve(cellPlan, isMasterAnchored, dmpCell, context);
             var state = new CellEncodeState
             {
                 CellFormId = cellFormId,
                 Mode = mode,
                 IsMasterAnchored = isMasterAnchored,
                 IsInterior = cellPlan.Context.IsInterior,
-                DropRenderCullingMarkers = isMasterAnchored
-                    && cellPlan.Context.IsInterior
-                    && mode == CellMergeMode.LoadedReplacement
-                    && !context.Options.ReplaceCellTemporariesOnOverride,
+                DropRenderCullingMarkers = dropRenderCullingMarkers,
+                RefDecisions = cellPlan.RefDecisions,
             };
 
             var persistent = new List<byte[]>();
@@ -286,12 +287,17 @@ internal static class PlanCellSectionBuilder
             EncodeBucketChildren(cellPlan.VwdChildren, 10, context, state, persistent, vwd, temporary, navmPrefix);
             EncodeBucketChildren(cellPlan.TemporaryChildren, 9, context, state, persistent, vwd, temporary, navmPrefix);
 
-            // A navmesh must ride along with a genuine content override, never create one:
-            // a navmesh-only master-cell override would transfer temp-children ownership
-            // (blanking the interior) for nothing but a mesh master already serves.
-            if (isMasterAnchored
-                && state.GenuineChildCount > 0
-                && state.GenuineChildCount == state.GenuineNavmCount)
+            // Cell-emission gates. Planner-settled values (CellPlan.Emits) win; the inline
+            // computation only runs for plans that predate the gate-planning stage. Full
+            // rationale for each gate (navmesh-only ownership transfer, ITM blanking class,
+            // fragile interior master seek/scan attach) lives on CellChildVerdictPlanner.
+            var usePlannedGates = cellPlan.Emits is not null;
+            var suppressNavmOnly = usePlannedGates
+                ? cellPlan.NavmOnlySuppressed
+                : isMasterAnchored
+                  && state.GenuineChildCount > 0
+                  && state.GenuineChildCount == state.GenuineNavmCount;
+            if (suppressNavmOnly)
             {
                 navmPrefix.Clear();
                 state.EmittedNavmFormIds.Clear();
@@ -299,31 +305,28 @@ internal static class PlanCellSectionBuilder
                 context.Stats?.IncrementDropReason("cell.navmesh-only-override-suppressed");
             }
 
-            // Master-anchored bundle with no surviving genuine children = a byte-identical
-            // (ITM) CELL override. It carries zero information but still makes this plugin
-            // the cell's winning file, which drops the master's temporary children in-game
-            // (Doc Mitchell's-house blanking class, in-game confirmed). Skip it; the master
-            // cell stands untouched. Carry-forward must never be the reason a cell emits.
-            if (isMasterAnchored && state.GenuineChildCount == 0)
+            if (usePlannedGates)
             {
-                context.Stats?.IncrementDropReason("cell.itm-override-suppressed");
-                continue;
+                if (!cellPlan.Emits!.Value)
+                {
+                    context.Stats?.IncrementDropReason(
+                        cellPlan.SuppressReason ?? "cell.itm-override-suppressed");
+                    continue;
+                }
             }
-
-            // INTERIOR stability gate: an ESM interior CELL override routes the cell through
-            // the engine's FRAGILE master seek/scan attach path (decompile- + runtime-proven:
-            // the master's temp-load scan is position-dependent and fails non-deterministically
-            // when a plugin becomes an extra defining file — the Vault11c crash, confirmed to
-            // vanish when this plugin is disabled). The DMP is a full memory snapshot that
-            // captured refs for every cell the player merely VISITED, so without this gate we
-            // override unchanged base/DLC interiors (position-only or carry overrides) and
-            // destabilize them for nothing. Only override an interior when we have genuinely
-            // NEW proto records the master lacks (e.g. Gomorrah01's proto placements); a
-            // visited-but-unchanged interior is left entirely to the master.
-            if (isMasterAnchored && cellPlan.Context.IsInterior && state.GenuineNewCount == 0)
+            else
             {
-                context.Stats?.IncrementDropReason("cell.interior-no-new-content-suppressed");
-                continue;
+                if (isMasterAnchored && state.GenuineChildCount == 0)
+                {
+                    context.Stats?.IncrementDropReason("cell.itm-override-suppressed");
+                    continue;
+                }
+
+                if (isMasterAnchored && cellPlan.Context.IsInterior && state.GenuineNewCount == 0)
+                {
+                    context.Stats?.IncrementDropReason("cell.interior-no-new-content-suppressed");
+                    continue;
+                }
             }
 
             // LAND and NAVM both live in Temporary Children; LAND first, then NAVM, then
@@ -350,28 +353,6 @@ internal static class PlanCellSectionBuilder
         }
 
         return bundles;
-    }
-
-    /// <summary>
-    ///     Per-cell merge-mode classification, mirroring legacy: master cells classify via
-    ///     <see cref="CellMerger.Classify" /> (any non-persistent master-resident capture ⇒
-    ///     LoadedReplacement; persistent-only ⇒ PersistentOnly); brand-new cells emit all
-    ///     their children unconditionally (LoadedReplacement semantics).
-    /// </summary>
-    private static CellMergeMode ResolveMergeMode(
-        bool isMasterAnchored, CellRecord? dmpCell, CellChildEncodeContext context)
-    {
-        if (!isMasterAnchored)
-        {
-            return CellMergeMode.LoadedReplacement;
-        }
-
-        if (dmpCell is null || context.MasterIndex is null)
-        {
-            return CellMergeMode.Skip;
-        }
-
-        return CellMerger.Classify(dmpCell, context.MasterRefFormIds);
     }
 
     private static void EncodeBucketChildren(

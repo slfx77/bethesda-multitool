@@ -1,7 +1,9 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
+using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
@@ -21,7 +23,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 /// </summary>
 internal static class PlannedPlacedRefEncoder
 {
-    private const uint CompressedFlag = 0x00040000u;
+    internal const uint CompressedFlag = 0x00040000u;
 
     /// <summary>
     ///     Encode one placed-ref child plan. Returns null when the ref is dropped by policy
@@ -37,6 +39,13 @@ internal static class PlannedPlacedRefEncoder
         if (child.Model is not PlacedReference placed)
         {
             return null;
+        }
+
+        // Planner-settled verdict wins: the decision chain below only runs for plans that
+        // predate the verdict pass (older fixtures, partial planner runs).
+        if (state.RefDecisions.TryGetValue(child.FormId, out var verdict))
+        {
+            return VerdictPlacedRefEncoder.Encode(child, placed, verdict, context, state, ref routeGroupType);
         }
 
         if (RuntimeStateRecordPolicy.IsRuntimeStateFormId(placed.FormId))
@@ -62,13 +71,10 @@ internal static class PlannedPlacedRefEncoder
     }
 
     /// <summary>Record-header flag: ref is persistent (must be set on Persistent Children GRUP members).</summary>
-    private const uint PersistentFlag = 0x00000400u;
+    internal const uint PersistentFlag = 0x00000400u;
 
     /// <summary>Record-header flag: visible when distant (set on VWD Children GRUP members).</summary>
-    private const uint VisibleWhenDistantFlag = 0x00008000u;
-
-    /// <summary>Engine-only render-culling marker bases: MultiBound, Occlusion, Room, Portal. Collision (0x21) is kept.</summary>
-    private static readonly HashSet<uint> RenderCullingEngineBases = [0x15u, 0x17u, 0x1Fu, 0x20u];
+    internal const uint VisibleWhenDistantFlag = 0x00008000u;
 
     private static byte[]? EncodeNew(
         RecordPlan child,
@@ -91,7 +97,7 @@ internal static class PlannedPlacedRefEncoder
         // bases (0x20 etc.) aren't in the master ESM so the EDID-based structural check
         // above can't see them. Drop them; the whole culling graph dies with them.
         if (state.DropRenderCullingMarkers
-            && (RenderCullingEngineBases.Contains(placed.BaseFormId)
+            && (PlacedRefBaseRules.RenderCullingEngineBases.Contains(placed.BaseFormId)
                 || (context.MasterByFormId.TryGetValue(placed.BaseFormId, out var newBaseRecord)
                     && CellStructuralReferencePreserver.IsStructuralMarkerBase(newBaseRecord))))
         {
@@ -121,7 +127,9 @@ internal static class PlannedPlacedRefEncoder
             baseFormId = remappedBase;
         }
 
-        if (!IsValidPlacedBase(child.Type, baseFormId, context, out var knownBaseRecordType))
+        if (!PlacedRefBaseRules.IsValidPlacedBase(
+                child.Type, baseFormId, context.MasterByFormId, context.Plan.EmittedFormIds,
+                out var knownBaseRecordType))
         {
             // Leveled-spawn recovery: a runtime-dynamic (0xFF) clone base never resolves, but the
             // actor's captured ExtraLeveledCreature pointer names the concrete NPC_/CREA the engine
@@ -130,7 +138,9 @@ internal static class PlannedPlacedRefEncoder
             if (context.Options.RecoverLeveledSpawnActors
                 && child.Type is "ACHR" or "ACRE"
                 && placed.BaseFormId >= 0xFF000000u
-                && TryRecoverLeveledSpawnBase(placed, child.Type, context, out var recoveredBase))
+                && PlacedRefBaseRules.TryRecoverLeveledSpawnBase(
+                    placed, child.Type, context.Plan.SourceToEmittedFormId, context.MasterByFormId,
+                    context.Plan.EmittedFormIds, context.DmpBaseTypes, out var recoveredBase))
             {
                 context.Stats?.IncrementDropReason("refr.leveled-recovered");
                 baseFormId = recoveredBase;
@@ -150,7 +160,9 @@ internal static class PlannedPlacedRefEncoder
                     context.MasterIndex.StemToFormIdsByType, context.DmpBaseTypes);
                 if (rescue.Outcome == ReferenceBaseRemapper.StemRescueOutcome.Rescued
                     && !context.Plan.SourceToEmittedFormId.ContainsKey(rescue.WinningFormId)
-                    && IsValidPlacedBase(child.Type, rescue.WinningFormId, context, out _))
+                    && PlacedRefBaseRules.IsValidPlacedBase(
+                        child.Type, rescue.WinningFormId, context.MasterByFormId,
+                        context.Plan.EmittedFormIds, out _))
                 {
                     context.Stats?.IncrementDropReason("refr.editorid-remap");
                     baseFormId = rescue.WinningFormId;
@@ -293,16 +305,7 @@ internal static class PlannedPlacedRefEncoder
             Subrecords = SanitizeOverrideSubrecords(encoded.Subrecords, context)
         };
 
-        // XEMI (emittance link) is eager-resolved when the plugin is ESM-flagged and was a
-        // known fault source in the ESM-era builds; the carry-forward path strips it via
-        // ReconstructRecordBytes, so the merge path must too or overrides re-import it.
-        var masterForMerge = masterRecord.Subrecords.Any(s => s.Signature == "XEMI")
-            ? masterRecord with
-            {
-                Subrecords = masterRecord.Subrecords.Where(s => s.Signature != "XEMI").ToList()
-            }
-            : masterRecord;
-
+        var masterForMerge = StripXemi(masterRecord);
         var merge = RecordMergeEngine.Merge(masterForMerge, encoded, SubrecordMergePolicy.Default);
         var bytes = PluginRecordByteBuilder.BuildOverrideRecordBytes(
             masterRecord, merge.SubrecordBytes, context.Options);
@@ -330,12 +333,25 @@ internal static class PlannedPlacedRefEncoder
     }
 
     /// <summary>
+    ///     XEMI (emittance link) is eager-resolved when the plugin is ESM-flagged and was a
+    ///     known fault source in the ESM-era builds; the carry-forward path strips it via
+    ///     ReconstructRecordBytes, so the merge path must too or overrides re-import it.
+    /// </summary>
+    internal static ParsedMainRecord StripXemi(ParsedMainRecord masterRecord) =>
+        masterRecord.Subrecords.Any(s => s.Signature == "XEMI")
+            ? masterRecord with
+            {
+                Subrecords = masterRecord.Subrecords.Where(s => s.Signature != "XEMI").ToList()
+            }
+            : masterRecord;
+
+    /// <summary>
     ///     Remap-then-validate the FormID-bearing override subrecords (XTEL target, XESP
     ///     parent, XLKR links, XOWN owner, XEZN zone) against master ∪ emitted. Dangling
     ///     targets drop the subrecord — the legacy <c>RemapEncodedFormIds</c> behavior; the
     ///     engine would log "Unable to find linked reference" and strip the data anyway.
     /// </summary>
-    private static List<EncodedSubrecord> SanitizeOverrideSubrecords(
+    internal static List<EncodedSubrecord> SanitizeOverrideSubrecords(
         IReadOnlyList<EncodedSubrecord> subrecords,
         CellChildEncodeContext context)
     {
@@ -400,90 +416,4 @@ internal static class PlannedPlacedRefEncoder
                || RuntimeStateRecordPolicy.EngineFormIds.Contains(formId);
     }
 
-    /// <summary>
-    ///     Runtime-dynamic (0xFF) leveled-spawn recovery: the actor's captured
-    ///     <see cref="PlacedReference.LeveledCreatureOriginalBaseFormId" /> (preferred), else
-    ///     <see cref="PlacedReference.LeveledCreatureTemplateFormId" />, names the concrete base
-    ///     the engine spawned it from. Accept the first candidate that resolves (through
-    ///     <c>SourceToEmittedFormId</c>) to a type-compatible NPC_/CREA base.
-    /// </summary>
-    private static bool TryRecoverLeveledSpawnBase(
-        PlacedReference placed,
-        string placedRecordType,
-        CellChildEncodeContext context,
-        out uint recoveredFormId)
-    {
-        return TryLeveledCandidate(placed.LeveledCreatureOriginalBaseFormId, placedRecordType, context, out recoveredFormId)
-               || TryLeveledCandidate(placed.LeveledCreatureTemplateFormId, placedRecordType, context, out recoveredFormId);
-    }
-
-    private static bool TryLeveledCandidate(
-        uint? candidate,
-        string placedRecordType,
-        CellChildEncodeContext context,
-        out uint recoveredFormId)
-    {
-        recoveredFormId = 0;
-        if (candidate is not { } source || source == 0 || source >= 0xFF000000u)
-        {
-            return false;
-        }
-
-        var resolved = context.Plan.SourceToEmittedFormId.TryGetValue(source, out var emitted) ? emitted : source;
-
-        // IsValidPlacedBase enforces CanPlacedRecordUseBaseType for master bases, so a master
-        // LVLN/LVLC candidate is rejected here and we fall through to the other pointer.
-        if (!IsValidPlacedBase(placedRecordType, resolved, context, out var knownBaseRecordType))
-        {
-            return false;
-        }
-
-        // Emitted (captured-proto) bases pass IsValidPlacedBase without a type check — verify the
-        // captured base type is actor-compatible so we never re-point an actor at a non-actor base.
-        if (knownBaseRecordType is null
-            && !(context.DmpBaseTypes is { } dmpTypes
-                 && dmpTypes.TryGetValue(source, out var dmpType)
-                 && ReferenceBaseRemapper.CanPlacedRecordUseBaseType(placedRecordType, dmpType)))
-        {
-            return false;
-        }
-
-        recoveredFormId = resolved;
-        return true;
-    }
-
-    /// <summary>
-    ///     A placed ref's base must resolve at load: a master record of a compatible base
-    ///     type, a FormID this plugin emits, or an engine-hardcoded form (reserved range
-    ///     below 0x800 plus the runtime-state singletons). Everything else — 0xFF-range
-    ///     runtime clones, proto FormIDs the final master cut — dangles.
-    /// </summary>
-    private static bool IsValidPlacedBase(
-        string placedRecordType,
-        uint baseFormId,
-        CellChildEncodeContext context,
-        out string? knownBaseRecordType)
-    {
-        knownBaseRecordType = null;
-
-        if (baseFormId is 0 or 0xFFFFFFFFu)
-        {
-            return true; // Null/sentinel bases pass through, same as legacy validation.
-        }
-
-        if (context.MasterByFormId.TryGetValue(baseFormId, out var masterRecord))
-        {
-            knownBaseRecordType = masterRecord.Header.Signature;
-            return ReferenceBaseRemapper.CanPlacedRecordUseBaseType(
-                placedRecordType, masterRecord.Header.Signature);
-        }
-
-        if (context.Plan.EmittedFormIds.Contains(baseFormId))
-        {
-            return true;
-        }
-
-        return baseFormId < 0x800u
-               || RuntimeStateRecordPolicy.EngineFormIds.Contains(baseFormId);
-    }
 }
