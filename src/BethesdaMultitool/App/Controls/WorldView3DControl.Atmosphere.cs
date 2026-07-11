@@ -660,7 +660,10 @@ public sealed partial class WorldView3DControl
     // <paramref name="domeCenter"/> is the world-space center of the sky dome / sun-moon billboards. The
     // live frame passes Vector3.Zero together with a translation-free viewProj (camera-relative, jitter-
     // free); the offscreen scene capture passes the absolute camera position with its absolute viewProj.
-    private void RenderSky(Matrix4x4 viewProj, Vector3 domeCenter)
+    // <paramref name="billboardBasis"/> overrides the sun/moon billboard camera basis — the ortho
+    // projection modes pass their own camera axes because the perspective camera is parked/stale there.
+    private void RenderSky(Matrix4x4 viewProj, Vector3 domeCenter,
+        (Vector3 Right, Vector3 Up)? billboardBasis = null)
     {
         EnsureSkyTexturesResolved();
         var atmo = AtmosphereState.Resolve(_gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: true);
@@ -684,7 +687,7 @@ public sealed partial class WorldView3DControl
 
         if (exterior)
         {
-            RenderSkyBillboards(viewProj, atmo, domeCenter);
+            RenderSkyBillboards(viewProj, atmo, domeCenter, billboardBasis);
         }
     }
 
@@ -692,22 +695,33 @@ public sealed partial class WorldView3DControl
     // direction/intensity come from the decompile-grounded AtmosphereState (already resolved by the
     // caller with lighting forced on); the moon uses a plausible night arc (the engine's independent
     // orbit isn't tracked here — documented simplification).
-    private void RenderSkyBillboards(Matrix4x4 viewProj, AtmosphereState.Resolved atmo, Vector3 domeCenter)
+    private void RenderSkyBillboards(Matrix4x4 viewProj, AtmosphereState.Resolved atmo, Vector3 domeCenter,
+        (Vector3 Right, Vector3 Up)? basisOverride = null)
     {
         if (_skyBillboards is null)
         {
             return;
         }
 
-        // Camera world basis from the inverse view matrix (System.Numerics row-vector: invView's rows are
-        // the camera's world-space right/up).
-        if (!Matrix4x4.Invert(_camera.GetViewMatrix(), out var invView))
+        Vector3 camRight, camUp;
+        if (basisOverride is { } basis)
         {
-            return;
+            // Ortho projection modes: the perspective camera is parked wherever the user left it,
+            // so the billboards face the projection camera's axes instead.
+            (camRight, camUp) = basis;
         }
+        else
+        {
+            // Camera world basis from the inverse view matrix (System.Numerics row-vector: invView's
+            // rows are the camera's world-space right/up).
+            if (!Matrix4x4.Invert(_camera.GetViewMatrix(), out var invView))
+            {
+                return;
+            }
 
-        var camRight = Vector3.Normalize(new Vector3(invView.M11, invView.M12, invView.M13));
-        var camUp = Vector3.Normalize(new Vector3(invView.M21, invView.M22, invView.M23));
+            camRight = Vector3.Normalize(new Vector3(invView.M11, invView.M12, invView.M13));
+            camUp = Vector3.Normalize(new Vector3(invView.M21, invView.M22, invView.M23));
+        }
         // Billboard origin = the dome center. The live frame passes 0 (camera-relative, with a translation-
         // free viewProj) so the sun/moon don't jitter at far-from-origin camera positions; the offscreen
         // capture passes the absolute camera position. camRight/camUp are pure directions either way.
