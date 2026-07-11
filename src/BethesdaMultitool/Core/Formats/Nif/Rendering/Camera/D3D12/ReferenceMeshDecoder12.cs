@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.SpeedTree;
@@ -42,6 +43,12 @@ internal sealed class ReferenceMeshDecoder12
 
     private int _totalMissingModelPaths;
     private int _totalSkinnedModelPaths;
+
+    // Kill-switch: FALLOUT_VIEWER_NIF_ANIMATION=0 decodes animated/skinned placed NIFs as inert
+    // static geometry (pre-v32 behavior). Diagnostic knob — cached entries reflect whichever mode
+    // decoded them.
+    private static readonly bool NifAnimationEnabled =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.NifAnimation) != "0";
 
     public ReferenceMeshDecoder12(
         MeshArchiveSet meshArchives,
@@ -103,6 +110,11 @@ internal sealed class ReferenceMeshDecoder12
             // Decoded Havok collision soup (set only on the NIF path below; SpeedTree has none).
             Vector3[]? collisionPositions = null;
             int[]? collisionTriangles = null;
+
+            // Keyframe playback rig + per-shape skin inputs (set only for internally-skinned
+            // animated NIFs — banners, cloth flags with tracks).
+            NifMeshAnimation? animation = null;
+            Dictionary<int, Skinning.NifSubmeshSkin>? skinsByShapeIndex = null;
 
             NifRenderableModel? model;
             if (lookupPath.EndsWith(".spt", StringComparison.OrdinalIgnoreCase))
@@ -207,11 +219,19 @@ internal sealed class ReferenceMeshDecoder12
                     }
                 }
 
+                // Internally-skinned NIFs (Morrowind banners, FNV cloth flags — skeleton nodes live
+                // inside the file) are skinned against their OWN authored node transforms, baking the
+                // correct REST pose. Everything else keeps skipping skinning: without an external
+                // skeleton there is nothing to pose those against, and bind-pose is today's behavior.
+                var animationSignature = NifAnimationEnabled
+                    ? NifAnimationDetector.Detect(nifData, nif)
+                    : default;
+
                 model = NifGeometryExtractor.Extract(
                     nifData, nif,
                     textureResolver: _textureResolver,
                     bindPoseOnly: false,
-                    skipSkinning: true,
+                    skipSkinning: !animationSignature.HasInternalSkin,
                     // MSWP per-placement re-skin: substituted where the extractor resolves each
                     // shape's .bgsm, so the replacement material's render state flows through.
                     materialSwaps: materialSwaps,
@@ -236,6 +256,22 @@ internal sealed class ReferenceMeshDecoder12
                     collisionPositions = havok.Positions;
                     collisionTriangles = havok.Triangles;
                 }
+
+                // Keyframe playback rig: internally-skinned NIFs with node keyframe tracks (banners)
+                // carry the bone tree + tracks + per-shape skin inputs so the viewer can re-pose them
+                // per frame. The baked vertices above stay REST-POSE — the rig is additive data.
+                if (animationSignature is { HasNodeKeyframeTracks: true, HasInternalSkin: true })
+                {
+                    animation = NifNodeKeyframeTrackCollector.Collect(nifData, nif);
+                    if (animation is not null)
+                    {
+                        skinsByShapeIndex = Skinning.NifSubmeshSkinExporter.Export(nifData, nif, animation);
+                        if (skinsByShapeIndex is null)
+                        {
+                            animation = null; // rig without skinnable shapes — nothing to pose
+                        }
+                    }
+                }
             }
 
             if (model is null)
@@ -243,11 +279,13 @@ internal sealed class ReferenceMeshDecoder12
                 result = "extract-failed";
                 return null;
             }
+            // WasSkinned is EXPECTED for internally-skinned NIFs now that they rest-pose skin
+            // (banners, cloth flags). The old "skinned → reject" guard here was dead code anyway:
+            // with skipSkinning:true the flag could never be set on this path. Keep the tally for
+            // the diagnostic counter only.
             if (model.WasSkinned)
             {
-                result = "skinned";
                 Interlocked.Increment(ref _totalSkinnedModelPaths);
-                return null;
             }
             if (!model.HasGeometry)
             {
@@ -329,7 +367,11 @@ internal sealed class ReferenceMeshDecoder12
                     EnvironmentMapTexturePath: hasEnvMap ? sub.EnvironmentMapTexturePath : null,
                     EnvironmentMapScale: hasEnvMap ? sub.EnvironmentMapScale : 0f,
                     EnvironmentMapSmoothness: hasEnvMap ? sub.EnvironmentMapSmoothness : 0f,
-                    UvScrollVelocity: sub.UvScrollVelocity));
+                    UvScrollVelocity: sub.UvScrollVelocity,
+                    Skin: skinsByShapeIndex is not null &&
+                          skinsByShapeIndex.TryGetValue(sub.SourceBlockIndex, out var skin)
+                        ? skin
+                        : null));
             }
 
             if (submeshes.Count == 0)
@@ -340,7 +382,7 @@ internal sealed class ReferenceMeshDecoder12
 
             submeshCount = submeshes.Count;
             result = "success";
-            return new DecodedNifMesh12(submeshes, collisionPositions, collisionTriangles);
+            return new DecodedNifMesh12(submeshes, collisionPositions, collisionTriangles, animation);
         }
         finally
         {
@@ -398,10 +440,12 @@ internal sealed class ReferenceMeshDecoder12
                 sub.EnvironmentMapTexturePath,
                 sub.EnvironmentMapScale,
                 sub.EnvironmentMapSmoothness,
-                sub.UvScrollVelocity));
+                sub.UvScrollVelocity,
+                sub.Skin));
         }
 
-        return new ReferenceDecodedMeshPayload12(submeshes, decoded.CollisionPositions, decoded.CollisionTriangles);
+        return new ReferenceDecodedMeshPayload12(
+            submeshes, decoded.CollisionPositions, decoded.CollisionTriangles, decoded.Animation);
     }
 
     public static DecodedNifMesh12 FromPersistentPayload(ReferenceDecodedMeshPayload12 payload)
@@ -442,10 +486,12 @@ internal sealed class ReferenceMeshDecoder12
                 sub.EnvironmentMapTexturePath,
                 sub.EnvironmentMapScale,
                 sub.EnvironmentMapSmoothness,
-                sub.UvScrollVelocity));
+                sub.UvScrollVelocity,
+                sub.Skin));
         }
 
-        return new DecodedNifMesh12(submeshes, payload.CollisionPositions, payload.CollisionTriangles);
+        return new DecodedNifMesh12(
+            submeshes, payload.CollisionPositions, payload.CollisionTriangles, payload.Animation);
     }
 
     public static long EstimateDecodedMeshBytes(DecodedNifMesh12 decoded)
@@ -457,10 +503,30 @@ internal sealed class ReferenceMeshDecoder12
             total += (long)submesh.Vertices.Length * vertexSize;
             total += (long)submesh.Indices.Length * sizeof(ushort);
             total += 256;
+            if (submesh.Skin is { } skin)
+            {
+                // base positions/normals + packed influences + inverse binds (LRU byte honesty).
+                total += (long)skin.BasePositions.Length * sizeof(float);
+                total += (long)(skin.BaseNormals?.Length ?? 0) * sizeof(float);
+                total += (long)skin.BoneIndices.Length;
+                total += (long)skin.BoneWeights.Length * sizeof(float);
+                total += (long)skin.InverseBindPoses.Length * 64;
+            }
         }
 
         if (decoded.CollisionPositions is { } cp) total += (long)cp.Length * 12;
         if (decoded.CollisionTriangles is { } ct) total += (long)ct.Length * sizeof(int);
+        if (decoded.Animation is { } anim)
+        {
+            total += anim.Bones.Length * 96L;
+            foreach (var track in anim.Tracks)
+            {
+                if (track is null) continue;
+                total += track.RotationKeys.Length * 20L;
+                total += track.TranslationKeys.Length * 16L;
+                total += track.ScaleKeys.Length * 8L;
+            }
+        }
 
         return total;
     }

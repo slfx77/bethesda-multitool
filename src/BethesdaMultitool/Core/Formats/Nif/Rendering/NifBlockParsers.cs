@@ -159,9 +159,10 @@ internal static class NifBlockParsers
         BlockInfo block,
         uint bsVersion,
         uint binaryVersion,
-        bool be)
+        bool be,
+        bool hasInlineStrings = false)
     {
-        return NifSceneGraphBlockReader.ParseShapeSkinInstanceRef(data, block, bsVersion, binaryVersion, be);
+        return NifSceneGraphBlockReader.ParseShapeSkinInstanceRef(data, block, bsVersion, binaryVersion, be, hasInlineStrings);
     }
 
     internal static int[]? ParseDismemberPartitions(byte[] data, BlockInfo block, bool be)

@@ -147,6 +147,20 @@ internal sealed class CachedSubmesh12
     public Vector2 UvScrollVelocity { get; init; }
 
     /// <summary>
+    ///     CPU skinning inputs for keyframe playback (raw skin-space base geometry + influences +
+    ///     inverse binds), null for unskinned/unanimated submeshes. Consumed by the per-frame mesh
+    ///     skinner together with the owning mesh's animation rig.
+    /// </summary>
+    public BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning.NifSubmeshSkin? Skin { get; init; }
+
+    /// <summary>
+    ///     CPU copy of the interleaved rest-pose vertices, retained ONLY for skinned submeshes
+    ///     (<see cref="Skin" /> non-null) as the per-frame skinner's write template — it rewrites
+    ///     position/normal and keeps uv/color/tangents. Null for the common static submesh.
+    /// </summary>
+    public Gpu.GpuMeshUploader.GpuVertex[]? RestPoseVertices { get; init; }
+
+    /// <summary>
     ///     Per-frame skinned-pose vertex buffer override, set (or cleared) every frame by the CPU
     ///     mesh skinner for animated skinned meshes; null = draw the static rest-pose VB. Ring-buffer
     ///     backed — valid for the frame it was written, hence the clear-or-refresh-every-frame rule.

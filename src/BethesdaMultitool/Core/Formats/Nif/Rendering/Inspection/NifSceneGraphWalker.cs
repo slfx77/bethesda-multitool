@@ -140,7 +140,7 @@ internal static class NifSceneGraphWalker
 
                 // Skip gore shapes identified via BSDismemberSkinInstance partition data.
                 // Body part IDs 100-299 are gore caps (section caps + torso caps).
-                var skinRef = NifBlockParsers.ParseShapeSkinInstanceRef(data, block, nif.BsVersion, nif.BinaryVersion, be);
+                var skinRef = NifBlockParsers.ParseShapeSkinInstanceRef(data, block, nif.BsVersion, nif.BinaryVersion, be, nif.HasInlineStrings);
                 if (skinRef >= 0 && skinRef < nif.Blocks.Count &&
                     nif.Blocks[skinRef].TypeName == "BSDismemberSkinInstance")
                 {

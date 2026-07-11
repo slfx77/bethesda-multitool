@@ -75,7 +75,9 @@ internal static class EnvironmentVariables
         /// <summary>Resident-mesh LRU entry cap for the 3D viewer's reference cache (default 2048). Diagnostic lever: tiny values force constant eviction-cascade churn for stress gates.</summary>
         public const string ReferenceMeshCapacity = "FALLOUT_VIEWER_REFERENCE_MESH_CAPACITY";
 
-        /// <summary>Decoded CPU mesh cache byte budget in MEGABYTES (default 256). Diagnostic lever, same purpose as <see cref="ReferenceMeshCapacity" />.</summary>
+        /// <summary>Decoded CPU mesh cache byte budget in MEGABYTES (default SCALES WITH SYSTEM RAM —
+        /// see <c>AdaptiveMemoryDefaults</c>: 128/256/512/1024 at &lt;12/12+/24+/48+ GB). Diagnostic
+        /// lever, same purpose as <see cref="ReferenceMeshCapacity" />.</summary>
         public const string ReferenceDecodedCacheMegabytes = "FALLOUT_VIEWER_REFERENCE_DECODED_CACHE_MB";
 
         public const string DisableReferenceFrustum = "FALLOUT_VIEWER_DISABLE_REFERENCE_FRUSTUM";
@@ -98,19 +100,26 @@ internal static class EnvironmentVariables
         /// stay clip-aligned either way.</summary>
         public const string CameraRelative = "FALLOUT_VIEWER_CAMERA_RELATIVE";
 
-        /// <summary>Sun shadow map kill-switch: set to "0" to disable the directional shadow pass
-        /// entirely (default ON; also toggleable per-session in the lighting flyout). OFF renders
-        /// pixel-identical to the pre-shadow viewer. Companion knob:
-        /// <c>FALLOUT_VIEWER_SHADOW_RES</c> (map dimension, default 4096).</summary>
+        /// <summary>Sun shadow kill-switch: set to "0" to disable the cascaded directional shadow
+        /// pass entirely (default ON; also toggleable per-session in the lighting flyout). OFF
+        /// renders pixel-identical to the pre-shadow viewer. Companion knob:
+        /// <c>FALLOUT_VIEWER_SHADOW_RES</c> (per-cascade map dimension; the default is VRAM-scaled
+        /// from the adapter's OS-assigned budget — 4096 at ≥ 8 GB, 2048 at ≥ 3 GB, else 1024).</summary>
         public const string Shadows = "FALLOUT_VIEWER_SHADOWS";
 
-        /// <summary>HEADLESS override for the shadow coverage half-extent, in WORLD UNITS (unset =
-        /// the lighting flyout's "Shadow distance" slider, default 4 cells). Smaller = sharper
-        /// (texel density is 2·radius/resolution); the radius is always clamped to the render
-        /// distance.</summary>
+        /// <summary>DIAGNOSTIC cap for the LAST shadow cascade's half-extent, in WORLD UNITS
+        /// (unset = the fixed ladder's 131072; the earlier cascades are fixed at 2048/8192/32768).
+        /// Exists only for headless texel-density experiments.</summary>
         public const string ShadowRadius = "FALLOUT_VIEWER_SHADOW_RADIUS";
 
-        /// <summary>Per-frame upload-heap ring-buffer size in MEGABYTES (default 128). Shared by every D3D12 renderer's per-draw CBs; raise if a very dense whole-map view drops draws (every consumer soft-fails instead of throwing).</summary>
+        /// <summary>When 1, logs each sun-shadow cascade render decision ([Shadow] lines). OFF by
+        /// default — the per-re-render console write at walking cadence was a measurable frame cost.</summary>
+        public const string ShadowDiag = "FALLOUT_VIEWER_SHADOW_DIAG";
+
+        /// <summary>Per-frame upload-heap ring-buffer size in MEGABYTES (default SCALES WITH SYSTEM
+        /// RAM — see <c>AdaptiveMemoryDefaults</c>: 64/128/256 at &lt;12/12+/24+ GB). Shared by every
+        /// D3D12 renderer's per-draw CBs; raise if a very dense whole-map view drops draws (every
+        /// consumer soft-fails instead of throwing).</summary>
         public const string RingBufferMegabytes = "FALLOUT_VIEWER_RING_BUFFER_MB";
 
         /// <summary>When 1, renders engine marker objects (XMarker/heading, map/travel markers, etc.) that are hidden by default to match the game.</summary>
@@ -150,6 +159,11 @@ internal static class EnvironmentVariables
         /// <summary>Optional override for decoded mesh cache directory. When unset, the OS temp directory is used.</summary>
         public const string MeshCacheDirectory = "FALLOUT_VIEWER_MESH_CACHE_DIR";
         public const string MeshCacheMaxMegabytes = "FALLOUT_VIEWER_MESH_CACHE_MAX_MB";
+
+        /// <summary>NIF animation kill-switch: set to "0" to decode animated/skinned placed NIFs as
+        /// inert static geometry (pre-v32 behavior — bind-pose banners, no UV scroll velocities).
+        /// The disk-cache version stays 32 either way, so flipping it doesn't corrupt warm entries.</summary>
+        public const string NifAnimation = "FALLOUT_VIEWER_NIF_ANIMATION";
     }
 
     /// <summary>Environment-variable names for the 2D world-map renderer's tracing and terrain-draw knobs.</summary>

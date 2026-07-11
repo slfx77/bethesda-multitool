@@ -1,5 +1,6 @@
 #if WINDOWS_GUI
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
@@ -37,6 +38,14 @@ internal sealed class CachedNifMesh12 : IDisposable
     }
 
     public IReadOnlyList<CachedSubmesh12> Submeshes { get; }
+
+    /// <summary>
+    ///     Keyframe animation rig (bone tree + tracks + clip window) for animated statics (Morrowind
+    ///     banners), carried CPU-side for the per-frame mesh skinner; null for the common static
+    ///     mesh. The uploaded vertex buffers hold the REST pose, so a renderer that never ticks the
+    ///     skinner still draws the correct static mesh.
+    /// </summary>
+    public NifMeshAnimation? Animation { get; set; }
 
     /// <summary>
     ///     Mesh-local AABBs (min/max) of any WaterShaderProperty submeshes in this NIF — the

@@ -4,6 +4,8 @@ using System.Text;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 using BethesdaMultitool.Core.Resources;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -139,6 +141,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     private const int MaxCollisionVertices = 4_000_000;
     private const int MaxCollisionIndices = 12_000_000;
     private const int MaxStringBytes = 8 * 1024;
+    private const int MaxAnimBones = 512;
+    private const int MaxKeysPerChannel = 65_536;
+    private const int MaxTextKeys = 4_096;
     private const string FileExtension = ".fdmc";
     private static readonly byte[] Magic = Encoding.ASCII.GetBytes("FNVMC12\0");
 
@@ -269,6 +274,78 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         foreach (var p in collisionPositions) WriteVector3(writer, p);
         writer.Write(collisionTriangles.Length);
         foreach (var t in collisionTriangles) writer.Write(t);
+
+        // Keyframe animation rig (trailing, optional, v32+).
+        writer.Write(mesh.Animation is not null);
+        if (mesh.Animation is { } anim)
+        {
+            WriteAnimation(writer, anim);
+        }
+    }
+
+    private static void WriteAnimation(BinaryWriter writer, NifMeshAnimation anim)
+    {
+        ValidateRange(anim.Bones.Length, 1, MaxAnimBones, nameof(anim.Bones));
+        ValidateRange(anim.TextKeys.Length, 0, MaxTextKeys, nameof(anim.TextKeys));
+
+        writer.Write(anim.Bones.Length);
+        for (var i = 0; i < anim.Bones.Length; i++)
+        {
+            var bone = anim.Bones[i];
+            WriteNullableString(writer, bone.Name, MaxStringBytes);
+            writer.Write(bone.ParentIndex);
+            WriteVector3(writer, bone.RestTranslation);
+            WriteQuaternion(writer, bone.RestRotation);
+            writer.Write(bone.RestScale);
+
+            var track = anim.Tracks[i];
+            writer.Write(track is not null);
+            if (track is null)
+            {
+                continue;
+            }
+
+            ValidateRange(track.RotationKeys.Length, 0, MaxKeysPerChannel, nameof(track.RotationKeys));
+            ValidateRange(track.TranslationKeys.Length, 0, MaxKeysPerChannel, nameof(track.TranslationKeys));
+            ValidateRange(track.ScaleKeys.Length, 0, MaxKeysPerChannel, nameof(track.ScaleKeys));
+
+            writer.Write(track.Frequency);
+            writer.Write(track.Phase);
+            writer.Write((byte)track.RotationInterpolation);
+            writer.Write(track.RotationKeys.Length);
+            foreach (var key in track.RotationKeys)
+            {
+                writer.Write(key.Time);
+                WriteQuaternion(writer, key.Value);
+            }
+
+            writer.Write((byte)track.TranslationInterpolation);
+            writer.Write(track.TranslationKeys.Length);
+            foreach (var key in track.TranslationKeys)
+            {
+                writer.Write(key.Time);
+                WriteVector3(writer, key.Value);
+            }
+
+            writer.Write((byte)track.ScaleInterpolation);
+            writer.Write(track.ScaleKeys.Length);
+            foreach (var key in track.ScaleKeys)
+            {
+                writer.Write(key.Time);
+                writer.Write(key.Value);
+            }
+        }
+
+        writer.Write(anim.TextKeys.Length);
+        foreach (var key in anim.TextKeys)
+        {
+            writer.Write(key.Time);
+            WriteNullableString(writer, key.Label, MaxStringBytes);
+        }
+
+        writer.Write(anim.ClipStart);
+        writer.Write(anim.ClipStop);
+        writer.Write(anim.ClipLoops);
     }
 
     private static ReferenceDecodedMeshPayload12 ReadMesh(BinaryReader reader)
@@ -301,7 +378,69 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             for (var i = 0; i < collisionIndexCount; i++) collisionTriangles[i] = reader.ReadInt32();
         }
 
-        return new ReferenceDecodedMeshPayload12(submeshes, collisionPositions, collisionTriangles);
+        var animation = reader.ReadBoolean() ? ReadAnimation(reader) : null;
+
+        return new ReferenceDecodedMeshPayload12(submeshes, collisionPositions, collisionTriangles, animation);
+    }
+
+    private static NifMeshAnimation ReadAnimation(BinaryReader reader)
+    {
+        var boneCount = ReadInt32(reader, 1, MaxAnimBones);
+        var bones = new NifAnimBone[boneCount];
+        var tracks = new NifNodeTrack?[boneCount];
+        for (var i = 0; i < boneCount; i++)
+        {
+            var name = ReadNullableString(reader, MaxStringBytes) ?? $"#{i}";
+            var parentIndex = reader.ReadInt32();
+            var restTranslation = ReadVector3(reader);
+            var restRotation = ReadQuaternion(reader);
+            var restScale = reader.ReadSingle();
+            bones[i] = new NifAnimBone(name, parentIndex, restTranslation, restRotation, restScale);
+
+            if (!reader.ReadBoolean())
+            {
+                continue;
+            }
+
+            var frequency = reader.ReadSingle();
+            var phase = reader.ReadSingle();
+
+            var rotInterp = (NifKeyInterpolation)reader.ReadByte();
+            var rotKeys = new NifQuatKey[ReadInt32(reader, 0, MaxKeysPerChannel)];
+            for (var k = 0; k < rotKeys.Length; k++)
+            {
+                rotKeys[k] = new NifQuatKey(reader.ReadSingle(), ReadQuaternion(reader));
+            }
+
+            var transInterp = (NifKeyInterpolation)reader.ReadByte();
+            var transKeys = new NifVec3Key[ReadInt32(reader, 0, MaxKeysPerChannel)];
+            for (var k = 0; k < transKeys.Length; k++)
+            {
+                transKeys[k] = new NifVec3Key(reader.ReadSingle(), ReadVector3(reader));
+            }
+
+            var scaleInterp = (NifKeyInterpolation)reader.ReadByte();
+            var scaleKeys = new NifFloatKey[ReadInt32(reader, 0, MaxKeysPerChannel)];
+            for (var k = 0; k < scaleKeys.Length; k++)
+            {
+                scaleKeys[k] = new NifFloatKey(reader.ReadSingle(), reader.ReadSingle());
+            }
+
+            tracks[i] = new NifNodeTrack(
+                name, frequency, phase, rotInterp, rotKeys, transInterp, transKeys, scaleInterp, scaleKeys);
+        }
+
+        var textKeys = new NifAnimTextKey[ReadInt32(reader, 0, MaxTextKeys)];
+        for (var i = 0; i < textKeys.Length; i++)
+        {
+            var time = reader.ReadSingle();
+            textKeys[i] = new NifAnimTextKey(time, ReadNullableString(reader, MaxStringBytes) ?? string.Empty);
+        }
+
+        var clipStart = reader.ReadSingle();
+        var clipStop = reader.ReadSingle();
+        var clipLoops = reader.ReadBoolean();
+        return new NifMeshAnimation(bones, tracks, textKeys, clipStart, clipStop, clipLoops);
     }
 
     private static void WriteSubmesh(BinaryWriter writer, ReferenceDecodedSubmeshPayload12 submesh)
@@ -357,6 +496,27 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(submesh.EnvironmentMapScale);
         writer.Write(submesh.EnvironmentMapSmoothness);
         WriteVector2(writer, submesh.UvScrollVelocity);
+
+        writer.Write(submesh.Skin is not null);
+        if (submesh.Skin is { } skin)
+        {
+            ValidateRange(skin.VertexCount, 1, MaxVerticesPerSubmesh, nameof(skin.BasePositions));
+            ValidateRange(skin.InverseBindPoses.Length, 1, MaxAnimBones, nameof(skin.InverseBindPoses));
+
+            writer.Write(skin.VertexCount);
+            foreach (var f in skin.BasePositions) writer.Write(f);
+            writer.Write(skin.BaseNormals is not null);
+            if (skin.BaseNormals is { } normals)
+            {
+                foreach (var f in normals) writer.Write(f);
+            }
+
+            writer.Write(skin.InverseBindPoses.Length);
+            foreach (var m in skin.InverseBindPoses) WriteMatrix(writer, m);
+            foreach (var idx in skin.SkinBoneToAnimBone) writer.Write(idx);
+            writer.Write(skin.BoneIndices);
+            foreach (var w in skin.BoneWeights) writer.Write(w);
+        }
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -422,7 +582,41 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             ReadNullableString(reader, MaxStringBytes),
             reader.ReadSingle(),
             reader.ReadSingle(),
-            ReadVector2(reader));
+            ReadVector2(reader),
+            reader.ReadBoolean() ? ReadSubmeshSkin(reader) : null);
+    }
+
+    private static NifSubmeshSkin ReadSubmeshSkin(BinaryReader reader)
+    {
+        var vertexCount = ReadInt32(reader, 1, MaxVerticesPerSubmesh);
+        var basePositions = new float[vertexCount * 3];
+        for (var i = 0; i < basePositions.Length; i++) basePositions[i] = reader.ReadSingle();
+
+        float[]? baseNormals = null;
+        if (reader.ReadBoolean())
+        {
+            baseNormals = new float[vertexCount * 3];
+            for (var i = 0; i < baseNormals.Length; i++) baseNormals[i] = reader.ReadSingle();
+        }
+
+        var boneCount = ReadInt32(reader, 1, MaxAnimBones);
+        var inverseBinds = new Matrix4x4[boneCount];
+        for (var i = 0; i < boneCount; i++) inverseBinds[i] = ReadMatrix(reader);
+
+        var skinBoneToAnimBone = new int[boneCount];
+        for (var i = 0; i < boneCount; i++) skinBoneToAnimBone[i] = reader.ReadInt32();
+
+        var boneIndices = reader.ReadBytes(vertexCount * 4);
+        if (boneIndices.Length != vertexCount * 4)
+        {
+            throw new InvalidDataException("Truncated skin bone indices in decoded mesh cache.");
+        }
+
+        var boneWeights = new float[vertexCount * 4];
+        for (var i = 0; i < boneWeights.Length; i++) boneWeights[i] = reader.ReadSingle();
+
+        return new NifSubmeshSkin(
+            basePositions, baseNormals, inverseBinds, skinBoneToAnimBone, boneIndices, boneWeights);
     }
 
     private static void WriteVector2(BinaryWriter writer, Vector2 value)
@@ -454,6 +648,32 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
 
     private static Vector4 ReadVector4(BinaryReader reader) =>
         new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+
+    private static void WriteQuaternion(BinaryWriter writer, Quaternion value)
+    {
+        writer.Write(value.X);
+        writer.Write(value.Y);
+        writer.Write(value.Z);
+        writer.Write(value.W);
+    }
+
+    private static Quaternion ReadQuaternion(BinaryReader reader) =>
+        new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+
+    private static void WriteMatrix(BinaryWriter writer, Matrix4x4 m)
+    {
+        writer.Write(m.M11); writer.Write(m.M12); writer.Write(m.M13); writer.Write(m.M14);
+        writer.Write(m.M21); writer.Write(m.M22); writer.Write(m.M23); writer.Write(m.M24);
+        writer.Write(m.M31); writer.Write(m.M32); writer.Write(m.M33); writer.Write(m.M34);
+        writer.Write(m.M41); writer.Write(m.M42); writer.Write(m.M43); writer.Write(m.M44);
+    }
+
+    private static Matrix4x4 ReadMatrix(BinaryReader reader) =>
+        new(
+            reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
+            reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
+            reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
+            reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
 }
 
 /// <summary>A disk-cache entry for a decoded reference mesh: the payload, or a negative (known-empty) marker.</summary>
@@ -461,11 +681,13 @@ internal readonly record struct ReferenceDecodedMeshDiskCacheEntry12(
     ReferenceDecodedMeshPayload12? Mesh,
     bool IsNegative);
 
-/// <summary>A decoded reference mesh ready to cache/upload: its submeshes plus optional collision geometry.</summary>
+/// <summary>A decoded reference mesh ready to cache/upload: its submeshes plus optional collision geometry
+/// and (v32+) the keyframe animation rig for animated statics.</summary>
 internal sealed record ReferenceDecodedMeshPayload12(
     IReadOnlyList<ReferenceDecodedSubmeshPayload12> Submeshes,
     Vector3[]? CollisionPositions = null,
-    int[]? CollisionTriangles = null);
+    int[]? CollisionTriangles = null,
+    NifMeshAnimation? Animation = null);
 
 /// <summary>One decoded submesh: its vertices/indices, texture paths, and resolved alpha/specular/billboard render state.</summary>
 internal sealed record ReferenceDecodedSubmeshPayload12(
@@ -502,4 +724,6 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     float EnvironmentMapScale = 0f,
     float EnvironmentMapSmoothness = 0f,
     // TES3 NiUVController constant scroll (v32+): UV units/second, zero = static.
-    Vector2 UvScrollVelocity = default);
+    Vector2 UvScrollVelocity = default,
+    // CPU skinning inputs for keyframe playback (v32+); null for unskinned submeshes.
+    NifSubmeshSkin? Skin = null);

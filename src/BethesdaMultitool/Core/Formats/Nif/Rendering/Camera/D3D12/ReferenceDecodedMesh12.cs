@@ -1,6 +1,8 @@
 #if WINDOWS_GUI
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 
@@ -8,10 +10,13 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 // present (root-local treatRootsAsIdentity frame, same as the visual submeshes). BuildCollisionMesh
 // prefers them over the visual-mesh soup so walk mode rides the gapless physics mesh. Null when the
 // NIF has no decodable Havok collision (→ visual-mesh fallback).
+// Animation (v32+) carries the keyframe rig for animated statics (banners); the baked Vertices stay
+// REST-POSE, so a consumer that ignores it still draws the correct static mesh.
 internal sealed record DecodedNifMesh12(
     IReadOnlyList<DecodedSubmesh12> Submeshes,
     Vector3[]? CollisionPositions = null,
-    int[]? CollisionTriangles = null);
+    int[]? CollisionTriangles = null,
+    NifMeshAnimation? Animation = null);
 
 internal sealed record DecodedSubmesh12(
     GpuMeshUploader.GpuVertex[] Vertices,
@@ -68,5 +73,8 @@ internal sealed record DecodedSubmesh12(
     float EnvironmentMapSmoothness = 0f,
     // TES3 NiUVController constant scroll (waterfalls, lava): UV units/second the renderer applies
     // as a per-draw offset off the animation clock. Zero = static. Persisted in v32+.
-    Vector2 UvScrollVelocity = default);
+    Vector2 UvScrollVelocity = default,
+    // CPU skinning inputs for keyframe playback (v32+): raw skin-space base geometry + influences
+    // + inverse binds, null for unskinned/unanimated submeshes. The baked Vertices are rest-pose.
+    NifSubmeshSkin? Skin = null);
 #endif

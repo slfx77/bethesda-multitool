@@ -72,5 +72,8 @@ internal static class GpuMeshUploader
         public Vector3 Tangent;
         public Vector3 Bitangent;
     }
+
+    /// <summary>Interleaved <see cref="GpuVertex" /> stride in bytes (Sequential layout, packed floats).</summary>
+    public const int GpuVertexSize = 72;
 }
 

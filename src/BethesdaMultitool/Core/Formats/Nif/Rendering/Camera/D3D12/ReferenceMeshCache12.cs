@@ -979,7 +979,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     EffectTint = sub.EffectTint == default ? Vector3.One : sub.EffectTint,
                     EffectFalloffParams = sub.EffectFalloffParams,
                     HasEffectFalloff = sub.HasEffectFalloff,
-                    UvScrollVelocity = sub.UvScrollVelocity
+                    UvScrollVelocity = sub.UvScrollVelocity,
+                    Skin = sub.Skin,
+                    RestPoseVertices = sub.Skin is not null ? sub.Vertices : null
                 });
             }
             catch (Exception ex)
@@ -999,7 +1001,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var cached = new CachedNifMesh12(
             submeshes, geometry, _geometryArena, _deletionQueue, _textureCache, MathF.Sqrt(meshLocalRadiusSq),
             aabbMin, aabbMax,
-            (IReadOnlyList<(Vector3 Min, Vector3 Max)>?)waterPlanesLocal ?? Array.Empty<(Vector3 Min, Vector3 Max)>());
+            (IReadOnlyList<(Vector3 Min, Vector3 Max)>?)waterPlanesLocal ?? Array.Empty<(Vector3 Min, Vector3 Max)>())
+        {
+            Animation = decoded.Animation
+        };
         if (started != 0)
         {
             RendererProfilerTrace.Event("resource-event", new Dictionary<string, object?>

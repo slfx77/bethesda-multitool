@@ -12,7 +12,8 @@ internal static class NifSceneGraphBlockReader
         BlockInfo block,
         uint bsVersion,
         uint binaryVersion,
-        bool be)
+        bool be,
+        bool hasInlineStrings = false)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -22,7 +23,8 @@ internal static class NifSceneGraphBlockReader
                 end,
                 bsVersion,
                 binaryVersion,
-                be))
+                be,
+                hasInlineStrings))
         {
             return -1;
         }
