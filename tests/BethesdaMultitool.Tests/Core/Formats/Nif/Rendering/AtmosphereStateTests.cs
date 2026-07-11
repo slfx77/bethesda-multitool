@@ -458,4 +458,59 @@ public sealed class AtmosphereStateTests
         Assert.Equal(g / 255f, actual.Y, 3);
         Assert.Equal(b / 255f, actual.Z, 3);
     }
+
+    // --- HorizonGlow: the warm-band gate must be continuous across the daylight edges -------------
+    // The old gate read |sunDir.Z| from SunDirection, which returns (0,0,-1) the instant the hour
+    // leaves [sunriseBegin, sunsetEnd] — so a capture at exactly sunset-end (hour 19 with the default
+    // timing) showed NO warm band while 18:59 showed a full one. The glow must instead decay over a
+    // civil-twilight window (~6° of solar descent) past the edge, and stay zero in deep night (the
+    // Midnight junk-teal fold protection).
+
+    [Fact]
+    public void HorizonGlow_ContinuousAcrossSunsetEnd()
+    {
+        // Just inside daylight the sun is at the horizon (sunDirZ ~ 0) => glow ~ 1.
+        var inside = AtmosphereState.HorizonGlow(18.99f, 5f, 19f, sunDirZ: 0.01f);
+        // Just past sunset-end the twilight decay has barely started => glow ~ 1, NOT 0.
+        var outside = AtmosphereState.HorizonGlow(19.01f, 5f, 19f, sunDirZ: -1f);
+
+        Assert.True(inside > 0.9f, $"glow just before sunset-end should be near 1, got {inside}");
+        Assert.True(outside > 0.9f, $"glow just after sunset-end should be near 1, got {outside}");
+        Assert.True(MathF.Abs(inside - outside) < 0.1f,
+            $"glow must not step across sunset-end (inside {inside} vs outside {outside})");
+    }
+
+    [Fact]
+    public void HorizonGlow_FadesOverCivilTwilight_ThenStaysZeroAllNight()
+    {
+        // Timing (5, 19): 14h daylight => descent rate π·50°/14h => ~0.53h twilight window.
+        var fifteenMinutesAfter = AtmosphereState.HorizonGlow(19.25f, 5f, 19f, sunDirZ: -1f);
+        var oneHourAfter = AtmosphereState.HorizonGlow(20f, 5f, 19f, sunDirZ: -1f);
+        var deepNight = AtmosphereState.HorizonGlow(1f, 5f, 19f, sunDirZ: -1f);
+
+        Assert.True(fifteenMinutesAfter is > 0.2f and < 0.8f,
+            $"afterglow should be mid-decay 15 min past sunset-end, got {fifteenMinutesAfter}");
+        Assert.Equal(0f, oneHourAfter);
+        Assert.Equal(0f, deepNight);
+    }
+
+    [Fact]
+    public void HorizonGlow_PreSunriseMirrorsPostSunset_AndWrapsMidnight()
+    {
+        // 15 min before sunrise-begin: same decay as 15 min past sunset-end (dawn glow).
+        var beforeSunrise = AtmosphereState.HorizonGlow(4.75f, 5f, 19f, sunDirZ: -1f);
+        var afterSunset = AtmosphereState.HorizonGlow(19.25f, 5f, 19f, sunDirZ: -1f);
+        Assert.Equal(afterSunset, beforeSunrise, 3);
+
+        // Midnight wrap: hour 0 is 5 hours past sunset AND 5 hours before sunrise — zero either way.
+        Assert.Equal(0f, AtmosphereState.HorizonGlow(0f, 5f, 19f, sunDirZ: -1f));
+    }
+
+    [Fact]
+    public void HorizonGlow_NoonUnchanged()
+    {
+        // Inside daylight the gate is the sun's horizon proximity — high sun => no glow (the daytime
+        // sky must be untouched). sin(50°) ≈ 0.766 is the apex sunDir.Z.
+        Assert.Equal(0f, AtmosphereState.HorizonGlow(12f, 5f, 19f, sunDirZ: 0.766f));
+    }
 }

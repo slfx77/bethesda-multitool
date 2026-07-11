@@ -105,6 +105,12 @@ public static class AtmosphereState
     // horizon (scaled down by sun elevation, so noon is untouched). Tuned for a visible-but-not-garish glow.
     private const float HorizonGlowStrength = 0.7f;
 
+    // How far below the horizon the sun keeps feeding the horizon glow (civil twilight ends at ~6° solar
+    // depression). Converted to a time window via the arc's horizon-crossing descent rate, this gives a
+    // ~half-hour afterglow for a 14-hour day instead of the glow vanishing the instant the clock passes
+    // sunset-end.
+    private const float CivilTwilightDepthRadians = 6f * (MathF.PI / 180f);
+
     // Scene-scale fog fallback (world units) when the weather carries no FNAM distances.
     private const float DefaultFogNear = 4096f;
     private const float DefaultFogFar = 98304f;
@@ -159,7 +165,7 @@ public static class AtmosphereState
             // reaches the Midnight column, which weathers author as junk for this category (e.g.
             // NVWastelandClear Horizon Midnight = (43,200,213) teal) since the engine only shows the
             // horizon glow around the low sun.
-            var horizonGlow = Math.Clamp(1f - (MathF.Abs(sunDir.Z) * 1.5f), 0f, 1f);
+            var horizonGlow = HorizonGlow(hour, srB, ssE, sunDir.Z);
             skyHorizon = Vector3.Lerp(skyLowerBand, horizonBand, horizonGlow * HorizonGlowStrength);
             fogColor = BandOr(wc, WeatherColorType.Fog, hour, srB, srE, ssB, ssE, Vector3.Lerp(NightTint, DayFog, day));
         }
@@ -307,6 +313,38 @@ public static class AtmosphereState
     // structure (Z up, peak at solar noon). NOTE: still NOT decompile-confirmed end-to-end — the night
     // directional path (Sun::Update → scene light → Lighting30Shader::SetLight, and pinning sky+0x100) is
     // owed; the colour fade matches the Sky::UpdateColors cat-4 modulation, which is as far as it's traced.
+    /// <summary>
+    ///     Horizon-glow gate: how strongly the warm NAM0 "Horizon" band folds into the dome's horizon.
+    ///     Inside the daylight span this is the sun's proximity to the horizon (1 − |sin el|·1.5,
+    ///     unchanged). Outside it, the old gate snapped to zero the instant the clock crossed
+    ///     sunriseBegin/sunsetEnd — SunDirection returns (0,0,−1) there, so a capture at exactly
+    ///     sunset-end showed no warm band at all while real twilight lingers. The glow now fades
+    ///     linearly over the sun's first ~6° of descent below the horizon (civil twilight), converted
+    ///     to hours via the arc's horizon-crossing rate (≈ half an hour for a 14-hour day), then stays
+    ///     zero all night — which the Midnight junk-teal gating (see the call site) relies on.
+    ///     Continuous at both window edges: |sin el| → 0 approaching the edge from daylight ⇒ glow → 1,
+    ///     and hoursBelow → 0 approaching from night ⇒ glow → 1.
+    /// </summary>
+    internal static float HorizonGlow(float hour, float srB, float ssE, float sunDirZ)
+    {
+        if (hour > srB && hour < ssE)
+        {
+            return Math.Clamp(1f - (MathF.Abs(sunDirZ) * 1.5f), 0f, 1f);
+        }
+
+        // Hours past the nearest daylight edge, wrap-aware (past sunset going forward, before
+        // sunrise going backward — deep night is far from both).
+        var pastSunset = hour >= ssE ? hour - ssE : hour + 24f - ssE;
+        var beforeSunrise = hour <= srB ? srB - hour : srB + 24f - hour;
+        var hoursBelowHorizon = MathF.Min(pastSunset, beforeSunrise);
+
+        // Solar descent rate at the horizon crossing: d/dt [sin(t01·π)·Peak] at t01 ∈ {0,1} is
+        // π·Peak per unit t01, over a daylight span of (ssE − srB) hours.
+        var descentRadiansPerHour = MathF.PI * PeakSunElevation / MathF.Max(ssE - srB, 0.1f);
+        var twilightHours = CivilTwilightDepthRadians / descentRadiansPerHour;
+        return Math.Clamp(1f - (hoursBelowHorizon / twilightHours), 0f, 1f);
+    }
+
     private static Vector3 SunDirection(float hour, float srB, float ssE)
     {
         if (hour <= srB || hour >= ssE)
