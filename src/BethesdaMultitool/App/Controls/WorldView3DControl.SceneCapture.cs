@@ -192,7 +192,11 @@ public sealed partial class WorldView3DControl
                 {
                     _shadowMap ??= new Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12(
                         _gpu12!, _cbvSrvUavHeap12!);
-                    _references!.ArmShadowCapture();
+                    _references!.ArmShadowCapture(MathF.Min(ShadowCasterRingRadius, _renderDistance));
+                }
+                else
+                {
+                    _references?.DisarmShadowCapture();
                 }
 
                 // Live-frame atmosphere (perspective defaults: fog + lighting on, no ortho overrides).
@@ -270,60 +274,31 @@ public sealed partial class WorldView3DControl
         fenceValue = recorder.LastSubmittedFenceValue;
         _gpu12!.PumpDebugMessages();
 
-        // Shadow-map diagnostics: env FALLOUT_VIEWER_SHADOW_DUMP=1 → read the map back after the
-        // capture and log its occupancy (nonzero texels, depth range, bounding box). Distinguishes
-        // "replay wrote nothing" from "sampling misses the content" without a GPU debugger.
+        // Shadow-map diagnostics: env FALLOUT_VIEWER_SHADOW_DUMP=1 → read each cascade back after
+        // the capture and log its occupancy (nonzero texels, depth range, bounding box).
+        // Distinguishes "replay wrote nothing" from "sampling misses the content" without a GPU
+        // debugger.
         if (captureShadows && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SHADOW_DUMP") == "1" &&
             _shadowMap is { HasContent: true } dumpMap)
         {
-            recorder.BeginFrame();
-            Vortice.Direct3D12.ID3D12Resource? dumpBuffer = null;
-            uint dumpPitch = 0;
-            try
+            for (var cascade = 0;
+                 cascade < Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.CascadeCount;
+                 cascade++)
             {
-                dumpBuffer = dumpMap.RecordDiagnosticReadback(recorder.CommandList, out dumpPitch);
-            }
-            finally
-            {
-                recorder.EndFrame();
-            }
-
-            WaitForFrameFence(_gpu12.FrameFence, recorder.LastSubmittedFenceValue);
-            unsafe
-            {
-                void* p = null;
-                dumpBuffer!.Map(0, &p).CheckError();
+                recorder.BeginFrame();
+                Vortice.Direct3D12.ID3D12Resource? dumpBuffer = null;
+                uint dumpPitch = 0;
                 try
                 {
-                    var res = dumpMap.Resolution;
-                    long nonZero = 0;
-                    float maxV = 0f, minNz = float.MaxValue;
-                    int minX = int.MaxValue, minY = int.MaxValue, maxX = -1, maxY = -1;
-                    for (var y = 0; y < res; y++)
-                    {
-                        var row = (float*)((byte*)p + (long)y * dumpPitch);
-                        for (var x = 0; x < res; x++)
-                        {
-                            var v = row[x];
-                            if (v <= 0f) continue;
-                            nonZero++;
-                            if (v > maxV) maxV = v;
-                            if (v < minNz) minNz = v;
-                            if (x < minX) minX = x;
-                            if (x > maxX) maxX = x;
-                            if (y < minY) minY = y;
-                            if (y > maxY) maxY = y;
-                        }
-                    }
-
-                    Log.Info("[ShadowDump] res={0} nonZero={1} ({2:0.000}%) range=[{3:0.00000},{4:0.00000}] bbox=({5},{6})-({7},{8})",
-                        res, nonZero, 100.0 * nonZero / ((long)res * res), minNz, maxV, minX, minY, maxX, maxY);
+                    dumpBuffer = dumpMap.RecordDiagnosticReadback(recorder.CommandList, cascade, out dumpPitch);
                 }
                 finally
                 {
-                    dumpBuffer.Unmap(0, null);
-                    dumpBuffer.Dispose();
+                    recorder.EndFrame();
                 }
+
+                WaitForFrameFence(_gpu12.FrameFence, recorder.LastSubmittedFenceValue);
+                AnalyzeAndLogShadowDump(dumpBuffer!, dumpMap.Resolution, dumpPitch, cascade);
             }
         }
 
@@ -333,5 +308,48 @@ public sealed partial class WorldView3DControl
             WaitForFrameFence(frameFence, fenceValue);
             return target.ReadbackToBytes(); // BGRA (B8G8R8A8_UNorm)
         });
+    }
+
+    /// <summary>
+    ///     Maps a shadow-cascade readback buffer and logs its occupancy stats (the
+    ///     FALLOUT_VIEWER_SHADOW_DUMP diagnostic). Synchronous on purpose: the mapped pointer
+    ///     must not live across an await, so the map/scan/unmap stays out of the async capture
+    ///     method. Disposes the buffer.
+    /// </summary>
+    private static unsafe void AnalyzeAndLogShadowDump(
+        Vortice.Direct3D12.ID3D12Resource dumpBuffer, int resolution, uint rowPitch, int cascade)
+    {
+        void* p = null;
+        dumpBuffer.Map(0, &p).CheckError();
+        try
+        {
+            long nonZero = 0;
+            float maxV = 0f, minNz = float.MaxValue;
+            int minX = int.MaxValue, minY = int.MaxValue, maxX = -1, maxY = -1;
+            for (var y = 0; y < resolution; y++)
+            {
+                var row = (float*)((byte*)p + (long)y * rowPitch);
+                for (var x = 0; x < resolution; x++)
+                {
+                    var v = row[x];
+                    if (v <= 0f) continue;
+                    nonZero++;
+                    if (v > maxV) maxV = v;
+                    if (v < minNz) minNz = v;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+
+            Log.Info("[ShadowDump] cascade={0} res={1} nonZero={2} ({3:0.000}%) range=[{4:0.00000},{5:0.00000}] bbox=({6},{7})-({8},{9})",
+                cascade, resolution, nonZero, 100.0 * nonZero / ((long)resolution * resolution), minNz, maxV, minX, minY, maxX, maxY);
+        }
+        finally
+        {
+            dumpBuffer.Unmap(0, null);
+            dumpBuffer.Dispose();
+        }
     }
 }

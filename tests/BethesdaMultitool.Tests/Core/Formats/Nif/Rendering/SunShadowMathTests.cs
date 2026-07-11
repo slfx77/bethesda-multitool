@@ -119,6 +119,36 @@ public sealed class SunShadowMathTests
     }
 
     [Fact]
+    public void KeyStability_DoesNotImplyFrustumStability_RefreshesMustReplayThePublishedFrustum()
+    {
+        // The pose key snaps the anchor by CenterSnap, so the raw camera anchor drifts up to
+        // ~512 units between key changes. A frustum REBUILT from the drifted anchor is a
+        // materially different world→clip mapping than the published one — content rendered with
+        // it strobes against the stale published sampling matrices (the whole-cell camera-motion
+        // flicker). Any refresh that doesn't re-publish (the wind-animated near-cascade path)
+        // must therefore replay the PUBLISHED frustum, origin-folded — never rebuild.
+        var published = new Vector3(10_000f, 20_000f, 1_000f);
+        var drifted = published + new Vector3(200f, -180f, 0f); // well inside one snap cell
+        Assert.Equal(
+            SunShadowMath.BuildKey(NoonishSun, published, 2048f, 0),
+            SunShadowMath.BuildKey(NoonishSun, drifted, 2048f, 0));
+
+        const int resolution = 4096;
+        var atPublished = SunShadowMath.BuildLightFrustum(
+            NoonishSun, published, Vector3.Zero, 2048f, resolution);
+        var rebuilt = SunShadowMath.BuildLightFrustum(
+            NoonishSun, drifted, Vector3.Zero, 2048f, resolution);
+
+        var probe = Project(atPublished.ViewProj, published);
+        var probeRebuilt = Project(rebuilt.ViewProj, published);
+        var texelsApartX = MathF.Abs(probe.X - probeRebuilt.X) * 0.5f * resolution;
+        var texelsApartY = MathF.Abs(probe.Y - probeRebuilt.Y) * 0.5f * resolution;
+        Assert.True(texelsApartX > 4f || texelsApartY > 4f,
+            $"a same-key rebuilt frustum shifted a fixed world point by ({texelsApartX}, {texelsApartY}) " +
+            "texels — if this ever becomes sub-texel the replay-published rule could be revisited");
+    }
+
+    [Fact]
     public void BuildKey_IsStableUnderSubSnapDrift_AndChangesWithRealInputs()
     {
         var center = new Vector3(10000f, 20000f, 500f);

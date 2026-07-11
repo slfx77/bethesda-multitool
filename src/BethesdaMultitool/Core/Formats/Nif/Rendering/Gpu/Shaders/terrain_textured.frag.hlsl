@@ -46,9 +46,17 @@ cbuffer Atmosphere : register(b3)
     float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = time
     float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
     float4 uCameraOrigin;       // xyz = camera-relative render origin (VS-consumed; layout parity)
-    // Sun shadow map (appended — earlier shaders declare only the prefix above, layout-safe).
-    float4x4 uShadowMatrix;     // origin-relative world → shadow clip (xy ±1, z reversed 0..1)
-    float4 uShadowParams;       // x = enabled, y = texel UV size, z = depth bias, w = SRV slot
+    // Sun shadow CASCADES, near→far (appended — earlier shaders declare only the prefix above,
+    // layout-safe). Each matrix: origin-relative world → that cascade's shadow clip (xy ±1,
+    // z reversed 0..1); each params: x = enabled, y = texel UV size, z = bias, w = SRV slot.
+    float4x4 uShadowMatrix0;
+    float4x4 uShadowMatrix1;
+    float4x4 uShadowMatrix2;
+    float4x4 uShadowMatrix3;
+    float4 uShadowParams0;
+    float4 uShadowParams1;
+    float4 uShadowParams2;
+    float4 uShadowParams3;
 };
 
 // Engine distance fog (grounded in Sky::UpdateFog): a linear near→far ramp toward the resolved fog
@@ -67,33 +75,28 @@ float3 ApplyFog(float3 color, float3 worldPos)
     return lerp(color, uFogColorFogEnabled.rgb, f);
 }
 
-// Sun-shadow visibility for an (origin-relative) world position — 1 = fully lit, 0 = fully
-// occluded. IDENTICAL to reference.frag.hlsl's ShadowFactor (terrain and placed meshes must
-// darken the same way under the same occluder). Terrain RECEIVES shadows but does not cast
-// (only the reference batches are replayed into the map) — hills won't self-shadow the valley,
-// a documented follow-up. uShadowParams.x OFF returns 1.0: pixel-identical to pre-shadow.
-float ShadowFactor(float3 worldPos)
+// One cascade attempt — IDENTICAL to reference.frag.hlsl's (terrain and placed meshes must darken
+// the same way under the same occluder; see there for the full rationale): footprint test with a
+// PCF-border margin, then a 3x3 tent of BILINEAR GatherRed comparison taps.
+bool TryCascadeShadow(float4x4 shadowMatrix, float4 cascade, float3 worldPos, out float visibility)
 {
-    if (uShadowParams.x < 0.5)
+    visibility = 1.0;
+    if (cascade.x < 0.5)
     {
-        return 1.0;
+        return false;
     }
 
-    // Ortho light projection: w == 1, no perspective divide. Reversed-Z: stored depth GROWS
-    // toward the light, so "an occluder exists" reads as stored > pixelDepth + bias.
-    float4 clip = mul(uShadowMatrix, float4(worldPos, 1.0));
+    float4 clip = mul(shadowMatrix, float4(worldPos, 1.0));
+    float texel = cascade.y;
     float2 uv = float2(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
-    if (min(uv.x, uv.y) < 0.0 || max(uv.x, uv.y) > 1.0 || clip.z <= 0.0 || clip.z >= 1.0)
+    float border = 2.5 * texel;
+    if (min(uv.x, uv.y) < border || max(uv.x, uv.y) > 1.0 - border || clip.z <= 0.0 || clip.z >= 1.0)
     {
-        return 1.0;
+        return false;
     }
 
-    uint slot = (uint)uShadowParams.w;
-    float reference = clip.z + uShadowParams.z;
-    float texel = uShadowParams.y;
-    // 3x3 tent of BILINEAR comparison taps — IDENTICAL to reference.frag.hlsl's (see there for the
-    // rationale): gather each tap's 2x2 quad, compare, and blend the COMPARE RESULTS by the
-    // sub-texel fraction so shadow edges resolve smoothly instead of as raw map texels.
+    uint slot = (uint)cascade.w;
+    float reference = clip.z + cascade.z;
     float2 texelPos = uv / texel - 0.5;
     float2 f = frac(texelPos);
     float2 gatherBase = (floor(texelPos) + 0.5) * texel;
@@ -111,7 +114,23 @@ float ShadowFactor(float3 worldPos)
             lit += lerp(lerp(vis.w, vis.z, f.x), lerp(vis.x, vis.y, f.x), f.y);
         }
     }
-    return lit / 9.0;
+    visibility = lit / 9.0;
+    return true;
+}
+
+// Sun-shadow visibility for an (origin-relative) world position — 1 = fully lit, 0 = fully
+// occluded. CASCADED: the smallest (sharpest) cascade containing the sample wins; terrain both
+// receives AND casts (hillsides shade valleys and self-shadow — the near cascade's small texels
+// keep the depth bias tight enough for gentle slopes). All cascades disabled returns 1.0:
+// pixel-identical to the pre-shadow renderer.
+float ShadowFactor(float3 worldPos)
+{
+    float visibility;
+    if (TryCascadeShadow(uShadowMatrix0, uShadowParams0, worldPos, visibility)) return visibility;
+    if (TryCascadeShadow(uShadowMatrix1, uShadowParams1, worldPos, visibility)) return visibility;
+    if (TryCascadeShadow(uShadowMatrix2, uShadowParams2, worldPos, visibility)) return visibility;
+    if (TryCascadeShadow(uShadowMatrix3, uShadowParams3, worldPos, visibility)) return visibility;
+    return 1.0;
 }
 
 // Per-pixel light factor (rgb) for a world-space normal. When lighting is disabled

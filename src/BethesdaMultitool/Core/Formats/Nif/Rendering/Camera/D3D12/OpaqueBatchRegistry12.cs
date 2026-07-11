@@ -42,6 +42,7 @@ internal sealed class OpaqueBatchRegistry12
         {
             batch.Instances.Clear();
             batch.InstanceBounds.Clear();
+            batch.ShadowOnlyInstances.Clear();
         }
         _activeBatches.Clear();
 
@@ -112,6 +113,19 @@ internal sealed class OpaqueBatchState(CachedSubmesh12 submesh, ID3D12PipelineSt
     /// <summary>Instances that passed this frame's exact cull in the shared-block copy pass
     /// (== Instances.Count when the refilter is inactive). Set by DrawOpaqueBatches.</summary>
     public int FrameDrawCount { get; set; }
+
+    /// <summary>
+    ///     SHADOW-ONLY instances: placements inside the shadow caster ring that failed the CAMERA
+    ///     frustum test — off-screen, but their shadows can land on-screen, so the sun-shadow
+    ///     replay must still draw them (a caster leaving the frustum must not pop its shadow).
+    ///     The copy pass appends these AFTER <see cref="Instances" /> in the batch's instance
+    ///     block; the main draw's instance count excludes them, the shadow replay's includes them.
+    /// </summary>
+    public List<Matrix4x4> ShadowOnlyInstances { get; } = new(8);
+
+    /// <summary>Shadow-only instances uploaded this frame (0 when the shadow capture is unarmed).
+    /// Set by DrawOpaqueBatches alongside <see cref="FrameDrawCount" />.</summary>
+    public int FrameShadowOnlyCount { get; set; }
 
     public int LastTouchedFrame { get; set; }
 }

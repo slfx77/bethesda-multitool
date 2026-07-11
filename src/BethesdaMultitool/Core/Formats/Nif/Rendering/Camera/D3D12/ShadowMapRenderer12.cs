@@ -1,5 +1,6 @@
 #if WINDOWS_GUI
 using System.Numerics;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
@@ -8,155 +9,192 @@ using Vortice.Mathematics;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 
 /// <summary>
-///     Owns the directional sun-shadow map: a single-sample D32 depth target the reference
-///     renderer replays its opaque instance batches into (depth-only, from the light's view),
-///     plus the persistent bindless R32_Float SRV the scene pixel shaders PCF-sample through
-///     the shared atmosphere CB.
+///     Owns the CASCADED directional sun-shadow maps: <see cref="CascadeCount" /> single-sample
+///     D32 targets the reference batches + terrain cells are replayed into depth-only from the
+///     light's view — a tight near cascade for sharp close-to-camera shadows, a mid cascade, and a
+///     far cascade covering the full render distance, so quality scales with closeness to the
+///     camera instead of degrading uniformly with coverage. The scene pixel shaders pick the
+///     SMALLEST cascade containing the sample (ShadowFactor in reference/terrain frag) and PCF
+///     through the per-cascade bindless R32_Float SRVs carried in the shared atmosphere CB.
 ///     <para>
-///         The map is CACHED: it re-renders only when its <see cref="SunShadowMath.ShadowKey" />
-///         (quantized sun direction, snapped coverage center, radius, batch content version)
-///         changes — a static scene with a static sun records zero shadow work per frame. The
-///         pass is recorded at the END of the frame from that frame's just-built batches, so the
-///         scene samples the PREVIOUS render's map (one frame of latency on a time-slider drag,
-///         invisible in practice, in exchange for replaying the frame's own ring-buffer CB
-///         allocations instead of duplicating the batch-build machinery).
+///         The cascade set is CACHED under one <see cref="SunShadowMath.ShadowKey" /> (quantized
+///         sun direction, snapped coverage center, far radius, content version): a static scene
+///         with a static sun records zero shadow work per frame; wind-animated foliage in view
+///         re-renders every frame (the host folds a tick into the key). The pass records at the
+///         END of the frame from that frame's just-built batches, so the scene samples the
+///         PREVIOUS render (one frame of latency, invisible under the cache).
 ///     </para>
 ///     <para>
-///         Resource state ping-pongs between DEPTH_WRITE (render) and PIXEL_SHADER_RESOURCE
-///         (the steady state between renders); a freshly created map is cleared-to-far, which
-///         the reversed-Z compare reads as "nothing occludes" — fully lit until first render.
+///         Each cascade's resource state ping-pongs between DEPTH_WRITE (render) and
+///         PIXEL_SHADER_RESOURCE (steady state between renders); a freshly created map is
+///         cleared-to-far, which the reversed-Z compare reads as "nothing occludes".
 ///     </para>
 /// </summary>
 internal sealed class ShadowMapRenderer12 : IDisposable
 {
+    private static readonly Logger Log = Logger.Instance;
+
+    /// <summary>Number of cascades (near → far). Radii ladder is the host's (RecordSunShadowPass)
+    /// and is FIXED — deliberately decoupled from the render-distance setting, which must only
+    /// bound where geometry (and therefore any shadow) exists at all.</summary>
+    public const int CascadeCount = 4;
+
     private readonly GpuDevice12 _gpu;
-    private readonly ID3D12Resource _depthTex;
+    private readonly ID3D12Resource[] _depthTex = new ID3D12Resource[CascadeCount];
     private readonly ID3D12DescriptorHeap _dsvHeap;
-    private readonly CpuDescriptorHandle _dsvHandle;
-    private readonly GpuDescriptorHeapAllocator12.PersistentAllocation _srv;
-    private bool _inSrvState;
-    private SunShadowMath.ShadowKey _renderedKey;
-    private Matrix4x4 _renderedViewProj;
+    private readonly CpuDescriptorHandle[] _dsvHandles = new CpuDescriptorHandle[CascadeCount];
+    private readonly GpuDescriptorHeapAllocator12.PersistentAllocation[] _srvs =
+        new GpuDescriptorHeapAllocator12.PersistentAllocation[CascadeCount];
+    private readonly bool[] _inSrvState = new bool[CascadeCount];
+    private readonly Matrix4x4[] _renderedViewProj = new Matrix4x4[CascadeCount];
+    private readonly Vector4[] _renderedParams = new Vector4[CascadeCount];
     private Vector3 _renderedOrigin;
-    private float _renderedNormalizedBias;
     private bool _disposed;
 
-    /// <summary>Shadow map dimension in texels (square). Env override <c>FALLOUT_VIEWER_SHADOW_RES</c>.
-    /// The coverage half-extent (the texel-density / reach trade) is the HOST's: the lighting
-    /// flyout's "Shadow distance" slider, or <c>FALLOUT_VIEWER_SHADOW_RADIUS</c> headless.</summary>
+    /// <summary>Per-cascade map dimension in texels (square). Defaults are VRAM-SCALED from the
+    /// OS-assigned local memory budget (see <see cref="ResolveResolution" />);
+    /// <c>FALLOUT_VIEWER_SHADOW_RES</c> overrides explicitly.</summary>
     public int Resolution { get; }
 
-    /// <summary>True once the map has been rendered at least once (before that the sampling
-    /// constants must stay disabled — the cleared map would be "fully lit" anyway, but the CB
-    /// flag keeps the PS from paying the PCF cost for nothing).</summary>
+    /// <summary>True once the cascades have been rendered at least once (before that the sampling
+    /// constants must stay disabled).</summary>
     public bool HasContent { get; private set; }
 
     public ShadowMapRenderer12(GpuDevice12 gpu, GpuDescriptorHeapAllocator12 cbvSrvUavHeap)
     {
         _gpu = gpu;
-        Resolution = ParseIntEnv("FALLOUT_VIEWER_SHADOW_RES", defaultValue: 4096, min: 512, max: 8192);
-
-        _depthTex = gpu.Device.CreateCommittedResource<ID3D12Resource>(
-            HeapProperties.DefaultHeapProperties, HeapFlags.None,
-            ResourceDescription.Texture2D(Format.D32_Float, (uint)Resolution, (uint)Resolution,
-                arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0,
-                ResourceFlags.AllowDepthStencil),
-            ResourceStates.DepthWrite,
-            new ClearValue(Format.D32_Float, new DepthStencilValue(0.0f, 0))); // reversed-Z far
+        Resolution = ResolveResolution(gpu);
 
         _dsvHeap = gpu.Device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = DescriptorHeapType.DepthStencilView,
-            DescriptorCount = 1,
+            DescriptorCount = CascadeCount,
             Flags = DescriptorHeapFlags.None,
         });
-        _dsvHandle = _dsvHeap.GetCPUDescriptorHandleForHeapStart();
-        gpu.Device.CreateDepthStencilView(_depthTex, null, _dsvHandle);
+        var dsvStride = gpu.Device.GetDescriptorHandleIncrementSize(DescriptorHeapType.DepthStencilView);
+        var dsvStart = _dsvHeap.GetCPUDescriptorHandleForHeapStart();
 
-        // Persistent bindless slot viewing the depth as R32_Float (same pattern as the water
-        // pass's scene-depth SRV). The slot index rides in the atmosphere CB's ShadowParams.w.
-        _srv = cbvSrvUavHeap.AllocatePersistent();
-        var srvDesc = new ShaderResourceViewDescription
+        for (var i = 0; i < CascadeCount; i++)
         {
-            Format = Format.R32_Float,
-            ViewDimension = ShaderResourceViewDimension.Texture2D,
-            Shader4ComponentMapping = ShaderComponentMapping.Default,
-            Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 },
-        };
-        gpu.Device.CreateShaderResourceView(_depthTex, srvDesc, _srv.Cpu);
-    }
+            _depthTex[i] = gpu.Device.CreateCommittedResource<ID3D12Resource>(
+                HeapProperties.DefaultHeapProperties, HeapFlags.None,
+                ResourceDescription.Texture2D(Format.D32_Float, (uint)Resolution, (uint)Resolution,
+                    arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0,
+                    ResourceFlags.AllowDepthStencil),
+                ResourceStates.DepthWrite,
+                new ClearValue(Format.D32_Float, new DepthStencilValue(0.0f, 0))); // reversed-Z far
 
-    /// <summary>Bindless SRV slot of the shadow map (ShadowParams.w in the atmosphere CB).</summary>
-    public uint BindlessIndex => _srv.BindlessIndex;
+            _dsvHandles[i] = new CpuDescriptorHandle { Ptr = dsvStart.Ptr + (nuint)(i * dsvStride) };
+            gpu.Device.CreateDepthStencilView(_depthTex[i], null, _dsvHandles[i]);
 
-    /// <summary>Whether the map must be re-rendered for <paramref name="key" />.</summary>
-    public bool NeedsRender(in SunShadowMath.ShadowKey key) => !HasContent || key != _renderedKey;
-
-    /// <summary>
-    ///     The sampling constants for the CURRENT frame: the rendered map's light matrix with the
-    ///     difference between the frame's render origin and the map's render origin folded in
-    ///     (see <see cref="SunShadowMath.FoldSampleMatrix" />), plus the packed params float4
-    ///     (enabled, texel UV size, normalized depth bias, bindless slot).
-    /// </summary>
-    public (Matrix4x4 Matrix, Vector4 Params) GetSampleConstants(Vector3 currentOrigin)
-    {
-        var matrix = SunShadowMath.FoldSampleMatrix(_renderedViewProj, _renderedOrigin, currentOrigin);
-        return (matrix, new Vector4(1f, 1f / Resolution, _renderedNormalizedBias, _srv.BindlessIndex));
+            // Persistent bindless slot viewing the cascade depth as R32_Float (same pattern as the
+            // water pass's scene-depth SRV). The slot index rides in the cascade's ShadowParams.w.
+            _srvs[i] = cbvSrvUavHeap.AllocatePersistent();
+            var srvDesc = new ShaderResourceViewDescription
+            {
+                Format = Format.R32_Float,
+                ViewDimension = ShaderResourceViewDimension.Texture2D,
+                Shader4ComponentMapping = ShaderComponentMapping.Default,
+                Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 },
+            };
+            gpu.Device.CreateShaderResourceView(_depthTex[i], srvDesc, _srvs[i].Cpu);
+        }
     }
 
     /// <summary>
-    ///     Transitions the map into DEPTH_WRITE, clears it to the reversed-Z far plane, and binds
-    ///     it as the sole (depth-only) render target with a full-map viewport. The caller records
-    ///     the depth draws, then calls <see cref="EndRender" />. Anything bound after this pass
-    ///     that needs the screen viewport must rebind it (the live frame records this pass last).
+    ///     Per-cascade sampling constants for the CURRENT frame: each rendered cascade's light
+    ///     matrix with the render-origin delta folded in (<see cref="SunShadowMath.FoldSampleMatrix" />)
+    ///     plus its packed params (enabled, texel UV size, normalized depth bias, bindless slot).
+    ///     All-disabled until the first render publishes content.
     /// </summary>
-    public void BeginRender(ID3D12GraphicsCommandList cmd)
+    public ShadowSampleConstants GetSampleConstants(Vector3 currentOrigin)
     {
-        if (_inSrvState)
+        if (!HasContent)
         {
-            cmd.ResourceBarrierTransition(_depthTex,
-                ResourceStates.PixelShaderResource, ResourceStates.DepthWrite);
-            _inSrvState = false;
+            return default;
         }
 
-        cmd.ClearDepthStencilView(_dsvHandle, ClearFlags.Depth, 0f, 0); // reversed-Z far
-        cmd.OMSetRenderTargets(Array.Empty<CpuDescriptorHandle>(), _dsvHandle);
+        return new ShadowSampleConstants
+        {
+            Matrix0 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[0], _renderedOrigin, currentOrigin),
+            Matrix1 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[1], _renderedOrigin, currentOrigin),
+            Matrix2 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[2], _renderedOrigin, currentOrigin),
+            Matrix3 = SunShadowMath.FoldSampleMatrix(_renderedViewProj[3], _renderedOrigin, currentOrigin),
+            Params0 = _renderedParams[0],
+            Params1 = _renderedParams[1],
+            Params2 = _renderedParams[2],
+            Params3 = _renderedParams[3],
+        };
+    }
+
+    /// <summary>CPU mirror of the atmosphere CB's shadow tail (4 matrices + 4 params float4s).</summary>
+    public struct ShadowSampleConstants
+    {
+        public Matrix4x4 Matrix0;
+        public Matrix4x4 Matrix1;
+        public Matrix4x4 Matrix2;
+        public Matrix4x4 Matrix3;
+        public Vector4 Params0;
+        public Vector4 Params1;
+        public Vector4 Params2;
+        public Vector4 Params3;
+    }
+
+    /// <summary>
+    ///     Transitions cascade <paramref name="index" /> into DEPTH_WRITE, clears it to the
+    ///     reversed-Z far plane, and binds it as the sole (depth-only) render target with a
+    ///     full-map viewport. The caller records the depth draws, then calls
+    ///     <see cref="EndCascade" />; after all cascades, <see cref="Publish" /> commits the key.
+    /// </summary>
+    public void BeginCascade(ID3D12GraphicsCommandList cmd, int index)
+    {
+        if (_inSrvState[index])
+        {
+            cmd.ResourceBarrierTransition(_depthTex[index],
+                ResourceStates.PixelShaderResource, ResourceStates.DepthWrite);
+            _inSrvState[index] = false;
+        }
+
+        cmd.ClearDepthStencilView(_dsvHandles[index], ClearFlags.Depth, 0f, 0); // reversed-Z far
+        cmd.OMSetRenderTargets(Array.Empty<CpuDescriptorHandle>(), _dsvHandles[index]);
         cmd.RSSetViewport(new Viewport(0, 0, Resolution, Resolution, 0f, 1f));
         cmd.RSSetScissorRect(Resolution, Resolution);
     }
 
-    /// <summary>Transitions the map to PIXEL_SHADER_RESOURCE and records what it now contains so
-    /// <see cref="GetSampleConstants" /> / <see cref="NeedsRender" /> reflect the new render.</summary>
-    public void EndRender(
-        ID3D12GraphicsCommandList cmd, in SunShadowMath.ShadowKey key,
-        in SunShadowMath.LightFrustum frustum, Vector3 renderOrigin)
+    /// <summary>Transitions cascade <paramref name="index" /> back to PIXEL_SHADER_RESOURCE.</summary>
+    public void EndCascade(ID3D12GraphicsCommandList cmd, int index)
     {
-        cmd.ResourceBarrierTransition(_depthTex,
+        cmd.ResourceBarrierTransition(_depthTex[index],
             ResourceStates.DepthWrite, ResourceStates.PixelShaderResource);
-        _inSrvState = true;
-        _renderedKey = key;
-        _renderedViewProj = frustum.ViewProj;
-        _renderedOrigin = renderOrigin;
-        _renderedNormalizedBias = frustum.NormalizedDepthBias;
-        HasContent = true;
-    }
-
-    /// <summary>Closes a <see cref="BeginRender" /> whose replay drew NOTHING (ring exhaustion):
-    /// transitions back to PIXEL_SHADER_RESOURCE without publishing a key, so the stale sampling
-    /// constants stay in effect (the cleared map reads fully lit) and the next frame retries.</summary>
-    public void EndRenderEmpty(ID3D12GraphicsCommandList cmd)
-    {
-        cmd.ResourceBarrierTransition(_depthTex,
-            ResourceStates.DepthWrite, ResourceStates.PixelShaderResource);
-        _inSrvState = true;
+        _inSrvState[index] = true;
     }
 
     /// <summary>
-    ///     DIAGNOSTICS: records a copy of the whole map into a fresh readback buffer (created here,
-    ///     caller disposes) and returns it with its row pitch. Record inside an open command list;
-    ///     map only after the submission fence. The map must be in its steady PSR state.
+    ///     Commits a completed render of all cascades: records what the maps now contain so
+    ///     <see cref="GetSampleConstants" /> reflects it. The re-render POLICY (pose keys, content
+    ///     throttling, animation ticks) is the host's — see RecordSunShadowPass. Skipping this
+    ///     after a degenerate render (nothing drew) leaves the previous constants in effect; the
+    ///     cleared maps read fully lit either way.
     /// </summary>
-    public ID3D12Resource RecordDiagnosticReadback(ID3D12GraphicsCommandList cmd, out uint rowPitch)
+    public void Publish(ReadOnlySpan<SunShadowMath.LightFrustum> frustums, Vector3 renderOrigin)
+    {
+        for (var i = 0; i < CascadeCount; i++)
+        {
+            _renderedViewProj[i] = frustums[i].ViewProj;
+            _renderedParams[i] = new Vector4(
+                1f, 1f / Resolution, frustums[i].NormalizedDepthBias, _srvs[i].BindlessIndex);
+        }
+
+        _renderedOrigin = renderOrigin;
+        HasContent = true;
+    }
+
+    /// <summary>
+    ///     DIAGNOSTICS: records a copy of one cascade into a fresh readback buffer (created here,
+    ///     caller disposes) and returns it with its row pitch. Record inside an open command list;
+    ///     map only after the submission fence. The cascade must be in its steady PSR state.
+    /// </summary>
+    public ID3D12Resource RecordDiagnosticReadback(ID3D12GraphicsCommandList cmd, int index, out uint rowPitch)
     {
         var device = _gpu.Device;
         var copyDesc = ResourceDescription.Texture2D(Format.R32_Float, (uint)Resolution, (uint)Resolution,
@@ -169,31 +207,56 @@ internal sealed class ShadowMapRenderer12 : IDisposable
             HeapProperties.ReadbackHeapProperties, HeapFlags.None,
             ResourceDescription.Buffer(totalBytes),
             ResourceStates.CopyDest, optimizedClearValue: null);
-        cmd.ResourceBarrierTransition(_depthTex,
+        cmd.ResourceBarrierTransition(_depthTex[index],
             ResourceStates.PixelShaderResource, ResourceStates.CopySource);
         cmd.CopyTextureRegion(
             new TextureCopyLocation(readback, footprints[0]), 0, 0, 0,
-            new TextureCopyLocation(_depthTex, 0));
-        cmd.ResourceBarrierTransition(_depthTex,
+            new TextureCopyLocation(_depthTex[index], 0));
+        cmd.ResourceBarrierTransition(_depthTex[index],
             ResourceStates.CopySource, ResourceStates.PixelShaderResource);
         rowPitch = footprints[0].Footprint.RowPitch;
         return readback;
     }
 
-    private static int ParseIntEnv(string name, int defaultValue, int min, int max)
+    /// <summary>
+    ///     Picks the per-cascade resolution: an explicit <c>FALLOUT_VIEWER_SHADOW_RES</c> wins;
+    ///     otherwise the default SCALES WITH THE ADAPTER'S VRAM (the OS-assigned local budget, so
+    ///     other apps' usage is already accounted for). Total depth-target cost is
+    ///     <see cref="CascadeCount" /> × res² × 4 bytes: 4096 ⇒ 256 MB (fine at a ≥ 8 GB budget,
+    ///     ~3%), 2048 ⇒ 64 MB, 1024 ⇒ 16 MB. A failed query (no IDXGIAdapter3 — WARP / ancient
+    ///     drivers) falls back to the conservative middle tier.
+    /// </summary>
+    private static int ResolveResolution(GpuDevice12 gpu)
     {
-        var raw = Environment.GetEnvironmentVariable(name);
-        return int.TryParse(raw, out var v) ? Math.Clamp(v, min, max) : defaultValue;
+        var raw = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SHADOW_RES");
+        if (int.TryParse(raw, out var explicitRes))
+        {
+            return Math.Clamp(explicitRes, 512, 8192);
+        }
+
+        if (!gpu.TryQueryLocalVideoMemoryMb(out _, out var budgetMb) || budgetMb <= 0)
+        {
+            return 2048;
+        }
+
+        var resolution = budgetMb >= 8192 ? 4096 : budgetMb >= 3072 ? 2048 : 1024;
+        Log.Info("[Shadow] cascade resolution {0}² × {1} ({2} MB) from VRAM budget {3} MB",
+            resolution, CascadeCount,
+            (long)resolution * resolution * 4 * CascadeCount / (1024 * 1024), budgetMb);
+        return resolution;
     }
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        // The persistent SRV slot lives in the shared heap; it dies with the heap (same pattern
+        // The persistent SRV slots live in the shared heap; they die with the heap (same pattern
         // as the live/capture depth SRVs — see DisposeD3D12Backend).
         _dsvHeap.Dispose();
-        _depthTex.Dispose();
+        foreach (var tex in _depthTex)
+        {
+            tex.Dispose();
+        }
     }
 }
 #endif

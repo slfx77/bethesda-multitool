@@ -36,17 +36,57 @@ public sealed partial class WorldView3DControl
     private Vector3 _lastResolvedSunDirection = new(0.5f, 0.5f, 1f);
     private Vector4 _lastBoundShadowParams; // diagnostics: what the last b3 upload carried
 
-    // Shadow coverage half-extent from the lighting flyout's "Shadow distance" slider, in CELLS
-    // (null = Unlimited → the full render distance). Smaller = sharper shadows (texel density is
-    // 2·radius/resolution). FALLOUT_VIEWER_SHADOW_RADIUS (world units) overrides it headless.
-    private float? _shadowDistanceCells = 4f;
-    private static readonly float? ShadowRadiusEnvOverride = ParseShadowRadiusEnvOverride();
+    // FIXED cascade radii ladder (near → far). Deliberately DECOUPLED from the render-distance
+    // setting: quality bands and shadow reach are properties of the shadow system; the draw
+    // distance only bounds where geometry — and therefore any shadow — exists at all. The far
+    // cascade's 32-cell reach covers every practical draw distance at a constant ~64 units/texel;
+    // FALLOUT_VIEWER_SHADOW_RADIUS (world units) can cap the LAST cascade for diagnostics.
+    private static readonly float[] ShadowCascadeRadii = { 2048f, 8192f, 32768f, 131072f };
 
-    // Monotonic tick folded into the shadow key while the captured casters include WIND-ANIMATED
-    // leaf cards: the map then re-renders every frame so canopy shadows sway with the trees
-    // instead of freezing into a slideshow. _shadowAnimatedActive gates the transition log.
-    private int _shadowAnimationTick;
+    // On wind-animated frames only the cascades up to this index re-render (the swaying canopy
+    // lives in the near field; the far cascades' full-distance terrain gathers are the expensive
+    // part and their coarse texels can't resolve leaf sway anyway).
+    private const int ShadowAnimatedCascadeCount = 2;
+
+    // Content-only re-renders (geometry streamed in; pose unchanged) are throttled to once per
+    // this many frames: streaming bumps the content version almost every frame while moving, and
+    // re-rendering 4 cascades + terrain at frame rate was the "shadows lag the renderer" report.
+    // A streamed-in mesh's shadow appearing a quarter-second late is imperceptible.
+    private const int ShadowContentRerenderFrames = 15;
+
+    // Off-screen shadow casters: frustum-rejected refs within this ring of the camera still cast
+    // (their shadows can land on-screen — without it, shadows pop when their caster leaves the
+    // frustum). Matches the mid cascade: beyond it the far cascades' coarse texels make a missing
+    // off-screen caster's shadow hard to notice, and the ring's price is streaming those meshes.
+    private const float ShadowCasterRingRadius = 8192f;
+
+    // Re-render policy state (see RecordSunShadowPass): the last rendered pose key + content
+    // version, the content throttle counter, and the animated-mode transition latch for logging.
+    private SunShadowMath.ShadowKey _shadowPoseKey;
+    private int _shadowContentVersion;
+    private int _shadowContentThrottle;
     private bool _shadowAnimatedActive;
+
+    // The frustums the cascades were last PUBLISHED with (+ the render origin they were built
+    // against and the terrain-cylinder center used). Animated-only refreshes MUST replay these
+    // exact frustums (origin-folded to the current frame): the pose KEY snaps the anchor by
+    // CenterSnap, so between key changes the raw camera anchor drifts up to ~512 units —
+    // rebuilding frustums from it re-renders content the published sampling matrices no longer
+    // describe, which strobed cell-sized false shadows during camera movement whenever swaying
+    // foliage kept the per-frame refresh alive. The terrain cylinder replays the published
+    // center for the same reason: a current-camera cylinder leaves the cleared trailing-edge
+    // strip of the footprint unredrawn, popping terrain shadows there.
+    private SunShadowMath.LightFrustum[]? _shadowPublishedFrustums;
+    private Vector3 _shadowPublishedOrigin;
+    private Vector3 _shadowPublishedCylinderCenter;
+
+    // Per-render console logging is DIAGNOSTIC-ONLY (FALLOUT_VIEWER_SHADOW_DIAG=1): the log line
+    // fired on every re-render, which while walking meant constantly — console I/O at frame rate
+    // was a measurable part of the reported lag.
+    private static readonly bool ShadowDiagLogging =
+        EnvironmentVariables.Get(EnvironmentVariables.Viewer.ShadowDiag) == "1";
+
+    private static readonly float? ShadowRadiusEnvOverride = ParseShadowRadiusEnvOverride();
 
     private static float? ParseShadowRadiusEnvOverride()
     {
@@ -57,15 +97,6 @@ public sealed partial class WorldView3DControl
             : null;
     }
 
-    // Coverage half-extent for the sun shadow map: the slider (or its headless env override),
-    // clamped to the render distance, plus the key's center-snap margin so geometry stays covered
-    // while the camera walks between key re-snaps.
-    private float ResolveShadowRadius()
-    {
-        var sliderWorld = _shadowDistanceCells is float cells ? cells * _cellSize : float.MaxValue;
-        return MathF.Min(_renderDistance, ShadowRadiusEnvOverride ?? sliderWorld) + SunShadowMath.CenterSnap;
-    }
-
     // Render-loop failure tolerance: skip + retry on transient frame failures, detach only when
     // they persist (see the OnRendering catch block).
     private const int MaxConsecutiveRenderFailures = 3;
@@ -74,6 +105,10 @@ public sealed partial class WorldView3DControl
     // Grid pitch for the snapped camera-relative render origin (see sceneRenderOrigin). One FNV
     // cell; fixed across games — it's a precision/stability trade, not a world-structure quantity.
     private const float RenderOriginGridSize = 4096f;
+
+    // Far plane for the synthetic perspective sky view in the ortho projection modes: only needs
+    // to clear the fixed 12k dome radius (+ sun/moon billboards). Scene clipping is unaffected.
+    private const float OrthoSkyFarPlane = 32_000f;
 
     private static Vector3 SnapToRenderOriginGrid(Vector3 position) => new(
         RenderOriginGridSize * MathF.Floor(position.X / RenderOriginGridSize),
@@ -218,23 +253,22 @@ public sealed partial class WorldView3DControl
         // TES4-era engines, so Oblivion etc. raise it (see GameProfile.AmbientLightScale).
         var ambientScale = BethesdaMultitool.Core.Games.GameProfiles
             .For(_data?.Game ?? BethesdaMultitool.Core.Games.BethesdaGame.Unknown).AmbientLightScale;
-        // Sun-shadow sampling constants: the rendered map's light matrix (with this frame's render
-        // origin folded in) + packed params. Disabled (zero) until the map has content, when the
-        // caller opts out (ortho export / top-down), or when the toggle / env kill-switch is off —
-        // the shader's ShadowFactor then returns 1.0 and the scene is pixel-identical to before.
-        var shadowMatrix = Matrix4x4.Identity;
-        var shadowParams = Vector4.Zero;
+        // Sun-shadow sampling constants: the rendered cascades' light matrices (with this frame's
+        // render origin folded in) + packed params. Disabled (zero) until the cascades have
+        // content, when the caller opts out (ortho export / top-down), or when the toggle / env
+        // kill-switch is off — the shader's ShadowFactor then returns 1.0 and the scene is
+        // pixel-identical to before.
+        var shadow = default(Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.ShadowSampleConstants);
         if (enableShadows && lightingOn && _showShadows && ShadowsEnvEnabled &&
             _shadowMap is { HasContent: true } shadowMap)
         {
-            (shadowMatrix, shadowParams) = shadowMap.GetSampleConstants(cameraOrigin);
+            shadow = shadowMap.GetSampleConstants(cameraOrigin);
         }
-        _lastBoundShadowParams = shadowParams;
+        _lastBoundShadowParams = shadow.Params0;
         var constants = AtmosphereConstants.From(
             resolved, gameHour, shadingCameraPos, lightingEnabled: lightingOn ? 1f : 0f,
             skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f, time: 0f,
-            cameraOrigin: cameraOrigin, ambientScale: ambientScale,
-            shadowMatrix: shadowMatrix, shadowParams: shadowParams);
+            cameraOrigin: cameraOrigin, ambientScale: ambientScale, shadow: shadow);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
@@ -260,14 +294,21 @@ public sealed partial class WorldView3DControl
         // projection (0 when camera-relative is off). The PS shaders that read this CB
         // declare only the prefix they use, so fields appended after their prefix are layout-safe.
         public Vector4 CameraOrigin;       // xyz = render origin (= camera world pos), w unused
-        // Sun shadow map (appended after CameraOrigin — same append-safe contract). The matrix maps
-        // origin-relative world positions (the PS's vWorldPos space) into shadow clip; ShadowParams
-        // packs (enabled, texel UV size, normalized depth bias, bindless SRV slot). Enabled == 0
-        // short-circuits the shader's ShadowFactor to 1.0, keeping the scene pixel-identical.
-        public Matrix4x4 ShadowMatrix;
-        public Vector4 ShadowParams;
+        // Sun shadow CASCADES (appended after CameraOrigin — same append-safe contract). Each
+        // matrix maps origin-relative world positions (the PS's vWorldPos space) into that
+        // cascade's shadow clip; each params float4 packs (enabled, texel UV size, normalized
+        // depth bias, bindless SRV slot). The PS picks the smallest containing cascade; all
+        // params.x == 0 short-circuits ShadowFactor to 1.0, keeping the scene pixel-identical.
+        public Matrix4x4 ShadowMatrix0;
+        public Matrix4x4 ShadowMatrix1;
+        public Matrix4x4 ShadowMatrix2;
+        public Matrix4x4 ShadowMatrix3;
+        public Vector4 ShadowParams0;
+        public Vector4 ShadowParams1;
+        public Vector4 ShadowParams2;
+        public Vector4 ShadowParams3;
 
-        public const uint ByteSize = 14 * 16;
+        public const uint ByteSize = 9 * 16 + 4 * 64 + 4 * 16;
 
         public static AtmosphereConstants From(
             AtmosphereState.Resolved a,
@@ -279,8 +320,7 @@ public sealed partial class WorldView3DControl
             float time,
             Vector3 cameraOrigin,
             float ambientScale = 0.3f,
-            Matrix4x4 shadowMatrix = default,
-            Vector4 shadowParams = default) => new()
+            Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.ShadowSampleConstants shadow = default) => new()
             {
                 SunDirIntensity = new Vector4(a.SunWorldDirection, a.SunIntensity),
                 SunColorLighting = new Vector4(a.SunColor, lightingEnabled),
@@ -292,20 +332,35 @@ public sealed partial class WorldView3DControl
                 Params = new Vector4(gameHour, a.FogNear, a.FogFar, time),
                 CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
                 CameraOrigin = new Vector4(cameraOrigin, 0f),
-                ShadowMatrix = shadowMatrix,
-                ShadowParams = shadowParams,
+                ShadowMatrix0 = shadow.Matrix0,
+                ShadowMatrix1 = shadow.Matrix1,
+                ShadowMatrix2 = shadow.Matrix2,
+                ShadowMatrix3 = shadow.Matrix3,
+                ShadowParams0 = shadow.Params0,
+                ShadowParams1 = shadow.Params1,
+                ShadowParams2 = shadow.Params2,
+                ShadowParams3 = shadow.Params3,
             };
     }
 
     /// <summary>
-    ///     Re-renders the sun shadow map when its cache key changed: fits the light's ortho frustum
-    ///     around the camera (SunShadowMath), binds the shadow DSV, replays the frame's captured
-    ///     reference draws depth-only, and draws the resident terrain cells (terrain casts too —
-    ///     hillsides shade valleys). Must be recorded AFTER the reference pass (the replay uses
-    ///     this frame's ring-buffer CB addresses) and after every screen-target draw (it rebinds the
-    ///     OM targets + viewport without restoring them). The map rendered here is sampled from the
-    ///     NEXT frame on via the atmosphere CB. While the captured casters include wind-animated
-    ///     leaf cards, the key ticks every frame so canopy shadows sway instead of freezing.
+    ///     Re-renders the sun shadow CASCADES per the re-render policy: a POSE change (sun
+    ///     direction / snapped anchor) renders everything immediately; a CONTENT-only change
+    ///     (streamed-in geometry) is throttled to every <see cref="ShadowContentRerenderFrames" />
+    ///     frames; wind-animated foliage re-renders only the NEAR cascades every frame (their
+    ///     frustums are pose-derived, so the published sampling constants stay valid). Each
+    ///     rendered cascade binds its DSV, replays the frame's captured reference draws depth-only
+    ///     (main + shadow-only off-screen casters), and draws the resident terrain cells (terrain
+    ///     casts — hillsides shade valleys and self-shadow). Must be recorded AFTER the reference
+    ///     pass (the replay uses this frame's ring-buffer CB addresses) and after every
+    ///     screen-target draw (it rebinds the OM targets + viewport without restoring them). The
+    ///     cascades rendered here are sampled from the NEXT frame on via the atmosphere CB.
+    ///     <para>
+    ///         The cascade ANCHOR is the camera XY with Z clamped into the loaded scene's vertical
+    ///         extent: anchoring at the raw camera Z shifted the near cascades' footprints off the
+    ///         ground below by ~sin(sunSlant)×altitude, so flying up silently degraded every
+    ///         shadow to the far cascade.
+    ///     </para>
     /// </summary>
     private void RecordSunShadowPass(
         Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, Vector3 renderOrigin, Vector3 sceneCenter)
@@ -313,62 +368,117 @@ public sealed partial class WorldView3DControl
         var terrainCasts = _showTerrain && _terrain is not null;
         if (_shadowMap is null || _references is null || (!_references.HasShadowDraws && !terrainCasts))
         {
-            return; // nothing to cast (or a degenerate frame) — keep the previous map + key
+            return; // nothing to cast (or a degenerate frame) — keep the previous cascades
         }
 
-        var animated = _references.ShadowDrawsIncludeAnimatedLeaves;
-        var tick = animated ? unchecked(++_shadowAnimationTick) : 0;
-        var radius = ResolveShadowRadius();
+        // Vertical anchor: clamp the center into the loaded geometry's Z band (epoch-cached scan).
+        var zExtent = _references.GetRenderedSceneWorldZExtentCached();
+        var anchor = zExtent is { } ze
+            ? new Vector3(sceneCenter.X, sceneCenter.Y, Math.Clamp(sceneCenter.Z, ze.Min, ze.Max))
+            : sceneCenter;
+
+        var lastRadius = MathF.Min(
+            ShadowCascadeRadii[^1], ShadowRadiusEnvOverride ?? float.MaxValue) + SunShadowMath.CenterSnap;
+        var poseKey = SunShadowMath.BuildKey(_lastResolvedSunDirection, anchor, lastRadius, 0);
         var contentVersion = HashCode.Combine(
-            _references.BatchContentVersion, _terrain?.ContentVersion ?? 0, tick);
-        var key = SunShadowMath.BuildKey(_lastResolvedSunDirection, sceneCenter, radius, contentVersion);
-        if (!_shadowMap.NeedsRender(key))
+            _references.BatchContentVersion, _terrain?.ContentVersion ?? 0);
+        var animated = _references.ShadowDrawsIncludeAnimatedLeaves;
+
+        _shadowContentThrottle++;
+        var poseChanged = !_shadowMap.HasContent || poseKey != _shadowPoseKey;
+        var contentDue = contentVersion != _shadowContentVersion &&
+                         _shadowContentThrottle >= ShadowContentRerenderFrames;
+        var fullRender = poseChanged || contentDue;
+        if (!fullRender && !animated)
         {
             return;
         }
-
-        var frustum = SunShadowMath.BuildLightFrustum(
-            _lastResolvedSunDirection, sceneCenter, renderOrigin, radius, _shadowMap.Resolution);
-        // One line per DISCRETE map render keeps logs quiet; the wind-driven continuous mode would
-        // log at frame rate, so it logs once per activation instead.
-        if (!animated)
+        if (!fullRender && _shadowPublishedFrustums is null)
         {
-            _shadowAnimatedActive = false;
-            Log.Info("[Shadow] rendering map: draws={0} radius={1:0} dir=({2:0.00},{3:0.00},{4:0.00}) origin=({5:0},{6:0},{7:0})",
-                _references.ShadowDrawCount, radius,
-                _lastResolvedSunDirection.X, _lastResolvedSunDirection.Y, _lastResolvedSunDirection.Z,
-                renderOrigin.X, renderOrigin.Y, renderOrigin.Z);
-        }
-        else if (!_shadowAnimatedActive)
-        {
-            _shadowAnimatedActive = true;
-            Log.Info("[Shadow] continuous re-render engaged (wind-animated foliage in view): draws={0} radius={1:0}",
-                _references.ShadowDrawCount, radius);
+            return; // animated refresh before any publish — nothing consistent to refresh yet
         }
 
-        _shadowMap.BeginRender(cmd);
-        var drewReferences = _references.RenderShadowDepth(frustum);
-        var drewTerrain = false;
-        if (terrainCasts)
+        var cascadeCount = Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.CascadeCount;
+        var frustums = new SunShadowMath.LightFrustum[cascadeCount];
+        for (var i = 0; i < cascadeCount; i++)
         {
-            // Same cylinder footprint the main pass streamed, clamped to the shadow coverage —
-            // draws only RESIDENT cells (the designed back-to-back RenderInternal double-call).
-            var terrainRadius = MathF.Min(radius, _renderDistance);
-            drewTerrain = _terrain!.RenderShadowDepth(
-                frustum.ViewProj, new VisibilityCylinder(sceneCenter, terrainRadius)) > 0;
+            if (fullRender)
+            {
+                var radius = MathF.Min(ShadowCascadeRadii[i], lastRadius);
+                frustums[i] = SunShadowMath.BuildLightFrustum(
+                    _lastResolvedSunDirection, anchor, renderOrigin, radius, _shadowMap.Resolution);
+            }
+            else
+            {
+                // Animated-only refresh: replay the PUBLISHED frustum, re-expressed against this
+                // frame's render origin with the SAME fold the sampler applies — content and
+                // sampling matrices then agree by construction. Rebuilding from the current
+                // camera anchor here is wrong: the pose key's CenterSnap quantization means the
+                // raw anchor drifts between key changes, and content rendered at the drifted
+                // anchor strobes against the stale published matrices (the whole-cell flicker).
+                var published = _shadowPublishedFrustums![i];
+                frustums[i] = published with
+                {
+                    ViewProj = SunShadowMath.FoldSampleMatrix(
+                        published.ViewProj, _shadowPublishedOrigin, renderOrigin),
+                };
+            }
         }
 
-        if (drewReferences || drewTerrain)
+        if (ShadowDiagLogging)
         {
-            _shadowMap.EndRender(cmd, key, frustum, renderOrigin);
+            if (fullRender)
+            {
+                _shadowAnimatedActive = false;
+                Log.Info("[Shadow] rendering cascades: draws={0} pose={1} content={2} dir=({3:0.00},{4:0.00},{5:0.00}) anchorZ={6:0}",
+                    _references.ShadowDrawCount, poseChanged, contentDue,
+                    _lastResolvedSunDirection.X, _lastResolvedSunDirection.Y, _lastResolvedSunDirection.Z,
+                    anchor.Z);
+            }
+            else if (!_shadowAnimatedActive)
+            {
+                _shadowAnimatedActive = true;
+                Log.Info("[Shadow] continuous near-cascade re-render engaged (wind-animated foliage): draws={0}",
+                    _references.ShadowDrawCount);
+            }
         }
-        else
+
+        // Animated-only frames refresh just the near cascades (sway lives in the near field; the
+        // far cascades' full-distance terrain gathers are the cost). They replay the published
+        // frustums verbatim (folded above), so no re-publish is needed on that path.
+        var renderCount = fullRender ? cascadeCount : ShadowAnimatedCascadeCount;
+        var drewAny = false;
+        for (var i = 0; i < renderCount; i++)
         {
-            // Nothing drew (ring exhaustion / nothing resident): the map was cleared but holds no
-            // scene — transition it back WITHOUT publishing the key, so sampling stays on the old
-            // constants (a cleared map reads fully lit either way) and the next frame retries.
-            _shadowMap.EndRenderEmpty(cmd);
+            _shadowMap.BeginCascade(cmd, i);
+            drewAny |= _references.RenderShadowDepth(frustums[i]);
+            if (terrainCasts)
+            {
+                // Same cylinder footprint the main pass streamed, clamped to this cascade's
+                // coverage — draws only RESIDENT cells (the designed RenderInternal double-call).
+                // Animated refreshes center it on the PUBLISHED anchor so the whole cleared
+                // footprint is redrawn (a current-camera cylinder leaves a trailing-edge strip
+                // of terrain depth un-redrawn).
+                var terrainCenter = fullRender ? sceneCenter : _shadowPublishedCylinderCenter;
+                var terrainRadius = MathF.Min(MathF.Min(ShadowCascadeRadii[i], lastRadius), _renderDistance);
+                drewAny |= _terrain!.RenderShadowDepth(
+                    frustums[i].ViewProj, new VisibilityCylinder(terrainCenter, terrainRadius)) > 0;
+            }
+            _shadowMap.EndCascade(cmd, i);
         }
+
+        if (fullRender && drewAny)
+        {
+            _shadowMap.Publish(frustums, renderOrigin);
+            _shadowPoseKey = poseKey;
+            _shadowContentVersion = contentVersion;
+            _shadowContentThrottle = 0;
+            _shadowPublishedFrustums = frustums;
+            _shadowPublishedOrigin = renderOrigin;
+            _shadowPublishedCylinderCenter = sceneCenter;
+        }
+        // else: animated-only refresh (constants unchanged), or nothing drew (ring exhaustion /
+        // nothing resident — the cleared cascades read fully lit and the next frame retries).
     }
 
     private void RenderFrameD3D12()
@@ -461,7 +571,18 @@ public sealed partial class WorldView3DControl
             // cancellation. Scene == absolute, so terrain/reference/water draw with the same matrix.
             viewProjAbsolute = BuildProjectionViewProj(aspect, out cylinder, out orthoEye);
             viewProjScene = viewProjAbsolute;
-            viewProjSky = viewProjAbsolute; // sky is suppressed in ortho modes; unused.
+            // Sky backdrop for the ortho modes: parallel ortho rays would all sample ONE sky
+            // direction (a flat color fill), so render the camera-centered dome through a synthetic
+            // PERSPECTIVE view aimed along the ortho view direction instead. Sky draws depth-off
+            // first; the ortho scene overwrites it wherever geometry exists, leaving the gradient +
+            // clouds + sun/moon as the backdrop. The far plane just needs to clear the fixed-radius
+            // dome (12k) — scene clipping is untouched (the scene uses viewProjScene).
+            var skyElevation = OrthoViewProjBuilder.ElevationDegFor(_projectionMode);
+            var skyForward = -OrthoViewProjBuilder.EyeDirection(_azimuthDeg, skyElevation);
+            var (_, skyUp) = ProjectionCameraBasis();
+            _camera.FarPlane = OrthoSkyFarPlane;
+            viewProjSky = Matrix4x4.CreateLookAt(Vector3.Zero, skyForward, skyUp)
+                          * _camera.GetProjectionMatrix(aspect);
             cameraRelative = false;
         }
         else
@@ -549,7 +670,11 @@ public sealed partial class WorldView3DControl
         {
             _shadowMap ??= new Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12(
                 _gpu12!, _cbvSrvUavHeap12!);
-            _references!.ArmShadowCapture();
+            _references!.ArmShadowCapture(MathF.Min(ShadowCasterRingRadius, _renderDistance));
+        }
+        else
+        {
+            _references?.DisarmShadowCapture();
         }
 
         // Resolve + upload the shared atmosphere CB (b3) once per frame, bound for the whole scene.
@@ -567,11 +692,13 @@ public sealed partial class WorldView3DControl
         // overwrites it via the normal depth pass; OFF ⇒ the flat dark-blue clear shows), then the
         // sun/moon billboards over it. Reads the b3 atmosphere CB bound just above. Sky renders
         // CAMERA-RELATIVE: the translation-free viewProjSky with the dome centered at the origin
-        // (domeCenter 0), so far-from-origin camera coords don't jitter the dome. Suppressed in the ortho
-        // projection modes: the dome is centered on the perspective camera, not where the ortho view looks.
-        if (_showSky && !projectionActive)
+        // (domeCenter 0), so far-from-origin camera coords don't jitter the dome. In the ortho
+        // projection modes viewProjSky is the synthetic perspective view built above, and the
+        // billboard basis comes from the ortho camera (the parked perspective camera is stale).
+        if (_showSky)
         {
-            RenderSky(viewProjSky, Vector3.Zero);
+            RenderSky(viewProjSky, Vector3.Zero,
+                projectionActive ? ProjectionCameraBasis() : null);
         }
 
         // Layer order matches D3D11: terrain → references → water → wireframe. Water is

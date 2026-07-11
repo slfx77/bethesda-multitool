@@ -21,7 +21,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 /// </summary>
 internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 {
-    private const uint PerFrameByteSize = 64;
+    // viewProj (64) + the 4 SpeedTree wind-v2 sway matrices (4 × 64) — see reference_instanced.vert.hlsl
+    // PerFrame. The shadow pass keeps its own shorter PerFrame; its shader variant never reads the matrices.
+    private const uint PerFrameByteSize = 64 + 256;
     private const uint PerDrawByteSize = 224;
     // 3 float4 (material) + uint4 (tex indices) + uint base + uint3 pad + float4 specular
     // + float4 camRight + float4 camUp (leaf billboard basis) + float4 wind
@@ -83,6 +85,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // don't cast (matching the engine's shadow-caster set).
     private readonly List<ShadowDraw> _shadowDraws = new(512);
     private bool _shadowCaptureArmed;
+    // Shadow-only caster ring (world units; 0 = off): frustum-rejected refs within it are kept as
+    // casters for the shadow replay. Cached with the cull survivors (see _cachedShadowOnlyCasters).
+    private float _shadowCasterRingRadius;
+    private readonly List<RenderableReference> _cachedShadowOnlyCasters = new(512);
+    private float _cullCacheShadowRing;
 
     private readonly record struct ShadowDraw(
         VertexBufferView VertexBufferView, IndexBufferView IndexBufferView, int IndexCount,
@@ -106,12 +113,24 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     /// <summary>Arms the shadow-draw capture for the frame about to be rendered (clears the prior
     /// list). Must be followed by <see cref="RenderShadowDepth" /> within the same host frame when
-    /// the map is re-rendered; the addresses go stale with the frame's ring allocations.</summary>
-    public void ArmShadowCapture()
+    /// the map is re-rendered; the addresses go stale with the frame's ring allocations.
+    /// <paramref name="casterRingRadius" /> (world units) bounds the SHADOW-ONLY caster set: refs
+    /// within it that fail the camera frustum still cast (their shadows can land on-screen), at the
+    /// cost of streaming their meshes. 0 disables the augmentation.</summary>
+    public void ArmShadowCapture(float casterRingRadius)
     {
         _shadowDraws.Clear();
         ShadowDrawsIncludeAnimatedLeaves = false;
         _shadowCaptureArmed = true;
+        _shadowCasterRingRadius = MathF.Max(casterRingRadius, 0f);
+    }
+
+    /// <summary>Disarms the capture (shadows off / interior): the next cull keeps no shadow-only
+    /// casters and the copy pass uploads none.</summary>
+    public void DisarmShadowCapture()
+    {
+        _shadowCaptureArmed = false;
+        _shadowCasterRingRadius = 0f;
     }
 
     // TEMP transparency diagnostic — set FALLOUT_VIEWER_ALPHA_DEBUG=<path-substring> (e.g. "maniasm25")
@@ -227,6 +246,26 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     transformed mesh bounds can. Returns null until at least one survivor's mesh bounds are
     ///     resident (the overlay re-renders while streaming, so the clip converges to the real ceiling).
     /// </summary>
+    /// <summary>
+    ///     <see cref="GetRenderedSceneWorldZExtent" /> memoized per cull epoch — the full scan is
+    ///     O(survivors) with a dictionary lookup each, too hot for the per-frame shadow pass that
+    ///     anchors the cascade center vertically. The survivor set only changes when the cull
+    ///     re-runs, so the epoch is the exact invalidation signal.
+    /// </summary>
+    internal (float Min, float Max)? GetRenderedSceneWorldZExtentCached()
+    {
+        if (_zExtentEpoch != _cullEpoch)
+        {
+            _zExtentCache = GetRenderedSceneWorldZExtent();
+            _zExtentEpoch = _cullEpoch;
+        }
+
+        return _zExtentCache;
+    }
+
+    private int _zExtentEpoch = -1;
+    private (float Min, float Max)? _zExtentCache;
+
     internal (float Min, float Max)? GetRenderedSceneWorldZExtent()
     {
         var minZ = float.MaxValue;
@@ -639,7 +678,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _deferredPerFrameCbvAddress = 0;
             return 0;
         }
-        unsafe { *(Matrix4x4*)perFrameAlloc.CpuPtr = viewProj; }
+        unsafe
+        {
+            *(Matrix4x4*)perFrameAlloc.CpuPtr = viewProj;
+            // Wind v2: the 4 slow sway matrices (identity at S = 0, so a calm frame is byte-static).
+            var windDst = (Matrix4x4*)((byte*)perFrameAlloc.CpuPtr + 64);
+            for (var w = 0; w < 4; w++)
+            {
+                windDst[w] = _windRig.WindMatrix(w);
+            }
+        }
         _deferredPerFrameCbvAddress = perFrameAlloc.GpuAddress;
         _deferredFrameIndex = frameIndex;
 
@@ -664,7 +712,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // but it must NOT drive the frustum — see the cullViewProj parameter docs.
         var cullFrustumSource = cullViewProj ?? viewProj;
         var frustum = hasFrustum ? Frustum.FromViewProjection(cullFrustumSource) : default;
-        Frustum? broadphaseFrustum = hasFrustum ? frustum : null;
+        // Shadow caster ring in effect for THIS render pass (0 when the shadow capture isn't
+        // armed — top-down/export/capture paths cull without shadow-only augmentation). While a
+        // ring is active the BROADPHASE must not frustum-filter, or off-screen casters never reach
+        // the per-REFR loop that collects them; the per-REFR frustum test still trims the main set.
+        var shadowRing = _shadowCaptureArmed ? _shadowCasterRingRadius : 0f;
+        Frustum? broadphaseFrustum = hasFrustum && shadowRing <= 0f ? frustum : null;
 
         double cullMs = 0;
         double meshUploadMs = 0;
@@ -698,6 +751,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             && _cullCacheShowMarkers == ShowMarkers
             && _cullCacheShowImposters == ShowImposters
             && _cullCacheShowDisabled == ShowInitiallyDisabled
+            && _cullCacheShadowRing == shadowRing
             && (tolerant
                 ? _cullCachePose is not null
                   && _cullCachePose.Value == cullCameraPose!.Value
@@ -736,6 +790,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         {
             var cullStarted = StartTiming();
             _cachedCullSurvivors.Clear();
+            _cachedShadowOnlyCasters.Clear();
             // Tolerant mode widens every cull bound by the drift slack so the survivor set is a
             // SUPERSET of the exact set for any camera position within CullPositionSlack of the
             // establishment position: √2× for the square footprint's corner reach, √3× for the 3D
@@ -834,9 +889,19 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     {
                         rejected = true;
                     }
-                    if (!rejected && hasFrustum)
+                    // Track the FRUSTUM-only rejection separately: an off-screen ref inside the
+                    // shadow caster ring still CASTS (its shadow can land on-screen — without this,
+                    // shadows pop when their caster leaves the frustum). Kept in a shadow-only list
+                    // the resolve pass batches for the shadow replay; the main draw never sees it.
+                    if (!rejected && hasFrustum &&
+                        !frustum.IntersectsSphere(cullCenter, cullRadius + FrustumCullMargin + frustumSlack))
                     {
-                        rejected = !frustum.IntersectsSphere(cullCenter, cullRadius + FrustumCullMargin + frustumSlack);
+                        rejected = true;
+                        var ringReach = shadowRing + cullRadius + driftSlack;
+                        if (shadowRing > 0f && MathF.Abs(dx) <= ringReach && MathF.Abs(dy) <= ringReach)
+                        {
+                            _cachedShadowOnlyCasters.Add(r);
+                        }
                     }
                     if (rejected) culled++;
                     else _cachedCullSurvivors.Add(r);
@@ -858,6 +923,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _cullCacheShowMarkers = ShowMarkers;
             _cullCacheShowImposters = ShowImposters;
             _cullCacheShowDisabled = ShowInitiallyDisabled;
+            _cullCacheShadowRing = shadowRing;
             _cullCacheCellsVisited = cellsVisited;
             _cullCacheCandidates = candidates;
             _cullCacheCulled = culled;
@@ -1050,6 +1116,49 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             {
                 referencesWithReadyMesh++;
                 drawn++;
+            }
+        }
+
+        // === Shadow-only caster resolve (skipped on batch-reuse frames, like the main pass) ===
+        // Off-screen refs inside the caster ring: resolved through the same memoized mesh path
+        // (their meshes must be resident to cast — bounded streaming, that's the ring's price) and
+        // batched into ShadowOnlyInstances, which only the shadow replay draws. Opaque non-decal
+        // submeshes only — blended/billboard/decal submeshes don't cast (matches the capture
+        // filter), and there is no textures-ready gate: a cutout casting with a placeholder alpha
+        // for a few frames beats the whole caster popping.
+        var shadowCastersToResolve = reuseBatches ? 0 : _cachedShadowOnlyCasters.Count;
+        for (var si = 0; si < shadowCastersToResolve; si++)
+        {
+            var r = _cachedShadowOnlyCasters[si];
+            if (!_resolvedMeshesThisFrame.TryGetValue(r.MeshId, out var mesh))
+            {
+                var pdx = r.BoundsCenter.X - cylinderX;
+                var pdy = r.BoundsCenter.Y - cylinderY;
+                mesh = _meshCache.GetOrUpload(
+                    r.ModelPath, ref uploadBudget, pdx * pdx + pdy * pdy, r.AlternateTextures);
+                _resolvedMeshesThisFrame[r.MeshId] = mesh;
+                if (mesh is not null)
+                {
+                    _meshLocalRadius[r.MeshId] = mesh.LocalBoundsRadius;
+                    _meshLocalBounds[r.MeshId] = (mesh.LocalBoundsMin, mesh.LocalBoundsMax);
+                }
+            }
+            if (mesh is null)
+            {
+                continue;
+            }
+
+            var relWorldMatrix = r.WorldMatrix;
+            relWorldMatrix.Translation -= renderOrigin;
+            foreach (var sub in mesh.Submeshes)
+            {
+                if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard || sub.IsDecal)
+                {
+                    continue;
+                }
+
+                var pso = sub.DoubleSided ? _pipelines.OpaqueDoublePso : _pipelines.OpaqueBackPso;
+                _opaqueBatches.GetOrCreate(sub, pso).ShadowOnlyInstances.Add(relWorldMatrix);
             }
         }
 
@@ -1347,11 +1456,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ref int submeshDraws)
     {
         var activeBatches = _opaqueBatches.ActiveBatches;
+        // Shadow-only casters are uploaded only when the shadow capture is armed this frame (they
+        // ride AFTER each batch's main instances in the same block — see the copy pass below).
+        var includeShadow = _shadowCaptureArmed;
         var totalInstances = 0;
         var activeBatchCount = 0;
         foreach (var batchState in activeBatches)
         {
-            var count = batchState.Instances.Count;
+            var count = batchState.Instances.Count +
+                        (includeShadow ? batchState.ShadowOnlyInstances.Count : 0);
             if (count == 0) continue;
             totalInstances += count;
             activeBatchCount++;
@@ -1389,9 +1502,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 foreach (var batchState in activeBatches)
                 {
                     var worlds = batchState.Instances;
-                    if (worlds.Count == 0)
+                    var shadowWorlds = includeShadow ? batchState.ShadowOnlyInstances : null;
+                    var shadowCount = shadowWorlds?.Count ?? 0;
+                    if (worlds.Count == 0 && shadowCount == 0)
                     {
                         batchState.FrameDrawCount = 0;
+                        batchState.FrameShadowOnlyCount = 0;
                         continue;
                     }
                     if (!refilter)
@@ -1399,17 +1515,30 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         CollectionsMarshal.AsSpan(worlds).CopyTo(span.Slice(offset, worlds.Count));
                         offset += worlds.Count;
                         batchState.FrameDrawCount = worlds.Count;
-                        continue;
                     }
-                    var worldSpan = CollectionsMarshal.AsSpan(worlds);
-                    var boundsSpan = CollectionsMarshal.AsSpan(batchState.InstanceBounds);
-                    var batchStart = offset;
-                    for (var i = 0; i < worldSpan.Length; i++)
+                    else
                     {
-                        if (!PassesExactCull(in boundsSpan[i])) continue;
-                        span[offset++] = worldSpan[i];
+                        var worldSpan = CollectionsMarshal.AsSpan(worlds);
+                        var boundsSpan = CollectionsMarshal.AsSpan(batchState.InstanceBounds);
+                        var batchStart = offset;
+                        for (var i = 0; i < worldSpan.Length; i++)
+                        {
+                            if (!PassesExactCull(in boundsSpan[i])) continue;
+                            span[offset++] = worldSpan[i];
+                        }
+                        batchState.FrameDrawCount = offset - batchStart;
                     }
-                    batchState.FrameDrawCount = offset - batchStart;
+
+                    // Shadow-only casters go AFTER the main instances so the main draw's count
+                    // excludes them while the shadow replay's count includes them (contiguous range
+                    // from the same uInstanceBase). Never refiltered — over-inclusion only writes
+                    // extra depth into the shadow map.
+                    if (shadowCount > 0)
+                    {
+                        CollectionsMarshal.AsSpan(shadowWorlds!).CopyTo(span.Slice(offset, shadowCount));
+                        offset += shadowCount;
+                    }
+                    batchState.FrameShadowOnlyCount = shadowCount;
                 }
             }
 
@@ -1422,15 +1551,18 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         foreach (var batchState in activeBatches)
         {
             var batch = batchState.Instances;
-            if (batch.Count == 0) continue;
+            var shadowOnly = includeShadow ? batchState.ShadowOnlyInstances : null;
+            if (batch.Count == 0 && (shadowOnly is null || shadowOnly.Count == 0)) continue;
 
             var drawStartInstance = startInstance;
             int drawCount;
+            int shadowCount;
             if (!haveSharedBlock)
             {
                 // Per-batch fallback block: small (count × 64 B), so it fits where the frame-wide
                 // block could not. Rebind the instance SRV at this batch's base and draw from 0.
-                var batchBytes = instanceStride * (uint)batch.Count;
+                var fallbackShadowCount = shadowOnly?.Count ?? 0;
+                var batchBytes = instanceStride * (uint)(batch.Count + fallbackShadowCount);
                 if (!_ringBuffer.TryAllocate(
                         frameIndex, batchBytes + instanceStride - 1, out var batchAlloc, alignment: 16))
                 {
@@ -1442,7 +1574,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 var batchCpuPtr = batchAlloc.CpuPtr + (int)(batchByteOffset - batchAlloc.ByteOffset);
                 unsafe
                 {
-                    var span = new Span<Matrix4x4>((void*)batchCpuPtr, batch.Count);
+                    var span = new Span<Matrix4x4>((void*)batchCpuPtr, batch.Count + fallbackShadowCount);
                     if (!refilter)
                     {
                         CollectionsMarshal.AsSpan(batch).CopyTo(span);
@@ -1459,8 +1591,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                             span[drawCount++] = worldSpan[i];
                         }
                     }
+
+                    // Shadow-only casters after the main instances (same contract as the shared block).
+                    if (fallbackShadowCount > 0)
+                    {
+                        CollectionsMarshal.AsSpan(shadowOnly!).CopyTo(span.Slice(drawCount, fallbackShadowCount));
+                    }
                 }
-                if (drawCount == 0) continue;
+                shadowCount = fallbackShadowCount;
+                if (drawCount + shadowCount == 0) continue;
 
                 var batchInstanceAddress = batchAlloc.GpuAddress + (batchByteOffset - batchAlloc.ByteOffset);
                 BindReferenceInstanceBuffer(cmd, batchInstanceAddress, ref srvBinds, ref srvBindMs);
@@ -1470,7 +1609,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             else
             {
                 drawCount = batchState.FrameDrawCount;
-                if (drawCount == 0) continue;
+                shadowCount = batchState.FrameShadowOnlyCount;
+                if (drawCount + shadowCount == 0) continue;
             }
 
             if (!ReferenceEquals(currentPso, batchState.Pso))
@@ -1491,6 +1631,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex,
                     sub.SpecularMap?.BindlessIndex ?? 0, sub.GradientMap?.BindlessIndex ?? 0),
                 drawStartInstance,
+                WindMatrixValid: 1,
                 Specular: sub.Specular,
                 CameraRight: _leafBillboardRight,
                 CameraUp: _leafBillboardUp,
@@ -1512,15 +1653,21 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var drawStarted = StartTiming();
             cmd.IASetVertexBuffers(0, batchState.Submesh.VertexBufferView);
             cmd.IASetIndexBuffer(batchState.Submesh.IndexBufferView);
-            cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)drawCount, 0, 0, 0);
-            if (_shadowCaptureArmed && !sub.IsDecal)
+            if (drawCount > 0)
+            {
+                // The main scene draw excludes the shadow-only tail of the instance range.
+                cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)drawCount, 0, 0, 0);
+            }
+            if (_shadowCaptureArmed && !sub.IsDecal && drawCount + shadowCount > 0)
             {
                 // Record this draw for the frame-end shadow replay: the ring-buffer CB just bound
                 // (uInstanceBase et al.) + the t8 instance block it indexes stay valid until the
-                // frame's allocations are recycled, i.e. exactly the replay window.
+                // frame's allocations are recycled, i.e. exactly the replay window. The replay's
+                // instance count INCLUDES the shadow-only casters appended after the main range.
                 _shadowDraws.Add(new ShadowDraw(
                     sub.VertexBufferView, sub.IndexBufferView, sub.IndexCount,
-                    instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount, sub.AlphaTest));
+                    instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount + shadowCount,
+                    sub.AlphaTest));
                 if (sub.IsLeafBillboard && (_wind.X != 0f || _wind.Z != 0f))
                 {
                     // Swaying canopy in the map → the host re-renders it every frame (rock/rustle
@@ -1529,7 +1676,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 }
             }
             drawCallMs += ElapsedMilliseconds(drawStarted);
-            startInstance += (uint)drawCount;
+            startInstance += (uint)(drawCount + shadowCount);
             submeshDraws++;
             LastStats.ReferenceInstancedDraws++;
             LastStats.ReferenceInstances += drawCount;
@@ -1759,7 +1906,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         uint InstanceBase,
         uint Padding0 = 0,
         uint Padding1 = 0,
-        uint Padding2 = 0,
+        // uWindMatrixValid: nonzero when this frame's PerFrame CB carries live wind-v2 sway matrices.
+        // Writers that never upload them leave it 0 and the shader's sway path stays inert.
+        uint WindMatrixValid = 0,
         // 1A — sun specular term (xyz = tint, w = Phong exponent; 0 = none). Matches the uSpecular field
         // in reference_instanced.vert.hlsl.
         Vector4 Specular = default,

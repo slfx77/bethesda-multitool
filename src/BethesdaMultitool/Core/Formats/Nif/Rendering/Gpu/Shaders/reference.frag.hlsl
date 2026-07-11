@@ -36,9 +36,17 @@ cbuffer Atmosphere : register(b3)
     float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = time
     float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
     float4 uCameraOrigin;       // xyz = camera-relative render origin (VS-consumed; layout parity)
-    // Sun shadow map (appended — earlier shaders declare only the prefix above, layout-safe).
-    float4x4 uShadowMatrix;     // origin-relative world → shadow clip (xy ±1, z reversed 0..1)
-    float4 uShadowParams;       // x = enabled, y = texel UV size, z = depth bias, w = SRV slot
+    // Sun shadow CASCADES, near→far (appended — earlier shaders declare only the prefix above,
+    // layout-safe). Each matrix: origin-relative world → that cascade's shadow clip (xy ±1,
+    // z reversed 0..1); each params: x = enabled, y = texel UV size, z = bias, w = SRV slot.
+    float4x4 uShadowMatrix0;
+    float4x4 uShadowMatrix1;
+    float4x4 uShadowMatrix2;
+    float4x4 uShadowMatrix3;
+    float4 uShadowParams0;
+    float4 uShadowParams1;
+    float4 uShadowParams2;
+    float4 uShadowParams3;
 };
 
 // Engine distance fog (grounded in Sky::UpdateFog): a linear near→far ramp toward the resolved fog
@@ -57,35 +65,32 @@ float3 ApplyFog(float3 color, float3 worldPos)
     return lerp(color, uFogColorFogEnabled.rgb, f);
 }
 
-// Sun-shadow visibility for an (origin-relative) world position — 1 = fully lit, 0 = fully
-// occluded. Samples the directional shadow map the frame's own reference batches were replayed
-// into (ShadowMapRenderer12) with a 3x3 PCF kernel of point taps. uShadowParams.x gates the whole
-// path: OFF returns 1.0, keeping the scene pixel-identical to the pre-shadow renderer. Positions
-// outside the map's ortho footprint (coverage edge) are lit — the map only covers the near field.
-float ShadowFactor(float3 worldPos)
+// One cascade attempt for ShadowFactor: returns true when worldPos lands inside this cascade's
+// footprint (with a PCF-kernel border margin so the filter never straddles the map edge) —
+// 'visibility' then carries the filtered shadow term. The PCF is a 3x3 tent of BILINEAR
+// comparison taps: each GatherRed pulls the tap's 2x2 texel quad and the four COMPARE RESULTS are
+// blended by the sub-texel fraction (filter the comparisons, never the depths). Ortho projection:
+// w == 1, no perspective divide. Reversed-Z: stored depth GROWS toward the light, so "an occluder
+// exists" reads as stored > pixelDepth + bias.
+bool TryCascadeShadow(float4x4 shadowMatrix, float4 cascade, float3 worldPos, out float visibility)
 {
-    if (uShadowParams.x < 0.5)
+    visibility = 1.0;
+    if (cascade.x < 0.5)
     {
-        return 1.0;
+        return false;
     }
 
-    // Ortho light projection: w == 1, no perspective divide. Reversed-Z: stored depth GROWS
-    // toward the light, so "an occluder exists" reads as stored > pixelDepth + bias.
-    float4 clip = mul(uShadowMatrix, float4(worldPos, 1.0));
+    float4 clip = mul(shadowMatrix, float4(worldPos, 1.0));
+    float texel = cascade.y;
     float2 uv = float2(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
-    if (min(uv.x, uv.y) < 0.0 || max(uv.x, uv.y) > 1.0 || clip.z <= 0.0 || clip.z >= 1.0)
+    float border = 2.5 * texel;
+    if (min(uv.x, uv.y) < border || max(uv.x, uv.y) > 1.0 - border || clip.z <= 0.0 || clip.z >= 1.0)
     {
-        return 1.0;
+        return false;
     }
 
-    uint slot = (uint)uShadowParams.w;
-    float reference = clip.z + uShadowParams.z;
-    float texel = uShadowParams.y;
-    // 3x3 tent of BILINEAR comparison taps: each GatherRed pulls the tap's 2x2 texel quad and the
-    // four COMPARE RESULTS are blended by the sub-texel fraction (percentage-closer filtering in
-    // the proper order — filter the comparisons, never the depths). A plain point-compare box
-    // showed the map's raw texels as hard blocks in walk mode; this melts them into a smooth
-    // ~3-texel penumbra.
+    uint slot = (uint)cascade.w;
+    float reference = clip.z + cascade.z;
     float2 texelPos = uv / texel - 0.5;
     float2 f = frac(texelPos);
     float2 gatherBase = (floor(texelPos) + 0.5) * texel;
@@ -103,7 +108,23 @@ float ShadowFactor(float3 worldPos)
             lit += lerp(lerp(vis.w, vis.z, f.x), lerp(vis.x, vis.y, f.x), f.y);
         }
     }
-    return lit / 9.0;
+    visibility = lit / 9.0;
+    return true;
+}
+
+// Sun-shadow visibility for an (origin-relative) world position — 1 = fully lit, 0 = fully
+// occluded. CASCADED: the smallest (sharpest) cascade containing the sample wins, so quality
+// scales with closeness to the camera; the far cascade reaches the full render distance. All
+// cascades disabled (params.x == 0) returns 1.0, keeping the scene pixel-identical to the
+// pre-shadow renderer.
+float ShadowFactor(float3 worldPos)
+{
+    float visibility;
+    if (TryCascadeShadow(uShadowMatrix0, uShadowParams0, worldPos, visibility)) return visibility;
+    if (TryCascadeShadow(uShadowMatrix1, uShadowParams1, worldPos, visibility)) return visibility;
+    if (TryCascadeShadow(uShadowMatrix2, uShadowParams2, worldPos, visibility)) return visibility;
+    if (TryCascadeShadow(uShadowMatrix3, uShadowParams3, worldPos, visibility)) return visibility;
+    return 1.0;
 }
 
 // Per-pixel light factor (rgb) for a world-space normal. When lighting is disabled

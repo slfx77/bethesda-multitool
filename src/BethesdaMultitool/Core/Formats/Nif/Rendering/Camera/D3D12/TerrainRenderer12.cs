@@ -120,7 +120,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private ID3D12Resource? _sharedIndexBuffer;
     private IndexBufferView _sharedIbv;
 
-    private LruCache<(int gx, int gy), CachedCellMesh12> _meshCache = CreateMeshCache(MinCacheCapacity);
+    private LruCache<(int gx, int gy), CachedCellMesh12> _meshCache;
     private readonly HashSet<(int gx, int gy)> _knownUnusableCells = new();
     private readonly List<VisibleCell> _visibleScratch = new();
     private readonly List<VisibleCell> _missingVisibleScratch = new();
@@ -177,6 +177,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             gpu, rootSignature, vsBytecode, TerrainInputElements);
 
         _sharedIndexData = TerrainMeshBuilder.BuildSharedIndexBufferData();
+        _meshCache = CreateMeshCache(MinCacheCapacity);
     }
 
     public void Dispose()
@@ -253,12 +254,19 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     ///     CellMeshLruCache): evicted/replaced entries are disposed, and the cache reports its
     ///     entry counts to the resource registry under the "terrain-cells" tag.
     /// </summary>
-    private static LruCache<(int gx, int gy), CachedCellMesh12> CreateMeshCache(int capacity) =>
+    private LruCache<(int gx, int gy), CachedCellMesh12> CreateMeshCache(int capacity) =>
         new LruCache<(int gx, int gy), CachedCellMesh12>(
                 "CellMeshLru",
                 ResourceCategory.GpuResident,
                 maxEntries: capacity,
-                onEvicted: static (_, mesh) => mesh.Dispose())
+                onEvicted: (_, mesh) =>
+                {
+                    mesh.Dispose();
+                    // A cell leaving residency changes what the shadow pass can draw: bump the
+                    // content version so the throttled shadow re-render heals the vanished
+                    // caster instead of the published cascades keeping its stale depth.
+                    unchecked { ContentVersion++; }
+                })
             .RegisterWith(ResourceRegistry.Instance, "terrain-cells");
 
     public void LoadData(Dictionary<(int gx, int gy), CellRecord> cells)
@@ -381,15 +389,107 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     public int ContentVersion { get; private set; }
 
     /// <summary>
-    ///     Sun-shadow depth pass: draws the RESIDENT terrain cells into the (already bound) shadow
-    ///     map from the light's view with the 1-sample no-cull shadow PSO — terrain casts shadows
-    ///     onto itself and onto placed references (hillsides shading valleys). Recorded back-to-back
-    ///     with the main pass in the same frame (a designed double-call — see the frame-budget note
-    ///     in <see cref="RenderInternal" />); the cylinder should already match the main pass's, so
-    ///     no extra cell streaming is triggered.
+    ///     Sun-shadow depth pass: draws the ALREADY-RESIDENT terrain cells into the (already bound)
+    ///     shadow map from the light's view with the 1-sample no-cull shadow PSO — terrain casts
+    ///     shadows onto itself and onto placed references (hillsides shading valleys).
+    ///     <para>
+    ///         Deliberately streaming-free, unlike <see cref="RenderInternal" />: it never builds or
+    ///         uploads cells (missing casters heal via <see cref="ContentVersion" /> once the MAIN
+    ///         pass streams them in), never touches the self-measured frame timestamp (per-cascade
+    ///         calls at frame end made the main pass measure a near-zero "frame duration", flooring
+    ///         its time-based streaming budget — the "terrain loads slower with shadows on" report),
+    ///         never overwrites <see cref="LastStats" />, and peeks the mesh cache without bumping
+    ///         recency (shadow reads of far cells must not push the camera's own cells toward
+    ///         eviction).
+    ///     </para>
     /// </summary>
     public int RenderShadowDepth(Matrix4x4 lightViewProj, VisibilityCylinder cylinder)
-        => RenderInternal(lightViewProj, cylinder, _shadowDepthPso);
+    {
+        if ((_spatialIndex is null || _spatialIndex.CellCount == 0) &&
+            (_cells is null || _cells.Count == 0))
+        {
+            return 0;
+        }
+
+        var cmd = _recorder.CommandList;
+        if (!_ringBuffer.TryAllocate(
+                _recorder.FrameIndex, PerFrameByteSize, out var perFrameAlloc, GpuRingBuffer12.CbAlignment) ||
+            !_ringBuffer.TryAllocate(
+                _recorder.FrameIndex, PerModeByteSize, out var perModeAlloc, GpuRingBuffer12.CbAlignment))
+        {
+            return 0; // ring exhausted — the cleared cascade reads lit and the next frame retries
+        }
+        unsafe
+        {
+            *(Matrix4x4*)perFrameAlloc.CpuPtr = lightViewProj;
+            // b2 is read by the terrain VS (UV scale feeds an output the null-PS pass ignores,
+            // but the register must still be validly bound — earlier passes rebind this slot).
+            *(Vector4*)perModeAlloc.CpuPtr = new Vector4(0f, DefaultDiffuseUvScale, 0f, 0f);
+        }
+
+        cmd.SetPipelineState(_shadowDepthPso);
+        cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        EnsureSharedIndexBuffer(cmd);
+        cmd.IASetIndexBuffer(_sharedIbv);
+        cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
+        cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerModeCbv, perModeAlloc.GpuAddress);
+
+        var vertexStride = (uint)Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
+        const uint blendWeightStride = 64; // SlotVectors (4) × sizeof(Vector4)
+        var drawn = 0;
+        foreach (var key in EnumerateCellKeysInCylinder(cylinder))
+        {
+            if (!_meshCache.TryPeek(key, out var entry))
+            {
+                continue;
+            }
+
+            cmd.IASetVertexBuffers(0, new VertexBufferView
+            {
+                BufferLocation = entry.VertexBuffer.GPUVirtualAddress,
+                SizeInBytes = (uint)entry.VertexBuffer.Description.Width,
+                StrideInBytes = vertexStride,
+            });
+            cmd.IASetVertexBuffers(1, new VertexBufferView
+            {
+                BufferLocation = entry.BlendWeightBuffer.GPUVirtualAddress,
+                SizeInBytes = (uint)entry.BlendWeightBuffer.Description.Width,
+                StrideInBytes = blendWeightStride,
+            });
+            // No per-draw CB: b1 carries the PS's texture indices and this PSO has no PS — skipping
+            // it saves one ring allocation per cell per cascade (the old streaming path's real ring
+            // pressure) and keeps LastStats untouched.
+            cmd.DrawIndexedInstanced((uint)_indexCount, 1, 0, 0, 0);
+            drawn++;
+        }
+
+        return drawn;
+    }
+
+    /// <summary>Cell keys within the cylinder, via the spatial index when present (matching the
+    /// gather in <see cref="RenderInternal" />) or the raw cell dictionary otherwise.</summary>
+    private IEnumerable<(int gx, int gy)> EnumerateCellKeysInCylinder(VisibilityCylinder cylinder)
+    {
+        if (_spatialIndex is not null)
+        {
+            _spatialIndex.QueryCellsInRadius(
+                cylinder.Position.X, -cylinder.Position.Y, cylinder.Radius, _candidateScratch);
+            foreach (var candidate in _candidateScratch)
+            {
+                yield return candidate.Key;
+            }
+        }
+        else
+        {
+            foreach (var key in _cells!.Keys)
+            {
+                if (cylinder.ContainsCell(key.gx, key.gy))
+                {
+                    yield return key;
+                }
+            }
+        }
+    }
 
     private int RenderInternal(Matrix4x4 viewProj, VisibilityCylinder cylinder, ID3D12PipelineState pso)
     {
