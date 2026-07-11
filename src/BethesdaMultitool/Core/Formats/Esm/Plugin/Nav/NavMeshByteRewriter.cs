@@ -96,6 +96,13 @@ internal static class NavMeshByteRewriter
             result.Add(new EncodedSubrecord(sub.Signature, bytes));
         }
 
+        // NVTR ↔ NVEX invariant: every external-flagged edge must reference a live NVEX entry.
+        // The adjacency rebuild preserves external edges but runtime-reconstructed navmeshes carry
+        // external flags with no NVEX, and winding/obstacle passes can leave stale indices; this
+        // pass clears any flag standing over an invalid index so the engine never reads NVEX[-1]
+        // (the TheStripWorld AI pathing AV). Runs after the repair chain, before count derivation.
+        NavMeshExternalEdgeConsistency.Enforce(result);
+
         // Final stage: upgrade the proto-format record shape to retail FNV (subrecord
         // order, NVER value, 24-byte DATA with derived counts, synthesized NVGD). The
         // retail engine's sequential NAVM loader rejects the proto shape, which fails the
@@ -233,6 +240,15 @@ internal static class NavMeshByteRewriter
         // NavMeshInfoMap setup at FalloutNV+0x0069DFDC.
         PatchDataEdgeLinkCount(newBodyBytes, keptNvexEntries);
 
+        // Dropping NVEX entries compacts (renumbers) the array, so any NVTR external-edge flag now
+        // points at the wrong or a missing entry. Rather than renumber, make the navmesh
+        // self-contained: clear every external flag so no edge references the disturbed NVEX. Only
+        // fires when a dangling target was actually dropped (droppedEntries > 0).
+        if (droppedEntries > 0)
+        {
+            ClearNvtrExternalFlagsInBody(newBodyBytes);
+        }
+
         var newRecord = new byte[RecordHeaderSize + newBodyBytes.Length];
         navmRecordBytes.AsSpan(0, RecordHeaderSize).CopyTo(newRecord);
         BinaryPrimitives.WriteUInt32LittleEndian(newRecord.AsSpan(4, 4), (uint)newBodyBytes.Length);
@@ -256,6 +272,32 @@ internal static class NavMeshByteRewriter
             if (sig == "DATA" && subSize >= 16)
             {
                 BinaryPrimitives.WriteUInt32LittleEndian(body.Slice(j + 6 + 12, 4), (uint)edgeCount);
+                return;
+            }
+            j += 6 + subSize;
+        }
+    }
+
+    /// <summary>
+    ///     Walks a NAVM body to its NVTR subrecord and clears every external-edge flag (treating the
+    ///     NVEX array as empty), making the navmesh self-contained. Used when a later pass disturbs
+    ///     the NVEX array out from under the NVTR flags. No-op if NVTR isn't found.
+    /// </summary>
+    private static void ClearNvtrExternalFlagsInBody(Span<byte> body)
+    {
+        var j = 0;
+        while (j + 6 <= body.Length)
+        {
+            var sig = System.Text.Encoding.ASCII.GetString(body.Slice(j, 4));
+            var subSize = BinaryPrimitives.ReadUInt16LittleEndian(body.Slice(j + 4, 2));
+            if (j + 6 + subSize > body.Length) break;
+            if (sig == "NVTR")
+            {
+                var nvtr = body.Slice(j + 6, subSize).ToArray();
+                if (NavMeshExternalEdgeConsistency.ClearInvalidExternalFlags(nvtr, 0) > 0)
+                {
+                    nvtr.CopyTo(body.Slice(j + 6, subSize));
+                }
                 return;
             }
             j += 6 + subSize;

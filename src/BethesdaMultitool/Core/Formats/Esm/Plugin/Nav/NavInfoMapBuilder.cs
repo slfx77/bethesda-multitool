@@ -84,12 +84,42 @@ internal static class NavInfoMapBuilder
         return bytes;
     }
 
-    /// <summary>Builds a 16-byte NVCI subrecord payload for one new NAVM (empty connection arrays).</summary>
-    public static byte[] BuildNvci(in NewNavmEntry entry)
+    /// <summary>
+    ///     Builds an NVCI subrecord payload for one new NAVM. Layout:
+    ///     <c>NavmFormId(4) · StandardCount(4)+Standard[FormID] · PreferredCount(4) · DoorLinksCount(4)+DoorLinks[FormID]</c>.
+    ///     Standard = the navmesh's NVEX edge-link targets (neighbor NAVMs); Preferred is left empty
+    ///     (an authoring cost-class split not recoverable from NVEX); DoorLinks = the navmesh's NVDP
+    ///     door REFRs. Reconstructing NVCI from the navmesh's own links keeps the NavMeshInfoMap graph
+    ///     consistent with NVEX/NVDP — an NVEX link with no matching NVCI neighbor null-derefs the
+    ///     engine's cross-cell A* (the empty-NVCI crash). Passing <c>default</c> emits empty arrays.
+    /// </summary>
+    public static byte[] BuildNvci(in NewNavmEntry entry, NavmConnectivity connectivity = default)
     {
-        var bytes = new byte[NvciSize];
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0, 4), entry.NavmFormId);
-        // StandardCount, PreferredCount, DoorLinksCount all zero — empty arrays.
+        var standard = connectivity.StandardNeighbors ?? [];
+        var doors = connectivity.DoorRefs ?? [];
+        var size = 4 + 4 + standard.Count * 4 + 4 + 4 + doors.Count * 4;
+        var bytes = new byte[size];
+        var o = 0;
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(o, 4), entry.NavmFormId);
+        o += 4;
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(o, 4), standard.Count);
+        o += 4;
+        foreach (var neighbor in standard)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(o, 4), neighbor);
+            o += 4;
+        }
+
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(o, 4), 0); // Preferred count.
+        o += 4;
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(o, 4), doors.Count);
+        o += 4;
+        foreach (var doorRef in doors)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(o, 4), doorRef);
+            o += 4;
+        }
+
         return bytes;
     }
 
@@ -105,8 +135,14 @@ internal static class NavInfoMapBuilder
     public static byte[] BuildNaviOverride(
         ParsedMainRecord masterNavi,
         IReadOnlyList<NewNavmEntry> newEntries,
-        PluginBuildOptions options)
+        PluginBuildOptions options,
+        IReadOnlyDictionary<uint, NavmConnectivity>? connectivityByNavm = null)
     {
+        NavmConnectivity Connectivity(uint navmFormId) =>
+            connectivityByNavm is not null && connectivityByNavm.TryGetValue(navmFormId, out var c)
+                ? c
+                : default;
+
         using var bodyStream = new MemoryStream();
         using (var writer = new BinaryWriter(bodyStream, Encoding.Latin1, true))
         {
@@ -140,7 +176,7 @@ internal static class NavInfoMapBuilder
                 {
                     foreach (var entry in newEntries)
                     {
-                        SubrecordEncoder.WriteSubrecord(writer, "NVCI", BuildNvci(entry));
+                        SubrecordEncoder.WriteSubrecord(writer, "NVCI", BuildNvci(entry, Connectivity(entry.NavmFormId)));
                     }
                     newNvcisEmitted = true;
                 }
@@ -160,7 +196,7 @@ internal static class NavInfoMapBuilder
             {
                 foreach (var entry in newEntries)
                 {
-                    SubrecordEncoder.WriteSubrecord(writer, "NVCI", BuildNvci(entry));
+                    SubrecordEncoder.WriteSubrecord(writer, "NVCI", BuildNvci(entry, Connectivity(entry.NavmFormId)));
                 }
             }
         }

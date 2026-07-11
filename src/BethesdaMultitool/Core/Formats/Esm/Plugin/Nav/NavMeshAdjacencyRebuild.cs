@@ -42,6 +42,9 @@ internal static class NavMeshAdjacencyRebuild
     private const int NvvxVertexSize = 12;
     private const int NoNeighbor = -1;
 
+    // Flags field (uint16) within an NVTR entry; bits 0/1/2 mark edge slot 0/1/2 as external.
+    private const int FlagsOffset = 12;
+
     // Edge-slot byte offsets within an NVTR entry, indexed by edge ordinal (0=V0V1, 1=V1V2, 2=V2V0).
     private static readonly int[] EdgeSlotOffset = [6, 8, 10];
 
@@ -120,9 +123,17 @@ internal static class NavMeshAdjacencyRebuild
         for (var t = 0; t < triangleCount; t++)
         {
             var baseOff = t * NvtrEntrySize;
+            // Flags (uint16 @12): bits 0/1/2 mark edge slot 0/1/2 as EXTERNAL — its value is an
+            // index into this navmesh's NVEX array (a cross-navmesh link), NOT a neighbor triangle
+            // index. Such an edge is geometrically a border edge (one local owner) and would be
+            // clobbered to -1 by the manifold rebuild, orphaning the NVEX link and leaving the
+            // engine to deref NVEX[-1] (the TheStripWorld AI pathing AV). Preserve the original
+            // value for external slots; only rebuild true internal neighbor links.
+            var flags = BinaryPrimitives.ReadUInt16LittleEndian(nvtrBytes.AsSpan(baseOff + FlagsOffset, 2));
             for (var e = 0; e < 3; e++)
             {
-                var value = rebuilt[t * 3 + e];
+                var isExternal = (flags & (1 << e)) != 0;
+                var value = isExternal ? original[t * 3 + e] : rebuilt[t * 3 + e];
                 if (value != original[t * 3 + e])
                 {
                     changed++;
