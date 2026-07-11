@@ -52,6 +52,27 @@ public sealed class NifAlphaClassifierZBufferWriteTests
     }
 
     [Fact]
+    public void Classify_BlendPlusTrivialAlphaTest_StaysNonDepthWritingBlend()
+    {
+        // FXMistLow01Long: blend + alpha-test at threshold 1 — the test keeps near-invisible mist
+        // texels, so a depth-writing hoist would lay a full-quad depth footprint that punches
+        // transparent holes in the water pass drawn after it. Trivial thresholds stay a plain
+        // sorted blend (Z-write off); only real cutout thresholds (NVSeaPlant02: 124) earn the
+        // depth-writing pre-water hoist.
+        var submesh = CreateSubmesh(hasAlphaBlend: true, hasAlphaTest: true, shaderFlags2: 0x1u,
+            "FXMistLow01Long:1", @"textures\effects\fxwastelandmist01.dds");
+        submesh.AlphaTestThreshold = 1;
+
+        var state = NifAlphaClassifier.Classify(submesh, null);
+
+        Assert.Equal(NifAlphaRenderMode.Blend, state.RenderMode);
+        Assert.True(state.HasAlphaBlend);
+        Assert.True(state.HasAlphaTest);
+        Assert.False(state.DepthWritingBlend);
+        Assert.False(state.WritesDepth);
+    }
+
+    [Fact]
     public void Classify_AlphaTestOnly_IsCutoutAndWritesDepth()
     {
         var submesh = CreateSubmesh(hasAlphaBlend: false, hasAlphaTest: true, shaderFlags2: 0x1u);

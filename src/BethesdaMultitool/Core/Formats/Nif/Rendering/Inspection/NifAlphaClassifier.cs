@@ -48,7 +48,17 @@ internal static class NifAlphaClassifier
         // therefore writes depth (its kept cutout texels are opaque). Keep it a blend but flag it
         // depth-writing, so the renderer keeps the blend yet writes depth and draws it before the water pass
         // (water then height-sorts against it). Plain alpha-blend (no test) does not write depth.
-        var depthWritingBlend = hasAlphaBlend && hasAlphaTest && !isHair;
+        //
+        // Threshold gate: the depth-writing hoist is only sound when the test actually CUTS the shape out —
+        // kept texels then approximate opaque geometry (NVSeaPlant02: threshold 124). A trivial threshold
+        // keeps near-invisible texels (FXMistLow01Long: blend+test at threshold 1, a 95%-transparent mist
+        // sheet), and hoisting that writes a full-quad depth footprint that punches holes in the water
+        // drawn after it. The engine writes Z for both, but only gets away with it because its water draws
+        // BEFORE the whole alpha pass; our water pass sits between the hoisted and deferred blend lists, so
+        // low-threshold blend+test stays a plain sorted blend with Z-write off.
+        const int depthWriteCutoutMinThreshold = 32;
+        var depthWritingBlend = hasAlphaBlend && hasAlphaTest && !isHair &&
+                                alphaTestThreshold >= depthWriteCutoutMinThreshold;
 
         // Hair / brow / lash submeshes use alpha-to-coverage instead of plain blend (the engine renders these
         // via BSRenderState::SetAlphaToCoverageEnable to avoid strand stacking / brown forehead patches).
