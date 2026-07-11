@@ -38,6 +38,24 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
     private const float SunDiscHalfSize = Radius * 0.040f;
     private const float SunGlareHalfSize = Radius * 0.160f;
     private const float GlareAlpha = 0.5f; // the glare halo is fainter than the disc
+
+    // Moon glow-halo suppression exponent (see sky_billboard.frag: alpha = pow(texel.a, exp)). The moon
+    // textures (masser/secunda) bake a bright DISC at alpha~1 plus a soft GLOW HALO at low alpha; drawn
+    // straight (exp=1) the halo reads as an over-opaque smear around the moon (the "moon glow/halo too
+    // opaque" report). exp>1 leaves the disc (alpha~1) intact and drives the halo toward transparent.
+    // 1.0 = disc+halo drawn as authored; higher = more halo suppression. GUI taste tuning is owed —
+    // overridable via FALLOUT_VIEWER_MOON_HALO for that pass.
+    private const float DefaultMoonGlowExponent = 2.2f;
+    private static readonly float MoonGlowExponent = ResolveMoonGlowExponent();
+
+    private static float ResolveMoonGlowExponent()
+    {
+        var raw = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_MOON_HALO");
+        return float.TryParse(raw, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) && v >= 1f
+            ? v
+            : DefaultMoonGlowExponent;
+    }
     // Moon half-extents are NOT a shared constant any more: each engine draws a different number of moons
     // at different apparent sizes, so the per-game SkyMoonProfile supplies moonHalfSize/moon2HalfSize per
     // draw (FNV/Skyrim decompile-grounded, the rest hand-tuned). See SkyMoonProfile.
@@ -138,39 +156,42 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
         if (_disposed) return;
 
         // Sun (day): glare halo first (so the disc reads on top), then the disc. Both additive.
+        // glowExp = 1 → the disc/glare are drawn exactly as authored (no halo suppression).
         if (sunFade > 0.001f && sunDir.Z > -0.05f)
         {
             if (sunGlareTex != NoTexture)
             {
                 Draw(_psoAdditive, viewProj, camPos, camRight, camUp, sunDir,
-                    SunGlareHalfSize, sunFade * GlareAlpha, sunGlareTex, sunColor, 1f);
+                    SunGlareHalfSize, sunFade * GlareAlpha, sunGlareTex, sunColor, 1f, glowExp: 1f);
             }
 
             if (sunDiscTex != NoTexture)
             {
                 Draw(_psoAdditive, viewProj, camPos, camRight, camUp, sunDir,
-                    SunDiscHalfSize, sunFade, sunDiscTex, sunColor, 1f);
+                    SunDiscHalfSize, sunFade, sunDiscTex, sunColor, 1f, glowExp: 1f);
             }
         }
 
         // Moon(s) (night): alpha-blended lit discs. The primary moon plus an optional second moon
         // (Secunda for the two-moon TES games), each sized by the caller's per-game SkyMoonProfile.
+        // MoonGlowExponent suppresses the texture's over-opaque glow halo (keeps the disc).
         if (moonFade > 0.001f && moonDir.Z > -0.05f && moonTex != NoTexture)
         {
             Draw(_psoAlpha, viewProj, camPos, camRight, camUp, moonDir,
-                moonHalfSize, moonFade, moonTex, Vector3.One, 1f);
+                moonHalfSize, moonFade, moonTex, Vector3.One, 1f, glowExp: MoonGlowExponent);
         }
 
         if (moon2Fade > 0.001f && moon2Dir.Z > -0.05f && moon2Tex != NoTexture)
         {
             Draw(_psoAlpha, viewProj, camPos, camRight, camUp, moon2Dir,
-                moon2HalfSize, moon2Fade, moon2Tex, Vector3.One, 1f);
+                moon2HalfSize, moon2Fade, moon2Tex, Vector3.One, 1f, glowExp: MoonGlowExponent);
         }
     }
 
     private void Draw(
         ID3D12PipelineState pso, Matrix4x4 viewProj, Vector3 camPos, Vector3 camRight, Vector3 camUp,
-        Vector3 dir, float halfSize, float fade, uint texIndex, Vector3 tint, float baseAlpha)
+        Vector3 dir, float halfSize, float fade, uint texIndex, Vector3 tint, float baseAlpha,
+        float glowExp)
     {
         var c = new BillboardConstants
         {
@@ -178,7 +199,7 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
             CenterDirRadius = new Vector4(dir, Radius),
             RightHalfSize = new Vector4(camRight, halfSize),
             UpFade = new Vector4(camUp, fade),
-            CamPos = new Vector4(camPos, 0f),
+            CamPos = new Vector4(camPos, glowExp),
             Tint = new Vector4(tint, baseAlpha),
             TexIndex = texIndex,
         };

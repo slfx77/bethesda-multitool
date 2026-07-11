@@ -13,7 +13,7 @@ cbuffer Billboard : register(b0)
     float4 uCenterDirRadius;
     float4 uRightHalfSize;
     float4 uUpFade;          // w = fade (0..1)
-    float4 uCamPos;          // xyz = camera world pos, w unused
+    float4 uCamPos;          // xyz = camera world pos, w = glow-suppression exponent (>=1)
     float4 uTint;            // rgb = tint, a = base alpha
     uint4  uTexIndex;        // x = bindless texture index
 };
@@ -28,6 +28,11 @@ float4 main(PSInput input) : SV_Target
 {
     float4 texel = textures[NonUniformResourceIndex(uTexIndex.x)].Sample(sSky, input.vUv);
     float3 rgb = texel.rgb * uTint.rgb;
-    float alpha = texel.a * uTint.a * uUpFade.w;
+    // Glow-suppression exponent (uCamPos.w, floored at 1). The full-brightness DISC region of a
+    // celestial texture sits at alpha~1 and is unchanged by any exponent; the soft GLOW HALO sits at
+    // low alpha and pow(a, exp>1) drives it toward transparent — so the moon's over-opaque halo can be
+    // tuned down without shrinking the disc. Sun draws pass exp=1 (identity), so they are untouched.
+    float glowExp = max(uCamPos.w, 1.0);
+    float alpha = pow(saturate(texel.a), glowExp) * uTint.a * uUpFade.w;
     return float4(rgb, alpha);
 }
