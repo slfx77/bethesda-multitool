@@ -13,6 +13,15 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 internal static class NifParticleSystemExtractor
 {
     /// <summary>
+    ///     Env-gated per-effect origin diagnostic (<c>FALLOUT_VIEWER_NIF_DROP_DIAG=1</c> — shared with the
+    ///     shape-drop diagnostic): logs each particle system's resolved placement so an effect rendering
+    ///     away from its intended origin can be attributed (wrong parent lookup, root-identity early-out,
+    ///     emitter-object frame) without a debugger.
+    /// </summary>
+    private static readonly bool OriginDiagnosticsEnabled =
+        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_NIF_DROP_DIAG") == "1";
+
+    /// <summary>
     ///     Find every NiParticleSystem, bake it, and append the resulting quad cloud(s) to
     ///     <paramref name="model" />. <paramref name="worldTransforms" /> + <paramref name="nodeChildren" />
     ///     come from the scene-graph walk (used to place each system within the NIF). No-op when the NIF has
@@ -44,6 +53,27 @@ internal static class NifParticleSystemExtractor
             // Mesh emitters (e.g. NV whirlwind columns) emit from a volume mesh, not a point — derive that
             // volume's AABB in the system's local frame so the baker fills the column instead of a blob.
             ResolveMeshEmitterBounds(data, nif, def, systemWorld, worldTransforms);
+
+            // Volume emitters: re-derive the emitter-object frame from the scene-graph walk. The parser
+            // seeded EmitterObjectTransform with the object's raw LOCAL transform, which is only correct
+            // when the object is a direct child of the system node. The engine spawns in the emitter
+            // OBJECT's world frame — when the object is the system's parent node (self-reference) or lives
+            // elsewhere in the graph, the local read double-applies or skips ancestor transforms and the
+            // whole effect renders away from its authored origin. Same fix-up mesh emitters already use:
+            // express the emitter frame relative to the system (emitterWorld · systemWorld⁻¹).
+            ResolveVolumeEmitterFrame(def, systemWorld, worldTransforms, i);
+
+            if (OriginDiagnosticsEnabled)
+            {
+                var name = NifBlockParsers.ReadBlockName(data, nif.Blocks[i], nif) ?? "<unnamed>";
+                var spawn = Vector3.Transform(
+                    def.Emitter.EmitterObjectTransform.Translation, systemWorld);
+                Console.WriteLine(
+                    $"[psys-origin] block {i} '{name}' shape={def.Emitter.Shape} " +
+                    $"emitterObj={def.Emitter.EmitterObjectIndex} " +
+                    $"systemWorldT=({systemWorld.Translation.X:F1},{systemWorld.Translation.Y:F1},{systemWorld.Translation.Z:F1}) " +
+                    $"spawnT=({spawn.X:F1},{spawn.Y:F1},{spawn.Z:F1})");
+            }
 
             var baked = NifParticleBaker.Bake(def);
             if (baked.Count == 0)
@@ -95,6 +125,38 @@ internal static class NifParticleSystemExtractor
         var local = NifObjectBlockReader.ParseNiAVObjectTransform(
             data, nif.Blocks[psIndex], nif.BsVersion, nif.BinaryVersion, nif.IsBigEndian, nif.HasInlineStrings);
         return local * parentWorld;
+    }
+
+    /// <summary>
+    ///     Re-derive a volume emitter's object frame relative to the system from the scene-graph walk
+    ///     (<c>emitterWorld · systemWorld⁻¹</c>). Three cases: emitter object == the system block itself
+    ///     ⇒ Identity (the parser's raw local read would double-apply the system transform); emitter object
+    ///     found in the walk ⇒ world-relative frame (correct wherever the object sits in the graph); not
+    ///     found (not a walked node type) ⇒ keep the parser's direct-child local read.
+    /// </summary>
+    private static void ResolveVolumeEmitterFrame(
+        ParticleSystemDefinition def, Matrix4x4 systemWorld,
+        IReadOnlyDictionary<int, Matrix4x4> worldTransforms, int psIndex)
+    {
+        var emitter = def.Emitter;
+        if (emitter is null || emitter.EmitterObjectIndex < 0 ||
+            emitter.Shape is not (ParticleEmitterShape.Box or ParticleEmitterShape.Sphere
+                or ParticleEmitterShape.Cylinder))
+        {
+            return;
+        }
+
+        if (emitter.EmitterObjectIndex == psIndex)
+        {
+            emitter.EmitterObjectTransform = Matrix4x4.Identity;
+            return;
+        }
+
+        if (worldTransforms.TryGetValue(emitter.EmitterObjectIndex, out var emitterWorld) &&
+            Matrix4x4.Invert(systemWorld, out var invSystemWorld))
+        {
+            emitter.EmitterObjectTransform = emitterWorld * invSystemWorld;
+        }
     }
 
     /// <summary>

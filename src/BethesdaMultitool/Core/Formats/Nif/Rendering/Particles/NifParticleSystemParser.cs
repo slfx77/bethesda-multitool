@@ -494,6 +494,7 @@ internal static class NifParticleSystemParser
         var shape = ParticleEmitterShape.Point;
         float width = 0, height = 0, depth = 0, radius = 0;
         var emitterObjectTransform = Matrix4x4.Identity;
+        var emitterObjectIndex = -1;
         List<int> meshIndices = [];
         var emissionAxis = Vector3.UnitZ; // +Z = declination reference for volume emitters (mesh emitter overrides)
 
@@ -504,6 +505,7 @@ internal static class NifParticleSystemParser
                 // Volume emitter: Emitter Object(Ptr 4) then Width, Height, Depth.
                 var emitterObj = afterBase + 4 <= end ? BinaryUtils.ReadInt32(data, afterBase, be) : -1;
                 emitterObjectTransform = ResolveObjectTransform(data, nif, emitterObj);
+                emitterObjectIndex = emitterObj;
                 var v = afterBase + 4;
                 if (v + 12 <= end)
                 {
@@ -516,6 +518,7 @@ internal static class NifParticleSystemParser
             {
                 var emitterObj = afterBase + 4 <= end ? BinaryUtils.ReadInt32(data, afterBase, be) : -1;
                 emitterObjectTransform = ResolveObjectTransform(data, nif, emitterObj);
+                emitterObjectIndex = emitterObj;
                 var v = afterBase + 4;
                 if (v + 4 <= end)
                 {
@@ -528,6 +531,7 @@ internal static class NifParticleSystemParser
             {
                 var emitterObj = afterBase + 4 <= end ? BinaryUtils.ReadInt32(data, afterBase, be) : -1;
                 emitterObjectTransform = ResolveObjectTransform(data, nif, emitterObj);
+                emitterObjectIndex = emitterObj;
                 var v = afterBase + 4;
                 if (v + 8 <= end)
                 {
@@ -574,6 +578,7 @@ internal static class NifParticleSystemParser
             Depth = depth,
             Radius = radius,
             EmitterObjectTransform = emitterObjectTransform,
+            EmitterObjectIndex = emitterObjectIndex,
             EmitterMeshIndices = meshIndices,
         };
 

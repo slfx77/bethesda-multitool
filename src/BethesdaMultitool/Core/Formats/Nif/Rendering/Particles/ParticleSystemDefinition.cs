@@ -80,8 +80,17 @@ internal sealed class ParticleEmitterDefinition : ParticleModifierDefinition
     public float Depth { get; init; }
     public float Radius { get; init; }
 
-    /// <summary>Local transform of the emitter object (volume emitters), relative to the system node.</summary>
-    public Matrix4x4 EmitterObjectTransform { get; init; } = Matrix4x4.Identity;
+    /// <summary>
+    ///     Transform of the emitter object (volume emitters) relative to the system node. The parser seeds it
+    ///     with the emitter object's own LOCAL transform (correct only when the object is a direct child of
+    ///     the system); the extractor re-derives it as <c>emitterWorld · inverse(systemWorld)</c> from the
+    ///     scene-graph walk when the emitter object resolves — the same frame fix-up mesh emitters use.
+    /// </summary>
+    public Matrix4x4 EmitterObjectTransform { get; set; } = Matrix4x4.Identity;
+
+    /// <summary>Block index of the volume emitter's Emitter Object node (-1 when absent), so the extractor
+    /// can resolve its WORLD transform from the scene-graph walk instead of trusting the raw local read.</summary>
+    public int EmitterObjectIndex { get; init; } = -1;
 
     /// <summary>For mesh emitters: block indices of the emitter-volume meshes (NiPSysMeshEmitter.Emitter Meshes).
     /// These are suppressed from rendering and used to derive the spawn volume (MVP: their AABB as a box).</summary>
