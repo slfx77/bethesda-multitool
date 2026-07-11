@@ -26,6 +26,18 @@ internal sealed class Tes3RefDraft
     /// <inheritdoc cref="DestX" />
     public float DestY { get; set; }
 
+    /// <inheritdoc cref="DestX" />
+    public float DestZ { get; set; }
+
+    /// <summary>DODT destination rotation (radians) — the arrival facing at the teleport point.</summary>
+    public float DestRotX { get; set; }
+
+    /// <inheritdoc cref="DestRotX" />
+    public float DestRotY { get; set; }
+
+    /// <inheritdoc cref="DestRotX" />
+    public float DestRotZ { get; set; }
+
     /// <summary>DNAM destination cell NAME — present only when the door leads to an interior cell.</summary>
     public string? DestinationCellName { get; set; }
 }
@@ -146,6 +158,10 @@ internal static class Tes3CellParser
                 reference.HasTeleportDestination = true;
                 reference.DestX = c.ReadFloat();
                 reference.DestY = c.ReadFloat();
+                reference.DestZ = c.ReadFloat();
+                reference.DestRotX = c.ReadFloat();
+                reference.DestRotY = c.ReadFloat();
+                reference.DestRotZ = c.ReadFloat();
                 break;
             case "DNAM":
                 reference.DestinationCellName = c.ReadRemainingString();

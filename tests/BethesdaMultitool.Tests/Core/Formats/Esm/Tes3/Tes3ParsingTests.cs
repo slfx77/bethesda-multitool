@@ -213,7 +213,7 @@ public class Tes3ParsingTests
         AppendSub(stream, "DATA", CellHeader(flags: 0, gridX: -2, gridY: -9));
         AppendSub(stream, "FRMR", [1, 0, 0, 0]);
         AppendSub(stream, "NAME", "ex_nord_door_01\0"u8.ToArray());
-        AppendSub(stream, "DODT", DoorDestination(x: 100f, y: 200f));
+        AppendSub(stream, "DODT", DoorDestination(x: 100f, y: 200f, z: 50f, rotZ: 1.5f));
         AppendSub(stream, "DNAM", "Seyda Neen, Arrille's Tradehouse\0"u8.ToArray());
         AppendSub(stream, "DATA", new byte[24]);
         var data = stream.ToArray();
@@ -224,6 +224,8 @@ public class Tes3ParsingTests
         Assert.True(reference.HasTeleportDestination);
         Assert.Equal(100f, reference.DestX);
         Assert.Equal(200f, reference.DestY);
+        Assert.Equal(50f, reference.DestZ);
+        Assert.Equal(1.5f, reference.DestRotZ);
         Assert.Equal("Seyda Neen, Arrille's Tradehouse", reference.DestinationCellName);
     }
 
@@ -268,11 +270,13 @@ public class Tes3ParsingTests
         return data;
     }
 
-    private static byte[] DoorDestination(float x, float y)
+    private static byte[] DoorDestination(float x, float y, float z = 0f, float rotZ = 0f)
     {
         var data = new byte[24]; // pos xyz + rot xyz
         BinaryPrimitives.WriteSingleLittleEndian(data, x);
         BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(4), y);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(8), z);
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(20), rotZ);
         return data;
     }
 

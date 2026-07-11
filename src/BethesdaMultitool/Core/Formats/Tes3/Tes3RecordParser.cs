@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
+using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Games;
 
@@ -316,7 +317,15 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
                     RotZ = r.RotZ,
                     Scale = r.Scale,
                     DestinationCellFormId = ResolveTeleportDestination(
-                        r, interiorCellsByName, exteriorCellsByGrid)
+                        r, interiorCellsByName, exteriorCellsByGrid),
+                    // DODT arrival pose feeds the viewer's door warp (same shape as TES4 XTEL:
+                    // destination-cell coords + radian rotations).
+                    TeleportPosRot = r.HasTeleportDestination
+                        ? new PositionSubrecord(
+                            r.DestX, r.DestY, r.DestZ,
+                            r.DestRotX, r.DestRotY, r.DestRotZ,
+                            Offset: 0, IsBigEndian: false)
+                        : null
                 });
             }
 
