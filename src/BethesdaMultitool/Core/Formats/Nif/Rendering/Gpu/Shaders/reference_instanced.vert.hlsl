@@ -39,7 +39,12 @@ cbuffer InstanceDraw : register(b1)
     float4 uTextureState; // .x = BC5 normal decode, .y = leaf-billboard mode (>0.5)
     uint4  uTexIndices;
     uint   uInstanceBase;
-    uint3  uInstanceDrawPad;
+    // Per-submesh UV scroll offset, CPU-wrapped (frac(velocity × animClock)) so precision never
+    // drifts. Packs into the former uint3 padding — same 16-byte register, layout unchanged; the
+    // CPU zero-fills it for static submeshes, so the add below is a no-op until an animated
+    // submesh writes a real offset.
+    float2 uUvScroll;
+    uint   uInstanceDrawPad;
     float4 uSpecular; // xyz = specular tint, w = Phong exponent (0 = no specular highlight)
     // Camera world-space basis for per-card leaf billboards (from the inverse view matrix, same source
     // as SkyBillboardRenderer12). Only read when uTextureState.y marks a leaf submesh.
@@ -160,7 +165,7 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
 
     o.Position = mul(uViewProj, worldPos);
     o.vWorldPos = worldPos.xyz; // camera-relative world pos (matches the shader camera = 0 for fog/spec)
-    o.vTexCoord = input.aTexCoord;
+    o.vTexCoord = input.aTexCoord + uUvScroll;
     o.vVertexColor = input.aVertexColor;
     o.vTangent = mul((float3x3)world, input.aTangent);
     o.vBitangent = mul((float3x3)world, input.aBitangent);

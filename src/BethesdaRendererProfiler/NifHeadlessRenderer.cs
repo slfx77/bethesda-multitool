@@ -43,6 +43,7 @@ internal static class NifHeadlessRenderer
         float? branchDimming = null; // --branch-dimming: TREE CNAM BranchDimmingValue stand-in (0..1)
         float? litHour = null; // when set, bind real AtmosphereState lighting (sun+ambient) at this hour
         var azimuthDeg = 315f; // camera azimuth; override with --yaw to view a specific face
+        var animTime = 0f; // --anim-time: pins the animation clock (UV scroll / skinned pose) for deterministic captures
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -62,6 +63,7 @@ internal static class NifHeadlessRenderer
                 case "--bg": bgSpec = Next(args, ref i); break;
                 case "--lit": litHour = float.TryParse(Next(args, ref i), out var h) ? h : 13f; break;
                 case "--yaw": azimuthDeg = float.TryParse(Next(args, ref i), out var az) ? az : 315f; break;
+                case "--anim-time": animTime = float.TryParse(Next(args, ref i), out var at) ? at : 0f; break;
                 case "--textures-bsa" or "--textures-archive":
                     // Consume following tokens until the next flag.
                     while (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
@@ -247,7 +249,10 @@ internal static class NifHeadlessRenderer
                 }
                 target.Bind(cmd);
                 references.SetLeafBillboardBasis(camRight, camUp);
-                references.SetWind(Vector2.UnitX, 0f, 0f);
+                // --anim-time pins the renderer's animation clock (UV scroll offsets, skinned pose)
+                // to a fixed value: two renders at the same time are byte-identical, different times
+                // show the motion — the settle loop re-renders the SAME pose each iteration.
+                references.SetWind(Vector2.UnitX, 0f, animTime);
                 references.Render(viewProj, cylinder);
                 water.SetNifWaterPlanes(references.NifWaterPlanes);
                 var waterDraws = water.Render(viewProj, cylinder);

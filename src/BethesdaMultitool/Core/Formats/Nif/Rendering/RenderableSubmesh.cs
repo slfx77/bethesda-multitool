@@ -191,6 +191,14 @@ internal sealed class RenderableSubmesh
     public (float R, float G, float B)? AnimatedEmissiveColor { get; set; }
 
     /// <summary>
+    ///     Constant UV scroll velocity (UV units/second) resolved from a TES3-era NiUVController
+    ///     looping ramp (waterfalls, lava). Zero = no scroll. The renderer applies
+    ///     <c>uv += frac(velocity × animClock)</c> as a per-draw constant — the authored UVs stay
+    ///     untouched, so a renderer without an animation clock draws the static base frame.
+    /// </summary>
+    public System.Numerics.Vector2 UvScrollVelocity { get; set; }
+
+    /// <summary>
     ///     Pre-skinning vertex positions in world space (same layout as <see cref="Positions" />).
     ///     Populated only for skinned submeshes; used by boundary vertex stitching to identify
     ///     coincident vertices across different source NIFs, then cleared after stitching.

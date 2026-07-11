@@ -65,5 +65,8 @@ internal sealed record DecodedSubmesh12(
     // (without them, FO4 metal/gloss reads matte).
     string? EnvironmentMapTexturePath = null,
     float EnvironmentMapScale = 0f,
-    float EnvironmentMapSmoothness = 0f);
+    float EnvironmentMapSmoothness = 0f,
+    // TES3 NiUVController constant scroll (waterfalls, lava): UV units/second the renderer applies
+    // as a per-draw offset off the animation clock. Zero = static. Persisted in v32+.
+    Vector2 UvScrollVelocity = default);
 #endif

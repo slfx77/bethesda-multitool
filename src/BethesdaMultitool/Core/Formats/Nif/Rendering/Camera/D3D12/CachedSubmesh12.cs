@@ -137,5 +137,24 @@ internal sealed class CachedSubmesh12
 
     /// <summary>True when the effect material enables the view-angle opacity falloff.</summary>
     public bool HasEffectFalloff { get; init; }
+
+    /// <summary>
+    ///     Constant UV scroll velocity (UV units/second) from a TES3 NiUVController looping ramp
+    ///     (waterfalls, lava). Zero = static. The renderer fills the per-draw UV offset with
+    ///     <c>frac(velocity × animClock)</c> — batching is unaffected because the velocity is a
+    ///     property of the submesh, which IS the batch key.
+    /// </summary>
+    public Vector2 UvScrollVelocity { get; init; }
+
+    /// <summary>
+    ///     Per-frame skinned-pose vertex buffer override, set (or cleared) every frame by the CPU
+    ///     mesh skinner for animated skinned meshes; null = draw the static rest-pose VB. Ring-buffer
+    ///     backed — valid for the frame it was written, hence the clear-or-refresh-every-frame rule.
+    ///     Render-thread only.
+    /// </summary>
+    public VertexBufferView? AnimatedVertexBufferView { get; set; }
+
+    /// <summary>The vertex buffer the draw should bind this frame (animated override, else static).</summary>
+    public VertexBufferView EffectiveVertexBufferView => AnimatedVertexBufferView ?? VertexBufferView;
 }
 #endif

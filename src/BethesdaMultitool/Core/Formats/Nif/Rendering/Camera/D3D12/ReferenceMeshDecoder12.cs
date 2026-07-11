@@ -328,7 +328,8 @@ internal sealed class ReferenceMeshDecoder12
                     HasEffectFalloff: sub.EffectFalloff is not null,
                     EnvironmentMapTexturePath: hasEnvMap ? sub.EnvironmentMapTexturePath : null,
                     EnvironmentMapScale: hasEnvMap ? sub.EnvironmentMapScale : 0f,
-                    EnvironmentMapSmoothness: hasEnvMap ? sub.EnvironmentMapSmoothness : 0f));
+                    EnvironmentMapSmoothness: hasEnvMap ? sub.EnvironmentMapSmoothness : 0f,
+                    UvScrollVelocity: sub.UvScrollVelocity));
             }
 
             if (submeshes.Count == 0)
@@ -396,7 +397,8 @@ internal sealed class ReferenceMeshDecoder12
                 sub.HasEffectFalloff,
                 sub.EnvironmentMapTexturePath,
                 sub.EnvironmentMapScale,
-                sub.EnvironmentMapSmoothness));
+                sub.EnvironmentMapSmoothness,
+                sub.UvScrollVelocity));
         }
 
         return new ReferenceDecodedMeshPayload12(submeshes, decoded.CollisionPositions, decoded.CollisionTriangles);
@@ -439,7 +441,8 @@ internal sealed class ReferenceMeshDecoder12
                 sub.HasEffectFalloff,
                 sub.EnvironmentMapTexturePath,
                 sub.EnvironmentMapScale,
-                sub.EnvironmentMapSmoothness));
+                sub.EnvironmentMapSmoothness,
+                sub.UvScrollVelocity));
         }
 
         return new DecodedNifMesh12(submeshes, payload.CollisionPositions, payload.CollisionTriangles);

@@ -978,7 +978,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     // arg); black would tint everything out, so normalize to the no-op white.
                     EffectTint = sub.EffectTint == default ? Vector3.One : sub.EffectTint,
                     EffectFalloffParams = sub.EffectFalloffParams,
-                    HasEffectFalloff = sub.HasEffectFalloff
+                    HasEffectFalloff = sub.HasEffectFalloff,
+                    UvScrollVelocity = sub.UvScrollVelocity
                 });
             }
             catch (Exception ex)

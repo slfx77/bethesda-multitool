@@ -126,7 +126,12 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // nodes and AvoidNode hulls excluded (5f74a54c) — the decoded submesh SET changes for TES3 NIFs
     // (in_lava_1024 gains its three magma shapes and drops the white avoid hull). Warm v30 entries
     // kept serving the pre-fix decode, which is why the GUI still showed white lava after the fix.
-    internal const int DecoderVersion = 31;
+    // Bumped 31→32: NIF animation — new per-submesh UvScrollVelocity payload field (TES3
+    // NiUVController constant scroll: waterfalls, lava), and internally-skinned statics
+    // (Morrowind banners, FNV cloth flags) now decode REST-POSE-skinned instead of raw bind-pose
+    // geometry. Payload shape AND decoded positions change; warm v31 entries bake face-up banners
+    // with no scroll fields.
+    internal const int DecoderVersion = 32;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -351,6 +356,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         WriteNullableString(writer, submesh.EnvironmentMapTexturePath, MaxStringBytes);
         writer.Write(submesh.EnvironmentMapScale);
         writer.Write(submesh.EnvironmentMapSmoothness);
+        WriteVector2(writer, submesh.UvScrollVelocity);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -415,7 +421,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadBoolean(),
             ReadNullableString(reader, MaxStringBytes),
             reader.ReadSingle(),
-            reader.ReadSingle());
+            reader.ReadSingle(),
+            ReadVector2(reader));
     }
 
     private static void WriteVector2(BinaryWriter writer, Vector2 value)
@@ -493,4 +500,6 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     bool HasEffectFalloff = false,
     string? EnvironmentMapTexturePath = null,
     float EnvironmentMapScale = 0f,
-    float EnvironmentMapSmoothness = 0f);
+    float EnvironmentMapSmoothness = 0f,
+    // TES3 NiUVController constant scroll (v32+): UV units/second, zero = static.
+    Vector2 UvScrollVelocity = default);

@@ -695,6 +695,16 @@ internal static class NifGeometryExtractor
                     NifTextureAnimationEvaluator.ApplyInPlace(submesh.UVs, uvTransform);
                 }
 
+                // TES3-era NiUVController on the SHAPE (waterfalls, lava): a constant looping UV
+                // ramp becomes a per-submesh scroll velocity the renderer animates via a per-draw
+                // constant. Distinct from the NiTexturingProperty/NiTextureTransformController
+                // static bake above — that path never handled NiUVController.
+                if (submesh.UVs != null &&
+                    Animation.NifUvScrollResolver.TryResolve(data, nif, shapeIndex, out var uvScroll))
+                {
+                    submesh.UvScrollVelocity = uvScroll;
+                }
+
                 // Read animated emissive color from NiMaterialColorController chain
                 if (propRefs != null)
                 {
