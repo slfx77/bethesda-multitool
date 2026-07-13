@@ -1097,10 +1097,13 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     // GPU specular term (1A): xyz = specular tint, w = Phong exponent (glossiness). w == 0 is the
     // shader's "no specular" sentinel, so a disabled material uploads Vector4.Zero. Glossiness is floored
     // at 1 to avoid pow(_, 0) flattening the highlight across the whole surface.
+    // Emissive shapes ride their material glow tint in the otherwise-unused xyz (the decoder put it
+    // there; see ReferenceMeshDecoder12) with w = 0 so the specular sentinel stays off — the PS's
+    // emissive branch reads vSpecular.rgb as the glow color.
     private static Vector4 BuildSpecular(DecodedSubmesh12 sub) =>
-        sub.SpecularEnabled
-            ? new Vector4(sub.SpecularColor, MathF.Max(sub.Glossiness, 1f))
-            : Vector4.Zero;
+        sub.SpecularEnabled ? new Vector4(sub.SpecularColor, MathF.Max(sub.Glossiness, 1f))
+        : sub.IsEmissive ? new Vector4(sub.SpecularColor, 0f)
+        : Vector4.Zero;
 
     private static uint CheckedByteSize(int elementCount, uint elementSize) =>
         checked((uint)((long)elementCount * elementSize));

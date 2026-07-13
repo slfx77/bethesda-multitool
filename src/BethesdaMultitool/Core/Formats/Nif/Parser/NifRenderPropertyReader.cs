@@ -183,13 +183,54 @@ internal static class NifRenderPropertyReader
                 specB = BinaryUtils.ReadFloat(data, specularColorOffset + 8, nif.IsBigEndian);
             }
 
+            // Emissive color sits between the specular color and glossiness in every layout the
+            // spec/glossiness offsets already handle. FO3+ (BS > 26) appends an Emissive Mult float
+            // after Alpha; older streams have none (mult stays 1).
+            var emissiveOffset = specularColorOffset + 12;
+            var emR = 1f;
+            var emG = 1f;
+            var emB = 1f;
+            if (emissiveOffset + 12 <= end)
+            {
+                emR = BinaryUtils.ReadFloat(data, emissiveOffset, nif.IsBigEndian);
+                emG = BinaryUtils.ReadFloat(data, emissiveOffset + 4, nif.IsBigEndian);
+                emB = BinaryUtils.ReadFloat(data, emissiveOffset + 8, nif.IsBigEndian);
+            }
+
+            var emissiveMult = 1f;
+            if (nif.BsVersion > 26 && alphaOffset + 8 <= end)
+            {
+                emissiveMult = BinaryUtils.ReadFloat(data, alphaOffset + 4, nif.IsBigEndian);
+            }
+
             return new MaterialPropertyInfo(
                 BinaryUtils.ReadFloat(data, alphaOffset, nif.IsBigEndian),
                 BinaryUtils.ReadFloat(data, glossinessOffset, nif.IsBigEndian),
-                specR, specG, specB);
+                specR, specG, specB,
+                emR, emG, emB, emissiveMult, HasMaterial: true);
         }
 
         return defaultInfo;
+    }
+
+    /// <summary>
+    ///     The material's emissive glow color × Emissive Mult, or null when the property list has no
+    ///     NiMaterialProperty. For FO3/FNV SHADER_NOLIGHTING shapes this IS the rendered glow color —
+    ///     the diffuse is typically a white gradient sheet (e.g. shared\shadefade01.dds) that the
+    ///     emissive tints (NV_BarrelPile03's goo: white gradient × green (0.05, 1, 0) × 2).
+    /// </summary>
+    internal static (float R, float G, float B)? ReadMaterialEmissive(byte[] data, NifInfo nif,
+        List<int> propertyRefs)
+    {
+        var info = ReadMaterialProperty(data, nif, propertyRefs);
+        if (!info.HasMaterial)
+        {
+            return null;
+        }
+
+        return (info.EmissiveR * info.EmissiveMult,
+            info.EmissiveG * info.EmissiveMult,
+            info.EmissiveB * info.EmissiveMult);
     }
 
     private static int GetMaterialGlossinessOffset(NifInfo nif)
@@ -338,11 +379,18 @@ internal static class NifRenderPropertyReader
         byte SrcBlendMode,
         byte DstBlendMode);
 
-    /// <summary>Parsed NiMaterialProperty fields: overall alpha, glossiness, and specular color.</summary>
+    /// <summary>Parsed NiMaterialProperty fields: overall alpha, glossiness, specular color, and the
+    /// emissive color (× the FO3+ Emissive Mult when present). <see cref="HasMaterial" /> is false when
+    /// the property list carried no NiMaterialProperty at all (defaults returned).</summary>
     internal readonly record struct MaterialPropertyInfo(
         float Alpha,
         float Glossiness,
         float SpecularR,
         float SpecularG,
-        float SpecularB);
+        float SpecularB,
+        float EmissiveR = 1f,
+        float EmissiveG = 1f,
+        float EmissiveB = 1f,
+        float EmissiveMult = 1f,
+        bool HasMaterial = false);
 }

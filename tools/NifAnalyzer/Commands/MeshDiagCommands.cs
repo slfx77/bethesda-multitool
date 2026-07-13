@@ -323,9 +323,18 @@ internal static class MeshDiagCommands
         {
             var min = byte.MaxValue;
             byte max = 0;
-            for (var i = 3; i < colors.Length; i += 4)
+            var minRgb = byte.MaxValue;
+            byte maxRgb = 0;
+            for (var i = 0; i + 3 < colors.Length; i += 4)
             {
-                var alpha = colors[i];
+                for (var c = 0; c < 3; c++)
+                {
+                    var channel = colors[i + c];
+                    if (channel < minRgb) minRgb = channel;
+                    if (channel > maxRgb) maxRgb = channel;
+                }
+
+                var alpha = colors[i + 3];
                 if (alpha < min) min = alpha;
                 if (alpha > max) max = alpha;
             }
@@ -334,6 +343,17 @@ internal static class MeshDiagCommands
             {
                 parts.Add(FormattableString.Invariant($"vtxA {min / 255f:0.##}-{max / 255f:0.##}"));
             }
+
+            // RGB range matters for modulate (ZERO/SRC_COLOR) decals: their softness gradient is
+            // authored in the COLOR (white edge → dark center), invisible in the alpha columns.
+            if (minRgb < byte.MaxValue)
+            {
+                parts.Add(FormattableString.Invariant($"vtxRGB {minRgb / 255f:0.##}-{maxRgb / 255f:0.##}"));
+            }
+        }
+        else
+        {
+            parts.Add("noVtxColor");
         }
 
         return parts.Count == 0 ? "[dim]-[/]" : Markup.Escape(string.Join(", ", parts));

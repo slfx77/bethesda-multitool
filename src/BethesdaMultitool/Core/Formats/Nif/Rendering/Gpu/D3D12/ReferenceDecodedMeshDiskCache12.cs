@@ -133,7 +133,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // (Morrowind banners, FNV cloth flags) now decode REST-POSE-skinned instead of raw bind-pose
     // geometry. Payload shape AND decoded positions change; warm v31 entries bake face-up banners
     // with no scroll fields.
-    internal const int DecoderVersion = 32;
+    // Bumped 32→33: emissive shapes now carry their material emissive GLOW TINT in the
+    // (specular-disabled-on-emissive) SpecularColor slot — the FO3/FNV SHADER_NOLIGHTING formula
+    // texture × emissive (× mult). Warm v32 entries carry (0,0,0) there and would render emissive
+    // glows white (BarrelPile03's clipped goo).
+    internal const int DecoderVersion = 33;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

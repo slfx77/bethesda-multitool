@@ -26,6 +26,12 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 /// </summary>
 internal sealed class ReferenceMeshDecoder12
 {
+    /// <summary>Env-gated per-submesh decode diagnostic (shares FALLOUT_VIEWER_NIF_DROP_DIAG with
+    /// the extractor's drop/origin logs): prints the emissive-tint decision, vertex-color state, and
+    /// blend modes each decoded submesh ships to the GPU.</summary>
+    private static readonly bool DecodeDiagnosticsEnabled =
+        Environment.GetEnvironmentVariable("FALLOUT_VIEWER_NIF_DROP_DIAG") == "1";
+
     private readonly MeshArchiveSet _meshArchives;
     private readonly NifTextureResolver _textureResolver;
 
@@ -319,6 +325,34 @@ internal sealed class ReferenceMeshDecoder12
 
                 var specularColor = new Vector3(sub.SpecularColor.R, sub.SpecularColor.G, sub.SpecularColor.B);
                 var specularEnabled = ComputeSpecularEnabled(sub);
+                // Emissive (no-lighting/effect) shapes never take the specular path (spec is
+                // force-disabled below and the PS gates on non-emissive), so the specular-color
+                // slot carries their material emissive GLOW TINT instead: the engine renders
+                // texture × emissive (× mult) — e.g. BarrelPile03's goo is a white gradient sheet
+                // × green (0.05, 1, 0) × 2; without the tint it draws clipped white. Animated
+                // (controller) emissive wins over the static material color; no material = white.
+                // An ALL-ZERO emissive is treated as unauthored (the FNV WTHR "IsAuthored"
+                // convention): shipped no-lighting shapes with a black material emissive still
+                // render in-engine — SuperMutantBedding01's multiplicative shadow plane SHARES its
+                // mattress's material (emissive 0,0,0) and would otherwise multiply the frame to
+                // black — so black cannot be a modulator; fall back to no tint.
+                if (sub.IsEmissive)
+                {
+                    var glow = sub.AnimatedEmissiveColor ?? sub.EmissiveColor;
+                    specularColor = glow is { } g && (g.R > 0f || g.G > 0f || g.B > 0f)
+                        ? new Vector3(g.R, g.G, g.B)
+                        : Vector3.One;
+                }
+
+                if (DecodeDiagnosticsEnabled)
+                {
+                    Console.WriteLine(
+                        $"[decode-diag] '{sub.ShapeName}' emissive={sub.IsEmissive} " +
+                        $"tint=({specularColor.X:0.##},{specularColor.Y:0.##},{specularColor.Z:0.##}) " +
+                        $"matEmissive={sub.EmissiveColor} anim={sub.AnimatedEmissiveColor} " +
+                        $"useVtxColors={sub.UseVertexColors} vtxColors={(sub.VertexColors is null ? "null" : sub.VertexColors.Length.ToString())} " +
+                        $"blend={sub.SrcBlendMode}/{sub.DstBlendMode} diffuse={diffusePath ?? "(none)"}");
+                }
                 // The env term needs the _s map (mask + per-texel smoothness) even when the
                 // specular ENABLE flag is clear — fo76utils computes envMapScale from the raw
                 // strength before zeroing disabled specular.

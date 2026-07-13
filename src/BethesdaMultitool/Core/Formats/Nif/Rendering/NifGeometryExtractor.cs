@@ -748,6 +748,15 @@ internal static class NifGeometryExtractor
                     }
                 }
 
+                // Static material emissive: for self-illuminated shapes the NiMaterialProperty's
+                // Emissive Color (× FO3+ Emissive Mult) IS the glow color the engine renders — the
+                // diffuse is often just a white gradient sheet it tints. Read it whenever the shape
+                // ended up emissive so the renderer can modulate (null = no material = draw as-is).
+                if (propRefs != null && submesh.IsEmissive)
+                {
+                    submesh.EmissiveColor = NifBlockParsers.ReadMaterialEmissive(data, nif, propRefs);
+                }
+
                 if (skinning != null) model.WasSkinned = true;
                 model.Submeshes.Add(submesh);
                 model.ExpandBounds(submesh.Positions);

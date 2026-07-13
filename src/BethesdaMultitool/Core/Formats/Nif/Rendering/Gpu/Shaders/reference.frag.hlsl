@@ -339,7 +339,13 @@ float4 main(PSInput input) : SV_Target
 
     if (input.vRenderState.w > 0.5)
     {
-        shade = 1.0; // emissive / full-bright shapes (e.g. glow) — unaffected by scene lighting
+        // Emissive / full-bright shapes — unaffected by scene lighting. Their color is the
+        // MATERIAL EMISSIVE glow tint (× mult) modulating the texture, the FO3/FNV
+        // SHADER_NOLIGHTING output: BarrelPile03's goo sheets are a white radial gradient
+        // (shared\shadefade01.dds) × green (0.05, 1, 0) × 2 — without the tint they clip to
+        // pure white. The decoder rides the tint in vSpecular.rgb (specular is force-disabled
+        // on emissive shapes, so the slot is free); shapes without a material carry (1,1,1).
+        shade = input.vSpecular.rgb;
     }
 
     // Vertex color modulates the diffuse (vertexRgb is pre-neutralized for gradient shapes) —

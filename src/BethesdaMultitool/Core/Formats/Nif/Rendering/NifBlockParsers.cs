@@ -385,6 +385,12 @@ internal static class NifBlockParsers
         return NifRenderPropertyReader.ReadAnimatedEmissiveColor(data, nif, propertyRefs);
     }
 
+    internal static (float R, float G, float B)? ReadMaterialEmissive(
+        byte[] data, NifInfo nif, List<int> propertyRefs)
+    {
+        return NifRenderPropertyReader.ReadMaterialEmissive(data, nif, propertyRefs);
+    }
+
     internal static byte[] ReadVertexColors(byte[] data, int offset, int numVerts, bool be)
     {
         return NifGeometryDataReader.ReadVertexColors(data, offset, numVerts, be);

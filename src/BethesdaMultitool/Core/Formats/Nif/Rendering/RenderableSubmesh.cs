@@ -191,6 +191,15 @@ internal sealed class RenderableSubmesh
     public (float R, float G, float B)? AnimatedEmissiveColor { get; set; }
 
     /// <summary>
+    ///     Static material emissive glow color (NiMaterialProperty Emissive Color × Emissive Mult),
+    ///     read for self-illuminated (SHADER_NOLIGHTING / effect) shapes. This IS the engine's glow
+    ///     color — the diffuse of such shapes is typically a white gradient sheet the emissive tints
+    ///     (NV_BarrelPile03's goo: white shadefade01.dds × green (0.05, 1, 0) × 2 — without this the
+    ///     glow renders clipped white). Null when the shape has no NiMaterialProperty (render as-is).
+    /// </summary>
+    public (float R, float G, float B)? EmissiveColor { get; set; }
+
+    /// <summary>
     ///     Constant UV scroll velocity (UV units/second) resolved from a TES3-era NiUVController
     ///     looping ramp (waterfalls, lava). Zero = no scroll. The renderer applies
     ///     <c>uv += frac(velocity × animClock)</c> as a per-draw constant — the authored UVs stay
