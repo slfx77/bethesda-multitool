@@ -136,6 +136,7 @@ public sealed partial class WorldView3DControl
                 ShowMarkers = _showMarkers,
                 ShowImposters = BethesdaMultitool.Core.EnvironmentVariables.IsEnabled(
                     BethesdaMultitool.Core.EnvironmentVariables.Viewer.ShowImposters),
+                AnimationsEnabled = _animationsEnabled, // persist the toolbar toggle across reloads
             };
             _references.SetHiddenCategories(_hiddenCategories);
             Log.Info("WorldView3DControl: reference pipeline initialized ({0} meshes BSA(s), {1} textures BSA(s)).",

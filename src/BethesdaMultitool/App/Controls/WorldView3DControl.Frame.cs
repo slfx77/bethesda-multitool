@@ -382,7 +382,8 @@ public sealed partial class WorldView3DControl
         var poseKey = SunShadowMath.BuildKey(_lastResolvedSunDirection, anchor, lastRadius, 0);
         var contentVersion = HashCode.Combine(
             _references.BatchContentVersion, _terrain?.ContentVersion ?? 0);
-        var animated = _references.ShadowDrawsIncludeAnimatedLeaves;
+        var animated = _references.ShadowDrawsIncludeAnimatedLeaves
+                       || _references.ShadowDrawsIncludeAnimatedMeshes;
 
         _shadowContentThrottle++;
         var poseChanged = !_shadowMap.HasContent || poseKey != _shadowPoseKey;

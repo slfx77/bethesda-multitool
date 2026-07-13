@@ -1,14 +1,23 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 /// <summary>
-///     Resolves the play window for an ambient animated static from its text-key markers.
+///     Resolves the play window for an ambient animated static (Morrowind banners, hanging cloth).
 ///     <para>
-///         CLIP POLICY STAND-IN (labeled): the engine's group choice for always-animated statics
-///         hasn't been decompiled. Morrowind banners author Idle/Idle2/Idle3 of increasing motion
-///         and an explicit "Idle3: Loop Start/Stop" window — we play the LAST Idle&lt;N&gt; group's
-///         loop window (else its start/stop). No text keys → the union of the tracks' key ranges.
-///         Verify sway choice against OpenMW as a black-box oracle; the policy is one method to
-///         change if it disagrees.
+///         CLIP POLICY (labeled stand-in). Passive always-animated decor in Morrowind is driven by
+///         auto-playing controllers (NiBSAnimationNode-era): the engine loops the WHOLE authored
+///         controller range and does not use the NiTextKeyExtraData group markers for selection —
+///         those "Idle/Idle2/Idle3" groups are the actor-animation PlayGroup vocabulary, which does
+///         not apply to a placed prop. So we loop the full key-time span, which returns the rig to its
+///         rest (hang) pose at the wrap instead of parking it in the middle of one sub-window.
+///     </para>
+///     <para>
+///         This deliberately REPLACES the earlier "loop the last Idle&lt;N&gt; group's Loop window"
+///         heuristic: for <c>furn_banner_tavern_01</c> that isolated Idle3's window (2.333–3.667),
+///         whose keys swing the root −46°…−85° about X — a hanging banner stuck ~65° off vertical
+///         (near horizontal) every frame. Full-range playback instead plays the gentle Idle2 build-up
+///         and the stronger Idle3 gust and settles back to the hang each 4 s cycle. Whether the engine
+///         instead sustains only Idle3's marked loop (a stronger, constant billow) is the open
+///         question for the OpenMW black-box oracle; this is the one method to change if it disagrees.
 ///     </para>
 /// </summary>
 internal static class NifAnimationClipSelector
@@ -17,89 +26,8 @@ internal static class NifAnimationClipSelector
 
     internal static NifAnimClip? SelectClip(NifAnimTextKey[] textKeys, IReadOnlyList<NifNodeTrack?> tracks)
     {
-        var fromTextKeys = SelectFromTextKeys(textKeys);
-        if (fromTextKeys is { } clip)
-        {
-            return clip;
-        }
-
+        _ = textKeys; // retained on NifMeshAnimation for diagnostics; not used for passive-decor selection
         return SelectFromKeyRanges(tracks);
-    }
-
-    private static NifAnimClip? SelectFromTextKeys(NifAnimTextKey[] textKeys)
-    {
-        // Group markers by clip name: "<name>: Start" / "Stop" / "Loop Start" / "Loop Stop".
-        Dictionary<string, (float? Start, float? Stop, float? LoopStart, float? LoopStop)> groups =
-            new(StringComparer.OrdinalIgnoreCase);
-        foreach (var key in textKeys)
-        {
-            var split = key.Label.IndexOf(':');
-            if (split <= 0)
-            {
-                continue;
-            }
-
-            var name = key.Label[..split].Trim();
-            var marker = key.Label[(split + 1)..].Trim();
-            var group = groups.TryGetValue(name, out var g) ? g : default;
-            switch (marker.ToLowerInvariant())
-            {
-                case "start": group.Start ??= key.Time; break;
-                case "stop": group.Stop ??= key.Time; break;
-                case "loop start": group.LoopStart ??= key.Time; break;
-                case "loop stop": group.LoopStop ??= key.Time; break;
-            }
-
-            groups[name] = group;
-        }
-
-        // Prefer the highest-numbered Idle<N> group ("Idle" counts as 1).
-        string? bestName = null;
-        var bestRank = -1;
-        foreach (var name in groups.Keys)
-        {
-            var rank = IdleRank(name);
-            if (rank > bestRank)
-            {
-                bestRank = rank;
-                bestName = name;
-            }
-        }
-
-        if (bestName is null)
-        {
-            return null;
-        }
-
-        var best = groups[bestName];
-        if (best is { LoopStart: { } loopStart, LoopStop: { } loopStop } && loopStop > loopStart)
-        {
-            return new NifAnimClip(loopStart, loopStop, Loops: true);
-        }
-
-        if (best is { Start: { } start, Stop: { } stop } && stop > start)
-        {
-            return new NifAnimClip(start, stop, Loops: true);
-        }
-
-        return null; // degenerate window (e.g. "Idle: Start/Stop" both at 0) → not animated
-    }
-
-    /// <summary>-1 = not an idle group; "Idle" = 1; "Idle<N>" = N.</summary>
-    private static int IdleRank(string name)
-    {
-        if (!name.StartsWith("Idle", StringComparison.OrdinalIgnoreCase))
-        {
-            return -1;
-        }
-
-        var suffix = name[4..].Trim();
-        if (suffix.Length == 0)
-        {
-            return 1;
-        }
-
-        return int.TryParse(suffix, out var n) ? n : -1;
     }
 
     private static NifAnimClip? SelectFromKeyRanges(IReadOnlyList<NifNodeTrack?> tracks)

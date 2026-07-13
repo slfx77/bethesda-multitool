@@ -24,7 +24,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // viewProj (64) + the 4 SpeedTree wind-v2 sway matrices (4 × 64) — see reference_instanced.vert.hlsl
     // PerFrame. The shadow pass keeps its own shorter PerFrame; its shader variant never reads the matrices.
     private const uint PerFrameByteSize = 64 + 256;
-    private const uint PerDrawByteSize = 224;
+    private const uint PerDrawByteSize = 240;
     // 3 float4 (material) + uint4 (tex indices) + uint base + uint3 pad + float4 specular
     // + float4 camRight + float4 camUp (leaf billboard basis) + float4 wind
     // + float4 effect tint + float4 effect falloff + float4 env map = 192 bytes.
@@ -111,6 +111,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// shadow into a slideshow that only advances on camera/sun changes).</summary>
     public bool ShadowDrawsIncludeAnimatedLeaves { get; private set; }
 
+    /// <summary>True when this frame's captured shadow casters include a KEYFRAME-ANIMATED mesh
+    /// (a CPU-skinned banner bound via its ring-buffer VB override) — same host contract as
+    /// <see cref="ShadowDrawsIncludeAnimatedLeaves" />: the map re-renders while one is casting.</summary>
+    public bool ShadowDrawsIncludeAnimatedMeshes { get; private set; }
+
     /// <summary>Arms the shadow-draw capture for the frame about to be rendered (clears the prior
     /// list). Must be followed by <see cref="RenderShadowDepth" /> within the same host frame when
     /// the map is re-rendered; the addresses go stale with the frame's ring allocations.
@@ -121,6 +126,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     {
         _shadowDraws.Clear();
         ShadowDrawsIncludeAnimatedLeaves = false;
+        ShadowDrawsIncludeAnimatedMeshes = false;
         _shadowCaptureArmed = true;
         _shadowCasterRingRadius = MathF.Max(casterRingRadius, 0f);
     }
@@ -170,6 +176,16 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // Default all-zero so non-viewer paths (captures, exports, headless) render trees static.
     private Vector4 _wind;
     private readonly Core.Formats.SpeedTree.SpeedTreeWindRig _windRig = new();
+
+    // NIF animation clock (seconds), captured from the SetWind timeSeconds the host already sends
+    // every frame. Drives UV-scroll offsets (NiUVController) and the CPU skinner's keyframe pose.
+    // Stays 0 on paths that never call SetWind → those render the authored base frame / rest pose.
+    private double _animationClockSeconds;
+    private readonly Animation.CpuMeshSkinner12 _skinner = new();
+
+    /// <summary>Master switch for NIF keyframe/UV playback (GUI "Animations" toggle). Off ⇒ UV
+    /// offsets stay (0,0) and the skinner clears its overrides — meshes draw their static rest pose.</summary>
+    public bool AnimationsEnabled { get; set; } = true;
     private readonly List<global::BethesdaMultitool.WorldSpatialCell> _candidateCells = new();
 
     // Candidates returned by the per-cell spatial broadphase before exact sphere/frustum cull.
@@ -515,6 +531,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public void SetWind(Vector2 direction, float strength, float timeSeconds)
     {
         _ = direction;
+        _animationClockSeconds = timeSeconds;
         _windRig.Tick(strength, timeSeconds);
         _wind = new Vector4(_windRig.RockAmount, _windRig.RockPhase, _windRig.RustleAmount, _windRig.RustlePhase);
     }
@@ -986,6 +1003,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // at 50k survivors.
                     _meshLocalRadius[r.MeshId] = mesh.LocalBoundsRadius;
                     _meshLocalBounds[r.MeshId] = (mesh.LocalBoundsMin, mesh.LocalBoundsMax);
+                    if (mesh.Animation is not null)
+                    {
+                        // Keyframe-animated mesh sighted this frame: (re-)register with the skinner
+                        // using the nearest-instance distance already computed for decode priority.
+                        _skinner.Register(mesh, pdx * pdx + pdy * pdy);
+                    }
                 }
             }
             if (mesh is null)
@@ -1198,6 +1221,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // (tolerant) survivor set — on build AND reuse frames — so the drawn set is always exact.
         _frameRefilterActive = _batchesWidened && hasFrustum;
         meshUploadMs = ElapsedMilliseconds(meshStarted);
+
+        // Keyframe playback: re-pose + CPU-skin every in-budget animated mesh into fresh ring
+        // allocations (or clear all overrides when disabled) BEFORE any pass binds a vertex buffer —
+        // both the opaque draws and the shadow capture below read EffectiveVertexBufferView.
+        _skinner.Tick(frameIndex, _ringBuffer, _animationClockSeconds, cylinder.Position, AnimationsEnabled);
 
         ID3D12PipelineState? currentPso = null;
         DrawOpaqueBatches(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref srvBindMs, ref drawCallMs, ref srvBinds, ref submeshDraws);
@@ -1631,6 +1659,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex,
                     sub.SpecularMap?.BindlessIndex ?? 0, sub.GradientMap?.BindlessIndex ?? 0),
                 drawStartInstance,
+                UvOffsetU: WrapUv(sub.UvScrollVelocity.X, UvScrollClock),
+                UvOffsetV: WrapUv(sub.UvScrollVelocity.Y, UvScrollClock),
                 WindMatrixValid: 1,
                 Specular: sub.Specular,
                 CameraRight: _leafBillboardRight,
@@ -1651,7 +1681,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             cbUpdateMs += ElapsedMilliseconds(cbStarted);
 
             var drawStarted = StartTiming();
-            cmd.IASetVertexBuffers(0, batchState.Submesh.VertexBufferView);
+            cmd.IASetVertexBuffers(0, batchState.Submesh.EffectiveVertexBufferView);
             cmd.IASetIndexBuffer(batchState.Submesh.IndexBufferView);
             if (drawCount > 0)
             {
@@ -1665,7 +1695,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 // frame's allocations are recycled, i.e. exactly the replay window. The replay's
                 // instance count INCLUDES the shadow-only casters appended after the main range.
                 _shadowDraws.Add(new ShadowDraw(
-                    sub.VertexBufferView, sub.IndexBufferView, sub.IndexCount,
+                    sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
                     instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount + shadowCount,
                     sub.AlphaTest));
                 if (sub.IsLeafBillboard && (_wind.X != 0f || _wind.Z != 0f))
@@ -1673,6 +1703,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // Swaying canopy in the map → the host re-renders it every frame (rock/rustle
                     // AMOUNTS gate motion; the phases advance regardless).
                     ShadowDrawsIncludeAnimatedLeaves = true;
+                }
+                if (sub.AnimatedVertexBufferView is not null)
+                {
+                    // A CPU-skinned pose is casting: its ring VB is only valid this frame, so the
+                    // host must re-render the map every frame it casts (same as animated leaves).
+                    ShadowDrawsIncludeAnimatedMeshes = true;
                 }
             }
             drawCallMs += ElapsedMilliseconds(drawStarted);
@@ -1798,6 +1834,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             EffectTint = new Vector4(draw.Submesh.EffectTint, draw.Submesh.HasEffectFalloff ? 1f : 0f),
             EffectFalloff = draw.Submesh.EffectFalloffParams,
             EnvMap = draw.Submesh.EnvMapState,
+            UvScroll = new Vector4(
+                WrapUv(draw.Submesh.UvScrollVelocity.X, UvScrollClock),
+                WrapUv(draw.Submesh.UvScrollVelocity.Y, UvScrollClock), 0f, 0f),
         };
         // Allocate before mutating PSO state so a soft-fail leaves the command list consistent.
         if (!_ringBuffer.TryAllocate(frameIndex, PerDrawByteSize, out var perDrawAlloc, GpuRingBuffer12.CbAlignment))
@@ -1814,7 +1853,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         cbUpdateMs += ElapsedMilliseconds(cbStarted);
 
         var drawStarted = StartTiming();
-        cmd.IASetVertexBuffers(0, draw.Submesh.VertexBufferView);
+        cmd.IASetVertexBuffers(0, draw.Submesh.EffectiveVertexBufferView);
         cmd.IASetIndexBuffer(draw.Submesh.IndexBufferView);
         cmd.DrawIndexedInstanced((uint)draw.Submesh.IndexCount, 1, 0, 0, 0);
         drawCallMs += ElapsedMilliseconds(drawStarted);
@@ -1863,6 +1902,24 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private static uint AlignUp(uint value, uint alignment) =>
         alignment == 0 ? value : ((value + alignment - 1) / alignment) * alignment;
 
+    // NiUVController scroll clock, gated by the Animations toggle (off ⇒ every offset is exactly 0,
+    // so a disabled frame is byte-identical to a pre-animation build).
+    private double UvScrollClock => AnimationsEnabled ? _animationClockSeconds : 0.0;
+
+    /// <summary>Fractional UV phase for a scrolling material: frac(velocity × clock), computed in
+    /// double so a long-running clock keeps sub-texel precision before the wrap. Zero velocity
+    /// returns exactly 0 — non-scrolling submeshes stay byte-static.</summary>
+    private static float WrapUv(float velocity, double clockSeconds)
+    {
+        if (velocity == 0f)
+        {
+            return 0f;
+        }
+
+        var phase = velocity * clockSeconds;
+        return (float)(phase - Math.Floor(phase));
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct PerDrawConstants
     {
@@ -1885,8 +1942,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         public Vector4 EffectTint;
         public Vector4 EffectFalloff;
         // FO4 cubemap environment mapping (uEnvMap): x = cube bindless slot (−1 until the cube
-        // texture is resident), y = envMapScale, z = material smoothness. Brings this to 224 bytes.
+        // texture is resident), y = envMapScale, z = material smoothness.
         public Vector4 EnvMap;
+        // uUvScroll: xy = fractional UV phase for scrolled materials (NiUVController — waterfalls
+        // draw on this blended path), zw unused. Brings this to 240 bytes.
+        public Vector4 UvScroll;
     }
 
     /// <summary>
@@ -1904,8 +1964,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         Vector4 TextureState,
         TexIndexQuad TexIndices,
         uint InstanceBase,
-        uint Padding0 = 0,
-        uint Padding1 = 0,
+        // uUvScroll: fractional UV phase for scrolled materials (NiUVController — waterfalls, lava).
+        // Occupies what were two padding uints, so the 192-byte layout is unchanged; writers that
+        // never fill them leave 0 = no scroll.
+        float UvOffsetU = 0,
+        float UvOffsetV = 0,
         // uWindMatrixValid: nonzero when this frame's PerFrame CB carries live wind-v2 sway matrices.
         // Writers that never upload them leave it 0 and the shader's sway path stays inert.
         uint WindMatrixValid = 0,

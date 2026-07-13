@@ -125,6 +125,10 @@
                           AutomationProperties.Name="Initially-disabled objects"
                           ToolTipService.ToolTip="Show objects flagged initially-disabled (press 7)"
                           Checked="DisabledCheckBox_Changed" Unchecked="DisabledCheckBox_Changed" />
+                <CheckBox x:Name="AnimationsCheckBox" IsChecked="True" Content="Animations"
+                          AutomationProperties.Name="Animations"
+                          ToolTipService.ToolTip="Play NIF animations (banner sway, waterfall and lava scrolling); off = static rest pose"
+                          Checked="AnimationsCheckBox_Changed" Unchecked="AnimationsCheckBox_Changed" />
               </StackPanel>
             </Flyout>
           </DropDownButton.Flyout>

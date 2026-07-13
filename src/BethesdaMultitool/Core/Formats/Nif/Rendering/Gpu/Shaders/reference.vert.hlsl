@@ -53,6 +53,9 @@ cbuffer PerDraw : register(b1)
     // FO4 cubemap environment mapping: x = cube bindless slot (< 0 = none/not yet resident),
     // y = envMapScale (fo76utils envScale × specular strength), z = material smoothness 0–1.
     float4 uEnvMap;
+    // NiUVController scroll: xy = fractional UV phase this frame (0 = static), zw unused.
+    // Must stay layout-matched with PerDrawConstants in ReferenceRenderer12.cs (240 bytes).
+    float4 uUvScroll;
 };
 
 struct VSInput
@@ -122,7 +125,7 @@ VSOutput main(VSInput input)
         float3 cornerDir = normalize(uCameraRight.xyz * input.aBitangent.x + uCameraUp.xyz * input.aBitangent.y);
         o.vWorldNormal = normalize(normalize(o.vWorldNormal) + cornerDir * uCameraRight.w);
     }
-    o.vTexCoord = input.aTexCoord;
+    o.vTexCoord = input.aTexCoord + uUvScroll.xy;
     o.vVertexColor = input.aVertexColor;
     o.vTangent = mul((float3x3)uWorld, input.aTangent);
     o.vBitangent = mul((float3x3)uWorld, input.aBitangent);

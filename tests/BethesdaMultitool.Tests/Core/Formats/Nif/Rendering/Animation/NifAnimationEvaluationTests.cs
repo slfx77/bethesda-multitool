@@ -73,44 +73,63 @@ public class NifAnimationEvaluationTests
     // ---- clip selector --------------------------------------------------------------------------
 
     [Fact]
-    public void ClipSelector_BannerKeySet_PicksIdle3LoopWindow()
+    public void ClipSelector_BannerTracks_LoopsFullAuthoredRange()
     {
-        // The exact marker set probed from furn_banner_tavern_01.nif.
-        NifAnimTextKey[] keys =
+        // Passive Morrowind decor loops its whole controller range (returns to the hang each cycle),
+        // NOT one text-key idle sub-window: furn_banner_tavern_01.nif's Root Bone track spans 0→4 s,
+        // so the play window is the full 0→4 even though "Idle3: Loop Start/Stop" mark 2.333–3.667.
+        var bannerRotKeys = new NifQuatKey[]
+        {
+            new(0f, Quaternion.Identity), new(0.667f, Quaternion.Identity),
+            new(1.333f, Quaternion.Identity), new(2f, Quaternion.Identity),
+            new(2.333f, Quaternion.Identity), new(2.667f, Quaternion.Identity),
+            new(3f, Quaternion.Identity), new(3.333f, Quaternion.Identity),
+            new(3.667f, Quaternion.Identity), new(4f, Quaternion.Identity),
+        };
+        var track = new NifNodeTrack(
+            "Root Bone", 1f, 0f,
+            NifKeyInterpolation.Quadratic, bannerRotKeys,
+            NifKeyInterpolation.Linear, [], NifKeyInterpolation.Linear, []);
+
+        NifAnimTextKey[] textKeys =
         [
-            new(0f, "Idle: Start"),
-            new(0f, "Idle: Stop"),
-            new(0f, "Idle2: Start"),
-            new(2f, "Idle2: Stop"),
-            new(2f, "Idle3: Start"),
-            new(2.333333f, "Idle3: Loop Start"),
-            new(3.666667f, "Idle3: Loop Stop"),
-            new(4f, "Idle3: Stop"),
+            new(0f, "Idle: Start"), new(0f, "Idle: Stop"),
+            new(0f, "Idle2: Start"), new(2f, "Idle2: Stop"),
+            new(2f, "Idle3: Start"), new(2.333333f, "Idle3: Loop Start"),
+            new(3.666667f, "Idle3: Loop Stop"), new(4f, "Idle3: Stop"),
         ];
 
-        var clip = NifAnimationClipSelector.SelectClip(keys, []);
+        var clip = NifAnimationClipSelector.SelectClip(textKeys, [track]);
 
         Assert.NotNull(clip);
-        Assert.Equal(2.333333f, clip.Value.Start, 4);
-        Assert.Equal(3.666667f, clip.Value.Stop, 4);
+        Assert.Equal(0f, clip.Value.Start, 4);
+        Assert.Equal(4f, clip.Value.Stop, 4);
         Assert.True(clip.Value.Loops);
     }
 
     [Fact]
-    public void ClipSelector_NoLoopMarkers_UsesStartStop()
+    public void ClipSelector_TextKeysIgnored_RangeComesFromTracks()
     {
-        NifAnimTextKey[] keys = [new(1f, "Idle2: Start"), new(3f, "Idle2: Stop")];
+        // Text-key group markers do not drive selection (they are actor-PlayGroup vocabulary, not a
+        // passive-prop control): the window is the track key span regardless of what the markers say.
+        NifAnimTextKey[] misleadingTextKeys = [new(2.333f, "Idle3: Loop Start"), new(3.667f, "Idle3: Loop Stop")];
+        var track = new NifNodeTrack(
+            "Bone", 1f, 0f,
+            NifKeyInterpolation.Linear,
+            [new(0f, Quaternion.Identity), new(3f, Quaternion.Identity)],
+            NifKeyInterpolation.Linear, [], NifKeyInterpolation.Linear, []);
 
-        var clip = NifAnimationClipSelector.SelectClip(keys, []);
+        var clip = NifAnimationClipSelector.SelectClip(misleadingTextKeys, [track]);
 
         Assert.NotNull(clip);
-        Assert.Equal(1f, clip.Value.Start);
+        Assert.Equal(0f, clip.Value.Start);
         Assert.Equal(3f, clip.Value.Stop);
     }
 
     [Fact]
-    public void ClipSelector_DegenerateWindow_ReturnsNull()
+    public void ClipSelector_NoMotionTracks_ReturnsNull()
     {
+        // No animated tracks (only degenerate text markers, no key motion) → not animated.
         NifAnimTextKey[] keys = [new(0f, "Idle: Start"), new(0f, "Idle: Stop")];
         Assert.Null(NifAnimationClipSelector.SelectClip(keys, []));
     }

@@ -108,6 +108,12 @@ public sealed partial class WorldView3DControl
         SetShowMarkers(EditorMarkersCheckBox.IsChecked == true);
     }
 
+    private void AnimationsCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetAnimationsEnabled(AnimationsCheckBox.IsChecked == true);
+    }
+
     private void ActivatorsCheckBox_Changed(object sender, RoutedEventArgs e)
     {
         if (_initializing) return;
@@ -177,6 +183,22 @@ public sealed partial class WorldView3DControl
         if (DisabledCheckBox is not null && DisabledCheckBox.IsChecked != on)
         {
             DisabledCheckBox.IsChecked = on;
+        }
+    }
+
+    /// <summary>NIF animation playback toggle (banner sway, waterfall/lava UV scroll). Default on.
+    /// Applies straight to the live reference renderer — off pauses playback at the rest pose /
+    /// base frame (render-time only, no rebuild).</summary>
+    private void SetAnimationsEnabled(bool on)
+    {
+        _animationsEnabled = on;
+        if (_references is not null)
+        {
+            _references.AnimationsEnabled = on;
+        }
+        if (AnimationsCheckBox is not null && AnimationsCheckBox.IsChecked != on)
+        {
+            AnimationsCheckBox.IsChecked = on;
         }
     }
 

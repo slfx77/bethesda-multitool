@@ -223,6 +223,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // across ESM reloads like _showDisabled).
     private bool _showMarkers = BethesdaMultitool.Core.EnvironmentVariables.IsEnabled(
         BethesdaMultitool.Core.EnvironmentVariables.Viewer.ShowMarkers);
+    // NIF animation playback (banner sway, waterfall/lava UV scroll). On by default; the toolbar
+    // toggle flips it live (persists across ESM reloads like _showMarkers). The
+    // FALLOUT_VIEWER_NIF_ANIMATION=0 kill-switch gates DECODE upstream; this only pauses playback.
+    private bool _animationsEnabled = true;
     // Placed-object categories hidden in the 3D view. Sky/glow props (DiamondCityGlow) start HIDDEN
     // (atmosphere-only meshes); Activators start VISIBLE (user feedback 2026-07-07: model-bearing
     // activators — the Anvil lighthouse fire bowl, flora — are real scenery and must render by
