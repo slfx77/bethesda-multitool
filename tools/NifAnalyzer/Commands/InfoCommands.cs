@@ -90,15 +90,15 @@ internal static class InfoCommands
         table.AddColumn(new TableColumn("Size").RightAligned());
         table.AddColumn("Type");
 
-        var offset = nif.BlockDataOffset;
         for (var i = 0; i < nif.NumBlocks; i++)
         {
-            var typeIdx = nif.BlockTypeIndices[i];
-            var typeName = nif.BlockTypes[typeIdx];
+            // Authoritative per-block offset (not a size accumulation): Morrowind/legacy blocks are not
+            // contiguous by size alone, so accumulating drifts after the first inline-name/pad gap.
+            var offset = nif.GetBlockOffset(i);
+            var typeName = nif.GetBlockTypeName(i);
             var size = nif.BlockSizes[i];
 
             table.AddRow(i.ToString(), $"0x{offset:X4}", size.ToString(), typeName);
-            offset += (int)size;
         }
 
         AnsiConsole.Write(table);

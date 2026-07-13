@@ -1,109 +1,66 @@
-using System.Buffers.Binary;
-using System.Text;
 using NifAnalyzer.Models;
-using static BethesdaMultitool.Core.Formats.Nif.Conversion.NifEndianUtils;
-using static BethesdaMultitool.Core.Utils.BinaryUtils;
+using CoreNifParser = BethesdaMultitool.Core.Formats.Nif.Parser.NifParser;
 
 namespace NifAnalyzer.Parsers;
 
 /// <summary>
-///     Parses NIF file headers.
+///     Parses NIF headers by delegating to the MAIN APPLICATION's parser
+///     (<c>BethesdaMultitool.Core.Formats.Nif.Parser.NifParser</c>) and projecting its authoritative
+///     result into <see cref="NifInfo" />. NifAnalyzer is a debugging aid FOR the main app, so it must
+///     decode NIFs with the app's own code — a forked header parser would read some formats differently
+///     (its old hand-rolled reader assumed the modern block-size-array layout and threw on Morrowind
+///     4.0.0.2, whose blocks are separated by inline type-name prefixes). The app parser handles every
+///     supported version (NetImmerse/Morrowind, legacy Gamebryo/Oblivion, and modern Bethesda) and
+///     hands back exact per-block offsets from its measure walk.
 /// </summary>
 internal static class NifParser
 {
     public static NifInfo Parse(byte[] data)
     {
-        var info = new NifInfo();
-        var pos = 0;
+        var core = CoreNifParser.Parse(data)
+                   ?? throw new InvalidDataException("Not a valid NIF file (the application parser returned null).");
 
-        // Read version string until newline
-        var nl = Array.IndexOf(data, (byte)0x0A, 0, Math.Min(128, data.Length));
-        if (nl < 0) throw new InvalidDataException("No newline in header");
-        info.VersionString = Encoding.ASCII.GetString(data, 0, nl);
-        pos = nl + 1;
+        // Rebuild a dedup table from the authoritative per-block type names so
+        // BlockTypes[BlockTypeIndices[i]] == the real type of block i for EVERY version — including
+        // Morrowind, which ships no on-disk block-types table (the app parser leaves TypeIndex = 0 and
+        // stores the name inline per block).
+        var typeIndexByName = new Dictionary<string, ushort>(StringComparer.Ordinal);
+        var blockTypes = new List<string>();
+        var blockTypeIndices = new ushort[core.Blocks.Count];
+        var blockSizes = new uint[core.Blocks.Count];
+        var blockOffsets = new int[core.Blocks.Count];
 
-        // Binary version (ALWAYS little-endian in header)
-        info.Version = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-        pos += 4;
-
-        // Endian flag (0 = big, 1 = little) for version >= 20.0.0.4
-        info.IsBigEndian = data[pos] == 0;
-        pos += 1;
-
-        // User version (ALWAYS little-endian)
-        info.UserVersion = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-        pos += 4;
-
-        // Num blocks (ALWAYS little-endian)
-        info.NumBlocks = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-        pos += 4;
-
-        // BS version (ALWAYS little-endian) if Bethesda format (user version >= 10)
-        if (info.UserVersion >= 10)
+        for (var i = 0; i < core.Blocks.Count; i++)
         {
-            info.BsVersion = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos));
-            pos += 4;
+            var block = core.Blocks[i];
+            if (!typeIndexByName.TryGetValue(block.TypeName, out var typeIndex))
+            {
+                typeIndex = (ushort)blockTypes.Count;
+                typeIndexByName[block.TypeName] = typeIndex;
+                blockTypes.Add(block.TypeName);
+            }
+
+            blockTypeIndices[i] = typeIndex;
+            blockSizes[i] = (uint)block.Size;
+            blockOffsets[i] = block.DataOffset;
         }
 
-        // Skip export info strings (3 ShortStrings)
-        for (var i = 0; i < 3; i++)
+        return new NifInfo
         {
-            int len = data[pos++];
-            pos += len;
-        }
-
-        // From here, endianness matters (NumBlockTypes onward)
-        // Num block types
-        int numBlockTypes = ReadUInt16(data, pos, info.IsBigEndian);
-        pos += 2;
-
-        // Block type names (SizedStrings)
-        info.BlockTypes = new List<string>(numBlockTypes);
-        for (var i = 0; i < numBlockTypes; i++)
-        {
-            var len = (int)ReadUInt32(data, pos, info.IsBigEndian);
-            pos += 4;
-            info.BlockTypes.Add(Encoding.ASCII.GetString(data, pos, len));
-            pos += len;
-        }
-
-        // Block type indices
-        info.BlockTypeIndices = new ushort[info.NumBlocks];
-        for (var i = 0; i < info.NumBlocks; i++)
-        {
-            info.BlockTypeIndices[i] = ReadUInt16(data, pos, info.IsBigEndian);
-            pos += 2;
-        }
-
-        // Block sizes
-        info.BlockSizes = new uint[info.NumBlocks];
-        for (var i = 0; i < info.NumBlocks; i++)
-        {
-            info.BlockSizes[i] = ReadUInt32(data, pos, info.IsBigEndian);
-            pos += 4;
-        }
-
-        // String table
-        info.NumStrings = (int)ReadUInt32(data, pos, info.IsBigEndian);
-        pos += 4;
-        info.MaxStringLength = (int)ReadUInt32(data, pos, info.IsBigEndian);
-        pos += 4;
-
-        info.Strings = new List<string>(info.NumStrings);
-        for (var i = 0; i < info.NumStrings; i++)
-        {
-            var len = (int)ReadUInt32(data, pos, info.IsBigEndian);
-            pos += 4;
-            info.Strings.Add(Encoding.ASCII.GetString(data, pos, len));
-            pos += len;
-        }
-
-        // Groups
-        var numGroups = (int)ReadUInt32(data, pos, info.IsBigEndian);
-        pos += 4;
-        pos += numGroups * 4;
-
-        info.BlockDataOffset = pos;
-        return info;
+            VersionString = core.HeaderString,
+            Version = core.BinaryVersion,
+            IsBigEndian = core.IsBigEndian,
+            UserVersion = core.UserVersion,
+            NumBlocks = core.Blocks.Count,
+            BsVersion = (int)core.BsVersion,
+            BlockTypes = blockTypes,
+            BlockTypeIndices = blockTypeIndices,
+            BlockSizes = blockSizes,
+            BlockOffsets = blockOffsets,
+            Strings = core.Strings,
+            NumStrings = core.Strings.Count,
+            MaxStringLength = core.Strings.Count > 0 ? core.Strings.Max(s => s.Length) : 0,
+            BlockDataOffset = core.Blocks.Count > 0 ? core.Blocks[0].DataOffset : 0,
+        };
     }
 }
