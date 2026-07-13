@@ -6,42 +6,50 @@ using Vortice.Mathematics;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
-///     A one-shot offscreen color + depth render target with a CPU readback path, used to render
-///     a full scene (terrain depth pre-pass + placed references) top-down for the 2D map's
-///     "Rendered models" overlay. Factored from <see cref="GpuSpriteRenderer12" />'s offscreen
-///     machinery, but sized for a whole viewport and matched to the live renderers' PSO formats
-///     (<see cref="Format.B8G8R8A8_UNorm" /> color, <see cref="Format.D32_Float" /> depth, single
-///     sample — see <c>TerrainRenderer12</c>/<c>ReferenceRenderer12</c>). Anti-aliasing is done by
-///     the caller via supersize-then-downsample rather than MSAA, since the live PSOs are 1-sample.
+///     A one-shot offscreen scene render target with a CPU readback path, used by every headless
+///     render (the profiler's <c>--render-nif</c>, <c>--capture-frame</c>, the 2D-map top-down
+///     overlay, and the 3D export). Renders into an HDR float scene color
+///     (<see cref="GpuSceneFormats.SceneColor" />, MSAA), resolves it, runs the fullscreen
+///     <see cref="GpuTonemapPass12" /> into an 8-bit <see cref="GpuSceneFormats.LdrOutput" /> target,
+///     and reads THAT back — so emissive glow / sun specular / imagespace scales above 1 are rolled
+///     off instead of clipped (matching the live swap-chain path). When the scene color is the legacy
+///     8-bit format the tonemap runs in passthrough (clamp) so the output is bit-identical to before.
 ///     <para>
 ///         Lifetime: create at the (supersampled) target size, then drive one or more recorder
 ///         frames (<see cref="Bind" /> → renderer draws → <see cref="RecordReadback" /> → EndFrame),
 ///         waiting on each submission fence then calling <see cref="ReadbackToBytes" /> before the
-///         next cycle. The target is REUSED across overlay requests at the same size (the caller
-///         re-creates it only when the size changes), so <see cref="RecordReadback" /> restores the
-///         color target to <see cref="ResourceStates.RenderTarget" /> at the end of each cycle and
-///         the readback buffer is allocated once and reused. <see cref="Dispose" /> on teardown.
-///         Reuse is single-flighted by the caller (one in-flight render + readback at a time), so
-///         the shared readback buffer is never mapped while the next copy is recorded.
+///         next cycle. The target is REUSED across requests at the same size; every state round-trips
+///         at the end of a cycle so a subsequent <see cref="Bind" /> is valid. <see cref="Dispose" />
+///         on teardown.
 ///     </para>
 /// </summary>
 internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
 {
-    // Match the live terrain/reference PSOs (TerrainRenderer12 + ReferenceRenderer12).
-    internal const Format ColorFormat = Format.B8G8R8A8_UNorm;
+    // HDR scene color the renderers draw into (shared with the live swap-chain PSOs), and the 8-bit
+    // format the tonemap writes + the readback consumes.
+    internal static readonly Format ColorFormat = GpuSceneFormats.SceneColor;
+    internal const Format LdrFormat = GpuSceneFormats.LdrOutput;
     internal const Format DepthFormat = Format.D32_Float;
 
+    private static readonly bool HdrActive = GpuSceneFormats.SceneColor == Format.R16G16B16A16_Float;
+
     private readonly GpuDevice12 _gpu;
-    private readonly ID3D12Resource _colorTex;
+    private readonly ID3D12Resource _colorTex;   // scene color (HDR, MSAA or 1-sample) — render target
     private readonly ID3D12Resource _depthTex;
-    // Single-sample resolve target (null when not MSAA): the MSAA color is resolved into this, which
-    // is then the CopySource for the readback. Matches the scene's MSAA so terrain/reference PSOs
-    // (SampleDescription = GpuDevice12.SceneSampleCount) draw into this target unchanged.
-    private readonly ID3D12Resource? _resolveTex;
+    // 1-sample HDR resolve target (null when not MSAA): the MSAA scene color resolves into this, which
+    // the tonemap then samples as an SRV.
+    private readonly ID3D12Resource? _hdrResolveTex;
+    // 1-sample 8-bit tonemap output = the readback copy source.
+    private readonly ID3D12Resource _ldrOutputTex;
+    private readonly GpuTonemapPass12 _tonemap;
+    private readonly float _exposure;
+    private readonly bool _tonemapEnabled;
     private readonly ID3D12DescriptorHeap _rtvHeap;
     private readonly ID3D12DescriptorHeap _dsvHeap;
-    private readonly CpuDescriptorHandle _rtvHandle;
+    private readonly CpuDescriptorHandle _rtvHandle;    // scene color RTV
+    private readonly CpuDescriptorHandle _ldrRtvHandle; // tonemap output RTV
     private readonly CpuDescriptorHandle _dsvHandle;
+    private readonly uint _rtvDescriptorSize;
     private ID3D12Resource? _readback;
     private PlacedSubresourceFootPrint _readbackFootprint;
     private uint _readbackRowPitch;
@@ -58,9 +66,8 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
 
     /// <summary>
     ///     The D32_Float depth texture, exposed so the capture path can bind it as an R32_Float SRV
-    ///     for the water shader's real column-depth fade (mirrors the live frame's swap-chain depth
-    ///     SRV). Only valid as an SRV when <see cref="IsMsaa" /> is false; the caller owns the
-    ///     DepthWrite ↔ PixelShaderResource transitions around the water draw.
+    ///     for the water shader's real column-depth fade. Only valid as an SRV when
+    ///     <see cref="IsMsaa" /> is false; the caller owns the transitions around the water draw.
     /// </summary>
     public ID3D12Resource DepthResource => _depthTex;
 
@@ -73,6 +80,9 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         var device = gpu.Device;
         var msaa = sampleCount > 1;
         IsMsaa = msaa;
+        _tonemap = new GpuTonemapPass12(gpu);
+        _exposure = ResolveExposure();
+        _tonemapEnabled = HdrActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
 
         _colorTex = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None,
@@ -92,9 +102,9 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
 
         if (msaa)
         {
-            // Single-sample resolve destination + readback source. Starts (and is restored to)
-            // ResolveDest each cycle (see RecordReadback).
-            _resolveTex = device.CreateCommittedResource<ID3D12Resource>(
+            // 1-sample HDR resolve destination + tonemap SRV source. Starts (and is restored to)
+            // ResolveDest each cycle.
+            _hdrResolveTex = device.CreateCommittedResource<ID3D12Resource>(
                 HeapProperties.DefaultHeapProperties, HeapFlags.None,
                 ResourceDescription.Texture2D(ColorFormat, (uint)width, (uint)height,
                     arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0,
@@ -102,10 +112,19 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
                 ResourceStates.ResolveDest, optimizedClearValue: null);
         }
 
+        // 8-bit tonemap output = readback source. Starts (and is restored to) RenderTarget.
+        _ldrOutputTex = device.CreateCommittedResource<ID3D12Resource>(
+            HeapProperties.DefaultHeapProperties, HeapFlags.None,
+            ResourceDescription.Texture2D(LdrFormat, (uint)width, (uint)height,
+                arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0,
+                ResourceFlags.AllowRenderTarget),
+            ResourceStates.RenderTarget,
+            new ClearValue(LdrFormat, new Color4(0f, 0f, 0f, 0f)));
+
         _rtvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = DescriptorHeapType.RenderTargetView,
-            DescriptorCount = 1,
+            DescriptorCount = 2, // [0] scene color, [1] LDR tonemap output
             Flags = DescriptorHeapFlags.None,
         });
         _dsvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
@@ -114,22 +133,28 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
             DescriptorCount = 1,
             Flags = DescriptorHeapFlags.None,
         });
+        _rtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
         _rtvHandle = _rtvHeap.GetCPUDescriptorHandleForHeapStart();
+        _ldrRtvHandle = _rtvHandle;
+        _ldrRtvHandle.Ptr += (nuint)_rtvDescriptorSize;
         _dsvHandle = _dsvHeap.GetCPUDescriptorHandleForHeapStart();
-        // Null view desc infers Texture2D (1 sample) or Texture2DMS (MSAA) automatically.
         device.CreateRenderTargetView(_colorTex, null, _rtvHandle);
+        device.CreateRenderTargetView(_ldrOutputTex, null, _ldrRtvHandle);
         device.CreateDepthStencilView(_depthTex, null, _dsvHandle);
     }
 
     /// <summary>
     ///     Binds the offscreen color + depth as the render targets, sets the full-target viewport
-    ///     and scissor, and clears color to transparent + depth to the far plane. Call after the
-    ///     shared descriptor heap + root signature are bound and before any renderer draws.
+    ///     and scissor, and clears color (transparent by default) + depth to the far plane. Call
+    ///     after the shared descriptor heap + root signature are bound and before any renderer draws.
+    ///     <paramref name="clearColor" /> supports harness renders that need an OPAQUE backdrop
+    ///     already present at draw time (multiplicative decals compute <c>fb·srcColor</c>, which over
+    ///     a transparent black clear is unconditionally black).
     /// </summary>
-    public void Bind(ID3D12GraphicsCommandList cmd)
+    public void Bind(ID3D12GraphicsCommandList cmd, Color4? clearColor = null)
     {
         cmd.OMSetRenderTargets(_rtvHandle, _dsvHandle);
-        cmd.ClearRenderTargetView(_rtvHandle, new Color4(0f, 0f, 0f, 0f));
+        cmd.ClearRenderTargetView(_rtvHandle, clearColor ?? new Color4(0f, 0f, 0f, 0f));
         cmd.ClearDepthStencilView(_dsvHandle, ClearFlags.Depth, 0f, 0); // reversed-Z: far value = 0
         cmd.RSSetViewport(new Viewport(0, 0, Width, Height, 0f, 1f));
         cmd.RSSetScissorRect(Width, Height);
@@ -143,68 +168,79 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     public void Rebind(ID3D12GraphicsCommandList cmd) => cmd.OMSetRenderTargets(_rtvHandle, _dsvHandle);
 
     /// <summary>
-    ///     Records the color → readback-buffer copy (transitioning the color target to
-    ///     <see cref="ResourceStates.CopySource" />, copying into the readback heap buffer, then
-    ///     transitioning the color target back to <see cref="ResourceStates.RenderTarget" /> so a
-    ///     subsequent <see cref="Bind" /> on the reused target is state-valid). The readback buffer
-    ///     is allocated once on first use and reused (the target's size is fixed for its lifetime —
-    ///     the caller recreates the whole target on resize). Must be the last thing recorded before
-    ///     the recorder's EndFrame, so the copy + restore are part of the submitted command list.
+    ///     Records: (MSAA) resolve the scene color into the 1-sample HDR target; run the fullscreen
+    ///     tonemap into the 8-bit output; copy that into the readback buffer. All states round-trip so
+    ///     the target is reusable next cycle. Must be the last thing recorded before EndFrame.
     /// </summary>
     public void RecordReadback(ID3D12GraphicsCommandList cmd)
     {
         var device = _gpu.Device;
+        EnsureReadback(device);
 
-        if (_readback is null)
+        // 1. Get the 1-sample HDR image the tonemap samples. MSAA → resolve; single-sample → the
+        //    scene color itself, transitioned to a shader resource.
+        ID3D12Resource hdrSource;
+        if (_hdrResolveTex is not null)
         {
-            // Footprint of the 1-sample BGRA copy source (resolveTex when MSAA, else colorTex) — both
-            // are Width×Height B8G8R8A8_UNorm, so a 1-sample colorDesc gives the right footprint.
-            var copyDesc = ResourceDescription.Texture2D(ColorFormat, (uint)Width, (uint)Height,
-                arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0, ResourceFlags.None);
-            var footprints = new PlacedSubresourceFootPrint[1];
-            var numRows = new uint[1];
-            var rowSize = new ulong[1];
-            device.GetCopyableFootprints(copyDesc, 0, 1, 0, footprints, numRows, rowSize, out var readbackBytes);
-
-            _readback = device.CreateCommittedResource<ID3D12Resource>(
-                HeapProperties.ReadbackHeapProperties, HeapFlags.None,
-                ResourceDescription.Buffer(readbackBytes),
-                ResourceStates.CopyDest, optimizedClearValue: null);
-            _readbackFootprint = footprints[0];
-            _readbackRowPitch = footprints[0].Footprint.RowPitch;
+            cmd.ResourceBarrierTransition(_colorTex, ResourceStates.RenderTarget, ResourceStates.ResolveSource);
+            cmd.ResolveSubresource(_hdrResolveTex, 0, _colorTex, 0, ColorFormat);
+            cmd.ResourceBarrierTransition(_hdrResolveTex, ResourceStates.ResolveDest, ResourceStates.PixelShaderResource);
+            hdrSource = _hdrResolveTex;
+        }
+        else
+        {
+            cmd.ResourceBarrierTransition(_colorTex, ResourceStates.RenderTarget, ResourceStates.PixelShaderResource);
+            hdrSource = _colorTex;
         }
 
-        if (_resolveTex is not null)
+        // 2. Tonemap HDR → LDR output.
+        _tonemap.Record(cmd, hdrSource, ColorFormat, _ldrRtvHandle, Width, Height, _exposure, _tonemapEnabled);
+
+        // 3. Copy LDR output → readback, restoring every state.
+        cmd.ResourceBarrierTransition(_ldrOutputTex, ResourceStates.RenderTarget, ResourceStates.CopySource);
+        cmd.CopyTextureRegion(
+            new TextureCopyLocation(_readback!, _readbackFootprint), 0, 0, 0,
+            new TextureCopyLocation(_ldrOutputTex, 0));
+        cmd.ResourceBarrierTransition(_ldrOutputTex, ResourceStates.CopySource, ResourceStates.RenderTarget);
+
+        if (_hdrResolveTex is not null)
         {
-            // MSAA: resolve the multisampled color into the 1-sample resolve target, then copy that
-            // into the readback buffer. States are round-tripped so the target is reusable next cycle:
-            // colorTex → RenderTarget, resolveTex → ResolveDest.
-            cmd.ResourceBarrierTransition(_colorTex, ResourceStates.RenderTarget, ResourceStates.ResolveSource);
-            cmd.ResolveSubresource(_resolveTex, 0, _colorTex, 0, ColorFormat);
-            cmd.ResourceBarrierTransition(_resolveTex, ResourceStates.ResolveDest, ResourceStates.CopySource);
-            cmd.CopyTextureRegion(
-                new TextureCopyLocation(_readback, _readbackFootprint), 0, 0, 0,
-                new TextureCopyLocation(_resolveTex, 0));
-            cmd.ResourceBarrierTransition(_resolveTex, ResourceStates.CopySource, ResourceStates.ResolveDest);
+            cmd.ResourceBarrierTransition(_hdrResolveTex, ResourceStates.PixelShaderResource, ResourceStates.ResolveDest);
             cmd.ResourceBarrierTransition(_colorTex, ResourceStates.ResolveSource, ResourceStates.RenderTarget);
         }
         else
         {
-            // Single-sample: copy the color target straight into the readback buffer, restoring it to
-            // RenderTarget so the next Bind's clear/render is state-valid (the target is reused).
-            cmd.ResourceBarrierTransition(_colorTex, ResourceStates.RenderTarget, ResourceStates.CopySource);
-            cmd.CopyTextureRegion(
-                new TextureCopyLocation(_readback, _readbackFootprint), 0, 0, 0,
-                new TextureCopyLocation(_colorTex, 0));
-            cmd.ResourceBarrierTransition(_colorTex, ResourceStates.CopySource, ResourceStates.RenderTarget);
+            cmd.ResourceBarrierTransition(_colorTex, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
         }
+    }
+
+    private void EnsureReadback(ID3D12Device device)
+    {
+        if (_readback is not null)
+        {
+            return;
+        }
+
+        // Footprint of the 1-sample 8-bit LDR output (the tonemap result the readback copies).
+        var copyDesc = ResourceDescription.Texture2D(LdrFormat, (uint)Width, (uint)Height,
+            arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0, ResourceFlags.None);
+        var footprints = new PlacedSubresourceFootPrint[1];
+        var numRows = new uint[1];
+        var rowSize = new ulong[1];
+        device.GetCopyableFootprints(copyDesc, 0, 1, 0, footprints, numRows, rowSize, out var readbackBytes);
+
+        _readback = device.CreateCommittedResource<ID3D12Resource>(
+            HeapProperties.ReadbackHeapProperties, HeapFlags.None,
+            ResourceDescription.Buffer(readbackBytes),
+            ResourceStates.CopyDest, optimizedClearValue: null);
+        _readbackFootprint = footprints[0];
+        _readbackRowPitch = footprints[0].Footprint.RowPitch;
     }
 
     /// <summary>
     ///     Maps the readback buffer and copies out a tightly-packed BGRA byte array
     ///     (<see cref="Width" /> × <see cref="Height" /> × 4). Call only after the submission fence
-    ///     that contained <see cref="RecordReadback" /> has completed. Safe to call off the UI
-    ///     thread (fence/Map are thread-safe).
+    ///     that contained <see cref="RecordReadback" /> has completed.
     /// </summary>
     public byte[] ReadbackToBytes()
     {
@@ -233,14 +269,25 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         }
     }
 
+    private static float ResolveExposure()
+    {
+        var raw = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_EXPOSURE");
+        return float.TryParse(raw, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0f
+            ? v
+            : 1f;
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
         _readback?.Dispose();
+        _tonemap.Dispose();
         _dsvHeap.Dispose();
         _rtvHeap.Dispose();
-        _resolveTex?.Dispose();
+        _ldrOutputTex.Dispose();
+        _hdrResolveTex?.Dispose();
         _depthTex.Dispose();
         _colorTex.Dispose();
     }

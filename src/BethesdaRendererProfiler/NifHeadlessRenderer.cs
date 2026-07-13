@@ -38,6 +38,7 @@ internal static class NifHeadlessRenderer
         string? outPng = null;
         var size = 512;
         string? bgSpec = null;
+        string? bgClearSpec = null; // --bg-clear: clear the target OPAQUE before rendering (see below)
         string? leafTextureOverride = null; // --leaf-texture: SPT leaf atlas (the TREE ICON stand-in)
         float? leafDimming = null;   // --leaf-dimming: TREE CNAM LeafDimmingValue stand-in (0..1)
         float? branchDimming = null; // --branch-dimming: TREE CNAM BranchDimmingValue stand-in (0..1)
@@ -61,6 +62,7 @@ internal static class NifHeadlessRenderer
                 case "--out" or "-o": outPng = Next(args, ref i); break;
                 case "--size": _ = int.TryParse(Next(args, ref i), out size); break;
                 case "--bg": bgSpec = Next(args, ref i); break;
+                case "--bg-clear": bgClearSpec = Next(args, ref i); break;
                 case "--lit": litHour = float.TryParse(Next(args, ref i), out var h) ? h : 13f; break;
                 case "--yaw": azimuthDeg = float.TryParse(Next(args, ref i), out var az) ? az : 315f; break;
                 case "--anim-time": animTime = float.TryParse(Next(args, ref i), out var at) ? at : 0f; break;
@@ -78,7 +80,7 @@ internal static class NifHeadlessRenderer
         {
             Console.Error.WriteLine("Usage: --render-nif <esm-relative-nif-path> --archive <meshes.bsa> " +
                                     "--textures-bsa <tex.bsa> [<tex2.bsa> ...] --out <png> [--size N] " +
-                                    "[--bg <#RRGGBB|magenta|gray|checker>]");
+                                    "[--bg <#RRGGBB|magenta|gray|checker>] [--bg-clear <#RRGGBB|gray|...>]");
             return 2;
         }
         if (!File.Exists(meshArchive))
@@ -247,7 +249,21 @@ internal static class NifHeadlessRenderer
                 {
                     BindFlatAtmosphere(cmd, recorder.FrameIndex, ring);
                 }
-                target.Bind(cmd);
+                // --bg-clear: clear the target to an OPAQUE color BEFORE rendering, instead of the
+                // post-composite --bg. Required to judge multiplicative (ZERO/SRC_COLOR) decals —
+                // e.g. baked soft-shadow planes — whose output is fb·srcColor: over the default
+                // transparent black clear they are unconditionally black; over an opaque clear they
+                // darken it like they darken terrain in the live viewer.
+                if (!string.IsNullOrWhiteSpace(bgClearSpec))
+                {
+                    var (cr, cg, cb) = ParseColor(bgClearSpec);
+                    target.Bind(cmd, new Vortice.Mathematics.Color4(cr / 255f, cg / 255f, cb / 255f, 1f));
+                }
+                else
+                {
+                    target.Bind(cmd);
+                }
+
                 references.SetLeafBillboardBasis(camRight, camUp);
                 // --anim-time pins the renderer's animation clock (UV scroll offsets, skinned pose)
                 // to a fixed value: two renders at the same time are byte-identical, different times

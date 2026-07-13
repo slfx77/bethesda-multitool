@@ -39,7 +39,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 internal sealed class GpuSwapChainSurface12 : IDisposable
 {
     private const int BufferCount = 2;
-    internal const Format SceneColorFormat = Format.B8G8R8A8_UNorm;
+    // HDR scene color the renderers draw into (shared with the offscreen target's PSOs). The swap
+    // chain / back buffer itself stays an 8-bit display format; the tonemap pass maps the HDR scene
+    // into it before Present.
+    internal static readonly Format SceneColorFormat = GpuSceneFormats.SceneColor;
+    internal const Format BackBufferFormat = GpuSceneFormats.LdrOutput;
     private static readonly Logger Log = Logger.Instance;
 
     private readonly ID3D12Device _device;
@@ -50,36 +54,57 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     private readonly int _sampleCount;
     private readonly ID3D12Resource[] _backBuffers;
     private ID3D12Resource? _depthTexture;
-    // Scene-MSAA color target (null when _sampleCount == 1): the scene renders into this and is
-    // ResolveSubresource'd into the current back buffer before Present. Lives at RTV-heap slot
-    // BufferCount. Its matching MSAA depth IS _depthTexture when _sampleCount > 1.
+    // HDR scene color target (float): the scene ALWAYS renders into this (MSAA or 1-sample) and is
+    // tonemapped into the current back buffer before Present. Lives at RTV-heap slot BufferCount. Its
+    // matching depth IS _depthTexture (MSAA when _sampleCount > 1).
     private ID3D12Resource? _msaaColor;
+    // 1-sample HDR resolve dest (MSAA only): the scene MSAA color resolves into this, which the
+    // tonemap then samples. Null for the 1-sample path (the scene color is sampled directly).
+    private ID3D12Resource? _hdrResolve;
+    private readonly GpuTonemapPass12 _tonemap;
+    private readonly float _exposure;
+    private readonly bool _tonemapEnabled;
     private uint _width;
     private uint _height;
 
     private GpuSwapChainSurface12(
-        ID3D12Device device,
+        GpuDevice12 gpu,
         IDXGISwapChain3 swapChain,
         ID3D12DescriptorHeap rtvHeap,
         ID3D12DescriptorHeap dsvHeap,
         ID3D12Resource[] backBuffers,
         ID3D12Resource depthTexture,
         ID3D12Resource? msaaColor,
+        ID3D12Resource? hdrResolve,
         int sampleCount,
         uint width,
         uint height)
     {
-        _device = device;
+        _device = gpu.Device;
         _swapChain = swapChain;
         _rtvHeap = rtvHeap;
         _dsvHeap = dsvHeap;
-        _rtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
+        _rtvDescriptorSize = gpu.Device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
         _sampleCount = sampleCount;
         _backBuffers = backBuffers;
         _depthTexture = depthTexture;
         _msaaColor = msaaColor;
+        _hdrResolve = hdrResolve;
+        _tonemap = new GpuTonemapPass12(gpu);
+        _exposure = ResolveExposure();
+        _tonemapEnabled = SceneColorFormat == Format.R16G16B16A16_Float
+                          && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
         _width = width;
         _height = height;
+    }
+
+    private static float ResolveExposure()
+    {
+        var raw = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_EXPOSURE");
+        return float.TryParse(raw, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0f
+            ? v
+            : 1f;
     }
 
     public uint Width => _width;
@@ -124,6 +149,9 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _depthTexture = null;
         _msaaColor?.Dispose();
         _msaaColor = null;
+        _hdrResolve?.Dispose();
+        _hdrResolve = null;
+        _tonemap.Dispose();
         _dsvHeap.Dispose();
         _rtvHeap.Dispose();
         _swapChain.Dispose();
@@ -150,6 +178,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         ID3D12Resource[]? backBuffers = null;
         ID3D12Resource? depthTexture = null;
         ID3D12Resource? msaaColor = null;
+        ID3D12Resource? hdrResolve = null;
 
         try
         {
@@ -162,7 +191,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             {
                 Width = width,
                 Height = height,
-                Format = SceneColorFormat,
+                Format = BackBufferFormat, // 8-bit display format; the scene renders HDR + tonemaps into this
                 Stereo = false,
                 SampleDescription = new SampleDescription(1, 0),
                 BufferUsage = Usage.RenderTargetOutput,
@@ -202,16 +231,18 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             var rtvDescriptorSize = gpu.Device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
             backBuffers = AcquireBackBuffers(gpu.Device, swapChain3, rtvHeap);
             depthTexture = CreateDepthBuffer(gpu.Device, width, height, dsvHeap, sampleCount);
-            msaaColor = CreateMsaaColor(gpu.Device, width, height, sampleCount, rtvHeap, rtvDescriptorSize);
+            msaaColor = CreateSceneColor(gpu.Device, width, height, sampleCount, rtvHeap, rtvDescriptorSize);
+            hdrResolve = CreateHdrResolve(gpu.Device, width, height, sampleCount);
 
             Log.Info("GpuSwapChainSurface12: bound {0}x{1} to SwapChainPanel ({2} buffers, MSAA {3}x)",
                 width, height, BufferCount, sampleCount);
             return new GpuSwapChainSurface12(
-                gpu.Device, swapChain3, rtvHeap, dsvHeap, backBuffers, depthTexture, msaaColor, sampleCount, width, height);
+                gpu, swapChain3, rtvHeap, dsvHeap, backBuffers, depthTexture, msaaColor, hdrResolve, sampleCount, width, height);
         }
         catch (SharpGenException ex)
         {
             Log.Warn("GpuSwapChainSurface12.Create failed: {0}", ex.Message);
+            hdrResolve?.Dispose();
             msaaColor?.Dispose();
             depthTexture?.Dispose();
             if (backBuffers is not null)
@@ -246,32 +277,66 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _depthTexture = null;
         _msaaColor?.Dispose();
         _msaaColor = null;
+        _hdrResolve?.Dispose();
+        _hdrResolve = null;
 
         _swapChain.ResizeBuffers(BufferCount, width, height, Format.Unknown, SwapChainFlags.None).CheckError();
 
         var newBuffers = AcquireBackBuffers(_device, _swapChain, _rtvHeap);
         for (int i = 0; i < newBuffers.Length; i++) _backBuffers[i] = newBuffers[i];
         _depthTexture = CreateDepthBuffer(_device, width, height, _dsvHeap, _sampleCount);
-        _msaaColor = CreateMsaaColor(_device, width, height, _sampleCount, _rtvHeap, _rtvDescriptorSize);
+        _msaaColor = CreateSceneColor(_device, width, height, _sampleCount, _rtvHeap, _rtvDescriptorSize);
+        _hdrResolve = CreateHdrResolve(_device, width, height, _sampleCount);
 
         _width = width;
         _height = height;
     }
 
     /// <summary>
-    ///     Resolves the multisampled scene color into the current back buffer (no-op when not
-    ///     <see cref="IsMsaa" />). Call after the scene draws and before <see cref="Present" />. The
-    ///     MSAA color is returned to RENDER_TARGET and the back buffer to PRESENT, so the caller does
-    ///     NOT additionally transition the back buffer to PRESENT on the MSAA path.
+    ///     Maps the HDR scene color into the current back buffer: (MSAA) resolve the multisampled
+    ///     scene color into the 1-sample HDR target, then run the fullscreen tonemap into the back
+    ///     buffer's RTV; (1-sample) tonemap the scene color directly. Call after the scene draws and
+    ///     before <see cref="Present" />. Leaves the back buffer in PRESENT and every scene target
+    ///     back in its render state for the next frame, so the caller does NOT additionally
+    ///     transition the back buffer.
     /// </summary>
     public void ResolveTo(ID3D12GraphicsCommandList cmd, ID3D12Resource backBuffer)
     {
         if (_msaaColor is null) return;
-        cmd.ResourceBarrierTransition(_msaaColor, ResourceStates.RenderTarget, ResourceStates.ResolveSource);
-        cmd.ResourceBarrierTransition(backBuffer, ResourceStates.Present, ResourceStates.ResolveDest);
-        cmd.ResolveSubresource(backBuffer, 0, _msaaColor, 0, SceneColorFormat);
-        cmd.ResourceBarrierTransition(backBuffer, ResourceStates.ResolveDest, ResourceStates.Present);
-        cmd.ResourceBarrierTransition(_msaaColor, ResourceStates.ResolveSource, ResourceStates.RenderTarget);
+
+        // 1. Obtain the 1-sample HDR image the tonemap samples.
+        ID3D12Resource hdrSource;
+        if (_hdrResolve is not null)
+        {
+            cmd.ResourceBarrierTransition(_msaaColor, ResourceStates.RenderTarget, ResourceStates.ResolveSource);
+            cmd.ResolveSubresource(_hdrResolve, 0, _msaaColor, 0, SceneColorFormat);
+            cmd.ResourceBarrierTransition(_hdrResolve, ResourceStates.ResolveDest, ResourceStates.PixelShaderResource);
+            hdrSource = _hdrResolve;
+        }
+        else
+        {
+            cmd.ResourceBarrierTransition(_msaaColor, ResourceStates.RenderTarget, ResourceStates.PixelShaderResource);
+            hdrSource = _msaaColor;
+        }
+
+        // 2. Tonemap HDR → back buffer (as an RTV). Recompute the current back buffer's RTV so the
+        //    caller need not thread it through (index is stable until Present).
+        var index = _swapChain.CurrentBackBufferIndex;
+        var backRtv = new CpuDescriptorHandle(_rtvHeap.GetCPUDescriptorHandleForHeapStart(), (int)index, _rtvDescriptorSize);
+        cmd.ResourceBarrierTransition(backBuffer, ResourceStates.Present, ResourceStates.RenderTarget);
+        _tonemap.Record(cmd, hdrSource, SceneColorFormat, backRtv, (int)_width, (int)_height, _exposure, _tonemapEnabled);
+        cmd.ResourceBarrierTransition(backBuffer, ResourceStates.RenderTarget, ResourceStates.Present);
+
+        // 3. Restore scene-target states for next frame.
+        if (_hdrResolve is not null)
+        {
+            cmd.ResourceBarrierTransition(_hdrResolve, ResourceStates.PixelShaderResource, ResourceStates.ResolveDest);
+            cmd.ResourceBarrierTransition(_msaaColor, ResourceStates.ResolveSource, ResourceStates.RenderTarget);
+        }
+        else
+        {
+            cmd.ResourceBarrierTransition(_msaaColor, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
+        }
     }
 
     /// <summary>Presents the current back buffer with vsync. The back-buffer index advances
@@ -351,11 +416,13 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     }
 
     /// <summary>
-    ///     Creates the multisampled scene color target (null when <paramref name="sampleCount" /> ==
-    ///     1) and its RTV at heap slot <see cref="BufferCount" />. Created in RENDER_TARGET state and
-    ///     kept there across frames (<see cref="ResolveTo" /> round-trips it through ResolveSource).
+    ///     Creates the HDR scene color target (float, MSAA or 1-sample) and its RTV at heap slot
+    ///     <see cref="BufferCount" />. The scene ALWAYS renders into this (the back buffer is now an
+    ///     8-bit display target the tonemap writes), so — unlike the old MSAA-only color — it exists
+    ///     even at 1-sample. Created in RENDER_TARGET state and kept there across frames
+    ///     (<see cref="ResolveTo" /> round-trips it).
     /// </summary>
-    private static ID3D12Resource? CreateMsaaColor(
+    private static ID3D12Resource CreateSceneColor(
         ID3D12Device device,
         uint width,
         uint height,
@@ -363,8 +430,6 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         ID3D12DescriptorHeap rtvHeap,
         uint rtvDescriptorSize)
     {
-        if (sampleCount <= 1) return null;
-
         var color = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties,
             HeapFlags.None,
@@ -372,14 +437,32 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
                 arraySize: 1, mipLevels: 1, sampleCount: (uint)sampleCount, sampleQuality: 0,
                 ResourceFlags.AllowRenderTarget),
             ResourceStates.RenderTarget,
-            // No optimized clear value: the scene re-clears the MSAA color every frame, and a fixed
-            // optimized value that doesn't match the clear color only triggers a debug-layer warning.
+            // No optimized clear value: the scene re-clears every frame, and a fixed optimized value
+            // that doesn't match the clear color only triggers a debug-layer warning.
             optimizedClearValue: null);
 
         var handle = new CpuDescriptorHandle(
             rtvHeap.GetCPUDescriptorHandleForHeapStart(), BufferCount, rtvDescriptorSize);
         device.CreateRenderTargetView(color, null, handle);
         return color;
+    }
+
+    /// <summary>
+    ///     1-sample HDR resolve destination for the MSAA path (null when 1-sample). The MSAA scene
+    ///     color resolves into this, which the tonemap then samples as an SRV. Starts (and is restored
+    ///     to) ResolveDest each frame.
+    /// </summary>
+    private static ID3D12Resource? CreateHdrResolve(ID3D12Device device, uint width, uint height, int sampleCount)
+    {
+        if (sampleCount <= 1) return null;
+
+        return device.CreateCommittedResource<ID3D12Resource>(
+            HeapProperties.DefaultHeapProperties,
+            HeapFlags.None,
+            ResourceDescription.Texture2D(SceneColorFormat, width, height,
+                arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0, ResourceFlags.None),
+            ResourceStates.ResolveDest,
+            optimizedClearValue: null);
     }
 }
 #endif

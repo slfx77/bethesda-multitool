@@ -217,7 +217,9 @@ float4 main(PSInput input) : SV_Target
     {
         float3 lava = lerp(uShallow.rgb, uDeep.rgb, depthT);
         float pulse = 0.9 + 0.1 * sin(t * 1.5 + (input.vWorldPos.x + input.vWorldPos.y) * 0.001);
-        return float4(ApplyFog(saturate(lava * pulse * 1.3), input.vWorldPos), 1.0);
+        // No output saturate: the HDR scene target holds the lava glow (×1.3) so the tonemap rolls
+        // it off instead of clipping it flat. The tonemap's own saturate is the final clamp.
+        return float4(ApplyFog(lava * pulse * 1.3, input.vWorldPos), 1.0);
     }
 
 #if MORROWIND_WATER
@@ -241,7 +243,7 @@ float4 main(PSInput input) : SV_Target
         // ambient keeps the surface tracking time-of-day like the rest of the scene.
         mwTex *= saturate(uAmbientColor.rgb + sunCol * saturate(sunDir.z));
     }
-    return float4(ApplyFog(saturate(mwTex), input.vWorldPos), saturate(asfloat(uNoiseParams.w)));
+    return float4(ApplyFog(mwTex, input.vWorldPos), saturate(asfloat(uNoiseParams.w)));
 #endif
 
     // FNV distance fade of ripples: full within 4096 world units, -> 0 at 8192.
@@ -377,7 +379,7 @@ float4 main(PSInput input) : SV_Target
     float fo4Alpha = lerp(saturate(uFo4Spec.z), saturate(uFo4Spec.w), aT);
     float fo4SurfF = 0.2 + 0.8 * pow(1.0 - ndotv, 5.0);
     fo4Alpha = max(fo4Alpha, fo4SurfF);
-    return float4(ApplyFog(saturate(fo4Color), input.vWorldPos), fo4Alpha);
+    return float4(ApplyFog(fo4Color, input.vWorldPos), fo4Alpha);
 #else
 
 #if OBLIVION_WATER
@@ -448,6 +450,6 @@ float4 main(PSInput input) : SV_Target
 #else
     float alpha = lerp(0.6, 0.95, saturate(F));
 #endif
-    return float4(ApplyFog(saturate(color), input.vWorldPos), alpha);
+    return float4(ApplyFog(color, input.vWorldPos), alpha);
 #endif // !FO4_WATER
 }

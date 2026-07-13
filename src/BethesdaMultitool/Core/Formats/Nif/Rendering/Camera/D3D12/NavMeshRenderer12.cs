@@ -145,7 +145,7 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
             DepthStencilState = depth,
             InputLayout = new InputLayoutDescription(inputElements),
             PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
-            RenderTargetFormats = new[] { Format.B8G8R8A8_UNorm },
+            RenderTargetFormats = new[] { Gpu.D3D12.GpuSceneFormats.SceneColor },
             DepthStencilFormat = Format.D32_Float,
             SampleDescription = new SampleDescription((uint)_gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,

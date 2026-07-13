@@ -130,7 +130,7 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
             DepthStencilState = depth,
             InputLayout = new InputLayoutDescription(Array.Empty<InputElementDescription>()),
             PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
-            RenderTargetFormats = new[] { Format.B8G8R8A8_UNorm },
+            RenderTargetFormats = new[] { GpuSceneFormats.SceneColor },
             DepthStencilFormat = Format.D32_Float,
             SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,

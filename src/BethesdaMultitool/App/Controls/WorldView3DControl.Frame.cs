@@ -507,22 +507,16 @@ public sealed partial class WorldView3DControl
 
         segmentStarted = StartProfileTimestamp();
         var (backBuffer, backRtv) = surface.AcquireBackBufferRtv();
-        // Scene renders into the MSAA color target (resolved into the back buffer before Present)
-        // when scene-wide MSAA is active; otherwise straight into the back buffer.
-        var sceneRtv = surface.IsMsaa ? surface.MsaaColorRtv : backRtv;
+        // The scene ALWAYS renders into the HDR float scene color (MSAA or 1-sample); the back buffer
+        // is now an 8-bit display target that surface.ResolveTo tonemaps the HDR scene into before
+        // Present (and which owns the back buffer's PRESENT ↔ RENDER_TARGET transition). The scene
+        // color stays in RENDER_TARGET across frames, so nothing to transition here.
+        _ = backRtv;
+        var sceneRtv = surface.MsaaColorRtv;
         var sceneDsv = surface.DepthStencilView;
         var acquireMs = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartProfileTimestamp();
-        // The MSAA color target stays in RENDER_TARGET across frames; only the non-MSAA back buffer
-        // needs PRESENT → RENDER_TARGET here (the MSAA back buffer is handled by ResolveTo at frame end).
-        if (!surface.IsMsaa)
-        {
-            cmd.ResourceBarrierTransition(backBuffer,
-                Vortice.Direct3D12.ResourceStates.Present,
-                Vortice.Direct3D12.ResourceStates.RenderTarget);
-        }
-
         cmd.ClearRenderTargetView(sceneRtv,
             new Vortice.Mathematics.Color4(0x1B / 255f, 0x24 / 255f, 0x36 / 255f, 1f));
         // Reversed-Z: clear depth to 0 (the far value). Pairs with CameraState.ReverseZ + every
@@ -834,19 +828,10 @@ public sealed partial class WorldView3DControl
         var hudMs = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartProfileTimestamp();
-        if (surface.IsMsaa)
-        {
-            // Resolve the multisampled scene color into the back buffer; leaves the back buffer in
-            // PRESENT (and the MSAA color back in RENDER_TARGET for the next frame).
-            surface.ResolveTo(cmd, backBuffer);
-        }
-        else
-        {
-            // RENDER_TARGET → PRESENT so DXGI can flip.
-            cmd.ResourceBarrierTransition(backBuffer,
-                Vortice.Direct3D12.ResourceStates.RenderTarget,
-                Vortice.Direct3D12.ResourceStates.Present);
-        }
+        // Tonemap the HDR scene color into the back buffer (resolving MSAA first when active). Leaves
+        // the back buffer in PRESENT and the scene color back in RENDER_TARGET for the next frame, so
+        // no additional back-buffer transition here.
+        surface.ResolveTo(cmd, backBuffer);
 
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.FrameEnd);
         _gpuTimestampProfiler12?.ResolveActiveFrame(cmd);
