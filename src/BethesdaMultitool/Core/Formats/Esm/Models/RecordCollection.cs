@@ -290,6 +290,9 @@ public record RecordCollection
     /// <summary>Parsed Climate (CLMT) records.</summary>
     public List<ClimateRecord> Climate { get; init; } = [];
 
+    /// <summary>Parsed Image Space (IMGS) records (per-cell/worldspace post-process parameters).</summary>
+    public List<ImageSpaceRecord> ImageSpaces { get; init; } = [];
+
     /// <summary>
     ///     FormID → model path (.nif) mapping from STAT, ACTI, DOOR, LIGH, FURN, WEAP, ARMO, AMMO, ALCH, MISC, BOOK, CONT
     ///     records.
@@ -509,6 +512,7 @@ public record RecordCollection
             NavMeshes = MergeList(NavMeshes, overlay.NavMeshes, r => r.FormId),
             Weather = MergeList(Weather, overlay.Weather, r => r.FormId),
             Climate = MergeList(Climate, overlay.Climate, r => r.FormId),
+            ImageSpaces = MergeList(ImageSpaces, overlay.ImageSpaces, r => r.FormId),
 
             // Dictionaries: overlay overwrites base
             ModelPathIndex = MergeDictionary(ModelPathIndex, overlay.ModelPathIndex),

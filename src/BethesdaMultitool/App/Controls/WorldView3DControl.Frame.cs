@@ -153,6 +153,10 @@ public sealed partial class WorldView3DControl
         // same parse headless (world-data 2.5 min vs 17.6 s). Rendering resumes the instant LoadData sets _data.
         if (_data is null) return;
 
+        // Per-frame refresh is a cheap struct assignment; keeps the tonemap operator in lockstep with
+        // interior/exterior + worldspace switches without invalidation bookkeeping.
+        _surface12.TonemapSettings = ResolveTonemapSettings();
+
         var now = DateTime.UtcNow;
         var deltaSeconds = (float)(now - _lastFrameTime).TotalSeconds;
         _lastFrameTime = now;
@@ -233,7 +237,7 @@ public sealed partial class WorldView3DControl
             : null;
         var resolved = AtmosphereState.Resolve(
             gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: lightingOn,
-            moonlightDirection: moonlight);
+            moonlightDirection: moonlight, game: _data?.Game ?? default);
         // Stash the frame's directional-light direction for the frame-end shadow pass (the map is
         // fitted around this direction; see RecordSunShadowPass).
         _lastResolvedSunDirection = resolved.SunWorldDirection;

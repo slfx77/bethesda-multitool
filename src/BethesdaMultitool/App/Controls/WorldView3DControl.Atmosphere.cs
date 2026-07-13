@@ -92,6 +92,62 @@ public sealed partial class WorldView3DControl
         ApplyWeatherSelection();
     }
 
+    /// <summary>
+    ///     Tonemap operator + parameters for the current view. FO3/FNV (and Oblivion as a labeled
+    ///     stand-in) reproduce the engine's imagespace HDR stage: the active IMGS resolves like the
+    ///     engine's <c>GetUsableImageSpace</c> — interior cell XCIM → worldspace INAM → the shipped
+    ///     DefaultImageSpaceInterior/Exterior values (0x160/0x161). Other games get their family
+    ///     default operator (see <see cref="Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings" />).
+    /// </summary>
+    private Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings ResolveTonemapSettings()
+    {
+        var interior = _selectedInterior is not null;
+        var settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ForGame(_data?.Game ?? default, interior);
+        if (settings.Mode != Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.EngineFo3Fnv || _data is null)
+        {
+            return settings;
+        }
+
+        var formId = interior
+            ? _selectedInterior!.ImageSpaceFormId
+            : CurrentExteriorWorldspace()?.ImageSpaceFormId;
+        if (formId is { } id && _data.ImageSpacesByFormId.TryGetValue(id, out var imgs))
+        {
+            if (imgs.Hdr is { } hdr)
+            {
+                settings = settings with
+                {
+                    TargetLum = hdr.TargetLum > 0f ? hdr.TargetLum : settings.TargetLum,
+                    UpperLumClamp = hdr.UpperLumClamp > 0f ? hdr.UpperLumClamp : settings.UpperLumClamp,
+                };
+            }
+
+            if (imgs.Cinematic is { } cin)
+            {
+                settings = settings with
+                {
+                    Saturation = cin.Saturation,
+                    ContrastAvgLum = cin.ContrastAvgLum,
+                    Contrast = cin.Contrast,
+                    Brightness = cin.Brightness,
+                };
+            }
+
+            if (imgs.Tint is { } tint)
+            {
+                settings = settings with
+                {
+                    TintR = tint.Red,
+                    TintG = tint.Green,
+                    TintB = tint.Blue,
+                    TintAmount = tint.Amount,
+                };
+            }
+        }
+
+        return Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ApplyOverrides(settings);
+    }
+
     // Resolves the sky-element bindless texture indices for the current climate + active weather,
     // re-running only when either changes. Runs inside the render frame (a command list is open for the
     // texture cache's first upload). Everything is DERIVED from the loaded data — sun/glare from the CLMT
@@ -666,7 +722,7 @@ public sealed partial class WorldView3DControl
         (Vector3 Right, Vector3 Up)? billboardBasis = null)
     {
         EnsureSkyTexturesResolved();
-        var atmo = AtmosphereState.Resolve(_gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: true);
+        var atmo = AtmosphereState.Resolve(_gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: true, game: _data?.Game ?? default);
         var daylight = atmo.SunIntensity; // 0 night → 1 day
         var exterior = _selectedInterior is null;
 
@@ -753,6 +809,15 @@ public sealed partial class WorldView3DControl
         var secundaPhase = MoonSky.PhaseIndex(_gameDay, phaseLengthDays, moonProfile.SecondaryPhaseOffsetDays);
         var moonTex = PhaseTextureOrFull(_moonPhaseTexIndices, masserPhase, _moonTexIndex);
         var secundaTex = PhaseTextureOrFull(_moonSecundaPhaseTexIndices, secundaPhase, _moonSecundaTexIndex);
+
+        // Deliberately-black new-moon stubs (FO3/FNV masser_new, and the same Oblivion family) are not
+        // drawn — the shipped asset is an all-black disc that would render as an opaque quad over the
+        // stars. Skipping the draw IS the new-moon look.
+        if (moonProfile.HiddenPhaseIndex is { } hidden)
+        {
+            if (masserPhase == hidden) moonTex = SkyBillboardRenderer12.NoTexture;
+            if (secundaPhase == hidden) secundaTex = SkyBillboardRenderer12.NoTexture;
+        }
 
         // Per-game moon disc sizes (fraction of the billboard radius → world half-extent). Prefer the
         // engine-exact size read from the loaded ESM's GMSTs (iMasserSize/iSecundaSize ÷ fSunXExtreme —

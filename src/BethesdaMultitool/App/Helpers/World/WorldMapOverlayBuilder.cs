@@ -134,6 +134,7 @@ internal static class WorldMapOverlayBuilder
             WatersByFormId = BuildWaterIndex(semantic.Water),
             WeathersByFormId = BuildWeatherIndex(weatherRecords),
             ClimatesByFormId = BuildClimateIndex(climateRecords),
+            ImageSpacesByFormId = BuildImageSpaceIndex(semantic.ImageSpaces),
             AllWeathers = BuildAllWeathers(weatherRecords)
         };
     }
@@ -309,6 +310,7 @@ internal static class WorldMapOverlayBuilder
             WatersByFormId = BuildWaterIndex(suppRecords.Water),
             WeathersByFormId = BuildWeatherIndex(suppRecords.Weather),
             ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),
+            ImageSpacesByFormId = BuildImageSpaceIndex(suppRecords.ImageSpaces),
             AllWeathers = BuildAllWeathers(suppRecords.Weather)
         };
     }
@@ -520,6 +522,16 @@ internal static class WorldMapOverlayBuilder
     private static Dictionary<uint, ClimateRecord> BuildClimateIndex(List<ClimateRecord> records)
     {
         var dict = new Dictionary<uint, ClimateRecord>(records.Count);
+        foreach (var r in records)
+        {
+            dict.TryAdd(r.FormId, r);
+        }
+        return dict;
+    }
+
+    private static Dictionary<uint, ImageSpaceRecord> BuildImageSpaceIndex(List<ImageSpaceRecord> records)
+    {
+        var dict = new Dictionary<uint, ImageSpaceRecord>(records.Count);
         foreach (var r in records)
         {
             dict.TryAdd(r.FormId, r);

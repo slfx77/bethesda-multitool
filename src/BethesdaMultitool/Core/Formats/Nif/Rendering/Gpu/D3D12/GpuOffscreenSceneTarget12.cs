@@ -42,8 +42,15 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     // 1-sample 8-bit tonemap output = the readback copy source.
     private readonly ID3D12Resource _ldrOutputTex;
     private readonly GpuTonemapPass12 _tonemap;
-    private readonly float _exposure;
     private readonly bool _tonemapEnabled;
+
+    /// <summary>
+    ///     Tonemap operator + parameters for this target. Defaults to gamma-corrected ACES; world-aware
+    ///     callers (frame/capture paths) override per game + active imagespace before rendering.
+    ///     FALLOUT_VIEWER_TONEMAP / FALLOUT_VIEWER_EXPOSURE overrides are folded in at construction; a
+    ///     setter value should already have <see cref="GpuTonemapSettings.ApplyOverrides" /> applied.
+    /// </summary>
+    public GpuTonemapSettings TonemapSettings { get; set; }
     private readonly ID3D12DescriptorHeap _rtvHeap;
     private readonly ID3D12DescriptorHeap _dsvHeap;
     private readonly CpuDescriptorHandle _rtvHandle;    // scene color RTV
@@ -81,7 +88,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         var msaa = sampleCount > 1;
         IsMsaa = msaa;
         _tonemap = new GpuTonemapPass12(gpu);
-        _exposure = ResolveExposure();
+        TonemapSettings = GpuTonemapSettings.ApplyOverrides(GpuTonemapSettings.GammaAcesDefaults);
         _tonemapEnabled = HdrActive && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
 
         _colorTex = device.CreateCommittedResource<ID3D12Resource>(
@@ -194,7 +201,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         }
 
         // 2. Tonemap HDR → LDR output.
-        _tonemap.Record(cmd, hdrSource, ColorFormat, _ldrRtvHandle, Width, Height, _exposure, _tonemapEnabled);
+        _tonemap.Record(cmd, hdrSource, ColorFormat, _ldrRtvHandle, Width, Height, TonemapSettings, _tonemapEnabled);
 
         // 3. Copy LDR output → readback, restoring every state.
         cmd.ResourceBarrierTransition(_ldrOutputTex, ResourceStates.RenderTarget, ResourceStates.CopySource);
@@ -267,15 +274,6 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         {
             _readback.Unmap(0, null);
         }
-    }
-
-    private static float ResolveExposure()
-    {
-        var raw = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_EXPOSURE");
-        return float.TryParse(raw, System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0f
-            ? v
-            : 1f;
     }
 
     public void Dispose()

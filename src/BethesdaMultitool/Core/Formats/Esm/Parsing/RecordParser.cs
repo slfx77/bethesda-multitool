@@ -495,6 +495,7 @@ public sealed class RecordParser
         var encounterZones = _miscGameSystems.ParseEncounterZones();
         var weather = _miscEnvironment.ParseWeather();
         var climate = _miscEnvironment.ParseClimate();
+        var imageSpaces = _miscEnvironment.ParseImageSpaces();
         var loadScreenTypes = _miscEnvironment.ParseLoadScreenTypes();
         var audioLocationControllers = _miscEnvironment.ParseAudioLocationControllers();
         var idleAnimations = _ai.ParseIdleAnimations();
@@ -641,6 +642,7 @@ public sealed class RecordParser
             EncounterZones = encounterZones,
             Weather = weather,
             Climate = climate,
+            ImageSpaces = imageSpaces,
 
             ModelPathIndex = modelIndex,
             AlternateTexturesByFormId = modsHarvest.AlternateTextures,
@@ -669,6 +671,7 @@ public sealed class RecordParser
                 Cells = result.Cells,
                 Climate = result.Climate,
                 Weather = result.Weather,
+                ImageSpaces = result.ImageSpaces,
                 LandTextures = result.LandTextures,
                 TextureSets = result.TextureSets,
                 // FO4/FO76 are schema-primary, so the viewer's material swaps must ride the bridge

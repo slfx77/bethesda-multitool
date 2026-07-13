@@ -44,12 +44,19 @@ public record ImageSpaceHdr
     public float LumRampNoTex { get; init; }
 }
 
-/// <summary>IMGS CNAM payload (12 bytes, 3 LE floats).</summary>
+/// <summary>
+///     IMGS cinematic block. Skyrim-style CNAM carries 3 floats (Saturation/Brightness/Contrast);
+///     the FO3/FNV DNAM cinematic block additionally authors the contrast pivot ("Avg Lum Value",
+///     applied as <c>Brightness·(Contrast·c − pivot) + pivot</c> in the engine's HDR blend-in shader).
+/// </summary>
 public record ImageSpaceCinematic
 {
     public float Saturation { get; init; }
     public float Brightness { get; init; }
     public float Contrast { get; init; }
+
+    /// <summary>Contrast pivot (FO3/FNV DNAM "Avg Lum Value"; 0.5 = neutral midpoint).</summary>
+    public float ContrastAvgLum { get; init; } = 0.5f;
 }
 
 /// <summary>IMGS TNAM payload (16 bytes, 4 LE floats: Amount, Red, Green, Blue).</summary>

@@ -1,21 +1,36 @@
 // Tonemap resolve pass. Samples the HDR scene color (R16G16B16A16_FLOAT, values may exceed 1 —
-// emissive glow, sun specular, imagespace scales) and maps it to the 8-bit display range with an
-// exposure multiply + a filmic curve, preserving hue while rolling highlights off and lifting
-// midtones. This is the HDR/imagespace stage the viewer previously skipped (an 8-bit render target
-// clipped everything > 1 to flat white and left midtones dark — the "too dark, but neon/goo blow to
-// white" signature).
+// emissive glow, sun specular) and maps it to the 8-bit display range.
 //
-// Operator: the ACES filmic approximation (Narkowicz 2015) — a single rational curve with a natural
-// toe (lifts shadows) and shoulder (rolls highlights). uParams.x = exposure (linear multiply before
-// the curve; 1 = neutral). uParams.y = enable (0 → passthrough clamp, so OFF is bit-identical to the
-// old LDR path for regression A/Bs). uParams.z/w reserved for per-game imagespace scale hooks.
+// Three operators (uParams0.z = mode):
+//   0 LegacyClamp — plain saturate; bit-identical to the pre-HDR 8-bit pipeline. Morrowind
+//     (pre-HDR engine) and the FALLOUT_VIEWER_HDR=0 kill-switch land here.
+//   1 GammaAces — decode 2.2 -> exposure -> ACES filmic -> encode 1/2.2. The scene renders in
+//     gamma space (engine-faithful for these D3D9-era games; no sRGB SRVs anywhere), so the
+//     curve must run in display-linear and re-encode — running ACES directly on gamma values
+//     lifted midtones and desaturated ("washed out"). Stand-in for Skyrim/FO4/FO76 until their
+//     imagespace stage is ported.
+//   2 EngineFo3Fnv — the FO3/FNV engine HDR stage, decompile-grounded from the shipped ISHDR*
+//     SM3 shaders + ImageSpaceEffectHDR (docs/research/fnv_engine_hdr_imagespace.md):
+//       L = sum(adaptedAvgSceneColor.rgb)   (avg pass below; steady-state = fully adapted eye)
+//       exposure = TargetLUM / max(L, TargetLUM)      // darkens toward bright scenes, never brightens
+//       c = scene * exposure                          // (bloom term = follow-up)
+//       cinematic: saturation -> tint -> contrast/brightness (IMGS cinematic block)
+//     Operates on gamma-space values exactly like the engine — no decode/encode by design.
+//
+// mainAvg is a second entry point rendered to a 1x1 float target first: a sparse grid average
+// of the scene (stand-in for the engine's DownSample16 chain) with the engine's ADAPT length
+// clamp applied (|avg| clamped to [0.01, UpperLUMClamp]).
 
 Texture2D    uHdr    : register(t0);
+Texture2D    uAvgLum : register(t1);
 SamplerState uSampler : register(s0);
 
 cbuffer TonemapParams : register(b0)
 {
-    float4 uParams; // x = exposure, y = enabled (>=0.5), zw reserved
+    float4 uParams0; // x = exposure, y = enabled (>=0.5), z = mode, w = TargetLUM
+    float4 uParams1; // x = Saturation, y = ContrastAvgLum, z = Contrast, w = Brightness
+    float4 uParams2; // xyz = Tint color, w = TintAmount
+    float4 uParams3; // x = UpperLUMClamp, yzw reserved (bloom scale/clamp/radius follow-up)
 };
 
 // ACES filmic tonemap (Krzysztof Narkowicz's fitted approximation of the ACES RRT+ODT).
@@ -39,14 +54,61 @@ float4 main(PSInput input) : SV_Target
 {
     float4 hdr = uHdr.Sample(uSampler, input.vUv);
 
-    // OFF: passthrough (saturate reproduces the old UNORM clamp exactly) so the toggle is a clean
-    // regression control.
-    if (uParams.y < 0.5)
+    // OFF / legacy: passthrough (saturate reproduces the old UNORM clamp exactly) so the toggle
+    // stays a clean regression control.
+    if (uParams0.y < 0.5 || uParams0.z < 0.5)
     {
         return float4(saturate(hdr.rgb), hdr.a);
     }
 
-    float3 color = hdr.rgb * uParams.x;   // exposure
-    color = AcesFilmic(color);            // filmic curve (already saturated inside)
-    return float4(color, hdr.a);
+    if (uParams0.z < 1.5)
+    {
+        // GammaAces: the curve expects linear light; the scene is gamma-encoded.
+        float3 lin = pow(max(hdr.rgb, 0.0), 2.2);
+        lin = AcesFilmic(lin * uParams0.x);
+        return float4(pow(lin, 1.0 / 2.2), hdr.a);
+    }
+
+    // EngineFo3Fnv — ISHDRBLENDINSHADER[CIN] on gamma-space values.
+    float3 adapted = uAvgLum.Sample(uSampler, float2(0.5, 0.5)).rgb;
+    float lum = adapted.r + adapted.g + adapted.b;      // BPBLUR writes sum(AvgLum.rgb) into bloom.a
+    float denom = max(lum, uParams0.w);
+    float3 c = hdr.rgb * (uParams0.w / denom) * uParams0.x;
+
+    // Cinematic block (ISHDRBLENDINSHADERCIN): saturation, tint, contrast/brightness around the
+    // authored average-luminance pivot. {Brightness,Contrast} slot assignment is ambiguous in the
+    // constant fill (identical at defaults, <0.04 divergence at FNV values); chosen as
+    // Brightness*(Contrast*c - pivot) + pivot.
+    float luma = dot(c, float3(0.299, 0.587, 0.114));
+    c = lerp(luma.xxx, c, uParams1.x);
+    c = lerp(c, luma * uParams2.xyz, uParams2.w);
+    c = uParams1.w * (uParams1.z * c - uParams1.y) + uParams1.y;
+    return float4(saturate(c), hdr.a);
+}
+
+// Average scene color for the engine exposure: sparse 16x16 grid mean (stand-in for the engine's
+// DownSample16 box chain), then the engine ADAPT pass's steady-state length clamp. Rendered to a
+// 1x1 target; the main pass samples it as uAvgLum. Half-texel inset keeps every tap in-frame.
+float4 mainAvg(PSInput input) : SV_Target
+{
+    const int GridSize = 16;
+    float3 sum = 0.0;
+    [loop]
+    for (int y = 0; y < GridSize; y++)
+    {
+        [loop]
+        for (int x = 0; x < GridSize; x++)
+        {
+            float2 uv = (float2(x, y) + 0.5) / GridSize;
+            sum += uHdr.SampleLevel(uSampler, uv, 0).rgb;
+        }
+    }
+
+    float3 avg = sum / (GridSize * GridSize);
+
+    // ISHDRADAPT steady state: length clamped to [0.01, UpperLUMClamp].
+    float len = length(avg);
+    float clamped = min(max(len, 0.01), uParams3.x);
+    avg *= clamped / max(len, 0.0001);
+    return float4(avg, 1.0);
 }

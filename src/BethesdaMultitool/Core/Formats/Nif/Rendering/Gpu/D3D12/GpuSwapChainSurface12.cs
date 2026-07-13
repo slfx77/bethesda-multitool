@@ -62,10 +62,16 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     // tonemap then samples. Null for the 1-sample path (the scene color is sampled directly).
     private ID3D12Resource? _hdrResolve;
     private readonly GpuTonemapPass12 _tonemap;
-    private readonly float _exposure;
     private readonly bool _tonemapEnabled;
     private uint _width;
     private uint _height;
+
+    /// <summary>
+    ///     Tonemap operator + parameters for the live viewer. Defaults to gamma-corrected ACES; the
+    ///     frame path overrides per game + active imagespace. Setter values should already have
+    ///     <see cref="GpuTonemapSettings.ApplyOverrides" /> applied.
+    /// </summary>
+    public GpuTonemapSettings TonemapSettings { get; set; }
 
     private GpuSwapChainSurface12(
         GpuDevice12 gpu,
@@ -91,20 +97,11 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _msaaColor = msaaColor;
         _hdrResolve = hdrResolve;
         _tonemap = new GpuTonemapPass12(gpu);
-        _exposure = ResolveExposure();
+        TonemapSettings = GpuTonemapSettings.ApplyOverrides(GpuTonemapSettings.GammaAcesDefaults);
         _tonemapEnabled = SceneColorFormat == Format.R16G16B16A16_Float
                           && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
         _width = width;
         _height = height;
-    }
-
-    private static float ResolveExposure()
-    {
-        var raw = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_EXPOSURE");
-        return float.TryParse(raw, System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0f
-            ? v
-            : 1f;
     }
 
     public uint Width => _width;
@@ -324,7 +321,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         var index = _swapChain.CurrentBackBufferIndex;
         var backRtv = new CpuDescriptorHandle(_rtvHeap.GetCPUDescriptorHandleForHeapStart(), (int)index, _rtvDescriptorSize);
         cmd.ResourceBarrierTransition(backBuffer, ResourceStates.Present, ResourceStates.RenderTarget);
-        _tonemap.Record(cmd, hdrSource, SceneColorFormat, backRtv, (int)_width, (int)_height, _exposure, _tonemapEnabled);
+        _tonemap.Record(cmd, hdrSource, SceneColorFormat, backRtv, (int)_width, (int)_height, TonemapSettings, _tonemapEnabled);
         cmd.ResourceBarrierTransition(backBuffer, ResourceStates.RenderTarget, ResourceStates.Present);
 
         // 3. Restore scene-target states for next frame.

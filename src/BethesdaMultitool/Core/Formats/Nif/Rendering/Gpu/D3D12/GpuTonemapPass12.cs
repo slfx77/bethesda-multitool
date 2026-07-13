@@ -29,15 +29,19 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed class GpuTonemapPass12 : IDisposable
 {
-    // SRV ring depth: one HDR-texture view per call, cycled so a view is never overwritten while the
-    // previous frame's tonemap draw still reads it. framesInFlight (2) × a couple of scene targets is
-    // comfortably under 8.
+    // SRV ring depth: one 2-descriptor group (t0 = HDR scene, t1 = 1×1 avg color) per call, cycled so
+    // a view is never overwritten while the previous frame's tonemap draw still reads it.
+    // framesInFlight (2) × a couple of scene targets is comfortably under 8 groups.
     private const int SrvRingSlots = 8;
+    private const int SrvsPerCall = 2;
 
     private readonly GpuDevice12 _gpu;
     private readonly ID3D12RootSignature _rootSignature;
     private readonly ID3D12PipelineState _pso;
+    private readonly ID3D12PipelineState _avgPso;
     private readonly ID3D12DescriptorHeap _srvHeap;
+    private readonly ID3D12DescriptorHeap _avgRtvHeap;
+    private readonly ID3D12Resource _avgTexture;
     private readonly uint _srvDescriptorSize;
     private int _srvCursor;
     private bool _disposed;
@@ -47,12 +51,12 @@ internal sealed class GpuTonemapPass12 : IDisposable
         _gpu = gpu;
         var device = gpu.Device;
 
-        // Root: [0] SRV table (t0, space0) for the HDR scene texture; [1] 4×32-bit root constants (b0)
-        // for the tonemap params; one linear-clamp static sampler (s0).
+        // Root: [0] SRV table (t0 = HDR scene, t1 = 1×1 adapted average color); [1] 16×32-bit root
+        // constants (b0, four float4s of tonemap/cinematic params); one linear-clamp static sampler (s0).
         var srvRange = new DescriptorRange1
         {
             RangeType = DescriptorRangeType.ShaderResourceView,
-            NumDescriptors = 1,
+            NumDescriptors = SrvsPerCall,
             BaseShaderRegister = 0,
             RegisterSpace = 0,
             Flags = DescriptorRangeFlags.DescriptorsVolatile,
@@ -60,7 +64,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
         };
         var srvTable = new RootParameter1(new RootDescriptorTable1(srvRange), ShaderVisibility.Pixel);
         var rootConstants = new RootParameter1(
-            new RootConstants(shaderRegister: 0, registerSpace: 0, num32BitValues: 4),
+            new RootConstants(shaderRegister: 0, registerSpace: 0, num32BitValues: 16),
             ShaderVisibility.Pixel);
 
         var sampler = new StaticSamplerDescription(
@@ -122,10 +126,34 @@ internal sealed class GpuTonemapPass12 : IDisposable
         };
         _pso = device.CreateGraphicsPipelineState(psoDesc);
 
+        // Average-scene-color subpass (engine mode): same fullscreen VS, mainAvg PS, into a private
+        // 1×1 float target the main pass then samples as t1 (the steady-state adapted eye).
+        var avgPs = CompileEmbeddedShader("tonemap.frag.hlsl", "mainAvg", "ps_5_1");
+        var avgPsoDesc = psoDesc;
+        avgPsoDesc.PixelShader = avgPs;
+        avgPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
+        _avgPso = device.CreateGraphicsPipelineState(avgPsoDesc);
+
+        _avgTexture = device.CreateCommittedResource<ID3D12Resource>(
+            new HeapProperties(HeapType.Default),
+            HeapFlags.None,
+            ResourceDescription.Texture2D(Format.R16G16B16A16_Float, 1, 1, 1, 1, 1, 0,
+                ResourceFlags.AllowRenderTarget),
+            ResourceStates.PixelShaderResource);
+        _avgTexture.Name = "TonemapAvgColor1x1";
+
+        _avgRtvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
+        {
+            Type = DescriptorHeapType.RenderTargetView,
+            DescriptorCount = 1,
+            Flags = DescriptorHeapFlags.None,
+        });
+        device.CreateRenderTargetView(_avgTexture, null, _avgRtvHeap.GetCPUDescriptorHandleForHeapStart());
+
         _srvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
-            DescriptorCount = SrvRingSlots,
+            DescriptorCount = SrvRingSlots * SrvsPerCall,
             Flags = DescriptorHeapFlags.ShaderVisible,
         });
         _srvDescriptorSize = device.GetDescriptorHandleIncrementSize(
@@ -140,7 +168,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
     ///     <see cref="GpuSceneFormats.LdrOutput" />). Sets its own descriptor heap + PSO; the caller
     ///     should re-establish its own heap afterward if it records further work.
     /// </summary>
-    /// <param name="exposure">Linear multiply applied before the curve (1 = neutral).</param>
+    /// <param name="settings">Operator + engine/cinematic parameters (see <see cref="GpuTonemapSettings" />).</param>
     /// <param name="enabled">False → passthrough clamp (bit-identical to the legacy LDR path).</param>
     public unsafe void Record(
         ID3D12GraphicsCommandList cmd,
@@ -149,7 +177,7 @@ internal sealed class GpuTonemapPass12 : IDisposable
         CpuDescriptorHandle ldrRtv,
         int width,
         int height,
-        float exposure,
+        in GpuTonemapSettings settings,
         bool enabled)
     {
         if (_disposed)
@@ -157,13 +185,13 @@ internal sealed class GpuTonemapPass12 : IDisposable
             return;
         }
 
-        // Cycle an SRV slot and point it at this call's HDR texture.
+        // Cycle a 2-descriptor group: t0 = this call's HDR texture, t1 = the 1×1 adapted average.
         var slot = _srvCursor;
         _srvCursor = (_srvCursor + 1) % SrvRingSlots;
         var cpu = _srvHeap.GetCPUDescriptorHandleForHeapStart();
-        cpu.Ptr += (nuint)(slot * _srvDescriptorSize);
+        cpu.Ptr += (nuint)(slot * SrvsPerCall * _srvDescriptorSize);
         var gpu = _srvHeap.GetGPUDescriptorHandleForHeapStart();
-        gpu.Ptr += (ulong)(slot * _srvDescriptorSize);
+        gpu.Ptr += (ulong)(slot * SrvsPerCall * _srvDescriptorSize);
 
         var srvDesc = new ShaderResourceViewDescription
         {
@@ -174,16 +202,44 @@ internal sealed class GpuTonemapPass12 : IDisposable
         };
         _gpu.Device.CreateShaderResourceView(hdrTexture, srvDesc, cpu);
 
+        var avgCpu = cpu;
+        avgCpu.Ptr += _srvDescriptorSize;
+        var avgSrvDesc = srvDesc with { Format = Format.R16G16B16A16_Float };
+        _gpu.Device.CreateShaderResourceView(_avgTexture, avgSrvDesc, avgCpu);
+
+        var p = stackalloc float[16]
+        {
+            settings.Exposure, enabled ? 1f : 0f, (float)settings.Mode, settings.TargetLum,
+            settings.Saturation, settings.ContrastAvgLum, settings.Contrast, settings.Brightness,
+            settings.TintR, settings.TintG, settings.TintB, settings.TintAmount,
+            settings.UpperLumClamp, 0f, 0f, 0f,
+        };
+
+        cmd.SetGraphicsRootSignature(_rootSignature);
+        cmd.SetDescriptorHeaps(1, new[] { _srvHeap });
+        cmd.SetGraphicsRootDescriptorTable(0, gpu);
+        cmd.SetGraphicsRoot32BitConstants(1, 16, p, 0);
+        cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+
+        // Engine mode: render the 1×1 adapted average first (t1 sits in the table during this draw but
+        // mainAvg never reads it, so the RENDER_TARGET state is legal).
+        if (enabled && settings.Mode == GpuTonemapMode.EngineFo3Fnv)
+        {
+            cmd.ResourceBarrierTransition(
+                _avgTexture, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
+            cmd.OMSetRenderTargets(_avgRtvHeap.GetCPUDescriptorHandleForHeapStart());
+            cmd.RSSetViewport(new Viewport(0, 0, 1, 1, 0f, 1f));
+            cmd.RSSetScissorRect(1, 1);
+            cmd.SetPipelineState(_avgPso);
+            cmd.DrawInstanced(3, 1, 0, 0);
+            cmd.ResourceBarrierTransition(
+                _avgTexture, ResourceStates.RenderTarget, ResourceStates.PixelShaderResource);
+        }
+
         cmd.OMSetRenderTargets(ldrRtv);
         cmd.RSSetViewport(new Viewport(0, 0, width, height, 0f, 1f));
         cmd.RSSetScissorRect(width, height);
         cmd.SetPipelineState(_pso);
-        cmd.SetGraphicsRootSignature(_rootSignature);
-        cmd.SetDescriptorHeaps(1, new[] { _srvHeap });
-        cmd.SetGraphicsRootDescriptorTable(0, gpu);
-        var p = stackalloc float[4] { exposure, enabled ? 1f : 0f, 0f, 0f };
-        cmd.SetGraphicsRoot32BitConstants(1, 4, p, 0);
-        cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.DrawInstanced(3, 1, 0, 0);
     }
 
@@ -192,6 +248,9 @@ internal sealed class GpuTonemapPass12 : IDisposable
         if (_disposed) return;
         _disposed = true;
         _srvHeap.Dispose();
+        _avgRtvHeap.Dispose();
+        _avgTexture.Dispose();
+        _avgPso.Dispose();
         _pso.Dispose();
         _rootSignature.Dispose();
     }

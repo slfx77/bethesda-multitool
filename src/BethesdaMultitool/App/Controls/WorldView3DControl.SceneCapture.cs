@@ -144,6 +144,9 @@ public sealed partial class WorldView3DControl
             return null;
         }
 
+        // Same tonemap operator/parameters as the live frame (engine imagespace for FO3/FNV, etc.).
+        target.TonemapSettings = ResolveTonemapSettings();
+
         // Perspective view-projection from the current camera pose (matches the live frame's absolute path).
         var aspect = w / (float)h;
         _camera.FarPlane = _renderDistance * 2f + MathF.Abs(_camera.Position.Z) + 2f * _cellSize;
@@ -154,7 +157,7 @@ public sealed partial class WorldView3DControl
         // Diagnostic: log the resolved atmosphere so a wrong sky COLOR can be told apart from a wrong
         // time-band (climate timing). A noon Mojave sky should be blue-ish (skyTop ≈ low-R/high-B) with the
         // sun high (sunDir.Z ≈ 1) and full daylight; red skyTop / low sun ⇒ off time-band or red data.
-        var atmo = AtmosphereState.Resolve(_gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: true);
+        var atmo = AtmosphereState.Resolve(_gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: true, game: _data?.Game ?? default);
         Log.Info(string.Create(CultureInfo.InvariantCulture,
             $"[Capture] atmo hour={_gameHour:0.0} weather={_selectedWeather?.EditorId ?? "(climate default)"} timing={_currentClimateTiming} " +
             $"skyTop=({atmo.SkyTopColor.X:0.00},{atmo.SkyTopColor.Y:0.00},{atmo.SkyTopColor.Z:0.00}) " +

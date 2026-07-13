@@ -903,6 +903,145 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         return list;
     }
 
+    /// <summary>
+    ///     Parse all Image Space (IMGS) records. Cells reference one via XCIM and worldspaces via INAM;
+    ///     the viewer's tonemap stage reads the HDR (TargetLUM/UpperLUMClamp) + cinematic
+    ///     (saturation/contrast/brightness/tint) values to reproduce the engine's post-process.
+    /// </summary>
+    internal List<ImageSpaceRecord> ParseImageSpaces()
+    {
+        return ParseRecordList("IMGS", 128,
+            ParseImageSpaceFromAccessor,
+            record => new ImageSpaceRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            });
+    }
+
+    private ImageSpaceRecord? ParseImageSpaceFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new ImageSpaceRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+
+        string? editorId = null;
+        ImageSpaceHdr? hdr = null;
+        ImageSpaceCinematic? cinematic = null;
+        ImageSpaceTint? tint = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                // FO3/FNV: a single DNAM block. 152 bytes for form version >= 10; 132 for older records
+                // (no Skin Dimmer at +56 — everything after shifts −4; no trailing unused/flags). The
+                // engine's TESImageSpace::Load branches on size < 0x98 the same way, so size (not the
+                // header form version) is the discriminator.
+                case "DNAM" when sub.DataLength >= 132:
+                {
+                    var be = record.IsBigEndian;
+                    hdr = new ImageSpaceHdr
+                    {
+                        EyeAdaptSpeed = ReadFloat(subData, 0, be),
+                        BlurRadius = ReadFloat(subData, 4, be),
+                        BlurPasses = ReadFloat(subData, 8, be),
+                        EmissiveMult = ReadFloat(subData, 12, be),
+                        TargetLum = ReadFloat(subData, 16, be),
+                        UpperLumClamp = ReadFloat(subData, 20, be),
+                        BrightScale = ReadFloat(subData, 24, be),
+                        BrightClamp = ReadFloat(subData, 28, be),
+                        LumRampNoTex = ReadFloat(subData, 32, be),
+                    };
+
+                    // Bloom(3) + GetHit(3) + NightEye(4) floats sit between the HDR block and the
+                    // cinematic block; the v>=10 layout also inserts Skin Dimmer after the HDR floats.
+                    var cinBase = (sub.DataLength >= 152 ? 60 : 56) + 40;
+                    cinematic = new ImageSpaceCinematic
+                    {
+                        Saturation = ReadFloat(subData, cinBase, be),
+                        ContrastAvgLum = ReadFloat(subData, cinBase + 4, be),
+                        Contrast = ReadFloat(subData, cinBase + 8, be),
+                        Brightness = ReadFloat(subData, cinBase + 12, be),
+                    };
+                    tint = new ImageSpaceTint
+                    {
+                        Red = ReadFloat(subData, cinBase + 16, be),
+                        Green = ReadFloat(subData, cinBase + 20, be),
+                        Blue = ReadFloat(subData, cinBase + 24, be),
+                        Amount = ReadFloat(subData, cinBase + 28, be),
+                    };
+                    break;
+                }
+                // Skyrim+ split layout (kept for forward compatibility with the newer games).
+                case "HNAM" when sub.DataLength >= 36:
+                    hdr = new ImageSpaceHdr
+                    {
+                        EyeAdaptSpeed = ReadFloat(subData, 0, record.IsBigEndian),
+                        BlurRadius = ReadFloat(subData, 4, record.IsBigEndian),
+                        BlurPasses = ReadFloat(subData, 8, record.IsBigEndian),
+                        EmissiveMult = ReadFloat(subData, 12, record.IsBigEndian),
+                        TargetLum = ReadFloat(subData, 16, record.IsBigEndian),
+                        UpperLumClamp = ReadFloat(subData, 20, record.IsBigEndian),
+                        BrightScale = ReadFloat(subData, 24, record.IsBigEndian),
+                        BrightClamp = ReadFloat(subData, 28, record.IsBigEndian),
+                        LumRampNoTex = ReadFloat(subData, 32, record.IsBigEndian),
+                    };
+                    break;
+                case "CNAM" when sub.DataLength >= 12:
+                    cinematic = new ImageSpaceCinematic
+                    {
+                        Saturation = ReadFloat(subData, 0, record.IsBigEndian),
+                        Brightness = ReadFloat(subData, 4, record.IsBigEndian),
+                        Contrast = ReadFloat(subData, 8, record.IsBigEndian),
+                    };
+                    break;
+                case "TNAM" when sub.DataLength >= 16:
+                    tint = new ImageSpaceTint
+                    {
+                        Amount = ReadFloat(subData, 0, record.IsBigEndian),
+                        Red = ReadFloat(subData, 4, record.IsBigEndian),
+                        Green = ReadFloat(subData, 8, record.IsBigEndian),
+                        Blue = ReadFloat(subData, 12, record.IsBigEndian),
+                    };
+                    break;
+            }
+        }
+
+        return new ImageSpaceRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            Hdr = hdr,
+            Cinematic = cinematic,
+            Tint = tint,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian
+        };
+    }
+
     #endregion
 
     #region Sounds
