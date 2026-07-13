@@ -70,7 +70,7 @@ internal static class SpeedTreeRenderCommands
         var bsaOption = new Option<string?>("--bsa") { Description = "Meshes BSA to enumerate .spt from" };
         var dirOption = new Option<string?>("--dir") { Description = "Directory to enumerate .spt from" };
         var esmOption = new Option<string?>("--esm")
-        { Description = "ESM to source per-tree TREE.SNAM seed + OBND/BNAM height (matches the viewer build)" };
+        { Description = "ESM to source the per-tree TREE.SNAM seed (matches the viewer build)" };
         command.Options.Add(bsaOption);
         command.Options.Add(dirOption);
         command.Options.Add(esmOption);
@@ -100,10 +100,7 @@ internal static class SpeedTreeRenderCommands
             {
                 var model = SptFile.Parse(bytes);
                 treeByPath.TryGetValue(archivePath, out var treeMeta);
-                var opt = SptGeometryOptions.FromEnvironment() with
-                {
-                    TargetHeight = treeMeta?.TargetHeight,
-                };
+                var opt = SptGeometryOptions.FromEnvironment();
                 var seed = treeMeta?.Seed ?? model.General.Token2005;
                 var renderable = SptGeometryBuilder.Build(model, seed, opt);
                 var bark = renderable.Submeshes.FirstOrDefault(s => s.ShapeName == "spt:bark");
@@ -238,10 +235,8 @@ internal static class SpeedTreeRenderCommands
         {
             var seedCount = treeByPath.Values.Count(t => t.Seed.HasValue);
             var leafCount = treeByPath.Values.Count(t => t.LeafTexture is not null);
-            var heightCount = treeByPath.Values.Count(t => t.TargetHeight.HasValue);
             Console.WriteLine($"ESM TREE metadata resolved for {treeByPath.Count} tree(s) " +
-                              $"({leafCount} ICON leaf atlases, {seedCount} SNAM seeds, " +
-                              $"{heightCount} OBND/BNAM heights).");
+                              $"({leafCount} ICON leaf atlases, {seedCount} SNAM seeds).");
         }
 
         Console.WriteLine($"Found {items.Count} .spt files. Rendering to {outDir} ...");
@@ -274,7 +269,6 @@ internal static class SpeedTreeRenderCommands
                 var opt = baseOpt with
                 {
                     LeafTextureOverride = treeMeta?.LeafTexture,
-                    TargetHeight = treeMeta?.TargetHeight,
                 };
                 var seed = treeMeta?.Seed ?? model.General.Token2005;
                 var renderable = SptGeometryBuilder.Build(model, seed, opt);
@@ -395,15 +389,11 @@ internal static class SpeedTreeRenderCommands
         };
         var esmOption = new Option<string?>("--esm")
         {
-            Description = "ESM to source TREE.ICON, TREE.SNAM seed, and TREE OBND/BNAM height for this .spt.",
+            Description = "ESM to source TREE.ICON and the TREE.SNAM seed for this .spt.",
         };
         var seedOption = new Option<uint?>("--seed")
         {
             Description = "Override the SpeedTree seed (TREE.SNAM / GECK SpeedTree Seed).",
-        };
-        var targetHeightOption = new Option<float?>("--target-height")
-        {
-            Description = "Override final tree height in model units (TREE billboard/BNAM/OBND-derived height).",
         };
         command.Arguments.Add(fileArg);
         command.Options.Add(outOption);
@@ -416,7 +406,6 @@ internal static class SpeedTreeRenderCommands
         command.Options.Add(leafTexOption);
         command.Options.Add(esmOption);
         command.Options.Add(seedOption);
-        command.Options.Add(targetHeightOption);
         command.SetAction(parseResult => RenderSpt(
             parseResult.GetValue(fileArg)!,
             parseResult.GetValue(outOption)!,
@@ -428,14 +417,12 @@ internal static class SpeedTreeRenderCommands
             parseResult.GetValue(bsaOption),
             parseResult.GetValue(leafTexOption),
             parseResult.GetValue(esmOption),
-            parseResult.GetValue(seedOption),
-            parseResult.GetValue(targetHeightOption)));
+            parseResult.GetValue(seedOption)));
         return command;
     }
 
     private static int RenderSpt(string sptPath, string outPng, string dataSource, float azimuth, float elevation,
-        int size, bool dumpTextures, string? bsa, string? leafTexture, string? esmPath, uint? seedOverride,
-        float? targetHeight)
+        int size, bool dumpTextures, string? bsa, string? leafTexture, string? esmPath, uint? seedOverride)
     {
         var bytes = SpeedTreeSptIo.LoadSptBytes(sptPath, bsa);
         if (bytes is null)
@@ -487,7 +474,6 @@ internal static class SpeedTreeRenderCommands
         var resolvedLeafTexture = leafTexture is not null
             ? SpeedTreeTexturePath.IconToLeafPath(leafTexture)
             : treeMeta?.LeafTexture;
-        var resolvedTargetHeight = targetHeight ?? treeMeta?.TargetHeight;
         // FALLOUT_SPT_CROSSED=1 renders the crossed-card path the GUI viewer uses (no per-card
         // camera-facing billboard) instead of the still-friendly camera-facing cards — for diagnosing
         // what the live viewer actually shows.
@@ -501,7 +487,6 @@ internal static class SpeedTreeRenderCommands
             LeafFaceDirection = crossed || billboard ? null : camDir,
             LeafBillboard = billboard,
             LeafTextureOverride = resolvedLeafTexture,
-            TargetHeight = resolvedTargetHeight,
         };
 
         var seed = seedOverride ?? treeMeta?.Seed ?? model.General.Token2005;
@@ -516,7 +501,7 @@ internal static class SpeedTreeRenderCommands
             ExpandLeafBillboards(renderable, camDir, windStrength, windTime);
         }
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"Built geometry: seed={seed} targetH={(resolvedTargetHeight?.ToString(CultureInfo.InvariantCulture) ?? "(raw)")} {renderable.Submeshes.Count} submeshes, bounds W={renderable.Width:F1} H={renderable.Height:F1} D={renderable.Depth:F1}"));
+            $"Built geometry: seed={seed} {renderable.Submeshes.Count} submeshes, bounds W={renderable.Width:F1} H={renderable.Height:F1} D={renderable.Depth:F1}"));
         foreach (var sub in renderable.Submeshes)
         {
             Console.WriteLine(

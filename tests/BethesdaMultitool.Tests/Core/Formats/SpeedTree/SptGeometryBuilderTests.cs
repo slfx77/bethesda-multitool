@@ -89,7 +89,7 @@ public class SptGeometryBuilderTests
     }
 
     [Fact]
-    public void Build_ScalesTreeToTargetHeightFromObnd()
+    public void Build_KeepsNaturalEngineScale_IgnoresTargetHeight()
     {
         var model = new SptModel
         {
@@ -98,11 +98,17 @@ public class SptGeometryBuilderTests
             Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner2 = new Vector3(6, 6, 0) }]
         };
 
-        var result = SptGeometryBuilder.Build(model, 7, new SptGeometryOptions { TargetHeight = 175f });
+        // The engine renders the loft at its natural world scale — there is NO rescale to the TREE
+        // OBND/BNAM height (verified against 15 runtime SptMeshDumper dumps: e.g. WastelandShrub01
+        // dumps 64.8 units tall while its OBND says 175). TargetHeight is a retained-but-ignored
+        // option until the last in-flight caller drops it.
+        var natural = SptGeometryBuilder.Build(model, 7, new SptGeometryOptions());
+        var withTarget = SptGeometryBuilder.Build(model, 7, new SptGeometryOptions { TargetHeight = 175f });
 
         // The tree grows along +Z (FNV world-up); NifRenderableModel labels the Z-extent "Depth".
-        // The whole tree (branches + leaves) is resized so its vertical extent matches the OBND value.
-        Assert.InRange(result.Depth, 175f * 0.98f, 175f * 1.02f);
+        Assert.Equal(natural.Depth, withTarget.Depth, 3);
+        Assert.True(MathF.Abs(withTarget.Depth - 175f) > 5f,
+            $"Depth {withTarget.Depth} should be the natural loft height, not the OBND value.");
     }
 
     [Fact]

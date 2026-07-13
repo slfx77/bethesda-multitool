@@ -162,7 +162,7 @@ internal static class NifHeadlessRenderer
             meshCache = new ReferenceMeshCache12(
                 gpu, meshArchives, textureResolver, textureCache, deletion,
                 capacity: 2048, decodedCacheByteBudget: 256L * 1024 * 1024,
-                autoSizeMeshCapacity: false, speedTreeHeights: null, speedTreeLeafTextures: leafTextures,
+                autoSizeMeshCapacity: false, speedTreeLeafTextures: leafTextures,
                 speedTreeDimming: dimming);
             references = new ReferenceRenderer12(gpu, recorder, ring, rootSig, heap, meshCache)
             {

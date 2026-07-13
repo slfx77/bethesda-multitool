@@ -122,7 +122,6 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         long decodedCacheByteBudget = DefaultDecodedMeshCacheByteBudget,
         ReferenceDecodedMeshDiskCache12? persistentDecodedCache = null,
         bool autoSizeMeshCapacity = true,
-        IReadOnlyDictionary<string, float>? speedTreeHeights = null,
         IReadOnlyDictionary<string, string>? speedTreeLeafTextures = null,
         IReadOnlyDictionary<string, SpeedTreeDimming>? speedTreeDimming = null)
     {
@@ -130,8 +129,10 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be > 0.");
 
         _meshArchives = meshArchives;
-        _decoder = new ReferenceMeshDecoder12(meshArchives, textureResolver, speedTreeHeights, speedTreeLeafTextures,
-            speedTreeDimming);
+        // speedTreeHeights: null — the engine renders .spt geometry at its natural world scale; the old
+        // TREE-OBND rescale oversized shrubs (param retained on the decoder until its file frees up).
+        _decoder = new ReferenceMeshDecoder12(meshArchives, textureResolver, speedTreeHeights: null,
+            speedTreeLeafTextures, speedTreeDimming);
         _textureCache = textureCache;
         _deletionQueue = deletionQueue;
         _geometryArena = new GpuGeometryArena12(gpu)

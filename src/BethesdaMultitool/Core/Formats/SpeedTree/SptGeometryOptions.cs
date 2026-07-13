@@ -10,8 +10,9 @@ namespace BethesdaMultitool.Core.Formats.SpeedTree;
 ///     counts, ring counts, the per-ring gravity bend, and leaf card size are all DATA-DRIVEN from the
 ///     <c>.spt</c> splines/scalars and the decompiled formulas — there are deliberately NO geometry
 ///     tuning knobs here. What remains is only what the SDK math genuinely leaves to the host: the
-///     final rescale to the TREE OBND/BNAM height, the recursion cap, the leaf atlas override (TREE.ICON),
-///     and how a static (non-camera) mesh stands in for the engine's per-frame leaf billboards.
+///     recursion cap, the leaf atlas override (TREE.ICON), and how a static (non-camera) mesh stands in
+///     for the engine's per-frame leaf billboards. The loft output is already world scale — the engine
+///     renders it 1:1 with no OBND/billboard rescale (verified against 15 runtime mesh dumps).
 /// </summary>
 public sealed record SptGeometryOptions
 {
@@ -19,14 +20,18 @@ public sealed record SptGeometryOptions
     public int MaxLevels { get; init; } = 8;
 
     /// <summary>
-    ///     Fallback master scale (SpeedTree "tree size") used only when the <c>.spt</c> General section
-    ///     carries no Float2006 size. The SDK works in arbitrary internal units; the tree is rescaled to
-    ///     <see cref="TargetHeight" /> afterwards, so this mainly sets internal proportions.
+    ///     Fallback master scale (SpeedTree "tree size", pre-×10 units) used only when the <c>.spt</c>
+    ///     General section carries no Float2006 size — it then IS the tree's world size the way Float2006
+    ///     would be.
     /// </summary>
     public float TrunkHeight { get; init; } = 100f;
 
-    /// <summary>Authoritative final tree height (model units) from the TREE OBND Z-extent / Oblivion BNAM
-    /// height. Null → keep the generated height.</summary>
+    /// <summary>
+    ///     IGNORED — kept only so in-flight callers still compile. The engine renders the loft at its
+    ///     natural world scale with NO rescale to TREE OBND/BNAM (15 runtime SptMeshDumper oracles;
+    ///     the old rescale oversized shrubs up to 2.7×). Delete once
+    ///     <c>ReferenceMeshDecoder12</c> (shared-dirty with the NIF-animation session) drops its assignment.
+    /// </summary>
     public float? TargetHeight { get; init; }
 
     /// <summary>Final-height tuning multiplier (env <c>FALLOUT_VIEWER_SPT_HEIGHT_SCALE</c>) — a host-side
@@ -92,8 +97,9 @@ public sealed record SptGeometryOptions
 
     /// <summary>
     ///     Build options from the defaults, applying the <c>FALLOUT_VIEWER_SPT_HEIGHT*</c> env-var
-    ///     overrides. Only the final-height rescale is exposed — branch/leaf geometry is fully derived
-    ///     from the <c>.spt</c> data and the decompiled formulas, so there is nothing else to tune.
+    ///     overrides. Only a host-side height nudge is exposed — branch/leaf geometry AND world scale are
+    ///     fully derived from the <c>.spt</c> data and the decompiled formulas, so there is nothing else
+    ///     to tune.
     /// </summary>
     public static SptGeometryOptions FromEnvironment()
     {

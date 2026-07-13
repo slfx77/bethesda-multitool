@@ -119,8 +119,6 @@ public sealed partial class WorldView3DControl
                 // knob is explicitly set (then honor the pinned value — used by eviction stress gates).
                 autoSizeMeshCapacity: BethesdaMultitool.Core.EnvironmentVariables.Get(
                     BethesdaMultitool.Core.EnvironmentVariables.Viewer.ReferenceMeshCapacity) is null,
-                // Data-driven SpeedTree sizing: each .spt tree is scaled to its TREE-record OBND height.
-                speedTreeHeights: _data?.SpeedTreeHeights,
                 // Authoritative leaf atlas from the TREE record's ICON (the .spt's dev material often never shipped).
                 speedTreeLeafTextures: _data?.SpeedTreeLeafTextures,
                 // TREE CNAM canopy-depth dimming (leaf + branch scalars) — engine-applied per tree.

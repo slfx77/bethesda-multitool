@@ -65,13 +65,6 @@ internal sealed class WorldViewData
         new Dictionary<uint, float>();
 
     /// <summary>
-    ///     SpeedTree archive path (<c>trees\&lt;name&gt;.spt</c>) → recorded tree height (TREE OBND
-    ///     Z-extent). Lets the procedural <c>.spt</c> geometry generator size each tree from the ESM
-    ///     data instead of a constant. Case-insensitive keys.
-    /// </summary>
-    public Dictionary<string, float> SpeedTreeHeights { get; init; } = [];
-
-    /// <summary>
     ///     SpeedTree archive path (<c>trees\&lt;name&gt;.spt</c>) → the leaf-atlas texture the engine
     ///     applies, taken from the TREE record's <c>ICON</c> field (NOT the `.spt`'s dev-era material,
     ///     which often never shipped). Case-insensitive keys.

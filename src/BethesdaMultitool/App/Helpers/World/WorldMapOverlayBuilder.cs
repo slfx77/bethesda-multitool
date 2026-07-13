@@ -102,7 +102,6 @@ internal static class WorldMapOverlayBuilder
             RefrToCellIndex = refrToCellIndex,
             BoundsIndex = boundsIndex,
             ModelPathIndex = modelPathIndex,
-            SpeedTreeHeights = BuildSpeedTreeHeights(semantic),
             SpeedTreeLeafTextures = BuildSpeedTreeLeafTextures(semantic),
             SpeedTreeDimming = BuildSpeedTreeDimming(semantic),
             CategoryIndex = categoryIndex,
@@ -277,7 +276,6 @@ internal static class WorldMapOverlayBuilder
             RefrToCellIndex = refrToCellIndex,
             BoundsIndex = boundsIndex,
             ModelPathIndex = modelPathIndex,
-            SpeedTreeHeights = BuildSpeedTreeHeights(suppRecords),
             SpeedTreeLeafTextures = BuildSpeedTreeLeafTextures(suppRecords),
             SpeedTreeDimming = BuildSpeedTreeDimming(suppRecords),
             CategoryIndex = categoryIndex,
@@ -313,46 +311,6 @@ internal static class WorldMapOverlayBuilder
             ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),
             AllWeathers = BuildAllWeathers(suppRecords.Weather)
         };
-    }
-
-    /// <summary>
-    ///     Map each SpeedTree <c>.spt</c> archive path to its recorded height (TREE record OBND Z-extent)
-    ///     so the procedural generator can size trees from the ESM rather than a constant.
-    /// </summary>
-    private static Dictionary<string, float> BuildSpeedTreeHeights(RecordCollection semantic)
-    {
-        var map = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-        foreach (var record in semantic.GenericRecords)
-        {
-            if (record.ModelPath is not { } modelPath || !SpeedTreeModelPath.IsSpt(modelPath))
-            {
-                continue;
-            }
-
-            // FO3/FNV: the TREE record's OBND Z-extent. Oblivion (TES4) records predate OBND, so fall
-            // back to the BNAM billboard Height (the tree's rendered height), then the MODB bound radius.
-            // Without this, Oblivion trees keep their tiny built scale and render far too small.
-            var height = record.Bounds is { } bounds ? bounds.Z2 - bounds.Z1 : 0f;
-
-            if (height <= 0f && record.Fields.TryGetValue("BNAM", out var bnam) &&
-                bnam is System.Collections.IDictionary bd && bd["Height"] is float bh)
-            {
-                height = bh;
-            }
-
-            if (height <= 0f && record.Fields.TryGetValue("MODB", out var modb) &&
-                modb is byte[] { Length: >= 4 } mb)
-            {
-                height = BitConverter.ToSingle(mb, 0);
-            }
-
-            if (height > 0f)
-            {
-                map[SpeedTreeModelPath.ToArchivePath(modelPath)] = height;
-            }
-        }
-
-        return map;
     }
 
     /// <summary>

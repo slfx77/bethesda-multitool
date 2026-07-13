@@ -42,9 +42,11 @@ internal static class SptGeometryBuilder
     ///     (<c>CIdvBranch::Compute</c> L2373), and the <c>budReach</c>/ring-radius floors are a literal
     ///     <c>0.01</c> in ×10 space. At ÷10 scale <c>100/42.5 = 2.352551</c> vs the engine's
     ///     <c>1000/425 = 2.352550</c> — a count landing near 8.0 floors to 7 in the builder and 8 in the
-    ///     engine, spawning one fewer child and forking the entire downstream RNG draw sequence. Generating
-    ///     at ×10 makes every such operation bit-identical to the engine; the final mesh is rescaled to OBND
-    ///     by <see cref="ApplyHeightScale" />, so the absolute ×10 never reaches the output.
+    ///     engine, spawning one fewer child and forking the entire downstream RNG draw sequence.
+    ///     This ×10 loft space IS world space: the engine renders the loft output 1:1 with no further
+    ///     rescale (runtime SptMeshDumper dumps across 15 FNV+Oblivion trees match the natural loft's bark
+    ///     height within ±5%, e.g. WastelandShrub 45.6 vs 47.4, YewForest 757.9 vs 754.6 — while its TREE
+    ///     OBND says 175 and its billboard 440, proving neither drives the mesh scale).
     /// </summary>
     private const float EngineWorldScale = 10f;
 
@@ -170,8 +172,8 @@ internal static class SptGeometryBuilder
         return result;
     }
 
-    /// <summary>Master scale = random(Float2006 − Float2007, Float2006 + Float2007), seeded; the final
-    /// tree is rescaled to OBND afterwards so this only sets internal proportions.</summary>
+    /// <summary>Master scale = random(Float2006 − Float2007, Float2006 + Float2007), seeded. This draw IS
+    /// the tree's world size (×10 loft space = world space, see <see cref="EngineWorldScale" />).</summary>
     private static float ComputeTreeSize(SptGeneralParams general, SptGeometryOptions opt, SptRandom rng)
     {
         // ×10 to loft in the engine's native scale (see EngineWorldScale) — the size GetUniform's range then
@@ -1146,28 +1148,15 @@ internal static class SptGeometryBuilder
             : frame;
     }
 
+    /// <summary>
+    ///     Host-side <see cref="SptGeometryOptions.HeightScale" /> nudge only. The natural loft is already
+    ///     world scale (see <see cref="EngineWorldScale" />) — the engine performs NO rescale to TREE
+    ///     OBND/BNAM, and neither does this (the old OBND rescale oversized every FNV/Oblivion shrub whose
+    ///     bounds/billboard are authored generously: WastelandShrub 175/108 = 1.62×, ShrubDaphne 1.9×).
+    /// </summary>
     private static void ApplyHeightScale(List<RenderableSubmesh> submeshes, SptGeometryOptions opt)
     {
-        var minZ = float.MaxValue;
-        var maxZ = float.MinValue;
-        foreach (var sub in submeshes)
-        {
-            for (var i = 2; i < sub.Positions.Length; i += 3)
-            {
-                var z = sub.Positions[i];
-                if (z < minZ) minZ = z;
-                if (z > maxZ) maxZ = z;
-            }
-        }
-
-        var height = maxZ - minZ;
-        if (height <= 1e-3f)
-        {
-            return;
-        }
-
-        var desired = (opt.TargetHeight is { } target && target > 0f ? target : height) * opt.HeightScale;
-        var scale = desired / height;
+        var scale = opt.HeightScale;
         if (MathF.Abs(scale - 1f) < 1e-3f)
         {
             return;

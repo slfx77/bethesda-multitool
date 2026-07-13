@@ -9,9 +9,9 @@ namespace EsmAnalyzer.Commands;
 /// <summary>
 ///     <c>spt meshstats</c>: build one <c>.spt</c> (no render) and print the geometry metrics the engine
 ///     oracles are judged by — bark bounds/tri count, leaf-card count, leaf-center z-distribution as a
-///     fraction of total height, and leaf-vs-bark radial extents. Comparisons against OBSE
-///     <c>ExportMesh</c> dumps are RATIO-based (height-normalized): the builder rescales to
-///     TREE OBND/billboard height, so absolutes are meaningless.
+///     fraction of total height, and leaf-vs-bark radial extents. The natural loft IS world scale
+///     (no OBND/billboard rescale, matching the engine), so absolutes compare directly against OBSE/NVSE
+///     <c>ExportMesh</c> dump extents — remember dump leaf verts are unexpanded card CENTERS.
 /// </summary>
 internal static class SpeedTreeMeshStatsCommand
 {
@@ -23,7 +23,7 @@ internal static class SpeedTreeMeshStatsCommand
         var bsaOption = new Option<string?>("--bsa")
         { Description = "Read <file> from this BSA archive instead of disk" };
         var esmOption = new Option<string?>("--esm")
-        { Description = "ESM to source per-tree TREE.SNAM seed + OBND/BNAM height (matches the viewer build)" };
+        { Description = "ESM to source the per-tree TREE.SNAM seed (matches the viewer build)" };
         var csvOption = new Option<string?>("--csv")
         { Description = "Write per-leaf-card centers (x,y,z) to this CSV" };
         var lowestOption = new Option<int>("--lowest")
@@ -71,7 +71,6 @@ internal static class SpeedTreeMeshStatsCommand
 
         var opt = SptGeometryOptions.FromEnvironment() with
         {
-            TargetHeight = treeMeta?.TargetHeight,
             // Match the viewer's GPU leaf path so the per-leaf wind weight packs into aBitangent.z
             // (the non-billboard fallback bakes flat quads and carries no wind data).
             LeafBillboard = true,
@@ -81,7 +80,7 @@ internal static class SpeedTreeMeshStatsCommand
 
         var ci = CultureInfo.InvariantCulture;
         Console.WriteLine(string.Create(ci,
-            $"=== {Path.GetFileName(sptPath)} seed={seed} targetHeight={(treeMeta?.TargetHeight is { } th ? th.ToString("F1", ci) : "(none)")} ==="));
+            $"=== {Path.GetFileName(sptPath)} seed={seed} ==="));
 
         var barkMin = new Vector3(float.MaxValue);
         var barkMax = new Vector3(float.MinValue);

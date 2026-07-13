@@ -9,7 +9,8 @@ namespace EsmAnalyzer.Commands;
 
 /// <summary>
 ///     TREE record metadata resolved from an ESM for a SpeedTree <c>.spt</c>: the engine's authoritative
-///     leaf atlas (ICON), the build seed (SNAM), and the target height (OBND/BNAM).
+///     leaf atlas (ICON) and the build seed (SNAM). OBND/BNAM sizes are informational only — the engine
+///     renders the loft at its natural world scale and never rescales to them (runtime-dump verified).
 /// </summary>
 internal sealed record TreeMetadata(
     string ArchivePath,
@@ -20,11 +21,7 @@ internal sealed record TreeMetadata(
     float? BillboardWidth,
     float? BillboardHeight)
 {
-    public float? TargetHeight => Positive(ObndHeight) ?? Positive(BillboardHeight);
-
     public string DisplayName => string.IsNullOrWhiteSpace(EditorId) ? ArchivePath : EditorId!;
-
-    private static float? Positive(float? value) => value is > 0f ? value : null;
 }
 
 /// <summary>
