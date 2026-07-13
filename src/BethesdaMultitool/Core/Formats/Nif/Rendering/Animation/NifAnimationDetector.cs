@@ -14,9 +14,11 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 /// </summary>
 internal readonly record struct NifAnimationSignature(
     bool HasInternalSkin,
-    bool HasNodeKeyframeTracks)
+    bool HasNodeKeyframeTracks,
+    bool HasControllerSequenceTracks)
 {
-    public bool IsAnimatedOrSkinned => HasInternalSkin || HasNodeKeyframeTracks;
+    public bool IsAnimatedOrSkinned =>
+        HasInternalSkin || HasNodeKeyframeTracks || HasControllerSequenceTracks;
 }
 
 internal static class NifAnimationDetector
@@ -25,6 +27,8 @@ internal static class NifAnimationDetector
     {
         var hasInternalSkin = false;
         var hasKeyframeTracks = false;
+        var hasSequences = false;
+        var hasTransformInterpolators = false;
 
         for (var i = 0; i < nif.Blocks.Count; i++)
         {
@@ -34,19 +38,26 @@ internal static class NifAnimationDetector
             {
                 hasKeyframeTracks = true;
             }
+            else if (typeName == "NiControllerSequence")
+            {
+                hasSequences = true;
+            }
+            else if (typeName == "NiTransformInterpolator")
+            {
+                hasTransformInterpolators = true;
+            }
             else if (!hasInternalSkin &&
                      typeName is "NiSkinInstance" or "BSDismemberSkinInstance")
             {
                 hasInternalSkin = HasResolvableInternalBones(data, nif, i);
             }
-
-            if (hasInternalSkin && hasKeyframeTracks)
-            {
-                break;
-            }
         }
 
-        return new NifAnimationSignature(hasInternalSkin, hasKeyframeTracks);
+        // A sequence only yields tracks through NiTransformInterpolator indirection — a manager
+        // whose sequences drive other controller kinds (flip/vis/alpha) has no transform rig here.
+        // The collector applies the strict gates (idle-named sequence, BSX Animated bit).
+        return new NifAnimationSignature(
+            hasInternalSkin, hasKeyframeTracks, hasSequences && hasTransformInterpolators);
     }
 
     /// <summary>Every bone ref must resolve to a scene-node block in THIS file for the NIF's own

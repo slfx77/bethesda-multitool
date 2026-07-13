@@ -137,7 +137,14 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // (specular-disabled-on-emissive) SpecularColor slot — the FO3/FNV SHADER_NOLIGHTING formula
     // texture × emissive (× mult). Warm v32 entries carry (0,0,0) there and would render emissive
     // glows white (BarrelPile03's clipped goo).
-    internal const int DecoderVersion = 33;
+    // Bumped 33→34: (a) the animation clip policy changed to loop the FULL authored controller
+    // range (the old last-IdleN-loop window parked Morrowind banners near-horizontal in Idle3's
+    // violent sub-window) — the clip window is baked into the cached NifMeshAnimation, so stale
+    // entries keep the wrong window; (b) modern NiControllerManager idle sequences (FNV cloth
+    // flags) now attach a playback rig, so their Animation/Skin payloads appear where v33 cached
+    // none; (c) SpeedTree .spt meshes now keep their natural engine world scale — v33 entries
+    // carry the old TREE-OBND/billboard rescale that oversized shrubs up to 2.7×.
+    internal const int DecoderVersion = 34;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

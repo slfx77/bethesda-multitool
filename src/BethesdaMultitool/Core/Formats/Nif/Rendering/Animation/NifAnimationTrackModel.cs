@@ -51,13 +51,18 @@ internal sealed record NifNodeTrack(
 /// <summary>
 ///     One bone in the flattened animation rig. Bones are ordered parents-before-children so a single
 ///     forward pass composes world transforms. Rest S/R/T is the node's authored local transform.
+///     <see cref="SourceBlockIndex" /> is the NIF node block this bone came from — the skin exporter
+///     maps skin-bone REFS through it (names alone are ambiguous: FNV's nv_ncr_flag_s carries two
+///     node chains with identical names). Decode-time only: the disk cache does not persist it
+///     (−1 after a cache round-trip; every consumer that needs it runs before serialization).
 /// </summary>
 internal sealed record NifAnimBone(
     string Name,
     int ParentIndex,
     Vector3 RestTranslation,
     Quaternion RestRotation,
-    float RestScale);
+    float RestScale,
+    int SourceBlockIndex = -1);
 
 /// <summary>
 ///     A mesh's complete animation description: the bone tree, per-bone keyframe tracks (parallel to

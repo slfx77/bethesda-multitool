@@ -38,9 +38,19 @@ internal static class NifSubmeshSkinExporter
             return null;
         }
 
+        // Skin-bone → anim-bone resolution: block index first (exact — the collectors record each
+        // bone's source node block, and skin instances reference bones by block ref), name as the
+        // fallback for rigs without source indices (cache round-trips, synthetic tests). Names
+        // alone mis-map NIFs with duplicate node names (nv_ncr_flag_s ships two same-named chains).
+        var animBoneByBlock = new Dictionary<int, int>(animation.Bones.Length);
         var animBoneByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < animation.Bones.Length; i++)
         {
+            if (animation.Bones[i].SourceBlockIndex >= 0)
+            {
+                animBoneByBlock.TryAdd(animation.Bones[i].SourceBlockIndex, i);
+            }
+
             animBoneByName.TryAdd(animation.Bones[i].Name, i);
         }
 
@@ -97,9 +107,15 @@ internal static class NifSubmeshSkinExporter
             for (var b = 0; b < skinData.Bones.Length; b++)
             {
                 inverseBinds[b] = skinData.Bones[b].InverseBindPose;
-                var boneName = b < skinInstance.BoneRefs.Length &&
-                               skinInstance.BoneRefs[b] >= 0 && skinInstance.BoneRefs[b] < nif.Blocks.Count
-                    ? NifBlockParsers.ReadBlockName(data, nif.Blocks[skinInstance.BoneRefs[b]], nif)
+                var boneRef = b < skinInstance.BoneRefs.Length ? skinInstance.BoneRefs[b] : -1;
+                if (animBoneByBlock.TryGetValue(boneRef, out var byBlock))
+                {
+                    skinBoneToAnimBone[b] = byBlock;
+                    continue;
+                }
+
+                var boneName = boneRef >= 0 && boneRef < nif.Blocks.Count
+                    ? NifBlockParsers.ReadBlockName(data, nif.Blocks[boneRef], nif)
                     : null;
                 skinBoneToAnimBone[b] = boneName is not null &&
                                         animBoneByName.TryGetValue(boneName, out var animIdx)

@@ -263,12 +263,24 @@ internal sealed class ReferenceMeshDecoder12
                     collisionTriangles = havok.Triangles;
                 }
 
-                // Keyframe playback rig: internally-skinned NIFs with node keyframe tracks (banners)
-                // carry the bone tree + tracks + per-shape skin inputs so the viewer can re-pose them
-                // per frame. The baked vertices above stay REST-POSE — the rig is additive data.
-                if (animationSignature is { HasNodeKeyframeTracks: true, HasInternalSkin: true })
+                // Keyframe playback rig: internally-skinned NIFs with animation tracks carry the
+                // bone tree + tracks + per-shape skin inputs so the viewer can re-pose them per
+                // frame. The baked vertices above stay REST-POSE — the rig is additive data. Two
+                // era collectors feed the SAME model: TES3 per-node NiKeyframeController graphs
+                // (Morrowind banners) and modern NiControllerManager idle sequences (FNV cloth
+                // flags); a NIF carrying both (none sighted) prefers the per-node graph.
+                if (animationSignature.HasInternalSkin &&
+                    (animationSignature.HasNodeKeyframeTracks ||
+                     animationSignature.HasControllerSequenceTracks))
                 {
-                    animation = NifNodeKeyframeTrackCollector.Collect(nifData, nif);
+                    animation = animationSignature.HasNodeKeyframeTracks
+                        ? NifNodeKeyframeTrackCollector.Collect(nifData, nif)
+                        : null;
+                    if (animation is null && animationSignature.HasControllerSequenceTracks)
+                    {
+                        animation = NifControllerSequenceTrackCollector.Collect(nifData, nif);
+                    }
+
                     if (animation is not null)
                     {
                         skinsByShapeIndex = Skinning.NifSubmeshSkinExporter.Export(nifData, nif, animation);
