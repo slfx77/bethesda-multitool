@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
@@ -127,7 +128,8 @@ public static class AtmosphereState
         WeatherRecord? weather = null,
         ClimateTiming? climate = null,
         bool lightingEnabled = true,
-        Vector3? moonlightDirection = null)
+        Vector3? moonlightDirection = null,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         var hour = WrapHour(gameHour);
         var (srB, srE, ssB, ssE) = NormalizeWindows(climate ?? ClimateTiming.Default);
@@ -224,6 +226,14 @@ public static class AtmosphereState
         }
         else
         {
+            // FNV/FO3: the engine's triangle-wave sun arc with the FNV GMST constants (noon apex ≈ 83°,
+            // slight −Y/south offset) replaces the fitted 50° analytic arc. Other non-DALC games keep the
+            // analytic arc until their constants are extracted.
+            if (game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3)
+            {
+                sunDir = FnvSunPathDirection(hour, srB, srE, ssB, ssE);
+            }
+
             sunColor = lightingEnabled ? sunColorBase * day : Vector3.Zero;
         }
 
@@ -370,19 +380,55 @@ public static class AtmosphereState
         return Vector3.Normalize(dir);
     }
 
-    // --- FO4-family directional-light path (Sun::Update, fo4_lighting_decompiled.txt) ------------------
-    // Engine defaults read from the Fallout4.exe image (SettingT statics; see the audit notes):
+    // --- Engine triangle-wave directional-light path (Sun::Update) --------------------------------------
+    // FO4 (fo4_lighting_decompiled.txt) and FNV (atmosphere_decompiled.txt:1855-1896) share the same
+    // sun-path shape: position = (x·fSunXExtreme, fSunYExtreme, |fSunXExtreme| − |x·fSunXExtreme|), with
+    // x sweeping +1→−1 across the padded day leg and wrapping overnight.
+    // FO4 engine defaults read from the Fallout4.exe image (SettingT statics; see the audit notes):
     // fSunXExtreme=400, fSunYExtreme=25, fSunAlphaTransTime=2h, fSunShadowMinAngle=30(°),
-    // fSunShadowScale=0. The light traverses a triangle-wave arc continuously over the full 24 hours
-    // (day leg between the padded sunrise/sunset midpoints, night leg wrapping back), and its unit z
-    // is floored at fSunShadowMinAngle·DEG_TO_RAD — the engine compares the unit-vector component
-    // against radians verbatim (≈ sin θ for small angles), reproduced exactly.
+    // fSunShadowScale=0. The FO4 unit z is floored at fSunShadowMinAngle·DEG_TO_RAD — the engine compares
+    // the unit-vector component against radians verbatim (≈ sin θ for small angles), reproduced exactly.
     private const float Fo4SunXExtreme = 400f;
     private const float Fo4SunYExtreme = 25f;
     private const float Fo4SunAlphaTransTimeHours = 2f;
     private const float Fo4SunShadowMinAngleDegrees = 30f;
 
+    // FNV GMSTs verified from FalloutNV.esm (2026-07-13): fSunXExtreme=800, fSunYExtreme=−100 → noon
+    // apex atan(800/100) ≈ 83° with the sun slightly on the −Y (south) side — supersedes the fitted 50°
+    // arc (that figure was a stand-in guess; the engine constants are authored). FO3 shares the engine
+    // path; its GMSTs are unverified, so it rides the FNV values as a labeled stand-in. No z floor:
+    // FNV has no shadow-min-angle clamp (FO4-only), and the night leg is unused (SunDirection's night
+    // return keeps the (0,0,−1) convention the horizon-glow gating depends on).
+    private const float FnvSunXExtreme = 800f;
+    private const float FnvSunYExtreme = -100f;
+
     internal static Vector3 Fo4SunPathDirection(float hour, float srB, float srE, float ssB, float ssE)
+    {
+        var p = EngineSunTrianglePosition(hour, srB, srE, ssB, ssE, Fo4SunXExtreme, Fo4SunYExtreme);
+        p = p.LengthSquared() > 1e-6f ? Vector3.Normalize(p) : Vector3.UnitZ;
+        // Engine: z += fSunShadowScale·DEG_TO_RAD (default 0), then floor at fSunShadowMinAngle·DEG_TO_RAD.
+        p.Z = MathF.Max(p.Z, Fo4SunShadowMinAngleDegrees * (MathF.PI / 180f));
+        return Vector3.Normalize(p);
+    }
+
+    /// <summary>
+    ///     FNV/FO3 daytime sun direction: the engine triangle wave with the FNV GMST constants. Only the
+    ///     day leg is served (night keeps the analytic path's (0,0,−1) so the horizon-glow/midnight gates
+    ///     behave); callers pass the same climate windows as <see cref="SunDirection" />.
+    /// </summary>
+    internal static Vector3 FnvSunPathDirection(float hour, float srB, float srE, float ssB, float ssE)
+    {
+        if (hour <= srB || hour >= ssE)
+        {
+            return new Vector3(0f, 0f, -1f); // night: below the horizon (directional colour fades to 0)
+        }
+
+        var p = EngineSunTrianglePosition(hour, srB, srE, ssB, ssE, FnvSunXExtreme, FnvSunYExtreme);
+        return p.LengthSquared() > 1e-6f ? Vector3.Normalize(p) : Vector3.UnitZ;
+    }
+
+    private static Vector3 EngineSunTrianglePosition(
+        float hour, float srB, float srE, float ssB, float ssE, float sunXExtreme, float sunYExtreme)
     {
         var dayStart = ((srB + srE) * 0.5f) - (Fo4SunAlphaTransTimeHours * 0.5f);
         var dayEnd = ((ssB + ssE) * 0.5f) + (Fo4SunAlphaTransTimeHours * 0.5f);
@@ -397,12 +443,8 @@ public static class AtmosphereState
             x = (sinceDusk / (24f - (dayEnd - dayStart))) * 2f - 1f;      // −1 at dusk → +1 at dawn
         }
 
-        var px = x * Fo4SunXExtreme;
-        var p = new Vector3(px, Fo4SunYExtreme, MathF.Abs(Fo4SunXExtreme) - MathF.Abs(px));
-        p = p.LengthSquared() > 1e-6f ? Vector3.Normalize(p) : Vector3.UnitZ;
-        // Engine: z += fSunShadowScale·DEG_TO_RAD (default 0), then floor at fSunShadowMinAngle·DEG_TO_RAD.
-        p.Z = MathF.Max(p.Z, Fo4SunShadowMinAngleDegrees * (MathF.PI / 180f));
-        return Vector3.Normalize(p);
+        var px = x * sunXExtreme;
+        return new Vector3(px, sunYExtreme, MathF.Abs(sunXExtreme) - MathF.Abs(px));
     }
 
     // --- WTHR NAM0 time-band sampling (Sky::FillColorBlend) -------------------------------------------

@@ -119,13 +119,23 @@ public class MoonSkyTests
     }
 
     [Fact]
-    public void Profile_Fallout_HasNoPerPhaseTextures()
+    public void Profile_Fallout_UsesEngineMasserPhaseSet()
     {
-        // Single-moon (and the other multi-moon games) ship no per-phase moon art, so the renderer uses the
-        // full-moon texture for every phase.
+        // FNV's engine moon is "Masser" with the full 8-phase texture set shipped in Textures2.bsa
+        // (decompile + archive verified 2026-07-13; docs/research/fnv_engine_hdr_imagespace.md §2).
+        // The FO3/FNV phase cycle is anchored at FULL on day 0 (Moon::Update member table), the
+        // reverse anchor of the TES games' new-first order, and the black masser_new stub phase is
+        // hidden rather than drawn.
         var moon = SkyMoonProfile.ForGame(BethesdaGame.FalloutNewVegas);
 
-        Assert.False(moon.HasPerPhaseTextures);
-        Assert.Null(moon.PhaseTexturePath(secondary: false, 0));
+        Assert.True(moon.HasPerPhaseTextures);
+        Assert.Equal(@"textures\sky\masser_full.dds", moon.PhaseTexturePath(secondary: false, 0));
+        Assert.Equal(@"textures\sky\masser_new.dds", moon.PhaseTexturePath(secondary: false, 4));
+        Assert.Equal(@"textures\sky\masser_three_wax.dds", moon.PhaseTexturePath(secondary: false, 7));
+        Assert.Equal(4, moon.HiddenPhaseIndex);
+        Assert.Equal(24f, moon.PrimaryOrbit.PeriodHours); // speed 0.25 x 60 deg/h = exact daily orbit
+        Assert.Equal(55f, moon.PrimaryOrbit.MaxAltitudeDeg); // 90 - 35 deg engine inclination
+        // The engine texture is the masser art; the legacy skymoonfull stays only as a fallback probe.
+        Assert.Equal(@"textures\sky\masser_full.dds", moon.PrimaryTextureCandidates[0]);
     }
 }

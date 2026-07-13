@@ -49,7 +49,8 @@ public sealed partial class WorldMapControl
     {
         if (!_hillshadeLightingEnabled) return null;
         var resolved = AtmosphereState.Resolve(
-            _gameHour, weather: null, climate: _currentClimateTiming, lightingEnabled: true);
+            _gameHour, weather: null, climate: _currentClimateTiming, lightingEnabled: true,
+            game: _data?.Game ?? default);
         var sun = resolved.SunWorldDirection; // unit TO-sun, +X east / +Y north / +Z up
         const float minElevation = 0.25f;
         return Vector3.Normalize(new Vector3(sun.X, -sun.Y, MathF.Max(minElevation, sun.Z)));

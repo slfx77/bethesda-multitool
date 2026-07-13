@@ -513,4 +513,40 @@ public sealed class AtmosphereStateTests
         // sky must be untouched). sin(50°) ≈ 0.766 is the apex sunDir.Z.
         Assert.Equal(0f, AtmosphereState.HorizonGlow(12f, 5f, 19f, sunDirZ: 0.766f));
     }
+
+    // --- FNV/FO3 engine sun path (triangle wave, FNV GMSTs fSunXExtreme=800 / fSunYExtreme=−100) ----
+
+    [Fact]
+    public void FnvSunPath_NoonApex_MatchesEngineConstants()
+    {
+        // FNV climate windows 6/8/18/20 → padded day leg 6..20, x=0 (solar noon) at hour 13.
+        // Apex = atan(800/100) ≈ 83°: sunDir.Z = 800/√(800²+100²) ≈ 0.9923, Y on the −south side.
+        var dir = AtmosphereState.FnvSunPathDirection(13f, 6f, 8f, 18f, 20f);
+        Assert.Equal(0.9923f, dir.Z, 3);
+        Assert.True(dir.Y < 0f, "engine fSunYExtreme is −100 — the sun sits slightly south of zenith");
+        Assert.Equal(0f, dir.X, 3);
+    }
+
+    [Fact]
+    public void FnvSunPath_NightKeepsBelowHorizonConvention()
+    {
+        // Outside the daylight span the analytic (0,0,−1) convention is preserved — the horizon-glow
+        // midnight gating depends on |sunDir.Z| being 1 at night.
+        Assert.Equal(new System.Numerics.Vector3(0f, 0f, -1f),
+            AtmosphereState.FnvSunPathDirection(2f, 6f, 8f, 18f, 20f));
+    }
+
+    [Fact]
+    public void Resolve_FalloutNewVegas_UsesEngineTriangleWaveAtNoon()
+    {
+        var fnv = AtmosphereState.Resolve(13f, climate: FnvTiming(), game: BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas);
+        var generic = AtmosphereState.Resolve(13f, climate: FnvTiming());
+
+        Assert.True(fnv.SunWorldDirection.Z > 0.98f, "FNV noon apex ≈ 83° (engine GMSTs)");
+        Assert.True(generic.SunWorldDirection.Z < 0.85f, "non-FNV games keep the analytic 50° arc");
+    }
+
+    private static AtmosphereState.ClimateTiming FnvTiming() =>
+        AtmosphereState.ClimateTiming.FromClimateData(
+            new BethesdaMultitool.Core.Formats.Esm.Models.Records.World.ClimateTimingData(36, 48, 108, 120, 0, 0x83));
 }

@@ -15,8 +15,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 ///         FO4/FO76 *Textures*.ba2): Morrowind moons live at <c>textures\tx_*_full.dds</c>; Oblivion and
 ///         Skyrim use the Creation slots <c>textures\sky\masser_full.dds</c> / <c>secunda_full.dds</c>;
 ///         FO4/FO76 ship both leftover Skyrim sets but the engine's single moon is the SECUNDA artwork
-///         (the small white-gray disc — matched against an in-game FO4 screenshot); FO3/FNV use
-///         <c>textures\sky\skymoonfull.dds</c>.
+///         (the small white-gray disc — matched against an in-game FO4 screenshot); FO3/FNV's engine
+///         moon is "Masser" too (decompile-verified; FNV ships the 8-phase <c>masser_*</c> set — the
+///         old <c>skymoonfull.dds</c> is an unreferenced legacy asset, kept as a fallback candidate).
 ///     </para>
 ///     <para>
 ///         The half-size fractions here are FALLBACKS. The engine's true moon size is a pair of GameSettings
@@ -90,9 +91,17 @@ public sealed record SkyMoonProfile
     public bool HasSecondMoon => MoonCount >= 2;
 
     /// <summary>True when the game ships distinct per-phase moon textures (Morrowind, Oblivion — both
-    /// moons — and FO4/76's secunda, all archive-verified). Skyrim shades phases in-shader and FO3/FNV
-    /// have a static moon, so those reuse the single full-moon texture for every phase.</summary>
+    /// moons — FO3/FNV's masser set, and FO4/76's secunda, all archive-verified). Skyrim shades phases
+    /// in-shader, so it reuses the single full-moon texture for every phase.</summary>
     public bool HasPerPhaseTextures => PrimaryPhaseTexturePattern is not null && PhaseTokens.Count == MoonSky.PhaseCount;
+
+    /// <summary>
+    ///     Phase index whose shipped texture is a deliberately-black stub the engine relies on a dark
+    ///     night sky to hide (FO3/FNV <c>masser_new.dds</c> = 94-byte black disc; the Oblivion
+    ///     <c>*_new.dds</c> stubs are the same family). The viewer skips the moon draw at this phase —
+    ///     drawing the stub renders an opaque black quad over the stars. Null = draw every phase.
+    /// </summary>
+    public int? HiddenPhaseIndex { get; init; }
 
     /// <summary>The per-phase texture path for a moon at <paramref name="phaseIndex" /> (0..7), or null when
     /// this game has no per-phase textures (caller falls back to the full-moon texture). The index is
@@ -125,7 +134,12 @@ public sealed record SkyMoonProfile
 
     // Verified asset paths (see class remarks). Candidate order = preference; the probe skips any the
     // loaded archives don't ship.
-    private static readonly string[] FalloutSingleMoon = [@"textures\sky\skymoonfull.dds"];
+    // FO3/FNV: the engine moon is "Masser" (Sky::HandleClimateChange passes the Oblivion-holdover base
+    // name — MemDebug rdata, docs/research/fnv_engine_hdr_imagespace.md §2) and FNV Textures2.bsa ships
+    // the full masser_* 8-phase set; skymoonfull.dds is a legacy asset no Moon code references, kept
+    // only as a fallback for archives that lack the masser set.
+    private static readonly string[] FalloutSingleMoon =
+        [@"textures\sky\masser_full.dds", @"textures\sky\skymoonfull.dds"];
     private static readonly string[] CreationMasser = [@"textures\sky\masser_full.dds"];
     private static readonly string[] CreationSecunda = [@"textures\sky\secunda_full.dds"];
     private static readonly string[] MorrowindMasser = [@"textures\tx_masser_full.dds"];
@@ -191,13 +205,29 @@ public sealed record SkyMoonProfile
     private static readonly MoonSky.MoonOrbit SingleNightlyOrbit = new(
         PeriodHours: 24f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 68f, PeakAzimuthDeg: 90f, AzSwingDeg: 20f);
 
-    // FO3/FNV: single moon. Fallback = the FNV shipped GMSTs (iMasserSize 85 / fSunXExtreme 800 = 0.106).
+    // FO3/FNV phase-token order, decompile-verified (Moon::Update indexes its 8 texture-name members by
+    // (phase+3)·8; the ctor's token→member assignments put FULL at phase 0 and NEW at phase 4 — the
+    // reverse anchor of the TES games' new-first cycle). masser_new.dds ships as a stub (black disc);
+    // day 0 = full moon in FO3/FNV.
+    private static readonly string[] FalloutPhaseTokens =
+        ["full", "three_wan", "half_wan", "one_wan", "new", "one_wax", "half_wax", "three_wax"];
+
+    // FO3/FNV: single moon ("Masser"). Fallback size = the FNV shipped GMSTs (iMasserSize 85 /
+    // fSunXExtreme 800 = 0.106). Orbit constants from Sky::HandleClimateChange's Moon ctor args
+    // (static_data_dump.txt): speed 0.25 × 60°/h = 15°/h → an exact 24h period (the FNV moon rises at
+    // the same time nightly — the day slider changes PHASE, not position), inclination 35° → culmination
+    // ≈ 55°. The cos-bell arc shape is the viewer's standing approximation of the engine's rotated-arm
+    // circle; the period/altitude are the engine's.
     private static readonly SkyMoonProfile Fallout = new()
     {
         MoonCount = 1,
         PrimaryTextureCandidates = FalloutSingleMoon,
         PrimaryHalfSizeFraction = 0.106f,
-        PrimaryOrbit = SingleNightlyOrbit,
+        PrimaryOrbit = new MoonSky.MoonOrbit(
+            PeriodHours: 24f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 55f, PeakAzimuthDeg: 90f, AzSwingDeg: 20f),
+        PrimaryPhaseTexturePattern = @"textures\sky\masser_{0}.dds",
+        PhaseTokens = FalloutPhaseTokens,
+        HiddenPhaseIndex = 4, // masser_new.dds is a black stub — skip the draw at new moon
     };
 
     // Skyrim: fallback = the shipped Skyrim.esm GMSTs (iMasserSize 90 / 400 = 0.225, iSecundaSize 40 / 400 = 0.10).
