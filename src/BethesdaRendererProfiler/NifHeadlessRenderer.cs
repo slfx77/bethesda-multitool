@@ -45,6 +45,19 @@ internal static class NifHeadlessRenderer
         float? litHour = null; // when set, bind real AtmosphereState lighting (sun+ambient) at this hour
         var azimuthDeg = 315f; // camera azimuth; override with --yaw to view a specific face
         var animTime = 0f; // --anim-time: pins the animation clock (UV scroll / skinned pose) for deterministic captures
+        // --anim-hold + --out2: after settle, keep rendering N extra iterations with the SAME camera
+        // and the clock ADVANCING from --anim-time at 30 Hz, then save the last frame to --out2.
+        // Reproduces the live viewer's parked-camera state (streaming quiesces → batch reuse/freeze
+        // engages) so idle-playback regressions show up headless: for an animated NIF, out2 must
+        // DIFFER from out; equal pixels = playback froze when the scene settled.
+        var animHoldIterations = 0;
+        string? outPng2 = null;
+        // --gui-shape: drive the reference renderer with the LIVE VIEWER's call shape — a
+        // CullCameraPose (tolerant cull → widened batches + per-instance refilter) and
+        // deferBlended:true + RenderBlendedDeferred() — instead of the harness's exact-cull inline
+        // form. The paths diverge in the renderer, so an idle-playback bug can hide in one and not
+        // the other.
+        var guiShape = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -66,6 +79,9 @@ internal static class NifHeadlessRenderer
                 case "--lit": litHour = float.TryParse(Next(args, ref i), out var h) ? h : 13f; break;
                 case "--yaw": azimuthDeg = float.TryParse(Next(args, ref i), out var az) ? az : 315f; break;
                 case "--anim-time": animTime = float.TryParse(Next(args, ref i), out var at) ? at : 0f; break;
+                case "--anim-hold": _ = int.TryParse(Next(args, ref i), out animHoldIterations); break;
+                case "--out2": outPng2 = Next(args, ref i); break;
+                case "--gui-shape": guiShape = true; break;
                 case "--textures-bsa" or "--textures-archive":
                     // Consume following tokens until the next flag.
                     while (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
@@ -269,9 +285,26 @@ internal static class NifHeadlessRenderer
                 // to a fixed value: two renders at the same time are byte-identical, different times
                 // show the motion — the settle loop re-renders the SAME pose each iteration.
                 references.SetWind(Vector2.UnitX, 0f, animTime);
-                references.Render(viewProj, cylinder);
-                water.SetNifWaterPlanes(references.NifWaterPlanes);
-                var waterDraws = water.Render(viewProj, cylinder);
+                int waterDraws;
+                if (guiShape)
+                {
+                    // Live-viewer call shape: tolerant cull pose + deferred blended pass.
+                    var pose = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12
+                        .ReferenceRenderer12.CullCameraPose(
+                            Vector3.Normalize(new Vector3(-1f, -1f, -0.5f)), 0.9f, 1f);
+                    references.Render(viewProj, cylinder, deferBlended: true,
+                        cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose);
+                    water.SetNifWaterPlanes(references.NifWaterPlanes);
+                    waterDraws = water.Render(viewProj, cylinder);
+                    references.RenderBlendedDeferred();
+                }
+                else
+                {
+                    references.Render(viewProj, cylinder);
+                    water.SetNifWaterPlanes(references.NifWaterPlanes);
+                    waterDraws = water.Render(viewProj, cylinder);
+                }
+
                 target.RecordReadback(cmd);
                 recorder.EndFrame();
 
@@ -351,6 +384,87 @@ internal static class NifHeadlessRenderer
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPng))!);
             PngWriter.SaveRgba(rgba, size, size, outPng);
             Console.WriteLine($"[nif-render] saved {outPng}");
+
+            // Parked-camera hold phase: identical camera every frame, clock advancing at 30 Hz —
+            // the live viewer's idle state. Batch reuse engages once the quiet-build streak is met,
+            // so a frozen-playback regression reproduces here without the GUI.
+            if (animHoldIterations > 0 && !string.IsNullOrWhiteSpace(outPng2))
+            {
+                var localRadius = references.TryGetMeshLocalRadius(meshId, out var hr) && hr > 1f ? hr : 300f;
+                var focus = frameRadius > 1f ? frameCenter : Vector3.Zero;
+                var halfHeight = (frameRadius > 1f ? frameRadius : localRadius) * 1.1f;
+                var viewProj = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg: azimuthDeg,
+                    elevationDeg: 30f, orthoHalfHeight: halfHeight, aspect: 1f);
+                var (camRight, camUp) = OrthoViewProjBuilder.CameraBasis(azimuthDeg, 30f);
+                var cullRadius = MathF.Max((focus.Length() + halfHeight) * 1.5f, 4096f);
+                var cylinder = OrthoViewProjBuilder.BuildCoverCylinder(Vector3.Zero, cullRadius);
+
+                var holdStartContentVersion = references.BatchContentVersion;
+                byte[]? holdBgra = null;
+                for (var k = 1; k <= animHoldIterations; k++)
+                {
+                    recorder.BeginFrame();
+                    var cmd = recorder.CommandList;
+                    deletion.Tick();
+                    ring.ResetFrame();
+                    heap.BeginFrame(recorder.FrameIndex);
+                    cmd.SetDescriptorHeaps(1, new[] { heap.Heap });
+                    cmd.SetGraphicsRootSignature(rootSig.RootSignature);
+                    if (litHour is { } holdHour)
+                    {
+                        BindLitAtmosphere(cmd, recorder.FrameIndex, ring, holdHour, focus);
+                    }
+                    else
+                    {
+                        BindFlatAtmosphere(cmd, recorder.FrameIndex, ring);
+                    }
+
+                    target.Bind(cmd);
+                    references.SetLeafBillboardBasis(camRight, camUp);
+                    references.SetWind(Vector2.UnitX, 0f, animTime + (k / 30f));
+                    if (guiShape)
+                    {
+                        var pose = new BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12
+                            .ReferenceRenderer12.CullCameraPose(
+                                Vector3.Normalize(new Vector3(-1f, -1f, -0.5f)), 0.9f, 1f);
+                        references.Render(viewProj, cylinder, deferBlended: true,
+                            cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose);
+                        water.SetNifWaterPlanes(references.NifWaterPlanes);
+                        water.Render(viewProj, cylinder);
+                        references.RenderBlendedDeferred();
+                    }
+                    else
+                    {
+                        references.Render(viewProj, cylinder);
+                        water.SetNifWaterPlanes(references.NifWaterPlanes);
+                        water.Render(viewProj, cylinder);
+                    }
+
+                    target.RecordReadback(cmd);
+                    recorder.EndFrame();
+                    WaitForFence(gpu.FrameFence, recorder.LastSubmittedFenceValue);
+                    holdBgra = target.ReadbackToBytes();
+                }
+
+                if (holdBgra is not null)
+                {
+                    var holdRgba = BgraToRgba(holdBgra);
+                    if (!string.IsNullOrWhiteSpace(bgSpec))
+                    {
+                        CompositeOverBackground(holdRgba, size, size, bgSpec);
+                    }
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPng2))!);
+                    PngWriter.SaveRgba(holdRgba, size, size, outPng2);
+                    // rebuilds ≈ animHoldIterations ⇒ batch reuse NEVER engaged and the hold did not
+                    // exercise the frozen-scene path; a handful ⇒ the scene froze as intended.
+                    Console.WriteLine(
+                        $"[nif-render] saved {outPng2} (hold {animHoldIterations} iters, clock " +
+                        $"{animTime:F2}->{animTime + (animHoldIterations / 30f):F2}s, " +
+                        $"rebuilds during hold={references.BatchContentVersion - holdStartContentVersion})");
+                }
+            }
+
             return 0;
         }
         catch (Exception ex)

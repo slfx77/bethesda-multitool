@@ -40,7 +40,20 @@ internal sealed class CpuMeshSkinner12
     private sealed class Entry
     {
         public required CachedNifMesh12 Mesh;
+
+        /// <summary>Nearest instance distance² from the LAST COMPLETE sighting — drives the radius
+        /// gate and nearest-first priority. Never decays in place: it is replaced wholesale from
+        /// <see cref="PendingDistanceSq" /> when a resolve pass re-sights the mesh, so it stays
+        /// valid across arbitrarily long frozen (batch-reuse) streaks where Register cannot run.</summary>
         public float NearestDistanceSq;
+
+        /// <summary>Min-accumulator for the CURRENT resolve pass's Register calls; consumed (and
+        /// reset) by the same frame's Tick. Register runs BEFORE Tick within a frame, so decaying
+        /// <see cref="NearestDistanceSq" /> directly in Tick erased the refresh it had just
+        /// received — every frozen streak then saw MaxValue and the radius gate stopped playback
+        /// the moment the camera parked (the "only animates while the camera moves" report).</summary>
+        public float PendingDistanceSq = float.MaxValue;
+
         public long LastSeenResolvePass;
         public Matrix4x4[] BoneWorlds = [];
         public Matrix4x4[] SkinMatrices = [];
@@ -69,7 +82,7 @@ internal sealed class CpuMeshSkinner12
         if (_entries.TryGetValue(mesh, out var entry))
         {
             entry.LastSeenResolvePass = _resolvePassCounter;
-            entry.NearestDistanceSq = MathF.Min(entry.NearestDistanceSq, nearestDistanceSq);
+            entry.PendingDistanceSq = MathF.Min(entry.PendingDistanceSq, nearestDistanceSq);
             return;
         }
 
@@ -134,6 +147,20 @@ internal sealed class CpuMeshSkinner12
                 sub.AnimatedVertexBufferView = null;
             }
 
+            if (resolveRan)
+            {
+                // Consume this pass's sighting (Register ran before Tick within the frame): a
+                // sighted mesh gets its fresh nearest distance — allowed to GROW as the camera
+                // walks away; an un-sighted one keeps its last-known distance and is handled by
+                // the resolve-pass expiry below.
+                if (entry.PendingDistanceSq < float.MaxValue)
+                {
+                    entry.NearestDistanceSq = entry.PendingDistanceSq;
+                }
+
+                entry.PendingDistanceSq = float.MaxValue;
+            }
+
             if (_resolvePassCounter - entry.LastSeenResolvePass > ResolvePassGrace)
             {
                 (expired ??= []).Add(entry.Mesh);
@@ -173,15 +200,6 @@ internal sealed class CpuMeshSkinner12
             {
                 meshBudget--;
                 AnyAnimatedThisFrame = true;
-            }
-
-            // Decay the nearest distance so a mesh the camera left drops out — but only on frames
-            // where a resolve pass could refresh it. Decaying on reuse frames left every entry at
-            // float.MaxValue one frame after the scene froze, gating all of them out of the radius
-            // check: animation stopped whenever the camera stopped.
-            if (resolveRan)
-            {
-                entry.NearestDistanceSq = float.MaxValue;
             }
         }
     }
