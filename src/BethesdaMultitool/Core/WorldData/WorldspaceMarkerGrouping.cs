@@ -45,12 +45,9 @@ internal static class WorldspaceMarkerGrouping
 
     // A child worldspace flagged "Use Map Data" (WNAM parent + PNAM bit 2) is drawn on its parent's world
     // map, so the engine shows the child's map markers on the parent's map — e.g. the FNV/FO3 sub-worldspaces
-    // that hang off the main wasteland. Fold each such child's markers into the parent's list so the 2D map
-    // surfaces them when the parent worldspace is selected (WorldMapStateController keys off SelectedWorldspace).
-    // Coordinates are taken 1:1: every shipped FNV/FO3/Oblivion "Use Map Data" child shares the parent's
-    // coordinate space. The rare child whose map image is repositioned would transform here via ONAM map
-    // offset/scale (WorldspaceRecord.MapOffsetScale*/MapOffsetZ); that is deferred. The child keeps its own
-    // entry, so viewing the child directly is unaffected.
+    // that hang off the main wasteland. Fold transformed copies into the parent's list so the 2D map surfaces
+    // them when the parent worldspace is selected (WorldMapStateController keys off SelectedWorldspace). The
+    // child keeps its original entry, so viewing the child directly is unaffected.
     private static void AppendChildMarkersToParents(
         List<WorldspaceRecord> worldspaces,
         Dictionary<uint, List<PlacedReference>> markersByWorldspace)
@@ -75,7 +72,42 @@ internal static class WorldspaceMarkerGrouping
                 markersByWorldspace[parentId] = parentMarkers;
             }
 
-            parentMarkers.AddRange(childMarkers);
+            parentMarkers.AddRange(childMarkers.Select(marker => TransformMarkerToParentMap(child, marker)));
         }
+    }
+
+    /// <summary>
+    ///     Applies FNV/FO3 <c>TESWorldSpace::AdjustMapMarkerCoord(..., false)</c>: scale about the center of
+    ///     the child's NAM0/NAM9 bounds, then add the ONAM X/Y offsets. Scale 0 is a sentinel that skips
+    ///     scaling (the same as the engine), while absent ONAM data has the initialized 1/0/0 defaults.
+    /// </summary>
+    internal static PlacedReference TransformMarkerToParentMap(
+        WorldspaceRecord child,
+        PlacedReference marker)
+    {
+        // FNV/FO3 ONAM is { World Map Scale, X Offset, Y Offset }. These model property names predate that
+        // recovered layout, but retain the three floats in their on-disk order.
+        var scale = child.MapOffsetScaleX ?? 1.0f;
+        var offsetX = child.MapOffsetScaleY ?? 0.0f;
+        var offsetY = child.MapOffsetZ ?? 0.0f;
+
+        var x = marker.X;
+        var y = marker.Y;
+        var z = marker.Z;
+        if (scale != 1.0f && scale != 0.0f)
+        {
+            var centerX = ((child.BoundsMinX ?? 0.0f) + (child.BoundsMaxX ?? 0.0f)) * 0.5f;
+            var centerY = ((child.BoundsMinY ?? 0.0f) + (child.BoundsMaxY ?? 0.0f)) * 0.5f;
+            x = centerX + ((x - centerX) * scale);
+            y = centerY + ((y - centerY) * scale);
+            z *= scale;
+        }
+
+        return marker with
+        {
+            X = x + offsetX,
+            Y = y + offsetY,
+            Z = z
+        };
     }
 }
