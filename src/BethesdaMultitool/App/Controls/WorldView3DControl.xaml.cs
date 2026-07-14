@@ -199,11 +199,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
     // Layer visibility — toggled by D1/D2/D3 keys. D4 toggles textured-vs-VCLR-only.
     // D5 toggles placed-object (REFR) rendering.
-    // The cell-boundary grid is a debug overlay → default OFF (must match CellsCheckBox.IsChecked in XAML).
-    // True only during InitializeComponent. The toolbar toggles set IsChecked in XAML, which fires
-    // their Checked/Unchecked handlers DURING load (now that they live in flyouts that realize early);
-    // the handlers read x:Name fields / touch renderers that aren't ready yet, so they no-op until the
-    // constructor clears this. Backing _show* fields already default to the XAML-checked values.
+    // The cell-boundary grid is a debug overlay → default OFF (must match CellsCheckBox.IsChecked in
+    // the settings-panel XAML — every _show* initializer must mirror its panel control's default).
+    // True during construction: WireSettingsPanel subscribes the settings-panel controls while this
+    // is still set, so any event that fires before the renderers exist no-ops.
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell",
         "S3604:Member initializer values should not be redundant",
         Justification = "InitializeComponent() fires the toggle handlers during construction; they read " +
@@ -249,6 +248,15 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // references). On by default when lighting is on; off ⇒ pixel-identical to the pre-shadow
     // renderer. Env kill-switch FALLOUT_VIEWER_SHADOWS=0 overrides the toggle.
     private bool _showShadows = true;
+    // Post-processing toggles (settings-panel "Post-processing" section; hidden for Morrowind —
+    // no engine HDR stage there). Read per-frame by ResolveTonemapSettings, so flipping them is
+    // free (no pipeline rebuild): HDR off = LegacyClamp passthrough (the pre-HDR look — the float
+    // scene target itself stays; only the static FALLOUT_VIEWER_HDR=0 env kill-switch reverts it),
+    // bloom off = skip the BrightPassBlur chain, imagespace off = neutral cinematic (no golden
+    // desert filter) while the eye-adapt exposure stays.
+    private bool _hdrEnabled = true;
+    private bool _bloomEnabled = true;
+    private bool _imagespaceModifiersEnabled = true;
 
     // Active worldspace's cell-edge size in world units (4096 Fallout-family, 8192 Morrowind). Set from
     // WorldViewData.CellWorldSize on every cell-grid build; drives camera framing, picking, render
@@ -279,8 +287,13 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
     public WorldView3DControl()
     {
+        // The settings panel exists for the control's whole lifetime (accessor shims like
+        // NavMeshCheckBox resolve through it), so standalone hosts (profiler apps) work with no
+        // SingleFileTab attached — the host merely DISPLAYS SettingsPanel in its Settings tab.
+        SettingsPanel = new WorldView3DSettingsPanel();
         InitializeComponent();
-        _initializing = false; // XAML load done — toolbar toggle handlers may now run for real.
+        WireSettingsPanel(); // subscribe while _initializing still gates the handlers
+        _initializing = false; // XAML load done — settings-panel toggle handlers may now run for real.
         // The interior browser is the shared CellListControl; in 3D a cell loads only on a real click.
         CellList.Activation = CellListControl.ActivationMode.ItemClick;
         CellList.CellActivated += CellList_CellActivated;
@@ -315,6 +328,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     internal void LoadData(WorldViewData data)
     {
         _data = data;
+        // Morrowind has no engine HDR/bloom/imagespace stage (LegacyClamp) — hide the toggles
+        // rather than offering dead switches. Re-evaluated on every LoadData (ESM switch).
+        SettingsPanel.TonemapSection.Visibility = data.Game == Core.Games.BethesdaGame.Morrowind
+            ? Visibility.Collapsed
+            : Visibility.Visible;
         // Make the base-object category available to the placement bake before the renderer pulls
         // its first cell — drives the per-category visibility filter (activators off by default).
         data.RenderCache.CategoryIndex = data.CategoryIndex;

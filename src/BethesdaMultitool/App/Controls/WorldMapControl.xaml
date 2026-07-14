@@ -14,10 +14,10 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!-- Toolbar — unified with the 3D viewer's icon + submenu style (2.2). Navigation dropdowns +
-         map-data selectors stay on the bar; Fit/Export are icon buttons; the former bottom filter
-         strip is consolidated into Layers / Visibility submenus (FilterCheckboxPanel, hidden in
-         cell-browser mode). Every filter keeps its x:Name + handler so code-behind is unchanged. -->
+    <!-- Toolbar — navigation dropdowns + map-data selectors + Fit/Export icon buttons. The former
+         Lighting / Layers / Visibility / Shading dropdowns live in WorldMapSettingsPanel (the
+         host's right-panel Settings tab), constructed + wired by this control (SettingsPanel /
+         WireSettingsPanel). -->
     <Grid Grid.Row="0" Padding="0,0,0,8" ColumnSpacing="8">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="Auto" />
@@ -63,108 +63,6 @@
                   SelectionChanged="ColorSchemeComboBox_SelectionChanged"
                   AutomationProperties.Name="Heightmap color scheme"
                   ToolTipService.ToolTip="Heightmap color scheme" />
-        <!-- Terrain-texture shading: independent vertex-color + hillshade modulation (shown only for the
-             TerrainTextures layer). Both can apply at once. -->
-        <DropDownButton x:Name="ShadingMenu" Visibility="Collapsed"
-                        AutomationProperties.Name="Terrain texture shading menu"
-                        ToolTipService.ToolTip="Shade terrain textures by vertex colors and/or hillshade">
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <FontIcon Glyph="&#xE790;" FontSize="14" />
-            <TextBlock Text="Shading" />
-          </StackPanel>
-          <DropDownButton.Flyout>
-            <Flyout>
-              <StackPanel Spacing="8" MinWidth="180">
-                <CheckBox x:Name="ShadeVertexColorsCheckBox" Content="Vertex colors"
-                          AutomationProperties.Name="Shade by vertex colors"
-                          ToolTipService.ToolTip="Multiply terrain textures by the per-vertex VCLR colors"
-                          Checked="ShadeVertexColorsCheckBox_Changed" Unchecked="ShadeVertexColorsCheckBox_Changed" />
-                <CheckBox x:Name="ShadeHillshadeCheckBox" Content="Hill-shade"
-                          AutomationProperties.Name="Shade by hillshade"
-                          ToolTipService.ToolTip="Multiply terrain textures by a hillshade derived from the heightmap"
-                          Checked="ShadeHillshadeCheckBox_Changed" Unchecked="ShadeHillshadeCheckBox_Changed" />
-              </StackPanel>
-            </Flyout>
-          </DropDownButton.Flyout>
-        </DropDownButton>
-
-        <StackPanel x:Name="FilterCheckboxPanel" Orientation="Horizontal" Spacing="6"
-                    VerticalAlignment="Center">
-
-          <!-- Lighting: drives the hillshade light direction (Slope layer + textured hill-shade). Fog and
-               Weather are hidden — the 2D map only uses the on/off toggle + time-of-day slider. -->
-          <local:LightingControlsPanel x:Name="LightingPanel" ShowFog="False" ShowWeather="False"
-                                       ShowDay="False" ShowShadows="False" ShowSkybox="False"
-                                       LightingToggled="LightingPanel_LightingToggled"
-                                       TimeChanged="LightingPanel_TimeChanged" />
-
-          <!-- Layers: cell grid / nav mesh (vertex coloring is a map data layer here, not a toggle) -->
-          <DropDownButton AutomationProperties.Name="Layers menu" ToolTipService.ToolTip="Layers">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <FontIcon Glyph="&#xE81E;" FontSize="14" />
-              <TextBlock Text="Layers" />
-            </StackPanel>
-            <DropDownButton.Flyout>
-              <Flyout>
-                <StackPanel Spacing="8" MinWidth="200">
-                  <CheckBox x:Name="CellGridCheckBox" Content="Cell grid" IsChecked="True"
-                            AutomationProperties.Name="Cell grid"
-                            ToolTipService.ToolTip="Show the cell grid overlay"
-                            Checked="CellGridCheckBox_Changed" Unchecked="CellGridCheckBox_Changed" />
-                  <CheckBox x:Name="NavMeshCheckBox" Content="Nav mesh" IsChecked="False"
-                            AutomationProperties.Name="Nav mesh"
-                            ToolTipService.ToolTip="Show the navmesh overlay"
-                            Checked="NavMeshCheckBox_Changed" Unchecked="NavMeshCheckBox_Changed" />
-                </StackPanel>
-              </Flyout>
-            </DropDownButton.Flyout>
-          </DropDownButton>
-
-          <!-- Visibility: water / map markers / disabled / rendered models / dangling-REFR picker -->
-          <DropDownButton AutomationProperties.Name="Visibility menu" ToolTipService.ToolTip="Visibility">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <FontIcon Glyph="&#xE890;" FontSize="14" />
-              <TextBlock Text="Visibility" />
-            </StackPanel>
-            <DropDownButton.Flyout>
-              <Flyout>
-                <StackPanel Spacing="8" MinWidth="260">
-                  <CheckBox x:Name="WaterCheckBox" Content="Water" IsChecked="True"
-                            AutomationProperties.Name="Water"
-                            ToolTipService.ToolTip="Show water surfaces"
-                            Checked="WaterCheckBox_Changed" Unchecked="WaterCheckBox_Changed" />
-                  <CheckBox x:Name="MapMarkersCheckBox" Content="Map markers" IsChecked="True"
-                            AutomationProperties.Name="Map markers"
-                            ToolTipService.ToolTip="Show map markers"
-                            Checked="MapMarkersCheckBox_Changed" Unchecked="MapMarkersCheckBox_Changed" />
-                  <CheckBox x:Name="DisabledCheckBox" Content="Initially disabled" IsChecked="False"
-                            AutomationProperties.Name="Initially disabled"
-                            ToolTipService.ToolTip="Show objects flagged initially-disabled"
-                            Checked="DisabledCheckBox_Changed" Unchecked="DisabledCheckBox_Changed" />
-                  <CheckBox x:Name="RenderedObjectsCheckBox" Content="Rendered models" IsChecked="False"
-                            IsEnabled="False"
-                            AutomationProperties.Name="Render placed objects top-down via the 3D renderer"
-                            ToolTipService.ToolTip="Replace placed-object dots/boxes with a top-down rendered view of the actual models, occluded by terrain (exterior cells only; needs Meshes + Textures BSAs)"
-                            Checked="RenderedObjectsCheckBox_Changed" Unchecked="RenderedObjectsCheckBox_Changed" />
-                  <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-                    <TextBlock x:Name="DanglingRefsLabel" Text="Dangling REFRs:" VerticalAlignment="Center"
-                               FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <ComboBox x:Name="DanglingRefsComboBox" MinWidth="100"
-                              AutomationProperties.Name="Dangling REFR confidence threshold"
-                              SelectionChanged="DanglingRefsComboBox_SelectionChanged"
-                              ToolTipService.ToolTip="Memory-dump (DMP) feature only — has no effect on ESM/ESP files. Shows heap-resident REFRs that the cell-traversal pipeline missed, at or above the chosen confidence level.">
-                      <ComboBoxItem Content="None" />
-                      <ComboBoxItem Content="High" />
-                      <ComboBoxItem Content="Medium" />
-                      <ComboBoxItem Content="Low" />
-                    </ComboBox>
-                  </StackPanel>
-                </StackPanel>
-              </Flyout>
-            </DropDownButton.Flyout>
-          </DropDownButton>
-
-        </StackPanel>
       </StackPanel>
     </Grid>
 

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+  x:Class="BethesdaMultitool.WorldMapSettingsPanel"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:BethesdaMultitool">
+
+  <!-- 2D world-map settings, shown in the host's right-panel "Settings" tab (replaces the old
+       toolbar dropdowns). Pure declarative XAML: WorldMapControl constructs this panel, reaches the
+       internal fields, and subscribes every control's events itself. FiltersSection mirrors the old
+       FilterCheckboxPanel (hidden wholesale in cell-browser mode); ShadingExpander is shown only for
+       the TerrainTextures layer (owner-gated, like the old ShadingMenu). -->
+  <StackPanel x:Name="FiltersSection" x:FieldModifier="internal" Spacing="8">
+
+    <!-- ============================== Lighting ============================== -->
+    <!-- Drives the hillshade light direction (Slope layer + textured hill-shade). Fog and Weather
+         rows are hidden — the 2D map only uses the on/off toggle + time-of-day slider. -->
+    <Expander x:Name="LightingExpander" IsExpanded="True"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+      <Expander.Header>
+        <TextBlock Text="Lighting" FontWeight="SemiBold"
+                   AutomationProperties.HeadingLevel="Level2" />
+      </Expander.Header>
+      <local:LightingControlsPanel x:Name="Lighting" x:FieldModifier="internal"
+                                   ShowFog="False" ShowWeather="False"
+                                   ShowDay="False" ShowShadows="False" ShowSkybox="False" />
+    </Expander>
+
+    <!-- ============================== Layers ============================== -->
+    <!-- Cell grid / nav mesh (vertex coloring is a map data layer here, not a toggle). -->
+    <Expander x:Name="LayersExpander"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+      <Expander.Header>
+        <TextBlock Text="Layers" FontWeight="SemiBold"
+                   AutomationProperties.HeadingLevel="Level2" />
+      </Expander.Header>
+      <StackPanel Spacing="8">
+        <CheckBox x:Name="CellGridCheckBox" x:FieldModifier="internal" Content="Cell grid" IsChecked="True"
+                  AutomationProperties.Name="Cell grid"
+                  ToolTipService.ToolTip="Show the cell grid overlay" />
+        <CheckBox x:Name="NavMeshCheckBox" x:FieldModifier="internal" Content="Nav mesh" IsChecked="False"
+                  AutomationProperties.Name="Nav mesh"
+                  ToolTipService.ToolTip="Show the navmesh overlay" />
+      </StackPanel>
+    </Expander>
+
+    <!-- ============================== Visibility ============================== -->
+    <!-- Water / map markers / disabled / rendered models / dangling-REFR picker. -->
+    <Expander x:Name="VisibilityExpander"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+      <Expander.Header>
+        <TextBlock Text="Visibility" FontWeight="SemiBold"
+                   AutomationProperties.HeadingLevel="Level2" />
+      </Expander.Header>
+      <StackPanel Spacing="8">
+        <CheckBox x:Name="WaterCheckBox" x:FieldModifier="internal" Content="Water" IsChecked="True"
+                  AutomationProperties.Name="Water"
+                  ToolTipService.ToolTip="Show water surfaces" />
+        <CheckBox x:Name="MapMarkersCheckBox" x:FieldModifier="internal" Content="Map markers" IsChecked="True"
+                  AutomationProperties.Name="Map markers"
+                  ToolTipService.ToolTip="Show map markers" />
+        <CheckBox x:Name="DisabledCheckBox" x:FieldModifier="internal" Content="Initially disabled" IsChecked="False"
+                  AutomationProperties.Name="Initially disabled"
+                  ToolTipService.ToolTip="Show objects flagged initially-disabled" />
+        <CheckBox x:Name="RenderedObjectsCheckBox" x:FieldModifier="internal" Content="Rendered models" IsChecked="False"
+                  IsEnabled="False"
+                  AutomationProperties.Name="Render placed objects top-down via the 3D renderer"
+                  ToolTipService.ToolTip="Replace placed-object dots/boxes with a top-down rendered view of the actual models, occluded by terrain (exterior cells only; needs Meshes + Textures BSAs)" />
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+          <TextBlock x:Name="DanglingRefsLabel" x:FieldModifier="internal" Text="Dangling REFRs:" VerticalAlignment="Center"
+                     FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <ComboBox x:Name="DanglingRefsComboBox" x:FieldModifier="internal" MinWidth="100"
+                    AutomationProperties.Name="Dangling REFR confidence threshold"
+                    ToolTipService.ToolTip="Memory-dump (DMP) feature only — has no effect on ESM/ESP files. Shows heap-resident REFRs that the cell-traversal pipeline missed, at or above the chosen confidence level.">
+            <ComboBoxItem Content="None" />
+            <ComboBoxItem Content="High" />
+            <ComboBoxItem Content="Medium" />
+            <ComboBoxItem Content="Low" />
+          </ComboBox>
+        </StackPanel>
+      </StackPanel>
+    </Expander>
+
+    <!-- ============================== Shading ============================== -->
+    <!-- Terrain-texture shading: independent vertex-color + hillshade modulation (shown only for
+         the TerrainTextures layer — owner toggles this expander's Visibility). -->
+    <Expander x:Name="ShadingExpander" x:FieldModifier="internal" Visibility="Collapsed"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+      <Expander.Header>
+        <TextBlock Text="Shading" FontWeight="SemiBold"
+                   AutomationProperties.HeadingLevel="Level2" />
+      </Expander.Header>
+      <StackPanel Spacing="8">
+        <CheckBox x:Name="ShadeVertexColorsCheckBox" x:FieldModifier="internal" Content="Vertex colors"
+                  AutomationProperties.Name="Shade by vertex colors"
+                  ToolTipService.ToolTip="Multiply terrain textures by the per-vertex VCLR colors" />
+        <CheckBox x:Name="ShadeHillshadeCheckBox" x:FieldModifier="internal" Content="Hill-shade"
+                  AutomationProperties.Name="Shade by hillshade"
+                  ToolTipService.ToolTip="Multiply terrain textures by a hillshade derived from the heightmap" />
+      </StackPanel>
+    </Expander>
+
+  </StackPanel>
+</UserControl>

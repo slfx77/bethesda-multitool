@@ -248,6 +248,7 @@ public sealed partial class SingleFileTab
 
     private void WorldMap_InspectCell(object? sender, CellRecord cell)
     {
+        WorldPanelSelector.SelectedItem = WorldPanelInspectionItem; // inspecting → show the Inspection tab
         _selectedWorldCell = cell;
         _selectedWorldObject = null;
         ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
@@ -288,6 +289,7 @@ public sealed partial class SingleFileTab
 
     private void WorldMap_InspectObject(object? sender, PlacedReference obj)
     {
+        WorldPanelSelector.SelectedItem = WorldPanelInspectionItem; // inspecting → show the Inspection tab
         _selectedWorldObject = obj;
         _selectedWorldCell = _session.WorldViewData?.RefrToCellIndex.TryGetValue(obj.FormId, out var ownerCell) == true
             ? ownerCell
@@ -766,6 +768,7 @@ public sealed partial class SingleFileTab
         Interlocked.Increment(ref _worldMapLoadGeneration);
         _selectedWorldCell = null;
         _selectedWorldObject = null;
+        WorldPanelSelector.SelectedItem = WorldPanelSettingsItem; // back to the default tab
         ViewBaseInBrowserButton.Visibility = Visibility.Collapsed;
         ViewCellInDetailButton.Visibility = Visibility.Collapsed;
         WorldMapPlaceholder.Visibility = Visibility.Visible;
@@ -801,6 +804,20 @@ public sealed partial class SingleFileTab
 
         WorldMapControl.Visibility = show3D ? Visibility.Collapsed : Visibility.Visible;
         WorldView3DControl.Visibility = show3D ? Visibility.Visible : Visibility.Collapsed;
+
+        // The Settings tab always shows the ACTIVE viewer's settings panel. Content swap (not
+        // visibility) so each panel keeps its Expander state; the panels are owned by the viewers.
+        WorldSettingsPresenter.Content = show3D
+            ? (UIElement)WorldView3DControl.SettingsPanel
+            : WorldMapControl.SettingsPanel;
+    }
+
+    /// <summary>Settings ↔ Inspection tab switch for the world-map right panel (SelectorBar).</summary>
+    private void WorldPanelSelector_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        var settings = sender.SelectedItem == WorldPanelSettingsItem;
+        WorldSettingsHost.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
+        WorldInspectionHost.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
     }
 }
 

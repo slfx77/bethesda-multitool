@@ -407,7 +407,12 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     public WorldMapControl()
     {
+        // The settings panel exists for the control's whole lifetime (accessor shims like
+        // WaterCheckBox resolve through it), so standalone hosts (profiler apps) work with no
+        // SingleFileTab attached — the host merely DISPLAYS SettingsPanel in its Settings tab.
+        SettingsPanel = new WorldMapSettingsPanel();
         InitializeComponent();
+        WireSettingsPanel(); // subscribe while _initializing still gates the handlers
         // Hillshade lighting defaults OFF (fixed NW look). Set the shared panel's toggle to match while
         // _initializing is still true, so its Toggled handler early-returns (no spurious rebuild).
         LightingPanel.LightingEnabled = false;
@@ -588,7 +593,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     {
         MapCanvas.Visibility = canvasVisible ? Visibility.Visible : Visibility.Collapsed;
         LegendOverlay.Visibility = canvasVisible ? Visibility.Visible : Visibility.Collapsed;
-        FilterCheckboxPanel.Visibility = canvasVisible ? Visibility.Visible : Visibility.Collapsed;
+        // Cell-browser mode hides the whole settings filter stack (it configures the map canvas).
+        SettingsPanel.FiltersSection.Visibility = canvasVisible ? Visibility.Visible : Visibility.Collapsed;
         CellBrowserPanel.Visibility = canvasVisible ? Visibility.Collapsed : Visibility.Visible;
         // Layer-build status floats over the canvas; collapse it when we switch to the cell
         // list so leftover warnings ("X produced no renderable data") don't overlap the list.

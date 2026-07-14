@@ -5,23 +5,12 @@
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-  <!-- Shared lighting flyout used by both the 3D viewer and the 2D world map. The host drops this
-       control straight into its toolbar; it renders its own DropDownButton. The flyout is split into
-       a "Lighting" section (toggles + time of day) and a "Weather" section (weather type + wind);
-       rows can be hidden per host (the 2D map drives only the hillshade light direction). -->
-  <DropDownButton AutomationProperties.Name="Lighting menu"
-                  ToolTipService.ToolTip="Lighting — toggles, time of day, weather, wind">
-    <StackPanel Orientation="Horizontal" Spacing="6">
-      <FontIcon Glyph="&#xE706;" FontSize="14" />
-      <TextBlock Text="Lighting" />
-    </StackPanel>
-    <DropDownButton.Flyout>
-      <Flyout>
-        <StackPanel Spacing="10" MinWidth="280">
-
-          <!-- ============================== Lighting ============================== -->
-          <TextBlock Text="Lighting" FontWeight="SemiBold"
-                     AutomationProperties.HeadingLevel="Level2" />
+  <!-- Shared lighting controls used by both the 3D viewer and the 2D world map. Hosts embed this
+       control inside their settings panel's "Lighting" expander (the expander header supplies the
+       section title). Split into lighting toggles + time of day and a "Weather" section (weather
+       type + wind); rows can be hidden per host (the 2D map drives only the hillshade light
+       direction). -->
+  <StackPanel Spacing="10" MinWidth="280">
           <ToggleSwitch x:Name="LightingToggle" IsOn="True" Header="Lighting"
                         OnContent="On" OffContent="Off"
                         AutomationProperties.Name="Lighting"
@@ -125,9 +114,6 @@
                     AutomationProperties.Name="Wind speed"
                     ToolTipService.ToolTip="SpeedTree wind strength on the engine scale (weather wind-speed byte ÷ 255; ~0.1 breeze, ~0.4 storm)"
                     ValueChanged="WindSpeedSlider_ValueChanged" />
-          </Grid>
-        </StackPanel>
-      </Flyout>
-    </DropDownButton.Flyout>
-  </DropDownButton>
+    </Grid>
+  </StackPanel>
 </UserControl>

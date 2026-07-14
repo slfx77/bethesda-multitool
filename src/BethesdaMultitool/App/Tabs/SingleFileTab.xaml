@@ -621,41 +621,62 @@
                                           InspectObject="WorldMap_InspectObject"
                                           InspectCell="WorldMap_InspectCell" />
 
-                <!--  Right: Object detail panel  -->
+                <!--  Right: tabbed Settings / Inspection panel. Settings (default) hosts the ACTIVE
+                      viewer's settings expanders (content swapped on the 2D/3D view-mode change);
+                      Inspection holds the object/cell detail and is auto-selected on click/pick.  -->
               <Grid Grid.Column="2" Padding="12,0,0,0">
                 <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <TextBlock x:Name="WorldObjectTitle" Grid.Row="0"
-                           Text="Click an object to inspect"
-                           AutomationProperties.HeadingLevel="Level2"
-                           Style="{StaticResource SubtitleTextBlockStyle}"
-                           TextWrapping="Wrap"
-                           Margin="0,0,0,8" />
+                <SelectorBar x:Name="WorldPanelSelector" Grid.Row="0" Margin="0,0,0,8"
+                             AutomationProperties.Name="World panel sections"
+                             SelectionChanged="WorldPanelSelector_SelectionChanged">
+                  <SelectorBarItem x:Name="WorldPanelSettingsItem" Text="Settings" />
+                  <SelectorBarItem x:Name="WorldPanelInspectionItem" Text="Inspection" />
+                </SelectorBar>
 
-                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
-                            Margin="0,0,0,8">
-                  <Button x:Name="ViewCellInDetailButton"
-                          Content="View Cell"
-                          Click="ViewCellInDetail_Click"
-                          Visibility="Collapsed"
-                          ToolTipService.ToolTip="View this cell on the map in detail mode" />
-                  <Button x:Name="ViewBaseInBrowserButton"
-                          Content="View in Records"
-                          Click="ViewBaseInBrowser_Click"
-                          Visibility="Collapsed"
-                          ToolTipService.ToolTip="View the base record in Records" />
-                </StackPanel>
+                <ScrollViewer x:Name="WorldSettingsHost" Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto">
+                  <ContentPresenter x:Name="WorldSettingsPresenter" />
+                </ScrollViewer>
 
-                <Border Grid.Row="2" CornerRadius="4"
-                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                  <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
-                    <StackPanel x:Name="WorldPropertyPanel" Spacing="2" />
-                  </ScrollViewer>
-                </Border>
+                <Grid x:Name="WorldInspectionHost" Grid.Row="1" Visibility="Collapsed">
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                  </Grid.RowDefinitions>
+
+                  <TextBlock x:Name="WorldObjectTitle" Grid.Row="0"
+                             Text="Click an object to inspect"
+                             AutomationProperties.HeadingLevel="Level2"
+                             Style="{StaticResource SubtitleTextBlockStyle}"
+                             TextWrapping="Wrap"
+                             Margin="0,0,0,8" />
+
+                  <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
+                              Margin="0,0,0,8">
+                    <Button x:Name="ViewCellInDetailButton"
+                            Content="View Cell"
+                            Click="ViewCellInDetail_Click"
+                            Visibility="Collapsed"
+                            ToolTipService.ToolTip="View this cell on the map in detail mode" />
+                    <Button x:Name="ViewBaseInBrowserButton"
+                            Content="View in Records"
+                            Click="ViewBaseInBrowser_Click"
+                            Visibility="Collapsed"
+                            ToolTipService.ToolTip="View the base record in Records" />
+                  </StackPanel>
+
+                  <Border Grid.Row="2" CornerRadius="4"
+                          Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
+                      <StackPanel x:Name="WorldPropertyPanel" Spacing="2" />
+                    </ScrollViewer>
+                  </Border>
+                </Grid>
               </Grid>
               </Grid>
             </Grid>

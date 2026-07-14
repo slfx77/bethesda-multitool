@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+  x:Class="BethesdaMultitool.WorldView3DSettingsPanel"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:BethesdaMultitool">
+
+  <!-- 3D viewer settings, shown in the host's right-panel "Settings" tab (replaces the old toolbar
+       dropdowns). Pure declarative XAML: WorldView3DControl constructs this panel, reaches the
+       internal fields, and subscribes every control's events in WireSettingsPanel() — no logic
+       lives here. IsChecked/IsOn defaults must match the owner's _show* field initializers
+       (the 1–9 keyboard shortcuts flip these controls through the owner's accessor shims). -->
+  <StackPanel Spacing="8">
+
+    <!-- ============================== Lighting ============================== -->
+    <Expander x:Name="LightingExpander" IsExpanded="True"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+      <Expander.Header>
+        <TextBlock Text="Lighting" FontWeight="SemiBold"
+                   AutomationProperties.HeadingLevel="Level2" />
+      </Expander.Header>
+      <StackPanel Spacing="10">
+        <local:LightingControlsPanel x:Name="Lighting" x:FieldModifier="internal" />
+
+        <!-- Post-processing: HDR/bloom/imagespace — hidden for games without the engine HDR stage
+             (Morrowind); the owner gates visibility per loaded game in LoadData. -->
+        <StackPanel x:Name="TonemapSection" x:FieldModifier="internal" Spacing="10">
+          <Border Height="1" Margin="0,2,0,2"
+                  Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+          <TextBlock Text="Post-processing" FontWeight="SemiBold"
+                     AutomationProperties.HeadingLevel="Level2" />
+          <ToggleSwitch x:Name="HdrToggle" x:FieldModifier="internal" IsOn="True" Header="HDR"
+                        OnContent="On" OffContent="Off"
+                        AutomationProperties.Name="HDR"
+                        ToolTipService.ToolTip="Engine HDR tonemap (eye adaptation + imagespace); off = the flat pre-HDR look" />
+          <ToggleSwitch x:Name="BloomToggle" x:FieldModifier="internal" IsOn="True" Header="Bloom"
+                        OnContent="On" OffContent="Off"
+                        AutomationProperties.Name="Bloom"
+                        ToolTipService.ToolTip="Engine bright-pass bloom (soft glow around bright/emissive surfaces)" />
+          <ToggleSwitch x:Name="ImagespaceToggle" x:FieldModifier="internal" IsOn="True"
+                        Header="Imagespace modifiers"
+                        OnContent="On" OffContent="Off"
+                        AutomationProperties.Name="Imagespace modifiers"
+                        ToolTipService.ToolTip="Apply the cell/worldspace imagespace color grade (e.g. the FNV golden desert filter); off = neutral" />
+        </StackPanel>
+      </StackPanel>
+    </Expander>
+
+    <!-- ============================== Layers ============================== -->
+    <Expander x:Name="LayersExpander"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+      <Expander.Header>
+        <TextBlock Text="Layers" FontWeight="SemiBold"
+                   AutomationProperties.HeadingLevel="Level2" />
+      </Expander.Header>
+      <StackPanel Spacing="8">
+        <CheckBox x:Name="CellsCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Cell grid"
+                  AutomationProperties.Name="Cell grid"
+                  ToolTipService.ToolTip="Show the cell grid overlay (press 1)" />
+        <CheckBox x:Name="TerrainTexturesToggle" x:FieldModifier="internal" IsChecked="True" Content="Terrain textures"
+                  AutomationProperties.Name="Terrain textures"
+                  ToolTipService.ToolTip="Show terrain diffuse textures (off = flat shaded)" />
+        <CheckBox x:Name="VertexColorsToggle" x:FieldModifier="internal" IsChecked="True" Content="Vertex colors"
+                  AutomationProperties.Name="Vertex colors"
+                  ToolTipService.ToolTip="Apply per-vertex terrain color tint (press 4)" />
+        <CheckBox x:Name="NavMeshCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Nav mesh"
+                  AutomationProperties.Name="Nav mesh"
+                  ToolTipService.ToolTip="Show the navmesh overlay (press 6)" />
+        <CheckBox x:Name="CollisionCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Collision mesh"
+                  AutomationProperties.Name="Collision mesh"
+                  ToolTipService.ToolTip="Overlay each object's walk-mode collision mesh as a green wireframe (compare against the rendered meshes)" />
+      </StackPanel>
+    </Expander>
+
+    <!-- ============================== Visibility ============================== -->
+    <Expander x:Name="VisibilityExpander"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+      <Expander.Header>
+        <TextBlock Text="Visibility" FontWeight="SemiBold"
+                   AutomationProperties.HeadingLevel="Level2" />
+      </Expander.Header>
+      <StackPanel Spacing="8">
+        <CheckBox x:Name="TerrainToggle" x:FieldModifier="internal" IsChecked="True" Content="Terrain"
+                  AutomationProperties.Name="Terrain"
+                  ToolTipService.ToolTip="Show terrain (press 2)" />
+        <CheckBox x:Name="RefsToggle" x:FieldModifier="internal" IsChecked="True" Content="Meshes"
+                  AutomationProperties.Name="Placed objects"
+                  ToolTipService.ToolTip="Show placed-object meshes (press 5)" />
+        <CheckBox x:Name="WaterCheckBox" x:FieldModifier="internal" IsChecked="True" Content="Water"
+                  AutomationProperties.Name="Water"
+                  ToolTipService.ToolTip="Show water surfaces (press 3)" />
+        <CheckBox x:Name="EditorMarkersCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Editor markers"
+                  AutomationProperties.Name="Editor markers"
+                  ToolTipService.ToolTip="Show editor/engine markers (XMarkers, travel/door markers)" />
+        <CheckBox x:Name="ActivatorsCheckBox" x:FieldModifier="internal" IsChecked="True" Content="Activators"
+                  AutomationProperties.Name="Activators"
+                  ToolTipService.ToolTip="Show activator objects (levers, terminals, buttons)" />
+        <CheckBox x:Name="SkyMeshesCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Sky meshes"
+                  AutomationProperties.Name="Sky meshes"
+                  ToolTipService.ToolTip="Show placed sky/glow meshes (Sky\ folder, e.g. DiamondCityGlow)" />
+        <CheckBox x:Name="TreesCheckBox" x:FieldModifier="internal" IsChecked="True" Content="Trees"
+                  AutomationProperties.Name="Trees"
+                  ToolTipService.ToolTip="Show trees (SpeedTree .spt and NIF trees; hiding before load also skips decoding them)" />
+        <CheckBox x:Name="EffectsCheckBox" x:FieldModifier="internal" IsChecked="True" Content="Effect meshes"
+                  AutomationProperties.Name="Effect meshes"
+                  ToolTipService.ToolTip="Show placed effect meshes (Effects\ folder: mist, dust, glows, ambient FX)" />
+        <CheckBox x:Name="DisabledCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Initially-disabled objects"
+                  AutomationProperties.Name="Initially-disabled objects"
+                  ToolTipService.ToolTip="Show objects flagged initially-disabled (press 7)" />
+        <CheckBox x:Name="AnimationsCheckBox" x:FieldModifier="internal" IsChecked="True" Content="Animations"
+                  AutomationProperties.Name="Animations"
+                  ToolTipService.ToolTip="Play NIF animations (banner sway, waterfall and lava scrolling); off = static rest pose" />
+      </StackPanel>
+    </Expander>
+
+    <!-- ============================== Projection ============================== -->
+    <Expander x:Name="ProjectionExpander"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+      <Expander.Header>
+        <TextBlock Text="Projection" FontWeight="SemiBold"
+                   AutomationProperties.HeadingLevel="Level2" />
+      </Expander.Header>
+      <StackPanel Spacing="10">
+        <RadioButtons x:Name="ProjectionModeRadios" x:FieldModifier="internal"
+                      AutomationProperties.Name="Projection mode"
+                      SelectedIndex="0">
+          <x:String>Perspective (default)</x:String>
+          <x:String>Orthographic (top-down)</x:String>
+          <x:String>Isometric</x:String>
+          <x:String>Trimetric</x:String>
+        </RadioButtons>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock x:Name="FovLabel" x:FieldModifier="internal" Text="Field of view" VerticalAlignment="Center" />
+          <Slider x:Name="FovSlider" x:FieldModifier="internal" Width="130" VerticalAlignment="Center"
+                  Minimum="30" Maximum="110" Value="60" StepFrequency="1"
+                  AutomationProperties.Name="Field of view"
+                  ToolTipService.ToolTip="Perspective field of view (degrees) — perspective mode only" />
+        </StackPanel>
+      </StackPanel>
+    </Expander>
+
+  </StackPanel>
+</UserControl>

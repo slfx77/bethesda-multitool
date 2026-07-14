@@ -129,6 +129,10 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         InitializeFileTypeCheckboxes();
         SetupTextBoxContextMenus();
         WorldMapControl.BeforeNavigate += WorldMap_BeforeNavigate;
+        // World-map right panel: seed the Settings tab with the default (2D) viewer's settings
+        // panel and select it (SelectorBar has no XAML default-selection attribute).
+        WorldSettingsPresenter.Content = WorldMapControl.SettingsPanel;
+        WorldPanelSelector.SelectedItem = WorldPanelSettingsItem;
         KeyDown += SingleFileTab_KeyDown;
         Loaded += SingleFileTab_Loaded;
         Unloaded += SingleFileTab_Unloaded;

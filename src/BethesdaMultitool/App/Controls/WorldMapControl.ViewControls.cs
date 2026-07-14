@@ -8,6 +8,59 @@ namespace BethesdaMultitool;
 /// <summary>Worldspace / layer / color-scheme picker handlers and the profiler-driving surface.</summary>
 public sealed partial class WorldMapControl
 {
+    /// <summary>
+    ///     The viewer's settings panel (Lighting / Layers / Visibility / Shading expanders),
+    ///     constructed in the ctor and displayed by the host's right-panel Settings tab. Owned here
+    ///     so standalone hosts (the profiler apps) keep working without a SingleFileTab.
+    /// </summary>
+    internal WorldMapSettingsPanel SettingsPanel { get; }
+
+    // Accessor shims for the controls that moved from the old toolbar dropdowns into the settings
+    // panel — Reset(), the marker/dangling plumbing, and the shading/canvas gates keep compiling
+    // against the original x:Name identifiers.
+    private LightingControlsPanel LightingPanel => SettingsPanel.Lighting;
+    private CheckBox CellGridCheckBox => SettingsPanel.CellGridCheckBox;
+    private CheckBox NavMeshCheckBox => SettingsPanel.NavMeshCheckBox;
+    private CheckBox WaterCheckBox => SettingsPanel.WaterCheckBox;
+    private CheckBox MapMarkersCheckBox => SettingsPanel.MapMarkersCheckBox;
+    private CheckBox DisabledCheckBox => SettingsPanel.DisabledCheckBox;
+    private CheckBox RenderedObjectsCheckBox => SettingsPanel.RenderedObjectsCheckBox;
+    private ComboBox DanglingRefsComboBox => SettingsPanel.DanglingRefsComboBox;
+    private TextBlock DanglingRefsLabel => SettingsPanel.DanglingRefsLabel;
+    private CheckBox ShadeVertexColorsCheckBox => SettingsPanel.ShadeVertexColorsCheckBox;
+    private CheckBox ShadeHillshadeCheckBox => SettingsPanel.ShadeHillshadeCheckBox;
+    private Expander ShadingMenu => SettingsPanel.ShadingExpander;
+
+    /// <summary>
+    ///     Subscribes every settings-panel control to its handler. Runs in the ctor while
+    ///     <c>_initializing</c> is still true, replacing the XAML event attributes the controls had
+    ///     on the old toolbar (the panel XAML is purely declarative).
+    /// </summary>
+    private void WireSettingsPanel()
+    {
+        var p = SettingsPanel;
+
+        p.Lighting.LightingToggled += LightingPanel_LightingToggled;
+        p.Lighting.TimeChanged += LightingPanel_TimeChanged;
+
+        Wire(p.CellGridCheckBox, CellGridCheckBox_Changed);
+        Wire(p.NavMeshCheckBox, NavMeshCheckBox_Changed);
+        Wire(p.WaterCheckBox, WaterCheckBox_Changed);
+        Wire(p.MapMarkersCheckBox, MapMarkersCheckBox_Changed);
+        Wire(p.DisabledCheckBox, DisabledCheckBox_Changed);
+        Wire(p.RenderedObjectsCheckBox, RenderedObjectsCheckBox_Changed);
+        Wire(p.ShadeVertexColorsCheckBox, ShadeVertexColorsCheckBox_Changed);
+        Wire(p.ShadeHillshadeCheckBox, ShadeHillshadeCheckBox_Changed);
+
+        p.DanglingRefsComboBox.SelectionChanged += DanglingRefsComboBox_SelectionChanged;
+
+        static void Wire(CheckBox box, RoutedEventHandler handler)
+        {
+            box.Checked += handler;
+            box.Unchecked += handler;
+        }
+    }
+
     // ========================================================================
     // Toolbar Events
     // ========================================================================

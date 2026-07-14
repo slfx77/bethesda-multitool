@@ -1,13 +1,112 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 
 namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
-    // Toolbar checkboxes mirror the 2D viewer. Handlers fire once during XAML load with
-    // IsChecked="True" (Water only) before sibling fields are assigned, so each must be safe to
-    // call before LoadData — they touch only their own control (assigned) and null-guarded state.
+    /// <summary>
+    ///     The viewer's settings panel (Lighting / Layers / Visibility / Projection expanders),
+    ///     constructed in the ctor and displayed by the host's right-panel Settings tab. Owned here
+    ///     so standalone hosts (the profiler apps) keep working without a SingleFileTab.
+    /// </summary>
+    internal WorldView3DSettingsPanel SettingsPanel { get; }
+
+    // Accessor shims for the controls that moved from the old toolbar dropdowns into the settings
+    // panel — the keyboard shortcuts (Input.cs), SetShow* re-syncs, and projection/lighting partials
+    // keep compiling against the original x:Name identifiers.
+    private LightingControlsPanel LightingPanel => SettingsPanel.Lighting;
+    private CheckBox CellsCheckBox => SettingsPanel.CellsCheckBox;
+    private CheckBox TerrainTexturesToggle => SettingsPanel.TerrainTexturesToggle;
+    private CheckBox VertexColorsToggle => SettingsPanel.VertexColorsToggle;
+    private CheckBox NavMeshCheckBox => SettingsPanel.NavMeshCheckBox;
+    private CheckBox CollisionCheckBox => SettingsPanel.CollisionCheckBox;
+    private CheckBox TerrainToggle => SettingsPanel.TerrainToggle;
+    private CheckBox RefsToggle => SettingsPanel.RefsToggle;
+    private CheckBox WaterCheckBox => SettingsPanel.WaterCheckBox;
+    private CheckBox EditorMarkersCheckBox => SettingsPanel.EditorMarkersCheckBox;
+    private CheckBox ActivatorsCheckBox => SettingsPanel.ActivatorsCheckBox;
+    private CheckBox SkyMeshesCheckBox => SettingsPanel.SkyMeshesCheckBox;
+    private CheckBox TreesCheckBox => SettingsPanel.TreesCheckBox;
+    private CheckBox EffectsCheckBox => SettingsPanel.EffectsCheckBox;
+    private CheckBox DisabledCheckBox => SettingsPanel.DisabledCheckBox;
+    private CheckBox AnimationsCheckBox => SettingsPanel.AnimationsCheckBox;
+    private RadioButtons ProjectionModeRadios => SettingsPanel.ProjectionModeRadios;
+    private Slider FovSlider => SettingsPanel.FovSlider;
+    private TextBlock FovLabel => SettingsPanel.FovLabel;
+
+    /// <summary>
+    ///     Subscribes every settings-panel control to its handler. Runs in the ctor while
+    ///     <c>_initializing</c> is still true, replacing the XAML event attributes the controls had
+    ///     on the old toolbar (the panel XAML is purely declarative — its defaults must mirror the
+    ///     <c>_show*</c> field initializers).
+    /// </summary>
+    private void WireSettingsPanel()
+    {
+        var p = SettingsPanel;
+
+        p.Lighting.LightingToggled += LightingPanel_LightingToggled;
+        p.Lighting.FogToggled += LightingPanel_FogToggled;
+        p.Lighting.ShadowsToggled += LightingPanel_ShadowsToggled;
+        p.Lighting.SkyboxToggled += LightingPanel_SkyboxToggled;
+        p.Lighting.TimeChanged += LightingPanel_TimeChanged;
+        p.Lighting.DayChanged += LightingPanel_DayChanged;
+        p.Lighting.WeatherChanged += LightingPanel_WeatherChanged;
+        p.Lighting.WindOverrideChanged += LightingPanel_WindOverrideChanged;
+        p.Lighting.WindSpeedChanged += LightingPanel_WindSpeedChanged;
+
+        p.HdrToggle.Toggled += HdrToggle_Changed;
+        p.BloomToggle.Toggled += BloomToggle_Changed;
+        p.ImagespaceToggle.Toggled += ImagespaceToggle_Changed;
+
+        Wire(p.CellsCheckBox, CellsCheckBox_Changed);
+        Wire(p.TerrainTexturesToggle, TerrainTexturesToggle_Changed);
+        Wire(p.VertexColorsToggle, VertexColorsToggle_Changed);
+        Wire(p.NavMeshCheckBox, NavMeshCheckBox_Changed);
+        Wire(p.CollisionCheckBox, CollisionCheckBox_Changed);
+        Wire(p.TerrainToggle, TerrainToggle_Changed);
+        Wire(p.RefsToggle, RefsToggle_Changed);
+        Wire(p.WaterCheckBox, WaterCheckBox_Changed);
+        Wire(p.EditorMarkersCheckBox, EditorMarkersCheckBox_Changed);
+        Wire(p.ActivatorsCheckBox, ActivatorsCheckBox_Changed);
+        Wire(p.SkyMeshesCheckBox, SkyMeshesCheckBox_Changed);
+        Wire(p.TreesCheckBox, TreesCheckBox_Changed);
+        Wire(p.EffectsCheckBox, EffectsCheckBox_Changed);
+        Wire(p.DisabledCheckBox, DisabledCheckBox_Changed);
+        Wire(p.AnimationsCheckBox, AnimationsCheckBox_Changed);
+
+        p.ProjectionModeRadios.SelectionChanged += ProjectionModeRadios_SelectionChanged;
+        p.FovSlider.ValueChanged += FovSlider_ValueChanged;
+
+        static void Wire(CheckBox box, RoutedEventHandler handler)
+        {
+            box.Checked += handler;
+            box.Unchecked += handler;
+        }
+    }
+
+    private void HdrToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        _hdrEnabled = SettingsPanel.HdrToggle.IsOn;
+    }
+
+    private void BloomToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        _bloomEnabled = SettingsPanel.BloomToggle.IsOn;
+    }
+
+    private void ImagespaceToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        _imagespaceModifiersEnabled = SettingsPanel.ImagespaceToggle.IsOn;
+    }
+
+    // Settings-panel checkboxes mirror the 2D viewer. Handlers are subscribed programmatically in
+    // WireSettingsPanel and must be safe to run before LoadData — they touch only their own control
+    // (assigned) and null-guarded state.
     private void CellsCheckBox_Changed(object sender, RoutedEventArgs e)
     {
         if (_initializing) return;

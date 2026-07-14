@@ -128,15 +128,30 @@ public sealed partial class WorldView3DControl
     {
         var interior = _selectedInterior is not null;
         var settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ForGame(_data?.Game ?? default, interior);
-        if (settings.Mode != Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.EngineFo3Fnv || _data is null)
+
+        // GUI post-processing toggles (settings panel, read per frame — no rebuild). HDR off =
+        // the LegacyClamp passthrough (visually the pre-HDR look; the float scene target itself is
+        // only revertible via the static FALLOUT_VIEWER_HDR=0 kill-switch).
+        if (!_hdrEnabled)
         {
-            return settings;
+            return settings with
+            {
+                Mode = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.LegacyClamp,
+                BloomEnabled = false,
+            };
         }
 
+        if (settings.Mode != Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.EngineFo3Fnv || _data is null)
+        {
+            return settings with { BloomEnabled = settings.BloomEnabled && _bloomEnabled };
+        }
+
+        // Imagespace modifiers off = skip the authored IMGS overlay (cinematic grade + HDR params)
+        // and render with the neutral family defaults; the eye-adapt exposure stays.
         var formId = interior
             ? _selectedInterior!.ImageSpaceFormId
             : CurrentExteriorWorldspace()?.ImageSpaceFormId;
-        if (formId is { } id && _data.ImageSpacesByFormId.TryGetValue(id, out var imgs))
+        if (_imagespaceModifiersEnabled && formId is { } id && _data.ImageSpacesByFormId.TryGetValue(id, out var imgs))
         {
             if (imgs.Hdr is { } hdr)
             {
@@ -175,7 +190,9 @@ public sealed partial class WorldView3DControl
             }
         }
 
-        return Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ApplyOverrides(settings);
+        settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ApplyOverrides(settings);
+        // The GUI Bloom toggle wins over the FALLOUT_VIEWER_BLOOM=1 force-on (debug knob).
+        return settings with { BloomEnabled = settings.BloomEnabled && _bloomEnabled };
     }
 
     // Resolves the sky-element bindless texture indices for the current climate + active weather,
