@@ -1,10 +1,12 @@
 using System.CommandLine;
 using System.IO.Enumeration;
+using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Ddx;
+using BethesdaMultitool.Core.Orchestration;
 using Spectre.Console;
 using ArchiveEntry = BethesdaMultitool.Core.Formats.Bsa.Index.ArchiveReader.ArchiveEntry;
 
@@ -280,6 +282,9 @@ internal static class BsaExtractCommand
         var extracted = 0;
         var failed = 0;
         long totalSize = 0;
+        var completed = 0;
+        var progressLock = new object();
+        var failures = new List<(string Path, string Error)>();
 
         await AnsiConsole.Progress()
             .AutoClear(false)
@@ -292,28 +297,49 @@ internal static class BsaExtractCommand
             .StartAsync(async ctx =>
             {
                 var task = ctx.AddTask("[green]Extracting files[/]", maxValue: entries.Count);
-                foreach (var entry in entries)
-                {
-                    task.Description = $"[green]Extracting:[/] {Path.GetFileName(entry.FullPath)}";
-                    try
+                await ParallelWork.ForEachAsync(
+                    "ba2-cli-extract",
+                    entries,
+                    ConcurrencyPolicy.Fixed(Ba2Extractor.MaxConcurrentBulkExtractions),
+                    async (entry, _) =>
                     {
-                        if (await reader.ExtractToDiskAsync(entry, output, overwrite))
+                        var succeeded = false;
+                        string? error = null;
+                        try
                         {
-                            extracted++;
-                            totalSize += entry.Size;
+                            succeeded = await reader.ExtractToDiskAsync(entry, output, overwrite);
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        failed++;
-                        AnsiConsole.MarkupLine("[red]Failed:[/] {0} ({1})", entry.FullPath, ex.Message);
-                    }
+                        catch (Exception ex)
+                        {
+                            error = ex.Message;
+                        }
 
-                    task.Increment(1);
-                }
+                        lock (progressLock)
+                        {
+                            if (succeeded)
+                            {
+                                extracted++;
+                                totalSize += entry.Size;
+                            }
+                            else if (error is not null)
+                            {
+                                failed++;
+                                failures.Add((entry.FullPath, error));
+                            }
+
+                            completed++;
+                            task.Value = completed;
+                            task.Description = $"[green]Extracting:[/] {Path.GetFileName(entry.FullPath)}";
+                        }
+                    });
             });
 
         AnsiConsole.WriteLine();
+        foreach (var failure in failures)
+        {
+            AnsiConsole.MarkupLine("[red]Failed:[/] {0} ({1})", failure.Path, failure.Error);
+        }
+
         AnsiConsole.MarkupLine("[green]✓ Extracted:[/] {0:N0} files ({1})", extracted,
             CliHelpers.FormatSize(totalSize));
         if (failed > 0)

@@ -63,6 +63,42 @@ public class Ba2ParserTests
     }
 
     [Fact]
+    public async Task ExtractAllAsync_StartsEntriesConcurrentlyAndWritesBothPayloads()
+    {
+        var path = WriteGnrlBa2();
+        var outputDir = Path.Combine(Path.GetTempPath(), $"ba2extract_{Guid.NewGuid():N}");
+        using var progress = new RendezvousProgress(participants: 2);
+        try
+        {
+            using var extractor = new Ba2Extractor(path);
+
+            var extracted = await extractor.ExtractAllAsync(
+                outputDir,
+                progress: progress,
+                cancellationToken: TestContext.Current.CancellationToken);
+
+            Assert.Equal(2, extracted);
+            Assert.Equal(2, progress.Seen.Count);
+            Assert.Equal([1, 2], progress.Seen.Select(static p => p.current).Order().ToArray());
+            Assert.Equal(
+                ["data\\packed.txt", "data\\plain.txt"],
+                progress.Seen.Select(static p => p.fileName).Order(StringComparer.Ordinal).ToArray());
+            Assert.Equal(PlainData, await File.ReadAllBytesAsync(
+                Path.Combine(outputDir, "data", "plain.txt"), TestContext.Current.CancellationToken));
+            Assert.Equal(CompressibleData, await File.ReadAllBytesAsync(
+                Path.Combine(outputDir, "data", "packed.txt"), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            File.Delete(path);
+            if (Directory.Exists(outputDir))
+            {
+                Directory.Delete(outputDir, true);
+            }
+        }
+    }
+
+    [Fact]
     public void IsBa2File_DetectsMagic()
     {
         var path = WriteGnrlBa2();
@@ -216,5 +252,33 @@ public class Ba2ParserTests
         }
 
         return output.ToArray();
+    }
+
+    /// <summary>
+    ///     Both extraction workers must reach progress before either is allowed to decode. A serial
+    ///     implementation times out instead of turning this into a throughput/timing benchmark.
+    /// </summary>
+    private sealed class RendezvousProgress(int participants) :
+        IProgress<(int current, int total, string fileName)>, IDisposable
+    {
+        private readonly Barrier _barrier = new(participants);
+        private readonly List<(int current, int total, string fileName)> _seen = [];
+
+        public IReadOnlyList<(int current, int total, string fileName)> Seen => _seen;
+
+        public void Report((int current, int total, string fileName) value)
+        {
+            lock (_seen)
+            {
+                _seen.Add(value);
+            }
+
+            if (!_barrier.SignalAndWait(TimeSpan.FromSeconds(10)))
+            {
+                throw new TimeoutException("BA2 extraction workers did not rendezvous.");
+            }
+        }
+
+        public void Dispose() => _barrier.Dispose();
     }
 }

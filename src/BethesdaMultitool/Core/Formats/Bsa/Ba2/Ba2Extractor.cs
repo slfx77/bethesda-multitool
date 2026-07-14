@@ -5,6 +5,7 @@
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
+using BethesdaMultitool.Core.Orchestration;
 
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 
@@ -17,6 +18,10 @@ namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 /// </summary>
 public sealed class Ba2Extractor : IDisposable
 {
+    // Four bounds the simultaneous packed + decoded + file-write buffers for large DX10 entries.
+    // Keep this aligned with BsaExtractionEngine's established archive-extraction fan-out.
+    internal const int MaxConcurrentBulkExtractions = 4;
+
     private readonly MemoryMappedFile _mappedFile;
 
     // ONE read-only view over the whole file, reused for every region read. Creating a view accessor is a
@@ -67,7 +72,8 @@ public sealed class Ba2Extractor : IDisposable
 
     /// <summary>
     ///     Extract a single entry to a byte array. DX10 textures get a synthesized DDS header so the
-    ///     result is a valid .dds. Thread-safe: each call opens its own view accessors.
+    ///     result is a valid .dds. Thread-safe: each call reads absolute regions from the shared
+    ///     read-only view into call-local buffers.
     /// </summary>
     public byte[] ExtractFile(Ba2FileRecord file)
     {
@@ -165,7 +171,11 @@ public sealed class Ba2Extractor : IDisposable
     }
 
     /// <summary>Extract one entry to disk under <paramref name="outputDir" /> at its virtual path.</summary>
-    public async Task<bool> ExtractFileToDiskAsync(Ba2FileRecord file, string outputDir, bool overwrite = false)
+    public async Task<bool> ExtractFileToDiskAsync(
+        Ba2FileRecord file,
+        string outputDir,
+        bool overwrite = false,
+        CancellationToken cancellationToken = default)
     {
         var outputPath = Path.Combine(outputDir, file.FullPath);
         if (!overwrite && File.Exists(outputPath))
@@ -180,7 +190,7 @@ public sealed class Ba2Extractor : IDisposable
         }
 
         var data = ExtractFile(file);
-        await File.WriteAllBytesAsync(outputPath, data).ConfigureAwait(false);
+        await File.WriteAllBytesAsync(outputPath, data, cancellationToken).ConfigureAwait(false);
         return true;
     }
 
@@ -193,16 +203,21 @@ public sealed class Ba2Extractor : IDisposable
     {
         var files = Archive.AllFiles.ToList();
         var extracted = 0;
-        for (var i = 0; i < files.Count; i++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var file = files[i];
-            progress?.Report((i + 1, files.Count, file.FullPath));
-            if (await ExtractFileToDiskAsync(file, outputDir, overwrite).ConfigureAwait(false))
+        var started = 0;
+        await ParallelWork.ForEachAsync(
+            "ba2-extract",
+            files,
+            ConcurrencyPolicy.Fixed(MaxConcurrentBulkExtractions),
+            async (file, ct) =>
             {
-                extracted++;
-            }
-        }
+                var current = Interlocked.Increment(ref started);
+                progress?.Report((current, files.Count, file.FullPath));
+                if (await ExtractFileToDiskAsync(file, outputDir, overwrite, ct).ConfigureAwait(false))
+                {
+                    Interlocked.Increment(ref extracted);
+                }
+            },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return extracted;
     }
