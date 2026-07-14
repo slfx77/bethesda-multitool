@@ -8,8 +8,8 @@ namespace BethesdaMultitool;
 ///     Marker icons that ship embedded in the tool, keyed by raw <c>TNAM</c> value. Catalog-driven: it
 ///     loads <see cref="MapMarkerEntry.IconKey" /> for each entry in the game's
 ///     <see cref="MapMarkerCatalog" /> table, so it serves every game whose art was extracted offline —
-///     FO3/FNV (white silhouettes, tinted to the map color scheme) and Skyrim/FO4/FO76 (pre-styled,
-///     untinted). Because the art is embedded, it also works for memory dumps with no game assets.
+///     FO3/FNV/FO4 (white silhouettes, tinted to the map color scheme) and Oblivion/Skyrim/FO76
+///     (pre-styled, untinted). Because the art is embedded, it also works for memory dumps with no game assets.
 ///     Decoded once on construction; this runs inside the Win2D draw handler on the STA UI thread, so the
 ///     decode uses the non-pumping wait pattern (a plain <c>GetResult()</c> there can re-enter XAML).
 /// </summary>

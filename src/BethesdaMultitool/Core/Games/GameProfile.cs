@@ -20,13 +20,13 @@ public enum MarkerArtStrategy
     /// <summary>No authentic art wired yet — draw the catalog's type-distinct glyph/color dot.</summary>
     GlyphOnly,
 
-    /// <summary>FO3/FNV: bundled white-silhouette PNGs, tinted to the map color scheme at draw time.</summary>
+    /// <summary>FO3/FNV/FO4: bundled white-silhouette PNGs, tinted to the map color scheme at draw time.</summary>
     EmbeddedTinted,
 
     /// <summary>
-    ///     Skyrim/FO4/FO76 (and eventually Oblivion): per-type icons extracted offline from the game's
-    ///     map SWF/atlas and embedded as pre-styled PNGs (drawn untinted). Works for asset-less memory
-    ///     dumps too, since the art ships with the tool.
+    ///     Oblivion/Skyrim/FO76: per-type icons extracted offline from the game's map assets and embedded
+    ///     as pre-styled PNGs (drawn untinted). Works for asset-less memory dumps too, since the art ships
+    ///     with the tool.
     /// </summary>
     EmbeddedColored
 }

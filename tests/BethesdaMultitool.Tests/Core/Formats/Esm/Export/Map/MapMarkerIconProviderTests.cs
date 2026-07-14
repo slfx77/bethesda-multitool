@@ -1,5 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Map;
 using BethesdaMultitool.Core.Games;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Export.Map;
@@ -45,6 +47,33 @@ public class MapMarkerIconProviderTests
         var count = MapMarkerCatalog.For(game)
             .Count(e => !string.IsNullOrEmpty(e.IconKey) && MapMarkerIconProvider.GetIconPng(e.IconKey) is not null);
         Assert.Equal(expected, count);
+    }
+
+    [Theory]
+    [InlineData("fo76_marker_000")] // blue/black Cave
+    [InlineData("fo76_marker_068")] // yellow/black Vault 76 badge
+    public void Fallout76AuthoredIcons_ContainVisibleColorPixels(string iconKey)
+    {
+        var png = MapMarkerIconProvider.GetIconPng(iconKey);
+        Assert.NotNull(png);
+
+        using var image = Image.Load<Rgba32>(png!);
+        var hasVisibleColor = false;
+        for (var y = 0; y < image.Height && !hasVisibleColor; y++)
+        for (var x = 0; x < image.Width; x++)
+        {
+            var pixel = image[x, y];
+            var channelRange = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B))
+                               - Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
+            if (pixel.A >= 64 && channelRange >= 8)
+            {
+                hasVisibleColor = true;
+                break;
+            }
+        }
+
+        Assert.True(hasVisibleColor,
+            $"FO76 icon '{iconKey}' unexpectedly contains no visible chromatic pixels");
     }
 
     [Theory]

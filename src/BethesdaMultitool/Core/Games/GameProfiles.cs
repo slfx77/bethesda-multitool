@@ -136,7 +136,8 @@ public static class GameProfiles
                 HasRecordVersionTrailer = true,
                 MasterFileHints = ["SeventySix", "Fallout76"],
                 HasMapMarkers = true,
-                MarkerArt = MarkerArtStrategy.EmbeddedTinted, // white silhouettes from mapmarkerslibrary.swf (fo76_marker_NNN.png)
+                // mapmarkerslibrary.swf sprites carry authored blue/black/yellow palettes; preserve them.
+                MarkerArt = MarkerArtStrategy.EmbeddedColored,
                 HasWorldspaceDefaultWaterHeight = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
                 DefaultLandscapeNormal = CommonwealthNormal

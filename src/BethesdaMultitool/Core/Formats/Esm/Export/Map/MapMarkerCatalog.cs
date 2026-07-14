@@ -32,8 +32,8 @@ public static class MapMarkerCatalog
     private static readonly MapMarkerEntry[] Fallout76Table = BuildFallout76Table();
 
     /// <summary>The full dense marker table for <paramref name="game" /> (index == raw value), or an
-    ///     empty list for games whose table isn't wired yet (Skyrim/FO4/FO76 — populated with their
-    ///     atlas phase) or that have no markers (Morrowind).</summary>
+    ///     empty list for games whose table isn't wired yet (Starfield/Unknown) or that have no markers
+    ///     (Morrowind).</summary>
     public static IReadOnlyList<MapMarkerEntry> For(BethesdaGame game) => game switch
     {
         BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas => FalloutTable,
@@ -201,7 +201,8 @@ public static class MapMarkerCatalog
     // Icons extracted offline from the named sprites in interface\mapmarkerslibrary.swf and embedded as
     // fo76_marker_NNN.png. World-location types 0..99 carry icons (96 of them — Salem/Minutemen/USS
     // Constitution/Vassal are FO4-enum leftovers with no FO76 sprite); runtime types 100..113 (door/quest/
-    // player/teammate/camp/event) are names-only (they aren't ESM XMRK markers). White silhouettes → tinted.
+    // player/teammate/camp/event) are names-only (they aren't ESM XMRK markers). The sprites retain their
+    // authored blue/black/yellow palettes and are drawn untinted.
     private static MapMarkerEntry[] BuildFallout76Table()
     {
         string[] classes =

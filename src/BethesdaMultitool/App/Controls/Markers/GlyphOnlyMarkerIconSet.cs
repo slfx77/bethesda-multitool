@@ -5,8 +5,8 @@ namespace BethesdaMultitool;
 
 /// <summary>
 ///     The no-art fallback set: carries no bitmaps, so the map draws every marker as its
-///     <c>MapMarkerCatalog</c> glyph/color dot. Used for games whose authentic atlas art isn't wired
-///     yet (Oblivion/Skyrim/FO4/FO76 before their atlas phase) and for games with unknown taxonomy.
+///     <c>MapMarkerCatalog</c> glyph/color dot. Used for games whose authentic art isn't wired and for
+///     games with unknown taxonomy.
 /// </summary>
 internal sealed class GlyphOnlyMarkerIconSet(BethesdaGame game) : IMapMarkerIconSet
 {

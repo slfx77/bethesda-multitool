@@ -280,9 +280,9 @@ public sealed partial class WorldMapControl
     }
 
     /// <summary>
-    ///     Builds the marker icon set for the loaded game (embedded tinted for FO3/FNV, atlas for the
-    ///     atlas games, glyph-only otherwise), rebuilding only when the game changes. The marker TYPE is
-    ///     always resolved per game via <c>MapMarkerCatalog</c>; this only governs the icon art.
+    ///     Builds the marker icon set for the loaded game (embedded tinted or pre-styled according to its
+    ///     profile, glyph-only otherwise), rebuilding only when the game changes. The marker TYPE is always
+    ///     resolved per game via <c>MapMarkerCatalog</c>; this only governs the icon art.
     /// </summary>
     private void EnsureMarkerIconSet(ICanvasResourceCreator resourceCreator)
     {

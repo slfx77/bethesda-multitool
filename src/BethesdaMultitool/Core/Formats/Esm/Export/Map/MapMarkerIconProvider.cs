@@ -4,7 +4,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export.Map;
 
 /// <summary>
 ///     Provides embedded map marker icon PNGs keyed by <see cref="MapMarkerType" />.
-///     Icons are white silhouettes on transparent background, intended for runtime tinting.
+///     Styling is game-specific: FO3/FNV/FO4 silhouettes are tinted at runtime, while
+///     Oblivion/Skyrim/FO76 PNGs retain their embedded colors.
 /// </summary>
 public static class MapMarkerIconProvider
 {

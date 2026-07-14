@@ -75,8 +75,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private bool _legendExpanded = true;
 
     // --- Marker icons (per game) ---
-    // The active game's marker icon set (embedded tinted for FO3/FNV, atlas for others, glyph-only when
-    // no art is wired). Keyed by raw TNAM value via MapMarkerCatalog; rebuilt on a game change.
+    // The active game's marker icon set (embedded tinted or pre-styled per profile, glyph-only when no
+    // art is wired). Keyed by raw TNAM value via MapMarkerCatalog; rebuilt on a game change.
     private IMapMarkerIconSet? _markerIconSet;
     private Core.Games.BethesdaGame _markerIconSetGame = Core.Games.BethesdaGame.Unknown;
 

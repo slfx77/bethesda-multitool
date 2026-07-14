@@ -122,11 +122,12 @@ public class GameProfilesTests
         Assert.Equal(1.0f, GameProfiles.For(BethesdaGame.FalloutNewVegas).AmbientLightScale);
         Assert.Equal(1.0f, GameProfiles.For(BethesdaGame.Oblivion).AmbientLightScale);
 
-        // FO4/FO76 icons are white silhouettes from their map SWFs → tinted to the scheme like FO3/FNV.
+        // FO4 embeds white silhouettes and tints them to the scheme like FO3/FNV. FO76's extracted
+        // sprites already carry their authored palette, so tinting would flatten blue/black/yellow art.
         Assert.Equal(MarkerArtStrategy.EmbeddedTinted, GameProfiles.For(BethesdaGame.Fallout4).MarkerArt);
         Assert.True(GameProfiles.For(BethesdaGame.Fallout4).MarkersAreTinted);
-        Assert.Equal(MarkerArtStrategy.EmbeddedTinted, GameProfiles.For(BethesdaGame.Fallout76).MarkerArt);
-        Assert.True(GameProfiles.For(BethesdaGame.Fallout76).MarkersAreTinted);
+        Assert.Equal(MarkerArtStrategy.EmbeddedColored, GameProfiles.For(BethesdaGame.Fallout76).MarkerArt);
+        Assert.False(GameProfiles.For(BethesdaGame.Fallout76).MarkersAreTinted);
 
         // Oblivion uses its parchment-tile icons drawn untinted (EmbeddedColored, like Skyrim).
         Assert.Equal(MarkerArtStrategy.EmbeddedColored, GameProfiles.For(BethesdaGame.Oblivion).MarkerArt);
