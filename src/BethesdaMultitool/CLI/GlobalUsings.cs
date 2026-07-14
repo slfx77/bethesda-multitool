@@ -6,6 +6,7 @@ global using BethesdaMultitool.CLI.Commands.Dialogue;
 global using BethesdaMultitool.CLI.Commands.Dmp;
 global using BethesdaMultitool.CLI.Commands.Esm;
 global using BethesdaMultitool.CLI.Commands.Export;
+global using BethesdaMultitool.CLI.Commands.Papyrus;
 global using BethesdaMultitool.CLI.Commands.Render;
 global using BethesdaMultitool.CLI.Commands.Repack;
 global using BethesdaMultitool.CLI.Commands.Report;

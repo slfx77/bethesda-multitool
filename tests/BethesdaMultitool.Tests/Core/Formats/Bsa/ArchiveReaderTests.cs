@@ -144,7 +144,7 @@ public class ArchiveReaderTests
     }
 
     /// <summary>Minimal version-1 GNRL BA2 with one uncompressed entry at <paramref name="name" />.</summary>
-    private static byte[] BuildGnrlBa2(uint nameHash, string name, byte[] data)
+    internal static byte[] BuildGnrlBa2(uint nameHash, string name, byte[] data)
     {
         const int headerSize = 24;
         const int recordSize = 36;

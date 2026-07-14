@@ -229,7 +229,7 @@ public sealed class PexParserTests
         }
     }
 
-    private static byte[] BuildFixture(
+    internal static byte[] BuildFixture(
         PexGameId gameId,
         byte minorVersion,
         bool invalidObjectName = false,

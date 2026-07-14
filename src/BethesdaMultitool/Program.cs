@@ -126,6 +126,7 @@ public static class Program
         rootCommand.Subcommands.Add(Ba2Command.Create()); // deprecated alias of 'archive'
         rootCommand.Subcommands.Add(BtdCommand.Create());
         rootCommand.Subcommands.Add(DialogueCommand.Create());
+        rootCommand.Subcommands.Add(PapyrusCommand.Create());
         rootCommand.Subcommands.Add(WorldCommand.Create());
         rootCommand.Subcommands.Add(RepackCommand.Create());
         rootCommand.Subcommands.Add(RttiCommand.Create());
