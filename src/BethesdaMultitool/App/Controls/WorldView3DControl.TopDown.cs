@@ -147,7 +147,8 @@ public sealed partial class WorldView3DControl
                 // enableShadows off: the top-down overlay records no shadow pass (and drives its own
                 // hour), so the live view's cached map would be stale/mismatched here.
                 BindAtmosphereConstants(cmd, recorder.FrameIndex, enableFog: false,
-                    enableLighting: enableLighting, gameHourOverride: gameHour, enableShadows: false);
+                    enableLighting: enableLighting, gameHourOverride: gameHour, enableShadows: false,
+                    lightVisibility: cylinder);
 
                 target.Bind(cmd);
                 _terrain!.RenderDepthOnly(viewProj, cylinder); // depth pre-pass: ground occludes refs

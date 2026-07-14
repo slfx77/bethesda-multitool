@@ -107,6 +107,15 @@ internal static class EnvironmentVariables
         /// from the adapter's OS-assigned budget — 4096 at ≥ 8 GB, 2048 at ≥ 3 GB, else 1024).</summary>
         public const string Shadows = "FALLOUT_VIEWER_SHADOWS";
 
+        /// <summary>Placed LIGH emitter kill-switch. Set to "0" to skip the point-light
+        /// buffer and shader loop (default ON for interiors; also gated by the live UI toggle).</summary>
+        public const string PlacedLights = "FALLOUT_VIEWER_PLACED_LIGHTS";
+
+        /// <summary>Opt-in for placed LIGH emitters in exterior cells. Interior lights are enabled
+        /// by default; exteriors remain behind this diagnostic/performance gate until the global
+        /// forward loop has been profiled in dense worldspaces.</summary>
+        public const string ExteriorPlacedLights = "FALLOUT_VIEWER_EXTERIOR_LIGHTS";
+
         /// <summary>DIAGNOSTIC cap for the LAST shadow cascade's half-extent, in WORLD UNITS
         /// (unset = the fixed ladder's 131072; the earlier cascades are fixed at 2048/8192/32768).
         /// Exists only for headless texel-density experiments.</summary>

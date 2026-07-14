@@ -203,7 +203,8 @@ public sealed partial class WorldView3DControl
                 }
 
                 // Live-frame atmosphere (perspective defaults: fog + lighting on, no ortho overrides).
-                BindAtmosphereConstants(cmd, recorder.FrameIndex, cameraRelative: false);
+                BindAtmosphereConstants(
+                    cmd, recorder.FrameIndex, cameraRelative: false, lightVisibility: cylinder);
                 target.Bind(cmd);
 
                 // Sky FIRST (gradient + sun/moon billboards), then the scene over it — same order as the live

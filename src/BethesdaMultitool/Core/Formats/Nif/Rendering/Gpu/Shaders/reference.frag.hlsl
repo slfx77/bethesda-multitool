@@ -33,7 +33,7 @@ cbuffer Atmosphere : register(b3)
     float4 uSkyTopSkyEnabled;   // rgb = sky-top color, w = skyEnabled (0/1)
     float4 uSkyHorizon;         // rgb = sky-horizon color, w = spare
     float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
-    float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = time
+    float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
     float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
     float4 uCameraOrigin;       // xyz = camera-relative render origin (VS-consumed; layout parity)
     // Sun shadow CASCADES, near→far (appended — earlier shaders declare only the prefix above,
@@ -48,6 +48,18 @@ cbuffer Atmosphere : register(b3)
     float4 uShadowParams2;
     float4 uShadowParams3;
 };
+
+// Per-frame local-light list. The root SRV lives outside the legacy t0..t7 texture table so
+// terrain and placed geometry can share the same forward loop without disturbing bindless slots.
+// Position is already expressed in the same absolute/origin-relative space as PSInput.vWorldPos.
+struct PointLight
+{
+    float4 PositionRadius;
+    float4 ColorIntensity;
+    float4 AuthoredMetadata;    // parsed falloff/FOV/flags; retained, not interpreted by FNV path
+    float4 Reserved;
+};
+StructuredBuffer<PointLight> uPointLights : register(t9, space0);
 
 // Engine distance fog (grounded in Sky::UpdateFog): a linear near→far ramp toward the resolved fog
 // color, raised to the weather's fog power. fogEnabled (uFogColorFogEnabled.w) gates it; OFF returns
@@ -138,7 +150,41 @@ float ShadowFactor(float3 worldPos)
 // viewer. Enabled: colored ambient + sun·(N·L)·sunShadow (shadow = 1.0 whenever the shadow pass
 // is off, preserving the exact pre-shadow output), energy-bounded so a fully sunlit surface lands
 // near the legacy max (~1.0) instead of blowing out.
-float3 AtmosphereLight(float3 N, float sunShadow)
+float3 PlacedLightContribution(float3 N, float3 worldPos)
+{
+    float3 contribution = 0.0;
+    uint count = (uint)max(round(uAtmosphereParams.w), 0.0);
+    [loop]
+    for (uint i = 0; i < count; i++)
+    {
+        PointLight light = uPointLights[i];
+        float radius = light.PositionRadius.w;
+        float3 toLight = light.PositionRadius.xyz - worldPos;
+        float distanceSquared = dot(toLight, toLight);
+        float radiusSquared = radius * radius;
+        if (radius <= 0.0 || distanceSquared >= radiusSquared)
+        {
+            continue;
+        }
+
+        float3 L = toLight * rsqrt(max(distanceSquared, 1e-8));
+        float ndotl = saturate(dot(N, L));
+        if (ndotl <= 0.0)
+        {
+            continue;
+        }
+
+        // Exact shipped FNV SLS2128 omni term: 1-dot((lightPos-worldPos)/radius, ...), i.e.
+        // 1-(d/r)^2 (pc_land_shader_disassembly.txt, SLS 2128-2131). The engine draws a bounded
+        // light volume; this global loop performs that same bound explicitly above.
+        float attenuation = saturate(1.0 - distanceSquared / radiusSquared);
+        contribution += light.ColorIntensity.rgb *
+            (light.ColorIntensity.w * ndotl * attenuation);
+    }
+    return contribution;
+}
+
+float3 AtmosphereLight(float3 N, float3 worldPos, float sunShadow)
 {
     if (uSunColorLighting.w < 0.5)
     {
@@ -160,7 +206,12 @@ float3 AtmosphereLight(float3 N, float sunShadow)
     // falls back to 1.0 when the slot is unset (legacy/headless paths).
     float kAmbientScale = uAmbientColor.w > 0.0001 ? uAmbientColor.w : 1.0;
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
-    return uAmbientColor.rgb * kAmbientScale + uSunColorLighting.rgb * (ndotl * sunShadow);
+    float3 shade = uAmbientColor.rgb * kAmbientScale +
+        uSunColorLighting.rgb * (ndotl * sunShadow) +
+        PlacedLightContribution(N, worldPos);
+    // Negative LIGH records subtract illumination but never produce physically meaningless
+    // negative scene radiance.
+    return max(shade, 0.0);
 }
 
 struct PSInput
@@ -341,7 +392,7 @@ float4 main(PSInput input) : SV_Target
     // Sun-shadow visibility, computed once per pixel and shared by the diffuse sun term (inside
     // AtmosphereLight) and the specular sun term below. 1.0 when lighting or shadows are off.
     float sunShadow = uSunColorLighting.w >= 0.5 ? ShadowFactor(input.vWorldPos) : 1.0;
-    float3 shade = AtmosphereLight(normal, sunShadow);
+    float3 shade = AtmosphereLight(normal, input.vWorldPos, sunShadow);
 
     if (input.vRenderState.w > 0.5)
     {

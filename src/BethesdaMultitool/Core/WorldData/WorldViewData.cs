@@ -230,6 +230,14 @@ internal sealed class WorldViewData
         new Dictionary<uint, LightingTemplateRecord>();
 
     /// <summary>
+    ///     Light (LIGH) base records keyed by FormID. The render cache resolves each placed REFR's
+    ///     <c>BaseFormId</c> through this index so meshless lights become emitter-only entries, while
+    ///     model-bearing lights contribute both their normal mesh and a local-light emitter.
+    /// </summary>
+    public IReadOnlyDictionary<uint, LightRecord> LightsByFormId { get; init; } =
+        new Dictionary<uint, LightRecord>();
+
+    /// <summary>
     ///     Placed-reference FormIDs whose XESP enable-parent CHAIN resolves to disabled in the initial
     ///     world state (parent initially-disabled, or enabled with the opposite-state flag). The
     ///     placement bake ORs this with each ref's own initially-disabled flag — the mechanism that

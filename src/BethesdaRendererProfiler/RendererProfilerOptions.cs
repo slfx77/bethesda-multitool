@@ -78,6 +78,12 @@ internal sealed record RendererProfilerOptions
     internal string? CaptureWorldspaceName { get; init; }
 
     /// <summary>
+    ///     Interior CELL EditorID or hexadecimal FormID to select before <see cref="CaptureFramePath" />
+    ///     runs (e.g. <c>GSDocMitchellHouse</c> or <c>0x00103DF9</c>).
+    /// </summary>
+    internal string? CaptureInterior { get; init; }
+
+    /// <summary>
     ///     Worldspace EditorID/FullName the 3D control selects at load (sets
     ///     <c>FALLOUT_VIEWER_WORLDSPACE</c> IN-PROCESS — the WinUI activation path doesn't inherit
     ///     the launching shell's environment, so the env var alone silently does nothing). Applies
@@ -126,6 +132,8 @@ internal sealed record RendererProfilerOptions
           --width <px>                Window width. Default: 1450.
           --height <px>               Window height. Default: 900.
           --capture-topdown <path>    Render one top-down "Rendered models" overlay to a PNG, log coverage, then exit.
+          --capture-frame <path>      Render one perspective frame to a PNG, then exit.
+          --capture-interior <cell>   Select an interior by EditorID or 0xFormID for --capture-frame.
           --capture-cells <n>         Top-down capture window size in cells (default 6).
           --capture-worldspace <i>    Target exterior worldspace index i (centered on its centroid) — tests the top-down worldspace sync.
           --capture-center-x <x>      Override the capture window center X (world units). Aims the capture at a landmark.
@@ -169,6 +177,7 @@ internal sealed record RendererProfilerOptions
         float? captureZ = null;
         string? captureFrame = null;
         string? captureWorldspaceName = null;
+        string? captureInterior = null;
         string? worldspaceName = null;
         string? captureWeatherName = null;
         var captureHour = 12f;
@@ -376,6 +385,11 @@ internal sealed record RendererProfilerOptions
                     if (error != null) return Fail(out options, error);
                     break;
 
+                case "--capture-interior":
+                    captureInterior = RequireValue(args, ref i, arg, out error);
+                    if (error != null) return Fail(out options, error);
+                    break;
+
                 case "--worldspace":
                     worldspaceName = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options, error);
@@ -470,6 +484,24 @@ internal sealed record RendererProfilerOptions
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(captureInterior) && string.IsNullOrWhiteSpace(captureFrame))
+        {
+            error = "--capture-interior requires --capture-frame.";
+            return Fail(out options, error);
+        }
+
+        if (!string.IsNullOrWhiteSpace(captureInterior) && !string.IsNullOrWhiteSpace(captureWorldspaceName))
+        {
+            error = "--capture-interior cannot be combined with --capture-worldspace-name.";
+            return Fail(out options, error);
+        }
+
+        if (!string.IsNullOrWhiteSpace(captureInterior) && !string.IsNullOrWhiteSpace(captureTopDown))
+        {
+            error = "--capture-interior cannot be combined with --capture-topdown.";
+            return Fail(out options, error);
+        }
+
         var resolvedProfileOutput = string.IsNullOrWhiteSpace(profileOutput)
             ? CreateDefaultProfileOutputPath()
             : Path.GetFullPath(profileOutput);
@@ -505,6 +537,7 @@ internal sealed record RendererProfilerOptions
             CaptureZ = captureZ,
             CaptureFramePath = string.IsNullOrWhiteSpace(captureFrame) ? null : Path.GetFullPath(captureFrame),
             CaptureWorldspaceName = captureWorldspaceName,
+            CaptureInterior = captureInterior?.Trim(),
             WorldspaceName = worldspaceName,
             CaptureWeatherName = captureWeatherName,
             CaptureHour = captureHour,

@@ -137,6 +137,7 @@ internal static class WorldMapOverlayBuilder
             ClimatesByFormId = BuildClimateIndex(climateRecords),
             ImageSpacesByFormId = BuildImageSpaceIndex(semantic.ImageSpaces),
             LightingTemplatesByFormId = BuildLightingTemplateIndex(semantic.LightingTemplates),
+            LightsByFormId = BuildLightIndex(semantic.Lights),
             AllWeathers = BuildAllWeathers(weatherRecords)
         };
     }
@@ -315,6 +316,7 @@ internal static class WorldMapOverlayBuilder
             ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),
             ImageSpacesByFormId = BuildImageSpaceIndex(suppRecords.ImageSpaces),
             LightingTemplatesByFormId = BuildLightingTemplateIndex(suppRecords.LightingTemplates),
+            LightsByFormId = BuildLightIndex(suppRecords.Lights),
             AllWeathers = BuildAllWeathers(suppRecords.Weather)
         };
     }
@@ -584,6 +586,16 @@ internal static class WorldMapOverlayBuilder
     private static Dictionary<uint, LightingTemplateRecord> BuildLightingTemplateIndex(List<LightingTemplateRecord> records)
     {
         var dict = new Dictionary<uint, LightingTemplateRecord>(records.Count);
+        foreach (var r in records)
+        {
+            dict.TryAdd(r.FormId, r);
+        }
+        return dict;
+    }
+
+    private static Dictionary<uint, LightRecord> BuildLightIndex(IReadOnlyList<LightRecord> records)
+    {
+        var dict = new Dictionary<uint, LightRecord>(records.Count);
         foreach (var r in records)
         {
             dict.TryAdd(r.FormId, r);

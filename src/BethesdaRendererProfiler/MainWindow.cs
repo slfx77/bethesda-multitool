@@ -169,6 +169,12 @@ internal sealed class MainWindow : Window, IDisposable
             SetStatus(summary);
             Log.Info(summary);
 
+            if (!TrySelectCaptureInterior(data))
+            {
+                ExitProfiler("capture-bad-interior");
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(_options.CaptureTopDownPath))
             {
                 // Autonomous top-down overlay capture: render the 2D-map "Rendered models" overlay
@@ -430,12 +436,14 @@ internal sealed class MainWindow : Window, IDisposable
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
             BethesdaMultitool.Core.Formats.Esm.Analysis.PngWriter.SaveRgba(rgba, px, pyh, path);
 
+            var targetDescription = !string.IsNullOrWhiteSpace(_options.CaptureInterior)
+                ? $"interior='{_options.CaptureInterior}'"
+                : $"ws='{_options.CaptureWorldspaceName ?? "(default)"}'";
             var msg = string.Format(
                 CultureInfo.InvariantCulture,
-                "[Capture] saved {0} ({1}x{2}) ws='{3}' weather='{4}' hour={5:0.#} pitch={6:0.#}deg coverage={7:P1}",
-                path, px, pyh, _options.CaptureWorldspaceName ?? "(default)",
-                _options.CaptureWeatherName ?? "(climate default)", _options.CaptureHour,
-                _options.CapturePitchDegrees, Coverage(bgra));
+                "[Capture] saved {0} ({1}x{2}) {3} weather='{4}' hour={5:0.#} pitch={6:0.#}deg coverage={7:P1}",
+                path, px, pyh, targetDescription, _options.CaptureWeatherName ?? "(climate default)",
+                _options.CaptureHour, _options.CapturePitchDegrees, Coverage(bgra));
             Log.Info(msg);
             Console.WriteLine(msg);
         }
@@ -448,6 +456,62 @@ internal sealed class MainWindow : Window, IDisposable
         {
             ExitProfiler("capture-complete");
         }
+    }
+
+    /// <summary>
+    ///     Resolves the profiler-only interior selector after semantic data is loaded, then reuses
+    ///     the same navigation path as an interior-cell activation in the production UI. That path
+    ///     builds the single-cell scene, frames its placed-object bounds, and refreshes its atmosphere.
+    /// </summary>
+    private bool TrySelectCaptureInterior(WorldViewData data)
+    {
+        var selector = _options.CaptureInterior;
+        if (string.IsNullOrWhiteSpace(selector))
+        {
+            return true;
+        }
+
+        var isFormIdSelector = selector.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+        var formId = 0u;
+        if (isFormIdSelector &&
+            !uint.TryParse(
+                selector.AsSpan(2),
+                NumberStyles.AllowHexSpecifier,
+                CultureInfo.InvariantCulture,
+                out formId))
+        {
+            var message = $"[Capture] FAILED: interior selector '{selector}' is not a valid 0xFormID.";
+            Log.Error(message);
+            Console.WriteLine(message);
+            return false;
+        }
+
+        var interior = isFormIdSelector
+            ? data.InteriorCells.FirstOrDefault(cell => cell.FormId == formId)
+            : data.InteriorCells.FirstOrDefault(cell =>
+                string.Equals(cell.EditorId, selector, StringComparison.OrdinalIgnoreCase));
+
+        if (interior is null)
+        {
+            var message = $"[Capture] FAILED: interior '{selector}' not found by " +
+                          (selector.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                              ? "0xFormID."
+                              : "EditorID.");
+            Log.Error(message);
+            Console.WriteLine(message);
+            return false;
+        }
+
+        _worldView.NavigateToCell(interior);
+        Log.Info(
+            "Capture: selected interior '{0}' ({1}) formId=0x{2:X8}.",
+            interior.EditorId ?? "(no EditorID)",
+            interior.FullName ?? "(no name)",
+            interior.FormId);
+        Console.WriteLine(
+            $"[Capture] selected interior '{interior.EditorId ?? "(no EditorID)"}' " +
+            $"formId=0x{interior.FormId:X8}.");
+        return true;
     }
 
     private static double Coverage(byte[] bgra)

@@ -56,6 +56,7 @@ public sealed partial class WorldView3DControl
         p.Lighting.WindOverrideChanged += LightingPanel_WindOverrideChanged;
         p.Lighting.WindSpeedChanged += LightingPanel_WindSpeedChanged;
 
+        p.PlacedLightsToggle.Toggled += PlacedLightsToggle_Changed;
         p.HdrToggle.Toggled += HdrToggle_Changed;
         p.BloomToggle.Toggled += BloomToggle_Changed;
         p.ImagespaceToggle.Toggled += ImagespaceToggle_Changed;
@@ -90,6 +91,12 @@ public sealed partial class WorldView3DControl
     {
         if (_initializing) return;
         _hdrEnabled = SettingsPanel.HdrToggle.IsOn;
+    }
+
+    private void PlacedLightsToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        _placedLightsEnabled = SettingsPanel.PlacedLightsToggle.IsOn;
     }
 
     private void BloomToggle_Changed(object sender, RoutedEventArgs e)

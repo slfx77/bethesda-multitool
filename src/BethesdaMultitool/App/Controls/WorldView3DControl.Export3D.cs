@@ -138,7 +138,8 @@ public sealed partial class WorldView3DControl
                 // view's cached map here would apply stale shadows to a differently-lit ortho export.
                 BindAtmosphereConstants(
                     cmd, recorder.FrameIndex, enableFog: false, enableLighting: true,
-                    cameraRelative: false, shadingCameraPosOverride: shadingEye, enableShadows: false);
+                    cameraRelative: false, shadingCameraPosOverride: shadingEye, enableShadows: false,
+                    lightVisibility: cylinder);
 
                 target.Bind(cmd);
 

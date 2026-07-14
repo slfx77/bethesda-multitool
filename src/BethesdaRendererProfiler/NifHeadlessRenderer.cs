@@ -494,24 +494,29 @@ internal static class NifHeadlessRenderer
     /// legacy flat shade (0.4 + 0.6·lambert). Faithful for verifying material/alpha, not time-of-day.</summary>
     private static void BindFlatAtmosphere(ID3D12GraphicsCommandList cmd, int frameIndex, GpuRingBuffer12 ring)
     {
-        const int atmosphereBytes = 9 * 16; // 9 float4, matches the b3 cbuffer layout
+        const int atmosphereBytes = 9 * 16 + 4 * 64 + 4 * 16;
         var alloc = ring.Allocate(frameIndex, atmosphereBytes, GpuRingBuffer12.CbAlignment);
         // Zero the (mapped upload) CB so lighting/fog/sky flags read 0 → reference.frag's legacy shade.
         Marshal.Copy(new byte[atmosphereBytes], 0, alloc.CpuPtr, atmosphereBytes);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
+        BindEmptyPointLights(cmd, frameIndex, ring);
     }
 
     /// <summary>Binds the REAL <see cref="AtmosphereState" /> lighting (sun + ambient) at
     /// <paramref name="gameHour" /> — the exact constants the live viewer uploads — so the worldspace
     /// shading path (full-strength ambient + sun·N·L, the engine SLS sum) is reproduced offscreen. Sky +
-    /// fog are disabled to isolate the surface lighting. Mirrors WorldView3DControl.AtmosphereConstants
-    /// (9 × float4). uAmbientColor.w stays 0 → the shader's 1.0 fallback (engine value).</summary>
+    /// fog are disabled to isolate the surface lighting. Mirrors the complete append-only
+    /// WorldView3DControl.AtmosphereConstants layout. uAmbientColor.w stays 0 → the shader's
+    /// 1.0 fallback (engine value).</summary>
     private static void BindLitAtmosphere(
         ID3D12GraphicsCommandList cmd, int frameIndex, GpuRingBuffer12 ring, float gameHour, Vector3 focus)
     {
         var a = AtmosphereState.Resolve(gameHour, weather: null, climate: null, lightingEnabled: true);
-        // 9 float4 = 144 bytes, matching the b3 cbuffer layout in reference.frag.hlsl.
-        var cb = new float[9 * 4];
+        // Zero the complete append-only b3 layout (nine legacy vectors, four shadow matrices,
+        // four shadow vectors). In particular Params.w remains zero: this verifier has no world
+        // placement cache, so it binds an empty local-light list.
+        const int atmosphereBytes = 9 * 16 + 4 * 64 + 4 * 16;
+        var cb = new float[atmosphereBytes / sizeof(float)];
         void Put(int slot, float x, float y, float z, float w)
         {
             cb[slot * 4 + 0] = x; cb[slot * 4 + 1] = y; cb[slot * 4 + 2] = z; cb[slot * 4 + 3] = w;
@@ -533,12 +538,23 @@ internal static class NifHeadlessRenderer
         // the old eye value here was a latent shift that only didn't bite because the VS now ignores it.
         Put(8, 0f, 0f, 0f, 0f);
 
-        const int atmosphereBytes = 9 * 16;
         var alloc = ring.Allocate(frameIndex, atmosphereBytes, GpuRingBuffer12.CbAlignment);
         var bytes = new byte[atmosphereBytes];
         Buffer.BlockCopy(cb, 0, bytes, 0, atmosphereBytes);
         Marshal.Copy(bytes, 0, alloc.CpuPtr, atmosphereBytes);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
+        BindEmptyPointLights(cmd, frameIndex, ring);
+    }
+
+    private static void BindEmptyPointLights(
+        ID3D12GraphicsCommandList cmd, int frameIndex, GpuRingBuffer12 ring)
+    {
+        const int pointLightBytes = 4 * 16;
+        var alloc = ring.Allocate(frameIndex, pointLightBytes, alignment: 16);
+        Marshal.Copy(new byte[pointLightBytes], 0, alloc.CpuPtr, pointLightBytes);
+        cmd.SetGraphicsRootShaderResourceView(
+            (uint)GpuRootSignature12.Slots.PointLightsSrv,
+            alloc.GpuAddress);
     }
 
     /// <summary>Extracts the NIF's local-space AABB (for framing) by parsing the mesh from the archive.

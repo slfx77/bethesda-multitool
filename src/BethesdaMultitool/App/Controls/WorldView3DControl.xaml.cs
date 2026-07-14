@@ -248,6 +248,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // references). On by default when lighting is on; off ⇒ pixel-identical to the pre-shadow
     // renderer. Env kill-switch FALLOUT_VIEWER_SHADOWS=0 overrides the toggle.
     private bool _showShadows = true;
+    // Placed LIGH point emitters uploaded once per frame. Interiors are on by
+    // default; exteriors stay behind FALLOUT_VIEWER_EXTERIOR_LIGHTS until the forward loop is
+    // profiled in dense worldspaces. The UI toggle is an additional live AND-gate.
+    private bool _placedLightsEnabled = true;
     // Post-processing toggles (settings-panel "Post-processing" section; hidden for Morrowind —
     // no engine HDR stage there). Read per-frame by ResolveTonemapSettings, so flipping them is
     // free (no pipeline rebuild): HDR off = LegacyClamp passthrough (the pre-HDR look — the float
@@ -336,6 +340,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // Make the base-object category available to the placement bake before the renderer pulls
         // its first cell — drives the per-category visibility filter (activators off by default).
         data.RenderCache.CategoryIndex = data.CategoryIndex;
+        // Resolve placed REFR base FormIDs to LIGH definitions during the same one-time cell bake.
+        // This is independent of ModelPath, so meshless lights still become emitter-only entries.
+        data.RenderCache.LightIndex = data.LightsByFormId;
         // XESP enable-parent resolution: parent-gated refs (condition-driven FX like light-ray
         // cones) bake as initially-disabled instead of always drawing.
         data.RenderCache.XespDisabledRefs = data.XespDisabledRefs;
@@ -351,6 +358,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // And the base-record MODC color remaps (FO4-family gradient-palette row overrides —
         // shipping-crate colorways).
         data.RenderCache.BaseColorRemapIndex = data.BaseColorRemapsByFormId;
+        _placedLightClipLoggedCells.Clear();
         if (data.BaseColorRemapsByFormId.Count > 0)
         {
             Log.Info("WorldView3DControl: {0} base-record MODC color remaps.", data.BaseColorRemapsByFormId.Count);

@@ -15,6 +15,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         <item>3: legacy descriptor table for <c>t0..t7, space0</c> — water and transition SRVs. VS + PS.</item>
 ///         <item>4: unbounded descriptor table for <c>t0.., space1</c> — bindless textures. VS + PS.</item>
 ///         <item>5: root SRV at <c>t8, space0</c> — reference instance structured buffer. VS.</item>
+///         <item>6: root CBV at <c>b3</c> — shared scene atmosphere. VS + PS.</item>
+///         <item>7: root SRV at <c>t9, space0</c> — placed point-light buffer. PS.</item>
 ///     </list>
 ///     <para>
 ///         Root CBVs at slots 0/1 are faster than descriptor tables for the
@@ -50,6 +52,9 @@ internal sealed class GpuRootSignature12 : IDisposable
         /// <summary>Root CBV at <c>b3</c> — the shared scene atmosphere (sun direction + sky / ambient
         /// / fog colors), uploaded once per frame and read by the lighting / sky / water shaders.</summary>
         public const int AtmosphereCbv = 6;
+
+        /// <summary>Root SRV at <c>t9, space0</c> — per-frame placed point lights.</summary>
+        public const int PointLightsSrv = 7;
     }
 
     /// <summary>SRV slots <c>t0..t(N-1)</c> reserved in the legacy table at slot
@@ -156,6 +161,14 @@ internal sealed class GpuRootSignature12 : IDisposable
             new RootDescriptor1(shaderRegister: 3, registerSpace: 0),
             ShaderVisibility.All);
 
+        // Slot 7: global per-frame local-light structured buffer at t9, space 0. Pixel-only: terrain
+        // and reference fragment shaders loop it; vertex/depth-only PSOs are unaffected. The host
+        // always binds at least one zeroed dummy element and carries the active count in b3.
+        var pointLights = new RootParameter1(
+            RootParameterType.ShaderResourceView,
+            new RootDescriptor1(shaderRegister: 9, registerSpace: 0),
+            ShaderVisibility.Pixel);
+
         var staticSamplers = new[]
         {
             new StaticSamplerDescription(
@@ -235,7 +248,10 @@ internal sealed class GpuRootSignature12 : IDisposable
         var desc = new RootSignatureDescription1(
             RootSignatureFlags.AllowInputAssemblerInputLayout |
             RootSignatureFlags.ConstantBufferViewShaderResourceViewUnorderedAccessViewHeapDirectlyIndexed,
-            new[] { perFrame, perDraw, perMode, srvTable, bindlessTable, referenceInstanceSrv, atmosphere },
+            new[]
+            {
+                perFrame, perDraw, perMode, srvTable, bindlessTable, referenceInstanceSrv, atmosphere, pointLights
+            },
             staticSamplers);
         var rs = gpu.Device.CreateRootSignature(desc);
         return new GpuRootSignature12(rs);

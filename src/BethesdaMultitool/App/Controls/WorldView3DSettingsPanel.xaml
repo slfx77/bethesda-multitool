@@ -23,6 +23,11 @@
       <StackPanel Spacing="10">
         <local:LightingControlsPanel x:Name="Lighting" x:FieldModifier="internal" />
 
+        <ToggleSwitch x:Name="PlacedLightsToggle" x:FieldModifier="internal" IsOn="True"
+                      Header="Placed lights" OnContent="On" OffContent="Off"
+                      AutomationProperties.Name="Placed lights"
+                      ToolTipService.ToolTip="Illuminate the scene with placed LIGH point emitters" />
+
         <!-- Post-processing: HDR/bloom/imagespace — hidden for games without the engine HDR stage
              (Morrowind); the owner gates visibility per loaded game in LoadData. -->
         <StackPanel x:Name="TonemapSection" x:FieldModifier="internal" Spacing="10">

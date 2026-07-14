@@ -231,7 +231,8 @@ public sealed partial class WorldView3DControl
     private void BindAtmosphereConstants(
         Vortice.Direct3D12.ID3D12GraphicsCommandList cmd, int frameIndex, bool enableFog = true,
         bool enableLighting = true, bool cameraRelative = false, Vector3? shadingCameraPosOverride = null,
-        float? gameHourOverride = null, Vector3? cameraOriginOverride = null, bool enableShadows = true)
+        float? gameHourOverride = null, Vector3? cameraOriginOverride = null, bool enableShadows = true,
+        VisibilityCylinder? lightVisibility = null)
     {
         // The top-down overlay drives lighting from the 2D map's own time-of-day, passed via
         // gameHourOverride; the live perspective path uses the 3D control's _gameHour. enableLighting is
@@ -263,6 +264,10 @@ public sealed partial class WorldView3DControl
         var cameraOrigin = cameraOriginOverride ?? (cameraRelative ? _camera.Position : Vector3.Zero);
         var shadingCameraPos = shadingCameraPosOverride
             ?? (cameraRelative ? _camera.Position - cameraOrigin : _camera.Position);
+        // Root SRV t9 is bound on every path, including lighting-off/top-down frames. Its returned
+        // count rides the previously spare b3 Params.w slot so both shading PSOs read one list.
+        var placedLightCount = BindPlacedLights(
+            cmd, frameIndex, lightVisibility, cameraOrigin, lightingOn);
         // Per-game ambient fill scale (uAmbientColor.w): FNV's 0.3 is too dark for the ambient-heavier
         // TES4-era engines, so Oblivion etc. raise it (see GameProfile.AmbientLightScale).
         var ambientScale = BethesdaMultitool.Core.Games.GameProfiles
@@ -281,7 +286,8 @@ public sealed partial class WorldView3DControl
         _lastBoundShadowParams = shadow.Params0;
         var constants = AtmosphereConstants.From(
             resolved, gameHour, shadingCameraPos, lightingEnabled: lightingOn ? 1f : 0f,
-            skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f, time: 0f,
+            skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f,
+            placedLightCount: placedLightCount,
             cameraOrigin: cameraOrigin, ambientScale: ambientScale, shadow: shadow);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
@@ -302,7 +308,7 @@ public sealed partial class WorldView3DControl
         public Vector4 SkyTopSkyEnabled;   // rgb = sky-top color, w = skyEnabled (0/1)
         public Vector4 SkyHorizon;         // rgb = sky-horizon color, w = spare
         public Vector4 FogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
-        public Vector4 Params;             // x = gameHour, y = fogNear, z = fogFar, w = time
+        public Vector4 Params;             // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
         public Vector4 CameraPosFogPower;  // xyz = camera world pos (0 in camera-relative mode), w = fog power
         // Camera-relative render origin the scene VS subtract from each world vertex before
         // projection (0 when camera-relative is off). The PS shaders that read this CB
@@ -331,7 +337,7 @@ public sealed partial class WorldView3DControl
             float lightingEnabled,
             float skyEnabled,
             float fogEnabled,
-            float time,
+            float placedLightCount,
             Vector3 cameraOrigin,
             float ambientScale = 0.3f,
             Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.ShadowSampleConstants shadow = default) => new()
@@ -343,7 +349,7 @@ public sealed partial class WorldView3DControl
                 SkyTopSkyEnabled = new Vector4(a.SkyTopColor, skyEnabled),
                 SkyHorizon = new Vector4(a.SkyHorizonColor, 0f),
                 FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
-                Params = new Vector4(gameHour, a.FogNear, a.FogFar, time),
+                Params = new Vector4(gameHour, a.FogNear, a.FogFar, placedLightCount),
                 CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
                 CameraOrigin = new Vector4(cameraOrigin, 0f),
                 ShadowMatrix0 = shadow.Matrix0,
@@ -695,7 +701,8 @@ public sealed partial class WorldView3DControl
         BindAtmosphereConstants(
             cmd, recorder.FrameIndex, enableFog: !projectionActive, cameraRelative: cameraRelative,
             shadingCameraPosOverride: projectionActive ? orthoEye : null,
-            cameraOriginOverride: cameraRelative ? sceneRenderOrigin : null);
+            cameraOriginOverride: cameraRelative ? sceneRenderOrigin : null,
+            lightVisibility: cylinder);
 
         // Sky FIRST — gradient + clouds + stars into the cleared color target (depth OFF, so terrain
         // overwrites it via the normal depth pass; OFF ⇒ the flat dark-blue clear shows), then the

@@ -22,6 +22,8 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         new(ReferenceEqualityComparer.Instance);
     private readonly ConcurrentDictionary<CellRecord, IReadOnlyList<RenderableReference>> _placements =
         new(ReferenceEqualityComparer.Instance);
+    private readonly ConcurrentDictionary<CellRecord, IReadOnlyList<PlacedLight>> _placedLights =
+        new(ReferenceEqualityComparer.Instance);
     private readonly ConcurrentDictionary<CellRecord, ReferencePlacementSpatialIndex> _placementSpatialIndexes =
         new(ReferenceEqualityComparer.Instance);
 
@@ -85,6 +87,13 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     /// </summary>
     internal IReadOnlyCollection<uint>? XespDisabledRefs { get; set; }
 
+    /// <summary>
+    ///     Base-FormID → LIGH record. Set from <see cref="WorldViewData.LightsByFormId" /> before
+    ///     placement baking so a REFR can produce a local-light emitter independently of whether
+    ///     its base record also carries a renderable model.
+    /// </summary>
+    internal IReadOnlyDictionary<uint, LightRecord>? LightIndex { get; set; }
+
     public string ResourceName => nameof(WorldRenderCache);
 
     public Core.Diagnostics.ResourceCategory Category => Core.Diagnostics.ResourceCategory.CpuCache;
@@ -119,6 +128,12 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
             bytes += (long)list.Count * refSize;
         }
 
+        var lightSize = System.Runtime.CompilerServices.Unsafe.SizeOf<PlacedLight>();
+        foreach (var list in _placedLights.Values)
+        {
+            bytes += (long)list.Count * lightSize;
+        }
+
         foreach (var index in _placementSpatialIndexes.Values)
         {
             bytes += index.EstimatedBytes;
@@ -135,7 +150,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
 
         return new()
         {
-            EntryCount = _terrain.Count + _textureWinners.Count + _placements.Count +
+            EntryCount = _terrain.Count + _textureWinners.Count + _placements.Count + _placedLights.Count +
                          _placementSpatialIndexes.Count + _terrainTextureSets.Count,
             EstimatedBytes = bytes,
         };
@@ -195,6 +210,19 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         _placements.GetOrAdd(cell, static (c, self) => self.BuildPlacementList(c), this);
 
     /// <summary>
+    ///     Returns the cell's placed LIGH emitters. The normal placement bake populates this list
+    ///     before it returns; forcing <see cref="GetPlacementList" /> here keeps mesh and emitter
+    ///     resolution a single pass over the cell's REFRs (including meshless emitter-only lights).
+    /// </summary>
+    internal IReadOnlyList<PlacedLight> GetPlacedLights(CellRecord cell)
+    {
+        _ = GetPlacementList(cell);
+        return _placedLights.TryGetValue(cell, out var lights)
+            ? lights
+            : Array.Empty<PlacedLight>();
+    }
+
+    /// <summary>
     ///     Returns this cell's static-mesh references whose cached aggregate bucket bounds may
     ///     intersect the current reference visibility volume. The renderer still runs exact
     ///     per-reference sphere/frustum tests afterward; this only avoids visiting whole
@@ -223,6 +251,7 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         var placements = cell.PlacedObjects;
         if (placements.Count == 0)
         {
+            _placedLights[cell] = Array.Empty<PlacedLight>();
             return Array.Empty<RenderableReference>();
         }
 
@@ -231,14 +260,23 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         var materialSwapIndex = MaterialSwapIndex;
         var baseMaterialSwapIndex = BaseMaterialSwapIndex;
         var baseColorRemapIndex = BaseColorRemapIndex;
+        var lightIndex = LightIndex;
         // Interns the merged base-MODS + MSWP + MODC set per (base, swap) pair for this cell's bake,
         // so the hundreds of placements sharing one colorway don't each rebuild an identical set
         // (and the mesh cache sees one shared VariantKey instance per combination). The MODC remap
         // is a function of the base FormID, so the (base, swap) key stays unique per combination.
         Dictionary<(uint BaseFormId, uint SwapFormId), AlternateTextureSet?>? mergedSwapSets = null;
         var built = new List<RenderableReference>(placements.Count);
+        List<PlacedLight>? placedLights = null;
         foreach (var p in placements)
         {
+            var xespDisabled = XespDisabledRefs?.Contains(p.FormId) == true;
+            if (lightIndex is not null && lightIndex.TryGetValue(p.BaseFormId, out var light) &&
+                PlacedLight.TryBuild(p, light, xespDisabled) is { } placedLight)
+            {
+                (placedLights ??= []).Add(placedLight);
+            }
+
             var category = categoryIndex is not null && categoryIndex.TryGetValue(p.BaseFormId, out var c)
                 ? c
                 : PlacedObjectCategory.Unknown;
@@ -286,10 +324,12 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
                 alternateTextures = merged ?? alternateTextures;
             }
 
-            var xespDisabled = XespDisabledRefs?.Contains(p.FormId) == true;
             var renderable = RenderableReference.TryBuild(p, category, alternateTextures, xespDisabled);
             if (renderable.HasValue) built.Add(renderable.Value);
         }
+        _placedLights[cell] = placedLights is { Count: > 0 }
+            ? placedLights
+            : Array.Empty<PlacedLight>();
         // Sort by ModelPath so consecutive draws batch on the same SRV — adjacent REFRs
         // of the same model (road segments, fence posts, lamp poles, etc.) collapse into
         // a single texture bind in ReferenceRenderer.BindSrvIfChanged. Ordinal compare is
