@@ -125,11 +125,18 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "DNAM" when Context.Game == BethesdaGame.Fallout4 && sub.DataLength >= 200:
                     visualProps = ReadFallout4WaterData(subData, record.IsBigEndian);
                     break;
-                // FO4 has no NNAM — its per-layer noise/normal textures ship as NAM2/NAM3/NAM4 zstrings
-                // (layer 1 first, usually all three identical). Surface layer 1 as the noise texture,
-                // stripping the "data\" prefix FO4 authors so the texture cache resolves it like any
-                // other "textures\..." path.
-                case "NAM2" when Context.Game == BethesdaGame.Fallout4 && noiseTexture is null:
+                // FO76 preserves FO4's Creation-era fog/physical/specular prefix through byte 107,
+                // then ends after a shorter game-specific tail (148 bytes in current retail records).
+                // Its shipped Shaders012.fxp Water group retains the FO4 lighting architecture, so
+                // surface exactly the shared fields without reading FO4's absent noise/silt tail.
+                case "DNAM" when Context.Game == BethesdaGame.Fallout76 && sub.DataLength >= 108:
+                    visualProps = ReadFallout76WaterData(subData, record.IsBigEndian);
+                    break;
+                // FO4/FO76 have no NNAM — their per-layer noise/normal textures ship as
+                // NAM2/NAM3/NAM4 zstrings (layer 1 first). Surface layer 1 as the noise texture,
+                // stripping the "data\" prefix authors use so the cache resolves it normally.
+                case "NAM2" when (Context.Game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76)
+                                  && noiseTexture is null:
                 {
                     var nam2 = EsmStringUtils.ReadNullTermString(subData);
                     if (!string.IsNullOrEmpty(nam2))
@@ -263,18 +270,45 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // (WaterShaderVariant.Fo4Water — tools/GhidraProject/fo4_water_pixel_shader_decompiled.txt).
     internal static Dictionary<string, object?> ReadFallout4WaterData(ReadOnlySpan<byte> d, bool isBigEndian)
     {
-        static uint Color(ReadOnlySpan<byte> d, int off) =>
-            (uint)(d[off] | (d[off + 1] << 8) | (d[off + 2] << 16));
+        var properties = ReadCreationWaterDataPrefix(d, isBigEndian);
+        properties["NoiseLayer1WindDir"] = ReadFloat(d, 128, isBigEndian);
+        properties["NoiseLayer2WindDir"] = ReadFloat(d, 132, isBigEndian);
+        properties["NoiseLayer3WindDir"] = ReadFloat(d, 136, isBigEndian);
+        properties["NoiseLayer1WindSpeed"] = ReadFloat(d, 140, isBigEndian);
+        properties["NoiseLayer2WindSpeed"] = ReadFloat(d, 144, isBigEndian);
+        properties["NoiseLayer3WindSpeed"] = ReadFloat(d, 148, isBigEndian);
+        properties["NoiseLayer1AmpScale"] = ReadFloat(d, 152, isBigEndian);
+        properties["NoiseLayer2AmpScale"] = ReadFloat(d, 156, isBigEndian);
+        properties["NoiseLayer3AmpScale"] = ReadFloat(d, 160, isBigEndian);
+        properties["NoiseLayer1UVScale"] = ReadFloat(d, 164, isBigEndian);
+        properties["NoiseLayer2UVScale"] = ReadFloat(d, 168, isBigEndian);
+        properties["NoiseLayer3UVScale"] = ReadFloat(d, 172, isBigEndian);
+        properties["SiltAmount"] = ReadFloat(d, 188, isBigEndian);
+        properties["LightSiltColor"] = ReadWaterColor(d, 192);
+        properties["DarkSiltColor"] = ReadWaterColor(d, 196);
+        return properties;
+    }
 
+    /// <summary>
+    ///     FO76 WATR DNAM. Retail records are 148 bytes and preserve FO4's fog, physical, and
+    ///     specular prefix exactly through byte 107; the later FO4 noise/silt block is absent.
+    /// </summary>
+    internal static Dictionary<string, object?> ReadFallout76WaterData(ReadOnlySpan<byte> d, bool isBigEndian)
+        => ReadCreationWaterDataPrefix(d, isBigEndian);
+
+    private static Dictionary<string, object?> ReadCreationWaterDataPrefix(
+        ReadOnlySpan<byte> d,
+        bool isBigEndian)
+    {
         return new Dictionary<string, object?>
         {
             // Depth Amount = the world-unit water column at which the depth ramps saturate (scales
             // with the body: IntTroughWater 18, ExtPuddleWater 290, ExtLakeQuannapowittWater 1087);
             // the color/alpha "ranges" below are multipliers of it (retail authors them ≈1.0).
             ["DepthAmount"] = ReadFloat(d, 0, isBigEndian),
-            ["ShallowColor"] = Color(d, 4),
-            ["DeepColor"] = Color(d, 8),
-            ["ReflectionColor"] = Color(d, 96),
+            ["ShallowColor"] = ReadWaterColor(d, 4),
+            ["DeepColor"] = ReadWaterColor(d, 8),
+            ["ReflectionColor"] = ReadWaterColor(d, 96),
             ["ColorShallowRange"] = ReadFloat(d, 12, isBigEndian),
             ["ColorDeepRange"] = ReadFloat(d, 16, isBigEndian),
             ["ShallowAlpha"] = ReadFloat(d, 20, isBigEndian),
@@ -288,23 +322,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             // (engine feeds them through the gloss pipeline; the DNAM values are the authored analogs).
             ["SunPower"] = ReadFloat(d, 100, isBigEndian),
             ["SunSpecularMagnitude"] = ReadFloat(d, 104, isBigEndian),
-            ["NoiseLayer1WindDir"] = ReadFloat(d, 128, isBigEndian),
-            ["NoiseLayer2WindDir"] = ReadFloat(d, 132, isBigEndian),
-            ["NoiseLayer3WindDir"] = ReadFloat(d, 136, isBigEndian),
-            ["NoiseLayer1WindSpeed"] = ReadFloat(d, 140, isBigEndian),
-            ["NoiseLayer2WindSpeed"] = ReadFloat(d, 144, isBigEndian),
-            ["NoiseLayer3WindSpeed"] = ReadFloat(d, 148, isBigEndian),
-            ["NoiseLayer1AmpScale"] = ReadFloat(d, 152, isBigEndian),
-            ["NoiseLayer2AmpScale"] = ReadFloat(d, 156, isBigEndian),
-            ["NoiseLayer3AmpScale"] = ReadFloat(d, 160, isBigEndian),
-            ["NoiseLayer1UVScale"] = ReadFloat(d, 164, isBigEndian),
-            ["NoiseLayer2UVScale"] = ReadFloat(d, 168, isBigEndian),
-            ["NoiseLayer3UVScale"] = ReadFloat(d, 172, isBigEndian),
-            ["SiltAmount"] = ReadFloat(d, 188, isBigEndian),
-            ["LightSiltColor"] = Color(d, 192),
-            ["DarkSiltColor"] = Color(d, 196),
         };
     }
+
+    private static uint ReadWaterColor(ReadOnlySpan<byte> d, int offset) =>
+        (uint)(d[offset] | (d[offset + 1] << 8) | (d[offset + 2] << 16));
 
     #endregion
 

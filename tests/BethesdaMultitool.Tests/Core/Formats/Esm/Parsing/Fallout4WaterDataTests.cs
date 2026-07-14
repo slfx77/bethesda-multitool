@@ -125,4 +125,27 @@ public sealed class Fallout4WaterDataTests
         Assert.Equal(0f, def.ColorShallowRange);
         Assert.Equal(0f, def.ColorDeepRange);
     }
+
+    [Fact]
+    public void ReadFallout76WaterData_DecodesSharedCreationPrefixWithoutFo4Tail()
+    {
+        var d = BuildFallout4Dnam()[..148];
+
+        var props = MiscEnvironmentHandler.ReadFallout76WaterData(d, isBigEndian: false);
+        var appearance = BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance
+            .FromVisualProperties(props, @"textures\water\WaterRainRipples.dds");
+
+        Assert.Equal(0x00_21_35_3Au, Assert.IsType<uint>(props["ShallowColor"]));
+        Assert.Equal(0x00_29_39_3Au, Assert.IsType<uint>(props["DeepColor"]));
+        Assert.Equal(0x00_73_62_51u, Assert.IsType<uint>(props["ReflectionColor"]));
+        Assert.Equal(951f, Assert.IsType<float>(props["SunPower"]));
+        Assert.Equal(8.803f, Assert.IsType<float>(props["SunSpecularMagnitude"]));
+        Assert.DoesNotContain("SiltAmount", props.Keys);
+        Assert.DoesNotContain("NoiseLayer1WindDir", props.Keys);
+
+        Assert.NotNull(appearance);
+        Assert.Equal(1087f, appearance.Surface.DepthAmount);
+        Assert.Equal(8.803f, appearance.Surface.SunSpecularMagnitude);
+        Assert.Equal(@"textures\water\WaterRainRipples.dds", appearance.NoiseTexture);
+    }
 }

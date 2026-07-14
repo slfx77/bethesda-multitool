@@ -129,12 +129,22 @@ public sealed record WaterProfile
     ///     RT-free math (Oren-Nayar diffuse, normalized Kelemen/Schlick specular, depth-LUT body), so
     ///     it gets its own shader variant. Renderer-side tuning stays FNV's: FO4's noise layers carry
     ///     their own DNAM wind/amplitude values and its NAM2 noise texture rides the same NNAM slot.
-    ///     FO76 is NOT routed here until its water shader is verified against FO4's (binary-RE-only).
+    ///     FO76 has a separately verified profile below.
     /// </summary>
     public static readonly WaterProfile Fallout4 = Fnv with
     {
         ShaderVariant = WaterShaderVariant.Fo4Water,
     };
+
+    /// <summary>
+    ///     Fallout 76's shipped <c>Shaders012.fxp</c> names its Water group and contains 23 VS plus
+    ///     525 PS variants. The baseline PS retains FO4's Creation-era dynamic-water architecture:
+    ///     normalized specular (1/pi and 0.25 energy factors), Schlick F0=0.2, dynamic water maps,
+    ///     cubemap reflection, and the point-light loop. It therefore routes to the existing
+    ///     <see cref="WaterShaderVariant.Fo4Water" /> port rather than the unrelated FNV WATER000
+    ///     fallback. FO76's shorter WATR DNAM is parsed separately and supplies the common fields.
+    /// </summary>
+    public static readonly WaterProfile Fallout76 = Fallout4 with { };
 
     /// <summary>
     ///     Morrowind's profile — fixed-function animated diffuse plane per <c>Morrowind.ini [Water]</c>
@@ -164,6 +174,7 @@ public sealed record WaterProfile
         BethesdaGame.Morrowind => Morrowind,
         BethesdaGame.Oblivion => Oblivion,
         BethesdaGame.Fallout4 => Fallout4,
+        BethesdaGame.Fallout76 => Fallout76,
         _ => Fnv,
     };
 }

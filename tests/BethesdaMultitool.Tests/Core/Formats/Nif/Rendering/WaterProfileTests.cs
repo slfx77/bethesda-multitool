@@ -7,11 +7,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
 /// <summary>
 ///     Locks the per-game <see cref="WaterProfile" /> mapping + the FNV constants that were hoisted out of
-///     <c>WaterRenderer12</c>. Under the binary-RE-only grounding policy, only FNV/FO3 (identical
-///     <c>shaderpackage019.sdp</c> water set) get a real profile; every other game falls back to the
-///     decompiled FNV WATER000 path until its own water shader is reverse-engineered. The constant values
-///     are asserted byte-for-byte so the Phase-1 refactor stays a no-op for FNV/FO3 (the relocation must
-///     not perturb a single uniform).
+///     <c>WaterRenderer12</c>. Games move off the FNV fallback only after their own shipped shader or
+///     fixed-function path is recovered. The constants are asserted byte-for-byte so profile routing
+///     cannot perturb FNV/FO3.
 /// </summary>
 public class WaterProfileTests
 {
@@ -31,7 +29,6 @@ public class WaterProfileTests
 
     [Theory]
     [InlineData(BethesdaGame.Skyrim)]
-    [InlineData(BethesdaGame.Fallout76)]
     [InlineData(BethesdaGame.Starfield)]
     [InlineData(BethesdaGame.Unknown)]
     public void GamesWithoutTheirOwnDecompiledShader_ShareTheRtFreeWater000Shader(BethesdaGame game)
@@ -63,13 +60,24 @@ public class WaterProfileTests
     {
         // FO4's BSWaterShader was disassembled from the shipped D3D11 bytecode (Shaders011.fxp group 5;
         // fo4_water_pixel_shader_decompiled.txt) and genuinely diverges (Oren-Nayar diffuse, normalized
-        // Kelemen/Schlick specular, depth-LUT body) — its own variant. FO76 stays on the FNV fallback
-        // until its shader is verified against FO4's (binary-RE-only: no assumed identity).
+        // Kelemen/Schlick specular, depth-LUT body) — its own variant. FO76 is verified independently
+        // in the test below rather than assumed identical.
         var profile = WaterProfile.ForGame(BethesdaGame.Fallout4);
         Assert.Same(WaterProfile.Fallout4, profile);
         Assert.Equal(WaterShaderVariant.Fo4Water, profile.ShaderVariant);
         Assert.Equal(WaterProfile.Fnv.NoiseTilingWorldUnits, profile.NoiseTilingWorldUnits);
         Assert.Equal(WaterProfile.Fnv.DepthTieBiasWorldUnits, profile.DepthTieBiasWorldUnits);
+    }
+
+    [Fact]
+    public void Fallout76_UsesVerifiedCreationWaterArchitecture()
+    {
+        var profile = WaterProfile.ForGame(BethesdaGame.Fallout76);
+
+        Assert.Same(WaterProfile.Fallout76, profile);
+        Assert.Equal(WaterShaderVariant.Fo4Water, profile.ShaderVariant);
+        Assert.Equal(WaterProfile.Fallout4.NoiseTilingWorldUnits, profile.NoiseTilingWorldUnits);
+        Assert.Equal(WaterProfile.Fallout4.DepthTieBiasWorldUnits, profile.DepthTieBiasWorldUnits);
     }
 
     [Fact]
