@@ -26,15 +26,24 @@ internal sealed class WorldSpatialIndex
     private readonly List<PlacedReference> _mapMarkers = [];
     private readonly List<WorldWaterCell> _waterCells = [];
 
-    private WorldSpatialIndex(float cellSize)
+    private WorldSpatialIndex(float cellSize, bool includesMapOverlays)
     {
         CellSize = cellSize;
+        IncludesMapOverlays = includesMapOverlays;
     }
 
     /// <summary>World units per exterior-cell edge for this worldspace (4096 Fallout-family, 8192
     /// Morrowind). All bucketing / canvas mapping keys off this so the index matches the geometry's
     /// absolute coordinates.</summary>
     internal float CellSize { get; }
+
+    /// <summary>
+    ///     Whether this instance contains the placed-reference/actor/marker/dangling buckets used by
+    ///     the 2D map. The 3D viewer consumes cells and water from this index, then performs its own
+    ///     per-cell reference broadphase through <see cref="WorldRenderCache" />; duplicating every
+    ///     world reference here is both unused and prohibitively expensive for FO76-sized worlds.
+    /// </summary>
+    internal bool IncludesMapOverlays { get; }
 
     internal IReadOnlyDictionary<(int gx, int gy), CellRecord> CellsByGrid => _cellsByGrid;
     internal IReadOnlyList<CellRecord> PersistentCells => _persistentCells;
@@ -50,17 +59,61 @@ internal sealed class WorldSpatialIndex
         IReadOnlyList<PlacedReference> filteredMarkers,
         uint? activeWorldspaceFormId,
         float? defaultWaterHeight)
+        => BuildCore(
+            data,
+            activeCells,
+            filteredMarkers,
+            activeWorldspaceFormId,
+            defaultWaterHeight,
+            includeMapOverlays: true);
+
+    /// <summary>
+    ///     Builds the cell/chunk/water index consumed by the 3D renderers without also duplicating
+    ///     every placed reference into the 2D map's buckets. Reference rendering already starts from
+    ///     the visible <see cref="CellRecord" /> set and uses <see cref="WorldRenderCache" />'s tighter
+    ///     sub-cell broadphase, so the omitted buckets have no 3D consumer.
+    /// </summary>
+    internal static WorldSpatialIndex BuildFor3D(
+        WorldViewData data,
+        IReadOnlyList<CellRecord> activeCells,
+        float? defaultWaterHeight)
+        => BuildCore(
+            data,
+            activeCells,
+            filteredMarkers: Array.Empty<PlacedReference>(),
+            activeWorldspaceFormId: null,
+            defaultWaterHeight,
+            includeMapOverlays: false);
+
+    private static WorldSpatialIndex BuildCore(
+        WorldViewData data,
+        IReadOnlyList<CellRecord> activeCells,
+        IReadOnlyList<PlacedReference> filteredMarkers,
+        uint? activeWorldspaceFormId,
+        float? defaultWaterHeight,
+        bool includeMapOverlays)
     {
-        var index = new WorldSpatialIndex(data.CellWorldSize);
+        var index = new WorldSpatialIndex(data.CellWorldSize, includeMapOverlays);
+        index._cellsByGrid.EnsureCapacity(activeCells.Count);
+        if (includeMapOverlays)
+        {
+            // A well-formed exterior usually produces about one reference bucket per CELL. Reserving
+            // that shape avoids repeated dictionary growth without making assumptions about the
+            // individual reference coordinates (out-of-cell refs still bucket by their true position).
+            index._refsByBucket.EnsureCapacity(activeCells.Count);
+        }
 
         foreach (var cell in activeCells)
         {
             if (cell.GridX is not int gx || cell.GridY is not int gy)
             {
                 index._persistentCells.Add(cell);
-                foreach (var obj in cell.PlacedObjects)
+                if (includeMapOverlays)
                 {
-                    index._persistentRefs.Add(obj);
+                    foreach (var obj in cell.PlacedObjects)
+                    {
+                        index._persistentRefs.Add(obj);
+                    }
                 }
                 continue;
             }
@@ -71,49 +124,57 @@ internal sealed class WorldSpatialIndex
                 index._cellsByGrid[key] = cell;
             }
 
-            if (data.NavMeshesByCell.TryGetValue(cell.FormId, out var navMeshes) && navMeshes.Count > 0)
+            if (includeMapOverlays &&
+                data.NavMeshesByCell.TryGetValue(cell.FormId, out var navMeshes) &&
+                navMeshes.Count > 0)
             {
                 index._navMeshesByGrid[key] = navMeshes;
             }
 
-            foreach (var obj in cell.PlacedObjects)
+            if (includeMapOverlays)
             {
-                if (cell.HasPersistentObjects || cell.IsPersistentCell)
+                foreach (var obj in cell.PlacedObjects)
                 {
-                    index._persistentRefs.Add(obj);
+                    if (cell.HasPersistentObjects || cell.IsPersistentCell)
+                    {
+                        index._persistentRefs.Add(obj);
+                        continue;
+                    }
+
+                    index.AddBucketed(index._refsByBucket, obj);
+                    if (obj.RecordType is "ACHR" or "ACRE")
+                    {
+                        index.AddBucketed(index._actorsByBucket, obj);
+                    }
+                }
+            }
+        }
+
+        if (includeMapOverlays)
+        {
+            foreach (var marker in filteredMarkers)
+            {
+                index._mapMarkers.Add(marker);
+                index.AddBucketed(index._markersByBucket, marker);
+            }
+
+            if (data.SaveOverlayMarkers is { Count: > 0 } saveRefs)
+            {
+                foreach (var saveRef in saveRefs)
+                {
+                    index.AddBucketed(index._saveRefsByBucket, saveRef);
+                }
+            }
+
+            foreach (var dangling in data.DanglingRefs.Positions)
+            {
+                if (!WorldspaceMatches(dangling.WorldspaceFormId, activeWorldspaceFormId))
+                {
                     continue;
                 }
 
-                index.AddBucketed(index._refsByBucket, obj);
-                if (obj.RecordType is "ACHR" or "ACRE")
-                {
-                    index.AddBucketed(index._actorsByBucket, obj);
-                }
+                index.AddBucketed(index._danglingByBucket, dangling);
             }
-        }
-
-        foreach (var marker in filteredMarkers)
-        {
-            index._mapMarkers.Add(marker);
-            index.AddBucketed(index._markersByBucket, marker);
-        }
-
-        if (data.SaveOverlayMarkers is { Count: > 0 } saveRefs)
-        {
-            foreach (var saveRef in saveRefs)
-            {
-                index.AddBucketed(index._saveRefsByBucket, saveRef);
-            }
-        }
-
-        foreach (var dangling in data.DanglingRefs.Positions)
-        {
-            if (!WorldspaceMatches(dangling.WorldspaceFormId, activeWorldspaceFormId))
-            {
-                continue;
-            }
-
-            index.AddBucketed(index._danglingByBucket, dangling);
         }
 
         foreach (var (key, cell) in index._cellsByGrid)
@@ -179,23 +240,9 @@ internal sealed class WorldSpatialIndex
     /// </summary>
     internal static WorldSpatialIndex BuildInterior(WorldViewData data, CellRecord interior)
     {
-        var index = new WorldSpatialIndex(data.CellWorldSize);
+        var index = new WorldSpatialIndex(data.CellWorldSize, includesMapOverlays: false);
         var key = SyntheticInteriorKey(interior, index.CellSize);
         index._cellsByGrid[key] = interior;
-
-        foreach (var obj in interior.PlacedObjects)
-        {
-            index.AddBucketed(index._refsByBucket, obj);
-            if (obj.RecordType is "ACHR" or "ACRE")
-            {
-                index.AddBucketed(index._actorsByBucket, obj);
-            }
-        }
-
-        if (data.NavMeshesByCell.TryGetValue(interior.FormId, out var navMeshes) && navMeshes.Count > 0)
-        {
-            index._navMeshesByGrid[key] = navMeshes;
-        }
 
         var chunk = index.GetOrCreateChunk(key.gx, key.gy);
         chunk.Cells.Add(new WorldSpatialCell(key, interior, index.CellCenterCanvas(key.gx, key.gy)));
