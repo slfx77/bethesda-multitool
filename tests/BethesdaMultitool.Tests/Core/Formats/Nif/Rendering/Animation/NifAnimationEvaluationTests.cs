@@ -108,22 +108,76 @@ public class NifAnimationEvaluationTests
     }
 
     [Fact]
-    public void ClipSelector_TextKeysIgnored_RangeComesFromTracks()
+    public void ClipSelector_NumberedIdleVariants_DoNotDriveSelection()
     {
-        // Text-key group markers do not drive selection (they are actor-PlayGroup vocabulary, not a
-        // passive-prop control): the window is the track key span regardless of what the markers say.
-        NifAnimTextKey[] misleadingTextKeys = [new(2.333f, "Idle3: Loop Start"), new(3.667f, "Idle3: Loop Stop")];
+        // Only the PLAIN "Idle" group selects a window. Numbered variants are the AI's occasional
+        // fidgets (the banner's "Idle3" is the violent gust) — with no plain Idle the window is the
+        // track key span.
+        NifAnimTextKey[] variantOnlyKeys = [new(2.333f, "Idle3: Loop Start"), new(3.667f, "Idle3: Loop Stop")];
         var track = new NifNodeTrack(
             "Bone", 1f, 0f,
             NifKeyInterpolation.Linear,
             [new(0f, Quaternion.Identity), new(3f, Quaternion.Identity)],
             NifKeyInterpolation.Linear, [], NifKeyInterpolation.Linear, []);
 
-        var clip = NifAnimationClipSelector.SelectClip(misleadingTextKeys, [track]);
+        var clip = NifAnimationClipSelector.SelectClip(variantOnlyKeys, [track]);
 
         Assert.NotNull(clip);
         Assert.Equal(0f, clip.Value.Start);
         Assert.Equal(3f, clip.Value.Stop);
+    }
+
+    [Fact]
+    public void ClipSelector_CreatureKeySet_PicksPlainIdleLoop()
+    {
+        // Creature-shaped marker set (r\Guar.NIF): every animation group concatenated on one
+        // timeline. Ambient playback must loop ONLY the plain Idle group — not tour the repertoire.
+        NifAnimTextKey[] keys =
+        [
+            new(0f, "Idle: Start"),
+            new(0f, "Idle: Loop Start"),
+            new(3.267f, "Idle: Loop Stop"),
+            new(3.267f, "Idle: Stop"),
+            new(3.267f, "Idle3: Start"),
+            new(5.6f, "Idle3: Stop"),
+            new(14.333f, "WalkForward: Start"),
+            new(16.467f, "WalkForward: Stop"),
+            new(19f, "Attack1: Start"),
+            new(19.8f, "Attack1: Stop"),
+            new(22.867f, "Death1: Start"),
+            new(23.6f, "Death1: Stop"),
+        ];
+        var track = new NifNodeTrack(
+            "Bip01 Spine", 1f, 0f,
+            NifKeyInterpolation.Linear,
+            [new(0f, Quaternion.Identity), new(27.333f, Quaternion.Identity)],
+            NifKeyInterpolation.Linear, [], NifKeyInterpolation.Linear, []);
+
+        var clip = NifAnimationClipSelector.SelectClip(keys, [track]);
+
+        Assert.NotNull(clip);
+        Assert.Equal(0f, clip.Value.Start, 3);
+        Assert.Equal(3.267f, clip.Value.Stop, 3);
+        Assert.True(clip.Value.Loops);
+    }
+
+    [Fact]
+    public void ClipSelector_DegeneratePlainIdle_FallsBackToFullRange()
+    {
+        // Animated decor authors a zero-length plain Idle (the tavern banner: Start/Stop both at 0)
+        // — that must NOT freeze the clip; the window falls back to the full key span.
+        NifAnimTextKey[] keys = [new(0f, "Idle: Start"), new(0f, "Idle: Stop")];
+        var track = new NifNodeTrack(
+            "Bone", 1f, 0f,
+            NifKeyInterpolation.Linear,
+            [new(0f, Quaternion.Identity), new(4f, Quaternion.Identity)],
+            NifKeyInterpolation.Linear, [], NifKeyInterpolation.Linear, []);
+
+        var clip = NifAnimationClipSelector.SelectClip(keys, [track]);
+
+        Assert.NotNull(clip);
+        Assert.Equal(0f, clip.Value.Start);
+        Assert.Equal(4f, clip.Value.Stop);
     }
 
     [Fact]

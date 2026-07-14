@@ -1,23 +1,25 @@
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 /// <summary>
-///     Resolves the play window for an ambient animated static (Morrowind banners, hanging cloth).
+///     Resolves the ambient play window for an animated NIF (Morrowind banners, creatures).
 ///     <para>
-///         CLIP POLICY (labeled stand-in). Passive always-animated decor in Morrowind is driven by
-///         auto-playing controllers (NiBSAnimationNode-era): the engine loops the WHOLE authored
-///         controller range and does not use the NiTextKeyExtraData group markers for selection —
-///         those "Idle/Idle2/Idle3" groups are the actor-animation PlayGroup vocabulary, which does
-///         not apply to a placed prop. So we loop the full key-time span, which returns the rig to its
-///         rest (hang) pose at the wrap instead of parking it in the middle of one sub-window.
+///         CLIP POLICY (labeled stand-in), two tiers:
 ///     </para>
 ///     <para>
-///         This deliberately REPLACES the earlier "loop the last Idle&lt;N&gt; group's Loop window"
-///         heuristic: for <c>furn_banner_tavern_01</c> that isolated Idle3's window (2.333–3.667),
-///         whose keys swing the root −46°…−85° about X — a hanging banner stuck ~65° off vertical
-///         (near horizontal) every frame. Full-range playback instead plays the gentle Idle2 build-up
-///         and the stronger Idle3 gust and settles back to the hang each 4 s cycle. Whether the engine
-///         instead sustains only Idle3's marked loop (a stronger, constant billow) is the open
-///         question for the OpenMW black-box oracle; this is the one method to change if it disagrees.
+///         1. The plain "Idle" text-key GROUP, when it has a non-degenerate window (its Loop
+///         Start/Stop, else Start/Stop). Creature files concatenate EVERY animation group on one
+///         timeline (r\Guar.NIF: Idle 0→3.27 s, then Idle2–6, Walk, Run, Attack1–3, Death,
+///         Knockout, Turns, Hit out to 27.3 s) — the ambient behavior is the standing idle, not a
+///         tour of the whole repertoire. Only the EXACT name "Idle" qualifies: the numbered
+///         variants are the AI's occasional fidgets ("Idle3" on the tavern banner is the violent
+///         gust that parked it near-horizontal when a previous policy picked highest-N).
+///     </para>
+///     <para>
+///         2. Otherwise the FULL key-time span, looped. Animated decor authors a DEGENERATE plain
+///         Idle marker (the banner's "Idle: Start/Stop" both at 0) — full-range playback gives the
+///         gentle build-up + gust cycle and returns the rig to its rest pose at each wrap. Whether
+///         the engine instead sustains one marked sub-loop is the open OpenMW black-box question;
+///         this selector is the one place to change if it disagrees.
 ///     </para>
 /// </summary>
 internal static class NifAnimationClipSelector
@@ -26,8 +28,43 @@ internal static class NifAnimationClipSelector
 
     internal static NifAnimClip? SelectClip(NifAnimTextKey[] textKeys, IReadOnlyList<NifNodeTrack?> tracks)
     {
-        _ = textKeys; // retained on NifMeshAnimation for diagnostics; not used for passive-decor selection
-        return SelectFromKeyRanges(tracks);
+        return SelectPlainIdleGroup(textKeys) ?? SelectFromKeyRanges(tracks);
+    }
+
+    /// <summary>The plain "Idle" group's window (Loop Start/Stop preferred, else Start/Stop), or
+    /// null when absent or degenerate. Numbered variants ("Idle2") never match.</summary>
+    private static NifAnimClip? SelectPlainIdleGroup(NifAnimTextKey[] textKeys)
+    {
+        float? start = null, stop = null, loopStart = null, loopStop = null;
+        foreach (var key in textKeys)
+        {
+            var split = key.Label.IndexOf(':');
+            if (split <= 0 ||
+                !key.Label.AsSpan(0, split).Trim().Equals("Idle", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            switch (key.Label[(split + 1)..].Trim().ToLowerInvariant())
+            {
+                case "start": start ??= key.Time; break;
+                case "stop": stop ??= key.Time; break;
+                case "loop start": loopStart ??= key.Time; break;
+                case "loop stop": loopStop ??= key.Time; break;
+            }
+        }
+
+        if (loopStart is { } ls && loopStop is { } le && le > ls + 1e-4f)
+        {
+            return new NifAnimClip(ls, le, Loops: true);
+        }
+
+        if (start is { } s && stop is { } e && e > s + 1e-4f)
+        {
+            return new NifAnimClip(s, e, Loops: true);
+        }
+
+        return null;
     }
 
     private static NifAnimClip? SelectFromKeyRanges(IReadOnlyList<NifNodeTrack?> tracks)
