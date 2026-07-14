@@ -255,6 +255,16 @@ internal static class ActorLedgerCommand
             var worldspace = cell.WorldspaceFormId is { } ws
                 ? _worldspaceNames.TryGetValue(ws, out var wsName) ? wsName : $"WRLD 0x{ws:X8}"
                 : "interior";
+
+            // Parse-side orphan buckets carry a synthesized EditorId ("[Virtual x,y]") that
+            // no game file contains — report the honest fact (unparented capture at a grid
+            // coordinate) instead of presenting an invented cell name as data.
+            if (cell.IsVirtual)
+            {
+                var at = cell.GridX.HasValue ? $" at ({cell.GridX},{cell.GridY})" : string.Empty;
+                return $"<no parent cell{at}> [{worldspace}]";
+            }
+
             var cellName = !string.IsNullOrEmpty(cell.EditorId)
                 ? cell.EditorId
                 : $"0x{cell.FormId:X8} ({cell.GridX},{cell.GridY})";
