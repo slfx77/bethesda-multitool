@@ -6,8 +6,10 @@ using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Bsa;
+using BethesdaMultitool.Core.Formats.Papyrus;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using WinRT.Interop;
@@ -128,6 +130,7 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
 
             // Load files
             _allFiles.Clear();
+            FilesListView.SelectedItem = null;
 
             foreach (var entry in _reader.ListFiles())
             {
@@ -259,6 +262,91 @@ public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSett
         {
             file.IsSelected = false;
         }
+    }
+
+    private void FilesListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        ViewPapyrusButton.IsEnabled = FilesListView.SelectedItem is BsaFileEntry entry &&
+                                     entry.Extension.Equals(".pex", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async void ViewPapyrusButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_reader is null || FilesListView.SelectedItem is not BsaFileEntry entry ||
+            !entry.Extension.Equals(".pex", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        ViewPapyrusButton.IsEnabled = false;
+        try
+        {
+            var pex = PexParser.Parse(_reader.Extract(entry.Record));
+            var source = PexDecompiler.Decompile(pex);
+            var assembly = PexDisassembler.Disassemble(pex);
+
+            var tabs = new TabView
+            {
+                IsAddTabButtonVisible = false,
+                MinWidth = 760,
+                MinHeight = 520,
+                TabWidthMode = TabViewWidthMode.SizeToContent
+            };
+            tabs.TabItems.Add(new TabViewItem
+            {
+                Header = "Source",
+                IsClosable = false,
+                Content = CreatePapyrusCodeView(source, "Decompiled Papyrus source")
+            });
+            tabs.TabItems.Add(new TabViewItem
+            {
+                Header = "VM listing",
+                IsClosable = false,
+                Content = CreatePapyrusCodeView(assembly, "Papyrus virtual machine listing")
+            });
+
+            var dialog = new ContentDialog
+            {
+                Title = $"Papyrus — {entry.FileName}",
+                Content = tabs,
+                CloseButtonText = "Close",
+                XamlRoot = XamlRoot
+            };
+            await dialog.ShowAsync();
+        }
+        catch (Exception ex) when (ex is PexParseException or IOException or InvalidDataException)
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Unable to open Papyrus script",
+                Content = ex.Message,
+                CloseButtonText = "OK",
+                XamlRoot = XamlRoot
+            };
+            await dialog.ShowAsync();
+        }
+        finally
+        {
+            ViewPapyrusButton.IsEnabled = FilesListView.SelectedItem is BsaFileEntry selected &&
+                                          selected.Extension.Equals(".pex", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static TextBox CreatePapyrusCodeView(string text, string automationName)
+    {
+        var view = new TextBox
+        {
+            Text = text,
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.NoWrap,
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 13
+        };
+        AutomationProperties.SetName(view, automationName);
+        ScrollViewer.SetHorizontalScrollBarVisibility(view, ScrollBarVisibility.Auto);
+        ScrollViewer.SetVerticalScrollBarVisibility(view, ScrollBarVisibility.Auto);
+        return view;
     }
 
     private void SortByPath_Click(object sender, RoutedEventArgs e)

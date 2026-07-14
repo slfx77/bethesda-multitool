@@ -274,6 +274,8 @@
               x:Name="FilesListView"
               Grid.Row="1"
               AutomationProperties.Name="Files in archive"
+              SelectionChanged="FilesListView_SelectionChanged"
+              SelectionMode="Single"
               Style="{StaticResource FileListViewStyle}">
               <ListView.ItemTemplate>
                 <DataTemplate x:DataType="local:BsaFileEntry">
@@ -426,6 +428,13 @@
           MinWidth="80"
           Click="CancelButton_Click"
           Visibility="Collapsed" />
+        <Button
+          x:Name="ViewPapyrusButton"
+          AutomationProperties.Name="View selected Papyrus script"
+          Content="View Papyrus"
+          Click="ViewPapyrusButton_Click"
+          IsEnabled="False"
+          MinWidth="120" />
         <Button
           x:Name="ExtractButton"
           x:Uid="Button_ExtractSelected"
