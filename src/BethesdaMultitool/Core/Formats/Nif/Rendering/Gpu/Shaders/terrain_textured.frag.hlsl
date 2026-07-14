@@ -33,7 +33,7 @@ cbuffer PerMode : register(b2)
     float4 uDebugMode_UvScale_Pad;
 };
 
-// Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants (7×float4),
+// Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants,
 // uploaded once per frame and bound for the whole scene (terrain/reference/water all read it).
 cbuffer Atmosphere : register(b3)
 {
@@ -45,6 +45,7 @@ cbuffer Atmosphere : register(b3)
     float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
     float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
     float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
+    float4 uFogFarColorMax;     // rgb = far-fog color, w = max powered fog amount
     float4 uCameraOrigin;       // xyz = camera-relative render origin (VS-consumed; layout parity)
     // Sun shadow CASCADES, near→far (appended — earlier shaders declare only the prefix above,
     // layout-safe). Each matrix: origin-relative world → that cascade's shadow clip (xy ±1,
@@ -69,9 +70,8 @@ struct PointLight
 };
 StructuredBuffer<PointLight> uPointLights : register(t9, space0);
 
-// Engine distance fog (grounded in Sky::UpdateFog): a linear near→far ramp toward the resolved fog
-// color, raised to the weather's fog power. fogEnabled (uFogColorFogEnabled.w) gates it; OFF returns
-// the color unchanged. near/far/power are the daylight-blended WTHR FNAM values from AtmosphereState.
+// Skyrim BSLightingShader constant fog: the same powered, FNAM-capped amount blends near→far fog
+// color and then surface→fog. Legacy weather binds far=near/max=1.
 float3 ApplyFog(float3 color, float3 worldPos)
 {
     if (uFogColorFogEnabled.w < 0.5)
@@ -80,9 +80,10 @@ float3 ApplyFog(float3 color, float3 worldPos)
     }
 
     float dist = length(worldPos - uCameraPosFogPower.xyz);
-    float f = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
-    f = pow(f, max(uCameraPosFogPower.w, 0.01));
-    return lerp(color, uFogColorFogEnabled.rgb, f);
+    float q = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
+    float amount = min(pow(q, max(uCameraPosFogPower.w, 0.01)), saturate(uFogFarColorMax.w));
+    float3 fogRgb = lerp(uFogColorFogEnabled.rgb, uFogFarColorMax.rgb, amount);
+    return lerp(color, fogRgb, amount);
 }
 
 // One cascade attempt — IDENTICAL to reference.frag.hlsl's (terrain and placed meshes must darken

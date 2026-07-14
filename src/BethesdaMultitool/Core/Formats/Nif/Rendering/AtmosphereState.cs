@@ -21,8 +21,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 ///             midpoint) and Night is solid outside the daylight span (<c>Sky::FillColorBlend</c>).
 ///             SIMPLIFICATION: the viewer holds the Day band solid through midday, whereas the engine
 ///             additionally cross-fades a separate daytime slot around solar noon — a 5th runtime band
-///             this 4-band NAM0 model does not carry — and widens the windows by a small ± pad the
-///             viewer drops. See <see cref="SampleBand" />;</item>
+///             this 4-band NAM0 model does not carry. Skyrim's exact ±0.5h
+///             <c>fDaytimeColorExtension</c> is applied by <see cref="Resolve" />; see
+///             <see cref="SampleBand" />;</item>
 ///             <item>directional sun intensity is the daylight fraction, 0 below the horizon
 ///             (<c>Sun::Update</c>) — see <see cref="DaylightFraction" />.</item>
 ///         </list>
@@ -68,10 +69,12 @@ public static class AtmosphereState
         Vector3 AmbientColor,
         Vector3 SkyTopColor,
         Vector3 SkyHorizonColor,
-        Vector3 FogColor,
+        Vector3 FogColor,           // near-fog color (legacy name retained for callers)
+        Vector3 FogFarColor,
         float FogNear,
         float FogFar,
-        float FogPower);            // distance-fog exponent (1 = linear), from WTHR FNAM day/night power
+        float FogPower,             // distance-fog exponent (1 = linear), from WTHR FNAM day/night power
+        float FogMaxOpacity);       // max powered fog amount; Skyrim FNAM day/night max, else 1
 
     /// <summary>
     ///     Interior-cell atmosphere from CELL XCLL lighting with LGTM lighting-template fallback —
@@ -169,9 +172,11 @@ public static class AtmosphereState
             fogColor,   // interiors have no sky: the fog color doubles as the void/background tint
             fogColor,
             fogColor,
+            fogColor,
             fogNear,
             fogFar,
-            MathF.Max(fogPower, 0.01f));
+            MathF.Max(fogPower, 0.01f),
+            1f);
     }
 
     // Default clear-day palette — placeholder for worldspaces with no WTHR NAM0 to drive the colors.
@@ -235,6 +240,12 @@ public static class AtmosphereState
         var hour = WrapHour(gameHour);
         var (srB, srE, ssB, ssE) = NormalizeWindows(climate ?? ClimateTiming.Default);
 
+        // Skyrim widens weather color/fog interpolation by fDaytimeColorExtension=.5h. This is
+        // independent of the sun's real horizon/daylight window: colors begin fading in before sunrise
+        // and finish after sunset, while directional intensity continues to use the unextended span.
+        var weatherSrB = game == BethesdaGame.Skyrim ? MathF.Max(0f, srB - 0.5f) : srB;
+        var weatherSsE = game == BethesdaGame.Skyrim ? MathF.Min(23.99f, ssE + 0.5f) : ssE;
+
         var sunDir = SunDirection(hour, srB, ssE);
         // Engine daylight fraction (Sun::Update): 0 below the horizon, ramps across the sunrise/sunset
         // windows, 1 through the day. Drives the directional sun intensity AND the placeholder day↔night
@@ -247,20 +258,20 @@ public static class AtmosphereState
         // the lighting scale; SkyUpper=0 / Fog=1 / SkyLower=7 per xEdit, corroborated by the 10-category
         // upload loop). Per channel: a missing/short NAM0 index falls back to the placeholder for that
         // channel only.
-        Vector3 sunColorBase, ambient, skyTop, skyHorizon, fogColor;
+        Vector3 sunColorBase, ambient, skyTop, skyHorizon, fogColor, fogFarColor;
         if (weather is { Colors.Count: > 0 } wc)
         {
-            sunColorBase = BandOr(wc, WeatherColorType.Sunlight, hour, srB, srE, ssB, ssE, DaySun);
-            ambient = BandOr(wc, WeatherColorType.Ambient, hour, srB, srE, ssB, ssE, Vector3.Lerp(NightAmbient, DayAmbient, day));
-            skyTop = BandOr(wc, WeatherColorType.SkyUpper, hour, srB, srE, ssB, ssE, Vector3.Lerp(NightTint, DaySkyTop, day));
-            var skyLowerBand = BandOr(wc, WeatherColorType.SkyLower, hour, srB, srE, ssB, ssE, Vector3.Lerp(NightTint, DaySkyHorizon, day));
+            sunColorBase = BandOr(wc, WeatherColorType.Sunlight, hour, weatherSrB, srE, ssB, weatherSsE, DaySun);
+            ambient = BandOr(wc, WeatherColorType.Ambient, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightAmbient, DayAmbient, day));
+            skyTop = BandOr(wc, WeatherColorType.SkyUpper, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightTint, DaySkyTop, day));
+            var skyLowerBand = BandOr(wc, WeatherColorType.SkyLower, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightTint, DaySkyHorizon, day));
             // Horizon glow: FNV authors the warm sunrise/sunset horizon in the SEPARATE NAM0 "Horizon"
             // band (index 8) — e.g. NVWastelandClear Sunset Horizon=(219,192,174) warm vs its blue
             // SkyUpper/SkyLower — which the dome gradient (SkyUpper↔SkyLower) otherwise drops, leaving the
             // sky blue at sunset ("no sunset lighting"). Fold the Horizon band into the dome's horizon,
             // gated by sun elevation so it only appears when the sun is low (zero at noon → the daytime
             // sky is unchanged), reproducing the warm low-sun horizon glow.
-            var horizonBand = BandOr(wc, WeatherColorType.Horizon, hour, srB, srE, ssB, ssE, skyLowerBand);
+            var horizonBand = BandOr(wc, WeatherColorType.Horizon, hour, weatherSrB, srE, ssB, weatherSsE, skyLowerBand);
             // Glow tracks the sun's PROXIMITY to the horizon (|Z|), peaking at dawn/dusk and fading to
             // zero both at noon and in deep night. The old `1 - Z*1.5` gate saturated for the whole night
             // (sun far below ⇒ Z ≈ -1), folding the Horizon band into the dome at full strength after
@@ -270,7 +281,11 @@ public static class AtmosphereState
             // horizon glow around the low sun.
             var horizonGlow = HorizonGlow(hour, srB, ssE, sunDir.Z);
             skyHorizon = Vector3.Lerp(skyLowerBand, horizonBand, horizonGlow * HorizonGlowStrength);
-            fogColor = BandOr(wc, WeatherColorType.Fog, hour, srB, srE, ssB, ssE, Vector3.Lerp(NightTint, DayFog, day));
+            fogColor = BandOr(wc, WeatherColorType.Fog, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightTint, DayFog, day));
+            // Skyrim's NiFogProperty receives two distinct authored colors. Category 12 is far fog;
+            // category 2 is unrelated (and all-zero in SkyrimClear). Older ten-category weather falls
+            // back to near=far, preserving its single-color fog path.
+            fogFarColor = BandOr(wc, WeatherColorType.FogFar, hour, weatherSrB, srE, ssB, weatherSsE, fogColor);
         }
         else
         {
@@ -284,6 +299,7 @@ public static class AtmosphereState
             skyTop = SampleBandV(NightTint, TwilightSkyTop, DaySkyTop, TwilightSkyTop, hour, srB, srE, ssB, ssE);
             skyHorizon = SampleBandV(NightTint, TwilightSkyHorizon, DaySkyHorizon, TwilightSkyHorizon, hour, srB, srE, ssB, ssE);
             fogColor = SampleBandV(NightTint, TwilightFog, DayFog, TwilightFog, hour, srB, srE, ssB, ssE);
+            fogFarColor = fogColor;
         }
 
         // Skyrim+/FO4 light exteriors from the weather's DALC directional-ambient cube, not the
@@ -293,7 +309,7 @@ public static class AtmosphereState
         // row / placeholder. FO3/FNV weathers carry no DALC, so their ambient is unchanged.
         if (weather?.DirectionalAmbient is { } ambientCube)
         {
-            ambient = SampleBand(ambientCube, hour, srB, srE, ssB, ssE);
+            ambient = SampleBand(ambientCube, hour, weatherSrB, srE, ssB, weatherSsE);
         }
 
         // Directional light color + direction, per engine family:
@@ -338,21 +354,29 @@ public static class AtmosphereState
             sunColor = lightingEnabled ? sunColorBase * day : Vector3.Zero;
         }
 
-        // Distance fog (grounded in Sky::UpdateFog): the engine blends day↔night near/far/power by the
-        // daylight fraction — the same windowed factor as the colors — reading the WTHR FNAM floats
-        // [0]=DayNear [1]=DayFar [2]=NightNear [3]=NightFar [4]=DayPower [5]=NightPower. A 2-float FNAM
-        // (day near/far only) is used verbatim; with none, scene-scale defaults stand in (the engine's
-        // no-weather default is a ~163840-unit near/far = effectively no fog).
+        // Distance fog (grounded in Sky::UpdateFog): resolve WTHR FNAM day/night pairs for near, far,
+        // power, and (when present) maximum opacity. Skyrim uses the same fDaytimeColorExtension=.5h
+        // window as its colors; older families retain the existing daylight factor. A 2-float FNAM is
+        // used verbatim; with none, scene-scale defaults stand in.
         var fogNear = DefaultFogNear;
         var fogFar = DefaultFogFar;
         var fogPower = 1f;
+        var fogMaxOpacity = 1f;
+        var weatherDay = game == BethesdaGame.Skyrim
+            ? DaylightFraction(hour, weatherSrB, srE, ssB, weatherSsE)
+            : day;
         if (weather is { FogDistances.Count: >= 4 } wf)
         {
-            fogNear = Lerp1(wf.FogDistances[2], wf.FogDistances[0], day); // night → day
-            fogFar = Lerp1(wf.FogDistances[3], wf.FogDistances[1], day);
+            fogNear = Lerp1(wf.FogDistances[2], wf.FogDistances[0], weatherDay); // night → day
+            fogFar = Lerp1(wf.FogDistances[3], wf.FogDistances[1], weatherDay);
             if (wf.FogDistances.Count >= 6)
             {
-                fogPower = Lerp1(wf.FogDistances[5], wf.FogDistances[4], day);
+                fogPower = Lerp1(wf.FogDistances[5], wf.FogDistances[4], weatherDay);
+            }
+
+            if (wf.FogDistances.Count >= 8)
+            {
+                fogMaxOpacity = Lerp1(wf.FogDistances[7], wf.FogDistances[6], weatherDay);
             }
         }
         else if (weather is { FogDistances.Count: >= 2 } w && w.FogDistances[1] > w.FogDistances[0])
@@ -367,8 +391,10 @@ public static class AtmosphereState
         }
 
         fogPower = MathF.Max(fogPower, 0.01f);
+        fogMaxOpacity = Math.Clamp(fogMaxOpacity, 0f, 1f);
 
-        return new Resolved(sunDir, sunColor, sunIntensity, ambient, skyTop, skyHorizon, fogColor, fogNear, fogFar, fogPower);
+        return new Resolved(sunDir, sunColor, sunIntensity, ambient, skyTop, skyHorizon,
+            fogColor, fogFarColor, fogNear, fogFar, fogPower, fogMaxOpacity);
     }
 
     // Clamps a climate's sunrise/sunset bounds to a strictly-ordered day (srB < srE < ssB < ssE, all in

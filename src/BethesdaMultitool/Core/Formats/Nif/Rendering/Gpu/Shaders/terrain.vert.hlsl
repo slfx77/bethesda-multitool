@@ -15,11 +15,11 @@ cbuffer Uniforms : register(b0)
 
 // 1G — camera-relative render origin (xyz), read from the shared atmosphere CB (b3). Subtracted from
 // each world vertex before projection so the large worldspace coordinates never enter the viewProj
-// product (the float-precision wobble). Zero when camera-relative is off; the leading 8 float4 are the
+// product (the float-precision wobble). Zero when camera-relative is off; the leading 9 float4 are the
 // sun/sky/fog/camera fields this VS does not use.
 cbuffer Atmosphere : register(b3)
 {
-    float4 uAtmospherePad[8];
+    float4 uAtmospherePad[9];
     float4 uCameraOrigin;
 };
 

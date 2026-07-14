@@ -50,7 +50,7 @@ cbuffer Uniforms : register(b0)
                          // w = DNAM Depth Amount (world-unit column at which the depth ramps saturate)
 };
 
-// Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants (7×float4),
+// Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants,
 // bound once per frame for the whole scene. Water reads the sun dir/color from here so its specular
 // and body-lighting track the time-of-day/weather sun like the rest of the scene (P3). When lighting
 // is disabled (uSunColorLighting.w == 0) it falls back to the static kSunDir/kSunColor below, so the
@@ -65,11 +65,11 @@ cbuffer Atmosphere : register(b3)
     float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
     float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = time
     float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
+    float4 uFogFarColorMax;     // rgb = far-fog color, w = max powered fog amount
 };
 
-// Engine distance fog (grounded in Sky::UpdateFog): a linear near→far ramp toward the resolved fog
-// color, raised to the weather's fog power — the same helper terrain/reference use, so distant water
-// recedes into the same haze. fogEnabled (uFogColorFogEnabled.w) gates it.
+// Skyrim constant fog: the same powered, FNAM-capped amount blends near→far fog color and then
+// surface→fog. Legacy weather binds far=near/max=1.
 float3 ApplyFog(float3 color, float3 worldPos)
 {
     if (uFogColorFogEnabled.w < 0.5)
@@ -81,9 +81,10 @@ float3 ApplyFog(float3 color, float3 worldPos)
     // uses water's OWN absolute camera (uCamPosTime.xyz) rather than the shared atmosphere camera, which
     // is zeroed in camera-relative mode (1G). The fog power (uCameraPosFogPower.w) is position-free.
     float dist = length(worldPos - uCamPosTime.xyz);
-    float f = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
-    f = pow(f, max(uCameraPosFogPower.w, 0.01));
-    return lerp(color, uFogColorFogEnabled.rgb, f);
+    float q = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
+    float amount = min(pow(q, max(uCameraPosFogPower.w, 0.01)), saturate(uFogFarColorMax.w));
+    float3 fogRgb = lerp(uFogColorFogEnabled.rgb, uFogFarColorMax.rgb, amount);
+    return lerp(color, fogRgb, amount);
 }
 
 // Bindless texture table (slot 4, space1) shared with terrain/references. The NNAM normal map

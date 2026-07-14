@@ -361,7 +361,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         //  • Skyrim/FO4/FO76/SF1: a wbWeatherTimeOfDay struct per category whose width is form-versioned
         //    (FO4/FO76/SF1 widen 4→8 RGBA bands at form version 111) and whose category COUNT grows with
         //    form version (10→19) — so the /10 structural divide is invalid. Key the stride off the game +
-        //    form version instead and read whatever categories fit (only 0–9 are consumed downstream).
+        //    form version instead and read whatever categories fit (base lighting rows plus Skyrim far fog 12).
         var modernWeather = Context.Game is BethesdaGame.Skyrim or BethesdaGame.Fallout4
             or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
         var modernStride = modernWeather ? ModernWeatherStride(Context.Game, ReadRecordFormVersion(record)) : 0;
@@ -440,9 +440,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     break;
                 // QNAM/RNAM "X/Y Cloud Speeds" (xEdit wbWeatherCloudSpeed): the per-layer per-axis UV
                 // scroll rate Clouds::Update accumulates. Layout is game-generation-keyed: FNV/FO3/Skyrim
-                // author ONE SIGNED BYTE per layer; FO4/FO76 author ONE FLOAT per layer — reading FO4's
-                // float bytes as per-layer speeds made every layer race in a nonsense direction. Both
-                // forms normalize to −1‥1 here (0 = still) so the renderer stays layout-agnostic.
+                // author ONE UNSIGNED byte biased around 127 (127 = still); FO4/FO76 author ONE FLOAT per
+                // layer. Reading the legacy byte as signed reverses most SkyrimClear layers; reading FO4's
+                // float bytes as per-layer speeds makes every layer race in a nonsense direction.
                 case "QNAM":
                     cloudSpeedsX = ReadCloudSpeeds(subData, record.IsBigEndian, Context.Game);
                     break;
@@ -458,7 +458,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "DALC" when sub.DataLength >= 24:
                     (directionalAmbientBands ??= []).Add(ReadDirectionalAmbientMean(subData, record.IsBigEndian));
                     break;
-                // FNAM "Fog Distances": 6 floats (24 bytes).
+                // FNAM fog scalars: day/night near + far, optional power pair, and Skyrim max-opacity pair.
                 case "FNAM" when sub.DataLength >= 4:
                     fogDistances = ReadFogDistances(subData, record.IsBigEndian);
                     break;
@@ -475,9 +475,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             ImageSpaceModifier = imageSpaceMod != 0 ? imageSpaceMod : null,
             Sounds = sounds,
-            // Present cloud layers in layer-index order (dense, gaps dropped) — the renderer maps each
-            // cloud dome shape to the ordinal-th layer.
+            // Present cloud layers in source-index order. The texture list remains dense for the sky-dome
+            // shape walk, but retain every original sparse index so QNAM/RNAM/PNAM/JNAM use their authored
+            // array slot (SkyrimClear jumps from source layer 7 to 15/19/20/28).
             CloudLayerTextures = cloudLayers.Count == 0 ? [] : cloudLayers.Values.ToList(),
+            CloudLayerSourceIndices = cloudLayers.Count == 0 ? [] : cloudLayers.Keys.ToList(),
             Colors = colors ?? [],
             DirectionalAmbient = BuildDirectionalAmbient(directionalAmbientBands),
             CloudColors = cloudColors ?? [],
@@ -562,9 +564,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // bands are interpolation aids with no engine "High Noon"/"Midnight" analogue, so HighNoon/Midnight
     // fall back to Day/Night (matching the FO3 fallback). Unlike FO3/FNV, the category COUNT here is
     // form-version dependent (10→19), so the stride is taken as given rather than derived from the length;
-    // only categories 0–9 (Sky/Fog/Ambient/Sunlight/Sun/Stars/Sky-Lower/Horizon/…) are consumed by the
-    // atmosphere renderer and they sit at identical ordinals across every game, so reading whatever fits at
-    // the correct stride is sufficient. Each band is one endian-aware uint with RGBA from fixed bit slots.
+    // the atmosphere renderer consumes the base lighting rows plus Skyrim's far-fog category 12; those
+    // ordinals are stable across the modern games. Reading whatever fits at the correct stride is therefore
+    // sufficient. Each band is one endian-aware uint with RGBA from fixed bit slots.
     internal static List<WeatherColor> ReadWeatherColorsModern(ReadOnlySpan<byte> data, bool isBigEndian, int strideBytes)
     {
         const int bandBytes = 4;
@@ -612,10 +614,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     }
 
     /// <summary>
-    ///     Reads a QNAM/RNAM per-layer cloud-speed array, normalized to −1‥1 (0 = still). FNV/FO3/Skyrim
-    ///     author one SIGNED byte per layer (÷127); FO4/FO76/Starfield one float per layer. FO4 floats are
-    ///     small (CK-authored ~±0.1), so they're scaled ×10 into the same domain — a visual calibration
-    ///     (the engine's exact scroll constant is unread), but sign + per-layer relative speeds are exact.
+    ///     Reads a QNAM/RNAM per-layer cloud-speed array. FNV/FO3/Skyrim author one UNSIGNED byte biased
+    ///     around 127: <c>(b - 127) / 127</c>, exactly matching TESWeather::GetCloudLayerSpeed's
+    ///     <c>(max-min)*b/254+min</c> with symmetric bounds. FO4/FO76/Starfield author one float per layer.
+    ///     FO4 floats are small (CK-authored ~±0.1), so they're scaled ×10 into the same domain — a visual
+    ///     calibration for that later engine family; Skyrim's separate renderer scale is decompile-exact.
     /// </summary>
     internal static float[] ReadCloudSpeeds(ReadOnlySpan<byte> data, bool isBigEndian, BethesdaGame game)
     {
@@ -626,7 +629,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             var bytes = new float[data.Length];
             for (var i = 0; i < data.Length; i++)
             {
-                bytes[i] = (sbyte)data[i] / 127f;
+                bytes[i] = (data[i] - 127f) / 127f;
             }
 
             return bytes;

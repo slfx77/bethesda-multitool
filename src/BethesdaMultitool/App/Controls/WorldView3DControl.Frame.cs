@@ -299,8 +299,8 @@ public sealed partial class WorldView3DControl
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
     }
 
-    // CPU mirror of the b3 `cbuffer Atmosphere` the lighting/sky/water shaders declare. 9 float4
-    // = 144 bytes (CB-aligned by the ring buffer). When a flag is 0 the shader falls back to its
+    // CPU mirror of the b3 `cbuffer Atmosphere` the lighting/sky/water shaders declare. 10 float4
+    // = 160 bytes before the shadow constants (CB-aligned by the ring buffer). When a flag is 0 the shader falls back to its
     // pre-atmosphere behavior, so a disabled toggle keeps that aspect of the scene looking flat.
     // (Shaders that don't apply fog — e.g. skybox — declare only the leading float4s they use, which
     // is layout-safe since later fields are appended at the end.)
@@ -315,6 +315,7 @@ public sealed partial class WorldView3DControl
         public Vector4 FogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
         public Vector4 Params;             // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
         public Vector4 CameraPosFogPower;  // xyz = camera world pos (0 in camera-relative mode), w = fog power
+        public Vector4 FogFarColorMax;     // rgb = far-fog color, w = maximum powered fog amount
         // Camera-relative render origin the scene VS subtract from each world vertex before
         // projection (0 when camera-relative is off). The PS shaders that read this CB
         // declare only the prefix they use, so fields appended after their prefix are layout-safe.
@@ -334,7 +335,7 @@ public sealed partial class WorldView3DControl
         public Vector4 ShadowParams2;
         public Vector4 ShadowParams3;
 
-        public const uint ByteSize = 9 * 16 + 4 * 64 + 4 * 16;
+        public const uint ByteSize = 10 * 16 + 4 * 64 + 4 * 16;
 
         public static AtmosphereConstants From(
             AtmosphereState.Resolved a,
@@ -358,6 +359,7 @@ public sealed partial class WorldView3DControl
                 FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
                 Params = new Vector4(gameHour, a.FogNear, a.FogFar, placedLightCount),
                 CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
+                FogFarColorMax = new Vector4(a.FogFarColor, a.FogMaxOpacity),
                 // w = IMGS EmissiveMult (hdrData[3]); manual/headless CB writers likewise upload
                 // an explicit neutral 1 when no imagespace is active.
                 CameraOrigin = new Vector4(cameraOrigin, emissiveMult),

@@ -27,27 +27,42 @@ public record WeatherRecord
     public IReadOnlyList<WeatherColor> Colors { get; init; } = [];
 
     /// <summary>
-    ///     FNAM "Fog Distances" — 6 floats: Day Near, Day Far, Night Near, Night Far, Day Max/Power,
-    ///     Night Max/Power (the last two are FNV's two-float extension over FO3). The engine feeds the
-    ///     5th/6th floats to the distance-fog exponent — <c>Sky::UpdateFog</c> stores them at the fog
-    ///     "power" field — so the atmosphere renderer treats them as the fog power. Empty when absent.
+    ///     FNAM "Fog Distances" — at least Day Near, Day Far, Night Near, Night Far. The next pair is
+    ///     Day/Night Power; Skyrim's final pair is Day/Night Max Opacity. <c>Sky::UpdateFog</c> resolves
+    ///     all authored day/night pairs and its lighting shader clamps the powered fog amount by the max.
+    ///     Empty when absent.
     /// </summary>
     public IReadOnlyList<float> FogDistances { get; init; } = [];
 
     /// <summary>
-    ///     Cloud-layer texture paths in layer order: DNAM = layer 0, CNAM = 1, ANAM = 2, BNAM = 3. The
-    ///     engine swaps these onto the sky-dome cloud nodes for the active weather, so they are the
-    ///     grounded source of a worldspace's clouds (vs. a hardcoded per-game cloud path). An unused
-    ///     layer is authored as the transparent placeholder <c>sky\alpha.dds</c>. Empty when the record
-    ///     carries no cloud subrecords.
+    ///     Cloud-layer texture paths in ascending SOURCE-layer order: DNAM = layer 0, CNAM = 1,
+    ///     ANAM = 2, BNAM = 3; Skyrim+ uses sparse <c>?0TX</c> indices. The engine swaps these onto the
+    ///     sky-dome cloud nodes for the active weather, so they are the grounded source of a worldspace's
+    ///     clouds (vs. a hardcoded per-game cloud path). An unused layer is authored as the transparent
+    ///     placeholder <c>sky\alpha.dds</c>. Empty when the record carries no cloud subrecords.
     /// </summary>
     public IReadOnlyList<string> CloudLayerTextures { get; init; } = [];
+
+    /// <summary>
+    ///     Original WTHR source index for each entry in <see cref="CloudLayerTextures" />. Skyrim weather
+    ///     texture signatures are sparse (for example <c>?0TX</c>/<c>C0TX</c>/<c>D0TX</c> are source
+    ///     layers 15/19/20), while QNAM/RNAM/PNAM/JNAM remain arrays indexed by those original numbers.
+    ///     Dropping the gaps therefore assigns the wrong speed/tint/opacity to every later texture.
+    ///     Legacy and synthetic weather records may leave this empty; consumers then use the dense
+    ///     ordinal for backward compatibility.
+    /// </summary>
+    public IReadOnlyList<int> CloudLayerSourceIndices { get; init; } = [];
+
+    /// <summary>Maps a dense rendered cloud ordinal back to its authored WTHR array index.</summary>
+    public int GetCloudLayerSourceIndex(int ordinal) =>
+        ordinal >= 0 && ordinal < CloudLayerSourceIndices.Count ? CloudLayerSourceIndices[ordinal] : ordinal;
 
     /// <summary>
     ///     PNAM "Cloud Colors" (xEdit wbWeatherCloudColors): one <see cref="WeatherColor" /> PER CLOUD
     ///     LAYER (same 6-band Time-of-Day RGBA struct as <see cref="Colors" />). The engine uploads this
     ///     per layer as the cloud shader's per-draw color uniform (RGB tint + A opacity) — verified in
-    ///     <c>SkyShader::SetupGeometryConstants</c>. Indexed parallel to <see cref="CloudLayerTextures" />.
+    ///     <c>SkyShader::SetupGeometryConstants</c>. Indexed by authored source layer; use
+    ///     <see cref="GetCloudLayerSourceIndex" /> while walking the dense texture list.
     ///     Empty when the record carries no PNAM.
     /// </summary>
     public IReadOnlyList<WeatherColor> CloudColors { get; init; } = [];
@@ -59,16 +74,17 @@ public record WeatherRecord
     ///     PNAM cloud color (whose alpha byte is unused, hence the 0s). A weather hides a layer by authoring 0
     ///     and thins others with fractional values — so a CLEAR weather (e.g. CommonwealthClear: layers at
     ///     0.0/0.2/0.4/0.75/…) shows mostly sky, while a CLOUDY one (SkyrimCloudy: all 1.0) fully overcasts.
-    ///     Indexed parallel to <see cref="CloudLayerTextures" />. Empty for FO3/FNV (which carry no JNAM —
+    ///     Indexed by authored source layer (which can be sparse relative to <see cref="CloudLayerTextures" />).
+    ///     Empty for FO3/FNV (which carry no JNAM —
     ///     they use a single cloud sheet, so the renderer's flat opacity is correct there).
     /// </summary>
     public IReadOnlyList<WeatherCloudAlpha> CloudLayerAlphas { get; init; } = [];
 
     /// <summary>
     ///     QNAM "X Cloud Speeds": per-layer U-axis scroll rate the engine accumulates in
-    ///     <c>Clouds::Update</c>, normalized to −1‥1 (0 = still). Authored as one signed byte per layer
-    ///     on FNV/FO3/Skyrim and one float per layer on FO4/FO76 — the handler normalizes both forms so
-    ///     the renderer never re-interprets raw bytes. Empty when absent.
+    ///     <c>Clouds::Update</c>, normalized around the byte midpoint (127 = still). Authored as one
+    ///     unsigned, biased byte per layer on FNV/FO3/Skyrim and one float per layer on FO4/FO76 — the
+    ///     handler normalizes both forms so the renderer never re-interprets raw bytes. Empty when absent.
     /// </summary>
     public IReadOnlyList<float> CloudSpeedsX { get; init; } = [];
 
@@ -141,6 +157,8 @@ public enum WeatherColorType
     SkyLower = 7,
     Horizon = 8,
     Unused9 = 9,
+    /// <summary>Skyrim+ NAM0 far-fog color; Sky::GetFogColorFar resolves category 12.</summary>
+    FogFar = 12,
 }
 
 /// <summary>WTHR DATA block (15 bytes) — see the converter's DATA/WTHR schema for the byte layout.</summary>

@@ -495,11 +495,11 @@ internal static class NifHeadlessRenderer
     /// material/alpha, not time-of-day.</summary>
     private static void BindFlatAtmosphere(ID3D12GraphicsCommandList cmd, int frameIndex, GpuRingBuffer12 ring)
     {
-        const int atmosphereBytes = 9 * 16 + 4 * 64 + 4 * 16;
+        const int atmosphereBytes = 10 * 16 + 4 * 64 + 4 * 16;
         var cb = new float[atmosphereBytes / sizeof(float)];
         // CameraOrigin.w carries EmissiveMult; the material verifier has no active IMGS, so bind the
         // explicit neutral value while every atmosphere enable flag remains zero.
-        cb[8 * 4 + 3] = 1f;
+        cb[9 * 4 + 3] = 1f;
         var bytes = new byte[atmosphereBytes];
         Buffer.BlockCopy(cb, 0, bytes, 0, atmosphereBytes);
         var alloc = ring.Allocate(frameIndex, atmosphereBytes, GpuRingBuffer12.CbAlignment);
@@ -518,10 +518,10 @@ internal static class NifHeadlessRenderer
         ID3D12GraphicsCommandList cmd, int frameIndex, GpuRingBuffer12 ring, float gameHour, Vector3 focus)
     {
         var a = AtmosphereState.Resolve(gameHour, weather: null, climate: null, lightingEnabled: true);
-        // Zero the complete append-only b3 layout (nine legacy vectors, four shadow matrices,
+        // Zero the complete append-only b3 layout (ten atmosphere vectors, four shadow matrices,
         // four shadow vectors). In particular Params.w remains zero: this verifier has no world
         // placement cache, so it binds an empty local-light list.
-        const int atmosphereBytes = 9 * 16 + 4 * 64 + 4 * 16;
+        const int atmosphereBytes = 10 * 16 + 4 * 64 + 4 * 16;
         var cb = new float[atmosphereBytes / sizeof(float)];
         void Put(int slot, float x, float y, float z, float w)
         {
@@ -539,10 +539,11 @@ internal static class NifHeadlessRenderer
         var eye = new Vector3(focus.X - 5793f, focus.Y - 5793f, focus.Z + 4096f); // NW + up
         Put(6, gameHour, a.FogNear, a.FogFar, 0f);
         Put(7, eye.X, eye.Y, eye.Z, a.FogPower);  // camera pos for spec/fog
+        Put(8, a.FogFarColor.X, a.FogFarColor.Y, a.FogFarColor.Z, a.FogMaxOpacity);
         // CameraOrigin (camera-relative render origin) = 0: this is an ABSOLUTE ortho render, so nothing is
         // shifted. The reference VS no longer reads this slot anyway (it folds the origin CPU-side); leaving
         // the old eye value here was a latent shift that only didn't bite because the VS now ignores it.
-        Put(8, 0f, 0f, 0f, 1f); // absolute origin + neutral EmissiveMult (no active IMGS)
+        Put(9, 0f, 0f, 0f, 1f); // absolute origin + neutral EmissiveMult (no active IMGS)
 
         var alloc = ring.Allocate(frameIndex, atmosphereBytes, GpuRingBuffer12.CbAlignment);
         var bytes = new byte[atmosphereBytes];

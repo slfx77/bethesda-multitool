@@ -18,10 +18,10 @@ cbuffer PerFrame : register(b0)
 // already yields the camera-relative position — computing it that way keeps float32 precision far from
 // the world origin (subtracting a ~52,000 absolute position AFTER the multiply lost it, Z-fighting distant
 // architecture). The cbuffer is still declared for b3 layout parity (terrain/water read uCameraOrigin);
-// the leading 8 float4 are the sun/sky/fog/camera fields this VS does not use.
+// the leading 9 float4 are the sun/sky/fog/camera fields this VS does not use.
 cbuffer Atmosphere : register(b3)
 {
-    float4 uAtmospherePad[8];
+    float4 uAtmospherePad[9];
     float4 uCameraOrigin; // retained for CB layout parity; references fold the origin CPU-side instead
 };
 

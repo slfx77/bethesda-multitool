@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -205,6 +206,77 @@ public sealed class AtmosphereStateTests
         Assert.Equal(200f, midnight.FogNear, 1);
         Assert.Equal(2000f, midnight.FogFar, 1);
         Assert.Equal(3f, midnight.FogPower, 2);
+    }
+
+    [Fact]
+    public void Resolve_SkyrimClear_UsesEightFieldFnamAndDistinctNearFarColors()
+    {
+        var neutral = new WeatherRgba(1, 1, 1, 255);
+        var filler = new WeatherColor(neutral, neutral, neutral, neutral);
+        var colors = Enumerable.Repeat(filler, 13).ToArray();
+        colors[(int)WeatherColorType.Fog] = new WeatherColor(
+            new WeatherRgba(0x2F, 0x4E, 0x5B, 255), new WeatherRgba(0x28, 0x6F, 0x8C, 255),
+            new WeatherRgba(0x26, 0x44, 0x43, 255), new WeatherRgba(0x18, 0x2D, 0x3D, 255));
+        colors[(int)WeatherColorType.FogFar] = new WeatherColor(
+            new WeatherRgba(0x88, 0x8A, 0x99, 255), new WeatherRgba(0x8E, 0xC9, 0xE6, 255),
+            new WeatherRgba(0x4E, 0x56, 0x5C, 255), new WeatherRgba(0x08, 0x1C, 0x21, 255));
+        var skyrimClear = new WeatherRecord
+        {
+            Colors = colors,
+            FogDistances = [1200f, 80000f, 1200f, 40000f, 0.4f, 0.4f, 0.85f, 0.85f]
+        };
+
+        var noon = AtmosphereState.Resolve(12f, skyrimClear, CleanTiming, game: BethesdaGame.Skyrim);
+        Assert.Equal(1200f, noon.FogNear);
+        Assert.Equal(80000f, noon.FogFar);
+        Assert.Equal(0.4f, noon.FogPower, 3);
+        Assert.Equal(0.85f, noon.FogMaxOpacity, 3);
+        AssertColor(0x28, 0x6F, 0x8C, noon.FogColor);
+        AssertColor(0x8E, 0xC9, 0xE6, noon.FogFarColor);
+
+        var midnight = AtmosphereState.Resolve(0f, skyrimClear, CleanTiming, game: BethesdaGame.Skyrim);
+        Assert.Equal(40000f, midnight.FogFar);
+        AssertColor(0x18, 0x2D, 0x3D, midnight.FogColor);
+        AssertColor(0x08, 0x1C, 0x21, midnight.FogFarColor);
+    }
+
+    [Fact]
+    public void Resolve_SkyrimFogDayWeight_StartsAtHalfHourExtension()
+    {
+        // CleanTiming begins sunrise at 5.0 and reaches day at 7.0. Skyrim's exact extension starts
+        // fog interpolation at A=4.5, so hour 5.0 has day weight (5-4.5)/(7-4.5)=0.2.
+        var weather = new WeatherRecord
+        {
+            FogDistances = [1000f, 5000f, 0f, 1000f, 1f, 3f, 0.8f, 0.2f]
+        };
+
+        var skyrim = AtmosphereState.Resolve(5f, weather, CleanTiming, game: BethesdaGame.Skyrim);
+        Assert.Equal(200f, skyrim.FogNear, 2);
+        Assert.Equal(1800f, skyrim.FogFar, 2);
+        Assert.Equal(2.6f, skyrim.FogPower, 2);
+        Assert.Equal(0.32f, skyrim.FogMaxOpacity, 2);
+
+        // Other engine families retain their previously grounded, unextended daylight window.
+        var legacy = AtmosphereState.Resolve(5f, weather, CleanTiming);
+        Assert.Equal(0f, legacy.FogNear);
+        Assert.Equal(1000f, legacy.FogFar);
+        Assert.Equal(0.2f, legacy.FogMaxOpacity, 2);
+    }
+
+    [Fact]
+    public void Resolve_LegacyFogFallsBackToSingleColorAndFullOpacity()
+    {
+        var fog = new WeatherRgba(20, 30, 40, 255);
+        var filler = new WeatherColor(fog, fog, fog, fog);
+        var weather = new WeatherRecord
+        {
+            Colors = [filler, filler],
+            FogDistances = [100f, 200f, 100f, 200f, 1f, 1f]
+        };
+
+        var resolved = AtmosphereState.Resolve(12f, weather, CleanTiming);
+        Assert.Equal(resolved.FogColor, resolved.FogFarColor);
+        Assert.Equal(1f, resolved.FogMaxOpacity);
     }
 
     [Fact]

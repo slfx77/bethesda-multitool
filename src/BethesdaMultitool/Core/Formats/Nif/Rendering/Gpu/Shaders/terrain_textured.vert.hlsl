@@ -29,10 +29,10 @@ cbuffer PerMode : register(b2)
 
 // 1G — camera-relative render origin (xyz) from the shared atmosphere CB (b3). Subtracted from each
 // world vertex before projection (kills the worldspace-edge wobble). Zero when camera-relative is off;
-// the leading 8 float4 are the sun/sky/fog/camera fields this VS does not use.
+// the leading 9 float4 are the sun/sky/fog/camera fields this VS does not use.
 cbuffer Atmosphere : register(b3)
 {
-    float4 uAtmospherePad[8];
+    float4 uAtmospherePad[9];
     float4 uCameraOrigin;
 };
 

@@ -490,6 +490,7 @@ public sealed partial class WorldView3DControl
                 var layerIndex = cloudOrdinal;
                 cloudOrdinal++;
                 var cloudPath = WeatherCloudTexture(weather, layerIndex);
+                var sourceLayerIndex = weather?.GetCloudLayerSourceIndex(layerIndex) ?? layerIndex;
                 if (cloudPath is null || IsUnusedCloudLayer(cloudPath))
                 {
                     if (_skyDiag) Log.Info($"[SkyGeo]     cloud shape #{layerIndex}: layer='{cloudPath ?? "(no layer)"}' -> SKIP (unused/no-layer)");
@@ -505,19 +506,20 @@ public sealed partial class WorldView3DControl
 
                 if (_skyDiag)
                 {
-                    var cc = WeatherCloudColor(weather, layerIndex);
+                    var cc = WeatherCloudColor(weather, sourceLayerIndex);
                     var a = cc is null ? "n/a" : $"R{cc.Day.R} G{cc.Day.G} B{cc.Day.B} A{cc.Day.A}";
-                    Log.Info($"[SkyGeo]     cloud shape #{layerIndex}: layer='{cloudPath}' -> DRAW (tex#{texIndex}) dayColor=[{a}]");
+                    Log.Info($"[SkyGeo]     cloud shape #{layerIndex}: sourceLayer={sourceLayerIndex} layer='{cloudPath}' -> DRAW (tex#{texIndex}) dayColor=[{a}]");
                 }
 
                 // This layer's per-draw color (PNAM), per-layer opacity (JNAM) + drift speed (QNAM/RNAM) —
                 // the engine drives each cloud layer's color/opacity/scroll independently
-                // (SkyShader::SetupGeometryConstants / Clouds::Update). All are indexed by the SAME layer
-                // ordinal as the textures above. JNAM (modern weathers) hides/thins layers per weather; FO3/
-                // FNV carry none, so cloudAlpha stays null and the renderer keeps its flat per-layer opacity.
-                cloudColor = WeatherCloudColor(weather, layerIndex);
-                cloudAlpha = WeatherCloudAlphaFor(weather, layerIndex);
-                scrollSpeed = WeatherCloudScroll(weather, layerIndex);
+                // (SkyShader::SetupGeometryConstants / Clouds::Update). Skyrim's texture signatures can be
+                // sparse (?0TX/C0TX/D0TX = 15/19/20), so every parallel array lookup uses the retained
+                // SOURCE index rather than the dense shape/texture ordinal. JNAM (modern weathers)
+                // hides/thins layers per weather; FO3/FNV carry none, so cloudAlpha stays null.
+                cloudColor = WeatherCloudColor(weather, sourceLayerIndex);
+                cloudAlpha = WeatherCloudAlphaFor(weather, sourceLayerIndex);
+                scrollSpeed = WeatherCloudScroll(weather, sourceLayerIndex);
             }
             else if (type == SkyObjectType.Stars)
             {
@@ -636,11 +638,9 @@ public sealed partial class WorldView3DControl
         return alphas is not null && layer >= 0 && layer < alphas.Count ? alphas[layer] : null;
     }
 
-    // Per-layer cloud UV drift from the weather's QNAM (X) / RNAM (Y) speeds, pre-normalized to −1‥1 by
-    // the parser (signed bytes ÷127 on FNV/FO3/Skyrim, per-layer floats on FO4/FO76), scaled to a slow
-    // UV/sec rate. CloudScrollScale is the one visual tunable; the per-layer RELATIVE speeds + axes are
-    // the data-grounded part (the exact engine speed constant lives in the binary's data section —
-    // Clouds::Update scales the authored value by it).
+    // Per-layer cloud UV drift from the weather's QNAM (X) / RNAM (Y) speeds. Skyrim's unsigned bytes
+    // are pre-normalized as (b−127)/127 by the parser; Clouds::Update applies fWeatherCloudSpeedMax=.1
+    // and its own .1 time scale, so CloudScrollScale=.010 UV/sec is exact for that engine.
     // NOTE: FNV weathers in practice OMIT QNAM/RNAM (confirmed: count 0 on every NVWastelandClear*), so the
     // engine drifts clouds at a built-in default speed (Clouds::Update defaults the per-layer byte to 0x33).
     // We reproduce that with DefaultCloudDrift when a layer has no authored speed, so FNV clouds still move.
