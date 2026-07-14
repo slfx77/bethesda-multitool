@@ -147,7 +147,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // v35: FO3/FNV BSShaderNoLightingProperty view-angle falloff now populates EffectFalloff —
     // v34 entries cache effect shells (dust storms, light-ray cones, glow fills) without their
     // authored |N·V| opacity ramp and render them as solid silhouettes.
-    internal const int DecoderVersion = 35;
+    // v36: bhkRigidBodyT transform offsets fixed (28/44 → 52/68) — v35 entries for every FNV
+    // bhkRigidBodyT static (RockCave07, NV_Truck, NVN_RockCanyon08, …) cache a NaN-poisoned
+    // collision soup that draws no overlay, fails walk-mode raycasts, and blocks the visual-mesh
+    // fallback.
+    internal const int DecoderVersion = 36;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

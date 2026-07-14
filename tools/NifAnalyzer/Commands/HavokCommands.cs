@@ -373,6 +373,9 @@ internal static class HavokCommands
         AnsiConsole.WriteLine();
     }
 
+    // Layout: nif.xml bhkRigidBodyCInfo550_660 (FO3/FNV), byte-verified against retail rockcave07.nif
+    // (Translation @52 is a small Havok-unit vector, Rotation @68 a unit quaternion; the old 28/44 read
+    // landed on CollisionResponse/ProcessContactCallbackDelay=0xFFFF, a guaranteed-NaN float).
     private static void ParseBhkRigidBody(byte[] data, int offset, int size, bool isBE)
     {
         var pos = offset;
@@ -381,33 +384,30 @@ internal static class HavokCommands
         AnsiConsole.WriteLine($"Shape Ref: {shapeRef}");
         pos += 4;
 
-        // 4 bytes unused
-        pos += 4;
-
-        // HavokFilter
+        // bhkWorldObject.HavokFilter: layer byte, flags/part byte, group ushort
         var filter = ReadUInt32(data, pos, isBE);
-        var group = ReadUInt32(data, pos + 4, isBE);
-        AnsiConsole.WriteLine($"HavokFilter: 0x{filter:X8}, Group: {group}");
-        pos += 8;
-
-        // 4 bytes unused
+        AnsiConsole.WriteLine($"HavokFilter: 0x{filter:X8} (Layer: {data[pos]})");
         pos += 4;
 
-        // CollisionResponse, unused, ProcessContactCallbackDelay
+        // bhkWorldObjCInfo: Unused01[4] + BroadPhaseType(1) + Unused02[3] + Property(12)
+        pos += 20;
+
+        // bhkEntityCInfo: CollisionResponse(1), Unused(1), ProcessContactCallbackDelay(2)
         AnsiConsole.WriteLine($"CollisionResponse: {data[pos]}");
         var callbackDelay = ReadUInt16(data, pos + 2, isBE);
-        AnsiConsole.WriteLine($"ProcessContactCallbackDelay: {callbackDelay}");
+        AnsiConsole.WriteLine($"ProcessContactCallbackDelay: 0x{callbackDelay:X4}");
         pos += 4;
 
-        // 4 bytes unused
-        pos += 4;
+        // bhkRigidBodyCInfo preamble: Unused01[4] + HavokFilter copy(4) + Unused02[4]
+        //                            + CollisionResponse/CallbackDelay copy(4) + Unused04[4]
+        pos += 20;
 
-        // Translation (Vector4)
+        // Translation (Vector4, Havok units) @52
         Console.WriteLine(
             $"Translation: ({ReadFloat(data, pos, isBE):F4}, {ReadFloat(data, pos + 4, isBE):F4}, {ReadFloat(data, pos + 8, isBE):F4}, {ReadFloat(data, pos + 12, isBE):F4})");
         pos += 16;
 
-        // Rotation (QuaternionXYZW)
+        // Rotation (hkQuaternion XYZW) @68
         Console.WriteLine(
             $"Rotation: ({ReadFloat(data, pos, isBE):F4}, {ReadFloat(data, pos + 4, isBE):F4}, {ReadFloat(data, pos + 8, isBE):F4}, {ReadFloat(data, pos + 12, isBE):F4})");
     }

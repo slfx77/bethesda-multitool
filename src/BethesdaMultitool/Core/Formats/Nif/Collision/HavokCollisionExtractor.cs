@@ -95,9 +95,21 @@ internal static class HavokCollisionExtractor
             if (!TryReadInt32(data, bodyBlock, 0, bigEndian, out var shapeRef)) continue;
 
             var nodeWorld = worldTransforms.TryGetValue(targetIdx, out var w) ? w : Matrix4x4.Identity;
-            var rbTransform = bodyBlock.TypeName == "bhkRigidBodyT"
-                ? TryReadRigidBodyTTransform(data, bodyBlock, bigEndian) ?? Matrix4x4.Identity
-                : Matrix4x4.Identity;
+            Matrix4x4 rbTransform;
+            if (bodyBlock.TypeName == "bhkRigidBodyT")
+            {
+                // A bhkRigidBodyT whose transform can't be read (truncated/garbage) must NOT emit
+                // geometry at identity — that places collision at the wrong spot. Skip this body;
+                // if no other collision body is usable, the caller's visual-mesh fallback engages.
+                var t = TryReadRigidBodyTTransform(data, bodyBlock, bigEndian);
+                if (t is null) continue;
+                rbTransform = t.Value;
+            }
+            else
+            {
+                rbTransform = Matrix4x4.Identity;
+            }
+
             var shapeToWorld = rbTransform * nodeWorld;
 
             // Fresh visited set per collision object so a shape shared between bodies (with different
@@ -107,6 +119,15 @@ internal static class HavokCollisionExtractor
         }
 
         if (triangles.Count < 3) return null;
+
+        // A soup with any non-finite vertex is worse than no soup: it is preferred over the visual-mesh
+        // fallback yet draws nothing and fails every raycast (NaN poisons the AABB slab test). Degrade
+        // to null so callers fall back to the visual mesh.
+        foreach (var p in positions)
+        {
+            if (!float.IsFinite(p.X) || !float.IsFinite(p.Y) || !float.IsFinite(p.Z)) return null;
+        }
+
         return new HavokTriangleSoup(positions.ToArray(), triangles.ToArray());
     }
 
@@ -121,19 +142,29 @@ internal static class HavokCollisionExtractor
         return true;
     }
 
-    // bhkRigidBodyT CInfo (FNV 550_660): Translation Vector4 @28, Rotation QuaternionXYZW @44.
-    // A plain bhkRigidBody ignores these (engine-side), so only bhkRigidBodyT reaches here.
+    // bhkRigidBodyT CInfo (FNV 550_660, nif.xml bhkRigidBodyCInfo550_660): Translation Vector4 @52,
+    // Rotation hkQuaternion (XYZW) @68. Offsets 28/44 (used before 2026-07-13) land on
+    // CollisionResponse/ProcessContactCallbackDelay=0xFFFF — a guaranteed-NaN float on retail FNV
+    // files. A plain bhkRigidBody ignores these (engine-side), so only bhkRigidBodyT reaches here.
     private static Matrix4x4? TryReadRigidBodyTTransform(byte[] data, BlockInfo block, bool be)
     {
-        // Need the rotation quaternion's last float at offset 44+12 = 56 (read 4 bytes → 60).
-        if (block.Size < 60) return null;
-        var tx = BinaryUtils.ReadFloat(data, block.DataOffset + 28, be);
-        var ty = BinaryUtils.ReadFloat(data, block.DataOffset + 32, be);
-        var tz = BinaryUtils.ReadFloat(data, block.DataOffset + 36, be);
-        var qx = BinaryUtils.ReadFloat(data, block.DataOffset + 44, be);
-        var qy = BinaryUtils.ReadFloat(data, block.DataOffset + 48, be);
-        var qz = BinaryUtils.ReadFloat(data, block.DataOffset + 52, be);
-        var qw = BinaryUtils.ReadFloat(data, block.DataOffset + 56, be);
+        // Need the rotation quaternion's last float at offset 68+12 = 80 (read 4 bytes → 84).
+        if (block.Size < 84) return null;
+        var tx = BinaryUtils.ReadFloat(data, block.DataOffset + 52, be);
+        var ty = BinaryUtils.ReadFloat(data, block.DataOffset + 56, be);
+        var tz = BinaryUtils.ReadFloat(data, block.DataOffset + 60, be);
+        var qx = BinaryUtils.ReadFloat(data, block.DataOffset + 68, be);
+        var qy = BinaryUtils.ReadFloat(data, block.DataOffset + 72, be);
+        var qz = BinaryUtils.ReadFloat(data, block.DataOffset + 76, be);
+        var qw = BinaryUtils.ReadFloat(data, block.DataOffset + 80, be);
+
+        // A non-finite transform would poison every collision vertex AND still count as a "present"
+        // soup, blocking the visual-mesh fallback — reject it here so the fallback engages.
+        if (!float.IsFinite(tx) || !float.IsFinite(ty) || !float.IsFinite(tz) ||
+            !float.IsFinite(qx) || !float.IsFinite(qy) || !float.IsFinite(qz) || !float.IsFinite(qw))
+        {
+            return null;
+        }
 
         var q = new Quaternion(qx, qy, qz, qw);
         q = q.LengthSquared() > 1e-6f ? Quaternion.Normalize(q) : Quaternion.Identity;

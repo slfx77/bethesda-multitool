@@ -125,6 +125,59 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
+    public void TryExtract_RigidBodyT_NonFiniteTransform_ReturnsNull()
+    {
+        // A bhkRigidBodyT whose authored transform is garbage must degrade to "no Havok soup" (so the
+        // visual-mesh fallback engages) — NOT emit geometry at identity or a NaN-poisoned soup.
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(99, 1, false),
+            RigidBodyT(2, new Vector3(float.NaN, 0, 0), Quaternion.Identity, false),
+            PackedShape(3, Vector3.One, false),
+            PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], false, false));
+
+        Assert.Null(HavokCollisionExtractor.TryExtract(data, nif, false));
+    }
+
+    [Fact]
+    public void TryExtract_InvalidRigidBodyT_DoesNotDiscardAnotherValidBody()
+    {
+        // Collision objects are independent. A corrupt transform must suppress only that body; a
+        // second valid body still provides authoritative collision instead of forcing visual fallback.
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(99, 1, false),
+            RigidBodyT(2, new Vector3(float.NaN, 0, 0), Quaternion.Identity, false),
+            PackedShape(3, Vector3.One, false),
+            PackedData([new Vector3(9, 0, 0)], [(0, 0, 0)], false, false),
+            CollisionObject(99, 5, false),
+            RigidBody(6, false),
+            PackedShape(7, Vector3.One, false),
+            PackedData([new Vector3(2, 0, 0)], [(0, 0, 0)], false, false));
+
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+
+        Assert.True(soup.HasValue);
+        Assert.Single(soup.Value.Positions);
+        AssertVec(new Vector3(14, 0, 0), soup.Value.Positions[0]);
+    }
+
+    [Fact]
+    public void TryExtract_NonFiniteVertex_ReturnsNull()
+    {
+        // Same policy at the vertex level: any non-finite decoded position invalidates the soup.
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(99, 1, false),
+            RigidBody(2, false),
+            PackedShape(3, Vector3.One, false),
+            PackedData([new Vector3(1, 0, 0), new Vector3(float.NaN, 1, 0), new Vector3(0, 0, 1)],
+                [(0, 1, 2)], false, false));
+
+        Assert.Null(HavokCollisionExtractor.TryExtract(data, nif, false));
+    }
+
+    [Fact]
     public void TryExtract_NoCollisionObject_ReturnsNull()
     {
         var (data, nif) = BuildNif(false, ("NiAlphaProperty", new byte[16]));
@@ -198,15 +251,21 @@ public sealed class HavokCollisionExtractorTests
 
     private static (string, byte[]) RigidBodyT(int shape, Vector3 translation, Quaternion rotation, bool be)
     {
-        var b = new byte[60];
+        // Real bhkRigidBodyCInfo550_660 layout (FO3/FNV, byte-verified vs retail rockcave07.nif):
+        // Translation Vector4 @52, Rotation hkQuaternion @68. Offset 28 holds CollisionResponse/
+        // ProcessContactCallbackDelay bytes that decode to NaN on retail files — plant a literal NaN
+        // there so a regression back to the old 28/44 read poisons the transform and fails the tests.
+        var b = new byte[96];
         WriteI32(b, 0, shape, be);
-        WriteF(b, 28, translation.X, be);
-        WriteF(b, 32, translation.Y, be);
-        WriteF(b, 36, translation.Z, be);
-        WriteF(b, 44, rotation.X, be);
-        WriteF(b, 48, rotation.Y, be);
-        WriteF(b, 52, rotation.Z, be);
-        WriteF(b, 56, rotation.W, be);
+        WriteF(b, 28, float.NaN, be);
+        WriteF(b, 44, float.NaN, be);
+        WriteF(b, 52, translation.X, be);
+        WriteF(b, 56, translation.Y, be);
+        WriteF(b, 60, translation.Z, be);
+        WriteF(b, 68, rotation.X, be);
+        WriteF(b, 72, rotation.Y, be);
+        WriteF(b, 76, rotation.Z, be);
+        WriteF(b, 80, rotation.W, be);
         return ("bhkRigidBodyT", b);
     }
 
