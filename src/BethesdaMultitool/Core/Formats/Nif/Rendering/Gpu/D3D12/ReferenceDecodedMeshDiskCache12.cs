@@ -153,7 +153,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // fallback.
     // v37: FO3/FNV refraction flags now suppress PPLighting/NoLighting distortion shells, and
     // External_Emittance shapes no longer cache their ignored material emissive multiplier.
-    internal const int DecoderVersion = 37;
+    // v38: classic Skyrim NiSwitchNode trees now keep the active full-detail, internally-skinned
+    // child and reconstruct its omitted NiTriShapeData topology from NiSkinPartition. Warm v37
+    // entries contain only the inactive sparse static fallback (TreePineForest03).
+    internal const int DecoderVersion = 38;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

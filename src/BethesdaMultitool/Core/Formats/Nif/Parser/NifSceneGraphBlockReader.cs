@@ -276,6 +276,72 @@ internal static class NifSceneGraphBlockReader
         return children;
     }
 
+    /// <summary>
+    ///     Reads a <c>NiSwitchNode</c>'s active-child ordinal. Returns <see langword="null" /> for a
+    ///     malformed block and <c>-1</c> when the authored index selects no child.
+    /// </summary>
+    internal static int? ParseSwitchNodeActiveChildOrdinal(
+        byte[] data,
+        BlockInfo block,
+        uint bsVersion,
+        uint binaryVersion,
+        bool be,
+        bool hasInlineStrings = false)
+    {
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+        if (!SkipNiGeometryHeader(
+                data,
+                ref pos,
+                end,
+                bsVersion,
+                binaryVersion,
+                be,
+                hasInlineStrings) ||
+            pos + 4 > end)
+        {
+            return null;
+        }
+
+        var numChildren = BinaryUtils.ReadUInt32(data, pos, be);
+        pos += 4;
+        if (numChildren > 500 || pos + numChildren * 4 > end)
+        {
+            return null;
+        }
+
+        pos += (int)numChildren * 4;
+
+        // NiNode carries a dynamic-effects array before NiSwitchNode's own fields through Skyrim
+        // SE; FO4 (BS stream 130+) removes it (#NI_BS_LT_FO4#).
+        if (bsVersion < 130)
+        {
+            if (pos + 4 > end)
+            {
+                return null;
+            }
+
+            var numEffects = BinaryUtils.ReadUInt32(data, pos, be);
+            pos += 4;
+            if (numEffects > 500 || pos + numEffects * 4 > end)
+            {
+                return null;
+            }
+
+            pos += (int)numEffects * 4;
+        }
+
+        // Switch Node Flags (ushort) + Index (uint).
+        if (pos + 6 > end)
+        {
+            return null;
+        }
+
+        pos += 2;
+        var active = BinaryUtils.ReadUInt32(data, pos, be);
+        return active < numChildren ? (int)active : -1;
+    }
+
     internal static int ParseShapeDataRef(byte[] data, BlockInfo block, uint bsVersion, uint binaryVersion,
         bool be, bool hasInlineStrings = false)
     {

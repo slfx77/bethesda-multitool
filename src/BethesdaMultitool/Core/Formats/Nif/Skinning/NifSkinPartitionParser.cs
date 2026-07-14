@@ -253,7 +253,13 @@ internal static class NifSkinPartitionParser
     ///     The triangles use mesh vertex indices (remapped via VertexMap).
     ///     Returns null if no faces are present.
     /// </summary>
-    public static ushort[]? ExtractTriangles(byte[] data, int offset, int size, bool isBigEndian, bool verbose = false)
+    public static ushort[]? ExtractTriangles(
+        byte[] data,
+        int offset,
+        int size,
+        bool isBigEndian,
+        bool verbose = false,
+        uint bsVersion = 0)
     {
         _ = verbose; // Reserved for future diagnostic use
         if (size < 4)
@@ -277,11 +283,13 @@ internal static class NifSkinPartitionParser
 
         var allTriangles = new List<ushort>();
 
-        for (var p = 0; p < numPartitions && reader.Pos < reader.End; p++)
+        for (var p = 0; p < numPartitions; p++)
         {
-            if (!TryExtractPartitionTriangles(ref reader, allTriangles))
+            if (!TryExtractPartitionTriangles(ref reader, allTriangles, bsVersion))
             {
-                break;
+                // A partial partition set is not a usable mesh. Returning the triangles parsed
+                // before the desync silently amputates geometry (Skyrim trees made this visible).
+                return null;
             }
         }
 
@@ -291,7 +299,10 @@ internal static class NifSkinPartitionParser
     /// <summary>
     ///     Extracts triangles from a single partition.
     /// </summary>
-    private static bool TryExtractPartitionTriangles(ref TriangleReader reader, List<ushort> allTriangles)
+    private static bool TryExtractPartitionTriangles(
+        ref TriangleReader reader,
+        List<ushort> allTriangles,
+        uint bsVersion)
     {
         if (!TryReadTrianglePartitionHeader(ref reader, out var header))
         {
@@ -329,8 +340,28 @@ internal static class NifSkinPartitionParser
             return false;
         }
 
-        // Skip bone indices
-        return TrySkipTriangleBoneIndices(ref reader, header.NumVertices, header.NumWeightsPerVertex);
+        // Skip bone indices.
+        if (!TrySkipTriangleBoneIndices(ref reader, header.NumVertices, header.NumWeightsPerVertex))
+        {
+            return false;
+        }
+
+        // Classic Skyrim (BS stream 83) appends LOD Level + Global VB to every SkinPartition.
+        // Omitting these two bytes shifts the next partition header: TreePineForest03's three
+        // foliage partitions were read as one valid partition followed by garbage, leaving the
+        // full-detail shape without usable topology. Skyrim SE (BS 100) has a different, larger
+        // NiSkinPartition layout, so keep this footer gate narrowly on the pre-SSE stream range.
+        if (bsVersion is > 34 and < 100)
+        {
+            if (!reader.CanRead(2))
+            {
+                return false;
+            }
+
+            reader.Skip(2);
+        }
+
+        return true;
     }
 
     /// <summary>

@@ -201,6 +201,18 @@ internal static class NifBlockParsers
         return NifSceneGraphBlockReader.ParseNodeChildren(data, block, bsVersion, binaryVersion, be, hasInlineStrings);
     }
 
+    internal static int? ParseSwitchNodeActiveChildOrdinal(
+        byte[] data,
+        BlockInfo block,
+        uint bsVersion,
+        uint binaryVersion,
+        bool be,
+        bool hasInlineStrings = false)
+    {
+        return NifSceneGraphBlockReader.ParseSwitchNodeActiveChildOrdinal(
+            data, block, bsVersion, binaryVersion, be, hasInlineStrings);
+    }
+
     internal static int ParseShapeDataRef(byte[] data, BlockInfo block, uint bsVersion, uint binaryVersion,
         bool be, bool hasInlineStrings = false)
     {

@@ -13,7 +13,8 @@ internal static class NifSceneGraphWalker
 {
     internal static readonly HashSet<string> NodeTypes =
     [
-        "NiNode", "NiBillboardNode", "BSFadeNode", "BSMultiBoundNode", "BSOrderedNode", "BSLeafAnimNode",
+        "NiNode", "NiBillboardNode", "NiSwitchNode", "BSFadeNode", "BSMultiBoundNode", "BSOrderedNode",
+        "BSLeafAnimNode", "BSTreeNode",
         // Morrowind-era Bethesda NiNode subclasses (nif.xml module BSLegacy). Without these the
         // subtree is never walked as scene nodes — e.g. i\in_lava_1024.nif roots its renderable
         // magma shapes under NiBSAnimationNode, which left the lava untextured/misplaced.
@@ -193,6 +194,20 @@ internal static class NifSceneGraphWalker
             }
         }
 
+        // NiSwitchNode renders exactly one child subtree. Classic Skyrim trees put their skinned,
+        // wind-deformed full-detail geometry in active child 0 and a static low-detail fallback in
+        // child 1. Treating every shape block as independently renderable selected both; because the
+        // full shapes keep faces only in NiSkinPartition, only the inactive static fallback survived
+        // extraction and TreePineForest03 looked severely sparse. Remove inactive descendants before
+        // transforms/skinning are built. Malformed switch metadata is deliberately non-destructive.
+        var inactiveSwitchShapes = CollectInactiveSwitchShapes(data, nif, nodeChildren);
+        foreach (var shapeIndex in inactiveSwitchShapes)
+        {
+            shapeDataMap.Remove(shapeIndex);
+            shapePropertyMap?.Remove(shapeIndex);
+            shapeSkinInstanceMap?.Remove(shapeIndex);
+        }
+
         // Legacy NetImmerse (Morrowind-era, NIF ≤ 4.2.2.0) render-property inheritance: a NiAlphaProperty /
         // NiTexturingProperty / NiMaterialProperty / NiStencilProperty attached to a NiNode applies to ALL
         // descendant geometry unless a nearer node/shape carries one of the same type. Newer Bethesda NIFs
@@ -202,6 +217,80 @@ internal static class NifSceneGraphWalker
             Parser.NifVersions.IsLegacyNetImmerse(nif.BinaryVersion))
         {
             PropagateInheritedProperties(data, nif, nodeChildren, shapeDataMap, shapePropertyMap, be);
+        }
+    }
+
+    /// <summary>
+    ///     Returns shape descendants of every inactive <c>NiSwitchNode</c> child. Internal for a
+    ///     graph-level regression test; callers should normally use <see cref="ClassifyBlocks" />.
+    /// </summary>
+    internal static HashSet<int> CollectInactiveSwitchShapes(
+        byte[] data,
+        NifInfo nif,
+        IReadOnlyDictionary<int, List<int>> nodeChildren)
+    {
+        var result = new HashSet<int>();
+        for (var switchIndex = 0; switchIndex < nif.Blocks.Count; switchIndex++)
+        {
+            var block = nif.Blocks[switchIndex];
+            if (block.TypeName != "NiSwitchNode" ||
+                !nodeChildren.TryGetValue(switchIndex, out var children))
+            {
+                continue;
+            }
+
+            var activeOrdinal = NifBlockParsers.ParseSwitchNodeActiveChildOrdinal(
+                data,
+                block,
+                nif.BsVersion,
+                nif.BinaryVersion,
+                nif.IsBigEndian,
+                nif.HasInlineStrings);
+            if (!activeOrdinal.HasValue)
+            {
+                continue;
+            }
+
+            for (var ordinal = 0; ordinal < children.Count; ordinal++)
+            {
+                if (ordinal == activeOrdinal.Value)
+                {
+                    continue;
+                }
+
+                CollectDescendantShapes(children[ordinal], nif, nodeChildren, result, []);
+            }
+        }
+
+        return result;
+    }
+
+    private static void CollectDescendantShapes(
+        int blockIndex,
+        NifInfo nif,
+        IReadOnlyDictionary<int, List<int>> nodeChildren,
+        HashSet<int> shapes,
+        HashSet<int> visited)
+    {
+        if (blockIndex < 0 || blockIndex >= nif.Blocks.Count || !visited.Add(blockIndex))
+        {
+            return;
+        }
+
+        if (ShapeTypes.Contains(nif.Blocks[blockIndex].TypeName))
+        {
+            shapes.Add(blockIndex);
+            return;
+        }
+
+        if (!nodeChildren.TryGetValue(blockIndex, out var children))
+        {
+            return;
+        }
+
+        foreach (var child in children)
+        {
+            CollectDescendantShapes(child, nif, nodeChildren, shapes, visited);
         }
     }
 

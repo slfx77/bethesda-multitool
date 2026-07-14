@@ -2,6 +2,8 @@ using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.GeometryAnalysis;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
+using BethesdaMultitool.Core.Formats.Nif.Skinning;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
@@ -93,6 +95,26 @@ internal static class NifSubmeshExtractor
                 _ => null
             };
 
+        // Classic Skyrim's internally-skinned trees omit the NiTriShapeData triangle list and keep
+        // topology only in NiSkinPartition. Retry only the otherwise-empty NiTriShapeData case so
+        // ordinary geometry pays no partition-parse cost and authored local triangles stay primary.
+        if (submesh == null && dataBlock.TypeName == "NiTriShapeData" &&
+            TryExtractSkinPartitionTriangles(data, nif, shapeIndex) is { Length: > 0 } partitionTriangles)
+        {
+            submesh = ExtractTriShapeData(
+                data,
+                dataBlock,
+                nif.IsBigEndian,
+                nif.BsVersion,
+                nif.BinaryVersion,
+                transform,
+                skinning,
+                useDualQuaternionSkinning,
+                preSkinMorphDeltas,
+                shapeName,
+                partitionTriangles);
+        }
+
         if (submesh == null)
         {
             return null;
@@ -130,6 +152,56 @@ internal static class NifSubmeshExtractor
         };
     }
 
+    private static ushort[]? TryExtractSkinPartitionTriangles(
+        byte[] data,
+        NifInfo nif,
+        int shapeIndex)
+    {
+        var shape = nif.Blocks[shapeIndex];
+        var skinInstanceRef = NifBlockParsers.ParseShapeSkinInstanceRef(
+            data,
+            shape,
+            nif.BsVersion,
+            nif.BinaryVersion,
+            nif.IsBigEndian,
+            nif.HasInlineStrings);
+        if (skinInstanceRef < 0 || skinInstanceRef >= nif.Blocks.Count)
+        {
+            return null;
+        }
+
+        var skinInstanceBlock = nif.Blocks[skinInstanceRef];
+        if (skinInstanceBlock.TypeName is not ("NiSkinInstance" or "BSDismemberSkinInstance"))
+        {
+            return null;
+        }
+
+        var skinInstance = NifSkinBlockParser.ParseNiSkinInstance(
+            data,
+            skinInstanceBlock,
+            nif.IsBigEndian,
+            nif.BinaryVersion);
+        if (skinInstance == null ||
+            skinInstance.SkinPartitionRef < 0 ||
+            skinInstance.SkinPartitionRef >= nif.Blocks.Count)
+        {
+            return null;
+        }
+
+        var partition = nif.Blocks[skinInstance.SkinPartitionRef];
+        if (partition.TypeName != "NiSkinPartition")
+        {
+            return null;
+        }
+
+        return NifSkinPartitionParser.ExtractTriangles(
+            data,
+            partition.DataOffset,
+            partition.Size,
+            nif.IsBigEndian,
+            bsVersion: nif.BsVersion);
+    }
+
     internal static RenderableSubmesh? ExtractTriShapeData(
         byte[] data,
         BlockInfo block,
@@ -140,7 +212,8 @@ internal static class NifSubmeshExtractor
         ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning = null,
         bool useDualQuaternionSkinning = false,
         float[]? preSkinMorphDeltas = null,
-        string? shapeName = null)
+        string? shapeName = null,
+        ushort[]? fallbackTriangles = null)
     {
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
@@ -321,26 +394,48 @@ internal static class NifSubmeshExtractor
 
         // "Has Triangles" bool exists only since 10.1.0.0; at or below 10.0.1.2 (Oblivion 10.0.1.x) the
         // triangle list follows unconditionally, so reading the bool would eat the first triangle index.
-        if (NifVersions.HasShapeTriangleFlag(binaryVersion) && (pos + 1 > end || data[pos++] == 0))
+        var hasLocalTriangles = true;
+        if (NifVersions.HasShapeTriangleFlag(binaryVersion))
+        {
+            if (pos + 1 > end)
+            {
+                return null;
+            }
+
+            hasLocalTriangles = data[pos++] != 0;
+        }
+
+        if (positions == null ||
+            (!hasLocalTriangles || numTriangles == 0) && fallbackTriangles is not { Length: > 0 })
         {
             return null;
         }
 
-        if (numTriangles == 0 || positions == null)
+        ushort[] triangles;
+        if (hasLocalTriangles && numTriangles > 0)
         {
-            return null;
-        }
+            if (pos + numTriangles * 6 > end)
+            {
+                return null;
+            }
 
-        if (pos + numTriangles * 6 > end)
-        {
-            return null;
+            triangles = new ushort[numTriangles * 3];
+            for (var i = 0; i < triangles.Length; i++)
+            {
+                triangles[i] = BinaryUtils.ReadUInt16(data, pos, be);
+                pos += 2;
+            }
         }
-
-        var triangles = new ushort[numTriangles * 3];
-        for (var i = 0; i < triangles.Length; i++)
+        else
         {
-            triangles[i] = BinaryUtils.ReadUInt16(data, pos, be);
-            pos += 2;
+            triangles = fallbackTriangles!;
+            for (var i = 0; i < triangles.Length; i++)
+            {
+                if (triangles[i] >= numVerts)
+                {
+                    return null;
+                }
+            }
         }
 
         // Apply EGM morph deltas in bind-pose space BEFORE skinning transforms vertices
