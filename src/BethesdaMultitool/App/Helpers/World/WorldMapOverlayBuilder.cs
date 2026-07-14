@@ -126,6 +126,7 @@ internal static class WorldMapOverlayBuilder
             DanglingRefs = DanglingRefAttributions.LoadDefault(),
             NavMeshesByCell = BuildNavMeshIndex(semantic.NavMeshes, semantic.Cells),
             LandTexturesByFormId = BuildLandTextureIndex(semantic.LandTextures),
+            GrassesByFormId = BuildGrassIndex(semantic.Grasses),
             TextureSetsByFormId = textureSetsByFormId,
             AlternateTexturesByFormId = BuildAlternateTextureIndex(
                 semantic.AlternateTexturesByFormId, textureSetsByFormId),
@@ -305,6 +306,7 @@ internal static class WorldMapOverlayBuilder
             DanglingRefs = DanglingRefAttributions.LoadDefault(),
             NavMeshesByCell = BuildNavMeshIndex(suppRecords.NavMeshes, suppRecords.Cells),
             LandTexturesByFormId = BuildLandTextureIndex(suppRecords.LandTextures),
+            GrassesByFormId = BuildGrassIndex(suppRecords.Grasses),
             TextureSetsByFormId = textureSetsByFormId,
             AlternateTexturesByFormId = BuildAlternateTextureIndex(
                 suppRecords.AlternateTexturesByFormId, textureSetsByFormId),
@@ -415,6 +417,16 @@ internal static class WorldMapOverlayBuilder
         List<LandscapeTextureRecord> records)
     {
         var dict = new Dictionary<uint, LandscapeTextureRecord>(records.Count);
+        foreach (var r in records)
+        {
+            dict.TryAdd(r.FormId, r);
+        }
+        return dict;
+    }
+
+    private static Dictionary<uint, GrassRecord> BuildGrassIndex(List<GrassRecord> records)
+    {
+        var dict = new Dictionary<uint, GrassRecord>(records.Count);
         foreach (var r in records)
         {
             dict.TryAdd(r.FormId, r);

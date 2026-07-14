@@ -132,6 +132,7 @@ public sealed partial class WorldView3DControl
                 // Markers/imposters are hidden by default to match the game; markers are also
                 // toggleable from the toolbar (_showMarkers persists across reloads).
                 ShowMarkers = _showMarkers,
+                ShowGrass = _showGrass,
                 ShowImposters = BethesdaMultitool.Core.EnvironmentVariables.IsEnabled(
                     BethesdaMultitool.Core.EnvironmentVariables.Viewer.ShowImposters),
                 AnimationsEnabled = _animationsEnabled, // persist the toolbar toggle across reloads

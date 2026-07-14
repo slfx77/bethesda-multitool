@@ -211,6 +211,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private bool _showWireframe;
     private bool _showTerrain = true;
     private bool _showWater = true;
+    private bool _showGrass = true;
     private bool _showTerrainTextures = true;
     private bool _showVertexColors = true;
     private bool _showReferences = true;
@@ -337,12 +338,20 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         SettingsPanel.TonemapSection.Visibility = data.Game == Core.Games.BethesdaGame.Morrowind
             ? Visibility.Collapsed
             : Visibility.Visible;
+        SettingsPanel.GrassCheckBox.Visibility =
+            Core.Formats.Nif.Rendering.Camera.GrassScatterProfile.ForGame(data.Game).Supported
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         // Make the base-object category available to the placement bake before the renderer pulls
         // its first cell — drives the per-category visibility filter (activators off by default).
         data.RenderCache.CategoryIndex = data.CategoryIndex;
         // Resolve placed REFR base FormIDs to LIGH definitions during the same one-time cell bake.
         // This is independent of ModelPath, so meshless lights still become emitter-only entries.
         data.RenderCache.LightIndex = data.LightsByFormId;
+        data.RenderCache.LandTextureIndex = data.LandTexturesByFormId;
+        data.RenderCache.GrassIndex = data.GrassesByFormId;
+        data.RenderCache.Game = data.Game;
+        data.RenderCache.DefaultWaterHeight = data.DefaultWaterHeight;
         // XESP enable-parent resolution: parent-gated refs (condition-driven FX like light-ray
         // cones) bake as initially-disabled instead of always drawing.
         data.RenderCache.XespDisabledRefs = data.XespDisabledRefs;

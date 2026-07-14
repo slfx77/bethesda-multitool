@@ -189,6 +189,10 @@ internal sealed class WorldViewData
     public IReadOnlyDictionary<uint, LandscapeTextureRecord> LandTexturesByFormId { get; init; } =
         new Dictionary<uint, LandscapeTextureRecord>();
 
+    /// <summary>GRAS records keyed by FormID. LTEX GNAM entries resolve through this for terrain scatter.</summary>
+    public IReadOnlyDictionary<uint, GrassRecord> GrassesByFormId { get; init; } =
+        new Dictionary<uint, GrassRecord>();
+
     /// <summary>Texture set records keyed by FormID. Used by the rendered-terrain layer.</summary>
     public IReadOnlyDictionary<uint, TextureSetRecord> TextureSetsByFormId { get; init; } =
         new Dictionary<uint, TextureSetRecord>();

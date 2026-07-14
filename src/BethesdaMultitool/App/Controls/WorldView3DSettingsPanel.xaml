@@ -95,6 +95,9 @@
         <CheckBox x:Name="WaterCheckBox" x:FieldModifier="internal" IsChecked="True" Content="Water"
                   AutomationProperties.Name="Water"
                   ToolTipService.ToolTip="Show water surfaces (press 3)" />
+        <CheckBox x:Name="GrassCheckBox" x:FieldModifier="internal" IsChecked="True" Content="Grass"
+                  AutomationProperties.Name="Grass"
+                  ToolTipService.ToolTip="Show engine-scattered LAND/GRAS vegetation" />
         <CheckBox x:Name="EditorMarkersCheckBox" x:FieldModifier="internal" IsChecked="False" Content="Editor markers"
                   AutomationProperties.Name="Editor markers"
                   ToolTipService.ToolTip="Show editor/engine markers (XMarkers, travel/door markers)" />

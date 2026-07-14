@@ -207,6 +207,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private VisibilityCylinder _cullCacheCylinder;
     private int _cullCacheMeshRadiusCount;
     private bool _cullCacheShowMarkers;
+    private bool _cullCacheShowGrass;
     private bool _cullCacheShowImposters;
     private bool _cullCacheShowDisabled;
     private int _cullCacheCellsVisited;
@@ -366,6 +367,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     in play. Driven by <c>RenderableReference.IsMarker</c> (model-path classification).
     /// </summary>
     public bool ShowMarkers { get; set; }
+
+    /// <summary>
+    ///     LAND/GRAS vegetation visibility. On by default; filtered before mesh resolution so an
+    ///     off toggle avoids decoding and uploading grass NIFs.
+    /// </summary>
+    public bool ShowGrass { get; set; } = true;
 
     /// <summary>
     ///     When <c>false</c> (default), imposter references (low-detail distant LOD stand-ins) are
@@ -766,6 +773,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _cullCacheValid
             && meshBoundsCurrent
             && _cullCacheShowMarkers == ShowMarkers
+            && _cullCacheShowGrass == ShowGrass
             && _cullCacheShowImposters == ShowImposters
             && _cullCacheShowDisabled == ShowInitiallyDisabled
             && _cullCacheShadowRing == shadowRing
@@ -839,6 +847,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // Hide initially-disabled REFRs unless the toggle is on (default off = hidden),
                     // matching the 2D viewer. Counted as culled so the HUD reflects the filter.
                     if (!ShowInitiallyDisabled && r.IsInitiallyDisabled)
+                    {
+                        culled++;
+                        continue;
+                    }
+                    if (!ShowGrass && r.IsGrass)
                     {
                         culled++;
                         continue;
@@ -938,6 +951,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _cullCacheRadius = cylinder.Radius;
             _cullCacheMeshRadiusCount = _meshLocalRadius.Count;
             _cullCacheShowMarkers = ShowMarkers;
+            _cullCacheShowGrass = ShowGrass;
             _cullCacheShowImposters = ShowImposters;
             _cullCacheShowDisabled = ShowInitiallyDisabled;
             _cullCacheShadowRing = shadowRing;

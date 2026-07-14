@@ -83,6 +83,48 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
     }
 
     [Fact]
+    public async Task Schema_primary_bridge_preserves_typed_grass_records()
+    {
+        var grassData = new byte[32];
+        grassData[0] = 35; // density
+        grassData[1] = 5;  // minimum slope
+        grassData[2] = 60; // maximum slope
+        BinaryPrimitives.WriteUInt16LittleEndian(grassData.AsSpan(4), 24);
+        BinaryPrimitives.WriteUInt32LittleEndian(grassData.AsSpan(8), 3);
+        BinaryPrimitives.WriteSingleLittleEndian(grassData.AsSpan(12), 40f);
+        BinaryPrimitives.WriteSingleLittleEndian(grassData.AsSpan(16), 0.25f);
+        BinaryPrimitives.WriteSingleLittleEndian(grassData.AsSpan(20), 0.5f);
+        BinaryPrimitives.WriteSingleLittleEndian(grassData.AsSpan(24), 12f);
+        grassData[28] = 0x06;
+
+        // The master filename selects Skyrim's schema-primary path. GRAS still needs the typed
+        // viewer bridge because the schema model otherwise retains it only as a generic record.
+        var filePath = WriteSyntheticEsm(
+            "Skyrim.esm",
+            EsmTestFileBuilder.BuildRecord(
+                "GRAS",
+                0x00001010,
+                0,
+                ("EDID", NullTerm("TestGrass")),
+                ("MODL", NullTerm("landscape\\grass\\testgrass.nif")),
+                ("DATA", grassData)));
+
+        using var loaded = await SemanticFileLoader.LoadAsync(
+            filePath,
+            new SemanticFileLoadOptions { FileType = AnalysisFileType.EsmFile },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(BethesdaMultitool.Core.Games.BethesdaGame.Skyrim, loaded.Records.Game);
+        var grass = Assert.Single(loaded.Records.Grasses);
+        Assert.Equal(0x00001010u, grass.FormId);
+        Assert.Equal("TestGrass", grass.EditorId);
+        Assert.Equal("landscape\\grass\\testgrass.nif", grass.ModelPath);
+        Assert.Equal((byte)35, grass.Data?.Density);
+        Assert.Equal(40f, grass.Data?.PositionRange);
+        Assert.Equal((byte)0x06, grass.Data?.Flags);
+    }
+
+    [Fact]
     public async Task SemanticSourceSetBuilder_merges_sources_in_load_order()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

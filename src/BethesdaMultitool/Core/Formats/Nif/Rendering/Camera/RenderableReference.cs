@@ -37,7 +37,8 @@ internal readonly record struct RenderableReference(
     bool IsMarker,
     bool IsImposter,
     PlacedObjectCategory Category,
-    AlternateTextureSet? AlternateTextures = null)
+    AlternateTextureSet? AlternateTextures = null,
+    bool IsGrass = false)
 {
     private static readonly char[] PathSeparators = ['/', '\\'];
 

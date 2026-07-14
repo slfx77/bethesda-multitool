@@ -673,6 +673,10 @@ public sealed class RecordParser
                 Weather = result.Weather,
                 ImageSpaces = result.ImageSpaces,
                 LandTextures = result.LandTextures,
+                // GRAS is consumed by the world viewer through LTEX GNAM links. The schema model
+                // keeps GRAS as generic records, so without this typed bridge Skyrim/FO4 retained
+                // their LTEX links but exposed an empty RecordCollection.Grasses lookup.
+                Grasses = result.Grasses,
                 TextureSets = result.TextureSets,
                 // FO4/FO76 are schema-primary, so the viewer's material swaps must ride the bridge
                 // overlay like the other typed world/atmosphere collections or they'd be discarded.

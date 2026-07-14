@@ -25,6 +25,7 @@ public sealed partial class WorldView3DControl
     private CheckBox TerrainToggle => SettingsPanel.TerrainToggle;
     private CheckBox RefsToggle => SettingsPanel.RefsToggle;
     private CheckBox WaterCheckBox => SettingsPanel.WaterCheckBox;
+    private CheckBox GrassCheckBox => SettingsPanel.GrassCheckBox;
     private CheckBox EditorMarkersCheckBox => SettingsPanel.EditorMarkersCheckBox;
     private CheckBox ActivatorsCheckBox => SettingsPanel.ActivatorsCheckBox;
     private CheckBox SkyMeshesCheckBox => SettingsPanel.SkyMeshesCheckBox;
@@ -69,6 +70,7 @@ public sealed partial class WorldView3DControl
         Wire(p.TerrainToggle, TerrainToggle_Changed);
         Wire(p.RefsToggle, RefsToggle_Changed);
         Wire(p.WaterCheckBox, WaterCheckBox_Changed);
+        Wire(p.GrassCheckBox, GrassCheckBox_Changed);
         Wire(p.EditorMarkersCheckBox, EditorMarkersCheckBox_Changed);
         Wire(p.ActivatorsCheckBox, ActivatorsCheckBox_Changed);
         Wire(p.SkyMeshesCheckBox, SkyMeshesCheckBox_Changed);
@@ -130,6 +132,12 @@ public sealed partial class WorldView3DControl
     {
         if (_initializing) return;
         _showWater = WaterCheckBox.IsChecked == true;
+    }
+
+    private void GrassCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SetShowGrass(GrassCheckBox.IsChecked == true);
     }
 
     private void TerrainTexturesToggle_Changed(object sender, RoutedEventArgs e)
@@ -320,6 +328,18 @@ public sealed partial class WorldView3DControl
         if (EditorMarkersCheckBox is not null && EditorMarkersCheckBox.IsChecked != on)
         {
             EditorMarkersCheckBox.IsChecked = on;
+        }
+    }
+
+    /// <summary>LAND/GRAS visibility toggle. The synthetic placements stay cached; filtering before
+    /// mesh resolution means grass hidden before streaming never decodes or uploads.</summary>
+    private void SetShowGrass(bool on)
+    {
+        _showGrass = on;
+        if (_references is not null) _references.ShowGrass = on;
+        if (GrassCheckBox is not null && GrassCheckBox.IsChecked != on)
+        {
+            GrassCheckBox.IsChecked = on;
         }
     }
 

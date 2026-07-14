@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Terrain;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
 
@@ -93,6 +95,14 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     ///     its base record also carries a renderable model.
     /// </summary>
     internal IReadOnlyDictionary<uint, LightRecord>? LightIndex { get; set; }
+
+    /// <summary>LTEX and GRAS lookup tables used by the lazy per-cell grass scatter bake.</summary>
+    internal IReadOnlyDictionary<uint, LandscapeTextureRecord>? LandTextureIndex { get; set; }
+    internal IReadOnlyDictionary<uint, GrassRecord>? GrassIndex { get; set; }
+
+    /// <summary>Game profile and worldspace water plane used by the engine-family grass rules.</summary>
+    internal BethesdaGame Game { get; set; }
+    internal float? DefaultWaterHeight { get; set; }
 
     public string ResourceName => nameof(WorldRenderCache);
 
@@ -249,12 +259,6 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     private IReadOnlyList<RenderableReference> BuildPlacementList(CellRecord cell)
     {
         var placements = cell.PlacedObjects;
-        if (placements.Count == 0)
-        {
-            _placedLights[cell] = Array.Empty<PlacedLight>();
-            return Array.Empty<RenderableReference>();
-        }
-
         var categoryIndex = CategoryIndex;
         var alternateTextureIndex = AlternateTextureIndex;
         var materialSwapIndex = MaterialSwapIndex;
@@ -330,6 +334,25 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         _placedLights[cell] = placedLights is { Count: > 0 }
             ? placedLights
             : Array.Empty<PlacedLight>();
+
+        // LAND/GRAS is not represented by REFR records. Scatter it into the same instanced-reference
+        // funnel so every shared grass NIF still resolves once and draws as one model batch.
+        if (LandTextureIndex is { Count: > 0 } landTextures && GrassIndex is { Count: > 0 } grasses)
+        {
+            var terrain = GetTerrain(cell);
+            if (terrain.HasTerrain)
+            {
+                var grassPlacements = GrassPlacementBuilder.Build(
+                    cell,
+                    terrain.Heights,
+                    landTextures,
+                    grasses,
+                    Game,
+                    ResolveEffectiveWaterHeight(cell, DefaultWaterHeight));
+                if (grassPlacements.Count > 0) built.AddRange(grassPlacements);
+            }
+        }
+
         // Sort by ModelPath so consecutive draws batch on the same SRV — adjacent REFRs
         // of the same model (road segments, fence posts, lamp poles, etc.) collapse into
         // a single texture bind in ReferenceRenderer.BindSrvIfChanged. Ordinal compare is

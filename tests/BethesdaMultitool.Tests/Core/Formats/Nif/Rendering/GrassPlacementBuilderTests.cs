@@ -1,0 +1,310 @@
+using System.Numerics;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Games;
+using Xunit;
+
+namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
+
+public sealed class GrassPlacementBuilderTests
+{
+    [Theory]
+    [InlineData(BethesdaGame.FalloutNewVegas, 80f)]
+    [InlineData(BethesdaGame.Skyrim, 20f)]
+    [InlineData(BethesdaGame.Fallout4, 20f)]
+    public void Profile_UsesRecoveredShippingDefaults(BethesdaGame game, float expectedMinimumSize)
+    {
+        var profile = GrassScatterProfile.ForGame(game);
+
+        Assert.True(profile.Supported);
+        Assert.Equal(expectedMinimumSize, profile.MinGrassSize);
+        Assert.Equal(2, profile.EvalRadius);
+        Assert.Equal(3, profile.MaxGrassEntriesPerTexture);
+        Assert.Equal(0f, profile.TexturePercentageThreshold);
+        Assert.Equal(
+            game == BethesdaGame.FalloutNewVegas
+                ? GrassPositionQuantization.FloorWorldUnits
+                : GrassPositionQuantization.HalfRelativeToTwelveCellBlock,
+            profile.PositionQuantization);
+    }
+
+    [Fact]
+    public void Build_InclusiveEngineLimitConsumesThreeGrassLinks()
+    {
+        var fixture = CreateFixture(CreateFlatHeights(), density: 100, positionRange: 512f);
+        var grass2 = fixture.Grass with { FormId = fixture.Grass.FormId + 1 };
+        var grass3 = fixture.Grass with { FormId = fixture.Grass.FormId + 2 };
+        var grass4 = fixture.Grass with { FormId = fixture.Grass.FormId + 3 };
+        var landTexture = fixture.LandTexture with
+        {
+            GrassFormIds = [fixture.Grass.FormId, grass2.FormId, grass3.FormId, grass4.FormId],
+        };
+
+        var placements = GrassPlacementBuilder.Build(
+            fixture.Cell,
+            fixture.Heights,
+            new Dictionary<uint, LandscapeTextureRecord> { [landTexture.FormId] = landTexture },
+            new Dictionary<uint, GrassRecord>
+            {
+                [fixture.Grass.FormId] = fixture.Grass,
+                [grass2.FormId] = grass2,
+                [grass3.FormId] = grass3,
+                [grass4.FormId] = grass4,
+            },
+            BethesdaGame.FalloutNewVegas,
+            effectiveWaterHeight: null);
+
+        Assert.Equal(64 * 3, placements.Count);
+        Assert.Contains(placements, p => p.FormId == fixture.Grass.FormId);
+        Assert.Contains(placements, p => p.FormId == grass2.FormId);
+        Assert.Contains(placements, p => p.FormId == grass3.FormId);
+        Assert.DoesNotContain(placements, p => p.FormId == grass4.FormId);
+    }
+
+    [Fact]
+    public void Build_FullDensityBaseTexture_ProducesOneCandidatePerEvaluationChunk()
+    {
+        var fixture = CreateFixture(CreateFlatHeights(), density: 100, positionRange: 512f);
+
+        var placements = Build(fixture, BethesdaGame.FalloutNewVegas);
+
+        // Four 2048-unit quadrants, each evaluated at q=2,6,10,14 on both axes: 4*4*4 = 64.
+        Assert.Equal(64, placements.Count);
+        Assert.All(placements, p =>
+        {
+            Assert.True(p.IsGrass);
+            Assert.Equal(fixture.Grass.FormId, p.FormId);
+            Assert.Equal(fixture.Grass.ModelPath, p.ModelPath);
+            Assert.InRange(p.WorldMatrix.Translation.X, 0f, 4096f);
+            Assert.InRange(p.WorldMatrix.Translation.Y, 0f, 4096f);
+            Assert.Equal(MathF.Floor(p.WorldMatrix.Translation.X), p.WorldMatrix.Translation.X);
+            Assert.Equal(MathF.Floor(p.WorldMatrix.Translation.Y), p.WorldMatrix.Translation.Y);
+            Assert.Equal(0f, p.WorldMatrix.Translation.Z, 5);
+        });
+    }
+
+    [Fact]
+    public void Build_SkyrimRoundTripsPositionsThroughBlockRelativeHalfPrecision()
+    {
+        var heights = Enumerable.Repeat(123.456f, 33 * 33).ToArray();
+        var fixture = CreateFixture(heights, density: 100, positionRange: 512f);
+
+        var placements = Build(fixture, BethesdaGame.Skyrim);
+
+        Assert.NotEmpty(placements);
+        Assert.All(placements, p =>
+        {
+            Assert.Equal((float)(Half)p.WorldMatrix.Translation.X, p.WorldMatrix.Translation.X);
+            Assert.Equal((float)(Half)p.WorldMatrix.Translation.Y, p.WorldMatrix.Translation.Y);
+            Assert.Equal((float)(Half)123.456f, p.WorldMatrix.Translation.Z);
+        });
+    }
+
+    [Fact]
+    public void QuantizePosition_NegativeCellsUseRecoveredTruncatingTwelveCellBlockOrigin()
+    {
+        var x = -4001.25f;
+        var y = -52000.75f;
+
+        GrassPositionQuantizer.Quantize(
+            ref x,
+            ref y,
+            cellX: -1,
+            cellY: -13,
+            cellSize: 4096f,
+            GrassPositionQuantization.HalfRelativeToTwelveCellBlock);
+
+        // Signed engine division truncates: -1 / 12 -> 0, while -13 / 12 -> -1.
+        Assert.Equal((float)(Half)(-4001.25f), x);
+        Assert.Equal(-49152f + (float)(Half)(-52000.75f + 49152f), y);
+    }
+
+    [Fact]
+    public void Build_RecoveredYawSamplingUsesPositiveSquareRootHalfCircle()
+    {
+        var fixture = CreateFixture(CreateFlatHeights(), density: 100, positionRange: 512f);
+
+        var placements = Build(fixture, BethesdaGame.Skyrim);
+
+        Assert.NotEmpty(placements);
+        // CreateGrass samples cos in [-1,1] and derives sin as the positive sqrt(1-cos^2).
+        Assert.All(placements, placement => Assert.True(placement.WorldMatrix.M11 >= 0f));
+        Assert.Contains(placements, placement => placement.WorldMatrix.M12 < 0f);
+        Assert.Contains(placements, placement => placement.WorldMatrix.M12 > 0f);
+    }
+
+    [Fact]
+    public void Build_IsDeterministicForTheSameCellAndRecords()
+    {
+        var fixture = CreateFixture(CreateFlatHeights(), density: 47, positionRange: 256f);
+
+        var first = Build(fixture, BethesdaGame.Skyrim);
+        var second = Build(fixture, BethesdaGame.Skyrim);
+
+        Assert.NotEmpty(first);
+        Assert.Equal(first.Count, second.Count);
+        for (var i = 0; i < first.Count; i++)
+        {
+            Assert.Equal(first[i].WorldMatrix, second[i].WorldMatrix);
+            Assert.Equal(first[i].MeshId, second[i].MeshId);
+        }
+    }
+
+    [Fact]
+    public void Build_ZeroDensitySuppressesEveryCandidate()
+    {
+        var fixture = CreateFixture(CreateFlatHeights(), density: 0, positionRange: 512f);
+
+        Assert.Empty(Build(fixture, BethesdaGame.Skyrim));
+    }
+
+    [Fact]
+    public void Build_AppliesRecoveredSlopeGate()
+    {
+        var heights = CreatePlanarHeights(dzdx: 1f);
+        var tooSteep = CreateFixture(heights, density: 100, positionRange: 512f, maxSlope: 30);
+        var accepted = CreateFixture(heights, density: 100, positionRange: 512f, maxSlope: 60);
+
+        Assert.Empty(Build(tooSteep, BethesdaGame.Skyrim));
+        Assert.Equal(64, Build(accepted, BethesdaGame.Skyrim).Count);
+    }
+
+    [Fact]
+    public void Build_FitToSlopeAlignsTheLocalUpAxisWithTerrainNormal()
+    {
+        var fixture = CreateFixture(
+            CreatePlanarHeights(dzdx: 1f),
+            density: 100,
+            positionRange: 512f,
+            maxSlope: 90,
+            flags: 0x04);
+
+        var placement = Assert.Single(Build(fixture, BethesdaGame.Skyrim).Take(1));
+        var up = Vector3.Normalize(new Vector3(
+            placement.WorldMatrix.M31,
+            placement.WorldMatrix.M32,
+            placement.WorldMatrix.M33));
+
+        Assert.Equal(-MathF.Sqrt(0.5f), up.X, 5);
+        Assert.Equal(0f, up.Y, 5);
+        Assert.Equal(MathF.Sqrt(0.5f), up.Z, 5);
+    }
+
+    [Fact]
+    public void Build_AppliesWaterStateBeforeEmittingInstances()
+    {
+        var belowOnly = CreateFixture(
+            CreateFlatHeights(),
+            density: 100,
+            positionRange: 512f,
+            waterAmount: 20,
+            waterState: 2);
+        var aboveOnly = CreateFixture(
+            CreateFlatHeights(),
+            density: 100,
+            positionRange: 512f,
+            waterAmount: 20,
+            waterState: 1);
+
+        Assert.Equal(64, Build(belowOnly, BethesdaGame.Fallout4, waterHeight: 100f).Count);
+        Assert.Empty(Build(aboveOnly, BethesdaGame.Fallout4, waterHeight: 100f));
+    }
+
+    [Fact]
+    public void Build_UnsupportedGameDoesNotScatterGrass()
+    {
+        var fixture = CreateFixture(CreateFlatHeights(), density: 100, positionRange: 512f);
+
+        Assert.Empty(Build(fixture, BethesdaGame.Morrowind));
+    }
+
+    private static IReadOnlyList<RenderableReference> Build(
+        Fixture fixture,
+        BethesdaGame game,
+        float? waterHeight = null)
+        => GrassPlacementBuilder.Build(
+            fixture.Cell,
+            fixture.Heights,
+            new Dictionary<uint, LandscapeTextureRecord> { [fixture.LandTexture.FormId] = fixture.LandTexture },
+            new Dictionary<uint, GrassRecord> { [fixture.Grass.FormId] = fixture.Grass },
+            game,
+            waterHeight);
+
+    private static Fixture CreateFixture(
+        float[] heights,
+        byte density,
+        float positionRange,
+        byte minSlope = 0,
+        byte maxSlope = 90,
+        byte flags = 0,
+        ushort waterAmount = 0,
+        uint waterState = 0)
+    {
+        const uint ltexFormId = 0x01000001;
+        const uint grassFormId = 0x01000002;
+        var layers = Enumerable.Range(0, 4)
+            .Select(q => new LandTextureLayer
+            {
+                Kind = LandTextureLayerKind.Base,
+                TextureFormId = ltexFormId,
+                Quadrant = (byte)q,
+            })
+            .ToList();
+        var cell = new CellRecord
+        {
+            FormId = 0x01000003,
+            GridX = 0,
+            GridY = 0,
+            CellWorldSize = 4096f,
+            LandVisualData = new LandVisualData { TextureLayers = layers },
+        };
+        var landTexture = new LandscapeTextureRecord
+        {
+            FormId = ltexFormId,
+            GrassFormIds = [grassFormId],
+        };
+        var grass = new GrassRecord
+        {
+            FormId = grassFormId,
+            ModelPath = "meshes/landscape/grass/testgrass.nif",
+            ModelBound = 32f,
+            Data = new GrassData
+            {
+                Density = density,
+                MinSlope = minSlope,
+                MaxSlope = maxSlope,
+                UnitsFromWaterAmount = waterAmount,
+                UnitsFromWaterType = waterState,
+                PositionRange = positionRange,
+                HeightRange = 0f,
+                ColorRange = 0.5f,
+                WavePeriod = 10f,
+                Flags = flags,
+            },
+        };
+        return new Fixture(cell, heights, landTexture, grass);
+    }
+
+    private static float[] CreateFlatHeights() => new float[33 * 33];
+
+    private static float[] CreatePlanarHeights(float dzdx)
+    {
+        var heights = new float[33 * 33];
+        for (var y = 0; y < 33; y++)
+        {
+            for (var x = 0; x < 33; x++)
+            {
+                heights[y * 33 + x] = x * 128f * dzdx;
+            }
+        }
+        return heights;
+    }
+
+    private sealed record Fixture(
+        CellRecord Cell,
+        float[] Heights,
+        LandscapeTextureRecord LandTexture,
+        GrassRecord Grass);
+}
