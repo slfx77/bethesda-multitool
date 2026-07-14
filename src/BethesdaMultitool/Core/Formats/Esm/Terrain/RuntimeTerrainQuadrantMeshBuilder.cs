@@ -16,7 +16,10 @@ internal static class RuntimeTerrainQuadrantMeshBuilder
         IReadOnlyList<RuntimeTerrainFloatArraySlot> normalArrays,
         IReadOnlyList<RuntimeTerrainFloatArraySlot> colorArrays)
     {
-        if (vertexArrays.Count == 0)
+        // A partial capture cannot be triangulated safely: filling its missing quadrant(s)
+        // stretches the surviving samples across the cell and produces the characteristic
+        // long diagonal wedges. The caller can still try the legacy single-array layout.
+        if (!HasCompleteQuadrantSet(vertexArrays))
         {
             return null;
         }
@@ -98,6 +101,7 @@ internal static class RuntimeTerrainQuadrantMeshBuilder
             Vertices = vertices,
             Normals = hasNormals ? normals : null,
             Colors = hasColors ? colors : null,
+            SourceVertexMask = occupied,
             VertexDataOffset = vertexDataOffset
         };
 
@@ -151,8 +155,7 @@ internal static class RuntimeTerrainQuadrantMeshBuilder
                IsNormalFinite(z) &&
                MathF.Abs(x) <= LocalCoordinateLimit &&
                MathF.Abs(y) <= LocalCoordinateLimit &&
-               MathF.Abs(z) <= HeightLimit &&
-               !(MathF.Abs(x) < 0.001f && MathF.Abs(y) < 0.001f && MathF.Abs(z) < 0.001f);
+               MathF.Abs(z) <= HeightLimit;
     }
 
     private static bool IsValidCompanionVector(float x, float y, float z)
@@ -186,5 +189,33 @@ internal static class RuntimeTerrainQuadrantMeshBuilder
         }
 
         return count;
+    }
+
+    private static bool HasCompleteQuadrantSet(IReadOnlyList<RuntimeTerrainFloatArraySlot> vertexArrays)
+    {
+        if (vertexArrays.Count != QuadrantCount)
+        {
+            return false;
+        }
+
+        var seenSlots = 0;
+        foreach (var vertexArray in vertexArrays)
+        {
+            if (vertexArray.Slot is < 0 or >= QuadrantCount ||
+                vertexArray.Data.Length < QuadrantVertexCount * 3)
+            {
+                return false;
+            }
+
+            var slotBit = 1 << vertexArray.Slot;
+            if ((seenSlots & slotBit) != 0)
+            {
+                return false;
+            }
+
+            seenSlots |= slotBit;
+        }
+
+        return seenSlots == (1 << QuadrantCount) - 1;
     }
 }

@@ -53,6 +53,12 @@ public record RuntimeTerrainMesh
     public bool HasColors => Colors != null;
 
     /// <summary>
+    ///     Exact source occupancy for canonical runtime meshes. When present, this distinguishes an
+    ///     authored vertex at local (0, 0, 0) from an unfilled zero-initialized destination slot.
+    /// </summary>
+    internal bool[]? SourceVertexMask { get; init; }
+
+    /// <summary>
     ///     Detect the LOD level of this terrain mesh from valid XY samples.
     ///     Supports both vertex-count grids (33, 17, 9, 5) and observed quad-count captures (16, 8, 4).
     /// </summary>
@@ -666,9 +672,15 @@ public record RuntimeTerrainMesh
     {
         var samples = new List<TerrainVertexSample>();
         var vertexCount = Math.Min(VertexCount, Vertices.Length / 3);
+        var hasSourceMask = SourceVertexMask is { Length: >= VertexCount };
 
         for (var i = 0; i < vertexCount; i++)
         {
+            if (hasSourceMask && !SourceVertexMask![i])
+            {
+                continue;
+            }
+
             if (SanitizedMask != null && i < SanitizedMask.Length && SanitizedMask[i])
             {
                 continue;
@@ -689,7 +701,8 @@ public record RuntimeTerrainMesh
                 continue;
             }
 
-            if (MathF.Abs(x) < 0.001f && MathF.Abs(y) < 0.001f && MathF.Abs(z) < 0.001f)
+            if (!hasSourceMask &&
+                MathF.Abs(x) < 0.001f && MathF.Abs(y) < 0.001f && MathF.Abs(z) < 0.001f)
             {
                 continue;
             }
