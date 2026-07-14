@@ -75,8 +75,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private bool _legendExpanded = true;
 
     // --- Marker icons (per game) ---
-    // The active game's marker icon set (embedded tinted or pre-styled per profile, glyph-only when no
-    // art is wired). Keyed by raw TNAM value via MapMarkerCatalog; rebuilt on a game change.
+    // The active game's marker icon set (installed archive first, bundled fallback, glyph-only when no
+    // art is wired). Keyed by raw TNAM value via MapMarkerCatalog; rebuilt for each loaded scene.
     private IMapMarkerIconSet? _markerIconSet;
     private Core.Games.BethesdaGame _markerIconSetGame = Core.Games.BethesdaGame.Unknown;
 
@@ -450,6 +450,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         CancelTopDownOverlay();
         DisposeWorldBitmaps();
         DisposeCellDetailBitmaps();
+        DisposeMarkerIcons();
         _spatialIndex = null;
         _cellGridLookup = null;
 

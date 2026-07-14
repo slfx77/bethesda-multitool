@@ -280,9 +280,9 @@ public sealed partial class WorldMapControl
     }
 
     /// <summary>
-    ///     Builds the marker icon set for the loaded game (embedded tinted or pre-styled according to its
-    ///     profile, glyph-only otherwise), rebuilding only when the game changes. The marker TYPE is always
-    ///     resolved per game via <c>MapMarkerCatalog</c>; this only governs the icon art.
+    ///     Builds the marker icon set for the loaded game (installed archive first, bundled fallback,
+    ///     glyph-only when no authentic art is wired), rebuilding only when the scene changes. The marker
+    ///     TYPE is always resolved per game via <c>MapMarkerCatalog</c>; this only governs the icon art.
     /// </summary>
     private void EnsureMarkerIconSet(ICanvasResourceCreator resourceCreator)
     {
@@ -291,7 +291,7 @@ public sealed partial class WorldMapControl
 
         _markerIconSet?.Dispose();
         DisposeTintedMarkerIcons();
-        _markerIconSet = MapMarkerIconSetFactory.Create(game, resourceCreator);
+        _markerIconSet = MapMarkerIconSetFactory.Create(_data, resourceCreator);
         _markerIconSetGame = game;
     }
 

@@ -15,8 +15,8 @@ internal interface IMapMarkerIconSet : IDisposable
     BethesdaGame Game { get; }
 
     /// <summary>
-    ///     True for the white-silhouette embedded set (FO3/FNV), which must be tinted to the map color
-    ///     scheme at draw time. Atlas art is already styled, so it is drawn untinted.
+    ///     True for white-silhouette art (FO3/FNV/FO4), which must be tinted to the map color scheme at
+    ///     draw time. Oblivion/Skyrim/FO76 art is already styled, so it is drawn untinted.
     /// </summary>
     bool RequiresTinting { get; }
 

@@ -20,13 +20,16 @@ public enum MarkerArtStrategy
     /// <summary>No authentic art wired yet — draw the catalog's type-distinct glyph/color dot.</summary>
     GlyphOnly,
 
-    /// <summary>FO3/FNV/FO4: bundled white-silhouette PNGs, tinted to the map color scheme at draw time.</summary>
+    /// <summary>
+    ///     FO3/FNV/FO4: white-silhouette art, tinted to the map color scheme at draw time. Direct DDS
+    ///     assets are loaded from the game archive when available; bundled PNGs are the fallback.
+    /// </summary>
     EmbeddedTinted,
 
     /// <summary>
-    ///     Oblivion/Skyrim/FO76: per-type icons extracted offline from the game's map assets and embedded
-    ///     as pre-styled PNGs (drawn untinted). Works for asset-less memory dumps too, since the art ships
-    ///     with the tool.
+    ///     Oblivion/Skyrim/FO76: pre-styled per-type icons (drawn untinted). Oblivion's individual DDS
+    ///     assets can load directly from its game archive; SWF-only Skyrim/FO76 use the offline-rasterized
+    ///     bundled PNGs, which also keep asset-less memory dumps functional.
     /// </summary>
     EmbeddedColored
 }
@@ -99,7 +102,7 @@ public sealed record GameProfile
     /// <summary>Where the 2D map sources this game's marker icon art. Defaults to glyph-only.</summary>
     public MarkerArtStrategy MarkerArt { get; init; } = MarkerArtStrategy.GlyphOnly;
 
-    /// <summary>True only for the embedded white-silhouette set (FO3/FNV), which is tinted at draw time.</summary>
+    /// <summary>True only for white-silhouette art (FO3/FNV/FO4), which is tinted at draw time.</summary>
     public bool MarkersAreTinted => MarkerArt == MarkerArtStrategy.EmbeddedTinted;
 
     /// <summary>
