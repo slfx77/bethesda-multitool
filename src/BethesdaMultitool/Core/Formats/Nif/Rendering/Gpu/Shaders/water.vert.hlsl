@@ -51,6 +51,17 @@ VSOutput main(uint vid : SV_VertexID, uint instanceId : SV_InstanceID)
         instance.OriginHeightFootprintX.y + corner.y * instance.FootprintY.x,
         instance.OriginHeightFootprintX.z);
 
+    // Hardware-depth fallback (no scene-depth SRV: MSAA scene, ortho modes, top-down/capture): the
+    // PS coplanar tie-break lives in its depth-sample branch and can't run here, so apply the SAME
+    // world-unit bias (uDepthParams.w) by lifting the plane — near-coplanar terrain resolves in the
+    // water's favour instead of z-fighting (Morrowind's Bitter Coast mud flats sit within ±1 unit
+    // of sea level). The depth-sample path keeps the true height: its clip() bias already covers
+    // the tie, and lifting there too would double the envelope.
+    if (uDepthParams.x == 0xFFFFFFFFu)
+    {
+        worldPos.z += asfloat(uDepthParams.w);
+    }
+
     VSOutput o;
     // Project CAMERA-RELATIVE (worldPos − uRenderOrigin, against the caller's camera-relative viewProj)
     // for float32 precision far from the world origin — absolute ~50k-unit coordinates through the
