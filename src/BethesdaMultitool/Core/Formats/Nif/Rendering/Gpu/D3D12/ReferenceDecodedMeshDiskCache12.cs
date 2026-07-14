@@ -151,7 +151,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // bhkRigidBodyT static (RockCave07, NV_Truck, NVN_RockCanyon08, …) cache a NaN-poisoned
     // collision soup that draws no overlay, fails walk-mode raycasts, and blocks the visual-mesh
     // fallback.
-    internal const int DecoderVersion = 36;
+    // v37: FO3/FNV refraction flags now suppress PPLighting/NoLighting distortion shells, and
+    // External_Emittance shapes no longer cache their ignored material emissive multiplier.
+    internal const int DecoderVersion = 37;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

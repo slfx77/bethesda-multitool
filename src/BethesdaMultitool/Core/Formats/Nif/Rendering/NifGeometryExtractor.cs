@@ -415,7 +415,16 @@ internal static class NifGeometryExtractor
                 // billboard). We don't do screen-space refraction, and such a plane ships a NORMAL map in its
                 // diffuse slot with no NiAlphaProperty — drawing it opaque produces a blue/purple "gem" that
                 // also occludes the real fire behind it. Skip it so the distorted effect shows through.
-                if (shaderMetadata is { PropertyType: "BSLightingShaderProperty", ShaderFlags: { } lsRefract }
+                // The FO3/FNV BSShaderFlags use the SAME bits (15 Refraction / 16 Fire_Refraction) on
+                // BSShaderPPLightingProperty / BSShaderNoLightingProperty — e.g. TrapGasFire01's
+                // "RefractGas" dome (PPLighting, 0x82018100, no alpha property) drew as an opaque white
+                // sphere hiding the additive gas billboard behind it.
+                if (shaderMetadata is
+                    {
+                        PropertyType: "BSLightingShaderProperty" or "BSShaderPPLightingProperty"
+                        or "BSShaderNoLightingProperty",
+                        ShaderFlags: { } lsRefract
+                    }
                     && (lsRefract & 0x18000u) != 0)
                 {
                     LogShapeDrop(data, nif, shapeIndex,
@@ -746,8 +755,21 @@ internal static class NifGeometryExtractor
                     submesh.UvScrollVelocity = uvScroll;
                 }
 
+                // FO3/FNV External_Emittance (BSShaderFlags bit 29): the engine sources the shape's
+                // emittance from the placed reference's XEMI link (a light/region, day/night driven),
+                // NOT from the material's Emissive Color × Mult — NVStripLightPollution authors
+                // (1,1,1) × 21 under this flag and the engine never reads it; multiplying it in blew
+                // the Strip glow ×21 into HDR. Until XEMI resolution exists, leave the tint null
+                // (renderer draws the texture untinted, mult 1) — the material-ignored half of the
+                // engine behavior, with no invented day/night term.
+                var externalEmittance = shaderMetadata is
+                    {
+                        PropertyType: "BSShaderPPLightingProperty" or "BSShaderNoLightingProperty",
+                        ShaderFlags: { } eeFlags
+                    } && (eeFlags & 0x20000000u) != 0;
+
                 // Read animated emissive color from NiMaterialColorController chain
-                if (propRefs != null)
+                if (propRefs != null && !externalEmittance)
                 {
                     var animEmissive = NifBlockParsers.ReadAnimatedEmissiveColor(data, nif, propRefs);
                     if (animEmissive.HasValue)
@@ -761,7 +783,7 @@ internal static class NifGeometryExtractor
                 // Emissive Color (× FO3+ Emissive Mult) IS the glow color the engine renders — the
                 // diffuse is often just a white gradient sheet it tints. Read it whenever the shape
                 // ended up emissive so the renderer can modulate (null = no material = draw as-is).
-                if (propRefs != null && submesh.IsEmissive)
+                if (propRefs != null && submesh.IsEmissive && !externalEmittance)
                 {
                     submesh.EmissiveColor = NifBlockParsers.ReadMaterialEmissive(data, nif, propRefs);
                 }
