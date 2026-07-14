@@ -92,8 +92,8 @@ internal sealed class RenderableSubmesh
     public bool IsDecal { get; set; }
 
     /// <summary>
-    ///     Effect-shader color tint: BGEM base color × base color scale, multiplied into the source
-    ///     texture RGB (fo76utils getDiffuseColor_Effect). (1,1,1) for non-effect materials.
+    ///     Effect-shader color tint: inline Skyrim BSEffect / BGEM base color × base color scale,
+    ///     multiplied into the source texture RGB. (1,1,1) for non-effect materials.
     /// </summary>
     public (float R, float G, float B) EffectTint { get; set; } = (1f, 1f, 1f);
 

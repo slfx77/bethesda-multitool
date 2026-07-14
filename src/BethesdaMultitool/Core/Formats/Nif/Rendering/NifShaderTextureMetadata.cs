@@ -12,6 +12,30 @@ internal sealed class NifShaderTextureMetadata
     public float? EnvMapScale { get; init; }
 
     /// <summary>
+    ///     Inline Skyrim <c>BSEffectShaderProperty</c> base color. The engine uploads
+    ///     <c>BaseColor.rgb * BaseColorScale</c> to the effect pixel shader; kept separate here so
+    ///     the decoded values remain inspectable and the extractor can form the exact tint.
+    /// </summary>
+    public (float R, float G, float B, float A)? EffectBaseColor { get; init; }
+
+    /// <summary>Inline Skyrim effect RGB multiplier (the float following Base Color).</summary>
+    public float? EffectBaseColorScale { get; init; }
+
+    /// <summary>
+    ///     Inline Skyrim effect lighting influence, normalized from the packed misc byte to 0..1.
+    ///     Retail's selected unlit permutation computes
+    ///     <c>rgb *= lerp(1, externalEmittanceColor, influence)</c>; the dormant Lit permutation
+    ///     substitutes scene lighting for that color.
+    /// </summary>
+    public float? EffectLightingInfluence { get; init; }
+
+    /// <summary>
+    ///     Inline Skyrim effect view-angle falloff values. Callers apply these only when
+    ///     SLSF1_Use_Falloff is set; retaining the raw quad mirrors the on-disk property.
+    /// </summary>
+    public (float StartAngle, float StopAngle, float StartOpacity, float StopOpacity)? EffectFalloff { get; init; }
+
+    /// <summary>
     ///     FO3/FNV BSShaderNoLightingProperty view-angle falloff (Start/Stop angle cosines +
     ///     Start/Stop opacity — the 4 floats after the shader's FileName, BS version &gt; 26).
     ///     The engine ramps effect opacity by |N·V| through these; without them, crossed-plane and

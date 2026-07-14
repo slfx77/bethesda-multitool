@@ -410,6 +410,41 @@ internal static class NifGeometryExtractor
                     effectFalloff = nlFalloff;
                 }
 
+                // Classic Skyrim inline BSEffect material terms. TESV's retail effect path computes
+                // base = texture * vertexColor * (BaseColor.rgb * BaseColorScale), with optional
+                // |N·V| falloff. Do NOT scene-light SLSF2_Effect_Lighting here: DetermineTechniqueID
+                // gates its 0x20000 "Lit" permutation on BSEffectShaderProperty::bLightingEnabled,
+                // and that retail static is zero-initialized with no writer in TESV.exe. Thus
+                // WRLODWindowGlow01 actually selects 0x883 (Vc/Tex/Additive), not the available
+                // 0x20883 permutation. Its packed LightingInfluence blends toward the per-placement
+                // external-emittance color in that unlit shader; XEMI plumbing is placement work,
+                // not a reason to incorrectly apply directional scene lighting to the cached mesh.
+                if (shaderMetadata is { PropertyType: "BSEffectShaderProperty" } effectMetadata)
+                {
+                    if (effectMetadata is
+                        {
+                            EffectBaseColor: { } baseColor,
+                            EffectBaseColorScale: { } baseColorScale
+                        })
+                    {
+                        effectTint = (
+                            baseColor.R * baseColorScale,
+                            baseColor.G * baseColorScale,
+                            baseColor.B * baseColorScale);
+                    }
+
+                    const uint slsf1UseFalloff = 1u << 6;
+                    if (effectMetadata is
+                        {
+                            ShaderFlags: { } effectFlags1,
+                            EffectFalloff: { } inlineFalloff
+                        }
+                        && (effectFlags1 & slsf1UseFalloff) != 0)
+                    {
+                        effectFalloff = inlineFalloff;
+                    }
+                }
+
                 // SLSF1_Refraction (0x8000) / SLSF1_Fire_Refraction (0x10000) on a BSLightingShaderProperty
                 // mark a screen-space heat-haze / distortion plane (e.g. the campfire's VaporTileNormal_n
                 // billboard). We don't do screen-space refraction, and such a plane ships a NORMAL map in its

@@ -69,9 +69,21 @@ internal static class NifShaderTexturePropertyReader
                     continue;
                 }
 
+                // Classic Skyrim/SE keeps the complete effect material inline. Preserve its flags,
+                // base tint, and lighting/falloff inputs instead of dropping the authored terms.
+                // Fallout 4+ layouts diverge (external BGEM / CRC flag arrays), so this deliberately
+                // only decodes the Skyrim-family layout.
+                var inline = ReadClassicBsEffectShaderData(data, nif, propBlock);
+
                 return new NifShaderTextureMetadata
                 {
                     PropertyType = propBlock.TypeName,
+                    ShaderFlags = inline?.ShaderFlags1,
+                    ShaderFlags2 = inline?.ShaderFlags2,
+                    EffectBaseColor = inline?.BaseColor,
+                    EffectBaseColorScale = inline?.BaseColorScale,
+                    EffectLightingInfluence = inline?.LightingInfluence,
+                    EffectFalloff = inline?.Falloff,
                     TextureSlots = slots,
                     // BSEffectShaderProperty has no leading "Shader Type" — the Name (a .bgem path on
                     // FO4/FO76) sits at the block data offset.
@@ -481,6 +493,87 @@ internal static class NifShaderTexturePropertyReader
 
     /// <summary>True when the diffuse (slot 0) of a texture-slot list is populated.</summary>
     private static bool HasDiffuse(List<string?> slots) => slots.Count > 0 && !string.IsNullOrEmpty(slots[0]);
+
+    /// <summary>
+    ///     Reads the pre-FO4 inline <c>BSEffectShaderProperty</c> material payload. Skyrim's shipped
+    ///     BSEffect pixel shader consumes these fields directly: BaseColor.rgb × BaseColorScale,
+    ///     plus the packed LightingInfluence byte / 255. The function is deliberately progressive:
+    ///     a truncated property can still surface its flags while optional tail fields remain null.
+    /// </summary>
+    private static ClassicBsEffectShaderData? ReadClassicBsEffectShaderData(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo propBlock)
+    {
+        // BSEffectShaderProperty begins with Skyrim. FO4 starts a different flag/material family at
+        // BS version 130; the classic layout below is Skyrim/Skyrim SE only (BS versions 83/100).
+        if (nif.BsVersion is < 83 or >= 130)
+        {
+            return null;
+        }
+
+        var pos = propBlock.DataOffset;
+        var end = Math.Min(data.Length, propBlock.DataOffset + propBlock.Size);
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian) || pos + 24 > end)
+        {
+            return null;
+        }
+
+        var flags1 = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
+        var flags2 = BinaryUtils.ReadUInt32(data, pos + 4, nif.IsBigEndian);
+        pos += 24; // flags1 + flags2 + UV offset + UV scale
+        _ = NifBinaryCursor.ReadSizedString(data, ref pos, end, nif.IsBigEndian); // Source Texture
+
+        if (pos + 4 > end)
+        {
+            return new ClassicBsEffectShaderData(flags1, flags2, null, null, null, null);
+        }
+
+        var misc = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
+        pos += 4;
+        var lightingInfluence = ((misc >> 8) & 0xFFu) / 255f;
+
+        // Four falloff floats + Color4 + BaseColorScale. SoftFalloffDepth and the following
+        // GreyscaleTexture do not affect this renderer path, so no tail beyond the scale is needed.
+        if (pos + 36 > end)
+        {
+            return new ClassicBsEffectShaderData(
+                flags1, flags2, lightingInfluence, null, null, null);
+        }
+
+        var startAngle = BinaryUtils.ReadFloat(data, pos, nif.IsBigEndian);
+        var stopAngle = BinaryUtils.ReadFloat(data, pos + 4, nif.IsBigEndian);
+        var startOpacity = BinaryUtils.ReadFloat(data, pos + 8, nif.IsBigEndian);
+        var stopOpacity = BinaryUtils.ReadFloat(data, pos + 12, nif.IsBigEndian);
+        pos += 16;
+
+        var baseR = BinaryUtils.ReadFloat(data, pos, nif.IsBigEndian);
+        var baseG = BinaryUtils.ReadFloat(data, pos + 4, nif.IsBigEndian);
+        var baseB = BinaryUtils.ReadFloat(data, pos + 8, nif.IsBigEndian);
+        var baseA = BinaryUtils.ReadFloat(data, pos + 12, nif.IsBigEndian);
+        var baseScale = BinaryUtils.ReadFloat(data, pos + 16, nif.IsBigEndian);
+
+        var falloffFinite = float.IsFinite(startAngle) && float.IsFinite(stopAngle)
+                            && float.IsFinite(startOpacity) && float.IsFinite(stopOpacity);
+        var baseFinite = float.IsFinite(baseR) && float.IsFinite(baseG)
+                         && float.IsFinite(baseB) && float.IsFinite(baseA);
+
+        return new ClassicBsEffectShaderData(
+            flags1,
+            flags2,
+            lightingInfluence,
+            baseFinite ? (baseR, baseG, baseB, baseA) : null,
+            float.IsFinite(baseScale) ? baseScale : null,
+            falloffFinite ? (startAngle, stopAngle, startOpacity, stopOpacity) : null);
+    }
+
+    private sealed record ClassicBsEffectShaderData(
+        uint ShaderFlags1,
+        uint ShaderFlags2,
+        float? LightingInfluence,
+        (float R, float G, float B, float A)? BaseColor,
+        float? BaseColorScale,
+        (float StartAngle, float StopAngle, float StartOpacity, float StopOpacity)? Falloff);
 
     /// <summary>
     ///     Reads the inline "Source Texture" of a Skyrim / SE / Fallout 4 BSEffectShaderProperty (the

@@ -156,7 +156,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // v38: classic Skyrim NiSwitchNode trees now keep the active full-detail, internally-skinned
     // child and reconstruct its omitted NiTriShapeData topology from NiSkinPartition. Warm v37
     // entries contain only the inactive sparse static fallback (TreePineForest03).
-    internal const int DecoderVersion = 38;
+    // v39: classic Skyrim inline BSEffectShaderProperty now preserves its flags, BaseColor × scale,
+    // and falloff. Warm v38 entries keep these effects white and non-decal — notably
+    // WRLODWindowGlow01 instead of its authored ×2 tint / decal state.
+    internal const int DecoderVersion = 39;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

@@ -191,8 +191,10 @@ public sealed class NifTextureResolverTests
 
         var data = new byte[128];
         WriteNiObjectNetHeader(data, 0); // 0..11
-        WriteUInt32(data, 12, 0); // Shader Flags 1
-        WriteUInt32(data, 16, 0); // Shader Flags 2
+        const uint shaderFlags1 = 0xAC000000; // Z-test + External_Emittance + Dynamic_Decal + Decal
+        const uint shaderFlags2 = 0x40000029; // Effect_Lighting + Vertex_Colors + No_Fade + Z-write
+        WriteUInt32(data, 12, shaderFlags1);
+        WriteUInt32(data, 16, shaderFlags2);
         WriteFloat(data, 20, 0f); // UV Offset.u
         WriteFloat(data, 24, 0f); // UV Offset.v
         WriteFloat(data, 28, 1f); // UV Scale.u
@@ -200,12 +202,33 @@ public sealed class NifTextureResolverTests
         var pos = 36;
         WriteSizedString(data, ref pos, sourceTexture);
 
+        WriteUInt32(data, pos, 0x0000FF03); // clamp=3, LightingInfluence=255
+        pos += 4;
+        WriteFloat(data, pos, 1f);      // Falloff Start Angle
+        WriteFloat(data, pos + 4, 1f);  // Falloff Stop Angle
+        WriteFloat(data, pos + 8, 0f);  // Falloff Start Opacity
+        WriteFloat(data, pos + 12, 0f); // Falloff Stop Opacity
+        pos += 16;
+        WriteFloat(data, pos, 0.25f);     // Base Color R
+        WriteFloat(data, pos + 4, 0.5f);  // Base Color G
+        WriteFloat(data, pos + 8, 0.75f); // Base Color B
+        WriteFloat(data, pos + 12, 1f);   // Base Color A
+        WriteFloat(data, pos + 16, 2f);   // Base Color Scale
+        pos += 20;
+
         var nif = CreateNifInfo(("BSEffectShaderProperty", 0, pos));
+        nif.BsVersion = 83;
         var metadata = NifTextureResolver.ReadShaderMetadata(data, nif, [0]);
 
         Assert.NotNull(metadata);
         Assert.Equal("BSEffectShaderProperty", metadata.PropertyType);
         Assert.Equal(sourceTexture, metadata.DiffusePath);
+        Assert.Equal(shaderFlags1, metadata.ShaderFlags);
+        Assert.Equal(shaderFlags2, metadata.ShaderFlags2);
+        Assert.Equal(1f, metadata.EffectLightingInfluence);
+        Assert.Equal(2f, metadata.EffectBaseColorScale);
+        Assert.Equal((0.25f, 0.5f, 0.75f, 1f), metadata.EffectBaseColor);
+        Assert.Equal((1f, 1f, 0f, 0f), metadata.EffectFalloff);
         Assert.Equal(sourceTexture, NifTextureResolver.ResolveDiffusePath(data, nif, [0]));
     }
 
