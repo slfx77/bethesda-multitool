@@ -1,5 +1,8 @@
+using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
@@ -85,6 +88,52 @@ internal static class ActorBaseAcbsBuilder
         };
 
         return SchemaModelSerializer.Serialize("ACBS", recordType, 24, mutated, AcbsExtractors);
+    }
+
+    /// <summary>
+    ///     Override identity policy (user-directed): an OVERRIDE of a master NPC/creature
+    ///     keeps MASTER's ACBS Flags dword and TemplateFlags word — runtime captures leak
+    ///     state bits into both (the Omerta entrance guard gained TemplateFlags
+    ///     0x015F→0x835F: UseScript 0x0200 re-points the engine at his TEMPLATE's script,
+    ///     silencing the weapons-check forcegreet, plus a bogus 0x8000 bit; his ACBS flags
+    ///     gained PCLevelMult the same way). Captured NUMERIC fields (fatigue, gold, level,
+    ///     speed, karma, disposition) stay — deliberate proto stat drift. Walks the merged
+    ///     subrecord stream and patches the ACBS payload in place.
+    /// </summary>
+    public static byte[] RestoreMasterIdentityFlags(byte[] mergedSubrecordBytes, ParsedMainRecord master)
+    {
+        var masterAcbs = master.Subrecords.FirstOrDefault(s =>
+            s.Signature == "ACBS" && s.Data.Length >= 24);
+        if (masterAcbs is null)
+        {
+            return mergedSubrecordBytes;
+        }
+
+        var bytes = mergedSubrecordBytes;
+        var i = 0;
+        while (i + 6 <= bytes.Length)
+        {
+            var length = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(i + 4, 2));
+            var dataStart = i + 6;
+            if (dataStart + length > bytes.Length)
+            {
+                break; // Malformed tail — leave untouched.
+            }
+
+            if (length >= 24
+                && bytes[i] == (byte)'A' && bytes[i + 1] == (byte)'C'
+                && bytes[i + 2] == (byte)'B' && bytes[i + 3] == (byte)'S')
+            {
+                var patched = (byte[])bytes.Clone();
+                masterAcbs.Data.AsSpan(0, 4).CopyTo(patched.AsSpan(dataStart, 4)); // Flags
+                masterAcbs.Data.AsSpan(22, 2).CopyTo(patched.AsSpan(dataStart + 22, 2)); // TemplateFlags
+                return patched;
+            }
+
+            i = dataStart + length;
+        }
+
+        return bytes;
     }
 
     /// <summary>

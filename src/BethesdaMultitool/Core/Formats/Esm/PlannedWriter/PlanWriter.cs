@@ -121,6 +121,17 @@ public sealed class PlanWriter
         }
 
         var merge = RecordMergeEngine.Merge(record.Master, encoded, policy);
-        return PluginRecordByteBuilder.BuildOverrideRecordBytes(record.Master, merge.SubrecordBytes, options);
+        var subrecordBytes = merge.SubrecordBytes;
+
+        // Master actor overrides keep MASTER's ACBS Flags + TemplateFlags (user-directed
+        // identity policy): runtime captures leak state bits that re-point scripts/leveling
+        // — the Omerta entrance guard's forcegreet died to a leaked UseScript template flag.
+        if (record.Type is "NPC_" or "CREA")
+        {
+            subrecordBytes = Plugin.Writers.Encoders.Character.ActorBaseAcbsBuilder
+                .RestoreMasterIdentityFlags(subrecordBytes, record.Master);
+        }
+
+        return PluginRecordByteBuilder.BuildOverrideRecordBytes(record.Master, subrecordBytes, options);
     }
 }
