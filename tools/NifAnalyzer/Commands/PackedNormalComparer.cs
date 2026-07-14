@@ -15,6 +15,12 @@ internal static class PackedNormalComparer
     private static void NormalCompare(string xboxPath, string pcPath, int packedBlockIndex, int pcGeomBlockIndex,
         int count)
     {
+        if (count < 0)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] Normal count {count} cannot be negative");
+            return;
+        }
+
         var xboxData = File.ReadAllBytes(xboxPath);
         var pcData = File.ReadAllBytes(pcPath);
         var xboxNif = NifParser.Parse(xboxData);
@@ -27,13 +33,13 @@ internal static class PackedNormalComparer
         AnsiConsole.WriteLine();
 
         // Validate blocks
-        if (packedBlockIndex >= xboxNif.NumBlocks)
+        if (packedBlockIndex < 0 || packedBlockIndex >= xboxNif.NumBlocks)
         {
             AnsiConsole.MarkupLine($"[red]Error:[/] Xbox block {packedBlockIndex} out of range");
             return;
         }
 
-        if (pcGeomBlockIndex >= pcNif.NumBlocks)
+        if (pcGeomBlockIndex < 0 || pcGeomBlockIndex >= pcNif.NumBlocks)
         {
             AnsiConsole.MarkupLine($"[red]Error:[/] PC block {pcGeomBlockIndex} out of range");
             return;
@@ -42,7 +48,7 @@ internal static class PackedNormalComparer
         var xboxTypeName = xboxNif.GetBlockTypeName(packedBlockIndex);
         var pcTypeName = pcNif.GetBlockTypeName(pcGeomBlockIndex);
 
-        if (!xboxTypeName.Contains("PackedAdditionalGeometryData"))
+        if (xboxTypeName != "BSPackedAdditionalGeometryData")
         {
             AnsiConsole.MarkupLine(
                 $"[red]Error:[/] Xbox block {packedBlockIndex} is {Markup.Escape(xboxTypeName)}, not BSPackedAdditionalGeometryData");
@@ -63,8 +69,30 @@ internal static class PackedNormalComparer
         // Parse PC geometry data
         var pcOffset = pcNif.GetBlockOffset(pcGeomBlockIndex);
         var pcSize = (int)pcNif.BlockSizes[pcGeomBlockIndex];
-        var pcGeom = GeometryParser.Parse(pcData.AsSpan(pcOffset, pcSize), pcNif.IsBigEndian, pcNif.BsVersion,
-            pcTypeName);
+        if (!GeometryParser.TryParse(
+                pcData.AsSpan(pcOffset, pcSize),
+                pcNif.IsBigEndian,
+                pcNif.Version,
+                pcNif.BsVersion,
+                pcTypeName,
+                out var pcGeom,
+                out var geometryError))
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(geometryError)}");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(pcGeom.ParseWarning))
+        {
+            AnsiConsole.MarkupLine($"[yellow]Warning:[/] {Markup.Escape(pcGeom.ParseWarning)}");
+        }
+
+        if (pcGeom.HasNormals == 0)
+        {
+            AnsiConsole.MarkupLine(
+                $"[red]Error:[/] PC block {pcGeomBlockIndex} ({Markup.Escape(pcTypeName)}) has no normals");
+            return;
+        }
 
         AnsiConsole.WriteLine($"Xbox: {packedResult.NumVertices} vertices, stride {packedResult.Stride}");
         AnsiConsole.WriteLine($"PC:   {pcGeom.NumVertices} vertices, HasNormals={pcGeom.HasNormals}");

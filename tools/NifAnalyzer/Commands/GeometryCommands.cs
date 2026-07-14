@@ -109,11 +109,10 @@ internal static class GeometryCommands
         AnsiConsole.Write(infoTable);
         AnsiConsole.WriteLine();
 
-        if (!typeName.Contains("TriShape") && !typeName.Contains("TriStrips"))
-            AnsiConsole.MarkupLine("[yellow]Warning:[/] Not a geometry data block");
-
-        // Parse geometry block
-        var geom = GeometryParser.Parse(data.AsSpan(offset, size), nif.IsBigEndian, nif.BsVersion, typeName);
+        if (!TryParseGeometryBlock(data, offset, size, nif, typeName, out var geom))
+        {
+            return;
+        }
 
         AnsiConsole.Write(new Rule("[bold]Geometry Data[/]").LeftJustified());
 
@@ -121,33 +120,37 @@ internal static class GeometryCommands
         geomTable.AddColumn("Field");
         geomTable.AddColumn(new TableColumn("Offset").RightAligned());
         geomTable.AddColumn("Value");
-        geomTable.AddRow("GroupId", $"0x{geom.FieldOffsets.GetValueOrDefault("GroupId"):X4}", geom.GroupId.ToString());
-        geomTable.AddRow("NumVertices", $"0x{geom.FieldOffsets.GetValueOrDefault("NumVertices"):X4}",
-            geom.NumVertices.ToString());
-        geomTable.AddRow("KeepFlags", $"0x{geom.FieldOffsets.GetValueOrDefault("KeepFlags"):X4}",
-            geom.KeepFlags.ToString());
-        geomTable.AddRow("CompressFlags", $"0x{geom.FieldOffsets.GetValueOrDefault("CompressFlags"):X4}",
-            geom.CompressFlags.ToString());
-        geomTable.AddRow("HasVertices", $"0x{geom.FieldOffsets.GetValueOrDefault("HasVertices"):X4}",
-            geom.HasVertices.ToString());
-        geomTable.AddRow("BsVectorFlags", $"0x{geom.FieldOffsets.GetValueOrDefault("BsVectorFlags"):X4}",
-            $"0x{geom.BsVectorFlags:X4}");
-        geomTable.AddRow("HasNormals", $"0x{geom.FieldOffsets.GetValueOrDefault("HasNormals"):X4}",
-            geom.HasNormals.ToString());
-        geomTable.AddRow("Center", $"0x{geom.FieldOffsets.GetValueOrDefault("Center"):X4}",
-            $"({geom.TangentCenterX:F2}, {geom.TangentCenterY:F2}, {geom.TangentCenterZ:F2})");
-        geomTable.AddRow("Radius", "", $"{geom.TangentRadius:F2}");
-        geomTable.AddRow("HasVertexColors", $"0x{geom.FieldOffsets.GetValueOrDefault("HasVertexColors"):X4}",
-            geom.HasVertexColors.ToString());
-        geomTable.AddRow("NumUvSets", "", $"{geom.NumUvSets} (from BsVectorFlags)");
-        geomTable.AddRow("ConsistencyFlags", $"0x{geom.FieldOffsets.GetValueOrDefault("ConsistencyFlags"):X4}",
-            geom.ConsistencyFlags.ToString());
-        geomTable.AddRow("AdditionalData", $"0x{geom.FieldOffsets.GetValueOrDefault("AdditionalData"):X4}",
-            $"{geom.AdditionalData} (block ref)");
+        AddGeometryFieldRow(geomTable, geom, "GroupId", "GroupId", geom.GroupId.ToString());
+        AddGeometryFieldRow(geomTable, geom, "NumVertices", "NumVertices", geom.NumVertices.ToString());
+        AddGeometryFieldRow(geomTable, geom, "KeepFlags", "KeepFlags", geom.KeepFlags.ToString());
+        AddGeometryFieldRow(geomTable, geom, "CompressFlags", "CompressFlags", geom.CompressFlags.ToString());
+        AddGeometryFieldRow(geomTable, geom, "HasVertices", "HasVertices", geom.HasVertices.ToString());
+        var dataFlagsLabel = geom.UsesBsDataFlags ? "BSDataFlags" : "DataFlags";
+        AddGeometryFieldRow(geomTable, geom, dataFlagsLabel, "DataFlags", $"0x{geom.DataFlags:X4}");
+        AddGeometryFieldRow(geomTable, geom, "MaterialCrc", "MaterialCrc", $"0x{geom.MaterialCrc:X8}");
+        AddGeometryFieldRow(geomTable, geom, "HasNormals", "HasNormals", geom.HasNormals.ToString());
+        AddGeometryFieldRow(geomTable, geom, "Tangents", "Tangents", $"{geom.NumVertices} × Vector3");
+        AddGeometryFieldRow(geomTable, geom, "Bitangents", "Bitangents", $"{geom.NumVertices} × Vector3");
+        AddGeometryFieldRow(
+            geomTable,
+            geom,
+            "BoundingSphere.Center",
+            "BoundingSphere",
+            $"({geom.BoundingCenterX:F2}, {geom.BoundingCenterY:F2}, {geom.BoundingCenterZ:F2})");
+        AddGeometryFieldRow(
+            geomTable, geom, "BoundingSphere.Radius", "BoundingRadius", $"{geom.BoundingRadius:F2}");
+        AddGeometryFieldRow(
+            geomTable, geom, "HasVertexColors", "HasVertexColors", geom.HasVertexColors.ToString());
+        AddGeometryFieldRow(geomTable, geom, "HasUv", "HasUv", geom.HasUv.ToString());
+        geomTable.AddRow("NumUvSets", "-", $"{geom.NumUvSets} (from {dataFlagsLabel})");
+        AddGeometryFieldRow(
+            geomTable, geom, "ConsistencyFlags", "ConsistencyFlags", geom.ConsistencyFlags.ToString());
+        AddGeometryFieldRow(
+            geomTable, geom, "AdditionalData", "AdditionalData", $"{geom.AdditionalData} (block ref)");
         AnsiConsole.Write(geomTable);
         AnsiConsole.WriteLine();
 
-        if (typeName.Contains("NiTriShapeData"))
+        if (typeName == "NiTriShapeData")
         {
             AnsiConsole.Write(new Rule("[bold]NiTriShapeData Specific[/]").LeftJustified());
 
@@ -155,14 +158,22 @@ internal static class GeometryCommands
             triTable.AddColumn("Field");
             triTable.AddColumn(new TableColumn("Offset").RightAligned());
             triTable.AddColumn("Value");
-            triTable.AddRow("NumTriangles", $"0x{geom.FieldOffsets.GetValueOrDefault("NumTriangles"):X4}",
-                geom.NumTriangles.ToString());
-            triTable.AddRow("NumTrianglePoints", $"0x{geom.FieldOffsets.GetValueOrDefault("NumTrianglePoints"):X4}",
-                geom.NumTrianglePoints.ToString());
-            triTable.AddRow("HasTriangles", $"0x{geom.FieldOffsets.GetValueOrDefault("HasTriangles"):X4}",
-                geom.HasTriangles.ToString());
-            triTable.AddRow("NumMatchGroups", $"0x{geom.FieldOffsets.GetValueOrDefault("NumMatchGroups"):X4}",
-                geom.NumMatchGroups.ToString());
+            AddGeometryFieldRow(
+                triTable, geom, "NumTriangles", "NumTriangles", geom.NumTriangles.ToString());
+            AddGeometryFieldRow(
+                triTable, geom, "NumTrianglePoints", "NumTrianglePoints", geom.NumTrianglePoints.ToString());
+            if (geom.FieldOffsets.ContainsKey("HasTriangles"))
+            {
+                AddGeometryFieldRow(
+                    triTable, geom, "HasTriangles", "HasTriangles", geom.HasTriangles.ToString());
+            }
+            else
+            {
+                triTable.AddRow("HasTriangles", "-", $"{geom.HasTriangles} (implicit for this NIF version)");
+            }
+
+            AddGeometryFieldRow(
+                triTable, geom, "NumMatchGroups", "NumMatchGroups", geom.NumMatchGroups.ToString());
             AnsiConsole.Write(triTable);
             AnsiConsole.WriteLine();
 
@@ -185,7 +196,7 @@ internal static class GeometryCommands
                 AnsiConsole.MarkupLine("[yellow]*** This suggests triangles ARE present despite HasTriangles=0 ***[/]");
             }
         }
-        else if (typeName.Contains("NiTriStripsData"))
+        else
         {
             AnsiConsole.Write(new Rule("[bold]NiTriStripsData Specific[/]").LeftJustified());
             AnsiConsole.MarkupLine($"NumTriangles: {geom.NumTriangles}");
@@ -213,7 +224,7 @@ internal static class GeometryCommands
         var nif1 = NifParser.Parse(data1);
         var nif2 = NifParser.Parse(data2);
 
-        if (blockIndex >= nif1.NumBlocks || blockIndex >= nif2.NumBlocks)
+        if (blockIndex < 0 || blockIndex >= nif1.NumBlocks || blockIndex >= nif2.NumBlocks)
         {
             AnsiConsole.MarkupLine($"[red]Error:[/] Block index {blockIndex} out of range");
             return;
@@ -241,14 +252,11 @@ internal static class GeometryCommands
         infoTable.AddRow("Offset", $"0x{offset1:X4}", $"0x{offset2:X4}");
         AnsiConsole.Write(infoTable);
 
-        if (!type1.Contains("Tri") || !type2.Contains("Tri"))
+        if (!TryParseGeometryBlock(data1, offset1, size1, nif1, type1, out var geom1)
+            || !TryParseGeometryBlock(data2, offset2, size2, nif2, type2, out var geom2))
         {
-            AnsiConsole.MarkupLine("\n[yellow]Not geometry blocks - cannot compare geometry data.[/]");
             return;
         }
-
-        var geom1 = GeometryParser.Parse(data1.AsSpan(offset1, size1), nif1.IsBigEndian, nif1.BsVersion, type1);
-        var geom2 = GeometryParser.Parse(data2.AsSpan(offset2, size2), nif2.IsBigEndian, nif2.BsVersion, type2);
 
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[bold]Geometry Fields[/]").LeftJustified());
@@ -259,21 +267,54 @@ internal static class GeometryCommands
         compareTable.AddColumn("File 2");
         compareTable.AddColumn("Match");
 
+        AddOptionalCompareRow(compareTable, "GroupId", geom1, geom2, "GroupId", geom1.GroupId, geom2.GroupId);
         AddCompareRow(compareTable, "NumVertices", geom1.NumVertices, geom2.NumVertices);
+        AddOptionalCompareRow(
+            compareTable, "KeepFlags", geom1, geom2, "KeepFlags", geom1.KeepFlags, geom2.KeepFlags);
+        AddOptionalCompareRow(
+            compareTable, "CompressFlags", geom1, geom2, "CompressFlags", geom1.CompressFlags, geom2.CompressFlags);
         AddCompareRow(compareTable, "HasVertices", geom1.HasVertices, geom2.HasVertices);
-        AddCompareRow(compareTable, "BsVectorFlags", $"0x{geom1.BsVectorFlags:X4}", $"0x{geom2.BsVectorFlags:X4}");
+        AddCompareRow(compareTable, "DataFlags kind",
+            geom1.UsesBsDataFlags ? "BSDataFlags" : "DataFlags",
+            geom2.UsesBsDataFlags ? "BSDataFlags" : "DataFlags");
+        AddCompareRow(compareTable, "DataFlags", $"0x{geom1.DataFlags:X4}", $"0x{geom2.DataFlags:X4}");
+        AddOptionalCompareRow(
+            compareTable,
+            "MaterialCrc",
+            geom1,
+            geom2,
+            "MaterialCrc",
+            geom1.MaterialCrc,
+            geom2.MaterialCrc,
+            static value => $"0x{value:X8}");
         AddCompareRow(compareTable, "HasNormals", geom1.HasNormals, geom2.HasNormals);
-        AddCompareRow(compareTable, "Center.X", geom1.TangentCenterX.ToString("F4"),
-            geom2.TangentCenterX.ToString("F4"));
-        AddCompareRow(compareTable, "Center.Y", geom1.TangentCenterY.ToString("F4"),
-            geom2.TangentCenterY.ToString("F4"));
-        AddCompareRow(compareTable, "Center.Z", geom1.TangentCenterZ.ToString("F4"),
-            geom2.TangentCenterZ.ToString("F4"));
-        AddCompareRow(compareTable, "Radius", geom1.TangentRadius.ToString("F4"), geom2.TangentRadius.ToString("F4"));
+        AddCompareRow(compareTable, "BoundingSphere.Center.X", geom1.BoundingCenterX.ToString("F4"),
+            geom2.BoundingCenterX.ToString("F4"));
+        AddCompareRow(compareTable, "BoundingSphere.Center.Y", geom1.BoundingCenterY.ToString("F4"),
+            geom2.BoundingCenterY.ToString("F4"));
+        AddCompareRow(compareTable, "BoundingSphere.Center.Z", geom1.BoundingCenterZ.ToString("F4"),
+            geom2.BoundingCenterZ.ToString("F4"));
+        AddCompareRow(compareTable, "BoundingSphere.Radius", geom1.BoundingRadius.ToString("F4"),
+            geom2.BoundingRadius.ToString("F4"));
         AddCompareRow(compareTable, "HasVertexColors", geom1.HasVertexColors, geom2.HasVertexColors);
+        AddOptionalCompareRow(compareTable, "HasUv", geom1, geom2, "HasUv", geom1.HasUv, geom2.HasUv);
         AddCompareRow(compareTable, "NumUvSets", geom1.NumUvSets, geom2.NumUvSets);
-        AddCompareRow(compareTable, "ConsistencyFlags", geom1.ConsistencyFlags, geom2.ConsistencyFlags);
-        AddCompareRow(compareTable, "AdditionalData", geom1.AdditionalData, geom2.AdditionalData);
+        AddOptionalCompareRow(
+            compareTable,
+            "ConsistencyFlags",
+            geom1,
+            geom2,
+            "ConsistencyFlags",
+            geom1.ConsistencyFlags,
+            geom2.ConsistencyFlags);
+        AddOptionalCompareRow(
+            compareTable,
+            "AdditionalData",
+            geom1,
+            geom2,
+            "AdditionalData",
+            geom1.AdditionalData,
+            geom2.AdditionalData);
         AddCompareRow(compareTable, "NumTriangles", geom1.NumTriangles, geom2.NumTriangles);
         AddCompareRow(compareTable, "NumTrianglePoints", geom1.NumTrianglePoints, geom2.NumTrianglePoints);
         AddCompareRow(compareTable, "HasTriangles", geom1.HasTriangles, geom2.HasTriangles);
@@ -316,10 +357,16 @@ internal static class GeometryCommands
 
     private static void Vertices(string path, int blockIndex, int count)
     {
+        if (count < 0)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] Vertex count {count} cannot be negative");
+            return;
+        }
+
         var data = File.ReadAllBytes(path);
         var nif = NifParser.Parse(data);
 
-        if (blockIndex >= nif.NumBlocks)
+        if (blockIndex < 0 || blockIndex >= nif.NumBlocks)
         {
             AnsiConsole.MarkupLine($"[red]Error:[/] Block index {blockIndex} out of range");
             return;
@@ -337,19 +384,17 @@ internal static class GeometryCommands
         AnsiConsole.Write(infoTable);
         AnsiConsole.WriteLine();
 
-        if (!typeName.Contains("Tri"))
+        if (!TryParseGeometryBlock(data, offset, size, nif, typeName, out var geom))
         {
-            AnsiConsole.MarkupLine("[red]Not a geometry block.[/]");
             return;
         }
-
-        var geom = GeometryParser.Parse(data.AsSpan(offset, size), nif.IsBigEndian, nif.BsVersion, typeName);
         count = Math.Min(count, geom.NumVertices);
 
         AnsiConsole.MarkupLine($"NumVertices: [cyan]{geom.NumVertices}[/]");
         AnsiConsole.MarkupLine($"HasVertices: [cyan]{geom.HasVertices}[/]");
         AnsiConsole.MarkupLine($"HasNormals: [cyan]{geom.HasNormals}[/]");
-        AnsiConsole.MarkupLine($"BsVectorFlags: [cyan]0x{geom.BsVectorFlags:X4}[/]");
+        var dataFlagsLabel = geom.UsesBsDataFlags ? "BSDataFlags" : "DataFlags";
+        AnsiConsole.MarkupLine($"{dataFlagsLabel}: [cyan]0x{geom.DataFlags:X4}[/]");
         AnsiConsole.MarkupLine($"NumUvSets: [cyan]{geom.NumUvSets}[/]");
         AnsiConsole.WriteLine();
 
@@ -415,6 +460,75 @@ internal static class GeometryCommands
         table.AddRow(name, val1?.ToString() ?? "null", val2?.ToString() ?? "null", match ? "[green]✓[/]" : "[red]✗[/]");
     }
 
+    private static void AddOptionalCompareRow<T>(
+        Table table,
+        string name,
+        GeometryInfo geometry1,
+        GeometryInfo geometry2,
+        string offsetKey,
+        T val1,
+        T val2,
+        Func<T, string>? format = null)
+    {
+        var present1 = geometry1.FieldOffsets.ContainsKey(offsetKey);
+        var present2 = geometry2.FieldOffsets.ContainsKey(offsetKey);
+        var match = present1 == present2
+                    && (!present1 || EqualityComparer<T>.Default.Equals(val1, val2));
+        var display1 = present1 ? format?.Invoke(val1) ?? val1?.ToString() ?? "null" : "[dim]<absent>[/]";
+        var display2 = present2 ? format?.Invoke(val2) ?? val2?.ToString() ?? "null" : "[dim]<absent>[/]";
+        table.AddRow(name, display1, display2, match ? "[green]✓[/]" : "[red]✗[/]");
+    }
+
+    private static bool TryParseGeometryBlock(
+        byte[] data,
+        int offset,
+        int size,
+        NifInfo nif,
+        string typeName,
+        out GeometryInfo geometry)
+    {
+        if (offset < 0 || size < 0 || offset > data.Length - size)
+        {
+            geometry = new GeometryInfo();
+            AnsiConsole.MarkupLine(
+                $"[red]Error:[/] Geometry block range 0x{offset:X}+{size} exceeds the {data.Length}-byte file");
+            return false;
+        }
+
+        if (!GeometryParser.TryParse(
+                data.AsSpan(offset, size),
+                nif.IsBigEndian,
+                nif.Version,
+                nif.BsVersion,
+                typeName,
+                out geometry,
+                out var error))
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(error)}");
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(geometry.ParseWarning))
+        {
+            AnsiConsole.MarkupLine($"[yellow]Warning:[/] {Markup.Escape(geometry.ParseWarning)}");
+        }
+
+        return true;
+    }
+
+    private static void AddGeometryFieldRow(
+        Table table,
+        GeometryInfo geometry,
+        string label,
+        string offsetKey,
+        string value)
+    {
+        if (geometry.FieldOffsets.TryGetValue(offsetKey, out var offset))
+        {
+            table.AddRow(label, $"0x{offset:X4}", value);
+        }
+    }
+
     internal static List<(float X, float Y, float Z)> ExtractVertices(ReadOnlySpan<byte> blockData, bool bigEndian,
         GeometryInfo geom, int count)
     {
@@ -476,12 +590,18 @@ internal static class GeometryCommands
     /// </summary>
     private static void ColorCompare(string path1, string path2, int block1, int block2, int count)
     {
+        if (count < 0)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] Color count {count} cannot be negative");
+            return;
+        }
+
         var data1 = File.ReadAllBytes(path1);
         var data2 = File.ReadAllBytes(path2);
         var nif1 = NifParser.Parse(data1);
         var nif2 = NifParser.Parse(data2);
 
-        if (block1 >= nif1.NumBlocks || block2 >= nif2.NumBlocks)
+        if (block1 < 0 || block2 < 0 || block1 >= nif1.NumBlocks || block2 >= nif2.NumBlocks)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] Block index out of range");
             return;
@@ -507,8 +627,11 @@ internal static class GeometryCommands
         infoTable.AddRow("Endian", nif1.IsBigEndian ? "[yellow]Big[/]" : "[green]Little[/]",
             nif2.IsBigEndian ? "[yellow]Big[/]" : "[green]Little[/]");
 
-        var geom1 = GeometryParser.Parse(data1.AsSpan(offset1, size1), nif1.IsBigEndian, nif1.BsVersion, type1);
-        var geom2 = GeometryParser.Parse(data2.AsSpan(offset2, size2), nif2.IsBigEndian, nif2.BsVersion, type2);
+        if (!TryParseGeometryBlock(data1, offset1, size1, nif1, type1, out var geom1)
+            || !TryParseGeometryBlock(data2, offset2, size2, nif2, type2, out var geom2))
+        {
+            return;
+        }
 
         infoTable.AddRow("NumVertices", geom1.NumVertices.ToString(), geom2.NumVertices.ToString());
         infoTable.AddRow("HasVertexColors", geom1.HasVertexColors.ToString(), geom2.HasVertexColors.ToString());
