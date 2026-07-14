@@ -44,6 +44,19 @@ internal readonly record struct GpuTonemapSettings
     /// <summary>IMGS HDR: length clamp on the adapted average scene color.</summary>
     public float UpperLumClamp { get; init; }
 
+    /// <summary>
+    ///     Temporal eye-adaptation blend factor for THIS frame: the weight of the PREVIOUS adapted
+    ///     average (engine ADAPT pass: <c>k = EyeAdaptSpeed^clamp(15·dt, 0, 1)</c>, new = k·prev +
+    ///     (1−k)·current). 0 = instant adaptation — the right value for single-frame headless captures
+    ///     and the first live frame; the live frame path computes it from the frame delta +
+    ///     <see cref="EyeAdaptSpeed" />. Smooths the sparse-grid average against camera motion (the
+    ///     "interior lighting flickers while moving" report).
+    /// </summary>
+    public float AdaptFactor { get; init; }
+
+    /// <summary>IMGS HDR: eye adaptation speed (temporal blend base; FNV defaults 0.9).</summary>
+    public float EyeAdaptSpeed { get; init; }
+
     /// <summary>IMGS Cinematic: 0 = grayscale, 1 = full color.</summary>
     public float Saturation { get; init; }
 
@@ -70,6 +83,7 @@ internal readonly record struct GpuTonemapSettings
     {
         Mode = GpuTonemapMode.EngineFo3Fnv,
         Exposure = 1f,
+        EyeAdaptSpeed = 0.9f,
         TargetLum = 1.2f,
         UpperLumClamp = 1.0f,
         Saturation = 0.85f,
@@ -87,6 +101,7 @@ internal readonly record struct GpuTonemapSettings
     {
         Mode = GpuTonemapMode.EngineFo3Fnv,
         Exposure = 1f,
+        EyeAdaptSpeed = 0.9f,
         TargetLum = 1.0f,
         UpperLumClamp = 1.0f,
         Saturation = 1f,

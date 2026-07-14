@@ -87,8 +87,12 @@ float4 main(PSInput input) : SV_Target
 }
 
 // Average scene color for the engine exposure: sparse 16x16 grid mean (stand-in for the engine's
-// DownSample16 box chain), then the engine ADAPT pass's steady-state length clamp. Rendered to a
-// 1x1 target; the main pass samples it as uAvgLum. Half-texel inset keeps every tap in-frame.
+// DownSample16 box chain), then the engine ADAPT pass — temporal blend against the PREVIOUS adapted
+// average (t1, the other ping-pong 1x1 target) followed by the length clamp. uParams3.y carries this
+// frame's blend factor k = EyeAdaptSpeed^clamp(15*dt, 0, 1) (engine formula; 0 = instant, used for
+// single-frame captures + the first live frame). The temporal blend is ALSO what stabilizes the
+// sparse grid against camera motion — without it the 256-tap sample jitters the exposure as taps
+// cross bright emissive edges (the "interior lighting flickers while moving" report).
 float4 mainAvg(PSInput input) : SV_Target
 {
     const int GridSize = 16;
@@ -106,7 +110,9 @@ float4 mainAvg(PSInput input) : SV_Target
 
     float3 avg = sum / (GridSize * GridSize);
 
-    // ISHDRADAPT steady state: length clamped to [0.01, UpperLUMClamp].
+    // ISHDRADAPT: new = k*prev + (1-k)*current, then length clamped to [0.01, UpperLUMClamp].
+    float3 prev = uAvgLum.SampleLevel(uSampler, float2(0.5, 0.5), 0).rgb;
+    avg = lerp(avg, prev, saturate(uParams3.y));
     float len = length(avg);
     float clamped = min(max(len, 0.01), uParams3.x);
     avg *= clamped / max(len, 0.0001);

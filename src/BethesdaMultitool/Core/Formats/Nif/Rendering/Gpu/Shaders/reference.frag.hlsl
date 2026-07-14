@@ -302,10 +302,11 @@ float4 main(PSInput input) : SV_Target
         // produced garbage per-pixel normals and a "deformed"/ribboned trunk once culling stopped hiding
         // the bark. With a degenerate tangent, fall back to the geometric normal (flat bark, no bump).
         float tLenSq = dot(input.vTangent, input.vTangent);
-        if (tLenSq > 1e-6)
+        float bLenSq = dot(input.vBitangent, input.vBitangent);
+        if (tLenSq > 1e-6 && bLenSq > 1e-6)
         {
             float3 T = input.vTangent * rsqrt(tLenSq);
-            float3 B = normalize(input.vBitangent);
+            float3 B = input.vBitangent * rsqrt(bLenSq);
             float3x3 TBN = float3x3(T, B, normal);
             normal = normalize(mul(mapN, TBN));
         }
@@ -374,6 +375,12 @@ float4 main(PSInput input) : SV_Target
         if (ndotl <= 0.2) spec *= max(ndotl + 0.5, 0.0);
         // Specular is pure sun light, so the sun shadow gates it too (×1.0 when shadows are off).
         lit += uSunColorLighting.rgb * (spec * uSunDirIntensity.w * sunShadow);
+        // Firefly bound: pre-HDR the 8-bit target clamped every MSAA SAMPLE to 1 before the resolve
+        // averaged it; the float target lost that, so sub-pixel spec glints on distant silhouettes
+        // rode through at full magnitude (the "hot pixels at a distance" regression). Restore the
+        // per-sample ceiling exactly where the aliasing lives — this block is gated non-emissive
+        // (vRenderState.w <= 0.5), so authored HDR glow (neon/goo) is untouched.
+        lit = min(lit, 1.0);
     }
 
     // FO4 cubemap environment reflections — the dominant "shiny" term for FO4 metal/gloss
@@ -407,7 +414,9 @@ float4 main(PSInput input) : SV_Target
         float rEnv = 1.0 - min(smoothness, 0.999);
         float kEnv = rEnv * rEnv * 0.5;
         float gEnv = nDotV / (nDotV + kEnv - nDotV * kEnv);
-        lit += env * saturate(shade) * (input.vEnvMap.y * specMask * gEnv);
+        // Firefly bound (see the sun-specular block): EnvMapScale reaches 8, so the addend is
+        // genuinely unbounded — cap it at the old per-sample LDR ceiling. Non-emissive-gated.
+        lit += min(env * saturate(shade) * (input.vEnvMap.y * specMask * gEnv), 1.0);
     }
 
     float outAlpha = input.vAlphaState.w > 0.5
