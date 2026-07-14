@@ -13,8 +13,39 @@ public static class PapyrusCommand
         command.Aliases.Add("pex");
         command.Subcommands.Add(CreateListCommand());
         command.Subcommands.Add(CreateInspectCommand());
+        command.Subcommands.Add(CreateDecompileCommand());
+        command.Subcommands.Add(CreateDisassembleCommand());
         command.Subcommands.Add(CreateExtractCommand());
         command.Subcommands.Add(CreateValidateCommand());
+        return command;
+    }
+
+    private static Command CreateDisassembleCommand()
+    {
+        var command = new Command("disassemble", "Write a label-based Papyrus VM instruction listing");
+        var inputArgument = new Argument<string>("input")
+        {
+            Description = "Path to a loose PEX, BSA, or BA2"
+        };
+        var scriptOption = new Option<string?>("--script", "-s")
+        {
+            Description = "Exact virtual path or unique substring when input is an archive"
+        };
+        var outputOption = new Option<string?>("--output", "-o")
+        {
+            Description = "Optional listing output path (stdout when omitted)"
+        };
+        command.Arguments.Add(inputArgument);
+        command.Options.Add(scriptOption);
+        command.Options.Add(outputOption);
+        command.SetAction(async (parseResult, cancellationToken) =>
+        {
+            await RunDisassembleAsync(
+                parseResult.GetValue(inputArgument)!,
+                parseResult.GetValue(scriptOption),
+                parseResult.GetValue(outputOption),
+                cancellationToken);
+        });
         return command;
     }
 
@@ -41,6 +72,35 @@ public static class PapyrusCommand
                 parseResult.GetValue(filterOption),
                 parseResult.GetValue(limitOption));
             return Task.CompletedTask;
+        });
+        return command;
+    }
+
+    private static Command CreateDecompileCommand()
+    {
+        var command = new Command("decompile", "Reconstruct Papyrus source from a loose or archived PEX");
+        var inputArgument = new Argument<string>("input")
+        {
+            Description = "Path to a loose PEX, BSA, or BA2"
+        };
+        var scriptOption = new Option<string?>("--script", "-s")
+        {
+            Description = "Exact virtual path or unique substring when input is an archive"
+        };
+        var outputOption = new Option<string?>("--output", "-o")
+        {
+            Description = "Optional PSC output path (stdout when omitted)"
+        };
+        command.Arguments.Add(inputArgument);
+        command.Options.Add(scriptOption);
+        command.Options.Add(outputOption);
+        command.SetAction(async (parseResult, cancellationToken) =>
+        {
+            await RunDecompileAsync(
+                parseResult.GetValue(inputArgument)!,
+                parseResult.GetValue(scriptOption),
+                parseResult.GetValue(outputOption),
+                cancellationToken);
         });
         return command;
     }
@@ -112,15 +172,21 @@ public static class PapyrusCommand
             Description = "Maximum scripts to validate (0 = all)",
             DefaultValueFactory = _ => 0
         };
+        var decompileOption = new Option<bool>("--decompile")
+        {
+            Description = "Also reconstruct source for every parsed script"
+        };
         command.Arguments.Add(inputArgument);
         command.Options.Add(filterOption);
         command.Options.Add(limitOption);
+        command.Options.Add(decompileOption);
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             await RunValidateAsync(
                 parseResult.GetValue(inputArgument)!,
                 parseResult.GetValue(filterOption),
                 parseResult.GetValue(limitOption),
+                parseResult.GetValue(decompileOption),
                 cancellationToken);
         });
         return command;
@@ -158,6 +224,130 @@ public static class PapyrusCommand
         if (limit > 0 && matching.Length > limit)
         {
             AnsiConsole.MarkupLine("[grey]Showing first {0}; use --limit 0 for all.[/]", limit);
+        }
+    }
+
+    private static async Task RunDecompileAsync(
+        string input,
+        string? scriptSelector,
+        string? output,
+        CancellationToken cancellationToken)
+    {
+        if (!RequireFile(input))
+        {
+            return;
+        }
+
+        try
+        {
+            PexFile pex;
+            string defaultName;
+            if (Path.GetExtension(input).Equals(".pex", StringComparison.OrdinalIgnoreCase))
+            {
+                pex = PexParser.Parse(input);
+                defaultName = Path.GetFileNameWithoutExtension(input) + ".psc";
+            }
+            else
+            {
+                using var archive = PexArchiveReader.Open(input);
+                var entry = ResolveArchiveEntry(archive, scriptSelector);
+                if (entry is null)
+                {
+                    return;
+                }
+
+                pex = archive.Parse(entry);
+                defaultName = Path.ChangeExtension(Path.GetFileName(entry.VirtualPath), ".psc");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var source = PexDecompiler.Decompile(pex);
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                AnsiConsole.Write(new Text(source));
+                AnsiConsole.WriteLine();
+                return;
+            }
+
+            var outputPath = Directory.Exists(output)
+                ? Path.Combine(output, defaultName)
+                : output;
+            var fullPath = Path.GetFullPath(outputPath);
+            var directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await File.WriteAllTextAsync(fullPath, source + Environment.NewLine, cancellationToken);
+            AnsiConsole.MarkupLine("[green]Wrote decompiled Papyrus source[/] to {0}", Markup.Escape(fullPath));
+        }
+        catch (Exception ex) when (ex is PexParseException or IOException or InvalidDataException or
+                                   InvalidOperationException)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] {0}", Markup.Escape(ex.Message));
+        }
+    }
+
+    private static async Task RunDisassembleAsync(
+        string input,
+        string? scriptSelector,
+        string? output,
+        CancellationToken cancellationToken)
+    {
+        if (!RequireFile(input))
+        {
+            return;
+        }
+
+        try
+        {
+            PexFile pex;
+            string defaultName;
+            if (Path.GetExtension(input).Equals(".pex", StringComparison.OrdinalIgnoreCase))
+            {
+                pex = PexParser.Parse(input);
+                defaultName = Path.GetFileNameWithoutExtension(input) + ".pexasm";
+            }
+            else
+            {
+                using var archive = PexArchiveReader.Open(input);
+                var entry = ResolveArchiveEntry(archive, scriptSelector);
+                if (entry is null)
+                {
+                    return;
+                }
+
+                pex = archive.Parse(entry);
+                defaultName = Path.ChangeExtension(Path.GetFileName(entry.VirtualPath), ".pexasm");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var listing = PexDisassembler.Disassemble(pex);
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                AnsiConsole.Write(new Text(listing));
+                AnsiConsole.WriteLine();
+                return;
+            }
+
+            var outputPath = Directory.Exists(output)
+                ? Path.Combine(output, defaultName)
+                : output;
+            var fullPath = Path.GetFullPath(outputPath);
+            var directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await File.WriteAllTextAsync(fullPath, listing + Environment.NewLine, cancellationToken);
+            AnsiConsole.MarkupLine("[green]Wrote Papyrus VM listing[/] to {0}", Markup.Escape(fullPath));
+        }
+        catch (Exception ex) when (ex is PexParseException or IOException or InvalidDataException or
+                                   InvalidOperationException)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] {0}", Markup.Escape(ex.Message));
         }
     }
 
@@ -254,6 +444,7 @@ public static class PapyrusCommand
         string input,
         string? filter,
         int limit,
+        bool decompile,
         CancellationToken cancellationToken)
     {
         if (!RequireFile(input))
@@ -271,16 +462,28 @@ public static class PapyrusCommand
         var entries = selected.ToArray();
         var failures = new List<(string Path, string Error)>();
         var parsed = 0;
+        var unstructuredBranches = 0;
         var timer = System.Diagnostics.Stopwatch.StartNew();
         foreach (var entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                _ = archive.Parse(entry);
+                var pex = archive.Parse(entry);
+                if (decompile)
+                {
+                    var source = PexDecompiler.Decompile(pex);
+                    if (source.Contains("; Unsupported VM opcode", StringComparison.Ordinal))
+                    {
+                        throw new InvalidDataException("decompiler left an unsupported VM opcode");
+                    }
+
+                    unstructuredBranches += CountOccurrences(source, "; VM branch to instruction");
+                }
+
                 parsed++;
             }
-            catch (Exception ex) when (ex is PexParseException or IOException or InvalidDataException)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 failures.Add((entry.VirtualPath, ex.Message));
             }
@@ -294,12 +497,14 @@ public static class PapyrusCommand
         timer.Stop();
         var color = failures.Count == 0 ? "green" : "yellow";
         AnsiConsole.MarkupLine(
-            "[{0}]Parsed {1:N0}/{2:N0} Papyrus scripts in {3:0.00}s; failures: {4:N0}[/]",
+            "[{0}]{1} {2:N0}/{3:N0} Papyrus scripts in {4:0.00}s; failures: {5:N0}{6}[/]",
             color,
+            decompile ? "Decompiled" : "Parsed",
             parsed,
             entries.Length,
             timer.Elapsed.TotalSeconds,
-            failures.Count);
+            failures.Count,
+            decompile ? $"; unstructured branches: {unstructuredBranches:N0}" : string.Empty);
         if (failures.Count == 0)
         {
             return;
@@ -410,5 +615,18 @@ public static class PapyrusCommand
 
         AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", Markup.Escape(path));
         return false;
+    }
+
+    private static int CountOccurrences(string value, string marker)
+    {
+        var count = 0;
+        var offset = 0;
+        while ((offset = value.IndexOf(marker, offset, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            offset += marker.Length;
+        }
+
+        return count;
     }
 }
