@@ -62,6 +62,22 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
+    public void TryExtract_PackedShapeScaleCopy_WinsOverByteOrderPoisonedPrimaryScale()
+    {
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(99, 1, false),
+            RigidBody(2, false),
+            PackedShape(3, Vector3.One, false, new Vector3(4.6e-41f)),
+            PackedData([new Vector3(1, 0, 0)], [(0, 0, 0)], false, false));
+
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+
+        Assert.True(soup.HasValue);
+        AssertVec(new Vector3(7, 0, 0), soup!.Value.Positions[0]);
+    }
+
+    [Fact]
     public void TryExtract_BigEndianCompressedVertices_DecodesHalfFloats()
     {
         var (data, nif) = BuildNif(
@@ -178,6 +194,127 @@ public sealed class HavokCollisionExtractorTests
     }
 
     [Fact]
+    public void TryExtract_BigEndianConvexVertices_TriangulatesAuthoredHalfSpaces()
+    {
+        Vector3[] vertices =
+        [
+            new(-1, -1, -1), new(-1, -1, 1), new(-1, 1, -1), new(-1, 1, 1),
+            new(1, -1, -1), new(1, -1, 1), new(1, 1, -1), new(1, 1, 1),
+        ];
+        Vector4[] planes =
+        [
+            new(1, 0, 0, -1), new(-1, 0, 0, -1),
+            new(0, 1, 0, -1), new(0, -1, 0, -1),
+            new(0, 0, 1, -1), new(0, 0, -1, -1),
+        ];
+        var (data, nif) = BuildNif(
+            true,
+            CollisionObject(99, 1, true),
+            RigidBody(2, true),
+            ConvexVerticesShape(vertices, planes, true));
+
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, true);
+
+        Assert.True(soup.HasValue);
+        Assert.Equal(8, soup.Value.Positions.Length);
+        Assert.Equal(12, soup.Value.Triangles.Length / 3);
+        AssertBounds(soup.Value.Positions, new Vector3(-7), new Vector3(7));
+    }
+
+    [Fact]
+    public void TryExtract_BoxShape_EmitsExactHalfExtentsInWorldUnits()
+    {
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(99, 1, false),
+            RigidBody(2, false),
+            BoxShape(new Vector3(1, 2, 3), false));
+
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+
+        Assert.True(soup.HasValue);
+        Assert.Equal(8, soup.Value.Positions.Length);
+        Assert.Equal(12, soup.Value.Triangles.Length / 3);
+        AssertBounds(soup.Value.Positions, new Vector3(-7, -14, -21), new Vector3(7, 14, 21));
+    }
+
+    [Fact]
+    public void TryExtract_SphereShape_TessellatesInheritedRadius()
+    {
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(99, 1, false),
+            RigidBody(2, false),
+            SphereShape(2, false));
+
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+
+        Assert.True(soup.HasValue);
+        Assert.Equal(62, soup.Value.Positions.Length);
+        Assert.Equal(120, soup.Value.Triangles.Length / 3);
+        AssertBounds(soup.Value.Positions, new Vector3(-14), new Vector3(14));
+    }
+
+    [Fact]
+    public void TryExtract_BigEndianCapsuleShape_TessellatesAxisAndEndpointRadii()
+    {
+        var (data, nif) = BuildNif(
+            true,
+            CollisionObject(99, 1, true),
+            RigidBody(2, true),
+            CapsuleShape(new Vector3(0, 0, -2), 0.5f, new Vector3(0, 0, 3), 1f, true));
+
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, true);
+
+        Assert.True(soup.HasValue);
+        Assert.Equal(98, soup.Value.Positions.Length);
+        Assert.Equal(192, soup.Value.Triangles.Length / 3);
+        AssertBounds(soup.Value.Positions, new Vector3(-7, -7, -17.5f), new Vector3(7, 7, 28));
+    }
+
+    [Theory]
+    [InlineData("bhkTransformShape")]
+    [InlineData("bhkConvexTransformShape")]
+    public void TryExtract_TransformShape_AppliesColumnMajorMatrixAndWorldUnitTranslation(string shapeType)
+    {
+        var transform = Matrix4x4.CreateRotationZ(MathF.PI * 0.5f) *
+                        Matrix4x4.CreateTranslation(100, 200, 300);
+        var (data, nif) = BuildNif(
+            true,
+            CollisionObject(99, 1, true),
+            RigidBody(2, true),
+            TransformShape(3, transform, shapeType, true),
+            BoxShape(new Vector3(1, 2, 3), true));
+
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, true);
+
+        Assert.True(soup.HasValue);
+        // Child half-extents become (7,14,21), rotate 90 degrees around Z, then receive the
+        // Matrix44's already-world-unit translation (it is deliberately not multiplied by seven).
+        AssertBounds(soup.Value.Positions, new Vector3(86, 193, 279), new Vector3(114, 207, 321));
+    }
+
+    [Fact]
+    public void TryExtract_TwoTransformsSharingOnePrimitive_EmitsBothInstances()
+    {
+        var (data, nif) = BuildNif(
+            false,
+            CollisionObject(99, 1, false),
+            RigidBody(2, false),
+            ListShape([3, 4], false),
+            TransformShape(5, Matrix4x4.Identity, "bhkConvexTransformShape", false),
+            TransformShape(5, Matrix4x4.CreateTranslation(100, 0, 0), "bhkConvexTransformShape", false),
+            BoxShape(Vector3.One, false));
+
+        var soup = HavokCollisionExtractor.TryExtract(data, nif, false);
+
+        Assert.True(soup.HasValue);
+        Assert.Equal(16, soup.Value.Positions.Length);
+        Assert.Equal(24, soup.Value.Triangles.Length / 3);
+        AssertBounds(soup.Value.Positions, new Vector3(-7), new Vector3(107, 7, 7));
+    }
+
+    [Fact]
     public void TryExtract_NoCollisionObject_ReturnsNull()
     {
         var (data, nif) = BuildNif(false, ("NiAlphaProperty", new byte[16]));
@@ -205,6 +342,20 @@ public sealed class HavokCollisionExtractorTests
         Assert.Equal(expected.X, actual.X, Tol);
         Assert.Equal(expected.Y, actual.Y, Tol);
         Assert.Equal(expected.Z, actual.Z, Tol);
+    }
+
+    private static void AssertBounds(Vector3[] positions, Vector3 expectedMin, Vector3 expectedMax)
+    {
+        var min = new Vector3(float.PositiveInfinity);
+        var max = new Vector3(float.NegativeInfinity);
+        foreach (var position in positions)
+        {
+            min = Vector3.Min(min, position);
+            max = Vector3.Max(max, position);
+        }
+
+        AssertVec(expectedMin, min);
+        AssertVec(expectedMax, max);
     }
 
     private static (byte[] data, NifInfo nif) BuildNif(bool bigEndian, params (string type, byte[] payload)[] blocks)
@@ -277,13 +428,18 @@ public sealed class HavokCollisionExtractorTests
         return ("bhkMoppBvTreeShape", b);
     }
 
-    private static (string, byte[]) PackedShape(int dataRef, Vector3 scale, bool be)
+    private static (string, byte[]) PackedShape(int dataRef, Vector3 scale, bool be,
+        Vector3? primaryScale = null)
     {
         var b = new byte[56];
-        WriteF(b, 16, scale.X, be);
-        WriteF(b, 20, scale.Y, be);
-        WriteF(b, 24, scale.Z, be);
+        var primary = primaryScale ?? scale;
+        WriteF(b, 16, primary.X, be);
+        WriteF(b, 20, primary.Y, be);
+        WriteF(b, 24, primary.Z, be);
         WriteF(b, 28, 0f, be);
+        WriteF(b, 36, scale.X, be);
+        WriteF(b, 40, scale.Y, be);
+        WriteF(b, 44, scale.Z, be);
         WriteI32(b, 52, dataRef, be);
         return ("bhkPackedNiTriStripsShape", b);
     }
@@ -294,6 +450,76 @@ public sealed class HavokCollisionExtractorTests
         WriteU32(b, 0, (uint)subRefs.Length, be);
         for (var i = 0; i < subRefs.Length; i++) WriteI32(b, 4 + i * 4, subRefs[i], be);
         return ("bhkListShape", b);
+    }
+
+    private static (string, byte[]) ConvexVerticesShape(Vector3[] vertices, Vector4[] planes, bool be)
+    {
+        // bhkConvexShape base (Material + Radius), two 12-byte properties, vertex count + Vector4s,
+        // then plane count + Vector4 plane equations.
+        var b = new byte[36 + vertices.Length * 16 + 4 + planes.Length * 16];
+        WriteF(b, 4, 0.1f, be);
+        WriteU32(b, 16, 0x80000000, be);
+        WriteU32(b, 28, 0x80000000, be);
+        WriteU32(b, 32, (uint)vertices.Length, be);
+        var p = 36;
+        foreach (var vertex in vertices)
+        {
+            WriteVector4(b, p, new Vector4(vertex, 0), be);
+            p += 16;
+        }
+
+        WriteU32(b, p, (uint)planes.Length, be);
+        p += 4;
+        foreach (var plane in planes)
+        {
+            WriteVector4(b, p, plane, be);
+            p += 16;
+        }
+
+        return ("bhkConvexVerticesShape", b);
+    }
+
+    private static (string, byte[]) BoxShape(Vector3 halfExtents, bool be)
+    {
+        var b = new byte[32];
+        WriteF(b, 4, 0.1f, be);
+        WriteVector3(b, 16, halfExtents, be);
+        return ("bhkBoxShape", b);
+    }
+
+    private static (string, byte[]) SphereShape(float radius, bool be)
+    {
+        var b = new byte[8];
+        WriteF(b, 4, radius, be);
+        return ("bhkSphereShape", b);
+    }
+
+    private static (string, byte[]) CapsuleShape(Vector3 point1, float radius1, Vector3 point2,
+        float radius2, bool be)
+    {
+        var b = new byte[48];
+        WriteF(b, 4, MathF.Max(radius1, radius2), be);
+        WriteVector3(b, 16, point1, be);
+        WriteF(b, 28, radius1, be);
+        WriteVector3(b, 32, point2, be);
+        WriteF(b, 44, radius2, be);
+        return ("bhkCapsuleShape", b);
+    }
+
+    private static (string, byte[]) TransformShape(int child, Matrix4x4 transform, string shapeType, bool be)
+    {
+        var b = new byte[84];
+        WriteI32(b, 0, child, be);
+        WriteF(b, 8, 0.1f, be);
+        float[] values =
+        [
+            transform.M11, transform.M12, transform.M13, transform.M14,
+            transform.M21, transform.M22, transform.M23, transform.M24,
+            transform.M31, transform.M32, transform.M33, transform.M34,
+            transform.M41, transform.M42, transform.M43, transform.M44,
+        ];
+        for (var i = 0; i < values.Length; i++) WriteF(b, 20 + i * 4, values[i], be);
+        return (shapeType, b);
     }
 
     private static (string, byte[]) PackedData(
@@ -366,6 +592,21 @@ public sealed class HavokCollisionExtractorTests
     private static void WriteF(byte[] b, int o, float v, bool be)
     {
         WriteU32(b, o, BitConverter.SingleToUInt32Bits(v), be);
+    }
+
+    private static void WriteVector3(byte[] b, int o, Vector3 value, bool be)
+    {
+        WriteF(b, o, value.X, be);
+        WriteF(b, o + 4, value.Y, be);
+        WriteF(b, o + 8, value.Z, be);
+    }
+
+    private static void WriteVector4(byte[] b, int o, Vector4 value, bool be)
+    {
+        WriteF(b, o, value.X, be);
+        WriteF(b, o + 4, value.Y, be);
+        WriteF(b, o + 8, value.Z, be);
+        WriteF(b, o + 12, value.W, be);
     }
 
     private static void WriteHalf(byte[] b, int o, float v, bool be)

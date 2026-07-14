@@ -13,10 +13,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Collision;
 ///     instead fixes those falls.
 ///     <para>
 ///         Walks <c>bhkCollisionObject → bhkRigidBody[T] → shape tree</c> and reads the packed
-///         tri-strip leaves (<c>hkPackedNiTriStripsData</c>) — the shape kind FNV floors/walkways/
-///         bridges use. Convex/box/sphere shapes are skipped in v1 (callers fall back to the visual
-///         mesh, exactly as before). Output is in the NIF root-local <c>treatRootsAsIdentity</c>
-///         frame, matching the visual collision soup, so the existing placement raycast is unchanged.
+///         tri-strip leaves (<c>hkPackedNiTriStripsData</c>) plus the primitive shapes used heavily by
+///         Xbox 360 clutter and compound collision: convex vertices, boxes, spheres, capsules, and
+///         transformed children. Output is in the NIF root-local <c>treatRootsAsIdentity</c> frame,
+///         matching the visual collision soup, so the existing placement raycast is unchanged.
 ///     </para>
 ///     <para>
 ///         The live decode pipeline converts Xbox (big-endian) NIFs to little-endian first, and that
@@ -35,6 +35,9 @@ internal static class HavokCollisionExtractor
     private const float HavokToWorldScale = 7f;
 
     private const int MaxShapeDepth = 16;
+    private const int PrimitiveRadialSegments = 12;
+    private const int SphereStacks = 6;
+    private const int CapsuleHemisphereRings = 4;
 
     private static readonly HashSet<string> CollisionObjectTypes =
         ["bhkCollisionObject", "bhkBlendCollisionObject", "bhkSPCollisionObject"];
@@ -180,46 +183,426 @@ internal static class HavokCollisionExtractor
         if (shapeIdx < 0 || shapeIdx >= nif.Blocks.Count) return;
         if (!visited.Add(shapeIdx)) return;
 
-        var block = nif.Blocks[shapeIdx];
-        switch (block.TypeName)
+        try
         {
-            case "bhkMoppBvTreeShape":
+            var block = nif.Blocks[shapeIdx];
+            switch (block.TypeName)
             {
-                // Child Shape ref @0; scalar Scale @16 (after a 12-byte Unused01). The MOPP accel tree
-                // is a broadphase BV tree over the same triangles — ignore it, read the wrapped shape.
-                if (!TryReadInt32(data, block, 0, be, out var childRef)) return;
-                var moppScale = TryReadFloat(data, block, 16, be) ?? 1f;
-                var next = moppScale > 0f ? accumScale * moppScale : accumScale;
-                AppendShape(data, nif, childRef, be, toWorld, next, positions, triangles, visited, depth + 1);
-                break;
-            }
-            case "bhkPackedNiTriStripsShape":
-            {
-                // FNV layout (no pre-20.0.0.5 sub-shape header): UserData@0, Unused@4, Radius@8,
-                // Unused@12, Scale Vector4 @16, RadiusCopy@32, ScaleCopy@36, Data ref @52.
-                var sx = TryReadFloat(data, block, 16, be) ?? 1f;
-                var sy = TryReadFloat(data, block, 20, be) ?? 1f;
-                var sz = TryReadFloat(data, block, 24, be) ?? 1f;
-                var shapeScale = accumScale * new Vector3(NonZero(sx), NonZero(sy), NonZero(sz));
-                if (!TryReadInt32(data, block, 52, be, out var dataRef)) return;
-                AppendPackedData(data, nif, dataRef, be, toWorld, shapeScale, positions, triangles);
-                break;
-            }
-            case "bhkListShape":
-            {
-                // Num Sub Shapes (uint @0) then that many int32 shape refs.
-                if (!TryReadUInt32(data, block, 0, be, out var numSub)) return;
-                var cap = Math.Min((int)Math.Min(numSub, int.MaxValue), Math.Max(0, (block.Size - 4) / 4));
-                for (var s = 0; s < cap; s++)
+                case "bhkMoppBvTreeShape":
                 {
-                    if (!TryReadInt32(data, block, 4 + s * 4, be, out var subRef)) break;
-                    AppendShape(data, nif, subRef, be, toWorld, accumScale, positions, triangles, visited, depth + 1);
+                    // Child Shape ref @0; scalar Scale @16 (after a 12-byte Unused01). The MOPP accel tree
+                    // is a broadphase BV tree over the same triangles — ignore it, read the wrapped shape.
+                    if (!TryReadInt32(data, block, 0, be, out var childRef)) return;
+                    var moppScale = TryReadFloat(data, block, 16, be) ?? 1f;
+                    var next = moppScale > 0f ? accumScale * moppScale : accumScale;
+                    AppendShape(data, nif, childRef, be, toWorld, next, positions, triangles, visited, depth + 1);
+                    break;
                 }
+                case "bhkPackedNiTriStripsShape":
+                {
+                    // FNV layout (no pre-20.0.0.5 sub-shape header): UserData@0, Unused@4, Radius@8,
+                    // Unused@12, Scale Vector4 @16, RadiusCopy@32, ScaleCopy@36, Data ref @52.
+                    // Prefer ScaleCopy: retail Xbox files store the primary vector in PC byte order,
+                    // while the converter swaps the copy into the post-conversion file's byte order.
+                    // Native PC files author both identically. Falling back preserves older synthetic/
+                    // truncated inputs that contain only the primary vector.
+                    var sx = ReadPackedScaleComponent(data, block, be, 36, 16);
+                    var sy = ReadPackedScaleComponent(data, block, be, 40, 20);
+                    var sz = ReadPackedScaleComponent(data, block, be, 44, 24);
+                    var shapeScale = accumScale * new Vector3(NonZero(sx), NonZero(sy), NonZero(sz));
+                    if (!TryReadInt32(data, block, 52, be, out var dataRef)) return;
+                    AppendPackedData(data, nif, dataRef, be, toWorld, shapeScale, positions, triangles);
+                    break;
+                }
+                case "bhkListShape":
+                {
+                    // Num Sub Shapes (uint @0) then that many int32 shape refs.
+                    if (!TryReadUInt32(data, block, 0, be, out var numSub)) return;
+                    var cap = Math.Min((int)Math.Min(numSub, int.MaxValue), Math.Max(0, (block.Size - 4) / 4));
+                    for (var s = 0; s < cap; s++)
+                    {
+                        if (!TryReadInt32(data, block, 4 + s * 4, be, out var subRef)) break;
+                        AppendShape(data, nif, subRef, be, toWorld, accumScale, positions, triangles, visited,
+                            depth + 1);
+                    }
 
-                break;
+                    break;
+                }
+                case "bhkTransformShape":
+                case "bhkConvexTransformShape":
+                {
+                    // Shape ref @0, Material @4, Radius @8, Unused[8] @12, Matrix44 @20. Matrix44 is
+                    // serialized column-major; feeding its 16 values in order to System.Numerics' row-
+                    // vector matrix gives the required transpose. Unlike bhkRigidBodyT, this matrix's
+                    // translation is already in NIF/world units (retail tlfencebackyard.nif uses a 1/7
+                    // linear basis around packed world-unit vertices), so do not multiply it by seven.
+                    if (!TryReadInt32(data, block, 0, be, out var childRef)) return;
+                    if (TryReadShapeTransform(data, block, be) is not { } shapeTransform) return;
+                    AppendShape(data, nif, childRef, be, shapeTransform * toWorld, accumScale, positions,
+                        triangles, visited, depth + 1);
+                    break;
+                }
+                case "bhkConvexVerticesShape":
+                    AppendConvexVertices(data, block, be, toWorld, accumScale, positions, triangles);
+                    break;
+                case "bhkBoxShape":
+                    AppendBox(data, block, be, toWorld, accumScale, positions, triangles);
+                    break;
+                case "bhkSphereShape":
+                    AppendSphere(data, block, be, toWorld, accumScale, positions, triangles);
+                    break;
+                case "bhkCapsuleShape":
+                    AppendCapsule(data, block, be, toWorld, accumScale, positions, triangles);
+                    break;
             }
-            // Convex hulls / boxes / spheres / transform shapes are not the gappy plank meshes this fix
-            // targets; skip them in v1 (the caller falls back to the visual mesh, as before).
+        }
+        finally
+        {
+            // This is a recursion-stack guard, not a global de-duplicator: a shared child referenced by
+            // two differently transformed wrappers must be emitted twice.
+            visited.Remove(shapeIdx);
+        }
+    }
+
+    private static Matrix4x4? TryReadShapeTransform(byte[] data, BlockInfo block, bool be)
+    {
+        const int matrixOffset = 20;
+        const int matrixBytes = 64;
+        if (matrixOffset + matrixBytes > block.Size) return null;
+
+        Span<float> m = stackalloc float[16];
+        for (var i = 0; i < m.Length; i++)
+        {
+            m[i] = BinaryUtils.ReadFloat(data, block.DataOffset + matrixOffset + i * 4, be);
+            if (!float.IsFinite(m[i])) return null;
+        }
+
+        // Havok commonly writes the affine matrix's unused final W as zero. Normalize the homogeneous
+        // row so composing with the target node's world matrix still carries node translation.
+        return new Matrix4x4(
+            m[0], m[1], m[2], 0f,
+            m[4], m[5], m[6], 0f,
+            m[8], m[9], m[10], 0f,
+            m[12], m[13], m[14], 1f);
+    }
+
+    private static float ReadPackedScaleComponent(byte[] data, BlockInfo block, bool be, int copyOffset,
+        int primaryOffset)
+    {
+        var copy = TryReadFloat(data, block, copyOffset, be);
+        if (copy is { } copyValue && float.IsFinite(copyValue) && MathF.Abs(copyValue) > 1e-8f)
+        {
+            return copyValue;
+        }
+
+        return TryReadFloat(data, block, primaryOffset, be) ?? 1f;
+    }
+
+    private static void AppendConvexVertices(byte[] data, BlockInfo block, bool be, Matrix4x4 toWorld,
+        Vector3 scale, List<Vector3> positions, List<int> triangles)
+    {
+        // bhkConvexShape: Material@0, Radius@4. Then two 12-byte bhkWorldObjCInfoProperty values,
+        // NumVertices@32, Vector4 vertices@36, NumNormals, and Vector4 plane equations.
+        if (!TryReadUInt32(data, block, 32, be, out var numVertices)) return;
+        if (numVertices < 4 || numVertices > int.MaxValue) return;
+        var vertexCount = (int)numVertices;
+        var vertexBytes = (long)vertexCount * 16;
+        const int vertexOffset = 36;
+        if (vertexOffset + vertexBytes + 4 > block.Size) return;
+
+        var localPositions = new Vector3[vertexCount];
+        var maxAbsCoordinate = 1f;
+        for (var i = 0; i < vertexCount; i++)
+        {
+            var rel = vertexOffset + i * 16;
+            var p = new Vector3(
+                BinaryUtils.ReadFloat(data, block.DataOffset + rel, be),
+                BinaryUtils.ReadFloat(data, block.DataOffset + rel + 4, be),
+                BinaryUtils.ReadFloat(data, block.DataOffset + rel + 8, be));
+            if (!IsFinite(p)) return;
+            localPositions[i] = p;
+            maxAbsCoordinate = MathF.Max(maxAbsCoordinate,
+                MathF.Max(MathF.Abs(p.X), MathF.Max(MathF.Abs(p.Y), MathF.Abs(p.Z))));
+        }
+
+        var normalCountOffset = vertexOffset + (int)vertexBytes;
+        if (!TryReadUInt32(data, block, normalCountOffset, be, out var numNormals)) return;
+        if (numNormals > int.MaxValue) return;
+        var normalCount = (int)numNormals;
+        var normalsOffset = normalCountOffset + 4;
+        if (normalsOffset + (long)normalCount * 16 > block.Size) return;
+
+        var localTriangles = new List<int>(Math.Max(12, normalCount * 6));
+        var emittedFaces = new HashSet<string>(StringComparer.Ordinal);
+        var face = new List<(int Index, float Angle)>(vertexCount);
+        var sortedFaceIndices = new int[vertexCount];
+
+        for (var planeIndex = 0; planeIndex < normalCount; planeIndex++)
+        {
+            var rel = normalsOffset + planeIndex * 16;
+            var normal = new Vector3(
+                BinaryUtils.ReadFloat(data, block.DataOffset + rel, be),
+                BinaryUtils.ReadFloat(data, block.DataOffset + rel + 4, be),
+                BinaryUtils.ReadFloat(data, block.DataOffset + rel + 8, be));
+            var distance = BinaryUtils.ReadFloat(data, block.DataOffset + rel + 12, be);
+            var normalLength = normal.Length();
+            if (!IsFinite(normal) || !float.IsFinite(distance) || normalLength < 1e-6f) continue;
+
+            var planeTolerance = 1e-4f * maxAbsCoordinate * MathF.Max(1f, normalLength);
+            face.Clear();
+            var centroid = Vector3.Zero;
+            for (var i = 0; i < localPositions.Length; i++)
+            {
+                if (MathF.Abs(Vector3.Dot(normal, localPositions[i]) + distance) > planeTolerance) continue;
+                centroid += localPositions[i];
+                face.Add((i, 0f));
+            }
+
+            if (face.Count < 3) continue;
+            centroid /= face.Count;
+            normal /= normalLength;
+            var helper = MathF.Abs(normal.Z) < 0.9f ? Vector3.UnitZ : Vector3.UnitY;
+            var tangent = Vector3.Normalize(Vector3.Cross(normal, helper));
+            var bitangent = Vector3.Cross(normal, tangent);
+            for (var i = 0; i < face.Count; i++)
+            {
+                var delta = localPositions[face[i].Index] - centroid;
+                face[i] = (face[i].Index,
+                    MathF.Atan2(Vector3.Dot(delta, bitangent), Vector3.Dot(delta, tangent)));
+                sortedFaceIndices[i] = face[i].Index;
+            }
+
+            face.Sort(static (a, b) => a.Angle.CompareTo(b.Angle));
+            Array.Sort(sortedFaceIndices, 0, face.Count);
+            var faceKey = string.Join(',', sortedFaceIndices.AsSpan(0, face.Count).ToArray());
+            if (!emittedFaces.Add(faceKey)) continue;
+
+            for (var i = 1; i + 1 < face.Count; i++)
+            {
+                localTriangles.Add(face[0].Index);
+                localTriangles.Add(face[i].Index);
+                localTriangles.Add(face[i + 1].Index);
+            }
+        }
+
+        if (localTriangles.Count < 3) return;
+        AppendPrimitiveMesh(localPositions, localTriangles, toWorld, scale, positions, triangles);
+    }
+
+    private static void AppendBox(byte[] data, BlockInfo block, bool be, Matrix4x4 toWorld,
+        Vector3 scale, List<Vector3> positions, List<int> triangles)
+    {
+        // Material@0, convex Radius@4, Unused[8]@8, half-extents Vector3@16.
+        var dimensions = new Vector3(
+            MathF.Abs(TryReadFloat(data, block, 16, be) ?? 0f),
+            MathF.Abs(TryReadFloat(data, block, 20, be) ?? 0f),
+            MathF.Abs(TryReadFloat(data, block, 24, be) ?? 0f));
+        if (!IsFinite(dimensions) || dimensions.X <= 0f || dimensions.Y <= 0f || dimensions.Z <= 0f) return;
+
+        Vector3[] localPositions =
+        [
+            new(-dimensions.X, -dimensions.Y, -dimensions.Z),
+            new( dimensions.X, -dimensions.Y, -dimensions.Z),
+            new( dimensions.X,  dimensions.Y, -dimensions.Z),
+            new(-dimensions.X,  dimensions.Y, -dimensions.Z),
+            new(-dimensions.X, -dimensions.Y,  dimensions.Z),
+            new( dimensions.X, -dimensions.Y,  dimensions.Z),
+            new( dimensions.X,  dimensions.Y,  dimensions.Z),
+            new(-dimensions.X,  dimensions.Y,  dimensions.Z),
+        ];
+        int[] localTriangles =
+        [
+            0, 2, 1, 0, 3, 2,
+            4, 5, 6, 4, 6, 7,
+            0, 1, 5, 0, 5, 4,
+            1, 2, 6, 1, 6, 5,
+            2, 3, 7, 2, 7, 6,
+            3, 0, 4, 3, 4, 7,
+        ];
+        AppendPrimitiveMesh(localPositions, localTriangles, toWorld, scale, positions, triangles);
+    }
+
+    private static void AppendSphere(byte[] data, BlockInfo block, bool be, Matrix4x4 toWorld,
+        Vector3 scale, List<Vector3> positions, List<int> triangles)
+    {
+        // bhkSphereShape has no fields beyond bhkConvexShape; its inherited Radius@4 is the sphere.
+        var radius = MathF.Abs(TryReadFloat(data, block, 4, be) ?? 0f);
+        if (!float.IsFinite(radius) || radius <= 0f) return;
+        var localPositions = new List<Vector3>();
+        var localTriangles = new List<int>();
+        BuildSphere(Vector3.Zero, radius, localPositions, localTriangles);
+        AppendPrimitiveMesh(localPositions, localTriangles, toWorld, scale, positions, triangles);
+    }
+
+    private static void AppendCapsule(byte[] data, BlockInfo block, bool be, Matrix4x4 toWorld,
+        Vector3 scale, List<Vector3> positions, List<int> triangles)
+    {
+        // Material@0, convex Radius@4, Unused[8]@8, Point1@16, Radius1@28, Point2@32, Radius2@44.
+        var point1 = TryReadVector3(data, block, 16, be);
+        var point2 = TryReadVector3(data, block, 32, be);
+        var radius1 = MathF.Abs(TryReadFloat(data, block, 28, be) ?? 0f);
+        var radius2 = MathF.Abs(TryReadFloat(data, block, 44, be) ?? 0f);
+        if (point1 is not { } p1 || point2 is not { } p2 ||
+            !float.IsFinite(radius1) || !float.IsFinite(radius2) || MathF.Max(radius1, radius2) <= 0f)
+        {
+            return;
+        }
+
+        var axisVector = p2 - p1;
+        var axisLength = axisVector.Length();
+        var localPositions = new List<Vector3>();
+        var localTriangles = new List<int>();
+        if (axisLength < 1e-6f)
+        {
+            BuildSphere((p1 + p2) * 0.5f, MathF.Max(radius1, radius2), localPositions, localTriangles);
+        }
+        else
+        {
+            BuildCapsule(p1, p2, radius1, radius2, axisVector / axisLength, localPositions, localTriangles);
+        }
+
+        AppendPrimitiveMesh(localPositions, localTriangles, toWorld, scale, positions, triangles);
+    }
+
+    private static void BuildSphere(Vector3 center, float radius, List<Vector3> positions, List<int> triangles)
+    {
+        var top = positions.Count;
+        positions.Add(center + Vector3.UnitZ * radius);
+        var firstRing = positions.Count;
+        for (var stack = 1; stack < SphereStacks; stack++)
+        {
+            var latitude = MathF.PI * 0.5f - MathF.PI * stack / SphereStacks;
+            AddRing(center + Vector3.UnitZ * (MathF.Sin(latitude) * radius), Vector3.UnitX, Vector3.UnitY,
+                MathF.Cos(latitude) * radius, positions);
+        }
+
+        var bottom = positions.Count;
+        positions.Add(center - Vector3.UnitZ * radius);
+
+        for (var segment = 0; segment < PrimitiveRadialSegments; segment++)
+        {
+            var next = (segment + 1) % PrimitiveRadialSegments;
+            triangles.Add(top);
+            triangles.Add(firstRing + segment);
+            triangles.Add(firstRing + next);
+        }
+
+        for (var ring = 0; ring + 1 < SphereStacks - 1; ring++)
+        {
+            ConnectRings(firstRing + ring * PrimitiveRadialSegments,
+                firstRing + (ring + 1) * PrimitiveRadialSegments, triangles);
+        }
+
+        var lastRing = firstRing + (SphereStacks - 2) * PrimitiveRadialSegments;
+        for (var segment = 0; segment < PrimitiveRadialSegments; segment++)
+        {
+            var next = (segment + 1) % PrimitiveRadialSegments;
+            triangles.Add(lastRing + next);
+            triangles.Add(lastRing + segment);
+            triangles.Add(bottom);
+        }
+    }
+
+    private static void BuildCapsule(Vector3 point1, Vector3 point2, float radius1, float radius2,
+        Vector3 axis, List<Vector3> positions, List<int> triangles)
+    {
+        var helper = MathF.Abs(axis.Z) < 0.9f ? Vector3.UnitZ : Vector3.UnitY;
+        var tangent = Vector3.Normalize(Vector3.Cross(axis, helper));
+        var bitangent = Vector3.Cross(axis, tangent);
+
+        var startPole = positions.Count;
+        positions.Add(point1 - axis * radius1);
+        var firstRing = positions.Count;
+        for (var ring = 1; ring <= CapsuleHemisphereRings; ring++)
+        {
+            var angle = -MathF.PI * 0.5f + MathF.PI * 0.5f * ring / CapsuleHemisphereRings;
+            AddRing(point1 + axis * (MathF.Sin(angle) * radius1), tangent, bitangent,
+                MathF.Cos(angle) * radius1, positions);
+        }
+
+        var point2Ring = positions.Count;
+        AddRing(point2, tangent, bitangent, radius2, positions);
+        for (var ring = 1; ring < CapsuleHemisphereRings; ring++)
+        {
+            var angle = MathF.PI * 0.5f * ring / CapsuleHemisphereRings;
+            AddRing(point2 + axis * (MathF.Sin(angle) * radius2), tangent, bitangent,
+                MathF.Cos(angle) * radius2, positions);
+        }
+
+        var endPole = positions.Count;
+        positions.Add(point2 + axis * radius2);
+
+        for (var segment = 0; segment < PrimitiveRadialSegments; segment++)
+        {
+            var next = (segment + 1) % PrimitiveRadialSegments;
+            triangles.Add(startPole);
+            triangles.Add(firstRing + next);
+            triangles.Add(firstRing + segment);
+        }
+
+        var ringCount = CapsuleHemisphereRings * 2;
+        for (var ring = 0; ring + 1 < ringCount; ring++)
+        {
+            ConnectRings(firstRing + ring * PrimitiveRadialSegments,
+                firstRing + (ring + 1) * PrimitiveRadialSegments, triangles);
+        }
+
+        var lastRing = point2Ring + (CapsuleHemisphereRings - 1) * PrimitiveRadialSegments;
+        for (var segment = 0; segment < PrimitiveRadialSegments; segment++)
+        {
+            var next = (segment + 1) % PrimitiveRadialSegments;
+            triangles.Add(lastRing + segment);
+            triangles.Add(lastRing + next);
+            triangles.Add(endPole);
+        }
+    }
+
+    private static void AddRing(Vector3 center, Vector3 tangent, Vector3 bitangent, float radius,
+        List<Vector3> positions)
+    {
+        for (var segment = 0; segment < PrimitiveRadialSegments; segment++)
+        {
+            var angle = MathF.Tau * segment / PrimitiveRadialSegments;
+            positions.Add(center + (tangent * MathF.Cos(angle) + bitangent * MathF.Sin(angle)) * radius);
+        }
+    }
+
+    private static void ConnectRings(int first, int second, List<int> triangles)
+    {
+        for (var segment = 0; segment < PrimitiveRadialSegments; segment++)
+        {
+            var next = (segment + 1) % PrimitiveRadialSegments;
+            triangles.Add(first + segment);
+            triangles.Add(second + segment);
+            triangles.Add(first + next);
+            triangles.Add(first + next);
+            triangles.Add(second + segment);
+            triangles.Add(second + next);
+        }
+    }
+
+    private static void AppendPrimitiveMesh(IReadOnlyList<Vector3> localPositions,
+        IReadOnlyList<int> localTriangles, Matrix4x4 toWorld, Vector3 scale,
+        List<Vector3> positions, List<int> triangles)
+    {
+        if (localPositions.Count == 0 || localTriangles.Count < 3) return;
+        var baseIndex = positions.Count;
+        var fullScale = scale * HavokToWorldScale;
+        for (var i = 0; i < localPositions.Count; i++)
+        {
+            positions.Add(Vector3.Transform(localPositions[i] * fullScale, toWorld));
+        }
+
+        for (var i = 0; i + 2 < localTriangles.Count; i += 3)
+        {
+            var a = localTriangles[i];
+            var b = localTriangles[i + 1];
+            var c = localTriangles[i + 2];
+            if ((uint)a >= (uint)localPositions.Count || (uint)b >= (uint)localPositions.Count ||
+                (uint)c >= (uint)localPositions.Count) continue;
+            triangles.Add(baseIndex + a);
+            triangles.Add(baseIndex + b);
+            triangles.Add(baseIndex + c);
         }
     }
 
@@ -316,5 +699,18 @@ internal static class HavokCollisionExtractor
         if (rel < 0 || rel + 4 > block.Size) return null;
         return BinaryUtils.ReadFloat(data, block.DataOffset + rel, be);
     }
+
+    private static Vector3? TryReadVector3(byte[] data, BlockInfo block, int rel, bool be)
+    {
+        if (rel < 0 || rel + 12 > block.Size) return null;
+        var value = new Vector3(
+            BinaryUtils.ReadFloat(data, block.DataOffset + rel, be),
+            BinaryUtils.ReadFloat(data, block.DataOffset + rel + 4, be),
+            BinaryUtils.ReadFloat(data, block.DataOffset + rel + 8, be));
+        return IsFinite(value) ? value : null;
+    }
+
+    private static bool IsFinite(Vector3 value)
+        => float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
 }
 
