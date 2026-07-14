@@ -118,7 +118,8 @@ public sealed class RefrEncoder : IRecordEncoder
     internal static EncodedRecord EncodeNewPlacedReference(
         PlacedReference placed,
         IReadOnlySet<uint>? validFormIds = null,
-        IReadOnlyDictionary<uint, uint>? remapTable = null)
+        IReadOnlyDictionary<uint, uint>? remapTable = null,
+        string? baseRecordType = null)
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
@@ -205,14 +206,18 @@ public sealed class RefrEncoder : IRecordEncoder
             }
         }
 
-        // XCNT only has stack-count semantics on REFR (e.g., caps, ammo, item containers).
-        // On ACHR/ACRE the same byte slot was overloaded by Bethesda as a runtime instance
-        // counter — the engine appends "(N)" to the placed actor's display name whenever
-        // it sees a nonzero count. Captures from a running game inevitably have this counter
-        // set (it increments per session), so emitting it back makes every templated NPC
-        // show "Ulysses (20770)" etc. Strip it for actor placements; the engine restores its
-        // own counter at load time.
-        if (placed.Count.HasValue && placed.RecordType == "REFR")
+        // XCNT is a stack count and is ONLY meaningful when the base is a carriable
+        // inventory item (caps, ammo, a loose weapon pile). Bethesda overloads the same
+        // ExtraCount slot at run time as a per-session instance counter on every OTHER
+        // reference kind — placed actors AND world objects like containers/furniture. A
+        // running-game capture therefore carries a large counter (it increments per
+        // session), so emitting it back makes the engine append "(N)" to the hover name:
+        // "Ulysses (20770)", "Trash Can (21022)". Gate on the BASE record type, not the
+        // placed record type — an item base keeps its real count; anything else (CONT,
+        // FURN, ACTI, DOOR, STAT, …) or an unknown/proto base drops it, and the engine
+        // restores its own counter at load.
+        if (placed.Count.HasValue && placed.RecordType == "REFR"
+            && BaseTypeAllowsStackCount(baseRecordType))
         {
             subs.Add(BuildXcntSubrecord(placed.Count.Value));
         }
@@ -372,6 +377,24 @@ public sealed class RefrEncoder : IRecordEncoder
     ///     XCNT — 4 bytes per parser's Simple4Byte schema: int16 Count @0, padding @2-3.
     ///     Anything shorter is silently rejected by the parser's <c>DataLength &gt;= 4</c> guard.
     /// </summary>
+    /// <summary>
+    ///     Carriable inventory-item base types whose placed refs may legitimately carry an
+    ///     XCNT stack count (a loose pile of caps/ammo, a stack of chips). Every other base —
+    ///     containers, furniture, activators, doors, statics, actors — never has a real stack
+    ///     count; a captured count there is the runtime session counter (hover "(N)" bug).
+    ///     A null/unknown base type is treated as non-item: the reported bug hit master
+    ///     containers (base resolves), and suppressing a rare unresolved proto item-pile
+    ///     count is strictly safer than re-introducing the counter.
+    /// </summary>
+    private static readonly HashSet<string> StackCountableBaseTypes = new(StringComparer.Ordinal)
+    {
+        "WEAP", "ARMO", "ARMA", "AMMO", "MISC", "ALCH", "BOOK",
+        "KEYM", "NOTE", "IMOD", "CMNY", "CCRD", "CHIP",
+    };
+
+    private static bool BaseTypeAllowsStackCount(string? baseRecordType) =>
+        baseRecordType is not null && StackCountableBaseTypes.Contains(baseRecordType);
+
     private static EncodedSubrecord BuildXcntSubrecord(short count)
     {
         var xcnt = new byte[4];

@@ -16,15 +16,31 @@ public class PlacedRefSubrecordsTests
     public void EncodeNewPlacedReference_XCNT_IsFourBytes()
     {
         // v3 wrote 2 bytes; parser's Simple4Byte schema requires 4. Regression test.
+        // XCNT now emits only for stackable-item bases, so declare a MISC base type.
         var placed = new PlacedReference { FormId = 1, BaseFormId = 0xCAFE, Count = 42 };
 
-        var encoded = RefrEncoder.EncodeNewPlacedReference(placed);
+        var encoded = RefrEncoder.EncodeNewPlacedReference(placed, baseRecordType: "MISC");
 
         var xcnt = Assert.Single(encoded.Subrecords, s => s.Signature == "XCNT");
         Assert.Equal(4, xcnt.Bytes.Length);
         Assert.Equal((short)42, BinaryPrimitives.ReadInt16LittleEndian(xcnt.Bytes.AsSpan(0, 2)));
         Assert.Equal(0, xcnt.Bytes[2]);
         Assert.Equal(0, xcnt.Bytes[3]);
+    }
+
+    [Fact]
+    public void EncodeNewPlacedReference_XCNT_SuppressedForContainerBase()
+    {
+        // A container ref captured live carries the runtime session counter in its count
+        // slot; emitting it makes the engine show "Trash Can (21022)". Gate on base type.
+        var placed = new PlacedReference { FormId = 1, BaseFormId = 0xCAFE, Count = 21022 };
+
+        var encodedContainer = RefrEncoder.EncodeNewPlacedReference(placed, baseRecordType: "CONT");
+        Assert.DoesNotContain(encodedContainer.Subrecords, s => s.Signature == "XCNT");
+
+        // Unknown/proto base type is treated as non-item too (conservative).
+        var encodedUnknown = RefrEncoder.EncodeNewPlacedReference(placed);
+        Assert.DoesNotContain(encodedUnknown.Subrecords, s => s.Signature == "XCNT");
     }
 
     [Fact]

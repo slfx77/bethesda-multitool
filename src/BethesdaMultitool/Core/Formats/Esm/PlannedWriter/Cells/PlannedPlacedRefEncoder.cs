@@ -190,13 +190,15 @@ internal static class PlannedPlacedRefEncoder
             }
         }
 
+        var originalBaseFormId = placed.BaseFormId;
         if (baseFormId != placed.BaseFormId)
         {
             placed = placed with { BaseFormId = baseFormId };
         }
 
         var subs = RefrEncoder.EncodeNewPlacedReference(
-            placed, context.ValidFormIds, context.Plan.SourceToEmittedFormId);
+            placed, context.ValidFormIds, context.Plan.SourceToEmittedFormId,
+            context.ResolveBaseRecordType(originalBaseFormId, baseFormId));
         if (subs.Subrecords.Count == 0)
         {
             return null;

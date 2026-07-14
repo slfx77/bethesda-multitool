@@ -22,7 +22,31 @@ internal sealed record CellChildEncodeContext(
     ConversionPipelineStats? Stats,
     MasterRecordIndex? MasterIndex,
     IReadOnlySet<uint> MasterRefFormIds,
-    IReadOnlyDictionary<uint, string>? DmpBaseTypes);
+    IReadOnlyDictionary<uint, string>? DmpBaseTypes)
+{
+    /// <summary>
+    ///     Resolve a placed ref's base record signature (e.g. "CONT", "WEAP"). The final
+    ///     (post-remap) base resolves against master; the original captured base resolves
+    ///     against the DMP base-type map for proto content the master lacks. Null when
+    ///     neither knows it. Used to gate stack-count (XCNT) emission by base kind.
+    /// </summary>
+    public string? ResolveBaseRecordType(uint originalBaseFormId, uint finalBaseFormId)
+    {
+        if (MasterByFormId.TryGetValue(finalBaseFormId, out var finalRec))
+        {
+            return finalRec.Header.Signature;
+        }
+
+        if (MasterByFormId.TryGetValue(originalBaseFormId, out var origRec))
+        {
+            return origRec.Header.Signature;
+        }
+
+        return DmpBaseTypes is { } types && types.TryGetValue(originalBaseFormId, out var type)
+            ? type
+            : null;
+    }
+}
 
 /// <summary>
 ///     Per-cell mutable state accumulated while encoding one cell's children: the
