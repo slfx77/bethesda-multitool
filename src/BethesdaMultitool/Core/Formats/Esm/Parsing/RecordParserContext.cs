@@ -25,6 +25,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 public sealed class RecordParserContext
 {
     private readonly Dictionary<string, List<DetectedMainRecord>> _recordsByType;
+    private Action<DetectedMainRecord>? _recordReadObserver;
     private Dictionary<uint, uint>? _refToBase;
     private readonly bool _recoverPartialCompressed;
 
@@ -492,6 +493,11 @@ public sealed class RecordParserContext
             return null;
         }
 
+        // Full semantic parsing installs this only after CaptureAllFullNames. Centralizing the
+        // callback here covers every typed handler while allowing repeated handler reads of one
+        // descriptor to be deduplicated by the progress reporter.
+        _recordReadObserver?.Invoke(record);
+
         // The previous Math.Min(record.DataSize, buffer.Length) silently truncated any record
         // larger than the caller's rented buffer — most visibly LAND quadrants whose later
         // subrecords sat past the cut, but the same shape affects any handler with a small
@@ -544,6 +550,38 @@ public sealed class RecordParserContext
             "  [ReadRecordData] NULL: {0} 0x{1:X8} decompression failed (flags=0x{2:X8}, dataSize={3})",
             record.RecordType, record.FormId, record.Flags, dataSize);
         return null;
+    }
+
+    /// <summary>
+    ///     Observes successful-in-bounds record-read attempts until the returned scope is disposed.
+    ///     Parsing is synchronous, so a single scoped observer is sufficient and avoids adding a
+    ///     callback parameter to every domain handler.
+    /// </summary>
+    internal IDisposable ObserveRecordReads(Action<DetectedMainRecord> observer)
+    {
+        if (_recordReadObserver != null)
+        {
+            throw new InvalidOperationException("A record-read observer is already active.");
+        }
+
+        _recordReadObserver = observer;
+        return new RecordReadObserverScope(this, observer);
+    }
+
+    private sealed class RecordReadObserverScope(
+        RecordParserContext context,
+        Action<DetectedMainRecord> observer) : IDisposable
+    {
+        private RecordParserContext? _context = context;
+
+        public void Dispose()
+        {
+            var activeContext = Interlocked.Exchange(ref _context, null);
+            if (activeContext != null && activeContext._recordReadObserver == observer)
+            {
+                activeContext._recordReadObserver = null;
+            }
+        }
     }
 
     /// <summary>

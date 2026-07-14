@@ -126,6 +126,11 @@ public sealed class RecordParser
             return tes3Result;
         }
 
+        var schemaPrimary = RecordModel.EsmSchemas.IsSchemaPrimary(_context.Game);
+        var progressReporter = progress == null
+            ? null
+            : new RecordParseProgressReporter(progress, _context.ScanResult.MainRecords, schemaPrimary);
+
         // Games whose record layouts diverge from the hand-written FNV/FO3 handlers but that have a
         // generated record schema (Oblivion today; Skyrim/FO4/FO76 as their schemas are validated) are
         // read by the schema-driven parser — it decodes every record into a GenericEsmRecord with a
@@ -142,10 +147,12 @@ public sealed class RecordParser
         // Oblivion correctly — verified: 19 climates, 84 worldspaces, 35k cells, real CLMT timing).
         RecordCollection? schemaResult = null;
         if (RecordModel.EsmSchemas.ForGame(_context.Game) is { } gameSchema
-            && RecordModel.EsmSchemas.IsSchemaPrimary(_context.Game))
+            && schemaPrimary)
         {
-            progress?.Report((0, $"Decoding {_context.Game} records (schema-driven)..."));
-            schemaResult = new SchemaDrivenRecordParser(_context, gameSchema).ParseAll(progress);
+            progressReporter?.SchemaProgress.Report(
+                (0, $"Decoding {_context.Game} records (schema-driven)..."));
+            schemaResult = new SchemaDrivenRecordParser(_context, gameSchema)
+                .ParseAll(progressReporter?.SchemaProgress);
             Logger.Instance.Info(
                 $"[Semantic Parse] Schema decode (schema:{_context.Game}): {schemaResult.TotalRecordsProcessed} " +
                 "records; running typed world/atmosphere handlers for the viewer bridge...");
@@ -193,7 +200,7 @@ public sealed class RecordParser
         // for every browsable record into the shared context (placement children — REFR/ACHR/NAVM/
         // LAND/... — carry no FULL), so re-reading the whole file here (~1M placement children on a
         // large Oblivion plugin) is pure waste. FNV/FO3 (schemaResult is null) are unchanged.
-        progress?.Report((2, "Scanning display names..."));
+        progressReporter?.ReportPhase(2, "Scanning display names...");
         if (schemaResult is null)
         {
             phaseSw.Restart();
@@ -201,6 +208,11 @@ public sealed class RecordParser
             Logger.Instance.Debug(
                 $"  [Semantic] Display names: {phaseSw.Elapsed} ({_context.FormIdToFullName.Count} names captured)");
         }
+
+        // Start record-granular progress only after the FULL-name prescan. That scan deliberately
+        // reads the whole file and would otherwise make the semantic pass appear complete before
+        // the typed handlers begin. The using declaration also removes the observer on exceptions.
+        using var recordProgressScope = progressReporter?.BeginTypedRecordTracking(_context);
 
         // On the schema-bridge path the typed parse exists ONLY to supply the viewer's world/
         // atmosphere/static collections + ModelPathIndex — the schema decode already owns the
@@ -213,7 +225,7 @@ public sealed class RecordParser
         var typedForViewerOnly = schemaResult is not null;
 
         // Build weapons and ammo first, then cross-reference for projectile data
-        progress?.Report((5, "Parsing characters..."));
+        progressReporter?.ReportPhase(5, "Parsing characters...");
         phaseSw.Restart();
         var npcs = typedForViewerOnly ? new List<NpcRecord>() : _actors.ParseNpcs();
         var creatures = typedForViewerOnly ? new List<CreatureRecord>() : _actors.ParseCreatures();
@@ -222,7 +234,7 @@ public sealed class RecordParser
         Logger.Instance.Debug(
             $"  [Semantic] Characters: {phaseSw.Elapsed} (NPCs: {npcs.Count}, Creatures: {creatures.Count}, Races: {races.Count}, Factions: {factions.Count})");
 
-        progress?.Report((15, "Parsing items..."));
+        progressReporter?.ReportPhase(15, "Parsing items...");
         phaseSw.Restart();
         var weapons = _weapons.ParseWeapons();
         var ammo = _consumables.ParseAmmo();
@@ -238,7 +250,7 @@ public sealed class RecordParser
             $"  [Semantic] Items: {phaseSw.Elapsed} (Weapons: {weapons.Count}, Armor: {armor.Count}, Ammo: {ammo.Count}, Consumables: {consumables.Count}, Misc: {miscItems.Count}, Keys: {keys.Count}, Containers: {containers.Count})");
 
         // Build dialogue data, then construct the tree hierarchy
-        progress?.Report((30, "Parsing dialogue..."));
+        progressReporter?.ReportPhase(30, "Parsing dialogue...");
         phaseSw.Restart();
         // Bridge: schema decode already produced the Dialogue tab's topics/infos/tree (game-aware
         // extractors) and the QUST generics — the typed dialogue below is discarded. The downstream
@@ -265,7 +277,7 @@ public sealed class RecordParser
         Logger.Instance.Debug(
             $"  [Semantic] Dialogue: {phaseSw.Elapsed} (Quests: {quests.Count}, Topics: {dialogTopics.Count}, Dialogues: {dialogues.Count})");
 
-        progress?.Report((45, "Building dialogue trees..."));
+        progressReporter?.ReportPhase(45, "Building dialogue trees...");
         phaseSw.Restart();
         var dialogueTree = _dialogue.BuildDialogueTrees(dialogues, dialogTopics, quests);
 
@@ -314,14 +326,14 @@ public sealed class RecordParser
         // === Quest enrichment: PathwayD backfill, variables cross-reference, related NPCs ===
         QuestScriptEnricher.EnrichQuests(_context, quests, scripts, dialogues, phaseSw);
 
-        progress?.Report((55, "Parsing abilities..."));
+        progressReporter?.ReportPhase(55, "Parsing abilities...");
         phaseSw.Restart();
         var perks = typedForViewerOnly ? new List<PerkRecord>() : _effects.ParsePerks();
         var spells = typedForViewerOnly ? new List<SpellRecord>() : _effects.ParseSpells();
         Logger.Instance.Debug(
             $"  [Semantic] Abilities: {phaseSw.Elapsed} (Perks: {perks.Count}, Spells: {spells.Count})");
 
-        progress?.Report((60, "Parsing world data..."));
+        progressReporter?.ReportPhase(60, "Parsing world data...");
         phaseSw.Restart();
         var cells = _world.ParseCells();
         var cellTime = phaseSw.Elapsed;
@@ -410,7 +422,7 @@ public sealed class RecordParser
         Logger.Instance.Debug(
             $"  [Semantic] World: {phaseSw.Elapsed} (Cells: {cells.Count} in {cellTime}, Worldspaces: {worldspaces.Count}, Packages: {packages.Count}, SpawnResolved: {resolvedCount}, MapMarkers: {mapMarkers.Count}, LeveledLists: {leveledLists.Count})");
 
-        progress?.Report((80, "Parsing game data..."));
+        progressReporter?.ReportPhase(80, "Parsing game data...");
         phaseSw.Restart();
         var gameSettings = _misc.ParseGameSettings();
         var globals = _miscBasicTypes.ParseGlobals();
@@ -439,7 +451,7 @@ public sealed class RecordParser
         var staticCollections = _miscStaticObjects.ParseStaticCollections();
         Logger.Instance.Debug($"  [Semantic] Game data: {phaseSw.Elapsed} (16 types)");
 
-        progress?.Report((85, "Parsing generic records..."));
+        progressReporter?.ReportPhase(85, "Parsing generic records...");
         phaseSw.Restart();
         var genericTypes = new[]
         {
@@ -475,7 +487,7 @@ public sealed class RecordParser
         _context.MergeRuntimeGenericRecords(genericRecords, allEsmFormIds);
         Logger.Instance.Debug($"  [Semantic] PDB generic runtime merge: {phaseSw.Elapsed}");
 
-        progress?.Report((88, "Parsing specialized records..."));
+        progressReporter?.ReportPhase(88, "Parsing specialized records...");
         phaseSw.Restart();
         var sounds = _miscEnvironment.ParseSounds();
         var musicTypes = _miscEnvironment.ParseMusicTypes();
@@ -535,7 +547,7 @@ public sealed class RecordParser
         // to real TXST texture paths / swap tables later in the world-view build.
         var modsHarvest = new AlternateTextureHandler(_context).BuildIndex();
 
-        progress?.Report((95, "Building lookup tables..."));
+        progressReporter?.ReportPhase(95, "Building lookup tables...");
 
         var result = new RecordCollection
         {
@@ -736,7 +748,7 @@ public sealed class RecordParser
                 _context.PartiallyRecoveredFormIds.Count);
         }
 
-        progress?.Report((100, "Complete"));
+        progressReporter?.Complete();
         return result;
     }
 
