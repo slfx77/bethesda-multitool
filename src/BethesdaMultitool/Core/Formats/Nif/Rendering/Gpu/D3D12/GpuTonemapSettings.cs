@@ -18,10 +18,11 @@ internal enum GpuTonemapMode
     /// <summary>
     ///     The FO3/FNV engine HDR stage (decompile-grounded, see
     ///     docs/research/fnv_engine_hdr_imagespace.md): steady-state eye-adapt exposure
-    ///     <c>TargetLUM / max(sum(adaptedAvgColor), TargetLUM)</c> followed by the IMGS cinematic
-    ///     transform (saturation → tint → contrast/brightness). Operates on gamma-space values exactly
-    ///     like the engine. Bloom (BrightPassBlur) is a follow-up. Also used for Oblivion with the FNV
-    ///     default parameters as a labeled stand-in (shared engine lineage; Oblivion authors HDR via INI).
+    ///     <c>TargetLUM / max(sum(adaptedAvgColor), TargetLUM)</c> plus the BrightPassBlur bloom term
+    ///     <c>bloom·(0.5/denom)</c>, followed by the IMGS cinematic transform (saturation → tint →
+    ///     contrast/brightness). Operates on gamma-space values exactly like the engine. Also used for
+    ///     Oblivion with the FNV default parameters as a labeled stand-in (shared engine lineage;
+    ///     Oblivion authors HDR via INI).
     /// </summary>
     EngineFo3Fnv = 2,
 }
@@ -78,6 +79,24 @@ internal readonly record struct GpuTonemapSettings
     /// <summary>IMGS Cinematic tint value: blend toward luma·tintColor (the FNV golden-tan filter ≈ 0.6).</summary>
     public float TintAmount { get; init; }
 
+    /// <summary>
+    ///     BrightPassBlur bloom stage on/off. Engine-mode only this cut (Skyrim/FO4 bloom rides their
+    ///     imagespace port). Runtime-flippable with no pipeline rebuild — the pass is simply skipped.
+    /// </summary>
+    public bool BloomEnabled { get; init; }
+
+    /// <summary>IMGS HDR: 1D blur kernel radius in bloom texels (engine clamps ceil(r) to 1..7 → 3..15 taps).</summary>
+    public float BlurRadius { get; init; }
+
+    /// <summary>IMGS HDR: number of fused bright-pass+blur passes (engine iNumBlurpasses; shipped 2 = H+V pair).</summary>
+    public float BlurPasses { get; init; }
+
+    /// <summary>IMGS HDR: bright-pass gain applied per tap after the threshold subtract.</summary>
+    public float BrightScale { get; init; }
+
+    /// <summary>IMGS HDR: bright-pass threshold — per tap <c>max(src − BrightClamp, 0) · BrightScale</c>.</summary>
+    public float BrightClamp { get; init; }
+
     /// <summary>Shipped FNV DefaultImageSpaceExterior (0x161) with neutral exposure.</summary>
     public static GpuTonemapSettings EngineExteriorDefaults { get; } = new()
     {
@@ -94,6 +113,11 @@ internal readonly record struct GpuTonemapSettings
         TintG = 0.537255f,
         TintB = 0.388235f,
         TintAmount = 0.6f,
+        BloomEnabled = true,
+        BlurRadius = 8f,
+        BlurPasses = 2f,
+        BrightScale = 1.5f,
+        BrightClamp = 0.35f,
     };
 
     /// <summary>Shipped FNV DefaultImageSpaceInterior (0x160): neutral cinematic.</summary>
@@ -112,6 +136,11 @@ internal readonly record struct GpuTonemapSettings
         TintG = 1f,
         TintB = 1f,
         TintAmount = 0f,
+        BloomEnabled = true,
+        BlurRadius = 7f,
+        BlurPasses = 2f,
+        BrightScale = 2f,
+        BrightClamp = 0.35f,
     };
 
     public static GpuTonemapSettings GammaAcesDefaults { get; } = new()
@@ -128,6 +157,14 @@ internal readonly record struct GpuTonemapSettings
         TintG = 1f,
         TintB = 1f,
         TintAmount = 0f,
+        // Bloom params carry the engine exterior values but stay DISABLED: the ACES stand-in has no
+        // bloom until the Skyrim/FO4 imagespace port. FALLOUT_VIEWER_BLOOM=1 (+TONEMAP=engine)
+        // force-enables for NIF-harness A/Bs.
+        BloomEnabled = false,
+        BlurRadius = 8f,
+        BlurPasses = 2f,
+        BrightScale = 1.5f,
+        BrightClamp = 0.35f,
     };
 
     /// <summary>
@@ -147,7 +184,7 @@ internal readonly record struct GpuTonemapSettings
         return ApplyOverrides(settings);
     }
 
-    /// <summary>Env overrides: mode swap for A/Bs + the existing exposure knob.</summary>
+    /// <summary>Env overrides: mode swap for A/Bs, bloom kill-switch, + the existing exposure knob.</summary>
     public static GpuTonemapSettings ApplyOverrides(GpuTonemapSettings settings)
     {
         var mode = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP");
@@ -158,6 +195,16 @@ internal readonly record struct GpuTonemapSettings
             "engine" => settings with { Mode = GpuTonemapMode.EngineFo3Fnv },
             _ => settings,
         };
+
+        var bloom = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_BLOOM");
+        if (bloom is "0" || string.Equals(bloom, "off", StringComparison.OrdinalIgnoreCase))
+        {
+            settings = settings with { BloomEnabled = false };
+        }
+        else if (bloom is "1" || string.Equals(bloom, "on", StringComparison.OrdinalIgnoreCase))
+        {
+            settings = settings with { BloomEnabled = true };
+        }
 
         var raw = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_EXPOSURE");
         if (raw != null

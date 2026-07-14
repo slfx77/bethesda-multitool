@@ -12,9 +12,10 @@
 //   2 EngineFo3Fnv — the FO3/FNV engine HDR stage, decompile-grounded from the shipped ISHDR*
 //     SM3 shaders + ImageSpaceEffectHDR (docs/research/fnv_engine_hdr_imagespace.md):
 //       L = sum(adaptedAvgSceneColor.rgb)   (avg pass below; steady-state = fully adapted eye)
-//       exposure = TargetLUM / max(L, TargetLUM)      // darkens toward bright scenes, never brightens
-//       c = scene * exposure                          // (bloom term = follow-up)
+//       denom = max(L, TargetLUM)                     // eye-adapt exposure, never brightens
+//       c = scene * (TargetLUM/denom) + bloom * (0.5/denom)   // ISHDRBLENDINSHADER composite
 //       cinematic: saturation -> tint -> contrast/brightness (IMGS cinematic block)
+//     bloom (t2) = the BrightPassBlur chain output (bloom.frag.hlsl); uParams3.z gates the term.
 //     Operates on gamma-space values exactly like the engine — no decode/encode by design.
 //
 // mainAvg is a second entry point rendered to a 1x1 float target first: a sparse grid average
@@ -23,6 +24,7 @@
 
 Texture2D    uHdr    : register(t0);
 Texture2D    uAvgLum : register(t1);
+Texture2D    uBloom  : register(t2);
 SamplerState uSampler : register(s0);
 
 cbuffer TonemapParams : register(b0)
@@ -30,7 +32,7 @@ cbuffer TonemapParams : register(b0)
     float4 uParams0; // x = exposure, y = enabled (>=0.5), z = mode, w = TargetLUM
     float4 uParams1; // x = Saturation, y = ContrastAvgLum, z = Contrast, w = Brightness
     float4 uParams2; // xyz = Tint color, w = TintAmount
-    float4 uParams3; // x = UpperLUMClamp, yzw reserved (bloom scale/clamp/radius follow-up)
+    float4 uParams3; // x = UpperLUMClamp, y = AdaptFactor, z = bloom enabled, w reserved
 };
 
 // ACES filmic tonemap (Krzysztof Narkowicz's fitted approximation of the ACES RRT+ODT).
@@ -71,9 +73,10 @@ float4 main(PSInput input) : SV_Target
 
     // EngineFo3Fnv — ISHDRBLENDINSHADER[CIN] on gamma-space values.
     float3 adapted = uAvgLum.Sample(uSampler, float2(0.5, 0.5)).rgb;
-    float lum = adapted.r + adapted.g + adapted.b;      // BPBLUR writes sum(AvgLum.rgb) into bloom.a
+    float lum = adapted.r + adapted.g + adapted.b;      // engine BPBLUR routes this via bloom.a
     float denom = max(lum, uParams0.w);
-    float3 c = hdr.rgb * (uParams0.w / denom) * uParams0.x;
+    float3 bloom = uParams3.z * uBloom.Sample(uSampler, input.vUv).rgb;
+    float3 c = (hdr.rgb * (uParams0.w / denom) + bloom * (0.5 / denom)) * uParams0.x;
 
     // Cinematic block (ISHDRBLENDINSHADERCIN): saturation, tint, contrast/brightness around the
     // authored average-luminance pivot. {Brightness,Contrast} slot assignment is ambiguous in the

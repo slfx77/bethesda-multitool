@@ -145,6 +145,10 @@ public sealed partial class WorldView3DControl
                     TargetLum = hdr.TargetLum > 0f ? hdr.TargetLum : settings.TargetLum,
                     UpperLumClamp = hdr.UpperLumClamp > 0f ? hdr.UpperLumClamp : settings.UpperLumClamp,
                     EyeAdaptSpeed = hdr.EyeAdaptSpeed > 0f ? hdr.EyeAdaptSpeed : settings.EyeAdaptSpeed,
+                    BlurRadius = hdr.BlurRadius > 0f ? hdr.BlurRadius : settings.BlurRadius,
+                    BlurPasses = hdr.BlurPasses >= 1f ? hdr.BlurPasses : settings.BlurPasses,
+                    BrightScale = hdr.BrightScale > 0f ? hdr.BrightScale : settings.BrightScale,
+                    BrightClamp = hdr.BrightClamp >= 0f ? hdr.BrightClamp : settings.BrightClamp,
                 };
             }
 
