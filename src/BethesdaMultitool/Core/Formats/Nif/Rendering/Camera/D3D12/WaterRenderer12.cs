@@ -16,9 +16,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 
 /// <summary>
 ///     v3 Pass 4 Step 2e — D3D12 port of <c>WaterRenderer</c>. Renders one
-///     alpha-blended flat quad per visible cell whose water height resolves. No vertex
-///     buffer: <c>water.vert.hlsl</c> expands the 6 quad corners from <c>SV_VertexID</c>
-///     and a per-instance structured-buffer entry.
+///     alpha-blended flat quad per visible cell whose water height resolves, plus authored
+///     WaterShaderProperty triangles from placed NIFs. No vertex buffer: <c>water.vert.hlsl</c>
+///     reads six world-space vertices from each structured-buffer packet via <c>SV_VertexID</c>.
 ///     <para>
 ///         Single PSO (no double-sided variants — water is always rendered with
 ///         CullMode.None). One root CBV at b0 for the viewProj, one structured-buffer
@@ -71,12 +71,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _waterCells = new();
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _visibleWaterScratch = new();
-    // Placed-NIF water planes (cave/pool/reflecting-pool water embedded in REFR meshes). Owned by
+    // Placed-NIF water geometry (cave/pool/reflecting-pool water embedded in REFR meshes). Owned by
     // ReferenceRenderer12 (which accumulates them as those references' meshes stream in) and handed
     // here once per frame via SetNifWaterPlanes; culled into _visibleNifScratch each Render and drawn
     // with the same shader/appearance as cell water.
-    private IReadOnlyList<NifWaterPlane> _nifWaterPlanes = Array.Empty<NifWaterPlane>();
-    private readonly List<NifWaterPlane> _visibleNifScratch = new();
+    private IReadOnlyList<NifWaterGeometry> _nifWaterPlanes = Array.Empty<NifWaterGeometry>();
+    private readonly List<NifWaterGeometry> _visibleNifScratch = new();
     private float? _worldspaceDefaultWaterHeight;
     private BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? _appearance;
     private uint _noiseBindlessIndex = NoNormalMap;
@@ -299,17 +299,17 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _morrowindSurfaceFrames = frameBindlessIndices;
 
     /// <summary>
-    ///     Supplies the world-space water planes detected on placed-reference NIFs (cave/pool water).
+    ///     Supplies world-space authored water geometry detected on placed-reference NIFs (cave/pool water).
     ///     The list is owned by <see cref="ReferenceRenderer12" /> and grows as those references'
-    ///     meshes stream in; this renderer reads it each frame and draws the visible planes with the
+    ///     meshes stream in; this renderer reads it each frame and draws the visible surfaces with the
     ///     same shader as cell water. Cheap reference assignment — call once per frame before Render.
     /// </summary>
-    public void SetNifWaterPlanes(IReadOnlyList<NifWaterPlane> planes) => _nifWaterPlanes = planes;
+    public void SetNifWaterPlanes(IReadOnlyList<NifWaterGeometry> planes) => _nifWaterPlanes = planes;
 
     /// <summary>IWorldRenderer entry — absolute path (zero render origin).</summary>
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder) => Render(viewProj, cylinder, default);
 
-    /// <summary>Draws the visible cell-water grid + NIF water planes; returns the draw count.</summary>
+    /// <summary>Draws the visible cell-water grid + authored NIF water geometry; returns the surface count.</summary>
     /// <param name="renderOrigin">
     ///     The world-space point <paramref name="viewProj" /> treats as its origin (the same value the
     ///     scene binds as the camera-relative render origin). The VS subtracts it from each water vertex
@@ -329,50 +329,60 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         var segmentStarted = StartTiming();
         var cellVisible = GatherVisibleWater(cylinder);
         var nifVisible = GatherVisibleNifPlanes(cylinder);
-        var visible = cellVisible + nifVisible;
-        LastStats.VisibleCandidates = visible;
+        var visibleSurfaces = cellVisible + nifVisible;
+        LastStats.VisibleCandidates = visibleSurfaces;
         LastStats.VisibleGatherMilliseconds = ElapsedMilliseconds(segmentStarted);
-        if (visible == 0)
+        if (visibleSurfaces == 0)
         {
             LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
             return 0;
         }
 
+        // One six-vertex packet holds a cell quad (two triangles) or up to two authored NIF
+        // triangles. Indices choose the exact source positions; an odd final triangle gets one
+        // degenerate companion, which rasterizes no fragments.
+        var nifPacketCount = 0;
+        for (var i = 0; i < nifVisible; i++)
+        {
+            nifPacketCount = checked(nifPacketCount + _visibleNifScratch[i].TrianglePacketCount);
+        }
+        var instanceCount = checked(cellVisible + nifPacketCount);
+
         segmentStarted = StartTiming();
-        EnsureInstanceCapacity(visible);
+        EnsureInstanceCapacity(instanceCount);
         LastStats.ResourceResizeMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartTiming();
         for (var i = 0; i < cellVisible; i++)
         {
             var water = _visibleWaterScratch[i];
-            _instanceScratch[i] = new WaterInstance
-            {
-                // OriginXY/FootprintSize are grid-derived for exteriors and AABB-derived for
-                // interiors (see WorldSpatialIndex.BuildInterior). Cell water is square, so the
-                // X and Y footprint extents are equal.
-                OriginHeightFootprintX = new Vector4(
-                    water.OriginXY.X,
-                    water.OriginXY.Y,
-                    water.Height,
-                    water.FootprintSize),
-                FootprintY = new Vector4(water.FootprintSize, 0f, 0f, 0f),
-            };
+            // OriginXY/FootprintSize are grid-derived for exteriors and AABB-derived for interiors
+            // (see WorldSpatialIndex.BuildInterior). This remains the existing cell-water quad path;
+            // only its two triangles are materialized into the unified six-vertex packet.
+            _instanceScratch[i] = CreateQuadPacket(
+                water.OriginXY,
+                water.Height,
+                new Vector2(water.FootprintSize));
         }
-        // Placed-NIF water planes follow the cell-water instances in the same buffer — same shader,
-        // same DNAM appearance, just a rectangular footprint derived from the mesh AABB at REFR placement.
+
+        // Placed NIF water follows the cell-water packets in the same buffer and uses the same DNAM
+        // appearance. Unlike the old AABB slab, every packet dereferences the authored indices and
+        // carries the exact transformed vertex positions (including distinct per-vertex heights).
+        var packetCursor = cellVisible;
         for (var j = 0; j < nifVisible; j++)
         {
-            var plane = _visibleNifScratch[j];
-            _instanceScratch[cellVisible + j] = new WaterInstance
+            var geometry = _visibleNifScratch[j];
+            for (var packetIndex = 0; packetIndex < geometry.TrianglePacketCount; packetIndex++)
             {
-                OriginHeightFootprintX = new Vector4(
-                    plane.OriginXY.X,
-                    plane.OriginXY.Y,
-                    plane.Height,
-                    plane.Footprint.X),
-                FootprintY = new Vector4(plane.Footprint.Y, 0f, 0f, 0f),
-            };
+                var packet = geometry.GetTrianglePacket(packetIndex);
+                _instanceScratch[packetCursor++] = CreateTrianglePacket(
+                    packet.Vertex0,
+                    packet.Vertex1,
+                    packet.Vertex2,
+                    packet.Vertex3,
+                    packet.Vertex4,
+                    packet.Vertex5);
+            }
         }
         LastStats.InstanceBuildMilliseconds = ElapsedMilliseconds(segmentStarted);
 
@@ -447,7 +457,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         }
 
         // Copy CPU instance scratch into the persistent-mapped UPLOAD buffer.
-        UploadInstances(visible);
+        UploadInstances(instanceCount);
         LastStats.GpuUploadMilliseconds = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartTiming();
@@ -477,12 +487,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         // sample the resolved NNAM normal map via NonUniformResourceIndex(uNoiseParams.x).
         cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
-        // 6 vertices per quad, `visible` instances.
-        cmd.DrawInstanced(6, (uint)visible, 0, 0);
+        // Six vertices per packet: a cell quad or one/two authored NIF triangles.
+        cmd.DrawInstanced(6, (uint)instanceCount, 0, 0);
         LastStats.DrawCallMilliseconds = ElapsedMilliseconds(segmentStarted);
-        LastStats.WaterDraws = visible;
+        LastStats.WaterDraws = visibleSurfaces;
         LastStats.CpuFrameMilliseconds = ElapsedMilliseconds(started);
-        return visible;
+        return visibleSurfaces;
     }
 
     public void Dispose()
@@ -530,27 +540,21 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         return _visibleWaterScratch.Count;
     }
 
-    // NIF water planes carry absolute world-space XY (from the REFR placement), so they cull directly
-    // against the cylinder's game-space position — no canvas-Y flip (that flip is only for the
-    // spatial-index buckets). A point-in-cylinder test padded by the plane's footprint keeps a plane
-    // that straddles the streaming edge visible. Small list (only water-bearing refs), so linear.
+    // NIF water geometry carries absolute world-space positions (from the REFR placement), so it culls
+    // directly against the cylinder's game-space position — no canvas-Y flip (that flip is only for the
+    // spatial-index buckets). Bounds are conservative only; the authored triangles remain unchanged.
+    // Small list (only water-bearing refs), so linear.
     private int GatherVisibleNifPlanes(VisibilityCylinder cylinder)
     {
         _visibleNifScratch.Clear();
         if (_nifWaterPlanes.Count == 0) return 0;
 
-        var cx = cylinder.Position.X;
-        var cy = cylinder.Position.Y;
-        foreach (var plane in _nifWaterPlanes)
+        var center = new Vector2(cylinder.Position.X, cylinder.Position.Y);
+        foreach (var geometry in _nifWaterPlanes)
         {
-            var halfX = plane.Footprint.X * 0.5f;
-            var halfY = plane.Footprint.Y * 0.5f;
-            var dx = (plane.OriginXY.X + halfX) - cx;
-            var dy = (plane.OriginXY.Y + halfY) - cy;
-            var reach = cylinder.Radius + MathF.Max(halfX, halfY);
-            if (dx * dx + dy * dy < reach * reach)
+            if (geometry.IntersectsXY(center, cylinder.Radius))
             {
-                _visibleNifScratch.Add(plane);
+                _visibleNifScratch.Add(geometry);
             }
         }
         return _visibleNifScratch.Count;
@@ -564,6 +568,32 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             return worldHeight;
         return null;
     }
+
+    private static WaterInstance CreateQuadPacket(Vector2 origin, float height, Vector2 footprint)
+    {
+        var v00 = new Vector3(origin, height);
+        var v10 = new Vector3(origin.X + footprint.X, origin.Y, height);
+        var v01 = new Vector3(origin.X, origin.Y + footprint.Y, height);
+        var v11 = new Vector3(origin + footprint, height);
+        return CreateTrianglePacket(v00, v10, v01, v01, v10, v11);
+    }
+
+    private static WaterInstance CreateTrianglePacket(
+        Vector3 v0,
+        Vector3 v1,
+        Vector3 v2,
+        Vector3 v3,
+        Vector3 v4,
+        Vector3 v5) =>
+        new()
+        {
+            Vertex0 = new Vector4(v0, 1f),
+            Vertex1 = new Vector4(v1, 1f),
+            Vertex2 = new Vector4(v2, 1f),
+            Vertex3 = new Vector4(v3, 1f),
+            Vertex4 = new Vector4(v4, 1f),
+            Vertex5 = new Vector4(v5, 1f),
+        };
 
     private unsafe void UploadInstances(int instanceCount)
     {
@@ -705,8 +735,17 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     [StructLayout(LayoutKind.Sequential)]
     private struct WaterInstance
     {
-        public Vector4 OriginHeightFootprintX; // xy = origin, z = water height, w = footprint X extent
-        public Vector4 FootprintY;             // x = footprint Y extent; yzw spare (16-byte aligned)
+        // Two explicit triangles. Cell water writes its usual rectangular quad here; placed NIF
+        // water writes authored indexed vertices. The matching HLSL layout is six float4 registers.
+        // This is 96 bytes versus the old compact cell-only instance's 32 bytes; that modest visible-
+        // cell upload cost keeps one buffer, one root-table binding, one VS, and one draw call instead
+        // of adding a second geometry path / PSO family solely for the uncommon placed-water surfaces.
+        public Vector4 Vertex0;
+        public Vector4 Vertex1;
+        public Vector4 Vertex2;
+        public Vector4 Vertex3;
+        public Vector4 Vertex4;
+        public Vector4 Vertex5;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -750,12 +789,4 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     }
 }
 
-/// <summary>
-///     A world-space placeable water plane extracted from a placed-reference NIF's WaterShaderProperty
-///     geometry (cave/pool/reflecting-pool water). <see cref="OriginXY" /> is the min XY corner,
-///     <see cref="Height" /> the surface Z, and <see cref="Footprint" /> the rectangular XY extent
-///     (separate width/depth) of the world-space AABB — the exact shape <c>water.vert.hlsl</c> expands
-///     per instance. Produced by <see cref="ReferenceRenderer12" /> and consumed by <see cref="WaterRenderer12" />.
-/// </summary>
-internal readonly record struct NifWaterPlane(Vector2 OriginXY, float Height, Vector2 Footprint);
 #endif

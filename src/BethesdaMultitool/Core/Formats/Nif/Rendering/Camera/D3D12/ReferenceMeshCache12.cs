@@ -862,21 +862,23 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         var submeshes = new List<CachedSubmesh12>(decoded.Submeshes.Count);
-        // Local AABBs of any WaterShaderProperty submeshes (caves/pools/reflecting pools), captured
-        // so the dedicated water renderer can place them as real water planes — see the divert below.
-        List<(Vector3 Min, Vector3 Max)>? waterPlanesLocal = null;
+        // Authored positions + triangle indices of WaterShaderProperty submeshes (caves/pools/
+        // reflecting pools), captured so the dedicated water renderer can transform and draw their
+        // real geometry. FNV WATER000 consumes source positions directly; reducing them to an AABB
+        // changed rotated, sloped, and circular water surfaces.
+        List<NifWaterGeometry>? waterPlanesLocal = null;
         var vertexStride = (uint)System.Runtime.InteropServices.Marshal.SizeOf<GpuMeshUploader.GpuVertex>();
         for (var i = 0; i < decoded.Submeshes.Count; i++)
         {
             var sub = decoded.Submeshes[i];
             // Placed water-shader geometry (WaterShaderProperty NIFs — caves/pools/reflecting pools)
-            // is NOT drawn as a reference slab. Divert it: capture the plane's local AABB so the
-            // dedicated WaterRenderer12 can render it with the real Fresnel/ripple/depth-fade water
-            // shader, and skip building a drawable submesh — that omission is what gates off the old
-            // flat translucent-tile fallback (the submesh never becomes a reference draw → no double-draw).
+            // is NOT drawn as a reference slab. Divert it: retain the authored triangle geometry so
+            // WaterRenderer12 can render it with the real Fresnel/ripple/depth-fade water shader, and
+            // skip building a drawable submesh — that omission gates off the old flat translucent-tile
+            // fallback (the submesh never becomes a reference draw → no double-draw).
             if (string.Equals(sub.DiffuseTexturePath, RenderableSubmesh.WaterSurfaceTexturePath, StringComparison.Ordinal))
             {
-                AppendWaterPlaneLocalBounds(sub.Vertices, ref waterPlanesLocal);
+                AppendWaterGeometry(sub.Vertices, sub.Indices, ref waterPlanesLocal);
                 continue;
             }
 
@@ -993,7 +995,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
 
         if (submeshes.Count == 0 && (waterPlanesLocal is null || waterPlanesLocal.Count == 0))
         {
-            // No drawable submeshes and no water planes — nothing references the arena range, so reclaim it.
+            // No drawable submeshes and no water geometry — nothing references the arena range, so reclaim it.
             _geometryArena.Free(geometry);
             return null;
         }
@@ -1002,7 +1004,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var cached = new CachedNifMesh12(
             submeshes, geometry, _geometryArena, _deletionQueue, _textureCache, MathF.Sqrt(meshLocalRadiusSq),
             aabbMin, aabbMax,
-            (IReadOnlyList<(Vector3 Min, Vector3 Max)>?)waterPlanesLocal ?? Array.Empty<(Vector3 Min, Vector3 Max)>())
+            (IReadOnlyList<NifWaterGeometry>?)waterPlanesLocal ?? Array.Empty<NifWaterGeometry>())
         {
             Animation = decoded.Animation
         };
@@ -1109,23 +1111,26 @@ internal sealed class ReferenceMeshCache12 : IDisposable
     private static uint CheckedByteSize(int elementCount, uint elementSize) =>
         checked((uint)((long)elementCount * elementSize));
 
-    // Accumulates one water plane's mesh-local AABB (min/max XYZ over its vertices). The water
-    // renderer expands a flat quad over the world-space footprint, so only the extent matters; the
-    // per-reference world matrix is applied later (ReferenceRenderer12) once the placement is known.
-    private static void AppendWaterPlaneLocalBounds(
+    // Retains one water submesh's validated, mesh-local triangle geometry. The per-reference world
+    // matrix is applied later (ReferenceRenderer12) once the placement is known. Invalid topology is
+    // skipped as a unit rather than guessed at; the ordinary drawable path already validates the same
+    // decoded arrays before they reach this point.
+    private static void AppendWaterGeometry(
         GpuMeshUploader.GpuVertex[] vertices,
-        ref List<(Vector3 Min, Vector3 Max)>? planes)
+        ushort[] indices,
+        ref List<NifWaterGeometry>? geometries)
     {
-        if (vertices.Length == 0) return;
-        var min = new Vector3(float.PositiveInfinity);
-        var max = new Vector3(float.NegativeInfinity);
-        foreach (var v in vertices)
+        if (vertices.Length == 0 || indices.Length < 3) return;
+        var positions = new Vector3[vertices.Length];
+        for (var i = 0; i < vertices.Length; i++)
         {
-            min = Vector3.Min(min, v.Position);
-            max = Vector3.Max(max, v.Position);
+            positions[i] = vertices[i].Position;
         }
 
-        (planes ??= new List<(Vector3 Min, Vector3 Max)>(1)).Add((min, max));
+        if (NifWaterGeometry.TryCreate(positions, indices, out var geometry) && geometry is not null)
+        {
+            (geometries ??= new List<NifWaterGeometry>(1)).Add(geometry);
+        }
     }
 
     private static int ParsePositiveIntEnvironment(string name, int defaultValue, int min, int max)

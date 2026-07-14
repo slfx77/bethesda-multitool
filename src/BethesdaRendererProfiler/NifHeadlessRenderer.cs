@@ -187,8 +187,8 @@ internal static class NifHeadlessRenderer
                 StreamingThrottled = false, // drain decodes/uploads as fast as possible
             };
 
-            // Water-shader submeshes are DIVERTED out of the reference draw path into flat
-            // NifWaterPlanes (ReferenceMeshCache12 skips them as drawables), so a pure-water NIF
+            // Water-shader submeshes are DIVERTED out of the reference draw path into authored
+            // NifWaterGeometry (ReferenceMeshCache12 skips them as drawables), so a pure-water NIF
             // (e.g. FO4 Water\Water1024.nif) draws nothing through ReferenceRenderer12 alone —
             // 0/0/0 stats and a blank frame that reads as "dropped". Mirror the live viewer
             // (WorldView3DControl.Frame) by rendering the accumulated planes each frame.

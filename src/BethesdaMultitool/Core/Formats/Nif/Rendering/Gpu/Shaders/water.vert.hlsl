@@ -1,7 +1,8 @@
-// v3 water vertex shader — emits a flat quad per visible water cell. The 6 quad corners are
-// expanded from SV_VertexID; per-cell origin/height/footprint comes from a structured instance
-// buffer indexed by SV_InstanceID. Two triangles wind CCW from above. World position is passed
-// through so the fragment shader can build view-dependent ripples + Fresnel.
+// v3 water vertex shader — emits two triangles per structured-buffer packet. Cell water writes its
+// existing flat quad as six explicit vertices; placed WaterShaderProperty NIFs write the authored
+// indexed positions (up to two triangles per packet). This matches the retail FNV WATER000 vertex
+// path, which transforms the supplied vertex position directly instead of replacing it with a slab.
+// World position is passed through so the fragment shader can build view-dependent ripples + Fresnel.
 //
 // Per-frame constants (b0): view·proj, the three DNAM water colors, and (camera pos, time).
 
@@ -24,8 +25,12 @@ cbuffer Uniforms : register(b0)
 
 struct WaterInstance
 {
-    float4 OriginHeightFootprintX; // xy = origin, z = water height, w = footprint X extent
-    float4 FootprintY;             // x = footprint Y extent; yzw spare
+    float4 Vertex0;
+    float4 Vertex1;
+    float4 Vertex2;
+    float4 Vertex3;
+    float4 Vertex4;
+    float4 Vertex5;
 };
 
 StructuredBuffer<WaterInstance> uInstances : register(t0);
@@ -36,20 +41,15 @@ struct VSOutput
     float3 vWorldPos : TEXCOORD0;
 };
 
-static const float2 kQuadCorners[6] =
-{
-    float2(0, 0), float2(1, 0), float2(0, 1),  // tri 1 (v00, v10, v01) — CCW from +Z
-    float2(0, 1), float2(1, 0), float2(1, 1)   // tri 2 (v01, v10, v11) — CCW from +Z
-};
-
 VSOutput main(uint vid : SV_VertexID, uint instanceId : SV_InstanceID)
 {
     WaterInstance instance = uInstances[instanceId];
-    float2 corner = kQuadCorners[vid];
-    float3 worldPos = float3(
-        instance.OriginHeightFootprintX.x + corner.x * instance.OriginHeightFootprintX.w,
-        instance.OriginHeightFootprintX.y + corner.y * instance.FootprintY.x,
-        instance.OriginHeightFootprintX.z);
+    float3 worldPos = vid == 0 ? instance.Vertex0.xyz
+                    : vid == 1 ? instance.Vertex1.xyz
+                    : vid == 2 ? instance.Vertex2.xyz
+                    : vid == 3 ? instance.Vertex3.xyz
+                    : vid == 4 ? instance.Vertex4.xyz
+                               : instance.Vertex5.xyz;
 
     // Hardware-depth fallback (no scene-depth SRV: MSAA scene, ortho modes, top-down/capture): the
     // PS coplanar tie-break lives in its depth-sample branch and can't run here, so apply the SAME

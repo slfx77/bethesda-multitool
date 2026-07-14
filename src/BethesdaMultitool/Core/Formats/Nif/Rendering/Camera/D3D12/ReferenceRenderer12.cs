@@ -313,11 +313,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         return any ? (minZ, maxZ) : null;
     }
 
-    // Placed-NIF water planes (WaterShaderProperty geometry diverted out of the drawable submesh set
-    // at upload) accumulated as their meshes resolve, deduped per REFR FormId, and handed to
-    // WaterRenderer12 each frame. Each plane is static (mesh AABB × placement), so it is computed
-    // exactly once; both are reset on LoadData.
-    private readonly List<NifWaterPlane> _nifWaterPlanes = new();
+    // Placed-NIF water geometry (WaterShaderProperty triangles diverted out of the drawable submesh
+    // set at upload) accumulated as meshes resolve, deduped per REFR FormId, and handed to
+    // WaterRenderer12 each frame. Each surface is static (authored vertices × placement), so it is
+    // transformed exactly once; both collections are reset on LoadData.
+    private readonly List<NifWaterGeometry> _nifWaterPlanes = new();
     private readonly HashSet<uint> _nifWaterPlaneSeen = new();
     private readonly bool _disableReferenceFrustum =
         EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.DisableReferenceFrustum);
@@ -400,13 +400,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public int LastFrameDrawsTruncated { get; private set; }
 
     /// <summary>
-    ///     World-space water planes detected on placed-reference NIFs (cave/pool/reflecting-pool
-    ///     water). Accumulates as those references' meshes stream in; the host hands this to
-    ///     <see cref="WaterRenderer12.SetNifWaterPlanes" /> so placed water renders with the real
+    ///     World-space authored water geometry detected on placed-reference NIFs (cave/pool/
+    ///     reflecting-pool water). Accumulates as those references' meshes stream in; the host hands
+    ///     this to <see cref="WaterRenderer12.SetNifWaterPlanes" /> so placed water renders with the real
     ///     water shader instead of a flat slab. The list reference is stable across a worldspace load
     ///     (cleared, not reallocated, in <see cref="LoadData" />).
     /// </summary>
-    public IReadOnlyList<NifWaterPlane> NifWaterPlanes => _nifWaterPlanes;
+    public IReadOnlyList<NifWaterGeometry> NifWaterPlanes => _nifWaterPlanes;
 
     private bool _streamingThrottled = true;
 
@@ -439,7 +439,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // are any frozen batches built from them.
         _cullCacheValid = false;
         _lastBuildValid = false;
-        // Drop the accumulated NIF water planes so they don't leak across worldspace loads. Cleared
+        // Drop the accumulated NIF water geometry so it doesn't leak across worldspace loads. Cleared
         // (not reallocated) so the reference the host handed WaterRenderer12 stays valid.
         _nifWaterPlanes.Clear();
         _nifWaterPlaneSeen.Clear();
@@ -1016,9 +1016,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 missingMeshes++;
                 continue;
             }
-            // Placed water planes need no textures — emit them as soon as the mesh resolves, once per
-            // REFR (the seen-set dedups the per-frame resolve). Transforms the mesh-local water AABB(s)
-            // by this placement's world matrix into world-space footprints for WaterRenderer12.
+            // Placed water geometry needs no textures — emit it as soon as the mesh resolves, once per
+            // REFR (the seen-set dedups the per-frame resolve). Transform every mesh-local authored
+            // vertex by this placement's world matrix for WaterRenderer12.
             if (mesh.WaterPlanesLocal.Count > 0 && _nifWaterPlaneSeen.Add(r.FormId))
             {
                 AccumulateNifWaterPlanes(r.WorldMatrix, mesh.WaterPlanesLocal);
@@ -1439,42 +1439,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
     }
 
-    // Transforms each mesh-local water-plane AABB by the placement world matrix into a world-space
-    // axis-aligned footprint and appends it as a NifWaterPlane. All 8 local corners are transformed
-    // and re-bounded so a rotated/scaled placement still yields a correct world AABB; the water
-    // renderer draws a flat quad at the mid-Z over the rectangular XY footprint (separate X/Y extents).
-    private void AccumulateNifWaterPlanes(Matrix4x4 world, IReadOnlyList<(Vector3 Min, Vector3 Max)> localPlanes)
+    // Applies the placement matrix to each authored water vertex. Bounds are recomputed only for
+    // culling; WaterRenderer12 consumes the transformed positions + original indices, matching the
+    // retail FNV WATER000 vertex path instead of expanding a flat AABB-derived quad.
+    private void AccumulateNifWaterPlanes(Matrix4x4 world, IReadOnlyList<NifWaterGeometry> localPlanes)
     {
         for (var pi = 0; pi < localPlanes.Count; pi++)
         {
-            var (min, max) = localPlanes[pi];
-            var wMin = new Vector3(float.PositiveInfinity);
-            var wMax = new Vector3(float.NegativeInfinity);
-            for (var c = 0; c < 8; c++)
-            {
-                var corner = new Vector3(
-                    (c & 1) == 0 ? min.X : max.X,
-                    (c & 2) == 0 ? min.Y : max.Y,
-                    (c & 4) == 0 ? min.Z : max.Z);
-                var w = Vector3.Transform(corner, world);
-                wMin = Vector3.Min(wMin, w);
-                wMax = Vector3.Max(wMax, w);
-            }
-
-            // Keep the X and Y extents separate so a non-square plane (e.g. NVCleanWater1x4)
-            // covers its true rectangle instead of a max-side square that overhangs the short axis.
-            var footprintX = wMax.X - wMin.X;
-            var footprintY = wMax.Y - wMin.Y;
-            if (!float.IsFinite(footprintX) || !float.IsFinite(footprintY) ||
-                footprintX <= 0f || footprintY <= 0f)
+            var placed = localPlanes[pi].Transform(world);
+            if (placed is null)
             {
                 continue;
             }
 
-            _nifWaterPlanes.Add(new NifWaterPlane(
-                new Vector2(wMin.X, wMin.Y),
-                (wMin.Z + wMax.Z) * 0.5f,
-                new Vector2(footprintX, footprintY)));
+            _nifWaterPlanes.Add(placed);
         }
     }
 

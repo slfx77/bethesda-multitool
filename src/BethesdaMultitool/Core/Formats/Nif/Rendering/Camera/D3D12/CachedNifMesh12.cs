@@ -5,7 +5,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 
-/// <summary>A reference NIF uploaded to GPU geometry/texture caches: its submeshes, bounds, and water planes, drawn each frame and disposed when evicted.</summary>
+/// <summary>A reference NIF uploaded to GPU geometry/texture caches: its submeshes, bounds, and authored water geometry, drawn each frame and disposed when evicted.</summary>
 internal sealed class CachedNifMesh12 : IDisposable
 {
     private readonly GeometryAllocation12 _geometry;
@@ -24,7 +24,7 @@ internal sealed class CachedNifMesh12 : IDisposable
         float localBoundsRadius,
         Vector3 localBoundsMin,
         Vector3 localBoundsMax,
-        IReadOnlyList<(Vector3 Min, Vector3 Max)> waterPlanesLocal)
+        IReadOnlyList<NifWaterGeometry> waterPlanesLocal)
     {
         Submeshes = submeshes;
         _geometry = geometry;
@@ -48,13 +48,13 @@ internal sealed class CachedNifMesh12 : IDisposable
     public NifMeshAnimation? Animation { get; set; }
 
     /// <summary>
-    ///     Mesh-local AABBs (min/max) of any WaterShaderProperty submeshes in this NIF — the
-    ///     placeable water planes (cave/pool/reflecting-pool water) that were diverted out of the
+    ///     Mesh-local positions and indices of any WaterShaderProperty submeshes in this NIF — the
+    ///     placeable water surfaces (cave/pool/reflecting-pool water) that were diverted out of the
     ///     drawable submesh set at upload. Empty for the common (non-water) mesh. The reference
-    ///     renderer transforms each by the placement world matrix and feeds the result to the water
-    ///     renderer so placed water gets the real Fresnel/ripple/depth-fade shader instead of a slab.
+    ///     renderer applies each placement world matrix to the authored vertices and feeds the result
+    ///     to the water renderer, preserving slopes, rotations, and non-rectangular outlines.
     /// </summary>
-    public IReadOnlyList<(Vector3 Min, Vector3 Max)> WaterPlanesLocal { get; }
+    public IReadOnlyList<NifWaterGeometry> WaterPlanesLocal { get; }
 
     /// <summary>
     ///     Conservative bounding-sphere radius of the whole mesh around the NIF origin (max vertex
