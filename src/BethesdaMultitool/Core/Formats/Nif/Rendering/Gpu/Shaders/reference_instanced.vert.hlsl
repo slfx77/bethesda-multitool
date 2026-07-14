@@ -103,7 +103,7 @@ struct VSOutput
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent
     nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
-    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness
+    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = additive-fog flag
 };
 
 VSOutput main(VSInput input, uint instanceId : SV_InstanceID)

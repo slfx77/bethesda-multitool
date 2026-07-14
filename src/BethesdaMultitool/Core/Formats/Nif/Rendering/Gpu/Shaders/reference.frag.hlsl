@@ -52,7 +52,12 @@ cbuffer Atmosphere : register(b3)
 // Engine distance fog (grounded in Sky::UpdateFog): a linear near→far ramp toward the resolved fog
 // color, raised to the weather's fog power. fogEnabled (uFogColorFogEnabled.w) gates it; OFF returns
 // the color unchanged. near/far/power are the daylight-blended WTHR FNAM values from AtmosphereState.
-float3 ApplyFog(float3 color, float3 worldPos)
+// ADDITIVE draws (dst blend ONE — glow fills, light shafts) fade toward BLACK instead: their blend
+// ADDS the shader output to the framebuffer, so lerping toward the fog COLOR injects fog-colored
+// light at any distance and distant glows never attenuate (the Strip's night dome washing out the
+// wasteland view — backlog A8). Fading the contribution to zero is what the engine's fogged
+// additive pass produces.
+float3 ApplyFog(float3 color, float3 worldPos, bool additive)
 {
     if (uFogColorFogEnabled.w < 0.5)
     {
@@ -62,7 +67,7 @@ float3 ApplyFog(float3 color, float3 worldPos)
     float dist = length(worldPos - uCameraPosFogPower.xyz);
     float f = saturate((dist - uAtmosphereParams.y) / max(uAtmosphereParams.z - uAtmosphereParams.y, 1.0));
     f = pow(f, max(uCameraPosFogPower.w, 0.01));
-    return lerp(color, uFogColorFogEnabled.rgb, f);
+    return additive ? color * (1.0 - f) : lerp(color, uFogColorFogEnabled.rgb, f);
 }
 
 // One cascade attempt for ShadowFactor: returns true when worldPos lands inside this cascade's
@@ -174,7 +179,7 @@ struct PSInput
     nointerpolation float4 vSpecular   : TEXCOORD10; // xyz = tint, w = Phong exponent (0 = none)
     nointerpolation float4 vEffectTint    : TEXCOORD11; // rgb = BGEM tint, w = falloff enabled
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
-    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness
+    nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = additive-fog flag
     bool   IsFrontFace  : SV_IsFrontFace;
 };
 
@@ -422,5 +427,5 @@ float4 main(PSInput input) : SV_Target
     float outAlpha = input.vAlphaState.w > 0.5
         ? saturate(sampleAlpha * input.vAlphaState.z)
         : 1.0;
-    return float4(ApplyFog(lit, input.vWorldPos), outAlpha);
+    return float4(ApplyFog(lit, input.vWorldPos, input.vEnvMap.w > 0.5), outAlpha);
 }

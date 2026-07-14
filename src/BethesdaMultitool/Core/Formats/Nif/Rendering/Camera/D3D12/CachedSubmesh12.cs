@@ -47,7 +47,8 @@ internal sealed class CachedSubmesh12
     public float EnvMapSmoothness { get; init; }
 
     /// <summary>
-    ///     Per-draw env-map constants (uEnvMap): x = cube bindless slot, y = scale, z = smoothness.
+    ///     Per-draw env-map constants (uEnvMap): x = cube bindless slot, y = scale, z = smoothness,
+    ///     w = additive-blend flag (see <see cref="IsAdditiveBlend" /> — consumed by the fog term).
     ///     x stays −1 until the entry is RESIDENT as a TextureCube — cold placeholders are 2D SRVs,
     ///     and indexing one through the shader's cube alias would read a mismatched descriptor.
     ///     Deliberately NOT cached: per-frame CB fills re-read it so promotion lands (same pattern
@@ -55,8 +56,17 @@ internal sealed class CachedSubmesh12
     /// </summary>
     public Vector4 EnvMapState =>
         EnvMap is { IsResident: true, IsCubemap: true } env
-            ? new Vector4(env.BindlessIndex, EnvMapScale, EnvMapSmoothness, 0f)
-            : new Vector4(-1f, 0f, 0f, 0f);
+            ? new Vector4(env.BindlessIndex, EnvMapScale, EnvMapSmoothness, IsAdditiveBlend ? 1f : 0f)
+            : new Vector4(-1f, 0f, 0f, IsAdditiveBlend ? 1f : 0f);
+
+    /// <summary>
+    ///     Destination blend factor ONE (NIF blend byte 0; 10 = GL src-alpha-saturate approximates
+    ///     One in the PSO too) — an additive draw. Rides EnvMapState.w so the fog term can fade
+    ///     additive contributions toward BLACK with distance (engine behavior) instead of lerping
+    ///     toward the fog color, which ADDS fog-colored light to every distant glow (backlog A8:
+    ///     the distant Strip glow never attenuated).
+    /// </summary>
+    public bool IsAdditiveBlend => AlphaBlend && DstBlendMode is 0 or 10;
 
     public required Vector4 AlphaState { get; init; }
     public required Vector4 RenderState { get; init; }
