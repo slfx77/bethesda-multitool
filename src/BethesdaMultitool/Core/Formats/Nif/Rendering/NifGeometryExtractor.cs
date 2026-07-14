@@ -401,6 +401,15 @@ internal static class NifGeometryExtractor
                 isEmissive = shaderMetadata?.PropertyType is "BSShaderNoLightingProperty"
                     or "BSEffectShaderProperty";
 
+                // FO3/FNV no-lighting view-angle falloff — same engine term the FO4 BGEM path feeds
+                // below (reference.frag |N·V| opacity ramp). Dust-storm shells, light-ray cones, and
+                // glow-dome fills all author it; without it they render as solid silhouettes (the
+                // "effects are largely opaque" report).
+                if (shaderMetadata is { NoLightingFalloff: { } nlFalloff })
+                {
+                    effectFalloff = nlFalloff;
+                }
+
                 // SLSF1_Refraction (0x8000) / SLSF1_Fire_Refraction (0x10000) on a BSLightingShaderProperty
                 // mark a screen-space heat-haze / distortion plane (e.g. the campfire's VaporTileNormal_n
                 // billboard). We don't do screen-space refraction, and such a plane ships a NORMAL map in its

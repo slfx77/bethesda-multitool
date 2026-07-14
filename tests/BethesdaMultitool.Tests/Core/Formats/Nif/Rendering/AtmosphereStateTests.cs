@@ -549,4 +549,63 @@ public sealed class AtmosphereStateTests
     private static AtmosphereState.ClimateTiming FnvTiming() =>
         AtmosphereState.ClimateTiming.FromClimateData(
             new BethesdaMultitool.Core.Formats.Esm.Models.Records.World.ClimateTimingData(36, 48, 108, 120, 0, 0x83));
+
+    // --- Interior XCLL/LGTM lighting (time-of-day independent) ---------------------------------
+
+    // GSProspectorSaloonInterior's real XCLL (FalloutNV.esm 0x00106185): packed colors are
+    // R | G<<8 | B<<16.
+    private static Dictionary<string, object?> SaloonXcll() => new()
+    {
+        ["AmbientColor"] = (uint)(30 | (41 << 8) | (77 << 16)),
+        ["DirectionalColor"] = (uint)(26 | (32 << 8) | (49 << 16)),
+        ["FogColor"] = (uint)(55 | (55 << 8) | (94 << 16)),
+        ["FogNear"] = 64f,
+        ["FogFar"] = 3750f,
+        ["DirectionalRotationXY"] = 0,
+        ["DirectionalRotationZ"] = 250,
+        ["DirectionalFade"] = 1.0f,
+        ["FogClipDistance"] = 6600f,
+        ["FogPow"] = 1.25f,
+    };
+
+    [Fact]
+    public void ResolveInterior_UsesAuthoredXcll_TimeIndependent()
+    {
+        var r = AtmosphereState.ResolveInterior(SaloonXcll(), templateLighting: null);
+
+        Assert.Equal(30 / 255f, r.AmbientColor.X, 3);
+        Assert.Equal(41 / 255f, r.AmbientColor.Y, 3);
+        Assert.Equal(77 / 255f, r.AmbientColor.Z, 3);
+        Assert.Equal(26 / 255f, r.SunColor.X, 3);          // directional = the interior "sun"
+        Assert.Equal(64f, r.FogNear);
+        Assert.Equal(3750f, r.FogFar);
+        Assert.Equal(1.25f, r.FogPower, 3);
+        Assert.Equal(1f, r.SunIntensity);                   // never fades with game hour
+        Assert.Equal(r.FogColor, r.SkyTopColor);            // no sky: fog doubles as backdrop
+    }
+
+    [Fact]
+    public void ResolveInterior_FallsBackToTemplate_AndHonorsInheritBits()
+    {
+        var template = new Dictionary<string, object?>
+        {
+            ["AmbientColor"] = (uint)(60 | (60 << 8) | (60 << 16)),
+            ["FogPower"] = 1.5f, // LGTM DATA spelling (vs XCLL "FogPow") — the dual-key trap
+        };
+
+        // No XCLL at all → template values drive.
+        var fromTemplate = AtmosphereState.ResolveInterior(null, template);
+        Assert.Equal(60 / 255f, fromTemplate.AmbientColor.X, 3);
+        Assert.Equal(1.5f, fromTemplate.FogPower, 3);
+
+        // XCLL present but ambient inherit bit (0x01) set → template ambient wins, XCLL fog stays.
+        var inherited = AtmosphereState.ResolveInterior(SaloonXcll(), template, inheritanceFlags: 0x01);
+        Assert.Equal(60 / 255f, inherited.AmbientColor.X, 3);
+        Assert.Equal(64f, inherited.FogNear);
+
+        // Inherit bits authored on a template-LESS cell (Saloon ships LNAM=0x9F, LTMP=NULL) must
+        // still resolve from the XCLL, not to defaults.
+        var noTemplate = AtmosphereState.ResolveInterior(SaloonXcll(), null, inheritanceFlags: 0x9F);
+        Assert.Equal(30 / 255f, noTemplate.AmbientColor.X, 3);
+    }
 }

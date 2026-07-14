@@ -73,6 +73,107 @@ public static class AtmosphereState
         float FogFar,
         float FogPower);            // distance-fog exponent (1 = linear), from WTHR FNAM day/night power
 
+    /// <summary>
+    ///     Interior-cell atmosphere from CELL XCLL lighting with LGTM lighting-template fallback —
+    ///     engine model: interiors are lit by their AUTHORED ambient + directional + fog, with NO
+    ///     time-of-day dependence (the previous exterior-sun fallback drove interiors to black at
+    ///     night). Field precedence per value: cell XCLL when present, else the referenced lighting
+    ///     template's DATA, else a neutral default. <paramref name="inheritanceFlags" /> bits force
+    ///     specific fields to come from the TEMPLATE even when XCLL is present (Skyrim-style LTMP
+    ///     inherit bits; FO3/FNV cells usually carry a full XCLL and no flags).
+    ///     Dictionary keys are the shared XCLL/LGTM schema names (SubrecordCellAndMiscSchemas):
+    ///     AmbientColor / DirectionalColor / FogColor (packed R|G&lt;&lt;8|B&lt;&lt;16),
+    ///     FogNear / FogFar / FogPow (floats), DirectionalRotationXY / DirectionalRotationZ
+    ///     (degrees, ints), DirectionalFade (float).
+    /// </summary>
+    public static Resolved ResolveInterior(
+        IReadOnlyDictionary<string, object?>? cellLighting,
+        IReadOnlyDictionary<string, object?>? templateLighting,
+        uint inheritanceFlags = 0,
+        bool lightingEnabled = true)
+    {
+        // Inherit bits (xEdit LTMP 'Inherit' flags): a set bit takes the field from the TEMPLATE.
+        const uint inheritAmbient = 1u << 0;
+        const uint inheritDirectional = 1u << 1;
+        const uint inheritFogColor = 1u << 2;
+        const uint inheritFogNear = 1u << 3;
+        const uint inheritFogFar = 1u << 4;
+        const uint inheritRotation = 1u << 5;
+        const uint inheritFade = 1u << 6;
+        const uint inheritFogPower = 1u << 8;
+
+        object? Pick(string key, uint inheritBit)
+        {
+            var fromTemplate = (inheritanceFlags & inheritBit) != 0;
+            var primary = fromTemplate ? templateLighting : cellLighting;
+            var secondary = fromTemplate ? cellLighting : templateLighting;
+            if (primary is not null && primary.TryGetValue(key, out var v) && v is not null) return v;
+            if (secondary is not null && secondary.TryGetValue(key, out var w) && w is not null) return w;
+            return null;
+        }
+
+        static Vector3? AsColor(object? v) => v switch
+        {
+            uint packed => new Vector3(packed & 0xFF, (packed >> 8) & 0xFF, (packed >> 16) & 0xFF) / 255f,
+            int packed => new Vector3((uint)packed & 0xFF, ((uint)packed >> 8) & 0xFF, ((uint)packed >> 16) & 0xFF) / 255f,
+            _ => null,
+        };
+
+        static float? AsFloat(object? v) => v switch
+        {
+            float f => f,
+            double d => (float)d,
+            int i => i,
+            uint u => u,
+            _ => null,
+        };
+
+        // Neutral defaults for a cell with neither XCLL nor a template (rare): readable gray ambient,
+        // soft white top-down directional, fog effectively off.
+        var ambient = AsColor(Pick("AmbientColor", inheritAmbient)) ?? new Vector3(0.33f, 0.33f, 0.33f);
+        var directional = AsColor(Pick("DirectionalColor", inheritDirectional)) ?? new Vector3(0.45f, 0.45f, 0.45f);
+        var fogColor = AsColor(Pick("FogColor", inheritFogColor)) ?? new Vector3(0.05f, 0.05f, 0.05f);
+        var fogNear = AsFloat(Pick("FogNear", inheritFogNear)) ?? DefaultFogNear;
+        var fogFar = AsFloat(Pick("FogFar", inheritFogFar)) ?? DefaultFogFar;
+        // Key-name trap: the XCLL schema names it FogPow, the LGTM DATA schema FogPower — check both.
+        var fogPower = AsFloat(Pick("FogPow", inheritFogPower))
+                       ?? AsFloat(Pick("FogPower", inheritFogPower)) ?? 1f;
+        var fade = AsFloat(Pick("DirectionalFade", inheritFade)) ?? 1f;
+        var rotXy = AsFloat(Pick("DirectionalRotationXY", inheritRotation)) ?? 0f;
+        var rotZ = AsFloat(Pick("DirectionalRotationZ", inheritRotation)) ?? 0f;
+
+        // Directional-light direction from the authored XY/Z rotations (degrees). Structural stand-in
+        // pending an engine decompile of the interior directional setup: yaw = Z, pitch = XY below
+        // horizontal, defaulting to a steep top-down light (rot 0/0 → straight down) — the engine's
+        // interior directional is a downlight unless authored otherwise. Returned as a TO-LIGHT vector
+        // to match the exterior sun convention.
+        var pitchRad = (90f - Math.Clamp(rotXy, -89f, 89f)) * (MathF.PI / 180f);
+        var yawRad = rotZ * (MathF.PI / 180f);
+        var dir = new Vector3(
+            MathF.Cos(pitchRad) * MathF.Cos(yawRad),
+            MathF.Cos(pitchRad) * MathF.Sin(yawRad),
+            MathF.Sin(pitchRad));
+        dir = dir.LengthSquared() > 1e-6f ? Vector3.Normalize(dir) : Vector3.UnitZ;
+
+        if (fogFar <= fogNear)
+        {
+            fogFar = fogNear + 1f;
+        }
+
+        var sunColor = lightingEnabled ? directional * Math.Clamp(fade, 0f, 4f) : Vector3.Zero;
+        return new Resolved(
+            dir,
+            sunColor,
+            lightingEnabled ? 1f : 0f,
+            ambient,
+            fogColor,   // interiors have no sky: the fog color doubles as the void/background tint
+            fogColor,
+            fogColor,
+            fogNear,
+            fogFar,
+            MathF.Max(fogPower, 0.01f));
+    }
+
     // Default clear-day palette — placeholder for worldspaces with no WTHR NAM0 to drive the colors.
     private static readonly Vector3 DaySun = new(1.00f, 0.96f, 0.88f);
     private static readonly Vector3 DayAmbient = new(0.40f, 0.43f, 0.50f);

@@ -97,6 +97,7 @@ internal static class WorldMapOverlayBuilder
             UnlinkedExteriorCells = unlinkedExterior,
             UnlinkedMapMarkers = unlinkedMarkers,
             AllCells = semantic.Cells,
+            XespDisabledRefs = BuildXespDisabledRefs(semantic.Cells),
             CellWorldSize = ResolveCellWorldSize(semantic.Cells),
             CellByFormId = cellByFormId,
             RefrToCellIndex = refrToCellIndex,
@@ -135,6 +136,7 @@ internal static class WorldMapOverlayBuilder
             WeathersByFormId = BuildWeatherIndex(weatherRecords),
             ClimatesByFormId = BuildClimateIndex(climateRecords),
             ImageSpacesByFormId = BuildImageSpaceIndex(semantic.ImageSpaces),
+            LightingTemplatesByFormId = BuildLightingTemplateIndex(semantic.LightingTemplates),
             AllWeathers = BuildAllWeathers(weatherRecords)
         };
     }
@@ -272,6 +274,7 @@ internal static class WorldMapOverlayBuilder
             UnlinkedExteriorCells = unlinkedExterior,
             UnlinkedMapMarkers = unlinkedMarkers,
             AllCells = suppRecords.Cells,
+            XespDisabledRefs = BuildXespDisabledRefs(suppRecords.Cells),
             CellWorldSize = ResolveCellWorldSize(suppRecords.Cells),
             CellByFormId = cellByFormId,
             RefrToCellIndex = refrToCellIndex,
@@ -311,6 +314,7 @@ internal static class WorldMapOverlayBuilder
             WeathersByFormId = BuildWeatherIndex(suppRecords.Weather),
             ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),
             ImageSpacesByFormId = BuildImageSpaceIndex(suppRecords.ImageSpaces),
+            LightingTemplatesByFormId = BuildLightingTemplateIndex(suppRecords.LightingTemplates),
             AllWeathers = BuildAllWeathers(suppRecords.Weather)
         };
     }
@@ -522,6 +526,64 @@ internal static class WorldMapOverlayBuilder
     private static Dictionary<uint, ClimateRecord> BuildClimateIndex(List<ClimateRecord> records)
     {
         var dict = new Dictionary<uint, ClimateRecord>(records.Count);
+        foreach (var r in records)
+        {
+            dict.TryAdd(r.FormId, r);
+        }
+        return dict;
+    }
+
+    /// <summary>
+    ///     Resolves every placed ref's XESP enable-parent chain to its initial-world enable state and
+    ///     returns the refs that come out DISABLED beyond their own flag: a ref slaved to a parent is
+    ///     disabled when the parent's resolved state is disabled (or ENABLED, with the XESP
+    ///     opposite-state flag bit 0). Chains are cycle/depth-guarded; a missing parent leaves the
+    ///     ref's own flag in charge. Own-flag-disabled refs are filtered elsewhere and skipped here.
+    /// </summary>
+    private static HashSet<uint> BuildXespDisabledRefs(List<CellRecord> cells)
+    {
+        var byId = new Dictionary<uint, PlacedReference>();
+        var linked = new List<PlacedReference>();
+        foreach (var cell in cells)
+        {
+            foreach (var p in cell.PlacedObjects)
+            {
+                byId.TryAdd(p.FormId, p);
+                if (p.EnableParentFormId is > 0)
+                {
+                    linked.Add(p);
+                }
+            }
+        }
+
+        var result = new HashSet<uint>();
+        foreach (var p in linked)
+        {
+            if (!p.IsInitiallyDisabled && ResolveXespDisabled(p, byId, depth: 0))
+            {
+                result.Add(p.FormId);
+            }
+        }
+
+        return result;
+
+        static bool ResolveXespDisabled(PlacedReference r, Dictionary<uint, PlacedReference> byId, int depth)
+        {
+            if (depth >= 16 || r.EnableParentFormId is not { } parentId || parentId == 0 ||
+                !byId.TryGetValue(parentId, out var parent))
+            {
+                return r.IsInitiallyDisabled;
+            }
+
+            var parentDisabled = ResolveXespDisabled(parent, byId, depth + 1);
+            var opposite = ((r.EnableParentFlags ?? 0) & 0x01) != 0; // bit 0 = opposite-of-parent (bit 1 = pop-in, irrelevant)
+            return opposite ? !parentDisabled : parentDisabled;
+        }
+    }
+
+    private static Dictionary<uint, LightingTemplateRecord> BuildLightingTemplateIndex(List<LightingTemplateRecord> records)
+    {
+        var dict = new Dictionary<uint, LightingTemplateRecord>(records.Count);
         foreach (var r in records)
         {
             dict.TryAdd(r.FormId, r);

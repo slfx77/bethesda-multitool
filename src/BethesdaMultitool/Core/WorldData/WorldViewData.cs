@@ -221,6 +221,23 @@ internal sealed class WorldViewData
     public IReadOnlyDictionary<uint, ImageSpaceRecord> ImageSpacesByFormId { get; init; } =
         new Dictionary<uint, ImageSpaceRecord>();
 
+    /// <summary>
+    ///     Lighting Template (LGTM) records keyed by FormID. An interior cell's LTMP FormID resolves
+    ///     through here so <c>AtmosphereState.ResolveInterior</c> can fall back to the template's
+    ///     ambient/directional/fog when the cell's XCLL is absent or inherit-flagged.
+    /// </summary>
+    public IReadOnlyDictionary<uint, LightingTemplateRecord> LightingTemplatesByFormId { get; init; } =
+        new Dictionary<uint, LightingTemplateRecord>();
+
+    /// <summary>
+    ///     Placed-reference FormIDs whose XESP enable-parent CHAIN resolves to disabled in the initial
+    ///     world state (parent initially-disabled, or enabled with the opposite-state flag). The
+    ///     placement bake ORs this with each ref's own initially-disabled flag — the mechanism that
+    ///     keeps condition-gated effect meshes (e.g. IndFXLightRays01) from always drawing. Refs whose
+    ///     own flag is set are filtered regardless and need not appear here.
+    /// </summary>
+    public IReadOnlyCollection<uint> XespDisabledRefs { get; init; } = new HashSet<uint>();
+
     /// <summary>All weather records, sorted by EditorId — populates the 3D viewer's weather dropdown
     /// (the user can preview any weather, not just the current climate's candidates).</summary>
     public IReadOnlyList<WeatherRecord> AllWeathers { get; init; } = [];

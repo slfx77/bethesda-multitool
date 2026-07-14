@@ -153,13 +153,25 @@ public sealed partial class WorldView3DControl
         // same parse headless (world-data 2.5 min vs 17.6 s). Rendering resumes the instant LoadData sets _data.
         if (_data is null) return;
 
-        // Per-frame refresh is a cheap struct assignment; keeps the tonemap operator in lockstep with
-        // interior/exterior + worldspace switches without invalidation bookkeeping.
-        _surface12.TonemapSettings = ResolveTonemapSettings();
-
         var now = DateTime.UtcNow;
         var deltaSeconds = (float)(now - _lastFrameTime).TotalSeconds;
         _lastFrameTime = now;
+
+        // Per-frame refresh is a cheap struct assignment; keeps the tonemap operator in lockstep with
+        // interior/exterior + worldspace switches without invalidation bookkeeping. AdaptFactor is the
+        // engine ADAPT blend weight for THIS frame (k = EyeAdaptSpeed^clamp(15·dt, 0, 1)) — the temporal
+        // smoothing that keeps the sparse-grid exposure from flickering while the camera moves.
+        var tonemap = ResolveTonemapSettings();
+        if (tonemap.EyeAdaptSpeed > 0f)
+        {
+            var speed = Math.Clamp(tonemap.EyeAdaptSpeed, 0.01f, 0.999f);
+            tonemap = tonemap with
+            {
+                AdaptFactor = MathF.Pow(speed, Math.Clamp(15f * Math.Max(deltaSeconds, 0f), 0f, 1f)),
+            };
+        }
+
+        _surface12.TonemapSettings = tonemap;
         // Clamp pathological deltas (long pause, debugger break) to keep camera step bounded.
         if (deltaSeconds > 0.1f) deltaSeconds = 0.1f;
         _windClockSeconds += deltaSeconds; // drives the SpeedTree leaf-wind sway phase
@@ -235,9 +247,7 @@ public sealed partial class WorldView3DControl
             ? BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.MoonSky.ComputeMoonDirection(
                 MoonProfile.PrimaryOrbit, gameHour, _gameDay)
             : null;
-        var resolved = AtmosphereState.Resolve(
-            gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: lightingOn,
-            moonlightDirection: moonlight, game: _data?.Game ?? default);
+        var resolved = ResolveSceneAtmosphere(gameHour, lightingOn, moonlight);
         // Stash the frame's directional-light direction for the frame-end shadow pass (the map is
         // fitted around this direction; see RecordSunShadowPass).
         _lastResolvedSunDirection = resolved.SunWorldDirection;

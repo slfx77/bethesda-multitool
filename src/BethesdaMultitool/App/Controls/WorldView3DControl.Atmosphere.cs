@@ -81,6 +81,31 @@ public sealed partial class WorldView3DControl
         return _data.WeathersByFormId.TryGetValue(entry.WeatherFormId, out var w) ? w : null;
     }
 
+    /// <summary>
+    ///     The scene atmosphere for the current view. Interiors resolve from their AUTHORED cell
+    ///     lighting (XCLL, with LGTM lighting-template fallback) — time-of-day independent, so the
+    ///     time slider no longer drives interiors to black at night. Exteriors use the weather/climate
+    ///     sun model as before.
+    /// </summary>
+    private AtmosphereState.Resolved ResolveSceneAtmosphere(
+        float gameHour, bool lightingEnabled, System.Numerics.Vector3? moonlightDirection = null)
+    {
+        // Cell DATA flag 0x80 = "behave like exterior" (xEdit): those interiors keep the exterior
+        // sun/weather atmosphere by engine design.
+        if (_selectedInterior is { } cell && _data is not null && (cell.Flags & 0x80) == 0)
+        {
+            var template = cell.LightingTemplateFormId is { } lgtmId
+                           && _data.LightingTemplatesByFormId.TryGetValue(lgtmId, out var lgtm)
+                ? lgtm.LightingData
+                : null;
+            return AtmosphereState.ResolveInterior(
+                cell.LightingData, template, cell.LightingTemplateInheritanceFlags ?? 0u, lightingEnabled);
+        }
+
+        return AtmosphereState.Resolve(gameHour, _selectedWeather, _currentClimateTiming,
+            lightingEnabled, moonlightDirection, _data?.Game ?? default);
+    }
+
     /// <summary>Refreshes the climate timing + default weather for whatever worldspace is now showing,
     /// then re-applies the dropdown selection (so "(Climate default)" picks up the new default).</summary>
     private void RefreshAtmosphereForCurrentWorldspace()
@@ -119,6 +144,7 @@ public sealed partial class WorldView3DControl
                 {
                     TargetLum = hdr.TargetLum > 0f ? hdr.TargetLum : settings.TargetLum,
                     UpperLumClamp = hdr.UpperLumClamp > 0f ? hdr.UpperLumClamp : settings.UpperLumClamp,
+                    EyeAdaptSpeed = hdr.EyeAdaptSpeed > 0f ? hdr.EyeAdaptSpeed : settings.EyeAdaptSpeed,
                 };
             }
 
@@ -722,7 +748,7 @@ public sealed partial class WorldView3DControl
         (Vector3 Right, Vector3 Up)? billboardBasis = null)
     {
         EnsureSkyTexturesResolved();
-        var atmo = AtmosphereState.Resolve(_gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: true, game: _data?.Game ?? default);
+        var atmo = ResolveSceneAtmosphere(_gameHour, lightingEnabled: true);
         var daylight = atmo.SunIntensity; // 0 night → 1 day
         var exterior = _selectedInterior is null;
 

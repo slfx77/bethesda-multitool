@@ -164,7 +164,8 @@ internal readonly record struct RenderableReference(
     public static RenderableReference? TryBuild(
         PlacedReference placement,
         PlacedObjectCategory category = PlacedObjectCategory.Unknown,
-        AlternateTextureSet? alternateTextures = null)
+        AlternateTextureSet? alternateTextures = null,
+        bool xespDisabled = false)
     {
         // Skip skinned actors — v3 renders static meshes only.
         if (placement.RecordType is "ACHR" or "ACRE") return null;
@@ -195,7 +196,9 @@ internal readonly record struct RenderableReference(
             BoundsCenter: center,
             BoundsRadius: radius,
             MeshId: meshId,
-            IsInitiallyDisabled: placement.IsInitiallyDisabled,
+            // XESP enable-parent chains slave a ref's enable state to its parent; the resolved
+            // initial-world state rides the same flag the cull's ShowInitiallyDisabled toggle reads.
+            IsInitiallyDisabled: placement.IsInitiallyDisabled || xespDisabled,
             IsMarker: IsMarkerModelPath(placement.ModelPath),
             IsImposter: IsImposterModelPath(placement.ModelPath) ||
                         IsLodDuplicateBaseEditorId(placement.BaseEditorId),

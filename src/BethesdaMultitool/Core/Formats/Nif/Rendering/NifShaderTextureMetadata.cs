@@ -10,6 +10,15 @@ internal sealed class NifShaderTextureMetadata
     public uint? ShaderFlags { get; init; }
     public uint? ShaderFlags2 { get; init; }
     public float? EnvMapScale { get; init; }
+
+    /// <summary>
+    ///     FO3/FNV BSShaderNoLightingProperty view-angle falloff (Start/Stop angle cosines +
+    ///     Start/Stop opacity — the 4 floats after the shader's FileName, BS version &gt; 26).
+    ///     The engine ramps effect opacity by |N·V| through these; without them, crossed-plane and
+    ///     shell effects (dust storms, light-ray cones, glow fills) render as solid silhouettes.
+    ///     Null when the block predates the fields or isn't a no-lighting shader.
+    /// </summary>
+    public (float StartAngle, float StopAngle, float StartOpacity, float StopOpacity)? NoLightingFalloff { get; init; }
     public IReadOnlyList<string?> TextureSlots { get; init; } = [];
 
     /// <summary>

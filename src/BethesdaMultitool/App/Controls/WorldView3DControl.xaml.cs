@@ -318,6 +318,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // Make the base-object category available to the placement bake before the renderer pulls
         // its first cell — drives the per-category visibility filter (activators off by default).
         data.RenderCache.CategoryIndex = data.CategoryIndex;
+        // XESP enable-parent resolution: parent-gated refs (condition-driven FX like light-ray
+        // cones) bake as initially-disabled instead of always drawing.
+        data.RenderCache.XespDisabledRefs = data.XespDisabledRefs;
         // Same timing for MODS alternate textures: the placement bake reads this to give each
         // re-skinned base (e.g. billboards) its own textured mesh variant.
         data.RenderCache.AlternateTextureIndex = data.AlternateTexturesByFormId;

@@ -119,7 +119,8 @@ internal static class NifShaderTexturePropertyReader
                 ShaderFlags2 = shaderFlags2,
                 EnvMapScale = envMapScale,
                 TextureSlots = CreateFixedTextureSlots(
-                    ResolveNoLightingTexture(data, nif, propBlock))
+                    ResolveNoLightingTexture(data, nif, propBlock)),
+                NoLightingFalloff = ReadNoLightingFalloff(data, nif, propBlock),
             };
         }
 
@@ -250,6 +251,44 @@ internal static class NifShaderTexturePropertyReader
         pos += 4;
         textureSetRef = BinaryUtils.ReadInt32(data, pos, nif.IsBigEndian);
         return true;
+    }
+
+    /// <summary>
+    ///     The BSShaderNoLightingProperty falloff quad (start/stop |N·V| cosines + start/stop
+    ///     opacity) — the 4 floats that follow the FileName sized string (nif.xml: present when
+    ///     BS version &gt; 26; FO3/FNV ship 34). Null when absent/truncated.
+    /// </summary>
+    private static (float, float, float, float)? ReadNoLightingFalloff(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo propBlock)
+    {
+        if (nif.BsVersion <= 26 ||
+            !TryReadShaderPropertyStart(data, propBlock, nif.IsBigEndian, out var pos, out var end) ||
+            pos + 16 + 4 > end)
+        {
+            return null;
+        }
+
+        pos += 16; // shader type + flags + flags2 + env-map scale
+        pos += 4;
+        _ = NifBinaryCursor.ReadSizedString(data, ref pos, end, nif.IsBigEndian); // FileName
+        if (pos + 16 > end)
+        {
+            return null;
+        }
+
+        var startAngle = BinaryUtils.ReadFloat(data, pos, nif.IsBigEndian);
+        var stopAngle = BinaryUtils.ReadFloat(data, pos + 4, nif.IsBigEndian);
+        var startOpacity = BinaryUtils.ReadFloat(data, pos + 8, nif.IsBigEndian);
+        var stopOpacity = BinaryUtils.ReadFloat(data, pos + 12, nif.IsBigEndian);
+
+        // All-zero quad = unauthored (the shader would multiply opacity to 0 and hide the shape);
+        // NaN/garbage guards the same way. Authored fades always carry a non-zero opacity or angle.
+        var authored = (startAngle != 0f || stopAngle != 0f || startOpacity != 0f || stopOpacity != 0f)
+                       && float.IsFinite(startAngle) && float.IsFinite(stopAngle)
+                       && float.IsFinite(startOpacity) && float.IsFinite(stopOpacity);
+        return authored ? (startAngle, stopAngle, startOpacity, stopOpacity) : null;
     }
 
     private static string? ResolveNoLightingTexture(

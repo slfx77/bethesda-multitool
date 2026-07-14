@@ -78,6 +78,13 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     /// </summary>
     internal IReadOnlyDictionary<uint, float>? BaseColorRemapIndex { get; set; }
 
+    /// <summary>
+    ///     Refs whose XESP enable-parent chain resolves to disabled in the initial world state
+    ///     (WorldViewData.XespDisabledRefs). OR'd into each placement's initially-disabled flag at
+    ///     bake time so parent-gated effect meshes don't always draw.
+    /// </summary>
+    internal IReadOnlyCollection<uint>? XespDisabledRefs { get; set; }
+
     public string ResourceName => nameof(WorldRenderCache);
 
     public Core.Diagnostics.ResourceCategory Category => Core.Diagnostics.ResourceCategory.CpuCache;
@@ -279,7 +286,8 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
                 alternateTextures = merged ?? alternateTextures;
             }
 
-            var renderable = RenderableReference.TryBuild(p, category, alternateTextures);
+            var xespDisabled = XespDisabledRefs?.Contains(p.FormId) == true;
+            var renderable = RenderableReference.TryBuild(p, category, alternateTextures, xespDisabled);
             if (renderable.HasValue) built.Add(renderable.Value);
         }
         // Sort by ModelPath so consecutive draws batch on the same SRV — adjacent REFRs

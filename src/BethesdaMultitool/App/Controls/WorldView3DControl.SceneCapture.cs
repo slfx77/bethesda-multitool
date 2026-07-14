@@ -157,7 +157,7 @@ public sealed partial class WorldView3DControl
         // Diagnostic: log the resolved atmosphere so a wrong sky COLOR can be told apart from a wrong
         // time-band (climate timing). A noon Mojave sky should be blue-ish (skyTop ≈ low-R/high-B) with the
         // sun high (sunDir.Z ≈ 1) and full daylight; red skyTop / low sun ⇒ off time-band or red data.
-        var atmo = AtmosphereState.Resolve(_gameHour, _selectedWeather, _currentClimateTiming, lightingEnabled: true, game: _data?.Game ?? default);
+        var atmo = ResolveSceneAtmosphere(_gameHour, lightingEnabled: true);
         Log.Info(string.Create(CultureInfo.InvariantCulture,
             $"[Capture] atmo hour={_gameHour:0.0} weather={_selectedWeather?.EditorId ?? "(climate default)"} timing={_currentClimateTiming} " +
             $"skyTop=({atmo.SkyTopColor.X:0.00},{atmo.SkyTopColor.Y:0.00},{atmo.SkyTopColor.Z:0.00}) " +

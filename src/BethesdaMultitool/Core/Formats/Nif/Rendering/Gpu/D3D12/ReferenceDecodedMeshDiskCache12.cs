@@ -144,7 +144,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // flags) now attach a playback rig, so their Animation/Skin payloads appear where v33 cached
     // none; (c) SpeedTree .spt meshes now keep their natural engine world scale — v33 entries
     // carry the old TREE-OBND/billboard rescale that oversized shrubs up to 2.7×.
-    internal const int DecoderVersion = 34;
+    // v35: FO3/FNV BSShaderNoLightingProperty view-angle falloff now populates EffectFalloff —
+    // v34 entries cache effect shells (dust storms, light-ray cones, glow fills) without their
+    // authored |N·V| opacity ramp and render them as solid silhouettes.
+    internal const int DecoderVersion = 35;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
