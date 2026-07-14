@@ -60,6 +60,7 @@ internal sealed class FlythroughCameraController
     // the ground every frame); _verticalVelocity integrates against Gravity until we land.
     private bool _airborne;
     private float _verticalVelocity;
+    private readonly WalkVoidRecovery _voidRecovery = new();
 
     // Grounded-Z easing state: false → the next grounded frame sets Z directly (mode switch /
     // teleport), so the camera never glides from a stale height across the map.
@@ -94,6 +95,7 @@ internal sealed class FlythroughCameraController
             // Leaving any in-progress jump behind on a mode switch.
             _airborne = false;
             _verticalVelocity = 0f;
+            _voidRecovery.Reset();
             _walkZSettled = false; // entering walk seats the camera directly, no glide
             if (_mode == CameraMode.Walk) SnapToGround(0f);
         }
@@ -139,7 +141,8 @@ internal sealed class FlythroughCameraController
 
     /// <summary>
     ///     Walk-mode ground-height lookup. <c>(worldX, worldY) → groundZ</c> or <c>null</c> when
-    ///     the camera is over a cell without terrain data (in which case the Z is left alone).
+    ///     the camera is over a cell without terrain data. Grounded motion leaves Z alone; an armed
+    ///     jump that descends there restores its saved launch pose.
     /// </summary>
     public Func<float, float, float?>? GroundHeightSampler { get; set; }
 
@@ -253,9 +256,9 @@ internal sealed class FlythroughCameraController
     /// <summary>
     ///     Walk-mode vertical integration. Grounded: snaps to the terrain (Space launches a jump).
     ///     Airborne: integrates <see cref="Gravity" /> against <see cref="JumpSpeed" /> and lands back
-    ///     on the terrain under the camera. Without a <see cref="GroundHeightSampler" /> there is no
-    ///     ground to jump from (and nothing to land on), so jumping is disabled and any in-progress
-    ///     hop is canceled — the camera Z is left wherever it is.
+    ///     on the terrain under the camera, or restores an explicitly-jumping camera when descent has
+    ///     no floor. Without a <see cref="GroundHeightSampler" /> there is no ground to jump from (and
+    ///     nothing to land on), so jumping is disabled and any in-progress hop is canceled.
     /// </summary>
     private void UpdateWalkVertical(float deltaSeconds)
     {
@@ -263,14 +266,27 @@ internal sealed class FlythroughCameraController
         {
             _airborne = false;
             _verticalVelocity = 0f;
+            _voidRecovery.Reset();
             return;
         }
 
-        // Launch a jump when grounded and Space is held (re-hops after landing if still held).
-        if (!_airborne && _keysDown.Contains(VirtualKey.Space))
+        var jumpHeld = _keysDown.Contains(VirtualKey.Space);
+        _voidRecovery.ObserveJumpKey(jumpHeld);
+
+        // Launch a jump when grounded and Space is held (re-hops after a NORMAL landing if still
+        // held). Capture an exact safe floor pose first. If horizontal movement crossed an edge in
+        // this same frame, TryArmJump falls back to the preceding grounded pose.
+        if (!_airborne && jumpHeld)
         {
-            _airborne = true;
-            _verticalVelocity = JumpSpeed;
+            var launchPosition = _camera.Position;
+            Vector3? currentGroundedPosition = GroundHeightSampler(launchPosition.X, launchPosition.Y) is float launchGround
+                ? new Vector3(launchPosition.X, launchPosition.Y, launchGround + EyeHeight)
+                : null;
+            if (_voidRecovery.TryArmJump(currentGroundedPosition))
+            {
+                _airborne = true;
+                _verticalVelocity = JumpSpeed;
+            }
         }
 
         if (!_airborne)
@@ -297,17 +313,31 @@ internal sealed class FlythroughCameraController
         }
 
         // Land once we descend to the eye-height floor above the ground beneath the (possibly
-        // air-controlled) X/Y. GroundHeightSampler null over a no-terrain cell leaves us airborne
-        // until we drift back over terrain.
-        if (_verticalVelocity <= 0f && GroundHeightSampler(pos.X, pos.Y) is float ground)
+        // air-controlled) X/Y. An explicitly-armed jump that descends over NO floor returns to its
+        // pre-jump safe pose; natural ledge falls are unarmed and retain the ordinary gravity path.
+        if (_verticalVelocity <= 0f)
         {
-            var floor = ground + EyeHeight;
-            if (newZ <= floor)
+            var ground = GroundHeightSampler(pos.X, pos.Y);
+            if (_voidRecovery.TryRecover(descending: true, floorKnown: ground is not null, out var recovered))
             {
-                newZ = floor;
                 _airborne = false;
                 _verticalVelocity = 0f;
-                _walkZSettled = true; // landed exactly at the floor — no post-landing glide
+                _walkZSettled = true;
+                _camera.Position = recovered;
+                return;
+            }
+
+            if (ground is float floorGround)
+            {
+                var floor = floorGround + EyeHeight;
+                if (newZ <= floor)
+                {
+                    newZ = floor;
+                    _airborne = false;
+                    _verticalVelocity = 0f;
+                    _walkZSettled = true; // landed exactly at the floor — no post-landing glide
+                    _voidRecovery.CompleteLanding(new Vector3(pos.X, pos.Y, floor));
+                }
             }
         }
 
@@ -335,6 +365,7 @@ internal sealed class FlythroughCameraController
         {
             _walkZSettled = true;
             _camera.Position = new Vector3(pos.X, pos.Y, target);
+            _voidRecovery.RecordGrounded(_camera.Position);
             return;
         }
 
@@ -351,6 +382,7 @@ internal sealed class FlythroughCameraController
         var newZ = pos.Z + ((target - pos.Z) * blend);
         if (MathF.Abs(target - newZ) < 0.05f) newZ = target; // settle exactly, no asymptotic crawl
         _camera.Position = new Vector3(pos.X, pos.Y, newZ);
+        _voidRecovery.RecordGrounded(new Vector3(pos.X, pos.Y, target));
     }
 }
 #endif
