@@ -39,11 +39,18 @@ internal static class GreetingEntrySynthesizer
     ///     valid-FormID set and would be filtered as dangling by
     ///     <see cref="DialogGrupBuilder" />'s sanitize pass.
     /// </param>
+    /// <param name="greetingSurvivesGates">
+    ///     Predicate matching the master-topic admission gates: a pair counts as "already has
+    ///     a greeting" only when at least one of its greeting INFOs will actually EMIT. A
+    ///     content-less runtime stub suppressing the synth and then dying at the gate leaves
+    ///     the NPC with only Goodbye. Null = count every greeting (legacy behavior).
+    /// </param>
     /// <returns>Synthesized INFO records to append to <paramref name="newInfos" />.</returns>
     public static List<DialogueRecord> Synthesize(
         IReadOnlyList<DialogTopicRecord> newTopics,
         IReadOnlyList<DialogueRecord> newInfos,
-        IReadOnlyDictionary<uint, uint> dialFormIdMap)
+        IReadOnlyDictionary<uint, uint> dialFormIdMap,
+        Func<DialogueRecord, bool>? greetingSurvivesGates = null)
     {
         // Map source DIAL FormID → topic metadata and quest. The synth works in source
         // FormID space while it infers roots from LinkTo/LinkFrom, then maps the surviving
@@ -68,13 +75,15 @@ internal static class GreetingEntrySynthesizer
 
         // Discover (speaker, quest) pairs already covered by an existing GREETING INFO so
         // we don't duplicate. A speaker may have its own GREETING under a different quest,
-        // so we treat the pair as the unique identity.
+        // so we treat the pair as the unique identity. Only greetings that will survive the
+        // master-topic gates count — a doomed stub must not suppress the synth entry.
         var existingGreetingPairs = new HashSet<(uint Speaker, uint Quest)>();
         foreach (var info in newInfos)
         {
             if (info.TopicFormId != MasterGreetingDial) continue;
             if (!info.SpeakerFormId.HasValue || info.SpeakerFormId.Value == 0) continue;
             if (!info.QuestFormId.HasValue || info.QuestFormId.Value == 0) continue;
+            if (greetingSurvivesGates is not null && !greetingSurvivesGates(info)) continue;
             existingGreetingPairs.Add((info.SpeakerFormId.Value, info.QuestFormId.Value));
         }
 
@@ -255,7 +264,10 @@ internal static class GreetingEntrySynthesizer
             // InfoFlags = 0: no Goodbye flag set, conversation continues after this INFO.
             InfoFlags = 0,
             InfoFlagsExt = 0,
-            Difficulty = 0
+            Difficulty = 0,
+            // Exempts this entry from the master-topic empty-stub gate: the silent greeting
+            // IS the designed topic-tree entry mechanism (see gate in DialogGrupBuilder).
+            IsSynthesizedGreetingEntry = true
         };
     }
 }

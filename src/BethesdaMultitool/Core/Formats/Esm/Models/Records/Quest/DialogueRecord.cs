@@ -68,6 +68,15 @@ public record DialogueRecord
     /// <summary>Perk or actor value FormID for speech challenges (runtime pPerkSkillStat).</summary>
     public uint? PerkSkillStatFormId { get; init; }
 
+    /// <summary>
+    ///     True when this INFO was fabricated by <c>GreetingEntrySynthesizer</c> as a
+    ///     topic-tree entry point (single empty response + TCLT links, speaker-bound).
+    ///     The master-topic empty-stub gate exempts these — the deliberately-silent
+    ///     greeting is the designed entry mechanism, unlike runtime menu-stub
+    ///     reconstructions which must stay dropped.
+    /// </summary>
+    public bool IsSynthesizedGreetingEntry { get; init; }
+
     // ESM linking subrecords
 
     /// <summary>Topics this INFO links TO (TCLT subrecords — choosing this response leads to these topics).</summary>

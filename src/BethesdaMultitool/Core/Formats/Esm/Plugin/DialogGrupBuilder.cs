@@ -87,6 +87,17 @@ internal static class DialogGrupBuilder
             return new DialogSectionResult([], null);
         }
 
+        // Proto topics whose FormIDs collide with retail records are excluded from emission
+        // above (the retail-FormID-stable generation of a quest's dialogue tree). Remember
+        // them per quest: they are the retail branches — INCLUDING the conversation exits
+        // ("Never mind." / goodbye topics) — that synthesized choice links must reconnect
+        // to. Without an exit link the root-return stamp closes an inescapable choice ring
+        // (Beatrix Russell softlock; byte-verified: the DUMP has the exit topic, the
+        // collision gate dropped it, and the ring was stamped on by us). Selection is
+        // per-speaker: shared quests (VFreeformFreeside) collide topics of MANY NPCs, and
+        // an exit whose retail INFO can't pass for this speaker is a hidden choice.
+        var exitTopicResolver = ExitTopicResolver.Build(topics, classifier, masterRecordsByFormId);
+
         // Pass 1: allocate fresh FormIDs for every new DIAL so we can patch INFO.TPIC
         // before encoding (the encoder writes TPIC verbatim from the model field).
         var dialFormIdMap = new Dictionary<uint, uint>();
@@ -104,8 +115,14 @@ internal static class DialogGrupBuilder
         // Must run AFTER dialFormIdMap is built so the synth INFO's TCLT entries point at
         // allocated DIAL FormIDs (which exist in validFormIds) — pointing at source FormIDs
         // would get filtered as dangling and the engine would surface no topic entry points.
+        // The survival predicate closes an existence-check hole: a (speaker, quest) pair
+        // whose only greeting is a content-less runtime stub must NOT count as covered —
+        // the stub dies at the master-topic gates below, and skipping the synth then leaves
+        // the NPC with only Goodbye (Ulysses, xex21.v116).
         var synthesizedGreetings = GreetingEntrySynthesizer.Synthesize(
-            newTopics, newInfos, dialFormIdMap);
+            newTopics, newInfos, dialFormIdMap,
+            greetingSurvivesGates: info =>
+                HasSpeakerBindingCondition(info) && HasRenderableResponse(info));
         if (synthesizedGreetings.Count > 0)
         {
             newInfos.AddRange(synthesizedGreetings);
@@ -229,7 +246,7 @@ internal static class DialogGrupBuilder
         }
 
         var synthesizedReturnLinks = ApplyRootReturnTopicLinks(
-            infosByEmittedDial, infosByMasterDial, dialEditorIdByFormId);
+            infosByEmittedDial, infosByMasterDial, dialEditorIdByFormId, exitTopicResolver);
 
         using var stream = new MemoryStream();
         var topLabel = "DIAL"u8.ToArray();
@@ -243,6 +260,7 @@ internal static class DialogGrupBuilder
         var remappedCtdaParameters = 0;
         var droppedNoQstiInfos = 0;
         var droppedUnboundMasterTopicInfos = 0;
+        var droppedEmptyStubMasterTopicInfos = 0;
         var infoSourceToAllocated = new Dictionary<uint, uint>();
         var audioBindings = new List<EmittedDialogueAudioBinding>();
         foreach (var topic in newTopics)
@@ -392,6 +410,30 @@ internal static class DialogGrupBuilder
                     continue;
                 }
 
+                // Even a correctly speaker-bound INFO must carry renderable content here.
+                // Runtime conversation-menu reconstructions yield content-less stubs (empty
+                // NAM1, zeroed TRDT, only TCLT choice links); chained into a shared master
+                // topic they SHADOW the actor's retail greeting — the engine selects the
+                // stub, renders nothing, and the conversation instantly closes (Victor /
+                // Doc Mitchell / the Gomorrah greeter, xex22.v113 in-game). Stubs stay
+                // legitimate under NEW proto topics, which re-emit their own menu structure.
+                // EXEMPT: GreetingEntrySynthesizer entries — their single empty response is
+                // the designed "[silence], then the topic list" entry mechanism; dropping
+                // them leaves proto NPCs with only Goodbye (Ulysses, xex21.v115 in-game)
+                // and severs synthesized topic entry points on retail NPCs.
+                if (!HasRenderableResponse(patched))
+                {
+                    if (!patched.IsSynthesizedGreetingEntry)
+                    {
+                        droppedEmptyStubMasterTopicInfos++;
+                        stats.IncrementSkipped("INFO");
+                        stats.IncrementDropReason("info.master-topic-empty-stub");
+                        continue;
+                    }
+
+                    stats.IncrementDropReason("info.master-topic-synth-entry-kept");
+                }
+
                 patched = patched with
                 {
                     PreviousInfo = lastEmittedInfoByQuest.TryGetValue(patched.QuestFormId.Value, out var prevInfo)
@@ -451,7 +493,9 @@ internal static class DialogGrupBuilder
             "(engine refuses topic-info inserts when QSTI is missing), and " +
             $"{droppedUnboundMasterTopicInfos:N0} master-topic INFO(s) without a hard speaker binding " +
             "(GetIsID/GetIsVoiceType/ANAM — unbound proto INFOs hijack vanilla NPC greetings once the " +
-            "engine strips their unresolvable conditions). " +
+            "engine strips their unresolvable conditions), and " +
+            $"{droppedEmptyStubMasterTopicInfos:N0} content-less master-topic stub INFO(s) " +
+            "(empty menu reconstructions that shadow retail greetings). " +
             $"Synthesized {synthesizedReturnLinks:N0} terminal INFO root-return topic link(s). " +
             $"Sanitized {sanitizedFieldCount:N0} unresolvable " +
             $"cross-record FormID reference(s); dropped {droppedConditions:N0} CTDA condition(s) " +
@@ -463,10 +507,281 @@ internal static class DialogGrupBuilder
             stream.ToArray(), null, infoSourceToAllocated, audioBindings);
     }
 
+    /// <summary>
+    ///     Per (quest, speaker), picks ONE master DIAL from the proto's retail-FormID-
+    ///     colliding topics to serve as the synthesized choice chains' exit link. The pick
+    ///     must have a retail INFO that PASSES for the speaker (GetIsID match or
+    ///     unconditioned) or the engine hides the choice — quest-level picks fail on shared
+    ///     quests like VFreeformFreeside where the lowest-FormID topic belongs to a
+    ///     different NPC. Ranking: goodbye-flagged passing → terminating (link-less)
+    ///     passing → any passing → quest-wide Min fallback; ties broken by Min FormID.
+    /// </summary>
+    private sealed class ExitTopicResolver
+    {
+        private readonly Dictionary<uint, List<uint>> _collidingByQuest;
+        private readonly Dictionary<uint, MasterDialConditions> _conditionsByDial;
+        private readonly Dictionary<(uint Quest, uint Speaker), uint> _memo = new();
+
+        private ExitTopicResolver(
+            Dictionary<uint, List<uint>> collidingByQuest,
+            Dictionary<uint, MasterDialConditions> conditionsByDial)
+        {
+            _collidingByQuest = collidingByQuest;
+            _conditionsByDial = conditionsByDial;
+        }
+
+        public static ExitTopicResolver Build(
+            IReadOnlyList<DialogTopicRecord> topics,
+            NewVsOverrideClassifier classifier,
+            IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId)
+        {
+            var collidingByQuest = new Dictionary<uint, List<uint>>();
+            var collidingDials = new HashSet<uint>();
+            foreach (var topic in topics)
+            {
+                // Engine/system DIALs (GREETING 0xC8, HELLO 0xD2, GOODBYE 0xD4, …) live in
+                // the sub-0x1000 FormID block and are captured by every dump — they collide
+                // with master by definition and their huge INFO sets trivially pass every
+                // rank, hijacking the exit pick (a TCLT back to GREETING is nonsense).
+                if (topic.FormId < 0x00001000u
+                    || !classifier.IsOverride(topic.FormId)
+                    || !masterRecordsByFormId.TryGetValue(topic.FormId, out var masterDial)
+                    || masterDial.Header.Signature != "DIAL")
+                {
+                    continue;
+                }
+
+                // Quest membership + type come from MASTER's own record — captured
+                // topic→quest attribution is unreliable (a Hidden Valley Conversation topic
+                // was attributed to Beatrix's Freeside quest). Choice links target
+                // Topic-type DIALs only (DATA type byte 0).
+                var dialData = masterDial.Subrecords.FirstOrDefault(s =>
+                    s.Signature == "DATA" && s.Data.Length >= 1);
+                if (dialData is null || dialData.Data[0] != 0)
+                {
+                    continue;
+                }
+
+                var addedToAnyQuest = false;
+                foreach (var qsti in masterDial.Subrecords)
+                {
+                    if (qsti.Signature != "QSTI" || qsti.Data.Length < 4)
+                    {
+                        continue;
+                    }
+
+                    var quest = BinaryPrimitives.ReadUInt32LittleEndian(qsti.Data.AsSpan(0, 4));
+                    if (quest == 0)
+                    {
+                        continue;
+                    }
+
+                    if (!collidingByQuest.TryGetValue(quest, out var list))
+                    {
+                        list = [];
+                        collidingByQuest[quest] = list;
+                    }
+
+                    if (!list.Contains(topic.FormId))
+                    {
+                        list.Add(topic.FormId);
+                        addedToAnyQuest = true;
+                    }
+                }
+
+                if (addedToAnyQuest)
+                {
+                    collidingDials.Add(topic.FormId);
+                }
+            }
+
+            var conditions = collidingDials.Count == 0
+                ? new Dictionary<uint, MasterDialConditions>()
+                : IndexMasterDialConditions(masterRecordsByFormId, collidingDials);
+            return new ExitTopicResolver(collidingByQuest, conditions);
+        }
+
+        /// <summary>0 when the quest has no colliding master topics.</summary>
+        public uint Resolve(uint quest, uint? speaker)
+        {
+            if (!_collidingByQuest.TryGetValue(quest, out var dials))
+            {
+                return 0;
+            }
+
+            var key = (quest, speaker ?? 0u);
+            if (_memo.TryGetValue(key, out var memoized))
+            {
+                return memoized;
+            }
+
+            var exit = PickForSpeaker(dials, speaker ?? 0u);
+            _memo[key] = exit;
+            return exit;
+        }
+
+        private uint PickForSpeaker(List<uint> dials, uint speaker)
+        {
+            uint bestGoodbye = 0, bestTerminating = 0, bestPassing = 0;
+            foreach (var dial in dials)
+            {
+                if (!_conditionsByDial.TryGetValue(dial, out var c))
+                {
+                    continue;
+                }
+
+                if (c.GoodbyePassesFor(speaker) && (bestGoodbye == 0 || dial < bestGoodbye))
+                {
+                    bestGoodbye = dial;
+                }
+
+                if (c.TerminatingPassesFor(speaker) && (bestTerminating == 0 || dial < bestTerminating))
+                {
+                    bestTerminating = dial;
+                }
+
+                if (c.AnyPassesFor(speaker) && (bestPassing == 0 || dial < bestPassing))
+                {
+                    bestPassing = dial;
+                }
+            }
+
+            if (bestGoodbye != 0)
+            {
+                return bestGoodbye;
+            }
+
+            if (bestTerminating != 0)
+            {
+                return bestTerminating;
+            }
+
+            return bestPassing != 0 ? bestPassing : dials.Min();
+        }
+
+        /// <summary>
+        ///     One offset-ordered walk over the master stream (INFO parentage is
+        ///     GRUP-positional). Per colliding DIAL, aggregates which speakers its INFOs
+        ///     pass for. INFO DATA: type(0), nextSpeaker(1), flags16(2-3) — Goodbye 0x0001.
+        ///     CTDA: functionIndex at offset 8 (GetIsID = 72), param1 at offset 12.
+        ///     "Terminating" = INFO with no TCLT links (playing it returns to the topic
+        ///     list, where the engine Goodbye is available).
+        /// </summary>
+        private static Dictionary<uint, MasterDialConditions> IndexMasterDialConditions(
+            IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
+            HashSet<uint> collidingDials)
+        {
+            var index = new Dictionary<uint, MasterDialConditions>();
+            uint currentDial = 0;
+            foreach (var record in masterRecordsByFormId.Values
+                         .Where(r => r.Header.Signature is "DIAL" or "INFO")
+                         .OrderBy(r => r.Offset))
+            {
+                if (record.Header.Signature == "DIAL")
+                {
+                    currentDial = record.Header.FormId;
+                    continue;
+                }
+
+                if (currentDial == 0 || !collidingDials.Contains(currentDial))
+                {
+                    continue;
+                }
+
+                var isGoodbye = false;
+                var hasTclt = false;
+                uint? getIsIdSpeaker = null;
+                var conditionCount = 0;
+                foreach (var sub in record.Subrecords)
+                {
+                    switch (sub.Signature)
+                    {
+                        case "DATA" when sub.Data.Length >= 4:
+                            isGoodbye = (sub.Data[2] & 0x01) != 0;
+                            break;
+                        case "TCLT":
+                            hasTclt = true;
+                            break;
+                        case "CTDA" when sub.Data.Length >= 16:
+                            conditionCount++;
+                            var functionIndex = BinaryPrimitives.ReadUInt16LittleEndian(sub.Data.AsSpan(8, 2));
+                            if (functionIndex == GetIsIdFunctionIndex)
+                            {
+                                getIsIdSpeaker = BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(12, 4));
+                            }
+
+                            break;
+                    }
+                }
+
+                if (!index.TryGetValue(currentDial, out var conditions))
+                {
+                    conditions = new MasterDialConditions();
+                    index[currentDial] = conditions;
+                }
+
+                conditions.Record(
+                    speaker: getIsIdSpeaker,
+                    unconditioned: conditionCount == 0,
+                    goodbye: isGoodbye,
+                    terminating: !hasTclt);
+            }
+
+            return index;
+        }
+    }
+
+    /// <summary>Per-master-DIAL aggregate of which speakers its INFOs pass for.</summary>
+    private sealed class MasterDialConditions
+    {
+        private readonly HashSet<uint> _goodbyeSpeakers = [];
+        private readonly HashSet<uint> _terminatingSpeakers = [];
+        private readonly HashSet<uint> _anySpeakers = [];
+        private bool _goodbyeUnconditioned;
+        private bool _terminatingUnconditioned;
+        private bool _anyUnconditioned;
+
+        public void Record(uint? speaker, bool unconditioned, bool goodbye, bool terminating)
+        {
+            Track(_anySpeakers, ref _anyUnconditioned, speaker, unconditioned);
+            if (goodbye)
+            {
+                Track(_goodbyeSpeakers, ref _goodbyeUnconditioned, speaker, unconditioned);
+            }
+
+            if (terminating)
+            {
+                Track(_terminatingSpeakers, ref _terminatingUnconditioned, speaker, unconditioned);
+            }
+        }
+
+        public bool GoodbyePassesFor(uint speaker) =>
+            _goodbyeUnconditioned || _goodbyeSpeakers.Contains(speaker);
+
+        public bool TerminatingPassesFor(uint speaker) =>
+            _terminatingUnconditioned || _terminatingSpeakers.Contains(speaker);
+
+        public bool AnyPassesFor(uint speaker) =>
+            _anyUnconditioned || _anySpeakers.Contains(speaker);
+
+        private static void Track(HashSet<uint> speakers, ref bool unconditioned, uint? speaker, bool isUnconditioned)
+        {
+            if (isUnconditioned)
+            {
+                unconditioned = true;
+            }
+            else if (speaker is > 0)
+            {
+                speakers.Add(speaker.Value);
+            }
+        }
+    }
+
     private static int ApplyRootReturnTopicLinks(
         Dictionary<uint, List<DialogueRecord>> infosByEmittedDial,
         Dictionary<uint, List<DialogueRecord>> infosByMasterDial,
-        Dictionary<uint, string> dialEditorIdByFormId)
+        Dictionary<uint, string> dialEditorIdByFormId,
+        ExitTopicResolver? exitTopicResolver = null)
     {
         var rootLinksBySpeaker = new Dictionary<(uint Quest, uint? Speaker), List<uint>>();
         var rootLinksByQuest = new Dictionary<uint, List<uint>>();
@@ -526,7 +841,7 @@ internal static class DialogGrupBuilder
                     continue;
                 }
 
-                var merged = new List<uint>(rootLinks.Count);
+                var merged = new List<uint>(rootLinks.Count + 1);
                 var seen = new HashSet<uint>();
                 foreach (var link in rootLinks)
                 {
@@ -534,6 +849,15 @@ internal static class DialogGrupBuilder
                     {
                         merged.Add(link);
                     }
+                }
+
+                // Reconnect the quest's retail exit branch (a master DIAL the collision
+                // gate excluded): its retail INFOs terminate, returning the player to the
+                // topic list — otherwise the stamped links form an inescapable ring.
+                var exitTopic = exitTopicResolver?.Resolve(questId, info.SpeakerFormId) ?? 0;
+                if (exitTopic != 0 && seen.Add(exitTopic))
+                {
+                    merged.Add(exitTopic);
                 }
 
                 if (merged.Count == 0)
@@ -970,6 +1294,21 @@ internal static class DialogGrupBuilder
         return info.Conditions.Any(condition =>
             condition.FunctionIndex == GetIsIdFunctionIndex && condition.Parameter1 != 0);
     }
+
+    /// <summary>
+    ///     True when the INFO carries at least one renderable response — non-empty NAM1 text
+    ///     or a TRDT voice sound. Content-less INFOs (runtime menu-structure stubs whose only
+    ///     payload is TCLT choice links) must never attach to a shared MASTER topic: bound to
+    ///     a retail NPC and chained ahead of the retail greetings, the engine selects the
+    ///     stub, plays nothing, and instantly ends the conversation. The encoder's
+    ///     "(NOT FOUND IN CRASH DUMP)" placeholder is NOT renderable — a placeholder-seeded
+    ///     model must never shadow a retail greeting either.
+    /// </summary>
+    private static bool HasRenderableResponse(DialogueRecord info) =>
+        info.Responses.Any(response =>
+            (!string.IsNullOrWhiteSpace(response.Text)
+             && !string.Equals(response.Text, DialogueTextBackfill.PlaceholderText, StringComparison.Ordinal))
+            || response.SoundFormId is > 0);
 
     private static DialogueRecord SanitizeInfoReferences(
         DialogueRecord info,
