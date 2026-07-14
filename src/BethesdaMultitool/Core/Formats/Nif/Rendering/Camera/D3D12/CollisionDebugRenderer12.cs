@@ -17,51 +17,97 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 ///     so the user can visually compare collision against the rendered meshes. Off by default; toggled
 ///     from the Visibility menu.
 ///     <para>
-///         Cloned from <c>CellGridDebugRenderer12</c>: reuses the cellgrid line shaders + PSO, builds a
-///         single per-frame dynamic line-vertex buffer in the shared ring buffer (no per-renderer GPU
-///         resource), and draws one <c>DrawInstanced</c> line list. Each collision triangle contributes
-///         three edges (6 line vertices). Depth is DISABLED so the cage stays visible through the meshes
-///         it overlays. Only refs whose collision mesh is already cached (warm) are drawn — exactly the
-///         set walk mode samples.
+///         Reuses the cellgrid line shaders + PSO and draws one <c>DrawInstanced</c> line list. Each
+///         collision triangle contributes three edges (6 line vertices). The transformed line list lives
+///         in a content-addressed persistent upload buffer, so an unchanged view reuses it across frames;
+///         only the small view/projection constant remains in the per-frame ring. Depth is DISABLED so the
+///         cage stays visible through the meshes it overlays. References are globally distance-sorted;
+///         warm meshes draw immediately and a bounded cold-path warmup offers the nearest misses to the
+///         shared reference cache.
 ///     </para>
 /// </summary>
 internal sealed class CollisionDebugRenderer12 : IDisposable
 {
     private const uint UniformsByteSize = 80; // float4x4 (64) + float4 color (16)
     private const uint VertexStride = 12;     // sizeof(Vector3)
+    private const int MaxColdWarmupRequestsPerFrame = 2;
 
-    // Cap on line vertices accumulated per frame (each 12 B → ~6 MB ring allocation at the cap). A dense
-    // area's collision cages fit comfortably; beyond this we stop adding (debug overlay — move closer to
-    // see the rest). Keeps the per-frame ring-buffer allocation bounded.
+    // Cap on line vertices retained in the persistent wireframe buffer (each 12 B → ~6 MB at the cap).
+    // A dense area's collision cages fit comfortably; beyond this we stop adding (debug overlay — move
+    // closer to see the rest).
     private const int MaxLineVertices = 500_000;
 
+    private readonly GpuDevice12 _gpu;
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
     private readonly ID3D12PipelineState _pso;
+    private readonly CollisionWireframeGeometryCache<ID3D12Resource> _geometryCache;
+    private readonly CollisionReferencePriorityResolver _priorityResolver = new();
 
     private readonly List<global::BethesdaMultitool.WorldSpatialCell> _visibleCellScratch = [];
-    private Vector3[] _lineScratch = new Vector3[4096];
-    private Vector3[] _worldPosScratch = [];
-    private int _lineVertexCount;
+    private readonly List<CollisionReferenceCandidate> _candidateScratch = [];
+    private readonly List<CollisionWireframeInstance> _instanceScratch = [];
+    private Func<string, CollisionMesh?>? _collisionResolver;
+    private Func<string, float, CollisionMesh?>? _collisionWarmup;
+    private bool _showDisabled;
     private bool _disposed;
 
     /// <summary>Spatial index for the loaded worldspace; set via <see cref="LoadData" />.</summary>
     public global::BethesdaMultitool.WorldSpatialIndex? SpatialIndex { get; private set; }
 
     /// <summary>Resolves a model path to its cached walk-mode collision mesh (null when not warm).</summary>
-    public Func<string, CollisionMesh?>? CollisionResolver { get; set; }
+    public Func<string, CollisionMesh?>? CollisionResolver
+    {
+        get => _collisionResolver;
+        set
+        {
+            if (ReferenceEquals(_collisionResolver, value)) return;
+            _collisionResolver = value;
+            _geometryCache.Invalidate();
+        }
+    }
+
+    /// <summary>
+    ///     Offers a cold model path to the reference streaming cache at the supplied squared XY
+    ///     distance. At most <see cref="MaxColdWarmupRequestsPerFrame" /> unique paths are offered.
+    /// </summary>
+    public Func<string, float, CollisionMesh?>? CollisionWarmup
+    {
+        get => _collisionWarmup;
+        set
+        {
+            if (ReferenceEquals(_collisionWarmup, value)) return;
+            _collisionWarmup = value;
+            _geometryCache.Invalidate();
+        }
+    }
 
     /// <summary>Mirror the viewer's "show initially-disabled" toggle so the overlay matches the scene.</summary>
-    public bool ShowDisabled { get; set; }
+    public bool ShowDisabled
+    {
+        get => _showDisabled;
+        set
+        {
+            if (_showDisabled == value) return;
+            _showDisabled = value;
+            _geometryCache.Invalidate();
+        }
+    }
 
     public CollisionDebugRenderer12(
         GpuDevice12 gpu,
         GpuCommandRecorder12 recorder,
         GpuRingBuffer12 ringBuffer,
-        GpuRootSignature12 rootSignature)
+        GpuRootSignature12 rootSignature,
+        GpuDeletionQueue12 deletionQueue)
     {
+        _gpu = gpu;
         _recorder = recorder;
         _ringBuffer = ringBuffer;
+        _geometryCache = new CollisionWireframeGeometryCache<ID3D12Resource>(
+            UploadGeometry,
+            deletionQueue.EnqueueDispose,
+            MaxLineVertices);
 
         var vsBytecode = CompileEmbeddedShader("cellgrid.vert.hlsl", "main", "vs_5_1");
         var psBytecode = CompileEmbeddedShader("cellgrid.frag.hlsl", "main", "ps_5_1");
@@ -132,72 +178,68 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _geometryCache.Dispose();
         _pso.Dispose();
     }
 
     /// <summary>Binds the loaded worldspace's spatial index (placed-ref source for the overlay).</summary>
     public void LoadData(global::BethesdaMultitool.WorldSpatialIndex? spatialIndex)
-        => SpatialIndex = spatialIndex;
+    {
+        _geometryCache.Invalidate();
+        SpatialIndex = spatialIndex;
+    }
 
     /// <summary>
-    ///     Draws the collision wireframe for every warm-collision reference within the visibility
-    ///     cylinder. Returns the number of references drawn (0 when nothing is warm / in view).
+    ///     Draws the collision wireframe nearest-first within the visibility cylinder. Returns the
+    ///     number of references drawn (0 when nothing is available / in view).
     /// </summary>
     public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
     {
-        if (_disposed || SpatialIndex is null || CollisionResolver is null) return 0;
+        if (_disposed || SpatialIndex is null || _collisionResolver is null) return 0;
 
-        _lineVertexCount = 0;
+        _candidateScratch.Clear();
         SpatialIndex.QueryCellsInRadius(cylinder.Position.X, -cylinder.Position.Y, cylinder.Radius, _visibleCellScratch);
 
-        // Draw NEAREST cells first so the per-frame line-vertex budget (MaxLineVertices) is spent on the
-        // collision closest to the camera — that's what you compare against the rendered meshes up close.
-        // QueryCellsInRadius returns cells in index order, so without this the budget could be exhausted by
-        // distant cells, leaving near collision undrawn ("only rendered far from the camera").
-        var camCanvas = new Vector2(cylinder.Position.X, -cylinder.Position.Y);
-        _visibleCellScratch.Sort((a, b) =>
-            Vector2.DistanceSquared(a.CenterCanvas, camCanvas)
-                .CompareTo(Vector2.DistanceSquared(b.CenterCanvas, camCanvas)));
-
-        var refsDrawn = 0;
+        // QueryCellsInRadius is row-major and Cell.PlacedObjects retains source order. Preserve that as
+        // the final tie-break, but rank every eligible REFR globally by its own XY distance below. A cell-
+        // only sort still lets a far corner of the camera's cell consume the cap before a near REFR in the
+        // adjacent cell.
+        var sourceOrder = 0;
         foreach (var spatialCell in _visibleCellScratch)
         {
             foreach (var p in spatialCell.Cell.PlacedObjects)
             {
-                if (_lineVertexCount >= MaxLineVertices) break;
+                var candidateSourceOrder = sourceOrder++;
                 if (string.IsNullOrEmpty(p.ModelPath)) continue;
-                if (!ShowDisabled && p.IsInitiallyDisabled) continue;
+                if (!_showDisabled && p.IsInitiallyDisabled) continue;
                 if (p.RecordType is "ACHR" or "ACRE") continue; // skinned actors carry no static collision
                 if (RenderableReference.IsMarkerModelPath(p.ModelPath) ||
                     RenderableReference.IsImposterModelPath(p.ModelPath) ||
                     RenderableReference.IsLodDuplicateBaseEditorId(p.BaseEditorId)) continue;
 
-                var mesh = CollisionResolver(p.ModelPath!);
-                if (mesh is null) continue;
-
                 var world = PlacedReferenceTransform.ComposeWorldMatrix(p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
-                AppendCollisionWireframe(mesh, world);
-                refsDrawn++;
+                var dx = p.X - cylinder.Position.X;
+                var dy = p.Y - cylinder.Position.Y;
+                _candidateScratch.Add(new CollisionReferenceCandidate(
+                    p.ModelPath!, p.FormId, dx * dx + dy * dy, world, candidateSourceOrder));
             }
-
-            if (_lineVertexCount >= MaxLineVertices) break;
         }
 
-        if (_lineVertexCount < 2) return 0;
+        _priorityResolver.Resolve(
+            _candidateScratch,
+            _collisionResolver,
+            _collisionWarmup,
+            MaxColdWarmupRequestsPerFrame,
+            MaxLineVertices,
+            _instanceScratch);
+        var cached = _geometryCache.Resolve(_instanceScratch);
+        if (cached.LineVertexCount < 2 || cached.Buffer is null) return 0;
 
         var frameIndex = _recorder.FrameIndex;
         var cmd = _recorder.CommandList;
 
-        var vbByteCount = (uint)(_lineVertexCount * VertexStride);
-        if (!_ringBuffer.TryAllocate(frameIndex, vbByteCount, out var vbAlloc, alignment: 4))
-        {
-            // Too large for the per-frame ring partition this frame — skip (non-essential overlay).
-            return 0;
-        }
-
-        WriteVertexBytes(vbAlloc.CpuPtr, vbByteCount);
-
-        // Same soft-fail as the vertex block above — non-essential overlay, retry next frame.
+        // Only the changing view/projection constants remain transient. Geometry is persistent until
+        // the ordered visible collision content changes or LoadData/property invalidation retires it.
         if (!_ringBuffer.TryAllocate(frameIndex, UniformsByteSize, out var cbAlloc, GpuRingBuffer12.CbAlignment))
         {
             return 0;
@@ -213,61 +255,19 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
         cmd.IASetPrimitiveTopology(PrimitiveTopology.LineList);
         cmd.IASetVertexBuffers(0, new VertexBufferView
         {
-            BufferLocation = vbAlloc.GpuAddress,
-            SizeInBytes = vbByteCount,
+            BufferLocation = cached.Buffer.GPUVirtualAddress,
+            SizeInBytes = (uint)(cached.LineVertexCount * VertexStride),
             StrideInBytes = VertexStride,
         });
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, cbAlloc.GpuAddress);
-        cmd.DrawInstanced((uint)_lineVertexCount, 1, 0, 0);
+        cmd.DrawInstanced((uint)cached.LineVertexCount, 1, 0, 0);
 
-        return refsDrawn;
+        return cached.ReferencesDrawn;
     }
 
-    private void AppendCollisionWireframe(CollisionMesh mesh, Matrix4x4 world)
+    private ID3D12Resource UploadGeometry(Vector3[] vertices, int count)
     {
-        var positions = mesh.Positions;
-        var triangles = mesh.Triangles;
-        if (positions.Length == 0 || triangles.Length < 3) return;
-
-        // Transform local positions to world once, then emit triangle edges by index.
-        if (_worldPosScratch.Length < positions.Length) _worldPosScratch = new Vector3[positions.Length];
-        for (var i = 0; i < positions.Length; i++) _worldPosScratch[i] = Vector3.Transform(positions[i], world);
-
-        for (var t = 0; t + 2 < triangles.Length; t += 3)
-        {
-            if (_lineVertexCount + 6 > MaxLineVertices) return;
-            int a = triangles[t], b = triangles[t + 1], c = triangles[t + 2];
-            if ((uint)a >= (uint)positions.Length || (uint)b >= (uint)positions.Length || (uint)c >= (uint)positions.Length)
-                continue;
-
-            EnsureLineCapacity(_lineVertexCount + 6);
-            Vector3 pa = _worldPosScratch[a], pb = _worldPosScratch[b], pc = _worldPosScratch[c];
-            _lineScratch[_lineVertexCount++] = pa;
-            _lineScratch[_lineVertexCount++] = pb;
-            _lineScratch[_lineVertexCount++] = pb;
-            _lineScratch[_lineVertexCount++] = pc;
-            _lineScratch[_lineVertexCount++] = pc;
-            _lineScratch[_lineVertexCount++] = pa;
-        }
-    }
-
-    private void EnsureLineCapacity(int required)
-    {
-        if (required <= _lineScratch.Length) return;
-        var next = _lineScratch.Length;
-        while (next < required) next *= 2;
-        Array.Resize(ref _lineScratch, next);
-    }
-
-    private unsafe void WriteVertexBytes(IntPtr destination, uint byteCount)
-    {
-        fixed (Vector3* src = _lineScratch)
-        {
-            System.Runtime.CompilerServices.Unsafe.CopyBlockUnaligned(
-                destination: (void*)destination,
-                source: src,
-                byteCount: byteCount);
-        }
+        return GpuMeshBufferFactory12.CreateUploadBuffer<Vector3>(_gpu, vertices.AsSpan(0, count));
     }
 
     private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)

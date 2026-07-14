@@ -200,6 +200,31 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         return false;
     }
 
+    /// <summary>
+    ///     Collision-overlay cold path. Promotes an already-queued plain-model decode to the supplied
+    ///     nearest-instance priority <em>before</em> <see cref="GetOrUpload" /> starts queued work, then
+    ///     gives one decoded mesh a chance to upload within the frame's existing byte/time budgets.
+    ///     The caller bounds how many unique paths it offers per frame.
+    /// </summary>
+    public CollisionMesh? GetOrWarmCollisionMesh(string modelPath, float priority)
+    {
+        if (TryGetCollisionMesh(modelPath, out var collision)) return collision;
+        if (_disposed) return null;
+
+        var normalizedPath = ReferenceMeshDecoder12.NormalizeModelPath(modelPath);
+        if (_meshLru.TryPeek(normalizedPath, out var node) && node.DecodeQueued)
+        {
+            // GetOrUpload normally starts the queue before re-offering an existing node's latest
+            // distance. The collision overlay already did a global nearest-first sort, so promote
+            // here first or an older far-field priority could win the newly-open worker slot.
+            _decodeQueue.Enqueue(normalizedPath, priority);
+        }
+
+        var uploadBudget = 1;
+        _ = GetOrUpload(normalizedPath, ref uploadBudget, priority);
+        return TryGetCollisionMesh(normalizedPath, out collision) ? collision : null;
+    }
+
     public int Capacity { get; }
     public int Count => _meshLru.Count;
 

@@ -207,6 +207,15 @@ public sealed partial class WorldView3DControl
         => _referenceMeshCache12 is { } cache && cache.TryGetCollisionMesh(modelPath, out var mesh) ? mesh : null;
 
     /// <summary>
+    ///     Bounded collision-overlay cold path. The overlay calls this for at most two unique nearby
+    ///     models per frame. The shared reference cache re-offers the exact distance to its
+    ///     decrease-key decode queue and, when a decoded payload fits the remaining frame upload
+    ///     budget, creates the collision mesh immediately as part of the normal upload.
+    /// </summary>
+    private CollisionMesh? ResolveOrWarmCollisionMesh(string modelPath, float distanceSquared)
+        => _referenceMeshCache12?.GetOrWarmCollisionMesh(modelPath, distanceSquared);
+
+    /// <summary>
     ///     Walk-mode ceiling lookup for jumps: returns the world Z of the nearest placed-object surface
     ///     directly ABOVE the eye under (<paramref name="worldX" />, <paramref name="worldY" />), or
     ///     <c>null</c> when nothing is overhead. Casts a straight-up ray against the cached collision
