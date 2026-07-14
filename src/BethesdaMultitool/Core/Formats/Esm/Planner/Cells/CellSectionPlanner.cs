@@ -35,7 +35,8 @@ public sealed class CellSectionPlanner
         FormIdAllocator allocator,
         bool emitMasterCellNavmAugmentation = false,
         IReadOnlySet<uint>? masterRefFormIds = null,
-        bool replaceCellTemporariesOnOverride = false)
+        bool replaceCellTemporariesOnOverride = false,
+        IReadOnlyDictionary<uint, uint>? masterRefToCell = null)
     {
         ArgumentNullException.ThrowIfNull(masterContexts);
         ArgumentNullException.ThrowIfNull(masterRecordsByFormId);
@@ -103,6 +104,26 @@ public sealed class CellSectionPlanner
         var cells = BuildCellPlans(
             decisions, navmsByCell, allocations, masterFormIds,
             masterRefFormIds, replaceCellTemporariesOnOverride);
+
+        // Proto-authored duplicate placements of master actors fold onto master's sole ref
+        // (move, never duplicate — 3× Arcade Gannon class). Before reparenting so converted
+        // overrides ride the container routing.
+        cells = DuplicateActorPlacementMerge.Apply(cells, masterRecordsByFormId);
+
+        // Master doors the proto re-placed in NEW-worldspace cells clone as fresh NEW REFRs
+        // (captured placement + teleport preserved; Overrides there die at the parent-cell
+        // guard and the Strip loses every door). Runs BEFORE reparenting so persistent
+        // door clones are re-homed to the container like any NEW persistent REFR.
+        cells = OverrideDoorCloning.Apply(
+            cells, masterContexts, masterRecordsByFormId, masterRefToCell, allocator);
+
+        // Exterior persistents (NEW refs, all persistent actors, map markers, rescued
+        // enable-parent targets) move to the worldspace persistent-container cell — the
+        // loader never reads Persistent-Children GRUPs under exterior grid cells (in-game
+        // proven; see PersistentCellReparenting). The allocator lets the pass synthesize a
+        // NEW container for proto worldspaces (e.g. TheStripWorld) that have neither a
+        // master nor a captured one.
+        cells = PersistentCellReparenting.Apply(cells, masterContexts, masterRecordsByFormId, allocator);
         var (worldspaces, worldspaceSourceToEmitted) =
             BuildWorldspacePlans(worldspaceCatalog, allocator);
 

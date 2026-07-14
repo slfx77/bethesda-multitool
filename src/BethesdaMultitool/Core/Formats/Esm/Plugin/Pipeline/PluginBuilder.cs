@@ -4221,7 +4221,8 @@ public sealed class PluginBuilder
         return bytes;
     }
 
-    private static bool TryReadPlacementData(ParsedMainRecord record, out PositionSubrecord position)
+    // Internal: OverrideDoorCloning's overlap guard reads master placements at plan time.
+    internal static bool TryReadPlacementData(ParsedMainRecord record, out PositionSubrecord position)
     {
         var data = record.Subrecords.FirstOrDefault(s => s.Signature == "DATA" && s.Data.Length >= 24);
         if (data is null)

@@ -103,6 +103,127 @@ public sealed class CellChildVerdictPlannerTests
     }
 
     [Fact]
+    public void Reparented_Actor_Override_In_PersistentOnly_Cell_Emits()
+    {
+        // A PersistentCellReparenting move into the worldspace container: the captured
+        // override must APPLY — neither sparse-cell master-preservation nor the parent-cell
+        // guard may drop a deliberate reparent.
+        var actor = Ref(MasterRefId, MasterNpcBaseId) with { RecordType = "ACHR", IsPersistent = true };
+        var cells = Apply(
+            MakeCell(mode: CellMergeMode.PersistentOnly, temporary:
+            [
+                OverrideChild("ACHR", MasterRefId, actor, reparented: true)
+            ]),
+            configureIndex: index =>
+            {
+                index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 8, "ACHR");
+                index.RefToCell[MasterRefId] = 0x000FFFFF; // master files the actor elsewhere
+            },
+            extraMaster: ("ACHR", MasterRefId));
+
+        var verdict = cells[CellId].RefDecisions[MasterRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
+        Assert.Equal(8, verdict.TargetGroupType);
+        Assert.True(verdict.MarksMasterCovered);
+    }
+
+    [Fact]
+    public void NonReparented_Actor_Override_In_PersistentOnly_Cell_Is_Sparse_Preserved()
+    {
+        var actor = Ref(MasterRefId, MasterNpcBaseId) with { RecordType = "ACHR", IsPersistent = true };
+        var cells = Apply(
+            MakeCell(mode: CellMergeMode.PersistentOnly, temporary:
+            [
+                OverrideChild("ACHR", MasterRefId, actor)
+            ]),
+            configureIndex: index => index.ChildLocations[MasterRefId] =
+                new MasterChildLocation(0x000FFFFF, 8, "ACHR"),
+            extraMaster: ("ACHR", MasterRefId));
+
+        var verdict = cells[CellId].RefDecisions[MasterRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
+        Assert.Equal("refr.sparse-cell-master-preserved", verdict.DropReason);
+    }
+
+    [Fact]
+    public void NonReparented_Actor_Override_In_Foreign_Cell_Is_Parent_Mismatch_Dropped()
+    {
+        var actor = Ref(MasterRefId, MasterNpcBaseId) with { RecordType = "ACHR", IsPersistent = true };
+        var cells = Apply(
+            MakeCell(mode: CellMergeMode.LoadedReplacement, temporary:
+            [
+                OverrideChild("ACHR", MasterRefId, actor)
+            ]),
+            configureIndex: index =>
+            {
+                index.ChildLocations[MasterRefId] = new MasterChildLocation(0x000FFFFF, 8, "ACHR");
+                index.RefToCell[MasterRefId] = 0x000FFFFF;
+            },
+            extraMaster: ("ACHR", MasterRefId));
+
+        var verdict = cells[CellId].RefDecisions[MasterRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
+        Assert.Equal("refr.parent-cell-mismatch", verdict.DropReason);
+    }
+
+    [Fact]
+    public void Reparented_Actor_Override_Applies_Proto_Enable_State()
+    {
+        // Master parks the cut NPC disabled (header 0x800); the proto capture has her live.
+        // The reparented override must force the Initially-Disabled bit off or the move
+        // places a disabled actor (EthelPhebus).
+        var actor = Ref(MasterRefId, MasterNpcBaseId) with { RecordType = "ACHR", IsPersistent = true };
+        var cells = Apply(
+            MakeCell(mode: CellMergeMode.PersistentOnly, temporary:
+            [
+                OverrideChild("ACHR", MasterRefId, actor, reparented: true)
+            ]),
+            configureIndex: index => index.ChildLocations[MasterRefId] =
+                new MasterChildLocation(0x000FFFFF, 8, "ACHR"),
+            extraMaster: ("ACHR", MasterRefId),
+            extraMasterFlags: 0x00000800u | 0x00000400u);
+
+        var verdict = cells[CellId].RefDecisions[MasterRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
+        Assert.False(verdict.OverrideInitiallyDisabled);
+    }
+
+    [Fact]
+    public void Reparented_NonPersistent_New_Ref_Emits_In_PersistentOnly_Cell()
+    {
+        // A rescued enable-parent marker captured without the persistent flag lands in the
+        // container (PersistentOnly): the move IS the decision to emit it there.
+        var marker = Ref(NewRefId, MasterStatBaseId); // IsPersistent = false
+        var cells = Apply(MakeCell(mode: CellMergeMode.PersistentOnly, temporary:
+        [
+            NewChild("REFR", NewRefId, marker, reparented: true)
+        ]));
+
+        var verdict = cells[CellId].RefDecisions[NewRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
+    }
+
+    [Fact]
+    public void Reparented_Master_Temporary_Actor_Is_Still_Suppressed()
+    {
+        // The engine constraint outranks the move: a master TEMPORARY actor re-emitted by an
+        // ESM plugin never initializes at attach, so even a reparent must suppress it.
+        var actor = Ref(MasterRefId, MasterNpcBaseId) with { RecordType = "ACHR" };
+        var cells = Apply(
+            MakeCell(mode: CellMergeMode.PersistentOnly, temporary:
+            [
+                OverrideChild("ACHR", MasterRefId, actor, reparented: true)
+            ]),
+            configureIndex: index => index.ChildLocations[MasterRefId] =
+                new MasterChildLocation(0x000FFFFF, 9, "ACHR"),
+            extraMaster: ("ACHR", MasterRefId));
+
+        var verdict = cells[CellId].RefDecisions[MasterRefId];
+        Assert.Equal(PlacedRefEmitVerdict.Drop, verdict.Verdict);
+        Assert.Equal("actor.temp-override-suppressed-esm", verdict.DropReason);
+    }
+
+    [Fact]
     public void Gate_Interior_With_No_New_Content_Suppresses()
     {
         // Only an override emit, zero NEW children ⇒ the interior stability gate fires.
@@ -186,7 +307,8 @@ public sealed class CellChildVerdictPlannerTests
     private static ImmutableDictionary<uint, CellPlan> Apply(
         CellPlan cellPlan,
         Action<MasterRecordIndex>? configureIndex = null,
-        (string Type, uint FormId)? extraMaster = null)
+        (string Type, uint FormId)? extraMaster = null,
+        uint extraMasterFlags = 0)
     {
         var masterByFormId = new Dictionary<uint, ParsedMainRecord>
         {
@@ -196,7 +318,7 @@ public sealed class CellChildVerdictPlannerTests
         };
         if (extraMaster is { } extra)
         {
-            masterByFormId[extra.FormId] = MakeMasterRecord(extra.Type, extra.FormId);
+            masterByFormId[extra.FormId] = MakeMasterRecord(extra.Type, extra.FormId, extraMasterFlags);
         }
 
         var index = new MasterRecordIndex
@@ -268,14 +390,17 @@ public sealed class CellChildVerdictPlannerTests
         IsPersistent = false,
     };
 
-    private static RecordPlan NewChild(string type, uint formId, PlacedReference model) =>
-        MakeChild(type, formId, model, RecordDisposition.New);
+    private static RecordPlan NewChild(
+        string type, uint formId, PlacedReference model, bool reparented = false) =>
+        MakeChild(type, formId, model, RecordDisposition.New, reparented);
 
-    private static RecordPlan OverrideChild(string type, uint formId, PlacedReference model) =>
-        MakeChild(type, formId, model, RecordDisposition.Override);
+    private static RecordPlan OverrideChild(
+        string type, uint formId, PlacedReference model, bool reparented = false) =>
+        MakeChild(type, formId, model, RecordDisposition.Override, reparented);
 
     private static RecordPlan MakeChild(
-        string type, uint formId, PlacedReference model, RecordDisposition disposition) => new()
+        string type, uint formId, PlacedReference model, RecordDisposition disposition,
+        bool reparented = false) => new()
     {
         Type = type,
         Disposition = disposition,
@@ -283,14 +408,15 @@ public sealed class CellChildVerdictPlannerTests
         Model = model,
         References = ImmutableArray<ResolvedRef>.Empty,
         ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
-        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+        Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" },
+        Reparented = reparented,
     };
 
-    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId) => new()
+    private static ParsedMainRecord MakeMasterRecord(string signature, uint formId, uint flags = 0) => new()
     {
         Header = new MainRecordHeader
         {
-            Signature = signature, DataSize = 0, Flags = 0, FormId = formId,
+            Signature = signature, DataSize = 0, Flags = flags, FormId = formId,
             Timestamp = 0, VcsInfo = 0, Version = 15
         },
         Offset = 0

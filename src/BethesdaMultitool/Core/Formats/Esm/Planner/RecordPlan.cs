@@ -99,5 +99,14 @@ public sealed record RecordPlan
 
     /// <summary>Why the planner chose this disposition. Captured for diagnostics.</summary>
     public required PlanProvenance Provenance { get; init; }
+
+    /// <summary>
+    ///     True when <c>PersistentCellReparenting</c> deliberately moved this placed ref out
+    ///     of its captured cell into the worldspace persistent-container cell. The verdict
+    ///     pass must then APPLY the captured override instead of sparse-preserving master or
+    ///     dropping it as a parent-cell mismatch — a reparent is a planned move, not a
+    ///     mis-captured parent.
+    /// </summary>
+    public bool Reparented { get; init; }
 }
 

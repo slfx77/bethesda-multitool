@@ -54,4 +54,13 @@ public sealed record PlacedRefDecision
     ///     pass doesn't re-emit the master copy (the <c>actor.temp-override-suppressed-esm</c> path).
     /// </summary>
     public bool MarksMasterCovered { get; init; }
+
+    /// <summary>
+    ///     When set on a reparented Override emit, the record-header Initially-Disabled bit
+    ///     (0x800) is forced to this value instead of inheriting master's. A reparented actor
+    ///     applies the proto's authored enable-state — e.g. a cut NPC whose only retail
+    ///     placement is disabled (EthelPhebus) but whom the proto shipped live must emit
+    ///     enabled, or the move just places a disabled actor. Null = keep master's bit.
+    /// </summary>
+    public bool? OverrideInitiallyDisabled { get; init; }
 }

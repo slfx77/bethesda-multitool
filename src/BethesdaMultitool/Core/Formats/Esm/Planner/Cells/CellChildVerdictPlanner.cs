@@ -239,7 +239,13 @@ public static class CellChildVerdictPlanner
             return Drop("cell.render-culling-marker-dropped");
         }
 
-        if (cellPlan.Mode == CellMergeMode.PersistentOnly && !placed.IsPersistent && !placed.IsMapMarker)
+        // Reparented children were deliberately routed into the container (e.g. rescued
+        // enable-parent markers captured without the persistent flag) — the move IS the
+        // decision to emit them there.
+        if (cellPlan.Mode == CellMergeMode.PersistentOnly
+            && !placed.IsPersistent
+            && !placed.IsMapMarker
+            && !child.Reparented)
         {
             return Drop("cell.persistent-only-nonpersistent-ref");
         }
@@ -338,7 +344,12 @@ public static class CellChildVerdictPlanner
             return Drop("cell.render-culling-marker-dropped");
         }
 
+        // Reparented children are deliberate moves into the worldspace container
+        // (PersistentCellReparenting): the captured override must APPLY, so neither the
+        // sparse-cell master-preservation nor the parent-cell guard may drop it — the
+        // "mismatched" parent is the whole point of the move.
         if (cellPlan.Mode == CellMergeMode.PersistentOnly
+            && !child.Reparented
             && !(placed.IsMapMarker && PluginBuilder.MapMarkerDiffersFromMaster(placed, masterRecord)))
         {
             return Drop("refr.sparse-cell-master-preserved");
@@ -347,7 +358,8 @@ public static class CellChildVerdictPlanner
         if (inputs.MasterIndex.RefToCell.TryGetValue(child.FormId, out var masterParentCell)
             && masterParentCell != 0
             && masterParentCell != cellPlan.CellFormId
-            && !placed.IsMapMarker)
+            && !placed.IsMapMarker
+            && !child.Reparented)
         {
             return Drop("refr.parent-cell-mismatch");
         }
@@ -366,11 +378,23 @@ public static class CellChildVerdictPlanner
             routeGroupType = 8;
         }
 
+        // A reparented actor applies the proto's authored enable-state: master's copy of a
+        // cut NPC is often disabled (EthelPhebus — retail parks her disabled in another
+        // worldspace) while the proto shipped her live. Without this the move emits a
+        // disabled actor and changes nothing in-game.
+        bool? overrideInitiallyDisabled = null;
+        if (child.Reparented
+            && (masterRecord.Header.Flags & 0x00000800u) != 0 != placed.IsInitiallyDisabled)
+        {
+            overrideInitiallyDisabled = placed.IsInitiallyDisabled;
+        }
+
         return new PlacedRefDecision
         {
             Verdict = PlacedRefEmitVerdict.Emit,
             TargetGroupType = routeGroupType,
             MarksMasterCovered = true,
+            OverrideInitiallyDisabled = overrideInitiallyDisabled,
         };
     }
 

@@ -63,13 +63,15 @@ internal static class VerdictPlacedRefEncoder
             context.Stats?.IncrementDropReason(aux);
         }
 
+        var originalBaseFormId = placed.BaseFormId;
         if (verdict.FinalBaseFormId != placed.BaseFormId)
         {
             placed = placed with { BaseFormId = verdict.FinalBaseFormId };
         }
 
         var subs = RefrEncoder.EncodeNewPlacedReference(
-            placed, context.ValidFormIds, context.Plan.SourceToEmittedFormId);
+            placed, context.ValidFormIds, context.Plan.SourceToEmittedFormId,
+            context.ResolveBaseRecordType(originalBaseFormId, placed.BaseFormId));
         if (subs.Subrecords.Count == 0)
         {
             return null;
@@ -120,6 +122,15 @@ internal static class VerdictPlacedRefEncoder
         var merge = RecordMergeEngine.Merge(masterForMerge, encoded, SubrecordMergePolicy.Default);
         var bytes = PluginRecordByteBuilder.BuildOverrideRecordBytes(
             masterRecord, merge.SubrecordBytes, context.Options);
+
+        // Reparented actors carry the proto's authored enable-state instead of master's
+        // Initially-Disabled bit (header flags dword at offset 8).
+        if (verdict.OverrideInitiallyDisabled is { } initiallyDisabled)
+        {
+            var headerFlags = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8, 4));
+            headerFlags = initiallyDisabled ? headerFlags | 0x00000800u : headerFlags & ~0x00000800u;
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(8, 4), headerFlags);
+        }
 
         if (verdict.MarksMasterCovered)
         {

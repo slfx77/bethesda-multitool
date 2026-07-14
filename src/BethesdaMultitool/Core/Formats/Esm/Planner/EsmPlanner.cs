@@ -100,7 +100,8 @@ public sealed class EsmPlanner
             ? RunCellSection(
                 dmpRecords, masterFormIds, masterCellContexts, masterRecordsByFormId,
                 cellChildAllocator, emitMasterCellNavmAugmentation,
-                masterRefFormIds, replaceCellTemporariesOnOverride)
+                masterRefFormIds, replaceCellTemporariesOnOverride,
+                cellVerdictInputs?.MasterIndex.RefToCell)
             : null;
 
         if (catalog.Count == 0 && cellSection is null)
@@ -195,7 +196,8 @@ public sealed class EsmPlanner
         FormIdAllocator? cellChildAllocator,
         bool emitMasterCellNavmAugmentation,
         IReadOnlySet<uint>? masterRefFormIds,
-        bool replaceCellTemporariesOnOverride)
+        bool replaceCellTemporariesOnOverride,
+        IReadOnlyDictionary<uint, uint>? masterRefToCell)
     {
         if (masterCellContexts is null || masterRecordsByFormId is null || cellChildAllocator is null)
         {
@@ -212,7 +214,8 @@ public sealed class EsmPlanner
             cellChildAllocator,
             emitMasterCellNavmAugmentation,
             masterRefFormIds,
-            replaceCellTemporariesOnOverride);
+            replaceCellTemporariesOnOverride,
+            masterRefToCell);
     }
 
     private static ImmutableHashSet<uint> BuildEmittedFormIds(
