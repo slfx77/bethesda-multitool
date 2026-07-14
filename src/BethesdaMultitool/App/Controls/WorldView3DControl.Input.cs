@@ -246,6 +246,23 @@ public sealed partial class WorldView3DControl
         _pickCellScratch.Clear();
         _spatialIndex.QueryCellsInRadius(queryCenter.X, -queryCenter.Y, queryRadius, _pickCellScratch);
 
+        // Match the depth-tested scene: visible terrain is an occluder for reference selection. CPU
+        // raycast the same heightfield triangles the terrain renderer uploads; this avoids a blocking
+        // depth-buffer readback and works for both perspective and orthographic click rays.
+        var terrainT = float.PositiveInfinity;
+        if (_showTerrain && _terrain is not null)
+        {
+            foreach (var spatialCell in _pickCellScratch)
+            {
+                if (TerrainRaycaster.RaycastNearest(
+                        spatialCell.Cell, nearWorld, rayDir, out var cellTerrainT,
+                        _data.RenderCache, terrainT))
+                {
+                    terrainT = cellTerrainT;
+                }
+            }
+        }
+
         // Click-through: collect ALL hits along the ray (same filters as the renderer so the
         // pickable set matches the visible set), sorted nearest-first.
         _pickHitScratch.Clear();
@@ -260,10 +277,9 @@ public sealed partial class WorldView3DControl
                 // imposters are render-only LOD stand-ins and never pickable.
                 if (r.IsMarker && !_showMarkers) continue;
                 if (r.IsImposter) continue;
-                // Broadphase: cheap bounding-sphere reject. Narrowphase: ray vs the OBND-tight
-                // oriented box — the exact box the selection highlight draws — so the pick lands on
-                // the clicked mesh instead of the near edge of an oversized bounding sphere.
-                // Broadphase sphere. Refs with no OBND bake an oversized cell-wide cull sphere
+                // Warm collision meshes use their local AABB as broadphase and exact triangles as
+                // narrowphase. Cold/unavailable meshes retain the OBND/sphere path below.
+                // Refs with no OBND bake an oversized cell-wide cull sphere
                 // (NoBoundsFallbackRadius); reusing it for the pick turns each into a "massive click
                 // zone" (→ overlapping fallbacks swallow every click in Oblivion, where trees never
                 // decode). When the mesh has resolved, use its real local bounds (tight). When it has
@@ -286,26 +302,67 @@ public sealed partial class WorldView3DControl
                         sphereRadius = RenderableReference.SelectionFallbackRadius;
                     }
                 }
+
+                // A collision entry is warm only after this model has decoded/uploaded. Transform the
+                // world ray into the same mesh-local frame and let CollisionMesh's local AABB reject
+                // cheaply before its exact triangle loop. A warm triangle miss is authoritative: do
+                // not resurrect it through the looser OBND/sphere fallback.
+                if (_referenceMeshCache12 is not null &&
+                    _referenceMeshCache12.TryGetCollisionMesh(r.ModelPath, out var collision) &&
+                    collision is not null &&
+                    Matrix4x4.Invert(r.WorldMatrix, out var inverseWorld))
+                {
+                    var localOrigin = Vector3.Transform(nearWorld, inverseWorld);
+                    var localDirection = Vector3.TransformNormal(rayDir, inverseWorld);
+                    if (!collision.RaycastNearest(localOrigin, localDirection, out var collisionT)) continue;
+
+                    // Preserve the existing origin-inside deprioritization: OBND-backed refs use the
+                    // same local box containment test; no-OBND refs retain their sphere containment.
+                    var collisionInside = usableBounds is { } collisionBounds
+                        ? localOrigin.X >= collisionBounds.X1 && localOrigin.X <= collisionBounds.X2 &&
+                          localOrigin.Y >= collisionBounds.Y1 && localOrigin.Y <= collisionBounds.Y2 &&
+                          localOrigin.Z >= collisionBounds.Z1 && localOrigin.Z <= collisionBounds.Z2
+                        : Vector3.DistanceSquared(nearWorld, r.BoundsCenter) <= sphereRadius * sphereRadius;
+                    if (!TerrainRaycaster.IsHitBehindTerrain(collisionT, terrainT))
+                    {
+                        _pickHitScratch.Add(
+                            new PickHit(placement, placement.FormId, collisionT, collisionInside));
+                    }
+                    continue;
+                }
+
+                // Cold collision cache (or a non-invertible placement): retain the previous cheap
+                // bounding-sphere broadphase and OBND-oriented-box narrowphase unchanged.
                 if (!RaySphereHit(nearWorld, rayDir, r.BoundsCenter, sphereRadius, out var sphereT,
                         out var sphereInside)) continue;
                 if (usableBounds is { } b)
                 {
                     if (RayObbHit(nearWorld, rayDir, b, r.WorldMatrix, out var obbT, out var obbInside))
                     {
-                        _pickHitScratch.Add(new PickHit(placement, placement.FormId, obbT, obbInside));
+                        if (!TerrainRaycaster.IsHitBehindTerrain(obbT, terrainT))
+                        {
+                            _pickHitScratch.Add(new PickHit(placement, placement.FormId, obbT, obbInside));
+                        }
                     }
                     else
                     {
                         // OBND missed but the broadphase sphere hit — some meshes' visible geometry
                         // overspills a too-tight base-record OBND (notably SpeedTree canopies), making
                         // them "impossible to click" under an OBB-only gate. Keep as a fallback.
-                        _pickSphereFallbackScratch.Add(new PickHit(placement, placement.FormId, sphereT, sphereInside));
+                        if (!TerrainRaycaster.IsHitBehindTerrain(sphereT, terrainT))
+                        {
+                            _pickSphereFallbackScratch.Add(
+                                new PickHit(placement, placement.FormId, sphereT, sphereInside));
+                        }
                     }
                 }
                 else
                 {
                     // No OBND at all — the broadphase sphere is the only available signal.
-                    _pickHitScratch.Add(new PickHit(placement, placement.FormId, sphereT, sphereInside));
+                    if (!TerrainRaycaster.IsHitBehindTerrain(sphereT, terrainT))
+                    {
+                        _pickHitScratch.Add(new PickHit(placement, placement.FormId, sphereT, sphereInside));
+                    }
                 }
             }
         }

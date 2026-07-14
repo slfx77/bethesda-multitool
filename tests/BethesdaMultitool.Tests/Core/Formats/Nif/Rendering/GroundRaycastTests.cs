@@ -139,6 +139,26 @@ public sealed class GroundRaycastTests
     }
 
     [Fact]
+    public void CollisionMesh_TransformedUnitWorldRayPreservesWorldHitDistance()
+    {
+        // Picking compares this t directly with terrain depth. Transforming both the origin and the
+        // direction by the inverse affine matrix preserves the ray parameter even under placement
+        // scale, so the collision triangle hit remains a world-space distance for a unit world ray.
+        var mesh = BuildHorizontalQuad(0f, 100f);
+        var world = PlacedReferenceTransform.ComposeWorldMatrix(
+            1000f, 2000f, 300f, 0f, 0f, 0f, 2f);
+        Assert.True(Matrix4x4.Invert(world, out var inverseWorld));
+
+        var worldOrigin = new Vector3(1000f, 2000f, 900f);
+        var worldDirection = -Vector3.UnitZ;
+        var localOrigin = Vector3.Transform(worldOrigin, inverseWorld);
+        var localDirection = Vector3.TransformNormal(worldDirection, inverseWorld);
+
+        Assert.True(mesh.RaycastNearest(localOrigin, localDirection, out var t));
+        Assert.Equal(600f, t, Tol);
+    }
+
+    [Fact]
     public void CollisionMesh_GapInVisualMesh_BridgedByGaplessHavokQuad()
     {
         // The bug this fixes: a plank bridge's VISUAL mesh has gaps between planks, so a walk-mode
