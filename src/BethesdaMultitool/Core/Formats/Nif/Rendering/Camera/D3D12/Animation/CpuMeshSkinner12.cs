@@ -29,20 +29,26 @@ internal sealed class CpuMeshSkinner12
     private static readonly int MaxAnimatedVerticesPerFrame = ReadEnvInt("FALLOUT_VIEWER_ANIM_MAX_VERTS", 65_536);
     private static readonly float AnimateRadius = ReadEnvInt("FALLOUT_VIEWER_ANIM_RADIUS", 8_192);
 
-    private const int RegistrationTtlFrames = 240; // ~2× the batch-reuse window; unseen meshes drop out
+    // A registered mesh survives missing this many RESOLVE PASSES before it drops out. Staleness is
+    // counted in resolve passes — the frames where Register COULD have re-sighted it — never in
+    // wall-clock frames: a settled scene freezes its batches and skips the resolve loop entirely
+    // (ReferenceRenderer12 batch reuse), so a frame-based TTL expired live meshes while the camera
+    // was still. Symptom: banners animated only while the camera moved, "pulsing" once per batch
+    // rebuild and snapping back to rest whenever the scene settled.
+    private const int ResolvePassGrace = 2;
 
     private sealed class Entry
     {
         public required CachedNifMesh12 Mesh;
         public float NearestDistanceSq;
-        public long LastSeenFrame;
+        public long LastSeenResolvePass;
         public Matrix4x4[] BoneWorlds = [];
         public Matrix4x4[] SkinMatrices = [];
     }
 
     private readonly Dictionary<CachedNifMesh12, Entry> _entries = new();
     private readonly List<Entry> _tickScratch = new();
-    private long _frameCounter;
+    private long _resolvePassCounter;
 
     /// <summary>True when any submesh carries a fresh animated VBV this frame — the host ORs this
     /// into its shadow-refresh condition (same contract as the wind-leaves flag).</summary>
@@ -62,7 +68,7 @@ internal sealed class CpuMeshSkinner12
 
         if (_entries.TryGetValue(mesh, out var entry))
         {
-            entry.LastSeenFrame = _frameCounter;
+            entry.LastSeenResolvePass = _resolvePassCounter;
             entry.NearestDistanceSq = MathF.Min(entry.NearestDistanceSq, nearestDistanceSq);
             return;
         }
@@ -86,7 +92,7 @@ internal sealed class CpuMeshSkinner12
         {
             Mesh = mesh,
             NearestDistanceSq = nearestDistanceSq,
-            LastSeenFrame = _frameCounter,
+            LastSeenResolvePass = _resolvePassCounter,
             BoneWorlds = new Matrix4x4[boneCount],
             SkinMatrices = new Matrix4x4[maxSkinBones],
         };
@@ -95,10 +101,19 @@ internal sealed class CpuMeshSkinner12
     /// <summary>
     ///     Per-frame driver: re-poses every in-budget registered mesh into fresh ring allocations
     ///     and clears every other override. Render-thread only, before the reference draw pass.
+    ///     <paramref name="resolveRan" /> = this frame ran the mesh-resolve loop (i.e. Register had
+    ///     a chance to re-sight live meshes). On batch-REUSE frames it must be false so entries
+    ///     neither expire nor decay while the frozen scene gives them no way to re-register.
     /// </summary>
-    public void Tick(int frameIndex, GpuRingBuffer12 ring, double clockSeconds, Vector3 cameraPos, bool enabled)
+    public void Tick(
+        int frameIndex, GpuRingBuffer12 ring, double clockSeconds, Vector3 cameraPos, bool enabled,
+        bool resolveRan)
     {
-        _frameCounter++;
+        if (resolveRan)
+        {
+            _resolvePassCounter++;
+        }
+
         AnyAnimatedThisFrame = false;
 
         if (_entries.Count == 0)
@@ -106,8 +121,9 @@ internal sealed class CpuMeshSkinner12
             return;
         }
 
-        // Snapshot + prune: entries not re-registered within the TTL fell out of the streamed set
-        // (or were evicted); their overrides were cleared on their last ticked frame.
+        // Snapshot + prune: entries that missed ResolvePassGrace consecutive resolve passes fell
+        // out of the streamed set (or were evicted); their overrides were cleared on their last
+        // ticked frame. Counted in resolve passes, NOT frames — see ResolvePassGrace.
         _tickScratch.Clear();
         List<CachedNifMesh12>? expired = null;
         foreach (var entry in _entries.Values)
@@ -118,7 +134,7 @@ internal sealed class CpuMeshSkinner12
                 sub.AnimatedVertexBufferView = null;
             }
 
-            if (_frameCounter - entry.LastSeenFrame > RegistrationTtlFrames)
+            if (_resolvePassCounter - entry.LastSeenResolvePass > ResolvePassGrace)
             {
                 (expired ??= []).Add(entry.Mesh);
                 continue;
@@ -159,8 +175,14 @@ internal sealed class CpuMeshSkinner12
                 AnyAnimatedThisFrame = true;
             }
 
-            // Distance refreshes on the next Register; decay so a mesh the camera left drops out.
-            entry.NearestDistanceSq = float.MaxValue;
+            // Decay the nearest distance so a mesh the camera left drops out — but only on frames
+            // where a resolve pass could refresh it. Decaying on reuse frames left every entry at
+            // float.MaxValue one frame after the scene froze, gating all of them out of the radius
+            // check: animation stopped whenever the camera stopped.
+            if (resolveRan)
+            {
+                entry.NearestDistanceSq = float.MaxValue;
+            }
         }
     }
 

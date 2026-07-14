@@ -1225,7 +1225,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // Keyframe playback: re-pose + CPU-skin every in-budget animated mesh into fresh ring
         // allocations (or clear all overrides when disabled) BEFORE any pass binds a vertex buffer —
         // both the opaque draws and the shadow capture below read EffectiveVertexBufferView.
-        _skinner.Tick(frameIndex, _ringBuffer, _animationClockSeconds, cylinder.Position, AnimationsEnabled);
+        // resolveRan: on batch-REUSE frames the resolve loop was skipped, so Register never had a
+        // chance to re-sight live meshes — the skinner must not expire/decay entries on those frames
+        // (a settled scene froze playback otherwise: meshes animated only while the camera moved).
+        _skinner.Tick(
+            frameIndex, _ringBuffer, _animationClockSeconds, cylinder.Position, AnimationsEnabled,
+            resolveRan: !reuseBatches);
 
         ID3D12PipelineState? currentPso = null;
         DrawOpaqueBatches(cmd, frameIndex, ref currentPso, ref cbUpdateMs, ref srvBindMs, ref drawCallMs, ref srvBinds, ref submeshDraws);
