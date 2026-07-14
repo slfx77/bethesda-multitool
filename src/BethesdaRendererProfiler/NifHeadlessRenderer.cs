@@ -490,14 +490,20 @@ internal static class NifHeadlessRenderer
         }
     }
 
-    /// <summary>Binds a zeroed atmosphere CB (b3) — lighting/fog/sky disabled, so reference.frag uses its
-    /// legacy flat shade (0.4 + 0.6·lambert). Faithful for verifying material/alpha, not time-of-day.</summary>
+    /// <summary>Binds a neutral atmosphere CB (b3) — lighting/fog/sky disabled and EmissiveMult=1, so
+    /// reference.frag uses its legacy flat shade (0.4 + 0.6·lambert). Faithful for verifying
+    /// material/alpha, not time-of-day.</summary>
     private static void BindFlatAtmosphere(ID3D12GraphicsCommandList cmd, int frameIndex, GpuRingBuffer12 ring)
     {
         const int atmosphereBytes = 9 * 16 + 4 * 64 + 4 * 16;
+        var cb = new float[atmosphereBytes / sizeof(float)];
+        // CameraOrigin.w carries EmissiveMult; the material verifier has no active IMGS, so bind the
+        // explicit neutral value while every atmosphere enable flag remains zero.
+        cb[8 * 4 + 3] = 1f;
+        var bytes = new byte[atmosphereBytes];
+        Buffer.BlockCopy(cb, 0, bytes, 0, atmosphereBytes);
         var alloc = ring.Allocate(frameIndex, atmosphereBytes, GpuRingBuffer12.CbAlignment);
-        // Zero the (mapped upload) CB so lighting/fog/sky flags read 0 → reference.frag's legacy shade.
-        Marshal.Copy(new byte[atmosphereBytes], 0, alloc.CpuPtr, atmosphereBytes);
+        Marshal.Copy(bytes, 0, alloc.CpuPtr, atmosphereBytes);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
         BindEmptyPointLights(cmd, frameIndex, ring);
     }
@@ -536,7 +542,7 @@ internal static class NifHeadlessRenderer
         // CameraOrigin (camera-relative render origin) = 0: this is an ABSOLUTE ortho render, so nothing is
         // shifted. The reference VS no longer reads this slot anyway (it folds the origin CPU-side); leaving
         // the old eye value here was a latent shift that only didn't bite because the VS now ignores it.
-        Put(8, 0f, 0f, 0f, 0f);
+        Put(8, 0f, 0f, 0f, 1f); // absolute origin + neutral EmissiveMult (no active IMGS)
 
         var alloc = ring.Allocate(frameIndex, atmosphereBytes, GpuRingBuffer12.CbAlignment);
         var bytes = new byte[atmosphereBytes];

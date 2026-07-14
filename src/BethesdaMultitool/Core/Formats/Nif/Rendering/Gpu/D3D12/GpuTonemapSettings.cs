@@ -58,6 +58,22 @@ internal readonly record struct GpuTonemapSettings
     /// <summary>IMGS HDR: eye adaptation speed (temporal blend base; FNV defaults 0.9).</summary>
     public float EyeAdaptSpeed { get; init; }
 
+    /// <summary>
+    ///     IMGS HDR: emissive-material brightness multiplier (hdrData[3]). Applied by the SCENE pass to
+    ///     self-illuminated shapes (rides the atmosphere CB, not the tonemap constants); shipped FNV
+    ///     values: 1.0 interior / 1.2 exterior. Authored zero is preserved; inactive paths upload 1.
+    /// </summary>
+    public float EmissiveMult { get; init; }
+
+    /// <summary>
+    ///     Resolves the scene-pass emissive multiplier without conflating an authored zero with a
+    ///     missing value. Disabling either HDR itself or imagespace modifiers restores the neutral
+    ///     multiplier because the engine applies this global only in its HDR/self-emittance path.
+    /// </summary>
+    internal static float ResolveEmissiveMult(
+        float familyDefault, float? authoredValue, bool hdrEnabled, bool imagespaceModifiersEnabled) =>
+        !hdrEnabled || !imagespaceModifiersEnabled ? 1f : authoredValue ?? familyDefault;
+
     /// <summary>IMGS Cinematic: 0 = grayscale, 1 = full color.</summary>
     public float Saturation { get; init; }
 
@@ -103,6 +119,7 @@ internal readonly record struct GpuTonemapSettings
         Mode = GpuTonemapMode.EngineFo3Fnv,
         Exposure = 1f,
         EyeAdaptSpeed = 0.9f,
+        EmissiveMult = 1.2f,
         TargetLum = 1.2f,
         UpperLumClamp = 1.0f,
         Saturation = 0.85f,
@@ -126,6 +143,7 @@ internal readonly record struct GpuTonemapSettings
         Mode = GpuTonemapMode.EngineFo3Fnv,
         Exposure = 1f,
         EyeAdaptSpeed = 0.9f,
+        EmissiveMult = 1f,
         TargetLum = 1.0f,
         UpperLumClamp = 1.0f,
         Saturation = 1f,
@@ -147,6 +165,7 @@ internal readonly record struct GpuTonemapSettings
     {
         Mode = GpuTonemapMode.GammaAces,
         Exposure = 1f,
+        EmissiveMult = 1f,
         TargetLum = 1f,
         UpperLumClamp = 1f,
         Saturation = 1f,

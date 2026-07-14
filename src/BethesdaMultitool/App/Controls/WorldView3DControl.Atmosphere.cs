@@ -127,27 +127,48 @@ public sealed partial class WorldView3DControl
     private Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings ResolveTonemapSettings()
     {
         var interior = _selectedInterior is not null;
-        var settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ForGame(_data?.Game ?? default, interior);
+        var game = _data?.Game ?? default;
+        var settings = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings.ForGame(game, interior);
+        var engineImagespaceFamily = game is Core.Games.BethesdaGame.Oblivion
+            or Core.Games.BethesdaGame.Fallout3
+            or Core.Games.BethesdaGame.FalloutNewVegas;
 
         // GUI post-processing toggles (settings panel, read per frame — no rebuild). HDR off =
         // the LegacyClamp passthrough (visually the pre-HDR look; the float scene target itself is
         // only revertible via the static FALLOUT_VIEWER_HDR=0 kill-switch).
-        if (!_hdrEnabled)
+        var hdrEnabled = _hdrEnabled
+            && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
+        if (!hdrEnabled)
         {
             return settings with
             {
                 Mode = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.LegacyClamp,
                 BloomEnabled = false,
+                EmissiveMult = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
+                    .ResolveEmissiveMult(settings.EmissiveMult, null, hdrEnabled: false,
+                        imagespaceModifiersEnabled: _imagespaceModifiersEnabled),
             };
         }
 
-        if (settings.Mode != Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.EngineFo3Fnv || _data is null)
+        // Tonemap operator overrides are display-pass A/Bs; they must not suppress the raw FO3/FNV
+        // imagespace values consumed by the scene pass (notably EmissiveMult).
+        if (!engineImagespaceFamily || _data is null)
         {
             return settings with { BloomEnabled = settings.BloomEnabled && _bloomEnabled };
         }
 
         // Imagespace modifiers off = skip the authored IMGS overlay (cinematic grade + HDR params)
-        // and render with the neutral family defaults; the eye-adapt exposure stays.
+        // and render with a neutral scene grade; the eye-adapt exposure stays.
+        if (!_imagespaceModifiersEnabled)
+        {
+            settings = settings with
+            {
+                EmissiveMult = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
+                    .ResolveEmissiveMult(settings.EmissiveMult, null, hdrEnabled: true,
+                        imagespaceModifiersEnabled: false),
+            };
+        }
+
         var formId = interior
             ? _selectedInterior!.ImageSpaceFormId
             : CurrentExteriorWorldspace()?.ImageSpaceFormId;
@@ -160,6 +181,10 @@ public sealed partial class WorldView3DControl
                     TargetLum = hdr.TargetLum > 0f ? hdr.TargetLum : settings.TargetLum,
                     UpperLumClamp = hdr.UpperLumClamp > 0f ? hdr.UpperLumClamp : settings.UpperLumClamp,
                     EyeAdaptSpeed = hdr.EyeAdaptSpeed > 0f ? hdr.EyeAdaptSpeed : settings.EyeAdaptSpeed,
+                    // Raw engine copy: zero is authored data, not an "unset" sentinel.
+                    EmissiveMult = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapSettings
+                        .ResolveEmissiveMult(settings.EmissiveMult, hdr.EmissiveMult,
+                            hdrEnabled: true, imagespaceModifiersEnabled: true),
                     BlurRadius = hdr.BlurRadius > 0f ? hdr.BlurRadius : settings.BlurRadius,
                     BlurPasses = hdr.BlurPasses >= 1f ? hdr.BlurPasses : settings.BlurPasses,
                     BrightScale = hdr.BrightScale > 0f ? hdr.BrightScale : settings.BrightScale,

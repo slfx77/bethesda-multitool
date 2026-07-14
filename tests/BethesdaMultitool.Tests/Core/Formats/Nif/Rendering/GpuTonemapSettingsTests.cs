@@ -22,6 +22,7 @@ public sealed class GpuTonemapSettingsTests
         Assert.Equal(2f, s.BlurPasses);
         Assert.Equal(1.5f, s.BrightScale);
         Assert.Equal(0.35f, s.BrightClamp);
+        Assert.Equal(1.2f, s.EmissiveMult);
         Assert.Equal(1.2f, s.TargetLum);
     }
 
@@ -35,6 +36,7 @@ public sealed class GpuTonemapSettingsTests
         Assert.Equal(2f, s.BlurPasses);
         Assert.Equal(2f, s.BrightScale);
         Assert.Equal(0.35f, s.BrightClamp);
+        Assert.Equal(1f, s.EmissiveMult);
         Assert.Equal(1.0f, s.TargetLum);
     }
 
@@ -43,6 +45,54 @@ public sealed class GpuTonemapSettingsTests
     {
         // Skyrim/FO4/76 bloom rides their imagespace port; the ACES stand-in must not bloom.
         Assert.False(GpuTonemapSettings.GammaAcesDefaults.BloomEnabled);
+        Assert.Equal(1f, GpuTonemapSettings.GammaAcesDefaults.EmissiveMult);
+    }
+
+    [Fact]
+    public void ResolveEmissiveMult_PreservesAuthoredZero()
+    {
+        Assert.Equal(0f, GpuTonemapSettings.ResolveEmissiveMult(
+            familyDefault: 1.2f, authoredValue: 0f, hdrEnabled: true,
+            imagespaceModifiersEnabled: true));
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public void ResolveEmissiveMult_InactivePathIsNeutral(
+        bool hdrEnabled, bool imagespaceModifiersEnabled)
+    {
+        Assert.Equal(1f, GpuTonemapSettings.ResolveEmissiveMult(
+            familyDefault: 1.2f, authoredValue: 4f, hdrEnabled,
+            imagespaceModifiersEnabled));
+    }
+
+    [Fact]
+    public void ResolveEmissiveMult_MissingAuthoredValueUsesFamilyDefault()
+    {
+        Assert.Equal(1.2f, GpuTonemapSettings.ResolveEmissiveMult(
+            familyDefault: 1.2f, authoredValue: null, hdrEnabled: true,
+            imagespaceModifiersEnabled: true));
+    }
+
+    [Fact]
+    public void ApplyOverrides_TonemapOperatorDoesNotChangeEmissiveMult()
+    {
+        var previous = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP");
+        try
+        {
+            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP", "aces");
+            var s = GpuTonemapSettings.ApplyOverrides(
+                GpuTonemapSettings.EngineExteriorDefaults with { EmissiveMult = 0f });
+
+            Assert.Equal(GpuTonemapMode.GammaAces, s.Mode);
+            Assert.Equal(0f, s.EmissiveMult);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_TONEMAP", previous);
+        }
     }
 
     [Theory]

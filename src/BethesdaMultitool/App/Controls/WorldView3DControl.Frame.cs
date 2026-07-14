@@ -272,6 +272,10 @@ public sealed partial class WorldView3DControl
         // TES4-era engines, so Oblivion etc. raise it (see GameProfile.AmbientLightScale).
         var ambientScale = BethesdaMultitool.Core.Games.GameProfiles
             .For(_data?.Game ?? BethesdaMultitool.Core.Games.BethesdaGame.Unknown).AmbientLightScale;
+        // uCameraOrigin.w = the active imagespace's EmissiveMult (hdrData[3], scene-pass emissive
+        // brightness). Keyed off the same per-game resolution the display pass uses so the two stay
+        // consistent.
+        var tonemap = ResolveTonemapSettings();
         // Sun-shadow sampling constants: the rendered cascades' light matrices (with this frame's
         // render origin folded in) + packed params. Disabled (zero) until the cascades have
         // content, when the caller opts out (ortho export / top-down), or when the toggle / env
@@ -288,7 +292,8 @@ public sealed partial class WorldView3DControl
             resolved, gameHour, shadingCameraPos, lightingEnabled: lightingOn ? 1f : 0f,
             skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f,
             placedLightCount: placedLightCount,
-            cameraOrigin: cameraOrigin, ambientScale: ambientScale, shadow: shadow);
+            cameraOrigin: cameraOrigin, ambientScale: ambientScale, shadow: shadow,
+            emissiveMult: tonemap.EmissiveMult);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
@@ -313,7 +318,8 @@ public sealed partial class WorldView3DControl
         // Camera-relative render origin the scene VS subtract from each world vertex before
         // projection (0 when camera-relative is off). The PS shaders that read this CB
         // declare only the prefix they use, so fields appended after their prefix are layout-safe.
-        public Vector4 CameraOrigin;       // xyz = render origin (= camera world pos), w unused
+        public Vector4 CameraOrigin;       // xyz = render origin (= camera world pos),
+                                           // w = IMGS EmissiveMult (explicit 1 when inactive)
         // Sun shadow CASCADES (appended after CameraOrigin — same append-safe contract). Each
         // matrix maps origin-relative world positions (the PS's vWorldPos space) into that
         // cascade's shadow clip; each params float4 packs (enabled, texel UV size, normalized
@@ -340,7 +346,8 @@ public sealed partial class WorldView3DControl
             float placedLightCount,
             Vector3 cameraOrigin,
             float ambientScale = 0.3f,
-            Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.ShadowSampleConstants shadow = default) => new()
+            Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.ShadowSampleConstants shadow = default,
+            float emissiveMult = 1f) => new()
             {
                 SunDirIntensity = new Vector4(a.SunWorldDirection, a.SunIntensity),
                 SunColorLighting = new Vector4(a.SunColor, lightingEnabled),
@@ -351,7 +358,9 @@ public sealed partial class WorldView3DControl
                 FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
                 Params = new Vector4(gameHour, a.FogNear, a.FogFar, placedLightCount),
                 CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
-                CameraOrigin = new Vector4(cameraOrigin, 0f),
+                // w = IMGS EmissiveMult (hdrData[3]); manual/headless CB writers likewise upload
+                // an explicit neutral 1 when no imagespace is active.
+                CameraOrigin = new Vector4(cameraOrigin, emissiveMult),
                 ShadowMatrix0 = shadow.Matrix0,
                 ShadowMatrix1 = shadow.Matrix1,
                 ShadowMatrix2 = shadow.Matrix2,

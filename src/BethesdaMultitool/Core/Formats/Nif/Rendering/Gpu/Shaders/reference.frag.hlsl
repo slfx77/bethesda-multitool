@@ -35,7 +35,8 @@ cbuffer Atmosphere : register(b3)
     float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
     float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
     float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
-    float4 uCameraOrigin;       // xyz = camera-relative render origin (VS-consumed; layout parity)
+    float4 uCameraOrigin;       // xyz = camera-relative render origin (VS-consumed; layout parity),
+                                // w = IMGS EmissiveMult (hdrData[3]; explicitly 1 when inactive)
     // Sun shadow CASCADES, near→far (appended — earlier shaders declare only the prefix above,
     // layout-safe). Each matrix: origin-relative world → that cascade's shadow clip (xy ±1,
     // z reversed 0..1); each params: x = enabled, y = texel UV size, z = bias, w = SRV slot.
@@ -402,7 +403,9 @@ float4 main(PSInput input) : SV_Target
         // (shared\shadefade01.dds) × green (0.05, 1, 0) × 2 — without the tint they clip to
         // pure white. The decoder rides the tint in vSpecular.rgb (specular is force-disabled
         // on emissive shapes, so the slot is free); shapes without a material carry (1,1,1).
-        shade = input.vSpecular.rgb;
+        // × the active imagespace's EmissiveMult (IMGS hdrData[3]; FNV ships 1.0 interior /
+        // 1.2 exterior). Every scene path uploads an explicit neutral 1 when HDR/modifiers are off.
+        shade = input.vSpecular.rgb * uCameraOrigin.w;
     }
 
     // Vertex color modulates the diffuse (vertexRgb is pre-neutralized for gradient shapes) —
