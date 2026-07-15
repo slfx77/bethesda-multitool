@@ -64,6 +64,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         var terrainMeshByGrid = new Dictionary<(uint, int, int), RuntimeTerrainMesh>();
         foreach (var land in Context.ScanResult.LandRecords)
         {
+            StampTerrainSourceParent(land);
             if (land.ParentCellFormId is uint parentCellFormId)
             {
                 if (land.Heightmap != null)
@@ -693,6 +694,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
 
         foreach (var land in scanResult.LandRecords)
         {
+            StampTerrainSourceParent(land);
             if (land.ParentCellFormId is uint parentCellFormId)
             {
                 if (land.Heightmap != null)
@@ -971,6 +973,34 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
 
         return runtime.PlacedObjects.TrueForAll(obj => obj.AssignmentSource == AssignmentSourceRuntimeCellList) &&
                existing.PlacedObjects.TrueForAll(obj => obj.AssignmentSource == AssignmentSourceProximity);
+    }
+
+    private static void StampTerrainSourceParent(ExtractedLandRecord land)
+    {
+        if (land.ParentCellFormId is not uint parentCellFormId)
+        {
+            return;
+        }
+
+        if (land.Heightmap is { } heightmap)
+        {
+            heightmap.SourceParentCellFormId = parentCellFormId;
+        }
+
+        if (land.ParsedHeightmap is { } capturedHeightmap)
+        {
+            capturedHeightmap.SourceParentCellFormId = parentCellFormId;
+        }
+
+        if (land.VisualData is { } visualData)
+        {
+            visualData.SourceParentCellFormId = parentCellFormId;
+        }
+
+        if (land.RuntimeTerrainMesh is { } runtimeTerrainMesh)
+        {
+            runtimeTerrainMesh.SourceParentCellFormId = parentCellFormId;
+        }
     }
 
     private static CellRecord AttachTerrainData(

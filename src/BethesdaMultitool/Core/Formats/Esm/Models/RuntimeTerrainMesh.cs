@@ -37,6 +37,12 @@ public record RuntimeTerrainMesh
     /// <summary>File offset where vertex data was read from.</summary>
     public long VertexDataOffset { get; init; }
 
+    /// <summary>
+    ///     Parent CELL FormID from the recovered LAND hierarchy. Conversion planning requires an
+    ///     exact parent match before synthesizing LAND from this mesh.
+    /// </summary>
+    internal uint? SourceParentCellFormId { get; set; }
+
     /// <summary>Number of garbage Z vertices repaired during sanitization (0 if unsanitized).</summary>
     public int SanitizedZCount { get; init; }
 
@@ -45,6 +51,12 @@ public record RuntimeTerrainMesh
     ///     Null if no sanitization was performed. Length = VertexCount (1089).
     /// </summary>
     public bool[]? SanitizedMask { get; init; }
+
+    /// <summary>
+    ///     Source index repaired specifically because an unmasked exact (0,0,0)
+    ///     sample was indistinguishable from an empty destination slot.
+    /// </summary>
+    internal int? SanitizedZeroOriginIndex { get; init; }
 
     /// <summary>Whether normals were successfully extracted.</summary>
     public bool HasNormals => Normals != null;
@@ -158,6 +170,7 @@ public record RuntimeTerrainMesh
     {
         var sanitized = (float[])Vertices.Clone();
         var vertexCount = Math.Min(VertexCount, sanitized.Length / 3);
+        int? sanitizedZeroOriginIndex = null;
 
         // Build a boolean grid of which Z values are bad.
         var isBad = new bool[VertexCount];
@@ -183,6 +196,7 @@ public record RuntimeTerrainMesh
         var zeroPercent = vertexCount > 0 ? zeroCount * 100.0f / vertexCount : 0f;
         if (zeroPercent > 20.0f)
         {
+            var hasAuthoritativeSourceMask = SourceVertexMask is { Length: >= VertexCount };
             for (var i = 0; i < vertexCount; i++)
             {
                 var x = sanitized[i * 3];
@@ -190,9 +204,11 @@ public record RuntimeTerrainMesh
                 if (!isBad[i] &&
                     MathF.Abs(sanitized[i * 3 + 2]) < 0.001f &&
                     MathF.Abs(x) < 0.001f &&
-                    MathF.Abs(y) < 0.001f)
+                    MathF.Abs(y) < 0.001f &&
+                    (!hasAuthoritativeSourceMask || !SourceVertexMask![i]))
                 {
                     isBad[i] = true;
+                    sanitizedZeroOriginIndex = i;
                 }
             }
         }
@@ -288,7 +304,8 @@ public record RuntimeTerrainMesh
         {
             Vertices = sanitized,
             SanitizedZCount = totalBad,
-            SanitizedMask = originalBadMask
+            SanitizedMask = originalBadMask,
+            SanitizedZeroOriginIndex = sanitizedZeroOriginIndex,
         };
     }
 

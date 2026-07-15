@@ -33,6 +33,9 @@ public sealed class CellLandPlannerTests
     public void Complete_Runtime_Mesh_Synthesizes_Land()
     {
         var cell = Exterior() with { RuntimeTerrainMesh = CompleteRuntimeMesh() };
+        var quality = cell.RuntimeTerrainMesh.DiagnoseQuality();
+        Assert.Equal(33 * 33 - 1, quality.SourceSampleCount);
+        Assert.True(quality.SourceCoveragePercent < 100f);
 
         var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
 
@@ -40,6 +43,283 @@ public sealed class CellLandPlannerTests
         Assert.Equal(CellLandHeightSource.CompleteRuntimeMesh, decision.HeightSource);
         Assert.Equal(33 * 33, decision.Heightmap.HeightDeltas.Length);
         Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void Complete_Flat_Runtime_Mesh_Synthesizes_Land()
+    {
+        var mesh = FullGridMesh((_, _) => 42f);
+        var quality = mesh.DiagnoseQuality();
+        Assert.Equal("Flat", quality.Classification);
+        Assert.Equal(100f, quality.SourceCoveragePercent);
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        var decision = Assert.Single(result.DecisionsByCellSourceFormId.Values);
+        Assert.Equal(CellLandHeightSource.CompleteRuntimeMesh, decision.HeightSource);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void Complete_FewPixel_Runtime_Mesh_Synthesizes_Land()
+    {
+        var mesh = FullGridMesh((x, y) => x == 32 && y == 32 ? 9f : 1f);
+        var quality = mesh.DiagnoseQuality();
+        Assert.Equal("FewPixels", quality.Classification);
+        Assert.Equal(100f, quality.SourceCoveragePercent);
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        var decision = Assert.Single(result.DecisionsByCellSourceFormId.Values);
+        Assert.Equal(CellLandHeightSource.CompleteRuntimeMesh, decision.HeightSource);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void Authoritative_Zero_Origin_Runtime_Mesh_Is_Complete()
+    {
+        var mesh = CompleteRuntimeMesh() with
+        {
+            SourceVertexMask = Enumerable.Repeat(true, 33 * 33).ToArray(),
+        };
+        var quality = mesh.DiagnoseQuality();
+        Assert.Equal(100f, quality.SourceCoveragePercent);
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Single(result.DecisionsByCellSourceFormId);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void Unmasked_Zero_Origin_Plus_Another_Missing_Sample_Is_Not_Complete()
+    {
+        var complete = CompleteRuntimeMesh();
+        var vertices = complete.Vertices[..^3];
+        var mesh = complete with { Vertices = vertices };
+        var quality = mesh.DiagnoseQuality();
+        Assert.Equal(33 * 33 - 2, quality.SourceSampleCount);
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-not-complete", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void Arbitrary_Zeroed_Vertex_Does_Not_Qualify_As_Origin_Ambiguity()
+    {
+        var complete = FullGridMesh((_, _) => 42f);
+        var vertices = (float[])complete.Vertices.Clone();
+        var arbitraryOffset = (10 * 33 + 10) * 3;
+        vertices[arbitraryOffset] = 0f;
+        vertices[arbitraryOffset + 1] = 0f;
+        vertices[arbitraryOffset + 2] = 0f;
+        var mesh = complete with { Vertices = vertices };
+        var quality = mesh.DiagnoseQuality();
+        Assert.Equal(33 * 33 - 1, quality.SourceSampleCount);
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-not-complete", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void Sanitized_Origin_Is_The_One_Allowed_Missing_Source_Slot()
+    {
+        var sanitizedMask = new bool[33 * 33];
+        sanitizedMask[0] = true;
+        var mesh = CompleteRuntimeMesh() with
+        {
+            SanitizedZCount = 1,
+            SanitizedMask = sanitizedMask,
+            SanitizedZeroOriginIndex = 0,
+        };
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Single(result.DecisionsByCellSourceFormId);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void Authoritative_Centered_Zero_Origin_Remains_A_Source_Sample()
+    {
+        var mesh = CenteredFullGridMesh((_, _) => 0f) with
+        {
+            SourceVertexMask = Enumerable.Repeat(true, 33 * 33).ToArray(),
+        };
+        mesh = mesh.SanitizeVertices();
+
+        Assert.Equal(0, mesh.SanitizedZCount);
+        Assert.Null(mesh.SanitizedMask);
+        var coverage = mesh.TryGetCanonicalSourceCoverageMask();
+        Assert.NotNull(coverage);
+        Assert.True(coverage[16, 16]);
+        Assert.Equal(100f, mesh.DiagnoseQuality().SourceCoveragePercent);
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Single(result.DecisionsByCellSourceFormId);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void Sanitized_Unmasked_Centered_Local_Origin_Maps_To_The_Canonical_Center()
+    {
+        var mesh = CenteredFullGridMesh((_, _) => 0f).SanitizeVertices();
+
+        Assert.Equal(1, mesh.SanitizedZCount);
+        Assert.True(mesh.SanitizedMask![16 * 33 + 16]);
+        Assert.Equal(16 * 33 + 16, mesh.SanitizedZeroOriginIndex);
+        var coverage = mesh.TryGetCanonicalSourceCoverageMask();
+        Assert.NotNull(coverage);
+        Assert.False(coverage[16, 16]);
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Single(result.DecisionsByCellSourceFormId);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Theory]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    public void Sanitized_Corrupt_Origin_Is_Not_The_Zero_Slot_Ambiguity(float corruptHeight)
+    {
+        var complete = FullGridMesh((_, _) => 42f);
+        var vertices = (float[])complete.Vertices.Clone();
+        vertices[2] = corruptHeight;
+        var mesh = (complete with { Vertices = vertices }).SanitizeVertices();
+
+        Assert.Equal(1, mesh.SanitizedZCount);
+        Assert.True(mesh.SanitizedMask![0]);
+        Assert.Null(mesh.SanitizedZeroOriginIndex);
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-not-complete", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void Authoritative_Sanitized_Source_Is_Not_Complete()
+    {
+        var sanitizedMask = new bool[33 * 33];
+        sanitizedMask[0] = true;
+        var mesh = FullGridMesh((_, _) => 0f) with
+        {
+            SourceVertexMask = Enumerable.Repeat(true, 33 * 33).ToArray(),
+            SanitizedZCount = 1,
+            SanitizedMask = sanitizedMask,
+        };
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-not-complete", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void Authoritative_SourceMask_With_One_Declared_Hole_Is_Not_Complete()
+    {
+        var sourceMask = Enumerable.Repeat(true, 33 * 33).ToArray();
+        sourceMask[10] = false;
+        var mesh = FullGridMesh((_, _) => 42f) with { SourceVertexMask = sourceMask };
+        var quality = mesh.DiagnoseQuality();
+        Assert.Equal(33 * 33 - 1, quality.SourceSampleCount);
+        Assert.True(quality.SourceCoveragePercent > 99f);
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-not-complete", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void Declared_Origin_Hole_Is_Not_Complete_Even_With_Origin_Sanitation()
+    {
+        var sourceMask = Enumerable.Repeat(true, 33 * 33).ToArray();
+        sourceMask[0] = false;
+        var unsanitized = FullGridMesh((_, _) => 0f) with { SourceVertexMask = sourceMask };
+
+        var rejected = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = unsanitized }, SourceKind.DmpNew)]);
+        Assert.Empty(rejected.DecisionsByCellSourceFormId);
+
+        var sanitizedMask = new bool[33 * 33];
+        sanitizedMask[0] = true;
+        var sanitized = unsanitized with
+        {
+            SanitizedZCount = 1,
+            SanitizedMask = sanitizedMask,
+        };
+
+        var stillRejected = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = sanitized }, SourceKind.DmpNew)]);
+        Assert.Empty(stillRejected.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-not-complete", Assert.Single(stillRejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void Sanitized_NonOrigin_Source_Slot_Is_Not_Complete()
+    {
+        var sanitizedMask = new bool[33 * 33];
+        sanitizedMask[10] = true;
+        var mesh = FullGridMesh((_, _) => 42f) with
+        {
+            SanitizedZCount = 1,
+            SanitizedMask = sanitizedMask,
+        };
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-not-complete", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Theory]
+    [InlineData(17)]
+    [InlineData(9)]
+    public void Complete_WorldFrame_LowerLod_Runtime_Mesh_Synthesizes_Land(int gridSize)
+    {
+        var mesh = WorldFrameGridMesh(gridSize);
+        var quality = mesh.DiagnoseQuality();
+        Assert.Equal(gridSize, quality.DetectedGridSize);
+        Assert.Equal(gridSize * gridSize, quality.SourceSampleCount);
+        Assert.Equal(100f, quality.SourceCoveragePercent);
+
+        var cell = Exterior() with { GridX = 2, GridY = 3, RuntimeTerrainMesh = mesh };
+        var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
+
+        Assert.Single(result.DecisionsByCellSourceFormId);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void Sanitized_Mesh_Cannot_Refit_As_Complete_LowerLod()
+    {
+        var mesh = WorldFrameGridMesh(17) with { SanitizedZCount = 1 };
+        Assert.Equal(100f, mesh.DiagnoseQuality().SourceCoveragePercent);
+
+        var cell = Exterior() with { GridX = 2, GridY = 3, RuntimeTerrainMesh = mesh };
+        var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-not-complete", Assert.Single(result.Diagnostics).Code);
     }
 
     [Fact]
@@ -51,8 +331,13 @@ public sealed class CellLandPlannerTests
             RuntimeTerrainMesh = new RuntimeTerrainMesh
             {
                 Vertices = [0f, 0f, 1f, 128f, 0f, 2f, 0f, 128f, 3f],
+                SourceParentCellFormId = 0x0010B902,
             },
         };
+        var corruptQuality = partial.RuntimeTerrainMesh.DiagnoseQuality();
+        Assert.Equal("None", corruptQuality.HeightSource);
+        Assert.Equal("Corrupt", corruptQuality.Classification);
+        Assert.Equal(0f, corruptQuality.SourceCoveragePercent);
 
         var result = CellLandPlanner.DecideAll(
             [Entry(coordinateOnly, SourceKind.DmpNew), Entry(partial, SourceKind.DmpNew)]);
@@ -80,6 +365,60 @@ public sealed class CellLandPlannerTests
     }
 
     [Fact]
+    public void Partial_Flat_Runtime_Mesh_Does_Not_Bypass_Coverage_Gate()
+    {
+        var vertices = new List<float>();
+        for (var y = 0; y < 12; y++)
+        {
+            for (var x = 0; x < 24; x++)
+            {
+                vertices.Add(x * 128f);
+                vertices.Add(y * 128f);
+                vertices.Add(0f);
+            }
+        }
+
+        var mesh = new RuntimeTerrainMesh
+        {
+            Vertices = vertices.ToArray(),
+            SourceParentCellFormId = 0x0010B901,
+        };
+        var quality = mesh.DiagnoseQuality();
+        Assert.Equal("RuntimeMESH", quality.HeightSource);
+        Assert.Equal("Flat", quality.Classification);
+        Assert.True(quality.SourceCoveragePercent < 99f);
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-not-complete", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void Partial_FewPixel_Runtime_Mesh_Does_Not_Bypass_Coverage_Gate()
+    {
+        var mesh = FullGridMesh((x, y) => x == 32 && y == 32 ? 8f : 1f);
+        var sourceMask = Enumerable.Repeat(true, 33 * 33).ToArray();
+        for (var i = 0; i < 14; i++)
+        {
+            sourceMask[i] = false;
+        }
+
+        mesh = mesh with { SourceVertexMask = sourceMask };
+        var quality = mesh.DiagnoseQuality();
+        Assert.Equal("RuntimeMESH", quality.HeightSource);
+        Assert.Equal("FewPixels", quality.Classification);
+        Assert.True(quality.SourceCoveragePercent < 99f);
+
+        var result = CellLandPlanner.DecideAll(
+            [Entry(Exterior() with { RuntimeTerrainMesh = mesh }, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-not-complete", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
     public void Captured_Vhgt_Wins_When_Runtime_Mesh_Is_Partial()
     {
         var captured = Heightmap(4);
@@ -97,6 +436,86 @@ public sealed class CellLandPlannerTests
         Assert.Same(captured, decision.Heightmap);
         Assert.Equal(CellLandHeightSource.CapturedHeightmap, decision.HeightSource);
         Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void GridMatched_Captured_Heightmap_With_Different_Parent_Is_Rejected()
+    {
+        var cell = Exterior() with
+        {
+            CapturedLandHeightmap = Heightmap(4, sourceParentCellFormId: 0x0010B999),
+        };
+
+        var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.captured-heightmap-parent-mismatch", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void Mismatched_Captured_Heightmap_Falls_Back_To_Exact_Runtime_Mesh()
+    {
+        var cell = Exterior() with
+        {
+            CapturedLandHeightmap = Heightmap(4, sourceParentCellFormId: 0x0010B999),
+            RuntimeTerrainMesh = CompleteRuntimeMesh(),
+        };
+
+        var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
+
+        var decision = Assert.Single(result.DecisionsByCellSourceFormId.Values);
+        Assert.Equal(CellLandHeightSource.CompleteRuntimeMesh, decision.HeightSource);
+        Assert.Equal("land.captured-heightmap-parent-mismatch", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void GridMatched_Runtime_Mesh_With_Different_Parent_Is_Rejected()
+    {
+        var mesh = CompleteRuntimeMesh() with { SourceParentCellFormId = 0x0010B999 };
+        var cell = Exterior() with { RuntimeTerrainMesh = mesh };
+
+        var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-mesh-parent-mismatch", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void Mismatched_Runtime_Mesh_Does_Not_Contribute_Vertex_Colors()
+    {
+        var mesh = CompleteRuntimeMesh() with
+        {
+            SourceParentCellFormId = 0x0010B999,
+            Colors = Enumerable.Repeat(1f, 33 * 33 * 3).ToArray(),
+        };
+        var cell = Exterior() with
+        {
+            CapturedLandHeightmap = Heightmap(4),
+            RuntimeTerrainMesh = mesh,
+        };
+
+        var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
+
+        Assert.Null(Assert.Single(result.DecisionsByCellSourceFormId.Values).VisualData);
+    }
+
+    [Fact]
+    public void GridMatched_Visual_Data_With_Different_Parent_Is_Dropped()
+    {
+        var cell = Exterior() with
+        {
+            CapturedLandHeightmap = Heightmap(4),
+            LandVisualData = new LandVisualData
+            {
+                SourceParentCellFormId = 0x0010B999,
+                VertexColors = new byte[33 * 33 * 3],
+            },
+        };
+
+        var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
+
+        Assert.Null(Assert.Single(result.DecisionsByCellSourceFormId.Values).VisualData);
+        Assert.Equal("land.visual-data-parent-mismatch", Assert.Single(result.Diagnostics).Code);
     }
 
     [Fact]
@@ -177,13 +596,19 @@ public sealed class CellLandPlannerTests
         DmpModel = cell,
     };
 
-    private static LandHeightmap Heightmap(sbyte value) => new()
+    private static LandHeightmap Heightmap(
+        sbyte value,
+        uint sourceParentCellFormId = 0x0010B901) => new()
     {
         HeightOffset = 100f,
         HeightDeltas = Enumerable.Repeat(value, 33 * 33).ToArray(),
+        SourceParentCellFormId = sourceParentCellFormId,
     };
 
     private static RuntimeTerrainMesh CompleteRuntimeMesh()
+        => FullGridMesh((x, y) => x * 3f + y * 2f + (x * y % 7));
+
+    private static RuntimeTerrainMesh FullGridMesh(Func<int, int, float> height)
     {
         var vertices = new float[33 * 33 * 3];
         for (var y = 0; y < 33; y++)
@@ -193,11 +618,58 @@ public sealed class CellLandPlannerTests
                 var index = (y * 33 + x) * 3;
                 vertices[index] = x * 128f;
                 vertices[index + 1] = y * 128f;
-                vertices[index + 2] = x * 3f + y * 2f + (x * y % 7);
+                vertices[index + 2] = height(x, y);
             }
         }
 
-        return new RuntimeTerrainMesh { Vertices = vertices };
+        return new RuntimeTerrainMesh
+        {
+            Vertices = vertices,
+            SourceParentCellFormId = 0x0010B901,
+        };
+    }
+
+    private static RuntimeTerrainMesh CenteredFullGridMesh(Func<int, int, float> height)
+    {
+        var vertices = new float[33 * 33 * 3];
+        for (var y = 0; y < 33; y++)
+        {
+            for (var x = 0; x < 33; x++)
+            {
+                var index = (y * 33 + x) * 3;
+                vertices[index] = (x - 16) * 128f;
+                vertices[index + 1] = (y - 16) * 128f;
+                vertices[index + 2] = height(x, y);
+            }
+        }
+
+        return new RuntimeTerrainMesh
+        {
+            Vertices = vertices,
+            SourceParentCellFormId = 0x0010B901,
+        };
+    }
+
+    private static RuntimeTerrainMesh WorldFrameGridMesh(int gridSize)
+    {
+        var vertices = new float[gridSize * gridSize * 3];
+        var spacing = 4096f / (gridSize - 1);
+        for (var y = 0; y < gridSize; y++)
+        {
+            for (var x = 0; x < gridSize; x++)
+            {
+                var index = (y * gridSize + x) * 3;
+                vertices[index] = 2 * 4096f + x * spacing;
+                vertices[index + 1] = 3 * 4096f + y * spacing;
+                vertices[index + 2] = 100f + x * 3f + y * 2f + (x * y % 7);
+            }
+        }
+
+        return new RuntimeTerrainMesh
+        {
+            Vertices = vertices,
+            SourceParentCellFormId = 0x0010B901,
+        };
     }
 
     private static RuntimeTerrainMesh PartialRuntimeMesh()
@@ -213,6 +685,10 @@ public sealed class CellLandPlannerTests
             }
         }
 
-        return new RuntimeTerrainMesh { Vertices = vertices.ToArray() };
+        return new RuntimeTerrainMesh
+        {
+            Vertices = vertices.ToArray(),
+            SourceParentCellFormId = 0x0010B901,
+        };
     }
 }

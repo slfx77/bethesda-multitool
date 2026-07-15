@@ -3,6 +3,7 @@ using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using Xunit;
 
@@ -191,6 +192,69 @@ public class EsmWorldExtractorLandDiagnosticsTests
         Assert.Equal(0x00002000u, land.WorldspaceFormId);
         Assert.Equal(3, land.CellX);
         Assert.Equal(-2, land.CellY);
+    }
+
+    [Fact]
+    public void AttachTerrainData_Preserves_Exact_Parent_Through_Grid_Fallback()
+    {
+        const uint parentCellFormId = 0x00006000;
+        var captured = new LandHeightmap
+        {
+            HeightOffset = 10f,
+            HeightDeltas = new sbyte[33 * 33],
+        };
+        var mesh = new RuntimeTerrainMesh
+        {
+            Vertices = Enumerable.Repeat(1f, 33 * 33 * 3).ToArray(),
+        };
+        var visualData = new LandVisualData
+        {
+            VertexColors = new byte[33 * 33 * 3],
+        };
+        var scanResult = new EsmRecordScanResult
+        {
+            LandRecords =
+            [
+                new ExtractedLandRecord
+                {
+                    Header = new DetectedMainRecord("LAND", 0, 0, 0x0000A000, 0x1000, false),
+                    ParentCellFormId = parentCellFormId,
+                    WorldspaceFormId = 0x00002000,
+                    CellX = 2,
+                    CellY = 3,
+                    Heightmap = captured,
+                    ParsedHeightmap = captured,
+                    VisualData = visualData,
+                    RuntimeTerrainMesh = mesh,
+                },
+            ],
+        };
+        var cells = new List<CellRecord>
+        {
+            new()
+            {
+                FormId = parentCellFormId,
+                WorldspaceFormId = 0x00002000,
+                GridX = 2,
+                GridY = 3,
+            },
+            new()
+            {
+                FormId = 0x00006001,
+                WorldspaceFormId = 0x00002000,
+                GridX = 2,
+                GridY = 3,
+            },
+        };
+
+        CellRecordHandler.AttachTerrainDataFromLandRecords(cells, scanResult);
+
+        Assert.All(cells, cell =>
+        {
+            Assert.Equal(parentCellFormId, cell.CapturedLandHeightmap?.SourceParentCellFormId);
+            Assert.Equal(parentCellFormId, cell.LandVisualData?.SourceParentCellFormId);
+            Assert.Equal(parentCellFormId, cell.RuntimeTerrainMesh?.SourceParentCellFormId);
+        });
     }
 
     private static byte[] BuildTextureLayer(uint textureFormId, byte quadrant, byte platformFlag, ushort layer)

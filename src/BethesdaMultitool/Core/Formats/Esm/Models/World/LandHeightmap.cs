@@ -16,6 +16,12 @@ public record LandHeightmap
     public long Offset { get; init; }
 
     /// <summary>
+    ///     Parent CELL FormID from the recovered LAND hierarchy. Conversion planning uses this
+    ///     provenance to avoid copying grid-matched terrain onto a different CELL at the same coordinates.
+    /// </summary>
+    internal uint? SourceParentCellFormId { get; set; }
+
+    /// <summary>
     ///     Optional exact height grid (from runtime mesh data).
     ///     When set, CalculateHeights() returns this directly, bypassing lossy delta decoding.
     /// </summary>

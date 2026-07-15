@@ -5,6 +5,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.World;
 /// </summary>
 public record LandVisualData
 {
+    /// <summary>
+    ///     Parent CELL FormID from the recovered LAND hierarchy. Conversion planning uses this
+    ///     provenance to reject visual data copied through a same-grid fallback.
+    /// </summary>
+    internal uint? SourceParentCellFormId { get; set; }
+
     /// <summary>VCLR payload, RGB triplets in LAND vertex order. Expected length is 3267 bytes.</summary>
     public byte[]? VertexColors { get; init; }
 
