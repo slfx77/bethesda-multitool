@@ -69,6 +69,11 @@ internal static class VerdictPlacedRefEncoder
             placed = placed with { BaseFormId = verdict.FinalBaseFormId };
         }
 
+        if (verdict.NewEnableParentFormId is { } enableParentFormId)
+        {
+            placed = placed with { EnableParentFormId = enableParentFormId };
+        }
+
         var subs = RefrEncoder.EncodeNewPlacedReference(
             placed, context.ValidFormIds, context.Plan.SourceToEmittedFormId,
             context.ResolveBaseRecordType(originalBaseFormId, placed.BaseFormId));

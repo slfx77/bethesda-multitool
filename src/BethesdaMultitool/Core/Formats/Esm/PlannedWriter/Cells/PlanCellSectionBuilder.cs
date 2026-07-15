@@ -25,6 +25,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 /// </summary>
 internal static class PlanCellSectionBuilder
 {
+    private const uint PersistentFlag = 0x00000400u;
     private const uint CompressedFlag = 0x00040000u;
 
     public static byte[]? BuildCellSection(
@@ -462,7 +463,16 @@ internal static class PlanCellSectionBuilder
             return null;
         }
 
-        var flags = options.CompressRecords ? CompressedFlag : 0u;
+        // Exterior persistent-container CELLs are identified by both their direct
+        // World Children placement and the persistent record-header bit.  The latter
+        // is present on CK-authored/master containers and is required for the runtime
+        // to register their group-8 children as worldspace persistents.
+        var flags = cellModel.IsPersistentCell ? PersistentFlag : 0u;
+        if (options.CompressRecords)
+        {
+            flags |= CompressedFlag;
+        }
+
         return PluginRecordByteBuilder.BuildNewRecordBytes(
             "CELL", cellPlan.CellFormId, flags, encoded.Subrecords);
     }

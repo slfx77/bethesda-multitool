@@ -58,6 +58,14 @@ public sealed record PlacedRefDecision
     public bool? NewInitiallyDisabled { get; init; }
 
     /// <summary>
+    ///     Optional planner-selected XESP enable parent for an emitted NEW ref. This is
+    ///     intentionally separate from the global source-to-emitted map: compatibility
+    ///     aliases for one placed-reference network must not redirect or suppress the
+    ///     source parent records themselves. Null keeps the captured parent.
+    /// </summary>
+    public uint? NewEnableParentFormId { get; init; }
+
+    /// <summary>
     ///     True when this Override ref must mark its master FormID "covered" so the carry-forward
     ///     pass doesn't re-emit the master copy (the <c>actor.temp-override-suppressed-esm</c> path).
     /// </summary>

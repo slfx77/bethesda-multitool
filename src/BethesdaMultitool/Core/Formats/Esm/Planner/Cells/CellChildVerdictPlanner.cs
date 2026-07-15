@@ -37,6 +37,14 @@ public sealed record CellVerdictInputs
 /// </summary>
 public static class CellChildVerdictPlanner
 {
+    private const uint TheStripWorldFormId = 0x0010B96F;
+    private const uint ProtoStreetLightSouthParent = 0x00127E9F;
+    private const uint ProtoStreetLightFirstParent = 0x00127EA0;
+    private const uint ProtoStreetLightNorthParent = 0x00127EA1;
+    private const uint RetailStreetLightOneParent = 0x0013BAE3;
+    private const uint RetailStreetLightTwoParent = 0x0013BAE2;
+    private const uint RetailStreetLightThreeParent = 0x0013BAE1;
+
     /// <summary>
     ///     Rewrite each planned cell with its children's verdicts. Cells whose
     ///     <see cref="CellPlan.Mode" /> is null (mode-planning didn't run) are left
@@ -310,32 +318,72 @@ public static class CellChildVerdictPlanner
             TargetGroupType = plannedGroupType,
             AuxStatCode = auxStatCode,
             NewInitiallyDisabled = SelectNewInitiallyDisabled(child, placed, cellPlan),
+            NewEnableParentFormId = SelectNewEnableParent(placed, cellPlan),
         };
     }
 
     /// <summary>
-    ///     The prototype Strip capture marks its undriven light/effect network Initially
-    ///     Disabled even though no surviving quest/script toggles it. Before NEW-ref flags
-    ///     were serialized, those placements loaded enabled; honoring every captured bit in
-    ///     v122 made 119 light, beam, glow, and marker references disappear in-game.
+    ///     v123 force-enabled 119 disabled Strip REFRs to restore content that v122 hid.
+    ///     Artifact tracing split that set into 98 normally-gated street-light refs, three
+    ///     captured starter markers, and 18 genuinely parentless compatibility refs. The
+    ///     first 101 are not undriven: retail's surviving VStreetLighting quest can drive
+    ///     them through the parent aliases selected below, so their captured disabled state
+    ///     is required for daytime-off behavior. Only the 18 parentless refs retain the
+    ///     v123 force-enable fallback.
     ///
     ///     Keep this compatibility rule deliberately narrow: NEW REFRs in TheStripWorld
-    ///     only. Opposite-state XESP children are authored hidden alternatives and retain
-    ///     their disabled bit; actors, creatures, and every other worldspace retain the
-    ///     capture verbatim.
+    ///     only. Opposite-state XESP children, the staged light network, actors, creatures,
+    ///     and every other worldspace retain the capture verbatim.
     /// </summary>
     private static bool SelectNewInitiallyDisabled(
         RecordPlan child,
         PlacedReference placed,
         CellPlan cellPlan)
     {
-        const uint theStripWorldFormId = 0x0010B96F;
         var isStripUndrivenScenery = child.Type == "REFR"
-            && cellPlan.Context.WorldspaceFormId == theStripWorldFormId
+            && cellPlan.Context.WorldspaceFormId == TheStripWorldFormId
             && placed.IsInitiallyDisabled
+            && !IsProtoStreetLightParent(placed.FormId)
+            && !TryMapProtoStreetLightParent(placed.EnableParentFormId, out _)
             && (placed.EnableParentFlags.GetValueOrDefault() & 0x01) == 0;
 
         return isStripUndrivenScenery ? false : placed.IsInitiallyDisabled;
+    }
+
+    /// <summary>
+    ///     The prototype and retail masters share the VStreetLighting quest/script FormIDs,
+    ///     but the retail script targets its renamed One/Two/Three starter refs. Point only
+    ///     the prototype Strip's staged XESP children at those live retail parents. The
+    ///     semantic mapping follows the scripted activation sequence:
+    ///     First/South/North becomes One/Two/Three.
+    /// </summary>
+    private static uint? SelectNewEnableParent(PlacedReference placed, CellPlan cellPlan)
+    {
+        if (cellPlan.Context.WorldspaceFormId != TheStripWorldFormId)
+        {
+            return null;
+        }
+
+        return TryMapProtoStreetLightParent(placed.EnableParentFormId, out var retailParent)
+            ? retailParent
+            : null;
+    }
+
+    private static bool IsProtoStreetLightParent(uint formId) =>
+        formId is ProtoStreetLightSouthParent
+            or ProtoStreetLightFirstParent
+            or ProtoStreetLightNorthParent;
+
+    private static bool TryMapProtoStreetLightParent(uint? sourceParent, out uint retailParent)
+    {
+        retailParent = sourceParent switch
+        {
+            ProtoStreetLightFirstParent => RetailStreetLightOneParent,
+            ProtoStreetLightSouthParent => RetailStreetLightTwoParent,
+            ProtoStreetLightNorthParent => RetailStreetLightThreeParent,
+            _ => 0,
+        };
+        return retailParent != 0;
     }
 
     /// <summary>Mirrors the writer's override chain: temp-actor suppression, render-culling

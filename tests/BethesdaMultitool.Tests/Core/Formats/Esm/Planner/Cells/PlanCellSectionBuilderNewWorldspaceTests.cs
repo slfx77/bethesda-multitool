@@ -25,6 +25,80 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Planner.Cells;
 public sealed class PlanCellSectionBuilderNewWorldspaceTests
 {
     [Fact]
+    public void New_Persistent_Cell_Anchor_Has_Persistent_Record_Flag()
+    {
+        const uint sourceWrldId = 0x01000900u;
+        const uint allocatedWrldId = 0x01000901u;
+        const uint persistentCellId = 0x01000801u;
+
+        var cellPlan = new CellPlan
+        {
+            CellFormId = persistentCellId,
+            CellRecordPlan = new RecordPlan
+            {
+                Type = "CELL",
+                Disposition = RecordDisposition.New,
+                FormId = persistentCellId,
+                Model = new CellRecord
+                {
+                    FormId = persistentCellId,
+                    WorldspaceFormId = sourceWrldId,
+                    IsPersistentCell = true
+                },
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+            },
+            Context = new PcEsmCellContext
+            {
+                CellFormId = persistentCellId,
+                IsInterior = false,
+                WorldspaceFormId = sourceWrldId,
+                BlockGroupType = 0,
+                SubblockGroupType = 0,
+                BlockLabel = null,
+                SubblockLabel = null
+            },
+            PersistentChildren = ImmutableArray<RecordPlan>.Empty,
+            VwdChildren = ImmutableArray<RecordPlan>.Empty,
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+            ParentWorldspaceFormId = sourceWrldId
+        };
+        var wrldPlan = new WorldspacePlan
+        {
+            WorldspaceFormId = allocatedWrldId,
+            WorldspaceRecordPlan = new RecordPlan
+            {
+                Type = "WRLD",
+                Disposition = RecordDisposition.New,
+                FormId = allocatedWrldId,
+                SourceFormId = sourceWrldId,
+                Model = new WorldspaceRecord { FormId = sourceWrldId, EditorId = "PlanNewWrld" },
+                References = ImmutableArray<ResolvedRef>.Empty,
+                ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+                Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
+            },
+            CellFormIds = ImmutableArray.Create(persistentCellId)
+        };
+        var plan = MakeEmptyPlan() with
+        {
+            CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty.Add(persistentCellId, cellPlan),
+            WorldspacesByFormId = ImmutableDictionary<uint, WorldspacePlan>.Empty.Add(sourceWrldId, wrldPlan),
+            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty.Add(sourceWrldId, allocatedWrldId)
+        };
+
+        var bytes = PlanCellSectionBuilder.BuildCellSection(
+            plan, new Dictionary<uint, ParsedMainRecord>(),
+            new PluginBuildOptions { CompressRecords = false });
+
+        Assert.NotNull(bytes);
+        var cellOffset = FindRecord(bytes, "CELL", persistentCellId);
+        Assert.True(cellOffset >= 0, "The persistent CELL anchor was not emitted.");
+        Assert.Equal(0x00000400u,
+            System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(cellOffset + 8, 4)));
+    }
+
+    [Fact]
     public void New_Worldspace_With_New_Cell_Emits_Through_Planner_With_Byte_Parity()
     {
         const uint sourceWrldId = 0x01000900u;
@@ -148,5 +222,22 @@ public sealed class PlanCellSectionBuilderNewWorldspaceTests
                 PlannerCoverage = ImmutableHashSet<string>.Empty
             }
         };
+    }
+
+    private static int FindRecord(byte[] bytes, string signature, uint formId)
+    {
+        var signatureBytes = System.Text.Encoding.ASCII.GetBytes(signature);
+        for (var i = 0; i <= bytes.Length - 24; i++)
+        {
+            if (!bytes.AsSpan(i, 4).SequenceEqual(signatureBytes)
+                || System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(i + 12, 4)) != formId)
+            {
+                continue;
+            }
+
+            return i;
+        }
+
+        return -1;
     }
 }

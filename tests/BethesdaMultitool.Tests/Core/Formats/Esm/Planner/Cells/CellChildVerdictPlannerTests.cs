@@ -69,6 +69,107 @@ public sealed class CellChildVerdictPlannerTests
     }
 
     [Theory]
+    [InlineData(0x00127EA0u, 0x0013BAE3u)] // First -> retail One
+    [InlineData(0x00127E9Fu, 0x0013BAE2u)] // South -> retail Two
+    [InlineData(0x00127EA1u, 0x0013BAE1u)] // North -> retail Three
+    public void Strip_Staged_Light_Retains_Disabled_State_And_Uses_Retail_Parent(
+        uint prototypeParent,
+        uint retailParent)
+    {
+        var placed = Ref(NewRefId, MasterStatBaseId) with
+        {
+            IsInitiallyDisabled = true,
+            EnableParentFormId = prototypeParent,
+        };
+        var cells = Apply(MakeCell(
+            temporary: [NewChild("REFR", NewRefId, placed)],
+            worldspaceFormId: 0x0010B96F));
+
+        var verdict = cells[CellId].RefDecisions[NewRefId];
+        Assert.True(verdict.NewInitiallyDisabled);
+        Assert.Equal(retailParent, verdict.NewEnableParentFormId);
+    }
+
+    [Theory]
+    [InlineData(0x00127E9Fu)]
+    [InlineData(0x00127EA0u)]
+    [InlineData(0x00127EA1u)]
+    public void Strip_Prototype_Starter_Marker_Retains_Disabled_State(uint markerFormId)
+    {
+        var placed = Ref(markerFormId, MasterStatBaseId) with { IsInitiallyDisabled = true };
+        var cells = Apply(MakeCell(
+            temporary: [NewChild("REFR", markerFormId, placed)],
+            worldspaceFormId: 0x0010B96F));
+
+        var verdict = cells[CellId].RefDecisions[markerFormId];
+        Assert.True(verdict.NewInitiallyDisabled);
+        Assert.Null(verdict.NewEnableParentFormId);
+    }
+
+    [Fact]
+    public void Strip_Captured_Light_Corpus_Maps_98_Staged_Refs_And_Only_Force_Enables_18_Parentless()
+    {
+        var children = new List<RecordPlan>();
+        var stagedIds = new List<uint>();
+        var parentlessIds = new List<uint>();
+        uint nextFormId = 0x01010000;
+
+        void AddStaged(uint prototypeParent, int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var formId = nextFormId++;
+                stagedIds.Add(formId);
+                children.Add(NewChild("REFR", formId, Ref(formId, MasterStatBaseId) with
+                {
+                    IsInitiallyDisabled = true,
+                    EnableParentFormId = prototypeParent,
+                }));
+            }
+        }
+
+        AddStaged(0x00127E9F, 22); // South -> retail Two
+        AddStaged(0x00127EA0, 52); // First -> retail One
+        AddStaged(0x00127EA1, 24); // North -> retail Three
+
+        for (var i = 0; i < 18; i++)
+        {
+            var formId = nextFormId++;
+            parentlessIds.Add(formId);
+            children.Add(NewChild("REFR", formId,
+                Ref(formId, MasterStatBaseId) with { IsInitiallyDisabled = true }));
+        }
+
+        uint[] markerIds = [0x00127E9F, 0x00127EA0, 0x00127EA1];
+        foreach (var markerId in markerIds)
+        {
+            children.Add(NewChild("REFR", markerId,
+                Ref(markerId, MasterStatBaseId) with { IsInitiallyDisabled = true }));
+        }
+
+        var cells = Apply(MakeCell(
+            temporary: [.. children],
+            worldspaceFormId: 0x0010B96F));
+        var verdicts = cells[CellId].RefDecisions;
+        var staged = stagedIds.Select(id => verdicts[id]).ToArray();
+        var parentless = parentlessIds.Select(id => verdicts[id]).ToArray();
+
+        Assert.Equal(98, staged.Length);
+        Assert.All(staged, verdict => Assert.True(verdict.NewInitiallyDisabled));
+        Assert.Equal(52, staged.Count(verdict => verdict.NewEnableParentFormId == 0x0013BAE3));
+        Assert.Equal(22, staged.Count(verdict => verdict.NewEnableParentFormId == 0x0013BAE2));
+        Assert.Equal(24, staged.Count(verdict => verdict.NewEnableParentFormId == 0x0013BAE1));
+
+        Assert.Equal(18, parentless.Length);
+        Assert.All(parentless, verdict =>
+        {
+            Assert.False(verdict.NewInitiallyDisabled);
+            Assert.Null(verdict.NewEnableParentFormId);
+        });
+        Assert.All(markerIds, markerId => Assert.True(verdicts[markerId].NewInitiallyDisabled));
+    }
+
+    [Theory]
     [InlineData("ACHR")]
     [InlineData("ACRE")]
     public void Strip_New_Disabled_Actors_Retain_Captured_State(string recordType)

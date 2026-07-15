@@ -292,6 +292,41 @@ public sealed class PlanCellSectionBuilderParityTests
     }
 
     [Fact]
+    public void New_Placed_Ref_Emits_Planner_Selected_Enable_Parent()
+    {
+        const uint prototypeParent = 0x00127EA0;
+        const uint retailParent = 0x0013BAE3;
+        var placed = new PlacedReference
+        {
+            FormId = 0x01000801,
+            BaseFormId = 0x0000001F,
+            RecordType = "REFR",
+            IsPersistent = true,
+            IsInitiallyDisabled = true,
+            EnableParentFormId = prototypeParent,
+        };
+        var verdict = new PlacedRefDecision
+        {
+            Verdict = PlacedRefEmitVerdict.Emit,
+            FinalBaseFormId = placed.BaseFormId,
+            TargetGroupType = 8,
+            NewInitiallyDisabled = true,
+            NewEnableParentFormId = retailParent,
+        };
+
+        var bytes = BuildSectionWithSinglePlacedRef(
+            placed,
+            emittedFormIds: ImmutableHashSet.Create(placed.FormId, retailParent),
+            verdict: verdict);
+
+        var expectedPlaced = placed with { EnableParentFormId = retailParent };
+        var subs = RefrEncoder.EncodeNewPlacedReference(expectedPlaced);
+        var expectedChild = PluginRecordByteBuilder.BuildNewRecordBytes(
+            "REFR", placed.FormId, 0xC00u, subs.Subrecords);
+        Assert.Equal(BuildExpectedCellOnlySection(persistentChildren: [expectedChild]), bytes);
+    }
+
+    [Fact]
     public void New_Placed_Ref_Base_Is_Remapped_Through_Source_To_Emitted_Map()
     {
         // A base pointing at another planner-allocated record must emit the EMITTED
