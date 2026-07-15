@@ -277,4 +277,27 @@ public sealed class DialogueTextBackfillTests
             File.Delete(csvPath);
         }
     }
+
+    [Fact]
+    public void CsvCatalog_AcceptsResponseAwareEsmRowsBeyondFirst()
+    {
+        var csvPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + "_response_aware.csv");
+        File.WriteAllText(csvPath,
+            "File,FormID,Source,Text\n" +
+            "topic_0010656e_2.xma,0010656E,esm-response,They can be right pushy.\n");
+        try
+        {
+            var catalog = DialogueCsvCatalog.Load([csvPath]);
+
+            Assert.Equal(0, catalog.RowsQuarantined);
+            var row = Assert.Single(catalog.SelectedRows);
+            Assert.Equal((byte)2, row.ResponseNumber);
+            Assert.Equal("They can be right pushy.", row.Text);
+            Assert.Equal(row, Assert.Single(catalog.SelectedAudioRows));
+        }
+        finally
+        {
+            File.Delete(csvPath);
+        }
+    }
 }

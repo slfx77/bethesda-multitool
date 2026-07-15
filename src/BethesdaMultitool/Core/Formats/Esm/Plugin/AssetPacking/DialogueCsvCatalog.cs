@@ -10,6 +10,7 @@ internal sealed record DialogueCsvRow(
     string FilePath,
     uint FormId,
     byte ResponseNumber,
+    string Source,
     string Text);
 
 /// <summary>
@@ -25,13 +26,15 @@ internal sealed class DialogueCsvCatalog
         IReadOnlyList<DialogueCsvRow> selectedAudioRows,
         IReadOnlyDictionary<string, IReadOnlySet<int>> selectedRowOrdinalsByCsvPath,
         int rowsRead,
-        int rowsParsed)
+        int rowsParsed,
+        int rowsQuarantined)
     {
         SelectedRows = selectedRows;
         SelectedAudioRows = selectedAudioRows;
         SelectedRowOrdinalsByCsvPath = selectedRowOrdinalsByCsvPath;
         RowsRead = rowsRead;
         RowsParsed = rowsParsed;
+        RowsQuarantined = rowsQuarantined;
     }
 
     public IReadOnlyList<DialogueCsvRow> SelectedRows { get; }
@@ -39,6 +42,7 @@ internal sealed class DialogueCsvCatalog
     public IReadOnlyDictionary<string, IReadOnlySet<int>> SelectedRowOrdinalsByCsvPath { get; }
     public int RowsRead { get; }
     public int RowsParsed { get; }
+    public int RowsQuarantined { get; }
 
     public static DialogueCsvCatalog Load(
         IReadOnlyList<string> csvPaths,
@@ -48,6 +52,7 @@ internal sealed class DialogueCsvCatalog
         var candidates = new List<DialogueCsvRow>();
         var rowsRead = 0;
         var rowsParsed = 0;
+        var rowsQuarantined = 0;
         for (var csvOrder = 0; csvOrder < csvPaths.Count; csvOrder++)
         {
             var csvPath = csvPaths[csvOrder];
@@ -65,6 +70,7 @@ internal sealed class DialogueCsvCatalog
             var header = DialogueAudioCsvReader.ReadCsvRecord(reader);
             var fileColumn = DialogueAudioCsvReader.FindColumn(header, "File");
             var formIdColumn = DialogueAudioCsvReader.FindColumn(header, "FormID");
+            var sourceColumn = DialogueAudioCsvReader.FindColumn(header, "Source");
             var textColumn = DialogueAudioCsvReader.FindColumn(header, "Text");
             if (fileColumn < 0 || formIdColumn < 0)
             {
@@ -98,10 +104,36 @@ internal sealed class DialogueCsvCatalog
                 var text = textColumn >= 0 && textColumn < fields.Count
                     ? fields[textColumn]
                     : string.Empty;
-                candidates.Add(new DialogueCsvRow(
-                    csvPath, csvOrder, rowOrder, filePath, formId, responseNumber.Value, text));
+                var source = sourceColumn >= 0 && sourceColumn < fields.Count
+                    ? fields[sourceColumn]
+                    : string.Empty;
                 rowsParsed++;
+
+                // Audio Transcriber CSVs written before the response-aware ESM index fix
+                // attached INFO's first NAM1 to every voice file sharing that FormID. The
+                // Source=esm rows for suffixes _2, _3, ... are therefore not independent
+                // response text: in the July corpus all 6,818 such rows repeat response 1.
+                // Quarantine them from BOTH subtitle and audio selection. For retail INFO
+                // overlays this leaves the unmatched master NAM1 and voice asset intact;
+                // trusted per-file Whisper/accepted rows remain eligible at every slot.
+                if (responseNumber.Value > 1
+                    && string.Equals(source.Trim(), "esm", StringComparison.OrdinalIgnoreCase))
+                {
+                    rowsQuarantined++;
+                    continue;
+                }
+
+                candidates.Add(new DialogueCsvRow(
+                    csvPath, csvOrder, rowOrder, filePath, formId, responseNumber.Value, source, text));
             }
+        }
+
+        if (rowsQuarantined > 0)
+        {
+            sink?.Warn(
+                "DialogueCsvCatalog",
+                $"Quarantined {rowsQuarantined:N0} legacy Source=esm row(s) for response slots above 1; " +
+                "those exports repeat INFO response 1 and cannot safely drive subtitles or audio.");
         }
 
         var selected = new List<DialogueCsvRow>();
@@ -165,7 +197,8 @@ internal sealed class DialogueCsvCatalog
                 static group => group.Key,
                 static group => (IReadOnlySet<int>)group.Select(static row => row.RowOrder).ToHashSet(),
                 StringComparer.OrdinalIgnoreCase);
-        return new DialogueCsvCatalog(selected, selectedAudio, ordinals, rowsRead, rowsParsed);
+        return new DialogueCsvCatalog(
+            selected, selectedAudio, ordinals, rowsRead, rowsParsed, rowsQuarantined);
     }
 
     private static IOrderedEnumerable<DialogueCsvRow> Rank(IEnumerable<DialogueCsvRow> rows) =>

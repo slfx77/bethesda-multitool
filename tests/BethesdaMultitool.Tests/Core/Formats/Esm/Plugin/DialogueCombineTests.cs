@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
@@ -106,6 +107,61 @@ public sealed class DialogueCombineTests
         var retainedSubrecords = ParseSubrecords(retained.RecordBytes);
         Assert.Equal("Retail second", retainedSubrecords[7].DataAsString);
         Assert.Equal(0, retained.ReplacedTextCount);
+    }
+
+    [Fact]
+    public void SharedSunnyOverlay_QuarantinesInheritedEsmTailAndKeepsMasterCaptionAudioFallback()
+    {
+        const uint sunnyInfo = 0x001055D6;
+        var csvPath = Path.Combine(Path.GetTempPath(), $"sunny-combine-{Guid.NewGuid():N}.csv");
+        File.WriteAllText(csvPath,
+            "File,FormID,VoiceType,Speaker,Quest,Source,Text\n" +
+            "sound\\voice\\falloutnv.esm\\femaleuniquesunnysmiles\\tempvfreeformg_001055d6_1.xma," +
+            "001055D6,femaleuniquesunnysmiles,Sunny Smiles,Goodsprings Dialogue,whisper,Prototype first\n" +
+            "sound\\voice\\falloutnv.esm\\femaleuniquesunnysmiles\\tempvfreeformg_001055d6_2.xma," +
+            "001055D6,femaleuniquesunnysmiles,Sunny Smiles,Goodsprings Dialogue,accepted,Prototype second\n" +
+            "sound\\voice\\falloutnv.esm\\femaleadult01default\\vfreeformg_001055d6_3.xma," +
+            "001055D6,femaleadult01default,Sunny Smiles,Goodsprings Dialogue,esm,Retail first repeated\n");
+
+        try
+        {
+            var catalog = DialogueCsvCatalog.Load([csvPath]);
+            Assert.Equal(3, catalog.RowsParsed);
+            Assert.Equal(1, catalog.RowsQuarantined);
+            Assert.Equal([1, 2], catalog.SelectedRows.Select(static row => row.ResponseNumber));
+            Assert.Equal(
+                catalog.SelectedRows.Select(static row =>
+                    (row.CsvPath, row.RowOrder, row.FormId, row.ResponseNumber, row.Source, row.Text)),
+                catalog.SelectedAudioRows.Select(static row =>
+                    (row.CsvPath, row.RowOrder, row.FormId, row.ResponseNumber, row.Source, row.Text)));
+
+            var captured = new List<DialogueRecord>
+            {
+                new() { FormId = sunnyInfo, Responses = [] }
+            };
+            var backfill = DialogueTextBackfill.ApplyFromCsvs(
+                captured, [csvPath], NullConversionProgressSink.Instance);
+            Assert.Equal(2, backfill.ResponsesAppended);
+            Assert.Equal([1, 2], captured[0].Responses.Select(static response => response.ResponseNumber));
+
+            var retail = Record("INFO", sunnyInfo, 100,
+                Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail first"),
+                Sub("TRDT", Trdt(2, 0x22)), TextSub("NAM1", "Retail second"),
+                Sub("TRDT", Trdt(3, 0x33)), TextSub("NAM1", "Retail third audio caption"));
+            var overlay = DialogueInfoOverlayWriter.Build(retail, captured[0]);
+            var emitted = ParseSubrecords(overlay.RecordBytes);
+
+            Assert.Equal(
+                ["Prototype first", "Prototype second", "Retail third audio caption"],
+                emitted.Where(static subrecord => subrecord.Signature == "NAM1")
+                    .Select(static subrecord => subrecord.DataAsString));
+            Assert.Equal([1, 2], overlay.SourceResponseNumbers);
+            Assert.Equal([1, 2], overlay.EmittedResponses.Select(static response => response.ResponseNumber));
+        }
+        finally
+        {
+            File.Delete(csvPath);
+        }
     }
 
     [Fact]

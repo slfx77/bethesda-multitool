@@ -39,28 +39,31 @@ public class EsmLookupIndex
 
     /// <summary>
     ///     Add or merge an INFO record. Xbox 360 splits each INFO into two records
-    ///     with the same FormID (Base: QSTI/ANAM, Response: NAM1), so we merge both halves.
+    ///     with the same FormID (Base: QSTI/ANAM, Response: NAM1), so we merge both halves
+    ///     while retaining response-number identity.
     /// </summary>
-    public void AddInfo(uint formId, string? subtitleText, uint? speakerFormId, uint? questFormId)
+    public void AddInfo(
+        uint formId,
+        IReadOnlyDictionary<int, string> subtitleTexts,
+        uint? speakerFormId,
+        uint? questFormId)
     {
-        if (_infoEntries.TryGetValue(formId, out var existing))
+        if (!_infoEntries.TryGetValue(formId, out var entry))
         {
-            _infoEntries[formId] = new InfoEntry
-            {
-                SubtitleText = existing.SubtitleText ?? subtitleText,
-                SpeakerFormId = existing.SpeakerFormId ?? speakerFormId,
-                QuestFormId = existing.QuestFormId ?? questFormId
-            };
+            entry = new InfoEntry();
+            _infoEntries[formId] = entry;
         }
-        else
+
+        foreach (var (responseNumber, text) in subtitleTexts)
         {
-            _infoEntries[formId] = new InfoEntry
+            if (responseNumber > 0 && !string.IsNullOrWhiteSpace(text))
             {
-                SubtitleText = subtitleText,
-                SpeakerFormId = speakerFormId,
-                QuestFormId = questFormId
-            };
+                entry.SubtitleTexts.TryAdd(responseNumber, text);
+            }
         }
+
+        entry.SpeakerFormId ??= speakerFormId;
+        entry.QuestFormId ??= questFormId;
     }
 
     public void AddNpc(uint formId, string name, uint? voiceTypeFormId = null, bool hasFullName = false)
@@ -105,9 +108,13 @@ public class EsmLookupIndex
     /// <summary>
     ///     Look up subtitle text for an INFO FormID.
     /// </summary>
-    public string? GetSubtitleText(uint infoFormId)
+    public string? GetSubtitleText(uint infoFormId, int responseIndex = 1)
     {
-        return _infoEntries.TryGetValue(infoFormId, out var entry) ? entry.SubtitleText : null;
+        var responseNumber = responseIndex > 0 ? responseIndex : 1;
+        return _infoEntries.TryGetValue(infoFormId, out var entry)
+               && entry.SubtitleTexts.TryGetValue(responseNumber, out var text)
+            ? text
+            : null;
     }
 
     /// <summary>
@@ -173,7 +180,7 @@ public class EsmLookupIndex
     /// </summary>
     public void Enrich(VoiceFileEntry entry)
     {
-        entry.SubtitleText = GetSubtitleText(entry.FormId);
+        entry.SubtitleText = GetSubtitleText(entry.FormId, entry.ResponseIndex);
         entry.EsmSubtitleText = entry.SubtitleText;
         entry.SpeakerName = GetSpeakerName(entry.FormId);
         entry.QuestName = GetQuestName(entry.FormId);
@@ -287,11 +294,11 @@ public class EsmLookupIndex
         return _voiceTypeToNpcs;
     }
 
-    private record struct InfoEntry
+    private sealed class InfoEntry
     {
-        public uint? QuestFormId;
-        public uint? SpeakerFormId;
-        public string? SubtitleText;
+        public Dictionary<int, string> SubtitleTexts { get; } = [];
+        public uint? QuestFormId { get; set; }
+        public uint? SpeakerFormId { get; set; }
     }
 
     private record struct TopicEntry

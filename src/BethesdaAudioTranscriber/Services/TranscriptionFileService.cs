@@ -282,7 +282,10 @@ public static class TranscriptionFileService
                     e.VoiceType,
                     e.SpeakerName,
                     e.QuestName,
-                    "esm",
+                    // Response-aware exports are safe at _2/_3/...; the converter
+                    // quarantines legacy Source=esm rows because those files assigned
+                    // INFO's first NAM1 to every response suffix.
+                    "esm-response",
                     e.SubtitleText));
             }
         }

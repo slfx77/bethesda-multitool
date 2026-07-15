@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaAudioTranscriber.Models;
 
@@ -38,9 +39,7 @@ public static class EsmIndexBuilder
             {
                 case "INFO":
                 {
-                    var subtitle = record.Subrecords
-                        .FirstOrDefault(s => s.Signature == "NAM1")
-                        ?.DataAsString;
+                    var subtitles = InfoResponseTextExtractor.Extract(record);
 
                     var speakerFormId = record.Subrecords
                         .FirstOrDefault(s => s.Signature == "ANAM" && s.Data.Length >= 4)
@@ -50,7 +49,7 @@ public static class EsmIndexBuilder
                         .FirstOrDefault(s => s.Signature == "QSTI" && s.Data.Length >= 4)
                         ?.DataAsFormId;
 
-                    index.AddInfo(record.Header.FormId, subtitle, speakerFormId, questFormId);
+                    index.AddInfo(record.Header.FormId, subtitles, speakerFormId, questFormId);
                     infoCount++;
                     break;
                 }
@@ -127,5 +126,6 @@ public static class EsmIndexBuilder
             $"Indexed {infoCount} INFOs, {npcCount} NPCs, {questCount} quests, {dialCount} topics, {vtypCount} voice types");
         return index;
     }
+
 }
 
