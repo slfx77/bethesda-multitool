@@ -155,9 +155,13 @@ internal static class PostVerdictScriptClosurePlanner
         var aliases = plan.SourceToEmittedFormId
             .Where(pair => liveFormIds.Contains(pair.Value))
             .ToImmutableDictionary();
-        var index = records
-            .Select((record, position) => (record.FormId, position))
-            .ToImmutableDictionary(pair => pair.FormId, pair => pair.position);
+        var index = ImmutableDictionary.CreateBuilder<uint, int>();
+        for (var position = 0; position < records.Length; position++)
+        {
+            // Match EsmPlanner's established index contract: duplicate captures are
+            // retained in record order and the final occurrence owns point lookup.
+            index[records[position].FormId] = position;
+        }
         return plan with
         {
             Records = records,
@@ -165,7 +169,7 @@ internal static class PostVerdictScriptClosurePlanner
             EmittedFormIds = liveFormIds,
             ValidScriptFormIds = ScriptReferenceSafetyPlanner.BuildValidScriptFormIds(
                 masterRecords, records),
-            RecordIndexByEmittedFormId = index,
+            RecordIndexByEmittedFormId = index.ToImmutable(),
             Diagnostics = plan.Diagnostics.AddRange(diagnostics),
         };
     }

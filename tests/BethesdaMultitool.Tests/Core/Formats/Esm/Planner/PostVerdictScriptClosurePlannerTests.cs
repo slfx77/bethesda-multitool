@@ -75,6 +75,36 @@ public sealed class PostVerdictScriptClosurePlannerTests
             && diagnostic.Message.Contains("SCRO[0]=0x01000801 was dropped", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Apply_DuplicateCaptureFormIdsKeepLastPointLookupLikeInitialPlan()
+    {
+        const uint duplicateFormId = 0x01002752;
+        var plan = new EmitPlan
+        {
+            Records =
+            [
+                Plan("DIAL", duplicateFormId, 0x00100001),
+                Plan("DIAL", duplicateFormId, 0x00100002),
+            ],
+            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty
+                .Add(0x00100001, duplicateFormId)
+                .Add(0x00100002, duplicateFormId),
+            EmittedFormIds = ImmutableHashSet<uint>.Empty.Add(duplicateFormId),
+            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty.Add(duplicateFormId, 1),
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            Meta = new PlanMetadata
+            {
+                NextObjectId = 0x800,
+                PlannerCoverage = ImmutableHashSet<string>.Empty,
+            },
+        };
+
+        var result = PostVerdictScriptClosurePlanner.Apply(plan, []);
+
+        Assert.Equal(2, result.Records.Length);
+        Assert.Equal(1, result.RecordIndexByEmittedFormId[duplicateFormId]);
+    }
+
     private static RecordPlan Plan(string type, uint emitted, uint source) => new()
     {
         Type = type,
