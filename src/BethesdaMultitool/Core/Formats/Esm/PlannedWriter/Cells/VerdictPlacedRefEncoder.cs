@@ -88,7 +88,7 @@ internal static class VerdictPlacedRefEncoder
             10 => PlannedPlacedRefEncoder.VisibleWhenDistantFlag,
             _ => 0u,
         };
-        if (placed.IsInitiallyDisabled)
+        if (verdict.NewInitiallyDisabled ?? placed.IsInitiallyDisabled)
         {
             flags |= PlannedPlacedRefEncoder.InitiallyDisabledFlag;
         }

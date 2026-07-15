@@ -309,7 +309,33 @@ public static class CellChildVerdictPlanner
             FinalBaseFormId = baseFormId,
             TargetGroupType = plannedGroupType,
             AuxStatCode = auxStatCode,
+            NewInitiallyDisabled = SelectNewInitiallyDisabled(child, placed, cellPlan),
         };
+    }
+
+    /// <summary>
+    ///     The prototype Strip capture marks its undriven light/effect network Initially
+    ///     Disabled even though no surviving quest/script toggles it. Before NEW-ref flags
+    ///     were serialized, those placements loaded enabled; honoring every captured bit in
+    ///     v122 made 119 light, beam, glow, and marker references disappear in-game.
+    ///
+    ///     Keep this compatibility rule deliberately narrow: NEW REFRs in TheStripWorld
+    ///     only. Opposite-state XESP children are authored hidden alternatives and retain
+    ///     their disabled bit; actors, creatures, and every other worldspace retain the
+    ///     capture verbatim.
+    /// </summary>
+    private static bool SelectNewInitiallyDisabled(
+        RecordPlan child,
+        PlacedReference placed,
+        CellPlan cellPlan)
+    {
+        const uint theStripWorldFormId = 0x0010B96F;
+        var isStripUndrivenScenery = child.Type == "REFR"
+            && cellPlan.Context.WorldspaceFormId == theStripWorldFormId
+            && placed.IsInitiallyDisabled
+            && (placed.EnableParentFlags.GetValueOrDefault() & 0x01) == 0;
+
+        return isStripUndrivenScenery ? false : placed.IsInitiallyDisabled;
     }
 
     /// <summary>Mirrors the writer's override chain: temp-actor suppression, render-culling

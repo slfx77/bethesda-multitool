@@ -149,10 +149,10 @@ internal sealed class RuntimeLoadedLandDiagnosticsReader
 
             if (pointer.FileOffset is long arrayFileOffset)
             {
-                var bytes = _context.ReadBytes(arrayFileOffset, MaxTextureArrayPointersToSample * 4);
+                var bytes = _context.ReadBytes(arrayFileOffset, MaxAlphaTextureSlots * 4);
                 if (bytes != null)
                 {
-                    for (var i = 0; i < MaxTextureArrayPointersToSample; i++)
+                    for (var i = 0; i < MaxAlphaTextureSlots; i++)
                     {
                         var texturePointer = BinaryUtils.ReadUInt32BE(bytes, i * 4);
                         if (texturePointer == 0)
@@ -196,30 +196,46 @@ internal sealed class RuntimeLoadedLandDiagnosticsReader
             float? minValue = null;
             float? maxValue = null;
 
-            if (pointer.DereferencedFileOffset is long dataFileOffset)
+            if (pointer.FileOffset is long pointerArrayFileOffset)
             {
-                var bytes = _context.ReadBytes(dataFileOffset, PercentArraySamplesToRead * 4);
-                if (bytes != null)
+                var pointerBytes = _context.ReadBytes(pointerArrayFileOffset, TextureWeightVertexCount * 4);
+                if (pointerBytes != null)
                 {
-                    sampledCount = PercentArraySamplesToRead;
-                    for (var i = 0; i < PercentArraySamplesToRead; i++)
+                    for (var position = 0; position < TextureWeightVertexCount; position++)
                     {
-                        var value = BinaryUtils.ReadFloatBE(bytes, i * 4);
-                        if (!RuntimeMemoryContext.IsNormalFloat(value))
+                        var vertexWeightsPointer = BinaryUtils.ReadUInt32BE(pointerBytes, position * 4);
+                        var vertexWeightsFileOffset = _context.VaToFileOffset(vertexWeightsPointer);
+                        if (vertexWeightsFileOffset is not long vertexWeightsOffset)
                         {
                             continue;
                         }
 
-                        normalCount++;
-                        minValue = minValue.HasValue ? Math.Min(minValue.Value, value) : value;
-                        maxValue = maxValue.HasValue ? Math.Max(maxValue.Value, value) : value;
-
-                        if (value is >= 0f and <= 1f)
+                        var weightBytes = _context.ReadBytes(vertexWeightsOffset, TextureWeightSlotCount * 4);
+                        if (weightBytes == null)
                         {
-                            unitCount++;
-                            if (value > 0.001f)
+                            continue;
+                        }
+
+                        for (var slot = 0; slot < TextureWeightSlotCount; slot++)
+                        {
+                            sampledCount++;
+                            var value = BinaryUtils.ReadFloatBE(weightBytes, slot * 4);
+                            if (!RuntimeMemoryContext.IsNormalFloat(value))
                             {
-                                nonZeroUnitCount++;
+                                continue;
+                            }
+
+                            normalCount++;
+                            minValue = minValue.HasValue ? Math.Min(minValue.Value, value) : value;
+                            maxValue = maxValue.HasValue ? Math.Max(maxValue.Value, value) : value;
+
+                            if (value is >= 0f and <= 1f)
+                            {
+                                unitCount++;
+                                if (value > 0.001f)
+                                {
+                                    nonZeroUnitCount++;
+                                }
                             }
                         }
                     }
@@ -297,8 +313,10 @@ internal sealed class RuntimeLoadedLandDiagnosticsReader
     private const int LoadedDataGrassMapSize = 64;
     private const int LoadedDataLandRigidBodyPtrOffset = 148; // NiPointer<bhkRigidBody> spLandRB
     private const int LoadedDataQuadCount = 4;
-    private const int MaxTextureArrayPointersToSample = 64;
-    private const int PercentArraySamplesToRead = 17 * 17;
+    // Slot 0 is pDefQuadTexture; these arrays contain engine slots 1..5 only.
+    private const int MaxAlphaTextureSlots = 5;
+    private const int TextureWeightSlotCount = 6;
+    private const int TextureWeightVertexCount = 17 * 17;
     private const int TesFormHeaderReadSize = 16;
     private const int TesFormFormIdOffset = 12;
     private const byte LandTextureFormType = 0x12;

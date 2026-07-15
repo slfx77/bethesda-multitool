@@ -89,6 +89,11 @@ internal static class DialogueCombinePlanner
                 }
 
                 overlays.Add(new SharedDialogueInfoOverlay(info, masterInfo));
+                // Never append unmatched prototype slots to the retail INFO itself. A cut
+                // slot may be rehomed only when it independently satisfies the strict cut-
+                // topic gate below, including an explicit player-facing PromptText. This
+                // retains intentional cut choices without ever exposing NAM1 NPC response
+                // text as a global dialogue option (the Sunny v122 regression).
                 var masterResponseNumbers = DialogueInfoOverlayWriter.GetMasterResponseNumbers(masterInfo.Record);
                 var extraResponses = DialogueInfoOverlayWriter.IndexPrototypeResponses(info.Responses)
                     .Where(pair => !masterResponseNumbers.Contains(pair.Key))
@@ -247,9 +252,9 @@ internal static class DialogueCombinePlanner
         var visibleResponses = responses
             .Where(response => DialogueInfoOverlayWriter.IsMeaningfulText(response.Text))
             .ToList();
-        var label = !string.IsNullOrWhiteSpace(source.PromptText)
-            ? source.PromptText!.Trim()
-            : visibleResponses.FirstOrDefault()?.Text?.Trim();
+        // NAM1 is an NPC response, never a player-facing topic label. Rehoming is
+        // safe only when the capture contains an explicit player prompt.
+        var label = source.PromptText?.Trim();
         if (!TryResolveLiveFormId(sourceQuest, liveFormIds, remapTable, out var quest)
             || !TryResolveLiveFormId(sourceSpeaker, liveFormIds, remapTable, out var speaker)
             || string.IsNullOrWhiteSpace(label)
@@ -395,6 +400,7 @@ internal static class DialogueCombinePlanner
             if (!retailCoveredSpeakers.Contains(speaker)
                 || quest == 0
                 || !topicById.TryGetValue(topicId, out var topic)
+                || topic.TopicType != 0
                 || topic.QuestFormId != quest)
             {
                 continue;
@@ -460,9 +466,6 @@ internal static class DialogueCombinePlanner
                 {
                     label = rootInfos.Select(static info => info.PromptText)
                         .FirstOrDefault(static text => !string.IsNullOrWhiteSpace(text));
-                    label ??= rootInfos.SelectMany(static info => info.Responses)
-                        .Select(static response => response.Text)
-                        .FirstOrDefault(DialogueInfoOverlayWriter.IsMeaningfulText);
                 }
 
                 if (string.IsNullOrWhiteSpace(label))

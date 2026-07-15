@@ -8,6 +8,23 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 public class CellCaptureUnionerTests
 {
     [Fact]
+    public void Union_Preserves_Captured_Land_Heightmap_From_Secondary_Capture()
+    {
+        var first = new CellRecord { FormId = 0x0010B901 };
+        var captured = new LandHeightmap
+        {
+            HeightOffset = 125f,
+            HeightDeltas = new sbyte[33 * 33],
+            SourceParentCellFormId = first.FormId,
+        };
+        var second = first with { CapturedLandHeightmap = captured };
+
+        var merged = Assert.Single(CellCaptureUnioner.Union([first, second]).Cells);
+
+        Assert.Same(captured, merged.CapturedLandHeightmap);
+    }
+
+    [Fact]
     public void Union_WhenFirstCaptureLacksGrid_KeepsGridFromSecondaryCapture()
     {
         var firstCapture = new CellRecord

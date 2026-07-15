@@ -259,6 +259,38 @@ public sealed class PlanCellSectionBuilderParityTests
         Assert.Equal(BuildExpectedCellOnlySection(persistentChildren: [expectedChild]), bytes);
     }
 
+    [Theory]
+    [InlineData(true, false, 0x400u)]
+    [InlineData(false, true, 0xC00u)]
+    public void New_Placed_Ref_Emits_Planner_Selected_Disabled_Header_Flag(
+        bool capturedDisabled,
+        bool plannedDisabled,
+        uint expectedFlags)
+    {
+        var placed = new PlacedReference
+        {
+            FormId = 0x01000801,
+            BaseFormId = 0x0000001F,
+            RecordType = "REFR",
+            IsPersistent = true,
+            IsInitiallyDisabled = capturedDisabled,
+        };
+        var verdict = new PlacedRefDecision
+        {
+            Verdict = PlacedRefEmitVerdict.Emit,
+            FinalBaseFormId = placed.BaseFormId,
+            TargetGroupType = 8,
+            NewInitiallyDisabled = plannedDisabled,
+        };
+
+        var bytes = BuildSectionWithSinglePlacedRef(placed, verdict: verdict);
+
+        var subs = RefrEncoder.EncodeNewPlacedReference(placed);
+        var expectedChild = PluginRecordByteBuilder.BuildNewRecordBytes(
+            "REFR", placed.FormId, expectedFlags, subs.Subrecords);
+        Assert.Equal(BuildExpectedCellOnlySection(persistentChildren: [expectedChild]), bytes);
+    }
+
     [Fact]
     public void New_Placed_Ref_Base_Is_Remapped_Through_Source_To_Emitted_Map()
     {
@@ -340,7 +372,8 @@ public sealed class PlanCellSectionBuilderParityTests
         PlacedReference placed,
         ImmutableDictionary<uint, uint>? sourceToEmitted = null,
         ImmutableHashSet<uint>? emittedFormIds = null,
-        ConversionPipelineStats? stats = null)
+        ConversionPipelineStats? stats = null,
+        PlacedRefDecision? verdict = null)
     {
         var (master, context) = MakeInteriorCellMaster(0x000ABCDE);
         var childPlan = new RecordPlan
@@ -369,7 +402,10 @@ public sealed class PlanCellSectionBuilderParityTests
             Context = context,
             PersistentChildren = ImmutableArray.Create(childPlan),
             VwdChildren = ImmutableArray<RecordPlan>.Empty,
-            TemporaryChildren = ImmutableArray<RecordPlan>.Empty
+            TemporaryChildren = ImmutableArray<RecordPlan>.Empty,
+            RefDecisions = verdict is null
+                ? ImmutableDictionary<uint, PlacedRefDecision>.Empty
+                : ImmutableDictionary<uint, PlacedRefDecision>.Empty.Add(placed.FormId, verdict),
         };
 
         var plan = MakeEmptyPlan() with

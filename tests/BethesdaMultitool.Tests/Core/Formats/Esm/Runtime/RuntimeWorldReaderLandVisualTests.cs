@@ -18,11 +18,13 @@ public class RuntimeWorldReaderLandVisualTests
     private const uint LandVa = BaseVa + 0x0100;
     private const uint LoadedLandVa = BaseVa + 0x0200;
     private const uint TextureArrayVa = BaseVa + 0x0300;
-    private const uint PercentArrayVa = BaseVa + 0x0400;
-    private const uint PercentMaskVa = BaseVa + 0x0500;
-    private const uint BadPercentMaskVa = BaseVa + 0x0A00;
+    private const uint PercentArrayVa = BaseVa + 0x8000;
+    private const uint PercentWeightsVa = BaseVa + 0x9000;
+    private const uint BadPercentArrayVa = BaseVa + 0xB000;
+    private const uint BadPercentWeightsVa = BaseVa + 0xC000;
     private const uint BaseTextureVa = BaseVa + 0x1000;
     private const uint AlphaTextureVa = BaseVa + 0x1100;
+    private const uint SecondAlphaTextureVa = BaseVa + 0x1180;
     private const uint InvalidTextureVa = BaseVa + 0x1200;
     private const uint TextureSetVa = BaseVa + 0x1300;
     private const uint GrassVa = BaseVa + 0x1400;
@@ -34,6 +36,40 @@ public class RuntimeWorldReaderLandVisualTests
     private const uint WrongInlinePathVa = BaseVa + 0x4400;
     private const uint NiDiffuseTextureVa = BaseVa + 0x5000;
     private const uint NiNormalTextureVa = BaseVa + 0x5100;
+    private const uint TerrainPointerArrayVa = BaseVa + 0x6000;
+    private const uint TerrainQuadrantsVa = BaseVa + 0x15000;
+
+    [Fact]
+    public void ReadRuntimeLandData_CarriesLoadedBaseHeightWithTerrainMesh()
+    {
+        var buffer = new byte[0x20000];
+        WriteLand(buffer, 0x00099999);
+        WriteLoadedLand(buffer, 0, 0, 0, 824f);
+        WriteTerrainQuadrants(buffer);
+
+        var land = ReadLand(buffer, 0x00099999);
+
+        Assert.NotNull(land);
+        Assert.Equal(824f, land.BaseHeight);
+        Assert.NotNull(land.TerrainMesh);
+        Assert.Equal(824f, land.TerrainMesh.RuntimeBaseHeight);
+    }
+
+    [Fact]
+    public void ReadRuntimeLandData_InvalidBaseHeightLeavesTerrainProvenanceMissing()
+    {
+        var buffer = new byte[0x20000];
+        WriteLand(buffer, 0x00099998);
+        WriteLoadedLand(buffer, 0, 0, 0, float.NaN);
+        WriteTerrainQuadrants(buffer);
+
+        var land = ReadLand(buffer, 0x00099998);
+
+        Assert.NotNull(land);
+        Assert.Equal(0f, land.BaseHeight);
+        Assert.NotNull(land.TerrainMesh);
+        Assert.Null(land.TerrainMesh.RuntimeBaseHeight);
+    }
 
     [Fact]
     public void ReadRuntimeLandData_ReconstructsTextureLayersFromRuntimeLoadedLandData()
@@ -43,13 +79,25 @@ public class RuntimeWorldReaderLandVisualTests
         WriteLoadedLand(buffer, BaseTextureVa, TextureArrayVa,
             PercentArrayVa);
         WriteUInt32BE(buffer, Offset(TextureArrayVa), AlphaTextureVa);
-        WriteUInt32BE(buffer, Offset(TextureArrayVa) + 4, InvalidTextureVa);
-        WriteUInt32BE(buffer, Offset(PercentArrayVa), PercentMaskVa);
-        WriteUInt32BE(buffer, Offset(PercentArrayVa) + 4, PercentMaskVa);
-        WritePercentMask(buffer, PercentMaskVa, (18, 0.75f), (288, 1.0f));
+        WriteUInt32BE(buffer, Offset(TextureArrayVa) + 4, SecondAlphaTextureVa);
+        // Slots 0..4 are the only alpha slots. Keep the intermediate slots
+        // nonzero so a reader with the historical 64-pointer overrun reaches
+        // the valid-looking canary in slot 5.
+        WriteUInt32BE(buffer, Offset(TextureArrayVa) + 8, InvalidTextureVa);
+        WriteUInt32BE(buffer, Offset(TextureArrayVa) + 12, InvalidTextureVa);
+        WriteUInt32BE(buffer, Offset(TextureArrayVa) + 16, InvalidTextureVa);
+        WriteUInt32BE(buffer, Offset(TextureArrayVa) + 20, AlphaTextureVa);
+        WriteRuntimePercentWeights(
+            buffer,
+            PercentArrayVa,
+            PercentWeightsVa,
+            (18, 1, 0.75f),
+            (19, 2, 0.25f),
+            (288, 1, 1.0f));
 
         WriteLandTexture(buffer, BaseTextureVa, 0x00111111, "RuntimeBaseTexture");
         WriteLandTexture(buffer, AlphaTextureVa, 0x00222222, "RuntimeAlphaTexture");
+        WriteLandTexture(buffer, SecondAlphaTextureVa, 0x00222223, "RuntimeSecondAlphaTexture");
         WriteFormHeader(buffer, InvalidTextureVa, 0x3A, 0x00333333);
         WriteTextureSet(buffer);
         WriteFormHeader(buffer, GrassVa, 0x24, 0x00555555);
@@ -61,7 +109,7 @@ public class RuntimeWorldReaderLandVisualTests
         Assert.Equal(VisualDataSource.Runtime, land.VisualData.Source);
 
         var layers = land.VisualData.TextureLayers;
-        Assert.Equal(2, layers.Count);
+        Assert.Equal(3, layers.Count);
 
         var baseLayer = layers[0];
         Assert.Equal(LandTextureLayerKind.Base, baseLayer.Kind);
@@ -77,10 +125,18 @@ public class RuntimeWorldReaderLandVisualTests
         Assert.Equal(0.75f, alphaLayer.BlendEntries[0].Opacity);
         Assert.Equal(1.0f, alphaLayer.BlendEntries[1].Opacity);
 
+        var secondAlphaLayer = layers[2];
+        Assert.Equal(LandTextureLayerKind.Alpha, secondAlphaLayer.Kind);
+        Assert.Equal(0x00222223u, secondAlphaLayer.TextureFormId);
+        Assert.Equal((ushort)1, secondAlphaLayer.Layer);
+        var secondBlend = Assert.Single(secondAlphaLayer.BlendEntries);
+        Assert.Equal((ushort)19, secondBlend.Position);
+        Assert.Equal(0.25f, secondBlend.Opacity);
+
         Assert.DoesNotContain(layers, l => l.TextureFormId == 0x00333333);
 
         var runtimeTextures = land.RuntimeLandTextures.OrderBy(t => t.FormId).ToArray();
-        Assert.Equal([0x00111111u, 0x00222222u], runtimeTextures.Select(t => t.FormId).ToArray());
+        Assert.Equal([0x00111111u, 0x00222222u, 0x00222223u], runtimeTextures.Select(t => t.FormId).ToArray());
         Assert.All(runtimeTextures, t =>
         {
             Assert.Equal(0x00444444u, t.TextureSetFormId);
@@ -97,9 +153,14 @@ public class RuntimeWorldReaderLandVisualTests
         Assert.Equal((ushort)0x1234, runtimeTextureSet.Flags);
 
         var textureDiag = Assert.Single(land.Diagnostics!.QuadTextureArrays, d => d.Pointer.IsMapped);
-        Assert.Equal(2, textureDiag.SampledPointerCount);
-        Assert.Equal(1, textureDiag.ResolvedTextureCount);
-        Assert.Equal([0x00222222u], textureDiag.TextureFormIds);
+        Assert.Equal(5, textureDiag.SampledPointerCount);
+        Assert.Equal(2, textureDiag.ResolvedTextureCount);
+        Assert.Equal([0x00222222u, 0x00222223u], textureDiag.TextureFormIds);
+
+        var percentDiag = Assert.Single(land.Diagnostics.PercentArrays, d => d.Pointer.IsMapped);
+        Assert.Equal(17 * 17 * 6, percentDiag.SampledCount);
+        Assert.Equal(17 * 17 * 6, percentDiag.NormalFloatCount);
+        Assert.Equal(17 * 17 * 6, percentDiag.UnitRangeCount);
     }
 
     [Fact]
@@ -172,10 +233,13 @@ public class RuntimeWorldReaderLandVisualTests
         var buffer = new byte[0x20000];
         WriteLand(buffer, 0x000BBBBB);
         WriteLoadedLand(buffer, BaseTextureVa, TextureArrayVa,
-            PercentArrayVa);
+            BadPercentArrayVa);
         WriteUInt32BE(buffer, Offset(TextureArrayVa), AlphaTextureVa);
-        WriteUInt32BE(buffer, Offset(PercentArrayVa), BadPercentMaskVa);
-        WriteBadPercentMask(buffer, BadPercentMaskVa);
+        WriteRuntimePercentWeights(
+            buffer,
+            BadPercentArrayVa,
+            BadPercentWeightsVa,
+            (0, 1, float.NaN));
 
         WriteLandTexture(buffer, BaseTextureVa, 0x00111111, "RuntimeBaseTexture");
         WriteLandTexture(buffer, AlphaTextureVa, 0x00222222, "RuntimeAlphaTexture");
@@ -230,7 +294,8 @@ public class RuntimeWorldReaderLandVisualTests
         byte[] buffer,
         uint baseTextureVa,
         uint textureArrayVa,
-        uint percentArrayVa)
+        uint percentArrayVa,
+        float baseHeight = 0f)
     {
         var offset = Offset(LoadedLandVa);
         WriteUInt32BE(buffer, offset + 32, baseTextureVa);
@@ -238,7 +303,34 @@ public class RuntimeWorldReaderLandVisualTests
         WriteUInt32BE(buffer, offset + 64, percentArrayVa);
         WriteInt32BE(buffer, offset + 152, 1);
         WriteInt32BE(buffer, offset + 156, -2);
-        WriteSingleBE(buffer, offset + 160, 0f);
+        WriteSingleBE(buffer, offset + 160, baseHeight);
+    }
+
+    private static void WriteTerrainQuadrants(byte[] buffer)
+    {
+        WriteUInt32BE(buffer, Offset(LoadedLandVa) + 4, TerrainPointerArrayVa);
+        for (var quadrant = 0; quadrant < 4; quadrant++)
+        {
+            const int quadrantSize = 17;
+            const int quadrantBytes = quadrantSize * quadrantSize * 3 * sizeof(float);
+            var quadrantVa = TerrainQuadrantsVa + (uint)(quadrant * quadrantBytes);
+            WriteUInt32BE(buffer, Offset(TerrainPointerArrayVa) + quadrant * 4, quadrantVa);
+
+            var minX = (quadrant & 1) == 0 ? -2048f : 0f;
+            var minY = (quadrant & 2) == 0 ? -2048f : 0f;
+            for (var y = 0; y < quadrantSize; y++)
+            {
+                for (var x = 0; x < quadrantSize; x++)
+                {
+                    var localX = minX + x * 128f;
+                    var localY = minY + y * 128f;
+                    var offset = Offset(quadrantVa) + (y * quadrantSize + x) * 3 * sizeof(float);
+                    WriteSingleBE(buffer, offset, localX);
+                    WriteSingleBE(buffer, offset + 4, localY);
+                    WriteSingleBE(buffer, offset + 8, localX * 0.125f + localY * 0.25f);
+                }
+            }
+        }
     }
 
     private static void WriteLandTexture(byte[] buffer, uint va, uint formId, string editorId)
@@ -315,24 +407,28 @@ public class RuntimeWorldReaderLandVisualTests
         buffer[Offset(va) + bytes.Length] = 0;
     }
 
-    private static void WritePercentMask(byte[] buffer, uint va, params (int Position, float Opacity)[] values)
+    private static void WriteRuntimePercentWeights(
+        byte[] buffer,
+        uint pointerArrayVa,
+        uint weightVectorsVa,
+        params (int Position, int Slot, float Opacity)[] values)
     {
-        for (var i = 0; i < 17 * 17; i++)
+        const int activeSlotCount = 6;
+        const int allocatedSlotCount = 8;
+        for (var position = 0; position < 17 * 17; position++)
         {
-            WriteSingleBE(buffer, Offset(va) + i * 4, 0f);
+            var vectorVa = weightVectorsVa + (uint)(position * allocatedSlotCount * 4);
+            WriteUInt32BE(buffer, Offset(pointerArrayVa) + position * 4, vectorVa);
+            for (var slot = 0; slot < activeSlotCount; slot++)
+            {
+                WriteSingleBE(buffer, Offset(vectorVa) + slot * 4, slot == 0 ? 1f : 0f);
+            }
         }
 
-        foreach (var (position, opacity) in values)
+        foreach (var (position, slot, opacity) in values)
         {
-            WriteSingleBE(buffer, Offset(va) + position * 4, opacity);
-        }
-    }
-
-    private static void WriteBadPercentMask(byte[] buffer, uint va)
-    {
-        for (var i = 0; i < 17 * 17; i++)
-        {
-            WriteSingleBE(buffer, Offset(va) + i * 4, i == 0 ? float.NaN : 0.5f);
+            var vectorVa = weightVectorsVa + (uint)(position * allocatedSlotCount * 4);
+            WriteSingleBE(buffer, Offset(vectorVa) + slot * 4, opacity);
         }
     }
 

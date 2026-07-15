@@ -50,6 +50,14 @@ public sealed record PlacedRefDecision
     public int TargetGroupType { get; init; }
 
     /// <summary>
+    ///     Record-header Initially-Disabled bit (0x800) selected for an emitted NEW ref.
+    ///     The planner owns this decision so compatibility policy is applied once and the
+    ///     encoder only serializes the settled state. Null is reserved for transitional
+    ///     callers that predate verdict planning and means "use the captured state".
+    /// </summary>
+    public bool? NewInitiallyDisabled { get; init; }
+
+    /// <summary>
     ///     True when this Override ref must mark its master FormID "covered" so the carry-forward
     ///     pass doesn't re-emit the master copy (the <c>actor.temp-override-suppressed-esm</c> path).
     /// </summary>

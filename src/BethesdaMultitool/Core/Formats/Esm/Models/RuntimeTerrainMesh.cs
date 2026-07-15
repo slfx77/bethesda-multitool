@@ -38,6 +38,14 @@ public record RuntimeTerrainMesh
     public long VertexDataOffset { get; init; }
 
     /// <summary>
+    ///     Absolute LoadedLandData base height captured with this mesh. Runtime vertex Z
+    ///     values are cell-local in FNV, so conversion must not serialize the mesh unless
+    ///     this provenance travels with it. Null means the runtime value was unavailable or
+    ///     invalid; zero is a valid, explicitly captured base height.
+    /// </summary>
+    internal float? RuntimeBaseHeight { get; init; }
+
+    /// <summary>
     ///     Parent CELL FormID from the recovered LAND hierarchy. Conversion planning requires an
     ///     exact parent match before synthesizing LAND from this mesh.
     /// </summary>

@@ -127,6 +127,9 @@ internal static class CellCaptureUnioner
             RadiationRegionFormIds = MergeDistinct(captures.SelectMany(c => c.RadiationRegionFormIds)),
             LinkedCellFormIds = MergeDistinct(captures.SelectMany(c => c.LinkedCellFormIds)),
             Heightmap = primary.Heightmap ?? captures.Select(c => c.Heightmap).FirstOrDefault(v => v is not null),
+            CapturedLandHeightmap = primary.CapturedLandHeightmap ??
+                                    captures.Select(c => c.CapturedLandHeightmap)
+                                        .FirstOrDefault(v => v is not null),
             LandVisualData = primary.LandVisualData ??
                              captures.Select(c => c.LandVisualData).FirstOrDefault(v => v is not null),
             RuntimeTerrainMesh = primary.RuntimeTerrainMesh ??

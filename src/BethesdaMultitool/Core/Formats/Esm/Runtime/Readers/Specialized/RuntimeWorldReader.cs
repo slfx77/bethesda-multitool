@@ -121,6 +121,7 @@ internal sealed class RuntimeWorldReader
         var cellX = RuntimeMemoryContext.ReadInt32BE(loadedDataBuffer, LoadedDataCellXOffset);
         var cellY = RuntimeMemoryContext.ReadInt32BE(loadedDataBuffer, LoadedDataCellYOffset);
         var baseHeight = BinaryUtils.ReadFloatBE(loadedDataBuffer, LoadedDataBaseHeightOffset);
+        float? terrainBaseHeight = baseHeight;
 
         // Validate cell coordinates are reasonable (-128 to 127 for typical worldspace)
         if (cellX < -1000 || cellX > 1000 || cellY < -1000 || cellY > 1000)
@@ -131,6 +132,7 @@ internal sealed class RuntimeWorldReader
         // Validate base height is reasonable
         if (!RuntimeMemoryContext.IsNormalFloat(baseHeight) || baseHeight < -100000 || baseHeight > 100000)
         {
+            terrainBaseHeight = null;
             baseHeight = 0;
         }
 
@@ -143,6 +145,10 @@ internal sealed class RuntimeWorldReader
 
         // Extract terrain mesh from heap pointers (ppVertices, ppNormals, ppColorsA)
         var terrainMesh = ReadTerrainMesh(loadedDataBuffer);
+        if (terrainMesh is not null)
+        {
+            terrainMesh = terrainMesh with { RuntimeBaseHeight = terrainBaseHeight };
+        }
 
         // Surface runtime VCLR + VNML alongside the texture layers. The terrain mesh's NiColorA
         // and NiPoint3 arrays (LoadedLandData.ppColorsA, ppNormals) carry the engine's live

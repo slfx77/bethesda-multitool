@@ -215,7 +215,7 @@ public sealed class DialogueCombineTests
     }
 
     [Fact]
-    public void CombinePlanner_RehomesOnlyUnmatchedResponseSlots()
+    public void CombinePlanner_RehomesOnlyExplicitlyPromptedUnmatchedResponseSlots()
     {
         const uint dial = 0x000000C8;
         const uint infoId = 0x0010A1EC;
@@ -370,6 +370,137 @@ public sealed class DialogueCombineTests
     }
 
     [Fact]
+    public void CombinePlanner_DoesNotUseNpcResponseAsRehomedTopicLabel()
+    {
+        const uint greetingDial = 0x000000C8;
+        const uint retailInfoId = 0x0010A1EC;
+        const uint sourceInfoId = 0x01110000;
+        const uint quest = 0x00104C1C;
+        const uint speaker = 0x00104C0A;
+        var retailDial = Record("DIAL", greetingDial, 100, TextSub("EDID", "GREETING"));
+        var retailInfo = Record("INFO", retailInfoId, 160,
+            FormSub("QSTI", quest),
+            Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(speaker));
+        var masterIndex = MasterDialogueIndex.Build(
+            [retailDial, retailInfo],
+            [new GrupHeaderInfo
+            {
+                Offset = 120,
+                GroupSize = 200,
+                GroupType = 7,
+                Label = BitConverter.GetBytes(greetingDial)
+            }]);
+        var source = new DialogueRecord
+        {
+            FormId = sourceInfoId,
+            TopicFormId = greetingDial,
+            QuestFormId = quest,
+            SpeakerFormId = speaker,
+            PromptText = null,
+            Responses = [new DialogueResponse
+            {
+                ResponseNumber = 1,
+                Text = "This is an NPC response, not a player prompt."
+            }]
+        };
+
+        var plan = DialogueCombinePlanner.Build(
+            [], [source], new NewVsOverrideClassifier([greetingDial, retailInfoId]),
+            masterIndex, [greetingDial, retailInfoId, quest, speaker]);
+
+        Assert.Empty(plan.NewTopics);
+        Assert.Empty(plan.NewInfos);
+        Assert.Equal(1, plan.SystemInfosSuppressed);
+    }
+
+    [Fact]
+    public void CombinePlanner_SharedSunnySlotWithoutPromptIsNotRehomed()
+    {
+        const uint greetingDial = 0x000000C8;
+        const uint sharedInfoId = 0x00104E6F;
+        const uint quest = 0x00104C1C;
+        const uint speaker = 0x00104C0A;
+        var retailDial = Record("DIAL", greetingDial, 100, TextSub("EDID", "GREETING"));
+        var retailInfo = Record("INFO", sharedInfoId, 160,
+            FormSub("QSTI", quest),
+            Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail greeting"), GetIsId(speaker));
+        var masterIndex = MasterDialogueIndex.Build(
+            [retailDial, retailInfo],
+            [new GrupHeaderInfo
+            {
+                Offset = 120,
+                GroupSize = 200,
+                GroupType = 7,
+                Label = BitConverter.GetBytes(greetingDial)
+            }]);
+        var source = new DialogueRecord
+        {
+            FormId = sharedInfoId,
+            TopicFormId = greetingDial,
+            QuestFormId = quest,
+            SpeakerFormId = speaker,
+            PromptText = null,
+            Responses =
+            [
+                new DialogueResponse { ResponseNumber = 1, Text = "Prototype retail slot" },
+                new DialogueResponse { ResponseNumber = 2, Text = "Unrelated Sunny NPC line" }
+            ]
+        };
+
+        var plan = DialogueCombinePlanner.Build(
+            [], [source], new NewVsOverrideClassifier([greetingDial, sharedInfoId]),
+            masterIndex, [greetingDial, sharedInfoId, quest, speaker]);
+
+        Assert.Single(plan.SharedInfoOverlays);
+        Assert.Empty(plan.NewTopics);
+        Assert.Empty(plan.NewInfos);
+        Assert.Equal(0, plan.CutInfosRehomed);
+    }
+
+    [Fact]
+    public void CombinePlanner_RehomesCoveredGreetingWithExplicitPlayerPrompt()
+    {
+        const uint greetingDial = 0x000000C8;
+        const uint retailInfoId = 0x0010A1EC;
+        const uint sourceInfoId = 0x01110000;
+        const uint quest = 0x00104C1C;
+        const uint speaker = 0x00104C0A;
+        var retailDial = Record("DIAL", greetingDial, 100, TextSub("EDID", "GREETING"));
+        var retailInfo = Record("INFO", retailInfoId, 160,
+            FormSub("QSTI", quest),
+            Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(speaker));
+        var masterIndex = MasterDialogueIndex.Build(
+            [retailDial, retailInfo],
+            [new GrupHeaderInfo
+            {
+                Offset = 120,
+                GroupSize = 200,
+                GroupType = 7,
+                Label = BitConverter.GetBytes(greetingDial)
+            }]);
+        var source = new DialogueRecord
+        {
+            FormId = sourceInfoId,
+            TopicFormId = greetingDial,
+            QuestFormId = quest,
+            SpeakerFormId = speaker,
+            PromptText = "Ask about the prototype topic.",
+            Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Prototype response." }]
+        };
+
+        var plan = DialogueCombinePlanner.Build(
+            [], [source], new NewVsOverrideClassifier([greetingDial, retailInfoId]),
+            masterIndex, [greetingDial, retailInfoId, quest, speaker]);
+
+        var topic = Assert.Single(plan.NewTopics);
+        var info = Assert.Single(plan.NewInfos);
+        Assert.True(topic.IsTopLevel);
+        Assert.Equal(source.PromptText, topic.FullName);
+        Assert.True(info.IsRehomedCutDialogue);
+        Assert.Equal(1, plan.CutInfosRehomed);
+    }
+
+    [Fact]
     public void CombinePlanner_PromotesCoveredSpeakerRootsWithoutSyntheticGreeting()
     {
         const uint greetingDial = 0x000000C8;
@@ -417,6 +548,54 @@ public sealed class DialogueCombineTests
             plan.NewTopics, plan.NewInfos, dialMap,
             speakersWithRetailGreeting: plan.RetailCoveredSpeakers);
         Assert.Empty(synthesized);
+    }
+
+    [Fact]
+    public void CombinePlanner_DoesNotPromoteCoveredConversationBark()
+    {
+        const uint greetingDial = 0x000000C8;
+        const uint retailGreetingInfo = 0x0010A1EC;
+        const uint speaker = 0x00122B95;
+        const uint quest = 0x0011F9CF;
+        const uint sourceTopic = 0x0100767B;
+        var retailDial = Record("DIAL", greetingDial, 100, TextSub("EDID", "GREETING"));
+        var retailInfo = Record("INFO", retailGreetingInfo, 160,
+            Sub("TRDT", Trdt(1, 0x11)), TextSub("NAM1", "Retail"), GetIsId(speaker));
+        var masterIndex = MasterDialogueIndex.Build(
+            [retailDial, retailInfo],
+            [new GrupHeaderInfo
+            {
+                Offset = 120,
+                GroupSize = 200,
+                GroupType = 7,
+                Label = BitConverter.GetBytes(greetingDial)
+            }]);
+        var topic = new DialogTopicRecord
+        {
+            FormId = sourceTopic,
+            EditorId = "FortWaterBarrelWarning",
+            FullName = "TheFortWaterBarrelWarning",
+            QuestFormId = quest,
+            TopicType = 1,
+            Flags = 0
+        };
+        var topicInfo = new DialogueRecord
+        {
+            FormId = 0x010078AF,
+            TopicFormId = sourceTopic,
+            QuestFormId = quest,
+            SpeakerFormId = speaker,
+            Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Get away from there." }]
+        };
+
+        var plan = DialogueCombinePlanner.Build(
+            [topic], [topicInfo], new NewVsOverrideClassifier([greetingDial, retailGreetingInfo]),
+            masterIndex, [greetingDial, retailGreetingInfo, quest, speaker]);
+
+        var preserved = Assert.Single(plan.NewTopics);
+        Assert.Equal((byte)1, preserved.TopicType);
+        Assert.False(preserved.IsTopLevel);
+        Assert.Equal("TheFortWaterBarrelWarning", preserved.FullName);
     }
 
     [Theory]

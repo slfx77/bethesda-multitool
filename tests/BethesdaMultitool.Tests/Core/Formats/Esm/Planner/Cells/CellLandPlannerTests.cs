@@ -46,6 +46,45 @@ public sealed class CellLandPlannerTests
     }
 
     [Fact]
+    public void Complete_Runtime_Mesh_Preserves_Enriched_Absolute_Base_Height()
+    {
+        var mesh = CompleteRuntimeMesh() with { RuntimeBaseHeight = 1024f };
+        var enriched = mesh.ToLandHeightmap(1024f);
+        enriched.SourceParentCellFormId = 0x0010B901;
+        var cell = Exterior() with
+        {
+            Heightmap = enriched,
+            RuntimeTerrainMesh = mesh,
+        };
+
+        var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
+
+        var decision = Assert.Single(result.DecisionsByCellSourceFormId.Values);
+        Assert.Same(enriched, decision.Heightmap);
+        Assert.Equal(CellLandHeightSource.CompleteRuntimeMesh, decision.HeightSource);
+        Assert.Equal(
+            mesh.ToLandHeightmap().CalculateHeights()[0, 0] + 1024f,
+            decision.Heightmap.CalculateHeights()[0, 0]);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void Complete_Runtime_Mesh_Without_Base_Height_Provenance_Fails_Closed()
+    {
+        var mesh = CompleteRuntimeMesh() with { RuntimeBaseHeight = null };
+        var cell = Exterior() with
+        {
+            Heightmap = mesh.ToLandHeightmap(),
+            RuntimeTerrainMesh = mesh,
+        };
+
+        var result = CellLandPlanner.DecideAll([Entry(cell, SourceKind.DmpNew)]);
+
+        Assert.Empty(result.DecisionsByCellSourceFormId);
+        Assert.Equal("land.runtime-base-height-missing", Assert.Single(result.Diagnostics).Code);
+    }
+
+    [Fact]
     public void Complete_Flat_Runtime_Mesh_Synthesizes_Land()
     {
         var mesh = FullGridMesh((_, _) => 42f);
@@ -626,6 +665,7 @@ public sealed class CellLandPlannerTests
         {
             Vertices = vertices,
             SourceParentCellFormId = 0x0010B901,
+            RuntimeBaseHeight = 0f,
         };
     }
 
@@ -647,6 +687,7 @@ public sealed class CellLandPlannerTests
         {
             Vertices = vertices,
             SourceParentCellFormId = 0x0010B901,
+            RuntimeBaseHeight = 0f,
         };
     }
 
@@ -669,6 +710,7 @@ public sealed class CellLandPlannerTests
         {
             Vertices = vertices,
             SourceParentCellFormId = 0x0010B901,
+            RuntimeBaseHeight = 0f,
         };
     }
 
@@ -689,6 +731,7 @@ public sealed class CellLandPlannerTests
         {
             Vertices = vertices.ToArray(),
             SourceParentCellFormId = 0x0010B901,
+            RuntimeBaseHeight = 0f,
         };
     }
 }

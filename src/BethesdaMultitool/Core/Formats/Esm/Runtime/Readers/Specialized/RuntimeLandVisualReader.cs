@@ -60,36 +60,31 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
             }
 
             var textureArrayFileOffset = _context.VaToFileOffset(textureArrayPointer);
-            var percentArrayFileOffset = _context.VaToFileOffset(percentArrayPointer);
-            if (textureArrayFileOffset is not long textureArrayOffset ||
-                percentArrayFileOffset is not long percentArrayOffset)
+            if (textureArrayFileOffset is not long textureArrayOffset)
             {
                 continue;
             }
 
-            var texturePointerBytes = _context.ReadBytes(textureArrayOffset, MaxTextureArrayPointersToSample * 4);
-            var percentPointerBytes = _context.ReadBytes(percentArrayOffset, MaxTextureArrayPointersToSample * 4);
-            if (texturePointerBytes == null || percentPointerBytes == null)
+            var texturePointerBytes = _context.ReadBytes(textureArrayOffset, MaxAlphaTextureSlots * 4);
+            var textureWeights = ReadRuntimeTextureWeights(percentArrayPointer);
+            if (texturePointerBytes == null || textureWeights == null)
             {
                 continue;
             }
 
-            for (var layerIndex = 0; layerIndex < MaxTextureArrayPointersToSample; layerIndex++)
+            for (var layerIndex = 0; layerIndex < MaxAlphaTextureSlots; layerIndex++)
             {
                 var texturePointer = BinaryUtils.ReadUInt32BE(texturePointerBytes, layerIndex * 4);
-                var percentPointer = BinaryUtils.ReadUInt32BE(percentPointerBytes, layerIndex * 4);
-                if (texturePointer == 0 && percentPointer == 0)
-                {
-                    break;
-                }
-
                 var textureRead = TryReadRuntimeLandTexture(texturePointer);
                 if (textureRead == null)
                 {
                     continue;
                 }
 
-                var blendEntries = ReadRuntimeTextureBlendEntries(percentPointer);
+                // Slot 0 is the separate quadrant default texture. Alpha texture
+                // array index 0 therefore consumes weight slot 1, through index 4
+                // consuming slot 5.
+                var blendEntries = BuildRuntimeTextureBlendEntries(textureWeights, layerIndex + 1);
                 if (blendEntries.Count == 0)
                 {
                     continue;
@@ -126,60 +121,74 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
         return new RuntimeLandVisualExtraction(visualData, landTextures.Values.ToList(), textureSets.Values.ToList());
     }
 
-    private List<LandTextureBlendEntry> ReadRuntimeTextureBlendEntries(uint percentPointer)
+    private float[,]? ReadRuntimeTextureWeights(uint vertexPointerArrayPointer)
     {
-        if (percentPointer == 0)
+        if (vertexPointerArrayPointer == 0)
         {
-            return [];
+            return null;
         }
 
-        var fileOffset = _context.VaToFileOffset(percentPointer);
-        if (fileOffset is not long maskFileOffset)
+        var pointerArrayFileOffset = _context.VaToFileOffset(vertexPointerArrayPointer);
+        if (pointerArrayFileOffset is not long pointerArrayOffset)
         {
-            return [];
+            return null;
         }
 
-        var bytes = _context.ReadBytes(maskFileOffset, PercentArraySamplesToRead * 4);
-        if (bytes == null)
+        // LoadedLandData.ppPercentArrays[q] points to 289 per-vertex pointers.
+        // Each pointee is an eight-float allocation; the engine reads the first
+        // six floats as default + five alpha weights.
+        var pointerBytes = _context.ReadBytes(pointerArrayOffset, TextureWeightVertexCount * 4);
+        if (pointerBytes == null)
         {
-            return [];
+            return null;
         }
 
-        var opacities = new float[PercentArraySamplesToRead];
-        var unitRangeCount = 0;
-        var normalCount = 0;
-        for (var i = 0; i < PercentArraySamplesToRead; i++)
+        var weights = new float[TextureWeightVertexCount, TextureWeightSlotCount];
+        for (var position = 0; position < TextureWeightVertexCount; position++)
         {
-            var value = BinaryUtils.ReadFloatBE(bytes, i * 4);
-            if (!RuntimeMemoryContext.IsNormalFloat(value))
+            var vertexWeightsPointer = BinaryUtils.ReadUInt32BE(pointerBytes, position * 4);
+            var vertexWeightsFileOffset = _context.VaToFileOffset(vertexWeightsPointer);
+            if (vertexWeightsFileOffset is not long vertexWeightsOffset)
             {
-                continue;
+                return null;
             }
 
-            normalCount++;
-            if (value is >= -0.001f and <= 1.001f)
+            var weightBytes = _context.ReadBytes(vertexWeightsOffset, TextureWeightSlotCount * 4);
+            if (weightBytes == null)
             {
-                unitRangeCount++;
-                opacities[i] = Math.Clamp(value, 0f, 1f);
+                return null;
+            }
+
+            for (var slot = 0; slot < TextureWeightSlotCount; slot++)
+            {
+                var value = BinaryUtils.ReadFloatBE(weightBytes, slot * 4);
+                if (!RuntimeMemoryContext.IsNormalFloat(value)
+                    || value is < -0.001f or > 1.001f)
+                {
+                    return null;
+                }
+
+                weights[position, slot] = Math.Clamp(value, 0f, 1f);
             }
         }
 
-        if (normalCount < PercentArraySamplesToRead ||
-            unitRangeCount < PercentArraySamplesToRead)
-        {
-            return [];
-        }
+        return weights;
+    }
 
+    private static List<LandTextureBlendEntry> BuildRuntimeTextureBlendEntries(
+        float[,] weights,
+        int slot)
+    {
         var entries = new List<LandTextureBlendEntry>();
-        for (var i = 0; i < opacities.Length; i++)
+        for (var position = 0; position < TextureWeightVertexCount; position++)
         {
-            var opacity = opacities[i];
+            var opacity = weights[position, slot];
             if (opacity <= 0.001f)
             {
                 continue;
             }
 
-            entries.Add(new LandTextureBlendEntry((ushort)i, 0, 0, opacity));
+            entries.Add(new LandTextureBlendEntry((ushort)position, 0, 0, opacity));
         }
 
         return entries;
@@ -618,8 +627,13 @@ internal sealed class RuntimeLandVisualReader(RuntimeMemoryContext context)
     private const int LoadedDataQuadTextureArrayOffset = 48;
     private const int LoadedDataPercentArraysOffset = 64;
     private const int LoadedDataQuadCount = 4;
-    private const int MaxTextureArrayPointersToSample = 64;
-    private const int PercentArraySamplesToRead = 17 * 17;
+    // TESObjectLAND texture slots are 0..5. Slot 0 is the separate quadrant
+    // default/base texture; pQuadTextureArray and ppPercentArrays contain only
+    // the five alpha slots (engine slots 1..5). Reading beyond five walks into
+    // unrelated heap data and can manufacture striped VTXT masks.
+    private const int MaxAlphaTextureSlots = 5;
+    private const int TextureWeightSlotCount = 6;
+    private const int TextureWeightVertexCount = 17 * 17;
     private const int TesFormEditorIdOffset = 16;
     private const int TesFormFormIdOffset = 12;
     private const byte TextureSetFormType = 0x04;

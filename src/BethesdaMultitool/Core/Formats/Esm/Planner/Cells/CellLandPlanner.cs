@@ -79,11 +79,27 @@ public static class CellLandPlanner
                 // allowing only the single unmasked (0,0,0) ambiguity that the runtime
                 // mesh reader intentionally omits.
                 var hasExactParent = runtimeMesh.SourceParentCellFormId == cell.FormId;
-                if (hasExactParent && HasCompleteRuntimeSource(runtimeMesh, quality))
+                var hasRuntimeBaseHeight = runtimeMesh.RuntimeBaseHeight.HasValue;
+                var hasCompleteRuntimeSource = HasCompleteRuntimeSource(runtimeMesh, quality);
+                if (hasExactParent && hasRuntimeBaseHeight && hasCompleteRuntimeSource)
                 {
                     try
                     {
-                        heightmap = runtimeMesh.ToLandHeightmap();
+                        // Runtime LAND enrichment has already applied LoadedLandData.BaseHeight
+                        // to cell.Heightmap. Rebuilding directly from the mesh here would drop
+                        // that per-cell absolute offset because runtime mesh Z values are local.
+                        // Keep the completeness gate above, then reuse the exact enriched grid
+                        // when it belongs to this CELL. If the enrichment projection is ever
+                        // absent, reconstruct only with the base-height provenance carried by
+                        // the mesh itself; an unavailable base fails closed below.
+                        heightmap = cell.Heightmap is
+                            {
+                                ExactHeights: not null,
+                                SourceParentCellFormId: var heightmapParent,
+                            } enrichedRuntimeHeightmap
+                            && heightmapParent == cell.FormId
+                                ? enrichedRuntimeHeightmap
+                                : runtimeMesh.ToLandHeightmap(runtimeMesh.RuntimeBaseHeight!.Value);
                         source = CellLandHeightSource.CompleteRuntimeMesh;
                     }
                     catch (InvalidOperationException)
@@ -96,18 +112,24 @@ public static class CellLandPlanner
                 if (heightmap is null)
                 {
                     var parentMismatch = !hasExactParent;
+                    var baseHeightMissing = hasExactParent && hasCompleteRuntimeSource && !hasRuntimeBaseHeight;
                     diagnostics.Add(new PlanDiagnostic
                     {
                         Kind = PlanDiagnosticKind.Warning,
                         Phase = "CellLand",
                         Code = parentMismatch
                             ? "land.runtime-mesh-parent-mismatch"
-                            : "land.runtime-mesh-not-complete",
+                            : baseHeightMissing
+                                ? "land.runtime-base-height-missing"
+                                : "land.runtime-mesh-not-complete",
                         RecordType = "CELL",
                         FormId = cell.FormId,
                         Message = parentMismatch
                             ? $"Skipped runtime LAND for DMP-new CELL 0x{cell.FormId:X8}: source parent was "
                               + FormatParent(runtimeMesh.SourceParentCellFormId) + "."
+                            : baseHeightMissing
+                                ? $"Skipped runtime LAND for DMP-new CELL 0x{cell.FormId:X8}: "
+                                  + "LoadedLandData base-height provenance was unavailable."
                             : $"Skipped LAND for DMP-new CELL 0x{cell.FormId:X8}: runtime terrain source coverage was "
                               + $"{quality.SourceSampleCount} accepted samples "
                               + $"({quality.SourceCoveragePercent:F1}%, {quality.Classification}).",

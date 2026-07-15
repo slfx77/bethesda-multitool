@@ -22,6 +22,7 @@ public sealed class CellChildVerdictPlannerTests
     private const uint CellId = 0x000ABCDE;
     private const uint MasterStatBaseId = 0x000A2001;
     private const uint MasterNpcBaseId = 0x000A3001;
+    private const uint MasterCreatureBaseId = 0x000A4001;
     private const uint NewRefId = 0x01000901;
     private const uint ActorRefId = 0x01000AAA;
     private const uint MasterRefId = 0x000B0001;
@@ -37,6 +38,63 @@ public sealed class CellChildVerdictPlannerTests
         Assert.Equal(PlacedRefEmitVerdict.Emit, verdict.Verdict);
         Assert.Equal(MasterStatBaseId, verdict.FinalBaseFormId);
         Assert.Equal(9, verdict.TargetGroupType);
+        Assert.False(verdict.NewInitiallyDisabled);
+    }
+
+    [Fact]
+    public void Strip_New_Disabled_Refr_Without_Opposite_State_Emits_Enabled()
+    {
+        var placed = Ref(NewRefId, MasterStatBaseId) with { IsInitiallyDisabled = true };
+        var cells = Apply(MakeCell(
+            temporary: [NewChild("REFR", NewRefId, placed)],
+            worldspaceFormId: 0x0010B96F));
+
+        Assert.False(cells[CellId].RefDecisions[NewRefId].NewInitiallyDisabled);
+    }
+
+    [Fact]
+    public void Strip_New_Disabled_Opposite_State_Alternative_Remains_Disabled()
+    {
+        var placed = Ref(NewRefId, MasterStatBaseId) with
+        {
+            IsInitiallyDisabled = true,
+            EnableParentFormId = 0x01002415,
+            EnableParentFlags = 0x01,
+        };
+        var cells = Apply(MakeCell(
+            temporary: [NewChild("REFR", NewRefId, placed)],
+            worldspaceFormId: 0x0010B96F));
+
+        Assert.True(cells[CellId].RefDecisions[NewRefId].NewInitiallyDisabled);
+    }
+
+    [Theory]
+    [InlineData("ACHR")]
+    [InlineData("ACRE")]
+    public void Strip_New_Disabled_Actors_Retain_Captured_State(string recordType)
+    {
+        var baseFormId = recordType == "ACHR" ? MasterNpcBaseId : MasterCreatureBaseId;
+        var placed = Ref(NewRefId, baseFormId) with
+        {
+            RecordType = recordType,
+            IsInitiallyDisabled = true,
+        };
+        var cells = Apply(MakeCell(
+            temporary: [NewChild(recordType, NewRefId, placed)],
+            worldspaceFormId: 0x0010B96F));
+
+        Assert.True(cells[CellId].RefDecisions[NewRefId].NewInitiallyDisabled);
+    }
+
+    [Fact]
+    public void Other_Worldspace_New_Disabled_Refr_Retains_Captured_State()
+    {
+        var placed = Ref(NewRefId, MasterStatBaseId) with { IsInitiallyDisabled = true };
+        var cells = Apply(MakeCell(
+            temporary: [NewChild("REFR", NewRefId, placed)],
+            worldspaceFormId: 0x0010B970));
+
+        Assert.True(cells[CellId].RefDecisions[NewRefId].NewInitiallyDisabled);
     }
 
     [Fact]
@@ -315,6 +373,7 @@ public sealed class CellChildVerdictPlannerTests
             [CellId] = MakeMasterRecord("CELL", CellId),
             [MasterStatBaseId] = MakeMasterRecord("STAT", MasterStatBaseId),
             [MasterNpcBaseId] = MakeMasterRecord("NPC_", MasterNpcBaseId),
+            [MasterCreatureBaseId] = MakeMasterRecord("CREA", MasterCreatureBaseId),
         };
         if (extraMaster is { } extra)
         {
@@ -348,7 +407,8 @@ public sealed class CellChildVerdictPlannerTests
 
     private static CellPlan MakeCell(
         RecordPlan[]? temporary = null,
-        CellMergeMode? mode = CellMergeMode.LoadedReplacement)
+        CellMergeMode? mode = CellMergeMode.LoadedReplacement,
+        uint? worldspaceFormId = null)
     {
         var masterCell = MakeMasterRecord("CELL", CellId);
         var dmpCell = new CellRecord { FormId = CellId };
@@ -369,9 +429,10 @@ public sealed class CellChildVerdictPlannerTests
             Context = new PcEsmCellContext
             {
                 CellFormId = CellId,
-                IsInterior = true,
-                BlockGroupType = 2,
-                SubblockGroupType = 3,
+                IsInterior = worldspaceFormId is null,
+                WorldspaceFormId = worldspaceFormId,
+                BlockGroupType = worldspaceFormId is null ? 2 : 4,
+                SubblockGroupType = worldspaceFormId is null ? 3 : 5,
                 BlockLabel = [1, 0, 0, 0],
                 SubblockLabel = [2, 0, 0, 0]
             },
