@@ -82,7 +82,8 @@ internal static class DialogGrupBuilder
         IReadOnlyDictionary<uint, string>? questEditorIdsByFormId = null,
         MasterDialogueIndex? masterDialogueIndex = null,
         IReadOnlySet<uint>? diagnosticKeepMasterFormIds = null,
-        IReadOnlyDictionary<uint, ImmutableHashSet<string>>? diagnosticRetainMasterSubrecords = null)
+        IReadOnlyDictionary<uint, ImmutableHashSet<string>>? diagnosticRetainMasterSubrecords = null,
+        IReadOnlyDictionary<uint, uint>? preallocatedNewFormIds = null)
     {
         masterDialogueIndex ??= MasterDialogueIndex.BuildFromRecordOrder(masterRecordsByFormId.Values);
         var combinePlan = DialogueCombinePlanner.Build(
@@ -140,7 +141,8 @@ internal static class DialogGrupBuilder
         var dialFormIdMap = new Dictionary<uint, uint>();
         foreach (var topic in newTopics)
         {
-            dialFormIdMap[topic.FormId] = allocator.Allocate();
+            dialFormIdMap[topic.FormId] = ResolvePreallocatedFormId(
+                topic.FormId, preallocatedNewFormIds, allocator);
         }
 
         // Synthesize GREETING INFOs for new (NPC, dialogue-quest) pairs that have topic
@@ -231,7 +233,8 @@ internal static class DialogGrupBuilder
         var infoFormIdMap = PreallocateInfoFormIds(
             infosByEmittedDial.Values.SelectMany(static list => list)
                 .Concat(infosByMasterDial.Values.SelectMany(static list => list)),
-            allocator);
+            allocator,
+            preallocatedNewFormIds);
 
         // Build the valid-FormID set used for cross-record field validation. Includes
         // master FormIDs, every DIAL FormID we just allocated (so an INFO's NAME/TCLT/TCLF
@@ -1041,7 +1044,8 @@ internal static class DialogGrupBuilder
 
     private static Dictionary<uint, uint> PreallocateInfoFormIds(
         IEnumerable<DialogueRecord> infos,
-        FormIdAllocator allocator)
+        FormIdAllocator allocator,
+        IReadOnlyDictionary<uint, uint>? preallocatedNewFormIds)
     {
         var map = new Dictionary<uint, uint>();
         foreach (var info in infos)
@@ -1053,10 +1057,24 @@ internal static class DialogGrupBuilder
                 continue;
             }
 
-            map[info.FormId] = allocator.Allocate();
+            map[info.FormId] = ResolvePreallocatedFormId(
+                info.FormId, preallocatedNewFormIds, allocator);
         }
 
         return map;
+    }
+
+    private static uint ResolvePreallocatedFormId(
+        uint sourceFormId,
+        IReadOnlyDictionary<uint, uint>? preallocatedNewFormIds,
+        FormIdAllocator allocator)
+    {
+        return sourceFormId != 0
+               && preallocatedNewFormIds is not null
+               && preallocatedNewFormIds.TryGetValue(sourceFormId, out var preallocated)
+               && preallocated != 0
+            ? preallocated
+            : allocator.Allocate();
     }
 
     private static uint ResolvePreallocatedInfoId(

@@ -83,6 +83,14 @@ public sealed class PlanWriter
                 Subrecords = EncodedSubrecordFormIdRemapper.Remap(
                     recordType, encoded.Subrecords, plan.SourceToEmittedFormId)
             };
+            if (plan.Meta.PlannerCoverage.Contains("SCPT"))
+            {
+                encoded = encoded with
+                {
+                    Subrecords = EncodedScriptBindingSanitizer.DropInvalidScri(
+                        encoded.Subrecords, plan.ValidScriptFormIds)
+                };
+            }
 
             if (encoded.Subrecords.Count == 0)
             {

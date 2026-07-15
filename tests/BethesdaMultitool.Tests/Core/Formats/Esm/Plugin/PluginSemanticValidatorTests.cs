@@ -17,7 +17,7 @@ public class PluginSemanticValidatorTests
     {
         var bytes = BuildPlugin(
             BuildRecord("ACTI", OwnerFormId, ("SCRI", FormIdBytes(ScriptFormId))),
-            BuildRecord("SCPT", ScriptFormId));
+            BuildRecord("SCPT", ScriptFormId, ("SCHR", new byte[20])));
 
         var result = PluginSemanticValidator.Validate(
             bytes,

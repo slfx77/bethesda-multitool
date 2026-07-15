@@ -34,7 +34,7 @@ public sealed class ScptEncoder : IRecordEncoder
     // Flags: 0x0001 = Enabled.
     private static readonly Dictionary<string, Func<ScriptRecord, object?>> SchrExtractors = new(StringComparer.Ordinal)
     {
-        ["RefCount"] = m => m.RefObjectCount,
+        ["RefCount"] = m => (uint)m.ReferencedObjects.Count,
         ["CompiledSize"] = m => m.CompiledSize,
         ["VariableCount"] = m => (uint)m.Variables.Count,
         ["Type"] = m => GetSchrType(m),
@@ -66,9 +66,8 @@ public sealed class ScptEncoder : IRecordEncoder
     /// <param name="script">SCPT model to emit.</param>
     /// <param name="validFormIds">
     ///     Master ∪ newly-emitted FormID set, used to validate SCRO references. When supplied,
-    ///     unresolvable refs are emitted as 0x00000000 (engine treats as null/no-op) so the
-    ///     engine doesn't refuse to execute the script. Index order is preserved so bytecode
-    ///     operands (1-based into the combined SCRO+SCRV list) stay valid.
+    ///     every reference must resolve. A single null slot makes FNV reject the entire
+    ///     script, so an unsafe table suppresses the new SCPT instead of degrading a slot.
     /// </param>
     /// <param name="remapTable">
     ///     Source→allocated FormID alias map. Proto FormIDs the converter has reallocated
@@ -101,6 +100,12 @@ public sealed class ScptEncoder : IRecordEncoder
             warnings.Add($"New SCPT 0x{script.FormId:X8} has no EditorId — emitting empty EDID.");
         }
 
+        if (!TryResolveReferenceTable(script, validFormIds, remapTable, out var resolvedReferences, out var issue))
+        {
+            warnings.Add($"New SCPT 0x{script.FormId:X8} suppressed — unsafe reference table: {issue}.");
+            return new EncodedRecord { Subrecords = [], Warnings = warnings };
+        }
+
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", script.EditorId ?? string.Empty));
         subs.Add(SchemaModelSerializer.SerializeSubrecord("SCHR", "", 20, script, SchrExtractors));
 
@@ -128,7 +133,7 @@ public sealed class ScptEncoder : IRecordEncoder
             subs.Add(NewRecordSubrecords.EncodeStringSubrecord("SCVR", variable.Name ?? string.Empty));
         }
 
-        foreach (var refFormId in script.ReferencedObjects)
+        foreach (var refFormId in resolvedReferences)
         {
             // SCRV entries are stored in the model with the high bit set (0x80000000 | varIdx).
             // Mask it off and emit as SCRV; everything else is a plain SCRO FormID.
@@ -139,16 +144,49 @@ public sealed class ScptEncoder : IRecordEncoder
             }
             else
             {
-                // Route every SCRO through the alias table + validity check. The bytecode
-                // refers to SCRO entries by 1-based index into the combined SCRO+SCRV list,
-                // so we MUST preserve order/count — a null result becomes 0x00000000 in
-                // place rather than a dropped entry. The engine treats null FormID refs as
-                // no-ops, but a dangling FormID causes "Script will not be executed".
-                var resolved = FormIdReferenceResolver.Resolve(refFormId, validFormIds, remapTable) ?? 0u;
-                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", resolved));
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", refFormId));
             }
         }
 
         return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+    }
+
+    private static bool TryResolveReferenceTable(
+        ScriptRecord script,
+        IReadOnlySet<uint>? validFormIds,
+        IReadOnlyDictionary<uint, uint>? remapTable,
+        out List<uint> resolvedReferences,
+        out string? issue)
+    {
+        resolvedReferences = new List<uint>(script.ReferencedObjects.Count);
+        var variableIds = script.Variables.Select(variable => variable.Index).ToHashSet();
+        for (var i = 0; i < script.ReferencedObjects.Count; i++)
+        {
+            var raw = script.ReferencedObjects[i];
+            if ((raw & 0x80000000u) != 0)
+            {
+                var variableId = raw & 0x7FFFFFFFu;
+                if (variableId == 0 || !variableIds.Contains(variableId))
+                {
+                    issue = $"SCRV[{i}] variable {variableId} has no matching SLSD";
+                    return false;
+                }
+
+                resolvedReferences.Add(raw);
+                continue;
+            }
+
+            var resolved = FormIdReferenceResolver.Resolve(raw, validFormIds, remapTable);
+            if (resolved is null or 0u)
+            {
+                issue = $"SCRO[{i}] 0x{raw:X8} does not resolve";
+                return false;
+            }
+
+            resolvedReferences.Add(resolved.Value);
+        }
+
+        issue = null;
+        return true;
     }
 }

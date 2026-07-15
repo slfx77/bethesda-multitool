@@ -37,7 +37,8 @@ public static class PluginSemanticValidator
     public static SemanticValidationResult Validate(
         byte[] espBytes,
         IReadOnlySet<uint>? masterFormIds = null,
-        IReadOnlyDictionary<string, HashSet<uint>>? masterFormIdsByType = null)
+        IReadOnlyDictionary<string, HashSet<uint>>? masterFormIdsByType = null,
+        IReadOnlySet<uint>? additionalValidFormIds = null)
     {
         var (records, grupHeaders) = EsmParser.EnumerateRecordsWithGrups(espBytes);
         var pluginFormIdsByType = records
@@ -199,6 +200,11 @@ public static class PluginSemanticValidator
             }
         }
 
+        var packageSemantic = PackageSemanticValidator.Validate(
+            records, pluginFormIdsByType, masterFormIdsByType);
+        var scriptSemantic = ScriptReferenceSemanticValidator.Validate(
+            records, pluginFormIds, masterFormIds, additionalValidFormIds);
+
         var report = new StringBuilder();
         var errors = 0;
         var warnings = 0;
@@ -312,12 +318,49 @@ public static class PluginSemanticValidator
             }
         }
 
+        if (scriptSemantic.Errors.Length > 0)
+        {
+            errors += scriptSemantic.Errors.Length;
+            report.AppendLine(
+                $"ERROR: {scriptSemantic.Errors.Length:N0} invalid SCPT SCRO/SCRV reference-table issue(s):");
+            foreach (var msg in scriptSemantic.Errors.Take(MaxDuplicateExamples))
+            {
+                report.AppendLine($"  {msg}");
+            }
+
+            if (scriptSemantic.Errors.Length > MaxDuplicateExamples)
+            {
+                report.AppendLine($"  …and {scriptSemantic.Errors.Length - MaxDuplicateExamples:N0} more.");
+            }
+        }
+
+        if (packageSemantic.Errors.Length > 0)
+        {
+            errors += packageSemantic.Errors.Length;
+            report.AppendLine(
+                $"ERROR: {packageSemantic.Errors.Length:N0} invalid PACK target/location or actor PKID reference(s):");
+            foreach (var msg in packageSemantic.Errors.Take(MaxDuplicateExamples))
+            {
+                report.AppendLine($"  {msg}");
+            }
+
+            if (packageSemantic.Errors.Length > MaxDuplicateExamples)
+            {
+                report.AppendLine(
+                    $"  …and {packageSemantic.Errors.Length - MaxDuplicateExamples:N0} more.");
+            }
+        }
+
         if (errors == 0 && warnings == 0)
         {
             report.AppendLine(
                 $"Semantic check passed: {records.Count:N0} records, {totalRefrs:N0} placed refs, " +
-                $"{totalScriptReferences:N0} script refs; no duplicate FormIDs, all refs correctly " +
-                "parented + flagged, all SCRI targets resolve to SCPT.");
+                $"{totalScriptReferences:N0} script refs, " +
+                $"{scriptSemantic.ReferenceCount:N0} SCPT object/variable refs, " +
+                $"{packageSemantic.PackageReferenceCount:N0} package target/location refs, " +
+                $"{packageSemantic.ActorPackageCount:N0} actor package refs; no duplicate FormIDs, " +
+                "all refs correctly parented + flagged, all SCRI/PACK/PKID targets resolve with " +
+                "the expected record type.");
         }
         else
         {

@@ -103,6 +103,11 @@ public sealed class InfoReferenceWalker : IRecordReferenceWalker
             var script = info.ResultScripts[s];
             for (var i = 0; i < script.ReferencedObjects.Count; i++)
             {
+                if ((script.ReferencedObjects[i] & 0x80000000u) != 0)
+                {
+                    continue; // SCRV is a local-variable ID, not a FormID.
+                }
+
                 yield return new RawReference
                 {
                     FieldPath = $"ResultScripts[{s}].SCRO[{i}]",

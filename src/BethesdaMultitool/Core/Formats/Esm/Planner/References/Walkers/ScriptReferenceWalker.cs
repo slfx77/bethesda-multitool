@@ -3,7 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 
 /// <summary>
-///     Walks SCRO subrecords (referenced objects) on a parsed <see cref="ScriptRecord" />.
+///     Walks SCRO subrecords (referenced forms) on a parsed <see cref="ScriptRecord" />.
 ///     Each referenced FormID yields one <see cref="RawReference" /> with field path
 ///     <c>SCRO[i]</c>. Paired with the SCPT entry in <see cref="DegradationPolicy" /> set
 ///     to drop the SCRO subrecord when the target isn't in the emit set — the v54 SCRO
@@ -25,6 +25,13 @@ public sealed class ScriptReferenceWalker : IRecordReferenceWalker
         for (var i = 0; i < script.ReferencedObjects.Count; i++)
         {
             var formId = script.ReferencedObjects[i];
+            if ((formId & 0x80000000u) != 0)
+            {
+                // SCRV is a local-variable ID, not a FormID. ScriptReferenceSafetyPlanner
+                // validates it against the script's SLSD table instead of the emit set.
+                continue;
+            }
+
             yield return new RawReference
             {
                 FieldPath = FieldPath.Indexed("SCRO", i),

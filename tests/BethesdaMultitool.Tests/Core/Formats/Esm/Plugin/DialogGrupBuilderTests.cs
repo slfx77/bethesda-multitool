@@ -251,6 +251,48 @@ public sealed class DialogGrupBuilderTests
     }
 
     [Fact]
+    public void BuildDialogSection_ReusesPlannerAllocationsForNewDialAndInfo()
+    {
+        const uint sourceQuest = 0x00020000;
+        const uint sourceTopic = 0x00100010;
+        const uint sourceInfo = 0x00100030;
+        const uint plannedTopic = 0x01002010;
+        const uint plannedInfo = 0x01002011;
+        var topic = new DialogTopicRecord
+        {
+            FormId = sourceTopic,
+            EditorId = "ScriptTargetTopic",
+            QuestFormId = sourceQuest
+        };
+        var info = new DialogueRecord
+        {
+            FormId = sourceInfo,
+            TopicFormId = sourceTopic,
+            QuestFormId = sourceQuest,
+            Responses = [new DialogueResponse { Text = "Planned once.", ResponseNumber = 1 }]
+        };
+
+        var result = DialogGrupBuilder.BuildDialogSection(
+            [topic], [info],
+            new NewVsOverrideClassifier([sourceQuest]),
+            new FormIdAllocator(),
+            [sourceQuest],
+            new Dictionary<uint, ParsedMainRecord>(),
+            new ConversionPipelineStats(),
+            NullConversionProgressSink.Instance,
+            preallocatedNewFormIds: new Dictionary<uint, uint>
+            {
+                [sourceTopic] = plannedTopic,
+                [sourceInfo] = plannedInfo
+            });
+
+        Assert.Equal(plannedTopic,
+            BinaryPrimitives.ReadUInt32LittleEndian(result.DialogSection.AsSpan(36, 4)));
+        Assert.True(ContainsTopicChildrenGrup(result.DialogSection, plannedTopic));
+        Assert.Equal(plannedInfo, result.NewInfoSourceToAllocated[sourceInfo]);
+    }
+
+    [Fact]
     public void BuildDialogSection_RemapsNewInfoFollowUpsToAllocatedInfoIds()
     {
         const uint sourceQuest = 0x00020000;

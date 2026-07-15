@@ -40,6 +40,7 @@ public class ScriptDialogueEncoderTests
             IsQuestScript = true,
             IsMagicEffectScript = false,
             IsCompiled = true,
+            ReferencedObjects = [0x00000014, 0x00000007],
             // 3 local variables — the encoder's VariableCount field is derived from
             // Variables.Count, not from the runtime VariableCount property, so the SLSD
             // entries we emit always match the engine's VariableCount expectation.
@@ -126,6 +127,7 @@ public class ScriptDialogueEncoderTests
         {
             FormId = 0x800,
             EditorId = "S",
+            Variables = { new ScriptVariableInfo(5, "target", 0) },
             ReferencedObjects = { 0x12345678, 0x80000005, 0xABCDEF }
         };
 
@@ -141,6 +143,40 @@ public class ScriptDialogueEncoderTests
         Assert.Equal(0xABCDEFu, BinaryPrimitives.ReadUInt32LittleEndian(scro[1].Bytes));
         // SCRV index has the high bit stripped.
         Assert.Equal(5u, BinaryPrimitives.ReadUInt32LittleEndian(scrv[0].Bytes));
+    }
+
+    [Fact]
+    public void ScptEncoder_EncodeNew_SuppressesWholeScriptWhenScroDoesNotResolve()
+    {
+        var script = new ScriptRecord
+        {
+            FormId = 0x800,
+            EditorId = "UnsafeScript",
+            ReferencedObjects = [0x00ABCDEF]
+        };
+
+        var encoded = ScptEncoder.EncodeNew(script, new HashSet<uint>(), new Dictionary<uint, uint>());
+
+        Assert.Empty(encoded.Subrecords);
+        Assert.Contains(encoded.Warnings, warning =>
+            warning.Contains("SCRO[0] 0x00ABCDEF does not resolve", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ScptEncoder_EncodeNew_SuppressesWholeScriptWhenScrvHasNoLocal()
+    {
+        var script = new ScriptRecord
+        {
+            FormId = 0x800,
+            EditorId = "UnsafeScript",
+            ReferencedObjects = [0x80000005]
+        };
+
+        var encoded = ScptEncoder.EncodeNew(script);
+
+        Assert.Empty(encoded.Subrecords);
+        Assert.Contains(encoded.Warnings, warning =>
+            warning.Contains("SCRV[0] variable 5 has no matching SLSD", StringComparison.Ordinal));
     }
 
     // ====================================================================================

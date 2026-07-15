@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition;
 using BethesdaMultitool.Core.Formats.Esm.Planner.References;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Validation;
+using BethesdaMultitool.Core.Formats.Esm.Plugin;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Cell;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
@@ -146,23 +147,34 @@ public sealed class EsmPlanner
                 .AddRange(cs.NavmSourceToEmitted)
                 .AddRange(cs.WorldspaceSourceToEmitted);
         }
-
+        var containedAllocations = cellSection?.LandByCellSourceToEmitted.Values
+            .Concat(cellSection.AdditionalEmittedFormIds);
         var emittedFormIds = BuildEmittedFormIds(
-            decisions, sourceToEmitted, masterFormIds, cellSection?.LandByCellSourceToEmitted.Values);
+            decisions, sourceToEmitted, masterFormIds, containedAllocations)
+            .Union(RuntimeStateRecordPolicy.EngineFormIds);
         var resolvedRefsByIndex = _references.ResolveAll(decisions, emittedFormIds, sourceToEmitted);
+        var scriptSanitation = ScriptReferenceSafetyPlanner.Apply(
+            decisions, sourceToEmitted, emittedFormIds, resolvedRefsByIndex, _references);
+        decisions = scriptSanitation.Decisions;
+        sourceToEmitted = scriptSanitation.SourceToEmitted;
+        emittedFormIds = scriptSanitation.EmittedFormIds;
+        resolvedRefsByIndex = scriptSanitation.References;
 
         var records = BuildRecordPlans(
             decisions, sourceToEmitted, resolvedRefsByIndex, retainMasterSubrecords);
-        var (ordered, diagnostics) = PlanValidator.Validate(records);
-        var validPackageFormIds = masterRecords
-            .Where(record => record.Header.Signature == "PACK")
-            .Select(record => record.Header.FormId)
-            .Concat(ordered
-                .Where(record => record.Type == "PACK" && record.Disposition != RecordDisposition.Skip)
-                .Select(record => record.FormId))
-            .ToImmutableHashSet();
-        var packageDiagnostics = BuildPackageReferenceDiagnostics(ordered, validPackageFormIds);
+        var packageSanitation = PackagePlanSanitizer.Apply(
+            records, emittedFormIds, sourceToEmitted, masterRecords, cellSection);
+        records = packageSanitation.Records;
+        if (packageSanitation.SuppressedNewFormIds.Count > 0)
+        {
+            emittedFormIds = emittedFormIds
+                .Except(packageSanitation.SuppressedNewFormIds)
+                .ToImmutableHashSet();
+        }
 
+        var (ordered, diagnostics) = PlanValidator.Validate(records);
+        var validPackageFormIds = PackagePlanSanitizer.BuildValidPackageFormIds(masterRecords, ordered);
+        var packageDiagnostics = BuildPackageReferenceDiagnostics(ordered, validPackageFormIds);
         var indexByFormId = ImmutableDictionary.CreateBuilder<uint, int>();
         for (var i = 0; i < ordered.Length; i++)
         {
@@ -175,10 +187,13 @@ public sealed class EsmPlanner
             SourceToEmittedFormId = sourceToEmitted,
             EmittedFormIds = emittedFormIds,
             ValidPackageFormIds = validPackageFormIds,
+            ValidScriptFormIds = ScriptReferenceSafetyPlanner.BuildValidScriptFormIds(masterRecords, ordered),
             RecordIndexByEmittedFormId = indexByFormId.ToImmutable(),
-            Diagnostics = cellSection is { } cellDiagnostics
-                ? diagnostics.AddRange(packageDiagnostics).AddRange(cellDiagnostics.Diagnostics)
-                : diagnostics.AddRange(packageDiagnostics),
+            Diagnostics = diagnostics
+                .AddRange(scriptSanitation.Diagnostics)
+                .AddRange(packageSanitation.Diagnostics)
+                .AddRange(packageDiagnostics)
+                .AddRange(cellSection?.Diagnostics ?? []),
             Meta = new PlanMetadata
             {
                 NextObjectId = _allocation.NextObjectId,
@@ -216,6 +231,7 @@ public sealed class EsmPlanner
                     plan.CellsByFormId, masterRecordsByFormId,
                     sourceToEmitted, emittedFormIds, verdictInputs),
             };
+            plan = PostVerdictScriptClosurePlanner.Apply(plan, masterRecords);
         }
 
         if (masterRecordsByFormId is not null && !plan.CellsByFormId.IsEmpty)

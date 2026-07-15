@@ -48,6 +48,10 @@ public sealed record EmitPlan
     public ImmutableHashSet<uint> ValidPackageFormIds { get; init; } =
         ImmutableHashSet<uint>.Empty;
 
+    /// <summary>Every master or planned SCPT that may safely receive an SCRI binding.</summary>
+    public ImmutableHashSet<uint> ValidScriptFormIds { get; init; } =
+        ImmutableHashSet<uint>.Empty;
+
     /// <summary>
     ///     <c>FormId → index into <see cref="Records" /></c>. Lets the writer answer
     ///     "where does this FormID live" in O(1). Populated alongside <see cref="Records" />

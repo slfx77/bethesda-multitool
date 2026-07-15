@@ -1,25 +1,23 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 
 /// <summary>
 ///     Walks outgoing FormID references on a parsed <see cref="PackageRecord" />:
-///     PLDT / PLD2 location unions (only when the type makes the union a FormID),
+///     PLDT / PLD2 location unions (only when the FNV schema arm is a FormID),
 ///     PTDT / PTD2 target FormIDs, the CNAM combat-style reference, and per-CTDA
 ///     Reference FormIDs. PLDT/PLD2 unions carry the <c>PLDT</c> container signature so
 ///     a dangle triggers the planner's container-downgrade rather than a subrecord drop.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         <b>PLDT/PLD2 location types.</b> Type 0 (NearRef), 1 (InCell), 4 (ObjectID),
-///         12 (NearLinkedRef) treat the union as a FormID. Type 2 (NearCurrentLocation),
-///         3 (NearEditorLocation), 5 (ObjectType) do not — the union is an enum / editor
-///         identifier the walker does not yield.
+///         <b>PLDT/PLD2 location types.</b> Type 0 (NearRef), 1 (InCell), and 4 (ObjectID)
+///         treat the union as a FormID. Types 2, 3, 5, 6, and 7 do not.
 ///     </para>
 ///     <para>
-///         <b>PTDT/PTD2 target types.</b> Type 0 (Specific Reference), 1 (Object ID),
-///         3 (Linked Reference) treat the field as a FormID. Type 2 (Object Type) is an
-///         enum and is skipped.
+///         <b>PTDT/PTD2 target types.</b> Type 0 (Specific Reference) and 1 (Object ID)
+///         treat the field as a FormID. Type 2 is an enum; type 3's FNV union arm is unused.
 ///     </para>
 ///     <para>
 ///         <b>CTDA condition parameters.</b> Only the per-condition <c>Reference</c>
@@ -87,7 +85,7 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
 
     private static IEnumerable<RawReference> WalkLocation(PackageLocation? location, string signature)
     {
-        if (location is null || !LocationTypeIsFormId(location.Type))
+        if (location is null || !PackageReferenceIntegrity.LocationTypeIsFormId(location.Type))
         {
             yield break;
         }
@@ -102,7 +100,7 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
 
     private static IEnumerable<RawReference> WalkTarget(PackageTarget? target, string signature)
     {
-        if (target is null || !TargetTypeIsFormId(target.Type))
+        if (target is null || !PackageReferenceIntegrity.TargetTypeIsFormId(target.Type))
         {
             yield break;
         }
@@ -115,9 +113,4 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
         };
     }
 
-    private static bool LocationTypeIsFormId(byte type) =>
-        type is 0 or 1 or 4 or 12; // NearRef / InCell / ObjectID / NearLinkedRef.
-
-    private static bool TargetTypeIsFormId(byte type) =>
-        type is 0 or 1 or 3; // Specific Reference / Object ID / Linked Reference.
 }

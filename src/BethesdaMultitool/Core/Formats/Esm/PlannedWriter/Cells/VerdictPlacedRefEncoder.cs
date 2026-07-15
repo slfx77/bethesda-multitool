@@ -77,6 +77,10 @@ internal static class VerdictPlacedRefEncoder
         var subs = RefrEncoder.EncodeNewPlacedReference(
             placed, context.ValidFormIds, context.Plan.SourceToEmittedFormId,
             context.ResolveBaseRecordType(originalBaseFormId, placed.BaseFormId));
+        subs = subs with
+        {
+            Subrecords = PlacedRefTeleportSanitizer.Sanitize(subs.Subrecords, context),
+        };
         PlannedPlacedRefEncoder.RecordEnableParentOutcome(placed, subs.Subrecords, context);
         if (subs.Subrecords.Count == 0)
         {

@@ -118,7 +118,8 @@ public sealed class CellSectionPlanner
         // guard and the Strip loses every door). Runs BEFORE reparenting so persistent
         // door clones are re-homed to the container like any NEW persistent REFR.
         cells = OverrideDoorCloning.Apply(
-            cells, masterContexts, masterRecordsByFormId, masterRefToCell, allocator);
+            cells, masterContexts, masterRecordsByFormId, masterRefToCell, allocator,
+            out var clonedDoorFormIds, out var doorDiagnostics);
 
         // Exterior persistents (NEW refs, all persistent actors, map markers, rescued
         // enable-parent targets) move to the worldspace persistent-container cell — the
@@ -144,8 +145,9 @@ public sealed class CellSectionPlanner
             CellChildSourceToEmitted = allocations.PlacedRefSourceToEmitted,
             NavmSourceToEmitted = allocations.NavmSourceToEmitted,
             LandByCellSourceToEmitted = allocations.LandByCellSourceToEmitted,
+            AdditionalEmittedFormIds = clonedDoorFormIds,
             WorldspaceSourceToEmitted = worldspaceSourceToEmitted,
-            Diagnostics = landPlanning.Diagnostics,
+            Diagnostics = landPlanning.Diagnostics.AddRange(doorDiagnostics),
         };
     }
 
@@ -468,6 +470,7 @@ public sealed class CellSectionPlanner
         CellChildSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
         NavmSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
         LandByCellSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
+        AdditionalEmittedFormIds = ImmutableHashSet<uint>.Empty,
         WorldspaceSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
         Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
     };
@@ -481,6 +484,9 @@ public sealed class CellSectionPlanner
         public required ImmutableDictionary<uint, uint> NavmSourceToEmitted { get; init; }
         public ImmutableDictionary<uint, uint> LandByCellSourceToEmitted { get; init; } =
             ImmutableDictionary<uint, uint>.Empty;
+        /// <summary>Post-allocation child FormIDs that must enter the emitted-ID set.</summary>
+        public ImmutableHashSet<uint> AdditionalEmittedFormIds { get; init; } =
+            ImmutableHashSet<uint>.Empty;
         public ImmutableDictionary<uint, uint> WorldspaceSourceToEmitted { get; init; } =
             ImmutableDictionary<uint, uint>.Empty;
         public ImmutableDictionary<uint, uint> CellSourceToEmitted { get; init; } =
@@ -489,4 +495,3 @@ public sealed class CellSectionPlanner
             ImmutableArray<PlanDiagnostic>.Empty;
     }
 }
-

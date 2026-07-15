@@ -685,7 +685,8 @@ public sealed class PluginBuilder
                     questEditorIdsByFormId: questEditorIdsByFormId,
                     masterDialogueIndex: masterDialogueIndex,
                     diagnosticKeepMasterFormIds: inputs.Options.DiagnosticKeepMasterFormIds,
-                    diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords);
+                    diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords,
+                    preallocatedNewFormIds: _emitPlan?.SourceToEmittedFormId);
             }
             if (dialogResult.DialogSection.Length > 0)
             {
@@ -820,7 +821,8 @@ public sealed class PluginBuilder
                 // dangling base FormIDs in NAME subrecords, and unresolved SCRI targets.
                 // These are runtime-load failures, so --validate rejects rather than merely
                 // annotating an artifact that cannot behave correctly in game.
-                var semantic = PluginSemanticValidator.Validate(outputBytes, _masterFormIds, _masterFormIdsByType);
+                var semantic = PluginSemanticValidator.Validate(
+                    outputBytes, _masterFormIds, _masterFormIdsByType, _masterChildFormIds);
                 _sink.Info("Validating output", semantic.Report);
                 if (semantic.ErrorCount > 0)
                 {
@@ -1444,26 +1446,6 @@ public sealed class PluginBuilder
         degradationPolicy.SetDefaultForType(
             "PACK",
             BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
-        // PACK PLDT/PLD2 union dangles reshape the location subrecord to Type 2 instead of
-        // dropping it. The reshape constants are documented on ContainerDowngrade.
-        var pldtDowngrade = new BethesdaMultitool.Core.Formats.Esm.Planner.ContainerDowngrade
-        {
-            ContainerSignature = "PLDT",
-            FromShape = "Type 0 (NearReference)",
-            ToShape = "Type 2 (NearCurrentLocation)",
-        };
-        var pld2Downgrade = new BethesdaMultitool.Core.Formats.Esm.Planner.ContainerDowngrade
-        {
-            ContainerSignature = "PLD2",
-            FromShape = "Type 0 (NearReference)",
-            ToShape = "Type 2 (NearCurrentLocation)",
-        };
-        degradationPolicy.SetRule(
-            "PACK", "PLDT.Union",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DowngradeContainer(pldtDowngrade));
-        degradationPolicy.SetRule(
-            "PACK", "PLD2.Union",
-            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DowngradeContainer(pld2Downgrade));
         degradationPolicy.SetDefaultForType(
             "NPC_",
             BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);

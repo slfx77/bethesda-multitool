@@ -13,36 +13,68 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 ///     cells into fresh NEW REFRs. A proto worldspace like TheStripWorld re-places retail
 ///     doors that master parents in a DIFFERENT worldspace (TheStripWorldNew); as Overrides
 ///     those refs die at the verdict parent-cell guard and the Strip loses every door.
-///     Cloning re-emits the captured placement under a plugin FormID with the model verbatim
-///     — position AND the XTEL teleport destination, which stays the MASTER door REFR and
-///     validates against the master-inclusive valid set. Return travel is one-way by user
-///     decision: exiting the retail interior leads to the retail Strip.
 /// </summary>
 /// <remarks>
-///     Overlap guard: a captured door whose master copy sits in the SAME worldspace within
-///     1 unit of the captured position is NOT cloned (master's own door suffices; a clone
-///     would double it). Scope: DOOR-base REFRs only — other world-object overrides in new
-///     cells stay dropped (counted by the verdict stats as parent-cell mismatches; separate
-///     policy question). Runs BEFORE <see cref="PersistentCellReparenting" /> so a cloned
-///     persistent-bucket door is re-homed to the worldspace container like any NEW
-///     persistent REFR.
+///     The first pass preserves the historical overlap guard: a captured door whose master
+///     copy sits in the SAME worldspace within 1 unit of the captured position is not cloned.
+///     The second pass repairs a narrower prototype/master identity collision. Some captured
+///     XTEL destinations reuse retail REFR FormIDs whose retail NAME is a STAT, while the DMP
+///     contains a reciprocal DOOR-base placement at that identity. When that counterpart is
+///     unique and captured under a live cell, it too is cloned and both XTELs are rewritten to
+///     the allocated pair. The retail static remains untouched. If the counterpart cannot be
+///     proved safe, the incompatible XTEL is removed and diagnosed instead of pointing the
+///     engine at a non-door REFR.
 /// </remarks>
 public static class OverrideDoorCloning
 {
     private const float OverlapDistanceSquared = 1.0f;
+    private const string ClonePolicyId = "OverrideDoorCloning";
 
     public static ImmutableDictionary<uint, CellPlan> Apply(
         ImmutableDictionary<uint, CellPlan> cells,
         IReadOnlyDictionary<uint, PcEsmCellContext> masterContexts,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
         IReadOnlyDictionary<uint, uint>? masterRefToCell,
-        FormIdAllocator allocator)
+        FormIdAllocator allocator) =>
+        Apply(cells, masterContexts, masterRecordsByFormId, masterRefToCell, allocator,
+            out _, out _);
+
+    public static ImmutableDictionary<uint, CellPlan> Apply(
+        ImmutableDictionary<uint, CellPlan> cells,
+        IReadOnlyDictionary<uint, PcEsmCellContext> masterContexts,
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
+        IReadOnlyDictionary<uint, uint>? masterRefToCell,
+        FormIdAllocator allocator,
+        out ImmutableHashSet<uint> clonedFormIds,
+        out ImmutableArray<PlanDiagnostic> diagnostics)
     {
         if (cells.IsEmpty)
         {
+            clonedFormIds = ImmutableHashSet<uint>.Empty;
+            diagnostics = ImmutableArray<PlanDiagnostic>.Empty;
             return cells;
         }
 
+        var clonesBySource = new Dictionary<uint, uint>();
+        var result = CloneNewWorldspaceDoors(
+            cells, masterContexts, masterRecordsByFormId, masterRefToCell, allocator,
+            clonesBySource);
+
+        result = DoorTeleportTargetRescue.Apply(
+            result, masterRecordsByFormId, allocator, clonesBySource, out diagnostics);
+
+        clonedFormIds = clonesBySource.Values.ToImmutableHashSet();
+        return result;
+    }
+
+    private static ImmutableDictionary<uint, CellPlan> CloneNewWorldspaceDoors(
+        ImmutableDictionary<uint, CellPlan> cells,
+        IReadOnlyDictionary<uint, PcEsmCellContext> masterContexts,
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
+        IReadOnlyDictionary<uint, uint>? masterRefToCell,
+        FormIdAllocator allocator,
+        Dictionary<uint, uint> clonesBySource)
+    {
         var result = cells.ToBuilder();
         var anyChanged = false;
 
@@ -59,11 +91,11 @@ public static class OverrideDoorCloning
 
             var mutated = false;
             var persistent = CloneBucket(cellPlan.PersistentChildren, cellPlan, masterContexts,
-                masterRecordsByFormId, masterRefToCell, allocator, ref mutated);
+                masterRecordsByFormId, masterRefToCell, allocator, clonesBySource, ref mutated);
             var temporary = CloneBucket(cellPlan.TemporaryChildren, cellPlan, masterContexts,
-                masterRecordsByFormId, masterRefToCell, allocator, ref mutated);
+                masterRecordsByFormId, masterRefToCell, allocator, clonesBySource, ref mutated);
             var vwd = CloneBucket(cellPlan.VwdChildren, cellPlan, masterContexts,
-                masterRecordsByFormId, masterRefToCell, allocator, ref mutated);
+                masterRecordsByFormId, masterRefToCell, allocator, clonesBySource, ref mutated);
             if (!mutated)
             {
                 continue;
@@ -88,6 +120,7 @@ public static class OverrideDoorCloning
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
         IReadOnlyDictionary<uint, uint>? masterRefToCell,
         FormIdAllocator allocator,
+        Dictionary<uint, uint> clonesBySource,
         ref bool mutated)
     {
         if (bucket.IsEmpty)
@@ -106,16 +139,25 @@ public static class OverrideDoorCloning
                 continue;
             }
 
+            if (clonesBySource.ContainsKey(child.FormId))
+            {
+                throw new InvalidOperationException(
+                    $"Door REFR 0x{child.FormId:X8} was captured in more than one new-worldspace cell; "
+                    + "a reciprocal XTEL rewrite would be ambiguous.");
+            }
+
+            var emittedFormId = allocator.Allocate();
+            clonesBySource.Add(child.FormId, emittedFormId);
             builder ??= SeedBuilder(bucket, i);
             builder.Add(child with
             {
                 Disposition = RecordDisposition.New,
-                FormId = allocator.Allocate(),
+                FormId = emittedFormId,
                 SourceFormId = child.FormId,
                 Master = null,
                 Provenance = new PlanProvenance
                 {
-                    PolicyId = "OverrideDoorCloning",
+                    PolicyId = ClonePolicyId,
                     Reason = "Master door re-placed by the proto in a new-worldspace cell; "
                              + "cloned as NEW with the captured placement + teleport preserved "
                              + $"(master REFR 0x{child.FormId:X8}, base 0x{placed.BaseFormId:X8}).",
@@ -157,8 +199,7 @@ public static class OverrideDoorCloning
 
         placed = model;
         if (model.IsMapMarker
-            || !masterRecordsByFormId.TryGetValue(model.BaseFormId, out var baseRecord)
-            || baseRecord.Header.Signature != "DOOR"
+            || !IsDoorBase(model.BaseFormId, masterRecordsByFormId)
             || !masterRecordsByFormId.TryGetValue(child.FormId, out var masterRef))
         {
             return false;
@@ -167,6 +208,12 @@ public static class OverrideDoorCloning
         return !OverlapsMasterPlacement(child.FormId, model, cellPlan, masterContexts,
             masterRef, masterRefToCell);
     }
+
+    private static bool IsDoorBase(
+        uint baseFormId,
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId) =>
+        masterRecordsByFormId.TryGetValue(baseFormId, out var baseRecord)
+        && baseRecord.Header.Signature == "DOOR";
 
     /// <summary>
     ///     True when master places the same door REFR in the SAME worldspace within 1 unit

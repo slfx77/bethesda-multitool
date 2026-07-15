@@ -200,6 +200,10 @@ internal static class PlannedPlacedRefEncoder
         var subs = RefrEncoder.EncodeNewPlacedReference(
             placed, context.ValidFormIds, context.Plan.SourceToEmittedFormId,
             context.ResolveBaseRecordType(originalBaseFormId, baseFormId));
+        subs = subs with
+        {
+            Subrecords = PlacedRefTeleportSanitizer.Sanitize(subs.Subrecords, context),
+        };
         RecordEnableParentOutcome(placed, subs.Subrecords, context);
         if (subs.Subrecords.Count == 0)
         {
@@ -381,9 +385,11 @@ internal static class PlannedPlacedRefEncoder
             var uintCount = sub.Signature == "XLKR" ? sub.Bytes.Length / 4 : 1;
             var bytes = sub.Bytes;
             var allResolvable = true;
+            var xtelTargetNotDoor = false;
             for (var u = 0; u < uintCount; u++)
             {
                 var target = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(u * 4, 4));
+                var finalTarget = target;
                 if (context.Plan.SourceToEmittedFormId.TryGetValue(target, out var remapped))
                 {
                     if (ReferenceEquals(bytes, sub.Bytes))
@@ -392,12 +398,18 @@ internal static class PlannedPlacedRefEncoder
                     }
 
                     BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(u * 4, 4), remapped);
-                    continue;
+                    finalTarget = remapped;
                 }
-
-                if (!IsResolvableFormId(target, context))
+                else if (!IsResolvableFormId(target, context))
                 {
                     allResolvable = false;
+                    break;
+                }
+
+                if (sub.Signature == "XTEL" && !context.IsLiveDoorReference(finalTarget))
+                {
+                    allResolvable = false;
+                    xtelTargetNotDoor = true;
                     break;
                 }
             }
@@ -418,7 +430,9 @@ internal static class PlannedPlacedRefEncoder
             // whole override, as legacy did) lets the merge keep master's own NAME.
             context.Stats?.IncrementDropReason(sub.Signature == "NAME"
                 ? "refr.override-name-preserved-master"
-                : "refr.override-subrecord-dangling");
+                : xtelTargetNotDoor
+                    ? "refr.xtel-target-not-door"
+                    : "refr.override-subrecord-dangling");
         }
 
         return result;

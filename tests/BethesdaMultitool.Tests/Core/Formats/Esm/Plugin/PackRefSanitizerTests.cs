@@ -10,14 +10,12 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 ///     PLDT/PLD2 + PTDT/PTD2 dangling-FormID sanitizer tests for PackEncoder.EncodeNew.
 ///     Dangling Package Location FormIDs trigger the engine errors "Unable to find Package
 ///     Location Reference" and "AI: is assigned a reference location that doesnt exist for
-///     a package" — the NPC's AI then falls through to default idle. Remap when possible,
-///     otherwise rewrite the Type byte to a no-FormID-needed variant (NearCurrentLocation
-///     for PLDT, Object Type for PTDT) so the package still loads cleanly.
+///     a package". Remap when possible; otherwise suppress the package so a conditional
+///     target/location is never silently converted into unconditional behavior.
 /// </summary>
 public class PackRefSanitizerTests
 {
     private const byte PlocNearReference = 0;
-    private const byte PlocNearCurrent = 2;
     private const byte PtdtSpecificReference = 0;
     private const byte PtdtObjectType = 2;
 
@@ -53,7 +51,7 @@ public class PackRefSanitizerTests
     }
 
     [Fact]
-    public void EncodeNew_falls_back_to_NearCurrent_when_PLDT_Union_dangles_no_remap()
+    public void EncodeNew_suppresses_PACK_when_PLDT_Union_dangles_no_remap()
     {
         // 0x00122985 is one of the actual dangling refs from the live error log.
         var pack = MakePack(new PackageLocation
@@ -64,10 +62,8 @@ public class PackRefSanitizerTests
 
         var encoded = PackEncoder.EncodeNew(pack, valid);
 
-        var pldt = Assert.Single(encoded.Subrecords, s => s.Signature == "PLDT");
-        Assert.Equal(PlocNearCurrent, pldt.Bytes[0]);
-        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(pldt.Bytes.AsSpan(4, 4)));
-        Assert.Contains(encoded.Warnings, w => w.Contains("PLDT") && w.Contains("fallback"));
+        Assert.Empty(encoded.Subrecords);
+        Assert.Contains(encoded.Warnings, w => w.Contains("PLDT") && w.Contains("suppressed"));
     }
 
     [Fact]
@@ -103,7 +99,7 @@ public class PackRefSanitizerTests
     }
 
     [Fact]
-    public void EncodeNew_falls_back_PTDT_to_ObjectType_when_FormIdOrType_dangles()
+    public void EncodeNew_suppresses_PACK_when_PTDT_FormIdOrType_dangles()
     {
         var pack = MakePack(target: new PackageTarget
         {
@@ -113,10 +109,8 @@ public class PackRefSanitizerTests
 
         var encoded = PackEncoder.EncodeNew(pack, valid);
 
-        var ptdt = Assert.Single(encoded.Subrecords, s => s.Signature == "PTDT");
-        Assert.Equal(PtdtObjectType, ptdt.Bytes[0]);
-        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(ptdt.Bytes.AsSpan(4, 4)));
-        Assert.Contains(encoded.Warnings, w => w.Contains("PTDT") && w.Contains("fallback"));
+        Assert.Empty(encoded.Subrecords);
+        Assert.Contains(encoded.Warnings, w => w.Contains("PTDT") && w.Contains("suppressed"));
     }
 
     [Fact]
@@ -148,10 +142,49 @@ public class PackRefSanitizerTests
 
         var encoded = PackEncoder.EncodeNew(pack, valid);
 
-        var pld2 = Assert.Single(encoded.Subrecords, s => s.Signature == "PLD2");
-        Assert.Equal(PlocNearCurrent, pld2.Bytes[0]);
-        var ptd2 = Assert.Single(encoded.Subrecords, s => s.Signature == "PTD2");
-        Assert.Equal(PtdtObjectType, ptd2.Bytes[0]);
+        Assert.Empty(encoded.Subrecords);
+        Assert.Contains(encoded.Warnings, w => w.Contains("PLD2") && w.Contains("suppressed"));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void EncodeNew_suppresses_zero_FormID_bearing_PLDT_union(byte type)
+    {
+        var encoded = PackEncoder.EncodeNew(
+            MakePack(new PackageLocation { Type = type, Union = 0, Radius = 100 }),
+            new HashSet<uint>());
+
+        Assert.Empty(encoded.Subrecords);
+        Assert.Contains(encoded.Warnings, warning =>
+            warning.Contains("selected FormID union is zero", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void EncodeNew_suppresses_zero_FormID_bearing_PTDT_union(byte type)
+    {
+        var encoded = PackEncoder.EncodeNew(
+            MakePack(target: new PackageTarget { Type = type, FormIdOrType = 0 }),
+            new HashSet<uint>());
+
+        Assert.Empty(encoded.Subrecords);
+        Assert.Contains(encoded.Warnings, warning =>
+            warning.Contains("selected FormID union is zero", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void EncodeNew_preserves_FNV_LinkedReference_target_unused_union()
+    {
+        var encoded = PackEncoder.EncodeNew(
+            MakePack(target: new PackageTarget { Type = 3, FormIdOrType = 0 }),
+            new HashSet<uint>());
+
+        var ptdt = Assert.Single(encoded.Subrecords, subrecord => subrecord.Signature == "PTDT");
+        Assert.Equal(3, ptdt.Bytes[0]);
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(ptdt.Bytes.AsSpan(4, 4)));
     }
 
     [Fact]
