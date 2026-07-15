@@ -14,7 +14,6 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
-
 /// <summary>
 ///     The planner-side equivalent of legacy <see cref="CellGrupBuilder.BuildCellSection" />.
 ///     Walks <see cref="EmitPlan.CellsByFormId" />, encodes each cell's children via the
@@ -27,7 +26,6 @@ internal static class PlanCellSectionBuilder
 {
     private const uint PersistentFlag = 0x00000400u;
     private const uint CompressedFlag = 0x00040000u;
-
     public static byte[]? BuildCellSection(
         EmitPlan plan,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterByFormId,
@@ -37,7 +35,6 @@ internal static class PlanCellSectionBuilder
     {
         return BuildCellSectionCore(plan, masterByFormId, options, stats, masterIndex).SectionBytes;
     }
-
     /// <summary>
     ///     Full-result variant: also reports which NAVM FormIDs were actually written, so
     ///     NAVI rows and NVEX valid-sets can be built from real emission rather than the
