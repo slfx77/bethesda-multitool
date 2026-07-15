@@ -467,6 +467,8 @@ public sealed class PluginBuilder
             // quest state). See memory/quest_script_brute_force_scan.md.
             AttachOrphanScriptsByEditorId(dmpRecords);
 
+            SanitizeQuestVariableConditions(dmpRecords, pcRecordsByFormId, stats);
+
             // EDID-based VTCK fallback: NPCs may carry a VTCK FormID from the proto runtime
             // that no longer exists in vanilla or our build (FormID 0x0014F3EB on Ulysses, for
             // example — that FormID is a hole between MaleUniqueTheKing (0x...EC) and
@@ -497,6 +499,27 @@ public sealed class PluginBuilder
             BuildPlannerStateIfEnabled(
                 pcRecordsList, dmpRecords, allocator, inputs,
                 cellContexts, pcRecordsByFormId, masterIndex);
+
+            // PlanWriter bypasses the legacy allocation bookkeeping. Bridge its actual NEW
+            // records before any legacy-routed top-level encoder runs, so cross-pipeline refs
+            // (notably ACTI/DOOR/FURN/QUST SCRI -> planner SCPT) remap and validate correctly.
+            // Diagnostic skips are excluded: a planned record suppressed by --skip-record-type
+            // must not become a phantom-valid target in the legacy pipeline.
+            if (_emitPlan is not null)
+            {
+                PlannerLegacyStateBridge.Merge(
+                    _emitPlan.SourceToEmittedFormId,
+                    emitted => _emitPlan.RecordIndexByEmittedFormId.TryGetValue(emitted, out var recordIndex)
+                               && !inputs.Options.SkipRecordTypes.Contains(_emitPlan.Records[recordIndex].Type)
+                        ? _emitPlan.Records[recordIndex].Type
+                        : null,
+                    _newRecordSourceToAllocated,
+                    _newRecordSourceToAllocatedType);
+                PlannerLegacyStateBridge.RegisterEmittedNewRecords(
+                    _emitPlan.Records,
+                    inputs.Options.SkipRecordTypes,
+                    TrackEmittedNewFormId);
+            }
 
             // Phase 3: top-level record merging (GMST, GLOB, WEAP, …).
             _sink.OnPhaseStart("Merging top-level records", null);
@@ -596,12 +619,12 @@ public sealed class PluginBuilder
             // DialogGrupBuilder can't resolve an INFO's QSTI/ANAM to a proto quest/NPC → the
             // reference is nulled → the whole INFO is dropped (droppedNoQstiInfos), the Ulysses /
             // Gomorrah-greeter "force-greets but has no dialogue" regression the ESM eager-load
-            // surfaces. DialogPlannerRemapAugmentation merges only records the planner actually
+            // surfaces. PlannerLegacyStateBridge merges only records the planner actually
             // emits (skipping allocated-but-unemitted orphans) and leaves DIAL/INFO to
             // DialogGrupBuilder, which allocates their real FormIDs itself.
             if (_emitPlan is not null)
             {
-                DialogPlannerRemapAugmentation.Merge(
+                PlannerLegacyStateBridge.Merge(
                     _emitPlan.SourceToEmittedFormId,
                     emitted => _emitPlan.RecordIndexByEmittedFormId.TryGetValue(emitted, out var recordIndex)
                         ? _emitPlan.Records[recordIndex].Type
@@ -794,15 +817,18 @@ public sealed class PluginBuilder
 
                 // Semantic check catches the structural issues that round-trip parsing alone
                 // misses — duplicate FormIDs, persistent-flag/parent-GRUP-type mismatches,
-                // dangling base FormIDs in NAME subrecords. These were the FNVEdit-class
-                // bugs behind the WastelandNV render crash.
+                // dangling base FormIDs in NAME subrecords, and unresolved SCRI targets.
+                // These are runtime-load failures, so --validate rejects rather than merely
+                // annotating an artifact that cannot behave correctly in game.
                 var semantic = PluginSemanticValidator.Validate(outputBytes, _masterFormIds, _masterFormIdsByType);
                 _sink.Info("Validating output", semantic.Report);
                 if (semantic.ErrorCount > 0)
                 {
                     _sink.Warn("Validating output",
-                        $"Semantic validation surfaced {semantic.ErrorCount:N0} error(s) — ESM may crash at load.",
+                        $"Semantic validation surfaced {semantic.ErrorCount:N0} error(s); refusing the output.",
                         "ESM", 0, "semantic.errors");
+                    throw new InvalidDataException(
+                        $"Semantic validation failed with {semantic.ErrorCount:N0} error(s).\n{semantic.Report}");
                 }
 
                 validationReport = $"{roundTrip}\n\n{semantic.Report}";
@@ -948,6 +974,87 @@ public sealed class PluginBuilder
                 $"runtimeDialogue={promotion.RuntimeDialogueEntriesPromoted:N0}, " +
                 $"placedRefs={promotion.RuntimePlacedReferenceEntriesPromoted:N0}, " +
                 $"skipped/audit={promotion.SkippedCandidates:N0}.");
+        }
+    }
+
+    /// <summary>
+    ///     Validate GetQuestVariable's numeric local IDs against the SCPT table that will
+    ///     actually load. Existing SCPTs remain master-pure, so prototype-only variables
+    ///     cannot safely survive merely because their source quest/script was captured.
+    ///     The sanitizer removes the whole newly-emitted INFO/PACK on a proven mismatch;
+    ///     dropping just CTDA would turn conditional dialogue/packages unconditional.
+    /// </summary>
+    private void SanitizeQuestVariableConditions(
+        RecordCollection dmpRecords,
+        IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
+        ConversionPipelineStats stats)
+    {
+        var result = QuestVariableConditionSanitizer.Apply(
+            dmpRecords,
+            masterRecordsByFormId,
+            _newRecordSourceToAllocated.Count > 0 ? _newRecordSourceToAllocated : null);
+
+        for (var i = 0; i < result.SuppressedInfoCount; i++)
+        {
+            stats.IncrementSkipped("INFO");
+        }
+
+        for (var i = 0; i < result.SuppressedPackageCount; i++)
+        {
+            stats.IncrementSkipped("PACK");
+        }
+
+        foreach (var diagnostic in result.Diagnostics)
+        {
+            var variable = string.IsNullOrWhiteSpace(diagnostic.VariableName)
+                ? $"ID {diagnostic.VariableIndex}"
+                : $"{diagnostic.VariableName} (ID {diagnostic.VariableIndex})";
+            var targetScript = diagnostic.TargetScriptFormId.HasValue
+                ? $"; target SCPT=0x{diagnostic.TargetScriptFormId.Value:X8}"
+                : string.Empty;
+            var detail = $"{diagnostic.Message} Target=0x{diagnostic.TargetFormId:X8}; " +
+                         $"variable={variable}{targetScript}.";
+
+            if (diagnostic.Code == "quest-variable.remapped")
+            {
+                _sink.Decision(
+                    "Sanitizing script-variable conditions",
+                    detail,
+                    diagnostic.RecordType,
+                    diagnostic.RecordFormId,
+                    diagnostic.Code);
+            }
+            else if (diagnostic.Code != "quest-variable.target-unresolved")
+            {
+                stats.Warnings++;
+                _sink.Warn(
+                    "Sanitizing script-variable conditions",
+                    detail,
+                    diagnostic.RecordType,
+                    diagnostic.RecordFormId,
+                    diagnostic.Code);
+            }
+        }
+
+        if (result.UnresolvedTargetCount > 0)
+        {
+            _sink.Info(
+                "Sanitizing script-variable conditions",
+                $"Retained {result.UnresolvedTargetCount:N0} GetQuestVariable condition(s) because " +
+                "their effective emitted quest/script binding could not be proven; no condition was widened.",
+                code: "quest-variable.target-unresolved-summary");
+        }
+
+        if (result.SuppressedInfoCount + result.SuppressedPackageCount +
+            result.RemappedConditionCount + result.RetainedGetScriptVariableCount > 0)
+        {
+            _sink.Info(
+                "Sanitizing script-variable conditions",
+                $"Suppressed {result.SuppressedInfoCount:N0} INFO and " +
+                $"{result.SuppressedPackageCount:N0} PACK record(s); remapped " +
+                $"{result.RemappedConditionCount:N0} GetQuestVariable condition(s); retained and " +
+                $"diagnosed {result.RetainedGetScriptVariableCount:N0} GetScriptVariable PACK condition(s).",
+                code: "script-variable.sanitization-summary");
         }
     }
 

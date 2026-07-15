@@ -8,7 +8,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 ///     the legacy remap DialogGrupBuilder resolves INFO QSTI/ANAM against, or proto dialogue is
 ///     dropped (Ulysses / Gomorrah-greeter "greets but no dialogue" under the ESM flag).
 /// </summary>
-public sealed class DialogPlannerRemapAugmentationTests
+public sealed class PlannerLegacyStateBridgeTests
 {
     private static Func<uint, string?> TypeLookup(Dictionary<uint, string> emittedTypes)
         => formId => emittedTypes.TryGetValue(formId, out var type) ? type : null;
@@ -32,7 +32,7 @@ public sealed class DialogPlannerRemapAugmentationTests
         var sourceToAllocated = new Dictionary<uint, uint>();
         var sourceToAllocatedType = new Dictionary<uint, string>();
 
-        DialogPlannerRemapAugmentation.Merge(
+        PlannerLegacyStateBridge.Merge(
             sourceToEmitted, TypeLookup(emittedTypes), sourceToAllocated, sourceToAllocatedType);
 
         Assert.Equal(questEmitted, sourceToAllocated[questSource]);
@@ -62,7 +62,7 @@ public sealed class DialogPlannerRemapAugmentationTests
         var sourceToAllocated = new Dictionary<uint, uint>();
         var sourceToAllocatedType = new Dictionary<uint, string>();
 
-        DialogPlannerRemapAugmentation.Merge(
+        PlannerLegacyStateBridge.Merge(
             sourceToEmitted, TypeLookup(emittedTypes), sourceToAllocated, sourceToAllocatedType);
 
         Assert.Empty(sourceToAllocated);
@@ -78,7 +78,7 @@ public sealed class DialogPlannerRemapAugmentationTests
         var sourceToAllocated = new Dictionary<uint, uint>();
         var sourceToAllocatedType = new Dictionary<uint, string>();
 
-        DialogPlannerRemapAugmentation.Merge(
+        PlannerLegacyStateBridge.Merge(
             sourceToEmitted, _ => null, sourceToAllocated, sourceToAllocatedType);
 
         Assert.Empty(sourceToAllocated);
@@ -96,7 +96,7 @@ public sealed class DialogPlannerRemapAugmentationTests
         var sourceToAllocated = new Dictionary<uint, uint> { [source] = legacyTarget };
         var sourceToAllocatedType = new Dictionary<uint, string> { [source] = "QUST" };
 
-        DialogPlannerRemapAugmentation.Merge(
+        PlannerLegacyStateBridge.Merge(
             sourceToEmitted, TypeLookup(emittedTypes), sourceToAllocated, sourceToAllocatedType);
 
         Assert.Equal(legacyTarget, sourceToAllocated[source]);
@@ -119,9 +119,84 @@ public sealed class DialogPlannerRemapAugmentationTests
         var sourceToAllocated = new Dictionary<uint, uint>();
         var sourceToAllocatedType = new Dictionary<uint, string>();
 
-        DialogPlannerRemapAugmentation.Merge(
+        PlannerLegacyStateBridge.Merge(
             sourceToEmitted, TypeLookup(emittedTypes), sourceToAllocated, sourceToAllocatedType);
 
         Assert.Empty(sourceToAllocated);
+    }
+
+    [Fact]
+    public void RegisterEmittedNewRecords_TracksPlannerScript_ForLegacyScriValidation()
+    {
+        var records = new[]
+        {
+            new BethesdaMultitool.Core.Formats.Esm.Planner.RecordPlan
+            {
+                Type = "SCPT",
+                Disposition = BethesdaMultitool.Core.Formats.Esm.Planner.RecordDisposition.New,
+                FormId = 0x0100525E,
+                SourceFormId = 0x000DA71A,
+                References = System.Collections.Immutable.ImmutableArray<
+                    BethesdaMultitool.Core.Formats.Esm.Planner.ResolvedRef>.Empty,
+                ContainedBy = System.Collections.Immutable.ImmutableArray<
+                    BethesdaMultitool.Core.Formats.Esm.Planner.RecordContainmentEdge>.Empty,
+                Provenance = new BethesdaMultitool.Core.Formats.Esm.Planner.PlanProvenance
+                {
+                    PolicyId = "test",
+                    Reason = "test"
+                }
+            },
+            new BethesdaMultitool.Core.Formats.Esm.Planner.RecordPlan
+            {
+                Type = "INFO",
+                Disposition = BethesdaMultitool.Core.Formats.Esm.Planner.RecordDisposition.New,
+                FormId = 0x01006000,
+                References = System.Collections.Immutable.ImmutableArray<
+                    BethesdaMultitool.Core.Formats.Esm.Planner.ResolvedRef>.Empty,
+                ContainedBy = System.Collections.Immutable.ImmutableArray<
+                    BethesdaMultitool.Core.Formats.Esm.Planner.RecordContainmentEdge>.Empty,
+                Provenance = new BethesdaMultitool.Core.Formats.Esm.Planner.PlanProvenance
+                {
+                    PolicyId = "test",
+                    Reason = "test"
+                }
+            }
+        };
+        var tracked = new List<(string Type, uint FormId)>();
+
+        PlannerLegacyStateBridge.RegisterEmittedNewRecords(
+            records,
+            new HashSet<string>(StringComparer.Ordinal),
+            (type, formId) => tracked.Add((type, formId)));
+
+        Assert.Equal(new[] { ("SCPT", 0x0100525Eu) }, tracked);
+    }
+
+    [Fact]
+    public void RegisterEmittedNewRecords_ExcludesDiagnosticSkips()
+    {
+        var record = new BethesdaMultitool.Core.Formats.Esm.Planner.RecordPlan
+        {
+            Type = "SCPT",
+            Disposition = BethesdaMultitool.Core.Formats.Esm.Planner.RecordDisposition.New,
+            FormId = 0x0100525E,
+            References = System.Collections.Immutable.ImmutableArray<
+                BethesdaMultitool.Core.Formats.Esm.Planner.ResolvedRef>.Empty,
+            ContainedBy = System.Collections.Immutable.ImmutableArray<
+                BethesdaMultitool.Core.Formats.Esm.Planner.RecordContainmentEdge>.Empty,
+            Provenance = new BethesdaMultitool.Core.Formats.Esm.Planner.PlanProvenance
+            {
+                PolicyId = "test",
+                Reason = "test"
+            }
+        };
+        var tracked = new List<(string Type, uint FormId)>();
+
+        PlannerLegacyStateBridge.RegisterEmittedNewRecords(
+            new[] { record },
+            new HashSet<string>(StringComparer.Ordinal) { "SCPT" },
+            (type, formId) => tracked.Add((type, formId)));
+
+        Assert.Empty(tracked);
     }
 }

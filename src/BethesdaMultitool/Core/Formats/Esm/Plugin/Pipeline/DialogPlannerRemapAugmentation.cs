@@ -1,21 +1,19 @@
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 
 /// <summary>
-///     Bridges the two-pass planner's new-record FormID allocations into the legacy dialogue
-///     remap table that <c>DialogGrupBuilder</c> consumes.
+///     Bridges the two-pass planner's new-record FormID allocations into the legacy pipeline's
+///     remap and emitted-record registries.
 /// </summary>
 /// <remarks>
-///     Under <c>--planner-types all</c> new proto records (QUST, NPC_, CREA, SPEL, …) are
-///     emitted by <c>PlanWriter</c>, whose dispatch returns before the legacy
-///     <c>TrackNewRecordSourceAlias</c> path — so their <c>source → emitted</c> mappings live
-///     only in <c>EmitPlan.SourceToEmittedFormId</c>. <c>DialogGrupBuilder</c> resolves INFO/DIAL
-///     cross-references (QSTI / ANAM / SCRO / CTDA FormIDs) through the legacy remap, which never
-///     received them, so an INFO whose QSTI points at a planner-allocated new quest has its
-///     reference nulled and is dropped (<c>droppedNoQstiInfos</c>). That is the Ulysses /
-///     Gomorrah-greeter "force-greets but has no dialogue" regression the ESM eager-load surfaces.
-///     Merging the planner allocations here restores resolution.
+///     Under <c>--planner-types all</c> new proto records are emitted by <c>PlanWriter</c>, whose
+///     dispatch returns before the legacy <c>TrackNewRecordSourceAlias</c> path. Their
+///     <c>source → emitted</c> mappings therefore live only in <c>EmitPlan</c>. Every later
+///     legacy-routed encoder still needs those mappings: dialogue needs QSTI/ANAM remaps, and
+///     ordinary records such as ACTI/DOOR/FURN/QUST need SCRI remaps to planner-allocated SCPTs.
+///     Without the bridge the script itself is emitted under a plugin FormID while its owner
+///     keeps the obsolete prototype FormID, producing runtime "Unable to find script" errors.
 /// </remarks>
-internal static class DialogPlannerRemapAugmentation
+internal static class PlannerLegacyStateBridge
 {
     /// <summary>
     ///     Merge every planner <c>source → emitted</c> mapping that the planner ACTUALLY emits
@@ -57,6 +55,29 @@ internal static class DialogPlannerRemapAugmentation
 
             sourceToAllocated[source] = emitted;
             sourceToAllocatedType[source] = type;
+        }
+    }
+
+    /// <summary>
+    ///     Registers planner-owned new records in the legacy type-aware emitted sets. Those
+    ///     sets validate SCRI/base/package references in legacy encoders. DIAL/INFO are excluded
+    ///     because <c>DialogGrupBuilder</c> owns their actual allocation and emission.
+    /// </summary>
+    public static void RegisterEmittedNewRecords(
+        IEnumerable<BethesdaMultitool.Core.Formats.Esm.Planner.RecordPlan> records,
+        IReadOnlySet<string> skippedRecordTypes,
+        Action<string, uint> register)
+    {
+        foreach (var record in records)
+        {
+            if (record.Disposition != BethesdaMultitool.Core.Formats.Esm.Planner.RecordDisposition.New
+                || record.Type is "DIAL" or "INFO"
+                || skippedRecordTypes.Contains(record.Type))
+            {
+                continue;
+            }
+
+            register(record.Type, record.FormId);
         }
     }
 }

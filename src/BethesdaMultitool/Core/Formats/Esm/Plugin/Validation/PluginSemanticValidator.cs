@@ -11,7 +11,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Validation;
 ///     issues FNVEdit's "Check for Errors" flags. Each finding is a problem the byte-level
 ///     <see cref="PluginRoundTripValidator" /> doesn't notice — duplicate FormIDs, REFRs
 ///     in the wrong cell-children GRUP type for their persistent flag, dangling base
-///     FormIDs in NAME subrecords, etc.
+///     FormIDs in NAME subrecords, dangling or mistyped script references, etc.
 /// </summary>
 public static class PluginSemanticValidator
 {
@@ -72,7 +72,10 @@ public static class PluginSemanticValidator
         var refrBaseDangling = new List<string>();
         var refrBaseTypeMismatches = new List<string>();
         var refrsInNonChildrenGrup = new List<string>();
+        var scriptDangling = new List<string>();
+        var scriptTypeMismatches = new List<string>();
         var totalRefrs = 0;
+        var totalScriptReferences = 0;
 
         foreach (var (offset, grup, record) in events)
         {
@@ -101,6 +104,36 @@ public static class PluginSemanticValidator
             {
                 formIdOccurrences[formId]++;
                 duplicateFormIds.Add(formId);
+            }
+
+            foreach (var scriptId in ReadFormIds(record, "SCRI"))
+            {
+                if (scriptId is 0 or 0xFFFFFFFFu)
+                {
+                    continue;
+                }
+
+                totalScriptReferences++;
+                if (ContainsTypedFormId(pluginFormIdsByType, "SCPT", scriptId)
+                    || ContainsTypedFormId(masterFormIdsByType, "SCPT", scriptId))
+                {
+                    continue;
+                }
+
+                if (TryResolveRecordType(
+                        scriptId, masterFormIdsByType, pluginFormIdsByType, out var scriptRecordType))
+                {
+                    scriptTypeMismatches.Add(
+                        $"{signature} 0x{formId:X8} SCRI FormID 0x{scriptId:X8} resolves to " +
+                        $"{scriptRecordType}, expected SCPT.");
+                }
+                else if (masterFormIdsByType is not null
+                         || (masterFormIds is not null && !masterFormIds.Contains(scriptId)))
+                {
+                    scriptDangling.Add(
+                        $"{signature} 0x{formId:X8} SCRI FormID 0x{scriptId:X8} is " +
+                        "neither an SCPT in master nor freshly emitted by this plugin.");
+                }
             }
 
             if (signature is "REFR" or "ACHR" or "ACRE")
@@ -248,11 +281,43 @@ public static class PluginSemanticValidator
             }
         }
 
+        if (scriptDangling.Count > 0)
+        {
+            errors += scriptDangling.Count;
+            report.AppendLine($"ERROR: {scriptDangling.Count:N0} record(s) with dangling SCRI FormID:");
+            foreach (var msg in scriptDangling.Take(MaxDuplicateExamples))
+            {
+                report.AppendLine($"  {msg}");
+            }
+
+            if (scriptDangling.Count > MaxDuplicateExamples)
+            {
+                report.AppendLine($"  …and {scriptDangling.Count - MaxDuplicateExamples:N0} more.");
+            }
+        }
+
+        if (scriptTypeMismatches.Count > 0)
+        {
+            errors += scriptTypeMismatches.Count;
+            report.AppendLine(
+                $"ERROR: {scriptTypeMismatches.Count:N0} record(s) whose SCRI target is not SCPT:");
+            foreach (var msg in scriptTypeMismatches.Take(MaxDuplicateExamples))
+            {
+                report.AppendLine($"  {msg}");
+            }
+
+            if (scriptTypeMismatches.Count > MaxDuplicateExamples)
+            {
+                report.AppendLine($"  …and {scriptTypeMismatches.Count - MaxDuplicateExamples:N0} more.");
+            }
+        }
+
         if (errors == 0 && warnings == 0)
         {
             report.AppendLine(
                 $"Semantic check passed: {records.Count:N0} records, {totalRefrs:N0} placed refs, " +
-                "no duplicate FormIDs, all refs correctly parented + flagged.");
+                $"{totalScriptReferences:N0} script refs; no duplicate FormIDs, all refs correctly " +
+                "parented + flagged, all SCRI targets resolve to SCPT.");
         }
         else
         {
@@ -268,6 +333,27 @@ public static class PluginSemanticValidator
     {
         var name = record.Subrecords.FirstOrDefault(s => s.Signature == "NAME" && s.Data.Length >= 4);
         return name is null ? null : BinaryPrimitives.ReadUInt32LittleEndian(name.Data);
+    }
+
+    private static IEnumerable<uint> ReadFormIds(ParsedMainRecord record, string signature)
+    {
+        foreach (var subrecord in record.Subrecords)
+        {
+            if (subrecord.Signature == signature && subrecord.Data.Length >= sizeof(uint))
+            {
+                yield return BinaryPrimitives.ReadUInt32LittleEndian(subrecord.Data);
+            }
+        }
+    }
+
+    private static bool ContainsTypedFormId(
+        IReadOnlyDictionary<string, HashSet<uint>>? formIdsByType,
+        string signature,
+        uint formId)
+    {
+        return formIdsByType is not null
+            && formIdsByType.TryGetValue(signature, out var formIds)
+            && formIds.Contains(formId);
     }
 
     private static uint ReadLabelFormId(GrupHeaderInfo grup)

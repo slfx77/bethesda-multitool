@@ -2,14 +2,16 @@ using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
 
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 
 /// <summary>
 ///     Walks an <see cref="EmitPlan" /> and produces a top-level GRUP for a requested record
-///     type. Pure: never allocates, never resolves, never validates — those happen in the
-///     planner. Reuses the legacy byte-emission primitives
+///     type. It never allocates or chooses a reference target — those decisions happen in
+///     the planner — but it applies the plan's settled source-to-emitted aliases to encoded
+///     FormID fields before serialization. Reuses the legacy byte-emission primitives
 ///     (<see cref="PluginRecordByteBuilder" />, <see cref="RecordMergeEngine" />,
 ///     <see cref="TopLevelRecordEmitter" />) so Tier 1 parity is byte-exact.
 /// </summary>
@@ -76,6 +78,11 @@ public sealed class PlanWriter
 
             var refs = new PlanReferenceLookup(record, plan);
             var encoded = encoder.Encode(record.Model, record, refs);
+            encoded = encoded with
+            {
+                Subrecords = EncodedSubrecordFormIdRemapper.Remap(
+                    recordType, encoded.Subrecords, plan.SourceToEmittedFormId)
+            };
 
             if (encoded.Subrecords.Count == 0)
             {
