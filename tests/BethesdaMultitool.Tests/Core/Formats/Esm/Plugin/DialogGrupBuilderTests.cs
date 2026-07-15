@@ -710,12 +710,18 @@ public sealed class DialogGrupBuilderTests
         const uint childTopic = 0x00130001;
         const uint grandchildTopic = 0x00130002;
         const uint otherSpeakerTopic = 0x00130003;
+        const uint conversationBark = 0x00130004;
         var topics = new[]
         {
             new DialogTopicRecord { FormId = rootTopic, EditorId = "Root", QuestFormId = quest },
             new DialogTopicRecord { FormId = childTopic, EditorId = "Child", QuestFormId = quest },
             new DialogTopicRecord { FormId = grandchildTopic, EditorId = "Grandchild", QuestFormId = quest },
-            new DialogTopicRecord { FormId = otherSpeakerTopic, EditorId = "OtherSpeaker", QuestFormId = quest }
+            new DialogTopicRecord { FormId = otherSpeakerTopic, EditorId = "OtherSpeaker", QuestFormId = quest },
+            new DialogTopicRecord
+            {
+                FormId = conversationBark, EditorId = "FortWaterBarrelWarning",
+                FullName = "TheFortWaterBarrelWarning", QuestFormId = quest, TopicType = 1
+            }
         };
         var infos = new[]
         {
@@ -741,6 +747,13 @@ public sealed class DialogGrupBuilderTests
                 TopicFormId = otherSpeakerTopic,
                 QuestFormId = quest,
                 SpeakerFormId = 0x00110001
+            },
+            new DialogueRecord
+            {
+                FormId = 0x00140003,
+                TopicFormId = conversationBark,
+                QuestFormId = quest,
+                SpeakerFormId = speaker
             }
         };
         var dialMap = new Dictionary<uint, uint>
@@ -748,7 +761,8 @@ public sealed class DialogGrupBuilderTests
             [rootTopic] = 0x01000800,
             [childTopic] = 0x01000801,
             [grandchildTopic] = 0x01000802,
-            [otherSpeakerTopic] = 0x01000803
+            [otherSpeakerTopic] = 0x01000803,
+            [conversationBark] = 0x01000804
         };
 
         var synthesized = GreetingEntrySynthesizer.Synthesize(topics, infos, dialMap);

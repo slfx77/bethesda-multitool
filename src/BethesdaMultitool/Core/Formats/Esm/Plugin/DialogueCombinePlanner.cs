@@ -149,6 +149,7 @@ internal static class DialogueCombinePlanner
             .Where(speaker => speaker is { } value && masterIndex.HasExactGreetingCoverage(value))
             .Select(static speaker => speaker!.Value)
             .ToHashSet();
+        RebuildScopedGreetingLinks(newTopics, newInfos);
         PromoteCoveredSpeakerRoots(newTopics, newInfos, retailCoveredSpeakers);
 
         return new DialogueCombinePlan(
@@ -159,6 +160,53 @@ internal static class DialogueCombinePlanner
             duplicateInfosCollapsed,
             suppressed,
             rehomed);
+    }
+
+    /// <summary>
+    ///     Runtime GREETING captures can contain a reconstructed menu snapshot rather than
+    ///     authored flow: xex21 carried the union of many speakers' TCLT choices on each
+    ///     prototype greeting, which exposed FortWaterBarrelWarning globally. Rebuild only
+    ///     TCLT from exact-speaker/exact-quest player-topic roots. Every other INFO field is
+    ///     retained, including responses, conditions, flags, and result-script blocks.
+    /// </summary>
+    private static void RebuildScopedGreetingLinks(
+        IReadOnlyList<DialogTopicRecord> topics,
+        List<DialogueRecord> infos)
+    {
+        // Captured greetings may already link a valid inferred root even when a different
+        // topic in the pair carries the explicit TopLevel bit. Include both categories for
+        // the sanitizer's allow-list; the synthesizer itself retains its established
+        // explicit-root precedence.
+        var rootsByPair = GreetingEntrySynthesizer.SelectScopedEntryTopics(
+            topics, infos, includeAllGraphRoots: true);
+        for (var index = 0; index < infos.Count; index++)
+        {
+            var greeting = infos[index];
+            if (greeting.TopicFormId != GreetingDialFormId)
+            {
+                continue;
+            }
+
+            var speaker = DialogueSpeakerBinding.GetExactSpeaker(greeting).GetValueOrDefault();
+            var quest = greeting.QuestFormId.GetValueOrDefault();
+            IReadOnlyList<uint> links = [];
+            if (speaker != 0
+                && quest != 0
+                && rootsByPair.TryGetValue((speaker, quest), out var roots))
+            {
+                var rootSet = roots.ToHashSet();
+                var retainedRoots = greeting.LinkToTopics
+                    .Where(rootSet.Contains)
+                    .Distinct()
+                    .ToList();
+                // Prefer the authored/recovered ordering when it contains scoped roots.
+                // If the runtime snapshot omitted every valid root, reconstruct them so a
+                // prototype-only NPC is not left with a Goodbye-only menu.
+                links = retainedRoots.Count > 0 ? retainedRoots : roots;
+            }
+
+            infos[index] = greeting with { LinkToTopics = [..links] };
+        }
     }
 
     private static List<DialogueRecord> DeduplicateInfos(

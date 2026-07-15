@@ -654,6 +654,119 @@ public sealed class DialogueCombineTests
         Assert.Equal("TheFortWaterBarrelWarning", preserved.FullName);
     }
 
+    [Fact]
+    public void CombinePlanner_RebuildsUncoveredGreetingFromSameSpeakerQuestTopicRoots()
+    {
+        const uint greetingDial = 0x000000C8;
+        const uint speaker = 0x01003000;
+        const uint otherSpeaker = 0x01003001;
+        const uint quest = 0x01004000;
+        const uint otherQuest = 0x01004001;
+        const uint rootTopic = 0x01005000;
+        const uint childTopic = 0x01005001;
+        const uint fortWaterBarrelWarning = 0x01005002;
+        const uint otherSpeakerTopic = 0x01005003;
+        const uint otherQuestTopic = 0x01005004;
+        const uint greetingInfoId = 0x01006000;
+        var retailGreeting = Record("DIAL", greetingDial, 100, TextSub("EDID", "GREETING"));
+        var masterIndex = MasterDialogueIndex.BuildFromRecordOrder([retailGreeting]);
+        var topics = new[]
+        {
+            new DialogTopicRecord
+            {
+                FormId = rootTopic, EditorId = "UlyssesRoot", FullName = "Ask about the Divide.",
+                QuestFormId = quest, TopicType = 0
+            },
+            new DialogTopicRecord
+            {
+                FormId = childTopic, EditorId = "UlyssesChild", FullName = "What happened next?",
+                QuestFormId = quest, TopicType = 0
+            },
+            new DialogTopicRecord
+            {
+                FormId = fortWaterBarrelWarning, EditorId = "FortWaterBarrelWarning",
+                FullName = "TheFortWaterBarrelWarning", QuestFormId = quest, TopicType = 1
+            },
+            new DialogTopicRecord
+            {
+                FormId = otherSpeakerTopic, EditorId = "OtherSpeakerRoot", FullName = "Not yours.",
+                QuestFormId = quest, TopicType = 0
+            },
+            new DialogTopicRecord
+            {
+                FormId = otherQuestTopic, EditorId = "OtherQuestRoot", FullName = "Wrong quest.",
+                QuestFormId = otherQuest, TopicType = 0
+            }
+        };
+        var response = new DialogueResponse { ResponseNumber = 1, Text = "The Divide still bears its scars." };
+        var resultScript = new DialogueResultScript
+        {
+            SourceText = "set VDialogueUlysses.spoken to 1",
+            ReferencedObjects = { quest }
+        };
+        var greeting = new DialogueRecord
+        {
+            FormId = greetingInfoId,
+            TopicFormId = greetingDial,
+            QuestFormId = quest,
+            SpeakerFormId = speaker,
+            Responses = [response],
+            HasResultScript = true,
+            ResultScripts = [resultScript],
+            // Recovered runtime menu union: child/internal, conversation bark, another
+            // speaker, another quest, and a dangling topic all leaked into GREETING.
+            LinkToTopics =
+            [
+                fortWaterBarrelWarning, otherSpeakerTopic, otherQuestTopic,
+                childTopic, rootTopic, 0x01FFFFFF
+            ]
+        };
+        var infos = new[]
+        {
+            greeting,
+            new DialogueRecord
+            {
+                FormId = 0x01006001, TopicFormId = rootTopic, QuestFormId = quest,
+                SpeakerFormId = speaker, LinkToTopics = [childTopic],
+                Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Root." }]
+            },
+            new DialogueRecord
+            {
+                FormId = 0x01006002, TopicFormId = childTopic, QuestFormId = quest,
+                SpeakerFormId = speaker,
+                Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Child." }]
+            },
+            new DialogueRecord
+            {
+                FormId = 0x01006003, TopicFormId = fortWaterBarrelWarning, QuestFormId = quest,
+                SpeakerFormId = speaker,
+                Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Don't touch that." }]
+            },
+            new DialogueRecord
+            {
+                FormId = 0x01006004, TopicFormId = otherSpeakerTopic, QuestFormId = quest,
+                SpeakerFormId = otherSpeaker,
+                Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Other speaker." }]
+            },
+            new DialogueRecord
+            {
+                FormId = 0x01006005, TopicFormId = otherQuestTopic, QuestFormId = otherQuest,
+                SpeakerFormId = speaker,
+                Responses = [new DialogueResponse { ResponseNumber = 1, Text = "Other quest." }]
+            }
+        };
+
+        var plan = DialogueCombinePlanner.Build(
+            topics, infos, new NewVsOverrideClassifier([greetingDial]), masterIndex,
+            [greetingDial, speaker, otherSpeaker, quest, otherQuest]);
+
+        var rebuilt = Assert.Single(plan.NewInfos, info => info.FormId == greetingInfoId);
+        Assert.Equal([rootTopic], rebuilt.LinkToTopics);
+        Assert.Same(response, Assert.Single(rebuilt.Responses));
+        Assert.True(rebuilt.HasResultScript);
+        Assert.Same(resultScript, Assert.Single(rebuilt.ResultScripts));
+    }
+
     [Theory]
     [InlineData(0x00, 0f, 0u)] // GetIsID(speaker) == 0 excludes the speaker.
     [InlineData(0x20, 1f, 0u)] // GetIsID(speaker) != 1 excludes the speaker.

@@ -53,26 +53,12 @@ internal static class GreetingEntrySynthesizer
         Func<DialogueRecord, bool>? greetingSurvivesGates = null,
         IReadOnlySet<uint>? speakersWithRetailGreeting = null)
     {
-        // Map source DIAL FormID → topic metadata and quest. The synth works in source
-        // FormID space while it infers roots from LinkTo/LinkFrom, then maps the surviving
-        // roots to emitted FormIDs at the end.
-        var topicBySource = new Dictionary<uint, DialogTopicRecord>();
-        var topicQuestBySource = new Dictionary<uint, uint>();
-        foreach (var topic in newTopics)
-        {
-            if (!topic.QuestFormId.HasValue || topic.QuestFormId.Value == 0)
-            {
-                continue;
-            }
-
-            if (!dialFormIdMap.ContainsKey(topic.FormId))
-            {
-                continue;
-            }
-
-            topicBySource[topic.FormId] = topic;
-            topicQuestBySource[topic.FormId] = topic.QuestFormId.Value;
-        }
+        // Infer entry points only from DIALs that will actually be emitted. The shared
+        // selector also rejects Conversation/combat/service barks and scopes every edge to
+        // one exact (speaker, quest) pair.
+        var scopedRoots = SelectScopedEntryTopics(
+            newTopics.Where(topic => dialFormIdMap.ContainsKey(topic.FormId)).ToList(),
+            newInfos);
 
         // Discover (speaker, quest) pairs already covered by an existing GREETING INFO so
         // we don't duplicate. A speaker may have its own GREETING under a different quest,
@@ -82,73 +68,20 @@ internal static class GreetingEntrySynthesizer
         foreach (var info in newInfos)
         {
             if (info.TopicFormId != MasterGreetingDial) continue;
-            if (!info.SpeakerFormId.HasValue || info.SpeakerFormId.Value == 0) continue;
             if (!info.QuestFormId.HasValue || info.QuestFormId.Value == 0) continue;
             if (greetingSurvivesGates is not null && !greetingSurvivesGates(info)) continue;
-            existingGreetingPairs.Add((info.SpeakerFormId.Value, info.QuestFormId.Value));
-        }
-
-        // Discover every distinct (speaker, quest) pair the conversion produced — those are
-        // the NPCs whose dialogue trees need an entry point. At the same time, collect the
-        // topics that actually have INFOs for that speaker and mark topics that are reached
-        // by a TCLT/TCLF edge. Synthetic GREETING must not link every topic in the quest:
-        // doing so flattens internal branches into the first dialogue menu.
-        var npcQuestPairs = new HashSet<(uint Speaker, uint Quest)>();
-        var candidateTopicsByPair = new Dictionary<(uint Speaker, uint Quest), HashSet<uint>>();
-        var incomingTopicsByPair = new Dictionary<(uint Speaker, uint Quest), HashSet<uint>>();
-        foreach (var info in newInfos)
-        {
-            if (!info.SpeakerFormId.HasValue || info.SpeakerFormId.Value == 0) continue;
-            if (!info.QuestFormId.HasValue || info.QuestFormId.Value == 0) continue;
-
-            var pair = (Speaker: info.SpeakerFormId.Value, Quest: info.QuestFormId.Value);
-            npcQuestPairs.Add(pair);
-
-            if (info.TopicFormId is not { } sourceTopicId ||
-                !topicQuestBySource.TryGetValue(sourceTopicId, out var topicQuestId) ||
-                topicQuestId != pair.Quest)
+            if (DialogueSpeakerBinding.GetExactSpeaker(info) is { } speaker)
             {
-                continue;
-            }
-
-            if (!candidateTopicsByPair.TryGetValue(pair, out var candidates))
-            {
-                candidates = [];
-                candidateTopicsByPair[pair] = candidates;
-            }
-
-            candidates.Add(sourceTopicId);
-
-            if (!incomingTopicsByPair.TryGetValue(pair, out var incoming))
-            {
-                incoming = [];
-                incomingTopicsByPair[pair] = incoming;
-            }
-
-            foreach (var linkedTopicId in info.LinkToTopics)
-            {
-                if (topicQuestBySource.TryGetValue(linkedTopicId, out var linkedQuestId) &&
-                    linkedQuestId == pair.Quest)
-                {
-                    incoming.Add(linkedTopicId);
-                }
-            }
-
-            // TCLF is the reverse edge: this INFO's parent topic is reachable from the
-            // listed source topic(s).
-            foreach (var sourceTopic in info.LinkFromTopics)
-            {
-                if (topicQuestBySource.TryGetValue(sourceTopic, out var sourceQuestId) &&
-                    sourceQuestId == pair.Quest)
-                {
-                    incoming.Add(sourceTopicId);
-                }
+                existingGreetingPairs.Add((speaker, info.QuestFormId.Value));
             }
         }
 
         var synthesized = new List<DialogueRecord>();
-        foreach (var (speakerId, questId) in npcQuestPairs)
+        foreach (var (pair, sourceRootTopics) in scopedRoots
+                     .OrderBy(static entry => entry.Key.Speaker)
+                     .ThenBy(static entry => entry.Key.Quest))
         {
+            var (speakerId, questId) = pair;
             // An exact retail GREETING for this speaker is the authoritative entry point.
             // Adding a silent synthetic INFO ahead of it shadows retail first-meet result
             // scripts (Sunny's tutorial walk regression). Covered prototype topic trees
@@ -163,9 +96,11 @@ internal static class GreetingEntrySynthesizer
                 continue;
             }
 
-            var linkedTopics = SelectEntryTopics(
-                speakerId, questId, candidateTopicsByPair, incomingTopicsByPair,
-                topicBySource, dialFormIdMap);
+            var linkedTopics = sourceRootTopics
+                .Select(sourceId => dialFormIdMap.TryGetValue(sourceId, out var emittedId) ? emittedId : 0)
+                .Where(static emittedId => emittedId != 0)
+                .Distinct()
+                .ToList();
             if (linkedTopics.Count == 0)
             {
                 continue;
@@ -177,51 +112,104 @@ internal static class GreetingEntrySynthesizer
         return synthesized;
     }
 
-    private static List<uint> SelectEntryTopics(
-        uint speakerId,
-        uint questId,
-        Dictionary<(uint Speaker, uint Quest), HashSet<uint>> candidateTopicsByPair,
-        Dictionary<(uint Speaker, uint Quest), HashSet<uint>> incomingTopicsByPair,
-        Dictionary<uint, DialogTopicRecord> topicBySource,
-        IReadOnlyDictionary<uint, uint> dialFormIdMap)
+    /// <summary>
+    ///     Infer source-space player-topic roots for exact (speaker, quest) pairs. Only
+    ///     Topic-type DIALs participate: Conversation and other system/bark topics must
+    ///     never become player choices merely because runtime capture attached them to a
+    ///     broad GREETING TCLT list.
+    /// </summary>
+    internal static IReadOnlyDictionary<(uint Speaker, uint Quest), IReadOnlyList<uint>>
+        SelectScopedEntryTopics(
+            IReadOnlyList<DialogTopicRecord> topics,
+            IReadOnlyList<DialogueRecord> infos,
+            bool includeAllGraphRoots = false)
     {
-        var pair = (speakerId, questId);
-        if (!candidateTopicsByPair.TryGetValue(pair, out var candidates) || candidates.Count == 0)
+        var topicBySource = topics
+            .Where(static topic => topic.FormId != 0
+                                   && topic.TopicType == 0
+                                   && topic.QuestFormId is > 0)
+            .GroupBy(static topic => topic.FormId)
+            .ToDictionary(static group => group.Key, static group => group.First());
+        var candidatesByPair = new Dictionary<(uint Speaker, uint Quest), HashSet<uint>>();
+        var scopedInfos = new List<(DialogueRecord Info, uint Speaker, uint Quest, uint Topic)>();
+        foreach (var info in infos)
         {
-            return [];
+            var speaker = DialogueSpeakerBinding.GetExactSpeaker(info).GetValueOrDefault();
+            var quest = info.QuestFormId.GetValueOrDefault();
+            var topicId = info.TopicFormId.GetValueOrDefault();
+            if (speaker == 0
+                || quest == 0
+                || !topicBySource.TryGetValue(topicId, out var topic)
+                || topic.QuestFormId != quest)
+            {
+                continue;
+            }
+
+            var pair = (speaker, quest);
+            if (!candidatesByPair.TryGetValue(pair, out var candidates))
+            {
+                candidates = [];
+                candidatesByPair[pair] = candidates;
+            }
+
+            candidates.Add(topicId);
+            scopedInfos.Add((info, speaker, quest, topicId));
         }
 
-        // Prefer explicit top-level topics when the runtime captured that bit. Some proto
-        // captures lack it, so fall back to graph roots inferred from TCLT/TCLF.
-        var roots = candidates
-            .Where(sourceId => topicBySource.TryGetValue(sourceId, out var topic) && topic.IsTopLevel)
-            .ToList();
-
-        if (roots.Count == 0)
+        var incomingByPair = candidatesByPair.Keys
+            .ToDictionary(static pair => pair, static _ => new HashSet<uint>());
+        foreach (var (info, speaker, quest, topicId) in scopedInfos)
         {
-            incomingTopicsByPair.TryGetValue(pair, out var incoming);
-            roots = candidates
-                .Where(sourceId => incoming is null || !incoming.Contains(sourceId))
+            var pair = (speaker, quest);
+            var candidates = candidatesByPair[pair];
+            var incoming = incomingByPair[pair];
+            foreach (var linkedTopicId in info.LinkToTopics)
+            {
+                if (candidates.Contains(linkedTopicId))
+                {
+                    incoming.Add(linkedTopicId);
+                }
+            }
+
+            // TCLF is the reverse edge: this INFO's parent topic is reachable from the
+            // listed source topic. Require that source to be a candidate for this exact
+            // pair; a same-quest edge owned by another speaker is not part of this graph.
+            if (info.LinkFromTopics.Any(candidates.Contains))
+            {
+                incoming.Add(topicId);
+            }
+        }
+
+        var result = new Dictionary<(uint Speaker, uint Quest), IReadOnlyList<uint>>();
+        foreach (var (pair, candidates) in candidatesByPair)
+        {
+            var incoming = incomingByPair[pair];
+            var explicitRoots = candidates
+                .Where(sourceId => topicBySource[sourceId].IsTopLevel)
+                .ToList();
+            var inferredRoots = candidates.Where(sourceId => !incoming.Contains(sourceId)).ToList();
+            var roots = explicitRoots.Count > 0
+                ? includeAllGraphRoots
+                    ? explicitRoots.Concat(inferredRoots).Distinct().ToList()
+                    : explicitRoots
+                : inferredRoots;
+
+            // A completely cyclic capture has no zero-incoming vertex. Every member of a
+            // root cycle is still scoped to this exact actor and quest; retain that legacy
+            // fallback rather than strand prototype-only NPCs with a Goodbye-only menu.
+            if (roots.Count == 0)
+            {
+                roots = [..candidates];
+            }
+
+            result[pair] = roots
+                .OrderBy(sourceId => topicBySource[sourceId].Priority)
+                .ThenBy(sourceId => topicBySource[sourceId].EditorId, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static sourceId => sourceId)
                 .ToList();
         }
 
-        if (roots.Count == 0)
-        {
-            roots = [..candidates];
-        }
-
-        return roots
-            .OrderBy(sourceId => topicBySource.TryGetValue(sourceId, out var topic)
-                ? topic.Priority
-                : 0f)
-            .ThenBy(sourceId => topicBySource.TryGetValue(sourceId, out var topic)
-                ? topic.EditorId
-                : null,
-                StringComparer.OrdinalIgnoreCase)
-            .Select(sourceId => dialFormIdMap.TryGetValue(sourceId, out var emittedId) ? emittedId : 0)
-            .Where(emittedId => emittedId != 0)
-            .Distinct()
-            .ToList();
+        return result;
     }
 
     private static DialogueRecord BuildGreetingInfo(
