@@ -28,13 +28,18 @@ public static class PlannedNavmEncoder
         uint newCellFormId,
         uint newNavmFormId,
         IReadOnlyDictionary<uint, uint> nvexRewrites,
+        IReadOnlyDictionary<uint, uint> doorRefRewrites,
+        IReadOnlySet<uint> validDoorRefs,
         PluginBuildOptions options)
     {
         ArgumentNullException.ThrowIfNull(navm);
         ArgumentNullException.ThrowIfNull(nvexRewrites);
+        ArgumentNullException.ThrowIfNull(doorRefRewrites);
+        ArgumentNullException.ThrowIfNull(validDoorRefs);
         ArgumentNullException.ThrowIfNull(options);
 
-        var patched = NavMeshByteRewriter.Rewrite(navm.RawSubrecords, newCellFormId, nvexRewrites);
+        var patched = NavMeshByteRewriter.Rewrite(
+            navm.RawSubrecords, newCellFormId, nvexRewrites, doorRefRewrites, validDoorRefs);
         var flags = options.CompressRecords ? CompressedFlag : 0u;
         return PluginRecordByteBuilder.BuildNewRecordBytes("NAVM", newNavmFormId, flags, patched);
     }

@@ -67,8 +67,13 @@ internal static class PlanCellSectionBuilder
             ? []
             : new HashSet<uint>(masterIndex.RefToCell.Keys);
 
+        IReadOnlyDictionary<uint, PlannerXespParentClassifier.Resolution> xespParentIndex = stats is null
+            ? new Dictionary<uint, PlannerXespParentClassifier.Resolution>()
+            : PlannerXespParentClassifier.BuildIndex(plan, masterByFormId, masterRefFormIds);
+
         var context = new CellChildEncodeContext(
-            plan, masterByFormId, validFormIds, options, stats, masterIndex, masterRefFormIds, dmpBaseTypes);
+            plan, masterByFormId, validFormIds, options, stats, masterIndex, masterRefFormIds,
+            dmpBaseTypes, xespParentIndex);
 
         var bundles = ConvertCellsToBundles(plan, context, out var emittedNavmFormIds);
         if (bundles.Count == 0)
@@ -281,11 +286,12 @@ internal static class PlanCellSectionBuilder
             var persistent = new List<byte[]>();
             var vwd = new List<byte[]>();
             var temporary = new List<byte[]>();
+            var landPrefix = new List<byte[]>();
             var navmPrefix = new List<byte[]>();
 
-            EncodeBucketChildren(cellPlan.PersistentChildren, 8, context, state, persistent, vwd, temporary, navmPrefix);
-            EncodeBucketChildren(cellPlan.VwdChildren, 10, context, state, persistent, vwd, temporary, navmPrefix);
-            EncodeBucketChildren(cellPlan.TemporaryChildren, 9, context, state, persistent, vwd, temporary, navmPrefix);
+            EncodeBucketChildren(cellPlan.PersistentChildren, 8, context, state, persistent, vwd, temporary, landPrefix, navmPrefix);
+            EncodeBucketChildren(cellPlan.VwdChildren, 10, context, state, persistent, vwd, temporary, landPrefix, navmPrefix);
+            EncodeBucketChildren(cellPlan.TemporaryChildren, 9, context, state, persistent, vwd, temporary, landPrefix, navmPrefix);
 
             // Cell-emission gates. Planner-settled values (CellPlan.Emits) win; the inline
             // computation only runs for plans that predate the gate-planning stage. Full
@@ -331,7 +337,6 @@ internal static class PlanCellSectionBuilder
 
             // LAND and NAVM both live in Temporary Children; LAND first, then NAVM, then
             // placed refs (vanilla master layout).
-            var landPrefix = new List<byte[]>();
             MasterChildCarryForward.AppendMasterLandFallback(context, state, landPrefix);
             MasterChildCarryForward.Apply(context, state, dmpCell, persistent, vwd, temporary);
 
@@ -363,10 +368,22 @@ internal static class PlanCellSectionBuilder
         List<byte[]> persistent,
         List<byte[]> vwd,
         List<byte[]> temporary,
+        List<byte[]> landPrefix,
         List<byte[]> navmPrefix)
     {
         foreach (var child in children)
         {
+            if (child.Type == "LAND")
+            {
+                var landBytes = PlannedLandEncoder.EncodeRecord(child, context.Options);
+                if (landBytes is not null)
+                {
+                    landPrefix.Add(landBytes);
+                    context.Stats?.IncrementEmitted("LAND");
+                }
+                // LAND does not participate in genuine-child emission gates.
+                continue;
+            }
             if (child.Type == "NAVM")
             {
                 if (context.Options.DiagnosticSkipCellNavm)
@@ -375,26 +392,23 @@ internal static class PlanCellSectionBuilder
                     context.Stats?.IncrementDropReason("navm.diagnostic-skip");
                     continue;
                 }
-
                 var navmBytes = EncodeNavm(
-                    child, state.CellFormId, context.Plan.SourceToEmittedFormId, context.Options);
+                    child, state.CellFormId, context.Plan.SourceToEmittedFormId,
+                    context.Plan.NavmDoorLinks, context.Options);
                 if (navmBytes is null)
                 {
                     continue;
                 }
-
                 navmPrefix.Add(navmBytes);
                 state.EmittedNavmFormIds.Add(child.FormId);
                 state.GenuineChildCount++;
                 state.GenuineNavmCount++;
                 continue;
             }
-
             if (child.Type is not ("REFR" or "ACHR" or "ACRE"))
             {
                 continue;
             }
-
             // Overrides re-bucket to master's original child GRUP (legacy parity); new
             // refs keep the planner's persistence-based bucket.
             var routeGroupType = plannedGroupType;
@@ -403,13 +417,11 @@ internal static class PlanCellSectionBuilder
             {
                 continue;
             }
-
             state.GenuineChildCount++;
             if (child.Disposition == RecordDisposition.New)
             {
                 state.GenuineNewCount++;
             }
-
             switch (routeGroupType)
             {
                 case 8:
@@ -459,6 +471,7 @@ internal static class PlanCellSectionBuilder
         RecordPlan child,
         uint cellFormId,
         IReadOnlyDictionary<uint, uint> nvexRewrites,
+        NavmDoorLinkPlan doorLinks,
         PluginBuildOptions options)
     {
         if (child.Model is not NavMeshRecord navm)
@@ -473,6 +486,8 @@ internal static class PlanCellSectionBuilder
                          // (memory/navm_engine_load_mechanism.md), so copying them is redundant.
         }
 
-        return PlannedNavmEncoder.EncodeRecord(navm, cellFormId, child.FormId, nvexRewrites, options);
+        return PlannedNavmEncoder.EncodeRecord(
+            navm, cellFormId, child.FormId, nvexRewrites,
+            doorLinks.SourceToEmittedDoorRef, doorLinks.ValidDoorRefFormIds, options);
     }
 }

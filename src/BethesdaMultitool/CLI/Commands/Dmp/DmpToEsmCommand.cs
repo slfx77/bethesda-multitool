@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+using System.Globalization;
 using System.CommandLine;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
@@ -166,6 +168,23 @@ public static class DmpToEsmCommand
         };
         command.Options.Add(skipRecordTypeOpt);
 
+        var diagnosticKeepMasterFormIdOpt = new Option<string[]>("--diag-keep-master-formid")
+        {
+            Description =
+                "Diagnostic: repeatable exact DMP-override FormID to leave master-pure. " +
+                "Requires the record type to be planner-enabled. Invalid or non-override IDs fail the build."
+        };
+        command.Options.Add(diagnosticKeepMasterFormIdOpt);
+
+        var diagnosticRetainMasterSubrecordsOpt =
+            new Option<string[]>("--diag-retain-master-subrecords")
+            {
+                Description =
+                    "Diagnostic: repeatable <FormID>:<SIG>[,<SIG>...] directive (for example " +
+                    "0x0012795D:AIDT,SNAM) retaining those exact master subrecords on one override."
+            };
+        command.Options.Add(diagnosticRetainMasterSubrecordsOpt);
+
         var plannerTypesOpt = new Option<string[]>("--planner-types")
         {
             Description =
@@ -225,6 +244,10 @@ public static class DmpToEsmCommand
             var skipRecordTypes = new HashSet<string>(
                 skipRecordTypeArgs.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()),
                 StringComparer.Ordinal);
+            var diagnosticKeepMasterFormIds = ParseDiagnosticFormIdSet(
+                parseResult.GetValue(diagnosticKeepMasterFormIdOpt) ?? []);
+            var diagnosticRetainMasterSubrecords = ParseDiagnosticSubrecordRetentions(
+                parseResult.GetValue(diagnosticRetainMasterSubrecordsOpt) ?? []);
             var plannerTypesArgs = parseResult.GetValue(plannerTypesOpt) ?? [];
             var plannerTypes = ResolvePlannerTypes(plannerTypesArgs);
 
@@ -232,7 +255,8 @@ public static class DmpToEsmCommand
                 secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, overrideVanilla,
                 disableRefrEditorIdRemap, replaceCellTemporaries, recoverGaps, emitMasterCellNavmAugmentation,
                 recoverLeveledSpawns, diagSkipCellNavm, diagSkipCellNewRefs, cellAuthorityPath,
-                skipWorldspaceFormIds, skipRecordTypes, plannerTypes, ct);
+                skipWorldspaceFormIds, skipRecordTypes, diagnosticKeepMasterFormIds,
+                diagnosticRetainMasterSubrecords, plannerTypes, ct);
         });
 
         return command;
@@ -263,6 +287,8 @@ public static class DmpToEsmCommand
         string? cellAuthorityPath,
         HashSet<uint> skipWorldspaceFormIds,
         HashSet<string> skipRecordTypes,
+        ImmutableHashSet<uint> diagnosticKeepMasterFormIds,
+        ImmutableDictionary<uint, ImmutableHashSet<string>> diagnosticRetainMasterSubrecords,
         HashSet<string> plannerEnabledRecordTypes,
         CancellationToken ct)
     {
@@ -331,6 +357,8 @@ public static class DmpToEsmCommand
             CellWorldspaceAuthorityWorldspaceNames = authorityLoad.WorldspaceNames,
             SkipWorldspaceFormIds = skipWorldspaceFormIds,
             SkipRecordTypes = skipRecordTypes,
+            DiagnosticKeepMasterFormIds = diagnosticKeepMasterFormIds,
+            DiagnosticRetainMasterSubrecords = diagnosticRetainMasterSubrecords,
             PlannerEnabledRecordTypes = plannerEnabledRecordTypes,
             DialogueTextOverridesCsvPaths = dialogueAudioCsvPaths
         };
@@ -345,6 +373,23 @@ public static class DmpToEsmCommand
         {
             AnsiConsole.MarkupLine(
                 $"[yellow]Skipping record types:[/] {string.Join(", ", skipRecordTypes)}");
+        }
+
+        if (diagnosticKeepMasterFormIds.Count > 0)
+        {
+            AnsiConsole.MarkupLine(
+                $"[yellow]Master-pure diagnostic FormIDs:[/] " +
+                $"{string.Join(", ", diagnosticKeepMasterFormIds.Order().Select(f => $"0x{f:X8}"))}");
+        }
+
+        if (diagnosticRetainMasterSubrecords.Count > 0)
+        {
+            var retentionSummary = string.Join("; ",
+                diagnosticRetainMasterSubrecords.OrderBy(pair => pair.Key).Select(pair =>
+                    $"0x{pair.Key:X8}:{string.Join(",", pair.Value.Order(StringComparer.Ordinal))}"));
+            AnsiConsole.MarkupLine(
+                $"[yellow]Master-subrecord diagnostics:[/] " +
+                Markup.Escape(retentionSummary));
         }
 
         if (plannerEnabledRecordTypes.Count > 0)
@@ -392,6 +437,43 @@ public static class DmpToEsmCommand
                 $"skipped={s.RecordsSkipped:N0}, failed={s.RecordsFailed:N0}");
             AnsiConsole.MarkupLine($"  Overrides={s.OverridesEmitted:N0}, new={s.NewRecordsEmitted:N0}, " +
                                    $"cells={s.CellsMerged:N0}");
+            var xespDistinctByStatus = Enum.GetValues<PlannerXespParentStatus>()
+                .ToDictionary(
+                    status => status,
+                    status => s.PlannerXespObservations
+                        .Where(observation => observation.ParentStatus == status)
+                        .Select(observation => observation.SourceParentFormId)
+                        .Distinct()
+                        .Count());
+            AnsiConsole.MarkupLine(
+                $"  Planner XESP sanitation: observed={s.PlannerXespObserved:N0}, " +
+                $"emitted={s.PlannerXespEmitted:N0}, skipped={s.PlannerXespSkipped:N0}; " +
+                $"distinct parents live-master={xespDistinctByStatus[PlannerXespParentStatus.LiveMaster]:N0}, " +
+                $"live-emitted={xespDistinctByStatus[PlannerXespParentStatus.LiveEmitted]:N0}, " +
+                $"captured-dropped={xespDistinctByStatus[PlannerXespParentStatus.CapturedDropped]:N0}, " +
+                $"runtime={xespDistinctByStatus[PlannerXespParentStatus.RuntimeState]:N0}, " +
+                $"absent={xespDistinctByStatus[PlannerXespParentStatus.Absent]:N0}");
+
+            foreach (var group in s.PlannerXespObservations
+                         .Where(observation => !observation.XespEmitted
+                                               || observation.ParentStatus is not (
+                                                   PlannerXespParentStatus.LiveMaster
+                                                   or PlannerXespParentStatus.LiveEmitted))
+                         .GroupBy(observation => new
+                         {
+                             observation.XespEmitted,
+                             observation.ParentStatus,
+                             observation.Reason,
+                         })
+                         .OrderBy(group => group.Key.XespEmitted)
+                         .ThenBy(group => group.Key.ParentStatus)
+                         .ThenBy(group => group.Key.Reason, StringComparer.Ordinal))
+            {
+                var detail = $"    XESP {(group.Key.XespEmitted ? "emitted" : "skipped")}: " +
+                             $"{group.Key.ParentStatus} ({group.Key.Reason}); " +
+                             $"parents={FormatXespParentPreview(group)}";
+                AnsiConsole.MarkupLine(Markup.Escape(detail));
+            }
             if (s.RecoverableGapCandidates > 0 || s.PromotedGapRawRecords > 0 ||
                 s.PromotedGapRuntimeDialogue > 0 || s.PromotedGapPlacedRefs > 0)
             {
@@ -545,6 +627,118 @@ public static class DmpToEsmCommand
             }
         }
         return set;
+    }
+
+    /// <summary>
+    ///     Strict parser for repeatable exact-record diagnostics. Unlike the older
+    ///     skip-worldspace helper, malformed values throw so a bisect can never silently
+    ///     run against a different artifact than requested.
+    /// </summary>
+    internal static ImmutableHashSet<uint> ParseDiagnosticFormIdSet(IEnumerable<string> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        var result = ImmutableHashSet.CreateBuilder<uint>();
+        foreach (var raw in values)
+        {
+            result.Add(ParseDiagnosticFormId(raw));
+        }
+
+        return result.ToImmutable();
+    }
+
+    /// <summary>Parse repeatable <c>FormID:SIG[,SIG...]</c> retention directives.</summary>
+    internal static ImmutableDictionary<uint, ImmutableHashSet<string>> ParseDiagnosticSubrecordRetentions(
+        IEnumerable<string> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        var byFormId = new Dictionary<uint, ImmutableHashSet<string>.Builder>();
+        foreach (var raw in values)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                throw new FormatException("Diagnostic master-subrecord directive cannot be empty.");
+            }
+
+            var colon = raw.IndexOf(':');
+            if (colon <= 0 || colon != raw.LastIndexOf(':') || colon == raw.Length - 1)
+            {
+                throw new FormatException(
+                    $"Invalid diagnostic master-subrecord directive '{raw}'; expected FormID:SIG[,SIG...].");
+            }
+
+            var formId = ParseDiagnosticFormId(raw[..colon]);
+            var signatureTokens = raw[(colon + 1)..].Split(',', StringSplitOptions.None);
+            if (!byFormId.TryGetValue(formId, out var signatures))
+            {
+                signatures = ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
+                byFormId.Add(formId, signatures);
+            }
+
+            foreach (var token in signatureTokens)
+            {
+                var signature = token.Trim().ToUpperInvariant();
+                if (signature.Length != 4 || signature.Any(static character =>
+                        character is not (>= 'A' and <= 'Z')
+                        and not (>= '0' and <= '9')
+                        and not '_'))
+                {
+                    throw new FormatException(
+                        $"Invalid subrecord signature '{token}' for 0x{formId:X8}; " +
+                        "expected four uppercase letters, digits, or underscores.");
+                }
+
+                signatures.Add(signature);
+            }
+        }
+
+        return byFormId.ToImmutableDictionary(
+            pair => pair.Key,
+            pair => pair.Value.ToImmutable());
+    }
+
+    private static uint ParseDiagnosticFormId(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            throw new FormatException("Diagnostic FormID cannot be empty.");
+        }
+
+        var token = raw.Trim();
+        if (token.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            token = token[2..];
+        }
+
+        if (token.Length is < 1 or > 8
+            || !uint.TryParse(token, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var formId)
+            || formId == 0)
+        {
+            throw new FormatException(
+                $"Invalid diagnostic FormID '{raw}'; expected a nonzero hexadecimal FormID.");
+        }
+
+        return formId;
+    }
+
+    private static string FormatXespParentPreview(IEnumerable<PlannerXespObservation> observations)
+    {
+        const int previewLimit = 16;
+        var parents = observations
+            .Select(observation => (observation.SourceParentFormId, observation.FinalParentFormId))
+            .Distinct()
+            .OrderBy(pair => pair.SourceParentFormId)
+            .ThenBy(pair => pair.FinalParentFormId)
+            .ToList();
+        var preview = string.Join(", ", parents.Take(previewLimit).Select(pair =>
+            pair.SourceParentFormId == pair.FinalParentFormId
+                ? $"0x{pair.SourceParentFormId:X8}"
+                : $"0x{pair.SourceParentFormId:X8}->0x{pair.FinalParentFormId:X8}"));
+
+        return parents.Count > previewLimit
+            ? $"{preview}, ... (+{parents.Count - previewLimit:N0} more)"
+            : preview;
     }
 
     /// <summary>

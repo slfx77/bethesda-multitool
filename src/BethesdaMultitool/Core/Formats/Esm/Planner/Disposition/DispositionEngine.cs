@@ -16,6 +16,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.Disposition;
 /// </remarks>
 public sealed class DispositionEngine
 {
+    private readonly List<IDispositionPolicy> _firstPriority = [];
     private readonly Dictionary<string, List<IDispositionPolicy>> _byType =
         new(StringComparer.Ordinal);
     private readonly List<IDispositionPolicy> _fallback = [];
@@ -26,6 +27,12 @@ public sealed class DispositionEngine
 
         foreach (var policy in policies)
         {
+            if (policy is IFirstPriorityDispositionPolicy)
+            {
+                _firstPriority.Add(policy);
+                continue;
+            }
+
             if (policy.RecordTypes.Count == 0)
             {
                 _fallback.Add(policy);
@@ -73,6 +80,15 @@ public sealed class DispositionEngine
 
     private DispositionDecision? DecideOne(CatalogEntry entry)
     {
+        foreach (var policy in _firstPriority)
+        {
+            var decision = policy.Decide(entry);
+            if (decision is not null)
+            {
+                return decision;
+            }
+        }
+
         if (_byType.TryGetValue(entry.Type, out var typed))
         {
             foreach (var policy in typed)

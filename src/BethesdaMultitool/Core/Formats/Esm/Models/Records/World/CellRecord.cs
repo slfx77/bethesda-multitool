@@ -95,6 +95,14 @@ public record CellRecord
     /// </summary>
     public LandHeightmap? Heightmap { get; set; }
 
+    /// <summary>
+    ///     VHGT parsed directly from an authored/captured LAND record before runtime terrain
+    ///     enrichment replaces <see cref="Heightmap" /> with an ExactHeights mesh projection.
+    ///     Conversion planning uses this provenance-preserving copy before considering a
+    ///     runtime mesh fallback.
+    /// </summary>
+    public LandHeightmap? CapturedLandHeightmap { get; set; }
+
     /// <summary>Associated LAND visual subrecords (VCLR/VTEX/BTXT/ATXT/VTXT), if found.</summary>
     // Settable (like Heightmap) so the Fallout 76 terrain injector can attach BTD-derived land-texture
     // data to an already-parsed exterior cell (FO76 keeps terrain in an external .btd, not the CELL).

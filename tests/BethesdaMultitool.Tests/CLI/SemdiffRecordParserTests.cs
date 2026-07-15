@@ -1,6 +1,7 @@
 using System.Text;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.CLI.Formatters;
+using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.BinaryTestWriter;
 using static BethesdaMultitool.Tests.Helpers.EsmTestRecordBuilder;
@@ -84,6 +85,40 @@ public class SemdiffRecordParserTests
         Assert.Equal("DATA", diffs[0].Signature);
         Assert.NotNull(diffs[0].DataA);
         Assert.NotNull(diffs[0].DataB);
+    }
+
+    [Fact]
+    public void NpcDnam_DifferentSkillBytes_AreDisplayedAsDifferentSchemaFields()
+    {
+        var masterDnam = new byte[]
+        {
+            0x0B, 0x0E, 0x55, 0x0F, 0x0F, 0x0B, 0x57, 0x0B, 0x0B, 0x59, 0x13, 0x0B, 0x0D, 0x0D,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        };
+        var protoDnam = new byte[]
+        {
+            0x0F, 0x0E, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x5A, 0x5A, 0x0F, 0x0F, 0x0F, 0x58, 0x0F,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        };
+        var schema = Assert.IsType<SubrecordSchema>(
+            SubrecordSchemaRegistry.GetSchema("DNAM", "NPC_", 28));
+
+        var masterFields = SemdiffFieldFormatter.DecodeSchemaFields(masterDnam, schema, false);
+        var protoFields = SemdiffFieldFormatter.DecodeSchemaFields(protoDnam, schema, false);
+
+        Assert.NotEqual(masterFields["SkillBaseValues"], protoFields["SkillBaseValues"]);
+        Assert.Equal(masterFields["SkillOffsets"], protoFields["SkillOffsets"]);
+
+        var master = new SemdiffTypes.ParsedRecord("NPC_", 0x0012795D, 0, 0,
+            [new SemdiffTypes.ParsedSubrecord("DNAM", masterDnam, 24)]);
+        var prototype = new SemdiffTypes.ParsedRecord("NPC_", 0x0012795D, 0, 0,
+            [new SemdiffTypes.ParsedSubrecord("DNAM", protoDnam, 24)]);
+        var dnamDiff = Assert.Single(
+            SemdiffRecordParser.CompareRecordFields(master, prototype, false, false));
+
+        Assert.Equal("DNAM", dnamDiff.Signature);
+        Assert.Equal(masterDnam, dnamDiff.DataA);
+        Assert.Equal(protoDnam, dnamDiff.DataB);
     }
 
     #endregion

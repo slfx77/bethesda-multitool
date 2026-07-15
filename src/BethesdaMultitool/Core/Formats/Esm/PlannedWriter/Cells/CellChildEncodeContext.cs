@@ -22,7 +22,8 @@ internal sealed record CellChildEncodeContext(
     ConversionPipelineStats? Stats,
     MasterRecordIndex? MasterIndex,
     IReadOnlySet<uint> MasterRefFormIds,
-    IReadOnlyDictionary<uint, string>? DmpBaseTypes)
+    IReadOnlyDictionary<uint, string>? DmpBaseTypes,
+    IReadOnlyDictionary<uint, PlannerXespParentClassifier.Resolution> XespParentIndex)
 {
     /// <summary>
     ///     Resolve a placed ref's base record signature (e.g. "CONT", "WEAP"). The final

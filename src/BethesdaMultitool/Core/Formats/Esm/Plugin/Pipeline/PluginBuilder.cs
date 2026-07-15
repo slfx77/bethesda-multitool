@@ -290,6 +290,7 @@ public sealed class PluginBuilder
             var pcEsmBytes = await File.ReadAllBytesAsync(inputs.PcEsmPath, ct);
             var (pcRecordsList, pcGrupHeaders) = EsmParser.EnumerateRecordsWithGrups(pcEsmBytes);
             var masterIndex = MasterRecordIndex.Build(pcRecordsList, pcGrupHeaders);
+            var masterDialogueIndex = MasterDialogueIndex.Build(pcRecordsList, pcGrupHeaders);
             var pcRecordsByFormId = masterIndex.RecordsByFormId;
 
             // Populate the validation set used by post-encode FormID checks (e.g. SCRI
@@ -553,6 +554,15 @@ public sealed class PluginBuilder
             // column (one row per voice file = one response number) supplies the missing line
             // so the engine emits real dialog instead of the placeholder sentinel. Applied
             // in-place to dmpRecords.Dialogues before encoding.
+            var duplicateDialogueInfos = DialogueCombinePlanner.DeduplicateInPlace(dmpRecords.Dialogues);
+            if (duplicateDialogueInfos > 0)
+            {
+                _sink.Info("DialogueTextBackfill",
+                    $"Collapsed {duplicateDialogueInfos:N0} duplicate INFO capture(s) before CSV selection " +
+                    "so direct DMP text remains authoritative.",
+                    code: "dialog.info-dedup");
+            }
+
             if (inputs.Options.DialogueTextOverridesCsvPaths.Count > 0)
             {
                 DialogueTextBackfill.ApplyFromCsvs(
@@ -622,14 +632,38 @@ public sealed class PluginBuilder
                 dialogAdditionalValidFormIds = dialogAdditionalValidFormIds.Concat(_emitPlan.EmittedFormIds);
             }
 
-            var dialogResult = DialogGrupBuilder.BuildDialogSection(
-                dmpRecords.DialogTopics, dmpRecords.Dialogues, classifier, allocator,
-                pcRecordsByFormId.Keys, pcRecordsByFormId, stats, _sink,
-                remapTable: _newRecordSourceToAllocated,
-                additionalValidFormIds: dialogAdditionalValidFormIds,
-                voiceTypeEditorIdsByFormId: voiceTypeEditorIdsByFormId,
-                npcVoiceTypeByNpcFormId: npcVoiceTypeByNpcFormId,
-                questEditorIdsByFormId: questEditorIdsByFormId);
+            DialogSectionResult dialogResult;
+            if (inputs.Options.SkipRecordTypes.Contains("DIAL"))
+            {
+                foreach (var _ in dmpRecords.DialogTopics)
+                {
+                    stats.IncrementSkipped("DIAL");
+                }
+
+                foreach (var _ in dmpRecords.Dialogues)
+                {
+                    stats.IncrementSkipped("INFO");
+                }
+
+                dialogResult = new DialogSectionResult([], null);
+                _sink.Info("Building dialog section",
+                    "Diagnostic --skip-record-type DIAL suppressed the complete nested DIAL/INFO section.",
+                    code: "dialog.skip-type");
+            }
+            else
+            {
+                dialogResult = DialogGrupBuilder.BuildDialogSection(
+                    dmpRecords.DialogTopics, dmpRecords.Dialogues, classifier, allocator,
+                    pcRecordsByFormId.Keys, pcRecordsByFormId, stats, _sink,
+                    remapTable: _newRecordSourceToAllocated,
+                    additionalValidFormIds: dialogAdditionalValidFormIds,
+                    voiceTypeEditorIdsByFormId: voiceTypeEditorIdsByFormId,
+                    npcVoiceTypeByNpcFormId: npcVoiceTypeByNpcFormId,
+                    questEditorIdsByFormId: questEditorIdsByFormId,
+                    masterDialogueIndex: masterDialogueIndex,
+                    diagnosticKeepMasterFormIds: inputs.Options.DiagnosticKeepMasterFormIds,
+                    diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords);
+            }
             if (dialogResult.DialogSection.Length > 0)
             {
                 grupBytesByType["DIAL"] = dialogResult.DialogSection;
@@ -1287,6 +1321,8 @@ public sealed class PluginBuilder
         var dispositionEngine = new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.DispositionEngine(
             new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.IDispositionPolicy[]
             {
+                new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.DiagnosticKeepMasterDispositionPolicy(
+                    inputs.Options.DiagnosticKeepMasterFormIds),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.ScriptDispositionPolicy(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.RuntimeStatePolicy(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies.DefaultDispositionPolicy(),
@@ -1365,7 +1401,11 @@ public sealed class PluginBuilder
                 EnableRefrBaseEditorIdRemap = inputs.Options.EnableRefrBaseEditorIdRemap,
                 DiagnosticSkipCellNewRefs = inputs.Options.DiagnosticSkipCellNewRefs,
                 DiagnosticSkipCellNavm = inputs.Options.DiagnosticSkipCellNavm,
-            });
+            },
+            diagnosticKeepMasterFormIds: inputs.Options.DiagnosticKeepMasterFormIds,
+            diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords);
+
+        ReportPlannerDiagnostics(_emitPlan, _sink);
 
         _planWriter = new BethesdaMultitool.Core.Formats.Esm.PlannedWriter.PlanWriter(registry);
 
@@ -1375,6 +1415,30 @@ public sealed class PluginBuilder
             $"{_emitPlan.CellsByFormId.Count:N0} cell plan(s), " +
             $"{_emitPlan.SourceToEmittedFormId.Count:N0} FormID allocation(s).",
             code: "planner.built");
+    }
+
+    internal static void ReportPlannerDiagnostics(
+        BethesdaMultitool.Core.Formats.Esm.Planner.EmitPlan plan,
+        IConversionProgressSink sink)
+    {
+        foreach (var diagnostic in plan.Diagnostics)
+        {
+            switch (diagnostic.Kind)
+            {
+                case BethesdaMultitool.Core.Formats.Esm.Planner.PlanDiagnosticKind.Warning:
+                    sink.Warn(diagnostic.Phase, diagnostic.Message,
+                        diagnostic.RecordType, diagnostic.FormId, diagnostic.Code);
+                    break;
+                case BethesdaMultitool.Core.Formats.Esm.Planner.PlanDiagnosticKind.Decision:
+                    sink.Decision(diagnostic.Phase, diagnostic.Message,
+                        diagnostic.RecordType, diagnostic.FormId, diagnostic.Code);
+                    break;
+                default:
+                    sink.Info(diagnostic.Phase, diagnostic.Message,
+                        diagnostic.RecordType, diagnostic.FormId, diagnostic.Code);
+                    break;
+            }
+        }
     }
 
     private Dictionary<uint, NewWorldspaceEntry> PreEncodeNewWorldspacesWithCells(
@@ -5869,4 +5933,3 @@ public sealed class PluginBuilder
         };
     }
 }
-

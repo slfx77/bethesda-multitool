@@ -128,7 +128,7 @@ internal static class SemdiffFieldFormatter
         }
     }
 
-    private static Dictionary<string, string> DecodeSchemaFields(byte[] data, SubrecordSchema schema, bool bigEndian)
+    internal static Dictionary<string, string> DecodeSchemaFields(byte[] data, SubrecordSchema schema, bool bigEndian)
     {
         var fields = new Dictionary<string, string>();
         var offset = 0;

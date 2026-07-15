@@ -72,6 +72,7 @@ internal static class VerdictPlacedRefEncoder
         var subs = RefrEncoder.EncodeNewPlacedReference(
             placed, context.ValidFormIds, context.Plan.SourceToEmittedFormId,
             context.ResolveBaseRecordType(originalBaseFormId, placed.BaseFormId));
+        PlannedPlacedRefEncoder.RecordEnableParentOutcome(placed, subs.Subrecords, context);
         if (subs.Subrecords.Count == 0)
         {
             return null;
@@ -87,6 +88,10 @@ internal static class VerdictPlacedRefEncoder
             10 => PlannedPlacedRefEncoder.VisibleWhenDistantFlag,
             _ => 0u,
         };
+        if (placed.IsInitiallyDisabled)
+        {
+            flags |= PlannedPlacedRefEncoder.InitiallyDisabledFlag;
+        }
 
         return PluginRecordByteBuilder.BuildNewRecordBytes(
             child.Type, child.FormId, flags, subs.Subrecords);

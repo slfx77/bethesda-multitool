@@ -36,6 +36,28 @@ public sealed record SubrecordMergePolicy
     public required IReadOnlySet<string> DoNotAppendFromDmp { get; init; }
 
     /// <summary>
+    ///     Return an immutable-by-construction extension for an exact-record diagnostic.
+    ///     Every retained signature is also blocked from the DMP append pass; retaining it
+    ///     in only the positional pass would create a duplicate subrecord at record end.
+    /// </summary>
+    public SubrecordMergePolicy WithAdditionalMasterRetention(IEnumerable<string> signatures)
+    {
+        ArgumentNullException.ThrowIfNull(signatures);
+
+        var additional = signatures.ToHashSet(StringComparer.Ordinal);
+        var retained = new HashSet<string>(RetainFromEsm, StringComparer.Ordinal);
+        retained.UnionWith(additional);
+        var doNotAppend = new HashSet<string>(DoNotAppendFromDmp, StringComparer.Ordinal);
+        doNotAppend.UnionWith(additional);
+
+        return this with
+        {
+            RetainFromEsm = retained,
+            DoNotAppendFromDmp = doNotAppend,
+        };
+    }
+
+    /// <summary>
     ///     Builds the v1 default policy mapping per-record-type ESM-retain rules.
     ///     For texture-mod-related records, MODT/MODS/MO2T/MO3T/MO4T/MO2S/MO3S/MO4S are retained
     ///     from the source ESM because the DMP doesn't carry PC-format texture hashes.

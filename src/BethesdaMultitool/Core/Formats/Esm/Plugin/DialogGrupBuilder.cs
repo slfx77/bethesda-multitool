@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
@@ -78,11 +79,47 @@ internal static class DialogGrupBuilder
         IEnumerable<uint>? additionalValidFormIds = null,
         IReadOnlyDictionary<uint, string>? voiceTypeEditorIdsByFormId = null,
         IReadOnlyDictionary<uint, uint>? npcVoiceTypeByNpcFormId = null,
-        IReadOnlyDictionary<uint, string>? questEditorIdsByFormId = null)
+        IReadOnlyDictionary<uint, string>? questEditorIdsByFormId = null,
+        MasterDialogueIndex? masterDialogueIndex = null,
+        IReadOnlySet<uint>? diagnosticKeepMasterFormIds = null,
+        IReadOnlyDictionary<uint, ImmutableHashSet<string>>? diagnosticRetainMasterSubrecords = null)
     {
-        var newTopics = topics.Where(t => !classifier.IsOverride(t.FormId)).ToList();
-        var newInfos = infos.Where(i => !classifier.IsOverride(i.FormId)).ToList();
-        if (newTopics.Count == 0 && newInfos.Count == 0)
+        masterDialogueIndex ??= MasterDialogueIndex.BuildFromRecordOrder(masterRecordsByFormId.Values);
+        var combinePlan = DialogueCombinePlanner.Build(
+            topics, infos, classifier, masterDialogueIndex, masterFormIds,
+            additionalValidFormIds, remapTable);
+        var newTopics = combinePlan.NewTopics.ToList();
+        var newInfos = combinePlan.NewInfos.ToList();
+        var sharedInfoOverlays = combinePlan.SharedInfoOverlays
+            .Where(overlay => diagnosticKeepMasterFormIds?.Contains(overlay.PrototypeInfo.FormId) != true)
+            .Where(overlay => diagnosticKeepMasterFormIds?.Contains(overlay.MasterInfo.ParentDialFormId) != true)
+            .ToList();
+        if (diagnosticKeepMasterFormIds is { Count: > 0 })
+        {
+            var candidateOrphanTopics = newInfos
+                .Where(info => diagnosticKeepMasterFormIds.Contains(info.FormId)
+                               || (info.TopicFormId is { } topicId
+                                   && diagnosticKeepMasterFormIds.Contains(topicId))
+                               || (info.AudioSourceInfoFormId is { } sourceId
+                                   && diagnosticKeepMasterFormIds.Contains(sourceId))
+                               || (info.AudioSourceTopicFormId is { } sourceTopicId
+                                   && diagnosticKeepMasterFormIds.Contains(sourceTopicId)))
+                .Select(static info => info.TopicFormId.GetValueOrDefault())
+                .Where(static topicId => topicId != 0)
+                .ToHashSet();
+            newInfos.RemoveAll(info =>
+                diagnosticKeepMasterFormIds.Contains(info.FormId)
+                || (info.TopicFormId is { } topicId && diagnosticKeepMasterFormIds.Contains(topicId))
+                || (info.AudioSourceInfoFormId is { } sourceId
+                    && diagnosticKeepMasterFormIds.Contains(sourceId))
+                || (info.AudioSourceTopicFormId is { } sourceTopicId
+                    && diagnosticKeepMasterFormIds.Contains(sourceTopicId)));
+            newTopics.RemoveAll(topic =>
+                candidateOrphanTopics.Contains(topic.FormId)
+                && newInfos.All(info => info.TopicFormId != topic.FormId));
+        }
+
+        if (newTopics.Count == 0 && newInfos.Count == 0 && sharedInfoOverlays.Count == 0)
         {
             return new DialogSectionResult([], null);
         }
@@ -122,7 +159,8 @@ internal static class DialogGrupBuilder
         var synthesizedGreetings = GreetingEntrySynthesizer.Synthesize(
             newTopics, newInfos, dialFormIdMap,
             greetingSurvivesGates: info =>
-                HasSpeakerBindingCondition(info) && HasRenderableResponse(info));
+                HasSpeakerBindingCondition(info) && HasRenderableResponse(info),
+            speakersWithRetailGreeting: combinePlan.RetailCoveredSpeakers);
         if (synthesizedGreetings.Count > 0)
         {
             newInfos.AddRange(synthesizedGreetings);
@@ -181,6 +219,12 @@ internal static class DialogGrupBuilder
             }
         }
 
+        var overlaysByMasterDial = sharedInfoOverlays
+            .GroupBy(static overlay => overlay.MasterInfo.ParentDialFormId)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.OrderBy(overlay => overlay.MasterInfo.FileOrder).ToList());
+
         // INFO-to-INFO references (PNAM and TCFU) need the destination INFO's emitted
         // FormID before any INFO is sanitized. Allocate surviving INFOs up front so sibling
         // links remap source runtime IDs to the actual plugin IDs instead of being dropped.
@@ -231,7 +275,7 @@ internal static class DialogGrupBuilder
                 dialEditorIdByFormId[newDialId] = topic.EditorId;
             }
         }
-        foreach (var masterDialId in infosByMasterDial.Keys)
+        foreach (var masterDialId in infosByMasterDial.Keys.Concat(overlaysByMasterDial.Keys).Distinct())
         {
             if (!masterRecordsByFormId.TryGetValue(masterDialId, out var masterRec))
             {
@@ -245,8 +289,13 @@ internal static class DialogGrupBuilder
             }
         }
 
+        var topLevelDialFormIds = newTopics
+            .Where(static topic => topic.IsTopLevel)
+            .Select(topic => dialFormIdMap[topic.FormId])
+            .ToHashSet();
         var synthesizedReturnLinks = ApplyRootReturnTopicLinks(
-            infosByEmittedDial, infosByMasterDial, dialEditorIdByFormId, exitTopicResolver);
+            infosByEmittedDial, infosByMasterDial, dialEditorIdByFormId,
+            topLevelDialFormIds, exitTopicResolver);
 
         using var stream = new MemoryStream();
         var topLabel = "DIAL"u8.ToArray();
@@ -255,6 +304,8 @@ internal static class DialogGrupBuilder
         var emittedDials = 0;
         var emittedMasterDialAnchors = 0;
         var emittedInfos = 0;
+        var emittedSharedInfoOverlays = 0;
+        var overlaidResponseTexts = 0;
         var sanitizedFieldCount = 0;
         var droppedConditions = 0;
         var remappedCtdaParameters = 0;
@@ -340,7 +391,7 @@ internal static class DialogGrupBuilder
                 }
 
                 CollectAudioBindings(
-                    audioBindings, patched, newInfoId, newDialId,
+                    audioBindings, info, patched, newInfoId, newDialId,
                     dialEditorIdByFormId, voiceTypeEditorIdsByFormId,
                     npcVoiceTypeByNpcFormId, masterRecordsByFormId,
                     questEditorIdsByFormId);
@@ -350,13 +401,19 @@ internal static class DialogGrupBuilder
         }
 
         var extendedAnchorQstiCount = 0;
-        foreach (var (masterDialId, infosForDial) in infosByMasterDial.OrderBy(kv => kv.Key))
+        var masterDialIds = infosByMasterDial.Keys
+            .Concat(overlaysByMasterDial.Keys)
+            .Distinct()
+            .OrderBy(static formId => formId);
+        foreach (var masterDialId in masterDialIds)
         {
-            if (infosForDial.Count == 0 ||
+            var infosForDial = infosByMasterDial.GetValueOrDefault(masterDialId) ?? [];
+            var overlaysForDial = overlaysByMasterDial.GetValueOrDefault(masterDialId) ?? [];
+            if ((infosForDial.Count == 0 && overlaysForDial.Count == 0) ||
                 !masterRecordsByFormId.TryGetValue(masterDialId, out var masterDialRecord) ||
                 masterDialRecord.Header.Signature != "DIAL")
             {
-                droppedUnavailableMasterDialInfos += infosForDial.Count;
+                droppedUnavailableMasterDialInfos += infosForDial.Count + overlaysForDial.Count;
                 continue;
             }
 
@@ -366,7 +423,12 @@ internal static class DialogGrupBuilder
             // QSTI, the engine never checks the new quest's INFOs against the speaker, so
             // every new NPC's master-topic dialogue silently fails. Reconstruct the master
             // record with QSTI appended; everything else stays verbatim.
-            var newQstis = CollectNewAnchorQstis(infosForDial, masterDialRecord, validFormIds, remapTable);
+            var retainMasterQstis = diagnosticRetainMasterSubrecords
+                ?.GetValueOrDefault(masterDialId)
+                ?.Contains("QSTI") == true;
+            var newQstis = retainMasterQstis
+                ? []
+                : CollectNewAnchorQstis(infosForDial, masterDialRecord, validFormIds, remapTable);
             extendedAnchorQstiCount += newQstis.Count;
             stream.Write(ReconstructDialWithExtraQstis(masterDialRecord, newQstis));
             stats.IncrementEmitted("DIAL");
@@ -376,6 +438,42 @@ internal static class DialogGrupBuilder
             var childLabel = new byte[4];
             BinaryPrimitives.WriteUInt32LittleEndian(childLabel, masterDialId);
             var childrenPos = WriteGrupHeader(stream, childLabel, 7);
+
+            // Shared INFOs are written in retail file order before plugin-new INFO chains.
+            // Only NAM1 payloads are replaced; all scripts, conditions, response metadata,
+            // links, unknown subrecords, and the retail FormID remain byte-for-byte master.
+            foreach (var overlay in overlaysForDial)
+            {
+                var overlayResult = DialogueInfoOverlayWriter.Build(
+                    overlay.MasterInfo.Record, overlay.PrototypeInfo,
+                    diagnosticRetainMasterSubrecords?.GetValueOrDefault(
+                        overlay.MasterInfo.Record.Header.FormId));
+                stream.Write(overlayResult.RecordBytes);
+                stats.IncrementEmitted("INFO");
+                stats.OverridesEmitted++;
+                emittedInfos++;
+                emittedSharedInfoOverlays++;
+                overlaidResponseTexts += overlayResult.ReplacedTextCount;
+
+                var masterScope = DialogueCombinePlanner.ResolveMasterScope(
+                    overlay.MasterInfo, overlay.PrototypeInfo);
+                var bindingInfo = overlay.PrototypeInfo with
+                {
+                    FormId = overlay.MasterInfo.Record.Header.FormId,
+                    TopicFormId = masterDialId,
+                    QuestFormId = masterScope.QuestFormId,
+                    SpeakerFormId = masterScope.SpeakerFormId,
+                    Responses = overlayResult.EmittedResponses.ToList(),
+                    AudioSourceInfoFormId = overlay.PrototypeInfo.FormId,
+                    AudioSourceResponseNumbers = overlayResult.SourceResponseNumbers.ToList()
+                };
+                CollectAudioBindings(
+                    audioBindings, bindingInfo, bindingInfo,
+                    overlay.MasterInfo.Record.Header.FormId, masterDialId,
+                    dialEditorIdByFormId, voiceTypeEditorIdsByFormId,
+                    npcVoiceTypeByNpcFormId, masterRecordsByFormId,
+                    questEditorIdsByFormId, isRetailInfoOverlay: true);
+            }
 
             // Same per-quest PNAM chain construction as the new-DIAL loop above.
             var lastEmittedInfoByQuest = new Dictionary<uint, uint>();
@@ -461,7 +559,7 @@ internal static class DialogGrupBuilder
                 }
 
                 CollectAudioBindings(
-                    audioBindings, patched, newInfoId, masterDialId,
+                    audioBindings, info, patched, newInfoId, masterDialId,
                     dialEditorIdByFormId, voiceTypeEditorIdsByFormId,
                     npcVoiceTypeByNpcFormId, masterRecordsByFormId,
                     questEditorIdsByFormId);
@@ -485,7 +583,12 @@ internal static class DialogGrupBuilder
 
         sink.Info("Building dialog section",
             $"Emitted {emittedDials:N0} new DIAL + {emittedMasterDialAnchors:N0} master DIAL anchor(s) " +
-            $"+ {emittedInfos:N0} new INFO record(s). " +
+            $"+ {emittedInfos - emittedSharedInfoOverlays:N0} new INFO record(s) + " +
+            $"{emittedSharedInfoOverlays:N0} retail INFO overlay(s) " +
+            $"({overlaidResponseTexts:N0} NAM1 replacement(s); all other retail bytes preserved). " +
+            $"Collapsed {combinePlan.DuplicateInfosCollapsed:N0} duplicate INFO capture(s), rehomed " +
+            $"{combinePlan.CutInfosRehomed:N0} safe cut INFO(s), and suppressed " +
+            $"{combinePlan.SystemInfosSuppressed:N0} unsafe/colliding system INFO(s). " +
             $"Extended {extendedAnchorQstiCount:N0} master-DIAL QSTI binding(s) so the engine knows " +
             "new quests speak master topics. " +
             $"Dropped {droppedUnavailableMasterDialInfos:N0} INFO(s) with unavailable master-DIAL TPIC, " +
@@ -690,7 +793,7 @@ internal static class DialogGrupBuilder
 
                 var isGoodbye = false;
                 var hasTclt = false;
-                uint? getIsIdSpeaker = null;
+                var getIsIdSpeakers = new HashSet<uint>();
                 var conditionCount = 0;
                 foreach (var sub in record.Subrecords)
                 {
@@ -704,10 +807,10 @@ internal static class DialogGrupBuilder
                             break;
                         case "CTDA" when sub.Data.Length >= 16:
                             conditionCount++;
-                            var functionIndex = BinaryPrimitives.ReadUInt16LittleEndian(sub.Data.AsSpan(8, 2));
-                            if (functionIndex == GetIsIdFunctionIndex)
+                            if (DialogueSpeakerBinding.IsPositiveSubjectGetIsId(sub.Data))
                             {
-                                getIsIdSpeaker = BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(12, 4));
+                                getIsIdSpeakers.Add(
+                                    BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(12, 4)));
                             }
 
                             break;
@@ -720,11 +823,25 @@ internal static class DialogGrupBuilder
                     index[currentDial] = conditions;
                 }
 
-                conditions.Record(
-                    speaker: getIsIdSpeaker,
-                    unconditioned: conditionCount == 0,
-                    goodbye: isGoodbye,
-                    terminating: !hasTclt);
+                if (getIsIdSpeakers.Count == 0)
+                {
+                    conditions.Record(
+                        speaker: null,
+                        unconditioned: conditionCount == 0,
+                        goodbye: isGoodbye,
+                        terminating: !hasTclt);
+                }
+                else
+                {
+                    foreach (var speaker in getIsIdSpeakers)
+                    {
+                        conditions.Record(
+                            speaker,
+                            unconditioned: false,
+                            goodbye: isGoodbye,
+                            terminating: !hasTclt);
+                    }
+                }
             }
 
             return index;
@@ -781,6 +898,7 @@ internal static class DialogGrupBuilder
         Dictionary<uint, List<DialogueRecord>> infosByEmittedDial,
         Dictionary<uint, List<DialogueRecord>> infosByMasterDial,
         Dictionary<uint, string> dialEditorIdByFormId,
+        IReadOnlySet<uint> topLevelDialFormIds,
         ExitTopicResolver? exitTopicResolver = null)
     {
         var rootLinksBySpeaker = new Dictionary<(uint Quest, uint? Speaker), List<uint>>();
@@ -814,6 +932,11 @@ internal static class DialogGrupBuilder
         var added = 0;
         foreach (var (dialId, infosForDial) in EnumerateInfoGroups(infosByEmittedDial, infosByMasterDial))
         {
+            if (topLevelDialFormIds.Contains(dialId))
+            {
+                continue;
+            }
+
             var isGreeting = dialEditorIdByFormId.TryGetValue(dialId, out var dialEditorId)
                              && string.Equals(dialEditorId, "GREETING", StringComparison.OrdinalIgnoreCase);
             var isGoodbyeTopic = dialEditorIdByFormId.TryGetValue(dialId, out dialEditorId)
@@ -825,6 +948,7 @@ internal static class DialogGrupBuilder
                 if (isGreeting
                     || isGoodbyeTopic
                     || IsGoodbyeInfo(info)
+                    || info.IsRehomedCutDialogue
                     || info.QuestFormId is not { } questId
                     || questId == 0
                     || info.Responses.Count == 0
@@ -972,6 +1096,7 @@ internal static class DialogGrupBuilder
     /// </summary>
     private static void CollectAudioBindings(
         List<EmittedDialogueAudioBinding> bindings,
+        DialogueRecord original,
         DialogueRecord patched,
         uint allocatedInfoId,
         uint parentDialFormId,
@@ -979,7 +1104,8 @@ internal static class DialogGrupBuilder
         IReadOnlyDictionary<uint, string>? voiceTypeEditorIdsByFormId,
         IReadOnlyDictionary<uint, uint>? npcVoiceTypeByNpcFormId,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
-        IReadOnlyDictionary<uint, string>? questEditorIdsByFormId)
+        IReadOnlyDictionary<uint, string>? questEditorIdsByFormId,
+        bool isRetailInfoOverlay = false)
     {
         if (!dialEditorIdByFormId.TryGetValue(parentDialFormId, out var dialEdid)
             || string.IsNullOrEmpty(dialEdid))
@@ -1020,12 +1146,22 @@ internal static class DialogGrupBuilder
         {
             var resp = patched.Responses[i];
             var respNum = resp.ResponseNumber > 0 ? resp.ResponseNumber : (byte)(i + 1);
+            var sourceRespNum = i < original.AudioSourceResponseNumbers.Count
+                && original.AudioSourceResponseNumbers[i] != 0
+                    ? original.AudioSourceResponseNumbers[i]
+                    : respNum;
+            var sourceInfoFormId = original.AudioSourceInfoFormId is > 0
+                ? original.AudioSourceInfoFormId.Value
+                : original.FormId;
             bindings.Add(new EmittedDialogueAudioBinding
             {
                 AllocatedInfoFormId = allocatedInfoId,
+                SourceInfoFormId = sourceInfoFormId,
                 ParentDialEditorId = dialEdid,
                 VoiceTypeEditorId = voiceTypeEdid,
                 ResponseNumber = respNum,
+                SourceResponseNumber = sourceRespNum,
+                IsRetailInfoOverlay = isRetailInfoOverlay,
                 QuestEditorId = questEdid,
                 ResponseText = resp.Text
             });
@@ -1260,7 +1396,6 @@ internal static class DialogGrupBuilder
     ///     dangle for function-aware FormID params) to <see cref="ConditionSanitizer.Filter" />.
     /// </summary>
     /// <summary>FNV condition function: GetIsID (parameter 1 = base NPC/creature form).</summary>
-    private const ushort GetIsIdFunctionIndex = 72;
 
     /// <summary>FNV condition function: GetQuestVariable (quest + script variable index).</summary>
     private const ushort GetQuestVariableFunctionIndex = 79;
@@ -1286,13 +1421,7 @@ internal static class DialogGrupBuilder
             return false;
         }
 
-        if (info.SpeakerFormId is > 0)
-        {
-            return true;
-        }
-
-        return info.Conditions.Any(condition =>
-            condition.FunctionIndex == GetIsIdFunctionIndex && condition.Parameter1 != 0);
+        return DialogueSpeakerBinding.GetExactSpeaker(info) is > 0;
     }
 
     /// <summary>

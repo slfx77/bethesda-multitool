@@ -81,7 +81,8 @@ public sealed class PlanCellSectionBuilderParityTests
             FormId = 0x01000801,
             BaseFormId = 0x000ABCDF,
             RecordType = "REFR",
-            IsPersistent = true
+            IsPersistent = true,
+            IsInitiallyDisabled = true
         };
         var childPlan = new RecordPlan
         {
@@ -126,7 +127,7 @@ public sealed class PlanCellSectionBuilderParityTests
         var subs = RefrEncoder.EncodeNewPlacedReference(placed);
         Assert.NotEmpty(subs.Subrecords);
         var legacyChildBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
-            "REFR", 0x01000801u, 0x400u, subs.Subrecords); // persistent-bucket ref carries flag 0x400
+            "REFR", 0x01000801u, 0xC00u, subs.Subrecords); // persistent + initially disabled
 
         var legacyBundle = new CellOverrideBundle
         {
@@ -280,6 +281,33 @@ public sealed class PlanCellSectionBuilderParityTests
         var expectedChild = PluginRecordByteBuilder.BuildNewRecordBytes(
             "REFR", 0x01000801u, 0x400u, subs.Subrecords); // persistent-bucket ref carries flag 0x400
         Assert.Equal(BuildExpectedCellOnlySection(persistentChildren: [expectedChild]), bytes);
+    }
+
+    [Fact]
+    public void New_Placed_Ref_With_Dangling_Enable_Parent_Surfaces_Planner_Diagnostic()
+    {
+        const uint missingParent = 0xAA00DEAD;
+        var placed = new PlacedReference
+        {
+            FormId = 0x01000801,
+            BaseFormId = 0x0000001F,
+            RecordType = "REFR",
+            IsPersistent = true,
+            EnableParentFormId = missingParent
+        };
+        var stats = new ConversionPipelineStats();
+
+        var bytes = BuildSectionWithSinglePlacedRef(placed, stats: stats);
+
+        Assert.NotNull(bytes);
+        Assert.Equal(1, stats.PlannerXespObserved);
+        Assert.Equal(0, stats.PlannerXespEmitted);
+        Assert.Equal(1, stats.PlannerXespSkipped);
+        Assert.Equal([missingParent], stats.PlannerXespMissingParentFormIds);
+        Assert.Equal(1, stats.DropReasonCounts["refr.xesp-dangling"]);
+        var observation = Assert.Single(stats.PlannerXespObservations);
+        Assert.Equal(PlannerXespParentStatus.Absent, observation.ParentStatus);
+        Assert.Equal("absent-from-master-and-capture", observation.Reason);
     }
 
     [Fact]

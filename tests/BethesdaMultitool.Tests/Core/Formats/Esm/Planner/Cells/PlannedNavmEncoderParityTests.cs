@@ -34,6 +34,8 @@ public sealed class PlannedNavmEncoderParityTests
             0x01000800,
             0x01000801,
             new Dictionary<uint, uint>(),
+            new Dictionary<uint, uint>(),
+            new HashSet<uint>(),
             options);
 
         var legacySubs = NavMeshByteRewriter.Rewrite(

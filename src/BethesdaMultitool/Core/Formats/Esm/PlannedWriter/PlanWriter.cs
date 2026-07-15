@@ -120,6 +120,22 @@ public sealed class PlanWriter
                 $"Override disposition for {record.Type} 0x{record.FormId:X8} has no master record — planner contract violated.");
         }
 
+        if (record.RetainMasterSubrecordSignatures.Count > 0)
+        {
+            foreach (var signature in record.RetainMasterSubrecordSignatures)
+            {
+                if (!encoded.Subrecords.Any(subrecord =>
+                        string.Equals(subrecord.Signature, signature, StringComparison.Ordinal)))
+                {
+                    throw new InvalidOperationException(
+                        $"Diagnostic retention requested {signature} on {record.Type} 0x{record.FormId:X8}, " +
+                        "but the DMP encoder produced no such subrecord.");
+                }
+            }
+
+            policy = policy.WithAdditionalMasterRetention(record.RetainMasterSubrecordSignatures);
+        }
+
         var merge = RecordMergeEngine.Merge(record.Master, encoded, policy);
         var subrecordBytes = merge.SubrecordBytes;
 

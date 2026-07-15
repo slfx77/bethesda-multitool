@@ -26,6 +26,15 @@ public interface IDispositionPolicy
 }
 
 /// <summary>
+///     Marker for diagnostic/safety policies that must run before type-specific behavior.
+///     These policies are still pure disposition policies; the marker only fixes their
+///     ordering in <see cref="DispositionEngine" />.
+/// </summary>
+public interface IFirstPriorityDispositionPolicy : IDispositionPolicy
+{
+}
+
+/// <summary>
 ///     The output of a policy: the chosen disposition plus the rationale that gets stored
 ///     in <see cref="RecordPlan.Provenance" />.
 /// </summary>

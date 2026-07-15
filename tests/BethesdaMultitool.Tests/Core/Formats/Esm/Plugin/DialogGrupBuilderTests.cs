@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Collections.Immutable;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
@@ -37,7 +38,15 @@ public sealed class DialogGrupBuilderTests
             QuestFormId = masterQuest,
             // Master-topic INFOs must be hard speaker-bound (GetIsID) or the builder
             // drops them — unbound proto INFOs hijack vanilla NPC greetings.
-            Conditions = [new DialogueCondition { FunctionIndex = 72, Parameter1 = masterQuest }],
+            Conditions =
+            [
+                new DialogueCondition
+                {
+                    FunctionIndex = 72,
+                    Parameter1 = masterQuest,
+                    ComparisonValue = 1f
+                }
+            ],
             Responses =
             [
                 new DialogueResponse
@@ -67,6 +76,43 @@ public sealed class DialogGrupBuilderTests
         Assert.Equal(1, stats.EmittedByType["INFO"]);
         Assert.Equal(1, stats.OverridesEmitted);
         Assert.Equal(1, stats.NewRecordsEmitted);
+    }
+
+    [Fact]
+    public void BuildDialogSection_DialQstiRetentionPreventsDiagnosticAppend()
+    {
+        const uint masterDialId = 0x000000C8;
+        const uint retailQuest = 0x0001F93C;
+        const uint prototypeQuest = 0x01000123;
+        const uint speaker = 0x00104C0A;
+        var masterDial = ParsedRecord("DIAL", masterDialId,
+            new ParsedSubrecord { Signature = "EDID", Data = Encoding.Latin1.GetBytes("GREETING\0") },
+            new ParsedSubrecord { Signature = "QSTI", Data = BitConverter.GetBytes(retailQuest) });
+        var info = new DialogueRecord
+        {
+            FormId = 0x01110000,
+            TopicFormId = masterDialId,
+            QuestFormId = prototypeQuest,
+            SpeakerFormId = speaker,
+            Responses = [new DialogueResponse { Text = "Prototype line.", ResponseNumber = 1 }]
+        };
+        var retentions = ImmutableDictionary<uint, ImmutableHashSet<string>>.Empty.Add(
+            masterDialId,
+            ImmutableHashSet.Create(StringComparer.Ordinal, "QSTI"));
+
+        var result = DialogGrupBuilder.BuildDialogSection(
+            [], [info],
+            new NewVsOverrideClassifier([masterDialId, retailQuest, prototypeQuest, speaker]),
+            new FormIdAllocator(),
+            [masterDialId, retailQuest, prototypeQuest, speaker],
+            new Dictionary<uint, ParsedMainRecord> { [masterDialId] = masterDial },
+            new ConversionPipelineStats(),
+            NullConversionProgressSink.Instance,
+            diagnosticRetainMasterSubrecords: retentions);
+
+        var dialSubrecords = ReadFirstDialSubrecords(result.DialogSection);
+        var qsti = Assert.Single(dialSubrecords, subrecord => subrecord.Signature == "QSTI");
+        Assert.Equal(retailQuest, BinaryPrimitives.ReadUInt32LittleEndian(qsti.Data));
     }
 
     [Fact]
@@ -131,7 +177,15 @@ public sealed class DialogGrupBuilderTests
             TopicFormId = masterDial,
             QuestFormId = runtimeQuestId,
             // Master-topic INFOs require a hard speaker binding to survive the builder.
-            Conditions = [new DialogueCondition { FunctionIndex = 72, Parameter1 = emittedQuestId }],
+            Conditions =
+            [
+                new DialogueCondition
+                {
+                    FunctionIndex = 72,
+                    Parameter1 = emittedQuestId,
+                    ComparisonValue = 1f
+                }
+            ],
             Responses = [new DialogueResponse { Text = "Hi.", ResponseNumber = 1 }]
         };
         var remap = new Dictionary<uint, uint> { [runtimeQuestId] = emittedQuestId };
@@ -260,6 +314,14 @@ public sealed class DialogGrupBuilderTests
             EditorId = "RootTopic",
             QuestFormId = sourceQuest
         };
+        var topLevelTopic = new DialogTopicRecord
+        {
+            FormId = 0x00100011,
+            EditorId = "TopLevelCutTopic",
+            FullName = "A self-contained choice",
+            QuestFormId = sourceQuest,
+            Flags = 0x02
+        };
         var rootGreeting = new DialogueRecord
         {
             FormId = 0x00100020,
@@ -279,11 +341,28 @@ public sealed class DialogGrupBuilderTests
             SpeakerFormId = sourceSpeaker,
             Responses = [new DialogueResponse { Text = "That is all.", ResponseNumber = 1 }]
         };
+        var rehomedCut = new DialogueRecord
+        {
+            FormId = 0x00100022,
+            TopicFormId = sourceRootTopic,
+            QuestFormId = sourceQuest,
+            SpeakerFormId = sourceSpeaker,
+            IsRehomedCutDialogue = true,
+            Responses = [new DialogueResponse { Text = "A self-contained cut line.", ResponseNumber = 1 }]
+        };
+        var topLevelTerminal = new DialogueRecord
+        {
+            FormId = 0x00100023,
+            TopicFormId = topLevelTopic.FormId,
+            QuestFormId = sourceQuest,
+            SpeakerFormId = sourceSpeaker,
+            Responses = [new DialogueResponse { Text = "A promoted root terminal.", ResponseNumber = 1 }]
+        };
         var stats = new ConversionPipelineStats();
 
         var result = DialogGrupBuilder.BuildDialogSection(
-            [topic],
-            [rootGreeting, terminal],
+            [topic, topLevelTopic],
+            [rootGreeting, terminal, rehomedCut, topLevelTerminal],
             new NewVsOverrideClassifier([masterGreeting, sourceQuest, sourceSpeaker]),
             new FormIdAllocator(),
             [masterGreeting, sourceQuest, sourceSpeaker],
@@ -292,6 +371,9 @@ public sealed class DialogGrupBuilderTests
             NullConversionProgressSink.Instance);
 
         const uint emittedRootTopic = 0x01000800;
+        // One TCLT comes from the GREETING root and one from the ordinary terminal INFO.
+        // The explicitly rehomed INFO and the terminal under a promoted/top-level DIAL
+        // intentionally stay linkless instead of being stamped into the retail root ring.
         Assert.Equal(2, CountFormIdSubrecords(result.DialogSection, "TCLT", emittedRootTopic));
     }
 
@@ -708,6 +790,7 @@ public sealed class DialogGrupBuilderTests
         var data = new byte[4];
         data[2] = goodbye ? (byte)0x01 : (byte)0x00;
         var ctda = new byte[28];
+        BinaryPrimitives.WriteSingleLittleEndian(ctda.AsSpan(4, 4), 1f);
         System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(ctda.AsSpan(8, 2), 72); // GetIsID
         System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(ctda.AsSpan(12, 4), getIsIdSpeaker);
         return ParsedRecordAt("INFO", formId, offset,
@@ -728,6 +811,29 @@ public sealed class DialogGrupBuilderTests
         }
 
         return false;
+    }
+
+    private static List<ParsedSubrecord> ReadFirstDialSubrecords(ReadOnlySpan<byte> dialogSection)
+    {
+        Assert.True(dialogSection.Length >= 48);
+        Assert.True(dialogSection.Slice(24, 4).SequenceEqual("DIAL"u8));
+        var bodySize = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(dialogSection.Slice(28, 4)));
+        var body = dialogSection.Slice(48, bodySize);
+        var result = new List<ParsedSubrecord>();
+        for (var offset = 0; offset < body.Length;)
+        {
+            var signature = Encoding.Latin1.GetString(body.Slice(offset, 4));
+            var length = BinaryPrimitives.ReadUInt16LittleEndian(body.Slice(offset + 4, 2));
+            offset += 6;
+            result.Add(new ParsedSubrecord
+            {
+                Signature = signature,
+                Data = body.Slice(offset, length).ToArray()
+            });
+            offset += length;
+        }
+
+        return result;
     }
 
     private static bool ContainsFormIdSubrecord(ReadOnlySpan<byte> bytes, string signature, uint formId)

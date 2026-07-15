@@ -314,4 +314,44 @@ public sealed class CellChildAllocatorTests
         Assert.Equal(0x01000800u, result.CellSourceToEmitted[0x0010B9A5u]);
         Assert.Equal(0x01000801u, result.PlacedRefSourceToEmitted[0xAA000001u]);
     }
+
+    [Fact]
+    public void Land_Allocation_Follows_Navm_And_Uses_Separate_Cell_Keyed_Map()
+    {
+        var allocator = new CellChildAllocator(new FormIdAllocator());
+        var cell = new CellRecord
+        {
+            FormId = 0x0010B9A5,
+            WorldspaceFormId = 0x0010B96F,
+            GridX = 0,
+            GridY = 0,
+        };
+        var entry = new CellCatalogEntry
+        {
+            CellFormId = cell.FormId,
+            Source = SourceKind.DmpNew,
+            DmpModel = cell,
+        };
+        var navm = new NavMeshRecord
+        {
+            FormId = 0xAA000001,
+            CellFormId = cell.FormId,
+            RawSubrecords = [new NavMeshSubrecord("DATA", [1, 2, 3, 4])],
+        };
+        var land = new CellLandDecision
+        {
+            CellSourceFormId = cell.FormId,
+            Heightmap = new LandHeightmap { HeightDeltas = new sbyte[33 * 33] },
+            HeightSource = CellLandHeightSource.CapturedHeightmap,
+        };
+
+        var result = allocator.AllocateAll(
+            [entry], [navm], new HashSet<uint>(),
+            new Dictionary<uint, CellLandDecision> { [cell.FormId] = land });
+
+        Assert.Equal(0x01000800u, result.CellSourceToEmitted[cell.FormId]);
+        Assert.Equal(0x01000801u, result.NavmSourceToEmitted[navm.FormId]);
+        Assert.Equal(0x01000802u, result.LandByCellSourceToEmitted[cell.FormId]);
+        Assert.DoesNotContain(result.LandByCellSourceToEmitted.Keys, result.CellSourceToEmitted.Values.Contains);
+    }
 }

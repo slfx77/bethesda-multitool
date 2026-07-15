@@ -87,6 +87,8 @@ public sealed class CellSectionPlannerTests
         Assert.False(cellPlan.Context.IsInterior);
         Assert.Equal(0x0000003Cu, cellPlan.Context.WorldspaceFormId);
         Assert.Equal(4, cellPlan.Context.BlockGroupType);
+        Assert.Equal(new byte[] { 0xFF, 0xFF, 0x00, 0x00 }, cellPlan.Context.BlockLabel);
+        Assert.Equal(new byte[] { 0xFF, 0xFF, 0x00, 0x00 }, cellPlan.Context.SubblockLabel);
     }
 
     [Fact]

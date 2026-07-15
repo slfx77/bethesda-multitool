@@ -50,7 +50,8 @@ internal static class GreetingEntrySynthesizer
         IReadOnlyList<DialogTopicRecord> newTopics,
         IReadOnlyList<DialogueRecord> newInfos,
         IReadOnlyDictionary<uint, uint> dialFormIdMap,
-        Func<DialogueRecord, bool>? greetingSurvivesGates = null)
+        Func<DialogueRecord, bool>? greetingSurvivesGates = null,
+        IReadOnlySet<uint>? speakersWithRetailGreeting = null)
     {
         // Map source DIAL FormID → topic metadata and quest. The synth works in source
         // FormID space while it infers roots from LinkTo/LinkFrom, then maps the surviving
@@ -148,6 +149,15 @@ internal static class GreetingEntrySynthesizer
         var synthesized = new List<DialogueRecord>();
         foreach (var (speakerId, questId) in npcQuestPairs)
         {
+            // An exact retail GREETING for this speaker is the authoritative entry point.
+            // Adding a silent synthetic INFO ahead of it shadows retail first-meet result
+            // scripts (Sunny's tutorial walk regression). Covered prototype topic trees
+            // are promoted to normal top-level choices by DialogueCombinePlanner instead.
+            if (speakersWithRetailGreeting?.Contains(speakerId) == true)
+            {
+                continue;
+            }
+
             if (existingGreetingPairs.Contains((speakerId, questId)))
             {
                 continue;

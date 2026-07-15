@@ -1,10 +1,33 @@
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 
 public class DialogueAudioCsvAssetCollectorTests
 {
+    [Fact]
+    public async Task CollectAsync_MissingPrototypeOverlayAudioCountsVanillaFallback()
+    {
+        var binding = new EmittedDialogueAudioBinding
+        {
+            SourceInfoFormId = 0x0010A1EC,
+            SourceResponseNumber = 1,
+            AllocatedInfoFormId = 0x0010A1EC,
+            ResponseNumber = 1,
+            ParentDialEditorId = "GREETING",
+            IsRetailInfoOverlay = true
+        };
+
+        var result = await DialogueAudioCsvAssetCollector.CollectAsync(
+            new RecordCollection(), null, [], NullConversionProgressSink.Instance,
+            CancellationToken.None, audioBindings: [binding]);
+
+        Assert.Equal(1, result.RetailOverlayFallbacks);
+        Assert.Empty(result.Paths);
+    }
+
     [Fact]
     public void CollectFromCsv_AddsOggAndLipRequestsForMatchedInfoFormIds()
     {
@@ -397,6 +420,87 @@ public class DialogueAudioCsvAssetCollectorTests
         Assert.DoesNotContain(
             "sound\\voice\\falloutnv.esm\\maleadult01default\\vdialogueulysses_greeting_00001234_1.ogg",
             paths);
+    }
+
+    [Fact]
+    public void CollectFromCsv_RetailOverlay_ResolvesPrototypeAudioAndPacksToRetailSlot()
+    {
+        using var csv = new TempFile();
+        File.WriteAllText(csv.Path,
+            "File,FormID,VoiceType,Speaker,Quest,Source,Text\n" +
+            "sound\\voice\\falloutnv.esm\\femaleadult01default\\tempgreeting_0010a1ec_1.xma," +
+            "0010A1EC,femaleadult01default,Sunny Smiles,VCG02,whisper,Prototype first meet\n");
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var binding = new EmittedDialogueAudioBinding
+        {
+            SourceInfoFormId = 0x0010A1EC,
+            SourceResponseNumber = 1,
+            AllocatedInfoFormId = 0x0010A1EC,
+            ResponseNumber = 1,
+            ParentDialEditorId = "GREETING",
+            VoiceTypeEditorId = "femaleadult01default",
+            QuestEditorId = "VCG02",
+            ResponseText = "Prototype first meet",
+            IsRetailInfoOverlay = true
+        };
+
+        var result = DialogueAudioCsvAssetCollector.CollectFromCsv(
+            csv.Path,
+            new HashSet<uint> { 0x0010A1EC },
+            paths,
+            outputEspFileName: "v122.esp",
+            packPathRenames: renames,
+            bindingsBySource: DialogueAudioCsvAssetCollector.BuildAudioBindingBySourceIndex([binding]));
+
+        Assert.Equal(1, result.RowsMatched);
+        var prototypePath =
+            "sound\\voice\\falloutnv.esm\\femaleadult01default\\tempgreeting_0010a1ec_1.ogg";
+        Assert.Contains(prototypePath, paths);
+        Assert.True(renames.TryGetValue(prototypePath, out var packPath));
+        Assert.Contains("sound\\voice\\v122.esp\\femaleadult01default\\", packPath,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("0010a1ec_1.ogg", packPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void CollectFromCsv_RehomedResponse_UsesSourceSlotAndAllocatedTarget()
+    {
+        using var csv = new TempFile();
+        File.WriteAllText(csv.Path,
+            "File,FormID,Text\n" +
+            "sound\\voice\\falloutnv.esm\\femaleadult01default\\tempgreeting_0010a1ec_7.xma," +
+            "0010A1EC,Cut response\n");
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var binding = new EmittedDialogueAudioBinding
+        {
+            SourceInfoFormId = 0x0010A1EC,
+            SourceResponseNumber = 7,
+            AllocatedInfoFormId = 0x01004567,
+            ResponseNumber = 1,
+            ParentDialEditorId = "DmpCut_0010A1EC",
+            VoiceTypeEditorId = "femaleadult01default",
+            QuestEditorId = "VCG02",
+            ResponseText = "Cut response"
+        };
+        var sourceIndex = DialogueAudioCsvAssetCollector.BuildAudioBindingBySourceIndex([binding]);
+
+        var result = DialogueAudioCsvAssetCollector.CollectFromCsv(
+            csv.Path,
+            new HashSet<uint> { 0x0010A1EC },
+            paths,
+            outputEspFileName: "v122.esp",
+            packPathRenames: renames,
+            bindingsBySource: sourceIndex);
+
+        Assert.Equal(1, result.RowsMatched);
+        Assert.Contains(
+            "sound\\voice\\falloutnv.esm\\femaleadult01default\\tempgreeting_0010a1ec_7.ogg",
+            paths);
+        Assert.Contains(renames.Values, path =>
+            path.Contains("v122.esp", StringComparison.OrdinalIgnoreCase)
+            && path.Contains("00004567_1.ogg", StringComparison.OrdinalIgnoreCase));
     }
 
     private sealed class TempFile : IDisposable

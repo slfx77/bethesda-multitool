@@ -55,9 +55,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         // (different worldspaces can share the same cell grid coordinates).
         var landWorldMap = Context.ScanResult.LandToWorldspaceMap;
         var heightmapByCellFormId = new Dictionary<uint, LandHeightmap>();
+        var capturedHeightmapByCellFormId = new Dictionary<uint, LandHeightmap>();
         var visualDataByCellFormId = new Dictionary<uint, LandVisualData>();
         var terrainMeshByCellFormId = new Dictionary<uint, RuntimeTerrainMesh>();
         var heightmapByGrid = new Dictionary<(uint, int, int), LandHeightmap>();
+        var capturedHeightmapByGrid = new Dictionary<(uint, int, int), LandHeightmap>();
         var visualDataByGrid = new Dictionary<(uint, int, int), LandVisualData>();
         var terrainMeshByGrid = new Dictionary<(uint, int, int), RuntimeTerrainMesh>();
         foreach (var land in Context.ScanResult.LandRecords)
@@ -67,6 +69,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 if (land.Heightmap != null)
                 {
                     heightmapByCellFormId.TryAdd(parentCellFormId, land.Heightmap);
+                }
+
+                if (land.ParsedHeightmap != null)
+                {
+                    capturedHeightmapByCellFormId.TryAdd(parentCellFormId, land.ParsedHeightmap);
                 }
 
                 if (land.VisualData != null)
@@ -90,6 +97,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 if (land.Heightmap != null)
                 {
                     heightmapByGrid.TryAdd(gridKey, land.Heightmap);
+                }
+
+                if (land.ParsedHeightmap != null)
+                {
+                    capturedHeightmapByGrid.TryAdd(gridKey, land.ParsedHeightmap);
                 }
 
                 if (land.VisualData != null)
@@ -137,8 +149,10 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     cellWorldMap.TryGetValue(record.FormId, out var cellWs);
                     var cell = ParseCellFromAccessor(record, refrByFormId,
                         hasGrupMapping ? cellToRefrMap : null, refrOffsetIndex, refrSortedByOffset,
-                        heightmapByCellFormId, visualDataByCellFormId, terrainMeshByCellFormId,
-                        heightmapByGrid, visualDataByGrid, terrainMeshByGrid, cellWs, buffer,
+                        heightmapByCellFormId, capturedHeightmapByCellFormId,
+                        visualDataByCellFormId, terrainMeshByCellFormId,
+                        heightmapByGrid, capturedHeightmapByGrid,
+                        visualDataByGrid, terrainMeshByGrid, cellWs, buffer,
                         runtimeCellMapEntries.GetValueOrDefault(record.FormId));
                     if (cell != null)
                     {
@@ -164,9 +178,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         MergeRuntimeCells(
             cells,
             heightmapByCellFormId,
+            capturedHeightmapByCellFormId,
             visualDataByCellFormId,
             terrainMeshByCellFormId,
             heightmapByGrid,
+            capturedHeightmapByGrid,
             visualDataByGrid,
             terrainMeshByGrid,
             runtimeCellMapEntries,
@@ -299,9 +315,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         long[]? refrOffsetIndex,
         ExtractedRefrRecord[]? refrSortedByOffset,
         Dictionary<uint, LandHeightmap> heightmapByCellFormId,
+        Dictionary<uint, LandHeightmap> capturedHeightmapByCellFormId,
         Dictionary<uint, LandVisualData> visualDataByCellFormId,
         Dictionary<uint, RuntimeTerrainMesh> terrainMeshByCellFormId,
         Dictionary<(uint, int, int), LandHeightmap> heightmapByGrid,
+        Dictionary<(uint, int, int), LandHeightmap> capturedHeightmapByGrid,
         Dictionary<(uint, int, int), LandVisualData> visualDataByGrid,
         Dictionary<(uint, int, int), RuntimeTerrainMesh> terrainMeshByGrid,
         uint cellWorldspace,
@@ -421,6 +439,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         // Grid keys include worldspace to prevent cross-worldspace pollution.
         // Falls back to worldspace 0 for DMP mode (no GRUP hierarchy).
         heightmapByCellFormId.TryGetValue(record.FormId, out var heightmap);
+        capturedHeightmapByCellFormId.TryGetValue(record.FormId, out var capturedHeightmap);
         visualDataByCellFormId.TryGetValue(record.FormId, out var visualData);
         terrainMeshByCellFormId.TryGetValue(record.FormId, out var terrainMesh);
         if (gridX.HasValue && gridY.HasValue)
@@ -429,6 +448,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             if (cellWorldspace != 0 && heightmap == null)
             {
                 heightmapByGrid.TryGetValue(gridKey, out heightmap);
+            }
+
+            if (cellWorldspace != 0 && capturedHeightmap == null)
+            {
+                capturedHeightmapByGrid.TryGetValue(gridKey, out capturedHeightmap);
             }
 
             if (cellWorldspace != 0 && visualData == null)
@@ -465,6 +489,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             HasPersistentObjects = isPersistentCell || cellRefs.Exists(r => r.IsPersistent),
             IsPersistentCell = isPersistentCell,
             Heightmap = heightmap,
+            CapturedLandHeightmap = capturedHeightmap,
             LandVisualData = visualData,
             RuntimeTerrainMesh = terrainMesh,
             Offset = record.Offset,
@@ -554,9 +579,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
     private void MergeRuntimeCells(
         List<CellRecord> cells,
         Dictionary<uint, LandHeightmap> heightmapByCellFormId,
+        Dictionary<uint, LandHeightmap> capturedHeightmapByCellFormId,
         Dictionary<uint, LandVisualData> visualDataByCellFormId,
         Dictionary<uint, RuntimeTerrainMesh> terrainMeshByCellFormId,
         Dictionary<(uint, int, int), LandHeightmap> heightmapByGrid,
+        Dictionary<(uint, int, int), LandHeightmap> capturedHeightmapByGrid,
         Dictionary<(uint, int, int), LandVisualData> visualDataByGrid,
         Dictionary<(uint, int, int), RuntimeTerrainMesh> terrainMeshByGrid,
         Dictionary<uint, RuntimeCellMapEntry> runtimeCellMapEntries,
@@ -636,9 +663,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             cells[i] = AttachTerrainData(
                 cells[i],
                 heightmapByCellFormId,
+                capturedHeightmapByCellFormId,
                 visualDataByCellFormId,
                 terrainMeshByCellFormId,
                 heightmapByGrid,
+                capturedHeightmapByGrid,
                 visualDataByGrid,
                 terrainMeshByGrid);
         }
@@ -654,9 +683,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         }
 
         var heightmapByCellFormId = new Dictionary<uint, LandHeightmap>();
+        var capturedHeightmapByCellFormId = new Dictionary<uint, LandHeightmap>();
         var visualDataByCellFormId = new Dictionary<uint, LandVisualData>();
         var terrainMeshByCellFormId = new Dictionary<uint, RuntimeTerrainMesh>();
         var heightmapByGrid = new Dictionary<(uint, int, int), LandHeightmap>();
+        var capturedHeightmapByGrid = new Dictionary<(uint, int, int), LandHeightmap>();
         var visualDataByGrid = new Dictionary<(uint, int, int), LandVisualData>();
         var terrainMeshByGrid = new Dictionary<(uint, int, int), RuntimeTerrainMesh>();
 
@@ -667,6 +698,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 if (land.Heightmap != null)
                 {
                     heightmapByCellFormId.TryAdd(parentCellFormId, land.Heightmap);
+                }
+
+                if (land.ParsedHeightmap != null)
+                {
+                    capturedHeightmapByCellFormId.TryAdd(parentCellFormId, land.ParsedHeightmap);
                 }
 
                 if (land.VisualData != null)
@@ -693,6 +729,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 heightmapByGrid.TryAdd(key, land.Heightmap);
             }
 
+            if (land.ParsedHeightmap != null)
+            {
+                capturedHeightmapByGrid.TryAdd(key, land.ParsedHeightmap);
+            }
+
             if (land.VisualData != null)
             {
                 visualDataByGrid.TryAdd(key, land.VisualData);
@@ -709,9 +750,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             cells[i] = AttachTerrainData(
                 cells[i],
                 heightmapByCellFormId,
+                capturedHeightmapByCellFormId,
                 visualDataByCellFormId,
                 terrainMeshByCellFormId,
                 heightmapByGrid,
+                capturedHeightmapByGrid,
                 visualDataByGrid,
                 terrainMeshByGrid);
         }
@@ -819,6 +862,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             PlacedObjects = ResolvePlacedObjects(esm, runtime),
             LinkedCellFormIds = esm.LinkedCellFormIds.Count > 0 ? esm.LinkedCellFormIds : runtime.LinkedCellFormIds,
             Heightmap = esm.Heightmap ?? runtime.Heightmap,
+            CapturedLandHeightmap = esm.CapturedLandHeightmap ?? runtime.CapturedLandHeightmap,
             LandVisualData = esm.LandVisualData ?? runtime.LandVisualData,
             RuntimeTerrainMesh = esm.RuntimeTerrainMesh ?? runtime.RuntimeTerrainMesh,
             HasPersistentObjects = esm.HasPersistentObjects || runtime.HasPersistentObjects,
@@ -932,9 +976,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
     private static CellRecord AttachTerrainData(
         CellRecord cell,
         Dictionary<uint, LandHeightmap> heightmapByCellFormId,
+        Dictionary<uint, LandHeightmap> capturedHeightmapByCellFormId,
         Dictionary<uint, LandVisualData> visualDataByCellFormId,
         Dictionary<uint, RuntimeTerrainMesh> terrainMeshByCellFormId,
         Dictionary<(uint, int, int), LandHeightmap> heightmapByGrid,
+        Dictionary<(uint, int, int), LandHeightmap> capturedHeightmapByGrid,
         Dictionary<(uint, int, int), LandVisualData> visualDataByGrid,
         Dictionary<(uint, int, int), RuntimeTerrainMesh> terrainMeshByGrid)
     {
@@ -944,12 +990,18 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         }
 
         var heightmap = cell.Heightmap;
+        var capturedHeightmap = cell.CapturedLandHeightmap;
         var visualData = cell.LandVisualData;
         var terrainMesh = cell.RuntimeTerrainMesh;
 
         if (heightmap == null)
         {
             heightmapByCellFormId.TryGetValue(cell.FormId, out heightmap);
+        }
+
+        if (capturedHeightmap == null)
+        {
+            capturedHeightmapByCellFormId.TryGetValue(cell.FormId, out capturedHeightmap);
         }
 
         if (visualData == null)
@@ -969,6 +1021,11 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             heightmapByGrid.TryGetValue(key, out heightmap);
         }
 
+        if (worldspaceFormId != 0 && capturedHeightmap == null)
+        {
+            capturedHeightmapByGrid.TryGetValue(key, out capturedHeightmap);
+        }
+
         if (worldspaceFormId != 0 && visualData == null)
         {
             visualDataByGrid.TryGetValue(key, out visualData);
@@ -979,7 +1036,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             terrainMeshByGrid.TryGetValue(key, out terrainMesh);
         }
 
-        if (heightmap == null && visualData == null && terrainMesh == null)
+        if (heightmap == null && capturedHeightmap == null && visualData == null && terrainMesh == null)
         {
             return cell;
         }
@@ -987,6 +1044,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         return cell with
         {
             Heightmap = heightmap ?? cell.Heightmap,
+            CapturedLandHeightmap = capturedHeightmap ?? cell.CapturedLandHeightmap,
             LandVisualData = visualData ?? cell.LandVisualData,
             RuntimeTerrainMesh = terrainMesh ?? cell.RuntimeTerrainMesh
         };

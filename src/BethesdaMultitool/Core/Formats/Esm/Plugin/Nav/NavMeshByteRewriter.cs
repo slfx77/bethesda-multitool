@@ -19,7 +19,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 ///             both proto-ESM-byte-stream NAVMs (engine may have mutated the underlying pages after load)
 ///             and runtime-synth NAVMs (mid-flight obstacle / FlipTriangle state).</description></item>
 ///     </list>
-///     Other subrecords (EDID, NVVX, NVDP, NVCA) pass through verbatim. The caller is
+///     NVDP rows are remapped and sanitized against live DOOR placements when the caller
+///     supplies the door maps. Other subrecords (EDID, NVVX, NVCA) pass through verbatim. The caller is
 ///     responsible for allocating the new record-level FormID and assembling the final
 ///     record via <see cref="BethesdaMultitool.Core.Formats.Esm.Plugin.Output.PluginRecordByteBuilder.BuildNewRecordBytes" />.
 /// </summary>
@@ -33,7 +34,9 @@ internal static class NavMeshByteRewriter
     public static List<EncodedSubrecord> Rewrite(
         IReadOnlyList<NavMeshSubrecord> capturedSubrecords,
         uint newCellFormId,
-        IReadOnlyDictionary<uint, uint> navmFormIdRewrites)
+        IReadOnlyDictionary<uint, uint> navmFormIdRewrites,
+        IReadOnlyDictionary<uint, uint>? doorRefRewrites = null,
+        IReadOnlySet<uint>? validDoorRefs = null)
     {
         // First drop runtime obstacle-split triangles (those lacking the 0x800 "real" flag) —
         // they overlap the base mesh and are what the engine's load-time validator chokes on.
@@ -70,6 +73,19 @@ internal static class NavMeshByteRewriter
                     // NVEX entries are 10 bytes each: uint32 Type + uint32 NavmeshFormID + uint16 Triangle.
                     // Walk the array and rewrite each NavmeshFormID via the dict where present.
                     PatchNvexEntries(bytes, navmFormIdRewrites);
+                    break;
+                case "NVDP":
+                    // Door portals point at placed REFRs, not base DOOR records. Prototype
+                    // worldspaces can clone a retail door placement under a plugin FormID;
+                    // rewrite that source reference to the clone, then remove any portal whose
+                    // target is neither a live master door nor an actually-emitted clone. Keeping
+                    // an NVDP row while omitting it from NAVI.NVCI produces two contradictory
+                    // connectivity graphs and the engine walks the stale portal during A* setup.
+                    bytes = RewriteAndFilterNvdpEntries(bytes, doorRefRewrites, validDoorRefs);
+                    if (bytes.Length == 0)
+                    {
+                        continue;
+                    }
                     break;
                 case "NVTR":
                     // 1) Normalize triangle winding against NVVX vertices so every triangle's
@@ -125,6 +141,45 @@ internal static class NavMeshByteRewriter
                 BinaryPrimitives.WriteUInt32LittleEndian(span, replacement);
             }
         }
+    }
+
+    /// <summary>
+    ///     Rewrites NVDP door-reference FormIDs through the door-specific clone map and, when
+    ///     supplied, filters the result to the set of live DOOR-base REFRs. The returned payload
+    ///     remains a packed array of 8-byte NVDP entries in original order.
+    /// </summary>
+    internal static byte[] RewriteAndFilterNvdpEntries(
+        byte[] bytes,
+        IReadOnlyDictionary<uint, uint>? rewrites,
+        IReadOnlySet<uint>? validDoorRefs)
+    {
+        const int EntrySize = 8;
+        const int FormIdOffset = 0;
+
+        if (bytes.Length < EntrySize)
+        {
+            return validDoorRefs is null ? (byte[])bytes.Clone() : [];
+        }
+
+        using var kept = new MemoryStream(bytes.Length);
+        for (var offset = 0; offset + EntrySize <= bytes.Length; offset += EntrySize)
+        {
+            var entry = bytes.AsSpan(offset, EntrySize).ToArray();
+            var source = BinaryPrimitives.ReadUInt32LittleEndian(entry.AsSpan(FormIdOffset, 4));
+            var target = rewrites is not null && rewrites.TryGetValue(source, out var replacement)
+                ? replacement
+                : source;
+
+            if (validDoorRefs is not null && (target == 0 || !validDoorRefs.Contains(target)))
+            {
+                continue;
+            }
+
+            BinaryPrimitives.WriteUInt32LittleEndian(entry.AsSpan(FormIdOffset, 4), target);
+            kept.Write(entry);
+        }
+
+        return kept.ToArray();
     }
 
     /// <summary>

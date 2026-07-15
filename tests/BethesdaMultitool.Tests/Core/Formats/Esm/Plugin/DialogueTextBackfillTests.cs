@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using Xunit;
 
@@ -199,6 +200,77 @@ public sealed class DialogueTextBackfillTests
             Assert.Equal(1, result.RowsParsed);
             Assert.Equal(0, result.InfosTouched);
             Assert.Equal("Existing", dialogues[0].Responses[0].Text);
+        }
+        finally
+        {
+            File.Delete(csvPath);
+        }
+    }
+
+    [Fact]
+    public void ApplyFromCsvs_PrefersTempVoiceRowAcrossConfiguredCsvOrder()
+    {
+        var retailCsv = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + "_retail.csv");
+        var prototypeCsv = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + "_prototype.csv");
+        File.WriteAllText(retailCsv,
+            "File,FormID,Text\n" +
+            "retailtopic_0010a1ec_1.xma,0010A1EC,Retail snapshot text\n");
+        File.WriteAllText(prototypeCsv,
+            "File,FormID,Text\n" +
+            "tempvdialoguegreeting_0010a1ec_1.xma,0010A1EC,Prototype snapshot text\n");
+        try
+        {
+            var dialogues = new List<DialogueRecord>
+            {
+                new()
+                {
+                    FormId = 0x0010A1EC,
+                    Responses =
+                    [
+                        new DialogueResponse
+                        {
+                            ResponseNumber = 1,
+                            Text = DialogueTextBackfill.PlaceholderText
+                        }
+                    ]
+                }
+            };
+
+            DialogueTextBackfill.ApplyFromCsvs(
+                dialogues, [retailCsv, prototypeCsv], NullConversionProgressSink.Instance);
+
+            Assert.Equal("Prototype snapshot text", dialogues[0].Responses[0].Text);
+        }
+        finally
+        {
+            File.Delete(retailCsv);
+            File.Delete(prototypeCsv);
+        }
+    }
+
+    [Fact]
+    public void CsvCatalog_DirectTextBeatsTempAndPreservesEveryMatchingVoiceVariant()
+    {
+        var csvPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + "_variants.csv");
+        File.WriteAllText(csvPath,
+            "File,FormID,Text\n" +
+            "sound\\voice\\falloutnv.esm\\femaleadult01\\tempwrong_0010a1ec_1.xma,0010A1EC,Older prototype text\n" +
+            "sound\\voice\\falloutnv.esm\\femaleadult01\\retail_0010a1ec_1.xma,0010A1EC,Direct captured text\n" +
+            "sound\\voice\\falloutnv.esm\\maleadult01\\retail_0010a1ec_1.xma,0010A1EC,Direct captured text\n");
+        try
+        {
+            var preferred = new Dictionary<(uint FormId, byte ResponseNumber), string>
+            {
+                [(0x0010A1EC, 1)] = "Direct captured text"
+            };
+
+            var catalog = DialogueCsvCatalog.Load([csvPath], preferredTexts: preferred);
+
+            Assert.Equal("Direct captured text", Assert.Single(catalog.SelectedRows).Text);
+            Assert.Equal(2, catalog.SelectedAudioRows.Count);
+            Assert.All(catalog.SelectedAudioRows,
+                row => Assert.Equal("Direct captured text", row.Text));
+            Assert.Equal(2, Assert.Single(catalog.SelectedRowOrdinalsByCsvPath).Value.Count);
         }
         finally
         {

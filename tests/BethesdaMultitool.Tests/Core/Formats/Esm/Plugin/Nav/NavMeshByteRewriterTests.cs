@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Nav;
 using Xunit;
 
@@ -86,6 +87,57 @@ public sealed class NavMeshByteRewriterTests
 
         Assert.Equal(0, dropped);
         Assert.Same(record, sanitized);
+    }
+
+    [Fact]
+    public void Rewrite_RemapsLiveNvdpDoor_DropsDanglingDoor_AndPatchesCount()
+    {
+        const uint sourceDoor = 0x0011662F;
+        const uint emittedDoor = 0x010022E0;
+        const uint danglingDoor = 0x00112075;
+
+        var data = new byte[20];
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(16, 4), 2);
+        var nvdp = new byte[2 * 8];
+        BinaryPrimitives.WriteUInt32LittleEndian(nvdp.AsSpan(0, 4), sourceDoor);
+        BinaryPrimitives.WriteUInt16LittleEndian(nvdp.AsSpan(4, 2), 7);
+        BinaryPrimitives.WriteUInt32LittleEndian(nvdp.AsSpan(8, 4), danglingDoor);
+        BinaryPrimitives.WriteUInt16LittleEndian(nvdp.AsSpan(12, 2), 9);
+
+        var rewritten = NavMeshByteRewriter.Rewrite(
+            [
+                new NavMeshSubrecord("DATA", data),
+                new NavMeshSubrecord("NVDP", nvdp),
+            ],
+            newCellFormId: 0x01000300,
+            navmFormIdRewrites: new Dictionary<uint, uint>(),
+            doorRefRewrites: new Dictionary<uint, uint> { [sourceDoor] = emittedDoor },
+            validDoorRefs: new HashSet<uint> { emittedDoor });
+
+        var finalData = Assert.Single(rewritten, s => s.Signature == "DATA").Bytes;
+        var finalNvdp = Assert.Single(rewritten, s => s.Signature == "NVDP").Bytes;
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(finalData.AsSpan(20, 4)));
+        Assert.Equal(8, finalNvdp.Length);
+        Assert.Equal(emittedDoor, BinaryPrimitives.ReadUInt32LittleEndian(finalNvdp.AsSpan(0, 4)));
+        Assert.Equal((ushort)7, BinaryPrimitives.ReadUInt16LittleEndian(finalNvdp.AsSpan(4, 2)));
+    }
+
+    [Fact]
+    public void RewriteAndFilterNvdp_PreservesOrderAndRepeatedLiveDoorRows()
+    {
+        const uint first = 0x01000100;
+        const uint second = 0x01000200;
+        var payload = new byte[3 * 8];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0, 4), first);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8, 4), second);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(16, 4), first);
+
+        var result = NavMeshByteRewriter.RewriteAndFilterNvdpEntries(
+            payload,
+            rewrites: null,
+            validDoorRefs: new HashSet<uint> { first, second });
+
+        Assert.Equal(payload, result);
     }
 
     // ============================================================================

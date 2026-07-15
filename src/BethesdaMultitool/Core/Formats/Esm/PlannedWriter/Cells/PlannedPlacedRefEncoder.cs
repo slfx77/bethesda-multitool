@@ -72,6 +72,7 @@ internal static class PlannedPlacedRefEncoder
 
     /// <summary>Record-header flag: ref is persistent (must be set on Persistent Children GRUP members).</summary>
     internal const uint PersistentFlag = 0x00000400u;
+    internal const uint InitiallyDisabledFlag = 0x00000800u;
 
     /// <summary>Record-header flag: visible when distant (set on VWD Children GRUP members).</summary>
     internal const uint VisibleWhenDistantFlag = 0x00008000u;
@@ -199,6 +200,7 @@ internal static class PlannedPlacedRefEncoder
         var subs = RefrEncoder.EncodeNewPlacedReference(
             placed, context.ValidFormIds, context.Plan.SourceToEmittedFormId,
             context.ResolveBaseRecordType(originalBaseFormId, baseFormId));
+        RecordEnableParentOutcome(placed, subs.Subrecords, context);
         if (subs.Subrecords.Count == 0)
         {
             return null;
@@ -216,6 +218,10 @@ internal static class PlannedPlacedRefEncoder
             10 => VisibleWhenDistantFlag,
             _ => 0u,
         };
+        if (placed.IsInitiallyDisabled)
+        {
+            flags |= InitiallyDisabledFlag;
+        }
 
         return PluginRecordByteBuilder.BuildNewRecordBytes(
             child.Type, child.FormId, flags, subs.Subrecords);
@@ -369,6 +375,9 @@ internal static class PlannedPlacedRefEncoder
 
             // XLKR can carry one or two FormIDs; the other signatures carry the target
             // first. Remap each through the plan and require every one to resolve.
+            var sourceXespParent = sub.Signature == "XESP"
+                ? BinaryPrimitives.ReadUInt32LittleEndian(sub.Bytes.AsSpan(0, 4))
+                : (uint?)null;
             var uintCount = sub.Signature == "XLKR" ? sub.Bytes.Length / 4 : 1;
             var bytes = sub.Bytes;
             var allResolvable = true;
@@ -391,6 +400,11 @@ internal static class PlannedPlacedRefEncoder
                     allResolvable = false;
                     break;
                 }
+            }
+
+            if (sourceXespParent is { } xespParent)
+            {
+                RecordEnableParentOutcome(xespParent, allResolvable, context);
             }
 
             if (allResolvable)
@@ -416,6 +430,44 @@ internal static class PlannedPlacedRefEncoder
                || context.ValidFormIds.Contains(formId)
                || formId < 0x800u
                || RuntimeStateRecordPolicy.EngineFormIds.Contains(formId);
+    }
+
+    /// <summary>
+    ///     Surface the optional-link sanitation performed inside <see cref="RefrEncoder" />.
+    ///     Recording both emitted and skipped links lets the v122 census distinguish a
+    ///     live parent from an allocated-but-dropped capture, runtime ID, or honest data gap.
+    /// </summary>
+    internal static void RecordEnableParentOutcome(
+        PlacedReference placed,
+        IReadOnlyList<EncodedSubrecord> emittedSubrecords,
+        CellChildEncodeContext context)
+    {
+        if (placed.EnableParentFormId is { } sourceParent)
+        {
+            RecordEnableParentOutcome(
+                sourceParent,
+                emittedSubrecords.Any(sub => sub.Signature == "XESP"),
+                context);
+        }
+    }
+
+    internal static void RecordEnableParentOutcome(
+        uint sourceParentFormId,
+        bool xespEmitted,
+        CellChildEncodeContext context)
+    {
+        if (context.Stats is not { } stats)
+        {
+            return;
+        }
+
+        var resolution = PlannerXespParentClassifier.Classify(sourceParentFormId, context);
+        stats.RecordPlannerXesp(
+            sourceParentFormId,
+            resolution.FinalParentFormId,
+            xespEmitted,
+            resolution.Status,
+            resolution.Reason);
     }
 
 }

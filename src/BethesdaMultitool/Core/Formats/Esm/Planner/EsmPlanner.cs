@@ -25,7 +25,7 @@ public sealed class EsmPlanner
     ///     double-allocating FormIDs for the same source record.
     /// </summary>
     private static readonly HashSet<string> CellPipelineOwnedTypes =
-        new(StringComparer.Ordinal) { "CELL", "WRLD", "REFR", "ACHR", "ACRE", "PGRE" };
+        new(StringComparer.Ordinal) { "CELL", "WRLD", "REFR", "ACHR", "ACRE", "PGRE", "LAND" };
 
     private readonly DispositionEngine _disposition;
     private readonly FormIdPlanner _allocation;
@@ -72,12 +72,23 @@ public sealed class EsmPlanner
         bool emitMasterCellNavmAugmentation = false,
         IReadOnlySet<uint>? masterRefFormIds = null,
         bool replaceCellTemporariesOnOverride = false,
-        CellVerdictInputs? cellVerdictInputs = null)
+        CellVerdictInputs? cellVerdictInputs = null,
+        ImmutableHashSet<uint>? diagnosticKeepMasterFormIds = null,
+        ImmutableDictionary<uint, ImmutableHashSet<string>>? diagnosticRetainMasterSubrecords = null)
     {
         var coverage = enabledTypes.ToImmutableHashSet(StringComparer.Ordinal);
+        var keepMasterFormIds = diagnosticKeepMasterFormIds ?? ImmutableHashSet<uint>.Empty;
+        var retainMasterSubrecords = diagnosticRetainMasterSubrecords
+                                     ?? ImmutableDictionary<uint, ImmutableHashSet<string>>.Empty;
 
         if (enabledTypes.Count == 0)
         {
+            if (keepMasterFormIds.Count > 0 || retainMasterSubrecords.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "Diagnostic FormID directives require at least one planner-enabled record type.");
+            }
+
             return Empty(coverage, masterPath);
         }
 
@@ -95,6 +106,9 @@ public sealed class EsmPlanner
                 .ToHashSet(StringComparer.Ordinal)
             : enabledTypes;
         var catalog = RecordCatalog.Build(masterSource, dmpSource, catalogTypes);
+
+        ValidateDiagnosticDirectives(
+            masterRecords, catalog, enabledTypes, keepMasterFormIds, retainMasterSubrecords);
 
         var cellSection = enabledTypes.Contains("CELL")
             ? RunCellSection(
@@ -133,11 +147,21 @@ public sealed class EsmPlanner
                 .AddRange(cs.WorldspaceSourceToEmitted);
         }
 
-        var emittedFormIds = BuildEmittedFormIds(decisions, sourceToEmitted, masterFormIds);
+        var emittedFormIds = BuildEmittedFormIds(
+            decisions, sourceToEmitted, masterFormIds, cellSection?.LandByCellSourceToEmitted.Values);
         var resolvedRefsByIndex = _references.ResolveAll(decisions, emittedFormIds, sourceToEmitted);
 
-        var records = BuildRecordPlans(decisions, sourceToEmitted, resolvedRefsByIndex);
+        var records = BuildRecordPlans(
+            decisions, sourceToEmitted, resolvedRefsByIndex, retainMasterSubrecords);
         var (ordered, diagnostics) = PlanValidator.Validate(records);
+        var validPackageFormIds = masterRecords
+            .Where(record => record.Header.Signature == "PACK")
+            .Select(record => record.Header.FormId)
+            .Concat(ordered
+                .Where(record => record.Type == "PACK" && record.Disposition != RecordDisposition.Skip)
+                .Select(record => record.FormId))
+            .ToImmutableHashSet();
+        var packageDiagnostics = BuildPackageReferenceDiagnostics(ordered, validPackageFormIds);
 
         var indexByFormId = ImmutableDictionary.CreateBuilder<uint, int>();
         for (var i = 0; i < ordered.Length; i++)
@@ -150,8 +174,11 @@ public sealed class EsmPlanner
             Records = ordered,
             SourceToEmittedFormId = sourceToEmitted,
             EmittedFormIds = emittedFormIds,
+            ValidPackageFormIds = validPackageFormIds,
             RecordIndexByEmittedFormId = indexByFormId.ToImmutable(),
-            Diagnostics = diagnostics,
+            Diagnostics = cellSection is { } cellDiagnostics
+                ? diagnostics.AddRange(packageDiagnostics).AddRange(cellDiagnostics.Diagnostics)
+                : diagnostics.AddRange(packageDiagnostics),
             Meta = new PlanMetadata
             {
                 NextObjectId = _allocation.NextObjectId,
@@ -167,7 +194,13 @@ public sealed class EsmPlanner
                 CellsByFormId = cellResult.CellsByFormId,
                 WorldspacesByFormId = cellResult.WorldspacesByFormId,
                 NavmEntries = cellResult.NavmEntries,
+                LandByCellSourceFormId = cellResult.LandByCellSourceToEmitted,
             };
+        }
+
+        if (cellSection is not null && masterRecordsByFormId is not null)
+        {
+            plan = LandTextureRewritePlanner.Apply(plan, masterRecordsByFormId);
         }
 
         // Phase F: per-ref emit/drop verdicts. Runs AFTER top-level allocation because a
@@ -185,7 +218,64 @@ public sealed class EsmPlanner
             };
         }
 
+        if (masterRecordsByFormId is not null && !plan.CellsByFormId.IsEmpty)
+        {
+            plan = plan with
+            {
+                NavmDoorLinks = NavmDoorLinkPlanner.Build(plan, masterRecordsByFormId),
+            };
+        }
+
         return plan;
+    }
+
+    internal static ImmutableArray<PlanDiagnostic> BuildPackageReferenceDiagnostics(
+        ImmutableArray<RecordPlan> records,
+        IReadOnlySet<uint> validPackageFormIds)
+    {
+        var diagnostics = ImmutableArray.CreateBuilder<PlanDiagnostic>();
+        foreach (var record in records)
+        {
+            if (record.Type != "NPC_" || record.Disposition is RecordDisposition.KeepMaster or RecordDisposition.Skip)
+            {
+                continue;
+            }
+
+            foreach (var reference in record.References)
+            {
+                if (!reference.FieldPath.StartsWith("PKID[", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var finalFormId = reference.FinalFormId ?? reference.OriginalFormId ?? 0;
+                if (reference.Action == ResolvedRefAction.Resolved
+                    && validPackageFormIds.Contains(finalFormId))
+                {
+                    continue;
+                }
+
+                var wrongType = reference.Action == ResolvedRefAction.Resolved;
+
+                diagnostics.Add(new PlanDiagnostic
+                {
+                    Kind = PlanDiagnosticKind.Decision,
+                    Phase = "References",
+                    Code = wrongType
+                        ? "references.drop.pkid-wrong-type"
+                        : "references.drop.pkid-dangle",
+                    RecordType = record.Type,
+                    FormId = record.FormId,
+                    Message = wrongType
+                        ? $"Dropped {reference.FieldPath} package reference 0x{reference.OriginalFormId ?? 0:X8}: "
+                          + $"resolved target 0x{finalFormId:X8} is live but is not a PACK record."
+                        : $"Dropped {reference.FieldPath} package reference "
+                          + $"0x{reference.OriginalFormId ?? 0:X8}: {reference.Reason}",
+                });
+            }
+        }
+
+        return diagnostics.ToImmutable();
     }
 
     private static CellSectionPlanner.CellSectionResult? RunCellSection(
@@ -221,7 +311,8 @@ public sealed class EsmPlanner
     private static ImmutableHashSet<uint> BuildEmittedFormIds(
         IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> decisions,
         ImmutableDictionary<uint, uint> sourceToEmitted,
-        IReadOnlySet<uint> masterFormIds)
+        IReadOnlySet<uint> masterFormIds,
+        IEnumerable<uint>? containedAllocations = null)
     {
         var builder = ImmutableHashSet.CreateBuilder<uint>();
         foreach (var id in masterFormIds)
@@ -232,6 +323,14 @@ public sealed class EsmPlanner
         foreach (var allocated in sourceToEmitted.Values)
         {
             builder.Add(allocated);
+        }
+
+        if (containedAllocations is not null)
+        {
+            foreach (var allocated in containedAllocations)
+            {
+                builder.Add(allocated);
+            }
         }
 
         foreach (var (entry, decision) in decisions)
@@ -253,7 +352,8 @@ public sealed class EsmPlanner
     private static ImmutableArray<RecordPlan> BuildRecordPlans(
         IReadOnlyList<(CatalogEntry Entry, DispositionDecision Decision)> decisions,
         ImmutableDictionary<uint, uint> sourceToEmitted,
-        ImmutableDictionary<int, ImmutableArray<ResolvedRef>> refsByIndex)
+        ImmutableDictionary<int, ImmutableArray<ResolvedRef>> refsByIndex,
+        ImmutableDictionary<uint, ImmutableHashSet<string>> retainMasterSubrecords)
     {
         var builder = ImmutableArray.CreateBuilder<RecordPlan>(decisions.Count);
 
@@ -267,6 +367,10 @@ public sealed class EsmPlanner
             var refs = refsByIndex.TryGetValue(i, out var resolved)
                 ? resolved
                 : ImmutableArray<ResolvedRef>.Empty;
+            var retainedSignatures = entry.MasterFormId is { } masterFormId
+                                     && retainMasterSubrecords.TryGetValue(masterFormId, out var configured)
+                ? configured
+                : ImmutableHashSet.Create<string>(StringComparer.Ordinal);
 
             builder.Add(new RecordPlan
             {
@@ -278,12 +382,85 @@ public sealed class EsmPlanner
                 Master = entry.Master,
                 References = refs,
                 OverrideSubrecords = null,
+                RetainMasterSubrecordSignatures = retainedSignatures,
                 ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
                 Provenance = decision.Provenance,
             });
         }
 
         return builder.ToImmutable();
+    }
+
+    private static void ValidateDiagnosticDirectives(
+        IReadOnlyList<ParsedMainRecord> masterRecords,
+        IReadOnlyList<CatalogEntry> catalog,
+        IReadOnlySet<string> enabledTypes,
+        ImmutableHashSet<uint> keepMasterFormIds,
+        ImmutableDictionary<uint, ImmutableHashSet<string>> retainMasterSubrecords)
+    {
+        var overlap = keepMasterFormIds.FirstOrDefault(retainMasterSubrecords.ContainsKey);
+        if (overlap != 0 || (keepMasterFormIds.Contains(0) && retainMasterSubrecords.ContainsKey(0)))
+        {
+            throw new InvalidOperationException(
+                $"Diagnostic FormID 0x{overlap:X8} cannot be both master-pure and partially retained.");
+        }
+
+        var masterByFormId = new Dictionary<uint, ParsedMainRecord>();
+        foreach (var master in masterRecords)
+        {
+            masterByFormId.TryAdd(master.Header.FormId, master);
+        }
+
+        foreach (var formId in keepMasterFormIds.Concat(retainMasterSubrecords.Keys).Distinct())
+        {
+            if (!masterByFormId.TryGetValue(formId, out var master))
+            {
+                throw new InvalidOperationException(
+                    $"Diagnostic FormID 0x{formId:X8} does not exist in the master ESM.");
+            }
+
+            if (!enabledTypes.Contains(master.Header.Signature))
+            {
+                throw new InvalidOperationException(
+                    $"Diagnostic FormID 0x{formId:X8} is {master.Header.Signature}, which is not planner-enabled.");
+            }
+
+            var entry = catalog.FirstOrDefault(candidate =>
+                candidate.MasterFormId == formId
+                && string.Equals(candidate.Type, master.Header.Signature, StringComparison.Ordinal));
+            if (entry is null || entry.Source != SourceKind.DmpOverride)
+            {
+                throw new InvalidOperationException(
+                    $"Diagnostic FormID 0x{formId:X8} is not an exact DMP override of its master record.");
+            }
+
+            if (!retainMasterSubrecords.TryGetValue(formId, out var signatures))
+            {
+                continue;
+            }
+
+            if (signatures.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Diagnostic FormID 0x{formId:X8} has no retained subrecord signatures.");
+            }
+
+            foreach (var signature in signatures)
+            {
+                if (signature.Length != 4)
+                {
+                    throw new InvalidOperationException(
+                        $"Diagnostic subrecord signature '{signature}' for 0x{formId:X8} must be exactly four characters.");
+                }
+
+                if (!master.Subrecords.Any(subrecord =>
+                        string.Equals(subrecord.Signature, signature, StringComparison.Ordinal)))
+                {
+                    throw new InvalidOperationException(
+                        $"Master {master.Header.Signature} 0x{formId:X8} has no {signature} subrecord to retain.");
+                }
+            }
+        }
     }
 
     private EmitPlan Empty(ImmutableHashSet<string> coverage, string? masterPath)

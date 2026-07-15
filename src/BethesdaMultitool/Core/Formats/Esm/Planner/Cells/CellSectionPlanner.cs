@@ -78,8 +78,10 @@ public sealed class CellSectionPlanner
 
         var dispositionEngine = new CellDispositionEngine([new DefaultCellDispositionPolicy()]);
         var decisions = dispositionEngine.Decide(catalog);
+        var landPlanning = CellLandPlanner.DecideAll(catalog);
         var childAllocator = new CellChildAllocator(allocator);
-        var allocations = childAllocator.AllocateAll(catalog, dmpNavmeshes, masterFormIds);
+        var allocations = childAllocator.AllocateAll(
+            catalog, dmpNavmeshes, masterFormIds, landPlanning.DecisionsByCellSourceFormId);
         var worldspaceCatalog = WorldspaceCatalog.Build(catalog, dmpWorldspaces, masterFormIds);
 
         // Group NAVMs by (alias-resolved) parent cell once so per-cell walks are cheap.
@@ -102,7 +104,8 @@ public sealed class CellSectionPlanner
         }
 
         var cells = BuildCellPlans(
-            decisions, navmsByCell, allocations, masterFormIds,
+            decisions, navmsByCell, landPlanning.DecisionsByCellSourceFormId,
+            allocations, masterFormIds,
             masterRefFormIds, replaceCellTemporariesOnOverride);
 
         // Proto-authored duplicate placements of master actors fold onto master's sole ref
@@ -140,7 +143,9 @@ public sealed class CellSectionPlanner
             CellSourceToEmitted = allocations.CellSourceToEmitted,
             CellChildSourceToEmitted = allocations.PlacedRefSourceToEmitted,
             NavmSourceToEmitted = allocations.NavmSourceToEmitted,
+            LandByCellSourceToEmitted = allocations.LandByCellSourceToEmitted,
             WorldspaceSourceToEmitted = worldspaceSourceToEmitted,
+            Diagnostics = landPlanning.Diagnostics,
         };
     }
 
@@ -149,6 +154,7 @@ public sealed class CellSectionPlanner
     private static ImmutableDictionary<uint, CellPlan> BuildCellPlans(
         IReadOnlyList<(CellCatalogEntry Entry, Disposition.DispositionDecision Decision)> decisions,
         IReadOnlyDictionary<uint, List<NavMeshRecord>> navmsByCell,
+        IReadOnlyDictionary<uint, CellLandDecision> landDecisions,
         CellChildAllocator.AllocationResult allocations,
         IReadOnlySet<uint> masterFormIds,
         IReadOnlySet<uint>? masterRefFormIds,
@@ -163,10 +169,11 @@ public sealed class CellSectionPlanner
                 continue;
             }
 
-            var context = entry.MasterContext ?? SynthesizeContext(entry);
+            var context = entry.MasterContext ?? CellContextSynthesizer.Synthesize(entry);
             var (mode, dropRenderCullingMarkers) = PlanMergeMode(
                 entry, context, masterRefFormIds, replaceCellTemporariesOnOverride);
-            var (persistent, vwd, temporary) = BuildChildPlans(entry, navmsByCell, allocations, masterFormIds);
+            var (persistent, vwd, temporary) = BuildChildPlans(
+                entry, navmsByCell, landDecisions, allocations, masterFormIds);
             // DmpNew cells whose proto FormID isn't in master get a fresh plugin-range
             // FormID in Pass 0 of the allocator. Use that emitted ID as the cell's plan
             // key (== record FormID == GRUP label) so the engine sees the cell as new
@@ -249,17 +256,12 @@ public sealed class CellSectionPlanner
     ///     VWD (currently always empty — the <c>PlacedReference</c> model doesn't expose
     ///     a VWD flag), and Temporary (everything else + NAVMs).
     /// </summary>
-    /// <remarks>
-    ///     LAND records aren't included in this method — LAND has no model FormID and
-    ///     its allocation needs separate handling. <c>PlanCellSectionBuilder</c> still
-    ///     drives LAND emission directly during Tier 6.1c; the planner's responsibility
-    ///     for LAND lands as a follow-up.
-    /// </remarks>
     private static (ImmutableArray<RecordPlan> Persistent,
         ImmutableArray<RecordPlan> Vwd,
         ImmutableArray<RecordPlan> Temporary) BuildChildPlans(
         CellCatalogEntry entry,
         IReadOnlyDictionary<uint, List<NavMeshRecord>> navmsByCell,
+        IReadOnlyDictionary<uint, CellLandDecision> landDecisions,
         CellChildAllocator.AllocationResult allocations,
         IReadOnlySet<uint> masterFormIds)
     {
@@ -272,6 +274,26 @@ public sealed class CellSectionPlanner
 
         var persistent = ImmutableArray.CreateBuilder<RecordPlan>();
         var temporary = ImmutableArray.CreateBuilder<RecordPlan>();
+
+        // File order inside Temporary Children is LAND, NAVM, then placed refs. Add LAND
+        // first here; the writer preserves the planned prefix order.
+        if (landDecisions.TryGetValue(entry.CellFormId, out var land)
+            && allocations.LandByCellSourceToEmitted.TryGetValue(entry.CellFormId, out var landFormId))
+        {
+            temporary.Add(BuildLandPlan(land, landFormId));
+        }
+
+        if (navmsByCell.TryGetValue(entry.CellFormId, out var navms))
+        {
+            foreach (var navm in navms)
+            {
+                var plan = BuildNavmPlan(navm, allocations);
+                if (plan is not null)
+                {
+                    temporary.Add(plan);
+                }
+            }
+        }
 
         foreach (var placed in entry.DmpModel.PlacedObjects)
         {
@@ -288,18 +310,6 @@ public sealed class CellSectionPlanner
             else
             {
                 temporary.Add(plan);
-            }
-        }
-
-        if (navmsByCell.TryGetValue(entry.CellFormId, out var navms))
-        {
-            foreach (var navm in navms)
-            {
-                var plan = BuildNavmPlan(navm, allocations);
-                if (plan is not null)
-                {
-                    temporary.Add(plan);
-                }
             }
         }
 
@@ -346,6 +356,24 @@ public sealed class CellSectionPlanner
             },
         };
     }
+
+    private static RecordPlan BuildLandPlan(CellLandDecision land, uint landFormId) => new()
+    {
+        Type = "LAND",
+        Disposition = RecordDisposition.New,
+        FormId = landFormId,
+        SourceFormId = null,
+        Model = land,
+        Master = null,
+        References = ImmutableArray<ResolvedRef>.Empty,
+        OverrideSubrecords = null,
+        ContainedBy = ImmutableArray<RecordContainmentEdge>.Empty,
+        Provenance = new PlanProvenance
+        {
+            PolicyId = "CellLandPlanner.New",
+            Reason = $"DMP-new exterior CELL 0x{land.CellSourceFormId:X8} has {land.HeightSource} terrain.",
+        },
+    };
 
     private static RecordPlan? BuildNavmPlan(
         NavMeshRecord navm,
@@ -432,30 +460,6 @@ public sealed class CellSectionPlanner
         return (worldspaces.ToImmutable(), sourceToEmitted.ToImmutable());
     }
 
-    /// <summary>
-    ///     For DMP-new cells that don't have a master context, synthesize one from the
-    ///     captured grid coords. The writer needs block / sub-block labels to nest the
-    ///     cell under the right GRUP; without master context we compute them from grid.
-    /// </summary>
-    private static PcEsmCellContext SynthesizeContext(CellCatalogEntry entry)
-    {
-        var dmp = entry.DmpModel
-            ?? throw new InvalidOperationException(
-                $"CellCatalogEntry 0x{entry.CellFormId:X8} has neither master context nor DMP model.");
-
-        var isInterior = !dmp.WorldspaceFormId.HasValue;
-        return new PcEsmCellContext
-        {
-            CellFormId = entry.CellFormId,
-            IsInterior = isInterior,
-            WorldspaceFormId = dmp.WorldspaceFormId,
-            BlockGroupType = isInterior ? 2 : 4,
-            SubblockGroupType = isInterior ? 3 : 5,
-            BlockLabel = null,
-            SubblockLabel = null,
-        };
-    }
-
     private static CellSectionResult Empty() => new()
     {
         CellsByFormId = ImmutableDictionary<uint, CellPlan>.Empty,
@@ -463,7 +467,9 @@ public sealed class CellSectionPlanner
         NavmEntries = ImmutableArray<PlannedNavmEntry>.Empty,
         CellChildSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
         NavmSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
+        LandByCellSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
         WorldspaceSourceToEmitted = ImmutableDictionary<uint, uint>.Empty,
+        Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
     };
 
     public sealed record CellSectionResult
@@ -473,10 +479,14 @@ public sealed class CellSectionPlanner
         public required ImmutableArray<PlannedNavmEntry> NavmEntries { get; init; }
         public required ImmutableDictionary<uint, uint> CellChildSourceToEmitted { get; init; }
         public required ImmutableDictionary<uint, uint> NavmSourceToEmitted { get; init; }
+        public ImmutableDictionary<uint, uint> LandByCellSourceToEmitted { get; init; } =
+            ImmutableDictionary<uint, uint>.Empty;
         public ImmutableDictionary<uint, uint> WorldspaceSourceToEmitted { get; init; } =
             ImmutableDictionary<uint, uint>.Empty;
         public ImmutableDictionary<uint, uint> CellSourceToEmitted { get; init; } =
             ImmutableDictionary<uint, uint>.Empty;
+        public ImmutableArray<PlanDiagnostic> Diagnostics { get; init; } =
+            ImmutableArray<PlanDiagnostic>.Empty;
     }
 }
 

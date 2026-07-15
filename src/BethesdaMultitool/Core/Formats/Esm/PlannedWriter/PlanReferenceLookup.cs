@@ -56,6 +56,13 @@ public sealed class PlanReferenceLookup
             "PlanReferenceLookup was constructed without an EmitPlan — whole-plan accessors are unavailable. " +
             "Pass the plan via the (record, plan) constructor.");
 
+    /// <summary>Live PACK records suitable for NPC PKID references.</summary>
+    public IReadOnlySet<uint> ValidPackageFormIds =>
+        _plan?.ValidPackageFormIds
+        ?? throw new InvalidOperationException(
+            "PlanReferenceLookup was constructed without an EmitPlan — whole-plan accessors are unavailable. " +
+            "Pass the plan via the (record, plan) constructor.");
+
     /// <summary>
     ///     Reference for <paramref name="fieldPath" />. Throws if the path is not present;
     ///     encoders only key off paths their walker reported, so a missing path means the

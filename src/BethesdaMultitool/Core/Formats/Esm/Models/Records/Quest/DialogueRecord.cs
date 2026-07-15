@@ -77,6 +77,34 @@ public record DialogueRecord
     /// </summary>
     public bool IsSynthesizedGreetingEntry { get; init; }
 
+    /// <summary>
+    ///     True when this INFO was safely rehomed from prototype-only dialogue that could
+    ///     not remain under a shared retail system topic. Rehomed INFOs deliberately carry
+    ///     only their scoped conditions and response text; retail links and result scripts
+    ///     are never copied onto the new top-level topic.
+    /// </summary>
+    public bool IsRehomedCutDialogue { get; init; }
+
+    /// <summary>
+    ///     Original prototype INFO FormID used to locate source voice rows when this INFO
+    ///     is emitted under a different allocated FormID. Null for ordinary INFOs whose
+    ///     source identity is simply <see cref="FormId" />.
+    /// </summary>
+    public uint? AudioSourceInfoFormId { get; init; }
+
+    /// <summary>
+    ///     Original prototype parent DIAL for rehomed cut dialogue. Retained so exact
+    ///     diagnostics that keep a master DIAL can suppress every derived child too.
+    /// </summary>
+    public uint? AudioSourceTopicFormId { get; init; }
+
+    /// <summary>
+    ///     Original prototype response numbers, positionally aligned with
+    ///     <see cref="Responses" />. Rehomed cut responses are densely renumbered for the
+    ///     emitted INFO while retaining these source slots for audio lookup.
+    /// </summary>
+    public List<byte> AudioSourceResponseNumbers { get; init; } = [];
+
     // ESM linking subrecords
 
     /// <summary>Topics this INFO links TO (TCLT subrecords — choosing this response leads to these topics).</summary>

@@ -41,6 +41,14 @@ public sealed record EmitPlan
     public required ImmutableHashSet<uint> EmittedFormIds { get; init; }
 
     /// <summary>
+    ///     Exact subset of live FormIDs whose record type is PACK. NPC encoders use this
+    ///     type-aware set for PKID sanitation; membership in <see cref="EmittedFormIds" />
+    ///     alone is insufficient because a live FormID of another type is not an AI package.
+    /// </summary>
+    public ImmutableHashSet<uint> ValidPackageFormIds { get; init; } =
+        ImmutableHashSet<uint>.Empty;
+
+    /// <summary>
     ///     <c>FormId → index into <see cref="Records" /></c>. Lets the writer answer
     ///     "where does this FormID live" in O(1). Populated alongside <see cref="Records" />
     ///     by phase E.
@@ -78,4 +86,19 @@ public sealed record EmitPlan
     /// </summary>
     public ImmutableArray<PlannedNavmEntry> NavmEntries { get; init; } =
         ImmutableArray<PlannedNavmEntry>.Empty;
+
+    /// <summary>
+    ///     Source CELL FormID → allocated LAND FormID. LAND has no reliable source FormID
+    ///     in a runtime capture, so this deliberately does not share the general
+    ///     <see cref="SourceToEmittedFormId" /> namespace.
+    /// </summary>
+    public ImmutableDictionary<uint, uint> LandByCellSourceFormId { get; init; } =
+        ImmutableDictionary<uint, uint>.Empty;
+
+    /// <summary>
+    ///     Door-portal policy for captured NAVMs: a door-specific source→clone map plus the
+    ///     exact set of live DOOR-base REFRs. Kept separate from the general source map so
+    ///     one-way XTEL destinations continue to target their retail door.
+    /// </summary>
+    public NavmDoorLinkPlan NavmDoorLinks { get; init; } = NavmDoorLinkPlan.Empty;
 }

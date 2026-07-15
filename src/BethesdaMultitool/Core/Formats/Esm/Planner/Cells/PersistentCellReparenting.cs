@@ -75,8 +75,9 @@ public static class PersistentCellReparenting
         }
 
         // Worldspace → captured PROTO persistent-container cell (new worldspaces only).
-        // Every DmpNew exterior context synthesizes with null block labels, so the context
-        // alone can't identify the container — require the parse-side IsPersistentCell flag.
+        // Require the parse-side IsPersistentCell flag as the authority. Synthesized
+        // contexts now distinguish grid cells from containers, but the semantic flag also
+        // protects this selection if a future input carries unusual grouping metadata.
         var protoContainers = new Dictionary<uint, uint>();
         foreach (var (cellFormId, plan) in cells)
         {

@@ -1,6 +1,37 @@
 namespace BethesdaMultitool.Core.Formats.Esm.Reporting;
 
 /// <summary>
+///     Planner-visible state of a captured XESP enable parent. This is diagnostic only:
+///     the writer's remap/drop policy remains the authority for whether the XESP subrecord
+///     is emitted.
+/// </summary>
+public enum PlannerXespParentStatus
+{
+    /// <summary>The parent is a placed reference supplied by the master ESM.</summary>
+    LiveMaster,
+
+    /// <summary>The parent has an emit verdict in a cell bundle the planner will write.</summary>
+    LiveEmitted,
+
+    /// <summary>The parent was captured, but its ref or containing cell has a drop verdict.</summary>
+    CapturedDropped,
+
+    /// <summary>The parent is an engine/runtime FormID rather than authored plugin content.</summary>
+    RuntimeState,
+
+    /// <summary>No matching captured, master, or emitted parent is known.</summary>
+    Absent,
+}
+
+/// <summary>One captured XESP link and the evidence used to classify its parent.</summary>
+public sealed record PlannerXespObservation(
+    uint SourceParentFormId,
+    uint FinalParentFormId,
+    bool XespEmitted,
+    PlannerXespParentStatus ParentStatus,
+    string Reason);
+
+/// <summary>
 ///     Running totals for a DMP→ESM conversion pipeline run.
 /// </summary>
 public sealed class ConversionPipelineStats
@@ -19,6 +50,27 @@ public sealed class ConversionPipelineStats
     public int PromotedGapRuntimeDialogue { get; set; }
     public int PromotedGapPlacedRefs { get; set; }
     public int SkippedGapCandidates { get; set; }
+
+    /// <summary>
+    ///     Number of captured XESP enable-parent links omitted by the planner writer because
+    ///     the parent could not be resolved against the final master/emitted FormID set.
+    /// </summary>
+    public int PlannerXespSkipped { get; private set; }
+
+    /// <summary>Distinct source parent FormIDs behind <see cref="PlannerXespSkipped" />.</summary>
+    public HashSet<uint> PlannerXespMissingParentFormIds { get; } = [];
+
+    /// <summary>Total captured XESP links observed by the planner cell writer.</summary>
+    public int PlannerXespObserved { get; private set; }
+
+    /// <summary>Captured XESP links that survived sanitation and were written.</summary>
+    public int PlannerXespEmitted { get; private set; }
+
+    /// <summary>
+    ///     Per-link XESP evidence. Consumers should group by <see cref="PlannerXespObservation.ParentStatus" />
+    ///     and distinct source FormID; repeated links can legitimately share one parent.
+    /// </summary>
+    public List<PlannerXespObservation> PlannerXespObservations { get; } = [];
 
     /// <summary>Per-record-type counts of records emitted to the output ESM.</summary>
     public Dictionary<string, int> EmittedByType { get; } = new(StringComparer.Ordinal);
@@ -60,6 +112,28 @@ public sealed class ConversionPipelineStats
     public void IncrementDropReason(string code)
     {
         DropReasonCounts[code] = DropReasonCounts.GetValueOrDefault(code) + 1;
+    }
+
+    public void RecordPlannerXesp(
+        uint sourceParentFormId,
+        uint finalParentFormId,
+        bool emitted,
+        PlannerXespParentStatus parentStatus,
+        string reason)
+    {
+        PlannerXespObserved++;
+        PlannerXespObservations.Add(new PlannerXespObservation(
+            sourceParentFormId, finalParentFormId, emitted, parentStatus, reason));
+
+        if (emitted)
+        {
+            PlannerXespEmitted++;
+            return;
+        }
+
+        PlannerXespSkipped++;
+        PlannerXespMissingParentFormIds.Add(sourceParentFormId);
+        IncrementDropReason("refr.xesp-dangling");
     }
 }
 

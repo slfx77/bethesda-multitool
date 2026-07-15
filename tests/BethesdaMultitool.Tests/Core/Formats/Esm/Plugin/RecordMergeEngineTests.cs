@@ -168,6 +168,33 @@ public class RecordMergeEngineTests
         Assert.Equal(vanillaPackage, ReadFirstSubrecordPayload(merge.SubrecordBytes, "PKID"));
     }
 
+    [Fact]
+    public void AdditionalMasterRetention_RetainsEveryOccurrenceAndDoesNotAppendDmpDuplicates()
+    {
+        var esm = MakeEsmRecord("NPC_",
+            ("SNAM", new byte[] { 0x01, 0x02 }),
+            ("SNAM", new byte[] { 0x03, 0x04 }));
+        var dmpEncoded = new EncodedRecord
+        {
+            Subrecords =
+            [
+                new EncodedSubrecord("SNAM", new byte[] { 0xA1, 0xA2 }),
+                new EncodedSubrecord("SNAM", new byte[] { 0xA3, 0xA4 }),
+            ],
+            Warnings = [],
+        };
+        var policy = SubrecordMergePolicy.ForRecordType("NPC_")
+            .WithAdditionalMasterRetention(["SNAM"]);
+
+        var merge = RecordMergeEngine.Merge(esm, dmpEncoded, policy);
+
+        Assert.Equal(2, CountSubrecords(merge.SubrecordBytes, "SNAM"));
+        Assert.Equal(new byte[] { 0x01, 0x02 }, ReadNthSubrecordPayload(merge.SubrecordBytes, "SNAM", 0));
+        Assert.Equal(new byte[] { 0x03, 0x04 }, ReadNthSubrecordPayload(merge.SubrecordBytes, "SNAM", 1));
+        Assert.DoesNotContain("SNAM", merge.DmpSignaturesUsed);
+        Assert.DoesNotContain("SNAM", merge.DmpSignaturesAppended);
+    }
+
     private static int FindSubrecordIndex(byte[] stream, string sig)
     {
         for (var i = 0; i + 6 <= stream.Length;)
@@ -194,5 +221,42 @@ public class RecordMergeEngineTests
 
         var len = BinaryPrimitives.ReadUInt16LittleEndian(stream.AsSpan(idx + 4, 2));
         return stream.AsSpan(idx + 6, len).ToArray();
+    }
+
+    private static int CountSubrecords(byte[] stream, string sig)
+    {
+        var count = 0;
+        for (var offset = 0; offset + 6 <= stream.Length;)
+        {
+            if (stream[offset] == sig[0] && stream[offset + 1] == sig[1]
+                && stream[offset + 2] == sig[2] && stream[offset + 3] == sig[3])
+            {
+                count++;
+            }
+
+            var len = BinaryPrimitives.ReadUInt16LittleEndian(stream.AsSpan(offset + 4, 2));
+            offset += 6 + len;
+        }
+
+        return count;
+    }
+
+    private static byte[] ReadNthSubrecordPayload(byte[] stream, string sig, int occurrence)
+    {
+        var seen = 0;
+        for (var offset = 0; offset + 6 <= stream.Length;)
+        {
+            var len = BinaryPrimitives.ReadUInt16LittleEndian(stream.AsSpan(offset + 4, 2));
+            if (stream[offset] == sig[0] && stream[offset + 1] == sig[1]
+                && stream[offset + 2] == sig[2] && stream[offset + 3] == sig[3]
+                && seen++ == occurrence)
+            {
+                return stream.AsSpan(offset + 6, len).ToArray();
+            }
+
+            offset += 6 + len;
+        }
+
+        return [];
     }
 }

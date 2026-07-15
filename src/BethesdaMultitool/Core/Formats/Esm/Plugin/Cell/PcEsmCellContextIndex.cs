@@ -35,7 +35,12 @@ public sealed record PcEsmCellContext
     public int SubblockGroupType { get; init; }
 
     /// <summary>True when this is the worldspace's persistent ref container (no block/subblock).</summary>
-    public bool IsPersistentCellContainer => !IsInterior && BlockLabel is null;
+    public bool IsPersistentCellContainer =>
+        !IsInterior
+        && BlockGroupType == 0
+        && SubblockGroupType == 0
+        && BlockLabel is null
+        && SubblockLabel is null;
 }
 
 /// <summary>

@@ -92,6 +92,14 @@ public sealed record RecordPlan
     public ImmutableArray<SubrecordDecision>? OverrideSubrecords { get; init; }
 
     /// <summary>
+    ///     Diagnostic signatures that an override must retain byte-for-byte from
+    ///     <see cref="Master" />. Immutable planner output: the writer may only execute
+    ///     this directive by extending both ESM-retain and DMP-no-append merge sets.
+    /// </summary>
+    public ImmutableHashSet<string> RetainMasterSubrecordSignatures { get; init; } =
+        ImmutableHashSet.Create<string>(StringComparer.Ordinal);
+
+    /// <summary>
     ///     Containment edges this record participates in (e.g. INFO → its parent DIAL,
     ///     REFR → its parent CELL). Phase E uses these to topologically sort the plan.
     /// </summary>

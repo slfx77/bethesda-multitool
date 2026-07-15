@@ -13,6 +13,74 @@ namespace BethesdaMultitool.Tests.CLI.Commands.Dmp;
 public sealed class DmpToEsmCommandPlannerTypesTests
 {
     [Fact]
+    public void DiagnosticOptions_AreRepeatableAtTheCommandLine()
+    {
+        var parse = DmpToEsmCommand.Create().Parse(
+        [
+            "sample.dmp",
+            "--pc-esm", "FalloutNV.esm",
+            "--output", "diagnostic.esm",
+            "--planner-types", "all",
+            "--diag-keep-master-formid", "0x0012795D",
+            "--diag-keep-master-formid", "0x000000C8",
+            "--diag-retain-master-subrecords", "0x00127956:AIDT,SNAM",
+            "--diag-retain-master-subrecords", "0x00127956:DATA,DNAM",
+        ]);
+
+        Assert.Empty(parse.Errors);
+    }
+
+    [Fact]
+    public void DiagnosticKeepMasterFormIds_AreStrictHexAndDeduplicated()
+    {
+        var result = DmpToEsmCommand.ParseDiagnosticFormIdSet(
+            ["0x0012795D", "0012795d", "000000C8"]);
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains(0x0012795Du, result);
+        Assert.Contains(0x000000C8u, result);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("0x")]
+    [InlineData("0")]
+    [InlineData("not-hex")]
+    [InlineData("0x100000000")]
+    public void DiagnosticKeepMasterFormIds_RejectInvalidInput(string value)
+    {
+        Assert.Throws<FormatException>(() => DmpToEsmCommand.ParseDiagnosticFormIdSet([value]));
+    }
+
+    [Fact]
+    public void DiagnosticRetentions_MergeRepeatedFormIdsAndNormalizeSignatures()
+    {
+        var result = DmpToEsmCommand.ParseDiagnosticSubrecordRetentions(
+            ["0x0012795D:AIDT,SNAM", "0012795d:data,dnam"]);
+
+        var signatures = Assert.Single(result).Value;
+        Assert.Equal(4, signatures.Count);
+        Assert.Contains("AIDT", signatures);
+        Assert.Contains("SNAM", signatures);
+        Assert.Contains("DATA", signatures);
+        Assert.Contains("DNAM", signatures);
+    }
+
+    [Theory]
+    [InlineData("0012795D")]
+    [InlineData("0012795D:")]
+    [InlineData(":DNAM")]
+    [InlineData("0012795D:DNA")]
+    [InlineData("0012795D:DNAM,")]
+    [InlineData("0012795D:DNAM:DATA")]
+    [InlineData("0012795D:A[DT")]
+    [InlineData("0012795D:A-DT")]
+    public void DiagnosticRetentions_RejectInvalidSyntax(string value)
+    {
+        Assert.Throws<FormatException>(() => DmpToEsmCommand.ParseDiagnosticSubrecordRetentions([value]));
+    }
+
+    [Fact]
     public void Empty_Args_Yields_Empty_Set()
     {
         var result = DmpToEsmCommand.ResolvePlannerTypes([]);

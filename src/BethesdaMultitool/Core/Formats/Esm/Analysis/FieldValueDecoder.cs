@@ -164,7 +164,11 @@ public static class FieldValueDecoder
     /// </summary>
     public static string FormatBytes(ReadOnlySpan<byte> data)
     {
-        if (data.Length <= 8)
+        // Schema-backed semantic diffs compare this formatted value. Returning only
+        // "N bytes" for medium fixed blobs made unequal same-length payloads appear to
+        // MATCH (notably NPC_ DNAM's two 14-byte skill arrays). Keep those payloads
+        // byte-visible; large terrain/opaque blobs retain the compact length display.
+        if (data.Length <= 32)
         {
             return string.Join(" ", data.ToArray().Select(b => $"{b:X2}"));
         }

@@ -35,7 +35,8 @@ public sealed class CellChildAllocator
     public AllocationResult AllocateAll(
         IReadOnlyList<CellCatalogEntry> cellEntries,
         IReadOnlyList<NavMeshRecord> dmpNavmeshes,
-        IReadOnlySet<uint> masterFormIds)
+        IReadOnlySet<uint> masterFormIds,
+        IReadOnlyDictionary<uint, CellLandDecision>? landDecisions = null)
     {
         ArgumentNullException.ThrowIfNull(cellEntries);
         ArgumentNullException.ThrowIfNull(dmpNavmeshes);
@@ -44,6 +45,7 @@ public sealed class CellChildAllocator
         var cellMap = ImmutableDictionary.CreateBuilder<uint, uint>();
         var placedRefMap = ImmutableDictionary.CreateBuilder<uint, uint>();
         var navmMap = ImmutableDictionary.CreateBuilder<uint, uint>();
+        var landByCellMap = ImmutableDictionary.CreateBuilder<uint, uint>();
 
         // Pass 0: cells themselves. DmpNew cells (no master FormID match) frequently carry
         // proto-era FormIDs that LOOK like master overrides (low load-order byte) but
@@ -112,11 +114,28 @@ public sealed class CellChildAllocator
             navmMap[navm.FormId] = _allocator.Allocate();
         }
 
+        // Pass 3: LAND has no trustworthy source FormID in a runtime cell capture, so
+        // allocate by source CELL identity in catalog order. Keeping this separate from
+        // CellSourceToEmitted prevents a cell→LAND mapping from colliding with the
+        // cell's own source→emitted mapping.
+        if (landDecisions is not null)
+        {
+            foreach (var entry in cellEntries)
+            {
+                if (landDecisions.ContainsKey(entry.CellFormId)
+                    && !landByCellMap.ContainsKey(entry.CellFormId))
+                {
+                    landByCellMap[entry.CellFormId] = _allocator.Allocate();
+                }
+            }
+        }
+
         return new AllocationResult
         {
             CellSourceToEmitted = cellMap.ToImmutable(),
             PlacedRefSourceToEmitted = placedRefMap.ToImmutable(),
             NavmSourceToEmitted = navmMap.ToImmutable(),
+            LandByCellSourceToEmitted = landByCellMap.ToImmutable(),
         };
     }
 
@@ -127,6 +146,8 @@ public sealed class CellChildAllocator
             ImmutableDictionary<uint, uint>.Empty;
         public required ImmutableDictionary<uint, uint> PlacedRefSourceToEmitted { get; init; }
         public required ImmutableDictionary<uint, uint> NavmSourceToEmitted { get; init; }
+        public ImmutableDictionary<uint, uint> LandByCellSourceToEmitted { get; init; } =
+            ImmutableDictionary<uint, uint>.Empty;
     }
 
     /// <summary>

@@ -8,11 +8,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef;
 /// <summary>
 ///     Planned encoder for NPC_. Transitional pass-through to legacy
 ///     <c>NpcEncoder.EncodeNew(npc, masterFormIds, masterNpcByRace, validPackageFormIds, remapTable, validFormIds)</c>.
-///     Tier 3 plumbs in the basic emit-set inputs (validFormIds, remapTable). The other
-///     three (master FormIDs, NPC race index, valid package set) are not yet exposed
-///     through the plan and pass null — synthetic tests with NPCs that have no outgoing
-///     refs still match legacy byte-for-byte. End-to-end parity needs additional plan
-///     plumbing (Tier 3 follow-up).
+///     Tier 3 plumbs in the emit set, remap table, and the type-aware live PACK set. The
+///     latter ensures a new NPC never writes a dangling or wrong-type PKID.
 /// </summary>
 public sealed class PlannedNpcEncoder : IPlannedRecordEncoder<NpcRecord>
 {
@@ -28,7 +25,7 @@ public sealed class PlannedNpcEncoder : IPlannedRecordEncoder<NpcRecord>
                 model,
                 masterFormIds: refs.EmittedFormIds,
                 masterNpcByRace: null,
-                validPackageFormIds: null,
+                validPackageFormIds: refs.ValidPackageFormIds,
                 remapTable: refs.SourceToEmittedFormId,
                 validFormIds: refs.EmittedFormIds),
             RecordDisposition.Override => _legacy.Encode(model),

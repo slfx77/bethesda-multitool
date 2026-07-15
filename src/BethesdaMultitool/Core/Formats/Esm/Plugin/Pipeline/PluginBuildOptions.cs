@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
@@ -220,6 +221,23 @@ public sealed record PluginBuildOptions
     /// </summary>
     public IReadOnlySet<string> SkipRecordTypes { get; init; } =
         new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    ///     Diagnostic: exact DMP override FormIDs that the planner must leave master-pure.
+    ///     The first-priority disposition policy converts the matching override to
+    ///     <c>KeepMaster</c>; a missing master/override is rejected before emission so a
+    ///     mistyped ID cannot silently produce a misleading bisect artifact.
+    /// </summary>
+    public ImmutableHashSet<uint> DiagnosticKeepMasterFormIds { get; init; } =
+        ImmutableHashSet<uint>.Empty;
+
+    /// <summary>
+    ///     Diagnostic: exact override FormID to master subrecord signatures that must be
+    ///     retained verbatim during the planner merge. Both the positional replacement and
+    ///     append passes suppress the DMP signature, preventing duplicate subrecords.
+    /// </summary>
+    public ImmutableDictionary<uint, ImmutableHashSet<string>> DiagnosticRetainMasterSubrecords { get; init; } =
+        ImmutableDictionary<uint, ImmutableHashSet<string>>.Empty;
 
     /// <summary>
     ///     Optional Bethesda Audio Transcriber CSV exports used to backfill INFO response

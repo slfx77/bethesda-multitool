@@ -18,6 +18,15 @@ public sealed record EmittedDialogueAudioBinding
     /// <summary>The PC-plugin FormID our allocator issued for this INFO.</summary>
     public required uint AllocatedInfoFormId { get; init; }
 
+    /// <summary>
+    ///     Prototype INFO FormID used by the source CSV/audio filename. For ordinary
+    ///     dialogue this equals the pre-allocation INFO identity; for a retail overlay it
+    ///     equals the preserved master INFO; for rehomed cut dialogue it remains the
+    ///     original shared/system INFO while <see cref="AllocatedInfoFormId" /> names the
+    ///     newly emitted target.
+    /// </summary>
+    public uint SourceInfoFormId { get; init; }
+
     /// <summary>EditorID of the parent DIAL (master override or newly allocated).</summary>
     public required string ParentDialEditorId { get; init; }
 
@@ -31,6 +40,20 @@ public sealed record EmittedDialogueAudioBinding
 
     /// <summary>1-based response number within the INFO record (matches TRDT slot).</summary>
     public required byte ResponseNumber { get; init; }
+
+    /// <summary>
+    ///     Response number in the prototype source. Normally equal to
+    ///     <see cref="ResponseNumber" />; rehomed INFOs densely renumber target responses
+    ///     while retaining the original source slot here.
+    /// </summary>
+    public byte SourceResponseNumber { get; init; }
+
+    /// <summary>
+    ///     True when the target is a FormID-stable retail INFO overlay. If no prototype
+    ///     voice row exists, the plugin intentionally ships no replacement asset and the
+    ///     engine falls back to the vanilla master voice file.
+    /// </summary>
+    public bool IsRetailInfoOverlay { get; init; }
 
     /// <summary>
     ///     EditorID of the QUEST that owns this INFO's parent DIAL (resolved via QSTI). The

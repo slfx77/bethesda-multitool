@@ -1,8 +1,8 @@
 using System.Globalization;
-using System.Text;
 using System.Text.RegularExpressions;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin;
@@ -44,31 +44,29 @@ internal static class DialogueTextBackfill
             return new BackfillResult(0, 0, 0, 0, 0);
         }
 
+        var catalog = DialogueCsvCatalog.Load(csvPaths, sink);
         var overrides = new Dictionary<uint, SortedDictionary<byte, string>>();
-        var rowsRead = 0;
-        var rowsParsed = 0;
-        foreach (var csvPath in csvPaths)
+        foreach (var row in catalog.SelectedRows)
         {
-            if (string.IsNullOrWhiteSpace(csvPath) || !File.Exists(csvPath))
+            if (string.IsNullOrEmpty(row.Text))
             {
-                if (!string.IsNullOrWhiteSpace(csvPath))
-                {
-                    sink.Warn("DialogueTextBackfill", $"CSV not found: {csvPath}");
-                }
-
                 continue;
             }
 
-            var (r, p) = LoadCsv(csvPath, overrides);
-            rowsRead += r;
-            rowsParsed += p;
+            if (!overrides.TryGetValue(row.FormId, out var byResponse))
+            {
+                byResponse = new SortedDictionary<byte, string>();
+                overrides[row.FormId] = byResponse;
+            }
+
+            byResponse[row.ResponseNumber] = row.Text;
         }
 
         if (overrides.Count == 0)
         {
             sink.Info("DialogueTextBackfill",
                 $"No usable rows found in {csvPaths.Count} CSV file(s).");
-            return new BackfillResult(rowsRead, rowsParsed, 0, 0, 0);
+            return new BackfillResult(catalog.RowsRead, catalog.RowsParsed, 0, 0, 0);
         }
 
         var infosTouched = 0;
@@ -96,9 +94,10 @@ internal static class DialogueTextBackfill
 
         sink.Info("DialogueTextBackfill",
             $"Applied {filled:N0} response text fill(s) + appended {appended:N0} new response(s) " +
-            $"across {infosTouched:N0} INFO(s) from {rowsParsed:N0}/{rowsRead:N0} CSV row(s).");
+            $"across {infosTouched:N0} INFO(s) from {catalog.RowsParsed:N0}/{catalog.RowsRead:N0} CSV row(s).");
 
-        return new BackfillResult(rowsRead, rowsParsed, infosTouched, filled, appended);
+        return new BackfillResult(
+            catalog.RowsRead, catalog.RowsParsed, infosTouched, filled, appended);
     }
 
     internal static (DialogueRecord Result, int Filled, int Appended) ApplyOverridesToInfo(
@@ -162,75 +161,6 @@ internal static class DialogueTextBackfill
                || string.Equals(text, PlaceholderText, StringComparison.Ordinal);
     }
 
-    private static (int RowsRead, int RowsParsed) LoadCsv(
-        string csvPath,
-        Dictionary<uint, SortedDictionary<byte, string>> overrides)
-    {
-        using var reader = new StreamReader(csvPath);
-        var header = ReadCsvRecord(reader);
-        if (header.Count == 0)
-        {
-            return (0, 0);
-        }
-
-        var fileCol = FindColumn(header, "File");
-        var formIdCol = FindColumn(header, "FormID");
-        var textCol = FindColumn(header, "Text");
-        if (fileCol < 0 || formIdCol < 0 || textCol < 0)
-        {
-            return (0, 0);
-        }
-
-        var rowsRead = 0;
-        var rowsParsed = 0;
-        while (!reader.EndOfStream)
-        {
-            var fields = ReadCsvRecord(reader);
-            if (fields.Count == 0)
-            {
-                continue;
-            }
-
-            rowsRead++;
-            var maxIndex = Math.Max(Math.Max(fileCol, formIdCol), textCol);
-            if (fields.Count <= maxIndex)
-            {
-                continue;
-            }
-
-            if (!TryParseFormId(fields[formIdCol], out var formId))
-            {
-                continue;
-            }
-
-            var respNum = ExtractResponseNumber(fields[fileCol]);
-            if (respNum is null)
-            {
-                continue;
-            }
-
-            var text = fields[textCol];
-            if (string.IsNullOrEmpty(text))
-            {
-                continue;
-            }
-
-            if (!overrides.TryGetValue(formId, out var byResp))
-            {
-                byResp = new SortedDictionary<byte, string>();
-                overrides[formId] = byResp;
-            }
-
-            // First non-empty Text wins per (FormID, ResponseNumber). Multiple CSVs can
-            // contribute different snapshots; keep the earliest parse rather than the latest
-            // so the priority order in the caller list is meaningful (first CSV wins).
-            byResp.TryAdd(respNum.Value, text);
-            rowsParsed++;
-        }
-
-        return (rowsRead, rowsParsed);
-    }
-
     internal static byte? ExtractResponseNumber(string filePath)
     {
         if (string.IsNullOrEmpty(filePath))
@@ -253,120 +183,4 @@ internal static class DialogueTextBackfill
         return resp == 0 ? null : resp;
     }
 
-    private static int FindColumn(List<string> header, string name)
-    {
-        for (var i = 0; i < header.Count; i++)
-        {
-            if (string.Equals(header[i], name, StringComparison.OrdinalIgnoreCase))
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private static bool TryParseFormId(string raw, out uint formId)
-    {
-        raw = raw.Trim();
-        if (raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            raw = raw[2..];
-        }
-
-        return uint.TryParse(raw, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out formId);
-    }
-
-    private static List<string> ReadCsvRecord(TextReader reader)
-    {
-        var record = new StringBuilder();
-        while (true)
-        {
-            var line = reader.ReadLine();
-            if (line is null)
-            {
-                break;
-            }
-
-            if (record.Length > 0)
-            {
-                record.Append('\n');
-            }
-
-            record.Append(line);
-            if (HasBalancedQuotes(record))
-            {
-                break;
-            }
-        }
-
-        return record.Length == 0 ? [] : ParseCsvFields(record.ToString());
-    }
-
-    private static bool HasBalancedQuotes(StringBuilder record)
-    {
-        var inQuotes = false;
-        var i = 0;
-        while (i < record.Length)
-        {
-            if (record[i] != '"')
-            {
-                i++;
-                continue;
-            }
-
-            if (inQuotes && i + 1 < record.Length && record[i + 1] == '"')
-            {
-                i += 2;
-                continue;
-            }
-
-            inQuotes = !inQuotes;
-            i++;
-        }
-
-        return !inQuotes;
-    }
-
-    private static List<string> ParseCsvFields(string record)
-    {
-        var fields = new List<string>();
-        var field = new StringBuilder();
-        var inQuotes = false;
-
-        var i = 0;
-        while (i < record.Length)
-        {
-            var ch = record[i];
-            if (ch == '"')
-            {
-                if (inQuotes && i + 1 < record.Length && record[i + 1] == '"')
-                {
-                    field.Append('"');
-                    i += 2;
-                }
-                else
-                {
-                    inQuotes = !inQuotes;
-                    i++;
-                }
-
-                continue;
-            }
-
-            if (ch == ',' && !inQuotes)
-            {
-                fields.Add(field.ToString());
-                field.Clear();
-                i++;
-                continue;
-            }
-
-            field.Append(ch);
-            i++;
-        }
-
-        fields.Add(field.ToString());
-        return fields;
-    }
 }
