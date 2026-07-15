@@ -60,6 +60,7 @@ public sealed class AssetPackingService
             // 2) Collect every referenced asset path.
             var requested = AssetPathCollector.Collect(espResult.Records, options.DmpPath, sink);
             IReadOnlyDictionary<string, string>? packPathRenames = null;
+            var forcedPackPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (options.DialogueAudioCsvPaths.Count > 0)
             {
                 var dialogueAudio = await DialogueAudioCsvAssetCollector
@@ -84,6 +85,37 @@ public sealed class AssetPackingService
                 }
 
                 packPathRenames = dialogueAudio.PackPathRenames;
+            }
+
+            // NPC FaceGen body/face textures use a runtime-derived plugin namespace and
+            // therefore never appear in record fields for AssetPathCollector to find.
+            // Rebase every resolvable emitted NPC sidecar from its source FormID/path to
+            // the output plugin's filename + local FormID. These are forced packs because
+            // a baseline hit under falloutnv.esm cannot satisfy the plugin-shaped lookup.
+            var npcFaceAssets = NpcFaceAssetCollector.Collect(
+                espResult.Records,
+                options.NewRecordSourceToAllocatedFormIds,
+                Path.GetFileName(options.ConvertedEsmPath));
+            if (npcFaceAssets.SourcePaths.Count > 0)
+            {
+                var mergedRenames = packPathRenames is null
+                    ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, string>(packPathRenames, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var sourcePath in npcFaceAssets.SourcePaths)
+                {
+                    requested.Add(sourcePath);
+                    forcedPackPaths.Add(sourcePath);
+                }
+
+                foreach (var (sourcePath, packPath) in npcFaceAssets.PackPathRenames)
+                {
+                    mergedRenames.TryAdd(sourcePath, packPath);
+                }
+
+                packPathRenames = mergedRenames;
+                sink.Info("AssetPacking",
+                    $"NPC FaceGen sidecars requested: {npcFaceAssets.SourcePaths.Count:N0}");
             }
 
             sink.Info("AssetPacking", $"Total unique asset paths to resolve: {requested.Count}");
@@ -173,7 +205,9 @@ public sealed class AssetPackingService
                     "asset-pack-resolve", requested, ConcurrencyPolicy.FullCores,
                     async (requestedPath, ct) =>
                     {
-                        var resolution = resolver.Resolve(requestedPath);
+                        var resolution = forcedPackPaths.Contains(requestedPath)
+                            ? resolver.ResolveForForcedPack(requestedPath)
+                            : resolver.Resolve(requestedPath);
                         Interlocked.Increment(ref stats.Total);
 
                         switch (resolution.Kind)

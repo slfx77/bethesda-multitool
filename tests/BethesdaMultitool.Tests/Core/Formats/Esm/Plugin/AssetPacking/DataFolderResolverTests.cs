@@ -68,6 +68,25 @@ public sealed class DataFolderResolverTests : IDisposable
     }
 
     [Fact]
+    public void ResolveForForcedPack_BaselineHasExactPath_ReturnsReadableSource()
+    {
+        var baselineDir = MakeDataFolder("baseline");
+        WriteLooseFile(baselineDir, "textures\\characters\\facemods\\falloutnv.esm\\00104f09_0.dds",
+            [1, 2, 3]);
+        using var baseline = new DataFolderIndex(baselineDir, false);
+        baseline.Build();
+
+        var resolver = new DataFolderResolver(baseline, []);
+        var result = resolver.ResolveForForcedPack(
+            "textures\\characters\\facemods\\falloutnv.esm\\00104f09_0.dds");
+
+        Assert.Equal(AssetResolutionKind.ResolvedExact, result.Kind);
+        Assert.NotNull(result.Source);
+        Assert.Equal([1, 2, 3], result.Source!.Read());
+        Assert.Equal(-1, result.SourceFolderIndex);
+    }
+
+    [Fact]
     public void Resolve_SecondaryHasExactPath_ReturnsResolvedExact()
     {
         var baselineDir = MakeDataFolder("baseline");

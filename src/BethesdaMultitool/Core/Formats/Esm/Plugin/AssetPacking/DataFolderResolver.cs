@@ -217,6 +217,33 @@ internal sealed class DataFolderResolver
     }
 
     /// <summary>
+    ///     Resolve an asset whose bytes must be emitted even when its source already exists
+    ///     in the baseline. This is used for engine-derived plugin namespaces such as NPC
+    ///     FaceGen sidecars: the vanilla bytes exist under <c>falloutnv.esm</c>, while the
+    ///     runtime asks for the overriding plugin's filename and cannot use the baseline
+    ///     entry in place.
+    /// </summary>
+    public DataFolderResolution ResolveForForcedPack(string normalizedPath)
+    {
+        var resolution = Resolve(normalizedPath);
+        if (resolution.Kind != AssetResolutionKind.AlreadyInBaseline
+            || string.IsNullOrEmpty(resolution.ResolvedPath)
+            || !_baseline.TryResolveExact(resolution.ResolvedPath, out var source))
+        {
+            return resolution;
+        }
+
+        return resolution with
+        {
+            Kind = string.Equals(normalizedPath, resolution.ResolvedPath, StringComparison.OrdinalIgnoreCase)
+                ? AssetResolutionKind.ResolvedExact
+                : AssetResolutionKind.ResolvedFuzzy,
+            Source = source,
+            SourceFolderIndex = -1
+        };
+    }
+
+    /// <summary>
     ///     Resolve a path using only the exact + extension-swap strategies — no fuzzy
     ///     fallback. Used for specular-companion (<c>_s</c>) lookups, where a fuzzy match to a
     ///     different sibling (e.g. the diffuse or normal map) is never correct: it yields a
