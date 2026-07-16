@@ -63,6 +63,14 @@ internal sealed record DialogSectionResult(
 internal static class DialogGrupBuilder
 {
     /// <summary>
+    ///     Built-in dialogue types (GREETING, HELLO, GOODBYE, combat/service barks, etc.)
+    ///     occupy the reserved low FormID block. Ordinary quest topics begin at 0x1000 and
+    ///     are reachable only through their authored dialogue tree, so the global system-
+    ///     topic speaker gate must not suppress their prototype-only INFO children.
+    /// </summary>
+    private const uint FirstNonSystemDialFormId = 0x00001000;
+
+    /// <summary>
     ///     Builds the top-level DIAL GRUP section: emits new topics with fresh FormIDs, nests
     ///     INFOs under their topic, and validates/drops dangling cross-record references.
     /// </summary>
@@ -503,7 +511,8 @@ internal static class DialogGrupBuilder
                 // Require a hard speaker binding: a GetIsID/GetIsVoiceType condition or an
                 // explicit speaker link. Unbound INFOs are dropped — proto content that
                 // can't be safely scoped has no business inside a shared master topic.
-                if (!HasSpeakerBindingCondition(patched))
+                if (masterDialId < FirstNonSystemDialFormId
+                    && !HasSpeakerBindingCondition(patched))
                 {
                     droppedUnboundMasterTopicInfos++;
                     stats.IncrementSkipped("INFO");
@@ -1407,14 +1416,6 @@ internal static class DialogGrupBuilder
         return topic with { QuestFormId = quest, SpeakerFormId = speaker };
     }
 
-    /// <summary>
-    ///     Drop FormID fields on a new INFO whose targets don't exist in either master or our
-    ///     newly-emitted set. Patches FormId + TopicFormId to the allocator-issued values.
-    ///     Delegates CTDA condition filtering (Reference dangle + Parameter1/Parameter2
-    ///     dangle for function-aware FormID params) to <see cref="ConditionSanitizer.Filter" />.
-    /// </summary>
-    /// <summary>FNV condition function: GetIsID (parameter 1 = base NPC/creature form).</summary>
-
     /// <summary>FNV condition function: GetQuestVariable (quest + script variable index).</summary>
     private const ushort GetQuestVariableFunctionIndex = 79;
 
@@ -1457,6 +1458,12 @@ internal static class DialogGrupBuilder
              && !string.Equals(response.Text, DialogueTextBackfill.PlaceholderText, StringComparison.Ordinal))
             || response.SoundFormId is > 0);
 
+    /// <summary>
+    ///     Drop FormID fields on a new INFO whose targets don't exist in either master or our
+    ///     newly-emitted set. Patches FormId + TopicFormId to the allocator-issued values.
+    ///     Delegates CTDA condition filtering (Reference dangle + Parameter1/Parameter2
+    ///     dangle for function-aware FormID params) to <see cref="ConditionSanitizer.Filter" />.
+    /// </summary>
     private static DialogueRecord SanitizeInfoReferences(
         DialogueRecord info,
         uint newInfoId,

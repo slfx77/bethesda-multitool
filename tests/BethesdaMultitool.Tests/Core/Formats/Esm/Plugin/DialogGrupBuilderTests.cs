@@ -79,6 +79,114 @@ public sealed class DialogGrupBuilderTests
     }
 
     [Fact]
+    public void BuildDialogSection_EmitsQuestVariableInfoUnderOrdinaryMasterDial()
+    {
+        // Meg Reynolds' purifier branch is a prototype-only INFO under a retained ordinary
+        // retail DIAL. The upstream quest-variable sanitizer has already proven/remapped
+        // this CTDA; the system-topic gate must not reject it merely because the parent
+        // DIAL happens to be master-anchored.
+        const uint masterTopic = 0x0010467A;
+        const uint quest = 0x00103FED;
+        const uint speaker = 0x00103FEE;
+        var masterDial = ParsedRecord("DIAL", masterTopic,
+            new ParsedSubrecord
+            {
+                Signature = "EDID",
+                Data = Encoding.Latin1.GetBytes("VFreeformUnderpassUnderpassMayorTopic000\0")
+            },
+            new ParsedSubrecord { Signature = "QSTI", Data = BitConverter.GetBytes(quest) });
+        var info = new DialogueRecord
+        {
+            FormId = 0x00104680,
+            TopicFormId = masterTopic,
+            QuestFormId = quest,
+            SpeakerFormId = speaker,
+            Conditions =
+            [
+                new DialogueCondition
+                {
+                    FunctionIndex = 79, // GetQuestVariable
+                    Parameter1 = quest,
+                    Parameter2 = 2,
+                    ComparisonValue = 0f
+                }
+            ],
+            Responses =
+            [
+                new DialogueResponse
+                {
+                    Text = "The purifier behind me is broken.",
+                    ResponseNumber = 1
+                }
+            ]
+        };
+        var stats = new ConversionPipelineStats();
+
+        var result = DialogGrupBuilder.BuildDialogSection(
+            [], [info],
+            new NewVsOverrideClassifier([masterTopic, quest, speaker]),
+            new FormIdAllocator(),
+            [masterTopic, quest, speaker],
+            new Dictionary<uint, ParsedMainRecord> { [masterTopic] = masterDial },
+            stats,
+            NullConversionProgressSink.Instance);
+
+        Assert.Contains("INFO"u8.ToArray(), result.DialogSection);
+        Assert.True(ContainsTopicChildrenGrup(result.DialogSection, masterTopic));
+        Assert.True(ContainsFormIdSubrecord(result.DialogSection, "QSTI", quest));
+        Assert.True(ContainsFormIdSubrecord(result.DialogSection, "ANAM", speaker));
+        Assert.Equal(1, stats.EmittedByType["INFO"]);
+        Assert.Equal(0, stats.DropReasonCounts.GetValueOrDefault("info.master-topic-unbound"));
+    }
+
+    [Fact]
+    public void BuildDialogSection_StillRejectsQuestVariableInfoUnderSystemDial()
+    {
+        // System topics are evaluated outside an authored quest-topic path. Keep their
+        // stricter fail-closed gate so a runtime-stripped variable condition cannot widen
+        // a prototype GREETING into a globally visible line.
+        const uint masterGreeting = 0x000000C8;
+        const uint quest = 0x00103FED;
+        const uint speaker = 0x00103FEE;
+        var masterDial = ParsedRecord("DIAL", masterGreeting,
+            new ParsedSubrecord
+            {
+                Signature = "EDID",
+                Data = Encoding.Latin1.GetBytes("GREETING\0")
+            });
+        var info = new DialogueRecord
+        {
+            FormId = 0x00104680,
+            TopicFormId = masterGreeting,
+            QuestFormId = quest,
+            SpeakerFormId = speaker,
+            Conditions =
+            [
+                new DialogueCondition
+                {
+                    FunctionIndex = 79,
+                    Parameter1 = quest,
+                    Parameter2 = 2
+                }
+            ],
+            Responses = [new DialogueResponse { Text = "Prototype greeting.", ResponseNumber = 1 }]
+        };
+        var stats = new ConversionPipelineStats();
+
+        _ = DialogGrupBuilder.BuildDialogSection(
+            [], [info],
+            new NewVsOverrideClassifier([masterGreeting, quest, speaker]),
+            new FormIdAllocator(),
+            [masterGreeting, quest, speaker],
+            new Dictionary<uint, ParsedMainRecord> { [masterGreeting] = masterDial },
+            stats,
+            NullConversionProgressSink.Instance);
+
+        Assert.False(stats.EmittedByType.ContainsKey("INFO"));
+        Assert.Equal(1, stats.DropReasonCounts.GetValueOrDefault("info.master-topic-unbound"));
+    }
+
+    [Fact]
     public void BuildDialogSection_DialQstiRetentionPreventsDiagnosticAppend()
     {
         const uint masterDialId = 0x000000C8;
