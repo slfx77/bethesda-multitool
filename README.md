@@ -34,7 +34,7 @@ A .NET 10.0 toolkit for analyzing and converting Bethesda game data across The E
 | `world` | Explore worldspace data, heightmaps, and placed objects |
 | `render` / `export` | Render NIF/NPC models to PNG, or export to GLB |
 | `save` | Inspect Fallout 3/NV save game files |
-| `dmp` | Memory dump analysis (modules, regions, coverage, cross-build compare, …) |
+| `dmp` | Memory dump analysis (modules, regions, coverage, cross-build compare, …) plus `dmp to-esm` — rebuild a loadable ESM/ESP plugin from a dump |
 | `search` / `stats` / `list` / `show` / `diff` | Format-agnostic inspection of any ESM/ESP/DMP file |
 | `version-track` | Track game data changes across development builds |
 
@@ -51,7 +51,7 @@ A standalone companion app for transcribing Fallout: New Vegas voice files using
 | Archives | BSA (Bethesda Softworks Archive) |
 | Textures | DDX (3XDO/3XDR), DDS, PNG |
 | Audio | XMA (Xbox Media Audio), WAV, LIP (lip sync) |
-| Scripts | ObScript bytecode (decompilation + comparison) |
+| Scripts | ObScript bytecode + Papyrus (`.pex`) — decompilation + comparison |
 | Executables | XEX (Xbox Executable) |
 | UI | XDBF (Xbox Dashboard) |
 | Crash dumps | Xbox 360 minidumps with PDB-aware struct reading |
@@ -174,9 +174,10 @@ The ESM converter handles Xbox 360 to PC format conversion for Fallout: New Vega
 
 ## Script Decompiler
 
-Decompiles ObScript bytecode (SCDA subrecords) back to readable script source:
+Decompiles game script bytecode back to readable source across engines:
 
-- Full opcode coverage for Fallout: New Vegas
+- **ObScript** (SCDA subrecords): full Fallout 3 / New Vegas opcode coverage, plus Oblivion
+- **Papyrus** (`.pex`): Skyrim, Fallout 4, and Fallout 76 compiled-script decompilation
 - Cross-script variable resolution via SCRO/SCRV reference chains
 - FormID to EditorID resolution for human-readable output
 - Semantic comparison between original SCTX source and decompiled output
@@ -195,6 +196,8 @@ Standalone CLI tools for format analysis and debugging. These are not included i
 | `tools/RttiScanner` | RTTI and operator-new extraction from raw binaries |
 | `tools/TerrainAnalyzer` | Terrain and heightmap analysis and visualization |
 | `tools/SignatureScanner` | File signature scanning utilities |
+| `tools/EsmSchemaGen` | Generates per-game C# record schemas from xEdit `wbDefinitions*.pas` (feeds the multi-game reader) |
+| `tools/ShaderProbe` | Extracts and probes the FNV `shaderpackage.sdp` for renderer-parity analysis |
 
 ```bash
 # ESM analysis and comparison

@@ -82,6 +82,7 @@ export npc <meshes-bsa> --esm <e> -o <dir>  # Export NPC with FaceGen morphs + e
                                             #   (--dmp / --dmp-equip work here too)
 
 # DMP commands
+dmp to-esm <file> -o <out>      # Rebuild a loadable ESM/ESP plugin from a dump (planner pipeline; to-esp is a back-compat alias)
 dmp modules <file>              # List loaded modules
 dmp regions <file>              # List memory regions
 dmp va2offset <file> <address>  # Convert VA to file offset
@@ -184,6 +185,8 @@ dotnet run --project src/BethesdaMultitool -f net10.0 -- esm semdiff <file1> <fi
 | TextureAnalyzer | DDX/DDS texture analysis and conversion | `dotnet run --project tools/TextureAnalyzer -- <cmd>` |
 | SignatureScanner | File signature matching in memory dumps | `dotnet run --project tools/SignatureScanner -- <cmd>` |
 | TerrainAnalyzer | Heightmap/terrain analysis | `dotnet run --project tools/TerrainAnalyzer -- <cmd>` |
+| EsmSchemaGen | Generate per-game C# record schemas from xEdit wbDefinitions | `dotnet run --project tools/EsmSchemaGen -- <cmd>` |
+| ShaderProbe | Extract/probe FNV shaderpackage.sdp for renderer parity | `dotnet run --project tools/ShaderProbe -- <cmd>` |
 
 ## Key Source Directories
 
