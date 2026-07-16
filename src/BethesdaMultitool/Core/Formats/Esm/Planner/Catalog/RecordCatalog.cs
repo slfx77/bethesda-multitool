@@ -44,9 +44,17 @@ public static class RecordCatalog
             }
         }
 
-        var dmpOverrideIndices = new HashSet<int>();
+        // Runtime dumps can contain repeated snapshots of the same top-level GRUP. Match
+        // the legacy emitter's per-type, per-FormID first-wins behavior before catalog
+        // pairing so later copies cannot masquerade as newly-authored records.
+        var seenDmpRecords = new HashSet<(string Type, uint FormId)>();
         foreach (var (type, formId, model) in dmp.Enumerate(enabledTypes))
         {
+            if (!seenDmpRecords.Add((type, formId)))
+            {
+                continue;
+            }
+
             // Only pair with master when record TYPES also match. FormIDs are unique
             // across types in vanilla ESMs, but DMP captures occasionally surface the same
             // FormID under a different signature (runtime aliasing, parser misclassification).
@@ -54,14 +62,9 @@ public static class RecordCatalog
             // the DMP's wrong-typed Model, which the planner encoder dispatch rejects as
             // "Model is not of type X: actual Y". Type-mismatched DMP records fall through
             // to DmpNew so they emit through their own signature's encoder.
-            // First DMP record with this FormID wins the override slot (dmpOverrideIndices.Add).
-            // Later duplicates fall through to DmpNew so the downstream emission warning surfaces
-            // the conflict (rather than silently dropping) and the planner doesn't crash on the
-            // second IndexOf.
             if (masterByFormId.TryGetValue(formId, out var masterEntry)
                 && string.Equals(masterEntry.Type, type, StringComparison.Ordinal)
-                && masterEntryIndexByFormId.TryGetValue(formId, out var idx)
-                && dmpOverrideIndices.Add(idx))
+                && masterEntryIndexByFormId.TryGetValue(formId, out var idx))
             {
                 entries[idx] = masterEntry with
                 {
