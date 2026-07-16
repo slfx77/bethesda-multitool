@@ -7,15 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
+Work since `3.0.0-alpha.1`. Highlights: the ESM reader/writer went multi-game (Morrowind through
+Fallout 76), the DMP→ESP converter was renamed **DMP→ESM** and grew a plan-time pipeline, the 3D
+worldspace viewer gained an engine-grounded lighting/atmosphere/effects stack, and script
+decompilation added Papyrus.
 
-- **Research / investigation docs**: pruned `docs/` to format-only documentation. Removed `Xbox_360_ESM_Conversion_Transforms.md`, `RTTI-ESM-Coverage.md`, `investigate-*.md` (3 files), `parity/` (SUMMARY + 2 baseline JSONs), `planner/migration-deltas.md`, `v3-scope.md`, plus the unused `runtime-refr-extra-baselines.json` and `runtime-world-cell-probe-baselines.json`.
-- **In-repo memory notes**: removed `memory/bsa_mixed_archive_layout.md`, `memory/bsa_split_2gb_boundary.md`, `memory/dialogue_topic_link_remap.md` — investigation notes, not format docs.
-- `MigrationDeltaMarkdownSyncTests.cs` — paired with the deleted `docs/planner/migration-deltas.md`; the C# `MigrationDeltaRegistry` is now the sole source of truth for delta entries.
+### Added
+
+#### Multi-game ESM/ESP reading (schema-driven)
+
+- **Schema-driven multi-game reader**: record/subrecord decoding extended from Fallout 3/NV to
+  Oblivion (TES4), Morrowind (TES3), Skyrim LE, Fallout 4, and Fallout 76. A per-game, version-gated
+  `RecordSchema` drives decode with no-data-loss passthrough (`RawMemberDef`/`UnusedDef` verbatim).
+- **`tools/EsmSchemaGen`**: generates the per-game C# record schemas from xEdit `wbDefinitions*.pas`
+  definitions, so games are added by regenerating schemas rather than hand-writing decoders.
+
+#### DMP→ESM converter (renamed from DMP→ESP)
+
+- **Plan-time pipeline**: a two-pass planner computes per-record dispositions and cell-child verdicts
+  before writing, covering actor merge/move policy, duplicate-actor merge, override-door cloning,
+  persistent-cell reparenting, dialogue exit-topic relink + master-topic stub gating, navmesh
+  NVCI/NVEX reconstruction, and default-on leveled-spawn recovery.
+- **`report validate` / `report consistency`**: field-domain sanity checks and cross-build agreement
+  diffs over converter output.
+
+#### 3D worldspace viewer
+
+- **Lighting & atmosphere**: engine imagespace HDR/tonemap (IMGS/IMAD) with BrightPass bloom,
+  cascaded sun shadow maps (4-cascade, off-screen caster replay), sky dome with sun/moon billboards,
+  layered cloud rendering, and per-game ambient/DALC lighting.
+- **Water & effects**: per-game water shaders plus authored NIF-water geometry, the particle system,
+  and SpeedTree weather-driven wind animation.
+- **Collision**: NIF Havok collision decoding and walk-mode ground/wall collision.
+- **Projection & export**: orthographic/isometric/trimetric modes with sky backdrop; internal
+  tile-and-stitch raises the non-tiled PNG export cap to 16384px. Many features are env-flag gated
+  (`FALLOUT_VIEWER_*`).
+
+#### Script decompilation
+
+- **Papyrus (`.pex`)** decompiler for Skyrim, Fallout 4, and Fallout 76; **ObScript** extended to
+  Oblivion. Per-game condition/command function tables back the decode.
+
+#### Archives & textures
+
+- **Format-agnostic `archive` command group** (BSA and BA2 auto-detected by magic; `bsa`/`ba2` remain
+  aliases). Read support for the **BA2 (`BTDX`)** archive format used by Fallout 4/76/Starfield.
+
+#### Tooling
+
+- **`tools/ShaderProbe`**: extracts and probes the FNV `shaderpackage.sdp` for renderer-parity work.
 
 ### Changed
 
+- **DMP→ESP converter renamed to DMP→ESM** across the CLI (`dmp to-esm`, with `to-esp` kept as a
+  back-compat alias), the WinUI converter tab, and internals (`EspAssembler`→`EsmAssembler`,
+  `DmpToEspInputs`→`DmpToEsmInputs`). No behavior change from the rename itself.
 - **`runtime-parity-matrix.json` moved** from `docs/` to `tests/BethesdaMultitool.Tests/Resources/`. It's a load-bearing test fixture (consumed by `RuntimeParityMatrixTests`), not documentation.
+
+### Removed
+
+- **Research / investigation docs**: pruned `docs/` to format-only documentation. Removed `Xbox_360_ESM_Conversion_Transforms.md`, `RTTI-ESM-Coverage.md`, `investigate-*.md` (3 files), `parity/` (SUMMARY + 2 baseline JSONs), `planner/migration-deltas.md`, `v3-scope.md`, plus the unused `runtime-refr-extra-baselines.json` and `runtime-world-cell-probe-baselines.json`.
+- **`docs/file-size-exemptions.md`**: a stale, unenforced list of intentionally-large files (no test consumed it; the `LineCountInvariantTests` ceiling is enforced in code).
+- **In-repo memory notes**: removed `memory/bsa_mixed_archive_layout.md`, `memory/bsa_split_2gb_boundary.md`, `memory/dialogue_topic_link_remap.md` — investigation notes, not format docs.
+- `MigrationDeltaMarkdownSyncTests.cs` — paired with the deleted `docs/planner/migration-deltas.md`; the C# `MigrationDeltaRegistry` is now the sole source of truth for delta entries.
 
 ## [3.0.0-alpha.1] - 2026-06-02
 
