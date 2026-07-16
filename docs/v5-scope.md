@@ -23,7 +23,7 @@ source of truth, both directions.
 - It builds *on top of* the v4 schema-driven multi-game reader — there is nothing to edit until records
   are read richly and correctly across games.
 - It introduces the first *write* path to game files from the GUI (today the app is read-only plus the
-  offline DMP→ESP converter). Writing crosses integrity concerns — headers, masters, FormID allocation —
+  offline DMP→ESM converter). Writing crosses integrity concerns — headers, masters, FormID allocation —
   that deserve a clean version boundary, not an opportunistic patch onto v4.
 - It is genuinely large: the cross-record integrity layer is what xEdit spent years on. Scoping it as v5
   keeps it from derailing v4's read-only multi-game goal.
@@ -55,7 +55,7 @@ these now:**
 |---|---|---|
 | Bidirectional schema | [RecordSchema.cs](../src/BethesdaMultitool/Core/Formats/Esm/RecordModel/Schema/RecordSchema.cs) | Yes — same `RecordDef` drives decode and encode; `RawMemberDef`/`UnusedDef` verbatim; `ArrayDef.CountRef` for dynamic counts |
 | Schema generator | [tools/EsmSchemaGen](../tools/EsmSchemaGen) | Yes — produces the per-game, version-gated schemas; no hand-written per-game encoders |
-| Write-side precedent | [Conversion/Processing/EsmRecordWriter.cs](../src/BethesdaMultitool/Core/Formats/Esm/Conversion/Processing/EsmRecordWriter.cs), `EsmGrupWriter.cs`, `RecordHeaderProcessor.cs` | Yes — the DMP→ESP converter already writes records, GRUPs, and headers; the schema-driven writer reuses this framing |
+| Write-side precedent | [Conversion/Processing/EsmRecordWriter.cs](../src/BethesdaMultitool/Core/Formats/Esm/Conversion/Processing/EsmRecordWriter.cs), `EsmGrupWriter.cs`, `RecordHeaderProcessor.cs` | Yes — the DMP→ESM converter already writes records, GRUPs, and headers; the schema-driven writer reuses this framing |
 | Compression | `EsmRecordCompression` (Conversion) | Yes — re-compress modified Skyrim/FO4 records on save |
 | Localized strings (read) | `LocalizedStringTables` + `.STRINGS` loader | Partial — read side exists; v5 needs the matching string-table *writer* |
 | FormID resolver | `FormIdResolver` (App) | Yes — powers a FormID picker / reference editing in the property panel |

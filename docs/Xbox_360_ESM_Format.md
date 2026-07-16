@@ -258,11 +258,9 @@ From PDB analysis, these structures have `Endian()` methods and map to ESM subre
 | ExteriorCellData        | var  | Exterior cell data         |
 | InteriorCellInitialData | var  | Interior cell initial data |
 
-**Full list**: See `tools/EsmStructures.cs` for all 217 structures exported as C# code.
+**Full list**: The complete set of PDB structures is extracted on demand by `tools/PdbAnalyzer` (the `FindEsmStructures` command) from the debug PDB, rather than checked in as a static `.cs` file.
 
-    void Endian();              // Built-in endian conversion method!
-
-**Key Discovery**: The `FORM` struct has an **`Endian()` method**, confirming the game has built-in endian conversion for these fields.
+**Key Discovery**: The `FORM` struct (and its header siblings) carry a built-in `Endian()` method, confirming the game does endian conversion at the struct level.
 
 ### CHUNK Structure (6 bytes)
 
@@ -337,7 +335,6 @@ class TESFile {
 | PC ESM         | `Sample/ESM/pc_final/`                                           | Reference for verification |
 | Xbox 360 proto | `Sample/ESM/360_proto/`                                          | Earlier Xbox build         |
 | Debug PDB      | `Sample/Fallout New Vegas (July 21, 2010)/FalloutNV/Fallout.pdb` | Structure definitions      |
-| PDB Structures | `tools/EsmStructures.cs`                                         | Exported C# structures     |
 
 ### Related Documentation
 
@@ -444,4 +441,3 @@ PDB struct `BGSProjectileData` (type 0x867895). Confirms `iFlags` at offset 0 is
 | 2026-01-XX | Added structured pattern detection to diff tool                          |
 | 2026-01-XX | Comprehensive analysis: NPC\_, WEAP, AMMO, ARMO, CREA, ALCH, ENCH, PERK  |
 | 2026-01-XX | Documented DATA variants by record type, CTDA patterns, OBND, ENIT, etc. |
-| 2026-02-09 | Mostly blanked pending rewrite.                                          |

@@ -8,7 +8,7 @@ lives in the code.
 ## File formats & containers
 
 | Term           | Meaning                                                                                                   |
-| -------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------- | -------------- |
+| -------------- | --------------------------------------------------------------------------------------------------------- |
 | **ESM**        | Elder Scrolls Master — a Bethesda master plugin (base game data).                                         |
 | **ESP**        | Elder Scrolls Plugin — a mod/add-on plugin (same record format as ESM).                                   |
 | **BSA**        | Bethesda Softworks Archive — the loose-asset archive used through Skyrim LE (versions 0x100/103/104/105). |
@@ -19,7 +19,9 @@ lives in the code.
 | **DMP**        | A `.dmp` memory dump (Xbox 360 minidump / crash dump) analyzed by the runtime readers.                    |
 | **PDB**        | Program Database — Microsoft debug-symbol file; supplies struct layouts for reading DMP memory.           |
 | **EGT**        | FaceGen Geometry/Texture data (per-actor head morph + texture coefficients).                              |
-| **BIK**        | Bink video. **XMA**                                                                                       | Xbox 360 audio codec. **LIP** | lip-sync data. |
+| **BIK**        | Bink video (RAD Game Tools).                                                                              |
+| **XMA**        | Xbox 360 audio codec.                                                                                     |
+| **LIP**        | Lip-sync data (drives mouth animation).                                                                   |
 | **GLB / glTF** | Khronos 3D model interchange format that `export`/`render` emit.                                          |
 
 ## ESM record & subrecord codes
