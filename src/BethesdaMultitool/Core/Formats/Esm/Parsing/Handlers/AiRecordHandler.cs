@@ -599,10 +599,7 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
                     _pendingVariableIndex = isBigEndian
                         ? BinaryPrimitives.ReadUInt32BigEndian(data)
                         : BinaryPrimitives.ReadUInt32LittleEndian(data);
-                    var isIntegerRaw = isBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(data[12..])
-                        : BinaryPrimitives.ReadUInt32LittleEndian(data[12..]);
-                    _pendingVariableType = isIntegerRaw != 0 ? (byte)1 : (byte)0;
+                    _pendingVariableType = ScriptLocalVariableLayout.ReadType(data);
                     break;
                 case "SCVR":
                 {

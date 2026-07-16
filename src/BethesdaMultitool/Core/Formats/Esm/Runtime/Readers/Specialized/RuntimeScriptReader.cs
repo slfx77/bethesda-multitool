@@ -32,7 +32,6 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
     private const int ScroStructSize = 16;
 
     // ScriptVariable: 32 bytes — standalone struct, not TESForm-derived.
-    private const int SvarIsIntegerOffset = 12; // bIsInteger within SCRIPT_LOCAL
     private const int SvarNameOffset = 24; // BSStringT cName
     private const int SvarStructSize = 32;
 
@@ -374,8 +373,7 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
             return null;
         }
 
-        var isInteger = BinaryUtils.ReadUInt32BE(buf, SvarIsIntegerOffset);
-        var type = isInteger != 0 ? (byte)1 : (byte)0;
+        var type = ScriptLocalVariableLayout.ReadType(buf);
         var name = _context.ReadBsStringT(fileOffset.Value, SvarNameOffset);
 
         return new ScriptVariableInfo(index, name, type);

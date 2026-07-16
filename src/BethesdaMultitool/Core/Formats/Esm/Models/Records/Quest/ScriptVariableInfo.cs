@@ -12,3 +12,12 @@ public record ScriptVariableInfo(uint Index, string? Name, byte Type)
     /// <summary>Human-readable type name.</summary>
     public string TypeName => Type == 0 ? "float" : "int";
 }
+
+/// <summary>Canonical PDB-backed field access for the 24-byte SCRIPT_LOCAL / SLSD payload.</summary>
+internal static class ScriptLocalVariableLayout
+{
+    internal const int IsIntegerOffset = 16;
+
+    internal static byte ReadType(ReadOnlySpan<byte> data) =>
+        data.Length > IsIntegerOffset && data[IsIntegerOffset] != 0 ? (byte)1 : (byte)0;
+}

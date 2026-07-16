@@ -458,10 +458,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     pendingVariableIndex = record.IsBigEndian
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    var isIntegerRaw = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[12..])
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
-                    pendingVariableType = isIntegerRaw != 0 ? (byte)1 : (byte)0;
+                    pendingVariableType = ScriptLocalVariableLayout.ReadType(subData);
                     break;
                 case "SCVR":
                 {

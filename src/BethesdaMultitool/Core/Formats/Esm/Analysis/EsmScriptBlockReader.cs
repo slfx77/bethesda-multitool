@@ -63,7 +63,7 @@ internal static class EsmScriptBlockReader
             if (sub.Signature == "SLSD" && sub.Data.Length >= 4)
             {
                 pendingIndex = BinaryPrimitives.ReadUInt32LittleEndian(sub.Data.AsSpan(0, 4));
-                pendingType = sub.Data.Length > 16 && sub.Data[16] != 0 ? (byte)1 : (byte)0;
+                pendingType = ScriptLocalVariableLayout.ReadType(sub.Data);
             }
             else if (sub.Signature == "SCVR" && pendingIndex.HasValue)
             {

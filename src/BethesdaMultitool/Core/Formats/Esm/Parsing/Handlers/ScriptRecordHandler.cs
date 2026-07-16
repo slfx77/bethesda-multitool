@@ -410,15 +410,11 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
                     break;
 
                 case "SLSD" when sub.DataLength >= 16:
-                    // PDB SCRIPT_LOCAL: uiID(4) + fValue(8) + bIsInteger(4) + padding(8)
+                    // PDB SCRIPT_LOCAL: uiID(4) + padding(4) + fValue(8) + bIsInteger(1) + padding(7)
                     pendingSlsdIndex = record.IsBigEndian
                         ? BinaryPrimitives.ReadUInt32BigEndian(subData)
                         : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    // bIsInteger at offset 12
-                    var isIntegerRaw = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[12..])
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
-                    pendingSlsdType = isIntegerRaw != 0 ? (byte)1 : (byte)0;
+                    pendingSlsdType = ScriptLocalVariableLayout.ReadType(subData);
                     break;
 
                 case "SCVR":

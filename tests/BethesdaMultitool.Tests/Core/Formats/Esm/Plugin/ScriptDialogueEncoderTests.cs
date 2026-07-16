@@ -1,11 +1,13 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.AI;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
@@ -464,6 +466,31 @@ public class ScriptDialogueEncoderTests
         });
         var scda = Assert.Single(encoded.Subrecords, sub => sub.Signature == "SCDA");
         Assert.Equal(littleEndianScda, scda.Bytes);
+    }
+
+    [Theory]
+    [InlineData(1u, 0, 0)]
+    [InlineData(0u, 1, 1)]
+    public void EsmScriptBlockReader_ReadsScriptLocalTypeAtOffset16(
+        uint decoyValueAtOffset12,
+        byte isIntegerAtOffset16,
+        byte expectedType)
+    {
+        var slsd = new byte[24];
+        BinaryPrimitives.WriteUInt32LittleEndian(slsd, 9);
+        BinaryPrimitives.WriteUInt32LittleEndian(slsd.AsSpan(12), decoyValueAtOffset12);
+        slsd[16] = isIntegerAtOffset16;
+        var subrecords = new List<ParsedSubrecord>
+        {
+            new() { Signature = "SLSD", Data = slsd },
+            new() { Signature = "SCVR", Data = Encoding.ASCII.GetBytes("state\0") }
+        };
+
+        var variable = Assert.Single(EsmScriptBlockReader.ReadScriptVariables(
+            subrecords, 0, subrecords.Count));
+        Assert.Equal(9u, variable.Index);
+        Assert.Equal("state", variable.Name);
+        Assert.Equal(expectedType, variable.Type);
     }
 
     [Fact]

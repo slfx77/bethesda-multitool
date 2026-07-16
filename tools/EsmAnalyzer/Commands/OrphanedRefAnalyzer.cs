@@ -90,8 +90,8 @@ internal static class OrphanedRefAnalyzer
                         if (sub.Data.Length >= 16)
                         {
                             pendingSlsdIndex = BinaryUtils.ReadUInt32(sub.Data, 0, bigEndian);
-                            // Type byte at offset 12
-                            pendingSlsdType = sub.Data.Length > 12 ? sub.Data[12] : (byte)0;
+                            // PDB SCRIPT_LOCAL stores bIsInteger at offset 16.
+                            pendingSlsdType = ScriptLocalVariableLayout.ReadType(sub.Data);
                             havePendingSlsd = true;
                         }
                         break;
