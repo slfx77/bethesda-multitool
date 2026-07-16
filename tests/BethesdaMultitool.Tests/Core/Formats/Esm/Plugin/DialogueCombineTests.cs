@@ -296,7 +296,7 @@ public sealed class DialogueCombineTests
             QuestFormId = quest,
             SpeakerFormId = speaker,
             PromptText = "Ask about the cut tutorial",
-            InfoFlags = 0x91,
+            InfoFlags = 0x95,
             InfoFlagsExt = 0x03,
             HasResultScript = true,
             Responses =
@@ -323,13 +323,30 @@ public sealed class DialogueCombineTests
         Assert.Empty(cutInfo.LinkToTopics);
         Assert.Empty(cutInfo.ResultScripts);
         Assert.False(cutInfo.HasResultScript);
-        Assert.Equal((byte)0x10, cutInfo.InfoFlags);
+        Assert.Equal((byte)0x04, cutInfo.InfoFlags);
         Assert.Equal((byte)0x01, cutInfo.InfoFlagsExt);
 
         var unavailableQuestPlan = DialogueCombinePlanner.Build(
             [], [source], new NewVsOverrideClassifier([dial, infoId]), masterIndex, [dial, infoId]);
         Assert.Empty(unavailableQuestPlan.NewTopics);
         Assert.Empty(unavailableQuestPlan.NewInfos);
+    }
+
+    [Fact]
+    public void DialogueRecord_UsesFnvTopicInfoFlagBits()
+    {
+        Assert.True(new DialogueRecord { InfoFlags = 0x01 }.IsGoodbye);
+        Assert.True(new DialogueRecord { InfoFlags = 0x02 }.IsRandom);
+        Assert.True(new DialogueRecord { InfoFlags = 0x04 }.IsSayOnce);
+        Assert.True(new DialogueRecord { InfoFlags = 0x08 }.IsRunImmediately);
+        Assert.True(new DialogueRecord { InfoFlags = 0x10 }.IsInfoRefusal);
+        Assert.True(new DialogueRecord { InfoFlags = 0x20 }.IsRandomEnd);
+        Assert.True(new DialogueRecord { InfoFlags = 0x40 }.IsRunForRumors);
+        Assert.True(new DialogueRecord { InfoFlags = 0x80 }.IsSpeechChallenge);
+
+        var sayOnceOnly = new DialogueRecord { InfoFlags = 0x04 };
+        Assert.False(sayOnceOnly.IsInfoRefusal);
+        Assert.False(sayOnceOnly.IsRandomEnd);
     }
 
     [Fact]

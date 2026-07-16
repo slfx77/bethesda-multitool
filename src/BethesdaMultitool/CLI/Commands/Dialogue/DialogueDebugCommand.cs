@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 using Spectre.Console;
@@ -258,14 +259,14 @@ internal static class DialogueDebugCommand
             names.Add("Random");
         }
 
-        if ((flags & 0x04) != 0)
-        {
-            names.Add("RandEnd");
-        }
-
-        if ((flags & 0x10) != 0)
+        if ((flags & DialogueRecord.SayOnceFlag) != 0)
         {
             names.Add("SayOnce");
+        }
+
+        if ((flags & DialogueRecord.RandomEndFlag) != 0)
+        {
+            names.Add("RandEnd");
         }
 
         if ((flags & 0x80) != 0)

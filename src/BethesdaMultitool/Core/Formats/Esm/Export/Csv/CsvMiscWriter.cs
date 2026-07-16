@@ -76,8 +76,8 @@ internal static class CsvMiscWriter
             if (d.IsGoodbye) flags.Add("Goodbye");
             if (d.IsSayOnce) flags.Add("SayOnce");
             if (d.IsSpeechChallenge) flags.Add("SpeechChallenge");
-            if ((d.InfoFlags & 0x02) != 0) flags.Add("Random");
-            if ((d.InfoFlags & 0x04) != 0) flags.Add("RandomEnd");
+            if (d.IsRandom) flags.Add("Random");
+            if (d.IsRandomEnd) flags.Add("RandomEnd");
             var flagsDesc = string.Join(";", flags);
 
             // Build semicolon-separated FormID lists

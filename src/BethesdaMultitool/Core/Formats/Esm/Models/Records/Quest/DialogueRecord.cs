@@ -56,7 +56,11 @@ public record DialogueRecord
     /// <summary>Ordering index within the parent topic (runtime iInfoIndex).</summary>
     public ushort InfoIndex { get; init; }
 
-    /// <summary>Info flags byte: Goodbye(0x01), Random(0x02), RandomEnd(0x04), SayOnce(0x10), SpeechChallenge(0x80).</summary>
+    /// <summary>
+    ///     FNV TESTopicInfo flags byte: Goodbye(0x01), Random(0x02), SayOnce(0x04),
+    ///     RunImmediately(0x08), InfoRefusal(0x10), RandomEnd(0x20), RunForRumors(0x40),
+    ///     SpeechChallenge(0x80).
+    /// </summary>
     public byte InfoFlags { get; init; }
 
     /// <summary>Extended info flags: SayOnceADay(0x01), AlwaysDarkened(0x02).</summary>
@@ -145,26 +149,38 @@ public record DialogueRecord
 
     // Computed properties
 
+    internal const byte GoodbyeFlag = 0x01;
+    internal const byte RandomFlag = 0x02;
+    internal const byte SayOnceFlag = 0x04;
+    internal const byte RunImmediatelyFlag = 0x08;
+    internal const byte InfoRefusalFlag = 0x10;
+    internal const byte RandomEndFlag = 0x20;
+    internal const byte RunForRumorsFlag = 0x40;
+    internal const byte SpeechChallengeFlag = 0x80;
+
     /// <summary>Whether this INFO ends the conversation.</summary>
-    public bool IsGoodbye => (InfoFlags & 0x01) != 0;
+    public bool IsGoodbye => (InfoFlags & GoodbyeFlag) != 0;
 
     /// <summary>Whether this INFO is randomly selected from alternatives.</summary>
-    public bool IsRandom => (InfoFlags & 0x02) != 0;
-
-    /// <summary>Whether this INFO ends a random selection group.</summary>
-    public bool IsRandomEnd => (InfoFlags & 0x04) != 0;
-
-    /// <summary>Whether result scripts run for rumor responses.</summary>
-    public bool IsRunForRumors => (InfoFlags & 0x08) != 0;
+    public bool IsRandom => (InfoFlags & RandomFlag) != 0;
 
     /// <summary>Whether this INFO can only be said once.</summary>
-    public bool IsSayOnce => (InfoFlags & 0x10) != 0;
+    public bool IsSayOnce => (InfoFlags & SayOnceFlag) != 0;
 
-    /// <summary>Whether this INFO uses inline response display.</summary>
-    public bool IsInlineResponse => (InfoFlags & 0x40) != 0;
+    /// <summary>Whether result scripts run when the conversation is generated.</summary>
+    public bool IsRunImmediately => (InfoFlags & RunImmediatelyFlag) != 0;
+
+    /// <summary>Whether this INFO is a refusal response.</summary>
+    public bool IsInfoRefusal => (InfoFlags & InfoRefusalFlag) != 0;
+
+    /// <summary>Whether this INFO ends a random selection group.</summary>
+    public bool IsRandomEnd => (InfoFlags & RandomEndFlag) != 0;
+
+    /// <summary>Whether result scripts run for rumor responses.</summary>
+    public bool IsRunForRumors => (InfoFlags & RunForRumorsFlag) != 0;
 
     /// <summary>Whether this INFO is a speech challenge option.</summary>
-    public bool IsSpeechChallenge => (InfoFlags & 0x80) != 0;
+    public bool IsSpeechChallenge => (InfoFlags & SpeechChallengeFlag) != 0;
 
     /// <summary>Human-readable difficulty name for speech challenges.</summary>
     public string DifficultyName => Difficulty switch

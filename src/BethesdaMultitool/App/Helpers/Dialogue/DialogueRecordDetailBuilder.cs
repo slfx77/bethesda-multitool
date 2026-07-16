@@ -130,9 +130,12 @@ internal static class DialogueRecordDetailBuilder
         {
             var flags = new List<string>();
             if (info.IsGoodbye) flags.Add("Goodbye");
-            if ((info.InfoFlags & 0x02) != 0) flags.Add("Random");
-            if ((info.InfoFlags & 0x04) != 0) flags.Add("RandomEnd");
+            if (info.IsRandom) flags.Add("Random");
             if (info.IsSayOnce) flags.Add("SayOnce");
+            if (info.IsRunImmediately) flags.Add("RunImmediately");
+            if (info.IsInfoRefusal) flags.Add("InfoRefusal");
+            if (info.IsRandomEnd) flags.Add("RandomEnd");
+            if (info.IsRunForRumors) flags.Add("RunForRumors");
             if (info.IsSpeechChallenge) flags.Add("SpeechChallenge");
             rows.Add(new DetailRow("Flags", $"0x{info.InfoFlags:X2} ({string.Join(", ", flags)})"));
         }

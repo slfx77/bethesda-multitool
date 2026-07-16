@@ -352,7 +352,7 @@ internal static class DialogueCombinePlanner
             ConditionFunctions = [..source.ConditionFunctions],
             Responses = denseResponses,
             PreviousInfo = 0,
-            InfoFlags = (byte)(source.InfoFlags & 0x10),
+            InfoFlags = (byte)(source.InfoFlags & DialogueRecord.SayOnceFlag),
             InfoFlagsExt = (byte)(source.InfoFlagsExt & 0x01),
             IsRehomedCutDialogue = true,
             AudioSourceInfoFormId = source.FormId,

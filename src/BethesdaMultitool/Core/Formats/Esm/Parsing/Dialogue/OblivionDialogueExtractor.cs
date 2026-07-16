@@ -197,9 +197,11 @@ internal static class OblivionDialogueExtractor
         byte flags = 0;
         if ((oblivion & 0x01) != 0) flags |= 0x01; // Goodbye
         if ((oblivion & 0x02) != 0) flags |= 0x02; // Random
-        if ((oblivion & 0x04) != 0) flags |= 0x10; // Say Once
-        if ((oblivion & 0x20) != 0) flags |= 0x04; // Random End
-        if ((oblivion & 0x40) != 0) flags |= 0x08; // Run for Rumors
+        if ((oblivion & 0x04) != 0) flags |= DialogueRecord.SayOnceFlag;
+        if ((oblivion & 0x08) != 0) flags |= DialogueRecord.RunImmediatelyFlag;
+        if ((oblivion & 0x10) != 0) flags |= DialogueRecord.InfoRefusalFlag;
+        if ((oblivion & 0x20) != 0) flags |= DialogueRecord.RandomEndFlag;
+        if ((oblivion & 0x40) != 0) flags |= DialogueRecord.RunForRumorsFlag;
         return flags;
     }
 

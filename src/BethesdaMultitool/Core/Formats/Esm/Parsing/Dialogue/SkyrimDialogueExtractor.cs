@@ -247,8 +247,8 @@ internal static class SkyrimDialogueExtractor
         byte flags = 0;
         if ((skyrim & 0x01) != 0) flags |= 0x01; // Goodbye
         if ((skyrim & 0x02) != 0) flags |= 0x02; // Random
-        if ((skyrim & 0x04) != 0) flags |= 0x10; // Say Once
-        if ((skyrim & 0x20) != 0) flags |= 0x04; // Random End
+        if ((skyrim & 0x04) != 0) flags |= DialogueRecord.SayOnceFlag;
+        if ((skyrim & 0x20) != 0) flags |= DialogueRecord.RandomEndFlag;
         return flags;
     }
 }

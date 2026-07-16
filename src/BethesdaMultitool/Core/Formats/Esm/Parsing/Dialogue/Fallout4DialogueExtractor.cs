@@ -224,8 +224,8 @@ internal static class Fallout4DialogueExtractor
     {
         byte flags = 0;
         if ((fo4 & 0x02) != 0) flags |= 0x02; // Random
-        if ((fo4 & 0x04) != 0) flags |= 0x10; // Say Once
-        if ((fo4 & 0x20) != 0) flags |= 0x04; // Random End
+        if ((fo4 & 0x04) != 0) flags |= DialogueRecord.SayOnceFlag;
+        if ((fo4 & 0x20) != 0) flags |= DialogueRecord.RandomEndFlag;
         return flags;
     }
 }

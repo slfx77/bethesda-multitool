@@ -20,7 +20,10 @@ public record RuntimeDialogueInfo
     /// <summary>Next speaker enum from TOPIC_INFO_DATA.nextSpeaker.</summary>
     public byte NextSpeaker { get; init; }
 
-    /// <summary>Info flags: Goodbye(0x01), Random(0x02), RandomEnd(0x04), SayOnce(0x10), SpeechChallenge(0x80).</summary>
+    /// <summary>
+    ///     Info flags: Goodbye(0x01), Random(0x02), SayOnce(0x04), RunImmediately(0x08),
+    ///     InfoRefusal(0x10), RandomEnd(0x20), RunForRumors(0x40), SpeechChallenge(0x80).
+    /// </summary>
     public byte InfoFlags { get; init; }
 
     /// <summary>Extended info flags: SayOnceADay(0x01), AlwaysDarkened(0x02).</summary>
