@@ -351,7 +351,7 @@ public static class EsmCoverageAnalyzer
         }
 
         return (
-            BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0, 4)),
+            BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(12, 4)),
             BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4, 4)),
             BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8, 4)));
     }
@@ -764,6 +764,11 @@ public static class EsmCoverageAnalyzer
 
         var compiledSizeMismatches = rows.Count(r => !r.CompiledSizeMatches);
         var refCountMismatches = rows.Count(r => !r.RefCountMatches);
+        // INFO and QUST fragment SCHRs can declare variables owned by the surrounding
+        // dialogue/quest context without serializing an inline SLSD/SCVR table. Vanilla
+        // FalloutNV.esm contains those rows, so only standalone SCPT blocks support a
+        // direct SCHR VariableCount-to-local-table integrity comparison.
+        var variableCountMismatches = rows.Count(IsStandaloneVariableCountMismatch);
         var walkFailures = rows.Count(r => !r.WalkedToEnd);
         var diagnostics = rows.Count(r => r.HasDiagnostics);
 
@@ -771,11 +776,12 @@ public static class EsmCoverageAnalyzer
         sb.AppendLine($"- Walked to end: {rows.Count - walkFailures:N0}/{rows.Count:N0}");
         sb.AppendLine($"- SCHR compiled-size mismatches: {compiledSizeMismatches:N0}");
         sb.AppendLine($"- SCHR reference-count mismatches: {refCountMismatches:N0}");
-        sb.AppendLine("- SLSD variables: counted in CSV only; SCHR's first dword is not a reliable vanilla variable count.");
+        sb.AppendLine($"- Standalone SCPT SCHR variable-count mismatches: {variableCountMismatches:N0}");
         sb.AppendLine($"- Blocks with decoder diagnostics: {diagnostics:N0}");
 
         var notable = rows
-            .Where(r => !r.CompiledSizeMatches || !r.RefCountMatches || !r.WalkedToEnd || r.HasDiagnostics)
+            .Where(r => !r.CompiledSizeMatches || !r.RefCountMatches || IsStandaloneVariableCountMismatch(r) ||
+                        !r.WalkedToEnd || r.HasDiagnostics)
             .OrderByDescending(r => r.ScdaLength)
             .Take(15)
             .ToList();
@@ -800,6 +806,11 @@ public static class EsmCoverageAnalyzer
                 issues.Add("ref-count");
             }
 
+            if (IsStandaloneVariableCountMismatch(row))
+            {
+                issues.Add("variable-count");
+            }
+
             if (!row.WalkedToEnd)
             {
                 issues.Add("walk");
@@ -814,6 +825,9 @@ public static class EsmCoverageAnalyzer
                 $"| {row.RecordType} | 0x{row.FormId:X8} | {row.BlockIndex} | {row.ScdaLength} | {string.Join(' ', issues)} | {row.Diagnostics} |");
         }
     }
+
+    private static bool IsStandaloneVariableCountMismatch(EsmScriptBytecodeCoverageRow row) =>
+        row.RecordType == "SCPT" && !row.VariableCountMatches;
 
     private static string Csv(object? value)
     {

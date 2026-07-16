@@ -137,6 +137,61 @@ public sealed class EsmCoverageAnalyzerTests
     }
 
     [Fact]
+    public void AnalyzeRecords_ReadsVariableCountFromSerializedSchrOffset()
+    {
+        var header = new byte[20];
+        WriteUInt32(header, 0, 0xDEADBEEF); // Serialized SCHR bytes 0..3 are unused.
+        WriteUInt32(header, 8, 4);
+        WriteUInt32(header, 12, 1);
+
+        var result = EsmCoverageAnalyzer.AnalyzeRecords(
+            "synthetic.esm",
+            [
+                Record("SCPT", 0x01000100,
+                    Sub("SCHR", header),
+                    Sub("SCDA", 0xFF, 0xFF, 0x00, 0x00),
+                    ScriptLocal(2, true),
+                    Sub("SCVR", (byte)'i', (byte)'C', (byte)'o', (byte)'u', (byte)'n', (byte)'t', 0))
+            ]);
+
+        var row = Assert.Single(result.ScriptBytecode);
+        Assert.Equal(1u, row.SchrVariableCount);
+        Assert.Equal(1, row.ActualVariables);
+        Assert.True(row.VariableCountMatches);
+    }
+
+    [Fact]
+    public void WriteReport_TreatsEmbeddedFragmentVariableCountsAsInformational()
+    {
+        var result = EsmCoverageAnalyzer.AnalyzeRecords(
+            "synthetic.esm",
+            [
+                Record("INFO", 0x01000100,
+                    ScriptHeader(variableCount: 1, compiledSize: 4),
+                    Sub("SCDA", 0xFF, 0xFF, 0x00, 0x00))
+            ]);
+        var row = Assert.Single(result.ScriptBytecode);
+        Assert.False(row.VariableCountMatches);
+
+        var outputDirectory = Path.Combine(Path.GetTempPath(), $"esm-coverage-{Guid.NewGuid():N}");
+        try
+        {
+            EsmCoverageAnalyzer.WriteReport(result, outputDirectory);
+            var summary = File.ReadAllText(Path.Combine(outputDirectory, "summary.md"));
+
+            Assert.Contains("Standalone SCPT SCHR variable-count mismatches: 0", summary);
+            Assert.DoesNotContain("| INFO |", summary);
+        }
+        finally
+        {
+            if (Directory.Exists(outputDirectory))
+            {
+                Directory.Delete(outputDirectory, true);
+            }
+        }
+    }
+
+    [Fact]
     public void AnalyzeRecords_ReportsParserAndEncoderOwnership()
     {
         var result = EsmCoverageAnalyzer.AnalyzeRecords(
@@ -461,9 +516,9 @@ public sealed class EsmCoverageAnalyzerTests
         uint compiledSize = 0)
     {
         var data = new byte[20];
-        WriteUInt32(data, 0, variableCount);
         WriteUInt32(data, 4, refCount);
         WriteUInt32(data, 8, compiledSize);
+        WriteUInt32(data, 12, variableCount);
         data[18] = 1;
         return Sub("SCHR", data);
     }
