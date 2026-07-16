@@ -741,7 +741,8 @@ public sealed partial class WorldView3DControl
                 weather,
                 weatherTransition.OutgoingWeather,
                 transitionCloudSourceIndices[i],
-                weatherTransition.CurrentWeatherWeight);
+                weatherTransition.CurrentWeatherWeight,
+                game);
             transitionCloudU[i] = transition.ScrollVelocity.X;
             transitionCloudV[i] = transition.ScrollVelocity.Y;
             var pinnedOffset = WeatherCloudTransitionResolver.OffsetAtTime(
@@ -779,7 +780,8 @@ public sealed partial class WorldView3DControl
                     weather,
                     weatherTransition.OutgoingWeather,
                     sourceIndex,
-                    weatherTransition.CurrentWeatherWeight);
+                    weatherTransition.CurrentWeatherWeight,
+                    game);
                 return transition.UsesSameTexture
                     ? "same-texture-coalesced"
                     : "single-texture-fade";

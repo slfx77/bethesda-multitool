@@ -40,6 +40,22 @@ public sealed class GpuTonemapSettingsTests
     }
 
     [Fact]
+    public void OblivionWeatherFactory_AllZeroPlaceholderKeepsSafeNeutralDefaults()
+    {
+        // Retail DefaultWeather (0x0000015E) has a required but wholly zero HNAM. Treating its
+        // TargetLum as active makes the recovered HDR operator multiply the scene by zero.
+        var s = GpuTonemapSettings.ForOblivionWeather(new WeatherHdr());
+
+        Assert.Equal(GpuTonemapSettings.EngineExteriorDefaults.TargetLum, s.TargetLum);
+        Assert.Equal(GpuTonemapSettings.EngineExteriorDefaults.UpperLumClamp, s.UpperLumClamp);
+        Assert.Equal(GpuTonemapSettings.EngineExteriorDefaults.EmissiveMult, s.EmissiveMult);
+        Assert.Equal(1f, s.Saturation);
+        Assert.Equal(1f, s.Contrast);
+        Assert.Equal(1f, s.Brightness);
+        Assert.Equal(0f, s.TintAmount);
+    }
+
+    [Fact]
     public void RecoveredAdaptationReference_WeightsCurrentScene()
     {
         // Independent CPU oracle for ISHDRADAPT: (1-k)*previous + k*current.

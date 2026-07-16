@@ -62,6 +62,10 @@ public static class GameProfiles
                 HasMapMarkers = true,
                 MarkerArt = MarkerArtStrategy.EmbeddedColored, // parchment-tile icons from menus\map\world (oblivion_marker_NN.png)
                 MarkerIconScale = 1.5f, // 32×32 parchment tiles render small at 1.0; match Skyrim's detailed-icon scale
+                // At zoom-to-fit the parchment tiles otherwise cover a disproportionate share of
+                // Cyrodiil. Grow them back to the existing 1.5× size by the ordinary detail zoom.
+                MarkerMinScreenScale = 0.55f,
+                MarkerFullSizeZoom = 0.05f,
                 // AmbientLightScale: engine default 1.0. The old 0.7 here compensated for the misread
                 // FNV "0.3 ambient scale" baseline (since refuted — see GameProfile.AmbientLightScale).
                 SupportsObscriptDecompilation = true,

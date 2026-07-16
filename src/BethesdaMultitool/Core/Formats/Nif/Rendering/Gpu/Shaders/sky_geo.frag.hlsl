@@ -58,17 +58,20 @@ float4 main(PSInput input) : SV_Target
     float2 uv = input.vUv + uScrollMode.xy;
     float4 tex = textures[NonUniformResourceIndex(uTexIndex.x)].Sample(sSky, uv);
 
-    // Retail SKY*.vso treats vertex RGB as weights for three BlendColor rows. Stars/clouds populate only
-    // BlendColor[0], so their recovered RGB contribution is tint * vertex.r; multiplying literal RGB here
-    // would incorrectly turn the retail (1,0,0) cloud weights red. The cloud dome's
+    // Retail SKY*.vso treats vertex RGB as weights for three BlendColor rows. Stars/clouds select one
+    // row, but that row is not consistently R across games/shapes: Oblivion's first Clouds.nif cap uses
+    // R while most vertices in its second cap use B. Collapse the one-hot selector to its magnitude;
+    // hard-coding R turns that second cap black. Multiplying literal RGB here would instead turn the
+    // retail (1,0,0)/(0,0,1) blend selectors into a red/blue tint. The cloud dome's
     // horizon fade is BAKED INTO that vertex alpha (verified in clouds.nif: cloudcloudy's alpha runs ~2 at
     // the rim/horizon to 255 overhead; CloudClear ~70 -> 255; the horizon bands ~170 flat). So the fade is
     // the mesh's `input.vColor.a`, not a guessed shader smoothstep — and stacked caps blend overhead while
     // their rims vanish into the hazy horizon.
+    float vertexWeight = max(input.vColor.r, max(input.vColor.g, input.vColor.b));
     if (mode == 1)
     {
         // Stars: additive (PSO SrcAlpha/One). Texture + vertex + night-fade alpha gate the add.
-        return float4(tex.rgb * uTintParam.rgb * input.vColor.r, tex.a * uTintParam.a * input.vColor.a);
+        return float4(tex.rgb * uTintParam.rgb * vertexWeight, tex.a * uTintParam.a * input.vColor.a);
     }
 
     // Clouds: alpha (PSO SrcAlpha/InvSrcAlpha), tinted by daylight, opacity-scaled, vertex-alpha faded.
@@ -77,6 +80,6 @@ float4 main(PSInput input) : SV_Target
     // meshes carry a blue-ish vertex tint that reads as a strong red cast, and the PNAM color is the
     // authoritative cloud color. Alpha = texture α × cloudOpacity × the mesh's baked vertex-alpha horizon
     // fade (cloudcloudy ~2 at the rim → 255 overhead), so clouds dense overhead, clean toward the horizon.
-    return float4(tex.rgb * uTintParam.rgb * input.vColor.r,
+    return float4(tex.rgb * uTintParam.rgb * vertexWeight,
                   saturate(tex.a * uTintParam.a * input.vColor.a));
 }

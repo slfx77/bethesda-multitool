@@ -24,9 +24,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 ///     <para>
 ///         Reuses the <c>cellgrid</c> shaders (position-only vertex + viewProj/color CB at b0,
 ///         passthrough fragment). Two PSOs share the cached vertex/index buffers: a solid fill
-///         (alpha-blended, depth-read/no-write so terrain occludes submerged navmesh) and a
-///         wireframe edge pass. R32 indices because a cell's combined navmesh vertex count can
-///         exceed 65 535.
+///         (alpha-blended, depth-disabled so the diagnostic remains visible through terrain and
+///         references) and a wireframe edge pass. R32 indices because a cell's combined navmesh
+///         vertex count can exceed 65 535.
 ///     </para>
 /// </summary>
 internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
@@ -78,16 +78,15 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
             new InputElementDescription("TEXCOORD", 0, Format.R32G32B32_Float, 0, 0)
         };
 
-        // Depth-read / no-write so terrain + refs (which wrote depth) occlude submerged navmesh,
-        // but the overlay itself doesn't perturb the depth buffer for later layers. Reversed-Z
-        // (near→1, far→0) so the test is GreaterEqual; a depth bias (in CreatePso's rasterizer)
-        // pulls the overlay toward the camera so it wins coplanar ties against terrain (no
-        // z-fighting) while real geometry in front still occludes it.
+        // NAVM is a diagnostic overlay: it must remain visible through terrain and references.
+        // Depth testing hid valid triangles whenever authored navmesh sat slightly below the
+        // rendered ground (the common case this overlay is meant to expose). The fill + edge draw
+        // order below still keeps navmesh edges on top of its own translucent fill.
         var depth = new D12.DepthStencilDescription
         {
-            DepthEnable = true,
+            DepthEnable = false,
             DepthWriteMask = D12.DepthWriteMask.Zero,
-            DepthFunc = ComparisonFunction.GreaterEqual,
+            DepthFunc = ComparisonFunction.Always,
             StencilEnable = false,
         };
 
@@ -120,14 +119,10 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
             FrontCounterClockwise = true,
             DepthClipEnable = true,
             MultisampleEnable = msaa,
-            // Priority over coplanar terrain/water (no z-fighting) without poking through walls.
-            // Under reversed-Z a POSITIVE bias moves the fragment TOWARD the camera (larger depth),
-            // so the navmesh wins the GreaterEqual tie against the surface it sits on. The
-            // slope-scaled term carries sloped terrain; the constant handles flat coplanar ground.
-            // Read-only depth (DepthWriteMask.Zero) so this never corrupts later layers' occlusion.
-            DepthBias = 2000,
+            // Depth is disabled for this diagnostic overlay, so no coplanar bias is required.
+            DepthBias = 0,
             DepthBiasClamp = 0f,
-            SlopeScaledDepthBias = 2f,
+            SlopeScaledDepthBias = 0f,
             // Fixed-function line AA is what aliased incorrectly on HDR monitors: its alpha-coverage
             // gradient is distorted by DWM's SDR->HDR mapping of the SDR backbuffer. Under MSAA the
             // edge is antialiased by multisample coverage (resolved before present), which is robust

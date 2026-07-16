@@ -297,6 +297,7 @@ public sealed record SkyMoonProfile
         SecondaryPhaseTexturePattern = @"textures\sky\secunda_{0}.dds",
         PhaseTokens = MorrowindPhaseTokens,
         PhaseLengthDays = MoonSky.MorrowindPhaseLengthDays,
+        HiddenPhaseIndex = 0, // masser_new/secunda_new are opaque black stubs, not visible moon discs
     };
 
     // A plain nightly arc for the single-moon Fallout games (no second moon, no per-phase textures).

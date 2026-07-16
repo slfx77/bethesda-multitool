@@ -128,8 +128,8 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
 
     /// <summary>
     ///     Returns the current back buffer's resource handle + RTV descriptor for the frame.
-    ///     The caller is responsible for transitioning the resource PRESENT → RENDER_TARGET
-    ///     before clearing and RENDER_TARGET → PRESENT before <see cref="Present" />.
+    ///     <see cref="ResolveTo" /> transitions it PRESENT → RENDER_TARGET and
+    ///     <see cref="FinishBackBuffer" /> transitions it back before <see cref="Present" />.
     /// </summary>
     public (ID3D12Resource Resource, CpuDescriptorHandle RtvHandle) AcquireBackBufferRtv()
     {
@@ -293,9 +293,10 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     ///     Maps the HDR scene color into the current back buffer: (MSAA) resolve the multisampled
     ///     scene color into the 1-sample HDR target, then run the fullscreen tonemap into the back
     ///     buffer's RTV; (1-sample) tonemap the scene color directly. Call after the scene draws and
-    ///     before <see cref="Present" />. Leaves the back buffer in PRESENT and every scene target
-    ///     back in its render state for the next frame, so the caller does NOT additionally
-    ///     transition the back buffer.
+    ///     before <see cref="Present" />. Leaves the back buffer in RENDER_TARGET so callers can
+    ///     composite LDR editor/debug overlays that must not participate in scene exposure or bloom.
+    ///     Call <see cref="FinishBackBuffer" /> after those overlays. Every HDR scene target is
+    ///     restored to its render state for the next frame.
     /// </summary>
     public void ResolveTo(ID3D12GraphicsCommandList cmd, ID3D12Resource backBuffer)
     {
@@ -322,7 +323,6 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         var backRtv = new CpuDescriptorHandle(_rtvHeap.GetCPUDescriptorHandleForHeapStart(), (int)index, _rtvDescriptorSize);
         cmd.ResourceBarrierTransition(backBuffer, ResourceStates.Present, ResourceStates.RenderTarget);
         _tonemap.Record(cmd, hdrSource, SceneColorFormat, backRtv, (int)_width, (int)_height, TonemapSettings, _tonemapEnabled);
-        cmd.ResourceBarrierTransition(backBuffer, ResourceStates.RenderTarget, ResourceStates.Present);
 
         // 3. Restore scene-target states for next frame.
         if (_hdrResolve is not null)
@@ -335,6 +335,14 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             cmd.ResourceBarrierTransition(_msaaColor, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
         }
     }
+
+    /// <summary>
+    ///     Completes a frame after <see cref="ResolveTo" /> and any post-tonemap LDR overlays by
+    ///     transitioning the current back buffer to PRESENT. Kept separate so diagnostic overlays
+    ///     (collision cages, editor guides) cannot contaminate HDR adaptation or bloom.
+    /// </summary>
+    public void FinishBackBuffer(ID3D12GraphicsCommandList cmd, ID3D12Resource backBuffer) =>
+        cmd.ResourceBarrierTransition(backBuffer, ResourceStates.RenderTarget, ResourceStates.Present);
 
     /// <summary>Presents the current back buffer with vsync. The back-buffer index advances
     /// automatically; the next <see cref="AcquireBackBufferRtv" /> picks up the new index.</summary>

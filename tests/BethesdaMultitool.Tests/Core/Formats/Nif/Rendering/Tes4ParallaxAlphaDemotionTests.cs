@@ -16,6 +16,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 public sealed class Tes4ParallaxAlphaDemotionTests
 {
     private const ushort BlendEnabledFlags = 0x00ED; // blend on, src 6 / dst 7, test off
+    private const ushort AdditiveBlendFlags = 0x100D; // blend on, src 6 / dst 0, test off
 
     [Theory]
     [InlineData(3u)] // APPLY_HILIGHT — TES4 parallax
@@ -44,6 +45,21 @@ public sealed class Tes4ParallaxAlphaDemotionTests
             out var hasAlphaBlend, out _, out _, out _, out _, out _);
 
         Assert.True(hasAlphaBlend);
+    }
+
+    [Theory]
+    [InlineData(3u)] // LandscapeWaterfallFoam01: HILIGHT plus additive blending
+    [InlineData(4u)]
+    public void Tes4AdditiveHilite_KeepsAuthoredBlend(uint applyMode)
+    {
+        var (data, nif) = BuildTes4Nif(applyMode, AdditiveBlendFlags);
+
+        NifBlockParsers.ReadAlphaProperty(data, nif, [0, 1],
+            out var hasAlphaBlend, out _, out _, out _, out var src, out var dst);
+
+        Assert.True(hasAlphaBlend);
+        Assert.Equal(6, src);
+        Assert.Equal(0, dst);
     }
 
     [Fact]
@@ -77,13 +93,13 @@ public sealed class Tes4ParallaxAlphaDemotionTests
 
     // TES4 (20.0.0.5, inline strings) property block header: name SizedString(len=0) + numExtra(0)
     // + controllerRef(-1) — 12 bytes — then the block's own fields.
-    private static (byte[] Data, NifInfo Nif) BuildTes4Nif(uint applyMode)
+    private static (byte[] Data, NifInfo Nif) BuildTes4Nif(uint applyMode, ushort alphaFlags = BlendEnabledFlags)
     {
         // Block 0 @ 0: NiAlphaProperty = header(12) + flags(2) + threshold(1) = 15 bytes
         // Block 1 @ 16: NiTexturingProperty = header(12) + applyMode(4) = 16 bytes
         var data = new byte[40];
         WriteInlineObjectNetHeader(data, 0);
-        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(12), BlendEnabledFlags);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(12), alphaFlags);
         data[14] = 0; // threshold
 
         WriteInlineObjectNetHeader(data, 16);

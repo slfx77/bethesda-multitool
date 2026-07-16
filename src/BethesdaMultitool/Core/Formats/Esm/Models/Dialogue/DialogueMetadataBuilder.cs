@@ -5,6 +5,7 @@ namespace BethesdaMultitool;
 
 /// <summary>
 ///     Pure data/logic helpers for building dialogue metadata structures.
+///     Kept in the cross-platform core so the same speaker-index rules are exercised by tests and UI.
 ///     No UI dependencies — all methods are static and operate on model types.
 /// </summary>
 internal static class DialogueMetadataBuilder
@@ -22,14 +23,36 @@ internal static class DialogueMetadataBuilder
         {
             foreach (var topic in topics)
             {
-                var speakerId = ResolveTopicSpeaker(topic, npcsWithFullName);
-
-                if (speakerId is > 0)
+                // Shared topics (notably Oblivion GREETING/HELLO topics) contain INFOs for many
+                // different NPCs. Reducing the whole topic to one consensus speaker silently drops
+                // the topic from every other NPC's picker, even though the later INFO filter can
+                // correctly isolate their lines. Index the topic under every explicitly attributed
+                // speaker and reserve the old consensus/voice-type fallback for genuinely
+                // unattributed topics only.
+                var speakerIds = topic.InfoChain
+                    .Select(i => i.Info.SpeakerFormId)
+                    .Where(id => id is > 0)
+                    .Select(id => id!.Value)
+                    .ToHashSet();
+                if (topic.Topic?.SpeakerFormId is > 0)
                 {
-                    if (!index.TryGetValue(speakerId.Value, out var list))
+                    speakerIds.Add(topic.Topic.SpeakerFormId.Value);
+                }
+
+                var fallback = speakerIds.Count == 0
+                    ? ResolveTopicSpeaker(topic, npcsWithFullName)
+                    : null;
+                if (fallback is > 0)
+                {
+                    speakerIds.Add(fallback.Value);
+                }
+
+                foreach (var speakerId in speakerIds)
+                {
+                    if (!index.TryGetValue(speakerId, out var list))
                     {
                         list = [];
-                        index[speakerId.Value] = list;
+                        index[speakerId] = list;
                     }
 
                     list.Add(topic);
@@ -48,8 +71,9 @@ internal static class DialogueMetadataBuilder
     }
 
     /// <summary>
-    ///     Resolves the speaker for a topic using consensus across all INFOs,
-    ///     preferring NPCs with FullName (real named NPCs) over marker/template NPCs.
+    ///     Resolves one representative speaker for callers that require one, using consensus across
+    ///     all INFOs and preferring NPCs with FullName (real named NPCs) over marker/template NPCs.
+    ///     <see cref="BuildTopicsBySpeaker" /> does not collapse shared topics to this representative.
     /// </summary>
     public static uint? ResolveTopicSpeaker(TopicDialogueNode topic, HashSet<uint> npcsWithFullName)
     {

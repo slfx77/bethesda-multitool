@@ -209,7 +209,8 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
     public void UpdateCloudWeatherTransition(
         WeatherRecord? currentWeather,
         WeatherRecord? outgoingWeather,
-        float currentWeatherWeight)
+        float currentWeatherWeight,
+        BethesdaGame game)
     {
         foreach (var layer in _layers)
         {
@@ -219,7 +220,7 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
             }
 
             var transition = WeatherCloudTransitionResolver.Resolve(
-                currentWeather, outgoingWeather, layer.CloudSourceIndex, currentWeatherWeight);
+                currentWeather, outgoingWeather, layer.CloudSourceIndex, currentWeatherWeight, game);
             layer.ScrollVelocity = transition.ScrollVelocity;
             layer.CloudCurrentWeatherWeight = outgoingWeather is null
                 ? null

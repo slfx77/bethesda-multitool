@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
@@ -58,16 +59,17 @@ internal static class WeatherCloudTransitionResolver
         WeatherRecord? currentWeather,
         WeatherRecord? outgoingWeather,
         int sourceLayerIndex,
-        float currentWeatherWeight)
+        float currentWeatherWeight,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         var currentLayer = currentWeather?.FindCloudLayerBySourceIndex(sourceLayerIndex);
         var outgoingLayer = outgoingWeather?.FindCloudLayerBySourceIndex(sourceLayerIndex);
         var weight = outgoingWeather is null
             ? 1f
             : Math.Clamp(currentWeatherWeight, 0f, 1f);
-        var currentVelocity = WeatherCloudMotion.Resolve(currentWeather, currentLayer, sourceLayerIndex);
+        var currentVelocity = WeatherCloudMotion.Resolve(currentWeather, currentLayer, sourceLayerIndex, game);
         var outgoingVelocity = WeatherCloudMotion.Resolve(
-            outgoingWeather, outgoingLayer, sourceLayerIndex);
+            outgoingWeather, outgoingLayer, sourceLayerIndex, game);
         var velocity = outgoingWeather is null
             ? currentVelocity
             : Vector2.Lerp(outgoingVelocity, currentVelocity, weight);

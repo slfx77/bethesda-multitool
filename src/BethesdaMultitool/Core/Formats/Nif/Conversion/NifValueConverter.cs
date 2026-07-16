@@ -62,7 +62,7 @@ internal sealed class NifValueConverter
 
     private bool ShouldProcessField(NifConversionContext ctx, NifFieldDef field, int depth)
     {
-        // Check onlyT (type-specific field)
+        // Check onlyT/excludeT (type-specific fields)
         if (!IsFieldTypeMatch(ctx, field, depth))
         {
             return false;
@@ -85,6 +85,16 @@ internal sealed class NifValueConverter
 
     private bool IsFieldTypeMatch(NifConversionContext ctx, NifFieldDef field, int depth)
     {
+        if (!string.IsNullOrEmpty(field.ExcludeT) && _schema.Inherits(ctx.BlockType, field.ExcludeT))
+        {
+            if (depth == 0)
+            {
+                Log.Trace($"    Skipping {field.Name} (excludeT={field.ExcludeT}, block={ctx.BlockType})");
+            }
+
+            return false;
+        }
+
         if (string.IsNullOrEmpty(field.OnlyT))
         {
             return true;

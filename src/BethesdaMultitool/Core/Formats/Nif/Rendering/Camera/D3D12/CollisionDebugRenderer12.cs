@@ -21,9 +21,10 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 ///         collision triangle contributes three edges (6 line vertices). The transformed line list lives
 ///         in a content-addressed persistent upload buffer, so an unchanged view reuses it across frames;
 ///         only the small view/projection constant remains in the per-frame ring. Depth is DISABLED so the
-///         cage stays visible through the meshes it overlays. References are globally distance-sorted;
-///         warm meshes draw immediately and a bounded cold-path warmup offers the nearest misses to the
-///         shared reference cache.
+///         cage stays visible through the meshes it overlays. It is drawn into the LDR back buffer after
+///         tonemapping, keeping this editor diagnostic out of scene bloom/exposure. References are globally
+///         distance-sorted; warm meshes draw immediately and a bounded cold-path warmup offers the nearest
+///         misses to the shared reference cache.
 ///     </para>
 /// </summary>
 internal sealed class CollisionDebugRenderer12 : IDisposable
@@ -40,7 +41,8 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     private readonly GpuDevice12 _gpu;
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
-    private readonly ID3D12PipelineState _pso;
+    private readonly ID3D12PipelineState _scenePso;
+    private readonly ID3D12PipelineState _ldrPso;
     private readonly CollisionWireframeGeometryCache<ID3D12Resource> _geometryCache;
     private readonly CollisionReferencePriorityResolver _priorityResolver = new();
 
@@ -128,15 +130,16 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
             StencilEnable = false
         };
 
-        var msaa = gpu.SceneSampleCount > 1;
         var rasterizer = new D12.RasterizerDescription
         {
             FillMode = D12.FillMode.Solid,
             CullMode = D12.CullMode.None,
             FrontCounterClockwise = true,
             DepthClipEnable = true,
-            MultisampleEnable = msaa,
-            AntialiasedLineEnable = !msaa,
+            // The post-tonemap back buffer is single-sample. Fixed-function line AA keeps the
+            // diagnostic readable without routing it through the scene's MSAA resolve/bloom path.
+            MultisampleEnable = false,
+            AntialiasedLineEnable = true,
         };
 
         var blend = new D12.BlendDescription
@@ -166,12 +169,24 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
             DepthStencilState = depth,
             InputLayout = new InputLayoutDescription(inputElements),
             PrimitiveTopologyType = PrimitiveTopologyType.Line,
-            RenderTargetFormats = new[] { Gpu.D3D12.GpuSceneFormats.SceneColor },
-            DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
+            RenderTargetFormats = new[] { Gpu.D3D12.GpuSceneFormats.LdrOutput },
+            DepthStencilFormat = Format.Unknown,
+            SampleDescription = new SampleDescription(1, 0),
             SampleMask = uint.MaxValue,
         };
-        _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        _ldrPso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+
+        // Projection exports still composite the optional cage into their HDR/MSAA scene target
+        // before readback. Keep a matching scene PSO for that path; the live viewer selects the
+        // single-sample LDR PSO above after tonemapping.
+        var sceneMsaa = gpu.SceneSampleCount > 1;
+        rasterizer.MultisampleEnable = sceneMsaa;
+        rasterizer.AntialiasedLineEnable = !sceneMsaa;
+        psoDesc.RasterizerState = rasterizer;
+        psoDesc.RenderTargetFormats = new[] { Gpu.D3D12.GpuSceneFormats.SceneColor };
+        psoDesc.DepthStencilFormat = Format.D32_Float;
+        psoDesc.SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0);
+        _scenePso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
     }
 
     public void Dispose()
@@ -179,7 +194,8 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
         if (_disposed) return;
         _disposed = true;
         _geometryCache.Dispose();
-        _pso.Dispose();
+        _scenePso.Dispose();
+        _ldrPso.Dispose();
     }
 
     /// <summary>Binds the loaded worldspace's spatial index (placed-ref source for the overlay).</summary>
@@ -193,7 +209,9 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
     ///     Draws the collision wireframe nearest-first within the visibility cylinder. Returns the
     ///     number of references drawn (0 when nothing is available / in view).
     /// </summary>
-    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder)
+    public int Render(
+        Matrix4x4 viewProj, VisibilityCylinder cylinder,
+        Vector3 renderOrigin = default, bool ldrTarget = false)
     {
         if (_disposed || SpatialIndex is null || _collisionResolver is null) return 0;
 
@@ -217,7 +235,14 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
                     RenderableReference.IsImposterModelPath(p.ModelPath) ||
                     RenderableReference.IsLodDuplicateBaseEditorId(p.BaseEditorId)) continue;
 
-                var world = PlacedReferenceTransform.ComposeWorldMatrix(p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
+                var world = PlacedReferenceTransform.ComposeWorldMatrix(
+                    p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
+                // Match the main scene's camera-relative frame. Keeping absolute ~50k+ world
+                // coordinates in this CPU-built line buffer made the cage wobble against the
+                // camera-relative visual mesh as view rotation amplified float cancellation.
+                world.M41 -= renderOrigin.X;
+                world.M42 -= renderOrigin.Y;
+                world.M43 -= renderOrigin.Z;
                 var dx = p.X - cylinder.Position.X;
                 var dy = p.Y - cylinder.Position.Y;
                 _candidateScratch.Add(new CollisionReferenceCandidate(
@@ -251,7 +276,7 @@ internal sealed class CollisionDebugRenderer12 : IDisposable
         };
         unsafe { *(CollisionUniforms*)cbAlloc.CpuPtr = uniforms; }
 
-        cmd.SetPipelineState(_pso);
+        cmd.SetPipelineState(ldrTarget ? _ldrPso : _scenePso);
         cmd.IASetPrimitiveTopology(PrimitiveTopology.LineList);
         cmd.IASetVertexBuffers(0, new VertexBufferView
         {

@@ -369,6 +369,7 @@ internal static class NifBlockParsers
         // see-through here because the mid-gray height data fed SRC_ALPHA blending. Demote blend for
         // that combination; alpha-test is left untouched (shipped parallax shapes author test=off).
         if (hasAlphaBlend &&
+            dstBlendMode == 7 &&
             Textures.NifTexturingPropertyReader.ReadApplyMode(data, nif, propertyRefs) is 3 or 4)
         {
             hasAlphaBlend = false;

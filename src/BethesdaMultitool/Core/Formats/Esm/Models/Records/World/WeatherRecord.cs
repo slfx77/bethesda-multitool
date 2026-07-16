@@ -141,9 +141,9 @@ public record WeatherRecord
     public IReadOnlyList<WeatherCloudAlpha> CloudLayerAlphas { get; init; } = [];
 
     /// <summary>
-    ///     QNAM "X Cloud Speeds": per-layer U-axis scroll rate the engine accumulates in
-    ///     <c>Clouds::Update</c>, normalized around the byte midpoint (127 = still). Authored as one
-    ///     unsigned, biased byte per layer in every supported game. The handler normalizes the authored
+    ///     ONAM/QNAM cloud speeds: per-layer scroll rate the engine accumulates in
+    ///     <c>Clouds::Update</c>. FO3/FNV scalar ONAM values are unsigned fractions; Skyrim+ QNAM axes
+    ///     are normalized around the byte midpoint (127 = still). The handler normalizes the authored
     ///     bytes so the renderer never re-interprets their storage. Empty when absent.
     /// </summary>
     public IReadOnlyList<float> CloudSpeedsX { get; init; } = [];

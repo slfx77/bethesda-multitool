@@ -159,7 +159,13 @@ internal static class TerrainMeshBuilder
                     throw new ArgumentException($"Vertex span must be at least {VertexCount} long.", nameof(vertices));
                 if (!terrain.HasTerrain) return false;
 
-                FillVertices(terrain.Heights, originX, originY, cell.LandVisualData?.VertexColors, vertices);
+                FillVertices(
+                    terrain.Heights,
+                    originX,
+                    originY,
+                    cell.LandVisualData?.VertexColors,
+                    cell.LandVisualData?.VertexNormals,
+                    vertices);
                 return true;
             }
         }
@@ -173,7 +179,15 @@ internal static class TerrainMeshBuilder
             throw new ArgumentException($"Vertex span must be at least {n * n} long.", nameof(vertices));
 
         var spacing = cellSize / (n - 1);
-        FillVertices(heights, originX, originY, spacing, cell.LandVisualData?.VertexColors, vertices, n);
+        FillVertices(
+            heights,
+            originX,
+            originY,
+            spacing,
+            cell.LandVisualData?.VertexColors,
+            cell.LandVisualData?.VertexNormals,
+            vertices,
+            n);
         return true;
     }
 
@@ -190,11 +204,13 @@ internal static class TerrainMeshBuilder
         float originY,
         float spacing,
         byte[]? vertexColors,
+        byte[]? vertexNormals,
         Span<GpuMeshUploader.GpuVertex> vertices,
         int n)
     {
         var lastIndex = n - 1;
         var hasColors = vertexColors is { } c && c.Length >= n * n * 3;
+        var hasNormals = vertexNormals is { } vn && vn.Length >= n * n * 3;
 
         for (var j = 0; j < n; j++)
         {
@@ -209,7 +225,9 @@ internal static class TerrainMeshBuilder
                 vertices[idx] = new GpuMeshUploader.GpuVertex
                 {
                     Position = position,
-                    Normal = ComputeNormal(heights, i, j, spacing, n),
+                    Normal = hasNormals
+                        ? ReadVertexNormal(vertexNormals!, idx)
+                        : ComputeNormal(heights, i, j, spacing, n),
                     TexCoord = new Vector2(i / (float)lastIndex, j / (float)lastIndex),
                     VertexColor = hasColors ? ReadVertexColor(vertexColors!, idx) : Vector4.One,
                     Tangent = Vector3.Zero,
@@ -224,9 +242,11 @@ internal static class TerrainMeshBuilder
         float originX,
         float originY,
         byte[]? vertexColors,
+        byte[]? vertexNormals,
         Span<GpuMeshUploader.GpuVertex> vertices)
     {
         var hasColors = vertexColors is { Length: >= VertexCount * 3 };
+        var hasNormals = vertexNormals is { Length: >= VertexCount * 3 };
 
         for (var j = 0; j < Grid; j++)
         {
@@ -241,7 +261,9 @@ internal static class TerrainMeshBuilder
                 vertices[idx] = new GpuMeshUploader.GpuVertex
                 {
                     Position = position,
-                    Normal = ComputeNormal(heights, i, j),
+                    Normal = hasNormals
+                        ? ReadVertexNormal(vertexNormals!, idx)
+                        : ComputeNormal(heights, i, j),
                     TexCoord = new Vector2(i / (float)LastIndex, j / (float)LastIndex),
                     VertexColor = hasColors ? ReadVertexColor(vertexColors!, idx) : Vector4.One,
                     Tangent = Vector3.Zero,
@@ -300,6 +322,19 @@ internal static class TerrainMeshBuilder
             colors[offset + 1] / 255f,
             colors[offset + 2] / 255f,
             1f);
+    }
+
+    private static Vector3 ReadVertexNormal(byte[] normals, int vertexIndex)
+    {
+        var offset = vertexIndex * 3;
+        var normal = new Vector3(
+            unchecked((sbyte)normals[offset]) / 127f,
+            unchecked((sbyte)normals[offset + 1]) / 127f,
+            unchecked((sbyte)normals[offset + 2]) / 127f);
+        var lengthSquared = normal.LengthSquared();
+        return lengthSquared > 1e-8f
+            ? normal / MathF.Sqrt(lengthSquared)
+            : Vector3.UnitZ;
     }
 
     private static void FillIndices(Span<ushort> indices, int n)

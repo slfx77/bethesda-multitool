@@ -77,6 +77,22 @@ public sealed class SkyMoonProfileTests
     }
 
     [Theory]
+    [InlineData(0d)]
+    [InlineData(1d)]
+    [InlineData(2d)]
+    [InlineData(24d)]
+    public void ForGame_OblivionHidesOpaqueBlackNewMoonStub(double gameDay)
+    {
+        var profile = SkyMoonProfile.ForGame(BethesdaGame.Oblivion);
+        var phase = MoonSky.PhaseIndex(gameDay, MoonSky.MorrowindPhaseLengthDays);
+
+        Assert.Equal(0, phase);
+        Assert.Equal(0, profile.HiddenPhaseIndex);
+        Assert.Equal(@"textures\sky\masser_new.dds", profile.PhaseTexturePath(false, phase));
+        Assert.Equal(@"textures\sky\secunda_new.dds", profile.PhaseTexturePath(true, phase));
+    }
+
+    [Theory]
     [InlineData(BethesdaGame.Fallout4)]
     [InlineData(BethesdaGame.Fallout76)]
     public void ForGame_FalloutCreation_DrawsTheSecundaSlot(BethesdaGame game)

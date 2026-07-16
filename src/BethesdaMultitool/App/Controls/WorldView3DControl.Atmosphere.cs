@@ -450,7 +450,8 @@ public sealed partial class WorldView3DControl
             // not the sky topology: reloading and recooking Clouds.nif for every new float bit-pattern
             // turns one weather transition into per-frame archive I/O and geometry allocation.
             _skyGeometry?.UpdateCloudWeatherTransition(
-                weather, outgoingWeather, transition.CurrentWeatherWeight);
+                weather, outgoingWeather, transition.CurrentWeatherWeight,
+                _data?.Game ?? BethesdaGame.Unknown);
             return;
         }
         _skyTexKey = key;
@@ -596,7 +597,8 @@ public sealed partial class WorldView3DControl
         if (outgoingWeather is not null)
         {
             ApplyCloudWeatherTransition(
-                layers, weather, outgoingWeather, currentCloudWeight);
+                layers, weather, outgoingWeather, currentCloudWeight,
+                _data?.Game ?? BethesdaGame.Unknown);
         }
 
         if (_skyDiag)
@@ -792,7 +794,9 @@ public sealed partial class WorldView3DControl
                 // hides/thins layers per weather; FO3/FNV carry none, so cloudAlpha stays null.
                 cloudColor = authoredLayer?.Color ?? WeatherCloudColor(weather, sourceLayerIndex);
                 cloudAlpha = authoredLayer?.Opacity ?? WeatherCloudAlphaFor(weather, sourceLayerIndex);
-                scrollSpeed = WeatherCloudMotion.Resolve(weather, authoredLayer, sourceLayerIndex);
+                scrollSpeed = WeatherCloudMotion.Resolve(
+                    weather, authoredLayer, sourceLayerIndex,
+                    _data?.Game ?? BethesdaGame.Unknown);
             }
             else if (type == SkyObjectType.Stars)
             {
@@ -838,7 +842,8 @@ public sealed partial class WorldView3DControl
         List<SkyGeometryLayer> layers,
         WeatherRecord? currentWeather,
         WeatherRecord outgoingWeather,
-        float currentWeatherWeight)
+        float currentWeatherWeight,
+        BethesdaGame game)
     {
         var sourceIndices = layers
             .Where(static layer => layer.Type == SkyObjectType.Clouds && layer.CloudSourceIndex >= 0)
@@ -849,7 +854,7 @@ public sealed partial class WorldView3DControl
         foreach (var sourceIndex in sourceIndices)
         {
             var transition = WeatherCloudTransitionResolver.Resolve(
-                currentWeather, outgoingWeather, sourceIndex, currentWeatherWeight);
+                currentWeather, outgoingWeather, sourceIndex, currentWeatherWeight, game);
             var currentColor = transition.CurrentLayer?.Color
                                ?? WeatherCloudColor(currentWeather, sourceIndex);
             var outgoingColor = transition.OutgoingLayer?.Color

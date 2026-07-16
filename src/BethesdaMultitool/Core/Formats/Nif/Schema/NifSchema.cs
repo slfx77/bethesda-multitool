@@ -189,6 +189,7 @@ public sealed class NifSchema
                 Since = field.Attribute("since")?.Value,
                 Until = field.Attribute("until")?.Value,
                 OnlyT = field.Attribute("onlyT")?.Value,
+                ExcludeT = field.Attribute("excludeT")?.Value,
                 Arg = field.Attribute("arg")?.Value,
                 StoresValueForLaterUse = NifFieldDef.ComputeStoresValueForLaterUse(name)
             });

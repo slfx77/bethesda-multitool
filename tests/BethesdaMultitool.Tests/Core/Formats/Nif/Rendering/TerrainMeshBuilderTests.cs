@@ -150,6 +150,63 @@ public sealed class TerrainMeshBuilderTests
     }
 
     [Fact]
+    public void Build_PrefersAuthoredLandVertexNormals()
+    {
+        var normals = new byte[33 * 33 * 3];
+        for (var i = 0; i < 33 * 33; i++)
+        {
+            // VNML stores signed XYZ bytes. Give every vertex a deliberately tilted normal so this
+            // cannot be confused with the +Z normal recomputed from the flat synthetic heightmap.
+            normals[i * 3] = unchecked((byte)(sbyte)64);
+            normals[i * 3 + 1] = unchecked((byte)(sbyte)-64);
+            normals[i * 3 + 2] = unchecked((byte)(sbyte)64);
+        }
+
+        var cell = new CellRecord
+        {
+            FormId = 0x1,
+            GridX = 0,
+            GridY = 0,
+            Heightmap = new LandHeightmap
+            {
+                HeightOffset = 0f,
+                HeightDeltas = new sbyte[33 * 33]
+            },
+            LandVisualData = new LandVisualData { VertexNormals = normals }
+        };
+
+        var mesh = TerrainMeshBuilder.Build(cell);
+
+        Assert.NotNull(mesh);
+        var expected = Vector3.Normalize(new Vector3(1f, -1f, 1f));
+        Assert.Equal(expected.X, mesh.Value.Vertices[0].Normal.X, 5);
+        Assert.Equal(expected.Y, mesh.Value.Vertices[0].Normal.Y, 5);
+        Assert.Equal(expected.Z, mesh.Value.Vertices[0].Normal.Z, 5);
+    }
+
+    [Fact]
+    public void Build_ZeroAuthoredVertexNormalFallsBackToUp()
+    {
+        var cell = new CellRecord
+        {
+            FormId = 0x1,
+            GridX = 0,
+            GridY = 0,
+            Heightmap = new LandHeightmap
+            {
+                HeightOffset = 0f,
+                HeightDeltas = new sbyte[33 * 33]
+            },
+            LandVisualData = new LandVisualData { VertexNormals = new byte[33 * 33 * 3] }
+        };
+
+        var mesh = TerrainMeshBuilder.Build(cell);
+
+        Assert.NotNull(mesh);
+        Assert.Equal(Vector3.UnitZ, mesh.Value.Vertices[0].Normal);
+    }
+
+    [Fact]
     public void Build_ReturnsNullWhenCellHasNoGridCoordinates()
     {
         var cell = new CellRecord

@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -86,6 +87,34 @@ public sealed class WeatherCloudMotionTests
 
         Assert.Equal(0.005f, resolved.X, 6);
         Assert.Equal(-0.0025f, resolved.Y, 6);
+    }
+
+    [Theory]
+    [InlineData(BethesdaGame.Oblivion)]
+    [InlineData(BethesdaGame.Fallout3)]
+    [InlineData(BethesdaGame.FalloutNewVegas)]
+    public void Resolve_LegacyScalarUsesUnsignedSpeedAndAuthoredWind(BethesdaGame game)
+    {
+        // FNV MemDebug Clouds::Update: (ONAM byte / 255) * fWeatherCloudSpeedMax(.1)
+        // * Sky.fWindSpeed * dt. Byte 51 is exactly .2 for both speed and wind.
+        var weather = new WeatherRecord
+        {
+            Data = new WeatherData { WindSpeed = 51 },
+            CloudLayers =
+            [
+                new WeatherCloudLayer
+                {
+                    SourceIndex = 0,
+                    SpeedU = 51f / 255f,
+                },
+            ],
+        };
+
+        var resolved = WeatherCloudMotion.Resolve(
+            weather, weather.CloudLayers[0], sourceLayerIndex: 0, game: game);
+
+        Assert.Equal(0.004f, resolved.X, 7);
+        Assert.Equal(0f, resolved.Y);
     }
 
     [Fact]

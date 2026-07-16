@@ -155,8 +155,9 @@ public sealed partial class WorldView3DControl
                     // HIGHEST surface — walks the camera up the slab to the ceiling. Treat every door
                     // as open (excluded from ground AND ceiling candidates); the door FRAME is a
                     // separate static and still collides normally.
-                    if (_data?.CategoryIndex.TryGetValue(p.BaseFormId, out var category) == true &&
-                        category == PlacedObjectCategory.Door)
+                    var category = _data?.CategoryIndex.GetValueOrDefault(
+                        p.BaseFormId, PlacedObjectCategory.Unknown) ?? PlacedObjectCategory.Unknown;
+                    if (category == PlacedObjectCategory.Door)
                     {
                         continue;
                     }
@@ -167,9 +168,15 @@ public sealed partial class WorldView3DControl
                         _referenceMeshCache12.TryGetCollisionMesh(p.ModelPath!, out collision);
                     }
 
-                    if (collision is null && (!includeColdObnd || p.Bounds is null))
+                    if (collision is null &&
+                        (!includeColdObnd || p.Bounds is null ||
+                         !WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(p.ModelPath, category)))
                     {
-                        continue; // nothing raycastable for this candidate
+                        // A cold solid may use its OBND for a frame, but effect cards/volumes are not
+                        // floors. Both reported FNV fixtures have no Havok and only alpha-blended
+                        // geometry; allowing their permanent OBND fallback made the camera stand on
+                        // dust and light rays. Authored collision still wins above when one exists.
+                        continue;
                     }
 
                     if (p.Bounds is { } b)

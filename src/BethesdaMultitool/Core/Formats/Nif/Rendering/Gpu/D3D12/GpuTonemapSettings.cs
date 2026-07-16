@@ -366,7 +366,11 @@ internal readonly record struct GpuTonemapSettings
             CinematicFlags = ImageSpaceCinematicFlags.All,
         };
 
-        if (hdr is null) return settings;
+        // TES4's DefaultWeather (0x0000015E) carries a required HNAM payload whose fourteen
+        // floats are all zero. It is a placeholder/default block, not an instruction to multiply
+        // the entire HDR scene by TargetLum=0 (which produces a black frame). Keep authored zeros
+        // in otherwise-active HNAM records losslessly; only the wholly empty placeholder falls back.
+        if (hdr is null || IsEmptyOblivionWeatherHdr(hdr)) return settings;
         return settings with
         {
             EyeAdaptSpeed = hdr.EyeAdaptSpeed,
@@ -379,6 +383,22 @@ internal readonly record struct GpuTonemapSettings
             BrightClamp = hdr.BrightClamp,
         };
     }
+
+    private static bool IsEmptyOblivionWeatherHdr(WeatherHdr hdr) =>
+        hdr.EyeAdaptSpeed == 0f &&
+        hdr.BlurRadius == 0f &&
+        hdr.BlurPasses == 0f &&
+        hdr.EmissiveMult == 0f &&
+        hdr.TargetLum == 0f &&
+        hdr.UpperLumClamp == 0f &&
+        hdr.BrightScale == 0f &&
+        hdr.BrightClamp == 0f &&
+        hdr.LumRampNoTex == 0f &&
+        hdr.LumRampMin == 0f &&
+        hdr.LumRampMax == 0f &&
+        hdr.SunlightDimmer == 0f &&
+        hdr.GrassDimmer == 0f &&
+        hdr.TreeDimmer == 0f;
 
     /// <summary>Env overrides: mode swap for A/Bs, bloom kill-switch, + the existing exposure knob.</summary>
     public static GpuTonemapSettings ApplyOverrides(GpuTonemapSettings settings)

@@ -3,6 +3,7 @@ using System.Threading;
 using Vortice.Direct3D12;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Orchestration;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -203,7 +204,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     /// </summary>
     public Entry GetOrUpload(string path, bool isNormalMap = false)
     {
-        var cacheKey = path.Replace('/', '\\').Trim();
+        var cacheKey = NormalizeCacheKey(path);
         if (cacheKey.Length == 0)
         {
             return isNormalMap ? FlatNormal : WhitePixel;
@@ -245,6 +246,16 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         _resolveQueue.Pump();
         return entry;
     }
+
+    /// <summary>
+    ///     Canonicalizes the GPU-residency key exactly like the backing resolver. Retail assets mix
+    ///     archive-relative paths (for example <c>SetDressing\Foo_d.dds</c>) with explicit
+    ///     <c>textures\</c>-rooted paths for the same DDS. Keeping the raw spelling here created two
+    ///     descriptors, uploads, and resident textures even though the resolver normalized both to
+    ///     one archive entry.
+    /// </summary>
+    internal static string NormalizeCacheKey(string path) =>
+        string.IsNullOrWhiteSpace(path) ? string.Empty : NifTexturePathUtility.Normalize(path);
 
     /// <summary>
     ///     Drops one reference acquired via <see cref="GetOrUpload" /> (render thread only). When the

@@ -643,8 +643,8 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         {
             cloudSpeedsX ??=
             [
-                NormalizeCloudSpeedByte(tes4Data.CloudSpeedLower ?? 127),
-                NormalizeCloudSpeedByte(tes4Data.CloudSpeedUpper ?? 127),
+                NormalizeLegacyCloudSpeedByte(tes4Data.CloudSpeedLower ?? 0),
+                NormalizeLegacyCloudSpeedByte(tes4Data.CloudSpeedUpper ?? 0),
             ];
         }
 
@@ -848,21 +848,26 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     /// <summary>
     ///     Reads an ONAM/QNAM/RNAM per-layer cloud-speed array. xEdit's shared
     ///     <c>wbWeatherCloudSpeed</c> defines every supported generation, including FO4/FO76, as one U8
-    ///     per layer. Values use the engine's biased representation: <c>(b - 127) / 127</c>.
-    ///     Endianness does not affect individual bytes.
+    ///     per layer, but the byte semantics differ. FO3/FNV ONAM is an unsigned scalar magnitude
+    ///     (<c>b / 255</c>); Skyrim+ QNAM/RNAM are signed axes biased around 127. Endianness does not
+    ///     affect individual bytes.
     /// </summary>
     internal static float[] ReadCloudSpeeds(ReadOnlySpan<byte> data, bool isBigEndian, BethesdaGame game)
     {
         var speeds = new float[data.Length];
         for (var i = 0; i < data.Length; i++)
         {
-            speeds[i] = NormalizeCloudSpeedByte(data[i]);
+            speeds[i] = game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas
+                ? NormalizeLegacyCloudSpeedByte(data[i])
+                : NormalizeCloudSpeedByte(data[i]);
         }
 
         return speeds;
     }
 
     internal static float NormalizeCloudSpeedByte(byte value) => (value - 127f) / 127f;
+
+    internal static float NormalizeLegacyCloudSpeedByte(byte value) => value / 255f;
 
     // Reads the JNAM cloud-alpha array: one per-layer <see cref="WeatherCloudAlpha" /> (Sunrise/Day/Sunset/
     // Night floats) per stride-byte block. Floats are endian-aware so Xbox (byte-swapped) and PC agree.

@@ -55,6 +55,50 @@ public class DialogueViewerLogicTests
 
     #endregion
 
+    #region DialogueMetadataBuilder Tests
+
+    [Fact]
+    public void BuildTopicsBySpeaker_SharedTopicIsIndexedForEveryExplicitSpeaker()
+    {
+        var sharedGreeting = MakeTopic(1, "GREETING",
+            MakeInfo(100, speakerId: 0xA),
+            MakeInfo(101, speakerId: 0xB),
+            MakeInfo(102, speakerId: 0xA));
+        var tree = new DialogueTreeResult
+        {
+            OrphanTopics = [sharedGreeting]
+        };
+
+        var result = DialogueMetadataBuilder.BuildTopicsBySpeaker(tree, [0xA, 0xB]);
+
+        Assert.Equal(2, result.Count);
+        Assert.Same(sharedGreeting, Assert.Single(result[0xA]));
+        Assert.Same(sharedGreeting, Assert.Single(result[0xB]));
+    }
+
+    [Fact]
+    public void BuildTopicsBySpeaker_TopicLevelSpeakerRemainsIndexedWithoutInfoSpeaker()
+    {
+        var topic = MakeTopic(1, "SpecificTopic", MakeInfo(100)) with
+        {
+            Topic = new DialogTopicRecord
+            {
+                FormId = 1,
+                SpeakerFormId = 0xA
+            }
+        };
+        var tree = new DialogueTreeResult
+        {
+            OrphanTopics = [topic]
+        };
+
+        var result = DialogueMetadataBuilder.BuildTopicsBySpeaker(tree, [0xA]);
+
+        Assert.Same(topic, Assert.Single(result[0xA]));
+    }
+
+    #endregion
+
     #region CollectLinkedTopics Tests
 
     [Fact]

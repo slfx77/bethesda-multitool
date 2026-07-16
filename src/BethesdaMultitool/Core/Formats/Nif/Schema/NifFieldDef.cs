@@ -15,6 +15,7 @@ public sealed class NifFieldDef
     public string? Since { get; init; } // Minimum version
     public string? Until { get; init; } // Maximum version
     public string? OnlyT { get; init; } // Only for specific block types (onlyT)
+    public string? ExcludeT { get; init; } // Excluded for specific block types (excludeT)
     public string? Arg { get; init; } // Template argument for #ARG# substitution
 
     /// <summary>

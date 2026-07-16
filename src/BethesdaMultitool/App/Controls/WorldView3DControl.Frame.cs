@@ -576,9 +576,8 @@ public sealed partial class WorldView3DControl
         var (backBuffer, backRtv) = surface.AcquireBackBufferRtv();
         // The scene ALWAYS renders into the HDR float scene color (MSAA or 1-sample); the back buffer
         // is now an 8-bit display target that surface.ResolveTo tonemaps the HDR scene into before
-        // Present (and which owns the back buffer's PRESENT ↔ RENDER_TARGET transition). The scene
+        // post-tonemap diagnostics + Present (the surface owns the state transitions). The scene
         // color stays in RENDER_TARGET across frames, so nothing to transition here.
-        _ = backRtv;
         var sceneRtv = surface.MsaaColorRtv;
         var sceneDsv = surface.DepthStencilView;
         var acquireMs = ElapsedMilliseconds(segmentStarted);
@@ -865,12 +864,9 @@ public sealed partial class WorldView3DControl
         // them. Water wrote no depth, so they depth-test against the opaque scene depth (terrain +
         // opaque refs); the DSV was restored above, so this stays depth-correct.
         if (_showReferences) _references?.RenderBlendedDeferred();
-        // Navmesh overlay — translucent, drawn after water (depth-read) and before the
-        // depth-disabled wireframe so the grid still stays on top.
+        // Navmesh overlay — translucent and depth-disabled so authored NAVM remains visible even
+        // where it sits slightly below rendered ground. Editor selection/grid guides draw later.
         var visibleNavMesh = _showNavMesh ? _navMesh?.Render(viewProjAbsolute, cylinder) ?? 0 : 0;
-        // Collision-cage debug overlay — depth-disabled green wireframe of each ref's walk-mode collision
-        // mesh, for comparing Havok collision against the rendered meshes. Off by default.
-        if (_showCollision) _collisionDebug?.Render(viewProjAbsolute, cylinder);
         segmentStarted = StartProfileTimestamp();
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WireframeStart);
         var visibleWireframe = _showWireframe ? _cellGrid?.Render(viewProjAbsolute, cylinder) ?? 0 : 0;
@@ -902,10 +898,27 @@ public sealed partial class WorldView3DControl
         var hudMs = ElapsedMilliseconds(segmentStarted);
 
         segmentStarted = StartProfileTimestamp();
-        // Tonemap the HDR scene color into the back buffer (resolving MSAA first when active). Leaves
-        // the back buffer in PRESENT and the scene color back in RENDER_TARGET for the next frame, so
-        // no additional back-buffer transition here.
+        // Tonemap the HDR scene color into the back buffer (resolving MSAA first when active). The
+        // back buffer deliberately stays in RENDER_TARGET for LDR editor diagnostics: collision cages
+        // must not feed eye adaptation or bloom, and drawing their large absolute coordinates in the
+        // HDR scene frame made them wobble against camera-relative reference geometry.
         surface.ResolveTo(cmd, backBuffer);
+
+        if (_showCollision && _collisionDebug is not null)
+        {
+            cmd.OMSetRenderTargets(backRtv);
+            cmd.RSSetViewport(new Vortice.Mathematics.Viewport(
+                0, 0, surface.Width, surface.Height, 0f, 1f));
+            cmd.RSSetScissorRect((int)surface.Width, (int)surface.Height);
+            // GpuTonemapPass12 binds its own fullscreen root signature + descriptor heap. Restore
+            // the scene root before the line renderer binds its b0 constant buffer.
+            cmd.SetDescriptorHeaps(1, new[] { _cbvSrvUavHeap12.Heap });
+            cmd.SetGraphicsRootSignature(_rootSignature12!.RootSignature);
+            _collisionDebug.Render(
+                viewProjScene, cylinder, sceneRenderOrigin, ldrTarget: true);
+        }
+
+        surface.FinishBackBuffer(cmd, backBuffer);
 
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.FrameEnd);
         _gpuTimestampProfiler12?.ResolveActiveFrame(cmd);

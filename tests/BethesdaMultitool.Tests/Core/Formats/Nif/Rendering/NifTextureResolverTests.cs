@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using Xunit;
 
@@ -18,6 +19,18 @@ public sealed class NifTextureResolverTests
         var normalized = NifTexturePathUtility.Normalize(@"characters/boone/face.dds");
 
         Assert.Equal(@"textures\characters\boone\face.dds", normalized);
+    }
+
+    [Fact]
+    public void GpuTextureCache_UsesOneKeyForRootedAndArchiveRelativePaths()
+    {
+        var archiveRelative = GpuTextureCache12.NormalizeCacheKey(
+            @"SetDressing\NewsStand\NewStand01_n.dds");
+        var textureRooted = GpuTextureCache12.NormalizeCacheKey(
+            @"textures/SetDressing/NewsStand/NewStand01_n.dds");
+
+        Assert.Equal(@"textures\setdressing\newsstand\newstand01_n.dds", archiveRelative);
+        Assert.Equal(archiveRelative, textureRooted);
     }
 
     [Fact]

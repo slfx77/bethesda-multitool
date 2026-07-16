@@ -113,6 +113,20 @@ public sealed record GameProfile
     public float MarkerIconScale { get; init; } = 1.0f;
 
     /// <summary>
+    ///     Smallest screen-space scale applied to markers at overview zoom. The default 1 keeps the
+    ///     historical constant-pixel-size behavior; games whose detailed icon tiles overwhelm a
+    ///     zoom-to-fit overview can shrink them while retaining full size when zoomed in.
+    /// </summary>
+    public float MarkerMinScreenScale { get; init; } = 1.0f;
+
+    /// <summary>
+    ///     View zoom at which markers reach their full screen-space size. Zero disables zoom-aware
+    ///     scaling. Between zero zoom and this value the draw interpolates from
+    ///     <see cref="MarkerMinScreenScale" /> to 1.
+    /// </summary>
+    public float MarkerFullSizeZoom { get; init; }
+
+    /// <summary>
     ///     Multiplier on the ambient ("fill") term in the scene lighting sum
     ///     <c>lit = AmbientLightScale·ambient + saturate(N·L)·sun</c> (objects + terrain). The engine value
     ///     is 1.0: the SLS pixel shader consumes the ambient register at full strength

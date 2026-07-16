@@ -51,18 +51,18 @@ public class WeatherCloudLayerTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ReadCloudSpeeds_LegacyBytes_ReadAsUnsignedBiasedFractions(bool isBigEndian)
+    public void ReadCloudSpeeds_FnvScalarBytesRemainUnsignedFractions(bool isBigEndian)
     {
-        // TESWeather::GetCloudLayerSpeed MOVZX-loads each byte, with 127 as still:
-        // normalized=(b-127)/127. The engine does not clamp byte 255's slight overshoot.
+        // FNV MemDebug Clouds::Update MOVZX-loads ONAM and multiplies it by 1/255 before applying
+        // fWeatherCloudSpeedMax and Sky.fWindSpeed. It never subtracts a midpoint.
         byte[] data = [0, 127, 254, 255];
 
         var speeds = MiscEnvironmentHandler.ReadCloudSpeeds(data, isBigEndian, BethesdaGame.FalloutNewVegas);
 
-        Assert.Equal(-1f, speeds[0]);
-        Assert.Equal(0f, speeds[1]);
-        Assert.Equal(1f, speeds[2]);
-        Assert.Equal(128f / 127f, speeds[3]);
+        Assert.Equal(0f, speeds[0]);
+        Assert.Equal(127f / 255f, speeds[1]);
+        Assert.Equal(254f / 255f, speeds[2]);
+        Assert.Equal(1f, speeds[3]);
     }
 
     [Fact]

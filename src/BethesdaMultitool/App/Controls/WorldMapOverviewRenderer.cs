@@ -361,8 +361,10 @@ internal static class WorldMapOverviewRenderer
 
         var (tlWorld, brWorld) = WorldMapViewportHelper.GetVisibleWorldBounds(
             canvasWidth, canvasHeight, zoom, panOffset);
-        var markerSize = 16f / zoom;
-        var iconScale = GameProfiles.For(markers.Game).MarkerIconScale;
+        var profile = GameProfiles.For(markers.Game);
+        var markerScreenScale = MapMarkerDisplayScale.Resolve(profile, zoom);
+        var markerSize = 16f * markerScreenScale / zoom;
+        var iconScale = profile.MarkerIconScale;
 
         using var labelFormat = new CanvasTextFormat
         {
@@ -373,7 +375,7 @@ internal static class WorldMapOverviewRenderer
 
         using var glyphFormat = new CanvasTextFormat
         {
-            FontSize = 12f / zoom,
+            FontSize = 12f * markerScreenScale / zoom,
             FontFamily = "Segoe MDL2 Assets",
             HorizontalAlignment = CanvasHorizontalAlignment.Center,
             VerticalAlignment = CanvasVerticalAlignment.Center

@@ -81,14 +81,23 @@ public sealed class RenderingShaderCompilationTests
         }
     }
 
+    [Fact]
+    public void SkyGeometryTextureLayersHonorAnyAuthoredBlendWeightChannel()
+    {
+        var source = ReadEmbeddedShader("sky_geo.frag.hlsl");
+
+        // Oblivion Clouds.nif uses R for one cap and B for the other. A hard-coded vColor.r
+        // multiplier makes most of the B-selected cap black even though its vertex alpha is visible.
+        Assert.Contains(
+            "max(input.vColor.r, max(input.vColor.g, input.vColor.b))",
+            source,
+            StringComparison.Ordinal);
+        Assert.Equal(2, source.Split("* vertexWeight", StringSplitOptions.None).Length - 1);
+    }
+
     private static void Compile(string name, string entryPoint, string profile, ShaderMacro[] macros)
     {
-        var assembly = typeof(SptGeometryOptions).Assembly;
-        var resourceName = assembly.GetManifestResourceNames()
-            .Single(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase));
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        var source = reader.ReadToEnd();
+        var source = ReadEmbeddedShader(name);
         // Match the runtime compiler's declaration-shape check so named tables such as
         // gWaterTextures[] and textures[] both receive D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES.
         var flags = System.Text.RegularExpressions.Regex.IsMatch(
@@ -121,5 +130,15 @@ public sealed class RenderingShaderCompilationTests
             errors?.Dispose();
             bytecode?.Dispose();
         }
+    }
+
+    private static string ReadEmbeddedShader(string name)
+    {
+        var assembly = typeof(SptGeometryOptions).Assembly;
+        var resourceName = assembly.GetManifestResourceNames()
+            .Single(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase));
+        using var stream = assembly.GetManifestResourceStream(resourceName)!;
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 }
