@@ -49,6 +49,10 @@ internal static class NifScanlineRasterizer
         }
 
         var invDenom = 1f / denom;
+        var windingSign = denom > 0f ? 1f : -1f;
+        var edge0IsTopLeft = IsTopLeftEdge(sx1, sy1, sx2, sy2, windingSign);
+        var edge1IsTopLeft = IsTopLeftEdge(sx2, sy2, sx0, sy0, windingSign);
+        var edge2IsTopLeft = IsTopLeftEdge(sx0, sy0, sx1, sy1, windingSign);
         var tex = tri.Texture;
         var normalMap = tri.NormalMap;
         var hasUvGradients = tri.Texture != null || tri.NormalMap != null;
@@ -67,15 +71,23 @@ internal static class NifScanlineRasterizer
                 var cx = px + 0.5f;
                 var cy = py + 0.5f;
 
-                // Barycentric coordinates
-                var w0 = ((sy1 - sy2) * (cx - sx2) + (sx2 - sx1) * (cy - sy2)) * invDenom;
-                var w1 = ((sy2 - sy0) * (cx - sx2) + (sx0 - sx2) * (cy - sy2)) * invDenom;
-                var w2 = 1f - w0 - w1;
+                // Apply the hardware top-left fill convention before normalizing the edge
+                // functions. Adjacent alpha-blended triangles otherwise both shade samples on
+                // their shared edge, producing a visibly darker/denser diagonal through cards.
+                var edge0 = (sy1 - sy2) * (cx - sx2) + (sx2 - sx1) * (cy - sy2);
+                var edge1 = (sy2 - sy0) * (cx - sx2) + (sx0 - sx2) * (cy - sy2);
+                var edge2 = (sy0 - sy1) * (cx - sx1) + (sx1 - sx0) * (cy - sy1);
 
-                if (w0 < 0 || w1 < 0 || w2 < 0)
+                if (!CoversSample(edge0 * windingSign, edge0IsTopLeft) ||
+                    !CoversSample(edge1 * windingSign, edge1IsTopLeft) ||
+                    !CoversSample(edge2 * windingSign, edge2IsTopLeft))
                 {
                     continue;
                 }
+
+                var w0 = edge0 * invDenom;
+                var w1 = edge1 * invDenom;
+                var w2 = edge2 * invDenom;
 
                 // Interpolate Z for depth test
                 var z = tri.Z0 * w0 + tri.Z1 * w1 + tri.Z2 * w2;
@@ -129,11 +141,10 @@ internal static class NifScanlineRasterizer
                     {
                         var u = tri.U0 * w0 + tri.U1 * w1 + tri.U2 * w2;
                         var v = tri.V0 * w0 + tri.V1 * w1 + tri.V2 * w2;
-                        u -= MathF.Floor(u);
-                        v -= MathF.Floor(v);
 
                         var (mnr, mng, mnb, mna) = NifTextureSampler.SampleTexture(
-                            normalMap, u, v, duDx, dvDx, duDy, dvDy);
+                            normalMap, u, v, duDx, dvDx, duDy, dvDy,
+                            tri.ClampTextureU, tri.ClampTextureV);
 
                         normalAlpha = mna;
 
@@ -253,6 +264,25 @@ internal static class NifScanlineRasterizer
         }
     }
 
+    private static bool CoversSample(float normalizedEdge, bool isTopLeft)
+    {
+        return normalizedEdge > 0f || (normalizedEdge == 0f && isTopLeft);
+    }
+
+    private static bool IsTopLeftEdge(
+        float ax,
+        float ay,
+        float bx,
+        float by,
+        float windingSign)
+    {
+        // Canonicalize both windings first. In the renderer's Y-down screen space, top edges
+        // run left-to-right and left edges run bottom-to-top.
+        var dx = (bx - ax) * windingSign;
+        var dy = (by - ay) * windingSign;
+        return dy < 0f || (dy == 0f && dx > 0f);
+    }
+
     private static void RasterizeTexturedPixel(
         byte[] pixels, float[] depthBuffer, byte[] faceKind,
         TriangleData tri, float w0, float w1, float w2,
@@ -263,12 +293,12 @@ internal static class NifScanlineRasterizer
         var tex = tri.Texture!;
         var u = tri.U0 * w0 + tri.U1 * w1 + tri.U2 * w2;
         var v = tri.V0 * w0 + tri.V1 * w1 + tri.V2 * w2;
-        u -= MathF.Floor(u);
-        v -= MathF.Floor(v);
 
         var (r, g, b, a) = NifSpriteRenderer.DisableTextures
             ? ((byte)200, (byte)200, (byte)200, (byte)255)
-            : NifTextureSampler.SampleTexture(tex, u, v, duDx, dvDx, duDy, dvDy);
+            : NifTextureSampler.SampleTexture(
+                tex, u, v, duDx, dvDx, duDy, dvDy,
+                tri.ClampTextureU, tri.ClampTextureV);
 
         if (tri.HasVertexColors)
         {
@@ -330,6 +360,13 @@ internal static class NifScanlineRasterizer
             }
         }
 
+        if (tri.HasEffectTint)
+        {
+            fr *= tri.EffectTintR;
+            fg *= tri.EffectTintG;
+            fb *= tri.EffectTintB;
+        }
+
         if (tri.EmissiveR > 0f || tri.EmissiveG > 0f || tri.EmissiveB > 0f)
         {
             fr += tri.EmissiveR * 255f;
@@ -357,46 +394,38 @@ internal static class NifScanlineRasterizer
         }
         else
         {
-            var srcA = Math.Clamp(a * MathF.Min(tri.MaterialAlpha, 1f) / 255f, 0f, 1f);
+            var srcA = ComputeBlendedOpacity(a, tri.MaterialAlpha);
             if (srcA <= 0f)
             {
                 return;
             }
 
-            if (tri.IsEmissive && tri.DstBlendMode != 0)
-            {
-                pixels[pIdx + 0] =
-                    (byte)Math.Clamp(pixels[pIdx + 0] + fr * 0.5f - pixels[pIdx + 0] * fr * 0.5f / 255f, 0, 255);
-                pixels[pIdx + 1] =
-                    (byte)Math.Clamp(pixels[pIdx + 1] + fg * 0.5f - pixels[pIdx + 1] * fg * 0.5f / 255f, 0, 255);
-                pixels[pIdx + 2] =
-                    (byte)Math.Clamp(pixels[pIdx + 2] + fb * 0.5f - pixels[pIdx + 2] * fb * 0.5f / 255f, 0, 255);
-            }
-            else
-            {
-                var srcR = Math.Clamp(fr / 255f, 0f, 1f);
-                var srcG = Math.Clamp(fg / 255f, 0f, 1f);
-                var srcB = Math.Clamp(fb / 255f, 0f, 1f);
-                var dstR = pixels[pIdx + 0] / 255f;
-                var dstG = pixels[pIdx + 1] / 255f;
-                var dstB = pixels[pIdx + 2] / 255f;
+            // Emissive changes the source lighting term, not the fixed-function blend state.  The old
+            // CPU path replaced every emissive blend with an invented half-strength screen operation,
+            // making CPU previews disagree with both the authored NiAlphaProperty and the GPU renderers.
+            var srcR = Math.Clamp(fr / 255f, 0f, 1f);
+            var srcG = Math.Clamp(fg / 255f, 0f, 1f);
+            var srcB = Math.Clamp(fb / 255f, 0f, 1f);
+            var dstR = pixels[pIdx + 0] / 255f;
+            var dstG = pixels[pIdx + 1] / 255f;
+            var dstB = pixels[pIdx + 2] / 255f;
+            var dstA = pixels[pIdx + 3] / 255f;
 
-                pixels[pIdx + 0] = (byte)Math.Clamp(
-                    fr * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG,
-                        dstB, 0) +
-                    pixels[pIdx + 0] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB,
-                        dstR, dstG, dstB, 0), 0, 255);
-                pixels[pIdx + 1] = (byte)Math.Clamp(
-                    fg * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG,
-                        dstB, 1) +
-                    pixels[pIdx + 1] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB,
-                        dstR, dstG, dstB, 1), 0, 255);
-                pixels[pIdx + 2] = (byte)Math.Clamp(
-                    fb * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR, srcG, srcB, dstR, dstG,
-                        dstB, 2) +
-                    pixels[pIdx + 2] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR, srcG, srcB,
-                        dstR, dstG, dstB, 2), 0, 255);
-            }
+            pixels[pIdx + 0] = (byte)Math.Clamp(
+                fr * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA, srcR, srcG, srcB, dstR, dstG,
+                    dstB, 0) +
+                pixels[pIdx + 0] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA, srcR, srcG, srcB,
+                    dstR, dstG, dstB, 0), 0, 255);
+            pixels[pIdx + 1] = (byte)Math.Clamp(
+                fg * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA, srcR, srcG, srcB, dstR, dstG,
+                    dstB, 1) +
+                pixels[pIdx + 1] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA, srcR, srcG, srcB,
+                    dstR, dstG, dstB, 1), 0, 255);
+            pixels[pIdx + 2] = (byte)Math.Clamp(
+                fb * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA, srcR, srcG, srcB, dstR, dstG,
+                    dstB, 2) +
+                pixels[pIdx + 2] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA, srcR, srcG, srcB,
+                    dstR, dstG, dstB, 2), 0, 255);
 
             var outAlpha = tri.DstBlendMode == 0
                 ? (byte)Math.Clamp(srcA * 64f, 0f, 255f)
@@ -475,50 +504,47 @@ internal static class NifScanlineRasterizer
         }
         else
         {
-            var srcA = Math.Clamp(vertexAlpha * MathF.Min(tri.MaterialAlpha, 1f) / 255f, 0f, 1f);
+            var srcA = ComputeBlendedOpacity(vertexAlpha, tri.MaterialAlpha);
             if (srcA <= 0f)
             {
                 return;
             }
 
-            if (tri.IsEmissive)
-            {
-                pixels[pIdx + 0] =
-                    (byte)Math.Clamp(pixels[pIdx + 0] + fr * 0.5f - pixels[pIdx + 0] * fr * 0.5f / 255f, 0, 255);
-                pixels[pIdx + 1] =
-                    (byte)Math.Clamp(pixels[pIdx + 1] + fg * 0.5f - pixels[pIdx + 1] * fg * 0.5f / 255f, 0, 255);
-                pixels[pIdx + 2] =
-                    (byte)Math.Clamp(pixels[pIdx + 2] + fb * 0.5f - pixels[pIdx + 2] * fb * 0.5f / 255f, 0, 255);
-            }
-            else
-            {
-                var srcR2 = Math.Clamp(fr / 255f, 0f, 1f);
-                var srcG2 = Math.Clamp(fg / 255f, 0f, 1f);
-                var srcB2 = Math.Clamp(fb / 255f, 0f, 1f);
-                var dstR2 = pixels[pIdx + 0] / 255f;
-                var dstG2 = pixels[pIdx + 1] / 255f;
-                var dstB2 = pixels[pIdx + 2] / 255f;
+            var srcR2 = Math.Clamp(fr / 255f, 0f, 1f);
+            var srcG2 = Math.Clamp(fg / 255f, 0f, 1f);
+            var srcB2 = Math.Clamp(fb / 255f, 0f, 1f);
+            var dstR2 = pixels[pIdx + 0] / 255f;
+            var dstG2 = pixels[pIdx + 1] / 255f;
+            var dstB2 = pixels[pIdx + 2] / 255f;
+            var dstA2 = pixels[pIdx + 3] / 255f;
 
-                pixels[pIdx + 0] = (byte)Math.Clamp(
-                    fr * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2,
-                        dstB2, 0) +
-                    pixels[pIdx + 0] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2,
-                        dstR2, dstG2, dstB2, 0), 0, 255);
-                pixels[pIdx + 1] = (byte)Math.Clamp(
-                    fg * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2,
-                        dstB2, 1) +
-                    pixels[pIdx + 1] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2,
-                        dstR2, dstG2, dstB2, 1), 0, 255);
-                pixels[pIdx + 2] = (byte)Math.Clamp(
-                    fb * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, srcR2, srcG2, srcB2, dstR2, dstG2,
-                        dstB2, 2) +
-                    pixels[pIdx + 2] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, srcR2, srcG2, srcB2,
-                        dstR2, dstG2, dstB2, 2), 0, 255);
-            }
+            pixels[pIdx + 0] = (byte)Math.Clamp(
+                fr * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA2, srcR2, srcG2, srcB2, dstR2, dstG2,
+                    dstB2, 0) +
+                pixels[pIdx + 0] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA2, srcR2, srcG2, srcB2,
+                    dstR2, dstG2, dstB2, 0), 0, 255);
+            pixels[pIdx + 1] = (byte)Math.Clamp(
+                fg * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA2, srcR2, srcG2, srcB2, dstR2, dstG2,
+                    dstB2, 1) +
+                pixels[pIdx + 1] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA2, srcR2, srcG2, srcB2,
+                    dstR2, dstG2, dstB2, 1), 0, 255);
+            pixels[pIdx + 2] = (byte)Math.Clamp(
+                fb * NifTextureSampler.ResolveBlendFactor(tri.SrcBlendMode, srcA, dstA2, srcR2, srcG2, srcB2, dstR2, dstG2,
+                    dstB2, 2) +
+                pixels[pIdx + 2] * NifTextureSampler.ResolveBlendFactor(tri.DstBlendMode, srcA, dstA2, srcR2, srcG2, srcB2,
+                    dstR2, dstG2, dstB2, 2), 0, 255);
 
             pixels[pIdx + 3] = Math.Max(pixels[pIdx + 3], (byte)Math.Clamp(srcA * 255f, 0f, 255f));
         }
     }
+
+    /// <summary>
+    ///     Apply authored material alpha before saturating the blend factor. Effect materials may
+    ///     deliberately author alpha above one; clipping the material first prevented it from
+    ///     amplifying a partially transparent texture/vertex envelope.
+    /// </summary>
+    internal static float ComputeBlendedOpacity(float sourceAlphaByte, float materialAlpha) =>
+        Math.Clamp(sourceAlphaByte * materialAlpha / 255f, 0f, 1f);
 
     /// <summary>
     ///     Bayer 2x2 dither thresholds (half-centered, bytes). Each of the four supersamples

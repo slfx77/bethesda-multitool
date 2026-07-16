@@ -86,9 +86,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // NoTexture entries (games with no per-phase moon art) fall back to the full-moon index above.
     private readonly uint[] _moonPhaseTexIndices = new uint[BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.MoonSky.PhaseCount];
     private readonly uint[] _moonSecundaPhaseTexIndices = new uint[BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.MoonSky.PhaseCount];
-    // (climate FormId, active-weather FormId) the sky textures were resolved for (null = unresolved).
-    // Clouds depend on the weather, so a weather change re-resolves even when the climate is unchanged.
-    private (uint Climate, uint Weather)? _skyTexKey;
+    // (climate, current-weather, outgoing-weather FormIds) the sky topology was resolved for. The
+    // continuously changing weather percentage updates retained layer state without recooking the NIFs.
+    private (uint Climate, uint Weather, uint OutgoingWeather)? _skyTexKey;
     private IReadOnlyList<SkyNifTexture>? _skyNifTextures; // cached CLMT MODL NIF harvest
     private string? _skyNifModlKey;                        // mesh path the harvest is for
 
@@ -168,6 +168,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // _climateDefaultWeather is the current worldspace climate's default (the "(Climate default)"
     // dropdown item); _currentClimateTiming drives the sun curve + the NAM0 time-band blend.
     private WeatherRecord? _selectedWeather;
+    // Runtime DMP weather transitions apply only while the UI is on the climate-default sentinel.
+    // Concrete dropdown/profiler choices are atomic previews and must not inherit Sky::pLastWeather.
+    private bool _weatherSelectionIsClimateDefault = true;
     private WeatherRecord? _climateDefaultWeather;
     private AtmosphereState.ClimateTiming _currentClimateTiming = AtmosphereState.ClimateTiming.Default;
     // Interiors are browsed via the shared CellListControl (searchable/filterable grouped list —
@@ -186,6 +189,11 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private WorldSpatialIndex? _spatialIndex;
     private double _lastControllerUpdateMilliseconds;
     private bool _stressBookmarkApplied;
+    // Scene-selection generation used by the headless profiler/capture harness. ComboBox selection is
+    // async-void and deliberately yields before rebuilding the world, so a stale handler must not be able
+    // to overwrite a newer interior/worldspace selection or advertise the old spatial index as ready.
+    private int _sceneSelectionGeneration;
+    private int _sceneReadyGeneration = -1;
     private bool _gpuTimestampsAutoEnabled;
     private long _profileFrameIndex;
     private long _lastHudUpdateTimestamp;
@@ -196,6 +204,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private int _lastGcGen0Collections = GC.CollectionCount(0);
     private int _lastGcGen1Collections = GC.CollectionCount(1);
     private int _lastGcGen2Collections = GC.CollectionCount(2);
+    // Process-wide monotonic allocation counter. Unlike live-heap size, its per-frame delta exposes
+    // transient particle/controller churn even when a collection immediately reclaims the objects.
+    private long _lastTotalAllocatedBytes = GC.GetTotalAllocatedBytes(false);
 
     // Layer visibility — toggled by D1/D2/D3 keys. D4 toggles textured-vs-VCLR-only.
     // D5 toggles placed-object (REFR) rendering.
@@ -332,6 +343,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
     internal void LoadData(WorldViewData data)
     {
+        var loadSelectionGeneration = BeginSceneSelection();
         _data = data;
         // Morrowind has no engine HDR/bloom/imagespace stage (LegacyClamp) — hide the toggles
         // rather than offering dead switches. Re-evaluated on every LoadData (ESM switch).
@@ -348,6 +360,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
         // Resolve placed REFR base FormIDs to LIGH definitions during the same one-time cell bake.
         // This is independent of ModelPath, so meshless lights still become emitter-only entries.
         data.RenderCache.LightIndex = data.LightsByFormId;
+        data.RenderCache.ExternalEmittanceIndex = data.ExternalEmittanceColorsByFormId;
         data.RenderCache.LandTextureIndex = data.LandTexturesByFormId;
         data.RenderCache.GrassIndex = data.GrassesByFormId;
         data.RenderCache.Game = data.Game;
@@ -469,6 +482,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
             TryBuildCellGrid();
             ResetCameraToDataCentroid();
             ApplyStressSceneBookmarkIfRequested();
+            RefreshAtmosphereForCurrentWorldspace();
+            MarkSceneSelectionReady(loadSelectionGeneration);
         }
 
         _ = InspectObject; // referenced so the event isn't flagged unused on paths that never raise it

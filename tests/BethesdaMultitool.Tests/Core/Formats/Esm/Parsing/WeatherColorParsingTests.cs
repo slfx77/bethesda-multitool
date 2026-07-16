@@ -1,5 +1,7 @@
 using System;
+using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Games;
@@ -27,8 +29,8 @@ public class WeatherColorParsingTests
         return buffer;
     }
 
-    // Each band is 4 bytes laid out [R,G,B,A] (little-endian read). N full categories at the given stride.
-    private static byte[] BuildCategoryBuffer(int categories, int bandsPerEntry)
+    // Each band is one endian-aware RGBA dword. N full categories at the given stride.
+    private static byte[] BuildCategoryBuffer(int categories, int bandsPerEntry, bool bigEndian = false)
     {
         var data = new byte[categories * bandsPerEntry * 4];
         for (var i = 0; i < data.Length; i++)
@@ -36,11 +38,186 @@ public class WeatherColorParsingTests
             data[i] = (byte)(i + 1); // byte value encodes its offset so bands are trivially identifiable.
         }
 
+        if (bigEndian)
+        {
+            for (var offset = 0; offset < data.Length; offset += 4)
+            {
+                Array.Reverse(data, offset, 4);
+            }
+        }
+
         return data;
     }
 
+    private static void WriteRgba(byte[] target, int offset, WeatherRgba value, bool bigEndian)
+    {
+        var raw = (uint)value.R |
+                  ((uint)value.G << 8) |
+                  ((uint)value.B << 16) |
+                  ((uint)value.A << 24);
+        if (bigEndian)
+            BinaryPrimitives.WriteUInt32BigEndian(target.AsSpan(offset, 4), raw);
+        else
+            BinaryPrimitives.WriteUInt32LittleEndian(target.AsSpan(offset, 4), raw);
+    }
+
+    private static void WriteSingle(byte[] target, int offset, float value, bool bigEndian)
+    {
+        if (bigEndian)
+            BinaryPrimitives.WriteSingleBigEndian(target.AsSpan(offset, 4), value);
+        else
+            BinaryPrimitives.WriteSingleLittleEndian(target.AsSpan(offset, 4), value);
+    }
+
+    [Theory]
+    [InlineData(132, 128, false)]
+    [InlineData(132, 128, true)]
+    [InlineData(148, 144, false)]
+    [InlineData(148, 144, true)]
+    [InlineData(152, 148, false)]
+    [InlineData(152, 148, true)]
+    public void ReadImageSpaceCinematicFlags_PreservesLayoutOffsetsAndEndian(
+        int length, int offset, bool bigEndian)
+    {
+        var data = new byte[length];
+        const uint rawWithNonSemanticHighBits = 0xA5F00007;
+        if (bigEndian)
+            BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(offset, 4), rawWithNonSemanticHighBits);
+        else
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, 4), rawWithNonSemanticHighBits);
+
+        Assert.Equal(
+            ImageSpaceCinematicFlags.Saturation | ImageSpaceCinematicFlags.Contrast | ImageSpaceCinematicFlags.Tint,
+            MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(data, bigEndian));
+    }
+
     [Fact]
-    public void ReadDirectionalAmbientMean_AveragesTheSixDirectionsOnly()
+    public void ImageSpaceCinematic_PreservesWhetherMaskWasActuallyAuthored()
+    {
+        var newLayoutBytes = new byte[148];
+        newLayoutBytes[144] = 0x07;
+        var classic132 = new byte[132];
+        classic132[128] = 0x02;
+        var classicOldLayout = new ImageSpaceCinematic
+        {
+            HasExplicitFlags = true,
+            Flags = MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(classic132),
+        };
+        var newLayout = new ImageSpaceCinematic
+        {
+            HasExplicitFlags = true,
+            Flags = MiscEnvironmentHandler.ReadImageSpaceCinematicFlags(newLayoutBytes),
+        };
+        var modernCnam = new ImageSpaceCinematic { HasExplicitFlags = false };
+
+        Assert.True(classicOldLayout.HasExplicitFlags);
+        Assert.Equal(ImageSpaceCinematicFlags.Contrast, classicOldLayout.Flags);
+        Assert.True(newLayout.HasExplicitFlags);
+        Assert.Equal(
+            ImageSpaceCinematicFlags.Saturation |
+            ImageSpaceCinematicFlags.Contrast |
+            ImageSpaceCinematicFlags.Tint,
+            newLayout.Flags);
+        Assert.False(modernCnam.HasExplicitFlags);
+    }
+
+    [Theory]
+    [InlineData(132, false)]
+    [InlineData(132, true)]
+    [InlineData(148, false)]
+    [InlineData(148, true)]
+    [InlineData(152, false)]
+    [InlineData(152, true)]
+    public void ReadClassicImageSpaceDnam_NormalizesOldSkinAndFadeWithoutLosingAuthoredData(
+        int length, bool bigEndian)
+    {
+        var data = new byte[length];
+        void WriteFloat(int offset, float value)
+        {
+            if (bigEndian)
+                BinaryPrimitives.WriteSingleBigEndian(data.AsSpan(offset, 4), value);
+            else
+                BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(offset, 4), value);
+        }
+
+        for (var index = 0; index < 14; index++) WriteFloat(index * 4, index + 1f);
+        var hasSkin = length >= 152;
+        if (hasSkin) WriteFloat(56, 15f);
+        var cinematicBase = hasSkin ? 100 : 96;
+        WriteFloat(cinematicBase, 0.7f);
+        WriteFloat(cinematicBase + 4, 0.2f);
+        WriteFloat(cinematicBase + 8, 1.3f);
+        WriteFloat(cinematicBase + 12, 0.9f);
+        WriteFloat(cinematicBase + 16, 0.1f);
+        WriteFloat(cinematicBase + 20, 0.2f);
+        WriteFloat(cinematicBase + 24, 0.3f);
+        WriteFloat(cinematicBase + 28, 0.4f);
+
+        if (length >= 148)
+        {
+            WriteFloat(cinematicBase + 32, 0.25f);
+            WriteFloat(cinematicBase + 36, 0.5f);
+            WriteFloat(cinematicBase + 40, 0.75f);
+            WriteFloat(cinematicBase + 44, 0.6f);
+        }
+
+        var maskOffset = length >= 152 ? 148 : length >= 148 ? 144 : 128;
+        if (bigEndian)
+            BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(maskOffset, 4), 0x0F);
+        else
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(maskOffset, 4), 0x0F);
+
+        var decoded = MiscEnvironmentHandler.ReadClassicImageSpaceDnam(data, bigEndian);
+
+        Assert.Equal(10f, decoded.Hdr.LumRampMin);
+        Assert.Equal(11f, decoded.Hdr.LumRampMax);
+        Assert.Equal(12f, decoded.Hdr.SunlightDimmer);
+        Assert.Equal(13f, decoded.Hdr.GrassDimmer);
+        Assert.Equal(14f, decoded.Hdr.TreeDimmer);
+        Assert.Equal(hasSkin ? 15f : 1f, decoded.Hdr.SkinDimmer);
+        Assert.Equal(0.7f, decoded.Cinematic.Saturation);
+        Assert.Equal(0.2f, decoded.Cinematic.ContrastAvgLum);
+        Assert.Equal(1.3f, decoded.Cinematic.Contrast);
+        Assert.Equal(0.9f, decoded.Cinematic.Brightness);
+        Assert.Equal(ImageSpaceCinematicFlags.All, decoded.Cinematic.Flags);
+        Assert.Equal(0.1f, decoded.Tint.Red);
+        Assert.Equal(0.4f, decoded.Tint.Amount);
+        Assert.Equal(length >= 148, decoded.Fade.IsAuthored);
+        Assert.Equal(length >= 148 ? 0.25f : 1f, decoded.Fade.Red);
+        Assert.Equal(length >= 148 ? 0.5f : 1f, decoded.Fade.Green);
+        Assert.Equal(length >= 148 ? 0.75f : 1f, decoded.Fade.Blue);
+        Assert.Equal(length >= 148 ? 0.6f : 0f, decoded.Fade.Amount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadWeatherRgbRow_PreservesFourBandsIncludingRawPadding(bool bigEndian)
+    {
+        var data = new byte[16];
+        for (var band = 0; band < 4; band++)
+        {
+            var rgba = new byte[]
+            {
+                (byte)(1 + band * 3), (byte)(2 + band * 3), (byte)(3 + band * 3),
+                (byte)(0x40 + band),
+            };
+            if (bigEndian) Array.Reverse(rgba);
+            rgba.CopyTo(data, band * 4);
+        }
+
+        var row = MiscEnvironmentHandler.ReadWeatherRgbRow(data, bigEndian);
+
+        Assert.Equal(new WeatherRgba(1, 2, 3, 0x40), row.Sunrise);
+        Assert.Equal(new WeatherRgba(4, 5, 6, 0x41), row.Day);
+        Assert.Equal(new WeatherRgba(7, 8, 9, 0x42), row.Sunset);
+        Assert.Equal(new WeatherRgba(10, 11, 12, 0x43), row.Night);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadDirectionalAmbientMean_AveragesTheSixDirectionsOnly(bool bigEndian)
     {
         // One DALC band: six direction colors (X+/X−/Y+/Y−/Z+/Z−) + specular RGBA + fresnel float
         // (32 bytes, the FO4 layout). The mean must cover ONLY the six directions — folding the
@@ -48,19 +225,53 @@ public class WeatherColorParsingTests
         var data = new byte[32];
         for (var d = 0; d < 6; d++)
         {
-            data[d * 4 + 0] = (byte)((d + 1) * 6);  // R: 6..36  → mean 21
-            data[d * 4 + 1] = (byte)((d + 1) * 12); // G: 12..72 → mean 42
-            data[d * 4 + 2] = (byte)((d + 1) * 18); // B: 18..108 → mean 63
-            data[d * 4 + 3] = 0xFF;
+            WriteRgba(data, d * 4, new WeatherRgba(
+                (byte)((d + 1) * 6),  // R: 6..36  → mean 21
+                (byte)((d + 1) * 12), // G: 12..72 → mean 42
+                (byte)((d + 1) * 18), // B: 18..108 → mean 63
+                0xFF), bigEndian);
         }
 
-        data[24] = 255; // specular R — must not participate
-        data[25] = 255;
-        data[26] = 255;
+        WriteRgba(data, 24, new WeatherRgba(255, 255, 255, 255), bigEndian);
 
-        var mean = MiscEnvironmentHandler.ReadDirectionalAmbientMean(data, false);
+        var mean = MiscEnvironmentHandler.ReadDirectionalAmbientMean(data, bigEndian);
 
         Assert.Equal(new WeatherRgba(21, 42, 63, 255), mean);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadDirectionalAmbientCube_PreservesEveryFaceSpecularAndFresnel(bool bigEndian)
+    {
+        var expectedFaces = new[]
+        {
+            new WeatherRgba(1, 2, 3, 4),
+            new WeatherRgba(5, 6, 7, 8),
+            new WeatherRgba(9, 10, 11, 12),
+            new WeatherRgba(13, 14, 15, 16),
+            new WeatherRgba(17, 18, 19, 20),
+            new WeatherRgba(21, 22, 23, 24),
+        };
+        var expectedSpecular = new WeatherRgba(101, 102, 103, 104);
+        const float expectedFresnel = 3.25f;
+        var data = new byte[32];
+
+        for (var face = 0; face < expectedFaces.Length; face++)
+            WriteRgba(data, face * 4, expectedFaces[face], bigEndian);
+        WriteRgba(data, 24, expectedSpecular, bigEndian);
+        WriteSingle(data, 28, expectedFresnel, bigEndian);
+
+        var cube = MiscEnvironmentHandler.ReadDirectionalAmbientCube(data, bigEndian);
+
+        Assert.Equal(expectedFaces[0], cube.PositiveX);
+        Assert.Equal(expectedFaces[1], cube.NegativeX);
+        Assert.Equal(expectedFaces[2], cube.PositiveY);
+        Assert.Equal(expectedFaces[3], cube.NegativeY);
+        Assert.Equal(expectedFaces[4], cube.PositiveZ);
+        Assert.Equal(expectedFaces[5], cube.NegativeZ);
+        Assert.Equal(expectedSpecular, cube.Specular);
+        Assert.Equal(expectedFresnel, cube.FresnelPower);
     }
 
     [Fact]
@@ -144,18 +355,25 @@ public class WeatherColorParsingTests
         Assert.Equal(expectedStride, MiscEnvironmentHandler.ModernWeatherStride(game, formVersion));
     }
 
-    [Fact]
-    public void ReadWeatherColorsModern_EightBandStride_ReadsFourBaseBands_BackfillsNoonMidnight()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadWeatherColorsModern_EightBandStride_PreservesAllTransitionBands(bool bigEndian)
     {
-        // FO4 v111+: 32-byte stride (8 bands), but only Sunrise/Day/Sunset/Night map to our model; the
-        // extra Early/Late Sunrise/Sunset bands are skipped and HighNoon/Midnight fall back to Day/Night.
-        var colors = MiscEnvironmentHandler.ReadWeatherColorsModern(BuildCategoryBuffer(2, 8), false, 32);
+        // FO4 v111+: 32-byte stride in semantic order: four base bands, then Early/Late
+        // Sunrise and Early/Late Sunset.
+        var colors = MiscEnvironmentHandler.ReadWeatherColorsModern(
+            BuildCategoryBuffer(2, 8, bigEndian), bigEndian, 32);
 
         Assert.Equal(2, colors.Count);
         Assert.Equal(new WeatherRgba(1, 2, 3, 4), colors[0].Sunrise);
         Assert.Equal(new WeatherRgba(5, 6, 7, 8), colors[0].Day);
         Assert.Equal(new WeatherRgba(9, 10, 11, 12), colors[0].Sunset);
         Assert.Equal(new WeatherRgba(13, 14, 15, 16), colors[0].Night);
+        Assert.Equal(new WeatherRgba(17, 18, 19, 20), colors[0].EarlySunrise!.Value);
+        Assert.Equal(new WeatherRgba(21, 22, 23, 24), colors[0].LateSunrise!.Value);
+        Assert.Equal(new WeatherRgba(25, 26, 27, 28), colors[0].EarlySunset!.Value);
+        Assert.Equal(new WeatherRgba(29, 30, 31, 32), colors[0].LateSunset!.Value);
         Assert.Equal(colors[0].Day, colors[0].HighNoon);
         Assert.Equal(colors[0].Night, colors[0].Midnight);
 
@@ -166,11 +384,14 @@ public class WeatherColorParsingTests
         Assert.NotEqual(new WeatherRgba(17, 18, 19, 20), colors[1].Sunrise);
     }
 
-    [Fact]
-    public void ReadWeatherColorsModern_FourBandStride_Uses16ByteStride()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadWeatherColorsModern_FourBandStride_Uses16ByteStride(bool bigEndian)
     {
         // FO4 pre-111 / Skyrim: 16-byte stride (4 bands).
-        var colors = MiscEnvironmentHandler.ReadWeatherColorsModern(BuildCategoryBuffer(2, 4), false, 16);
+        var colors = MiscEnvironmentHandler.ReadWeatherColorsModern(
+            BuildCategoryBuffer(2, 4, bigEndian), bigEndian, 16);
 
         Assert.Equal(2, colors.Count);
         Assert.Equal(new WeatherRgba(1, 2, 3, 4), colors[0].Sunrise);
@@ -183,9 +404,27 @@ public class WeatherColorParsingTests
     public void ReadWeatherColorsModern_Fo4RetailNam0_Decodes19Categories()
     {
         // FO4 retail NAM0 is 608 bytes = 19 categories × 32 bytes (verified against Fallout4.esm
-        // 0x0024A3C1). Only categories 0–9 are consumed by the atmosphere renderer; the rest are harmless.
+        // 0x0024A3C1). The widened tail includes the authored Sun Glare and Moon Glare rows.
         var colors = MiscEnvironmentHandler.ReadWeatherColorsModern(new byte[608], false, 32);
         Assert.Equal(19, colors.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadWeatherColorsModern_PreservesFo4SunAndMoonGlareRows(bool bigEndian)
+    {
+        var data = new byte[17 * 32];
+
+        var sunGlareDay = new WeatherRgba(11, 22, 33, 44);
+        var moonGlareNight = new WeatherRgba(55, 66, 77, 88);
+        WriteRgba(data, ((int)WeatherColorType.SunGlare * 32) + 4, sunGlareDay, bigEndian);
+        WriteRgba(data, ((int)WeatherColorType.MoonGlare * 32) + 12, moonGlareNight, bigEndian);
+
+        var colors = MiscEnvironmentHandler.ReadWeatherColorsModern(data, bigEndian, 32);
+
+        Assert.Equal(sunGlareDay, colors[(int)WeatherColorType.SunGlare].Day);
+        Assert.Equal(moonGlareNight, colors[(int)WeatherColorType.MoonGlare].Night);
     }
 
     // --- JNAM "Cloud Alphas" (Skyrim/FO4/FO76/SF1 per-layer cloud opacity) -------------------------------
@@ -197,14 +436,14 @@ public class WeatherColorParsingTests
 
     // Builds N layers of cloud-alpha floats at the given stride; layer L band B float = L*10 + B + 1 so
     // every band is trivially identifiable and the stride is testable.
-    private static byte[] BuildCloudAlphaBuffer(int layers, int floatsPerLayer)
+    private static byte[] BuildCloudAlphaBuffer(int layers, int floatsPerLayer, bool bigEndian = false)
     {
         var data = new byte[layers * floatsPerLayer * 4];
         for (var L = 0; L < layers; L++)
         {
             for (var b = 0; b < floatsPerLayer; b++)
             {
-                BitConverter.GetBytes((float)((L * 10) + b + 1)).CopyTo(data, ((L * floatsPerLayer) + b) * 4);
+                WriteSingle(data, ((L * floatsPerLayer) + b) * 4, (L * 10) + b + 1, bigEndian);
             }
         }
 
@@ -222,11 +461,14 @@ public class WeatherColorParsingTests
         Assert.Equal(expectedStride, MiscEnvironmentHandler.ModernCloudAlphaStride(game, formVersion));
     }
 
-    [Fact]
-    public void ReadCloudAlphas_FourFloatStride_ReadsAllBands()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadCloudAlphas_FourFloatStride_ReadsAllBands(bool bigEndian)
     {
         // Skyrim / FO4 pre-111: 16-byte stride (4 floats).
-        var alphas = MiscEnvironmentHandler.ReadCloudAlphas(BuildCloudAlphaBuffer(2, 4), false, 16);
+        var alphas = MiscEnvironmentHandler.ReadCloudAlphas(
+            BuildCloudAlphaBuffer(2, 4, bigEndian), bigEndian, 16);
 
         Assert.Equal(2, alphas.Count);
         Assert.Equal(1f, alphas[0].Sunrise);
@@ -238,21 +480,68 @@ public class WeatherColorParsingTests
         Assert.Equal(12f, alphas[1].Day);
     }
 
-    [Fact]
-    public void ReadCloudAlphas_EightFloatStride_ReadsFourBaseBands_SkipsExtra()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadCloudAlphas_EightFloatStride_PreservesAllTransitionBands(bool bigEndian)
     {
-        // FO4 v111+: 32-byte stride (8 floats) but only the four base bands map to our model; the extra
-        // Early/Late Sunrise/Sunset interpolation aids are skipped. This is the stride guard — a regressed
+        // FO4 v111+: 32-byte stride (8 floats), retaining each transition. This is also the stride guard — a regressed
         // 16-byte read would land layer 1 on layer 0's Early-Sunrise float (5) instead of byte 32 (11).
-        var alphas = MiscEnvironmentHandler.ReadCloudAlphas(BuildCloudAlphaBuffer(2, 8), false, 32);
+        var alphas = MiscEnvironmentHandler.ReadCloudAlphas(
+            BuildCloudAlphaBuffer(2, 8, bigEndian), bigEndian, 32);
 
         Assert.Equal(2, alphas.Count);
         Assert.Equal(1f, alphas[0].Sunrise);
         Assert.Equal(2f, alphas[0].Day);
         Assert.Equal(3f, alphas[0].Sunset);
         Assert.Equal(4f, alphas[0].Night);
+        Assert.Equal(5f, alphas[0].EarlySunrise!.Value);
+        Assert.Equal(6f, alphas[0].LateSunrise!.Value);
+        Assert.Equal(7f, alphas[0].EarlySunset!.Value);
+        Assert.Equal(8f, alphas[0].LateSunset!.Value);
         Assert.Equal(11f, alphas[1].Sunrise);
         Assert.NotEqual(5f, alphas[1].Sunrise);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadWeatherHdr_PreservesAllFourteenFloats(bool bigEndian)
+    {
+        var data = new byte[56];
+        for (var i = 0; i < 14; i++)
+        {
+            var bytes = BitConverter.GetBytes(i + 0.25f);
+            if (bigEndian) Array.Reverse(bytes);
+            bytes.CopyTo(data, i * 4);
+        }
+
+        var hdr = MiscEnvironmentHandler.ReadWeatherHdr(data, bigEndian);
+        Assert.Equal(0.25f, hdr.EyeAdaptSpeed);
+        Assert.Equal(2.25f, hdr.BlurPasses);
+        Assert.Equal(7.25f, hdr.BrightClamp);
+        Assert.Equal(13.25f, hdr.TreeDimmer);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadWeatherImageSpaces_PreservesEightSemanticFormIds(bool bigEndian)
+    {
+        var data = new byte[32];
+        for (var i = 0; i < 8; i++)
+        {
+            var bytes = BitConverter.GetBytes((uint)(0x01020300 + i));
+            if (bigEndian) Array.Reverse(bytes);
+            bytes.CopyTo(data, i * 4);
+        }
+
+        var bands = MiscEnvironmentHandler.ReadWeatherImageSpaces(data, bigEndian, 8);
+        Assert.Equal(0x01020300u, bands.Sunrise);
+        Assert.Equal(0x01020304u, bands.EarlySunrise!.Value);
+        Assert.Equal(0x01020305u, bands.LateSunrise!.Value);
+        Assert.Equal(0x01020306u, bands.EarlySunset!.Value);
+        Assert.Equal(0x01020307u, bands.LateSunset!.Value);
     }
 
     [Fact]

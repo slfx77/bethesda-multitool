@@ -76,6 +76,7 @@ public sealed partial class WorldView3DControl
         // Interiors have no grid coords — same single-cell load path as a cell-browser pick.
         if (cell.GridX is not int || cell.GridY is not int)
         {
+            var selectionGeneration = BeginSceneSelection();
             _pendingNavigateCell = null;
             _pendingNavigateWarpPose = null;
             _selectedInterior = cell;
@@ -87,6 +88,8 @@ public sealed partial class WorldView3DControl
             if (warpPose is { } pose) ApplyWarpPose(pose);
             else ResetCameraToInteriorBounds(cell);
             RefreshAtmosphereForCurrentWorldspace();
+            MarkSceneSelectionReady(selectionGeneration);
+            HideStatus();
             return;
         }
 

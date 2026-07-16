@@ -42,6 +42,11 @@ internal static class NifParticleSystemExtractor
                 continue;
             }
 
+            // Source provenance must not depend on the time-zero bake. A mixed NIF can contain ordinary
+            // geometry plus a controller-delayed particle system whose static bake is empty; without this
+            // marker its positive warm-cache entry looks particle-free and live mode never source-decodes it.
+            model.ContainsParticleSource = true;
+
             var def = NifParticleSystemParser.Parse(data, nif, i);
             if (def?.Emitter is null)
             {
@@ -50,9 +55,10 @@ internal static class NifParticleSystemExtractor
 
             var systemWorld = ResolveSystemWorld(data, nif, i, worldTransforms, nodeChildren, treatRootsAsIdentity);
 
-            // Mesh emitters (e.g. NV whirlwind columns) emit from a volume mesh, not a point — derive that
-            // volume's AABB in the system's local frame so the baker fills the column instead of a blob.
-            ResolveMeshEmitterBounds(data, nif, def, systemWorld, worldTransforms);
+            // Mesh emitters select authored vertices/edges/faces and can launch along their normals. Preserve
+            // the indexed emitter geometry in system-local space; an AABB volume changes both distribution
+            // and velocity and is not an engine fallback.
+            ResolveMeshEmitterGeometry(data, nif, def, systemWorld, worldTransforms);
 
             // Volume emitters: re-derive the emitter-object frame from the scene-graph walk. The parser
             // seeded EmitterObjectTransform with the object's raw LOCAL transform, which is only correct
@@ -78,7 +84,19 @@ internal static class NifParticleSystemExtractor
             var baked = NifParticleBaker.Bake(def);
             if (baked.Count == 0)
             {
-                continue;
+                if (!ParticleLiveSettings.Enabled)
+                {
+                    continue;
+                }
+
+                // A controller can author a quiet time-zero frame and become active later. Keep one fully
+                // transparent bootstrap quad only in opt-in mode so the decoded submesh can retain its
+                // material/runtime owner; the first live tick replaces it or suppresses it with indexCount=0.
+                baked =
+                [
+                    new BakedParticle(Vector3.Zero, 0.01f, Vector4.Zero,
+                        new Vector4(0f, 0f, 1f, 1f))
+                ];
             }
 
             var submesh = BuildSubmesh(baked, systemWorld, def);
@@ -87,6 +105,7 @@ internal static class NifParticleSystemExtractor
                 continue;
             }
 
+            submesh.ParticleRuntime = new ParticleRuntimeDefinition(def, systemWorld);
             model.Submeshes.Add(submesh);
             model.ExpandBounds(submesh.Positions);
         }
@@ -160,12 +179,10 @@ internal static class NifParticleSystemExtractor
     }
 
     /// <summary>
-    ///     For a mesh emitter, compute the spawn-volume AABB in the particle system's LOCAL frame from the
-    ///     emitter mesh geometry and store it on the emitter (<c>MeshBoundsMin/Max</c>) so the baker spawns
-    ///     uniformly within the column/volume instead of from a single point. No-op for non-mesh emitters or
-    ///     when the geometry can't be read (the baker then falls back to point emission).
+    ///     Decode a mesh emitter's indexed surface in the particle system's LOCAL frame. Positions, normals,
+    ///     and triangle topology are retained so the baker can implement every EmitFrom/VelocityType mode.
     /// </summary>
-    private static void ResolveMeshEmitterBounds(
+    private static void ResolveMeshEmitterGeometry(
         byte[] data, NifInfo nif, ParticleSystemDefinition def, Matrix4x4 systemWorld,
         IReadOnlyDictionary<int, Matrix4x4> worldTransforms)
     {
@@ -183,9 +200,9 @@ internal static class NifParticleSystemExtractor
             invSystem = Matrix4x4.Identity;
         }
 
-        var min = new Vector3(float.MaxValue);
-        var max = new Vector3(float.MinValue);
-        var any = false;
+        var vertices = new List<Vector3>();
+        var normals = new List<Vector3>();
+        var triangles = new List<int>();
 
         foreach (var meshIndex in emitter.EmitterMeshIndices)
         {
@@ -215,30 +232,42 @@ internal static class NifParticleSystemExtractor
                 _ => null,
             };
 
-            var positions = sub?.Positions;
-            if (positions is null || positions.Length < 3)
+            if (sub?.Positions is not { Length: >= 3 } positions)
             {
                 continue;
             }
 
+            var vertexBase = vertices.Count;
             for (var v = 0; v + 2 < positions.Length; v += 3)
             {
-                var pnt = new Vector3(positions[v], positions[v + 1], positions[v + 2]);
-                min = Vector3.Min(min, pnt);
-                max = Vector3.Max(max, pnt);
-                any = true;
+                vertices.Add(new Vector3(positions[v], positions[v + 1], positions[v + 2]));
+                if (sub.Normals is { } sourceNormals && v + 2 < sourceNormals.Length)
+                {
+                    normals.Add(new Vector3(sourceNormals[v], sourceNormals[v + 1], sourceNormals[v + 2]));
+                }
+                else
+                {
+                    normals.Add(Vector3.Zero);
+                }
+            }
+
+            foreach (var index in sub.Triangles)
+            {
+                triangles.Add(vertexBase + index);
             }
         }
 
-        // Require some positive extent (a fully-degenerate point gives the baker nothing to spread over).
-        if (any && (max.X > min.X || max.Y > min.Y || max.Z > min.Z))
+        if (vertices.Count > 0)
         {
-            emitter.MeshBoundsMin = min;
-            emitter.MeshBoundsMax = max;
+            emitter.MeshVertices = vertices;
+            emitter.MeshNormals = normals;
+            emitter.MeshTriangles = triangles;
+            emitter.MeshBoundsMin = vertices.Aggregate(Vector3.Min);
+            emitter.MeshBoundsMax = vertices.Aggregate(Vector3.Max);
         }
     }
 
-    private static RenderableSubmesh? BuildSubmesh(
+    internal static RenderableSubmesh? BuildSubmesh(
         IReadOnlyList<BakedParticle> particles, Matrix4x4 systemWorld, ParticleSystemDefinition def)
     {
         var n = particles.Count;
@@ -276,7 +305,10 @@ internal static class NifParticleSystemExtractor
         {
             var p = particles[k];
             var center = Vector3.Transform(p.Position, systemWorld);
-            var half = MathF.Max(0.01f, p.Size * sysScale);
+            var halfY = MathF.Max(0.01f, p.Size * sysScale);
+            var halfX = halfY * MathF.Max(0.01f, p.AspectRatio);
+            var sinRotation = MathF.Sin(p.Rotation);
+            var cosRotation = MathF.Cos(p.Rotation);
 
             var r = (byte)Math.Clamp(p.Color.X * 255f, 0f, 255f);
             var g = (byte)Math.Clamp(p.Color.Y * 255f, 0f, 255f);
@@ -288,26 +320,31 @@ internal static class NifParticleSystemExtractor
             {
                 var (ox, oy, u, v) = corners[c];
                 var vi = baseV + c;
+                var unrotatedX = ox * halfX;
+                var unrotatedY = oy * halfY;
+                var cornerX = cosRotation * unrotatedX - sinRotation * unrotatedY;
+                var cornerY = sinRotation * unrotatedX + cosRotation * unrotatedY;
 
                 // Placeholder world-axis-aligned quad for bounds + the CPU still path; the leaf-billboard
                 // VS rebuilds it camera-facing from the tangent (center) + bitangent (corner offset).
-                positions[vi * 3 + 0] = center.X + ox * half;
-                positions[vi * 3 + 1] = center.Y + oy * half;
+                positions[vi * 3 + 0] = center.X + cornerX;
+                positions[vi * 3 + 1] = center.Y + cornerY;
                 positions[vi * 3 + 2] = center.Z;
 
                 normals[vi * 3 + 0] = 0f;
                 normals[vi * 3 + 1] = 0f;
                 normals[vi * 3 + 2] = 1f;
 
-                uvs[vi * 2 + 0] = u;
-                uvs[vi * 2 + 1] = v;
+                var uvRect = p.UvRect == default ? new Vector4(0f, 0f, 1f, 1f) : p.UvRect;
+                uvs[vi * 2 + 0] = uvRect.X + u * uvRect.Z;
+                uvs[vi * 2 + 1] = uvRect.Y + v * uvRect.W;
 
                 tangents[vi * 3 + 0] = center.X;
                 tangents[vi * 3 + 1] = center.Y;
                 tangents[vi * 3 + 2] = center.Z;
 
-                bitangents[vi * 3 + 0] = ox * half;
-                bitangents[vi * 3 + 1] = oy * half;
+                bitangents[vi * 3 + 0] = cornerX;
+                bitangents[vi * 3 + 1] = cornerY;
                 bitangents[vi * 3 + 2] = 0f; // wind weight (particles: none for MVP)
 
                 colors[vi * 4 + 0] = r;
@@ -344,6 +381,7 @@ internal static class NifParticleSystemExtractor
             UseVertexColors = true,
             DiffuseTexturePath = def.DiffuseTexturePath,
             IsLeafBillboard = true,
+            IsParticleCloud = true,
             IsEmissive = isEmissive,
             IsDoubleSided = true,
             HasAlphaBlend = true,

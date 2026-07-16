@@ -1,15 +1,17 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 
 /// <summary>
-///     Parses a FO3/FNV <c>NiParticleSystem</c> block (and its emitter + modifier chain + NiPSysData) into a
+///     Parses a Bethesda <c>NiParticleSystem</c> block (and its emitter + modifier chain + NiPSysData) into a
 ///     <see cref="ParticleSystemDefinition" /> the baker can simulate. Layout verified against real data
-///     (FXDustWhirlWind01 block 46): after the standard NiGeometry header come Data ref + Skin ref +
-///     MaterialData, then NiParticleSystem's World Space (bool) + Num Modifiers (uint) + Modifiers[] refs.
+///     (FXDustWhirlWind01 block 46), Skyrim LE, and Fallout 4 retail particle systems. Bethesda changed the
+///     inherited geometry layout twice while retaining the NiPSys modifier model, so each stream family has
+///     an explicit cursor rather than attempting to interpret all of them as the FO3/FNV NiGeometry form.
 ///     The per-particle arrays in NiPSysData are NOT read — the engine fills them by simulation, so the
 ///     baker re-simulates (see particles_formula_spec.md).
 /// </summary>
@@ -18,9 +20,19 @@ internal static class NifParticleSystemParser
     // NiPSysModifier base (FO3/FNV string-table): Name(int32 index) + Order(uint) + Target(int32) + Active(bool).
     private const int ModifierBaseSize = 4 + 4 + 4 + 1;
 
-    /// <summary>True when the block is a NiParticleSystem (FO3/FNV; BSParticleSystem variants aren't FNV).</summary>
+    // NiControllerSequence's verified Bethesda 20.2.0.7 controlled-block form: interpolator ref,
+    // controller ref, priority byte, then five string-table indices. The fixed sequence tail follows it.
+    private const int ControlledBlockStride = 29;
+    private const int SequenceTailSize = 32;
+    private const int MaxControlledBlocks = 512;
+
+    /// <summary>
+    ///     True for the schema-backed NiPSys particle-system family. <c>BSStripParticleSystem</c> is a
+    ///     field-identical Bethesda subclass in nif.xml. The unrelated 20.5+ <c>NiPSParticleSystem</c>
+    ///     simulator family is deliberately excluded until an installed binary fixture proves its full base.
+    /// </summary>
     internal static bool IsParticleSystem(string typeName) =>
-        typeName is "NiParticleSystem" or "NiMeshParticleSystem";
+        typeName is "NiParticleSystem" or "NiMeshParticleSystem" or "BSStripParticleSystem";
 
     /// <summary>
     ///     Collect every shape block referenced as an emitter VOLUME mesh by any NiPSysMeshEmitter in the
@@ -68,73 +80,23 @@ internal static class NifParticleSystemParser
         var pos = block.DataOffset;
         var end = block.DataOffset + block.Size;
 
-        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, be, nif.HasInlineStrings))
+        if (!NifBinaryCursor.SkipNiObjectNET(
+                data, ref pos, end, be, nif.HasInlineStrings, nif.BinaryVersion))
         {
             return null;
         }
 
         pos += nif.BsVersion > 26 ? 4 : 2; // Flags
         pos += 12 + 36 + 4; // Translation + Rotation + Scale
-
-        // Properties (NiAVObject, BS stream <= 34): NumProperties + refs. Capture for texture/blend.
         var propertyRefs = new List<int>();
-        if (pos + 4 > end)
+        int dataRef;
+        bool worldSpace;
+        List<int> modifierRefs;
+        if (!TryReadSystemLayout(
+                data, nif, ref pos, end, propertyRefs,
+                out dataRef, out worldSpace, out modifierRefs))
         {
             return null;
-        }
-
-        var numProperties = BinaryUtils.ReadUInt32(data, pos, be);
-        pos += 4;
-        if (numProperties > 100 || pos + (long)numProperties * 4 > end)
-        {
-            return null;
-        }
-
-        for (var i = 0; i < numProperties; i++)
-        {
-            var propRef = BinaryUtils.ReadInt32(data, pos, be);
-            pos += 4;
-            if (propRef >= 0 && propRef < nif.Blocks.Count)
-            {
-                propertyRefs.Add(propRef);
-            }
-        }
-
-        pos += 4; // Collision Object ref
-
-        if (pos + 4 > end)
-        {
-            return null;
-        }
-
-        var dataRef = BinaryUtils.ReadInt32(data, pos, be);
-        pos += 4; // Data ref (NiPSysData)
-        pos += 4; // Skin Instance ref
-
-        if (!SkipMaterialData(data, ref pos, end, be) || pos + 1 + 4 > end)
-        {
-            return null;
-        }
-
-        var worldSpace = data[pos] != 0;
-        pos += 1;
-
-        var numModifiers = BinaryUtils.ReadUInt32(data, pos, be);
-        pos += 4;
-        if (numModifiers > 100 || pos + (long)numModifiers * 4 > end)
-        {
-            return null;
-        }
-
-        var modifierRefs = new List<int>((int)numModifiers);
-        for (var i = 0; i < numModifiers; i++)
-        {
-            var modRef = BinaryUtils.ReadInt32(data, pos, be);
-            pos += 4;
-            if (modRef >= 0 && modRef < nif.Blocks.Count)
-            {
-                modifierRefs.Add(modRef);
-            }
         }
 
         var capacity = ReadDataCapacity(data, nif, dataRef);
@@ -143,7 +105,15 @@ internal static class NifParticleSystemParser
             BlockIndex = blockIndex,
             WorldSpace = worldSpace,
             Capacity = capacity,
+            SourceTypeName = block.TypeName,
+            SourceLayout = nif.BsVersion switch
+            {
+                <= 34 => ParticleSystemSourceLayout.LegacyNiGeometry,
+                < 100 => ParticleSystemSourceLayout.SkyrimNiGeometry,
+                _ => ParticleSystemSourceLayout.BsGeometry,
+            },
         };
+        ReadParticlePresentation(data, nif, dataRef, def);
 
         foreach (var modRef in modifierRefs)
         {
@@ -153,19 +123,26 @@ internal static class NifParticleSystemParser
                 continue;
             }
 
+            modifier.SourceTypeName = nif.Blocks[modRef].TypeName;
             def.Modifiers.Add(modifier);
             if (modifier is ParticleEmitterDefinition emitter && def.Emitter is null)
             {
                 def.Emitter = emitter;
             }
+
+            if (modifier.Kind == ParticleModifierKind.Other)
+            {
+                def.UnsupportedSimulatorSteps.Add(
+                    $"block {modRef}: {modifier.SourceTypeName} (retained in order; simulation not implemented)");
+            }
         }
 
-        // Steady-state density comes from the BIRTH RATE, not the capacity (which is just the buffer max). The
-        // rate lives on the NiPSysEmitterCtlr's interpolator; without it the bake fills to capacity and dust
-        // stacks to opaque. Sets it on the emitter so the baker maintains birthRate·lifespan live particles.
+        // Density comes from the live BIRTH RATE curve, not the capacity (which is only the buffer maximum).
+        // Preserve the two-stage sequence/controller clocks and every rate key so the renderer can advance the
+        // rate instead of holding the busiest key forever.
         if (def.Emitter is not null)
         {
-            def.Emitter.BirthRate = ResolveBirthRate(data, nif, blockIndex);
+            def.Emitter.BirthRateController = ResolveBirthRateController(data, nif, blockIndex);
         }
 
         ResolveAppearance(data, nif, propertyRefs, def);
@@ -173,118 +150,452 @@ internal static class NifParticleSystemParser
     }
 
     /// <summary>
-    ///     Resolve the steady-state birth rate (particles/sec) for the system's emitter. The rate is animated
-    ///     through the NiControllerManager, so it isn't on the emitter ctlr's (blend) interpolator directly —
-    ///     it's on the real NiFloatInterpolator referenced by the matching ControlledBlock in a
-    ///     NiControllerSequence. Returns 0 when it can't be found (the baker then falls back to capacity).
+    ///     Decode the three observed Bethesda 20.2 inheritance layouts. All cursors are schema-derived and
+    ///     terminate at the shared World Space / Modifiers tail:
+    ///     FO3/FNV through BS 34, Skyrim LE (BS 83), and SSE/FO4/FO76 from BS 100 onward.
     /// </summary>
-    private static float ResolveBirthRate(byte[] data, NifInfo nif, int systemIndex)
+    private static bool TryReadSystemLayout(
+        byte[] data,
+        NifInfo nif,
+        ref int pos,
+        int end,
+        List<int> propertyRefs,
+        out int dataRef,
+        out bool worldSpace,
+        out List<int> modifierRefs)
     {
+        dataRef = -1;
+        worldSpace = true;
+        modifierRefs = [];
         var be = nif.IsBigEndian;
 
-        // 1. The NiPSysEmitterCtlr that targets this system (NiTimeController.Target at +22).
-        var emitterCtlr = -1;
-        for (var i = 0; i < nif.Blocks.Count; i++)
+        if (nif.BsVersion <= 34)
         {
-            if (nif.Blocks[i].TypeName != "NiPSysEmitterCtlr")
+            // NiAVObject.Properties[] is present through FO3/FNV.
+            if (!TryReadPropertyArray(data, nif, ref pos, end, propertyRefs) || pos + 12 > end)
             {
-                continue;
+                return false;
             }
 
-            var b = nif.Blocks[i];
-            if (b.DataOffset + 26 <= b.DataOffset + b.Size &&
-                BinaryUtils.ReadInt32(data, b.DataOffset + 22, be) == systemIndex)
+            pos += 4; // Collision Object
+            dataRef = BinaryUtils.ReadInt32(data, pos, be);
+            pos += 8; // Data + Skin Instance
+            if (!SkipMaterialData(data, ref pos, end, be))
             {
-                emitterCtlr = i;
-                break;
+                return false;
+            }
+        }
+        else if (nif.BsVersion < 100)
+        {
+            // Skyrim LE (BS 83) remains NiGeometry-style, but NiAVObject.Properties[] is gone.
+            // Appearance moved to dedicated Shader/Alpha refs after MaterialData.
+            if (pos + 12 > end)
+            {
+                return false;
+            }
+
+            pos += 4; // Collision Object
+            dataRef = BinaryUtils.ReadInt32(data, pos, be);
+            pos += 8; // Data + Skin Instance
+            if (!SkipMaterialData(data, ref pos, end, be) || pos + 16 > end)
+            {
+                return false;
+            }
+
+            AddPropertyRef(BinaryUtils.ReadInt32(data, pos, be));
+            AddPropertyRef(BinaryUtils.ReadInt32(data, pos + 4, be));
+            pos += 8;
+            pos += 8; // Far Begin/End + Near Begin/End (4 x ushort)
+        }
+        else
+        {
+            // SSE/FO4/FO76 NiParticleSystem uses the BSGeometry base: bounds and dedicated refs precede
+            // VertexDesc; its NiPSysData ref moved after the distance bands.
+            var boundsSize = 16 + (nif.BsVersion >= 155 ? 24 : 0);
+            if (pos + 4 + boundsSize + 12 + 8 + 8 + 4 > end)
+            {
+                return false;
+            }
+
+            pos += 4; // Collision Object
+            pos += boundsSize; // Bounding sphere, plus FO76 bounding box
+            pos += 4; // Skin
+            AddPropertyRef(BinaryUtils.ReadInt32(data, pos, be));
+            AddPropertyRef(BinaryUtils.ReadInt32(data, pos + 4, be));
+            pos += 8; // Shader + Alpha
+            pos += 8; // BSVertexDesc
+            pos += 8; // Far Begin/End + Near Begin/End
+            dataRef = BinaryUtils.ReadInt32(data, pos, be);
+            pos += 4;
+        }
+
+        if (pos + 5 > end)
+        {
+            return false;
+        }
+
+        worldSpace = data[pos++] != 0;
+        var authoredModifierCount = BinaryUtils.ReadUInt32(data, pos, be);
+        pos += 4;
+        if (authoredModifierCount > 100 || pos + (long)authoredModifierCount * 4 > end)
+        {
+            return false;
+        }
+
+        modifierRefs = new List<int>((int)authoredModifierCount);
+        for (var i = 0; i < authoredModifierCount; i++)
+        {
+            var modifierRef = BinaryUtils.ReadInt32(data, pos, be);
+            pos += 4;
+            if (modifierRef >= 0 && modifierRef < nif.Blocks.Count)
+            {
+                modifierRefs.Add(modifierRef);
             }
         }
 
-        if (emitterCtlr < 0)
+        return true;
+
+        void AddPropertyRef(int propertyRef)
         {
-            return 0f;
-        }
-
-        // 2. Find the ControlledBlock referencing that ctlr inside a NiControllerSequence. Each ControlledBlock
-        //    begins [Interpolator(int32)][Controller(int32)], so scan for Controller == emitterCtlr and take the
-        //    preceding int32 as the interpolator — validated by requiring it to be a NiFloatInterpolator.
-        for (var i = 0; i < nif.Blocks.Count; i++)
-        {
-            if (nif.Blocks[i].TypeName != "NiControllerSequence")
+            if (propertyRef >= 0 && propertyRef < nif.Blocks.Count)
             {
-                continue;
-            }
-
-            var b = nif.Blocks[i];
-            var end = b.DataOffset + b.Size;
-            for (var p = b.DataOffset + 4; p + 4 <= end; p += 4)
-            {
-                if (BinaryUtils.ReadInt32(data, p, be) != emitterCtlr)
-                {
-                    continue;
-                }
-
-                var interp = BinaryUtils.ReadInt32(data, p - 4, be);
-                if (interp < 0 || interp >= nif.Blocks.Count ||
-                    nif.Blocks[interp].TypeName != "NiFloatInterpolator")
-                {
-                    continue;
-                }
-
-                var rate = ReadFloatInterpolatorValue(data, nif, interp);
-                if (rate > 0f)
-                {
-                    return rate;
-                }
+                propertyRefs.Add(propertyRef);
             }
         }
-
-        return 0f;
     }
 
-    /// <summary>Read a NiFloatInterpolator's effective value: the constant Value when set, else the peak key of
-    /// its NiFloatData (the busiest moment of an animated rate). Returns 0 when neither is usable.</summary>
-    private static float ReadFloatInterpolatorValue(byte[] data, NifInfo nif, int interp)
+    private static bool TryReadPropertyArray(
+        byte[] data, NifInfo nif, ref int pos, int end, List<int> propertyRefs)
     {
-        var be = nif.IsBigEndian;
-        var b = nif.Blocks[interp];
-        var value = BinaryUtils.ReadFloat(data, b.DataOffset, be);
-        if (float.IsFinite(value) && value is > 0f and < 1e30f)
+        if (pos + 4 > end)
         {
-            return value;
+            return false;
         }
 
-        var dataRef = BinaryUtils.ReadInt32(data, b.DataOffset + 4, be);
+        var count = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
+        pos += 4;
+        if (count > 100 || pos + (long)count * 4 > end)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < count; i++)
+        {
+            var propertyRef = BinaryUtils.ReadInt32(data, pos, nif.IsBigEndian);
+            pos += 4;
+            if (propertyRef >= 0 && propertyRef < nif.Blocks.Count)
+            {
+                propertyRefs.Add(propertyRef);
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Resolve the NiPSysEmitterCtlr that targets this system, then bind its BirthRate
+    ///     NiFloatInterpolator from the exact ControlledBlock table. The controller's own clock is retained in
+    ///     addition to the outer sequence clock: retail FXDust uses distinct controller phases to desynchronise
+    ///     its two emitters even though both live in the same 0..12 second looping sequence.
+    /// </summary>
+    private static ParticleRateControllerDefinition? ResolveBirthRateController(
+        byte[] data, NifInfo nif, int systemIndex)
+    {
+        for (var controllerIndex = 0; controllerIndex < nif.Blocks.Count; controllerIndex++)
+        {
+            var controllerBlock = nif.Blocks[controllerIndex];
+            if (controllerBlock.TypeName is not ("NiPSysEmitterCtlr" or "BSPSysMultiTargetEmitterCtlr") ||
+                !NifTimeControllerReader.TryRead(
+                    data, controllerBlock, nif.IsBigEndian, out var controllerHeader) ||
+                controllerHeader.TargetRef != systemIndex)
+            {
+                continue;
+            }
+
+            var controllerTiming = ReadControllerTiming(controllerHeader);
+            ParticleRateControllerDefinition? firstManaged = null;
+
+            // Managed controllers point at a NiBlendFloatInterpolator themselves; the real BirthRate
+            // NiFloatInterpolator is supplied by the matching sequence ControlledBlock.
+            for (var sequenceIndex = 0; sequenceIndex < nif.Blocks.Count; sequenceIndex++)
+            {
+                var sequenceBlock = nif.Blocks[sequenceIndex];
+                if (sequenceBlock.TypeName != "NiControllerSequence" ||
+                    !TryReadSequenceRateBinding(
+                        data, nif, sequenceBlock, controllerIndex,
+                        out var interpolatorRef, out var sequenceTiming, out var isIdle))
+                {
+                    continue;
+                }
+
+                var managed = ReadRateInterpolator(
+                    data, nif, interpolatorRef, controllerHeader.IsActive,
+                    controllerTiming, sequenceTiming);
+                if (managed is null)
+                {
+                    continue;
+                }
+
+                // Passive embedded effects conventionally auto-play Idle. Retain the first valid sequence as
+                // a deterministic fallback for older exports which do not name their sole sequence.
+                if (isIdle)
+                {
+                    return managed;
+                }
+
+                firstManaged ??= managed;
+            }
+
+            if (firstManaged is not null)
+            {
+                return firstManaged;
+            }
+
+            // Non-manager-controlled legacy files can attach NiFloatInterpolator directly after the shared
+            // NiTimeController header. Blend/unknown interpolators are rejected safely by ReadRateInterpolator.
+            if (controllerBlock.Size >= NifTimeControllerHeader.HeaderSize + 4)
+            {
+                var directInterpolator = BinaryUtils.ReadInt32(
+                    data, controllerBlock.DataOffset + NifTimeControllerHeader.HeaderSize, nif.IsBigEndian);
+                if (ReadRateInterpolator(
+                        data, nif, directInterpolator, controllerHeader.IsActive,
+                        controllerTiming, sequenceTiming: null) is { } direct)
+                {
+                    return direct;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryReadSequenceRateBinding(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo sequence,
+        int controllerIndex,
+        out int interpolatorRef,
+        out ParticleControllerTiming sequenceTiming,
+        out bool isIdle)
+    {
+        interpolatorRef = -1;
+        sequenceTiming = ParticleControllerTiming.Identity;
+        isIdle = false;
+
+        // The supported FO3/FNV particle family uses Bethesda's 20.2.0.7 string-table form. Do not scan
+        // arbitrary four-byte words: the 29-byte stride intentionally de-aligns every later ControlledBlock.
+        if (nif.BinaryVersion != NifVersions.Gamebryo202007 || nif.BsVersion == 0 || sequence.Size < 12)
+        {
+            return false;
+        }
+
+        var be = nif.IsBigEndian;
+        var end = sequence.DataOffset + sequence.Size;
+        var nameIndex = BinaryUtils.ReadInt32(data, sequence.DataOffset, be);
+        isIdle = nameIndex >= 0 && nameIndex < nif.Strings.Count &&
+                 nif.Strings[nameIndex].Contains("idle", StringComparison.OrdinalIgnoreCase);
+
+        var count = BinaryUtils.ReadUInt32(data, sequence.DataOffset + 4, be);
+        if (count == 0 || count > MaxControlledBlocks)
+        {
+            return false;
+        }
+
+        var controlledCount = (int)count;
+        var controlledStart = sequence.DataOffset + 12; // Name + count + Array Grow By
+        var tailLong = (long)controlledStart + (long)controlledCount * ControlledBlockStride;
+        if (tailLong > int.MaxValue)
+        {
+            return false;
+        }
+
+        var tail = (int)tailLong;
+        if (tail + SequenceTailSize > end)
+        {
+            return false;
+        }
+
+        var cycle = ReadCycle(BinaryUtils.ReadInt32(data, tail + 8, be));
+        sequenceTiming = new ParticleControllerTiming(
+            BinaryUtils.ReadFloat(data, tail + 12, be),
+            0f,
+            BinaryUtils.ReadFloat(data, tail + 16, be),
+            BinaryUtils.ReadFloat(data, tail + 20, be),
+            cycle);
+
+        for (var i = 0; i < controlledCount; i++)
+        {
+            var blockStart = controlledStart + i * ControlledBlockStride;
+            if (BinaryUtils.ReadInt32(data, blockStart + 4, be) != controllerIndex)
+            {
+                continue;
+            }
+
+            var candidate = BinaryUtils.ReadInt32(data, blockStart, be);
+            if (candidate >= 0 && candidate < nif.Blocks.Count &&
+                nif.Blocks[candidate].TypeName == "NiFloatInterpolator")
+            {
+                interpolatorRef = candidate;
+                return true; // the controller's Bool/EmitterActive binding has a different interpolator type
+            }
+        }
+
+        return false;
+    }
+
+    private static ParticleRateControllerDefinition? ReadRateInterpolator(
+        byte[] data,
+        NifInfo nif,
+        int interpolatorRef,
+        bool isActive,
+        ParticleControllerTiming controllerTiming,
+        ParticleControllerTiming? sequenceTiming)
+    {
+        if (interpolatorRef < 0 || interpolatorRef >= nif.Blocks.Count)
+        {
+            return null;
+        }
+
+        var interpolator = nif.Blocks[interpolatorRef];
+        if (interpolator.TypeName != "NiFloatInterpolator" || interpolator.Size < 8)
+        {
+            return null;
+        }
+
+        var be = nif.IsBigEndian;
+        var dataRef = BinaryUtils.ReadInt32(data, interpolator.DataOffset + 4, be);
+        if (TryReadRateKeysFromBlock(data, nif, dataRef, out var interpolation, out var keys))
+        {
+            return new ParticleRateControllerDefinition
+            {
+                IsActive = isActive,
+                SequenceTiming = sequenceTiming,
+                ControllerTiming = controllerTiming,
+                Interpolation = interpolation,
+                Keys = keys,
+            };
+        }
+
+        // NiFloatInterpolator.Value is authoritative only when no usable NiFloatData exists. Zero is a valid
+        // authored rate and must NOT fall through to the old capacity/lifespan density estimate.
+        var poseValue = BinaryUtils.ReadFloat(data, interpolator.DataOffset, be);
+        if (!float.IsFinite(poseValue) || MathF.Abs(poseValue) >= 1e30f)
+        {
+            return null;
+        }
+
+        return new ParticleRateControllerDefinition
+        {
+            IsActive = isActive,
+            SequenceTiming = sequenceTiming,
+            ControllerTiming = controllerTiming,
+            ConstantValue = poseValue,
+        };
+    }
+
+    private static bool TryReadRateKeysFromBlock(
+        byte[] data,
+        NifInfo nif,
+        int dataRef,
+        out ParticleRateInterpolation interpolation,
+        out IReadOnlyList<ParticleRateKey> keys)
+    {
+        interpolation = ParticleRateInterpolation.Linear;
+        keys = [];
         if (dataRef < 0 || dataRef >= nif.Blocks.Count || nif.Blocks[dataRef].TypeName != "NiFloatData")
         {
-            return 0f;
+            return false;
         }
 
-        var db = nif.Blocks[dataRef];
-        var pos = db.DataOffset;
-        var dend = db.DataOffset + db.Size;
-        if (pos + 8 > dend)
-        {
-            return 0f;
-        }
-
-        var numKeys = BinaryUtils.ReadUInt32(data, pos, be);
-        var interpolation = BinaryUtils.ReadUInt32(data, pos + 4, be);
-        pos += 8;
-        if (numKeys == 0 || numKeys > 1024)
-        {
-            return 0f;
-        }
-
-        var stride = 4 + 4 + (interpolation == 2 ? 8 : 0); // QUADRATIC: + in/out tangents (2 floats)
-        var peak = 0f;
-        for (var k = 0; k < numKeys && pos + 8 <= dend; k++, pos += stride)
-        {
-            peak = MathF.Max(peak, BinaryUtils.ReadFloat(data, pos + 4, be));
-        }
-
-        return peak;
+        var block = nif.Blocks[dataRef];
+        return TryReadRateKeys(
+            data, block.DataOffset, block.Size, nif.IsBigEndian, out interpolation, out keys);
     }
+
+    /// <summary>
+    ///     Decode one raw NiFloatData KeyGroup. Kept independent of NifInfo so little-/big-endian parser
+    ///     fixtures can prove byte order and auxiliary-key retention without manufacturing a full NIF graph.
+    /// </summary>
+    internal static bool TryReadRateKeys(
+        byte[] data,
+        int offset,
+        int size,
+        bool isBigEndian,
+        out ParticleRateInterpolation interpolation,
+        out IReadOnlyList<ParticleRateKey> keys)
+    {
+        interpolation = ParticleRateInterpolation.Linear;
+        keys = [];
+        if (offset < 0 || size < 8 || (long)offset + size > data.Length)
+        {
+            return false;
+        }
+
+        var pos = offset;
+        var end = offset + size;
+        var be = isBigEndian;
+        var count = BinaryUtils.ReadUInt32(data, pos, be);
+        var rawInterpolation = BinaryUtils.ReadUInt32(data, pos + 4, be);
+        if (count == 0 || count > 1024 ||
+            rawInterpolation is not (1u or 2u or 3u or 5u))
+        {
+            return false;
+        }
+
+        interpolation = (ParticleRateInterpolation)rawInterpolation;
+        var stride = interpolation switch
+        {
+            ParticleRateInterpolation.Quadratic => 16,
+            ParticleRateInterpolation.Tbc => 20,
+            _ => 8,
+        };
+        pos += 8;
+        if ((long)pos + (long)count * stride > end)
+        {
+            return false;
+        }
+
+        var parsed = new ParticleRateKey[(int)count];
+        var previousTime = float.NegativeInfinity;
+        for (var i = 0; i < parsed.Length; i++, pos += stride)
+        {
+            var time = BinaryUtils.ReadFloat(data, pos, be);
+            var value = BinaryUtils.ReadFloat(data, pos + 4, be);
+            if (!float.IsFinite(time) || !float.IsFinite(value) || time < previousTime)
+            {
+                return false;
+            }
+
+            previousTime = time;
+            parsed[i] = interpolation switch
+            {
+                ParticleRateInterpolation.Quadratic => new ParticleRateKey(
+                    time, value,
+                    Forward: BinaryUtils.ReadFloat(data, pos + 8, be),
+                    Backward: BinaryUtils.ReadFloat(data, pos + 12, be)),
+                ParticleRateInterpolation.Tbc => new ParticleRateKey(
+                    time, value,
+                    Tension: BinaryUtils.ReadFloat(data, pos + 8, be),
+                    Bias: BinaryUtils.ReadFloat(data, pos + 12, be),
+                    Continuity: BinaryUtils.ReadFloat(data, pos + 16, be)),
+                _ => new ParticleRateKey(time, value),
+            };
+        }
+
+        keys = parsed;
+        return true;
+    }
+
+    private static ParticleControllerTiming ReadControllerTiming(NifTimeControllerHeader header) =>
+        new(header.Frequency, header.Phase, header.StartTime, header.StopTime,
+            ReadCycle((int)header.CycleType));
+
+    private static ParticleControllerCycle ReadCycle(int cycle) => cycle switch
+    {
+        0 => ParticleControllerCycle.Loop,
+        1 => ParticleControllerCycle.Reverse,
+        _ => ParticleControllerCycle.Clamp, // unknown values hold safely rather than wrapping unpredictably
+    };
 
     /// <summary>Resolve the particle sprite texture + blend mode from the system's property refs.</summary>
     private static void ResolveAppearance(byte[] data, NifInfo nif, List<int> propertyRefs, ParticleSystemDefinition def)
@@ -312,6 +623,130 @@ internal static class NifParticleSystemParser
         var capacity = NifSceneGraphBlockReader.ReadVertexCount(data, nif.Blocks[dataRef], nif.IsBigEndian,
             nif.BinaryVersion);
         return capacity < 0 ? 0 : capacity;
+    }
+
+    /// <summary>
+    ///     Walk the NiGeometryData/NiParticlesData prefix far enough to retain authored atlas and aspect
+    ///     presentation. Bethesda 20.2 streams serialize the presence booleans but omit the per-particle
+    ///     rest arrays; treating those booleans as array payloads is what previously walked past the real
+    ///     Subtexture Offsets block.
+    /// </summary>
+    private static void ReadParticlePresentation(
+        byte[] data, NifInfo nif, int dataRef, ParticleSystemDefinition definition)
+    {
+        if (dataRef < 0 || dataRef >= nif.Blocks.Count ||
+            nif.Blocks[dataRef].TypeName is not ("NiPSysData" or "NiMeshPSysData" or "NiParticlesData"))
+        {
+            return;
+        }
+
+        var block = nif.Blocks[dataRef];
+        var be = nif.IsBigEndian;
+        var pos = block.DataOffset;
+        var end = Math.Min(data.Length, block.DataOffset + block.Size);
+        var modernGeom = NifVersions.HasModernGeometryBase(nif.BinaryVersion);
+        var bethesda202 = nif.BinaryVersion == 0x14020007 && nif.BsVersion > 0;
+
+        if (NifVersions.HasGeometryGroupId(nif.BinaryVersion)) pos += 4;
+        if (pos + 2 > end) return;
+        var numVertices = BinaryUtils.ReadUInt16(data, pos, be);
+        pos += 2;
+        if (NifVersions.HasGeometryKeepFlags(nif.BinaryVersion)) pos += 2;
+
+        // Bethesda 20.2 NiPSysData retains the presence booleans and BS Max Vertices, but none of the
+        // NiGeometryData per-particle arrays are serialized. Their storage is allocated at runtime.
+        if (!SkipOptionalArray(ref pos, 12, includePayload: !bethesda202)) return; // vertices
+
+        ushort dataFlags = 0;
+        if (modernGeom)
+        {
+            if (pos + 2 > end) return;
+            dataFlags = BinaryUtils.ReadUInt16(data, pos, be);
+            pos += 2;
+            if (nif.BsVersion > 34) pos += 4; // material CRC
+        }
+
+        if (pos + 1 > end) return;
+        var hasNormals = data[pos++] != 0;
+        if (hasNormals && !bethesda202)
+        {
+            pos += numVertices * 12;
+            if (modernGeom && (dataFlags & 0x1000) != 0) pos += numVertices * 24;
+        }
+        if (modernGeom) pos += 16; // bounding sphere is present whether normals are present or not
+
+        if (!SkipOptionalArray(ref pos, 16, includePayload: !bethesda202)) return; // vertex colors
+        if (modernGeom)
+        {
+            if (!bethesda202 && (dataFlags & 0x0001) != 0) pos += numVertices * 8;
+        }
+        else
+        {
+            if (pos + 4 > end) return;
+            var uvSets = BinaryUtils.ReadUInt16(data, pos, be) & 0x3F;
+            pos += 4 + uvSets * numVertices * 8;
+        }
+
+        pos += 2; // consistency
+        if (nif.BinaryVersion >= 0x14000004) pos += 4; // additional data ref
+        if (pos + 1 > end) return;
+
+        // NiParticlesData. In Bethesda 20.2 the bools remain but their large rest-pose arrays are omitted.
+        if (nif.BinaryVersion >= 0x0A010000 && !SkipOptionalArray(ref pos, 4, !bethesda202)) return; // radii
+        pos += 2; // Num Active
+        if (!SkipOptionalArray(ref pos, 4, !bethesda202)) return; // sizes
+        if (nif.BinaryVersion >= 0x0A000100 && !SkipOptionalArray(ref pos, 16, !bethesda202)) return; // quaternions
+        if (nif.BinaryVersion >= 0x14000004 && !SkipOptionalArray(ref pos, 4, !bethesda202)) return; // angles
+        if (nif.BinaryVersion >= 0x14000004 && !SkipOptionalArray(ref pos, 12, !bethesda202)) return; // axes
+
+        if (!bethesda202 || pos + 1 > end) return;
+        _ = data[pos++] != 0; // Has Texture Indices: runtime array presence; offsets still follow.
+
+        uint count;
+        if (nif.BsVersion <= 34)
+        {
+            if (pos + 1 > end) return;
+            count = data[pos++];
+        }
+        else
+        {
+            if (pos + 4 > end) return;
+            count = BinaryUtils.ReadUInt32(data, pos, be);
+            pos += 4;
+        }
+
+        if (count is > 0 and <= 256 && pos + (long)count * 16 <= end)
+        {
+            var offsets = new Vector4[count];
+            for (var i = 0; i < count; i++)
+            {
+                // NIF orders each atlas entry as (uOffset, uScale, vOffset, vScale).
+                // Normalize it to the renderer's (uOffset, vOffset, uScale, vScale) contract;
+                // treating the raw Vector4 as RGBA is what produced zero/negative frame widths.
+                offsets[i] = ReadAtlasRectangle(data, pos + i * 16, be);
+            }
+            definition.SubtextureOffsets = offsets;
+            pos += checked((int)count * 16);
+        }
+
+        if (nif.BsVersion > 34 && pos + 4 <= end)
+        {
+            var aspect = BinaryUtils.ReadFloat(data, pos, be);
+            if (float.IsFinite(aspect) && aspect > 1e-4f)
+            {
+                definition.AspectRatio = aspect;
+            }
+        }
+
+        return;
+
+        bool SkipOptionalArray(ref int cursor, int stride, bool includePayload)
+        {
+            if (cursor + 1 > end) return false;
+            var present = data[cursor++] != 0;
+            if (present && includePayload) cursor += numVertices * stride;
+            return cursor <= end;
+        }
     }
 
     private static ParticleModifierDefinition? ParseModifier(byte[] data, NifInfo nif, int modRef)
@@ -369,7 +804,8 @@ internal static class NifParticleSystemParser
 
             case "NiPSysGravityModifier":
             {
-                // Gravity Object(Ptr 4) + Gravity Axis(12) + Decay(4) + Strength(4) + Force Type(4) + ...
+                // Gravity Object(Ptr 4) + Gravity Axis(12) + Decay(4) + Strength(4) + Force Type(4)
+                // + Turbulence(4) + Turbulence Scale(4) + World Aligned(bool, when present).
                 if (p + 4 + 12 + 12 > end) return null;
                 var gravObj = BinaryUtils.ReadInt32(data, p, be);
                 return new GravityModifierDefinition
@@ -381,6 +817,9 @@ internal static class NifParticleSystemParser
                     Decay = BinaryUtils.ReadFloat(data, p + 16, be),
                     Strength = BinaryUtils.ReadFloat(data, p + 20, be),
                     ForceType = (int)BinaryUtils.ReadUInt32(data, p + 24, be),
+                    Turbulence = p + 32 <= end ? BinaryUtils.ReadFloat(data, p + 28, be) : 0f,
+                    TurbulenceScale = p + 36 <= end ? BinaryUtils.ReadFloat(data, p + 32, be) : 1f,
+                    WorldAligned = p + 37 <= end && data[p + 36] != 0,
                 };
             }
 
@@ -437,7 +876,46 @@ internal static class NifParticleSystemParser
             case "NiPSysPositionModifier":
                 return new ParticleModifierDefinition { Kind = ParticleModifierKind.Position, Active = active, BlockIndex = modRef };
             case "NiPSysRotationModifier":
-                return new ParticleModifierDefinition { Kind = ParticleModifierKind.Rotation, Active = active, BlockIndex = modRef };
+            {
+                // FO3/FNV 20.2.0.7: speed, variation, angle, variation, random-sign, random-axis, axis.
+                if (p + 4 > end)
+                {
+                    return new ParticleModifierDefinition
+                        { Kind = ParticleModifierKind.Rotation, Active = active, BlockIndex = modRef };
+                }
+
+                return new RotationModifierDefinition
+                {
+                    Kind = ParticleModifierKind.Rotation,
+                    Active = active,
+                    BlockIndex = modRef,
+                    RotationSpeed = BinaryUtils.ReadFloat(data, p, be),
+                    RotationSpeedVariation = p + 8 <= end ? BinaryUtils.ReadFloat(data, p + 4, be) : 0f,
+                    RotationAngle = p + 12 <= end ? BinaryUtils.ReadFloat(data, p + 8, be) : 0f,
+                    RotationAngleVariation = p + 16 <= end ? BinaryUtils.ReadFloat(data, p + 12, be) : 0f,
+                    RandomSpeedSign = p + 17 <= end && data[p + 16] != 0,
+                };
+            }
+
+            case "BSPSysSubTexModifier":
+                if (p + 28 > end)
+                {
+                    return new ParticleModifierDefinition
+                        { Kind = ParticleModifierKind.Subtexture, Active = active, BlockIndex = modRef };
+                }
+                return new SubtextureModifierDefinition
+                {
+                    Kind = ParticleModifierKind.Subtexture,
+                    Active = active,
+                    BlockIndex = modRef,
+                    StartFrame = BinaryUtils.ReadFloat(data, p, be),
+                    StartFrameFudge = BinaryUtils.ReadFloat(data, p + 4, be),
+                    EndFrame = BinaryUtils.ReadFloat(data, p + 8, be),
+                    LoopStartFrame = BinaryUtils.ReadFloat(data, p + 12, be),
+                    LoopStartFrameFudge = BinaryUtils.ReadFloat(data, p + 16, be),
+                    FrameCount = BinaryUtils.ReadFloat(data, p + 20, be),
+                    FrameCountFudge = BinaryUtils.ReadFloat(data, p + 24, be),
+                };
 
             case "NiPSysSpawnModifier":
             {
@@ -497,6 +975,8 @@ internal static class NifParticleSystemParser
         var emitterObjectIndex = -1;
         List<int> meshIndices = [];
         var emissionAxis = Vector3.UnitZ; // +Z = declination reference for volume emitters (mesh emitter overrides)
+        var velocityType = ParticleVelocityType.UseDirection;
+        var emitFrom = ParticleEmitFrom.Vertices;
 
         switch (block.TypeName)
         {
@@ -546,9 +1026,23 @@ internal static class NifParticleSystemParser
                 meshIndices = ReadEmitterMeshRefs(data, block, be)
                     .Where(r => r >= 0 && r < nif.Blocks.Count).ToList();
                 // After the emitter-mesh refs: Initial Velocity Type(4) + Emission Type(4) + Emission Axis(12).
-                var refsEnd = afterBase + 4 + meshIndices.Count * 4;
-                if (refsEnd + 8 + 12 <= end)
+                // Cursor advancement must use the AUTHORED ref count. meshIndices deliberately filters invalid
+                // refs, and using its count shifted these fields left whenever a sparse/broken ref was present.
+                var authoredMeshCount = afterBase + 4 <= end
+                    ? BinaryUtils.ReadUInt32(data, afterBase, be)
+                    : 0u;
+                var refsEndLong = afterBase + 4L + authoredMeshCount * 4L;
+                if (authoredMeshCount <= 64 && refsEndLong + 8 + 12 <= end)
                 {
+                    var refsEnd = (int)refsEndLong;
+                    velocityType = Enum.IsDefined(typeof(ParticleVelocityType),
+                        (int)BinaryUtils.ReadUInt32(data, refsEnd, be))
+                        ? (ParticleVelocityType)BinaryUtils.ReadUInt32(data, refsEnd, be)
+                        : ParticleVelocityType.UseDirection;
+                    emitFrom = Enum.IsDefined(typeof(ParticleEmitFrom),
+                        (int)BinaryUtils.ReadUInt32(data, refsEnd + 4, be))
+                        ? (ParticleEmitFrom)BinaryUtils.ReadUInt32(data, refsEnd + 4, be)
+                        : ParticleEmitFrom.Vertices;
                     emissionAxis = ReadVector3(data, refsEnd + 8, be);
                 }
                 break;
@@ -573,6 +1067,8 @@ internal static class NifParticleSystemParser
             LifeSpan = lifeSpan,
             LifeSpanVariation = lifeSpanVar,
             EmissionAxis = emissionAxis,
+            VelocityType = velocityType,
+            EmitFrom = emitFrom,
             Width = width,
             Height = height,
             Depth = depth,
@@ -654,6 +1150,18 @@ internal static class NifParticleSystemParser
             BinaryUtils.ReadFloat(data, offset + 4, be),
             BinaryUtils.ReadFloat(data, offset + 8, be),
             BinaryUtils.ReadFloat(data, offset + 12, be));
+
+    /// <summary>
+    ///     Read one NiPSysData Subtexture Offset. NIF serializes
+    ///     <c>(uOffset, uScale, vOffset, vScale)</c>; particle geometry consumes
+    ///     <c>(uOffset, vOffset, uScale, vScale)</c>. Keeping this conversion in an independently
+    ///     testable helper prevents endian/parser changes from silently reintroducing zero-width frames.
+    /// </summary>
+    internal static Vector4 ReadAtlasRectangle(byte[] data, int offset, bool isBigEndian)
+    {
+        var authored = ReadColor4(data, offset, isBigEndian);
+        return new Vector4(authored.X, authored.Z, authored.Y, authored.W);
+    }
 
     /// <summary>
     ///     Read a NiColorData block's key array (NiPSysColorModifier's gradient): Num Keys(uint) +

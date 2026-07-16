@@ -33,6 +33,7 @@ public static class Program
         {
             if (!string.IsNullOrEmpty(error))
             {
+                Environment.ExitCode = 2;
                 Console.Error.WriteLine(error);
                 Console.Error.WriteLine();
             }
@@ -127,7 +128,24 @@ public static class Program
                     ["cameraMotion"] = options.CameraMotion.ToString(),
                     ["cameraSpeed"] = options.CameraSpeed,
                     ["stallThresholdMs"] = options.StallThresholdMilliseconds,
-                    ["gpuTimestamps"] = options.ForceGpuTimestamps
+                    ["gpuTimestamps"] = options.ForceGpuTimestamps,
+                    ["captureFrame"] = options.CaptureFramePath,
+                    ["captureWidth"] = options.CaptureWidth,
+                    ["captureHeight"] = options.CaptureHeight,
+                    ["captureRequestedWorldspace"] = options.CaptureWorldspaceName,
+                    ["captureRequestedWeather"] = options.CaptureWeatherName,
+                    ["captureHour"] = options.CaptureHour,
+                    ["captureDay"] = options.CaptureDay,
+                    ["captureAnimationTimeSeconds"] = options.CaptureAnimationTimeSeconds,
+                    ["capturePitchDegrees"] = options.CapturePitchDegrees,
+                    ["captureYawDegrees"] = options.CaptureYawDegrees,
+                    ["captureSettleTimeoutSeconds"] = options.CaptureSettleTimeoutSeconds,
+                    // Record architectural A/B state in the trace itself. Without these fields two
+                    // otherwise-identical profile files cannot prove which opt-in path they exercised.
+                    ["liveParticles"] = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_LIVE_PARTICLES"),
+                    ["speedTreeRuntimeLod"] = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_SPT_RUNTIME_LOD"),
+                    ["modernWater"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ModernWater),
+                    ["modernImageSpace"] = EnvironmentVariables.Get(EnvironmentVariables.Viewer.ModernImageSpace)
                 });
             }
         }

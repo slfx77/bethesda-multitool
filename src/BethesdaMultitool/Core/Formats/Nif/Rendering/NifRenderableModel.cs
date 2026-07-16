@@ -23,6 +23,14 @@ internal sealed class NifRenderableModel
     public bool WasSkinned { get; set; }
 
     /// <summary>
+    ///     True when the source NIF contains a particle-system block, independent of whether that system
+    ///     emitted any particles in the static time-zero bake. The persistent decoded-mesh cache retains
+    ///     this provenance so opt-in live playback can source-decode quiet systems and recover their
+    ///     controller/modifier graph.
+    /// </summary>
+    public bool ContainsParticleSource { get; set; }
+
+    /// <summary>
     ///     Update bounding box from a submesh's positions.
     /// </summary>
     public void ExpandBounds(float[] positions)

@@ -20,20 +20,35 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 ///         old <c>skymoonfull.dds</c> is an unreferenced legacy asset, kept as a fallback candidate).
 ///     </para>
 ///     <para>
-///         The half-size fractions here are FALLBACKS. The engine's true moon size is a pair of GameSettings
-///         — <c>iMasserSize</c> / <c>iSecundaSize</c> (the ±size billboard quad's world half-extent) divided
-///         by <c>fSunXExtreme</c> (the sky-dome horizontal radius the moon orbits at). This was verified by
-///         decompiling FNV's <c>Moon.cpp</c> (360 MemDebug) and Skyrim's <c>TESV Moon::Initialize</c>: both
-///         build a <c>±size</c> quad and orbit the same sun/moon box. Because they are GMSTs they vary per
-///         game and even per mod (FNV ships 85 / dome 800 → 0.106; Skyrim 90 / dome 400 → 0.225), so the
-///         viewer reads them from the loaded ESM at runtime (see <see cref="FractionFromGmst" />) and only
-///         falls back to these constants when the GMSTs are absent (e.g. Morrowind TES3, or DMP captures
-///         without a settings table). The fractions are relative to the billboard radius
+///         The half-size fractions here are FALLBACKS. FNV's symbol-backed <c>Moon::Initialize</c> and
+///         Skyrim's retail implementation both build a <c>±iMasserSize</c>/<c>±iSecundaSize</c> quad and
+///         translate its rotated-arm node to local <c>(0,512,0)</c>. Their apparent half-size is therefore
+///         the authored size divided by the fixed 512-unit arm, independently of <c>fSunXExtreme</c>.
+///         FO4's recovered triangle path is a separate family and continues to use its authored
+///         <c>fSunXExtreme</c> radius. Because the sizes are GMSTs they can vary per mod, so the viewer reads
+///         them from the loaded ESM at runtime (see <see cref="HalfSizeFractionFromGmst" />) and falls back
+///         to these constants when the required GMSTs are absent (e.g. Morrowind TES3, or DMP captures
+///         without a settings table). Fractions are relative to the billboard radius
 ///         (<see cref="D3D12.SkyBillboardRenderer12.Radius" />).
 ///     </para>
 /// </summary>
 public sealed record SkyMoonProfile
 {
+    /// <summary>Recovered orbit implementation used by this engine family.</summary>
+    public MoonPathFamily PathFamily { get; init; }
+
+    /// <summary>Fallback primary-moon angle where the recovered rotated-arm disc reaches full opacity.</summary>
+    public float PrimaryAngleFadeStartDegrees { get; init; }
+
+    /// <summary>Fallback primary-moon angle where the recovered rotated-arm disc becomes invisible.</summary>
+    public float PrimaryAngleFadeEndDegrees { get; init; }
+
+    /// <summary>Fallback Secunda angle where the recovered rotated-arm disc reaches full opacity.</summary>
+    public float SecondaryAngleFadeStartDegrees { get; init; }
+
+    /// <summary>Fallback Secunda angle where the recovered rotated-arm disc becomes invisible.</summary>
+    public float SecondaryAngleFadeEndDegrees { get; init; }
+
     /// <summary>Number of moons this engine draws (0 = no billboard moon for this game).</summary>
     public int MoonCount { get; init; }
 
@@ -43,8 +58,8 @@ public sealed record SkyMoonProfile
     /// <summary>Second moon (Secunda) texture candidates — only used when <see cref="MoonCount" /> ≥ 2.</summary>
     public IReadOnlyList<string> SecondaryTextureCandidates { get; init; } = [];
 
-    /// <summary>Fallback primary-moon half-extent (fraction of the billboard radius) when the engine
-    /// <c>iMasserSize</c>/<c>fSunXExtreme</c> GMSTs aren't available.</summary>
+    /// <summary>Fallback primary-moon half-extent (fraction of the billboard radius) when the engine's
+    /// authored size inputs aren't available.</summary>
     public float PrimaryHalfSizeFraction { get; init; }
 
     /// <summary>Fallback second-moon half-extent (fraction of the billboard radius).</summary>
@@ -95,6 +110,65 @@ public sealed record SkyMoonProfile
     /// in-shader, so it reuses the single full-moon texture for every phase.</summary>
     public bool HasPerPhaseTextures => PrimaryPhaseTexturePattern is not null && PhaseTokens.Count == MoonSky.PhaseCount;
 
+    /// <summary>Evaluates this profile's game-family-specific moon path.</summary>
+    public System.Numerics.Vector3 Direction(
+        bool secondary, float gameHour, float day, AtmosphereState.ClimateTiming climate,
+        float? rotatedArmSpeedOverride = null, float? rotatedArmInclinationOverride = null)
+    {
+        var orbit = secondary ? SecondaryOrbit : PrimaryOrbit;
+        return PathFamily switch
+        {
+            MoonPathFamily.FalloutRotatedArm or MoonPathFamily.SkyrimRotatedArm =>
+                MoonSky.ComputeRotatedArmDirection(
+                speed: rotatedArmSpeedOverride ?? RotatedArmSpeed(secondary),
+                inclinationDegrees: rotatedArmInclinationOverride ?? RotatedArmInclination(secondary),
+                gameHour,
+                day),
+            MoonPathFamily.CreationTriangle => AtmosphereState.Fo4MoonPathDirection(
+                gameHour,
+                climate.SunriseBeginHour,
+                climate.SunriseEndHour,
+                climate.SunsetBeginHour,
+                climate.SunsetEndHour),
+            _ => MoonSky.ComputeMoonDirection(orbit, gameHour, day),
+        };
+    }
+
+    /// <summary>Fallback speed GMST for a recovered rotated-arm moon.</summary>
+    public float RotatedArmSpeed(bool secondary)
+    {
+        var orbit = secondary ? SecondaryOrbit : PrimaryOrbit;
+        return 6f / MathF.Max(orbit.PeriodHours, 0.001f);
+    }
+
+    /// <summary>Fallback Z-offset/inclination GMST for a recovered rotated-arm moon.</summary>
+    public float RotatedArmInclination(bool secondary)
+    {
+        var orbit = secondary ? SecondaryOrbit : PrimaryOrbit;
+        return 90f - orbit.MaxAltitudeDeg;
+    }
+
+    /// <summary>
+    ///     Evaluates the recovered per-moon angular opacity envelope. Runtime GMST values override the
+    ///     profile defaults so plugin-authored fade and speed changes affect both position and opacity.
+    /// </summary>
+    public float RotatedArmDiscFade(
+        bool secondary, float gameHour, float day,
+        float? speedOverride = null, float? fadeStartOverride = null, float? fadeEndOverride = null)
+    {
+        if (PathFamily is not (MoonPathFamily.FalloutRotatedArm or MoonPathFamily.SkyrimRotatedArm))
+        {
+            return 1f;
+        }
+
+        var start = fadeStartOverride ??
+                    (secondary ? SecondaryAngleFadeStartDegrees : PrimaryAngleFadeStartDegrees);
+        var end = fadeEndOverride ??
+                  (secondary ? SecondaryAngleFadeEndDegrees : PrimaryAngleFadeEndDegrees);
+        return MoonSky.ComputeRotatedArmDiscFade(
+            speedOverride ?? RotatedArmSpeed(secondary), gameHour, day, start, end);
+    }
+
     /// <summary>
     ///     Phase index whose shipped texture is a deliberately-black stub the engine relies on a dark
     ///     night sky to hide (FO3/FNV <c>masser_new.dds</c> = 94-byte black disc; the Oblivion
@@ -122,12 +196,34 @@ public sealed record SkyMoonProfile
     public static readonly SkyMoonProfile None = new() { MoonCount = 0 };
 
     /// <summary>
-    ///     The engine's exact moon apparent-size as a fraction of the billboard radius:
+    ///     Local Y translation used by the recovered FNV and Skyrim rotated-arm moon nodes. This is an
+    ///     executable constant, not <c>fSunXExtreme</c>.
+    /// </summary>
+    public const float RotatedArmLength = 512f;
+
+    /// <summary>
+    ///     Resolves an authored moon quad half-extent to this profile's apparent half-size fraction.
+    ///     Recovered FNV/Skyrim rotated arms divide by their fixed 512-unit node translation; the FO4
+    ///     triangle family and unrecovered calibrated families retain the authored/fallback sky radius.
+    /// </summary>
+    public float? HalfSizeFractionFromGmst(int? moonSizeSetting, float? sunXExtreme)
+    {
+        if (moonSizeSetting is not int size)
+        {
+            return null;
+        }
+
+        return PathFamily is MoonPathFamily.FalloutRotatedArm or MoonPathFamily.SkyrimRotatedArm
+            ? size / RotatedArmLength
+            : FractionFromGmst(size, sunXExtreme);
+    }
+
+    /// <summary>
+    ///     Radius-based moon apparent-size as a fraction of the billboard radius:
     ///     <paramref name="moonSizeSetting" /> (the <c>iMasserSize</c>/<c>iSecundaSize</c> ±size quad
     ///     half-extent, in world units) divided by <paramref name="sunXExtreme" /> (the <c>fSunXExtreme</c>
-    ///     sky-dome horizontal radius). Returns null when either GMST is missing or the dome radius is
-    ///     non-positive (caller then uses the per-game fallback fraction). See class remarks for the
-    ///     decompilation this model came from.
+    ///     path radius). Returns null when either GMST is missing or the radius is non-positive. Do not use
+    ///     this directly for recovered FNV/Skyrim rotated arms; use <see cref="HalfSizeFractionFromGmst" />.
     /// </summary>
     public static float? FractionFromGmst(int? moonSizeSetting, float? sunXExtreme)
         => moonSizeSetting is int size && sunXExtreme is float dome && dome > 0f ? size / dome : null;
@@ -154,6 +250,7 @@ public sealed record SkyMoonProfile
 
     private static readonly SkyMoonProfile Morrowind = new()
     {
+        PathFamily = MoonPathFamily.CalibratedTesOrbit,
         MoonCount = 2,
         PrimaryTextureCandidates = MorrowindMasser,
         SecondaryTextureCandidates = MorrowindSecunda,
@@ -178,6 +275,7 @@ public sealed record SkyMoonProfile
 
     private static readonly SkyMoonProfile Oblivion = new()
     {
+        PathFamily = MoonPathFamily.CalibratedTesOrbit,
         MoonCount = 2,
         PrimaryTextureCandidates = CreationMasser,
         SecondaryTextureCandidates = CreationSecunda,
@@ -212,17 +310,20 @@ public sealed record SkyMoonProfile
     private static readonly string[] FalloutPhaseTokens =
         ["full", "three_wan", "half_wan", "one_wan", "new", "one_wax", "half_wax", "three_wax"];
 
-    // FO3/FNV: single moon ("Masser"). Fallback size = the FNV shipped GMSTs (iMasserSize 85 /
-    // fSunXExtreme 800 = 0.106). Orbit constants from Sky::HandleClimateChange's Moon ctor args
+    // FO3/FNV: single moon ("Masser"). Fallback size = the FNV shipped iMasserSize 85 divided by the
+    // fixed 512-unit Moon node arm = 0.166015625. Orbit constants from Sky::HandleClimateChange's ctor args
     // (static_data_dump.txt): speed 0.25 × 60°/h = 15°/h → an exact 24h period (the FNV moon rises at
     // the same time nightly — the day slider changes PHASE, not position), inclination 35° → culmination
-    // ≈ 55°. The cos-bell arc shape is the viewer's standing approximation of the engine's rotated-arm
-    // circle; the period/altitude are the engine's.
+    // ≈ 55°. Direction evaluates the recovered rotated-arm matrix, including its 90-degree initial state.
     private static readonly SkyMoonProfile Fallout = new()
     {
+        PathFamily = MoonPathFamily.FalloutRotatedArm,
+        // FNV/FO3 Moon.cpp constructor defaults recovered from the symbol-backed Xbox build.
+        PrimaryAngleFadeStartDegrees = 55f,
+        PrimaryAngleFadeEndDegrees = 45f,
         MoonCount = 1,
         PrimaryTextureCandidates = FalloutSingleMoon,
-        PrimaryHalfSizeFraction = 0.106f,
+        PrimaryHalfSizeFraction = 85f / RotatedArmLength,
         PrimaryOrbit = new MoonSky.MoonOrbit(
             PeriodHours: 24f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 55f, PeakAzimuthDeg: 90f, AzSwingDeg: 20f),
         PrimaryPhaseTexturePattern = @"textures\sky\masser_{0}.dds",
@@ -230,20 +331,32 @@ public sealed record SkyMoonProfile
         HiddenPhaseIndex = 4, // masser_new.dds is a black stub — skip the draw at new moon
     };
 
-    // Skyrim: fallback = the shipped Skyrim.esm GMSTs (iMasserSize 90 / 400 = 0.225, iSecundaSize 40 / 400 = 0.10).
+    // Skyrim: fallback = the shipped Skyrim.esm GMSTs divided by the fixed 512-unit Moon node arm
+    // (iMasserSize 90 / 512, iSecundaSize 40 / 512). TESV.exe 1.9.32 Moon::Update and
+    // Sky::HandleClimateChange prove
+    // that both moons use the rotated-arm matrices, with the executable's GMST defaults passed to the
+    // constructor: Masser speed=.25 / z-offset=35 degrees, Secunda speed=.30 / z-offset=50 degrees.
+    // Thus their periods are exactly 24h and 20h and their maximum altitudes are 55 and 40 degrees.
     private static readonly SkyMoonProfile Skyrim = new()
     {
+        PathFamily = MoonPathFamily.SkyrimRotatedArm,
+        // Skyrim.esm authors both Masser and Secunda's f*AngleFadeStart/End as 35/20 degrees.
+        PrimaryAngleFadeStartDegrees = 35f,
+        PrimaryAngleFadeEndDegrees = 20f,
+        SecondaryAngleFadeStartDegrees = 35f,
+        SecondaryAngleFadeEndDegrees = 20f,
         MoonCount = 2,
         PrimaryTextureCandidates = CreationMasser,
         SecondaryTextureCandidates = CreationSecunda,
-        PrimaryHalfSizeFraction = 0.225f,
-        SecondaryHalfSizeFraction = 0.100f,
-        // Two distinct arcs. Skyrim renders moon phases via its own shader, not per-phase textures, so the
-        // full-moon texture is used for every phase here (no PhaseTexturePattern).
+        PrimaryHalfSizeFraction = 90f / RotatedArmLength,
+        SecondaryHalfSizeFraction = 40f / RotatedArmLength,
+        // Skyrim renders moon phases via its own shader, not per-phase textures, so the full-moon texture
+        // is used for every phase here (no PhaseTexturePattern). The unused azimuth fields remain zero;
+        // Direction maps period/max-altitude back to the recovered speed/inclination pair.
         PrimaryOrbit = new MoonSky.MoonOrbit(
-            PeriodHours: 24f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 74f, PeakAzimuthDeg: 100f, AzSwingDeg: 24f),
+            PeriodHours: 24f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 55f, PeakAzimuthDeg: 0f, AzSwingDeg: 0f),
         SecondaryOrbit = new MoonSky.MoonOrbit(
-            PeriodHours: 24.5f, PhaseOffsetTurns: 0.18f, MaxAltitudeDeg: 58f, PeakAzimuthDeg: 62f, AzSwingDeg: 30f),
+            PeriodHours: 20f, PhaseOffsetTurns: 0f, MaxAltitudeDeg: 40f, PeakAzimuthDeg: 0f, AzSwingDeg: 0f),
     };
 
     // FO4/FO76: single moon drawn from the Creation SECUNDA slot. The FO4 BA2s ship ONLY the Skyrim
@@ -256,6 +369,7 @@ public sealed record SkyMoonProfile
     // GMST read overrides, taking iSecundaSize for the primary via PrimaryUsesSecundaSize.
     private static readonly SkyMoonProfile FalloutCreation = new()
     {
+        PathFamily = MoonPathFamily.CreationTriangle,
         MoonCount = 1,
         PrimaryTextureCandidates = CreationSecunda,
         PrimaryHalfSizeFraction = 0.125f,
@@ -277,4 +391,17 @@ public sealed record SkyMoonProfile
         BethesdaGame.Fallout76 => FalloutCreation,
         _ => None,
     };
+}
+
+/// <summary>Moon trajectory family selected explicitly by game identity.</summary>
+public enum MoonPathFamily
+{
+    /// <summary>TES-family fallback pending a recovered per-game binary oracle.</summary>
+    CalibratedTesOrbit,
+    /// <summary>FO3/FNV rotated-arm matrices recovered from <c>Moon::Update</c>.</summary>
+    FalloutRotatedArm,
+    /// <summary>Skyrim's two per-GMST rotated-arm paths recovered from TESV <c>Moon::Update</c>.</summary>
+    SkyrimRotatedArm,
+    /// <summary>FO4/FO76 triangle-wave position recovered from <c>Moon::Update</c>.</summary>
+    CreationTriangle,
 }

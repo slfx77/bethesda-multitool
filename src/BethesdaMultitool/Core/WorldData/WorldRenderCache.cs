@@ -96,6 +96,9 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
     /// </summary>
     internal IReadOnlyDictionary<uint, LightRecord>? LightIndex { get; set; }
 
+    /// <summary>REGN/LIGH color lookup for placed-reference XEMI links.</summary>
+    internal IReadOnlyDictionary<uint, Vector3>? ExternalEmittanceIndex { get; set; }
+
     /// <summary>LTEX and GRAS lookup tables used by the lazy per-cell grass scatter bake.</summary>
     internal IReadOnlyDictionary<uint, LandscapeTextureRecord>? LandTextureIndex { get; set; }
     internal IReadOnlyDictionary<uint, GrassRecord>? GrassIndex { get; set; }
@@ -269,7 +272,8 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
         // so the hundreds of placements sharing one colorway don't each rebuild an identical set
         // (and the mesh cache sees one shared VariantKey instance per combination). The MODC remap
         // is a function of the base FormID, so the (base, swap) key stays unique per combination.
-        Dictionary<(uint BaseFormId, uint SwapFormId), AlternateTextureSet?>? mergedSwapSets = null;
+        Dictionary<(uint BaseFormId, uint SwapFormId, uint EmittanceFormId), AlternateTextureSet?>?
+            mergedSwapSets = null;
         var built = new List<RenderableReference>(placements.Count);
         List<PlacedLight>? placedLights = null;
         foreach (var p in placements)
@@ -313,15 +317,25 @@ internal sealed class WorldRenderCache : Core.Diagnostics.ITrackableResource
                 ? remap
                 : null;
 
-            if (swaps is not null || colorRemap is not null)
+            Vector3? externalEmittance = p.EmittanceFormId is { } emittanceFormId &&
+                                          ExternalEmittanceIndex is { } emittanceIndex &&
+                                          emittanceIndex.TryGetValue(emittanceFormId, out var emittanceColor)
+                ? emittanceColor
+                : null;
+
+            if (swaps is not null || colorRemap is not null || externalEmittance is not null)
             {
                 mergedSwapSets ??= [];
-                var key = (p.BaseFormId, effectiveSwapFormId ?? 0u);
+                var key = (p.BaseFormId, effectiveSwapFormId ?? 0u, p.EmittanceFormId ?? 0u);
                 if (!mergedSwapSets.TryGetValue(key, out var merged))
                 {
                     merged = alternateTextures is null
-                        ? AlternateTextureSet.Create([], swaps, colorRemap)
-                        : AlternateTextureSet.Create(alternateTextures.Overrides, swaps, colorRemap);
+                        ? AlternateTextureSet.Create([], swaps, colorRemap, externalEmittance)
+                        : AlternateTextureSet.Create(
+                            alternateTextures.Overrides,
+                            swaps ?? alternateTextures.MaterialSwaps,
+                            colorRemap ?? alternateTextures.GradientMapVOverride,
+                            externalEmittance ?? alternateTextures.ExternalEmittanceColor);
                     mergedSwapSets[key] = merged;
                 }
 

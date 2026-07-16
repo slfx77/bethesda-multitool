@@ -62,6 +62,8 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.Equal(new Vector3(0.478f, 0.478f, 0.478f), loaded.EffectTint);
         Assert.Equal(new Vector4(0.98481f, 0.17365f, 1f, 0f), loaded.EffectFalloffParams);
         Assert.True(loaded.HasEffectFalloff);
+        Assert.True(loaded.ClampTextureU);
+        Assert.False(loaded.ClampTextureV);
         Assert.Equal(new ushort[] { 0, 1, 2 }, loaded.Indices);
         Assert.Equal(new Vector3(10, 20, 30), loaded.Vertices[0].Position);
         Assert.Equal(new Vector4(0.1f, 0.2f, 0.3f, 0.4f), loaded.Vertices[0].VertexColor);
@@ -79,6 +81,23 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.True(cache.TryLoad(metadata, variantKey: null, out var entry));
         Assert.True(entry.IsNegative);
         Assert.Null(entry.Mesh);
+    }
+
+    [Fact]
+    public void StoreAndTryLoad_RoundTripsQuietParticleSourceProvenanceWithoutCloudGeometry()
+    {
+        using var tempDir = new TempDirectory();
+        var cache = new ReferenceDecodedMeshDiskCache12(tempDir.Path);
+        var metadata = CreateMetadata(64, 1000);
+        var payload = CreatePayload() with { ContainsParticleSource = true };
+
+        cache.Store(metadata, variantKey: null, payload);
+
+        Assert.True(cache.TryLoad(metadata, variantKey: null, out var entry));
+        Assert.False(entry.IsNegative);
+        var loaded = Assert.IsType<ReferenceDecodedMeshPayload12>(entry.Mesh);
+        Assert.True(loaded.ContainsParticleSource);
+        Assert.False(Assert.Single(loaded.Submeshes).IsParticleCloud);
     }
 
     [Fact]
@@ -162,7 +181,9 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
                 IsDecal: true,
                 EffectTint: new Vector3(0.478f, 0.478f, 0.478f),
                 EffectFalloffParams: new Vector4(0.98481f, 0.17365f, 1f, 0f),
-                HasEffectFalloff: true)
+                HasEffectFalloff: true,
+                ClampTextureU: true,
+                ClampTextureV: false)
         ]);
     }
 

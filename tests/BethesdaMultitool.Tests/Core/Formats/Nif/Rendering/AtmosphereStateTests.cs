@@ -74,6 +74,70 @@ public sealed class AtmosphereStateTests
     }
 
     [Fact]
+    public void Resolve_PreservesAndEvaluatesEveryDalcDirection()
+    {
+        var cube = new WeatherAmbientCube
+        {
+            PositiveX = new WeatherRgba(255, 0, 0, 255),
+            NegativeX = new WeatherRgba(0, 255, 0, 255),
+            PositiveY = new WeatherRgba(0, 0, 255, 255),
+            NegativeY = new WeatherRgba(255, 255, 0, 255),
+            PositiveZ = new WeatherRgba(255, 0, 255, 255),
+            NegativeZ = new WeatherRgba(0, 255, 255, 255),
+        };
+        var weather = new WeatherRecord
+        {
+            DirectionalAmbientCubes = new WeatherTimeBands<WeatherAmbientCube>(cube, cube, cube, cube),
+            // Compatibility mean deliberately disagrees: the lossless cube must win.
+            DirectionalAmbient = new WeatherColor(
+                new WeatherRgba(1, 1, 1, 255), new WeatherRgba(1, 1, 1, 255),
+                new WeatherRgba(1, 1, 1, 255), new WeatherRgba(1, 1, 1, 255)),
+        };
+
+        var resolved = AtmosphereState.Resolve(12f, weather, CleanTiming, game: BethesdaGame.Fallout4);
+        var sampled = Assert.IsType<AtmosphereState.ResolvedAmbientCube>(resolved.DirectionalAmbient);
+
+        Assert.Equal(new Vector3(1f, 0f, 0f), sampled.Evaluate(Vector3.UnitX));
+        Assert.Equal(new Vector3(0f, 1f, 1f), sampled.Evaluate(-Vector3.UnitZ));
+        // normalize(1,1,0) has squared component weights (0.5,0.5,0), selecting +X/+Y.
+        var diagonal = sampled.Evaluate(new Vector3(1f, 1f, 0f));
+        Assert.Equal(0.5f, diagonal.X, 6);
+        Assert.Equal(0f, diagonal.Y, 6);
+        Assert.Equal(0.5f, diagonal.Z, 6);
+        Assert.Equal(sampled.Mean, resolved.AmbientColor);
+    }
+
+    [Fact]
+    public void SampleDirectionalAmbientCube_UsesModernQuarterBandsWithoutCollapsingFaces()
+    {
+        static WeatherAmbientCube Solid(byte value) => new()
+        {
+            PositiveX = new WeatherRgba(value, 0, 0, 255),
+            NegativeX = new WeatherRgba(0, value, 0, 255),
+            PositiveY = new WeatherRgba(0, 0, value, 255),
+            NegativeY = new WeatherRgba(value, value, 0, 255),
+            PositiveZ = new WeatherRgba(value, 0, value, 255),
+            NegativeZ = new WeatherRgba(0, value, value, 255),
+        };
+
+        var bands = new WeatherTimeBands<WeatherAmbientCube>(Solid(64), Solid(192), Solid(96), Solid(16))
+        {
+            EarlySunrise = Solid(32),
+            LateSunrise = Solid(128),
+            EarlySunset = Solid(160),
+            LateSunset = Solid(48),
+        };
+
+        // Sunrise window 5..7: hour 5.5 is exactly its first quarter key (Early Sunrise).
+        var sampled = AtmosphereState.SampleDirectionalAmbientCube(bands, 5.5f, 5f, 7f, 17f, 19f);
+
+        Assert.Equal(32f / 255f, sampled.PositiveX.X, 6);
+        Assert.Equal(32f / 255f, sampled.NegativeX.Y, 6);
+        Assert.Equal(32f / 255f, sampled.PositiveY.Z, 6);
+        Assert.Equal(Vector3.Zero, new Vector3(sampled.PositiveX.Y, sampled.PositiveX.Z, sampled.NegativeX.X));
+    }
+
+    [Fact]
     public void Resolve_ModernWeatherAtNight_KeepsTheEngineDirectionalPath()
     {
         // FO4-family (DALC weather): the directional light follows FO4 Sun::Update's CONTINUOUS
@@ -92,9 +156,8 @@ public sealed class AtmosphereStateTests
             DirectionalAmbient = new WeatherColor(dalc, dalc, dalc, dalc)
         };
 
-        // moonlightDirection is deliberately ignored for lighting now — pass one to prove it.
         var midnight = AtmosphereState.Resolve(0f, weather, CleanTiming,
-            moonlightDirection: Vector3.Normalize(new Vector3(0.9f, 0.1f, 0.1f)));
+            game: BethesdaGame.Fallout4);
 
         Assert.Equal(53f / 255f, midnight.SunColor.X, 3);
         Assert.Equal(87f / 255f, midnight.SunColor.Z, 3);
@@ -103,6 +166,141 @@ public sealed class AtmosphereStateTests
         Assert.Equal(1f, midnight.SunWorldDirection.Length(), 3);
         // Sun-keyed consumers (specular scale, moon-billboard fade) must still read "night".
         Assert.Equal(0f, midnight.SunIntensity);
+    }
+
+    [Fact]
+    public void Resolve_SkyrimDalc_DoesNotSelectFo4DirectionalFamily()
+    {
+        var moonBlue = new WeatherRgba(53, 70, 87, 255);
+        var filler = new WeatherColor(moonBlue, moonBlue, moonBlue, moonBlue);
+        var weather = new WeatherRecord
+        {
+            Colors = [filler, filler, filler, filler, filler],
+            DirectionalAmbient = filler,
+        };
+
+        var midnight = AtmosphereState.Resolve(0f, weather, CleanTiming, game: BethesdaGame.Skyrim);
+
+        Assert.Equal(Vector3.Zero, midnight.SunColor);
+        Assert.True(midnight.SunWorldDirection.Z < 0f,
+            $"Skyrim DALC must not route through FO4's above-horizon night light: {midnight.SunWorldDirection}");
+    }
+
+    [Fact]
+    public void Resolve_PrefersExplicitSunAndMoonGlareRows()
+    {
+        var red = new WeatherRgba(255, 0, 0, 255);
+        var green = new WeatherRgba(0, 255, 0, 255);
+        var weather = new WeatherRecord
+        {
+            SunGlareColor = new WeatherColor(red, red, red, red),
+            MoonGlareColor = new WeatherColor(green, green, green, green),
+        };
+
+        var resolved = AtmosphereState.Resolve(12f, weather, CleanTiming, game: BethesdaGame.Skyrim);
+
+        Assert.Equal(new Vector4(1f, 0f, 0f, 1f), resolved.SunGlareColor);
+        Assert.Equal(new Vector4(0f, 1f, 0f, 1f), resolved.MoonGlareColor);
+    }
+
+    [Fact]
+    public void Resolve_Fo4ConsumesAuthoredSunStarsAndWidenedGlareRows()
+    {
+        var zero = new WeatherRgba(0, 0, 0, 0);
+        var empty = new WeatherColor(zero, zero, zero, zero);
+        var colors = Enumerable.Repeat(empty, 17).ToArray();
+        var red = new WeatherRgba(255, 0, 0, 255);
+        var green = new WeatherRgba(0, 255, 0, 128);
+        var blue = new WeatherRgba(0, 0, 255, 64);
+        var yellow = new WeatherRgba(255, 255, 0, 192);
+        colors[(int)WeatherColorType.Sun] = new WeatherColor(red, red, red, red);
+        colors[(int)WeatherColorType.Stars] = new WeatherColor(green, green, green, green);
+        colors[(int)WeatherColorType.SunGlare] = new WeatherColor(blue, blue, blue, blue);
+        colors[(int)WeatherColorType.MoonGlare] = new WeatherColor(yellow, yellow, yellow, yellow);
+        var weather = new WeatherRecord
+        {
+            Colors = colors,
+            Data = new WeatherData { SunGlare = 128 },
+        };
+
+        var resolved = AtmosphereState.Resolve(12f, weather, CleanTiming, game: BethesdaGame.Fallout4);
+
+        Assert.Equal(new Vector4(1f, 0f, 0f, 1f), resolved.SunDiscColor);
+        Assert.Equal(new Vector4(0f, 1f, 0f, 128f / 255f), resolved.StarsColor);
+        Assert.Equal(new Vector4(0f, 0f, 1f, 64f / 255f), resolved.SunGlareColor);
+        Assert.Equal(new Vector4(1f, 1f, 0f, 192f / 255f), resolved.MoonGlareColor);
+        Assert.Equal(128f / 255f, resolved.SunGlareIntensity, 6);
+    }
+
+    [Fact]
+    public void Resolve_CelestialRgbxPaddingSurvivesButNeverGatesVisibility()
+    {
+        var zero = new WeatherRgba(0, 0, 0, 0);
+        var empty = new WeatherColor(zero, zero, zero, zero);
+        var colors = Enumerable.Repeat(empty, 17).ToArray();
+        var sunRgbx = new WeatherRgba(255, 192, 128, 0);
+        var starsRgbx = new WeatherRgba(96, 128, 160, 0);
+        var sunGlareRgbx = new WeatherRgba(240, 220, 180, 0);
+        var moonGlareRgbx = new WeatherRgba(160, 180, 255, 0);
+        colors[(int)WeatherColorType.Sun] = new WeatherColor(sunRgbx, sunRgbx, sunRgbx, sunRgbx);
+        colors[(int)WeatherColorType.Stars] = new WeatherColor(starsRgbx, starsRgbx, starsRgbx, starsRgbx);
+        var weather = new WeatherRecord
+        {
+            Colors = colors,
+            // Skyrim NAM2/NAM3 are explicit RGBX rows whose fourth byte is padding.
+            SunGlareColor = new WeatherColor(sunGlareRgbx, sunGlareRgbx, sunGlareRgbx, sunGlareRgbx),
+            MoonGlareColor = new WeatherColor(moonGlareRgbx, moonGlareRgbx, moonGlareRgbx, moonGlareRgbx),
+            Data = new WeatherData { SunGlare = 128 },
+        };
+
+        var noon = AtmosphereState.Resolve(12f, weather, CleanTiming, game: BethesdaGame.Skyrim);
+        var midnight = AtmosphereState.Resolve(0f, weather, CleanTiming, game: BethesdaGame.Skyrim);
+
+        // Lossless state retains all four raw X bytes.
+        Assert.Equal(0f, noon.SunDiscColor.W);
+        Assert.Equal(0f, noon.StarsColor.W);
+        Assert.Equal(0f, noon.SunGlareColor.W);
+        Assert.Equal(0f, noon.MoonGlareColor.W);
+
+        // Independent visibility/controller state remains authoritative despite zero padding.
+        Assert.Equal(1f, noon.SunDiscDrawAlpha);
+        Assert.Equal(128f / 255f, noon.SunGlareDrawAlpha, 6);
+        Assert.Equal(0f, noon.StarsDrawAlpha);
+        Assert.Equal(1f, midnight.StarsDrawAlpha);
+        Assert.Equal(0.75f, noon.MoonDiscDrawAlpha(0.75f));
+    }
+
+    [Theory]
+    [InlineData(4.0f, 1f)]
+    [InlineData(4.5f, 1f)]
+    [InlineData(5.125f, 0.5f)]
+    [InlineData(5.75f, 0f)]
+    [InlineData(12f, 0f)]
+    [InlineData(18.25f, 0f)]
+    [InlineData(18.875f, 0.5f)]
+    [InlineData(19.5f, 1f)]
+    [InlineData(22f, 1f)]
+    public void ComputeCreationStarVisibility_MatchesRecoveredFo4Controller(float hour, float expected)
+    {
+        // Independent FO4 Stars::Update vector for CleanTiming after fDaytimeColorExtension=.5:
+        // BeginSunriseColors=4.5, sunrise fade midpoint=(4.5+7)/2=5.75;
+        // sunset fade midpoint=(17+19.5)/2=18.25, EndSunsetColors=19.5.
+        var actual = AtmosphereState.ComputeCreationStarVisibility(
+            hour, 4.5f, 7f, 17f, 19.5f);
+
+        Assert.Equal(expected, actual, 6);
+    }
+
+    [Fact]
+    public void Resolve_Fo4StarsUseColorWindowMidpointsInsteadOfSunIntensityMultiplier()
+    {
+        // At 05:30 the recovered star fade is 20%: 1-(5.5-4.5)/(5.75-4.5). The previous
+        // clamp(1-SunIntensity*1.5) approximation produced 62.5% for the same fixed state.
+        var resolved = AtmosphereState.Resolve(
+            5.5f, climate: CleanTiming, game: BethesdaGame.Fallout4);
+
+        Assert.Equal(0.2f, resolved.StarVisibility, 6);
+        Assert.Equal(0.2f, resolved.StarsDrawAlpha, 6);
     }
 
     [Fact]
@@ -140,8 +338,7 @@ public sealed class AtmosphereStateTests
         var filler = new WeatherColor(gray, gray, gray, gray);
         var fnvLike = new WeatherRecord { Colors = [filler, filler, filler, filler, filler] };
 
-        var noDalc = AtmosphereState.Resolve(0f, fnvLike, CleanTiming,
-            moonlightDirection: Vector3.UnitZ);
+        var noDalc = AtmosphereState.Resolve(0f, fnvLike, CleanTiming);
         Assert.Equal(Vector3.Zero, noDalc.SunColor);
     }
 
@@ -428,10 +625,9 @@ public sealed class AtmosphereStateTests
         Assert.Equal(40f / 255f, midnight.W, 3);
     }
 
-    // --- FNV High Noon / Midnight peak slots (6-band NAM0, Sky::FillColorBlend's noon/midnight pivots) ---
-    // An authored peak cross-fades Day↔HighNoon around solar noon and Night↔Midnight around solar
-    // midnight; an all-zero peak is "unused" (fopdoc) and keeps the old solid Day/Night segments — the
-    // 4-band tests above pin that unchanged behavior.
+    // --- FNV optional fields --------------------------------------------------------------------------
+    // High Noon is an authored daytime color. Midnight is retained by the parser but is not a color band;
+    // the runtime holds the Night color outside the daylight span.
 
     [Fact]
     public void Resolve_SolarNoon_PicksAuthoredHighNoonPeak()
@@ -458,10 +654,8 @@ public sealed class AtmosphereStateTests
     }
 
     [Fact]
-    public void Resolve_SolarMidnight_PicksAuthoredMidnightPeak_AndWrapsContinuously()
+    public void Resolve_MidnightField_IsNotUsedAsAColorBand()
     {
-        // CleanTiming: solar midnight = solar noon + 12 = 24 ≡ 0 → exactly the Midnight color there,
-        // and the 23.99↔0.01 wrap must stay continuous.
         var w = WeatherWithAmbient6(
             new WeatherRgba(10, 12, 14, 255), new WeatherRgba(200, 210, 220, 255),
             new WeatherRgba(50, 40, 30, 255), new WeatherRgba(80, 80, 100, 255),
@@ -469,13 +663,74 @@ public sealed class AtmosphereStateTests
 
         var justBefore = AtmosphereState.Resolve(23.99f, w, CleanTiming).AmbientColor;
         var justAfter = AtmosphereState.Resolve(0.01f, w, CleanTiming).AmbientColor;
-        Assert.True((justBefore - new Vector3(2 / 255f, 2 / 255f, 4 / 255f)).Length() < 0.02f,
-            "solar midnight must sit on the Midnight peak");
-        Assert.True((justBefore - justAfter).Length() < 0.02f, "midnight wrap must stay continuous");
-
-        // Halfway through the evening night span (19 → 24): Night/Midnight midpoint.
+        AssertColor(80, 80, 100, justBefore);
+        AssertColor(80, 80, 100, justAfter);
         var evening = AtmosphereState.Resolve(21.5f, w, CleanTiming).AmbientColor;
-        AssertColor(41, 41, 52, evening); // lerp(Night(80,80,100), Midnight(2,3,4), 0.5)
+        AssertColor(80, 80, 100, evening);
+    }
+
+    [Fact]
+    public void Resolve_ModernWeatherSamplesEverySunriseTransitionBand()
+    {
+        var zero = new WeatherRgba(0, 0, 0, 0);
+        var colors = Enumerable.Repeat(new WeatherColor(zero, zero, zero, zero), 15).ToArray();
+        colors[(int)WeatherColorType.Ambient] = new WeatherColor(new WeatherTimeBands<WeatherRgba>(
+            new WeatherRgba(80, 0, 0, 255),
+            new WeatherRgba(160, 0, 0, 255),
+            new WeatherRgba(96, 0, 0, 255),
+            zero)
+        {
+            EarlySunrise = new WeatherRgba(20, 0, 0, 255),
+            LateSunrise = new WeatherRgba(120, 0, 0, 255),
+            EarlySunset = new WeatherRgba(144, 0, 0, 255),
+            LateSunset = new WeatherRgba(40, 0, 0, 255),
+        });
+        var weather = new WeatherRecord { Colors = colors };
+
+        // FO4 retail GetBeginSunriseColors/GetEndSunsetColors extend the climate windows by 0.5h.
+        // CleanTiming therefore samples the five sunrise keys over 4.5..7.0 and the five sunset keys
+        // over 17.0..19.5. GetTimes subdivides each interval into four exactly equal segments.
+        AssertColor(20, 0, 0,
+            AtmosphereState.Resolve(5.125f, weather, CleanTiming, game: BethesdaGame.Fallout4).AmbientColor);
+        AssertColor(80, 0, 0,
+            AtmosphereState.Resolve(5.75f, weather, CleanTiming, game: BethesdaGame.Fallout4).AmbientColor);
+        AssertColor(120, 0, 0,
+            AtmosphereState.Resolve(6.375f, weather, CleanTiming, game: BethesdaGame.Fallout4).AmbientColor);
+        AssertColor(144, 0, 0,
+            AtmosphereState.Resolve(17.625f, weather, CleanTiming, game: BethesdaGame.Fallout4).AmbientColor);
+        AssertColor(96, 0, 0,
+            AtmosphereState.Resolve(18.25f, weather, CleanTiming, game: BethesdaGame.Fallout4).AmbientColor);
+        AssertColor(40, 0, 0,
+            AtmosphereState.Resolve(18.875f, weather, CleanTiming, game: BethesdaGame.Fallout4).AmbientColor);
+    }
+
+    [Fact]
+    public void ModernCloudBands_UseTheSameExtendedFo4ColorWindow()
+    {
+        var zero = new WeatherRgba(0, 0, 0, 0);
+        var color = new WeatherColor(new WeatherTimeBands<WeatherRgba>(
+            new WeatherRgba(80, 0, 0, 255), new WeatherRgba(160, 0, 0, 255), zero, zero)
+        {
+            EarlySunrise = new WeatherRgba(20, 0, 0, 255),
+            LateSunrise = new WeatherRgba(120, 0, 0, 255),
+            EarlySunset = zero,
+            LateSunset = zero,
+        });
+        var alpha = new WeatherCloudAlpha(new WeatherTimeBands<float>(0.4f, 0.8f, 0f, 0f)
+        {
+            EarlySunrise = 0.1f,
+            LateSunrise = 0.6f,
+            EarlySunset = 0f,
+            LateSunset = 0f,
+        });
+
+        var tint = AtmosphereState.SampleCloudColor(
+            color, 5.125f, CleanTiming, BethesdaGame.Fallout4);
+        var opacity = AtmosphereState.SampleCloudAlpha(
+            alpha, 5.125f, CleanTiming, BethesdaGame.Fallout4);
+
+        Assert.Equal(20f / 255f, tint.X, 5);
+        Assert.Equal(0.1f, opacity, 5);
     }
 
     [Fact]
@@ -679,5 +934,55 @@ public sealed class AtmosphereStateTests
         // still resolve from the XCLL, not to defaults.
         var noTemplate = AtmosphereState.ResolveInterior(SaloonXcll(), null, inheritanceFlags: 0x9F);
         Assert.Equal(30 / 255f, noTemplate.AmbientColor.X, 3);
+    }
+
+    [Theory]
+    [InlineData(5.0f, AtmosphereState.WeatherBandKind.Night,
+        AtmosphereState.WeatherBandKind.EarlySunrise, 0f)]
+    [InlineData(5.5f, AtmosphereState.WeatherBandKind.EarlySunrise,
+        AtmosphereState.WeatherBandKind.Sunrise, 0f)]
+    [InlineData(6.0f, AtmosphereState.WeatherBandKind.Sunrise,
+        AtmosphereState.WeatherBandKind.LateSunrise, 0f)]
+    [InlineData(6.5f, AtmosphereState.WeatherBandKind.LateSunrise,
+        AtmosphereState.WeatherBandKind.Day, 0f)]
+    [InlineData(18.5f, AtmosphereState.WeatherBandKind.LateSunset,
+        AtmosphereState.WeatherBandKind.Night, 0f)]
+    public void SelectWeatherBandBlend_ReportsModernAuthoredSegments(
+        float hour,
+        AtmosphereState.WeatherBandKind expectedFrom,
+        AtmosphereState.WeatherBandKind expectedTo,
+        float expectedWeight)
+    {
+        // FO76 intentionally uses the authored 5/7/17/19 windows without FO4's recovered ±0.5h
+        // extension. Quarter-window vectors therefore land exactly on each five-band segment edge.
+        var blend = AtmosphereState.SelectWeatherBandBlend(
+            hour, CleanTiming, BethesdaGame.Fallout76,
+            hasModernTransitions: true, hasAuthoredHighNoon: false);
+
+        Assert.Equal(expectedFrom, blend.From);
+        Assert.Equal(expectedTo, blend.To);
+        Assert.Equal(expectedWeight, blend.ToWeight, 6);
+    }
+
+    [Theory]
+    [InlineData(9.5f, AtmosphereState.WeatherBandKind.Day,
+        AtmosphereState.WeatherBandKind.HighNoon, 0.5f)]
+    [InlineData(14.5f, AtmosphereState.WeatherBandKind.HighNoon,
+        AtmosphereState.WeatherBandKind.Day, 0.5f)]
+    [InlineData(2f, AtmosphereState.WeatherBandKind.Night,
+        AtmosphereState.WeatherBandKind.Night, 0f)]
+    public void SelectWeatherBandBlend_ReportsClassicHighNoonWithoutUsingMidnight(
+        float hour,
+        AtmosphereState.WeatherBandKind expectedFrom,
+        AtmosphereState.WeatherBandKind expectedTo,
+        float expectedWeight)
+    {
+        var blend = AtmosphereState.SelectWeatherBandBlend(
+            hour, CleanTiming, BethesdaGame.FalloutNewVegas,
+            hasModernTransitions: false, hasAuthoredHighNoon: true);
+
+        Assert.Equal(expectedFrom, blend.From);
+        Assert.Equal(expectedTo, blend.To);
+        Assert.Equal(expectedWeight, blend.ToWeight, 6);
     }
 }

@@ -34,7 +34,8 @@ cbuffer PerDraw : register(b1)
     // uRenderState: x = double-sided, y = has bump map, z = bump strength, w = unlit/emissive.
     // Unused in VS; cull state is handled on the CPU side.
     float4 uRenderState;
-    // uTextureState: x = BC5/ATI2 normal map, yzw reserved.
+    // uTextureState: x = BC5/ATI2 normal map; y = billboard/SpeedTree route; z = exact flags
+    // (bit0 spec map, bit1 clamp U, bit2 clamp V); w = gradient-map row (<0 disabled).
     float4 uTextureState;
     // 4a — bindless TexIndices: .x diffuse slot, .y normal slot, .zw reserved. Mirrors
     // the instanced VS's per-instance struct; the PS reads vTexIndices regardless of path.

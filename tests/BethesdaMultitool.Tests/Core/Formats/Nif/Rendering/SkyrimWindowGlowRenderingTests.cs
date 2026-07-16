@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -48,5 +49,13 @@ public sealed class SkyrimWindowGlowRenderingTests
         Assert.False(glow.HasAlphaTest);
         Assert.Equal((byte)6, glow.SrcBlendMode); // SRC_ALPHA
         Assert.Equal((byte)0, glow.DstBlendMode); // ONE (additive)
+
+        var externalColor = new Vector3(0.75f, 0.5f, 0.25f);
+        var externallyTinted = Assert.IsType<NifRenderableModel>(
+            NifGeometryExtractor.Extract(data!, nif, externalEmittanceColor: externalColor));
+        var tintedGlow = Assert.Single(externallyTinted.Submeshes);
+        Assert.Equal(1.5f, tintedGlow.EffectTint.R, 3);
+        Assert.Equal(1f, tintedGlow.EffectTint.G, 3);
+        Assert.Equal(0.5f, tintedGlow.EffectTint.B, 3);
     }
 }

@@ -93,6 +93,7 @@ internal static class RuntimeDataEnricher
                     MarkerName = existing.MarkerName ?? runtimeRefr.MarkerName,
                     EncounterZoneFormId = existing.EncounterZoneFormId ?? runtimeRefr.EncounterZoneFormId,
                     MaterialSwapFormId = existing.MaterialSwapFormId ?? runtimeRefr.MaterialSwapFormId,
+                    EmittanceFormId = existing.EmittanceFormId ?? runtimeRefr.EmittanceFormId,
                     LockLevel = existing.LockLevel ?? runtimeRefr.LockLevel,
                     LockKeyFormId = existing.LockKeyFormId ?? runtimeRefr.LockKeyFormId,
                     LockFlags = existing.LockFlags ?? runtimeRefr.LockFlags,

@@ -1,9 +1,11 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
+using D12 = Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
@@ -13,6 +15,52 @@ public sealed class NifAlphaCompositionTests
     private const string JacketTexturePath = @"textures\tests\jacket.dds";
     private const string GrimeTexturePath = @"textures\tests\grime.dds";
     private const string FrontBlendTexturePath = @"textures\tests\frontblend.dds";
+
+    [Theory]
+    [InlineData((byte)0, D12.Blend.One)]
+    [InlineData((byte)1, D12.Blend.Zero)]
+    [InlineData((byte)2, D12.Blend.SourceColor)]
+    [InlineData((byte)3, D12.Blend.InverseSourceColor)]
+    [InlineData((byte)4, D12.Blend.DestinationColor)]
+    [InlineData((byte)5, D12.Blend.InverseDestinationColor)]
+    [InlineData((byte)6, D12.Blend.SourceAlpha)]
+    [InlineData((byte)7, D12.Blend.InverseSourceAlpha)]
+    [InlineData((byte)8, D12.Blend.DestinationAlpha)]
+    [InlineData((byte)9, D12.Blend.InverseDestinationAlpha)]
+    [InlineData((byte)10, D12.Blend.SourceAlphaSaturate)]
+    public void D3d12BlendMapper_PreservesNifOpenGlOrder(byte mode, D12.Blend expected)
+    {
+        Assert.Equal(expected, NifD3D12BlendMapper.ResolveBlendFactor(mode));
+    }
+
+    [Theory]
+    [InlineData((byte)0, 1f)]
+    [InlineData((byte)1, 0f)]
+    [InlineData((byte)2, 0.4f)]
+    [InlineData((byte)3, 0.6f)]
+    [InlineData((byte)4, 0.5f)]
+    [InlineData((byte)5, 0.5f)]
+    [InlineData((byte)6, 0.3f)]
+    [InlineData((byte)7, 0.7f)]
+    [InlineData((byte)8, 0.7f)]
+    [InlineData((byte)9, 0.3f)]
+    [InlineData((byte)10, 0.3f)]
+    public void CpuBlendFactor_UsesTheSameNifOrderAndDestinationAlpha(byte mode, float expected)
+    {
+        var actual = NifTextureSampler.ResolveBlendFactor(
+            mode,
+            srcAlpha: 0.3f,
+            dstAlpha: 0.7f,
+            srcR: 0.2f,
+            srcG: 0.4f,
+            srcB: 0.6f,
+            dstR: 0.1f,
+            dstG: 0.5f,
+            dstB: 0.9f,
+            channel: 1);
+
+        Assert.Equal(expected, actual, 6);
+    }
 
     [Fact]
     public void Classify_LeavesOpaqueSubmeshOpaqueWhenOnlyTextureHasAlpha()
@@ -221,28 +269,34 @@ public sealed class NifAlphaCompositionTests
             64);
         var gpuStats = SummarizeVisiblePixels(gpuSprite!);
 
-        Assert.InRange(gpuStats.AvgR, 0f, 16f);
-        if (srcBlendMode == 0 && dstBlendMode == 1)
+        AssertSupportedBlendColor(gpuStats, srcBlendMode);
+    }
+
+    private static void AssertSupportedBlendColor(VisiblePixelStats stats, byte srcBlendMode)
+    {
+        Assert.InRange(stats.AvgR, 0f, 16f);
+
+        if (srcBlendMode == 0)
         {
             // One/Zero: front fully replaces back → pure green
-            Assert.InRange(gpuStats.AvgG, 220f, 255f);
-            Assert.InRange(gpuStats.AvgB, 0f, 32f);
+            Assert.InRange(stats.AvgG, 220f, 255f);
+            Assert.InRange(stats.AvgB, 0f, 32f);
             return;
         }
 
-        if (srcBlendMode == 2 && dstBlendMode == 3)
+        if (srcBlendMode == 2)
         {
             // SourceColor/InverseSourceColor: front green channel is 255 (factor 1.0),
             // so source green passes through fully and dest green is zeroed.
             // Blue channel: front blue=0 (factor 0.0), dest blue passes through fully.
-            Assert.InRange(gpuStats.AvgG, 220f, 255f);
-            Assert.InRange(gpuStats.AvgB, 220f, 255f);
+            Assert.InRange(stats.AvgG, 220f, 255f);
+            Assert.InRange(stats.AvgB, 220f, 255f);
             return;
         }
 
         // SrcAlpha/InvSrcAlpha (6,7): alpha=128 → ~50% blend of green + blue
-        Assert.InRange(gpuStats.AvgG, 96f, 160f);
-        Assert.InRange(gpuStats.AvgB, 96f, 160f);
+        Assert.InRange(stats.AvgG, 96f, 160f);
+        Assert.InRange(stats.AvgB, 96f, 160f);
     }
 
     [Fact]

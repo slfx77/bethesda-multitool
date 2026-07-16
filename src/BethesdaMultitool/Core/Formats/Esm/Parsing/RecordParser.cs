@@ -508,6 +508,7 @@ public sealed class RecordParser
         var weather = _miscEnvironment.ParseWeather();
         var climate = _miscEnvironment.ParseClimate();
         var imageSpaces = _miscEnvironment.ParseImageSpaces();
+        var imageSpaceModifiers = _miscEnvironment.ParseImageSpaceModifiers();
         var loadScreenTypes = _miscEnvironment.ParseLoadScreenTypes();
         var audioLocationControllers = _miscEnvironment.ParseAudioLocationControllers();
         var idleAnimations = _ai.ParseIdleAnimations();
@@ -655,6 +656,7 @@ public sealed class RecordParser
             Weather = weather,
             Climate = climate,
             ImageSpaces = imageSpaces,
+            ImageSpaceModifiers = imageSpaceModifiers,
 
             ModelPathIndex = modelIndex,
             AlternateTexturesByFormId = modsHarvest.AlternateTextures,
@@ -665,6 +667,7 @@ public sealed class RecordParser
             RuntimeWorldspaceMaps = _context.RuntimeWorldspaceCellMaps != null
                 ? new Dictionary<uint, RuntimeWorldspaceData>(_context.RuntimeWorldspaceCellMaps)
                 : [],
+            RuntimeWeatherTransition = _context.RuntimeReader?.ReadWeatherTransitionSnapshot(),
             TotalRecordsProcessed = _context.ScanResult.MainRecords.Count,
             UnparsedTypeCounts = unparsedCounts
         };
@@ -684,6 +687,7 @@ public sealed class RecordParser
                 Climate = result.Climate,
                 Weather = result.Weather,
                 ImageSpaces = result.ImageSpaces,
+                ImageSpaceModifiers = result.ImageSpaceModifiers,
                 LandTextures = result.LandTextures,
                 // GRAS is consumed by the world viewer through LTEX GNAM links. The schema model
                 // keeps GRAS as generic records, so without this typed bridge Skyrim/FO4 retained
@@ -708,6 +712,7 @@ public sealed class RecordParser
                 BaseMaterialSwapFormIds = result.BaseMaterialSwapFormIds,
                 BaseColorRemapIndices = result.BaseColorRemapIndices,
                 RuntimeWorldspaceMaps = result.RuntimeWorldspaceMaps,
+                RuntimeWeatherTransition = result.RuntimeWeatherTransition,
                 FormIdToEditorId = result.FormIdToEditorId,
                 FormIdToDisplayName = result.FormIdToDisplayName,
                 // Obscript games (Oblivion) run the script parse on this path too — the schema

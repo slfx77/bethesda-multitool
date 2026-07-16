@@ -1,5 +1,22 @@
 namespace BethesdaMultitool;
 
+internal sealed record ParticleRenderTelemetry(
+    int BlockIndex,
+    string SourceTypeName,
+    string Support,
+    string? DiffuseTexture,
+    int Capacity,
+    int RenderedCount,
+    int UvFrame,
+    int AtlasFrameCount,
+    uint DeterministicSeed,
+    string? EmitterShape,
+    string? EmitFrom,
+    string? VelocityType,
+    IReadOnlyList<string> OrderedModifiers,
+    bool LiveFrame,
+    string? FallbackReason);
+
 internal sealed class WorldRenderStats
 {
     internal int VisibleCandidates { get; set; }
@@ -15,6 +32,16 @@ internal sealed class WorldRenderStats
     internal int TexturePendingResolves { get; set; }
     internal int TexturePendingUploads { get; set; }
     internal int WaterDraws { get; set; }
+    internal string? WaterPipeline { get; set; }
+    internal string? WaterTechnique { get; set; }
+    internal IReadOnlyList<string> WaterMapPaths { get; set; } = [];
+    internal IReadOnlyList<string> WaterMapRoles { get; set; } = [];
+    internal IReadOnlyList<bool> WaterMapResolved { get; set; } = [];
+    internal int WaterAnimationFrame { get; set; } = -1;
+    internal float WaterAnimationFps { get; set; }
+    internal float WaterAnimationSeconds { get; set; }
+    internal bool WaterNoisePrepassUsed { get; set; }
+    internal string? WaterTelemetryUnavailableReason { get; set; }
     internal int WireframeDraws { get; set; }
     internal double CpuFrameMilliseconds { get; set; }
     internal double StateSetupMilliseconds { get; set; }
@@ -63,6 +90,32 @@ internal sealed class WorldRenderStats
     internal int ReferenceInstances { get; set; }
     internal int ReferenceInstancedDraws { get; set; }
     internal int ReferenceBlendedDraws { get; set; }
+    // Opt-in live-particle diagnostics. Owners is the number of unique particle systems visible in
+    // the frame (including when the opt-in is disabled); the remaining counters describe geometry
+    // actually produced by the live path. Draws counts placed-reference draw calls, so one shared
+    // owner can legitimately produce multiple draws while uploading its snapshot only once.
+    internal int ReferenceLiveParticleOwners { get; set; }
+    internal int ReferenceLiveParticleParticles { get; set; }
+    internal int ReferenceLiveParticleDraws { get; set; }
+    internal int ReferenceLiveParticleFallbacks { get; set; }
+    internal uint ReferenceLiveParticleUploadBytes { get; set; }
+    internal int ReferenceLiveParticleUvFrame { get; set; } = -1;
+    internal int ReferenceLiveParticleAtlasFrameCount { get; set; }
+    internal int ReferenceLiveParticleAuthoredCapacity { get; set; }
+    internal int ReferenceParticleRenderedCount { get; set; }
+    internal IReadOnlyList<ParticleRenderTelemetry> ReferenceParticleSystems { get; set; } = [];
+    internal float ReferenceSpeedTreeWindStrength { get; set; }
+    internal float ReferenceSpeedTreeRockAmount { get; set; }
+    internal float ReferenceSpeedTreeRockPhase { get; set; }
+    internal float ReferenceSpeedTreeRustleAmount { get; set; }
+    internal float ReferenceSpeedTreeRustlePhase { get; set; }
+    internal float ReferenceSpeedTreeAnimationSeconds { get; set; }
+    internal bool ReferenceSpeedTreeRuntimeLodEnabled { get; set; }
+    internal int ReferenceSpeedTreeBranchInstances { get; set; }
+    internal int ReferenceSpeedTreeLeafInstances { get; set; }
+    internal int ReferenceSpeedTreeBillboardInstances { get; set; }
+    internal int ReferenceSpeedTreeMinimumLod { get; set; } = -1;
+    internal int ReferenceSpeedTreeMaximumLod { get; set; } = -1;
     internal double ReferenceStateSetupMilliseconds { get; set; }
     internal double ReferenceCullMilliseconds { get; set; }   // per-REFR cylinder cull + placement-list walk
     internal double ReferenceMeshUploadMilliseconds { get; set; } // cache-miss NIF parse + GPU upload
@@ -85,6 +138,16 @@ internal sealed class WorldRenderStats
         TexturePendingResolves = 0;
         TexturePendingUploads = 0;
         WaterDraws = 0;
+        WaterPipeline = null;
+        WaterTechnique = null;
+        WaterMapPaths = [];
+        WaterMapRoles = [];
+        WaterMapResolved = [];
+        WaterAnimationFrame = -1;
+        WaterAnimationFps = 0f;
+        WaterAnimationSeconds = 0f;
+        WaterNoisePrepassUsed = false;
+        WaterTelemetryUnavailableReason = null;
         WireframeDraws = 0;
         CpuFrameMilliseconds = 0;
         StateSetupMilliseconds = 0;
@@ -127,6 +190,28 @@ internal sealed class WorldRenderStats
         ReferenceInstances = 0;
         ReferenceInstancedDraws = 0;
         ReferenceBlendedDraws = 0;
+        ReferenceLiveParticleOwners = 0;
+        ReferenceLiveParticleParticles = 0;
+        ReferenceLiveParticleDraws = 0;
+        ReferenceLiveParticleFallbacks = 0;
+        ReferenceLiveParticleUploadBytes = 0;
+        ReferenceLiveParticleUvFrame = -1;
+        ReferenceLiveParticleAtlasFrameCount = 0;
+        ReferenceLiveParticleAuthoredCapacity = 0;
+        ReferenceParticleRenderedCount = 0;
+        ReferenceParticleSystems = [];
+        ReferenceSpeedTreeWindStrength = 0f;
+        ReferenceSpeedTreeRockAmount = 0f;
+        ReferenceSpeedTreeRockPhase = 0f;
+        ReferenceSpeedTreeRustleAmount = 0f;
+        ReferenceSpeedTreeRustlePhase = 0f;
+        ReferenceSpeedTreeAnimationSeconds = 0f;
+        ReferenceSpeedTreeRuntimeLodEnabled = false;
+        ReferenceSpeedTreeBranchInstances = 0;
+        ReferenceSpeedTreeLeafInstances = 0;
+        ReferenceSpeedTreeBillboardInstances = 0;
+        ReferenceSpeedTreeMinimumLod = -1;
+        ReferenceSpeedTreeMaximumLod = -1;
         ReferenceStateSetupMilliseconds = 0;
         ReferenceCullMilliseconds = 0;
         ReferenceMeshUploadMilliseconds = 0;
@@ -150,6 +235,16 @@ internal sealed class WorldRenderStats
         TexturePendingResolves = TexturePendingResolves,
         TexturePendingUploads = TexturePendingUploads,
         WaterDraws = WaterDraws,
+        WaterPipeline = WaterPipeline,
+        WaterTechnique = WaterTechnique,
+        WaterMapPaths = WaterMapPaths.ToArray(),
+        WaterMapRoles = WaterMapRoles.ToArray(),
+        WaterMapResolved = WaterMapResolved.ToArray(),
+        WaterAnimationFrame = WaterAnimationFrame,
+        WaterAnimationFps = WaterAnimationFps,
+        WaterAnimationSeconds = WaterAnimationSeconds,
+        WaterNoisePrepassUsed = WaterNoisePrepassUsed,
+        WaterTelemetryUnavailableReason = WaterTelemetryUnavailableReason,
         WireframeDraws = WireframeDraws,
         CpuFrameMilliseconds = CpuFrameMilliseconds,
         StateSetupMilliseconds = StateSetupMilliseconds,
@@ -192,6 +287,28 @@ internal sealed class WorldRenderStats
         ReferenceInstances = ReferenceInstances,
         ReferenceInstancedDraws = ReferenceInstancedDraws,
         ReferenceBlendedDraws = ReferenceBlendedDraws,
+        ReferenceLiveParticleOwners = ReferenceLiveParticleOwners,
+        ReferenceLiveParticleParticles = ReferenceLiveParticleParticles,
+        ReferenceLiveParticleDraws = ReferenceLiveParticleDraws,
+        ReferenceLiveParticleFallbacks = ReferenceLiveParticleFallbacks,
+        ReferenceLiveParticleUploadBytes = ReferenceLiveParticleUploadBytes,
+        ReferenceLiveParticleUvFrame = ReferenceLiveParticleUvFrame,
+        ReferenceLiveParticleAtlasFrameCount = ReferenceLiveParticleAtlasFrameCount,
+        ReferenceLiveParticleAuthoredCapacity = ReferenceLiveParticleAuthoredCapacity,
+        ReferenceParticleRenderedCount = ReferenceParticleRenderedCount,
+        ReferenceParticleSystems = ReferenceParticleSystems.ToArray(),
+        ReferenceSpeedTreeWindStrength = ReferenceSpeedTreeWindStrength,
+        ReferenceSpeedTreeRockAmount = ReferenceSpeedTreeRockAmount,
+        ReferenceSpeedTreeRockPhase = ReferenceSpeedTreeRockPhase,
+        ReferenceSpeedTreeRustleAmount = ReferenceSpeedTreeRustleAmount,
+        ReferenceSpeedTreeRustlePhase = ReferenceSpeedTreeRustlePhase,
+        ReferenceSpeedTreeAnimationSeconds = ReferenceSpeedTreeAnimationSeconds,
+        ReferenceSpeedTreeRuntimeLodEnabled = ReferenceSpeedTreeRuntimeLodEnabled,
+        ReferenceSpeedTreeBranchInstances = ReferenceSpeedTreeBranchInstances,
+        ReferenceSpeedTreeLeafInstances = ReferenceSpeedTreeLeafInstances,
+        ReferenceSpeedTreeBillboardInstances = ReferenceSpeedTreeBillboardInstances,
+        ReferenceSpeedTreeMinimumLod = ReferenceSpeedTreeMinimumLod,
+        ReferenceSpeedTreeMaximumLod = ReferenceSpeedTreeMaximumLod,
         ReferenceStateSetupMilliseconds = ReferenceStateSetupMilliseconds,
         ReferenceCullMilliseconds = ReferenceCullMilliseconds,
         ReferenceMeshUploadMilliseconds = ReferenceMeshUploadMilliseconds,

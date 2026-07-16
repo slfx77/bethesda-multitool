@@ -156,6 +156,7 @@ internal static class EsmDataExtractor
             uint? ownerFormId = null;
             uint? encounterZoneFormId = null;
             uint? materialSwapFormId = null;
+            uint? emittanceFormId = null;
             byte? lockLevel = null;
             uint? lockKeyFormId = null;
             byte? lockFlags = null;
@@ -217,6 +218,11 @@ internal static class EsmDataExtractor
                         break;
                     case "XMSP" when sub.Data.Length == 4: // FO4/FO76 per-placement material swap (MSWP)
                         materialSwapFormId = bigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
+                            : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
+                        break;
+                    case "XEMI" when sub.Data.Length == 4:
+                        emittanceFormId = bigEndian
                             ? BinaryPrimitives.ReadUInt32BigEndian(sub.Data)
                             : BinaryPrimitives.ReadUInt32LittleEndian(sub.Data);
                         break;
@@ -320,6 +326,7 @@ internal static class EsmDataExtractor
                 OwnerFormId = ownerFormId,
                 EncounterZoneFormId = encounterZoneFormId,
                 MaterialSwapFormId = materialSwapFormId,
+                EmittanceFormId = emittanceFormId,
                 LockLevel = lockLevel,
                 LockKeyFormId = lockKeyFormId,
                 LockFlags = lockFlags,

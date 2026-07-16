@@ -32,12 +32,8 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
 
     // Sky-sphere radius the billboards sit on (world units). Depth is off, so this only sets the
     // projected screen position/size — kept well inside the camera far plane. Public so the per-game
-    // moon profile (SkyMoonProfile) can size each game's moon disc against it (half-extent =
-    // Radius * fraction ≈ radius * tan(angular half-size)).
+    // celestial profiles can preserve each authored quad-to-path ratio at this replacement radius.
     public const float Radius = 30000f;
-    private const float SunDiscHalfSize = Radius * 0.040f;
-    private const float SunGlareHalfSize = Radius * 0.160f;
-    private const float GlareAlpha = 0.5f; // the glare halo is fainter than the disc
 
     // Moon glow-halo suppression exponent (see sky_billboard.frag: alpha = pow(texel.a, exp)). The moon
     // textures (masser/secunda) bake a bright DISC at alpha~1 plus a soft GLOW HALO at low alpha; drawn
@@ -147,28 +143,32 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
     /// <param name="camUp">Camera world-space up.</param>
     /// <param name="sunDir">Unit world direction toward the sun (+Z up).</param>
     /// <param name="sunColor">Sun tint (warms at sunrise/sunset).</param>
+    /// <param name="sunDiscHalfSize">Caller-resolved authored base-quad half-extent.</param>
+    /// <param name="sunGlareHalfSize">Caller-resolved authored maximum glare-quad half-extent.</param>
     public void Render(
         Matrix4x4 viewProj, Vector3 camPos, Vector3 camRight, Vector3 camUp,
-        Vector3 sunDir, float sunFade, Vector3 sunColor, uint sunDiscTex, uint sunGlareTex,
-        Vector3 moonDir, float moonFade, uint moonTex, float moonHalfSize,
-        Vector3 moon2Dir, float moon2Fade, uint moon2Tex, float moon2HalfSize)
+        Vector3 sunDir, float sunFade, Vector3 sunColor,
+        float sunGlareFade, Vector3 sunGlareColor,
+        float sunDiscHalfSize, float sunGlareHalfSize, uint sunDiscTex, uint sunGlareTex,
+        Vector3 moonDir, float moonFade, Vector3 moonColor, uint moonTex, float moonHalfSize,
+        Vector3 moon2Dir, float moon2Fade, Vector3 moon2Color, uint moon2Tex, float moon2HalfSize)
     {
         if (_disposed) return;
 
         // Sun (day): glare halo first (so the disc reads on top), then the disc. Both additive.
         // glowExp = 1 → the disc/glare are drawn exactly as authored (no halo suppression).
-        if (sunFade > 0.001f && sunDir.Z > -0.05f)
+        if (MathF.Max(sunFade, sunGlareFade) > 0.001f && sunDir.Z > -0.05f)
         {
-            if (sunGlareTex != NoTexture)
+            if (sunGlareFade > 0.001f && sunGlareTex != NoTexture)
             {
                 Draw(_psoAdditive, viewProj, camPos, camRight, camUp, sunDir,
-                    SunGlareHalfSize, sunFade * GlareAlpha, sunGlareTex, sunColor, 1f, glowExp: 1f);
+                    sunGlareHalfSize, sunGlareFade, sunGlareTex, sunGlareColor, 1f, glowExp: 1f);
             }
 
-            if (sunDiscTex != NoTexture)
+            if (sunFade > 0.001f && sunDiscTex != NoTexture)
             {
                 Draw(_psoAdditive, viewProj, camPos, camRight, camUp, sunDir,
-                    SunDiscHalfSize, sunFade, sunDiscTex, sunColor, 1f, glowExp: 1f);
+                    sunDiscHalfSize, sunFade, sunDiscTex, sunColor, 1f, glowExp: 1f);
             }
         }
 
@@ -178,13 +178,13 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
         if (moonFade > 0.001f && moonDir.Z > -0.05f && moonTex != NoTexture)
         {
             Draw(_psoAlpha, viewProj, camPos, camRight, camUp, moonDir,
-                moonHalfSize, moonFade, moonTex, Vector3.One, 1f, glowExp: MoonGlowExponent);
+                moonHalfSize, moonFade, moonTex, moonColor, 1f, glowExp: MoonGlowExponent);
         }
 
         if (moon2Fade > 0.001f && moon2Dir.Z > -0.05f && moon2Tex != NoTexture)
         {
             Draw(_psoAlpha, viewProj, camPos, camRight, camUp, moon2Dir,
-                moon2HalfSize, moon2Fade, moon2Tex, Vector3.One, 1f, glowExp: MoonGlowExponent);
+                moon2HalfSize, moon2Fade, moon2Tex, moon2Color, 1f, glowExp: MoonGlowExponent);
         }
     }
 

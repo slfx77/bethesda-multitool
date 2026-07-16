@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
@@ -17,7 +18,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 ///     Renders the REAL climate sky-dome NIF geometry — the atmosphere/stars/clouds layers the engine
 ///     itself draws (extracted from the game's own <c>Sky\*.nif</c>) — instead of a procedural dome. Each
 ///     layer is drawn camera-centered, depth-OFF, on the dome's OWN authored UVs, with a blend mode keyed
-///     to its <see cref="SkyObjectType" /> (gradient/opaque for SKY, additive for STARS, alpha for
+///     to its <see cref="SkyObjectType" /> (authored blend-weight/opaque for SKY, additive for STARS, alpha for
 ///     CLOUDS). Using authored geometry + UVs removes the procedural dome's tiling stretch, horizon seam,
 ///     and "too far" feel, and the per-layer texture is data-driven (the weather's cloud textures, the
 ///     sky NIF's stars), not a hardcoded heuristic.
@@ -47,11 +48,24 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
     {
         public required SkyVertex[] Vertices;
         public required ushort[] Indices;
-        public int Mode;                 // 1 stars, 2 clouds (gradient comes from the fallback dome)
+        public int Mode;                 // 0 atmosphere, 1 stars, 2 clouds
+        public bool HasAuthoredBlendWeights; // SKY vertex RGB selects horizon/lower/upper BlendColor rows
         public uint TexIndex;            // bindless diffuse index
         public Vector2 ScrollVelocity;   // UV/sec drift (clouds: per-layer from QNAM/RNAM; stars: zero)
         public WeatherColor? CloudColor; // PNAM per-layer cloud color (RGB tint + A opacity); null = fallback
+        public WeatherColor? OutgoingCloudColor; // outgoing PNAM sampled before one weather blend
         public WeatherCloudAlpha? CloudAlpha; // JNAM per-layer opacity (modern weathers); null = no JNAM
+        public WeatherCloudAlpha? OutgoingCloudAlpha; // outgoing JNAM sampled before one weather blend
+        public float? CloudCurrentWeatherWeight; // null for atomic weather; otherwise current=t, outgoing=1-t
+        public float CloudWeatherWeight; // texture contribution; 1 when equal textures coalesce to one draw
+        public int CloudSourceIndex;
+        public bool IsOutgoingCloudPass;
+    }
+
+    private sealed class CloudScrollState
+    {
+        public Vector2 Offset;
+        public long UpdatedFrame;
     }
 
     private readonly GpuCommandRecorder12 _recorder;
@@ -61,10 +75,12 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
     private readonly ID3D12PipelineState _psoStars;
     private readonly ID3D12PipelineState _psoClouds;
     private readonly List<GpuLayer> _layers = new();
+    private readonly Dictionary<int, CloudScrollState> _cloudScrollStates = new();
     private readonly long _startTimestamp = Stopwatch.GetTimestamp();
-    // Procedural gradient dome rendered EVERY frame as the sky base — so games whose sky NIFs we can't
-    // parse (Oblivion's pre-SkyShaderProperty NIFs, an unresolved climate MODL, …) still get the b3 sky
-    // gradient instead of a black void. The real stars/clouds geometry layers draw on top of it.
+    private long _lastScrollTimestamp = Stopwatch.GetTimestamp();
+    private long _scrollFrame;
+    // Procedural gradient dome used only when no authored Atmosphere.nif layer was recovered. Games whose
+    // atmosphere NIFs cannot be parsed still get a sky instead of a black void.
     private readonly SkyVertex[] _fallbackVerts;
     private readonly ushort[] _fallbackIndices;
     private bool _disposed;
@@ -133,8 +149,8 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
     public bool HasLayers => _layers.Count > 0;
 
     /// <summary>
-    ///     Replaces the sky geometry with a new climate's STARS + CLOUDS layers (the gradient is the
-    ///     fallback dome). Each input carries its mesh + UVs + indices, its <see cref="SkyObjectType" />,
+    ///     Replaces the sky geometry with a new climate's ATMOSPHERE + STARS + CLOUDS layers. Each input
+    ///     carries its mesh + UVs + indices, its <see cref="SkyObjectType" />,
     ///     and its resolved bindless texture index. The vertex shader places every layer's vertices on one
     ///     camera-centered sphere by DIRECTION (so the layers' very different authored sizes/centers don't
     ///     matter — they all overlay into one sky), so no per-layer scale is needed here.
@@ -146,10 +162,6 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         foreach (var layer in layers)
         {
             var mode = ModeFor(layer.Type);
-            if (mode == 0)
-            {
-                continue; // gradient layers are covered by the fallback dome — don't double-draw
-            }
 
             var positions = layer.Positions;
             var uvs = layer.Uvs;
@@ -166,7 +178,7 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
                 // the engine's cloud-dome fade (cloudcloudy ~2 at the rim/horizon -> 255 overhead).
                 verts[v].Color = colors != null && (v * 4) + 3 < colors.Length
                     ? (uint)(colors[v * 4] | (colors[(v * 4) + 1] << 8) | (colors[(v * 4) + 2] << 16) | (colors[(v * 4) + 3] << 24))
-                    : 0xFFFFFFFFu;
+                    : 0xFF0000FFu; // BlendColor0 weight=1, alpha=1; G/B are weights, not an RGB tint
             }
 
             _layers.Add(new GpuLayer
@@ -174,15 +186,65 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
                 Vertices = verts,
                 Indices = layer.Indices,
                 Mode = mode,
+                HasAuthoredBlendWeights = mode == 0 && colors is not null,
                 TexIndex = layer.TextureIndex,
                 ScrollVelocity = mode == 2 ? layer.ScrollSpeed : Vector2.Zero,
                 CloudColor = mode == 2 ? layer.CloudColor : null,
+                OutgoingCloudColor = mode == 2 ? layer.OutgoingCloudColor : null,
                 CloudAlpha = mode == 2 ? layer.CloudAlpha : null,
+                OutgoingCloudAlpha = mode == 2 ? layer.OutgoingCloudAlpha : null,
+                CloudCurrentWeatherWeight = mode == 2 ? layer.CloudCurrentWeatherWeight : null,
+                CloudWeatherWeight = mode == 2 ? Math.Clamp(layer.CloudWeatherWeight, 0f, 1f) : 1f,
+                CloudSourceIndex = mode == 2 ? layer.CloudSourceIndex : -1,
+                IsOutgoingCloudPass = mode == 2 && layer.IsOutgoingCloudPass,
             });
         }
     }
 
+    /// <summary>
+    ///     Updates the continuously changing weather percentage without rebuilding the retained NIF
+    ///     geometry. Both texture candidates for one source layer receive the same recovered velocity;
+    ///     equal-texture transitions were already coalesced when the topology was built.
+    /// </summary>
+    public void UpdateCloudWeatherTransition(
+        WeatherRecord? currentWeather,
+        WeatherRecord? outgoingWeather,
+        float currentWeatherWeight)
+    {
+        foreach (var layer in _layers)
+        {
+            if (layer.Mode != 2 || layer.CloudSourceIndex < 0)
+            {
+                continue;
+            }
+
+            var transition = WeatherCloudTransitionResolver.Resolve(
+                currentWeather, outgoingWeather, layer.CloudSourceIndex, currentWeatherWeight);
+            layer.ScrollVelocity = transition.ScrollVelocity;
+            layer.CloudCurrentWeatherWeight = outgoingWeather is null
+                ? null
+                : transition.CurrentWeatherWeight;
+            layer.CloudWeatherWeight = layer.IsOutgoingCloudPass
+                ? transition.OutgoingTextureWeight
+                : transition.CurrentTextureWeight;
+        }
+    }
+
     public void Clear() => _layers.Clear();
+
+    /// <summary>Authored source indices with resolved NIF geometry and textures in the retained topology.</summary>
+    public int[] GetCookedCloudSourceIndices() => _layers
+        .Where(static layer => layer.Mode == 2 && layer.CloudSourceIndex >= 0)
+        .Select(static layer => layer.CloudSourceIndex)
+        .Distinct()
+        .Order()
+        .ToArray();
+
+    /// <summary>Number of retained texture candidates for one source; active-only excludes zero-weight endpoints.</summary>
+    public int GetCookedCloudDrawCandidateCount(int sourceIndex, bool activeOnly = false) => _layers.Count(layer =>
+        layer.Mode == 2 &&
+        layer.CloudSourceIndex == sourceIndex &&
+        (!activeOnly || layer.CloudWeatherWeight > 0.001f));
 
     /// <summary>
     ///     Draws every sky layer for the frame, centered on <paramref name="camPos" />. Must run AFTER the
@@ -194,26 +256,73 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
     /// </summary>
     public void Render(
         Matrix4x4 viewProj, Vector3 camPos,
+        Vector3 skyUpper, Vector3 skyLower, Vector3 skyHorizon, Vector3 fallbackHorizon,
         Vector3 cloudTint, float cloudOpacity, Vector3 starTint, float starFade,
-        float gameHour, AtmosphereState.ClimateTiming? cloudTiming)
+        float gameHour, AtmosphereState.ClimateTiming? cloudTiming, BethesdaGame game,
+        float? animationTimeSeconds = null)
     {
         if (_disposed) return;
 
         var frameIndex = _recorder.FrameIndex;
         var cmd = _recorder.CommandList;
-        var elapsed = (float)Stopwatch.GetElapsedTime(_startTimestamp).TotalSeconds;
+        var elapsed = animationTimeSeconds is { } pinned && float.IsFinite(pinned) && pinned >= 0f
+            ? pinned
+            : (float)Stopwatch.GetElapsedTime(_startTimestamp).TotalSeconds;
+        var pinnedAnimation = animationTimeSeconds is { } captureTime &&
+                              float.IsFinite(captureTime) && captureTime >= 0f;
+        var scrollDeltaSeconds = 0f;
+        var scrollFrame = 0L;
+        if (!pinnedAnimation)
+        {
+            var now = Stopwatch.GetTimestamp();
+            scrollDeltaSeconds = (float)Stopwatch.GetElapsedTime(_lastScrollTimestamp, now).TotalSeconds;
+            _lastScrollTimestamp = now;
+            scrollFrame = ++_scrollFrame;
+
+            // Clouds::Update advances the retained offset independently of draw visibility. Do this before
+            // opacity, endpoint-weight, texture, or JNAM suppression so a hidden layer cannot freeze and
+            // then jump behind the rest of the sky when it becomes visible again.
+            foreach (var cloudLayer in _layers)
+            {
+                if (cloudLayer.Mode != 2 || cloudLayer.CloudSourceIndex < 0)
+                {
+                    continue;
+                }
+
+                if (!_cloudScrollStates.TryGetValue(cloudLayer.CloudSourceIndex, out var state))
+                {
+                    state = new CloudScrollState();
+                    _cloudScrollStates.Add(cloudLayer.CloudSourceIndex, state);
+                }
+
+                if (state.UpdatedFrame == scrollFrame)
+                {
+                    continue; // current/outgoing candidates for one source share exactly one integration
+                }
+
+                state.Offset = WeatherCloudTransitionResolver.AdvanceOffset(
+                    state.Offset, cloudLayer.ScrollVelocity, scrollDeltaSeconds);
+                state.UpdatedFrame = scrollFrame;
+            }
+        }
 
         cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.BindlessSrvTable, _cbvSrvUavHeap.BindlessHeapStartGpu);
 
-        // Gradient base FIRST — always (every game gets a sky). Opaque background fill.
-        DrawMesh(cmd, frameIndex, viewProj, camPos, _fallbackVerts, _fallbackIndices,
-            mode: 0, scale: TargetRadius, Vector3.One, 1f, Vector2.Zero, NoTexture);
+        // The procedural dome is strictly a missing-asset fallback. An authored Atmosphere.nif owns the
+        // background whenever one was decoded, including its non-linear vertex blend bands.
+        if (!_layers.Any(static layer => layer.Mode == 0))
+        {
+            DrawMesh(cmd, frameIndex, viewProj, camPos, _fallbackVerts, _fallbackIndices,
+                mode: 0, scale: TargetRadius, fallbackHorizon, 1f, Vector2.Zero, NoTexture,
+                skyUpper, skyLower, skyHorizon, authoredAtmosphere: false);
+        }
 
-        // Real stars + clouds geometry on top.
+        // Real atmosphere + stars + clouds geometry.
         foreach (var layer in _layers)
         {
-            if ((layer.Mode == 1 && starFade <= 0.001f) || (layer.Mode == 2 && cloudOpacity <= 0.001f) ||
-                layer.TexIndex == NoTexture)
+            if ((layer.Mode == 1 && starFade <= 0.001f)
+                || (layer.Mode == 2 && (cloudOpacity <= 0.001f || layer.CloudWeatherWeight <= 0.001f)) ||
+                (layer.Mode != 0 && layer.TexIndex == NoTexture))
             {
                 continue; // suppressed this frame (interior) or no resolved texture
             }
@@ -223,9 +332,16 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
             // with fractions, so a CLEAR weather (most layers 0/low) shows sky while a CLOUDY one (all 1.0)
             // overcasts. Applied as a MULTIPLIER on the host opacity (which keeps the global translucency +
             // day/night fade), so FO3/FNV — no JNAM → factor 1.0 — render exactly as before.
-            var cloudAlphaFactor = layer.CloudAlpha is { } ca
-                ? AtmosphereState.SampleCloudAlpha(ca, gameHour, cloudTiming)
+            var currentCloudAlpha = layer.CloudAlpha is { } ca
+                ? AtmosphereState.SampleCloudAlpha(ca, gameHour, cloudTiming, game)
                 : 1f;
+            var outgoingCloudAlpha = layer.OutgoingCloudAlpha is { } outgoingAlpha
+                ? AtmosphereState.SampleCloudAlpha(outgoingAlpha, gameHour, cloudTiming, game)
+                : 1f;
+            var cloudAlphaFactor = layer.CloudCurrentWeatherWeight is { } alphaWeight
+                ? WeatherCloudTransitionResolver.BlendSample(
+                    currentCloudAlpha, outgoingCloudAlpha, alphaWeight)
+                : currentCloudAlpha;
             if (layer.Mode == 2 && cloudAlphaFactor <= 0.001f)
             {
                 continue; // this cloud layer is authored fully transparent for this weather/time — skip it
@@ -233,40 +349,57 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
 
             Vector3 tint;
             float param;
-            if (layer.Mode == 1)
+            if (layer.Mode == 0)
+            {
+                tint = fallbackHorizon;
+                param = 1f;
+            }
+            else if (layer.Mode == 1)
             {
                 tint = starTint;
                 param = starFade;
             }
-            else if (layer.CloudColor is { } cc)
-            {
-                // Per-layer cloud TINT: the weather's PNAM color (RGB), blended by the game hour — the
-                // engine's per-draw cloud color uniform (SkyShader::SetupGeometryConstants). Only the RGB is
-                // the tint: Clouds::Update pushes the cloud color's alpha as a CONSTANT 1.0 (fStack_a4), so
-                // the PNAM alpha byte is NOT an opacity — the opacity is the host gate here, and the real
-                // fade is the vertex alpha × texture alpha multiplied in the shader. (Using the PNAM alpha
-                // as opacity made clouds vanish, since these records author it ~0.)
-                var rgb = AtmosphereState.SampleCloudColor(cc, gameHour, cloudTiming);
-                var pnam = new Vector3(rgb.X, rgb.Y, rgb.Z);
-                // Skyrim/FO4 weathers author MOST cloud layers with a (0,0,0) PNAM color (verified: e.g.
-                // SkyrimCloudy layers 0–7 are RGB 0,0,0 with JNAM alpha 1.0 — the engine LIGHTS the cloud
-                // sheets by sun/sky, so a black PNAM is "no extra tint", not "black cloud"). The shader
-                // MULTIPLIES texture × tint, so a near-black tint nukes the layer to black — the dark,
-                // faceted Skyrim/FO4 overcast. When the authored tint is near-black, light the layer with
-                // the daylight cloud tint instead (FNV/FO3 PNAM is ~white, so they keep their authored tint).
-                tint = pnam.LengthSquared() < 0.0025f ? cloudTint : pnam;
-                param = cloudOpacity * cloudAlphaFactor;
-            }
             else
             {
-                tint = cloudTint;       // fallback for weathers with no PNAM cloud color
-                param = cloudOpacity * cloudAlphaFactor;
+                Vector3 SampleTint(WeatherColor? color)
+                {
+                    if (color is null) return cloudTint;
+                    // PNAM alpha is retained RGBX metadata; JNAM/host opacity owns visibility.
+                    var rgb = AtmosphereState.SampleCloudColor(color, gameHour, cloudTiming, game);
+                    var pnam = new Vector3(rgb.X, rgb.Y, rgb.Z);
+                    // Existing bounded lighting fallback: modern black PNAM rows do not blacken the sheet.
+                    return pnam.LengthSquared() < 0.0025f ? cloudTint : pnam;
+                }
+
+                var currentTint = SampleTint(layer.CloudColor);
+                tint = layer.CloudCurrentWeatherWeight is { } colorWeight
+                    ? WeatherCloudTransitionResolver.BlendSample(
+                        currentTint, SampleTint(layer.OutgoingCloudColor), colorWeight)
+                    : currentTint;
+                param = cloudOpacity * cloudAlphaFactor * layer.CloudWeatherWeight;
             }
 
-            // Per-layer UV drift: stars hold still; each cloud layer scrolls at its own QNAM/RNAM speed.
-            var scroll = elapsed * layer.ScrollVelocity;
+            // Integrate one retained offset per authored source layer. Current/outgoing texture candidates
+            // therefore cannot diverge while the runtime weather weight changes. Pinned captures derive the
+            // equivalent wrapped offset directly from their deterministic animation clock.
+            var scroll = Vector2.Zero;
+            if (layer.Mode == 2)
+            {
+                if (pinnedAnimation || layer.CloudSourceIndex < 0)
+                {
+                    scroll = WeatherCloudTransitionResolver.OffsetAtTime(
+                        layer.ScrollVelocity, elapsed);
+                }
+                else
+                {
+                    scroll = _cloudScrollStates.TryGetValue(layer.CloudSourceIndex, out var state)
+                        ? state.Offset
+                        : Vector2.Zero;
+                }
+            }
             DrawMesh(cmd, frameIndex, viewProj, camPos, layer.Vertices, layer.Indices,
-                layer.Mode, TargetRadius, tint, param, scroll, layer.TexIndex);
+                layer.Mode, TargetRadius, tint, param, scroll, layer.TexIndex,
+                skyUpper, skyLower, skyHorizon, layer.HasAuthoredBlendWeights);
         }
     }
 
@@ -275,7 +408,8 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
     private void DrawMesh(
         ID3D12GraphicsCommandList cmd, int frameIndex, Matrix4x4 viewProj, Vector3 camPos,
         SkyVertex[] verts, ushort[] indices, int mode, float scale, Vector3 tint, float param,
-        Vector2 scroll, uint texIndex)
+        Vector2 scroll, uint texIndex, Vector3 skyUpper, Vector3 skyLower, Vector3 skyHorizon,
+        bool authoredAtmosphere)
     {
         var vbByteCount = (uint)verts.Length * VertexStride;
         if (!_ringBuffer.TryAllocate(frameIndex, vbByteCount, out var vbAlloc, alignment: 4)) return;
@@ -299,8 +433,11 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
             ViewProj = viewProj,
             CamPosScale = new Vector4(camPos, scale),
             TintParam = new Vector4(tint, param),
-            ScrollMode = new Vector4(scroll, mode, 0f),
+            ScrollMode = new Vector4(scroll, mode, authoredAtmosphere ? 1f : 0f),
             TexIndex = texIndex,
+            SkyUpper = new Vector4(skyUpper, 1f),
+            SkyLower = new Vector4(skyLower, 1f),
+            SkyHorizon = new Vector4(skyHorizon, 1f),
         };
         // Soft-fail on ring exhaustion — drop this sky mesh for the frame rather than throwing.
         if (!_ringBuffer.TryAllocate(frameIndex, SkyGeoConstants.ByteSize, out var cbAlloc, GpuRingBuffer12.CbAlignment))
@@ -436,8 +573,11 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         public uint Pad0;
         public uint Pad1;
         public uint Pad2;
+        public Vector4 SkyUpper;     // recovered SKY BlendColor[2]
+        public Vector4 SkyLower;     // recovered SKY BlendColor[1]
+        public Vector4 SkyHorizon;   // recovered SKY BlendColor[0]
 
-        public const uint ByteSize = 64 + (4 * 16); // 128
+        public const uint ByteSize = 64 + (7 * 16); // 176
     }
 
     private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
@@ -489,8 +629,14 @@ internal sealed class SkyGeometryLayer
     public required ushort[] Indices { get; init; }
     public SkyObjectType Type { get; init; }
     public uint TextureIndex { get; init; }
-    public Vector2 ScrollSpeed { get; init; }        // clouds: per-layer UV/sec drift (QNAM/RNAM); else zero
-    public WeatherColor? CloudColor { get; init; }   // clouds: weather PNAM per-layer color (RGB tint + A opacity)
-    public WeatherCloudAlpha? CloudAlpha { get; init; } // clouds: weather JNAM per-layer opacity (modern weathers)
+    public Vector2 ScrollSpeed { get; set; }         // clouds: one blended per-layer UV/sec drift; else zero
+    public WeatherColor? CloudColor { get; set; }    // clouds: current weather PNAM per-layer color
+    public WeatherColor? OutgoingCloudColor { get; set; } // clouds: outgoing PNAM before weather blend
+    public WeatherCloudAlpha? CloudAlpha { get; set; } // clouds: current weather JNAM per-layer opacity
+    public WeatherCloudAlpha? OutgoingCloudAlpha { get; set; } // outgoing JNAM before weather blend
+    public float? CloudCurrentWeatherWeight { get; set; } // null=atomic; otherwise current=t/outgoing=1-t
+    public int CloudSourceIndex { get; init; } = -1;
+    public bool IsOutgoingCloudPass { get; init; }
+    public float CloudWeatherWeight { get; set; } = 1f; // texture contribution; one for coalesced textures
 }
 #endif

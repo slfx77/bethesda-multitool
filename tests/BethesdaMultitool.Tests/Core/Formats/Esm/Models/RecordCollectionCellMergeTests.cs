@@ -74,7 +74,12 @@ public class RecordCollectionCellMergeTests
     [Fact]
     public void MergeWith_CellOverride_BackfillsMissingHeaderFields()
     {
-        var baseCell = Cell(0x10, Land()) with { EditorId = "BaseCell", WaterHeight = 5f };
+        var baseCell = Cell(0x10, Land()) with
+        {
+            EditorId = "BaseCell",
+            WaterHeight = 5f,
+            ClimateFormId = 0x1234,
+        };
         var overrideCell = new CellRecord { FormId = 0x10, FullName = "Renamed" };
 
         var merged = new RecordCollection { Cells = [baseCell] }
@@ -84,6 +89,7 @@ public class RecordCollectionCellMergeTests
         Assert.Equal("Renamed", cell.FullName);               // override header field wins
         Assert.Equal("BaseCell", cell.EditorId);              // absent fields backfill from base
         Assert.Equal(5f, cell.WaterHeight);
+        Assert.Equal(0x1234u, cell.ClimateFormId);
         Assert.Equal(CommonwealthWs, cell.WorldspaceFormId);
         Assert.Equal(1, cell.GridX);
     }

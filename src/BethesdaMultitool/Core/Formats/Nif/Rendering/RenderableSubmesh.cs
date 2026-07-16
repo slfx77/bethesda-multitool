@@ -41,6 +41,18 @@ internal sealed class RenderableSubmesh
     /// <summary>Diffuse texture path resolved from shader properties (e.g., "textures\architecture\foo.dds").</summary>
     public string? DiffuseTexturePath { get; set; }
 
+    /// <summary>
+    ///     Clamp the diffuse/material texture on U instead of wrapping it. FO4/FO76 external
+    ///     materials author this as the inverse of the BGSM/BGEM <c>TileU</c> flag.
+    /// </summary>
+    public bool ClampTextureU { get; set; }
+
+    /// <summary>
+    ///     Clamp the diffuse/material texture on V instead of wrapping it. FO4/FO76 external
+    ///     materials author this as the inverse of the BGSM/BGEM <c>TileV</c> flag.
+    /// </summary>
+    public bool ClampTextureV { get; set; }
+
     /// <summary>Normal map texture path resolved from shader properties (slot 1).</summary>
     public string? NormalMapTexturePath { get; set; }
 
@@ -139,7 +151,10 @@ internal sealed class RenderableSubmesh
     /// <summary>Dest blend factor from NiAlphaProperty bits 5-8 (default 7 = INV_SRC_ALPHA).</summary>
     public byte DstBlendMode { get; set; } = 7;
 
-    /// <summary>Material alpha from NiMaterialProperty (0.0-1.0). Values &lt; 1.0 trigger alpha blending.</summary>
+    /// <summary>
+    ///     Material alpha from NiMaterialProperty/BGSM/BGEM. Authored values above 1 are retained for
+    ///     the effect pipeline; values below 1 trigger alpha blending.
+    /// </summary>
     public float MaterialAlpha { get; set; } = 1f;
 
     /// <summary>Material glossiness from NiMaterialProperty. Fallout 3 / New Vegas commonly default this to 10.</summary>
@@ -255,6 +270,36 @@ internal sealed class RenderableSubmesh
     ///     <see cref="IsBillboard" />, which re-aims a WHOLE submesh as one rigid quad.
     /// </summary>
     public bool IsLeafBillboard { get; set; }
+
+    /// <summary>
+    ///     True for a baked particle cloud whose vertices are four-vertex camera-facing quads.
+    ///     Unlike SpeedTree leaf cards, particle quads must also be depth-sorted independently
+    ///     inside the submesh each frame. The per-quad center is carried in the first vertex's
+    ///     tangent (the same center used by the billboard vertex-shader route).
+    /// </summary>
+    public bool IsParticleCloud { get; set; }
+
+    /// <summary>
+    ///     Non-persisted legacy particle source for the opt-in live D3D12 path. Null for ordinary geometry
+    ///     and for renderers that consume only the static baked arrays above.
+    /// </summary>
+    public Particles.ParticleRuntimeDefinition? ParticleRuntime { get; set; }
+
+    /// <summary>
+    ///     True for SpeedTree bark/frond geometry carrying the specialized branch-wind payload.
+    ///     Tangent direction/length encodes TBN + matrix slot, bitangent direction/length encodes
+    ///     TBN + wind weight; the general vertex format remains unchanged.
+    /// </summary>
+    public bool IsSpeedTreeBranch { get; set; }
+
+    /// <summary>TREE CNAM (RockSpeed, RustleSpeed), applied per SpeedTree batch.</summary>
+    public System.Numerics.Vector2 SpeedTreeWindSpeeds { get; set; } = System.Numerics.Vector2.One;
+
+    /// <summary>
+    ///     Non-persisted identity for one component of the temporary opt-in SpeedTree runtime-LOD
+    ///     sequence. Null on the established single-LOD path and on ordinary NIF geometry.
+    /// </summary>
+    public BethesdaMultitool.Core.Formats.SpeedTree.SpeedTreeLodMetadata? SpeedTreeLod { get; set; }
 
     /// <summary>
     ///     True when this submesh came from a <c>BSMeshLODTriShape</c> whose LOD0 slice is EMPTY, so

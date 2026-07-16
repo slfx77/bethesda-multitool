@@ -67,7 +67,7 @@ public sealed record SptGeometryOptions
     public System.Numerics.Vector3? LeafFaceDirection { get; init; }
 
     /// <summary>Alpha-test threshold (0-255) for leaf cards.</summary>
-    public byte LeafAlphaThreshold { get; init; } = 96;
+    public byte LeafAlphaThreshold { get; init; } = 84;
 
     /// <summary>
     ///     Game-relative leaf-atlas path that OVERRIDES the <c>.spt</c>'s dev-era leaf material for every
@@ -93,6 +93,24 @@ public sealed record SptGeometryOptions
     /// </summary>
     public float? BranchDimming { get; init; }
 
+    /// <summary>TREE CNAM Rock Speed, multiplied into the shared rock timer per tree type.</summary>
+    public float RockSpeed { get; init; } = 1f;
+
+    /// <summary>TREE CNAM Rustle Speed, multiplied into the shared rustle timer per tree type.</summary>
+    public float RustleSpeed { get; init; } = 1f;
+
+    /// <summary>
+    ///     Temporary opt-in architectural path that emits the authored branch/leaf LOD sequence plus a
+    ///     far billboard. False preserves the established single-LOD geometry byte-for-byte.
+    /// </summary>
+    public bool RuntimeLod { get; init; }
+
+    /// <summary>
+    ///     Game-relative far-billboard atlas. The live decoder supplies the conventional
+    ///     <c>textures\trees\billboards\{model-stem}.dds</c> path; explicit callers may override it.
+    /// </summary>
+    public string? BillboardTexturePath { get; init; }
+
     public static SptGeometryOptions Default { get; } = new();
 
     /// <summary>
@@ -107,6 +125,7 @@ public sealed record SptGeometryOptions
         {
             TrunkHeight = ReadFloat(EnvironmentVariables.Viewer.SpeedTreeHeight, Default.TrunkHeight, 1f, 100000f),
             HeightScale = ReadFloat(EnvironmentVariables.Viewer.SpeedTreeHeightScale, Default.HeightScale, 0.05f, 20f),
+            RuntimeLod = SpeedTreeRuntimeLod.Enabled,
         };
     }
 

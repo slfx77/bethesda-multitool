@@ -11,6 +11,9 @@
 
 Texture2D    textures[]   : register(t0, space1);
 SamplerState sDiffuse     : register(s0);
+SamplerState sClampUWrapV : register(s4);
+SamplerState sWrapUClampV : register(s5);
+SamplerState sClampUV     : register(s6);
 
 struct PSInput
 {
@@ -46,10 +49,22 @@ bool PassAlphaTest(float alpha, float threshold, float functionId)
     return false;                              // NEVER / invalid
 }
 
+float SampleMaterialAlpha(uint slot, float2 uv, float packedState)
+{
+    uint addressing = ((uint)round(packedState) >> 1u) & 3u;
+    if (addressing == 1u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sClampUWrapV, uv).a;
+    if (addressing == 2u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sWrapUClampV, uv).a;
+    if (addressing == 3u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sClampUV, uv).a;
+    return textures[NonUniformResourceIndex(slot)].Sample(sDiffuse, uv).a;
+}
+
 void main(PSInput input)
 {
-    float alpha = textures[NonUniformResourceIndex(input.vTexIndices.x)]
-        .Sample(sDiffuse, input.vTexCoord).a;
+    float alpha = SampleMaterialAlpha(
+        input.vTexIndices.x, input.vTexCoord, input.vTextureState.z);
     float testAlpha = (input.vAlphaState.w > 0.5) ? alpha : saturate(alpha * input.vVertexColor.a);
     if (!PassAlphaTest(testAlpha, input.vAlphaState.x, input.vAlphaState.y)) discard;
 }

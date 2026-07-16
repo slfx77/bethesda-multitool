@@ -50,4 +50,29 @@ public sealed class RendererProfilerTraceTests
 
         Assert.False(RendererProfilerTrace.IsEnabled);
     }
+
+    [Fact]
+    public void StatsFields_EmitsLiveParticleWorkloadCounters()
+    {
+        var fields = RendererProfilerTrace.StatsFields("refs.", new global::BethesdaMultitool.WorldRenderStats
+        {
+            ReferenceLiveParticleOwners = 2,
+            ReferenceLiveParticleParticles = 19,
+            ReferenceLiveParticleDraws = 3,
+            ReferenceLiveParticleFallbacks = 1,
+            ReferenceLiveParticleUploadBytes = 4096,
+            ReferenceLiveParticleUvFrame = 7,
+            ReferenceLiveParticleAtlasFrameCount = 16,
+            ReferenceLiveParticleAuthoredCapacity = 19,
+        });
+
+        Assert.Equal(2, Assert.IsType<int>(fields["refs.refLiveParticleOwners"]));
+        Assert.Equal(19, Assert.IsType<int>(fields["refs.refLiveParticleParticles"]));
+        Assert.Equal(3, Assert.IsType<int>(fields["refs.refLiveParticleDraws"]));
+        Assert.Equal(1, Assert.IsType<int>(fields["refs.refLiveParticleFallbacks"]));
+        Assert.Equal((uint)4096, Assert.IsType<uint>(fields["refs.refLiveParticleUploadBytes"]));
+        Assert.Equal(7, Assert.IsType<int>(fields["refs.refLiveParticleUvFrame"]));
+        Assert.Equal(16, Assert.IsType<int>(fields["refs.refLiveParticleAtlasFrames"]));
+        Assert.Equal(19, Assert.IsType<int>(fields["refs.refLiveParticleAuthoredCapacity"]));
+    }
 }

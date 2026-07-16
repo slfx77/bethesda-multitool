@@ -11,7 +11,11 @@ public readonly record struct WaterNoiseLayer(
     float UvScale,
     float WindDirDegrees,
     float WindSpeed,
-    float AmpScale);
+    float AmpScale,
+    // FO4 DNAM's per-layer Noise Falloff. Classic WATR layouts do not carry it, so zero is
+    // the lossless compatibility default and the modern prepass leaves it uninterpreted until
+    // TESWaterNormals' exact falloff equation is recovered.
+    float Falloff = 0f);
 
 /// <summary>
 ///     The non-color WATR DNAM shading parameters that drive the water surface shader, parsed
@@ -57,12 +61,55 @@ public sealed record WaterSurfaceParams(
     float DeepAlpha = 1f,
     float AlphaShallowRange = 0f,
     float AlphaDeepRange = 0f,
-    // Color Shallow/Deep Range @12/@16 — multipliers of DepthAmount for the Shallow→Deep color ramp.
+    // Color Shallow/Deep Range @12/@16 — separately-authored LUT range controls. The exact generator
+    // is open, so retain their units without folding them into DepthAmount.
     float ColorShallowRange = 0f,
     float ColorDeepRange = 0f,
-    // Depth Amount @0 — the world-unit water column at which the FO4 depth ramps saturate (the
-    // color/alpha ranges above multiply it; retail authors those ≈1.0).
-    float DepthAmount = 0f)
+    // Depth Amount @0 — authored water-column scale used to address the dynamic depth LUT.
+    float DepthAmount = 0f,
+    // ---- Oblivion WATR DATA fields. These are preserved separately from the FO3/FNV noise-layer
+    // contract because TES4's WATER000 takes a direct XY Scroll constant and WATR fog distances.
+    float WaveAmplitude = 0f,
+    float WaveFrequency = 1f,
+    float ScrollXSpeed = 0f,
+    float ScrollYSpeed = 0f,
+    float FogNear = 0f,
+    float FogFar = 0f,
+    float TextureBlend = 0f,
+    float WindVelocity = 0f,
+    float WindDirection = 90f,
+    float RainForce = 0f,
+    float RainVelocity = 0f,
+    float RainFalloff = 0f,
+    float RainDampener = 0f,
+    float RainStartingSize = 0f,
+    float DisplacementForce = 0f,
+    float DisplacementVelocity = 0f,
+    float DisplacementFalloff = 0f,
+    float DisplacementDampener = 0f,
+    float DisplacementStartingSize = 0f,
+    // ---- Creation-era DNAM prefix retained losslessly for the opt-in dynamic-water pipeline. ----
+    float UnderwaterFogAmount = 0f,
+    float UnderwaterFogNear = 0f,
+    float UnderwaterFogFar = 0f,
+    float NormalMagnitude = 1f,
+    float ShallowNormalFalloff = 0f,
+    float DeepNormalFalloff = 0f,
+    float SurfaceEffectFalloff = 0f,
+    float SunSparklePower = 0f,
+    float SunSparkleMagnitude = 0f,
+    float InteriorSpecularRadius = 0f,
+    float InteriorSpecularBrightness = 0f,
+    float InteriorSpecularPower = 0f,
+    bool ScreenSpaceReflections = false,
+    bool HasAuthoredNoiseLayers = false,
+    // FO76's five post-specular floats do not yet have recovered semantics. Preserve them under
+    // neutral names rather than discarding the bytes or assigning guessed meanings.
+    float ModernUnknown1 = 0f,
+    float ModernUnknown2 = 0f,
+    float ModernUnknown3 = 0f,
+    float ModernUnknown4 = 0f,
+    float ModernUnknown5 = 0f)
 {
     /// <summary>Fallback when a record has no full 196-byte DNAM (proto/test water, or a worldspace whose
     /// WATR didn't resolve). These are the engine's shipped <c>NVCleanWater</c> preset values (FormID
@@ -78,7 +125,8 @@ public sealed record WaterSurfaceParams(
         SunPower: 826f,          // DNAM fSunPower @16
         DepthFalloffStart: 0f,
         DepthFalloffEnd: 0.01f,  // DNAM DepthFalloffEnd @128 (NVCleanWater)
-        // WaterNoiseLayer = (UvScale[displacement, unused for noise], WindDirDeg, WindSpeed, AmpScale=fAmplitude).
+        // WaterNoiseLayer = (fHeightUVScale -> prepass fTexScale=max(1,ceil(x*.01)),
+        // WindDirDeg, WindSpeed, AmpScale=fAmplitude).
         Layer1: new WaterNoiseLayer(0f, 180f, 0.065f, 0.300f),
         Layer2: new WaterNoiseLayer(0f, 10f, 0.033f, 0.525f),
         Layer3: new WaterNoiseLayer(0f, 67f, 0.029f, 0.138f),
@@ -109,7 +157,17 @@ public sealed record WaterAppearance(
     bool IsLava = false,
     // FO4 DNAM Silt "Dark Color" @196 — the FO4 water shader's unshadowed ambient-add term
     // (its PS adds this constant to the accumulated sun/point lighting before the body multiply).
-    (byte R, byte G, byte B)? DarkSilt = null)
+    (byte R, byte G, byte B)? DarkSilt = null,
+    // Authoritative ordered texture set. Skyrim carries three repeated NNAMs; keeping only the
+    // compatibility NoiseTexture silently collapsed all three layers onto the first map.
+    IReadOnlyList<string>? NormalTextures = null,
+    // FO4 DNAM Silt Light Color and the Creation-prefix underwater color are retained separately.
+    // SetupMaterial mappings are still open, so neither is silently substituted for DarkSilt.
+    (byte R, byte G, byte B)? LightSilt = null,
+    (byte R, byte G, byte B)? Underwater = null,
+    // TES4 WATR TNAM. This is WATER000's per-water detail/surface input, not its global animated
+    // water00..31 normal sequence, so it must never enter NormalTextures as a compatibility fallback.
+    string? SurfaceTexture = null)
 {
     /// <summary>
     ///     Builds appearance from a <see cref="WaterRecord" />. Returns null when the record is
@@ -129,7 +187,13 @@ public sealed record WaterAppearance(
         var causesDamage = water.WaterFlags is { Length: > 0 } f && (f[0] & 0x01) != 0;
         var isLava = LooksLikeLava(water);
 
-        var appearance = FromVisualProperties(water.VisualProperties, water.NoiseTexture);
+        var textures = water.NormalTextures.Count > 0
+            ? water.NormalTextures
+            : water.NoiseTexture is { Length: > 0 } noise
+                ? new[] { noise }
+                : Array.Empty<string>();
+        var firstTexture = textures.Count > 0 ? textures[0] : water.NoiseTexture;
+        var appearance = FromVisualProperties(water.VisualProperties, firstTexture, textures);
         if (appearance is not null)
         {
             // ANAM is Required in shipped WATRs, so a raw 0 means the subrecord was absent
@@ -140,17 +204,19 @@ public sealed record WaterAppearance(
                 CausesDamage = causesDamage,
                 IsLava = isLava,
                 Surface = appearance.Surface with { Opacity = opacity },
+                SurfaceTexture = water.SurfaceTexture,
             };
         }
 
         // No usable DATA/DNAM colors. The shipping Oblivion lava planes (OblivionCitadelLavaPlane,
-        // CamoranLava) carry no vertex colors — the engine colors them from the TNAM texture, which the
-        // viewer doesn't sample for water — so without a fallback they would render as default water (the
-        // OBLIV-2 bug). Hand lava a default molten palette + the lava flag so the renderer still gives it
-        // the emissive look. Ordinary color-less water returns null so the caller keeps its own tint.
+        // CamoranLava) carry no vertex colors; TNAM now reaches the recovered DetailMap path, but it does
+        // not replace the missing authored body-color constants. Without a fallback they would still use
+        // default water colors (the OBLIV-2 bug). Hand lava a default molten palette + the lava flag so the
+        // renderer gives it the emissive look. Ordinary color-less water returns null for caller fallback.
         return isLava
             ? new WaterAppearance(DefaultLavaShallow, DefaultLavaDeep, DefaultLavaShallow,
-                water.NoiseTexture, WaterSurfaceParams.Default, causesDamage, IsLava: true)
+                firstTexture, WaterSurfaceParams.Default, causesDamage, IsLava: true,
+                NormalTextures: textures, SurfaceTexture: water.SurfaceTexture)
             : null;
     }
 
@@ -173,7 +239,8 @@ public sealed record WaterAppearance(
     ///     when neither ShallowColor nor DeepColor is present (or both are zero).
     /// </summary>
     public static WaterAppearance? FromVisualProperties(
-        IReadOnlyDictionary<string, object?>? props, string? noiseTexture)
+        IReadOnlyDictionary<string, object?>? props, string? noiseTexture,
+        IReadOnlyList<string>? normalTextures = null)
     {
         if (props is null) return null;
 
@@ -186,7 +253,9 @@ public sealed record WaterAppearance(
         var d = deep ?? shallow!.Value;
         var r = reflection ?? s;
         return new WaterAppearance(s, d, r, noiseTexture, ExtractSurface(props),
-            DarkSilt: ExtractColor(props, "DarkSiltColor"));
+            DarkSilt: ExtractColor(props, "DarkSiltColor"), NormalTextures: normalTextures,
+            LightSilt: ExtractColor(props, "LightSiltColor"),
+            Underwater: ExtractColor(props, "UnderwaterColor"));
     }
 
     /// <summary>
@@ -217,7 +286,45 @@ public sealed record WaterAppearance(
             AlphaDeepRange: ExtractFloat(props, "AlphaDeepRange", def.AlphaDeepRange),
             ColorShallowRange: ExtractFloat(props, "ColorShallowRange", def.ColorShallowRange),
             ColorDeepRange: ExtractFloat(props, "ColorDeepRange", def.ColorDeepRange),
-            DepthAmount: ExtractFloat(props, "DepthAmount", def.DepthAmount));
+            DepthAmount: ExtractFloat(props, "DepthAmount", def.DepthAmount),
+            WaveAmplitude: ExtractFloat(props, "WaveAmplitude", def.WaveAmplitude),
+            WaveFrequency: ExtractFloat(props, "WaveFrequency", def.WaveFrequency),
+            ScrollXSpeed: ExtractFloat(props, "ScrollXSpeed", def.ScrollXSpeed),
+            ScrollYSpeed: ExtractFloat(props, "ScrollYSpeed", def.ScrollYSpeed),
+            FogNear: ExtractFloat(props, "FogNear", def.FogNear),
+            FogFar: ExtractFloat(props, "FogFar", def.FogFar),
+            TextureBlend: ExtractFloat(props, "TextureBlend", def.TextureBlend),
+            WindVelocity: ExtractFloat(props, "WindVelocity", def.WindVelocity),
+            WindDirection: ExtractFloat(props, "WindDirection", def.WindDirection),
+            RainForce: ExtractFloat(props, "RainForce", def.RainForce),
+            RainVelocity: ExtractFloat(props, "RainVelocity", def.RainVelocity),
+            RainFalloff: ExtractFloat(props, "RainFalloff", def.RainFalloff),
+            RainDampener: ExtractFloat(props, "RainDampener", def.RainDampener),
+            RainStartingSize: ExtractFloat(props, "RainStartingSize", def.RainStartingSize),
+            DisplacementForce: ExtractFloat(props, "DisplacementForce", def.DisplacementForce),
+            DisplacementVelocity: ExtractFloat(props, "DisplacementVelocity", def.DisplacementVelocity),
+            DisplacementFalloff: ExtractFloat(props, "DisplacementFalloff", def.DisplacementFalloff),
+            DisplacementDampener: ExtractFloat(props, "DisplacementDampener", def.DisplacementDampener),
+            DisplacementStartingSize: ExtractFloat(props, "DisplacementStartingSize", def.DisplacementStartingSize),
+            UnderwaterFogAmount: ExtractFloat(props, "UnderwaterFogAmount", def.UnderwaterFogAmount),
+            UnderwaterFogNear: ExtractFloat(props, "UnderwaterFogNear", def.UnderwaterFogNear),
+            UnderwaterFogFar: ExtractFloat(props, "UnderwaterFogFar", def.UnderwaterFogFar),
+            NormalMagnitude: ExtractFloat(props, "NormalMagnitude", def.NormalMagnitude),
+            ShallowNormalFalloff: ExtractFloat(props, "ShallowNormalFalloff", def.ShallowNormalFalloff),
+            DeepNormalFalloff: ExtractFloat(props, "DeepNormalFalloff", def.DeepNormalFalloff),
+            SurfaceEffectFalloff: ExtractFloat(props, "SurfaceEffectFalloff", def.SurfaceEffectFalloff),
+            SunSparklePower: ExtractFloat(props, "SunSparklePower", def.SunSparklePower),
+            SunSparkleMagnitude: ExtractFloat(props, "SunSparkleMagnitude", def.SunSparkleMagnitude),
+            InteriorSpecularRadius: ExtractFloat(props, "InteriorSpecularRadius", def.InteriorSpecularRadius),
+            InteriorSpecularBrightness: ExtractFloat(props, "InteriorSpecularBrightness", def.InteriorSpecularBrightness),
+            InteriorSpecularPower: ExtractFloat(props, "InteriorSpecularPower", def.InteriorSpecularPower),
+            ScreenSpaceReflections: ExtractBool(props, "ScreenSpaceReflections", def.ScreenSpaceReflections),
+            HasAuthoredNoiseLayers: HasAnyNoiseLayer(props),
+            ModernUnknown1: ExtractFloat(props, "ModernUnknown1", def.ModernUnknown1),
+            ModernUnknown2: ExtractFloat(props, "ModernUnknown2", def.ModernUnknown2),
+            ModernUnknown3: ExtractFloat(props, "ModernUnknown3", def.ModernUnknown3),
+            ModernUnknown4: ExtractFloat(props, "ModernUnknown4", def.ModernUnknown4),
+            ModernUnknown5: ExtractFloat(props, "ModernUnknown5", def.ModernUnknown5));
     }
 
     private static WaterNoiseLayer ExtractLayer(
@@ -226,7 +333,26 @@ public sealed record WaterAppearance(
             UvScale: ExtractFloat(props, prefix + "UVScale", fallback.UvScale),
             WindDirDegrees: ExtractFloat(props, prefix + "WindDir", fallback.WindDirDegrees),
             WindSpeed: ExtractFloat(props, prefix + "WindSpeed", fallback.WindSpeed),
-            AmpScale: ExtractFloat(props, prefix + "AmpScale", fallback.AmpScale));
+            AmpScale: ExtractFloat(props, prefix + "AmpScale", fallback.AmpScale),
+            Falloff: ExtractFloat(props, prefix + "Falloff", fallback.Falloff));
+
+    private static bool HasAnyNoiseLayer(IReadOnlyDictionary<string, object?> props) =>
+        props.ContainsKey("NoiseLayer1WindDir") || props.ContainsKey("NoiseLayer1WindSpeed") ||
+        props.ContainsKey("NoiseLayer1AmpScale") || props.ContainsKey("NoiseLayer1UVScale");
+
+    private static bool ExtractBool(
+        IReadOnlyDictionary<string, object?> props, string key, bool fallback)
+    {
+        if (!props.TryGetValue(key, out var value) || value is null) return fallback;
+        return value switch
+        {
+            bool b => b,
+            byte b => b != 0,
+            int i => i != 0,
+            uint u => u != 0,
+            _ => fallback,
+        };
+    }
 
     /// <summary>
     ///     Decodes a packed-uint32 DNAM color key. A packed value of 0 is treated as "missing"

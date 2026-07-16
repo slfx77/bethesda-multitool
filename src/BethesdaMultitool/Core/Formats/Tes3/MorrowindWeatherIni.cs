@@ -112,7 +112,7 @@ internal static class MorrowindWeatherIni
         var sunDisc = sun;
         if (ReadColor(s, "Sun Disc Sunset Color") is { } discSunset)
         {
-            sunDisc = sun with { Sunset = discSunset };
+            sunDisc = new WeatherColor(sun.Bands with { Sunset = discSunset });
         }
 
         // NAM0 category mapping (see WeatherColorType): Morrowind authors ONE sky color (no
@@ -203,7 +203,7 @@ internal static class MorrowindWeatherIni
         var day = ReadColor(s, $"{channel} Day Color") ?? default;
         var sunset = ReadColor(s, $"{channel} Sunset Color") ?? default;
         var night = ReadColor(s, $"{channel} Night Color") ?? default;
-        return new WeatherColor(sunrise, day, sunset, night, HighNoon: day, Midnight: night);
+        return new WeatherColor(sunrise, day, sunset, night, day, night);
     }
 
     private static WeatherColor Solid(WeatherRgba c) => new(c, c, c, c, c, c);

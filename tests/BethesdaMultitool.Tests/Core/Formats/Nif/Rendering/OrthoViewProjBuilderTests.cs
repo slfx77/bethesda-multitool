@@ -53,6 +53,25 @@ public sealed class OrthoViewProjBuilderTests
     }
 
     [Fact]
+    public void TiltedView_RenderEyeIsDistinctFromCoverCylinderCenter()
+    {
+        // The cylinder is a footprint-centered streaming/culling volume, not a camera pose. Render
+        // consumers such as particle ordering, billboard facing, and SpeedTree LOD must use the eye.
+        var focus = new Vector3(4096f, -8192f, 256f);
+        const float azimuth = 45f;
+        const float elevation = 30f;
+        var eye = OrthoViewProjBuilder.EyePosition(focus, azimuth, elevation);
+        var expectedEye = focus +
+                          (OrthoViewProjBuilder.EyeDirection(azimuth, elevation) *
+                           OrthoViewProjBuilder.EyeDistance);
+        var cylinder = OrthoViewProjBuilder.BuildCoverCylinder(focus, radius: 2048f);
+
+        Assert.InRange(Vector3.Distance(eye, expectedEye), 0f, 0.01f);
+        Assert.True(Vector3.Distance(eye, cylinder.Position) > 100_000f,
+            "a tilted view's cull center must not be substituted for its rendering eye");
+    }
+
+    [Fact]
     public void ReversedZ_GeometryTowardCameraWinsDepth()
     {
         // Reversed-Z: geometry nearer the camera must produce a LARGER clip Z (GreaterEqual depth test

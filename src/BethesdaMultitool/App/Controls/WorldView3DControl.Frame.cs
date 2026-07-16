@@ -162,7 +162,13 @@ public sealed partial class WorldView3DControl
         // engine ADAPT blend weight for THIS frame (k = EyeAdaptSpeed^clamp(15·dt, 0, 1)) — the temporal
         // smoothing that keeps the sparse-grid exposure from flickering while the camera moves.
         var tonemap = ResolveTonemapSettings();
-        if (tonemap.EyeAdaptSpeed > 0f)
+        if (tonemap.Mode == Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.CreationModern)
+        {
+            // The modern temporal response has not been recovered. Replace the average immediately
+            // instead of applying the unrelated FO3/FNV ADAPT equation.
+            tonemap = tonemap with { AdaptFactor = 1f };
+        }
+        else if (tonemap.EyeAdaptSpeed > 0f)
         {
             var speed = Math.Clamp(tonemap.EyeAdaptSpeed, 0.01f, 0.999f);
             tonemap = tonemap with
@@ -240,15 +246,7 @@ public sealed partial class WorldView3DControl
         // overlay passes its own lighting-enabled flag as enableLighting with _showLighting left true).
         var gameHour = gameHourOverride ?? _gameHour;
         var lightingOn = enableLighting && _showLighting;
-        // Night directional: pass the primary moon's sky direction so Resolve can hand the scene
-        // light from the sun to the MOON once the sun is fully down (modern weathers only — the
-        // handover is gated on the weather carrying DALC). Same orbit the moon billboard draws on,
-        // so night N·L shading matches the visible moon position.
-        System.Numerics.Vector3? moonlight = MoonProfile.HasMoon
-            ? BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.MoonSky.ComputeMoonDirection(
-                MoonProfile.PrimaryOrbit, gameHour, _gameDay)
-            : null;
-        var resolved = ResolveSceneAtmosphere(gameHour, lightingOn, moonlight);
+        var resolved = ResolveSceneAtmosphere(gameHour, lightingOn);
         // Stash the frame's directional-light direction for the frame-end shadow pass (the map is
         // fitted around this direction; see RecordSunShadowPass).
         _lastResolvedSunDirection = resolved.SunWorldDirection;
@@ -293,7 +291,11 @@ public sealed partial class WorldView3DControl
             skyEnabled: _showSky ? 1f : 0f, fogEnabled: enableFog && _showFog ? 1f : 0f,
             placedLightCount: placedLightCount,
             cameraOrigin: cameraOrigin, ambientScale: ambientScale, shadow: shadow,
-            emissiveMult: tonemap.EmissiveMult);
+            emissiveMult: tonemap.EmissiveMult,
+            sunlightScale: tonemap.Mode == Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.CreationModern
+                ? tonemap.SunlightScale : 1f,
+            skyScale: tonemap.Mode == Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.CreationModern
+                ? tonemap.SkyScale : 1f);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
         unsafe { *(AtmosphereConstants*)alloc.CpuPtr = constants; }
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.AtmosphereCbv, alloc.GpuAddress);
@@ -334,8 +336,16 @@ public sealed partial class WorldView3DControl
         public Vector4 ShadowParams1;
         public Vector4 ShadowParams2;
         public Vector4 ShadowParams3;
+        // Full WTHR DALC directional-ambient cube. PositiveX.w is the explicit presence flag;
+        // legacy weather keeps all six zero and shaders use AmbientColor.rgb unchanged.
+        public Vector4 AmbientPositiveX;
+        public Vector4 AmbientNegativeX;
+        public Vector4 AmbientPositiveY;
+        public Vector4 AmbientNegativeY;
+        public Vector4 AmbientPositiveZ;
+        public Vector4 AmbientNegativeZ;
 
-        public const uint ByteSize = 10 * 16 + 4 * 64 + 4 * 16;
+        public const uint ByteSize = 10 * 16 + 4 * 64 + 4 * 16 + 6 * 16;
 
         public static AtmosphereConstants From(
             AtmosphereState.Resolved a,
@@ -348,14 +358,21 @@ public sealed partial class WorldView3DControl
             Vector3 cameraOrigin,
             float ambientScale = 0.3f,
             Core.Formats.Nif.Rendering.Camera.D3D12.ShadowMapRenderer12.ShadowSampleConstants shadow = default,
-            float emissiveMult = 1f) => new()
+            float emissiveMult = 1f,
+            float sunlightScale = 1f,
+            float skyScale = 1f)
+        {
+            var directionalAmbient = AuthoredSkyArchitecture.SelectDirectionalAmbientForUpload(
+                AuthoredSkyArchitecture.Enabled, a.DirectionalAmbient);
+
+            return new()
             {
                 SunDirIntensity = new Vector4(a.SunWorldDirection, a.SunIntensity),
-                SunColorLighting = new Vector4(a.SunColor, lightingEnabled),
+                SunColorLighting = new Vector4(a.SunColor * sunlightScale, lightingEnabled),
                 // w carries the per-game ambient ("fill") scale read by the object/terrain shaders.
                 AmbientColor = new Vector4(a.AmbientColor, ambientScale),
-                SkyTopSkyEnabled = new Vector4(a.SkyTopColor, skyEnabled),
-                SkyHorizon = new Vector4(a.SkyHorizonColor, 0f),
+                SkyTopSkyEnabled = new Vector4(a.SkyTopColor * skyScale, skyEnabled),
+                SkyHorizon = new Vector4(a.SkyHorizonColor * skyScale, 0f),
                 FogColorFogEnabled = new Vector4(a.FogColor, fogEnabled),
                 Params = new Vector4(gameHour, a.FogNear, a.FogFar, placedLightCount),
                 CameraPosFogPower = new Vector4(cameraPos, a.FogPower),
@@ -371,7 +388,26 @@ public sealed partial class WorldView3DControl
                 ShadowParams1 = shadow.Params1,
                 ShadowParams2 = shadow.Params2,
                 ShadowParams3 = shadow.Params3,
+                AmbientPositiveX = directionalAmbient is { } cube
+                    ? new Vector4(cube.PositiveX, 1f)
+                    : Vector4.Zero,
+                AmbientNegativeX = directionalAmbient is { } cubeNx
+                    ? new Vector4(cubeNx.NegativeX, 0f)
+                    : Vector4.Zero,
+                AmbientPositiveY = directionalAmbient is { } cubePy
+                    ? new Vector4(cubePy.PositiveY, 0f)
+                    : Vector4.Zero,
+                AmbientNegativeY = directionalAmbient is { } cubeNy
+                    ? new Vector4(cubeNy.NegativeY, 0f)
+                    : Vector4.Zero,
+                AmbientPositiveZ = directionalAmbient is { } cubePz
+                    ? new Vector4(cubePz.PositiveZ, 0f)
+                    : Vector4.Zero,
+                AmbientNegativeZ = directionalAmbient is { } cubeNz
+                    ? new Vector4(cubeNz.NegativeZ, 0f)
+                    : Vector4.Zero,
             };
+        }
     }
 
     /// <summary>
@@ -672,9 +708,14 @@ public sealed partial class WorldView3DControl
                 LightingPanel.SeedWindOverride(_windStrength.Value); // reflect in the Weather section UI
             }
         }
+        var weatherTransition = ResolveSelectedWeatherTransition();
+        var currentWind = (weatherTransition.CurrentWeather?.Data?.WindSpeed ?? 0) / 255f;
+        var outgoingWind = (weatherTransition.OutgoingWeather?.Data?.WindSpeed ?? 0) / 255f;
         var weatherWind = _selectedInterior is not null
             ? 0f
-            : ((_selectedWeather ?? _climateDefaultWeather)?.Data?.WindSpeed ?? 0) / 255f;
+            : weatherTransition.OutgoingWeather is null
+                ? currentWind
+                : outgoingWind + ((currentWind - outgoingWind) * weatherTransition.CurrentWeatherWeight);
         var effectiveWind = _windStrength ?? weatherWind;
         // In auto mode, keep the (disabled) wind slider showing the weather-driven value. We're on the
         // UI thread (CompositionTarget.Rendering); the panel never raises events for display updates.
@@ -767,7 +808,8 @@ public sealed partial class WorldView3DControl
         var visibleReferences = _showReferences
             ? _references?.Render(
                   viewProjScene, cylinder, deferBlended: true, cullViewProj: viewProjAbsolute,
-                  renderOrigin: referenceRenderOrigin, cullCameraPose: cullPose) ?? 0
+                  renderOrigin: referenceRenderOrigin, cullCameraPose: cullPose,
+                  cameraPosition: projectionActive ? orthoEye : _camera.Position) ?? 0
             : 0;
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.ReferencesEnd);
         var referencesMs = ElapsedMilliseconds(segmentStarted);
@@ -884,6 +926,9 @@ public sealed partial class WorldView3DControl
         _lastGcGen0Collections = gcGen0Collections;
         _lastGcGen1Collections = gcGen1Collections;
         _lastGcGen2Collections = gcGen2Collections;
+        var totalAllocatedBytes = GC.GetTotalAllocatedBytes(false);
+        var allocatedBytes = Math.Max(0L, totalAllocatedBytes - _lastTotalAllocatedBytes);
+        _lastTotalAllocatedBytes = totalAllocatedBytes;
 
         var terrainStats = _showTerrain ? _terrain?.LastStats.Snapshot() : null;
         var waterStats = _showWater ? _water?.LastStats.Snapshot() : null;
@@ -918,7 +963,8 @@ public sealed partial class WorldView3DControl
             GcGen0Collections: gcGen0Delta,
             GcGen1Collections: gcGen1Delta,
             GcGen2Collections: gcGen2Delta,
-            ManagedMemoryBytes: GC.GetTotalMemory(false));
+            ManagedMemoryBytes: GC.GetTotalMemory(false),
+            AllocatedBytes: allocatedBytes);
 
         if (_profileLogging)
         {

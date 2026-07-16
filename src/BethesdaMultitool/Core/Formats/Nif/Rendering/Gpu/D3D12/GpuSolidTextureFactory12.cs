@@ -87,8 +87,12 @@ internal sealed unsafe class GpuSolidTextureFactory12
                 cmd.CopyTextureRegion(
                     new TextureCopyLocation(textureResource, 0), 0, 0, 0,
                     new TextureCopyLocation(stagingResource, footprints[0]));
+                // The placeholder/flat-normal entries can back the compute-sampled FNV NNAM slot
+                // while streaming. Make the shared bindless texture legal in both shader classes.
                 cmd.ResourceBarrierTransition(
-                    textureResource, ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
+                    textureResource,
+                    ResourceStates.CopyDest,
+                    ResourceStates.PixelShaderResource | ResourceStates.NonPixelShaderResource);
             });
             // ExecuteOneShotDirect blocks until the GPU finishes the copy, so the staging buffer is
             // safe to free immediately (no frame-deferred disposal needed).

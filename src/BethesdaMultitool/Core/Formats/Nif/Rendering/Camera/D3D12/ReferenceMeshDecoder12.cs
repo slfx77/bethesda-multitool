@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.Formats.Nif.Conversion;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
@@ -91,7 +92,8 @@ internal sealed class ReferenceMeshDecoder12
         string modelPath,
         IReadOnlyDictionary<string, ShapeTextureOverride>? overrides = null,
         IReadOnlyDictionary<string, string>? materialSwaps = null,
-        float? gradientMapVOverride = null)
+        float? gradientMapVOverride = null,
+        Vector3? externalEmittanceColor = null)
     {
         var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
         var lookupPath = NormalizeModelPath(modelPath);
@@ -151,10 +153,14 @@ internal sealed class ReferenceMeshDecoder12
                 // the record's LeafDimmingValue and supplies BranchDimmingValue (which has no .spt source).
                 float? leafDimming = null;
                 float? branchDimming = null;
+                var rockSpeed = 1f;
+                var rustleSpeed = 1f;
                 if (_speedTreeDimming is not null && _speedTreeDimming.TryGetValue(lookupPath, out var dim))
                 {
                     leafDimming = dim.Leaf;
                     branchDimming = dim.Branch;
+                    rockSpeed = dim.RockSpeed;
+                    rustleSpeed = dim.RustleSpeed;
                 }
 
                 var seed = spt.General.Token2005 != 0 ? spt.General.Token2005 : StableSeed(lookupPath);
@@ -164,6 +170,9 @@ internal sealed class ReferenceMeshDecoder12
                     LeafTextureOverride = leafTexture,
                     LeafDimming = leafDimming,
                     BranchDimming = branchDimming,
+                    RockSpeed = rockSpeed,
+                    RustleSpeed = rustleSpeed,
+                    BillboardTexturePath = SpeedTreeRuntimeLod.BillboardTexturePath(lookupPath),
                     // The live D3D12 viewer re-faces each leaf card to the camera per frame in the
                     // leaf-billboard vertex shader, so emit GPU billboard cards (center + offset).
                     LeafBillboard = true,
@@ -252,7 +261,10 @@ internal sealed class ReferenceMeshDecoder12
                     collectBillboards: true,
                     // Drop the per-bone proxy boxes on animated cloth (e.g. NV_NCR_Flag.NIF) that
                     // would otherwise render as untextured "havok" blocks beside the flag.
-                    dropBoneAttachedShapes: true);
+                    dropBoneAttachedShapes: true,
+                    // REFR XEMI is placement state. Bake it into this variant-keyed decode so
+                    // opaque instancing never shares one external-emittance color across refs.
+                    externalEmittanceColor: externalEmittanceColor);
 
                 // Decode Havok (bhk*) collision geometry from the same (converted, LE) buffer/parse,
                 // off the render thread. Walk mode prefers this gapless physics mesh over the visual
@@ -417,7 +429,14 @@ internal sealed class ReferenceMeshDecoder12
                     Skin: skinsByShapeIndex is not null &&
                           skinsByShapeIndex.TryGetValue(sub.SourceBlockIndex, out var skin)
                         ? skin
-                        : null));
+                        : null,
+                    IsSpeedTreeBranch: sub.IsSpeedTreeBranch,
+                    SpeedTreeWindSpeeds: sub.SpeedTreeWindSpeeds,
+                    ClampTextureU: sub.ClampTextureU,
+                    ClampTextureV: sub.ClampTextureV,
+                    IsParticleCloud: sub.IsParticleCloud,
+                    ParticleRuntime: ParticleLiveSettings.Enabled ? sub.ParticleRuntime : null,
+                    SpeedTreeLod: sub.SpeedTreeLod));
             }
 
             if (submeshes.Count == 0)
@@ -428,7 +447,8 @@ internal sealed class ReferenceMeshDecoder12
 
             submeshCount = submeshes.Count;
             result = "success";
-            return new DecodedNifMesh12(submeshes, collisionPositions, collisionTriangles, animation);
+            return new DecodedNifMesh12(
+                submeshes, collisionPositions, collisionTriangles, animation, model.ContainsParticleSource);
         }
         finally
         {
@@ -487,11 +507,17 @@ internal sealed class ReferenceMeshDecoder12
                 sub.EnvironmentMapScale,
                 sub.EnvironmentMapSmoothness,
                 sub.UvScrollVelocity,
-                sub.Skin));
+                sub.IsSpeedTreeBranch,
+                sub.SpeedTreeWindSpeeds,
+                sub.Skin,
+                sub.ClampTextureU,
+                sub.ClampTextureV,
+                sub.IsParticleCloud));
         }
 
         return new ReferenceDecodedMeshPayload12(
-            submeshes, decoded.CollisionPositions, decoded.CollisionTriangles, decoded.Animation);
+            submeshes, decoded.CollisionPositions, decoded.CollisionTriangles, decoded.Animation,
+            decoded.ContainsParticleSource);
     }
 
     public static DecodedNifMesh12 FromPersistentPayload(ReferenceDecodedMeshPayload12 payload)
@@ -533,11 +559,17 @@ internal sealed class ReferenceMeshDecoder12
                 sub.EnvironmentMapScale,
                 sub.EnvironmentMapSmoothness,
                 sub.UvScrollVelocity,
-                sub.Skin));
+                sub.Skin,
+                sub.IsSpeedTreeBranch,
+                sub.SpeedTreeWindSpeeds,
+                sub.ClampTextureU,
+                sub.ClampTextureV,
+                sub.IsParticleCloud));
         }
 
         return new DecodedNifMesh12(
-            submeshes, payload.CollisionPositions, payload.CollisionTriangles, payload.Animation);
+            submeshes, payload.CollisionPositions, payload.CollisionTriangles, payload.Animation,
+            payload.ContainsParticleSource);
     }
 
     public static long EstimateDecodedMeshBytes(DecodedNifMesh12 decoded)
@@ -549,6 +581,13 @@ internal sealed class ReferenceMeshDecoder12
             total += (long)submesh.Vertices.Length * vertexSize;
             total += (long)submesh.Indices.Length * sizeof(ushort);
             total += 256;
+            if (submesh.ParticleRuntime is not null)
+            {
+                // Modifier/key lists and retained emitter geometry are CPU-side live state. This is a
+                // conservative accounting surcharge; the large indexed mesh arrays dominate and already
+                // live on the definition itself rather than the transient frame snapshot.
+                total += 4096;
+            }
             if (submesh.Skin is { } skin)
             {
                 // base positions/normals + packed influences + inverse binds (LRU byte honesty).

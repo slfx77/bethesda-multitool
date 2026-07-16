@@ -1,30 +1,24 @@
-// BrightPassBlur — the FO3/FNV engine bloom stage (ISBPBLUR3..15 SM3 shaders, decompile-grounded:
-// docs/research/fnv_engine_hdr_imagespace.md §1). Bright-pass and blur are FUSED exactly like the
-// engine: every tap is thresholded and scaled before weighting, per tap
-//   max(src − BrightClamp, 0) · BrightScale
-// with a 1D kernel of 2n+1 taps (n = ceil(BlurRadius) clamped 1..7 → the engine's 3..15 tap
-// variants). One pass per IMGS BlurPasses, alternating direction per pass (shipped passes = 2
-// reads as an H+V separable pair); passes after the first re-threshold already-thresholded data,
-// matching the engine's single-shader chain.
+// FNV recovered bloom topology (shared with the other classic paths pending their binary oracles):
+//   HDR scene -> recursive DownSample16 chain to 1x1 for ADAPT; retain the first /4 level for one
+//   BrightPassBlur draw -> composite.
+// BlurPasses is stored by the data formats but is not a repeated-pass counter in this shader chain.
+// Bright-pass is applied per BPBLUR tap before its weight:
+//   max(src - BrightClamp, 0) * BrightScale.
 //
-// Labeled viewer approximations (engine-faithful otherwise):
-//   - The bloom target is ¼×¼ scene resolution and pass 0 bilinear-samples the full-res scene
-//     directly — standing in for one explicit DownSample16 (¼×¼ box) step of the engine chain.
-//   - Tap weights use a normalized Gaussian (σ = n/2); the engine's CPU-side weight fill is not
-//     decompiled yet. Revisit if the weight table is recovered.
-//
-// The engine's BPBLUR also writes sum(adaptedAvgColor.rgb) into out.a for the composite; our
-// composite reads the adapted 1×1 average at t1 directly, so alpha here is unused (kept 1).
+// The shipped BPBLUR3..15 programs consume a single compact row of 3, 5, ... 15 CPU constants.
+// Their recovered tables use the same signed scalar for x and y, so this deliberately samples one
+// diagonal row rather than evaluating a square (2r+1)^2 Gaussian.
 
 Texture2D    uSource  : register(t0);
+Texture2D    uAvgLum  : register(t1);
 SamplerState uSampler : register(s0);
 
 cbuffer BloomParams : register(b0)
 {
-    float4 uBloom0; // x = BrightClamp, y = BrightScale, z = tap radius n (1..7), w = unused
-    float4 uBloom1; // xy = dest texel size, zw = blur direction (1,0) or (0,1)
-    float4 uBloom2; // reserved
-    float4 uBloom3; // reserved
+    float4 uBloom0; // x = BrightClamp, y = BrightScale, z = BPBLUR radius (1..7), w = unused
+    float4 uBloom1; // xy = source texel size, zw = unused
+    float4 uBloom2;
+    float4 uBloom3;
 };
 
 struct PSInput
@@ -33,22 +27,103 @@ struct PSInput
     float2 vUv      : TEXCOORD0;
 };
 
-float4 main(PSInput input) : SV_Target
+// Bit-exact weights recovered from the seven ImageSpaceEffectBlur tables in the retail FNV XEX.
+// Keeping the original IEEE-754 payloads also avoids depending on a shader compiler's exp result.
+float ClassicBrightPassWeight(int radius, int distance)
 {
-    int n = (int)uBloom0.z;
-    float sigma = max(uBloom0.z * 0.5, 0.5);
-    float2 step = uBloom1.xy * uBloom1.zw;
-
-    float3 sum = 0.0;
-    float weightSum = 0.0;
-    [loop]
-    for (int i = -n; i <= n; i++)
+    if (radius == 1)
     {
-        float w = exp(-(i * i) / (2.0 * sigma * sigma));
-        float3 tap = uSource.SampleLevel(uSampler, input.vUv + i * step, 0).rgb;
-        sum += w * max(tap - uBloom0.x, 0.0) * uBloom0.y;
-        weightSum += w;
+        return distance == 0 ? asfloat(0x3F4977E6u) : asfloat(0x3DDA2032u);
     }
 
-    return float4(sum / weightSum, 1.0);
+    if (radius == 2)
+    {
+        if (distance == 0) return asfloat(0x3ECE2433u);
+        if (distance == 1) return asfloat(0x3E7A0FF4u);
+        return asfloat(0x3D5F2F68u);
+    }
+
+    if (radius == 3)
+    {
+        if (distance == 0) return asfloat(0x3E8A96DAu);
+        if (distance == 1) return asfloat(0x3E5DF275u);
+        if (distance == 2) return asfloat(0x3DE3E720u);
+        return asfloat(0x3D160C3Eu);
+    }
+
+    if (radius == 4)
+    {
+        if (distance == 0) return asfloat(0x3E511048u);
+        if (distance == 1) return asfloat(0x3E387F7Du);
+        if (distance == 2) return asfloat(0x3DFD9B6Bu);
+        if (distance == 3) return asfloat(0x3D87BEEEu);
+        return asfloat(0x3CE25956u);
+    }
+
+    if (radius == 5)
+    {
+        if (distance == 0) return asfloat(0x3E27E706u);
+        if (distance == 1) return asfloat(0x3E1AFE51u);
+        if (distance == 2) return asfloat(0x3DF3D829u);
+        if (distance == 3) return asfloat(0x3DA37425u);
+        if (distance == 4) return asfloat(0x3D3ABB7Cu);
+        return asfloat(0x3CB5C8DBu);
+    }
+
+    if (radius == 6)
+    {
+        if (distance == 0) return asfloat(0x3E0C4FB5u);
+        if (distance == 1) return asfloat(0x3E04BA92u);
+        if (distance == 2) return asfloat(0x3DE0B47Au);
+        if (distance == 3) return asfloat(0x3DAA34D5u);
+        if (distance == 4) return asfloat(0x3D66BC17u);
+        if (distance == 5) return asfloat(0x3D0BF29Au);
+        return asfloat(0x3C97E98Cu);
+    }
+
+    if (distance == 0) return asfloat(0x3DF10A7Fu);
+    if (distance == 1) return asfloat(0x3DE7668Bu);
+    if (distance == 2) return asfloat(0x3DCCBB66u);
+    if (distance == 3) return asfloat(0x3DA6F002u);
+    if (distance == 4) return asfloat(0x3D7AE64Au);
+    if (distance == 5) return asfloat(0x3D2DC3F7u);
+    if (distance == 6) return asfloat(0x3CDDD244u);
+    return asfloat(0x3C827C32u);
+}
+
+float4 mainDownsample16(PSInput input) : SV_Target
+{
+    // The shipped path uses four authored +/-1 offsets with a linear sampler. Each fetch averages a
+    // 2x2 neighborhood, producing the effective 4x4 / 16-texel box with the retail interpolation and
+    // odd-dimension behavior (not sixteen independent point-center fetches).
+    float2 texel = uBloom1.xy;
+    float3 sum =
+        uSource.SampleLevel(uSampler, input.vUv + float2(-1.0, -1.0) * texel, 0).rgb +
+        uSource.SampleLevel(uSampler, input.vUv + float2( 1.0, -1.0) * texel, 0).rgb +
+        uSource.SampleLevel(uSampler, input.vUv + float2( 1.0,  1.0) * texel, 0).rgb +
+        uSource.SampleLevel(uSampler, input.vUv + float2(-1.0,  1.0) * texel, 0).rgb;
+    return float4(sum * 0.25, 1.0);
+}
+
+float4 main(PSInput input) : SV_Target
+{
+    int radius = clamp((int)uBloom0.z, 1, 7);
+    float3 sum = 0.0;
+
+    [loop]
+    for (int tapIndex = -7; tapIndex <= 7; tapIndex++)
+    {
+        if (abs(tapIndex) <= radius)
+        {
+            float weight = ClassicBrightPassWeight(radius, abs(tapIndex));
+            float2 offset = float2(tapIndex, tapIndex) * uBloom1.xy;
+            float3 tap = uSource.SampleLevel(uSampler, input.vUv + offset, 0).rgb;
+            sum += weight * max(tap - uBloom0.x, 0.0) * uBloom0.y;
+        }
+    }
+
+    // The recovered shader consumes its authored weights directly; it does not renormalize them.
+    // It routes the adapted RGB sum through bloom alpha for ISHDRBLENDINSHADER.
+    float3 adapted = uAvgLum.SampleLevel(uSampler, float2(0.5, 0.5), 0).rgb;
+    return float4(sum, adapted.r + adapted.g + adapted.b);
 }

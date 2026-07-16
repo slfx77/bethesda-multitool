@@ -48,14 +48,16 @@ public class WeatherCloudLayerTests
         Assert.Equal(-1, layer);
     }
 
-    [Fact]
-    public void ReadCloudSpeeds_LegacyBytes_ReadAsUnsignedBiasedFractions()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadCloudSpeeds_LegacyBytes_ReadAsUnsignedBiasedFractions(bool isBigEndian)
     {
         // TESWeather::GetCloudLayerSpeed MOVZX-loads each byte, with 127 as still:
         // normalized=(b-127)/127. The engine does not clamp byte 255's slight overshoot.
         byte[] data = [0, 127, 254, 255];
 
-        var speeds = MiscEnvironmentHandler.ReadCloudSpeeds(data, isBigEndian: false, BethesdaGame.FalloutNewVegas);
+        var speeds = MiscEnvironmentHandler.ReadCloudSpeeds(data, isBigEndian, BethesdaGame.FalloutNewVegas);
 
         Assert.Equal(-1f, speeds[0]);
         Assert.Equal(0f, speeds[1]);
@@ -79,11 +81,13 @@ public class WeatherCloudLayerTests
         Assert.Equal(4, weather.GetCloudLayerSourceIndex(4)); // legacy/synthetic dense fallback
     }
 
-    [Fact]
-    public void ReadCloudSpeeds_SkyrimClearLayerZero_MatchesEngineFormula()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadCloudSpeeds_SkyrimClearLayerZero_MatchesEngineFormula(bool isBigEndian)
     {
-        var qnam = MiscEnvironmentHandler.ReadCloudSpeeds([0xA8], false, BethesdaGame.Skyrim);
-        var rnam = MiscEnvironmentHandler.ReadCloudSpeeds([0x72], false, BethesdaGame.Skyrim);
+        var qnam = MiscEnvironmentHandler.ReadCloudSpeeds([0xA8], isBigEndian, BethesdaGame.Skyrim);
+        var rnam = MiscEnvironmentHandler.ReadCloudSpeeds([0x72], isBigEndian, BethesdaGame.Skyrim);
 
         Assert.Equal(41f / 127f, qnam[0], 6);
         Assert.Equal(-13f / 127f, rnam[0], 6);
@@ -92,19 +96,44 @@ public class WeatherCloudLayerTests
         Assert.Equal(-0.0010236220f, rnam[0] * 0.01f, 7);
     }
 
-    [Fact]
-    public void ReadCloudSpeeds_Fallout4Floats_ReadPerLayerNotPerByte()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadCloudSpeeds_Fallout4RetainsEveryAuthoredByte(bool isBigEndian)
     {
-        // FO4/FO76 QNAM/RNAM: one float per layer. Reading these bytes as per-layer speeds is what made
-        // every cloud layer race in a nonsense direction. Values are CK-scale (~±0.1), normalized ×10.
-        var data = new byte[8];
-        BitConverter.GetBytes(0.05f).CopyTo(data, 0);
-        BitConverter.GetBytes(-0.02f).CopyTo(data, 4);
+        // xEdit's shared wbWeatherCloudSpeed declares FO4/FO76 as U8 arrays too. A float decode collapses
+        // four independent layer values into one and loses sparse source identities.
+        byte[] data = [0, 64, 127, 192, 254, 255];
 
-        var speeds = MiscEnvironmentHandler.ReadCloudSpeeds(data, isBigEndian: false, BethesdaGame.Fallout4);
+        var speeds = MiscEnvironmentHandler.ReadCloudSpeeds(data, isBigEndian, BethesdaGame.Fallout4);
 
-        Assert.Equal(2, speeds.Length);
-        Assert.Equal(0.5f, speeds[0], 3);
-        Assert.Equal(-0.2f, speeds[1], 3);
+        Assert.Equal(data.Length, speeds.Length);
+        Assert.Equal(-1f, speeds[0]);
+        Assert.Equal(0f, speeds[2]);
+        Assert.Equal(1f, speeds[4]);
+        Assert.Equal(128f / 127f, speeds[5]);
+    }
+
+    [Fact]
+    public void TryCloudLayerIndex_OblivionKeepsLowerThenUpperIdentity()
+    {
+        Assert.True(MiscEnvironmentHandler.TryCloudLayerIndex("CNAM", BethesdaGame.Oblivion, out var lower));
+        Assert.True(MiscEnvironmentHandler.TryCloudLayerIndex("DNAM", BethesdaGame.Oblivion, out var upper));
+        Assert.Equal(0, lower);
+        Assert.Equal(1, upper);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public void TryWeatherImageSpaceAdapterIndex_MapsBinarySignatures(int authoredIndex)
+    {
+        var signature = new string([(char)authoredIndex, 'I', 'A', 'D']);
+        Assert.True(MiscEnvironmentHandler.TryWeatherImageSpaceAdapterIndex(signature, out var index));
+        Assert.Equal(authoredIndex, index);
     }
 }

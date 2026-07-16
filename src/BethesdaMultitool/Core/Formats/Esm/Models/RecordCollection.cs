@@ -10,6 +10,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
@@ -293,6 +294,9 @@ public record RecordCollection
     /// <summary>Parsed Image Space (IMGS) records (per-cell/worldspace post-process parameters).</summary>
     public List<ImageSpaceRecord> ImageSpaces { get; init; } = [];
 
+    /// <summary>Parsed Image Space Modifier (IMAD) records with lossless frame timelines.</summary>
+    public List<ImageSpaceModifierRecord> ImageSpaceModifiers { get; init; } = [];
+
     /// <summary>
     ///     FormID → model path (.nif) mapping from STAT, ACTI, DOOR, LIGH, FURN, WEAP, ARMO, AMMO, ALCH, MISC, BOOK, CONT
     ///     records.
@@ -339,6 +343,13 @@ public record RecordCollection
     ///     consumers can inspect grid bounds and the persistent-cell pointer without re-scanning.
     /// </summary>
     public Dictionary<uint, RuntimeWorldspaceData> RuntimeWorldspaceMaps { get; init; } = [];
+
+    /// <summary>
+    ///     Immutable weather-transition state recovered from a DMP's runtime <c>Sky</c> singleton.
+    ///     Null for plugin-only sources and unsupported runtime layouts. The recovered FNV snapshot
+    ///     deliberately retains a null modifier elapsed clock until that separate runtime field is known.
+    /// </summary>
+    public WeatherTransitionSnapshot? RuntimeWeatherTransition { get; init; }
 
     /// <summary>Total records processed.</summary>
     public int TotalRecordsProcessed { get; init; }
@@ -513,12 +524,14 @@ public record RecordCollection
             Weather = MergeList(Weather, overlay.Weather, r => r.FormId),
             Climate = MergeList(Climate, overlay.Climate, r => r.FormId),
             ImageSpaces = MergeList(ImageSpaces, overlay.ImageSpaces, r => r.FormId),
+            ImageSpaceModifiers = MergeList(ImageSpaceModifiers, overlay.ImageSpaceModifiers, r => r.FormId),
 
             // Dictionaries: overlay overwrites base
             ModelPathIndex = MergeDictionary(ModelPathIndex, overlay.ModelPathIndex),
             FormIdToEditorId = MergeDictionary(FormIdToEditorId, overlay.FormIdToEditorId),
             FormIdToDisplayName = MergeDictionary(FormIdToDisplayName, overlay.FormIdToDisplayName),
             RuntimeWorldspaceMaps = MergeDictionary(RuntimeWorldspaceMaps, overlay.RuntimeWorldspaceMaps),
+            RuntimeWeatherTransition = overlay.RuntimeWeatherTransition ?? RuntimeWeatherTransition,
             UnparsedTypeCounts = MergeDictionary(UnparsedTypeCounts, overlay.UnparsedTypeCounts),
             AlternateTexturesByFormId = MergeDictionary(
                 new Dictionary<uint, IReadOnlyList<AlternateTextureEntry>>(AlternateTexturesByFormId),
@@ -1128,6 +1141,7 @@ public record RecordCollection
             MusicTypeFormId = overrideCell.MusicTypeFormId ?? baseCell.MusicTypeFormId,
             AcousticSpaceFormId = overrideCell.AcousticSpaceFormId ?? baseCell.AcousticSpaceFormId,
             ImageSpaceFormId = overrideCell.ImageSpaceFormId ?? baseCell.ImageSpaceFormId,
+            ClimateFormId = overrideCell.ClimateFormId ?? baseCell.ClimateFormId,
             LightingTemplateFormId = overrideCell.LightingTemplateFormId ?? baseCell.LightingTemplateFormId,
             LightingTemplateInheritanceFlags =
                 overrideCell.LightingTemplateInheritanceFlags ?? baseCell.LightingTemplateInheritanceFlags,

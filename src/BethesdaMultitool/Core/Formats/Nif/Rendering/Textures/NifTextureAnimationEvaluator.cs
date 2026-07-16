@@ -296,7 +296,8 @@ internal static class NifTextureAnimationEvaluator
             return true;
         }
 
-        if (pos + 28 > end)
+        // Seven floats (translation 2, scale 2, rotation 1, center 2) plus the uint method = 32 bytes.
+        if (pos + 32 > end)
         {
             return false;
         }

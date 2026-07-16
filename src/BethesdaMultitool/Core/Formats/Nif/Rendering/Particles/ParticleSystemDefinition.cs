@@ -14,17 +14,48 @@ internal sealed class ParticleSystemDefinition
     /// <summary>Block index of the source NiParticleSystem.</summary>
     public int BlockIndex { get; init; }
 
+    /// <summary>Concrete source block type, including schema-backed aliases such as BSStripParticleSystem.</summary>
+    public string SourceTypeName { get; init; } = "NiParticleSystem";
+
+    /// <summary>The inherited on-disk geometry layout used to locate the shared NiPSys tail.</summary>
+    public ParticleSystemSourceLayout SourceLayout { get; init; }
+
     /// <summary>True when the system simulates in world space (NiParticleSystem.World Space).</summary>
     public bool WorldSpace { get; init; }
 
     /// <summary>Max live particles (NiPSysData capacity / Num Vertices). The bake is capped to this.</summary>
     public int Capacity { get; init; }
 
+    /// <summary>The exact deterministic seed used by the static and live particle baker.</summary>
+    public uint DeterministicSeed =>
+        unchecked((uint)(BlockIndex * 2654435761u) ^ 0x9E3779B9u);
+
+    /// <summary>
+    ///     Authored atlas rectangles from <c>NiParticlesData.Subtexture Offsets</c>. Each vector is
+    ///     <c>(uOffset, vOffset, uScale, vScale)</c>; an empty list means the full texture.
+    /// </summary>
+    public IReadOnlyList<Vector4> SubtextureOffsets { get; set; } = [];
+
+    /// <summary>Authored sprite width/height ratio. One is the legacy FO3/FNV default.</summary>
+    public float AspectRatio { get; set; } = 1f;
+
     /// <summary>The emitter (one per system in practice). Null if no recognised emitter modifier was found.</summary>
     public ParticleEmitterDefinition? Emitter { get; set; }
 
     /// <summary>Modifiers in execution order (the NiParticleSystem Modifiers[] array order).</summary>
     public List<ParticleModifierDefinition> Modifiers { get; } = [];
+
+    /// <summary>
+    ///     Ordered simulator features retained by the parser but not yet executed by the deterministic baker.
+    ///     This is exposed beside the live definition so unsupported modern steps are observable rather than
+    ///     silently approximated.
+    /// </summary>
+    public List<string> UnsupportedSimulatorSteps { get; } = [];
+
+    /// <summary>Compact diagnostic value suitable for renderer/capture telemetry.</summary>
+    public string SupportTelemetry => UnsupportedSimulatorSteps.Count == 0
+        ? $"{SourceTypeName}:{SourceLayout}:supported"
+        : $"{SourceTypeName}:{SourceLayout}:partial[{string.Join(",", UnsupportedSimulatorSteps)}]";
 
     /// <summary>Diffuse texture path resolved from the system's shader property (the particle sprite).</summary>
     public string? DiffuseTexturePath { get; set; }
@@ -39,6 +70,13 @@ internal sealed class ParticleSystemDefinition
     public bool HasAlphaBlend { get; set; } = true;
 }
 
+internal enum ParticleSystemSourceLayout
+{
+    LegacyNiGeometry,
+    SkyrimNiGeometry,
+    BsGeometry,
+}
+
 /// <summary>Emitter volume shape (NiPSysEmitter subtype).</summary>
 internal enum ParticleEmitterShape
 {
@@ -47,6 +85,24 @@ internal enum ParticleEmitterShape
     Sphere,
     Cylinder,
     Mesh,
+}
+
+/// <summary>NiPSysMeshEmitter initial-velocity selection.</summary>
+internal enum ParticleVelocityType
+{
+    UseNormals = 0,
+    UseRandom = 1,
+    UseDirection = 2,
+}
+
+/// <summary>NiPSysMeshEmitter surface element used to select the spawn point.</summary>
+internal enum ParticleEmitFrom
+{
+    Vertices = 0,
+    FaceCenter = 1,
+    EdgeCenter = 2,
+    FaceSurface = 3,
+    EdgeSurface = 4,
 }
 
 /// <summary>
@@ -69,10 +125,13 @@ internal sealed class ParticleEmitterDefinition : ParticleModifierDefinition
     public float LifeSpan { get; init; }
     public float LifeSpanVariation { get; init; }
 
-    /// <summary>Declination reference axis. Declination=0 emits along this; the emitter-object transform then
-    /// orients it to world. Defaults to +Z (the convention for volume emitters, which carry no explicit axis) —
-    /// NOT +X, or the fountain jet shoots sideways. Mesh emitters override it with their authored Emission Axis.</summary>
+    /// <summary>Declination reference axis. Recovered FNV math treats declination as elevation, so π/2 emits
+    /// along this axis and zero emits in its perpendicular plane; the emitter-object transform then orients it
+    /// to world. Defaults to +Z for volume emitters. Mesh emitters override it with their authored Emission Axis.</summary>
     public Vector3 EmissionAxis { get; init; } = Vector3.UnitZ;
+
+    public ParticleVelocityType VelocityType { get; init; } = ParticleVelocityType.UseDirection;
+    public ParticleEmitFrom EmitFrom { get; init; } = ParticleEmitFrom.Vertices;
 
     // Volume params (only the relevant ones for the shape are populated).
     public float Width { get; init; }
@@ -92,17 +151,30 @@ internal sealed class ParticleEmitterDefinition : ParticleModifierDefinition
     /// can resolve its WORLD transform from the scene-graph walk instead of trusting the raw local read.</summary>
     public int EmitterObjectIndex { get; init; } = -1;
 
-    /// <summary>For mesh emitters: block indices of the emitter-volume meshes (NiPSysMeshEmitter.Emitter Meshes).
-    /// These are suppressed from rendering and used to derive the spawn volume (MVP: their AABB as a box).</summary>
+    /// <summary>For mesh emitters: block indices of the authored emission meshes
+    /// (<c>NiPSysMeshEmitter.Emitter Meshes</c>). These shapes are suppressed from ordinary rendering.</summary>
     public IReadOnlyList<int> EmitterMeshIndices { get; init; } = [];
 
-    /// <summary>For mesh emitters: the emitter-volume AABB (system-local), computed from the emitter mesh
-    /// geometry at extraction time (Phase 3). The baker spawns uniformly within this box. Zero ⇒ point emit.</summary>
+    /// <summary>Compatibility projection of the emitter geometry bounds in particle-system local space.</summary>
     public Vector3 MeshBoundsMin { get; set; }
     public Vector3 MeshBoundsMax { get; set; }
 
-    /// <summary>Steady-state birth rate (particles/sec). Resolved from the emitter controller, else estimated.</summary>
+    /// <summary>Emitter mesh geometry expressed in particle-system local space.</summary>
+    public IReadOnlyList<Vector3> MeshVertices { get; set; } = [];
+    public IReadOnlyList<Vector3> MeshNormals { get; set; } = [];
+    public IReadOnlyList<int> MeshTriangles { get; set; } = [];
+
+    /// <summary>
+    ///     Static birth-rate fallback (particles/sec) for definitions without an authored live controller.
+    ///     Parsed NiPSysEmitterCtlr data lives in <see cref="BirthRateController" /> instead.
+    /// </summary>
     public float BirthRate { get; set; }
+
+    /// <summary>
+    ///     Authored, time-sampled NiPSysEmitterCtlr birth-rate curve. Null means the controller graph was
+    ///     absent or could not be decoded safely, in which case the baker retains its bounded static fallback.
+    /// </summary>
+    public ParticleRateControllerDefinition? BirthRateController { get; set; }
 }
 
 /// <summary>The recognised per-tick modifier kinds the baker simulates.</summary>
@@ -119,6 +191,7 @@ internal enum ParticleModifierKind
     Rotation,
     Spawn,
     BoundUpdate,
+    Subtexture,
     Other,
 }
 
@@ -128,6 +201,7 @@ internal class ParticleModifierDefinition
     public ParticleModifierKind Kind { get; init; }
     public bool Active { get; init; } = true;
     public int BlockIndex { get; init; }
+    public string SourceTypeName { get; set; } = "NiPSysModifier";
 }
 
 /// <summary>NiPSysGrowFadeModifier: size ramps baseScale→1→baseScale over grow/fade times.</summary>
@@ -138,6 +212,49 @@ internal sealed class GrowFadeModifierDefinition : ParticleModifierDefinition
     public float FadeTime { get; init; }
     public ushort FadeGeneration { get; init; }
     public float BaseScale { get; init; } = 1f;
+}
+
+/// <summary>NiPSysRotationModifier authored initial angle and angular velocity.</summary>
+internal sealed class RotationModifierDefinition : ParticleModifierDefinition
+{
+    public float RotationSpeed { get; init; }
+    public float RotationSpeedVariation { get; init; }
+    public float RotationAngle { get; init; }
+    public float RotationAngleVariation { get; init; }
+    public bool RandomSpeedSign { get; init; }
+}
+
+/// <summary>BSPSysSubTexModifier atlas-frame controller.</summary>
+internal sealed class SubtextureModifierDefinition : ParticleModifierDefinition
+{
+    public float StartFrame { get; init; }
+    public float StartFrameFudge { get; init; }
+    public float EndFrame { get; init; }
+    public float LoopStartFrame { get; init; }
+    public float LoopStartFrameFudge { get; init; }
+    public float FrameCount { get; init; }
+    public float FrameCountFudge { get; init; }
+
+    internal int SampleFrame(float age, float seed, int atlasCount)
+    {
+        if (atlasCount <= 1)
+        {
+            return 0;
+        }
+
+        var start = StartFrame + StartFrameFudge * seed;
+        var end = EndFrame >= start ? EndFrame : atlasCount - 1;
+        var rate = MathF.Max(0f, FrameCount + FrameCountFudge * (seed - 0.5f));
+        var frame = start + age * rate;
+        if (frame > end)
+        {
+            var loopStart = Math.Clamp(LoopStartFrame + LoopStartFrameFudge * seed, start, end);
+            var loopLength = MathF.Max(1f, end - loopStart + 1f);
+            frame = loopStart + (frame - loopStart) % loopLength;
+        }
+
+        return Math.Clamp((int)MathF.Floor(frame), 0, atlasCount - 1);
+    }
 }
 
 /// <summary>NiPSysBombModifier: the vortex/blast force (whirlwind). Force applied along the symmetry dir.</summary>
@@ -159,6 +276,9 @@ internal sealed class GravityModifierDefinition : ParticleModifierDefinition
     public float Decay { get; init; }
     public float Strength { get; init; } = 1f;
     public int ForceType { get; init; }     // 0 planar, 1 spherical
+    public float Turbulence { get; init; }
+    public float TurbulenceScale { get; init; } = 1f;
+    public bool WorldAligned { get; init; }
     public Matrix4x4 GravityObjectTransform { get; init; } = Matrix4x4.Identity;
     public bool HasGravityObject { get; init; }
 }
@@ -248,11 +368,17 @@ internal sealed class ColorModifierDefinition : ParticleModifierDefinition
             color = initial;
         }
 
-        // Apply the fade envelope to ALL channels: alpha for alpha-blended particles, AND rgb so additive
-        // (One/One) glow particles dim toward black at birth/death instead of staying full-bright (the
-        // additive over-glow fix). A glow that fades to black is the standard look.
+        // FadeIn/FadeOut belong only to BSPSysSimpleColorModifier. NiPSysColorModifier already authors its
+        // complete RGBA curve in NiColorData and must not inherit the SimpleColor default 0.1/0.9 envelope.
+        if (!IsSimpleColor)
+        {
+            return color;
+        }
+
+        // BSPSysSimpleColor keeps the RGB three-key curve and applies FadeIn/FadeOut to opacity. Multiplying
+        // RGB by this envelope was a viewer invention which made alpha-blended dust change colour as it aged.
         var fade = FadeEnvelope(t);
-        return new Vector4(color.X * fade, color.Y * fade, color.Z * fade, color.W * fade);
+        return new Vector4(color.X, color.Y, color.Z, color.W * fade);
     }
 
     private Vector4 SampleGradient(float t)

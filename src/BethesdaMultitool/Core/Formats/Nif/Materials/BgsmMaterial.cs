@@ -6,8 +6,7 @@
 // Beyond texture paths, the render-state fields the engine gives material priority over the NIF's
 // inline properties are decoded: the alpha block (opacity, blend enable + modes, test enable +
 // threshold), two-sided, and — for lighting materials — specular color/strength/smoothness,
-// emissive, and environment mapping (cubemap slot 4 + scale). Remaining physical params (UV
-// tiling, wrinkles, some BGEM effect params) are intentionally skipped.
+// emissive, environment mapping, and the common-header UV offset/scale.
 
 using System.Buffers.Binary;
 using System.Numerics;
@@ -52,6 +51,16 @@ public sealed class BgsmMaterial
 
     /// <summary>Material opacity (engine-clamped 0–8; ≤ 1 in practice).</summary>
     public float Alpha { get; private set; } = 1f;
+
+    /// <summary>Static material UV offset from the common BGSM/BGEM header.</summary>
+    public Vector2 UvOffset { get; private set; }
+
+    /// <summary>Static material UV scale from the common BGSM/BGEM header.</summary>
+    public Vector2 UvScale { get; private set; } = Vector2.One;
+
+    /// <summary>Whether U/V addressing is tiled rather than clamped (common-header flags bits 0/1).</summary>
+    public bool TileU { get; private set; }
+    public bool TileV { get; private set; }
 
     /// <summary>Alpha blending enabled.</summary>
     public bool AlphaBlendEnabled { get; private set; }
@@ -237,6 +246,15 @@ public sealed class BgsmMaterial
         }
 
         var material = new BgsmMaterial(version, isEffect);
+        // fo76utils BGSMFile::loadBGSMFile: flags u32 @8, then (offsetU, offsetV, scaleU, scaleV)
+        // @12. Keep authored values losslessly within the engine's own [-256,256] guard range.
+        var commonFlags = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8));
+        material.TileU = (commonFlags & 1u) != 0;
+        material.TileV = (commonFlags & 2u) != 0;
+        material.UvOffset = new Vector2(
+            ReadClamped(data, 12, -256f, 256f), ReadClamped(data, 16, -256f, 256f));
+        material.UvScale = new Vector2(
+            ReadClamped(data, 20, -256f, 256f), ReadClamped(data, 24, -256f, 256f));
         material.ReadAlphaBlock(data);
         var endPos = material.ReadTexturePaths(data, pos, texturePathMap);
         if (isEffect)
@@ -422,6 +440,9 @@ public sealed class BgsmMaterial
 
     private static float ReadClamped01(byte[] data, int pos) =>
         Math.Clamp(BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos)), 0f, 1f);
+
+    private static float ReadClamped(byte[] data, int pos, float min, float max) =>
+        Math.Clamp(BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(pos)), min, max);
 
     /// <summary>
     ///     Reads the texture-path strings and returns the position just past the table. <paramref

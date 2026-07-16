@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -21,7 +22,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 ///             midpoint) and Night is solid outside the daylight span (<c>Sky::FillColorBlend</c>).
 ///             SIMPLIFICATION: the viewer holds the Day band solid through midday, whereas the engine
 ///             additionally cross-fades a separate daytime slot around solar noon — a 5th runtime band
-///             this 4-band NAM0 model does not carry. Skyrim's exact ±0.5h
+///             this 4-band NAM0 model does not carry. Skyrim's and Fallout 4's exact ±0.5h
 ///             <c>fDaytimeColorExtension</c> is applied by <see cref="Resolve" />; see
 ///             <see cref="SampleBand" />;</item>
 ///             <item>directional sun intensity is the daylight fraction, 0 below the horizon
@@ -64,6 +65,7 @@ public static class AtmosphereState
     /// <summary>The resolved per-frame atmosphere the GPU constant buffer mirrors.</summary>
     public readonly record struct Resolved(
         Vector3 SunWorldDirection,  // unit vector FROM the surface TOWARD the sun (+Z up)
+        Vector3 SunBillboardDirection, // recovered raw SunPos direction; FO4's light-only floor is excluded
         Vector3 SunColor,           // 0..1 RGB; zero when lighting is disabled or the sun is down
         float SunIntensity,         // 0 at/below the horizon → 1 across the day (engine daylight fraction)
         Vector3 AmbientColor,
@@ -74,7 +76,77 @@ public static class AtmosphereState
         float FogNear,
         float FogFar,
         float FogPower,             // distance-fog exponent (1 = linear), from WTHR FNAM day/night power
-        float FogMaxOpacity);       // max powered fog amount; Skyrim FNAM day/night max, else 1
+        float FogMaxOpacity,        // max powered fog amount; Skyrim FNAM day/night max, else 1
+        Vector4 SunDiscColor,       // authored WTHR Sun row (RGBA)
+        Vector4 StarsColor,         // authored WTHR Stars row (RGBA)
+        Vector4 SunGlareColor,      // modern WTHR Sun Glare row (RGBA)
+        Vector4 MoonGlareColor,     // modern WTHR Moon Glare row (RGBA)
+        float SunGlareIntensity,    // DATA.SunGlare normalized 0..1
+        float StarVisibility,       // Stars::Update controller alpha; independent of RGBX padding
+        ResolvedAmbientCube? DirectionalAmbient, // lossless DALC cube, null for legacy/single ambient
+        Vector3 SkyLowerColor,      // authored NAM0 SkyLower, retained for Atmosphere.nif vertex weights
+        Vector3 AuthoredHorizonColor) // authored NAM0 Horizon, before fallback-dome low-sun shaping
+    {
+        // WTHR celestial rows are RGBX. Their fourth byte is retained losslessly in the Vector4 values
+        // above, but it is padding rather than authored opacity. Visibility comes from Sun::Update and
+        // DATA.SunGlare; rendering must never let an RGBX padding byte gate a billboard.
+        public float SunDiscDrawAlpha => Math.Clamp(SunIntensity, 0f, 1f);
+        public float SunGlareDrawAlpha =>
+            Math.Clamp(SunIntensity, 0f, 1f) * Math.Clamp(SunGlareIntensity, 0f, 1f);
+        public float StarsDrawAlpha => Math.Clamp(StarVisibility, 0f, 1f);
+        public float MoonDiscDrawAlpha(float pathVisibility) => Math.Clamp(pathVisibility, 0f, 1f);
+    }
+
+    /// <summary>
+    ///     Runtime directional-ambient cube sampled from WTHR DALC. The retail lighting convention
+    ///     weights the signed X/Y/Z face by the squared corresponding normal component, so the three
+    ///     selected weights sum to one for a unit normal.
+    /// </summary>
+    public readonly record struct ResolvedAmbientCube(
+        Vector3 PositiveX,
+        Vector3 NegativeX,
+        Vector3 PositiveY,
+        Vector3 NegativeY,
+        Vector3 PositiveZ,
+        Vector3 NegativeZ)
+    {
+        public Vector3 Mean =>
+            (PositiveX + NegativeX + PositiveY + NegativeY + PositiveZ + NegativeZ) / 6f;
+
+        public Vector3 Evaluate(Vector3 normal)
+        {
+            if (!float.IsFinite(normal.X) || !float.IsFinite(normal.Y) || !float.IsFinite(normal.Z) ||
+                normal.LengthSquared() < 1e-12f)
+            {
+                return Mean;
+            }
+
+            var n = Vector3.Normalize(normal);
+            var squared = n * n;
+            return (n.X >= 0f ? PositiveX : NegativeX) * squared.X +
+                   (n.Y >= 0f ? PositiveY : NegativeY) * squared.Y +
+                   (n.Z >= 0f ? PositiveZ : NegativeZ) * squared.Z;
+        }
+    }
+
+    /// <summary>Semantic endpoints and destination weight selected by the weather color clock.</summary>
+    public readonly record struct WeatherBandBlend(
+        WeatherBandKind From,
+        WeatherBandKind To,
+        float ToWeight);
+
+    public enum WeatherBandKind
+    {
+        Night,
+        EarlySunrise,
+        Sunrise,
+        LateSunrise,
+        Day,
+        HighNoon,
+        EarlySunset,
+        Sunset,
+        LateSunset,
+    }
 
     /// <summary>
     ///     Interior-cell atmosphere from CELL XCLL lighting with LGTM lighting-template fallback —
@@ -166,6 +238,7 @@ public static class AtmosphereState
         var sunColor = lightingEnabled ? directional * Math.Clamp(fade, 0f, 4f) : Vector3.Zero;
         return new Resolved(
             dir,
+            dir,
             sunColor,
             lightingEnabled ? 1f : 0f,
             ambient,
@@ -176,7 +249,16 @@ public static class AtmosphereState
             fogNear,
             fogFar,
             MathF.Max(fogPower, 0.01f),
-            1f);
+            1f,
+            Vector4.One,
+            Vector4.Zero,
+            Vector4.One,
+            Vector4.One,
+            0f,
+            0f,
+            null,
+            fogColor,
+            fogColor);
     }
 
     // Default clear-day palette — placeholder for worldspaces with no WTHR NAM0 to drive the colors.
@@ -234,23 +316,42 @@ public static class AtmosphereState
         WeatherRecord? weather = null,
         ClimateTiming? climate = null,
         bool lightingEnabled = true,
-        Vector3? moonlightDirection = null,
-        BethesdaGame game = BethesdaGame.Unknown)
+        BethesdaGame game = BethesdaGame.Unknown,
+        float? sunXExtreme = null,
+        float? sunYExtreme = null,
+        float? sunAlphaTransitionHours = null)
     {
         var hour = WrapHour(gameHour);
         var (srB, srE, ssB, ssE) = NormalizeWindows(climate ?? ClimateTiming.Default);
+        var normalizedClimate = new ClimateTiming(srB, srE, ssB, ssE,
+            (climate ?? ClimateTiming.Default).MoonPhaseDays);
+        var sunProfile = SkySunProfile.ForGame(game);
 
-        // Skyrim widens weather color/fog interpolation by fDaytimeColorExtension=.5h. This is
+        // Skyrim and Fallout 4 widen weather-color interpolation by fDaytimeColorExtension=.5h. This is
         // independent of the sun's real horizon/daylight window: colors begin fading in before sunrise
         // and finish after sunset, while directional intensity continues to use the unextended span.
-        var weatherSrB = game == BethesdaGame.Skyrim ? MathF.Max(0f, srB - 0.5f) : srB;
-        var weatherSsE = game == BethesdaGame.Skyrim ? MathF.Min(23.99f, ssE + 0.5f) : ssE;
+        // FO4 retail proof: Sky::GetBeginSunriseColors subtracts the setting and clamps at 0, while
+        // Sky::GetEndSunsetColors adds it and clamps at 23.99 (Fallout4.exe 0x140658080/0x140658200);
+        // the setting object's default at 0x143718C00 is float32 0.5.
+        var (weatherSrB, weatherSsE) = ExtendWeatherColorWindow(game, srB, ssE);
 
         var sunDir = SunDirection(hour, srB, ssE);
-        // Engine daylight fraction (Sun::Update): 0 below the horizon, ramps across the sunrise/sunset
-        // windows, 1 through the day. Drives the directional sun intensity AND the placeholder day↔night
-        // blends (the NAM0 path encodes its own per-band intensity, so it does not use this).
-        var day = DaylightFraction(hour, srB, srE, ssB, ssE);
+        var sunBillboardDir = sunDir;
+        // Recovered Sun::Update alpha is centered on the climate sunrise/sunset midpoints and uses
+        // fSunAlphaTransTime as its full transition width. That is distinct from the authored color
+        // windows. Families without a recovered Sun path retain the previous windowed approximation.
+        var day = sunProfile.HasRecoveredTriangleProjection
+            ? sunProfile.ResolveVisibility(hour, normalizedClimate, sunAlphaTransitionHours)
+            : DaylightFraction(hour, srB, srE, ssB, ssE);
+        if (sunProfile.HasRecoveredTriangleProjection)
+        {
+            var rawBillboardPosition = sunProfile.ResolveTrianglePosition(
+                hour, normalizedClimate, sunXExtreme, sunYExtreme, sunAlphaTransitionHours);
+            if (rawBillboardPosition.LengthSquared() > 1e-6f)
+            {
+                sunBillboardDir = Vector3.Normalize(rawBillboardPosition);
+            }
+        }
 
         // Colors: when the weather carries NAM0 time-band colors, blend those by the hour via the
         // engine's windowed scheme (Sky::FillColorBlend); otherwise fall back to the placeholder day↔night
@@ -258,20 +359,20 @@ public static class AtmosphereState
         // the lighting scale; SkyUpper=0 / Fog=1 / SkyLower=7 per xEdit, corroborated by the 10-category
         // upload loop). Per channel: a missing/short NAM0 index falls back to the placeholder for that
         // channel only.
-        Vector3 sunColorBase, ambient, skyTop, skyHorizon, fogColor, fogFarColor;
+        Vector3 sunColorBase, ambient, skyTop, skyLower, authoredHorizon, skyHorizon, fogColor, fogFarColor;
         if (weather is { Colors.Count: > 0 } wc)
         {
             sunColorBase = BandOr(wc, WeatherColorType.Sunlight, hour, weatherSrB, srE, ssB, weatherSsE, DaySun);
             ambient = BandOr(wc, WeatherColorType.Ambient, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightAmbient, DayAmbient, day));
             skyTop = BandOr(wc, WeatherColorType.SkyUpper, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightTint, DaySkyTop, day));
-            var skyLowerBand = BandOr(wc, WeatherColorType.SkyLower, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightTint, DaySkyHorizon, day));
+            skyLower = BandOr(wc, WeatherColorType.SkyLower, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightTint, DaySkyHorizon, day));
             // Horizon glow: FNV authors the warm sunrise/sunset horizon in the SEPARATE NAM0 "Horizon"
             // band (index 8) — e.g. NVWastelandClear Sunset Horizon=(219,192,174) warm vs its blue
             // SkyUpper/SkyLower — which the dome gradient (SkyUpper↔SkyLower) otherwise drops, leaving the
             // sky blue at sunset ("no sunset lighting"). Fold the Horizon band into the dome's horizon,
             // gated by sun elevation so it only appears when the sun is low (zero at noon → the daytime
             // sky is unchanged), reproducing the warm low-sun horizon glow.
-            var horizonBand = BandOr(wc, WeatherColorType.Horizon, hour, weatherSrB, srE, ssB, weatherSsE, skyLowerBand);
+            authoredHorizon = BandOr(wc, WeatherColorType.Horizon, hour, weatherSrB, srE, ssB, weatherSsE, skyLower);
             // Glow tracks the sun's PROXIMITY to the horizon (|Z|), peaking at dawn/dusk and fading to
             // zero both at noon and in deep night. The old `1 - Z*1.5` gate saturated for the whole night
             // (sun far below ⇒ Z ≈ -1), folding the Horizon band into the dome at full strength after
@@ -280,7 +381,7 @@ public static class AtmosphereState
             // NVWastelandClear Horizon Midnight = (43,200,213) teal) since the engine only shows the
             // horizon glow around the low sun.
             var horizonGlow = HorizonGlow(hour, srB, ssE, sunDir.Z);
-            skyHorizon = Vector3.Lerp(skyLowerBand, horizonBand, horizonGlow * HorizonGlowStrength);
+            skyHorizon = Vector3.Lerp(skyLower, authoredHorizon, horizonGlow * HorizonGlowStrength);
             fogColor = BandOr(wc, WeatherColorType.Fog, hour, weatherSrB, srE, ssB, weatherSsE, Vector3.Lerp(NightTint, DayFog, day));
             // Skyrim's NiFogProperty receives two distinct authored colors. Category 12 is far fog;
             // category 2 is unrelated (and all-zero in SkyrimClear). Older ten-category weather falls
@@ -298,16 +399,25 @@ public static class AtmosphereState
             ambient = SampleBandV(NightAmbient, TwilightAmbient, DayAmbient, TwilightAmbient, hour, srB, srE, ssB, ssE);
             skyTop = SampleBandV(NightTint, TwilightSkyTop, DaySkyTop, TwilightSkyTop, hour, srB, srE, ssB, ssE);
             skyHorizon = SampleBandV(NightTint, TwilightSkyHorizon, DaySkyHorizon, TwilightSkyHorizon, hour, srB, srE, ssB, ssE);
+            skyLower = skyHorizon;
+            authoredHorizon = skyHorizon;
             fogColor = SampleBandV(NightTint, TwilightFog, DayFog, TwilightFog, hour, srB, srE, ssB, ssE);
             fogFarColor = fogColor;
         }
 
-        // Skyrim+/FO4 light exteriors from the weather's DALC directional-ambient cube, not the
-        // NAM0 "Ambient" row — FO4 authors that row near-black (CommonwealthClear Night = (2,2,2)
-        // vs its DALC night mean ≈ (18,26,34)), which rendered FO4 nights pitch black. The parse
-        // reduces the six-direction cube to its per-band mean; when present it wins over the NAM0
-        // row / placeholder. FO3/FNV weathers carry no DALC, so their ambient is unchanged.
-        if (weather?.DirectionalAmbient is { } ambientCube)
+        // Skyrim+/FO4 light exteriors from the weather's full DALC directional-ambient cube, not
+        // the NAM0 "Ambient" row — FO4 authors that row near-black (CommonwealthClear Night = (2,2,2)
+        // vs its DALC night mean ≈ (18,26,34)), which rendered FO4 nights pitch black. Retain all six
+        // signed directions for GPU normal-dependent shading; AmbientColor carries only the mean as
+        // a compatibility fallback for legacy/CPU consumers. FO3/FNV carry no DALC and stay unchanged.
+        ResolvedAmbientCube? directionalAmbient = null;
+        if (weather?.DirectionalAmbientCubes is { } authoredCubes)
+        {
+            directionalAmbient = SampleDirectionalAmbientCube(
+                authoredCubes, hour, weatherSrB, srE, ssB, weatherSsE);
+            ambient = directionalAmbient.Value.Mean;
+        }
+        else if (weather?.DirectionalAmbient is { } ambientCube)
         {
             ambient = SampleBand(ambientCube, hour, weatherSrB, srE, ssB, weatherSsE);
         }
@@ -336,9 +446,10 @@ public static class AtmosphereState
         // ambient-only night stands (both grounded in the FNV S3 audit).
         Vector3 sunColor;
         var sunIntensity = lightingEnabled ? day : 0f;
-        if (lightingEnabled && weather?.DirectionalAmbient is not null)
+        if (lightingEnabled && game is (BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield))
         {
-            sunDir = Fo4SunPathDirection(hour, srB, srE, ssB, ssE);
+            sunDir = Fo4SunPathDirection(
+                hour, srB, srE, ssB, ssE, sunXExtreme, sunYExtreme, sunAlphaTransitionHours);
             sunColor = sunColorBase;
         }
         else
@@ -346,9 +457,15 @@ public static class AtmosphereState
             // FNV/FO3: the engine's triangle-wave sun arc with the FNV GMST constants (noon apex ≈ 83°,
             // slight −Y/south offset) replaces the fitted 50° analytic arc. Other non-DALC games keep the
             // analytic arc until their constants are extracted.
-            if (game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3)
+            if (game == BethesdaGame.Skyrim)
             {
-                sunDir = FnvSunPathDirection(hour, srB, srE, ssB, ssE);
+                sunDir = SkyrimSunPathDirection(
+                    hour, srB, srE, ssB, ssE, sunXExtreme, sunYExtreme, sunAlphaTransitionHours);
+            }
+            else if (game is BethesdaGame.FalloutNewVegas or BethesdaGame.Fallout3)
+            {
+                sunDir = FnvSunPathDirection(
+                    hour, srB, srE, ssB, ssE, sunXExtreme, sunYExtreme, sunAlphaTransitionHours);
             }
 
             sunColor = lightingEnabled ? sunColorBase * day : Vector3.Zero;
@@ -393,8 +510,185 @@ public static class AtmosphereState
         fogPower = MathF.Max(fogPower, 0.01f);
         fogMaxOpacity = Math.Clamp(fogMaxOpacity, 0f, 1f);
 
-        return new Resolved(sunDir, sunColor, sunIntensity, ambient, skyTop, skyHorizon,
-            fogColor, fogFarColor, fogNear, fogFar, fogPower, fogMaxOpacity);
+        var sunDisc = BandOr4(weather, WeatherColorType.Sun, hour, weatherSrB, srE, ssB, weatherSsE,
+            new Vector4(sunColorBase, 1f));
+        var stars = BandOr4(weather, WeatherColorType.Stars, hour, weatherSrB, srE, ssB, weatherSsE,
+            new Vector4(0.45f, 0.50f, 0.62f, 1f));
+        var sunGlare = weather?.SunGlareColor is { } authoredSunGlare
+            ? SampleBand4(authoredSunGlare, hour, weatherSrB, srE, ssB, weatherSsE)
+            : BandOr4(weather, WeatherColorType.SunGlare, hour, weatherSrB, srE, ssB, weatherSsE,
+                sunDisc);
+        var moonGlare = weather?.MoonGlareColor is { } authoredMoonGlare
+            ? SampleBand4(authoredMoonGlare, hour, weatherSrB, srE, ssB, weatherSsE)
+            : BandOr4(weather, WeatherColorType.MoonGlare, hour, weatherSrB, srE, ssB, weatherSsE,
+                Vector4.One);
+        var sunGlareIntensity = (weather?.Data?.SunGlare ?? 255) / 255f;
+        var starVisibility = ResolveStarVisibility(hour, normalizedClimate, game);
+
+        return new Resolved(sunDir, sunBillboardDir, sunColor, sunIntensity, ambient, skyTop, skyHorizon,
+            fogColor, fogFarColor, fogNear, fogFar, fogPower, fogMaxOpacity,
+            sunDisc, stars, sunGlare, moonGlare, sunGlareIntensity, starVisibility, directionalAmbient,
+            skyLower, authoredHorizon);
+    }
+
+    /// <summary>
+    ///     Resolves both sides of the runtime <c>Sky</c> weather transition and blends the sampled
+    ///     per-frame atmosphere with <paramref name="currentWeatherWeight" />. This keeps all WTHR
+    ///     consumers—sky/fog colors, celestial rows, <c>DATA.SunGlare</c>, and DALC—on the same
+    ///     authoritative current/outgoing weight instead of transitioning image-space in isolation.
+    /// </summary>
+    public static Resolved ResolveWeatherTransition(
+        float gameHour,
+        WeatherRecord? currentWeather,
+        WeatherRecord? outgoingWeather,
+        float currentWeatherWeight,
+        ClimateTiming? climate = null,
+        bool lightingEnabled = true,
+        BethesdaGame game = BethesdaGame.Unknown,
+        float? sunXExtreme = null,
+        float? sunYExtreme = null,
+        float? sunAlphaTransitionTime = null)
+    {
+        var current = Resolve(gameHour, currentWeather, climate, lightingEnabled, game,
+            sunXExtreme, sunYExtreme, sunAlphaTransitionTime);
+        if (outgoingWeather is null)
+        {
+            return current;
+        }
+
+        var outgoing = Resolve(gameHour, outgoingWeather, climate, lightingEnabled, game,
+            sunXExtreme, sunYExtreme, sunAlphaTransitionTime);
+        var t = Math.Clamp(currentWeatherWeight, 0f, 1f);
+
+        static ResolvedAmbientCube Uniform(Vector3 value) => new(
+            value, value, value, value, value, value);
+
+        static ResolvedAmbientCube BlendCube(
+            ResolvedAmbientCube outgoing,
+            ResolvedAmbientCube current,
+            float weight) => new(
+            Vector3.Lerp(outgoing.PositiveX, current.PositiveX, weight),
+            Vector3.Lerp(outgoing.NegativeX, current.NegativeX, weight),
+            Vector3.Lerp(outgoing.PositiveY, current.PositiveY, weight),
+            Vector3.Lerp(outgoing.NegativeY, current.NegativeY, weight),
+            Vector3.Lerp(outgoing.PositiveZ, current.PositiveZ, weight),
+            Vector3.Lerp(outgoing.NegativeZ, current.NegativeZ, weight));
+
+        ResolvedAmbientCube? ambientCube = (outgoing.DirectionalAmbient, current.DirectionalAmbient) switch
+        {
+            (null, null) => null,
+            ({ } from, { } to) => BlendCube(from, to, t),
+            ({ } from, null) => BlendCube(from, Uniform(current.AmbientColor), t),
+            (null, { } to) => BlendCube(Uniform(outgoing.AmbientColor), to, t),
+        };
+
+        return new Resolved(
+            Vector3.Lerp(outgoing.SunWorldDirection, current.SunWorldDirection, t),
+            Vector3.Lerp(outgoing.SunBillboardDirection, current.SunBillboardDirection, t),
+            Vector3.Lerp(outgoing.SunColor, current.SunColor, t),
+            Lerp1(outgoing.SunIntensity, current.SunIntensity, t),
+            Vector3.Lerp(outgoing.AmbientColor, current.AmbientColor, t),
+            Vector3.Lerp(outgoing.SkyTopColor, current.SkyTopColor, t),
+            Vector3.Lerp(outgoing.SkyHorizonColor, current.SkyHorizonColor, t),
+            Vector3.Lerp(outgoing.FogColor, current.FogColor, t),
+            Vector3.Lerp(outgoing.FogFarColor, current.FogFarColor, t),
+            Lerp1(outgoing.FogNear, current.FogNear, t),
+            Lerp1(outgoing.FogFar, current.FogFar, t),
+            Lerp1(outgoing.FogPower, current.FogPower, t),
+            Lerp1(outgoing.FogMaxOpacity, current.FogMaxOpacity, t),
+            Vector4.Lerp(outgoing.SunDiscColor, current.SunDiscColor, t),
+            Vector4.Lerp(outgoing.StarsColor, current.StarsColor, t),
+            Vector4.Lerp(outgoing.SunGlareColor, current.SunGlareColor, t),
+            Vector4.Lerp(outgoing.MoonGlareColor, current.MoonGlareColor, t),
+            Lerp1(outgoing.SunGlareIntensity, current.SunGlareIntensity, t),
+            Lerp1(outgoing.StarVisibility, current.StarVisibility, t),
+            ambientCube,
+            Vector3.Lerp(outgoing.SkyLowerColor, current.SkyLowerColor, t),
+            Vector3.Lerp(outgoing.AuthoredHorizonColor, current.AuthoredHorizonColor, t));
+    }
+
+    /// <summary>Samples every authored DALC face with the same game-time schedule as weather colors.</summary>
+    internal static ResolvedAmbientCube SampleDirectionalAmbientCube(
+        WeatherTimeBands<WeatherAmbientCube> bands,
+        float hour,
+        float srB,
+        float srE,
+        float ssB,
+        float ssE)
+    {
+        static ResolvedAmbientCube Convert(WeatherAmbientCube cube) => new(
+            ToVec(cube.PositiveX), ToVec(cube.NegativeX),
+            ToVec(cube.PositiveY), ToVec(cube.NegativeY),
+            ToVec(cube.PositiveZ), ToVec(cube.NegativeZ));
+
+        var night = Convert(bands.Night);
+        var sunrise = Convert(bands.Sunrise);
+        var day = Convert(bands.Day);
+        var sunset = Convert(bands.Sunset);
+
+        if (bands.HasModernTransitions)
+        {
+            return SampleModernAmbientCube(
+                night,
+                Convert(bands.EarlySunrise ?? bands.Sunrise),
+                sunrise,
+                Convert(bands.LateSunrise ?? bands.Sunrise),
+                day,
+                Convert(bands.EarlySunset ?? bands.Sunset),
+                sunset,
+                Convert(bands.LateSunset ?? bands.Sunset),
+                hour, srB, srE, ssB, ssE);
+        }
+
+        ResolvedAmbientCube? highNoon = bands.HighNoon is { } high ? Convert(high) : null;
+        return SampleAmbientCube(night, sunrise, day, sunset, hour, srB, srE, ssB, ssE, highNoon);
+    }
+
+    private static ResolvedAmbientCube SampleAmbientCube(
+        ResolvedAmbientCube night,
+        ResolvedAmbientCube sunrise,
+        ResolvedAmbientCube day,
+        ResolvedAmbientCube sunset,
+        float hour,
+        float srB,
+        float srE,
+        float ssB,
+        float ssE,
+        ResolvedAmbientCube? highNoon)
+    {
+        Vector3 Face(Func<ResolvedAmbientCube, Vector3> select) =>
+            SampleBandV(select(night), select(sunrise), select(day), select(sunset),
+                hour, srB, srE, ssB, ssE, highNoon is { } high ? select(high) : null);
+
+        return new ResolvedAmbientCube(
+            Face(static c => c.PositiveX), Face(static c => c.NegativeX),
+            Face(static c => c.PositiveY), Face(static c => c.NegativeY),
+            Face(static c => c.PositiveZ), Face(static c => c.NegativeZ));
+    }
+
+    private static ResolvedAmbientCube SampleModernAmbientCube(
+        ResolvedAmbientCube night,
+        ResolvedAmbientCube earlySunrise,
+        ResolvedAmbientCube sunrise,
+        ResolvedAmbientCube lateSunrise,
+        ResolvedAmbientCube day,
+        ResolvedAmbientCube earlySunset,
+        ResolvedAmbientCube sunset,
+        ResolvedAmbientCube lateSunset,
+        float hour,
+        float srB,
+        float srE,
+        float ssB,
+        float ssE)
+    {
+        Vector3 Face(Func<ResolvedAmbientCube, Vector3> select) => SampleModernBandV(
+            select(night), select(earlySunrise), select(sunrise), select(lateSunrise), select(day),
+            select(earlySunset), select(sunset), select(lateSunset), hour, srB, srE, ssB, ssE);
+
+        return new ResolvedAmbientCube(
+            Face(static c => c.PositiveX), Face(static c => c.NegativeX),
+            Face(static c => c.PositiveY), Face(static c => c.NegativeY),
+            Face(static c => c.PositiveZ), Face(static c => c.NegativeZ));
     }
 
     // Clamps a climate's sunrise/sunset bounds to a strictly-ordered day (srB < srE < ssB < ssE, all in
@@ -407,6 +701,86 @@ public static class AtmosphereState
         var ssE = Math.Clamp(t.SunsetEndHour, srE + 0.2f, 24f);
         var ssB = Math.Clamp(t.SunsetBeginHour, srE + 0.1f, ssE - 0.1f);
         return (srB, srE, ssB, ssE);
+    }
+
+    private static (float sunriseBegin, float sunsetEnd) ExtendWeatherColorWindow(
+        BethesdaGame game, float sunriseBegin, float sunsetEnd)
+    {
+        // FO76/Starfield retain the modern eight-band record layout, but this timing offset has only
+        // been recovered from Skyrim and FO4 binaries. Keep unproven families on authored CLMT bounds.
+        if (game is not (BethesdaGame.Skyrim or BethesdaGame.Fallout4))
+        {
+            return (sunriseBegin, sunsetEnd);
+        }
+
+        const float daytimeColorExtension = 0.5f;
+        return (
+            MathF.Max(0f, sunriseBegin - daytimeColorExtension),
+            MathF.Min(23.99f, sunsetEnd + daytimeColorExtension));
+    }
+
+    /// <summary>
+    ///     Resolves the authored star-controller alpha. FO4 <c>Stars::Update</c> fades from fully
+    ///     visible at <c>GetBeginSunriseColors</c> to zero at its midpoint with sunrise end, then fades
+    ///     back from zero at the sunset-begin/end-colors midpoint to one at
+    ///     <c>GetEndSunsetColors</c>. Skyrim uses the same Creation-era color-window schedule. Other
+    ///     families retain the prior daylight-derived fallback until their controller is recovered.
+    /// </summary>
+    public static float ResolveStarVisibility(
+        float gameHour,
+        ClimateTiming? timing,
+        BethesdaGame game)
+    {
+        var hour = WrapHour(gameHour);
+        var (srB, srE, ssB, ssE) = NormalizeWindows(timing ?? ClimateTiming.Default);
+        if (game is BethesdaGame.Skyrim or BethesdaGame.Fallout4)
+        {
+            var (beginSunriseColors, endSunsetColors) = ExtendWeatherColorWindow(game, srB, ssE);
+            return ComputeCreationStarVisibility(
+                hour, beginSunriseColors, srE, ssB, endSunsetColors);
+        }
+
+        return Math.Clamp(1f - (DaylightFraction(hour, srB, srE, ssB, ssE) * 1.5f), 0f, 1f);
+    }
+
+    /// <summary>Pure FO4 <c>Stars::Update</c> alpha curve for independent reference vectors.</summary>
+    public static float ComputeCreationStarVisibility(
+        float gameHour,
+        float beginSunriseColors,
+        float sunriseEnd,
+        float sunsetBegin,
+        float endSunsetColors)
+    {
+        var hour = WrapHour(gameHour);
+        var sunriseFadeEnd = (beginSunriseColors + sunriseEnd) * 0.5f;
+        var sunsetFadeBegin = (sunsetBegin + endSunsetColors) * 0.5f;
+
+        if (!float.IsFinite(sunriseFadeEnd) || !float.IsFinite(sunsetFadeBegin) ||
+            sunriseFadeEnd <= beginSunriseColors || endSunsetColors <= sunsetFadeBegin)
+        {
+            return 0f;
+        }
+
+        if (hour <= beginSunriseColors || hour >= endSunsetColors)
+        {
+            return 1f;
+        }
+
+        if (hour < sunriseFadeEnd)
+        {
+            return Math.Clamp(
+                1f - ((hour - beginSunriseColors) / (sunriseFadeEnd - beginSunriseColors)),
+                0f, 1f);
+        }
+
+        if (hour <= sunsetFadeBegin)
+        {
+            return 0f;
+        }
+
+        return Math.Clamp(
+            (hour - sunsetFadeBegin) / (endSunsetColors - sunsetFadeBegin),
+            0f, 1f);
     }
 
     // Engine daylight fraction (Sun::Update): 0 outside the [sunriseBegin, sunsetEnd] daylight span,
@@ -515,9 +889,6 @@ public static class AtmosphereState
     // fSunXExtreme=400, fSunYExtreme=25, fSunAlphaTransTime=2h, fSunShadowMinAngle=30(°),
     // fSunShadowScale=0. The FO4 unit z is floored at fSunShadowMinAngle·DEG_TO_RAD — the engine compares
     // the unit-vector component against radians verbatim (≈ sin θ for small angles), reproduced exactly.
-    private const float Fo4SunXExtreme = 400f;
-    private const float Fo4SunYExtreme = 25f;
-    private const float Fo4SunAlphaTransTimeHours = 2f;
     private const float Fo4SunShadowMinAngleDegrees = 30f;
 
     // FNV GMSTs verified from FalloutNV.esm (2026-07-13): fSunXExtreme=800, fSunYExtreme=−100 → noon
@@ -526,12 +897,13 @@ public static class AtmosphereState
     // path; its GMSTs are unverified, so it rides the FNV values as a labeled stand-in. No z floor:
     // FNV has no shadow-min-angle clamp (FO4-only), and the night leg is unused (SunDirection's night
     // return keeps the (0,0,−1) convention the horizon-glow gating depends on).
-    private const float FnvSunXExtreme = 800f;
-    private const float FnvSunYExtreme = -100f;
-
-    internal static Vector3 Fo4SunPathDirection(float hour, float srB, float srE, float ssB, float ssE)
+    internal static Vector3 Fo4SunPathDirection(
+        float hour, float srB, float srE, float ssB, float ssE,
+        float? sunXExtreme = null, float? sunYExtreme = null, float? sunAlphaTransitionHours = null)
     {
-        var p = EngineSunTrianglePosition(hour, srB, srE, ssB, ssE, Fo4SunXExtreme, Fo4SunYExtreme);
+        var p = SkySunProfile.ForGame(BethesdaGame.Fallout4).ResolveTrianglePosition(
+            hour, new ClimateTiming(srB, srE, ssB, ssE),
+            sunXExtreme, sunYExtreme, sunAlphaTransitionHours);
         p = p.LengthSquared() > 1e-6f ? Vector3.Normalize(p) : Vector3.UnitZ;
         // Engine: z += fSunShadowScale·DEG_TO_RAD (default 0), then floor at fSunShadowMinAngle·DEG_TO_RAD.
         p.Z = MathF.Max(p.Z, Fo4SunShadowMinAngleDegrees * (MathF.PI / 180f));
@@ -539,39 +911,145 @@ public static class AtmosphereState
     }
 
     /// <summary>
+    ///     FO4-family <c>Moon::Update</c> uses the same recovered triangle-wave position as the sun
+    ///     object, but does not apply the directional-light shadow-minimum Z floor.
+    /// </summary>
+    internal static Vector3 Fo4MoonPathDirection(float hour, float srB, float srE, float ssB, float ssE)
+    {
+        var p = SkySunProfile.ForGame(BethesdaGame.Fallout4).ResolveTrianglePosition(
+            hour, new ClimateTiming(srB, srE, ssB, ssE));
+        return p.LengthSquared() > 1e-6f ? Vector3.Normalize(p) : Vector3.UnitZ;
+    }
+
+    /// <summary>
+    ///     Skyrim's recovered <c>Sun::Update</c> uses the same direct triangle-path translation as FO4,
+    ///     but its legacy directional light does not apply FO4's shadow-minimum Z floor.
+    /// </summary>
+    internal static Vector3 SkyrimSunPathDirection(
+        float hour, float srB, float srE, float ssB, float ssE,
+        float? sunXExtreme = null, float? sunYExtreme = null, float? sunAlphaTransitionHours = null)
+    {
+        if (hour <= srB || hour >= ssE)
+        {
+            return new Vector3(0f, 0f, -1f);
+        }
+
+        var p = SkySunProfile.ForGame(BethesdaGame.Skyrim).ResolveTrianglePosition(
+            hour, new ClimateTiming(srB, srE, ssB, ssE),
+            sunXExtreme, sunYExtreme, sunAlphaTransitionHours);
+        return p.LengthSquared() > 1e-6f ? Vector3.Normalize(p) : Vector3.UnitZ;
+    }
+
+    /// <summary>
     ///     FNV/FO3 daytime sun direction: the engine triangle wave with the FNV GMST constants. Only the
     ///     day leg is served (night keeps the analytic path's (0,0,−1) so the horizon-glow/midnight gates
     ///     behave); callers pass the same climate windows as <see cref="SunDirection" />.
     /// </summary>
-    internal static Vector3 FnvSunPathDirection(float hour, float srB, float srE, float ssB, float ssE)
+    internal static Vector3 FnvSunPathDirection(
+        float hour, float srB, float srE, float ssB, float ssE,
+        float? sunXExtreme = null, float? sunYExtreme = null, float? sunAlphaTransitionHours = null)
     {
         if (hour <= srB || hour >= ssE)
         {
             return new Vector3(0f, 0f, -1f); // night: below the horizon (directional colour fades to 0)
         }
 
-        var p = EngineSunTrianglePosition(hour, srB, srE, ssB, ssE, FnvSunXExtreme, FnvSunYExtreme);
+        var p = SkySunProfile.ForGame(BethesdaGame.FalloutNewVegas).ResolveTrianglePosition(
+            hour, new ClimateTiming(srB, srE, ssB, ssE),
+            sunXExtreme, sunYExtreme, sunAlphaTransitionHours);
         return p.LengthSquared() > 1e-6f ? Vector3.Normalize(p) : Vector3.UnitZ;
     }
 
-    private static Vector3 EngineSunTrianglePosition(
-        float hour, float srB, float srE, float ssB, float ssE, float sunXExtreme, float sunYExtreme)
+    /// <summary>
+    ///     Returns the exact semantic color-band segment selected by the same schedules used below.
+    ///     This is capture/profiler telemetry: it makes a wrong authored band distinguishable from a
+    ///     wrong interpolation weight without re-running production color math to invent an expected RGB.
+    /// </summary>
+    public static WeatherBandBlend SelectWeatherBandBlend(
+        float gameHour,
+        ClimateTiming? timing,
+        BethesdaGame game,
+        bool hasModernTransitions,
+        bool hasAuthoredHighNoon)
     {
-        var dayStart = ((srB + srE) * 0.5f) - (Fo4SunAlphaTransTimeHours * 0.5f);
-        var dayEnd = ((ssB + ssE) * 0.5f) + (Fo4SunAlphaTransTimeHours * 0.5f);
-        float x;
-        if (hour >= dayStart && hour <= dayEnd)
+        var (srB, srE, ssB, ssE) = NormalizeWindows(timing ?? ClimateTiming.Default);
+        (srB, ssE) = ExtendWeatherColorWindow(game, srB, ssE);
+        var hour = WrapHour(gameHour);
+
+        static WeatherBandBlend Solid(WeatherBandKind band) => new(band, band, 0f);
+        static WeatherBandBlend Segment(WeatherBandKind from, WeatherBandKind to, float weight) =>
+            new(from, to, Math.Clamp(weight, 0f, 1f));
+
+        if (hasModernTransitions)
         {
-            x = 1f - ((hour - dayStart) / (dayEnd - dayStart)) * 2f;      // +1 at dawn → −1 at dusk
-        }
-        else
-        {
-            var sinceDusk = hour > dayEnd ? hour - dayEnd : (hour + 24f) - dayEnd;
-            x = (sinceDusk / (24f - (dayEnd - dayStart))) * 2f - 1f;      // −1 at dusk → +1 at dawn
+            if (hour < srB || hour >= ssE) return Solid(WeatherBandKind.Night);
+            if (hour < srE)
+            {
+                return SelectFive(
+                    WeatherBandKind.Night,
+                    WeatherBandKind.EarlySunrise,
+                    WeatherBandKind.Sunrise,
+                    WeatherBandKind.LateSunrise,
+                    WeatherBandKind.Day,
+                    (hour - srB) / (srE - srB));
+            }
+
+            if (hour < ssB) return Solid(WeatherBandKind.Day);
+            return SelectFive(
+                WeatherBandKind.Day,
+                WeatherBandKind.EarlySunset,
+                WeatherBandKind.Sunset,
+                WeatherBandKind.LateSunset,
+                WeatherBandKind.Night,
+                (hour - ssB) / (ssE - ssB));
         }
 
-        var px = x * sunXExtreme;
-        return new Vector3(px, sunYExtreme, MathF.Abs(sunXExtreme) - MathF.Abs(px));
+        var srMid = (srB + srE) * 0.5f;
+        var ssMid = (ssB + ssE) * 0.5f;
+        if (hour < srB || hour >= ssE) return Solid(WeatherBandKind.Night);
+        if (hour < srMid)
+        {
+            return Segment(WeatherBandKind.Night, WeatherBandKind.Sunrise,
+                (hour - srB) / (srMid - srB));
+        }
+        if (hour < srE)
+        {
+            return Segment(WeatherBandKind.Sunrise, WeatherBandKind.Day,
+                (hour - srMid) / (srE - srMid));
+        }
+        if (hour < ssB)
+        {
+            if (!hasAuthoredHighNoon || ssB - srE < 0.2f) return Solid(WeatherBandKind.Day);
+            var solarNoon = (srB + ssE) * 0.5f;
+            var noon = Math.Clamp(solarNoon, srE + 0.05f, ssB - 0.05f);
+            return hour < noon
+                ? Segment(WeatherBandKind.Day, WeatherBandKind.HighNoon,
+                    (hour - srE) / (noon - srE))
+                : Segment(WeatherBandKind.HighNoon, WeatherBandKind.Day,
+                    (hour - noon) / (ssB - noon));
+        }
+        if (hour < ssMid)
+        {
+            return Segment(WeatherBandKind.Day, WeatherBandKind.Sunset,
+                (hour - ssB) / (ssMid - ssB));
+        }
+        return Segment(WeatherBandKind.Sunset, WeatherBandKind.Night,
+            (hour - ssMid) / (ssE - ssMid));
+
+        WeatherBandBlend SelectFive(
+            WeatherBandKind a,
+            WeatherBandKind b,
+            WeatherBandKind c,
+            WeatherBandKind d,
+            WeatherBandKind e,
+            float t)
+        {
+            var x = Math.Clamp(t, 0f, 1f) * 4f;
+            if (x < 1f) return Segment(a, b, x);
+            if (x < 2f) return Segment(b, c, x - 1f);
+            if (x < 3f) return Segment(c, d, x - 2f);
+            return Segment(d, e, x - 3f);
+        }
     }
 
     // --- WTHR NAM0 time-band sampling (Sky::FillColorBlend) -------------------------------------------
@@ -584,36 +1062,62 @@ public static class AtmosphereState
         return i >= 0 && i < w.Colors.Count ? SampleBand(w.Colors[i], hour, srB, srE, ssB, ssE) : fallback;
     }
 
+    private static Vector4 BandOr4(WeatherRecord? w, WeatherColorType type, float hour,
+        float srB, float srE, float ssB, float ssE, Vector4 fallback)
+    {
+        if (w is null)
+        {
+            return fallback;
+        }
+
+        var i = (int)type;
+        return i >= 0 && i < w.Colors.Count ? SampleBand4(w.Colors[i], hour, srB, srE, ssB, ssE) : fallback;
+    }
+
     // Blends the NAM0 time bands across the 24h clock, grounded in Sky::FillColorBlend: the colors
     // cross-fade only WITHIN the sunrise / sunset windows, pivoting at each window's midpoint. A band reads:
-    //   night→midnight→night  outside the daylight span, pivoting at solar midnight (FNV's Midnight slot);
+    //   solid Night outside the daylight span (FNV's stored Midnight field is not a color band);
     //   night→sunrise  over sunriseBegin..sunriseMid, sunrise→day over sunriseMid..sunriseEnd;
     //   day→highNoon→day  over sunriseEnd..sunsetBegin, pivoting at solar noon (FNV's High Noon slot) —
     //     this is the engine's "extra daytime slot pivoting at a stored solar-noon time" previously
     //     simplified to solid Day;
     //   day→sunset over sunsetBegin..sunsetMid, sunset→night over sunsetMid..sunsetEnd.
-    // FNV authors the two peak slots per fopdoc; an all-zero peak means "unused" and falls back to
-    // Day/Night, which also keeps FO3 (4-band NAM0) and the placeholder palette on the old solid segments.
+    // FNV authors the HighNoon slot per fopdoc; an all-zero peak means "unused" and falls back to Day.
+    // Modern eight-band records insert authored early/late colors at the quarter points of each climate
+    // transition window, retaining every stored band instead of skipping them.
     // Every segment denominator is a window half-width, provably > 0 after NormalizeWindows (the peak
     // pivots are clamped into their spans; degenerate spans fall back to the solid segment).
     private static Vector3 SampleBand(WeatherColor c, float hour, float srB, float srE, float ssB, float ssE)
     {
         var day = ToVec(c.Day);
         var night = ToVec(c.Night);
-        Vector3? highNoon = IsAuthored(c.HighNoon) ? ToVec(c.HighNoon) : null;
-        Vector3? midnight = IsAuthored(c.Midnight) ? ToVec(c.Midnight) : null;
+        if (c.Bands.HasModernTransitions)
+        {
+            return SampleModernBandV(
+                night,
+                ToVec(c.EarlySunrise ?? c.Sunrise),
+                ToVec(c.Sunrise),
+                ToVec(c.LateSunrise ?? c.Sunrise),
+                day,
+                ToVec(c.EarlySunset ?? c.Sunset),
+                ToVec(c.Sunset),
+                ToVec(c.LateSunset ?? c.Sunset),
+                hour, srB, srE, ssB, ssE);
+        }
+
+        Vector3? highNoon = c.Bands.HighNoon is { } hn && IsAuthored(hn) ? ToVec(hn) : null;
         return SampleBandV(night, ToVec(c.Sunrise), day, ToVec(c.Sunset),
-            hour, srB, srE, ssB, ssE, highNoon, midnight);
+            hour, srB, srE, ssB, ssE, highNoon);
     }
 
     // fopdoc FNV WTHR: a (0,0,0) High Noon / Midnight color is authored-empty — the engine uses Day/Night.
     private static bool IsAuthored(WeatherRgba c) => c.R != 0 || c.G != 0 || c.B != 0;
 
     // Vector3 form of the time-band blend, shared by the NAM0 path (above) and the placeholder palette.
-    // highNoon/midnight are the optional FNV peak slots; null keeps the segment solid (4-band behavior).
+    // highNoon is the optional FNV daytime peak slot; null keeps the day segment solid.
     private static Vector3 SampleBandV(Vector3 night, Vector3 sunrise, Vector3 day, Vector3 sunset,
         float hour, float srB, float srE, float ssB, float ssE,
-        Vector3? highNoon = null, Vector3? midnight = null)
+        Vector3? highNoon = null)
     {
         var srMid = (srB + srE) * 0.5f;
         var ssMid = (ssB + ssE) * 0.5f;
@@ -621,18 +1125,7 @@ public static class AtmosphereState
 
         if (hour < srB || hour >= ssE)
         {
-            // Night span [ssE .. srB+24], pivoting at solar midnight: Night → Midnight → Night.
-            var span = (srB + 24f) - ssE;
-            if (midnight is not { } mid || span < 0.2f)
-            {
-                return night; // no authored Midnight (or degenerate span): solid night, the old behavior
-            }
-
-            var h = hour < srB ? hour + 24f : hour; // unwrap onto [ssE, srB+24]
-            var solarMidnight = Math.Clamp(solarNoon + 12f, ssE + 0.05f, srB + 24f - 0.05f);
-            return h < solarMidnight
-                ? Vector3.Lerp(night, mid, (h - ssE) / (solarMidnight - ssE))
-                : Vector3.Lerp(mid, night, (h - solarMidnight) / (srB + 24f - solarMidnight));
+            return night;
         }
 
         if (hour < srMid)
@@ -667,6 +1160,32 @@ public static class AtmosphereState
         return Vector3.Lerp(sunset, night, (hour - ssMid) / (ssE - ssMid));
     }
 
+    private static Vector3 SampleModernBandV(
+        Vector3 night, Vector3 earlySunrise, Vector3 sunrise, Vector3 lateSunrise, Vector3 day,
+        Vector3 earlySunset, Vector3 sunset, Vector3 lateSunset,
+        float hour, float srB, float srE, float ssB, float ssE)
+    {
+        if (hour < srB || hour >= ssE) return night;
+        if (hour < srE)
+        {
+            var t = (hour - srB) / (srE - srB);
+            return SampleFive(night, earlySunrise, sunrise, lateSunrise, day, t);
+        }
+
+        if (hour < ssB) return day;
+        var sunsetT = (hour - ssB) / (ssE - ssB);
+        return SampleFive(day, earlySunset, sunset, lateSunset, night, sunsetT);
+    }
+
+    private static Vector3 SampleFive(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 e, float t)
+    {
+        var x = Math.Clamp(t, 0f, 1f) * 4f;
+        if (x < 1f) return Vector3.Lerp(a, b, x);
+        if (x < 2f) return Vector3.Lerp(b, c, x - 1f);
+        if (x < 3f) return Vector3.Lerp(c, d, x - 2f);
+        return Vector3.Lerp(d, e, x - 3f);
+    }
+
     private static Vector3 ToVec(WeatherRgba c) => new(c.R / 255f, c.G / 255f, c.B / 255f);
 
     /// <summary>
@@ -675,15 +1194,16 @@ public static class AtmosphereState
     ///     Public so the sky-geometry renderer can resolve each cloud layer's engine per-draw color uniform
     ///     (SkyShader::SetupGeometryConstants) per frame, instead of a guessed daylight tint.
     /// </summary>
-    public static Vector4 SampleCloudColor(WeatherColor c, float gameHour, ClimateTiming? timing)
+    public static Vector4 SampleCloudColor(
+        WeatherColor c, float gameHour, ClimateTiming? timing, BethesdaGame game = BethesdaGame.Unknown)
     {
         var (srB, srE, ssB, ssE) = NormalizeWindows(timing ?? ClimateTiming.Default);
-        return SampleBand4(c, WrapHour(gameHour), srB, srE, ssB, ssE);
+        var (weatherSrB, weatherSsE) = ExtendWeatherColorWindow(game, srB, ssE);
+        return SampleBand4(c, WrapHour(gameHour), weatherSrB, srE, ssB, weatherSsE);
     }
 
-    // RGBA twin of SampleBand — identical windowed blend (incl. the FNV High Noon / Midnight peak slots),
-    // but keeps the alpha channel (cloud opacity). A peak is "authored" if ANY of RGBA is non-zero (alpha
-    // is opacity here, so an authored invisible-at-midnight layer is meaningful).
+    // RGBA twin of SampleBand — identical windowed blend, retaining the modern transition bands and the
+    // FNV HighNoon color while treating FNV Midnight as stored metadata rather than a color band.
     private static Vector4 SampleBand4(WeatherColor c, float hour, float srB, float srE, float ssB, float ssE)
     {
         var srMid = (srB + srE) * 0.5f;
@@ -694,25 +1214,41 @@ public static class AtmosphereState
         var day = ToVec4(c.Day);
         var sunset = ToVec4(c.Sunset);
 
+        if (c.Bands.HasModernTransitions)
+        {
+            if (hour < srB || hour >= ssE) return night;
+            if (hour < srE)
+            {
+                return SampleFive(
+                    night,
+                    ToVec4(c.EarlySunrise ?? c.Sunrise),
+                    sunrise,
+                    ToVec4(c.LateSunrise ?? c.Sunrise),
+                    day,
+                    (hour - srB) / (srE - srB));
+            }
+
+            if (hour < ssB) return day;
+            return SampleFive(
+                day,
+                ToVec4(c.EarlySunset ?? c.Sunset),
+                sunset,
+                ToVec4(c.LateSunset ?? c.Sunset),
+                night,
+                (hour - ssB) / (ssE - ssB));
+        }
+
         if (hour < srB || hour >= ssE)
         {
-            var span = (srB + 24f) - ssE;
-            var m = c.Midnight;
-            if ((m.R | m.G | m.B | m.A) == 0 || span < 0.2f) return night;
-            var mid4 = ToVec4(m);
-            var h = hour < srB ? hour + 24f : hour;
-            var solarMidnight = Math.Clamp(solarNoon + 12f, ssE + 0.05f, srB + 24f - 0.05f);
-            return h < solarMidnight
-                ? Vector4.Lerp(night, mid4, (h - ssE) / (solarMidnight - ssE))
-                : Vector4.Lerp(mid4, night, (h - solarMidnight) / (srB + 24f - solarMidnight));
+            return night;
         }
 
         if (hour < srMid) return Vector4.Lerp(night, sunrise, (hour - srB) / (srMid - srB));
         if (hour < srE) return Vector4.Lerp(sunrise, day, (hour - srMid) / (srE - srMid));
         if (hour < ssB)
         {
-            var hn = c.HighNoon;
-            if ((hn.R | hn.G | hn.B | hn.A) == 0 || ssB - srE < 0.2f) return day;
+            if (c.Bands.HighNoon is not { } hn ||
+                (hn.R | hn.G | hn.B | hn.A) == 0 || ssB - srE < 0.2f) return day;
             var hn4 = ToVec4(hn);
             var noon = Math.Clamp(solarNoon, srE + 0.05f, ssB - 0.05f);
             return hour < noon
@@ -724,6 +1260,15 @@ public static class AtmosphereState
         return Vector4.Lerp(sunset, night, (hour - ssMid) / (ssE - ssMid));
     }
 
+    private static Vector4 SampleFive(Vector4 a, Vector4 b, Vector4 c, Vector4 d, Vector4 e, float t)
+    {
+        var x = Math.Clamp(t, 0f, 1f) * 4f;
+        if (x < 1f) return Vector4.Lerp(a, b, x);
+        if (x < 2f) return Vector4.Lerp(b, c, x - 1f);
+        if (x < 3f) return Vector4.Lerp(c, d, x - 2f);
+        return Vector4.Lerp(d, e, x - 3f);
+    }
+
     private static Vector4 ToVec4(WeatherRgba c) => new(c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f);
 
     /// <summary>
@@ -733,18 +1278,53 @@ public static class AtmosphereState
     ///     others with fractions). Public so the sky-geometry renderer can apply each cloud layer's real
     ///     opacity instead of a flat constant.
     /// </summary>
-    public static float SampleCloudAlpha(WeatherCloudAlpha a, float gameHour, ClimateTiming? timing)
+    public static float SampleCloudAlpha(
+        WeatherCloudAlpha a, float gameHour, ClimateTiming? timing, BethesdaGame game = BethesdaGame.Unknown)
     {
         var (srB, srE, ssB, ssE) = NormalizeWindows(timing ?? ClimateTiming.Default);
+        (srB, ssE) = ExtendWeatherColorWindow(game, srB, ssE);
         var hour = WrapHour(gameHour);
         var srMid = (srB + srE) * 0.5f;
         var ssMid = (ssB + ssE) * 0.5f;
+        if (a.Bands.HasModernTransitions)
+        {
+            if (hour < srB || hour >= ssE) return a.Night;
+            if (hour < srE)
+            {
+                return SampleFive(
+                    a.Night,
+                    a.EarlySunrise ?? a.Sunrise,
+                    a.Sunrise,
+                    a.LateSunrise ?? a.Sunrise,
+                    a.Day,
+                    (hour - srB) / (srE - srB));
+            }
+
+            if (hour < ssB) return a.Day;
+            return SampleFive(
+                a.Day,
+                a.EarlySunset ?? a.Sunset,
+                a.Sunset,
+                a.LateSunset ?? a.Sunset,
+                a.Night,
+                (hour - ssB) / (ssE - ssB));
+        }
+
         if (hour < srB || hour >= ssE) return a.Night;
         if (hour < srMid) return Lerp1(a.Night, a.Sunrise, (hour - srB) / (srMid - srB));
         if (hour < srE) return Lerp1(a.Sunrise, a.Day, (hour - srMid) / (srE - srMid));
         if (hour < ssB) return a.Day;
         if (hour < ssMid) return Lerp1(a.Day, a.Sunset, (hour - ssB) / (ssMid - ssB));
         return Lerp1(a.Sunset, a.Night, (hour - ssMid) / (ssE - ssMid));
+    }
+
+    private static float SampleFive(float a, float b, float c, float d, float e, float t)
+    {
+        var x = Math.Clamp(t, 0f, 1f) * 4f;
+        if (x < 1f) return Lerp1(a, b, x);
+        if (x < 2f) return Lerp1(b, c, x - 1f);
+        if (x < 3f) return Lerp1(c, d, x - 2f);
+        return Lerp1(d, e, x - 3f);
     }
 
     private static float Lerp1(float a, float b, float t) => a + ((b - a) * t);

@@ -58,6 +58,12 @@ cbuffer Atmosphere : register(b3)
     float4 uShadowParams1;
     float4 uShadowParams2;
     float4 uShadowParams3;
+    float4 uAmbientPositiveX;  // w = full DALC cube present
+    float4 uAmbientNegativeX;
+    float4 uAmbientPositiveY;
+    float4 uAmbientNegativeY;
+    float4 uAmbientPositiveZ;
+    float4 uAmbientNegativeZ;
 };
 
 // Must stay layout-identical to reference.frag.hlsl and GpuPointLight.
@@ -200,8 +206,17 @@ float3 AtmosphereLight(float3 N, float3 worldPos, float sunShadow)
     // (GameProfile.AmbientLightScale) or they re-imbalance at night — that invariant stands regardless of
     // the value. Falls back to 1.0 when the slot is unset.
     float kAmbientScale = uAmbientColor.w > 0.0001 ? uAmbientColor.w : 1.0;
+    float3 unitNormal = normalize(N);
+    float3 ambient = uAmbientColor.rgb;
+    if (uAmbientPositiveX.w > 0.5)
+    {
+        float3 normalSquared = unitNormal * unitNormal;
+        ambient = (unitNormal.x >= 0.0 ? uAmbientPositiveX.rgb : uAmbientNegativeX.rgb) * normalSquared.x +
+                  (unitNormal.y >= 0.0 ? uAmbientPositiveY.rgb : uAmbientNegativeY.rgb) * normalSquared.y +
+                  (unitNormal.z >= 0.0 ? uAmbientPositiveZ.rgb : uAmbientNegativeZ.rgb) * normalSquared.z;
+    }
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
-    float3 shade = uAmbientColor.rgb * kAmbientScale +
+    float3 shade = ambient * kAmbientScale +
         uSunColorLighting.rgb * (ndotl * sunShadow) +
         PlacedLightContribution(N, worldPos);
     return max(shade, 0.0);

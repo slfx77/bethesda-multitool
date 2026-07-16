@@ -7,17 +7,19 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 ///     The shader path the water renderer compiles + selects for a game. FNV's <c>WATER000.pso</c> and
 ///     Skyrim's <c>BSWaterShader</c> (disassembled from <c>Skyrim - Shaders.bsa</c> →
 ///     <c>shaders001.fxp</c>; see <c>tools/GhidraProject/skyrim_water_pixel_shader_decompiled.txt</c>)
-///     are the SAME shader on their RT-free path — identical Shallow→Deep body, Schlick fresnel, dual
-///     sun/sky specular — so FO3/Skyrim(+) share <see cref="FnvWater000" /> and their per-game fidelity
-///     is the WATR DNAM parse. Oblivion's <c>WATER000.pso</c> genuinely DIVERGES
+///     share the recovered RT-free color core — Shallow→Deep body, Schlick fresnel, and dual sun/sky
+///     specular — so the current FO3/FNV/Skyrim implementation shares <see cref="FnvWater000" />.
+///     This is not a claim of full shader/input identity: Skyrim keeps three independent authored normal
+///     inputs and Creation-era constants, while FNV uses its dedicated noise prepass and legacy output
+///     contract. Oblivion's <c>WATER000.pso</c> genuinely diverges
 ///     (<c>tools/GhidraProject/oblivion_water_pixel_shader_decompiled.txt</c>): the body blends
 ///     Deep→Shallow by view angle (N·V) rather than the depth column, and the specular is a single sun
 ///     glint — hence its own variant.
 /// </summary>
 public enum WaterShaderVariant
 {
-    /// <summary>The RT-free <c>BSWaterShader</c> math (FNV PC <c>WATER000.pso</c>) — FO3/FNV/Skyrim+,
-    /// and the fallback for games without their own decompiled water shader.</summary>
+    /// <summary>The shared recovered RT-free color core used by FO3/FNV and the bounded Skyrim path;
+    /// game-specific normal/prepass/input contracts remain outside this variant selector.</summary>
     FnvWater000,
 
     /// <summary>Oblivion's <c>WATER000.pso</c> on the RT-free path: view-angle (N·V) Deep→Shallow body,
@@ -71,8 +73,9 @@ public sealed record WaterProfile
     /// ~coplanar resolves in the water's favour instead of z-fighting (3D-2). Tiny vs the DepthFalloff.</summary>
     public float DepthTieBiasWorldUnits { get; init; }
 
-    /// <summary>Frames/second of the <see cref="WaterShaderVariant.MorrowindWater" /> surface-texture
-    /// cycle (<c>[Water] SurfaceFPS</c>). 0 for every other variant (no frame cycle).</summary>
+    /// <summary>Frames/second of the legacy <c>water00..31.dds</c> cycle. Morrowind samples it as
+    /// the fixed-function diffuse surface; Oblivion samples it as WATER000's global NormalMap.
+    /// Both shipped INIs specify 12 FPS. Zero means no frame cycle.</summary>
     public float SurfaceFrameFps { get; init; }
 
     /// <summary>Surface opacity of the <see cref="WaterShaderVariant.MorrowindWater" /> plane
@@ -121,6 +124,7 @@ public sealed record WaterProfile
     public static readonly WaterProfile Oblivion = Fnv with
     {
         ShaderVariant = WaterShaderVariant.OblivionWater000,
+        SurfaceFrameFps = 12f, // Oblivion_default.ini [Water] uSurfaceFPS=12
     };
 
     /// <summary>

@@ -63,6 +63,26 @@ internal static class EnvironmentVariables
         public const string Worldspace = "FALLOUT_VIEWER_WORLDSPACE";
         public const string DumpReference = "FALLOUT_VIEWER_DUMP_REFR";
 
+        /// <summary>
+        ///     Explicit opt-in for the lazy FO4/FO76 dynamic-water architecture. Unset keeps the
+        ///     established stand-in pipeline byte-for-byte; initialization or per-frame prepass
+        ///     failure also falls back to it.
+        /// </summary>
+        public const string ModernWater = "FALLOUT_VIEWER_MODERN_WATER";
+
+        /// <summary>
+        ///     Explicit opt-in for the evidence-backed Skyrim/FO4-family imagespace increment. Unset
+        ///     retains GammaACES while modern record blending and shader stages complete capture gates.
+        /// </summary>
+        public const string ModernImageSpace = "FALLOUT_VIEWER_MODERN_IMAGESPACE";
+
+        /// <summary>
+        ///     Explicit opt-in for authored-sky architectural replacements: loading the default
+        ///     Atmosphere.nif layer and uploading the full WTHR DALC directional-ambient cube.
+        ///     Unset preserves the procedural atmosphere and flat ambient compatibility paths.
+        /// </summary>
+        public const string AuthoredSky = "FALLOUT_VIEWER_AUTHORED_SKY";
+
         public const string TerrainBuildConcurrency = "FALLOUT_VIEWER_TERRAIN_BUILD_CONCURRENCY";
         public const string TerrainBuildStartsPerFrame = "FALLOUT_VIEWER_TERRAIN_BUILD_STARTS_PER_FRAME";
 

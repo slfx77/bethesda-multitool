@@ -43,7 +43,7 @@ cbuffer InstanceDraw : register(b1)
 {
     float4 uAlphaState;
     float4 uRenderState;
-    float4 uTextureState; // .x = BC5 normal decode, .y = leaf-billboard mode (>0.5)
+    float4 uTextureState; // .x = BC5; .y = leaf/SpeedTree; .z flags: spec/clampU/clampV; .w palette row
     uint4  uTexIndices;
     uint   uInstanceBase;
     // Per-submesh UV scroll offset, CPU-wrapped (frac(velocity × animClock)) so precision never
@@ -110,6 +110,39 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
 {
     float4x4 world = uInstanceWorlds[uInstanceBase + instanceId];
 
+    // SpeedTree bark/frond payload. The SPT builder preserves the ordinary orthonormal TBN
+    // directions while encoding the wind-matrix index and authored branch weight in their lengths:
+    //   |T| = matrixIndex + 1, |B| = weight + 1.
+    // Decode before either deformation or normal-map shading; this keeps GpuVertex unchanged and is
+    // scoped by the explicit negative TextureState marker, so ordinary NIF tangents are never treated
+    // as wind data. The recovered STBRANCH transform is the same weighted matrix interpolation used
+    // by the leaf path: p' = lerp(p, M[index] * p, weight).
+    float3 modelPosition = input.aPosition;
+    float3 modelNormal = input.aNormal;
+    float3 modelTangent = input.aTangent;
+    float3 modelBitangent = input.aBitangent;
+    if (uTextureState.y < -0.5)
+    {
+        float tangentLength = length(modelTangent);
+        float bitangentLength = length(modelBitangent);
+        int windIdx = (int)min(max(floor(tangentLength + 0.5) - 1.0, 0.0), 3.0);
+        float windWeight = saturate(bitangentLength - 1.0);
+
+        modelTangent = tangentLength > 1e-8 ? modelTangent / tangentLength : float3(1.0, 0.0, 0.0);
+        modelBitangent = bitangentLength > 1e-8 ? modelBitangent / bitangentLength : float3(0.0, 1.0, 0.0);
+#ifndef SHADOW_CARD_LIGHT_FACING
+        if (uWindMatrixValid != 0 && windWeight > 0.0)
+        {
+            float3x3 windRotation = (float3x3)uWindMatrices[windIdx];
+            float3 swayedPosition = mul(uWindMatrices[windIdx], float4(modelPosition, 1.0)).xyz;
+            modelPosition = lerp(modelPosition, swayedPosition, windWeight);
+            modelNormal = normalize(lerp(modelNormal, mul(windRotation, modelNormal), windWeight));
+            modelTangent = normalize(lerp(modelTangent, mul(windRotation, modelTangent), windWeight));
+            modelBitangent = normalize(lerp(modelBitangent, mul(windRotation, modelBitangent), windWeight));
+        }
+#endif
+    }
+
     VSOutput o;
     float4 worldPos;
     if (uTextureState.y > 0.5)
@@ -121,85 +154,109 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
         // do that same transform here in the VS.)
         // aBitangent.z packs the engine's STLEAF v3.z, widened for the wind-matrix slot:
         // integer = LeafBase phase slot (0..47, per-corner) + 48·windMatrixIndex (0..3);
-        // fraction = the wind-matrix lerp weight (design doc B.3, 1 − raw).
+        // fraction = min(dimmerByte/255, .99), consumed as BOTH lighting and phase jitter.
+        // Engine v3.x's independent wind-matrix weight is encoded as |aNormal|-1; normalizing
+        // aNormal restores the authored lighting direction.
         float packedSlot = floor(input.aBitangent.z);
-        float windWeight = frac(input.aBitangent.z);
+        float dimmerFraction = frac(input.aBitangent.z);
+        float encodedNormalLength = length(input.aNormal);
+        float windWeight = saturate(encodedNormalLength - 1.0);
         float slot = fmod(packedSlot, 48.0);
         int windIdx = (int)(packedSlot * (1.0 / 48.0));
 
-        // Wind v2 — the slow whole-canopy sway: lerp the MODEL-space card center toward its
-        // wind-matrix-tilted position by the per-leaf weight (CLeafGeometry::ComputeWindEffect /
-        // the STLEAF dp4 rows: orig + (M·orig − orig)·w). Applying the matrix to the CENTER only
-        // (the card corners rebuild world-side below) is the design doc's sanctioned near-equivalent:
-        // for ≤0.61 rad tilts and card-sized offsets the corner error is sub-centimeter.
-        // The shadow variant skips it: its PerFrame CB does not carry the matrices, and a static
-        // shadow under a gently swaying canopy is imperceptible.
+        // The recovered STLEAF order is corner construction FIRST, wind-matrix lerp SECOND. Camera
+        // billboard axes arrive in world space, so convert them into model space with the inverse
+        // of the instance's uniform-scale rotation. This lets every corner follow
+        //   final = lerp(modelCorner, WindMatrix[index] * modelCorner, weight)
+        // instead of the old center-only approximation (which left large card edges rigid).
         float3 modelCenter = input.aTangent;
-#ifndef SHADOW_CARD_LIGHT_FACING
-        if (uWindMatrixValid != 0)
-        {
-            float3 swayed = mul(uWindMatrices[windIdx], float4(modelCenter, 1.0)).xyz;
-            modelCenter = lerp(modelCenter, swayed, windWeight);
-        }
-#endif
-
-        float4 worldCenterAbs = mul(world, float4(modelCenter, 1.0)); // world is CPU-folded camera-relative
-        float3 worldCenter = worldCenterAbs.xyz;
         float scale = length(float3(world[0].x, world[0].y, world[0].z)); // uniform REFR scale
+        float3x3 worldLinear = (float3x3)world;
+        float3x3 worldRotation = worldLinear / max(scale, 1e-8);
 
         // SpeedTree leaf ROCK/RUSTLE — the engine STLEAF vertex math, ported verbatim from the
         // PC STLEAF000-003.vso disasm (design doc A.6). Each corner slot lands a slightly
         // different phase (Δ = π/48), the authentic per-card shear.
         //   rock   = in-plane spin of the card offset;
         //   rustle = yaw of the billboard basis about the tree's up axis.
-        float phase = slot * (1.0 / 48.0);
+        float phase = (slot + dimmerFraction) * (1.0 / 48.0);
         float rockA   = uWind.x * sin(3.14159265 * (phase + uWind.y));
         float rustleA = uWind.z * sin(3.14159265 * (phase + uWind.w));
         float sK, cK; sincos(rockA, sK, cK);
         float sR, cR; sincos(rustleA, sR, cR);
-        float2 c  = input.aBitangent.xy * scale;
+        float2 c  = input.aBitangent.xy;
         float2 ck = float2(cK * c.x - sK * c.y, sK * c.x + cK * c.y);
 #ifdef SHADOW_CARD_LIGHT_FACING
-        float3 cardRight = uShadowCardRight.xyz; // light-perpendicular basis (see PerFrame)
-        float3 cardUp    = uShadowCardUp.xyz;
+        float3 cardRightWorld = uShadowCardRight.xyz; // light-perpendicular basis (see PerFrame)
+        float3 cardUpWorld    = uShadowCardUp.xyz;
 #else
-        float3 cardRight = uCameraRight.xyz;
-        float3 cardUp    = uCameraUp.xyz;
+        float3 cardRightWorld = uCameraRight.xyz;
+        float3 cardUpWorld    = uCameraUp.xyz;
 #endif
+        // For an orthonormal R, inverse(R)·v == transpose(R)·v. HLSL's row-vector mul(v,R)
+        // expresses that transpose application for the column-vector world transform used below.
+        float3 cardRight = normalize(mul(cardRightWorld, worldRotation));
+        float3 cardUp = normalize(mul(cardUpWorld, worldRotation));
+        // Rustle is a yaw around the tree's MODEL-space Z axis, not world Z.
         float3 Rr = float3(cR * cardRight.x - sR * cardRight.y,
                            sR * cardRight.x + cR * cardRight.y, cardRight.z);
         float3 Ur = float3(cR * cardUp.x - sR * cardUp.y,
                            sR * cardUp.x + cR * cardUp.y, cardUp.z);
 
-        worldPos = float4(worldCenter + Rr * ck.x + Ur * ck.y, 1.0);
+        float3 modelCorner = modelCenter + Rr * ck.x + Ur * ck.y;
+#ifndef SHADOW_CARD_LIGHT_FACING
+        if (uWindMatrixValid != 0)
+        {
+            float3 swayedCorner = mul(uWindMatrices[windIdx], float4(modelCorner, 1.0)).xyz;
+            modelCorner = lerp(modelCorner, swayedCorner, windWeight);
+        }
+#endif
+        worldPos = mul(world, float4(modelCorner, 1.0));
         // STLEAF per-corner normal puff (PC STLEAF000.vso: N = normalize(normalize(cornerDir) ·
         // LeafLighting.y + leafNormal)): each corner's normal leans outward along its card offset,
         // so the card shades like a rounded leaf cluster instead of a flat plate. uCameraRight.w
         // carries the LeafLighting.y adjust (0 = flat per-leaf normal). Pivot corners can sit at a
         // zero offset — guard the normalize.
-        float3 leafN = normalize(mul((float3x3)world, input.aNormal));
+        float3 leafN = encodedNormalLength > 1e-8
+            ? input.aNormal / encodedNormalLength
+            : float3(0.0, 0.0, 1.0);
         float2 cornerOff = input.aBitangent.xy;
         if (uCameraRight.w > 0.0 && dot(cornerOff, cornerOff) > 1e-8)
         {
-            float3 cornerDir = normalize(uCameraRight.xyz * cornerOff.x + uCameraUp.xyz * cornerOff.y);
+            float3 cornerDir = normalize(cardRight * cornerOff.x + cardUp * cornerOff.y);
             leafN = normalize(leafN + cornerDir * uCameraRight.w);
         }
+#ifndef SHADOW_CARD_LIGHT_FACING
+        if (uWindMatrixValid != 0 && windWeight > 0.0)
+        {
+            float3 windLeafN = mul((float3x3)uWindMatrices[windIdx], leafN);
+            leafN = normalize(lerp(leafN, windLeafN, windWeight));
+        }
+#endif
+        leafN = normalize(mul(worldLinear, leafN));
         o.vWorldNormal = leafN;
     }
     else
     {
         // world's translation is CPU-folded to the render origin, so this is already the camera-relative
         // position (absolute when renderOrigin == 0). The prior post-multiply "-= uCameraOrigin" is gone.
-        worldPos = mul(world, float4(input.aPosition, 1.0));
-        o.vWorldNormal = mul((float3x3)world, input.aNormal);
+        worldPos = mul(world, float4(modelPosition, 1.0));
+        o.vWorldNormal = mul((float3x3)world, modelNormal);
     }
 
     o.Position = mul(uViewProj, worldPos);
     o.vWorldPos = worldPos.xyz; // camera-relative world pos (matches the shader camera = 0 for fog/spec)
     o.vTexCoord = input.aTexCoord + uUvScroll;
     o.vVertexColor = input.aVertexColor;
-    o.vTangent = mul((float3x3)world, input.aTangent);
-    o.vBitangent = mul((float3x3)world, input.aBitangent);
+    if (uTextureState.y > 0.5)
+    {
+        // Retail STLEAF multiplies the lit vertex color by frc(v3.z), not by a repurposed copy.
+        // Alpha remains the authored opaque vertex alpha; the diffuse texture supplies cutout alpha.
+        float leafDimmer = frac(input.aBitangent.z);
+        o.vVertexColor.rgb = float3(leafDimmer, leafDimmer, leafDimmer);
+    }
+    o.vTangent = mul((float3x3)world, modelTangent);
+    o.vBitangent = mul((float3x3)world, modelBitangent);
     o.vAlphaState = uAlphaState;
     o.vRenderState = uRenderState;
     o.vTextureState = uTextureState;

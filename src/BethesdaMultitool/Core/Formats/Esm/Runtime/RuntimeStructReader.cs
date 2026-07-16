@@ -67,6 +67,7 @@ public sealed class RuntimeStructReader
     private readonly RuntimeRegionReader _regions;
     private readonly RuntimeReputationReader _reputations;
     private readonly RuntimeScriptReader _scripts;
+    private readonly RuntimeSkyWeatherReader _skyWeather;
     private readonly RuntimeSoundReader _sounds;
     private readonly RuntimeSurvivalStageReader _survivalStages;
     private readonly RuntimeVoiceTypeReader _voiceTypes;
@@ -111,6 +112,7 @@ public sealed class RuntimeStructReader
         _dialogue = new RuntimeDialogueReader(_context);
         _effects = new RuntimeEffectReader(_context, probeResults?.EffectLayout);
         _scripts = new RuntimeScriptReader(_context);
+        _skyWeather = new RuntimeSkyWeatherReader(_context);
         _world = new RuntimeWorldReader(_context);
         _refrs = new RuntimeRefrReader(_context, useProtoOffsets);
         _packages = new RuntimePackageReader(_context);
@@ -169,6 +171,16 @@ public sealed class RuntimeStructReader
     ///     Null when constructed without an entry set (e.g. test fixtures).
     /// </summary>
     internal RuntimeProbeResults? ProbeResults { get; }
+
+    /// <summary>
+    ///     Locates the runtime Sky singleton and returns its current/outgoing weather blend.
+    ///     Currently supported only for the symbol- and DMP-validated FNV Xbox 360 Debug,
+    ///     Release Beta, and Release MemDebug families; unsupported games return null.
+    /// </summary>
+    public WeatherTransitionSnapshot? ReadWeatherTransitionSnapshot()
+    {
+        return _skyWeather.Read();
+    }
 
     /// <summary>
     ///     Factory that probes the DMP memory to auto-detect early vs final build layout.

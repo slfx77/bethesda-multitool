@@ -438,6 +438,31 @@ public sealed class WorldRenderInfrastructureTests
         Assert.Equal("materials\\x\\blue.bgsm", reference.AlternateTextures!.MaterialSwaps!["materials\\x\\a.bgsm"]);
     }
 
+    [Fact]
+    public void WorldRenderCache_PlacementBake_ResolvesExternalEmittanceAsVariantState()
+    {
+        const uint emittanceFormId = 0x500;
+        var placement = RenderablePlacement(0x241, 0f, 0f) with { EmittanceFormId = emittanceFormId };
+        var cell = new CellRecord
+        {
+            FormId = 0x240,
+            GridX = 0,
+            GridY = 0,
+            PlacedObjects = [placement]
+        };
+        var color = new Vector3(1f, 0.25f, 0.125f);
+        var cache = new WorldRenderCache
+        {
+            ExternalEmittanceIndex = new Dictionary<uint, Vector3> { [emittanceFormId] = color }
+        };
+        var candidates = new List<RenderableReference>();
+
+        cache.QueryPlacementCandidates(cell, 0f, 0f, 512f, null, 0f, candidates);
+
+        var reference = Assert.Single(candidates);
+        Assert.Equal(color, reference.AlternateTextures?.ExternalEmittanceColor);
+    }
+
     private static PlacedReference RenderablePlacement(
         uint formId,
         float x,

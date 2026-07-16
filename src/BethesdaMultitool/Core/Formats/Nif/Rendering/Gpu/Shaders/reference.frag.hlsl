@@ -20,6 +20,9 @@ SamplerState sDiffuse     : register(s0); // wrap, anisotropic (set in C#)
 SamplerState sNormalMap   : register(s1); // wrap, anisotropic (set in C#)
 SamplerState sPalette     : register(s2); // CLAMP, linear — palette + cubemap lookups
 SamplerState sShadowPoint : register(s3); // CLAMP, point — sun-shadow-map depth taps (PCF)
+SamplerState sClampUWrapV : register(s4); // BGSM/BGEM TileU off, TileV on
+SamplerState sWrapUClampV : register(s5); // BGSM/BGEM TileU on, TileV off
+SamplerState sClampUV     : register(s6); // BGSM/BGEM TileU/TileV both off
 
 cbuffer PerFrame : register(b0) { float4x4 uViewProj; }
 
@@ -49,6 +52,12 @@ cbuffer Atmosphere : register(b3)
     float4 uShadowParams1;
     float4 uShadowParams2;
     float4 uShadowParams3;
+    float4 uAmbientPositiveX;  // w = full DALC cube present
+    float4 uAmbientNegativeX;
+    float4 uAmbientPositiveY;
+    float4 uAmbientNegativeY;
+    float4 uAmbientPositiveZ;
+    float4 uAmbientNegativeZ;
 };
 
 // Per-frame local-light list. The root SRV lives outside the legacy t0..t7 texture table so
@@ -208,8 +217,17 @@ float3 AtmosphereLight(float3 N, float3 worldPos, float sunShadow)
     // uAmbientColor.w carries GameProfile.AmbientLightScale (engine value 1.0; kept as a per-game knob);
     // falls back to 1.0 when the slot is unset (legacy/headless paths).
     float kAmbientScale = uAmbientColor.w > 0.0001 ? uAmbientColor.w : 1.0;
+    float3 unitNormal = normalize(N);
+    float3 ambient = uAmbientColor.rgb;
+    if (uAmbientPositiveX.w > 0.5)
+    {
+        float3 normalSquared = unitNormal * unitNormal;
+        ambient = (unitNormal.x >= 0.0 ? uAmbientPositiveX.rgb : uAmbientNegativeX.rgb) * normalSquared.x +
+                  (unitNormal.y >= 0.0 ? uAmbientPositiveY.rgb : uAmbientNegativeY.rgb) * normalSquared.y +
+                  (unitNormal.z >= 0.0 ? uAmbientPositiveZ.rgb : uAmbientNegativeZ.rgb) * normalSquared.z;
+    }
     float ndotl = saturate(dot(N, uSunDirIntensity.xyz));
-    float3 shade = uAmbientColor.rgb * kAmbientScale +
+    float3 shade = ambient * kAmbientScale +
         uSunColorLighting.rgb * (ndotl * sunShadow) +
         PlacedLightContribution(N, worldPos);
     // Negative LIGH records subtract illumination but never produce physically meaningless
@@ -252,9 +270,58 @@ bool PassAlphaTest(float alpha, float threshold, float functionId)
     return false;                              // NEVER / invalid
 }
 
+// vTextureState.z is an exact integer bitfield carried through a float constant:
+// bit 0 = specular map present, bit 1 = clamp U, bit 2 = clamp V.
+uint MaterialTextureFlags(float packedState)
+{
+    return (uint)round(packedState);
+}
+
+bool HasMaterialSpecularMap(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 1u) != 0u;
+}
+
+float4 SampleMaterialTexture(uint slot, float2 uv, float packedState)
+{
+    uint addressing = (MaterialTextureFlags(packedState) >> 1u) & 3u;
+    if (addressing == 1u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sClampUWrapV, uv);
+    if (addressing == 2u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sWrapUClampV, uv);
+    if (addressing == 3u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sClampUV, uv);
+    return textures[NonUniformResourceIndex(slot)].Sample(sDiffuse, uv);
+}
+
+float4 SampleMaterialNormal(uint slot, float2 uv, float packedState)
+{
+    uint addressing = (MaterialTextureFlags(packedState) >> 1u) & 3u;
+    if (addressing == 1u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sClampUWrapV, uv);
+    if (addressing == 2u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sWrapUClampV, uv);
+    if (addressing == 3u)
+        return textures[NonUniformResourceIndex(slot)].Sample(sClampUV, uv);
+    return textures[NonUniformResourceIndex(slot)].Sample(sNormalMap, uv);
+}
+
+float CalculateMaterialTextureLod(uint slot, float2 uv, float packedState)
+{
+    uint addressing = (MaterialTextureFlags(packedState) >> 1u) & 3u;
+    if (addressing == 1u)
+        return textures[NonUniformResourceIndex(slot)].CalculateLevelOfDetail(sClampUWrapV, uv);
+    if (addressing == 2u)
+        return textures[NonUniformResourceIndex(slot)].CalculateLevelOfDetail(sWrapUClampV, uv);
+    if (addressing == 3u)
+        return textures[NonUniformResourceIndex(slot)].CalculateLevelOfDetail(sClampUV, uv);
+    return textures[NonUniformResourceIndex(slot)].CalculateLevelOfDetail(sDiffuse, uv);
+}
+
 float4 main(PSInput input) : SV_Target
 {
-    float4 sample = textures[NonUniformResourceIndex(input.vTexIndices.x)].Sample(sDiffuse, input.vTexCoord);
+    float4 sample = SampleMaterialTexture(
+        input.vTexIndices.x, input.vTexCoord, input.vTextureState.z);
 
     // FO4/FO76 grayscale-to-palette (vTextureState.w >= 0 = the material's GradientMapV row): the
     // palette lookup REPLACES the diffuse RGB — the raw base texture is authoring data (FO4's
@@ -303,8 +370,8 @@ float4 main(PSInput input) : SV_Target
     // carry real leaf coverage (> 0.25) are rescued.
     if (input.vTextureState.y > 1.5)
     {
-        float leafLod = textures[NonUniformResourceIndex(input.vTexIndices.x)]
-            .CalculateLevelOfDetail(sDiffuse, input.vTexCoord);
+        float leafLod = CalculateMaterialTextureLod(
+            input.vTexIndices.x, input.vTexCoord, input.vTextureState.z);
         if (testAlpha > 0.25)
         {
             testAlpha = saturate(testAlpha * (1.0 + leafLod * 0.25));
@@ -328,7 +395,8 @@ float4 main(PSInput input) : SV_Target
     float specSmoothScale = 1.0;
     if (input.vRenderState.y > 0.5)
     {
-        float4 normalSample = textures[NonUniformResourceIndex(input.vTexIndices.y)].Sample(sNormalMap, input.vTexCoord);
+        float4 normalSample = SampleMaterialNormal(
+            input.vTexIndices.y, input.vTexCoord, input.vTextureState.z);
         float3 mapN;
         if (input.vTextureState.x > 0.5)
         {
@@ -346,9 +414,10 @@ float4 main(PSInput input) : SV_Target
         // FO4/FO76 specular map (_s.dds): R = per-texel specular mask, replacing the normal-map
         // alpha that BC5 lacks; G = per-texel smoothness (feeds the env-map term's gloss/mip).
         // Bound at TexIndices.z, flagged by vTextureState.z.
-        if (input.vTextureState.z > 0.5)
+        if (HasMaterialSpecularMap(input.vTextureState.z))
         {
-            float2 specSample = textures[NonUniformResourceIndex(input.vTexIndices.z)].Sample(sDiffuse, input.vTexCoord).rg;
+            float2 specSample = SampleMaterialTexture(
+                input.vTexIndices.z, input.vTexCoord, input.vTextureState.z).rg;
             specMask = specSample.r;
             specSmoothScale = specSample.g;
         }
@@ -458,7 +527,7 @@ float4 main(PSInput input) : SV_Target
     // fo76utils multiplies by a constant envColor = 1.0 (its renders are always-day); this viewer
     // modulates by the scene shade factor instead — a labeled stand-in pending an FO4
     // BSLightingShader decompile — so night metal doesn't reflect a daylight cube at full strength.
-    if (uSunColorLighting.w >= 0.5 && input.vRenderState.y > 0.5 && input.vTextureState.z > 0.5 &&
+    if (uSunColorLighting.w >= 0.5 && input.vRenderState.y > 0.5 && HasMaterialSpecularMap(input.vTextureState.z) &&
         input.vRenderState.w <= 0.5 && input.vEnvMap.x >= 0.0 && input.vEnvMap.y > 0.0 &&
         specMask > 0.0)
     {

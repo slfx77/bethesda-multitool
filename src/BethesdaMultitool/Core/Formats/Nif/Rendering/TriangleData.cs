@@ -44,10 +44,14 @@ internal struct TriangleData
     // Textures
     public DecodedTexture? Texture;
     public DecodedTexture? NormalMap;
+    public bool ClampTextureU;
+    public bool ClampTextureV;
 
     // Emissive (self-illuminated, no lighting applied)
     public bool IsEmissive;
     public float EmissiveR, EmissiveG, EmissiveB; // animated emissive color (from NiMaterialColorController)
+    public bool HasEffectTint;
+    public float EffectTintR, EffectTintG, EffectTintB; // BSEffect/BGEM base RGB × HDR scale
 
     // Double-sided (NiStencilProperty DRAW_BOTH: flip normals instead of culling)
     public bool IsDoubleSided;

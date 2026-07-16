@@ -39,6 +39,7 @@ public class CellCaptureUnionerTests
             GridX = 3,
             GridY = -2,
             WorldspaceFormId = 0x0010B96F,
+            ClimateFormId = 0x0010B970,
             WorldspaceAssignmentSource = "FragmentRun",
             PlacedObjects =
             [
@@ -57,6 +58,7 @@ public class CellCaptureUnionerTests
         Assert.Equal(3, cell.GridX);
         Assert.Equal(-2, cell.GridY);
         Assert.Equal(0x0010B96Fu, cell.WorldspaceFormId);
+        Assert.Equal(0x0010B970u, cell.ClimateFormId);
         Assert.Equal("Authority", cell.WorldspaceAssignmentSource);
         Assert.Single(cell.PlacedObjects);
     }

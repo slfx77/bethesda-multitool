@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using Xunit;
 
@@ -91,5 +92,18 @@ public sealed class AlternateTextureSetTests
         Assert.Equal(0.6875f, blue!.GradientMapVOverride);
         Assert.Equal(blue.VariantKey, blueAgain!.VariantKey);
         Assert.NotEqual(blue.VariantKey, yellow!.VariantKey);
+    }
+
+    [Fact]
+    public void Create_ExternalEmittanceAlone_CreatesColorKeyedVariants()
+    {
+        var warm = AlternateTextureSet.Create([], externalEmittanceColor: new Vector3(1f, 0.5f, 0.25f));
+        var warmAgain = AlternateTextureSet.Create([], externalEmittanceColor: new Vector3(1f, 0.5f, 0.25f));
+        var cool = AlternateTextureSet.Create([], externalEmittanceColor: new Vector3(0.25f, 0.5f, 1f));
+
+        Assert.NotNull(warm);
+        Assert.Equal(new Vector3(1f, 0.5f, 0.25f), warm!.ExternalEmittanceColor);
+        Assert.Equal(warm.VariantKey, warmAgain!.VariantKey);
+        Assert.NotEqual(warm.VariantKey, cool!.VariantKey);
     }
 }

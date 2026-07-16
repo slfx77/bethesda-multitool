@@ -555,6 +555,9 @@ internal static class EsmDescriptorScanner
             case "XMSP" when subData.Length == 4:
                 state.MaterialSwapFormId = ReadUInt32(subData, 0, record.IsBigEndian);
                 break;
+            case "XEMI" when subData.Length == 4:
+                state.EmittanceFormId = ReadUInt32(subData, 0, record.IsBigEndian);
+                break;
             case "XCNT" when subData.Length >= 4:
                 state.Count = (short)ReadInt32(subData, 0, record.IsBigEndian);
                 break;
@@ -641,6 +644,7 @@ internal static class EsmDescriptorScanner
                 OwnerFormId = state.OwnerFormId,
                 EncounterZoneFormId = state.EncounterZoneFormId,
                 MaterialSwapFormId = state.MaterialSwapFormId,
+                EmittanceFormId = state.EmittanceFormId,
                 LockLevel = state.LockLevel,
                 LockKeyFormId = state.LockKeyFormId,
                 LockFlags = state.LockFlags,
@@ -687,6 +691,7 @@ internal static class EsmDescriptorScanner
         public uint? OwnerFormId { get; set; }
         public uint? EncounterZoneFormId { get; set; }
         public uint? MaterialSwapFormId { get; set; }
+        public uint? EmittanceFormId { get; set; }
         public byte? LockLevel { get; set; }
         public uint? LockKeyFormId { get; set; }
         public byte? LockFlags { get; set; }

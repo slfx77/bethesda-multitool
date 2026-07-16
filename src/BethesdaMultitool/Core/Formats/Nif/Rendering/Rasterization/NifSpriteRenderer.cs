@@ -437,6 +437,12 @@ internal static class NifSpriteRenderer
                     EmissiveR = submesh.AnimatedEmissiveColor?.R ?? 0f,
                     EmissiveG = submesh.AnimatedEmissiveColor?.G ?? 0f,
                     EmissiveB = submesh.AnimatedEmissiveColor?.B ?? 0f,
+                    HasEffectTint = submesh.EffectTint.R != 1f ||
+                                    submesh.EffectTint.G != 1f ||
+                                    submesh.EffectTint.B != 1f,
+                    EffectTintR = submesh.EffectTint.R,
+                    EffectTintG = submesh.EffectTint.G,
+                    EffectTintB = submesh.EffectTint.B,
                     IsDoubleSided = submesh.IsDoubleSided,
                     HasAlphaBlend = alphaState.HasAlphaBlend,
                     HasAlphaTest = alphaState.HasAlphaTest,
@@ -460,7 +466,9 @@ internal static class NifSpriteRenderer
                     IsFaceGen = submesh.IsFaceGen,
                     SubsurfaceR = submesh.SubsurfaceColor.R,
                     SubsurfaceG = submesh.SubsurfaceColor.G,
-                    SubsurfaceB = submesh.SubsurfaceColor.B
+                    SubsurfaceB = submesh.SubsurfaceColor.B,
+                    ClampTextureU = submesh.ClampTextureU,
+                    ClampTextureV = submesh.ClampTextureV
                 };
 
                 // Populate UV data if texture is available

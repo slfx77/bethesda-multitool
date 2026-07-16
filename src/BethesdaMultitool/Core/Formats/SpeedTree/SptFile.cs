@@ -93,6 +93,8 @@ public static class SptFile
     private const uint LodBranchEnd = 9006;       // 0x232E section terminator
     private const uint LodNumBranchLods = 9007;   // 0x232F -> +0x70
     private const uint LodBranchFar = 9008;       // 0x2330 -> +0xdc
+    private const uint LodLeafSizeIncrease = 9010;// 0x2332 -> +0xe4 (0 is normalized to 0.1)
+    private const uint LodNumLeafLods = 9011;     // 0x2333 -> +0xc0
     private const uint LodBranchNear = 9012;      // 0x2334 -> +0xe0 (LOD0)
     private const uint LodBranchDemotion = 9013;  // 0x2335 -> +0xe8 (BuildBranchLods demotion draw bound)
     private const uint LodBranchGuarantee = 9014; // 0x2336 -> +0xec (guaranteed-keep threshold fraction)
@@ -120,7 +122,8 @@ public static class SptFile
             }
 
             int? numLods = (int)num;
-            float? near = null, far = null, demotion = null, guarantee = null;
+            int? numLeafLods = null;
+            float? near = null, far = null, leafSizeIncrease = null, demotion = null, guarantee = null;
             var pos = offset + 8;
             var terminated = false;
             // Walk (token, value) pairs to the section terminator; ignore tokens we don't model.
@@ -142,6 +145,16 @@ public static class SptFile
                 {
                     case LodBranchFar:
                         far = BinaryUtils.ReadFloatLE(data, pos + 4);
+                        break;
+                    case LodLeafSizeIncrease:
+                        leafSizeIncrease = BinaryUtils.ReadFloatLE(data, pos + 4);
+                        break;
+                    case LodNumLeafLods:
+                        var authoredLeafLods = BinaryUtils.ReadUInt32LE(data, pos + 4);
+                        if (authoredLeafLods is > 0 and <= 64)
+                        {
+                            numLeafLods = (int)authoredLeafLods;
+                        }
                         break;
                     case LodBranchNear:
                         near = BinaryUtils.ReadFloatLE(data, pos + 4);
@@ -165,6 +178,10 @@ public static class SptFile
                     NumBranchLods = numLods.Value,
                     BranchNearFraction = near.Value,
                     BranchFarFraction = far ?? defaults.BranchFarFraction,
+                    NumLeafLods = numLeafLods ?? defaults.NumLeafLods,
+                    LeafLodSizeIncrease = leafSizeIncrease is null or 0f
+                        ? defaults.LeafLodSizeIncrease
+                        : leafSizeIncrease.Value,
                     BranchDemotionRandomness = demotion ?? defaults.BranchDemotionRandomness,
                     BranchGuaranteeFraction = guarantee ?? defaults.BranchGuaranteeFraction,
                 };

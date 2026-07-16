@@ -1,18 +1,10 @@
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 
 /// <summary>
-///     Image Space Modifier (IMAD) record. Animated post-processing layer applied on top
-///     of the base <see cref="ImageSpaceRecord" />; engine selects active IMADs for HDR
-///     transitions, weapon-firing flashes, drug effects, etc. Missing the encoder strips
-///     proto-only IMADs and causes the engine to load an undefined post-processing slot,
-///     producing visible render mismatches and cell-entry instability in proto worldspaces.
-///
-///     This is a minimal encoder covering EDID + DNAM only. IMAD's frame-table subrecords
-///     (BNAM/VNAM/TNAM/NAM3/RNAM/SNAM/UNAM and several IMAD-specific tint/blur arrays) are
-///     out of scope for this phase — they animate timelines and need both a runtime reader
-///     and frame-by-frame parsing not yet built. The minimal record still unblocks the
-///     crash-on-missing case since the engine only requires EDID + DNAM (animatable flag +
-///     duration) to instantiate the modifier slot.
+///     Image Space Modifier (IMAD) record. Every authored frame table is retained in source
+///     order; <see cref="Parameters" /> is the semantic projection of the 21 recovered
+///     multiply/add channels used by the classic imagespace manager. Scalar/color tables not
+///     consumed by the current tonemap pass remain available losslessly for later effects work.
 /// </summary>
 public record ImageSpaceModifierRecord
 {
@@ -22,6 +14,32 @@ public record ImageSpaceModifierRecord
 
     /// <summary>IMAD DNAM payload, 244 bytes. See <see cref="ImageSpaceModifierData" /> for layout.</summary>
     public ImageSpaceModifierData? Data { get; init; }
+
+    /// <summary>
+    ///     The 21 recovered parameter pairs in engine ordinal order. Each parameter has an
+    ///     absolute multiply curve (<c>\0IAD</c>..<c>\x14IAD</c>) and an add curve
+    ///     (<c>@IAD</c>..<c>TIAD</c>).
+    /// </summary>
+    public IReadOnlyList<ImageSpaceModifierParameterTimeline> Parameters { get; init; } = [];
+
+    /// <summary>Named scalar timelines (BNAM/VNAM/RNAM/SNAM/UNAM/NAM1/NAM2/WNAM/XNAM/YNAM/NAM4).</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<ImageSpaceModifierFloatKey>> ScalarTimelines { get; init; } =
+        new Dictionary<string, IReadOnlyList<ImageSpaceModifierFloatKey>>(StringComparer.Ordinal);
+
+    /// <summary>TNAM tint-color timeline (time + RGBA float).</summary>
+    public IReadOnlyList<ImageSpaceModifierColorKey> TintColorTimeline { get; init; } = [];
+
+    /// <summary>NAM3 fade-color timeline (time + RGBA float).</summary>
+    public IReadOnlyList<ImageSpaceModifierColorKey> FadeColorTimeline { get; init; } = [];
+
+    public uint? IntroSoundFormId { get; init; }
+    public uint? OutroSoundFormId { get; init; }
+
+    /// <summary>
+    ///     Ordered raw subrecords, including unknown signatures and malformed/trailing bytes. This is
+    ///     the lossless authority when a format variant is not represented by a semantic projection.
+    /// </summary>
+    public IReadOnlyList<ImageSpaceModifierRawSubrecord> OrderedSubrecords { get; init; } = [];
 
     public long Offset { get; init; }
 
@@ -50,4 +68,50 @@ public record ImageSpaceModifierData
     ///     4-byte values without distinguishing — endian flips uniformly.
     /// </summary>
     public IReadOnlyList<uint> RawPayload { get; init; } = [];
+
+    public bool IsAnimatable => AnimatableFlag != 0;
 }
+
+/// <summary>Recovered classic IMAD parameter ordinals (TESImageSpaceModifier::Apply[Weather]).</summary>
+public enum ImageSpaceModifierParameter
+{
+    EyeAdaptSpeed = 0,
+    HdrBlurRadius = 1,
+    HdrSkinDimmer = 2,
+    HdrEmissiveMult = 3,
+    HdrTargetLum = 4,
+    HdrUpperLumClamp = 5,
+    HdrBrightScale = 6,
+    HdrBrightClamp = 7,
+    HdrLumRampNoTex = 8,
+    HdrLumRampMin = 9,
+    HdrLumRampMax = 10,
+    HdrSunlightDimmer = 11,
+    HdrGrassDimmer = 12,
+    HdrTreeDimmer = 13,
+    BloomBlurRadius = 14,
+    BloomAlphaAddInterior = 15,
+    BloomAlphaAddExterior = 16,
+    CinematicSaturation = 17,
+    CinematicContrastAvgLum = 18,
+    CinematicContrast = 19,
+    CinematicBrightness = 20,
+}
+
+public enum ImageSpaceModifierOperation
+{
+    Multiply = 0,
+    Add = 1,
+}
+
+public readonly record struct ImageSpaceModifierFloatKey(float Time, float Value);
+
+public readonly record struct ImageSpaceModifierColorKey(
+    float Time, float Red, float Green, float Blue, float Alpha);
+
+public sealed record ImageSpaceModifierParameterTimeline(
+    ImageSpaceModifierParameter Parameter,
+    IReadOnlyList<ImageSpaceModifierFloatKey> Multiply,
+    IReadOnlyList<ImageSpaceModifierFloatKey> Add);
+
+public sealed record ImageSpaceModifierRawSubrecord(string Signature, byte[] Data);

@@ -87,6 +87,25 @@ public class BgsmMaterialTests
     }
 
     [Fact]
+    public void Parse_CommonHeader_PreservesUvTransformTilingAndHdrAlpha()
+    {
+        var data = BuildBgsm(2, false, 63, "tile_d.dds", "tile_n.dds");
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(8), 3u);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(12), 0.25f);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(16), -0.5f);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(20), 2f);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(24), 0.5f);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(0x1C), 4f);
+
+        var mat = Assert.IsType<BgsmMaterial>(BgsmMaterial.Parse(data));
+        Assert.True(mat.TileU);
+        Assert.True(mat.TileV);
+        Assert.Equal(new System.Numerics.Vector2(0.25f, -0.5f), mat.UvOffset);
+        Assert.Equal(new System.Numerics.Vector2(2f, 0.5f), mat.UvScale);
+        Assert.Equal(4f, mat.Alpha);
+    }
+
+    [Fact]
     public void Parse_Fallout4Bgsm_ReadsDecalByte()
     {
         // Decal byte @0x2F (fo76utils loadBGSMFile: u32 z-write/z-test/SSR @0x2B, u8 decal, u8
@@ -108,8 +127,9 @@ public class BgsmMaterialTests
         // FO4 BGEM tail (fo76utils loadBGEMFile): after the texture-path table, a 6-byte bool block
         // ([1] = Effect Lighting, [2]|[3] = falloff enabled), then base color RGB + scale (4 floats),
         // falloff params (4 floats: startAngle/stopAngle/startOpacity/stopOpacity), and the lighting
-        // influence float. Values mirror AmbBeamMistRoundDusty.BGEM — the terms whose absence
-        // rendered mist blobs blinding white. The non-gradient FO4 BGEM path map (0x000514F0) reads
+        // influence float. Values otherwise mirror AmbBeamMistRoundDusty.BGEM, with an above-one
+        // scale to guard the HDR path — the terms whose absence rendered mist blobs blinding white.
+        // The non-gradient FO4 BGEM path map (0x000514F0) reads
         // FIVE strings, so five paths pad the table.
         var head = BuildBgsm(2, true, 63, "fx_d.dds", "grad.dds", "", "", "");
         using var ms = new MemoryStream();
@@ -119,7 +139,7 @@ public class BgsmMaterialTests
         System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[..4], 0.478f);
         System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[4..8], 0.478f);
         System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[8..12], 0.478f);
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[12..16], 0.75f);  // scale
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[12..16], 2.5f);   // HDR scale
         System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[16..20], 0.98481f); // start angle
         System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[20..24], 0.17365f); // stop angle
         System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(floats[24..28], 1f);       // start opacity
@@ -134,7 +154,7 @@ public class BgsmMaterialTests
         Assert.True(mat.EffectLightingEnabled);
         Assert.True(mat.FalloffEnabled);
         Assert.Equal(0.478f, mat.BaseColor.X, 3);
-        Assert.Equal(0.75f, mat.BaseColorScale, 3);
+        Assert.Equal(2.5f, mat.BaseColorScale, 3);
         Assert.Equal(0.98481f, mat.FalloffStartAngle, 4);
         Assert.Equal(0.17365f, mat.FalloffStopAngle, 4);
         Assert.Equal(1f, mat.FalloffStartOpacity, 3);

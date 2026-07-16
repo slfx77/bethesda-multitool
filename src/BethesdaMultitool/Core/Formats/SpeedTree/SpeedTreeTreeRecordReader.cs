@@ -46,7 +46,9 @@ public static class SpeedTreeTreeRecordReader
         {
             return new SpeedTreeDimming(
                 ReadFloat(cnam, "LeafDimmingValue"),
-                ReadFloat(cnam, "BranchDimmingValue"));
+                ReadFloat(cnam, "BranchDimmingValue"),
+                ReadFloat(cnam, "RockSpeed", 1f),
+                ReadFloat(cnam, "RustleSpeed", 1f));
         }
 
         var cnamNode = decodedTree is null ? null : DecodedTreeReader.TopBySignature(decodedTree, "CNAM");
@@ -57,11 +59,15 @@ public static class SpeedTreeTreeRecordReader
 
         var leaf = DecodedTreeReader.Float(DecodedTreeReader.ChildByLabel(cnamNode, "Leaf Dimming Value"));
         var branch = DecodedTreeReader.Float(DecodedTreeReader.ChildByLabel(cnamNode, "Branch Dimming Value"));
-        return leaf is null && branch is null ? null : new SpeedTreeDimming(leaf ?? 0f, branch ?? 0f);
+        var rock = DecodedTreeReader.Float(DecodedTreeReader.ChildByLabel(cnamNode, "Rock Speed"));
+        var rustle = DecodedTreeReader.Float(DecodedTreeReader.ChildByLabel(cnamNode, "Rustle Speed"));
+        return leaf is null && branch is null && rock is null && rustle is null
+            ? null
+            : new SpeedTreeDimming(leaf ?? 0f, branch ?? 0f, rock ?? 1f, rustle ?? 1f);
     }
 
-    private static float ReadFloat(Dictionary<string, object?> fields, string name) =>
-        fields.TryGetValue(name, out var v) && v is float f ? f : 0f;
+    private static float ReadFloat(Dictionary<string, object?> fields, string name, float fallback = 0f) =>
+        fields.TryGetValue(name, out var v) && v is float f ? f : fallback;
 
     /// <summary>The TREE record's first SpeedTree seed (SNAM array) from the schema-decoded tree, or null.
     /// The typed <c>Fields["SNAM"]</c> path is handled by callers; this only covers the DecodedTree case.</summary>

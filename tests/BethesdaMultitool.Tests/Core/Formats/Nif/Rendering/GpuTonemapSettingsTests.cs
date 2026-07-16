@@ -1,4 +1,6 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Games;
 using Xunit;
 
@@ -12,6 +14,99 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 /// </summary>
 public sealed class GpuTonemapSettingsTests
 {
+    [Fact]
+    public void OblivionWeatherFactory_UsesHnamWithoutFnvCinematicGrade()
+    {
+        var hdr = new WeatherHdr
+        {
+            EyeAdaptSpeed = 0.25f,
+            BlurRadius = 3f,
+            BlurPasses = 0f,
+            EmissiveMult = 0.75f,
+            TargetLum = 0.5f,
+            UpperLumClamp = 2f,
+            BrightScale = 0f,
+            BrightClamp = 0.2f,
+        };
+
+        var s = GpuTonemapSettings.ForOblivionWeather(hdr);
+        Assert.Equal(0.25f, s.EyeAdaptSpeed);
+        Assert.Equal(0f, s.BlurPasses);     // authored zero is data, not a missing-value sentinel
+        Assert.Equal(0f, s.BrightScale);
+        Assert.Equal(1f, s.Saturation);
+        Assert.Equal(1f, s.Contrast);
+        Assert.Equal(1f, s.Brightness);
+        Assert.Equal(0f, s.TintAmount);
+    }
+
+    [Fact]
+    public void RecoveredAdaptationReference_WeightsCurrentScene()
+    {
+        // Independent CPU oracle for ISHDRADAPT: (1-k)*previous + k*current.
+        const float previous = 0.2f;
+        const float current = 1.0f;
+        const float k = 0.25f;
+        var adapted = ((1f - k) * previous) + (k * current);
+        Assert.Equal(0.4f, adapted, 6);
+    }
+
+    [Fact]
+    public void RecoveredCinematicReference_AppliesBrightnessInsideContrast()
+    {
+        // Independent scalar oracle for Contrast*(Brightness*color-pivot)+pivot.
+        const float color = 0.6f;
+        const float brightness = 0.9f;
+        const float contrast = 1.2f;
+        const float pivot = 0.125f;
+        var output = contrast * ((brightness * color) - pivot) + pivot;
+        Assert.Equal(0.623f, output, 6);
+    }
+
+    [Fact]
+    public void ExteriorCinematicMask_IsRetainedAsSourceMetadata()
+    {
+        var flags = GpuTonemapSettings.EngineExteriorDefaults.CinematicFlags;
+        Assert.True(flags.HasFlag(ImageSpaceCinematicFlags.Saturation));
+        Assert.True(flags.HasFlag(ImageSpaceCinematicFlags.Contrast));
+        Assert.True(flags.HasFlag(ImageSpaceCinematicFlags.Tint));
+        Assert.False(flags.HasFlag(ImageSpaceCinematicFlags.Brightness));
+    }
+
+    [Fact]
+    public void CnamWithoutStoredMask_RetainsCurrentMaskForTelemetry()
+    {
+        var exterior = GpuTonemapSettings.EngineExteriorDefaults;
+        var cnam = new ImageSpaceCinematic
+        {
+            HasExplicitFlags = false,
+            Flags = ImageSpaceCinematicFlags.All,
+            Saturation = 0.875f,
+            Contrast = 1.02f,
+            Brightness = 0f,
+        };
+
+        var resolved = GpuTonemapSettings.ResolveCinematicFlags(exterior.CinematicFlags, cnam);
+
+        Assert.Equal(exterior.CinematicFlags, resolved);
+        Assert.False(resolved.HasFlag(ImageSpaceCinematicFlags.Brightness));
+    }
+
+    [Fact]
+    public void CinematicWithStoredMask_ReplacesDestinationMaskForTelemetry()
+    {
+        var explicitMask = new ImageSpaceCinematic
+        {
+            HasExplicitFlags = true,
+            Flags = ImageSpaceCinematicFlags.Brightness,
+        };
+
+        Assert.Equal(
+            ImageSpaceCinematicFlags.Brightness,
+            GpuTonemapSettings.ResolveCinematicFlags(
+                GpuTonemapSettings.EngineExteriorDefaults.CinematicFlags,
+                explicitMask));
+    }
+
     [Fact]
     public void EngineExteriorDefaults_MatchShippedImageSpace0x161()
     {
@@ -161,5 +256,66 @@ public sealed class GpuTonemapSettingsTests
         {
             Environment.SetEnvironmentVariable("FALLOUT_VIEWER_BLOOM", previous);
         }
+    }
+
+    [Fact]
+    public void ApplyOverrides_ForceOnDoesNotBorrowClassicBloomForModernMode()
+    {
+        var previous = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_BLOOM");
+        try
+        {
+            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_BLOOM", "1");
+            var s = GpuTonemapSettings.ApplyOverrides(
+                GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Fallout4));
+            Assert.False(s.BloomEnabled);
+            Assert.Equal(1f, s.AdaptFactor);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_BLOOM", previous);
+        }
+    }
+
+    [Fact]
+    public void ModernPipeline_IsDefaultOffAndExplicitlyOptedIn()
+    {
+        var previous = Environment.GetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE");
+        try
+        {
+            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE", null);
+            Assert.Equal(GpuTonemapMode.GammaAces, GpuTonemapSettings.ForGame(BethesdaGame.Fallout4).Mode);
+            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE", "1");
+            var enabled = GpuTonemapSettings.ForGame(BethesdaGame.Fallout4);
+            Assert.Equal(GpuTonemapMode.CreationModern, enabled.Mode);
+            Assert.Equal(ImageSpaceModernFamily.Fallout4, enabled.ModernFamily);
+            Assert.False(enabled.BloomEnabled); // modern bloom topology is not borrowed from FNV
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FALLOUT_VIEWER_MODERN_IMAGESPACE", previous);
+        }
+    }
+
+    [Fact]
+    public void ModernReference_UsesAuthoredExposureClampAndCinematicOnly()
+    {
+        var settings = GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Fallout4) with
+        {
+            AutoExposureMin = 0.5f,
+            AutoExposureMax = 2f,
+            MiddleGray = 0.25f,
+            Saturation = 1f,
+            Brightness = 1f,
+            Contrast = 1f,
+            TintAmount = 0f,
+        };
+
+        // Independent semantic oracle: clamp(middleGray / adaptedLuma, min, max).
+        Assert.Equal(0.5f, ModernImageSpaceReference.ResolveExposure(1f, settings), 6);
+        Assert.Equal(2f, ModernImageSpaceReference.ResolveExposure(0.01f, settings), 6);
+        var output = ModernImageSpaceReference.Apply(new(0.1f, 0.2f, 0.3f), 0.125f, settings);
+        Assert.Equal(0.2f, output.X, 6);
+        Assert.Equal(0.4f, output.Y, 6);
+        Assert.Equal(0.6f, output.Z, 6);
     }
 }

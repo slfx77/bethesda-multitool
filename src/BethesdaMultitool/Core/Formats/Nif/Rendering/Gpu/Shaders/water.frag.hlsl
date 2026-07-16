@@ -6,8 +6,7 @@
 // diverges (tools/GhidraProject/oblivion_water_pixel_shader_decompiled.txt): the body color blends
 // Deep→Shallow by the VIEW ANGLE (N·V), not the depth column, and the specular is a single
 // sun glint (no sky-glint term). Everything else (Schlick fresnel with F0 = WATR Fresnel Amount,
-// ReflectionColor × Reflectivity on the RT-free path, distance fog) is shared. The FNV permutation
-// is textually unchanged when the define is absent.
+// ReflectionColor→reflection-target interpolation, distance fog) is shared.
 //
 // The engine shader composites: reflection RT, refraction RT, a depth-map water-column factor,
 // a single NNAM normal tap, a Schlick fresnel, a dual sun/sky specular, and distance fog. Our
@@ -48,6 +47,14 @@ cbuffer Uniforms : register(b0)
                          //       (multipliers of Depth Amount; retail authors them ≈1.0)
     float4 uFo4DarkSilt; // rgb = DNAM silt Dark Color (the FO4 PS's unshadowed ambient add),
                          // w = DNAM Depth Amount (world-unit column at which the depth ramps saturate)
+    uint4 uNormalIndices; // ordered normal sources; Oblivion repurposes y as WATR TNAM DetailMap
+    float4 uLegacySurface0; // Oblivion: WaveAmplitude, WaveFrequency, ScrollXSpeed, ScrollYSpeed
+    float4 uLegacySurface1; // Oblivion: FogNear, FogFar, TextureBlend, WindVelocity
+    // WATER-07 opt-in FO4/FO76 architecture (FO4_WATER_ARCHITECTURAL only).
+    uint4 uModernIndices;   // body/coverage, composited normal, gloss/flow, depth LUT
+    uint4 uModernTechnique; // x = recovered technique ID, y = TextureCube index, z = point-light cap
+    float4 uModernParams;   // glossScaleA/B, neutral outputAlpha, neutral alphaTestThreshold
+    float4 uModernLightSilt;// retained LightSilt rgb, normal magnitude in w
 };
 
 // Shared scene atmosphere (b3). CPU mirror: WorldView3DControl.AtmosphereConstants,
@@ -63,9 +70,24 @@ cbuffer Atmosphere : register(b3)
     float4 uSkyTopSkyEnabled;   // rgb = sky-top color, w = skyEnabled (0/1)
     float4 uSkyHorizon;         // rgb = sky-horizon color, w = spare
     float4 uFogColorFogEnabled; // rgb = fog color, w = fogEnabled (0/1)
-    float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = time
+    float4 uAtmosphereParams;   // x = gameHour, y = fogNear, z = fogFar, w = placed-light count
     float4 uCameraPosFogPower;  // xyz = camera world pos, w = fog power (1 = linear)
     float4 uFogFarColorMax;     // rgb = far-fog color, w = max powered fog amount
+    float4 uCameraOrigin;       // xyz = camera-relative render origin
+    float4x4 uShadowMatrix0;
+    float4x4 uShadowMatrix1;
+    float4x4 uShadowMatrix2;
+    float4x4 uShadowMatrix3;
+    float4 uShadowParams0;
+    float4 uShadowParams1;
+    float4 uShadowParams2;
+    float4 uShadowParams3;
+    float4 uAmbientPositiveX;
+    float4 uAmbientNegativeX;
+    float4 uAmbientPositiveY;
+    float4 uAmbientNegativeY;
+    float4 uAmbientPositiveZ;
+    float4 uAmbientNegativeZ;
 };
 
 // Skyrim constant fog: the same powered, FNAM-capped amount blends near→far fog color and then
@@ -91,13 +113,24 @@ float3 ApplyFog(float3 color, float3 worldPos)
 // lives at uNoiseParams.x (FNV NoiseMap, sampler s2). s0 is the shared anisotropic-wrap sampler.
 Texture2D gWaterTextures[] : register(t0, space1);
 SamplerState gWaterSampler : register(s0);
+#if FO4_WATER_ARCHITECTURAL
+TextureCube gWaterCubemaps[] : register(t0, space2);
+SamplerState gWaterClampSampler : register(s2);
+SamplerState gWaterShadowSampler : register(s3);
 
-// Noise scroll/blend is now fully DNAM-driven (RE-recovered, no tuned constants): each of the 3 noise
-// layers scrolls at its own DNAM WindSpeed in noise-UV space along its WindDir(°), and is weighted by its
-// DNAM fAmplitude — exactly the engine's ISNOISESCROLLANDBLEND prepass (TESWaterSystem::UpdateWaterNoise:
-// texScroll += WindSpeed·dt·(cosθ,sinθ)). The composite is sampled once and the noise frequency comes
-// from fNoiseScale/fUVScale (see main()). So the old kNoiseGain / kOctaves / kScrollWorldSpeed tuning
-// constants are gone — their values are the real DNAM fAmplitude / fNoiseScale / WindSpeed.
+struct PointLight
+{
+    float4 PositionRadius;
+    float4 ColorIntensity;
+    float4 AuthoredMetadata;
+    float4 Reserved;
+};
+StructuredBuffer<PointLight> uPointLights : register(t9, space0);
+#endif
+
+// FO3/FNV's DNAM-driven scroll/blend + normal reconstruction now runs in the explicit
+// water_noise.comp.hlsl prepass. This helper remains for Skyrim's independently-authored normal maps
+// and for a soft fallback if the prepass cannot reserve transient GPU constants in a saturated frame.
 // FNV passes the live scene SunDir (c12) / SunColor (c13). P3 feeds those from the shared b3
 // atmosphere CB (uSunDirIntensity / uSunColorLighting) when lighting is enabled, so water tracks the
 // time-of-day/weather sun; when lighting is OFF these static constants stand in (the pre-atmosphere
@@ -129,18 +162,17 @@ float2 RipplePerturb(float2 p, float t)
 // (genaratednoise01.dds) is a full-range RGB noise, NOT a blue-biased normal map — the engine adds the
 // (0,0,1) z-bias in the pixel shader (see main()), so all three channels are the perturbation (engine
 // WATER000.pso: `texld r3,v7,s2; mad r3.xyz,r3,2,-1`).
-//   IMPORTANT: `layer.x` (UvScale) and `layer.w` (AmpScale) are NOT used — those WATR-DNAM fields are the
-//   FFT-DISPLACEMENT params (fHeightUVScale @172-180 / fAmplitude @184-192), which are ZERO in standard
-//   water; reading them as noise params collapsed the UV to a constant texel (flat) at zero amplitude.
-//   The noise normal is driven by ONE shared scale (`freq`, from fNoiseScale-era tiling) scrolled by the
-//   real DNAM noise wind dir/speed (`layer.y` = WindDirDeg @100-108, `layer.z` = WindSpeed @112-120).
+// `layer.x` is consumed by the classic prepass as fTexScale=max(1,ceil(fHeightUVScale*.01)); this
+// direct fallback uses its caller-provided world frequency instead. `layer.w` remains the authored
+// fAmplitude weight.
 float3 SampleNoiseLayer(uint idx, float2 worldXy, float freq, float4 layer, float t)
 {
     // layer = (UvScale[displacement fHeightUVScale, NOT used for noise], WindDirDeg, WindSpeed, fAmplitude).
     // Engine ISNOISESCROLLANDBLEND: each layer scrolls the noise in its own UV by WindSpeed·dt along WindDir°,
     // weighted by fAmplitude (UpdateWaterNoise, RE-recovered — no fudge multiplier on the scroll rate).
     float rad = radians(layer.y);
-    float2 dir = float2(cos(rad), sin(rad));
+    // Compass-style direction: UpdateWaterNoise accumulates X with sin and Y with cos.
+    float2 dir = float2(sin(rad), cos(rad));
     float2 uv = worldXy * freq + dir * (layer.z * t);
     return (gWaterTextures[NonUniformResourceIndex(idx)].Sample(gWaterSampler, uv).xyz * 2.0 - 1.0) * layer.w;
 }
@@ -153,6 +185,86 @@ float LinearizeDepth(float ndcZ, float near, float far)
     return (near * far) / max(near + ndcZ * (far - near), 1e-4);
 }
 
+#if FO4_WATER_ARCHITECTURAL
+bool TryModernCascadeShadow(float4x4 shadowMatrix, float4 cascade, float3 worldPos, out float visibility)
+{
+    visibility = 1.0;
+    if (cascade.x < 0.5) return false;
+
+    float4 shadowClip = mul(shadowMatrix, float4(worldPos, 1.0));
+    float texel = cascade.y;
+    float2 uv = float2(shadowClip.x * 0.5 + 0.5, 0.5 - shadowClip.y * 0.5);
+    float border = 2.5 * texel;
+    if (min(uv.x, uv.y) < border || max(uv.x, uv.y) > 1.0 - border ||
+        shadowClip.z <= 0.0 || shadowClip.z >= 1.0)
+    {
+        return false;
+    }
+
+    uint slot = (uint)cascade.w;
+    float reference = shadowClip.z + cascade.z;
+    float2 texelPos = uv / texel - 0.5;
+    float2 fraction = frac(texelPos);
+    float2 gatherBase = (floor(texelPos) + 0.5) * texel;
+    float litAmount = 0.0;
+    [unroll]
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        [unroll]
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            float4 quad = gWaterTextures[NonUniformResourceIndex(slot)]
+                .GatherRed(gWaterShadowSampler, gatherBase + float2(dx, dy) * texel);
+            float4 visible = 1.0 - step(reference.xxxx, quad);
+            litAmount += lerp(
+                lerp(visible.w, visible.z, fraction.x),
+                lerp(visible.x, visible.y, fraction.x),
+                fraction.y);
+        }
+    }
+    visibility = litAmount / 9.0;
+    return true;
+}
+
+float ModernShadowFactor(float3 worldPos)
+{
+    float visibility;
+    if (TryModernCascadeShadow(uShadowMatrix0, uShadowParams0, worldPos, visibility)) return visibility;
+    if (TryModernCascadeShadow(uShadowMatrix1, uShadowParams1, worldPos, visibility)) return visibility;
+    if (TryModernCascadeShadow(uShadowMatrix2, uShadowParams2, worldPos, visibility)) return visibility;
+    if (TryModernCascadeShadow(uShadowMatrix3, uShadowParams3, worldPos, visibility)) return visibility;
+    return 1.0;
+}
+
+float ModernOrenNayar(float3 V, float3 N, float3 L, float sigma)
+{
+    float sigma2 = sigma * sigma;
+    float A = 1.0 - 0.5 * sigma2 / (sigma2 + 0.57);
+    float B = 0.45 * sigma2 / (sigma2 + 0.09);
+    float vdotn = dot(V, N);
+    float ldotn = dot(L, N);
+    float sinTan = sqrt(saturate((1.0 - vdotn * vdotn) * (1.0 - ldotn * ldotn))) /
+        max(max(vdotn, ldotn), 1e-4);
+    float cosPhi = max(dot(V - N * vdotn, L - N * ldotn), 0.0);
+    return saturate(ldotn) * (A + B * cosPhi * sinTan);
+}
+
+float ModernSpecular(float3 V, float3 N, float3 L, float specPower, float specAmplitude)
+{
+    float ndotl = saturate(dot(N, L));
+    float ndotvLocal = saturate(dot(N, V));
+    float3 H = normalize(V + L);
+    float ndoth = saturate(dot(N, H));
+    float vdoth = saturate(dot(V, H));
+    float normalizedBlinn = pow(ndoth, specPower) * (specPower + 2.0) * 0.159155;
+    float visibility = min(2.0 * ndoth * min(ndotl, ndotvLocal) / max(vdoth, 1e-4), 1.0) /
+        max(ndotvLocal, 1e-4);
+    float fresnel5 = pow(1.0 - vdoth, 5.0);
+    float fresnel = min(fresnel5 + 0.2 * (1.0 - fresnel5), 1.0);
+    return min(visibility * fresnel * normalizedBlinn * 0.25, 15.0) * specAmplitude * ndotl;
+}
+#endif
+
 float4 main(PSInput input) : SV_Target
 {
     float t = uCamPosTime.w;
@@ -161,6 +273,7 @@ float4 main(PSInput input) : SV_Target
     bool lit = uSunColorLighting.w > 0.5;
     float3 sunDir = lit ? normalize(uSunDirIntensity.xyz) : kSunDir;
     float3 sunCol = lit ? uSunColorLighting.rgb : kSunColor;
+    float sunGate = lit ? max(uSunDirIntensity.w, 0.0) : 1.0;
     uint noiseIndex = uNoiseParams.x;
     // RE-recovered scales (the 256² NNAM tiles at TexScale). The recovered VS does v7=(worldXY+QPos)/TexScale,
     // and TexScale = DNAM fUVScale (@136, ~1000 world units) — fNoiseScale (@96, ~13) is far too small to be a
@@ -247,6 +360,17 @@ float4 main(PSInput input) : SV_Target
     return float4(ApplyFog(mwTex, input.vWorldPos), saturate(asfloat(uNoiseParams.w)));
 #endif
 
+#if FO4_WATER_ARCHITECTURAL
+    // The modern path consumes the explicit t1 prepass output. The engine's water VS supplies a
+    // single authored UV; the viewer has no water UV/vertex-color payload yet, so keep the existing
+    // WATR world tile as the isolated coordinate fallback rather than inventing a second scale.
+    float2 modernUv = input.vWorldPos.xy / max(uSurface0.x, 1.0);
+    float2 modernNormalXy = gWaterTextures[NonUniformResourceIndex(uModernIndices.y)]
+        .Sample(gWaterSampler, modernUv).xy * 2.0 - 1.0;
+    float3 N = normalize(float3(
+        modernNormalXy,
+        sqrt(saturate(1.0 - dot(modernNormalXy, modernNormalXy)))));
+#else
     // FNV distance fade of ripples: full within 4096 world units, -> 0 at 8192.
     float noiseFade = saturate((8192.0 - distXY) / 4096.0);
 
@@ -257,26 +381,56 @@ float4 main(PSInput input) : SV_Target
     // exceeded 1, the rebuilt z collapsed to 0, tilting the normal flat/horizontal and smearing the sun
     // glint into elongated streaks. The z-bias keeps the normal near-vertical, so the surface reads as
     // gentle ripples. The engine pre-composites its 3 noise layers (ISNOISESCROLLANDBLEND) into one
-    // texture and taps it once; lacking that prepass the viewer sums the 3 DNAM layers here — each a tap
-    // of the NNAM at noiseFreq, scrolled by its own WindDir/WindSpeed and weighted by its fAmplitude.
+    // texture and taps it once. uNormalIndices.w marks that recovered precomposited input; Skyrim and
+    // allocation-failure fallbacks retain the direct authored-layer path below.
     float3 pert;
+#if OBLIVION_WATER
+    // Oblivion's NormalMap path is separate from FNV's precomposited-noise path. WATER000 unpacks
+    // the current global water00..31 animation frame directly, attenuates XY by
+    // (1-horizontalDistance*0.000122)^2, then normalizes; it does NOT multiply the normal by the
+    // water-column factor or add FNV's (0,0,1) bias. WATR TNAM is the separate DetailMap below.
+    if (noiseIndex == 0xFFFFFFFFu)
+    {
+        pert = float3(RipplePerturb(input.vWorldPos.xy, t), 1.0);
+    }
+    else
+    {
+        float2 legacyUv = input.vWorldPos.xy * fMacro + uLegacySurface0.zw * t;
+        pert = gWaterTextures[NonUniformResourceIndex(noiseIndex)].Sample(gWaterSampler, legacyUv).xyz * 2.0 - 1.0;
+    }
+    float oblivionLinearDistanceAtten = 1.0 - distXY * 0.000122;
+    float oblivionDistanceAtten = oblivionLinearDistanceAtten * oblivionLinearDistanceAtten;
+    pert.xy *= oblivionDistanceAtten;
+    float3 N = normalize(pert);
+#else
     if (noiseIndex == 0xFFFFFFFFu)
     {
         pert = float3(RipplePerturb(input.vWorldPos.xy, t), 0.0);
     }
     else
     {
-        // TWO octaves of the full 3-layer blend so the fine ripple is at full authored amplitude (not a single
-        // weak layer): the macro octave (tile=fUVScale) gives the broad, non-repeating structure; the detail
-        // octave (tile=fUVScale/fNoiseScale) gives dense fine ripples — the engine's fNoiseScale normal detail.
-        // Each layer carries WindDir(°)=.y, WindSpeed=.z, fAmplitude=.w. uLayerN.x (displacement) is unused.
-        float3 macro = SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fMacro, uLayer1, t)
-                     + SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fMacro, uLayer2, t)
-                     + SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fMacro, uLayer3, t);
-        float3 detail = SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fDetail, uLayer1, t)
-                      + SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fDetail, uLayer2, t)
-                      + SampleNoiseLayer(noiseIndex, input.vWorldPos.xy, fDetail, uLayer3, t);
-        pert = macro + detail;
+        if (uNormalIndices.w != 0u)
+        {
+            // WATER000.vso supplies (worldXY + QPosAdjust) / fUVScale. The compute prepass already
+            // contains all three animated layers and the ISNOISENORMALMAP Sobel reconstruction.
+            pert = gWaterTextures[NonUniformResourceIndex(noiseIndex)]
+                .Sample(gWaterSampler, input.vWorldPos.xy * fMacro).xyz * 2.0 - 1.0;
+        }
+        else
+        {
+            // Skyrim keeps three independently-authored normal inputs; the same path is also the
+            // fail-soft fallback if the transient ring cannot record this frame's classic prepass.
+            uint normal1 = uNormalIndices.x == 0xFFFFFFFFu ? noiseIndex : uNormalIndices.x;
+            uint normal2 = uNormalIndices.y == 0xFFFFFFFFu ? normal1 : uNormalIndices.y;
+            uint normal3 = uNormalIndices.z == 0xFFFFFFFFu ? normal1 : uNormalIndices.z;
+            float3 macro = SampleNoiseLayer(normal1, input.vWorldPos.xy, fMacro, uLayer1, t)
+                         + SampleNoiseLayer(normal2, input.vWorldPos.xy, fMacro, uLayer2, t)
+                         + SampleNoiseLayer(normal3, input.vWorldPos.xy, fMacro, uLayer3, t);
+            float3 detail = SampleNoiseLayer(normal1, input.vWorldPos.xy, fDetail, uLayer1, t)
+                          + SampleNoiseLayer(normal2, input.vWorldPos.xy, fDetail, uLayer2, t)
+                          + SampleNoiseLayer(normal3, input.vWorldPos.xy, fDetail, uLayer3, t);
+            pert = macro + detail;
+        }
     }
     // Ripple amplitude scales with the REAL water-column depth (engine r0.z: shallow water reads flat,
     // deep water ripples). depthT is that column ONLY when a scene-depth SRV is bound; otherwise it's the
@@ -288,10 +442,95 @@ float4 main(PSInput input) : SV_Target
     n3.z += 1.0;                // engine: + (0,0,1) z-bias — normal stays near-vertical (gentle ripples)
     n3.xy *= noiseFade;         // engine: xy faded out with distance
     float3 N = normalize(n3);
+#endif
+#endif // !FO4_WATER_ARCHITECTURAL
 
     float ndotv = saturate(dot(N, V));
 
 #if FO4_WATER
+#if FO4_WATER_ARCHITECTURAL
+    // ==== FO4/FO76 recovered dynamic-water architecture (explicit opt-in) ====
+    // t0/t1/t2/t15 are real per-frame GPU resources. Unrecovered generators/constants remain
+    // neutral and are documented in water_modern.comp.hlsl; the established FO4 stand-in below
+    // remains the default and the per-frame fallback whenever these resources cannot be recorded.
+    uint modernTechnique = uModernTechnique.x;
+    float4 baseCoverage = gWaterTextures[NonUniformResourceIndex(uModernIndices.x)].Load(int3(0, 0, 0));
+    float4 bodyCoverage = baseCoverage;
+    if ((modernTechnique & 0x40u) != 0u && depthIndex != 0xFFFFFFFFu)
+    {
+        float gammaDepth = pow(saturate(column / max(uFo4DarkSilt.w, 1e-4)), 0.45454545);
+        bodyCoverage = gWaterTextures[NonUniformResourceIndex(uModernIndices.w)]
+            .SampleLevel(gWaterClampSampler, float2(gammaDepth, 0.5), 0);
+    }
+
+    float4 glossFlow = gWaterTextures[NonUniformResourceIndex(uModernIndices.z)].Load(int3(0, 0, 0));
+    float scaledGloss = glossFlow.y * uModernParams.x;
+    float sigma = 1.0 - scaledGloss;
+    float specPower = exp(10.0 * scaledGloss + 1.0);
+    float specAmplitude = glossFlow.x * uModernParams.y * 3.14159265;
+    float satNL = saturate(dot(N, sunDir));
+    float relativeWorldDepthSpace = input.Position.z;
+    float3 relativeWorldPos = input.vWorldPos - uCameraOrigin.xyz;
+    float shadow = lit ? ModernShadowFactor(relativeWorldPos) : 1.0;
+
+    // Recovered Oren-Nayar + transmission core. Diffuse receives shadow here and the complete
+    // accumulator receives it again below, matching the shipped shader's double shadow multiply.
+    float3 accumulated = ModernOrenNayar(V, N, sunDir, sigma) * sunCol * sunGate * shadow;
+    float backscatter = 3.0 - 3.0 /
+        (1.0 + exp(8.65591 * (2.0 * (1.0 - scaledGloss) - 1.0)));
+    accumulated += saturate(dot(V, -sunDir)) * pow(1.0 - ndotv, 0.01) * satNL *
+        backscatter * sunCol * sunGate;
+    // cb1 wrap and under-light scales remain unrecovered. Their neutral value is zero, so no
+    // residual term is fabricated here.
+    accumulated *= shadow;
+
+    float3 specularColor = ModernSpecular(V, N, sunDir, specPower, specAmplitude) *
+        sunCol * sunGate * shadow;
+
+    // Same recovered lighting core for local lights, with the shipped bounded attenuation and
+    // hard clamp of twenty entries. Point-light positions are already camera-origin-relative.
+    uint pointCount = lit
+        ? min((uint)max(floor(uAtmosphereParams.w), 0.0), min(uModernTechnique.z, 20u))
+        : 0u;
+    [loop]
+    for (uint pointIndex = 0; pointIndex < pointCount; pointIndex++)
+    {
+        PointLight pointLight = uPointLights[pointIndex];
+        float radius = pointLight.PositionRadius.w;
+        float3 toPoint = pointLight.PositionRadius.xyz - relativeWorldPos;
+        float distanceSquared = dot(toPoint, toPoint);
+        float radiusSquared = radius * radius;
+        if (radius <= 0.0 || distanceSquared >= radiusSquared) continue;
+
+        float3 pointDirection = toPoint * rsqrt(max(distanceSquared, 1e-8));
+        float attenuation = pow(saturate(1.0 - distanceSquared / radiusSquared), 2.2);
+        float3 pointRadiance = pointLight.ColorIntensity.rgb *
+            (pointLight.ColorIntensity.w * attenuation);
+        accumulated += ModernOrenNayar(V, N, pointDirection, sigma) * pointRadiance;
+        specularColor += ModernSpecular(V, N, pointDirection, specPower, specAmplitude) * pointRadiance;
+    }
+
+    // SetupMaterial's ambient-source mapping is still open. Preserve the pre-existing DarkSilt
+    // stand-in rather than silently replacing it with LightSilt or the DALC average.
+    float3 lighting = accumulated + uFo4DarkSilt.rgb;
+    float3 modernColor = bodyCoverage.rgb * lighting + specularColor;
+
+    if ((modernTechnique & 0x100u) != 0u && uModernTechnique.y != 0xFFFFFFFFu)
+    {
+        float3 reflected = reflect(-V, N);
+        float cubeMip = (1.0 - saturate(glossFlow.y)) * 6.0 + relativeWorldDepthSpace * 0.001953;
+        float3 cube = gWaterCubemaps[NonUniformResourceIndex(uModernTechnique.y)]
+            .SampleLevel(gWaterClampSampler, reflected, cubeMip).rgb;
+        // Recovered factor 3 * t2.x * glossScaleB. Global cube intensity is neutral one until
+        // SetupTechnique recovers cb1[2].x.
+        modernColor += cube * (3.0 * glossFlow.x * uModernParams.y) * lighting;
+    }
+
+    // Exact structural alpha behavior: t0 coverage gates discard and output alpha is constant.
+    // Their cb2 mappings are not recovered, so CPU supplies neutral threshold=0/output=1.
+    clip(baseCoverage.a - uModernParams.w);
+    return float4(ApplyFog(modernColor, input.vWorldPos), uModernParams.z);
+#else
     // ==== FO4 BSWaterShader (ps_5_0, Shaders011.fxp group 5) — engine-exact math per
     // tools/GhidraProject/fo4_water_pixel_shader_decompiled.txt; asm line refs = g5_ps_00000001.asm.
     // Engine-generated inputs get labeled stand-ins: the composited displacement-normal texture is
@@ -381,6 +620,7 @@ float4 main(PSInput input) : SV_Target
     float fo4SurfF = 0.2 + 0.8 * pow(1.0 - ndotv, 5.0);
     fo4Alpha = max(fo4Alpha, fo4SurfF);
     return float4(ApplyFog(fo4Color, input.vWorldPos), fo4Alpha);
+#endif // FO4_WATER_ARCHITECTURAL
 #else
 
 #if OBLIVION_WATER
@@ -391,7 +631,7 @@ float4 main(PSInput input) : SV_Target
 #else
     // FNV body color: lerp(Shallow, Deep, depthT), softly lit by the key light.
     float3 body = lerp(uShallow.rgb, uDeep.rgb, depthT);
-    body *= lerp(0.6, 1.0, saturate(dot(N, sunDir)));
+    body *= saturate(dot(N, sunDir));
 #endif
 
     // Reflected view vector — used for both the sky-reflection tint and the sun specular below.
@@ -401,10 +641,17 @@ float4 main(PSInput input) : SV_Target
     // the atmosphere sky — horizon→top by the reflected ray's up component — so water mirrors the
     // time-of-day/weather sky (P5; one-way b3 read, no RTT loop). Otherwise the DNAM ReflectionColor.
     // Scaled by the reflectivity multiplier either way.
-    float3 reflBase = uSkyTopSkyEnabled.w > 0.5
+    float3 reflectedSky = uSkyTopSkyEnabled.w > 0.5
         ? lerp(uSkyHorizon.rgb, uSkyTopSkyEnabled.rgb, saturate(R.z))
         : uReflection.rgb;
+#if OBLIVION_WATER
+    // Engine: lerp(ReflectionColor, planarReflectionRT, Reflectivity). The viewer's sky-gradient
+    // reflection is the RT-free stand-in for that RT, so the authored color remains the base term.
+    float3 refl = lerp(uReflection.rgb, reflectedSky, reflectivity);
+#else
+    float3 reflBase = reflectedSky;
     float3 refl = reflBase * reflectivity;
+#endif
 
     // FNV Schlick fresnel: F0 + (1-F0)*(1-NdotV)^5, F0 = FresnelAmount. Reflection over body.
     float F = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
@@ -413,8 +660,10 @@ float4 main(PSInput input) : SV_Target
     // asm 139). DECOMPILE-RESOLVED (Oblivion.exe FUN_00499570 fills the global; FUN_004ed660 is
     // the getter; the console "set water opacity" handler FUN_0050d8e0 writes the same slot):
     // VarAmounts.z = WATR ANAM Opacity / 100 — per water type. Vanilla: DefaultWater 100 (fully
-    // floored/opaque), dungeon/sewer/oil waters 85. Floors both the color lerp and the alpha.
-    float fresneled = max(asfloat(uNoiseParams.w), saturate(F));
+    // floored/opaque), dungeon/sewer/oil waters 85. The recovered max feeds alpha only; applying
+    // it to the RGB Fresnel interpolation was the washed-out TES4 mismatch fixed here.
+    float alphaFresnel = max(asfloat(uNoiseParams.w), saturate(F));
+    float fresneled = saturate(F);
 #else
     float fresneled = saturate(F);
 #endif
@@ -423,13 +672,26 @@ float4 main(PSInput input) : SV_Target
 #if OBLIVION_WATER
     // Oblivion single specular: pow(dot(reflect(-V,N), SunDir), Sun Power) × SunColor — no
     // sky-glint term in WATER000.pso.
-    float sunSpec = pow(saturate(dot(R, sunDir)), specExp);
-    color += sunSpec * sunCol;
+    float sunSpec = pow(saturate(dot(R, sunDir)), max(uSurface1.x, 1.0));
+    color += sunSpec * sunCol * sunGate;
+
+    // WATER000.pso asm 116-121/166: WATR TNAM is the separate DetailMap (s2), sampled at the
+    // scrolling normal UV plus N.xy*0.1. Its exact blend factor is the UNSQUARED distance term
+    // (1-horizontalDistance*0.000122) times VarAmounts.w = DATA.TextureBlend/100. The normal itself
+    // uses the squared distance term above; conflating those two attenuations changes mid-distance
+    // detail substantially. A missing/empty TNAM skips this term, matching retail DefaultWater.
+    if (uNormalIndices.y != 0xFFFFFFFFu && uLegacySurface1.z != 0.0)
+    {
+        float2 detailUv = input.vWorldPos.xy * fMacro + uLegacySurface0.zw * t + N.xy * 0.1;
+        float3 detail = gWaterTextures[NonUniformResourceIndex(uNormalIndices.y)]
+            .Sample(gWaterSampler, detailUv).rgb;
+        color = lerp(color, detail, oblivionLinearDistanceAtten * uLegacySurface1.z);
+    }
 #else
     // FNV dual specular: sharp sun glint off the reflected view vector + a fixed sky-glint term.
     float sunSpec = pow(saturate(dot(R, sunDir)), specExp);
     float skyGlint = pow(saturate(dot(float2(N.x, N.z), float2(-0.57, 0.82))), 100.0);
-    color += (sunSpec + skyGlint) * sunCol;
+    color += (sunSpec + skyGlint) * sunCol * sunGate;
 #endif
 
 #if OBLIVION_WATER
@@ -445,12 +707,27 @@ float4 main(PSInput input) : SV_Target
     // Without a scene-depth SRV there is no column (the N·V proxy is unrelated and zero at grazing
     // angles, which would erase the surface) — fall back to deep-water behavior (aDepth = 1).
     float aDepth = (depthIndex == 0xFFFFFFFFu) ? 1.0 : saturate(column / 512.0);
-    float alphaBase = lerp(0.25, fresneled, aDepth);
+    float alphaBase = lerp(0.25, alphaFresnel, aDepth);
     float shoreS = saturate(1.0 - (aDepth - 0.2) * 2.857143);
     float alpha = alphaBase * (1.0 - shoreS * shoreS * shoreS);
 #else
-    float alpha = lerp(0.6, 0.95, saturate(F));
+    // WATER000 outputs the interpolated vertex alpha. Cell/NIF water vertices are authored opaque,
+    // so the canonical RT-free path writes 1 rather than an invented Fresnel coverage ramp.
+    float alpha = 1.0;
 #endif
+#if OBLIVION_WATER
+    // Oblivion WATER000 uses the WATR DATA fog range, not FNV's depth-falloff fields. FogColor is
+    // the active scene fog color; with fog disabled there is no valid engine fog source to apply.
+    if (uFogColorFogEnabled.w > 0.5 && uLegacySurface1.y > uLegacySurface1.x)
+    {
+        float viewDist = length(input.vWorldPos - uCamPosTime.xyz);
+        float visibility = saturate((uLegacySurface1.y - viewDist) /
+                                    max(uLegacySurface1.y - uLegacySurface1.x, 1.0));
+        color = lerp(uFogColorFogEnabled.rgb, color, visibility);
+    }
+    return float4(color, alpha);
+#else
     return float4(ApplyFog(color, input.vWorldPos), alpha);
+#endif
 #endif // !FO4_WATER
 }

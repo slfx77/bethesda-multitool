@@ -68,6 +68,13 @@ public record PlacedReference
     /// re-skinned variant, so alpha/two-sided/specular flow from the replacement materials.</summary>
     public uint? MaterialSwapFormId { get; init; }
 
+    /// <summary>
+    ///     XEMI external-emittance FormID. External-emittance shader properties source their
+    ///     color from this placement link (normally REGN, sometimes LIGH) instead of the NIF's
+    ///     material emissive multiplier.
+    /// </summary>
+    public uint? EmittanceFormId { get; init; }
+
     /// <summary>Lock level from XLOC/ExtraLock.</summary>
     public byte? LockLevel { get; init; }
 

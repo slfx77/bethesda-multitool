@@ -53,6 +53,7 @@ public class WaterProfileTests
         Assert.Equal(WaterShaderVariant.OblivionWater000, profile.ShaderVariant);
         Assert.Equal(WaterProfile.Fnv.NoiseTilingWorldUnits, profile.NoiseTilingWorldUnits);
         Assert.Equal(WaterProfile.Fnv.DepthTieBiasWorldUnits, profile.DepthTieBiasWorldUnits);
+        Assert.Equal(12f, profile.SurfaceFrameFps);
     }
 
     [Fact]

@@ -87,7 +87,8 @@ internal static class WorldMapOverlayBuilder
         // Build spawn resolution index
         var spawnIndex = SpawnResolutionIndex.Build(semantic);
         var usageIndex = FormUsageIndex.Build(semantic);
-        var (moonPrimarySize, moonSecondarySize) = ComputeMoonSizes(semantic);
+        var (moonPrimarySize, moonSecondarySize) = ComputeMoonSizes(semantic, game);
+        var gameSettingsByEditorId = BuildGameSettingIndex(semantic.GameSettings);
         var textureSetsByFormId = BuildTextureSetIndex(semantic.TextureSets);
 
         return new WorldViewData
@@ -118,6 +119,7 @@ internal static class WorldMapOverlayBuilder
             HeightmapMaxCellY = hmMaxY,
             SourceFilePath = sourceFilePath,
             Game = game,
+            GameSettingsByEditorId = gameSettingsByEditorId,
             MoonPrimaryHalfSizeFraction = moonPrimarySize,
             MoonSecondaryHalfSizeFraction = moonSecondarySize,
             SpawnIndex = spawnIndex,
@@ -135,10 +137,14 @@ internal static class WorldMapOverlayBuilder
             BaseColorRemapsByFormId = semantic.BaseColorRemapIndices,
             WatersByFormId = BuildWaterIndex(semantic.Water),
             WeathersByFormId = BuildWeatherIndex(weatherRecords),
+            RuntimeWeatherTransition = semantic.RuntimeWeatherTransition,
             ClimatesByFormId = BuildClimateIndex(climateRecords),
             ImageSpacesByFormId = BuildImageSpaceIndex(semantic.ImageSpaces),
+            ImageSpaceModifiersByFormId = BuildImageSpaceModifierIndex(semantic.ImageSpaceModifiers),
             LightingTemplatesByFormId = BuildLightingTemplateIndex(semantic.LightingTemplates),
             LightsByFormId = BuildLightIndex(semantic.Lights),
+            ExternalEmittanceColorsByFormId = ExternalEmittanceResolver.BuildIndex(
+                semantic.Regions, semantic.Lights),
             AllWeathers = BuildAllWeathers(weatherRecords)
         };
     }
@@ -151,31 +157,38 @@ internal static class WorldMapOverlayBuilder
     private static BethesdaGame DetectGame(string? sourceFilePath)
         => GameDetector.DetectFromFile(sourceFilePath).Game;
 
-    // Engine-exact moon-disc sizes for the loaded game, read from its GMSTs: iMasserSize / iSecundaSize
-    // (the ±size billboard quad half-extent) ÷ fSunXExtreme (the sky-dome horizontal radius), as a fraction
-    // of the billboard radius. This is the engine's exact apparent-size model (decompiled from FNV Moon.cpp
-    // + Skyrim TESV Moon::Initialize); because they're GMSTs the values vary per game/mod (FNV 85 / dome 800,
-    // Skyrim 90 / dome 400), so reading them here makes the moon exact and mod-aware. Either fraction is null
-    // when its GMSTs are absent (e.g. Morrowind TES3) → the viewer uses the per-game SkyMoonProfile default.
-    private static (float? Primary, float? Secondary) ComputeMoonSizes(RecordCollection records)
+    // Moon-disc sizes for the loaded game, read from iMasserSize/iSecundaSize. Recovered FNV and Skyrim
+    // Moon::Initialize implementations place their ±size billboard quad on a fixed 512-unit arm; FO4's
+    // separate triangle family uses fSunXExtreme as its path radius. The profile owns that distinction so
+    // the loaded GMST remains mod-aware without incorrectly coupling the classic arm to the sun path.
+    private static (float? Primary, float? Secondary) ComputeMoonSizes(
+        RecordCollection records, BethesdaGame game)
     {
         int? GmstInt(string id) => records.GameSettings
             .FirstOrDefault(g => string.Equals(g.EditorId, id, StringComparison.OrdinalIgnoreCase))?.IntValue;
         float? GmstFloat(string id) => records.GameSettings
             .FirstOrDefault(g => string.Equals(g.EditorId, id, StringComparison.OrdinalIgnoreCase))?.FloatValue;
 
-        // FNV/FO3 ship fSunXExtreme=800, which yields a correct-looking moon (verified in-viewer); Skyrim
-        // ships 400. Oblivion ships iMasserSize but NO fSunXExtreme (and no iSecundaSize), so its moon was
-        // falling back to the over-large profile default. Use the FNV-calibrated dome radius (800) when
-        // fSunXExtreme is absent so the size is still computed from iMasserSize, and estimate Secunda at
-        // ~0.55x Masser (the smaller second moon) when its GMST is missing.
+        var profile = SkyMoonProfile.ForGame(game);
+
+        // Keep the existing 800-unit calibration only for unrecovered legacy families such as Oblivion
+        // when fSunXExtreme is absent. Recovered rotated arms ignore it; modern paths must fall back to
+        // their profile rather than silently borrowing a classic radius.
         const float fallbackDomeRadius = 800f;
-        var dome = GmstFloat("fSunXExtreme") ?? fallbackDomeRadius;
+        var dome = GmstFloat("fSunXExtreme");
+        if (dome is null && profile.PathFamily == MoonPathFamily.CalibratedTesOrbit)
+        {
+            dome = fallbackDomeRadius;
+        }
+
         var masser = GmstInt("iMasserSize");
         var secunda = GmstInt("iSecundaSize") ?? (masser is int m ? (int)(m * 0.55f) : null);
-        return (SkyMoonProfile.FractionFromGmst(masser, dome),
-                SkyMoonProfile.FractionFromGmst(secunda, dome));
+        return (profile.HalfSizeFractionFromGmst(masser, dome),
+                profile.HalfSizeFractionFromGmst(secunda, dome));
     }
+
+    internal static Dictionary<string, GameSettingRecord> BuildGameSettingIndex(
+        IReadOnlyList<GameSettingRecord> settings) => GameSettingRegistry.BuildIndex(settings);
 
     /// <summary>
     ///     Build <see cref="WorldViewData" /> from a save file, optionally enriched with a supplementary ESM.
@@ -230,6 +243,7 @@ internal static class WorldMapOverlayBuilder
         List<PlacedReference> overlayMarkers,
         (float X, float Y, float Z)? playerPos)
     {
+        var game = DetectGame(supplementaryEsmPath);
         var (boundsIndex, categoryIndex) = ObjectBoundsIndex.BuildCombined(suppRecords);
         var modelPathIndex = ObjectBoundsIndex.BuildModelPathIndex(suppRecords);
 
@@ -266,7 +280,8 @@ internal static class WorldMapOverlayBuilder
         var (refrToCellIndex, refPositionIndex) = BuildRefrIndices(suppRecords.Cells);
         var spawnIndex = SpawnResolutionIndex.Build(suppRecords);
         var usageIndex = FormUsageIndex.Build(suppRecords);
-        var (moonPrimarySize, moonSecondarySize) = ComputeMoonSizes(suppRecords);
+        var (moonPrimarySize, moonSecondarySize) = ComputeMoonSizes(suppRecords, game);
+        var gameSettingsByEditorId = BuildGameSettingIndex(suppRecords.GameSettings);
         var textureSetsByFormId = BuildTextureSetIndex(suppRecords.TextureSets);
 
         return new WorldViewData
@@ -296,6 +311,8 @@ internal static class WorldMapOverlayBuilder
             HeightmapMinCellX = hmMinX,
             HeightmapMaxCellY = hmMaxY,
             SourceFilePath = supplementaryEsmPath,
+            Game = game,
+            GameSettingsByEditorId = gameSettingsByEditorId,
             MoonPrimaryHalfSizeFraction = moonPrimarySize,
             MoonSecondaryHalfSizeFraction = moonSecondarySize,
             SpawnIndex = spawnIndex,
@@ -315,10 +332,14 @@ internal static class WorldMapOverlayBuilder
             BaseColorRemapsByFormId = suppRecords.BaseColorRemapIndices,
             WatersByFormId = BuildWaterIndex(suppRecords.Water),
             WeathersByFormId = BuildWeatherIndex(suppRecords.Weather),
+            RuntimeWeatherTransition = suppRecords.RuntimeWeatherTransition,
             ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),
             ImageSpacesByFormId = BuildImageSpaceIndex(suppRecords.ImageSpaces),
+            ImageSpaceModifiersByFormId = BuildImageSpaceModifierIndex(suppRecords.ImageSpaceModifiers),
             LightingTemplatesByFormId = BuildLightingTemplateIndex(suppRecords.LightingTemplates),
             LightsByFormId = BuildLightIndex(suppRecords.Lights),
+            ExternalEmittanceColorsByFormId = ExternalEmittanceResolver.BuildIndex(
+                suppRecords.Regions, suppRecords.Lights),
             AllWeathers = BuildAllWeathers(suppRecords.Weather)
         };
     }
@@ -618,6 +639,17 @@ internal static class WorldMapOverlayBuilder
     private static Dictionary<uint, ImageSpaceRecord> BuildImageSpaceIndex(List<ImageSpaceRecord> records)
     {
         var dict = new Dictionary<uint, ImageSpaceRecord>(records.Count);
+        foreach (var r in records)
+        {
+            dict.TryAdd(r.FormId, r);
+        }
+        return dict;
+    }
+
+    private static Dictionary<uint, ImageSpaceModifierRecord> BuildImageSpaceModifierIndex(
+        IReadOnlyList<ImageSpaceModifierRecord> records)
+    {
+        var dict = new Dictionary<uint, ImageSpaceModifierRecord>(records.Count);
         foreach (var r in records)
         {
             dict.TryAdd(r.FormId, r);

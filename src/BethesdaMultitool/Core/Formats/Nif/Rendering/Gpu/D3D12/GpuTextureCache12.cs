@@ -505,7 +505,14 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                 continue;
             }
 
-            cmd.ResourceBarrierTransition(c.Texture!, ResourceStates.Common, ResourceStates.PixelShaderResource);
+            // Bindless material textures are normally sampled by pixel shaders, but the recovered
+            // FO3/FNV water-noise construction also consumes its NNAM source in a compute shader.
+            // Keep resident texture resources legal for both shader classes; descriptors and all
+            // existing pixel-only consumers are unchanged.
+            cmd.ResourceBarrierTransition(
+                c.Texture!,
+                ResourceStates.Common,
+                ResourceStates.PixelShaderResource | ResourceStates.NonPixelShaderResource);
             _gpu.Device.CreateShaderResourceView(c.Texture, c.SrvDesc, node.Entry.PersistentSrv);
             node.Entry.ReplaceTexture(c.Texture!, c.SrvDesc, c.Format, c.NormalDecodeMode, c.ByteSize);
             _residentBytes += c.ByteSize;

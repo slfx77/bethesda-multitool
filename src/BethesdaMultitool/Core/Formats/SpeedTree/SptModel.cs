@@ -73,6 +73,18 @@ public sealed record SptLodInfo
     /// <summary>Token 9008 → <c>+0xdc</c>: far-LOD keep fraction. Ctor default 0.5.</summary>
     public float BranchFarFraction { get; init; } = 0.5f;
 
+    /// <summary>
+    ///     Token 9011 → <c>CTreeEngine+0xc0</c>: number of leaf LOD lists built by
+    ///     <c>CTreeEngine::BuildLeafLods</c>. Constructor default 1 (the unmerged LOD0 list only).
+    /// </summary>
+    public int NumLeafLods { get; init; } = 1;
+
+    /// <summary>
+    ///     Token 9010 → <c>CTreeEngine+0xe4</c>: per-level leaf-card size increase. The parser normalizes
+    ///     authored zero to the SDK's 0.1 fallback, exactly as <c>ParseLodInfo</c> does.
+    /// </summary>
+    public float LeafLodSizeIncrease { get; init; } = 0.1f;
+
     /// <summary>Token 9013 → <c>+0xe8</c>: upper bound of the per-branch demotion draw in
     /// <c>BuildBranchLods</c> (<c>u = GetUniform(0, this)</c>; sort key zeroed when
     /// <c>(1−u)·v + u·max &lt; 0</c>). Ctor default 0 = no demotion (draws still happen, from a private

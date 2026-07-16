@@ -141,6 +141,7 @@ public static class EsmParsedRecordTypes
         new("WTHR", nameof(RecordCollection.Weather)),
         new("CLMT", nameof(RecordCollection.Climate)),
         new("IMGS", nameof(RecordCollection.ImageSpaces)),
+        new("IMAD", nameof(RecordCollection.ImageSpaceModifiers)),
         new("LSCT", nameof(RecordCollection.LoadScreenTypes)),
         new("IPCT", nameof(RecordCollection.ImpactData)),
         new("ALOC", nameof(RecordCollection.AudioLocationControllers)),
@@ -164,10 +165,9 @@ public static class EsmParsedRecordTypes
         new("DOBJ", nameof(RecordCollection.GenericRecords)),
         new("ADDN", nameof(RecordCollection.GenericRecords)),
         new("TREE", nameof(RecordCollection.GenericRecords)),
-        new("IMAD", nameof(RecordCollection.GenericRecords)),
         new("IDLM", nameof(RecordCollection.GenericRecords)),
         new("PWAT", nameof(RecordCollection.GenericRecords)),
-        // IMGS moved to the typed ImageSpaces list (viewer tonemap stage) — see the entry above.
+        // IMGS/IMAD moved to typed image-space lists (viewer tonemap stage) — see the entries above.
         new("AMEF", nameof(RecordCollection.GenericRecords)),
     ];
 

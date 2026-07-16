@@ -159,7 +159,24 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // v39: classic Skyrim inline BSEffectShaderProperty now preserves its flags, BaseColor × scale,
     // and falloff. Warm v38 entries keep these effects white and non-decal — notably
     // WRLODWindowGlow01 instead of its authored ×2 tint / decal state.
-    internal const int DecoderVersion = 39;
+    // Bumped 39→40: SpeedTree bark now carries TBN + branch-wind payload, and the per-submesh
+    // cache persists the branch route plus TREE.CNAM rock/rustle speeds.
+    // Bumped 40→41: particle meshes now retain authored surface emission, capacity, atlas UVs,
+    // rotation/aspect, and corrected declination; shader/BGSM UV transforms and unclipped effect
+    // alpha/HDR scales also change decoded submesh data. Warm v40 entries contain the old geometry.
+    // Bumped 41→42: external-material TileU/TileV now reach the CPU/GPU sampler-addressing state;
+    // the per-submesh payload gains independent U/V clamp flags. Warm v41 entries always wrap.
+    // Bumped 42→43: particle clouds carry an explicit marker so their four-vertex quads can be
+    // camera-sorted independently inside the blended submesh. Warm v42 entries lack the marker.
+    // Bumped 43→44: legacy emitter birth rates now sample their authored controller clock instead of
+    // holding the peak key, changing static time-zero particle counts/positions. The opt-in live path
+    // bypasses this disk payload because its parsed runtime graph is deliberately CPU-only/non-persisted.
+    // Bumped 44→45: Skyrim LE and FO4 NiParticleSystem blocks now use their actual Bethesda geometry
+    // inheritance layouts. Warm v44 entries decoded those systems as null and therefore lack their clouds.
+    // Bumped 45→46: the mesh payload now retains particle-SOURCE provenance independently of baked
+    // particle-cloud geometry. A controller-delayed system in a mixed NIF can emit nothing at time zero;
+    // live mode must still reject that positive warm entry and recover its non-persisted runtime graph.
+    internal const int DecoderVersion = 46;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;
@@ -307,6 +324,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         {
             WriteAnimation(writer, anim);
         }
+
+        // Source provenance (v46+), distinct from per-submesh IsParticleCloud.
+        writer.Write(mesh.ContainsParticleSource);
     }
 
     private static void WriteAnimation(BinaryWriter writer, NifMeshAnimation anim)
@@ -405,8 +425,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         }
 
         var animation = reader.ReadBoolean() ? ReadAnimation(reader) : null;
+        var containsParticleSource = reader.ReadBoolean();
 
-        return new ReferenceDecodedMeshPayload12(submeshes, collisionPositions, collisionTriangles, animation);
+        return new ReferenceDecodedMeshPayload12(
+            submeshes, collisionPositions, collisionTriangles, animation, containsParticleSource);
     }
 
     private static NifMeshAnimation ReadAnimation(BinaryReader reader)
@@ -522,6 +544,8 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         writer.Write(submesh.EnvironmentMapScale);
         writer.Write(submesh.EnvironmentMapSmoothness);
         WriteVector2(writer, submesh.UvScrollVelocity);
+        writer.Write(submesh.IsSpeedTreeBranch);
+        WriteVector2(writer, submesh.SpeedTreeWindSpeeds);
 
         writer.Write(submesh.Skin is not null);
         if (submesh.Skin is { } skin)
@@ -543,6 +567,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             writer.Write(skin.BoneIndices);
             foreach (var w in skin.BoneWeights) writer.Write(w);
         }
+
+        writer.Write(submesh.ClampTextureU);
+        writer.Write(submesh.ClampTextureV);
+        writer.Write(submesh.IsParticleCloud);
     }
 
     private static ReferenceDecodedSubmeshPayload12 ReadSubmesh(BinaryReader reader)
@@ -609,7 +637,12 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             reader.ReadSingle(),
             reader.ReadSingle(),
             ReadVector2(reader),
-            reader.ReadBoolean() ? ReadSubmeshSkin(reader) : null);
+            reader.ReadBoolean(),
+            ReadVector2(reader),
+            reader.ReadBoolean() ? ReadSubmeshSkin(reader) : null,
+            reader.ReadBoolean(),
+            reader.ReadBoolean(),
+            reader.ReadBoolean());
     }
 
     private static NifSubmeshSkin ReadSubmeshSkin(BinaryReader reader)
@@ -713,7 +746,9 @@ internal sealed record ReferenceDecodedMeshPayload12(
     IReadOnlyList<ReferenceDecodedSubmeshPayload12> Submeshes,
     Vector3[]? CollisionPositions = null,
     int[]? CollisionTriangles = null,
-    NifMeshAnimation? Animation = null);
+    NifMeshAnimation? Animation = null,
+    // Source provenance (v46+), independent of whether the static bake produced a cloud submesh.
+    bool ContainsParticleSource = false);
 
 /// <summary>One decoded submesh: its vertices/indices, texture paths, and resolved alpha/specular/billboard render state.</summary>
 internal sealed record ReferenceDecodedSubmeshPayload12(
@@ -751,5 +786,13 @@ internal sealed record ReferenceDecodedSubmeshPayload12(
     float EnvironmentMapSmoothness = 0f,
     // TES3 NiUVController constant scroll (v32+): UV units/second, zero = static.
     Vector2 UvScrollVelocity = default,
+    // SpeedTree bark/frond route + TREE.CNAM per-tree phase multipliers (v40+).
+    bool IsSpeedTreeBranch = false,
+    Vector2 SpeedTreeWindSpeeds = default,
     // CPU skinning inputs for keyframe playback (v32+); null for unskinned submeshes.
-    NifSubmeshSkin? Skin = null);
+    NifSubmeshSkin? Skin = null,
+    // BGSM/BGEM TileU/TileV normalized to sampler clamp state (v42+).
+    bool ClampTextureU = false,
+    bool ClampTextureV = false,
+    // Baked particle-cloud marker (v43+); drives per-quad camera sorting at draw time.
+    bool IsParticleCloud = false);

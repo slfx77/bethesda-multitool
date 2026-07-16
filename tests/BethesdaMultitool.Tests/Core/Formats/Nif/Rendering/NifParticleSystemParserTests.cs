@@ -38,23 +38,19 @@ public sealed class NifParticleSystemParserTests
             nif = NifParser.Parse(data)!;
         }
 
-        // Find a NiParticleSystem block and parse it.
-        var psIndex = -1;
-        for (var i = 0; i < nif.Blocks.Count; i++)
-        {
-            if (NifParticleSystemParser.IsParticleSystem(nif.Blocks[i].TypeName))
-            {
-                psIndex = i;
-                break;
-            }
-        }
+        // FXDust contains two particle systems: the 19-particle face-surface whirlwind and a
+        // separate 200-particle sprite system whose NiPSysData authors the 4x4 atlas. Preserve
+        // those independent source contracts instead of assigning one system's atlas to another.
+        var systems = nif.Blocks.Select((block, index) => (block, index))
+            .Where(x => NifParticleSystemParser.IsParticleSystem(x.block.TypeName))
+            .Select(x => NifParticleSystemParser.Parse(data, nif, x.index))
+            .OfType<ParticleSystemDefinition>()
+            .ToArray();
+        Assert.NotEmpty(systems);
 
-        Assert.True(psIndex >= 0, "no NiParticleSystem block found");
-
-        var def = NifParticleSystemParser.Parse(data, nif, psIndex);
-        Assert.NotNull(def);
-        Assert.True(def!.WorldSpace);
-        Assert.True(def.Capacity > 0, "NiPSysData capacity should be non-zero");
+        var def = Assert.Single(systems, system => system.Capacity == 19);
+        Assert.True(def.WorldSpace);
+        Assert.Equal(19, def.Capacity);
 
         // FXDust's first system has 9 modifiers (AgeDeath, MeshEmitter, Spawn, GrowFade, Color, Rotation,
         // Bomb, Position, BoundUpdate).
@@ -64,6 +60,28 @@ public sealed class NifParticleSystemParserTests
         Assert.NotNull(def.Emitter);
         Assert.Equal(ParticleEmitterShape.Mesh, def.Emitter!.Shape);
         Assert.NotEmpty(def.Emitter.EmitterMeshIndices);
+        Assert.Equal(ParticleVelocityType.UseNormals, def.Emitter.VelocityType);
+        Assert.Equal(ParticleEmitFrom.FaceSurface, def.Emitter.EmitFrom);
+        var wispsRate = Assert.IsType<ParticleRateControllerDefinition>(def.Emitter.BirthRateController);
+        Assert.NotNull(wispsRate.SequenceTiming);
+        Assert.Equal(7.5f, wispsRate.Sample(0f), 4);
+
+        var atlasDef = Assert.Single(systems, system => system.SubtextureOffsets.Count == 16);
+        var debrisRate = Assert.IsType<ParticleRateControllerDefinition>(
+            Assert.IsType<ParticleEmitterDefinition>(atlasDef.Emitter).BirthRateController);
+        Assert.NotNull(debrisRate.SequenceTiming);
+        Assert.Equal(60f, debrisRate.Sample(0f), 4);
+        var expectedCells = Enumerable.Range(0, 16)
+            .Select(i => new System.Numerics.Vector4(
+                (i % 4) * 0.25f, (i / 4) * 0.25f, 0.25f, 0.25f))
+            .ToArray();
+        Assert.Equal(expectedCells, atlasDef.SubtextureOffsets);
+        Assert.Equal(16, atlasDef.SubtextureOffsets.Distinct().Count());
+        Assert.All(atlasDef.SubtextureOffsets, rect =>
+        {
+            Assert.Equal(0.25f, rect.Z, 4);
+            Assert.Equal(0.25f, rect.W, 4);
+        });
 
         // The vortex (Bomb) + grow/fade modifiers are recognised with their params.
         Assert.Contains(def.Modifiers, m => m.Kind == ParticleModifierKind.Bomb);

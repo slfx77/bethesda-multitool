@@ -171,7 +171,14 @@ internal sealed class MainWindow : Window, IDisposable
 
             if (!TrySelectCaptureInterior(data))
             {
-                ExitProfiler("capture-bad-interior");
+                ExitProfiler("capture-bad-interior", exitCode: 2);
+                return;
+            }
+
+            if (!await WaitForProfileSceneReadyAsync())
+            {
+                Log.Error("Renderer profiler scene did not become ready before the 30-second timeout.");
+                ExitProfiler("scene-ready-timeout", exitCode: 1);
                 return;
             }
 
@@ -215,7 +222,22 @@ internal sealed class MainWindow : Window, IDisposable
             _progressBar.IsIndeterminate = false;
             SetStatus($"Failed: {ex.GetType().Name}: {ex.Message}");
             Log.Error("Renderer profiler startup failed: {0}", ex);
+            ExitProfiler("startup-exception", exitCode: 1);
         }
+    }
+
+    private async Task<bool> WaitForProfileSceneReadyAsync()
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        while (!_worldView.Profiler_IsSceneReady && DateTime.UtcNow < deadline)
+        {
+            // Yield the UI thread so WorldspaceComboBox_SelectionChanged can resume after its
+            // deliberate Task.Yield, build the spatial index, reset the camera, and apply the
+            // requested stress bookmark before the scenario captures its initial pose.
+            await Task.Delay(25);
+        }
+
+        return _worldView.Profiler_IsSceneReady;
     }
 
     private async Task RunTopDownCaptureAsync()
@@ -227,7 +249,7 @@ internal sealed class MainWindow : Window, IDisposable
             {
                 Log.Warn("Capture: top-down provider unavailable (D3D12 down or no Meshes BSA).");
                 Console.WriteLine("[Capture] UNAVAILABLE: top-down provider not ready (no D3D12 / no Meshes BSA).");
-                ExitProfiler("capture-unavailable");
+                ExitProfiler("capture-unavailable", exitCode: 1);
                 return;
             }
 
@@ -249,7 +271,7 @@ internal sealed class MainWindow : Window, IDisposable
                 {
                     Console.WriteLine(
                         $"[Capture] UNAVAILABLE: worldspace index {wsIdx} out of range / empty (count={_worldView.Profiler_ExteriorWorldspaceCount}).");
-                    ExitProfiler("capture-bad-worldspace");
+                    ExitProfiler("capture-bad-worldspace", exitCode: 2);
                     return;
                 }
 
@@ -313,7 +335,7 @@ internal sealed class MainWindow : Window, IDisposable
             if (render is null)
             {
                 Console.WriteLine("[Capture] FAILED: render returned null.");
-                ExitProfiler("capture-null");
+                ExitProfiler("capture-null", exitCode: 1);
                 return;
             }
 
@@ -332,7 +354,8 @@ internal sealed class MainWindow : Window, IDisposable
         catch (Exception ex)
         {
             Log.Error("Capture failed: {0}", ex);
-            Console.WriteLine($"[Capture] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            Console.Error.WriteLine($"[Capture] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ExitProfiler("capture-exception", exitCode: 1);
         }
         finally
         {
@@ -343,20 +366,38 @@ internal sealed class MainWindow : Window, IDisposable
     private async Task RunSceneCaptureAsync()
     {
         var path = _options.CaptureFramePath!;
-        const int px = 768, pyh = 480;
+        var px = _options.CaptureWidth;
+        var pyh = _options.CaptureHeight;
         try
         {
             if (!_worldView.CanRenderProjectionExport)
             {
                 Console.WriteLine("[Capture] UNAVAILABLE: D3D12 scene renderer not ready (no GPU / no Meshes BSA).");
-                ExitProfiler("capture-unavailable");
+                ExitProfiler("capture-unavailable", exitCode: 1);
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(_options.CaptureWorldspaceName) &&
-                !_worldView.Profiler_TrySelectWorldspaceByName(_options.CaptureWorldspaceName))
+            if (!string.IsNullOrWhiteSpace(_options.CaptureWorldspaceName))
             {
-                Console.WriteLine($"[Capture] worldspace '{_options.CaptureWorldspaceName}' not found; using the default bookmark.");
+                _worldView.Profiler_TrySelectWorldspaceByName(_options.CaptureWorldspaceName);
+            }
+
+            // Setting the ComboBox starts an async-void rebuild which yields before constructing the
+            // target spatial index and resetting its camera. Starting the fixed-pose scenario sooner
+            // captures the old pose and then restores it every 16 ms over the target-world reset.
+            if (!await WaitForProfileSceneReadyAsync())
+            {
+                Console.WriteLine("[Capture] FAILED: selected scene did not become ready within 30 seconds.");
+                ExitProfiler("capture-scene-ready-timeout", exitCode: 1);
+                return;
+            }
+
+            if (!ValidateCaptureSelection(
+                    "worldspace",
+                    _options.CaptureWorldspaceName,
+                    _worldView.Profiler_SelectedWorldspaceEditorId))
+            {
+                return;
             }
 
             // Phase 1 — settle the worldspace FIRST. Selecting a worldspace kicks off async cell streaming
@@ -368,10 +409,17 @@ internal sealed class MainWindow : Window, IDisposable
             _scenario = null;
 
             // NOW select the weather + hour (worldspace stable → the selection sticks).
-            if (!string.IsNullOrWhiteSpace(_options.CaptureWeatherName) &&
-                !_worldView.Profiler_TrySelectWeatherByName(_options.CaptureWeatherName))
+            if (!string.IsNullOrWhiteSpace(_options.CaptureWeatherName))
             {
-                Console.WriteLine($"[Capture] weather '{_options.CaptureWeatherName}' not found; using climate default.");
+                _worldView.Profiler_TrySelectWeatherByName(_options.CaptureWeatherName);
+            }
+
+            if (!ValidateCaptureSelection(
+                    "weather",
+                    _options.CaptureWeatherName,
+                    _worldView.Profiler_ActiveWeatherEditorId))
+            {
+                return;
             }
 
             _worldView.Profiler_SetGameHour(_options.CaptureHour);
@@ -401,61 +449,157 @@ internal sealed class MainWindow : Window, IDisposable
             // Pure delay-polling is valid here because the scenario keeps driving frames (stats only
             // advance when frames render). Time-boxed: a permanently-missing asset can pin the counter.
             var quiesceTimer = System.Diagnostics.Stopwatch.StartNew();
+            var settleTimeout = TimeSpan.FromSeconds(_options.CaptureSettleTimeoutSeconds);
             var quiesced = await StreamingQuiescence.PollAsync(
                 () => _worldView.Profiler_IsReferenceStreamingQuiesced,
-                StreamingQuiescence.DefaultSettleTimeout, TimeSpan.FromMilliseconds(250));
+                settleTimeout, TimeSpan.FromMilliseconds(250));
 
-            if (quiesceTimer.ElapsedMilliseconds >= 250)
-            {
-                Console.WriteLine(quiesced
-                    ? $"[Capture] reference streaming quiesced after +{quiesceTimer.ElapsedMilliseconds} ms."
-                    : $"[Capture] reference streaming did NOT quiesce within " +
-                      $"{StreamingQuiescence.DefaultSettleTimeout.TotalSeconds:F0}s — capturing anyway.");
-            }
             _scenario.Dispose();
             _scenario = null;
 
-            // Point the camera up at the sky (degrees → radians; Profiler_SetCameraPose clamps near ±90°).
+            if (!CaptureReadinessGuard.TryValidateStreamingQuiesced(
+                    quiesced,
+                    settleTimeout,
+                    out var streamingError))
+            {
+                Log.Error(streamingError!);
+                Console.Error.WriteLine(streamingError);
+                RendererProfilerTrace.Event("capture-streaming-timeout", new Dictionary<string, object?>
+                {
+                    ["timeoutSeconds"] = _options.CaptureSettleTimeoutSeconds,
+                    ["elapsedMilliseconds"] = quiesceTimer.ElapsedMilliseconds,
+                    ["requestedWorldspace"] = _options.CaptureWorldspaceName,
+                    ["actualWorldspace"] = _worldView.Profiler_SelectedWorldspaceEditorId,
+                    ["requestedWeather"] = _options.CaptureWeatherName,
+                    ["actualWeather"] = _worldView.Profiler_ActiveWeatherEditorId
+                });
+                ExitProfiler("capture-streaming-timeout", exitCode: 1);
+                return;
+            }
+
+            Console.WriteLine(
+                $"[Capture] reference streaming quiesced after +{quiesceTimer.ElapsedMilliseconds} ms.");
+
+            // Verify again after the settle loop. A late climate/worldspace refresh must not silently
+            // replace the authored weather requested by an unattended parity capture.
+            if (!ValidateCaptureSelection(
+                    "worldspace",
+                    _options.CaptureWorldspaceName,
+                    _worldView.Profiler_SelectedWorldspaceEditorId) ||
+                !ValidateCaptureSelection(
+                    "weather",
+                    _options.CaptureWeatherName,
+                    _worldView.Profiler_ActiveWeatherEditorId))
+            {
+                return;
+            }
+
+            // Apply an explicit celestial framing. Pitch is always authored by the capture request;
+            // yaw remains bookmark-compatible unless --capture-yaw is provided.
             var pose = _worldView.Profiler_CameraPose;
             var pitchRadians = _options.CapturePitchDegrees * (MathF.PI / 180f);
-            _worldView.Profiler_SetCameraPose(pose with { Pitch = pitchRadians });
+            var yawRadians = _options.CaptureYawDegrees is float yawDegrees
+                ? yawDegrees * (MathF.PI / 180f)
+                : pose.Yaw;
+            _worldView.Profiler_SetCameraPose(pose with { Pitch = pitchRadians, Yaw = yawRadians });
+            var capturePose = _worldView.Profiler_CameraPose;
 
             // Collapse the live view so the capture frame doesn't share the command recorder with a live one.
             _worldView.Visibility = Visibility.Collapsed;
             await Task.Delay(400);
 
-            var bgra = await _worldView.Profiler_CaptureSceneAsync(px, pyh);
+            var bgra = await _worldView.Profiler_CaptureSceneAsync(
+                px, pyh, _options.CaptureAnimationTimeSeconds);
             if (bgra is null)
             {
                 Console.WriteLine("[Capture] FAILED: capture returned null.");
-                ExitProfiler("capture-null");
+                ExitProfiler("capture-null", exitCode: 1);
+                return;
+            }
+
+            var expectedByteCount = checked(px * pyh * 4);
+            if (bgra.Length != expectedByteCount)
+            {
+                var sizeError = $"[Capture] FAILED: renderer returned {bgra.Length:N0} bytes for " +
+                                $"a {px}×{pyh} BGRA frame; expected {expectedByteCount:N0}.";
+                Log.Error(sizeError);
+                Console.Error.WriteLine(sizeError);
+                ExitProfiler("capture-size-mismatch", exitCode: 1);
                 return;
             }
 
             var rgba = BgraToRgba(bgra);
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
             BethesdaMultitool.Core.Formats.Esm.Analysis.PngWriter.SaveRgba(rgba, px, pyh, path);
+            var pixelSha256 = CaptureImageFingerprint.Compute(bgra);
+            string pngSha256;
+            using (var pngStream = File.OpenRead(path))
+            {
+                pngSha256 = CaptureImageFingerprint.Compute(pngStream);
+            }
 
             var targetDescription = !string.IsNullOrWhiteSpace(_options.CaptureInterior)
                 ? $"interior='{_options.CaptureInterior}'"
-                : $"ws='{_options.CaptureWorldspaceName ?? "(default)"}'";
+                : $"ws='{_worldView.Profiler_SelectedWorldspaceEditorId ?? "(none)"}'";
             var msg = string.Format(
                 CultureInfo.InvariantCulture,
-                "[Capture] saved {0} ({1}x{2}) {3} weather='{4}' hour={5:0.#} pitch={6:0.#}deg coverage={7:P1}",
-                path, px, pyh, targetDescription, _options.CaptureWeatherName ?? "(climate default)",
-                _options.CaptureHour, _options.CapturePitchDegrees, Coverage(bgra));
+                "[Capture] saved {0} ({1}x{2}) {3} weather='{4}' hour={5:0.#} pitch={6:0.###}deg yaw={7:0.###}deg animation={8:0.###}s coverage={9:P1} pixelSha256={10} pngSha256={11}",
+                path, px, pyh, targetDescription, _worldView.Profiler_ActiveWeatherEditorId ?? "(none)",
+                _options.CaptureHour,
+                capturePose.Pitch * (180f / MathF.PI),
+                capturePose.Yaw * (180f / MathF.PI),
+                _options.CaptureAnimationTimeSeconds,
+                Coverage(bgra),
+                pixelSha256,
+                pngSha256);
             Log.Info(msg);
             Console.WriteLine(msg);
+
+            var captureFields = RendererProfilerTrace.CameraPoseFields(capturePose);
+            captureFields["path"] = Path.GetFullPath(path);
+            captureFields["pixelWidth"] = px;
+            captureFields["pixelHeight"] = pyh;
+            captureFields["pixelFormat"] = "BGRA8";
+            captureFields["pixelByteCount"] = bgra.Length;
+            captureFields["pixelSha256"] = pixelSha256;
+            captureFields["pngSha256"] = pngSha256;
+            captureFields["animationClockPinned"] = true;
+            captureFields["animationClockSeconds"] = _options.CaptureAnimationTimeSeconds;
+            captureFields["worldspace"] = _worldView.Profiler_SelectedWorldspaceEditorId;
+            captureFields["weather"] = _worldView.Profiler_ActiveWeatherEditorId;
+            captureFields["gameHour"] = _options.CaptureHour;
+            captureFields["gameDay"] = _options.CaptureDay;
+            RendererProfilerTrace.Event("capture-image", captureFields);
         }
         catch (Exception ex)
         {
             Log.Error("Scene capture failed: {0}", ex);
-            Console.WriteLine($"[Capture] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            Console.Error.WriteLine($"[Capture] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ExitProfiler("capture-exception", exitCode: 1);
         }
         finally
         {
             ExitProfiler("capture-complete");
         }
+    }
+
+    private bool ValidateCaptureSelection(string selectorKind, string? requested, string? actual)
+    {
+        if (CaptureSelectionGuard.TryValidate(selectorKind, requested, actual, out var error))
+        {
+            return true;
+        }
+
+        Log.Error(error!);
+        Console.Error.WriteLine(error);
+        RendererProfilerTrace.Event("capture-selection-mismatch", new Dictionary<string, object?>
+        {
+            ["selectorKind"] = selectorKind,
+            ["requested"] = requested,
+            ["actual"] = actual
+        });
+        ExitProfiler($"capture-{selectorKind}-mismatch", exitCode: 2);
+        return false;
     }
 
     /// <summary>
@@ -563,7 +707,7 @@ internal sealed class MainWindow : Window, IDisposable
         Log.Info("BethesdaRendererProfiler: timed exit armed for {0}s.", seconds);
     }
 
-    private void ExitProfiler(string message)
+    private void ExitProfiler(string message, int exitCode = 0)
     {
         if (_exiting)
         {
@@ -571,13 +715,15 @@ internal sealed class MainWindow : Window, IDisposable
         }
 
         _exiting = true;
+        Environment.ExitCode = exitCode;
         SetStatus(message);
         Log.Info(message);
-        Console.WriteLine($"[BethesdaRendererProfiler] Complete. Profile log: {_options.ProfileOutputPath}");
+        Console.WriteLine(
+            $"[BethesdaRendererProfiler] Complete (exit code {exitCode}). Profile log: {_options.ProfileOutputPath}");
         _timedExitTimer?.Stop();
         _timedExitTimer = null;
         Dispose();
-        CloseProfilerTrace("duration-elapsed");
+        CloseProfilerTrace(message);
         Log.CloseLogFile();
         Application.Current.Exit();
     }

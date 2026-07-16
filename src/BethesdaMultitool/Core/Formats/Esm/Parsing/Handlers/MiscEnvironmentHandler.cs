@@ -53,7 +53,9 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
         var (data, dataSize) = recordData.Value;
 
-        string? editorId = null, fullName = null, noiseTexture = null;
+        string? editorId = null, fullName = null, noiseTexture = null, surfaceTexture = null;
+        var normalTextures = new List<string>(3);
+        var legacyNormalTextures = new List<string>(3);
         byte opacity = 0;
         byte[]? waterFlags = null;
         uint? soundFormId = null;
@@ -79,8 +81,30 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     fullName = Context.ReadFullName(subData);
                     break;
                 case "NNAM":
-                    noiseTexture = EsmStringUtils.ReadNullTermString(subData);
+                {
+                    var texture = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrWhiteSpace(texture))
+                    {
+                        // Skyrim labels NNAM as the old texture layout and uses NAM2/NAM3/NAM4
+                        // for its active set. Retain both without letting old NNAM entries occupy
+                        // the three active sampler slots when a record carries both layouts.
+                        if (Context.Game == BethesdaGame.Skyrim)
+                        {
+                            legacyNormalTextures.Add(texture);
+                        }
+                        else
+                        {
+                            normalTextures.Add(texture);
+                            noiseTexture ??= texture;
+                        }
+                    }
                     break;
+                }
+                case "TNAM" when Context.Game == BethesdaGame.Oblivion:
+                {
+                    surfaceTexture = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                }
                 case "ANAM" when sub.DataLength >= 1:
                     opacity = subData[0];
                     break;
@@ -102,9 +126,17 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 // Game-gated rather than length-gated because FNV's WATR also has a large DATA variant
                 // (the DNAM-or-DATA visual union, ~186 bytes) with a different field layout. Without this
                 // every Oblivion water renders with the default tint (all 23 Oblivion WATR have no DNAM).
-                case "DATA" when Context.Game == BethesdaGame.Oblivion && sub.DataLength >= 56:
+                case "DATA" when Context.Game == BethesdaGame.Oblivion && sub.DataLength >= 100:
+                {
                     visualProps = ReadOblivionWaterData(subData, record.IsBigEndian);
+                    if (sub.DataLength >= 102)
+                    {
+                        damage = record.IsBigEndian
+                            ? BinaryPrimitives.ReadUInt16BigEndian(subData.Slice(100, 2))
+                            : BinaryPrimitives.ReadUInt16LittleEndian(subData.Slice(100, 2));
+                    }
                     break;
+                }
                 // Skyrim WATR DNAM (xEdit wbDefinitionsTES5): a longer struct (~228 bytes LE / 232 SSE)
                 // whose colors are shifted +4 vs FNV (an extra float at +28) and which adds Skyrim-specific
                 // specular/noise fields. Game-gated because its length (≠196) and layout differ from FNV's
@@ -132,18 +164,20 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "DNAM" when Context.Game == BethesdaGame.Fallout76 && sub.DataLength >= 108:
                     visualProps = ReadFallout76WaterData(subData, record.IsBigEndian);
                     break;
-                // FO4/FO76 have no NNAM — their per-layer noise/normal textures ship as
-                // NAM2/NAM3/NAM4 zstrings (layer 1 first). Surface layer 1 as the noise texture,
-                // stripping the "data\" prefix authors use so the cache resolves it normally.
-                case "NAM2" when (Context.Game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76)
-                                  && noiseTexture is null:
+                // Skyrim's active set and FO4/FO76's only set ship as NAM2/NAM3/NAM4 zstrings
+                // (layer 1 first). Surface layer 1 as the compatibility noise texture, stripping
+                // the "data\" prefix authors use so the cache resolves it normally.
+                case "NAM2" or "NAM3" or "NAM4"
+                    when Context.Game is BethesdaGame.Skyrim or BethesdaGame.Fallout4 or BethesdaGame.Fallout76:
                 {
-                    var nam2 = EsmStringUtils.ReadNullTermString(subData);
-                    if (!string.IsNullOrEmpty(nam2))
+                    var texture = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(texture))
                     {
-                        noiseTexture = nam2.StartsWith("data\\", StringComparison.OrdinalIgnoreCase)
-                            ? nam2[5..]
-                            : nam2;
+                        texture = texture.StartsWith("data\\", StringComparison.OrdinalIgnoreCase)
+                            ? texture[5..]
+                            : texture;
+                        normalTextures.Add(texture);
+                        noiseTexture ??= texture;
                     }
 
                     break;
@@ -169,12 +203,23 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             }
         }
 
+        // Compatibility for old Skyrim records that carry only repeated NNAM. Named layers take
+        // authority whenever they are present, but no authored-only-NNAM record becomes textureless.
+        if (normalTextures.Count == 0 && legacyNormalTextures.Count > 0)
+        {
+            normalTextures.AddRange(legacyNormalTextures);
+            noiseTexture = normalTextures[0];
+        }
+
         return new WaterRecord
         {
             FormId = record.FormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             NoiseTexture = noiseTexture,
+            SurfaceTexture = surfaceTexture,
+            NormalTextures = normalTextures,
+            LegacyNormalTextures = legacyNormalTextures,
             Opacity = opacity,
             WaterFlags = waterFlags,
             SoundFormId = soundFormId != 0 ? soundFormId : null,
@@ -199,18 +244,31 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
         return new Dictionary<string, object?>
         {
+            ["WindVelocity"] = ReadFloat(d, 0, isBigEndian),
+            ["WindDirection"] = ReadFloat(d, 4, isBigEndian),
+            ["WaveAmplitude"] = ReadFloat(d, 8, isBigEndian),
+            ["WaveFrequency"] = ReadFloat(d, 12, isBigEndian),
             ["SunPower"] = ReadFloat(d, 16, isBigEndian),
             ["ReflectivityAmount"] = ReadFloat(d, 20, isBigEndian),
             ["FresnelAmount"] = ReadFloat(d, 24, isBigEndian),
-            // Wind/scroll (@0-15/@28-35) feed the noise scroll like FNV's DNAM layer fields; the WATR
-            // fog distances (@36/@40) are Oblivion's depth-fade analog (the WATER000.pso FogParam).
-            ["NoiseLayer1WindSpeed"] = ReadFloat(d, 0, isBigEndian),
-            ["NoiseLayer1WindDir"] = ReadFloat(d, 4, isBigEndian),
-            ["DepthFalloffStart"] = ReadFloat(d, 36, isBigEndian),
-            ["DepthFalloffEnd"] = ReadFloat(d, 40, isBigEndian),
+            ["ScrollXSpeed"] = ReadFloat(d, 28, isBigEndian),
+            ["ScrollYSpeed"] = ReadFloat(d, 32, isBigEndian),
+            ["FogNear"] = ReadFloat(d, 36, isBigEndian),
+            ["FogFar"] = ReadFloat(d, 40, isBigEndian),
             ["ShallowColor"] = Color(d, 44),
             ["DeepColor"] = Color(d, 48),
             ["ReflectionColor"] = Color(d, 52),
+            ["TextureBlend"] = d[56] / 100f,
+            ["RainForce"] = ReadFloat(d, 60, isBigEndian),
+            ["RainVelocity"] = ReadFloat(d, 64, isBigEndian),
+            ["RainFalloff"] = ReadFloat(d, 68, isBigEndian),
+            ["RainDampener"] = ReadFloat(d, 72, isBigEndian),
+            ["RainStartingSize"] = ReadFloat(d, 76, isBigEndian),
+            ["DisplacementForce"] = ReadFloat(d, 80, isBigEndian),
+            ["DisplacementVelocity"] = ReadFloat(d, 84, isBigEndian),
+            ["DisplacementFalloff"] = ReadFloat(d, 88, isBigEndian),
+            ["DisplacementDampener"] = ReadFloat(d, 92, isBigEndian),
+            ["DisplacementStartingSize"] = ReadFloat(d, 96, isBigEndian),
         };
     }
 
@@ -283,9 +341,13 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         properties["NoiseLayer1UVScale"] = ReadFloat(d, 164, isBigEndian);
         properties["NoiseLayer2UVScale"] = ReadFloat(d, 168, isBigEndian);
         properties["NoiseLayer3UVScale"] = ReadFloat(d, 172, isBigEndian);
+        properties["NoiseLayer1Falloff"] = ReadFloat(d, 176, isBigEndian);
+        properties["NoiseLayer2Falloff"] = ReadFloat(d, 180, isBigEndian);
+        properties["NoiseLayer3Falloff"] = ReadFloat(d, 184, isBigEndian);
         properties["SiltAmount"] = ReadFloat(d, 188, isBigEndian);
         properties["LightSiltColor"] = ReadWaterColor(d, 192);
         properties["DarkSiltColor"] = ReadWaterColor(d, 196);
+        if (d.Length > 200) properties["ScreenSpaceReflections"] = d[200] != 0;
         return properties;
     }
 
@@ -294,35 +356,74 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     ///     specular prefix exactly through byte 107; the later FO4 noise/silt block is absent.
     /// </summary>
     internal static Dictionary<string, object?> ReadFallout76WaterData(ReadOnlySpan<byte> d, bool isBigEndian)
-        => ReadCreationWaterDataPrefix(d, isBigEndian);
+    {
+        var properties = ReadCreationWaterDataPrefix(d, isBigEndian);
+        // The retail 148-byte layout names these five trailing floats Unknown 1..5. Keep them
+        // losslessly without assigning FO4's incompatible noise-layer semantics.
+        AddOptionalCreationFloat(properties, d, "ModernUnknown1", 128, isBigEndian);
+        AddOptionalCreationFloat(properties, d, "ModernUnknown2", 132, isBigEndian);
+        AddOptionalCreationFloat(properties, d, "ModernUnknown3", 136, isBigEndian);
+        AddOptionalCreationFloat(properties, d, "ModernUnknown4", 140, isBigEndian);
+        AddOptionalCreationFloat(properties, d, "ModernUnknown5", 144, isBigEndian);
+        return properties;
+    }
 
     private static Dictionary<string, object?> ReadCreationWaterDataPrefix(
         ReadOnlySpan<byte> d,
         bool isBigEndian)
     {
-        return new Dictionary<string, object?>
+        var properties = new Dictionary<string, object?>
         {
-            // Depth Amount = the world-unit water column at which the depth ramps saturate (scales
-            // with the body: IntTroughWater 18, ExtPuddleWater 290, ExtLakeQuannapowittWater 1087);
-            // the color/alpha "ranges" below are multipliers of it (retail authors them ≈1.0).
+            // Depth Amount and the four range fields are retained as separately-authored values.
+            // The exact t15 LUT generator is still open; do not collapse the range fields into
+            // multipliers or normalize them during parsing.
             ["DepthAmount"] = ReadFloat(d, 0, isBigEndian),
             ["ShallowColor"] = ReadWaterColor(d, 4),
             ["DeepColor"] = ReadWaterColor(d, 8),
-            ["ReflectionColor"] = ReadWaterColor(d, 96),
             ["ColorShallowRange"] = ReadFloat(d, 12, isBigEndian),
             ["ColorDeepRange"] = ReadFloat(d, 16, isBigEndian),
             ["ShallowAlpha"] = ReadFloat(d, 20, isBigEndian),
             ["DeepAlpha"] = ReadFloat(d, 24, isBigEndian),
             ["AlphaShallowRange"] = ReadFloat(d, 28, isBigEndian),
             ["AlphaDeepRange"] = ReadFloat(d, 32, isBigEndian),
+            ["UnderwaterColor"] = ReadWaterColor(d, 36),
+            ["UnderwaterFogAmount"] = ReadFloat(d, 40, isBigEndian),
+            ["UnderwaterFogNear"] = ReadFloat(d, 44, isBigEndian),
+            ["UnderwaterFogFar"] = ReadFloat(d, 48, isBigEndian),
             ["NormalMagnitude"] = ReadFloat(d, 52, isBigEndian),
+            ["ShallowNormalFalloff"] = ReadFloat(d, 56, isBigEndian),
+            ["DeepNormalFalloff"] = ReadFloat(d, 60, isBigEndian),
             ["ReflectivityAmount"] = ReadFloat(d, 64, isBigEndian),
             ["FresnelAmount"] = ReadFloat(d, 68, isBigEndian),
+            ["SurfaceEffectFalloff"] = ReadFloat(d, 72, isBigEndian),
+            ["DisplacementForce"] = ReadFloat(d, 76, isBigEndian),
+            ["DisplacementVelocity"] = ReadFloat(d, 80, isBigEndian),
+            ["DisplacementFalloff"] = ReadFloat(d, 84, isBigEndian),
+            ["DisplacementDampener"] = ReadFloat(d, 88, isBigEndian),
+            ["DisplacementStartingSize"] = ReadFloat(d, 92, isBigEndian),
+            ["ReflectionColor"] = ReadWaterColor(d, 96),
             // Sun Specular Power/Magnitude: the FO4 shader's Blinn exponent + amplitude sources
             // (engine feeds them through the gloss pipeline; the DNAM values are the authored analogs).
             ["SunPower"] = ReadFloat(d, 100, isBigEndian),
             ["SunSpecularMagnitude"] = ReadFloat(d, 104, isBigEndian),
         };
+        AddOptionalCreationFloat(properties, d, "SunSparklePower", 108, isBigEndian);
+        AddOptionalCreationFloat(properties, d, "SunSparkleMagnitude", 112, isBigEndian);
+        AddOptionalCreationFloat(properties, d, "InteriorSpecularRadius", 116, isBigEndian);
+        AddOptionalCreationFloat(properties, d, "InteriorSpecularBrightness", 120, isBigEndian);
+        AddOptionalCreationFloat(properties, d, "InteriorSpecularPower", 124, isBigEndian);
+        return properties;
+    }
+
+    private static void AddOptionalCreationFloat(
+        Dictionary<string, object?> properties,
+        ReadOnlySpan<byte> data,
+        string key,
+        int offset,
+        bool isBigEndian)
+    {
+        if (offset + sizeof(float) <= data.Length)
+            properties[key] = ReadFloat(data, offset, isBigEndian);
     }
 
     private static uint ReadWaterColor(ReadOnlySpan<byte> d, int offset) =>
@@ -365,17 +466,26 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         var (data, dataSize) = recordData.Value;
 
         string? editorId = null;
-        uint? imageSpaceMod = null;
         var sounds = new List<WeatherSound>();
         var cloudLayers = new SortedDictionary<int, string>();
         IReadOnlyList<WeatherColor>? colors = null;
         IReadOnlyList<WeatherColor>? cloudColors = null;
-        List<WeatherRgba>? directionalAmbientBands = null;
+        List<WeatherAmbientCube>? directionalAmbientBands = null;
         IReadOnlyList<WeatherCloudAlpha>? cloudAlphas = null;
         float[]? cloudSpeedsX = null;
         float[]? cloudSpeedsY = null;
         IReadOnlyList<float>? fogDistances = null;
         WeatherData? weatherData = null;
+        WeatherHdr? weatherHdr = null;
+        WeatherColor? sunGlareColor = null;
+        WeatherColor? moonGlareColor = null;
+        WeatherTimeBands<uint>? imageSpaceModifiers = null;
+        // Nullable slots preserve the distinction between an absent optional band (FO3 only
+        // authors 00IAD..03IAD) and an explicitly authored null FormID. The evaluator falls back
+        // from an absent HighNoon band to Day, while an authored zero retains the engine's neutral
+        // default modifier for that slot.
+        var legacyImageSpaceIds = new uint?[6];
+        var hasLegacyImageSpaceIds = false;
 
         // NAM0/PNAM per-category stride. Two distinct NAM0 layouts:
         //  • FO3/FNV/Oblivion: a fixed 10 color categories; only the band count varies (FO3=4, FNV=6),
@@ -386,7 +496,8 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         //    form version instead and read whatever categories fit (base lighting rows plus Skyrim far fog 12).
         var modernWeather = Context.Game is BethesdaGame.Skyrim or BethesdaGame.Fallout4
             or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
-        var modernStride = modernWeather ? ModernWeatherStride(Context.Game, ReadRecordFormVersion(record)) : 0;
+        var formVersion = ReadRecordFormVersion(record);
+        var modernStride = modernWeather ? ModernWeatherStride(Context.Game, formVersion) : 0;
         var weatherBands = modernWeather ? 0 : DetectWeatherBands(data, dataSize, record.IsBigEndian);
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
@@ -403,8 +514,16 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     }
 
                     break;
-                case "ONAM" when sub.DataLength == 4:
-                    imageSpaceMod = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                // FO3 authors four scalar cloud speeds in ONAM. Some transitional FNV records retain
+                // that layout, so treat it as cloud data for both games rather than a FormID.
+                case "ONAM" when Context.Game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas:
+                    cloudSpeedsX = ReadCloudSpeeds(subData, record.IsBigEndian, Context.Game);
+                    break;
+                // FO3/FNV store their per-band IMAD references as binary signatures \0IAD..\5IAD.
+                case var iadSig when TryWeatherImageSpaceAdapterIndex(iadSig, out var iadIndex)
+                                     && sub.DataLength == 4:
+                    legacyImageSpaceIds[iadIndex] = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    hasLegacyImageSpaceIds = true;
                     break;
                 case "SNAM" when sub.DataLength == 8:
                 {
@@ -424,7 +543,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 // 0–3); Skyrim/FO4/FO76/SF1 use the ?0TX scheme (layer N = (char)(0x30+N) + "0TX", up to 29
                 // layers) — both per xEdit's wbWeatherCloudTextures. Recognized by SIGNATURE (structural, no
                 // game gate); the active weather's clouds derive from these.
-                case var cloudSig when TryCloudLayerIndex(cloudSig, out var cloudLayer):
+                case var cloudSig when TryCloudLayerIndex(cloudSig, Context.Game, out var cloudLayer):
                 {
                     var cloud = EsmStringUtils.ReadNullTermString(subData);
                     if (!string.IsNullOrWhiteSpace(cloud))
@@ -455,21 +574,26 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 // JNAM "Cloud Alphas" (Skyrim/FO4/FO76/SF1; xEdit wbWeatherCloudAlphas): per-cloud-layer
                 // per-time-of-day OPACITY floats — the engine's real per-layer cloud opacity (PNAM's alpha
                 // byte is unused). Modern-only; FO3/FNV carry no JNAM. Stride is form-versioned exactly like
-                // the colors (FO4/76/SF1 widen 4→8 float bands at version 111); only the four base bands are
-                // kept. Floats are endian-aware so Xbox (byte-swapped) and PC agree.
+                // the colors (FO4/76/SF1 widen 4→8 float bands at version 111); every authored band is
+                // retained. Floats are endian-aware so Xbox (byte-swapped) and PC agree.
                 case "JNAM" when modernWeather && sub.DataLength >= 16:
-                    cloudAlphas = ReadCloudAlphas(subData, record.IsBigEndian, ModernCloudAlphaStride(Context.Game, ReadRecordFormVersion(record)));
+                    cloudAlphas = ReadCloudAlphas(subData, record.IsBigEndian,
+                        ModernCloudAlphaStride(Context.Game, formVersion));
                     break;
                 // QNAM/RNAM "X/Y Cloud Speeds" (xEdit wbWeatherCloudSpeed): the per-layer per-axis UV
-                // scroll rate Clouds::Update accumulates. Layout is game-generation-keyed: FNV/FO3/Skyrim
-                // author ONE UNSIGNED byte biased around 127 (127 = still); FO4/FO76 author ONE FLOAT per
-                // layer. Reading the legacy byte as signed reverses most SkyrimClear layers; reading FO4's
-                // float bytes as per-layer speeds makes every layer race in a nonsense direction.
+                // scroll rate Clouds::Update accumulates. Every supported generation authors ONE UNSIGNED
+                // byte per layer biased around 127 (127 = still), including FO4/FO76. Treating modern bytes
+                // as floats collapsed four authored layer identities into each decoded value.
                 case "QNAM":
                     cloudSpeedsX = ReadCloudSpeeds(subData, record.IsBigEndian, Context.Game);
                     break;
                 case "RNAM":
                     cloudSpeedsY = ReadCloudSpeeds(subData, record.IsBigEndian, Context.Game);
+                    break;
+                // Skyrim+ stores four/eight per-time-band IMGS FormIDs in one packed IMSP block.
+                case "IMSP" when modernWeather && sub.DataLength >= 16:
+                    imageSpaceModifiers = ReadWeatherImageSpaces(subData, record.IsBigEndian,
+                        modernStride >= 32 ? 8 : 4);
                     break;
                 // DALC "Directional Ambient Lighting Colors" (xEdit wbAmbientColors): six RGBA byte
                 // colors (X+/X−/Y+/Y−/Z+/Z−) + specular RGBA + fresnel float — ONE SUBRECORD PER
@@ -478,7 +602,19 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 // band reduces to the directions' mean for the single-ambient atmosphere.
                 // Structural — no FO3/FNV record carries DALC.
                 case "DALC" when sub.DataLength >= 24:
-                    (directionalAmbientBands ??= []).Add(ReadDirectionalAmbientMean(subData, record.IsBigEndian));
+                    (directionalAmbientBands ??= []).Add(ReadDirectionalAmbientCube(subData, record.IsBigEndian));
+                    break;
+                // Oblivion carries its HDR settings on each WTHR, not in IMGS.
+                case "HNAM" when Context.Game == BethesdaGame.Oblivion && sub.DataLength >= 56:
+                    weatherHdr = ReadWeatherHdr(subData, record.IsBigEndian);
+                    break;
+                // Skyrim stores these four authored RGB time bands outside NAM0. The fourth byte of
+                // each color is padding, not alpha; normalize it to opaque before billboard sampling.
+                case "NAM2" when Context.Game == BethesdaGame.Skyrim && sub.DataLength >= 16:
+                    sunGlareColor = ReadWeatherRgbRow(subData, record.IsBigEndian);
+                    break;
+                case "NAM3" when Context.Game == BethesdaGame.Skyrim && sub.DataLength >= 16:
+                    moonGlareColor = ReadWeatherRgbRow(subData, record.IsBigEndian);
                     break;
                 // FNAM fog scalars: day/night near + far, optional power pair, and Skyrim max-opacity pair.
                 case "FNAM" when sub.DataLength >= 4:
@@ -486,30 +622,63 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     break;
                 // DATA: 15-byte struct (wind speed, sun glare, precip timing, flags, lightning color).
                 case "DATA" when sub.DataLength >= 15:
-                    weatherData = ReadWeatherData(subData);
+                    weatherData = ReadWeatherData(subData, Context.Game);
                     break;
             }
         }
+
+        if (imageSpaceModifiers is null && hasLegacyImageSpaceIds)
+        {
+            imageSpaceModifiers = new WeatherTimeBands<uint>(
+                legacyImageSpaceIds[0].GetValueOrDefault(), legacyImageSpaceIds[1].GetValueOrDefault(),
+                legacyImageSpaceIds[2].GetValueOrDefault(), legacyImageSpaceIds[3].GetValueOrDefault())
+            {
+                HighNoon = legacyImageSpaceIds[4],
+                Midnight = legacyImageSpaceIds[5],
+            };
+        }
+
+        // TES4 keeps the two cloud speeds in DATA and names its textures Lower=CNAM / Upper=DNAM.
+        if (Context.Game == BethesdaGame.Oblivion && weatherData is { } tes4Data)
+        {
+            cloudSpeedsX ??=
+            [
+                NormalizeCloudSpeedByte(tes4Data.CloudSpeedLower ?? 127),
+                NormalizeCloudSpeedByte(tes4Data.CloudSpeedUpper ?? 127),
+            ];
+        }
+
+        IReadOnlyList<string> textureValues = cloudLayers.Count == 0 ? [] : cloudLayers.Values.ToList();
+        IReadOnlyList<int> textureIndices = cloudLayers.Count == 0 ? [] : cloudLayers.Keys.ToList();
+        var ambientBands = BuildDirectionalAmbientBands(directionalAmbientBands);
+        var authoritativeCloudLayers = BuildCloudLayers(
+            cloudLayers, cloudSpeedsX, cloudSpeedsY, cloudColors, cloudAlphas);
 
         return new WeatherRecord
         {
             FormId = record.FormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
-            ImageSpaceModifier = imageSpaceMod != 0 ? imageSpaceMod : null,
+            ImageSpaceModifier = imageSpaceModifiers is { Day: not 0 } ? imageSpaceModifiers.Day : null,
+            ImageSpaceModifiers = imageSpaceModifiers,
             Sounds = sounds,
             // Present cloud layers in source-index order. The texture list remains dense for the sky-dome
             // shape walk, but retain every original sparse index so QNAM/RNAM/PNAM/JNAM use their authored
             // array slot (SkyrimClear jumps from source layer 7 to 15/19/20/28).
-            CloudLayerTextures = cloudLayers.Count == 0 ? [] : cloudLayers.Values.ToList(),
-            CloudLayerSourceIndices = cloudLayers.Count == 0 ? [] : cloudLayers.Keys.ToList(),
+            CloudLayerTextures = textureValues,
+            CloudLayerSourceIndices = textureIndices,
+            CloudLayers = authoritativeCloudLayers,
             Colors = colors ?? [],
-            DirectionalAmbient = BuildDirectionalAmbient(directionalAmbientBands),
+            DirectionalAmbient = BuildDirectionalAmbient(ambientBands),
+            DirectionalAmbientCubes = ambientBands,
             CloudColors = cloudColors ?? [],
             CloudLayerAlphas = cloudAlphas ?? [],
             CloudSpeedsX = cloudSpeedsX ?? [],
             CloudSpeedsY = cloudSpeedsY ?? [],
             FogDistances = fogDistances ?? [],
             Data = weatherData,
+            Hdr = weatherHdr,
+            SunGlareColor = sunGlareColor,
+            MoonGlareColor = moonGlareColor,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
@@ -521,7 +690,18 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // actual signature), so no game gate is needed — no FO3/FNV record carries ?0TX, and Skyrim+ weathers
     // that ship the legacy DNAM/CNAM/ANAM/BNAM map them to the same layers, overwritten by ?0TX if present.
     internal static bool TryCloudLayerIndex(string signature, out int layer)
+        => TryCloudLayerIndex(signature, BethesdaGame.Unknown, out layer);
+
+    internal static bool TryCloudLayerIndex(string signature, BethesdaGame game, out int layer)
     {
+        // Oblivion names the lower cloud texture CNAM and upper DNAM. Later engines reverse those
+        // two legacy signatures (DNAM layer 0 / CNAM layer 1).
+        if (game == BethesdaGame.Oblivion)
+        {
+            if (signature == "CNAM") { layer = 0; return true; }
+            if (signature == "DNAM") { layer = 1; return true; }
+        }
+
         switch (signature)
         {
             case "DNAM": layer = 0; return true;
@@ -541,6 +721,20 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         }
 
         layer = -1;
+        return false;
+    }
+
+    /// <summary>Maps the binary FO3/FNV WTHR signatures \0IAD..\5IAD to semantic band slots.</summary>
+    internal static bool TryWeatherImageSpaceAdapterIndex(string signature, out int index)
+    {
+        if (signature.Length == 4 && signature[1] == 'I' && signature[2] == 'A' && signature[3] == 'D'
+            && signature[0] is >= '\0' and <= '\u0005')
+        {
+            index = signature[0];
+            return true;
+        }
+
+        index = -1;
         return false;
     }
 
@@ -570,11 +764,16 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             var day = ReadRgba(data.Slice(b + bandBytes, bandBytes), isBigEndian);
             var sunset = ReadRgba(data.Slice(b + 2 * bandBytes, bandBytes), isBigEndian);
             var night = ReadRgba(data.Slice(b + 3 * bandBytes, bandBytes), isBigEndian);
-            // FO3 (4 bands) has no separate High Noon / Midnight — fall back to Day / Night so the
-            // atmosphere resolver still gets sensible values across the clock.
-            var highNoon = bandsPerEntry >= 5 ? ReadRgba(data.Slice(b + 4 * bandBytes, bandBytes), isBigEndian) : day;
-            var midnight = bandsPerEntry >= 6 ? ReadRgba(data.Slice(b + 5 * bandBytes, bandBytes), isBigEndian) : night;
-            colors.Add(new WeatherColor(sunrise, day, sunset, night, highNoon, midnight));
+            if (bandsPerEntry >= 6)
+            {
+                colors.Add(new WeatherColor(sunrise, day, sunset, night,
+                    ReadRgba(data.Slice(b + 4 * bandBytes, bandBytes), isBigEndian),
+                    ReadRgba(data.Slice(b + 5 * bandBytes, bandBytes), isBigEndian)));
+            }
+            else
+            {
+                colors.Add(new WeatherColor(sunrise, day, sunset, night));
+            }
         }
 
         return colors;
@@ -583,8 +782,8 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // Skyrim/FO4/FO76/SF1 NAM0 + PNAM categories: each is a wbWeatherTimeOfDay struct of FOUR RGBA bands
     // (Sunrise/Day/Sunset/Night = 16 bytes). FO4/FO76/SF1 form version 111+ append FOUR more bands
     // (Early/Late Sunrise + Early/Late Sunset = 32 bytes total) per xEdit's wbWeatherTimeOfDay. Those extra
-    // bands are interpolation aids with no engine "High Noon"/"Midnight" analogue, so HighNoon/Midnight
-    // fall back to Day/Night (matching the FO3 fallback). Unlike FO3/FNV, the category COUNT here is
+    // bands are semantic transition colors with no engine "High Noon"/"Midnight" analogue and are
+    // retained explicitly. Unlike FO3/FNV, the category COUNT here is
     // form-version dependent (10→19), so the stride is taken as given rather than derived from the length;
     // the atmosphere renderer consumes the base lighting rows plus Skyrim's far-fog category 12; those
     // ordinals are stable across the modern games. Reading whatever fits at the correct stride is therefore
@@ -606,7 +805,19 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             var day = ReadRgba(data.Slice(b + bandBytes, bandBytes), isBigEndian);
             var sunset = ReadRgba(data.Slice(b + 2 * bandBytes, bandBytes), isBigEndian);
             var night = ReadRgba(data.Slice(b + 3 * bandBytes, bandBytes), isBigEndian);
-            colors.Add(new WeatherColor(sunrise, day, sunset, night, day, night));
+            var bands = new WeatherTimeBands<WeatherRgba>(sunrise, day, sunset, night);
+            if (strideBytes >= 8 * bandBytes)
+            {
+                bands = bands with
+                {
+                    EarlySunrise = ReadRgba(data.Slice(b + 4 * bandBytes, bandBytes), isBigEndian),
+                    LateSunrise = ReadRgba(data.Slice(b + 5 * bandBytes, bandBytes), isBigEndian),
+                    EarlySunset = ReadRgba(data.Slice(b + 6 * bandBytes, bandBytes), isBigEndian),
+                    LateSunset = ReadRgba(data.Slice(b + 7 * bandBytes, bandBytes), isBigEndian),
+                };
+            }
+
+            colors.Add(new WeatherColor(bands));
         }
 
         return colors;
@@ -625,8 +836,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
     // JNAM "Cloud Alphas": per-layer opacity FLOATS (Sunrise/Day/Sunset/Night), one struct per cloud layer.
     // FO4/FO76/SF1 widen 4→8 float bands at form version 111 (the extra Early/Late Sunrise/Sunset aids),
-    // exactly like the colors; Skyrim is always 4. Stride = bands × 4 bytes (16 or 32). Only the four base
-    // bands are read regardless of stride, since they sit at the same fixed offsets in both layouts.
+    // exactly like the colors; Skyrim is always 4. Stride = bands × 4 bytes (16 or 32).
     internal static int ModernCloudAlphaStride(BethesdaGame game, int formVersion)
     {
         const int floatBytes = 4;
@@ -636,39 +846,23 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     }
 
     /// <summary>
-    ///     Reads a QNAM/RNAM per-layer cloud-speed array. FNV/FO3/Skyrim author one UNSIGNED byte biased
-    ///     around 127: <c>(b - 127) / 127</c>, exactly matching TESWeather::GetCloudLayerSpeed's
-    ///     <c>(max-min)*b/254+min</c> with symmetric bounds. FO4/FO76/Starfield author one float per layer.
-    ///     FO4 floats are small (CK-authored ~±0.1), so they're scaled ×10 into the same domain — a visual
-    ///     calibration for that later engine family; Skyrim's separate renderer scale is decompile-exact.
+    ///     Reads an ONAM/QNAM/RNAM per-layer cloud-speed array. xEdit's shared
+    ///     <c>wbWeatherCloudSpeed</c> defines every supported generation, including FO4/FO76, as one U8
+    ///     per layer. Values use the engine's biased representation: <c>(b - 127) / 127</c>.
+    ///     Endianness does not affect individual bytes.
     /// </summary>
     internal static float[] ReadCloudSpeeds(ReadOnlySpan<byte> data, bool isBigEndian, BethesdaGame game)
     {
-        var floatForm = game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield
-                        && data.Length >= 4 && data.Length % 4 == 0;
-        if (!floatForm)
+        var speeds = new float[data.Length];
+        for (var i = 0; i < data.Length; i++)
         {
-            var bytes = new float[data.Length];
-            for (var i = 0; i < data.Length; i++)
-            {
-                bytes[i] = (data[i] - 127f) / 127f;
-            }
-
-            return bytes;
-        }
-
-        var speeds = new float[data.Length / 4];
-        for (var i = 0; i < speeds.Length; i++)
-        {
-            var raw = isBigEndian
-                ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data[(i * 4)..])
-                : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(data[(i * 4)..]);
-            var value = BitConverter.UInt32BitsToSingle(raw);
-            speeds[i] = float.IsFinite(value) ? Math.Clamp(value * 10f, -1f, 1f) : 0f;
+            speeds[i] = NormalizeCloudSpeedByte(data[i]);
         }
 
         return speeds;
     }
+
+    internal static float NormalizeCloudSpeedByte(byte value) => (value - 127f) / 127f;
 
     // Reads the JNAM cloud-alpha array: one per-layer <see cref="WeatherCloudAlpha" /> (Sunrise/Day/Sunset/
     // Night floats) per stride-byte block. Floats are endian-aware so Xbox (byte-swapped) and PC agree.
@@ -689,7 +883,19 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             var day = ReadFloat(data, b + floatBytes, isBigEndian);
             var sunset = ReadFloat(data, b + (2 * floatBytes), isBigEndian);
             var night = ReadFloat(data, b + (3 * floatBytes), isBigEndian);
-            alphas.Add(new WeatherCloudAlpha(sunrise, day, sunset, night));
+            var bands = new WeatherTimeBands<float>(sunrise, day, sunset, night);
+            if (strideBytes >= 8 * floatBytes)
+            {
+                bands = bands with
+                {
+                    EarlySunrise = ReadFloat(data, b + (4 * floatBytes), isBigEndian),
+                    LateSunrise = ReadFloat(data, b + (5 * floatBytes), isBigEndian),
+                    EarlySunset = ReadFloat(data, b + (6 * floatBytes), isBigEndian),
+                    LateSunset = ReadFloat(data, b + (7 * floatBytes), isBigEndian),
+                };
+            }
+
+            alphas.Add(new WeatherCloudAlpha(bands));
         }
 
         return alphas;
@@ -748,31 +954,146 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     // sun already lights those) and down/occluded faces brighter, so the mean tracks the overall
     // authored ambient level per band.
     internal static WeatherRgba ReadDirectionalAmbientMean(ReadOnlySpan<byte> data, bool isBigEndian)
-    {
-        int r = 0, g = 0, b = 0;
-        for (var i = 0; i < 6; i++)
-        {
-            var c = ReadRgba(data.Slice(i * 4, 4), isBigEndian);
-            r += c.R;
-            g += c.G;
-            b += c.B;
-        }
+        => ReadDirectionalAmbientCube(data, isBigEndian).Mean;
 
-        return new WeatherRgba((byte)(r / 6), (byte)(g / 6), (byte)(b / 6), 255);
-    }
+    internal static WeatherAmbientCube ReadDirectionalAmbientCube(ReadOnlySpan<byte> data, bool isBigEndian) =>
+        new()
+        {
+            PositiveX = ReadRgba(data.Slice(0, 4), isBigEndian),
+            NegativeX = ReadRgba(data.Slice(4, 4), isBigEndian),
+            PositiveY = ReadRgba(data.Slice(8, 4), isBigEndian),
+            NegativeY = ReadRgba(data.Slice(12, 4), isBigEndian),
+            PositiveZ = ReadRgba(data.Slice(16, 4), isBigEndian),
+            NegativeZ = ReadRgba(data.Slice(20, 4), isBigEndian),
+            Specular = data.Length >= 28 ? ReadRgba(data.Slice(24, 4), isBigEndian) : null,
+            FresnelPower = data.Length >= 32 ? ReadFloat(data, 28, isBigEndian) : null,
+        };
 
     // Assembles the per-band DALC means into a WeatherColor in NAM0 band order (Sunrise/Day/
-    // Sunset/Night; FO4's four extra interpolation-aid bands are ignored, like the colors). The
-    // HighNoon/Midnight peaks are left unauthored so the band blend falls back to Day/Night.
-    private static WeatherColor? BuildDirectionalAmbient(List<WeatherRgba>? bands)
+    // Sunset/Night followed by FO4's four explicit transition bands). HighNoon/Midnight remain
+    // unauthored because they are not part of the modern format.
+    private static WeatherTimeBands<WeatherAmbientCube>? BuildDirectionalAmbientBands(
+        List<WeatherAmbientCube>? bands)
     {
         if (bands is not { Count: > 0 })
         {
             return null;
         }
 
-        WeatherRgba Band(int i) => bands[Math.Min(i, bands.Count - 1)];
-        return new WeatherColor(Band(0), Band(1), Band(2), Band(3));
+        WeatherAmbientCube Band(int i) => bands[Math.Min(i, bands.Count - 1)];
+        var result = new WeatherTimeBands<WeatherAmbientCube>(Band(0), Band(1), Band(2), Band(3));
+        if (bands.Count >= 8)
+        {
+            result = result with
+            {
+                EarlySunrise = Band(4),
+                LateSunrise = Band(5),
+                EarlySunset = Band(6),
+                LateSunset = Band(7),
+            };
+        }
+
+        return result;
+    }
+
+    private static WeatherColor? BuildDirectionalAmbient(WeatherTimeBands<WeatherAmbientCube>? bands)
+    {
+        if (bands is null) return null;
+        return new WeatherColor(new WeatherTimeBands<WeatherRgba>(
+            bands.Sunrise.Mean, bands.Day.Mean, bands.Sunset.Mean, bands.Night.Mean)
+        {
+            EarlySunrise = bands.EarlySunrise?.Mean,
+            LateSunrise = bands.LateSunrise?.Mean,
+            EarlySunset = bands.EarlySunset?.Mean,
+            LateSunset = bands.LateSunset?.Mean,
+        });
+    }
+
+    internal static WeatherTimeBands<uint> ReadWeatherImageSpaces(
+        ReadOnlySpan<byte> data, bool isBigEndian, int bandCount)
+    {
+        var bands = new WeatherTimeBands<uint>(
+            RecordParserContext.ReadFormId(data.Slice(0, 4), isBigEndian),
+            RecordParserContext.ReadFormId(data.Slice(4, 4), isBigEndian),
+            RecordParserContext.ReadFormId(data.Slice(8, 4), isBigEndian),
+            RecordParserContext.ReadFormId(data.Slice(12, 4), isBigEndian));
+        if (bandCount >= 8 && data.Length >= 32)
+        {
+            bands = bands with
+            {
+                EarlySunrise = RecordParserContext.ReadFormId(data.Slice(16, 4), isBigEndian),
+                LateSunrise = RecordParserContext.ReadFormId(data.Slice(20, 4), isBigEndian),
+                EarlySunset = RecordParserContext.ReadFormId(data.Slice(24, 4), isBigEndian),
+                LateSunset = RecordParserContext.ReadFormId(data.Slice(28, 4), isBigEndian),
+            };
+        }
+
+        return bands;
+    }
+
+    private static IReadOnlyList<WeatherCloudLayer> BuildCloudLayers(
+        SortedDictionary<int, string> textures,
+        IReadOnlyList<float>? speedsX,
+        IReadOnlyList<float>? speedsY,
+        IReadOnlyList<WeatherColor>? colors,
+        IReadOnlyList<WeatherCloudAlpha>? alphas)
+    {
+        var max = textures.Count > 0 ? textures.Keys.Max() : -1;
+        max = Math.Max(max, (speedsX?.Count ?? 0) - 1);
+        max = Math.Max(max, (speedsY?.Count ?? 0) - 1);
+        max = Math.Max(max, (colors?.Count ?? 0) - 1);
+        max = Math.Max(max, (alphas?.Count ?? 0) - 1);
+        if (max < 0) return [];
+
+        var layers = new List<WeatherCloudLayer>(max + 1);
+        for (var i = 0; i <= max; i++)
+        {
+            layers.Add(new WeatherCloudLayer
+            {
+                SourceIndex = i,
+                Texture = textures.GetValueOrDefault(i),
+                SpeedU = i < (speedsX?.Count ?? 0) ? speedsX![i] : 0f,
+                SpeedV = i < (speedsY?.Count ?? 0) ? speedsY![i] : 0f,
+                Color = i < (colors?.Count ?? 0) ? colors![i] : null,
+                Opacity = i < (alphas?.Count ?? 0) ? alphas![i] : null,
+            });
+        }
+
+        return layers;
+    }
+
+    internal static WeatherHdr ReadWeatherHdr(ReadOnlySpan<byte> data, bool isBigEndian) =>
+        new()
+        {
+            EyeAdaptSpeed = ReadFloat(data, 0, isBigEndian),
+            BlurRadius = ReadFloat(data, 4, isBigEndian),
+            BlurPasses = ReadFloat(data, 8, isBigEndian),
+            EmissiveMult = ReadFloat(data, 12, isBigEndian),
+            TargetLum = ReadFloat(data, 16, isBigEndian),
+            UpperLumClamp = ReadFloat(data, 20, isBigEndian),
+            BrightScale = ReadFloat(data, 24, isBigEndian),
+            BrightClamp = ReadFloat(data, 28, isBigEndian),
+            LumRampNoTex = ReadFloat(data, 32, isBigEndian),
+            LumRampMin = ReadFloat(data, 36, isBigEndian),
+            LumRampMax = ReadFloat(data, 40, isBigEndian),
+            SunlightDimmer = ReadFloat(data, 44, isBigEndian),
+            GrassDimmer = ReadFloat(data, 48, isBigEndian),
+            TreeDimmer = ReadFloat(data, 52, isBigEndian),
+        };
+
+    internal static WeatherColor ReadWeatherRgbRow(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        // Skyrim NAM2/NAM3 are four RGBX rows. Preserve the fourth byte losslessly: captures show
+        // retail records commonly store zero there, and Sun/Moon::Update supplies visibility through
+        // separate alpha state rather than interpreting this padding as opacity.
+        static WeatherRgba Band(ReadOnlySpan<byte> source, int offset, bool bigEndian) =>
+            ReadRgba(source.Slice(offset, 4), bigEndian);
+
+        return new WeatherColor(
+            Band(data, 0, isBigEndian),
+            Band(data, 4, isBigEndian),
+            Band(data, 8, isBigEndian),
+            Band(data, 12, isBigEndian));
     }
 
     private static WeatherRgba ReadRgba(ReadOnlySpan<byte> band, bool isBigEndian)
@@ -795,13 +1116,15 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         return fog;
     }
 
-    private static WeatherData ReadWeatherData(ReadOnlySpan<byte> d) =>
+    private static WeatherData ReadWeatherData(ReadOnlySpan<byte> d, BethesdaGame game) =>
         // 15-byte layout per the DATA/WTHR converter schema: WindSpeed(0), pad(1,2), TransDelta(3),
         // SunGlare(4), SunDamage(5), PrecipBeginFadeIn(6), PrecipEndFadeOut(7), ThunderBeginFadeIn(8),
         // ThunderEndFadeOut(9), ThunderFreq(10), Flags(11), LightningR/G/B(12,13,14).
         new()
         {
             WindSpeed = d[0],
+            CloudSpeedLower = game == BethesdaGame.Oblivion ? d[1] : null,
+            CloudSpeedUpper = game == BethesdaGame.Oblivion ? d[2] : null,
             TransDelta = d[3],
             SunGlare = d[4],
             SunDamage = d[5],
@@ -813,6 +1136,90 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             Flags = d[11],
             LightningColor = new WeatherRgba(d[12], d[13], d[14], 255),
         };
+
+    /// <summary>
+    ///     Classic IMGS DNAM stores its cinematic-mask dword at byte 128, 144, or 148 for the
+    ///     132-, 148-, and 152-byte layouts respectively. Only the low nibble is semantic; read the
+    ///     full dword with source endianness so Xbox records do not select the wrong byte.
+    /// </summary>
+    internal static ImageSpaceCinematicFlags ReadImageSpaceCinematicFlags(
+        ReadOnlySpan<byte> data, bool isBigEndian = false)
+    {
+        var offset = data.Length switch
+        {
+            >= 152 => 148,
+            >= 148 => 144,
+            >= 132 => 128,
+            _ => -1,
+        };
+        if (offset < 0 || data.Length < offset + sizeof(uint)) return ImageSpaceCinematicFlags.None;
+        var raw = isBigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data.Slice(offset, sizeof(uint)))
+            : BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, sizeof(uint)));
+        return (ImageSpaceCinematicFlags)(raw & (uint)ImageSpaceCinematicFlags.All);
+    }
+
+    /// <summary>
+    ///     Semantic classic DNAM reader. The 132-byte source variant authors a tail mask at +128
+    ///     but omits SkinDimmer and Fade; normalize those omissions to the manager defaults rather
+    ///     than reproducing TESImageSpace::Load's undefined short-read stack tail.
+    /// </summary>
+    internal static ImageSpaceClassicData ReadClassicImageSpaceDnam(
+        ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        if (data.Length < 132)
+            throw new ArgumentException("Classic IMGS DNAM requires at least 132 bytes.", nameof(data));
+
+        var hasSkinDimmer = data.Length >= 152;
+        var hasFade = data.Length >= 148;
+        var cinematicBase = (hasSkinDimmer ? 60 : 56) + 40;
+        var fadeBase = cinematicBase + 32;
+        var hdr = new ImageSpaceHdr
+        {
+            EyeAdaptSpeed = ReadFloat(data, 0, isBigEndian),
+            BlurRadius = ReadFloat(data, 4, isBigEndian),
+            BlurPasses = ReadFloat(data, 8, isBigEndian),
+            EmissiveMult = ReadFloat(data, 12, isBigEndian),
+            TargetLum = ReadFloat(data, 16, isBigEndian),
+            UpperLumClamp = ReadFloat(data, 20, isBigEndian),
+            BrightScale = ReadFloat(data, 24, isBigEndian),
+            BrightClamp = ReadFloat(data, 28, isBigEndian),
+            LumRampNoTex = ReadFloat(data, 32, isBigEndian),
+            LumRampMin = ReadFloat(data, 36, isBigEndian),
+            LumRampMax = ReadFloat(data, 40, isBigEndian),
+            SunlightDimmer = ReadFloat(data, 44, isBigEndian),
+            GrassDimmer = ReadFloat(data, 48, isBigEndian),
+            TreeDimmer = ReadFloat(data, 52, isBigEndian),
+            SkinDimmer = hasSkinDimmer ? ReadFloat(data, 56, isBigEndian) : 1f,
+        };
+        var cinematic = new ImageSpaceCinematic
+        {
+            HasExplicitFlags = true,
+            Flags = ReadImageSpaceCinematicFlags(data, isBigEndian),
+            Saturation = ReadFloat(data, cinematicBase, isBigEndian),
+            ContrastAvgLum = ReadFloat(data, cinematicBase + 4, isBigEndian),
+            Contrast = ReadFloat(data, cinematicBase + 8, isBigEndian),
+            Brightness = ReadFloat(data, cinematicBase + 12, isBigEndian),
+        };
+        var tint = new ImageSpaceTint
+        {
+            Red = ReadFloat(data, cinematicBase + 16, isBigEndian),
+            Green = ReadFloat(data, cinematicBase + 20, isBigEndian),
+            Blue = ReadFloat(data, cinematicBase + 24, isBigEndian),
+            Amount = ReadFloat(data, cinematicBase + 28, isBigEndian),
+        };
+        var fade = hasFade
+            ? new ImageSpaceFade
+            {
+                IsAuthored = true,
+                Red = ReadFloat(data, fadeBase, isBigEndian),
+                Green = ReadFloat(data, fadeBase + 4, isBigEndian),
+                Blue = ReadFloat(data, fadeBase + 8, isBigEndian),
+                Amount = ReadFloat(data, fadeBase + 12, isBigEndian),
+            }
+            : new ImageSpaceFade();
+        return new ImageSpaceClassicData(hdr, cinematic, tint, fade);
+    }
 
     #endregion
 
@@ -929,6 +1336,200 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     }
 
     /// <summary>
+    ///     Parse all classic Image Space Modifier (IMAD) records. Unlike GenericEsmRecord's
+    ///     signature-keyed dictionary, this path appends repeated frame tables and therefore cannot
+    ///     discard authored keys that share a subrecord signature.
+    /// </summary>
+    internal List<ImageSpaceModifierRecord> ParseImageSpaceModifiers()
+    {
+        return ParseRecordList("IMAD", 512,
+            ParseImageSpaceModifierFromAccessor,
+            record => new ImageSpaceModifierRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian,
+            });
+    }
+
+    private ImageSpaceModifierRecord? ParseImageSpaceModifierFromAccessor(DetectedMainRecord record, byte[] buffer)
+    {
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            return new ImageSpaceModifierRecord
+            {
+                FormId = record.FormId,
+                EditorId = Context.GetEditorId(record.FormId),
+                Offset = record.Offset,
+                IsBigEndian = record.IsBigEndian,
+            };
+        }
+
+        var (data, dataSize) = recordData.Value;
+        string? editorId = null;
+        ImageSpaceModifierData? modifierData = null;
+        var parameterKeys = new List<ImageSpaceModifierFloatKey>?[21, 2];
+        var scalarKeys = new Dictionary<string, List<ImageSpaceModifierFloatKey>>(StringComparer.Ordinal);
+        var tintKeys = new List<ImageSpaceModifierColorKey>();
+        var fadeKeys = new List<ImageSpaceModifierColorKey>();
+        var ordered = new List<ImageSpaceModifierRawSubrecord>();
+        uint? introSound = null;
+        uint? outroSound = null;
+
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            ordered.Add(new ImageSpaceModifierRawSubrecord(sub.Signature, subData.ToArray()));
+
+            if (TryImageSpaceModifierParameterSignature(sub.Signature, out var parameter, out var operation))
+            {
+                var list = parameterKeys[(int)parameter, (int)operation] ??= [];
+                list.AddRange(ReadImageSpaceModifierFloatKeys(subData, record.IsBigEndian));
+                continue;
+            }
+
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId)) Context.FormIdToEditorId[record.FormId] = editorId;
+                    break;
+                case "DNAM" when sub.DataLength >= 8:
+                    modifierData = ReadImageSpaceModifierData(subData, record.IsBigEndian);
+                    break;
+                case "TNAM":
+                    tintKeys.AddRange(ReadImageSpaceModifierColorKeys(subData, record.IsBigEndian));
+                    break;
+                case "NAM3":
+                    fadeKeys.AddRange(ReadImageSpaceModifierColorKeys(subData, record.IsBigEndian));
+                    break;
+                case "RDSD" when sub.DataLength >= 4:
+                    introSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "RDSI" when sub.DataLength >= 4:
+                    outroSound = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "BNAM" or "VNAM" or "RNAM" or "SNAM" or "UNAM" or
+                     "NAM1" or "NAM2" or "WNAM" or "XNAM" or "YNAM" or "NAM4":
+                {
+                    if (!scalarKeys.TryGetValue(sub.Signature, out var keys))
+                    {
+                        keys = [];
+                        scalarKeys.Add(sub.Signature, keys);
+                    }
+                    keys.AddRange(ReadImageSpaceModifierFloatKeys(subData, record.IsBigEndian));
+                    break;
+                }
+            }
+        }
+
+        var parameters = new ImageSpaceModifierParameterTimeline[21];
+        for (var i = 0; i < parameters.Length; i++)
+        {
+            parameters[i] = new ImageSpaceModifierParameterTimeline(
+                (ImageSpaceModifierParameter)i,
+                parameterKeys[i, (int)ImageSpaceModifierOperation.Multiply] ?? [],
+                parameterKeys[i, (int)ImageSpaceModifierOperation.Add] ?? []);
+        }
+
+        return new ImageSpaceModifierRecord
+        {
+            FormId = record.FormId,
+            EditorId = editorId ?? Context.GetEditorId(record.FormId),
+            Data = modifierData,
+            Parameters = parameters,
+            ScalarTimelines = scalarKeys.ToDictionary(
+                p => p.Key, p => (IReadOnlyList<ImageSpaceModifierFloatKey>)p.Value,
+                StringComparer.Ordinal),
+            TintColorTimeline = tintKeys,
+            FadeColorTimeline = fadeKeys,
+            IntroSoundFormId = introSound is not 0 ? introSound : null,
+            OutroSoundFormId = outroSound is not 0 ? outroSound : null,
+            OrderedSubrecords = ordered,
+            Offset = record.Offset,
+            IsBigEndian = record.IsBigEndian,
+        };
+    }
+
+    /// <summary>
+    ///     IMAD DNAM's first DWORD is already little-endian in Xbox records; the remaining fields use
+    ///     record endianness. This asymmetry is mirrored by SubrecordSchemaProcessor's converter.
+    /// </summary>
+    internal static ImageSpaceModifierData ReadImageSpaceModifierData(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        var payload = new List<uint>(Math.Max(0, (data.Length - 8) / 4));
+        for (var offset = 8; offset + 4 <= data.Length; offset += 4)
+        {
+            payload.Add(isBigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(data.Slice(offset, 4))
+                : BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, 4)));
+        }
+
+        return new ImageSpaceModifierData
+        {
+            AnimatableFlag = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(0, 4)),
+            Duration = ReadFloat(data, 4, isBigEndian),
+            RawPayload = payload,
+        };
+    }
+
+    internal static IReadOnlyList<ImageSpaceModifierFloatKey> ReadImageSpaceModifierFloatKeys(
+        ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        var keys = new List<ImageSpaceModifierFloatKey>(data.Length / 8);
+        for (var offset = 0; offset + 8 <= data.Length; offset += 8)
+        {
+            keys.Add(new ImageSpaceModifierFloatKey(
+                ReadFloat(data, offset, isBigEndian),
+                ReadFloat(data, offset + 4, isBigEndian)));
+        }
+        return keys;
+    }
+
+    internal static IReadOnlyList<ImageSpaceModifierColorKey> ReadImageSpaceModifierColorKeys(
+        ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        var keys = new List<ImageSpaceModifierColorKey>(data.Length / 20);
+        for (var offset = 0; offset + 20 <= data.Length; offset += 20)
+        {
+            keys.Add(new ImageSpaceModifierColorKey(
+                ReadFloat(data, offset, isBigEndian),
+                ReadFloat(data, offset + 4, isBigEndian),
+                ReadFloat(data, offset + 8, isBigEndian),
+                ReadFloat(data, offset + 12, isBigEndian),
+                ReadFloat(data, offset + 16, isBigEndian)));
+        }
+        return keys;
+    }
+
+    internal static bool TryImageSpaceModifierParameterSignature(
+        string signature, out ImageSpaceModifierParameter parameter, out ImageSpaceModifierOperation operation)
+    {
+        if (signature.Length == 4 && signature[1] == 'I' && signature[2] == 'A' && signature[3] == 'D')
+        {
+            var prefix = signature[0];
+            if (prefix <= '\u0014')
+            {
+                parameter = (ImageSpaceModifierParameter)prefix;
+                operation = ImageSpaceModifierOperation.Multiply;
+                return true;
+            }
+            if (prefix is >= '@' and <= 'T')
+            {
+                parameter = (ImageSpaceModifierParameter)(prefix - '@');
+                operation = ImageSpaceModifierOperation.Add;
+                return true;
+            }
+        }
+
+        parameter = default;
+        operation = default;
+        return false;
+    }
+
+    /// <summary>
     ///     Parse all Image Space (IMGS) records. Cells reference one via XCIM and worldspaces via INAM;
     ///     the viewer's tonemap stage reads the HDR (TargetLUM/UpperLUMClamp) + cinematic
     ///     (saturation/contrast/brightness/tint) values to reproduce the engine's post-process.
@@ -964,8 +1565,15 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
         string? editorId = null;
         ImageSpaceHdr? hdr = null;
+        ImageSpaceModernHdr? modernHdr = null;
         ImageSpaceCinematic? cinematic = null;
         ImageSpaceTint? tint = null;
+        ImageSpaceFade? fade = null;
+        ImageSpaceDepthOfField? depthOfFieldData = null;
+        string? lutTexturePath = null;
+        var hasSplitModernHdr = false;
+        var modernImageSpace = Context.Game is BethesdaGame.Skyrim or BethesdaGame.Fallout4
+            or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
@@ -981,46 +1589,36 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                     }
 
                     break;
-                // FO3/FNV: a single DNAM block. 152 bytes for form version >= 10; 132 for older records
-                // (no Skin Dimmer at +56 — everything after shifts −4; no trailing unused/flags). The
-                // engine's TESImageSpace::Load branches on size < 0x98 the same way, so size (not the
-                // header form version) is the discriminator.
+                // FO3/FNV: a single DNAM block. The 152-byte layout includes Skin Dimmer and Fade;
+                // 148 omits Skin Dimmer, while 132 omits both. Each layout still authors a mask dword
+                // at its own tail. Size (not the header form version) is the discriminator.
                 case "DNAM" when sub.DataLength >= 132:
                 {
-                    var be = record.IsBigEndian;
-                    hdr = new ImageSpaceHdr
-                    {
-                        EyeAdaptSpeed = ReadFloat(subData, 0, be),
-                        BlurRadius = ReadFloat(subData, 4, be),
-                        BlurPasses = ReadFloat(subData, 8, be),
-                        EmissiveMult = ReadFloat(subData, 12, be),
-                        TargetLum = ReadFloat(subData, 16, be),
-                        UpperLumClamp = ReadFloat(subData, 20, be),
-                        BrightScale = ReadFloat(subData, 24, be),
-                        BrightClamp = ReadFloat(subData, 28, be),
-                        LumRampNoTex = ReadFloat(subData, 32, be),
-                    };
-
-                    // Bloom(3) + GetHit(3) + NightEye(4) floats sit between the HDR block and the
-                    // cinematic block; the v>=10 layout also inserts Skin Dimmer after the HDR floats.
-                    var cinBase = (sub.DataLength >= 152 ? 60 : 56) + 40;
-                    cinematic = new ImageSpaceCinematic
-                    {
-                        Saturation = ReadFloat(subData, cinBase, be),
-                        ContrastAvgLum = ReadFloat(subData, cinBase + 4, be),
-                        Contrast = ReadFloat(subData, cinBase + 8, be),
-                        Brightness = ReadFloat(subData, cinBase + 12, be),
-                    };
-                    tint = new ImageSpaceTint
-                    {
-                        Red = ReadFloat(subData, cinBase + 16, be),
-                        Green = ReadFloat(subData, cinBase + 20, be),
-                        Blue = ReadFloat(subData, cinBase + 24, be),
-                        Amount = ReadFloat(subData, cinBase + 28, be),
-                    };
+                    var classic = ReadClassicImageSpaceDnam(subData, record.IsBigEndian);
+                    hdr = classic.Hdr;
+                    cinematic = classic.Cinematic;
+                    tint = classic.Tint;
+                    fade = classic.Fade;
                     break;
                 }
-                // Skyrim+ split layout (kept for forward compatibility with the newer games).
+                // Skyrim/FO4-family legacy packed layout: seven HDR values, cinematic, then tint.
+                // ENAM omits the two later HNAM-only fields; those stay null rather than inheriting
+                // values from unrelated ordinals. Split HNAM/CNAM/TNAM wins when both are present.
+                case "ENAM" when modernImageSpace && sub.DataLength >= 56:
+                {
+                    var packed = ReadModernImageSpacePackedData(subData, record.IsBigEndian, Context.Game);
+                    if (!hasSplitModernHdr) modernHdr = packed.Hdr;
+                    cinematic ??= packed.Cinematic;
+                    tint ??= packed.Tint;
+                    break;
+                }
+                // Modern 36-byte HNAM has two incompatible semantic layouts. Never decode it as the
+                // classic FO3/FNV ImageSpaceHdr ordinal block.
+                case "HNAM" when modernImageSpace && sub.DataLength >= 36:
+                    modernHdr = ReadModernImageSpaceHdr(subData, record.IsBigEndian, Context.Game);
+                    hasSplitModernHdr = true;
+                    break;
+                // Non-modern split layout retained for old plugin compatibility.
                 case "HNAM" when sub.DataLength >= 36:
                     hdr = new ImageSpaceHdr
                     {
@@ -1038,6 +1636,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 case "CNAM" when sub.DataLength >= 12:
                     cinematic = new ImageSpaceCinematic
                     {
+                        HasExplicitFlags = false,
                         Saturation = ReadFloat(subData, 0, record.IsBigEndian),
                         Brightness = ReadFloat(subData, 4, record.IsBigEndian),
                         Contrast = ReadFloat(subData, 8, record.IsBigEndian),
@@ -1052,18 +1651,143 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                         Blue = ReadFloat(subData, 12, record.IsBigEndian),
                     };
                     break;
+                case "DNAM" when modernImageSpace && sub.DataLength >= 16:
+                    depthOfFieldData = ReadModernImageSpaceDepthOfField(subData, record.IsBigEndian);
+                    break;
+                case "TX00" when modernImageSpace:
+                    lutTexturePath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
             }
         }
+
+        IReadOnlyList<float>? depthOfField = depthOfFieldData is null
+            ? null
+            : depthOfFieldData.VignetteRadius is { } vignetteRadius
+                ? [depthOfFieldData.Strength, depthOfFieldData.Distance, depthOfFieldData.Range,
+                    depthOfFieldData.SkyBlurRadius, vignetteRadius,
+                    depthOfFieldData.VignetteStrength.GetValueOrDefault()]
+                : [depthOfFieldData.Strength, depthOfFieldData.Distance, depthOfFieldData.Range,
+                    depthOfFieldData.SkyBlurRadius];
 
         return new ImageSpaceRecord
         {
             FormId = record.FormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             Hdr = hdr,
+            ModernHdr = modernHdr,
             Cinematic = cinematic,
             Tint = tint,
+            Fade = fade,
+            DepthOfField = depthOfField,
+            DepthOfFieldData = depthOfFieldData,
+            LutTexturePath = lutTexturePath,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
+        };
+    }
+
+    internal static ImageSpaceModernHdr ReadModernImageSpaceHdr(
+        ReadOnlySpan<byte> data, bool isBigEndian, BethesdaGame game)
+    {
+        if (data.Length < 36) throw new ArgumentException("Modern IMGS HNAM requires 36 bytes.", nameof(data));
+        var fallout4Family = game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
+        return fallout4Family
+            ? new ImageSpaceModernHdr
+            {
+                Family = ImageSpaceModernFamily.Fallout4,
+                EyeAdaptSpeed = ReadFloat(data, 0, isBigEndian),
+                TonemapE = ReadFloat(data, 4, isBigEndian),
+                BloomThreshold = ReadFloat(data, 8, isBigEndian),
+                BloomScale = ReadFloat(data, 12, isBigEndian),
+                AutoExposureMax = ReadFloat(data, 16, isBigEndian),
+                AutoExposureMin = ReadFloat(data, 20, isBigEndian),
+                SunlightScale = ReadFloat(data, 24, isBigEndian),
+                SkyScale = ReadFloat(data, 28, isBigEndian),
+                MiddleGray = ReadFloat(data, 32, isBigEndian),
+            }
+            : new ImageSpaceModernHdr
+            {
+                Family = ImageSpaceModernFamily.Skyrim,
+                EyeAdaptSpeed = ReadFloat(data, 0, isBigEndian),
+                BloomBlurRadius = ReadFloat(data, 4, isBigEndian),
+                BloomThreshold = ReadFloat(data, 8, isBigEndian),
+                BloomScale = ReadFloat(data, 12, isBigEndian),
+                ReceiveBloomThreshold = ReadFloat(data, 16, isBigEndian),
+                White = ReadFloat(data, 20, isBigEndian),
+                SunlightScale = ReadFloat(data, 24, isBigEndian),
+                SkyScale = ReadFloat(data, 28, isBigEndian),
+                EyeAdaptStrength = ReadFloat(data, 32, isBigEndian),
+            };
+    }
+
+    internal static ImageSpacePackedData ReadModernImageSpacePackedData(
+        ReadOnlySpan<byte> data, bool isBigEndian, BethesdaGame game)
+    {
+        if (data.Length < 56) throw new ArgumentException("Modern IMGS ENAM requires 56 bytes.", nameof(data));
+        var fallout4Family = game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
+        var combined = ReadFloat(data, 16, isBigEndian);
+        var modernHdr = fallout4Family
+            ? new ImageSpaceModernHdr
+            {
+                Family = ImageSpaceModernFamily.Fallout4,
+                IsLegacyPackedEnam = true,
+                EyeAdaptSpeed = ReadFloat(data, 0, isBigEndian),
+                TonemapE = ReadFloat(data, 4, isBigEndian),
+                BloomThreshold = ReadFloat(data, 8, isBigEndian),
+                BloomScale = ReadFloat(data, 12, isBigEndian),
+                AutoExposureMax = combined,
+                AutoExposureMin = combined,
+                SunlightScale = ReadFloat(data, 20, isBigEndian),
+                SkyScale = ReadFloat(data, 24, isBigEndian),
+            }
+            : new ImageSpaceModernHdr
+            {
+                Family = ImageSpaceModernFamily.Skyrim,
+                IsLegacyPackedEnam = true,
+                EyeAdaptSpeed = ReadFloat(data, 0, isBigEndian),
+                BloomBlurRadius = ReadFloat(data, 4, isBigEndian),
+                BloomThreshold = ReadFloat(data, 8, isBigEndian),
+                BloomScale = ReadFloat(data, 12, isBigEndian),
+                ReceiveBloomThreshold = combined,
+                SunlightScale = ReadFloat(data, 20, isBigEndian),
+                SkyScale = ReadFloat(data, 24, isBigEndian),
+            };
+        return new ImageSpacePackedData(
+            modernHdr,
+            new ImageSpaceCinematic
+            {
+                HasExplicitFlags = false,
+                Saturation = ReadFloat(data, 28, isBigEndian),
+                Brightness = ReadFloat(data, 32, isBigEndian),
+                Contrast = ReadFloat(data, 36, isBigEndian),
+            },
+            new ImageSpaceTint
+            {
+                Amount = ReadFloat(data, 40, isBigEndian),
+                Red = ReadFloat(data, 44, isBigEndian),
+                Green = ReadFloat(data, 48, isBigEndian),
+                Blue = ReadFloat(data, 52, isBigEndian),
+            });
+    }
+
+    internal static ImageSpaceDepthOfField ReadModernImageSpaceDepthOfField(
+        ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        if (data.Length < 16) throw new ArgumentException("Modern IMGS DNAM requires 16 bytes.", nameof(data));
+        var skyBlurRadius = isBigEndian
+            ? BinaryPrimitives.ReadUInt16BigEndian(data.Slice(14, 2))
+            : BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(14, 2));
+        return new ImageSpaceDepthOfField
+        {
+            Strength = ReadFloat(data, 0, isBigEndian),
+            Distance = ReadFloat(data, 4, isBigEndian),
+            Range = ReadFloat(data, 8, isBigEndian),
+            Unused0 = data[12],
+            Unused1 = data[13],
+            SkyBlurRadius = skyBlurRadius,
+            VignetteRadius = data.Length >= 20 ? ReadFloat(data, 16, isBigEndian) : null,
+            VignetteStrength = data.Length >= 24 ? ReadFloat(data, 20, isBigEndian) : null,
+            RawData = data.ToArray(),
         };
     }
 

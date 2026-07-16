@@ -1,7 +1,7 @@
 // Tonemap resolve pass. Samples the HDR scene color (R16G16B16A16_FLOAT, values may exceed 1 —
 // emissive glow, sun specular) and maps it to the 8-bit display range.
 //
-// Three operators (uParams0.z = mode):
+// Four operators (uParams0.z = mode):
 //   0 LegacyClamp — plain saturate; bit-identical to the pre-HDR 8-bit pipeline. Morrowind
 //     (pre-HDR engine) and the FALLOUT_VIEWER_HDR=0 kill-switch land here.
 //   1 GammaAces — decode 2.2 -> exposure -> ACES filmic -> encode 1/2.2. The scene renders in
@@ -17,10 +17,14 @@
 //       cinematic: saturation -> tint -> contrast/brightness (IMGS cinematic block)
 //     bloom (t2) = the BrightPassBlur chain output (bloom.frag.hlsl); uParams3.z gates the term.
 //     Operates on gamma-space values exactly like the engine — no decode/encode by design.
+//   3 CreationModern — default-off evidence-backed increment. FO4 auto exposure (authored
+//     min/max/middle-gray), cinematic, tint and scene sunlight/sky scales are active. Tonemap-E,
+//     Skyrim White/EyeAdaptStrength, LUT grading and modern bloom topology remain neutral until
+//     their shader/resource oracles are recovered.
 //
-// mainAvg is a second entry point rendered to a 1x1 float target first: a sparse grid average
-// of the scene (stand-in for the engine's DownSample16 chain) with the engine's ADAPT length
-// clamp applied (|avg| clamped to [0.01, UpperLUMClamp]).
+// mainAdapt consumes the classic recursive DownSample16 chain's 1x1 result and applies ADAPT.
+// mainAvg retains the sparse-grid average only for the default-off modern path, whose reduction
+// topology has not been recovered.
 
 Texture2D    uHdr    : register(t0);
 Texture2D    uAvgLum : register(t1);
@@ -32,7 +36,9 @@ cbuffer TonemapParams : register(b0)
     float4 uParams0; // x = exposure, y = enabled (>=0.5), z = mode, w = TargetLUM
     float4 uParams1; // x = Saturation, y = ContrastAvgLum, z = Contrast, w = Brightness
     float4 uParams2; // xyz = Tint color, w = TintAmount
-    float4 uParams3; // x = UpperLUMClamp, y = AdaptFactor, z = bloom enabled, w reserved
+    float4 uParams3; // x = UpperLUMClamp, y = AdaptFactor(current weight), z = bloom, w = retained cinematic flags (classic shader does not consume)
+    float4 uParams4; // modern: x/y exposure min/max, z middle gray, w retained Tonemap-E
+    float4 uParams5; // modern: x white, y eye strength, z receive-bloom threshold, w family (0 Skyrim/1 FO4)
 };
 
 // ACES filmic tonemap (Krzysztof Narkowicz's fitted approximation of the ACES RRT+ODT).
@@ -71,31 +77,79 @@ float4 main(PSInput input) : SV_Target
         return float4(pow(lin, 1.0 / 2.2), hdr.a);
     }
 
+    if (uParams0.z >= 2.5)
+    {
+        float3 adapted = uAvgLum.Sample(uSampler, float2(0.5, 0.5)).rgb;
+        float exposure = 1.0;
+        if (uParams5.w > 0.5) // FO4 family; Skyrim exposure equation is not recovered.
+        {
+            float adaptedLuma = dot(adapted, float3(0.2126, 0.7152, 0.0722));
+            float lo = min(uParams4.x, uParams4.y);
+            float hi = max(uParams4.x, uParams4.y);
+            exposure = clamp(uParams4.z / max(adaptedLuma, 1e-6), lo, hi);
+        }
+        float3 c = max(hdr.rgb, 0.0) * exposure * uParams0.x;
+        float luma = dot(c, float3(0.299, 0.587, 0.114));
+        c = lerp(luma.xxx, c, uParams1.x);
+        c = lerp(c, luma * uParams2.xyz, uParams2.w);
+        c = uParams1.z * (uParams1.w * c - uParams1.y) + uParams1.y;
+        return float4(saturate(c), hdr.a);
+    }
+
     // EngineFo3Fnv — ISHDRBLENDINSHADER[CIN] on gamma-space values.
     float3 adapted = uAvgLum.Sample(uSampler, float2(0.5, 0.5)).rgb;
-    float lum = adapted.r + adapted.g + adapted.b;      // engine BPBLUR routes this via bloom.a
+    float4 bloomSample = uBloom.Sample(uSampler, input.vUv);
+    // The active recovered path carries the adapted sum through the FP16 bloom alpha exactly like
+    // BPBLUR. Bloom-off is a viewer diagnostic and falls back to the adapted RGB texture directly.
+    float lum = uParams3.z > 0.5
+        ? bloomSample.a
+        : adapted.r + adapted.g + adapted.b;
     float denom = max(lum, uParams0.w);
-    float3 bloom = uParams3.z * uBloom.Sample(uSampler, input.vUv).rgb;
+    float3 bloom = uParams3.z * bloomSample.rgb;
     float3 c = (hdr.rgb * (uParams0.w / denom) + bloom * (0.5 / denom)) * uParams0.x;
 
-    // Cinematic block (ISHDRBLENDINSHADERCIN): saturation, tint, contrast/brightness around the
-    // authored average-luminance pivot. {Brightness,Contrast} slot assignment is ambiguous in the
-    // constant fill (identical at defaults, <0.04 divergence at FNV values); chosen as
-    // Brightness*(Contrast*c - pivot) + pivot.
+    // Cinematic block (ISHDRBLENDINSHADERCIN): saturation, tint, then the recovered
+    // Contrast * (Brightness * color - pivot) + pivot transform. TESImageSpace retains an
+    // operation-enable mask, but the shipped FO3/FNV composite and standalone cinematic pixel
+    // shaders do not bind/read it; all authored terms execute unconditionally here as they do there.
     float luma = dot(c, float3(0.299, 0.587, 0.114));
     c = lerp(luma.xxx, c, uParams1.x);
     c = lerp(c, luma * uParams2.xyz, uParams2.w);
-    c = uParams1.w * (uParams1.z * c - uParams1.y) + uParams1.y;
+
+    // ISHDRBLENDINSHADERCIN: Contrast * (Brightness * c - pivot) + pivot.
+    c = uParams1.z * (uParams1.w * c - uParams1.y) + uParams1.y;
     return float4(saturate(c), hdr.a);
 }
 
-// Average scene color for the engine exposure: sparse 16x16 grid mean (stand-in for the engine's
-// DownSample16 box chain), then the engine ADAPT pass — temporal blend against the PREVIOUS adapted
-// average (t1, the other ping-pong 1x1 target) followed by the length clamp. uParams3.y carries this
-// frame's blend factor k = EyeAdaptSpeed^clamp(15*dt, 0, 1) (engine formula; 0 = instant, used for
-// single-frame captures + the first live frame). The temporal blend is ALSO what stabilizes the
-// sparse grid against camera motion — without it the 256-tap sample jitters the exposure as taps
-// cross bright emissive edges (the "interior lighting flickers while moving" report).
+// ADAPT temporally blends against the PREVIOUS adapted average (t1, the other ping-pong 1x1 target),
+// then applies the recovered vector-length upper clamp. uParams3.y is this frame's CURRENT weight;
+// a value greater than one marks a reset frame whose previous texture must not be sampled.
+float4 ApplyAdapt(float3 averageColor)
+{
+    float3 adapted = averageColor;
+    if (uParams3.y <= 1.0)
+    {
+        float3 previous = uAvgLum.SampleLevel(uSampler, float2(0.5, 0.5), 0).rgb;
+        adapted = lerp(previous, adapted, saturate(uParams3.y));
+    }
+
+    // ISHDRADAPT does not raise vectors shorter than 0.01. Both numerator and denominator use the
+    // same 0.01 floor, so the low-length scale is one unless UpperLUMClamp is itself lower.
+    float len = length(adapted);
+    float safeLen = max(len, 0.01);
+    float clamped = min(safeLen, uParams3.x);
+    adapted *= clamped / safeLen;
+    return float4(adapted, 1.0);
+}
+
+// Classic path: t0 is the final 1x1 result of the recursive /4 DownSample16 chain.
+float4 mainAdapt(PSInput input) : SV_Target
+{
+    float3 averageColor = uHdr.SampleLevel(uSampler, float2(0.5, 0.5), 0).rgb;
+    return ApplyAdapt(averageColor);
+}
+
+// Modern stand-in only: sparse 16x16 grid mean until the Creation-era reduction is recovered.
 float4 mainAvg(PSInput input) : SV_Target
 {
     const int GridSize = 16;
@@ -111,13 +165,5 @@ float4 mainAvg(PSInput input) : SV_Target
         }
     }
 
-    float3 avg = sum / (GridSize * GridSize);
-
-    // ISHDRADAPT: new = k*prev + (1-k)*current, then length clamped to [0.01, UpperLUMClamp].
-    float3 prev = uAvgLum.SampleLevel(uSampler, float2(0.5, 0.5), 0).rgb;
-    avg = lerp(avg, prev, saturate(uParams3.y));
-    float len = length(avg);
-    float clamped = min(max(len, 0.01), uParams3.x);
-    avg *= clamped / max(len, 0.0001);
-    return float4(avg, 1.0);
+    return ApplyAdapt(sum / (GridSize * GridSize));
 }

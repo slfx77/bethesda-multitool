@@ -3,7 +3,7 @@ using System.Numerics;
 namespace BethesdaMultitool.Core.Formats.SpeedTree;
 
 /// <summary>
-///     The engine's leaf rock/rustle wind driver — a faithful port of
+///     The engine's leaf rock/rustle wind driver — a recovered port of
 ///     <c>BSTreeManager::UpdateWindMatrices</c> (360 0x824986A8 ≡ PC FUN_006658b0) +
 ///     <c>SpeedTreeLeafShader::UpdateWindTimers</c> (360 0x82AA0B80), per
 ///     <c>tools/GhidraProject/speedtree_wind_design.md</c>. Four sin/cos oscillators run at
@@ -14,10 +14,13 @@ namespace BethesdaMultitool.Core.Formats.SpeedTree;
 ///         Inputs the engine uses that we mirror: wind strength S = weather wind-speed byte / 255
 ///         (0 = perfectly static). The six <c>fLeaf*</c> settings come from <see cref="Profile" />
 ///         (per-game: FNV/FO3 compiled defaults vs Oblivion.esm GMSTs — see
-///         <see cref="SpeedTreeWindProfile" />). Oblivion's driver (<c>FUN_0055e060</c>) is
-///         instruction-identical to FNV's, oscillator constants byte-identical; only the setting
-///         values differ. The .spt's own 1011 wind section is DEAD DATA in both engines (parsed
-///         then bypassed by <c>SetWindStrength(0, −1, −1)</c>); do not feed it in.
+///         <see cref="SpeedTreeWindProfile" />). The control math and oscillator constants are shared,
+///         but their trig source is not: Oblivion calls CRT <c>sin/cos</c>, while FO3/FNV quantize
+///         through runtime-built 512-entry tables. This implementation's continuous <see cref="MathF" />
+///         path is therefore exact for Oblivion; FO3/FNV table parity remains intentionally open until
+///         the runtime table contents are captured instead of guessed. The .spt's own 1011 wind section
+///         is DEAD DATA in both engines (parsed then bypassed by <c>SetWindStrength(0, −1, −1)</c>);
+///         do not feed it in.
 ///     </para>
 /// </summary>
 public sealed class SpeedTreeWindRig
@@ -50,8 +53,8 @@ public sealed class SpeedTreeWindRig
     /// <summary>Rustle amplitude (engine <c>RustleParams.x</c>).</summary>
     public float RustleAmount { get; private set; }
 
-    /// <summary>Rock phase (engine <c>RockParams.y</c> with the TREE CNAM RockSpeed multiplier
-    /// held at 1.0 — the per-tree speeds are a deferred per-batch refinement).</summary>
+    /// <summary>Rock phase (engine <c>RockParams.y</c> before the TREE CNAM RockSpeed multiplier;
+    /// the renderer applies that species-specific multiplier per draw batch).</summary>
     public float RockPhase => _rockTime;
 
     /// <inheritdoc cref="RockPhase" />
@@ -89,6 +92,9 @@ public sealed class SpeedTreeWindRig
             }
 
             var w = s * 20f;
+            // SPT-06: exact for Oblivion. FO3/FNV index runtime-built 512-entry tables with
+            // truncation + &511 here; their contents are absent from both static images, so keep
+            // this explicit continuous fallback until a runtime capture supplies the binary oracle.
             var a = MathF.Sin(Frequencies[i].Sin * w * _matrixTimes[i]);
             var b = MathF.Cos(Frequencies[i].Cos * w * _matrixTimes[i]);
             if (i == 2)

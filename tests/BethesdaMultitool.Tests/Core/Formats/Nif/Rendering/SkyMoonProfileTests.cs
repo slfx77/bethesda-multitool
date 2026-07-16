@@ -102,24 +102,58 @@ public sealed class SkyMoonProfileTests
     }
 
     [Theory]
-    // Engine-exact model: moon half-extent (iMasserSize/iSecundaSize) ÷ sky-dome radius (fSunXExtreme).
-    [InlineData(85, 800f, 0.10625f)]  // FNV shipped: iMasserSize 85 / fSunXExtreme 800
-    [InlineData(90, 400f, 0.225f)]    // Skyrim shipped: iMasserSize 90 / 400
-    [InlineData(40, 400f, 0.10f)]     // Skyrim Secunda: iSecundaSize 40 / 400
-    public void FractionFromGmst_ComputesSizeOverDome(int size, float dome, float expected)
+    [InlineData(BethesdaGame.Fallout3, 85, 800f, 0.166015625f)]
+    [InlineData(BethesdaGame.FalloutNewVegas, 85, null, 0.166015625f)]
+    [InlineData(BethesdaGame.FalloutNewVegas, 85, 1234f, 0.166015625f)]
+    [InlineData(BethesdaGame.Skyrim, 90, 400f, 0.17578125f)]
+    [InlineData(BethesdaGame.Skyrim, 40, 400f, 0.078125f)]
+    public void HalfSizeFractionFromGmst_RotatedArmUsesRecovered512UnitTranslation(
+        BethesdaGame game, int size, float? unrelatedSunRadius, float expected)
     {
-        var fraction = SkyMoonProfile.FractionFromGmst(size, dome);
+        var fraction = SkyMoonProfile.ForGame(game)
+            .HalfSizeFractionFromGmst(size, unrelatedSunRadius);
 
         Assert.NotNull(fraction);
-        Assert.Equal(expected, fraction!.Value, 5);
+        Assert.Equal(expected, fraction!.Value, 7);
     }
 
     [Theory]
-    [InlineData(null, 400f)]  // no size GMST
-    [InlineData(90, null)]    // no dome GMST (e.g. Morrowind TES3)
-    [InlineData(90, 0f)]      // non-positive dome → avoid divide-by-zero
-    public void FractionFromGmst_MissingOrInvalid_ReturnsNull(int? size, float? dome)
+    [InlineData(BethesdaGame.Fallout4)]
+    [InlineData(BethesdaGame.Fallout76)]
+    public void HalfSizeFractionFromGmst_CreationTriangleRetainsAuthoredPathRadius(BethesdaGame game)
     {
-        Assert.Null(SkyMoonProfile.FractionFromGmst(size, dome));
+        var fraction = SkyMoonProfile.ForGame(game).HalfSizeFractionFromGmst(75, 600f);
+
+        Assert.NotNull(fraction);
+        Assert.Equal(0.125f, fraction!.Value, 7);
+    }
+
+    [Theory]
+    [InlineData(null, 400f)]
+    [InlineData(90, null)]
+    [InlineData(90, 0f)]
+    public void HalfSizeFractionFromGmst_CreationTriangleMissingOrInvalidRadius_ReturnsNull(
+        int? size, float? radius)
+    {
+        Assert.Null(SkyMoonProfile.ForGame(BethesdaGame.Fallout4)
+            .HalfSizeFractionFromGmst(size, radius));
+    }
+
+    [Fact]
+    public void ForGame_RotatedArmFallbackSizesMatchRetailQuadToArmRatios()
+    {
+        var fallout = SkyMoonProfile.ForGame(BethesdaGame.FalloutNewVegas);
+        var skyrim = SkyMoonProfile.ForGame(BethesdaGame.Skyrim);
+
+        Assert.Equal(85f / 512f, fallout.PrimaryHalfSizeFraction, 7);
+        Assert.Equal(90f / 512f, skyrim.PrimaryHalfSizeFraction, 7);
+        Assert.Equal(40f / 512f, skyrim.SecondaryHalfSizeFraction, 7);
+    }
+
+    [Fact]
+    public void HalfSizeFractionFromGmst_RotatedArmStillRequiresAuthoredQuadSize()
+    {
+        Assert.Null(SkyMoonProfile.ForGame(BethesdaGame.FalloutNewVegas)
+            .HalfSizeFractionFromGmst(null, null));
     }
 }

@@ -49,6 +49,94 @@ public static class MoonSky
     private const float Deg2Rad = MathF.PI / 180f;
 
     /// <summary>
+    ///     FO3/FNV and Skyrim <c>Moon::Update</c>'s recovered rotated-arm path. The moon starts on local
+    ///     +Y, then the engine applies <c>RotX(-angle) * RotZ(inclination)</c>. Its angle member is
+    ///     initialized to 90 degrees before accumulating <c>absoluteGameHours * speed * 60</c>. The speed
+    ///     and inclination are per-moon GMSTs; for example, Masser uses 0.25 and 35 degrees in both
+    ///     recovered binaries.
+    /// </summary>
+    public static Vector3 ComputeRotatedArmDirection(
+        float speed, float inclinationDegrees, float gameHour, float day)
+    {
+        var angleDegrees = ComputeRotatedArmAngleDegrees(speed, gameHour, day);
+        var angle = angleDegrees * Deg2Rad;
+        var inclination = inclinationDegrees * Deg2Rad;
+        var cosInclination = MathF.Cos(inclination);
+
+        // Exact column-vector expansion of RotX(-angle) * RotZ(inclination) * (0,1,0).
+        // NiMatrix3::MakeXRotation stores +sin in row 1 and -sin in row 2; passing -angle therefore
+        // produces a positive Z arm component after the matrix product. MakeZRotation stores +sin in
+        // row 0/column 1, so the local +Y arm also has a positive X component. The previous signs were
+        // a row/column-convention error which put the moon below the horizon and mirrored its azimuth.
+        return Vector3.Normalize(new Vector3(
+            MathF.Sin(inclination),
+            cosInclination * MathF.Cos(angle),
+            cosInclination * MathF.Sin(angle)));
+    }
+
+    /// <summary>
+    ///     The wrapped angle stored by recovered FO3/FNV/Skyrim <c>Moon::Update</c>. Retail initializes
+    ///     this member to 90 degrees, then advances it by elapsed game hours times <c>speed * 60</c>.
+    /// </summary>
+    public static float ComputeRotatedArmAngleDegrees(float speed, float gameHour, float day)
+    {
+        var absoluteHours = (day * 24f) + gameHour;
+        var angle = 90f + (absoluteHours * speed * 60f);
+        angle %= 360f;
+        return angle < 0f ? angle + 360f : angle;
+    }
+
+    /// <summary>
+    ///     Recovered <c>Moon::GetMoonFade</c> angular envelope. The moon fades in from
+    ///     <paramref name="fadeEndDegrees" /> to <paramref name="fadeStartDegrees" />, remains fully
+    ///     visible through the mirrored center interval, then fades out symmetrically before 180 degrees.
+    ///     Angles outside that half-orbit are invisible.
+    /// </summary>
+    public static float EvaluateRotatedArmDiscFade(
+        float angleDegrees, float fadeStartDegrees, float fadeEndDegrees)
+    {
+        if (!float.IsFinite(angleDegrees) ||
+            !float.IsFinite(fadeStartDegrees) ||
+            !float.IsFinite(fadeEndDegrees) ||
+            fadeStartDegrees <= fadeEndDegrees)
+        {
+            return 0f;
+        }
+
+        if (angleDegrees < fadeEndDegrees || angleDegrees > 180f - fadeEndDegrees)
+        {
+            return 0f;
+        }
+
+        var width = fadeStartDegrees - fadeEndDegrees;
+        if (angleDegrees <= fadeStartDegrees)
+        {
+            return (angleDegrees - fadeEndDegrees) / width;
+        }
+
+        var mirroredStart = 180f - fadeStartDegrees;
+        if (angleDegrees < mirroredStart)
+        {
+            return 1f;
+        }
+
+        return (180f - fadeEndDegrees - angleDegrees) / width;
+    }
+
+    /// <summary>Evaluates the recovered disc fade at a game day/hour using the same arm angle as the path.</summary>
+    public static float ComputeRotatedArmDiscFade(
+        float speed, float gameHour, float day, float fadeStartDegrees, float fadeEndDegrees) =>
+        EvaluateRotatedArmDiscFade(
+            ComputeRotatedArmAngleDegrees(speed, gameHour, day),
+            fadeStartDegrees,
+            fadeEndDegrees);
+
+    /// <summary>Compatibility name for the FO3/FNV caller of the shared recovered rotated-arm math.</summary>
+    public static Vector3 ComputeFalloutRotatedArmDirection(
+        float speed, float inclinationDegrees, float gameHour, float day) =>
+        ComputeRotatedArmDirection(speed, inclinationDegrees, gameHour, day);
+
+    /// <summary>
     ///     A single moon's sky orbit, derived in form from the decompiled <c>Moon::Update</c> (the moon
     ///     accumulates a sky angle that advances with elapsed game time, and its node is rotated by that
     ///     angle plus a fixed inclination). The literal Morrowind constants aren't recoverable from the

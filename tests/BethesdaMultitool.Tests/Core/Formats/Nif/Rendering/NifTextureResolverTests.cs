@@ -195,10 +195,10 @@ public sealed class NifTextureResolverTests
         const uint shaderFlags2 = 0x40000029; // Effect_Lighting + Vertex_Colors + No_Fade + Z-write
         WriteUInt32(data, 12, shaderFlags1);
         WriteUInt32(data, 16, shaderFlags2);
-        WriteFloat(data, 20, 0f); // UV Offset.u
-        WriteFloat(data, 24, 0f); // UV Offset.v
-        WriteFloat(data, 28, 1f); // UV Scale.u
-        WriteFloat(data, 32, 1f); // UV Scale.v
+        WriteFloat(data, 20, 0.125f); // UV Offset.u
+        WriteFloat(data, 24, -0.25f); // UV Offset.v
+        WriteFloat(data, 28, 2f); // UV Scale.u
+        WriteFloat(data, 32, 0.5f); // UV Scale.v
         var pos = 36;
         WriteSizedString(data, ref pos, sourceTexture);
 
@@ -212,7 +212,7 @@ public sealed class NifTextureResolverTests
         WriteFloat(data, pos, 0.25f);     // Base Color R
         WriteFloat(data, pos + 4, 0.5f);  // Base Color G
         WriteFloat(data, pos + 8, 0.75f); // Base Color B
-        WriteFloat(data, pos + 12, 1f);   // Base Color A
+        WriteFloat(data, pos + 12, 0.25f); // Base Color A (distinct authored opacity)
         WriteFloat(data, pos + 16, 2f);   // Base Color Scale
         pos += 20;
 
@@ -225,9 +225,11 @@ public sealed class NifTextureResolverTests
         Assert.Equal(sourceTexture, metadata.DiffusePath);
         Assert.Equal(shaderFlags1, metadata.ShaderFlags);
         Assert.Equal(shaderFlags2, metadata.ShaderFlags2);
+        Assert.Equal(new System.Numerics.Vector2(0.125f, -0.25f), metadata.UvOffset);
+        Assert.Equal(new System.Numerics.Vector2(2f, 0.5f), metadata.UvScale);
         Assert.Equal(1f, metadata.EffectLightingInfluence);
         Assert.Equal(2f, metadata.EffectBaseColorScale);
-        Assert.Equal((0.25f, 0.5f, 0.75f, 1f), metadata.EffectBaseColor);
+        Assert.Equal((0.25f, 0.5f, 0.75f, 0.25f), metadata.EffectBaseColor);
         Assert.Equal((1f, 1f, 0f, 0f), metadata.EffectFalloff);
         Assert.Equal(sourceTexture, NifTextureResolver.ResolveDiffusePath(data, nif, [0]));
     }

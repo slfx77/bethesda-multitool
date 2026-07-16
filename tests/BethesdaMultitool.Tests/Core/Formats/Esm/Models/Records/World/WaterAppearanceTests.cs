@@ -130,6 +130,77 @@ public sealed class WaterAppearanceTests
         Assert.Equal("water\\water.dds", appearance.NoiseTexture);
     }
 
+    [Fact]
+    public void FromWaterRecord_PreservesRepeatedNormalTexturesInSourceOrder()
+    {
+        var water = new WaterRecord
+        {
+            FormId = 0x56,
+            NoiseTexture = "water\\normal01.dds",
+            NormalTextures =
+            [
+                "water\\normal01.dds",
+                "water\\normal02.dds",
+                "water\\normal03.dds"
+            ],
+            VisualProperties = new Dictionary<string, object?>
+            {
+                ["ShallowColor"] = 0x00_30_20_10u
+            }
+        };
+
+        var appearance = WaterAppearance.FromWaterRecord(water);
+
+        Assert.NotNull(appearance);
+        Assert.Equal("water\\normal01.dds", appearance!.NoiseTexture);
+        Assert.Equal(water.NormalTextures, appearance.NormalTextures);
+    }
+
+    [Fact]
+    public void FromWaterRecord_OblivionSurfaceTextureStaysSeparateFromGlobalNormalAnimation()
+    {
+        var water = new WaterRecord
+        {
+            FormId = 0x57,
+            SurfaceTexture = "water\\water00.dds",
+            VisualProperties = new Dictionary<string, object?>
+            {
+                ["ShallowColor"] = 0x00_30_20_10u
+            }
+        };
+
+        var appearance = WaterAppearance.FromWaterRecord(water);
+
+        Assert.NotNull(appearance);
+        Assert.Null(appearance!.NoiseTexture);
+        Assert.Empty(appearance.NormalTextures!);
+        Assert.Equal("water\\water00.dds", appearance.SurfaceTexture);
+    }
+
+    [Fact]
+    public void FromWaterRecord_TnamFilenameDoesNotReclassifyBloodAsLava()
+    {
+        // Retail Oblivion Blood uses Landscape\Oblivion\TerrainHDOblivionLava01.dds as TNAM.
+        // TNAM used to be projected into NoiseTexture, whose name-based fallback then incorrectly
+        // classified this WATR as lava. The record identity remains authoritative.
+        var water = new WaterRecord
+        {
+            FormId = 0x58,
+            EditorId = "Blood",
+            SurfaceTexture = @"Landscape\Oblivion\TerrainHDOblivionLava01.dds",
+            VisualProperties = new Dictionary<string, object?>
+            {
+                ["ShallowColor"] = 0x00_30_20_10u
+            }
+        };
+
+        var appearance = WaterAppearance.FromWaterRecord(water);
+
+        Assert.NotNull(appearance);
+        Assert.False(appearance!.IsLava);
+        Assert.Equal(water.SurfaceTexture, appearance.SurfaceTexture);
+    }
+
     private static WaterRecord WaterWith(string? editorId, byte flags) => new()
     {
         FormId = 0x1,

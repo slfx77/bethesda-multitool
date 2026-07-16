@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
@@ -346,6 +347,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         uint? musicTypeFormId = null;
         uint? acousticSpaceFormId = null;
         uint? imageSpaceFormId = null;
+        uint? climateFormId = null;
         uint? lightingTemplateFormId = null;
         uint? lightingTemplateInheritanceFlags = null;
         Dictionary<string, object?>? lightingData = null;
@@ -397,6 +399,14 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "XCIM" when sub.DataLength == 4:
                     imageSpaceFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "XCCM" when sub.DataLength == 4
+                                      && Context.Game is BethesdaGame.Oblivion
+                                          or BethesdaGame.Fallout3
+                                          or BethesdaGame.FalloutNewVegas:
+                    // XCCM is a CLMT FormID only in the classic families. Skyrim/FO4/FO76 reuse
+                    // this signature for a REGN sky/weather source and must not populate this field.
+                    climateFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "LTMP" when sub.DataLength == 4:
                     lightingTemplateFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
@@ -482,6 +492,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             MusicTypeFormId = musicTypeFormId,
             AcousticSpaceFormId = acousticSpaceFormId,
             ImageSpaceFormId = imageSpaceFormId,
+            ClimateFormId = climateFormId,
             LightingTemplateFormId = lightingTemplateFormId,
             LightingTemplateInheritanceFlags = lightingTemplateInheritanceFlags,
             LightingData = lightingData,
@@ -857,6 +868,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             MusicTypeFormId = esm.MusicTypeFormId ?? runtime.MusicTypeFormId,
             AcousticSpaceFormId = esm.AcousticSpaceFormId ?? runtime.AcousticSpaceFormId,
             ImageSpaceFormId = esm.ImageSpaceFormId ?? runtime.ImageSpaceFormId,
+            ClimateFormId = esm.ClimateFormId ?? runtime.ClimateFormId,
             LightingTemplateFormId = esm.LightingTemplateFormId ?? runtime.LightingTemplateFormId,
             LightingTemplateInheritanceFlags =
             esm.LightingTemplateInheritanceFlags ?? runtime.LightingTemplateInheritanceFlags,

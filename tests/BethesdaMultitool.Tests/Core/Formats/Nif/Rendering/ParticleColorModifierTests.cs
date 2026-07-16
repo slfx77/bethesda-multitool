@@ -9,7 +9,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 ///     fade-in/out envelope. Pins the FXDustWhirlWind01 case: Color1 is the base dust colour, Colors[0]/[2]
 ///     are black with all transition percents = 0, so a naive "fall through to Color2" makes particles black
 ///     (invisible). The fix resolves degenerate windows to Color1, and the fade envelope dims birth/death
-///     particles (the additive over-glow remedy).
+///     particles. FadeIn/FadeOut are an opacity envelope; RGB remains on the authored three-key curve.
 /// </summary>
 public sealed class ParticleColorModifierTests
 {
@@ -46,10 +46,12 @@ public sealed class ParticleColorModifierTests
     {
         var m = FxDustLike();
 
-        // Birth (t=0): fully faded → all channels 0.
+        // Birth (t=0): opacity is faded, but RGB stays on the authored color curve.
         var birth = m.Sample(0f, Vector4.One);
         Assert.Equal(0f, birth.W, 3);
-        Assert.Equal(0f, birth.X, 3);
+        Assert.Equal(Tan.X, birth.X, 3);
+        Assert.Equal(Tan.Y, birth.Y, 3);
+        Assert.Equal(Tan.Z, birth.Z, 3);
 
         // Death (t=1): past FadeOut=0.35, envelope = (1-1)/(1-0.35) = 0 → faded out.
         var death = m.Sample(1f, Vector4.One);

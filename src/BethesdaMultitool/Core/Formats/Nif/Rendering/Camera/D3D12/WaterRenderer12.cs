@@ -3,7 +3,9 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Games;
 using Vortice.D3DCompiler;
@@ -28,9 +30,14 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 /// </summary>
 internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 {
+    private static readonly Logger Log = Logger.Instance;
+
     // viewProj(64) + 3 DNAM colors(48) + camPosTime(16) + noiseParams(16) + surface0/1(32)
     // + 3 layers(48) + depthParams(16) + renderOrigin(16) + 3 FO4 float4s(48)
-    private const uint UniformsByteSize = 304; // WaterFrameUniforms incl. the trailing FO4 constants
+    // + ordered normal indices(16) + 2 Oblivion DATA registers(32)
+    // + 4 opt-in modern-water registers(64) = 416 bytes / 26 registers.
+    private const uint UniformsByteSize = ModernWaterPipeline.FrameUniformByteSize;
+    private const uint FnvNoiseDimension = 256;
 
     // Sentinel meaning "no resolved NNAM normal map" — the shader then uses a procedural ripple
     // normal so proto/test worldspaces with no water texture still animate.
@@ -48,6 +55,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private readonly GpuDescriptorHeapAllocator12 _cbvSrvUavHeap;
     private readonly GpuPersistentDescriptorAllocator12 _persistentSrvs;
     private readonly GpuDeletionQueue12 _deletionQueue;
+    private readonly ID3D12RootSignature _sharedRootSignature;
     // _pso: depth-test variant (DSV bound, hardware depth test) used when no scene-depth SRV is
     // available. _psoDepthSample: depth-test OFF (no DSV) used when the host hands us the scene
     // depth as an SRV — occlusion is then done in-shader via the sampled depth (FNV WATER000 path).
@@ -63,11 +71,32 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private readonly ID3D12PipelineState _psoFo4DepthSample;
     private readonly ID3D12PipelineState _psoMorrowind;
     private readonly ID3D12PipelineState _psoMorrowindDepthSample;
+    private readonly GraphicsPipelineStateDescription _depthPsoTemplate;
+    private readonly GraphicsPipelineStateDescription _depthSamplePsoTemplate;
 
-    // Morrowind surface animation: the bindless indices of textures\water\water00-31.dds, resolved
-    // by the host at load; Render picks the frame from elapsed time × the profile's SurfaceFrameFps
-    // and passes it in the NNAM slot (the MorrowindWater shader samples it as a tiled diffuse).
-    private uint[]? _morrowindSurfaceFrames;
+    // WATER-07 architectural replacement. These resources and shader permutations are created only
+    // after an explicit opt-in on FO4/FO76. Any initialization or transient-prepass failure selects
+    // the established _psoFo4 path for that frame.
+    private ModernWaterResources12? _modernWater;
+    private bool _modernWaterInitializationFailed;
+    private uint _modernCubeBindlessIndex = NoNormalMap;
+    private BethesdaGame _game = BethesdaGame.FalloutNewVegas;
+
+    // WATER-08: FO3/FNV do not sample three procedural octaves in WATER000. The engine first
+    // renders ISNOISESCROLLANDBLEND into a 256x256 scalar tile, then runs
+    // ISNOISENORMALMAP over it and binds that finished normal tile to WATER000.
+    private readonly ID3D12PipelineState _fnvNoiseScrollBlendPso;
+    private readonly ID3D12PipelineState _fnvNoiseNormalPso;
+    private readonly ID3D12Resource _fnvNoiseBlendTexture;
+    private readonly ID3D12Resource _fnvNoiseNormalTexture;
+    private readonly uint _fnvNoiseBlendBindlessIndex;
+    private readonly uint _fnvNoiseNormalBindlessIndex;
+    private bool _useFnvNoisePrepass;
+
+    // Legacy water animation: bindless indices of textures\water\water00-31.dds, resolved by the
+    // host at load. Morrowind samples the selected frame as diffuse; Oblivion WATER000 samples it
+    // as its global animated normal. WATR TNAM is a separate per-water detail input.
+    private uint[]? _legacyAnimatedFrames;
 
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _waterCells = new();
     private readonly List<global::BethesdaMultitool.WorldWaterCell> _visibleWaterScratch = new();
@@ -80,6 +109,11 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     private float? _worldspaceDefaultWaterHeight;
     private BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? _appearance;
     private uint _noiseBindlessIndex = NoNormalMap;
+    private readonly uint[] _normalBindlessIndices = [NoNormalMap, NoNormalMap, NoNormalMap];
+    private uint _oblivionDetailBindlessIndex = NoNormalMap;
+    private string[] _telemetryMapPaths = [];
+    private string[] _telemetryMapRoles = [];
+    private bool[] _telemetryMapResolved = [];
     private uint _depthBindlessIndex = NoNormalMap; // scene depth SRV; NoNormalMap => proxy + depth-test PSO
     private float _depthNear = 16f;
     private float _depthFar = 1f;
@@ -104,6 +138,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         GpuDescriptorHeapAllocator12 cbvSrvUavHeap,
         GpuDeletionQueue12 deletionQueue)
     {
+        ValidateGpuLayouts();
         _gpu = gpu;
         _recorder = recorder;
         _ringBuffer = ringBuffer;
@@ -113,6 +148,64 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
             capacity: 1);
         _deletionQueue = deletionQueue;
+        _sharedRootSignature = rootSignature.RootSignature;
+
+        var noiseScrollBlendBytecode = CompileEmbeddedShader(
+            "water_noise.comp.hlsl", "mainScrollBlend", "cs_5_1");
+        var noiseNormalBytecode = CompileEmbeddedShader(
+            "water_noise.comp.hlsl", "mainNormal", "cs_5_1");
+        _fnvNoiseScrollBlendPso = gpu.Device.CreateComputePipelineState(
+            new ComputePipelineStateDescription
+            {
+                RootSignature = rootSignature.RootSignature,
+                ComputeShader = noiseScrollBlendBytecode,
+            });
+        _fnvNoiseNormalPso = gpu.Device.CreateComputePipelineState(
+            new ComputePipelineStateDescription
+            {
+                RootSignature = rootSignature.RootSignature,
+                ComputeShader = noiseNormalBytecode,
+            });
+
+        var noiseTextureDescription = ResourceDescription.Texture2D(
+            Format.R8G8B8A8_UNorm,
+            FnvNoiseDimension,
+            FnvNoiseDimension,
+            1,
+            1,
+            1,
+            0,
+            ResourceFlags.AllowUnorderedAccess);
+        _fnvNoiseBlendTexture = gpu.Device.CreateCommittedResource<ID3D12Resource>(
+            new HeapProperties(HeapType.Default),
+            HeapFlags.None,
+            noiseTextureDescription,
+            ResourceStates.NonPixelShaderResource);
+        _fnvNoiseBlendTexture.Name = "FNV Water Noise Scroll+Blend";
+        _fnvNoiseNormalTexture = gpu.Device.CreateCommittedResource<ID3D12Resource>(
+            new HeapProperties(HeapType.Default),
+            HeapFlags.None,
+            noiseTextureDescription,
+            ResourceStates.PixelShaderResource);
+        _fnvNoiseNormalTexture.Name = "FNV Water Noise Normal";
+
+        var noiseSrvDescription = new ShaderResourceViewDescription
+        {
+            Format = Format.R8G8B8A8_UNorm,
+            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
+            Shader4ComponentMapping = ShaderComponentMapping.Default,
+            Texture2D = new Texture2DShaderResourceView
+            {
+                MostDetailedMip = 0,
+                MipLevels = 1,
+            },
+        };
+        var blendSrv = cbvSrvUavHeap.AllocatePersistent();
+        _fnvNoiseBlendBindlessIndex = blendSrv.BindlessIndex;
+        gpu.Device.CreateShaderResourceView(_fnvNoiseBlendTexture, noiseSrvDescription, blendSrv.Cpu);
+        var normalSrv = cbvSrvUavHeap.AllocatePersistent();
+        _fnvNoiseNormalBindlessIndex = normalSrv.BindlessIndex;
+        gpu.Device.CreateShaderResourceView(_fnvNoiseNormalTexture, noiseSrvDescription, normalSrv.Cpu);
 
         var vsBytecode = CompileEmbeddedShader("water.vert.hlsl", "main", "vs_5_1");
         var psBytecode = CompileEmbeddedShader("water.frag.hlsl", "main", "ps_5_1");
@@ -189,6 +282,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
+        _depthPsoTemplate = psoDesc;
         _pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psOblivionBytecode;
         _psoOblivion = gpu.Device.CreateGraphicsPipelineState(psoDesc);
@@ -209,6 +303,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             StencilEnable = false,
         };
         psoDesc.DepthStencilFormat = Format.Unknown;
+        _depthSamplePsoTemplate = psoDesc;
         _psoDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
         psoDesc.PixelShader = psOblivionBytecode;
         _psoOblivionDepthSample = gpu.Device.CreateGraphicsPipelineState(psoDesc);
@@ -220,6 +315,7 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
 
     public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
     public bool DetailedProfilingEnabled { get; set; }
+    public bool ModernPipelineEnabled { get; set; }
 
     public void LoadData(
         Dictionary<(int gx, int gy), CellRecord> cells,
@@ -245,11 +341,39 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         global::BethesdaMultitool.WorldSpatialIndex? spatialIndex,
         BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? appearance,
         uint? normalMapBindlessIndex)
+        => LoadData(cells, worldspaceDefaultWaterHeight, spatialIndex, appearance,
+            normalMapBindlessIndex is { } index ? new uint?[] { index } : null);
+
+    public void LoadData(
+        Dictionary<(int gx, int gy), CellRecord> cells,
+        float? worldspaceDefaultWaterHeight,
+        global::BethesdaMultitool.WorldSpatialIndex? spatialIndex,
+        BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? appearance,
+        IReadOnlyList<uint?>? normalMapBindlessIndices)
     {
         _worldspaceDefaultWaterHeight = worldspaceDefaultWaterHeight;
         _spatialIndex = spatialIndex;
         _appearance = appearance;
-        _noiseBindlessIndex = normalMapBindlessIndex ?? NoNormalMap;
+        var first = NoNormalMap;
+        if (normalMapBindlessIndices is not null)
+        {
+            for (var i = 0; i < normalMapBindlessIndices.Count; i++)
+            {
+                if (normalMapBindlessIndices[i] is { } resolved)
+                {
+                    first = resolved;
+                    break;
+                }
+            }
+        }
+        _noiseBindlessIndex = first;
+        for (var i = 0; i < _normalBindlessIndices.Length; i++)
+        {
+            _normalBindlessIndices[i] = normalMapBindlessIndices is not null && i < normalMapBindlessIndices.Count
+                ? normalMapBindlessIndices[i] ?? first
+                : first;
+        }
+        RefreshWaterMapTelemetry();
         _waterCells.Clear();
 
         if (spatialIndex is not null)
@@ -282,21 +406,77 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _depthFar = far;
     }
 
+    public void SetModernCubeMap(uint? cubeMapBindlessIndex) =>
+        _modernCubeBindlessIndex = cubeMapBindlessIndex ?? NoNormalMap;
+
     /// <summary>Selects the per-game <see cref="WaterProfile" /> (shader variant + tuning) for the loaded
     /// game. Call before <see cref="Render(Matrix4x4, VisibilityCylinder, Vector3)" /> on each
     /// worldspace/interior load. FNV/FO3 resolve to the FNV profile (byte-identical); every other game
     /// falls back to it until its own water shader is reverse-engineered (binary-RE-only policy).</summary>
-    public void SetGame(BethesdaGame game) => _waterProfile = WaterProfile.ForGame(game);
+    public void SetGame(BethesdaGame game)
+    {
+        _game = game;
+        _waterProfile = WaterProfile.ForGame(game);
+        // FO3 and FNV share the recovered ISNOISESCROLLANDBLEND -> ISNOISENORMALMAP chain.
+        // Skyrim's evolved shader samples its three authored normals independently and must not be
+        // routed through this classic single-NNAM prepass merely because its RT-free body math shares
+        // the FNV profile.
+        _useFnvNoisePrepass = game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas;
+    }
 
     /// <summary>
-    ///     Supplies the bindless indices of Morrowind's animated surface frames
-    ///     (<c>textures\water\water00–31.dds</c>), resolved by the host at worldspace load.
-    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, Vector3)" /> cycles them at the profile's
-    ///     <see cref="WaterProfile.SurfaceFrameFps" />. Null/empty → the MorrowindWater shader falls
-    ///     back to the profile's flat default tint. No-op for other games' profiles.
+    ///     Supplies the bindless indices of the legacy <c>water00–31.dds</c> animation, resolved by
+    ///     the host at worldspace load. Morrowind interprets the selected texture as diffuse;
+    ///     Oblivion WATER000 interprets it as NormalMap. Null/empty preserves the established fallback.
     /// </summary>
-    public void SetMorrowindSurfaceFrames(uint[]? frameBindlessIndices) =>
-        _morrowindSurfaceFrames = frameBindlessIndices;
+    public void SetLegacyAnimatedFrames(uint[]? frameBindlessIndices) =>
+        _legacyAnimatedFrames = frameBindlessIndices;
+
+    /// <summary>
+    ///     Supplies TES4 WATR TNAM as WATER000's DetailMap. It is intentionally separate from the
+    ///     global animated normal sequence: retail TNAM values are per-water textures and the
+    ///     shipped DefaultWater record leaves TNAM empty.
+    /// </summary>
+    public void SetOblivionDetailTexture(uint? detailBindlessIndex)
+    {
+        _oblivionDetailBindlessIndex = detailBindlessIndex ?? NoNormalMap;
+        RefreshWaterMapTelemetry();
+    }
+
+    private void RefreshWaterMapTelemetry()
+    {
+        var paths = new List<string>();
+        var roles = new List<string>();
+        var resolved = new List<bool>();
+        var normals = _appearance?.NormalTextures;
+        if (normals is { Count: > 0 })
+        {
+            for (var i = 0; i < normals.Count; i++)
+            {
+                paths.Add(normals[i]);
+                roles.Add($"normal-{i + 1}");
+                resolved.Add(i < _normalBindlessIndices.Length &&
+                             _normalBindlessIndices[i] != NoNormalMap);
+            }
+        }
+        else if (_appearance?.NoiseTexture is { Length: > 0 } noise)
+        {
+            paths.Add(noise);
+            roles.Add("noise-or-normal-1");
+            resolved.Add(_noiseBindlessIndex != NoNormalMap);
+        }
+
+        if (_appearance?.SurfaceTexture is { Length: > 0 } detail)
+        {
+            paths.Add(detail);
+            roles.Add("oblivion-detail");
+            resolved.Add(_oblivionDetailBindlessIndex != NoNormalMap);
+        }
+
+        _telemetryMapPaths = paths.ToArray();
+        _telemetryMapRoles = roles.ToArray();
+        _telemetryMapResolved = resolved.ToArray();
+    }
 
     /// <summary>
     ///     Supplies world-space authored water geometry detected on placed-reference NIFs (cave/pool water).
@@ -306,8 +486,247 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     /// </summary>
     public void SetNifWaterPlanes(IReadOnlyList<NifWaterGeometry> planes) => _nifWaterPlanes = planes;
 
+    private bool TryEnsureModernWater(out ModernWaterResources12? resources)
+    {
+        resources = _modernWater;
+        if (resources is not null) return true;
+        if (_modernWaterInitializationFailed) return false;
+
+        try
+        {
+            resources = ModernWaterResources12.Create(
+                _gpu,
+                _sharedRootSignature,
+                _cbvSrvUavHeap,
+                _depthPsoTemplate,
+                _depthSamplePsoTemplate);
+            _modernWater = resources;
+            Log.Info("[Water] Initialized opt-in FO4/FO76 dynamic-water resources.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _modernWaterInitializationFailed = true;
+            Log.Warn(
+                "[Water] Opt-in modern-water initialization failed; preserving stand-in pipeline: {0}",
+                ex.Message);
+            resources = null;
+            return false;
+        }
+    }
+
+    private unsafe bool RecordModernWaterPrepasses(
+        ID3D12GraphicsCommandList cmd,
+        int frameIndex,
+        float elapsedSeconds,
+        WaterSurfaceParams surface,
+        ModernWaterResources12 resources)
+    {
+        if (!_ringBuffer.TryAllocate(
+                frameIndex,
+                ModernWaterPipeline.PrepassUniformByteSize,
+                out var constants,
+                GpuRingBuffer12.CbAlignment))
+        {
+            return false;
+        }
+
+        var layer1 = surface.Layer1;
+        var layer2 = surface.Layer2;
+        var layer3 = surface.Layer3;
+        if (!surface.HasAuthoredNoiseLayers)
+        {
+            // FO76's short DNAM omits FO4's layer block. Equal, stationary unit layers are the
+            // neutral composite; do not reuse unrelated classic-water defaults as modern authorship.
+            layer1 = new WaterNoiseLayer(1f, 0f, 0f, 1f / 3f);
+            layer2 = layer1;
+            layer3 = layer1;
+        }
+
+        *(ModernWaterPrepassUniforms*)constants.CpuPtr = new ModernWaterPrepassUniforms
+        {
+            NormalIndex1 = _normalBindlessIndices[0],
+            NormalIndex2 = _normalBindlessIndices[1],
+            NormalIndex3 = _normalBindlessIndices[2],
+            ShallowCoverage = ColorToVector4(_appearance?.Shallow, _waterProfile.DefaultShallow) with
+            {
+                W = surface.ShallowAlpha,
+            },
+            DeepCoverage = ColorToVector4(_appearance?.Deep, _waterProfile.DefaultDeep) with
+            {
+                W = surface.DeepAlpha,
+            },
+            Layer1 = LayerToVector4(layer1),
+            Layer2 = LayerToVector4(layer2),
+            Layer3 = LayerToVector4(layer3),
+            NormalParams = new Vector4(
+                surface.NormalsUvScale,
+                surface.NormalMagnitude,
+                surface.DepthAmount,
+                elapsedSeconds),
+            Ranges = new Vector4(
+                surface.ColorShallowRange,
+                surface.ColorDeepRange,
+                surface.AlphaShallowRange,
+                surface.AlphaDeepRange),
+        };
+
+        GpuDescriptorHeapAllocator12.DescriptorAllocation uavs;
+        try
+        {
+            uavs = _cbvSrvUavHeap.Allocate((uint)resources.Outputs.Length);
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+
+        var uavCpu = uavs.Cpu;
+        for (var i = 0; i < resources.Outputs.Length; i++)
+        {
+            _gpu.Device.CreateUnorderedAccessView(resources.Outputs[i], null, null, uavCpu);
+            uavCpu.Ptr += uavs.DescriptorSize;
+        }
+
+        cmd.SetComputeRootSignature(_sharedRootSignature);
+        cmd.SetComputeRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, constants.GpuAddress);
+        cmd.SetComputeRootDescriptorTable(
+            GpuRootSignature12.Slots.BindlessSrvTable,
+            _cbvSrvUavHeap.BindlessHeapStartGpu);
+
+        var uavGpu = uavs.Gpu;
+        for (var i = 0; i < resources.Outputs.Length; i++)
+        {
+            var output = resources.Outputs[i];
+            cmd.ResourceBarrierTransition(
+                output,
+                ModernWaterPipeline.DynamicReadState,
+                ModernWaterPipeline.DynamicWriteState);
+            cmd.SetPipelineState(resources.ComputePipelines[i]);
+            cmd.SetComputeRootDescriptorTable(GpuRootSignature12.Slots.WaterNoiseUavTable, uavGpu);
+            var width = i == ModernWaterResources12.DepthLutOutput
+                ? ModernWaterPipeline.DepthLutWidth
+                : ModernWaterPipeline.SurfaceDimension;
+            var height = i == ModernWaterResources12.DepthLutOutput
+                ? ModernWaterPipeline.DepthLutHeight
+                : ModernWaterPipeline.SurfaceDimension;
+            cmd.Dispatch((width + 7) / 8, (height + 7) / 8, 1);
+            cmd.ResourceBarrierTransition(
+                output,
+                ModernWaterPipeline.DynamicWriteState,
+                ModernWaterPipeline.DynamicReadState);
+            uavGpu.Ptr += uavs.DescriptorSize;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    ///     Records the recovered FO3/FNV noise construction without rebinding the graphics render
+    ///     targets: ISNOISESCROLLANDBLEND writes the scalar tile, ISNOISENORMALMAP consumes it and
+    ///     writes the normal tile. The shared root signature has independent compute/graphics binding
+    ///     state, so the scene's graphics atmosphere CB remains intact across these dispatches.
+    /// </summary>
+    private unsafe bool RecordFnvNoisePrepass(
+        ID3D12GraphicsCommandList cmd,
+        int frameIndex,
+        float elapsedSeconds,
+        uint sourceIndex,
+        WaterSurfaceParams surface)
+    {
+        if (!_ringBuffer.TryAllocate(
+                frameIndex,
+                (uint)Marshal.SizeOf<FnvNoiseUniforms>(),
+                out var constants,
+                GpuRingBuffer12.CbAlignment))
+        {
+            return false;
+        }
+
+        *(FnvNoiseUniforms*)constants.CpuPtr = new FnvNoiseUniforms
+        {
+            SourceIndex = sourceIndex,
+            BlendIndex = _fnvNoiseBlendBindlessIndex,
+            NoiseScale = surface.NoiseScale,
+            TexScaleAmplitude = new Vector4(
+                RecoveredNoiseTexScale(surface.Layer1.UvScale),
+                RecoveredNoiseTexScale(surface.Layer2.UvScale),
+                RecoveredNoiseTexScale(surface.Layer3.UvScale),
+                0f),
+            Scroll0 = new Vector4(RecoveredNoiseScroll(surface.Layer1, elapsedSeconds), 0f, 0f),
+            Scroll1 = new Vector4(RecoveredNoiseScroll(surface.Layer2, elapsedSeconds), 0f, 0f),
+            Scroll2 = new Vector4(RecoveredNoiseScroll(surface.Layer3, elapsedSeconds), 0f, 0f),
+            Amplitude = new Vector4(
+                surface.Layer1.AmpScale,
+                surface.Layer2.AmpScale,
+                surface.Layer3.AmpScale,
+                0f),
+        };
+
+        var uavs = _cbvSrvUavHeap.Allocate(2);
+        var blendUavCpu = uavs.Cpu;
+        var normalUavCpu = uavs.Cpu;
+        normalUavCpu.Ptr += uavs.DescriptorSize;
+        _gpu.Device.CreateUnorderedAccessView(_fnvNoiseBlendTexture, null, null, blendUavCpu);
+        _gpu.Device.CreateUnorderedAccessView(_fnvNoiseNormalTexture, null, null, normalUavCpu);
+
+        var blendUavGpu = uavs.Gpu;
+        var normalUavGpu = uavs.Gpu;
+        normalUavGpu.Ptr += uavs.DescriptorSize;
+
+        cmd.SetComputeRootSignature(_sharedRootSignature);
+        cmd.SetComputeRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, constants.GpuAddress);
+        cmd.SetComputeRootDescriptorTable(
+            GpuRootSignature12.Slots.BindlessSrvTable,
+            _cbvSrvUavHeap.BindlessHeapStartGpu);
+
+        cmd.ResourceBarrierTransition(
+            _fnvNoiseBlendTexture,
+            ResourceStates.NonPixelShaderResource,
+            ResourceStates.UnorderedAccess);
+        cmd.SetPipelineState(_fnvNoiseScrollBlendPso);
+        cmd.SetComputeRootDescriptorTable(GpuRootSignature12.Slots.WaterNoiseUavTable, blendUavGpu);
+        cmd.Dispatch(FnvNoiseDimension / 8, FnvNoiseDimension / 8, 1);
+        cmd.ResourceBarrierTransition(
+            _fnvNoiseBlendTexture,
+            ResourceStates.UnorderedAccess,
+            ResourceStates.NonPixelShaderResource);
+
+        cmd.ResourceBarrierTransition(
+            _fnvNoiseNormalTexture,
+            ResourceStates.PixelShaderResource,
+            ResourceStates.UnorderedAccess);
+        cmd.SetPipelineState(_fnvNoiseNormalPso);
+        cmd.SetComputeRootDescriptorTable(GpuRootSignature12.Slots.WaterNoiseUavTable, normalUavGpu);
+        cmd.Dispatch(FnvNoiseDimension / 8, FnvNoiseDimension / 8, 1);
+        cmd.ResourceBarrierTransition(
+            _fnvNoiseNormalTexture,
+            ResourceStates.UnorderedAccess,
+            ResourceStates.PixelShaderResource);
+        return true;
+    }
+
+    private static float RecoveredNoiseTexScale(float authoredScale) =>
+        MathF.Max(1f, MathF.Ceiling(authoredScale * 0.01f));
+
+    private static Vector2 RecoveredNoiseScroll(WaterNoiseLayer layer, float elapsedSeconds)
+    {
+        // TESWaterSystem::UpdateWaterNoise accumulates X with sin(direction) and Y with
+        // cos(direction): the DNAM angle is compass-style (0 degrees points +Y), not the prior
+        // mathematical-angle cos/sin interpretation. Sampling wraps, so retain only the fraction
+        // to keep long-running sessions numerically stable.
+        var radians = layer.WindDirDegrees * (MathF.PI / 180f);
+        var distance = layer.WindSpeed * elapsedSeconds;
+        return new Vector2(
+            WrapUnit(MathF.Sin(radians) * distance),
+            WrapUnit(MathF.Cos(radians) * distance));
+    }
+
+    private static float WrapUnit(float value) => value - MathF.Floor(value);
+
     /// <summary>IWorldRenderer entry — absolute path (zero render origin).</summary>
-    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder) => Render(viewProj, cylinder, default);
+    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder) =>
+        RenderCore(viewProj, cylinder, default, animationTimeSeconds: null);
 
     /// <summary>Draws the visible cell-water grid + authored NIF water geometry; returns the surface count.</summary>
     /// <param name="renderOrigin">
@@ -317,9 +736,53 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
     ///     shimmered the water edge as the camera rotated). Absolute callers (top-down, export) use the
     ///     two-arg overload — a no-op. vWorldPos stays absolute for the PS's noise-UV/view-vector anchoring.
     /// </param>
-    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder, Vector3 renderOrigin)
+    public int Render(Matrix4x4 viewProj, VisibilityCylinder cylinder, Vector3 renderOrigin) =>
+        RenderCore(viewProj, cylinder, renderOrigin, animationTimeSeconds: null);
+
+    /// <summary>
+    ///     Capture-only deterministic entry point. Uses one authored clock for legacy frame selection,
+    ///     noise scrolling, and shader time instead of renderer construction time.
+    /// </summary>
+    internal int RenderAtTime(
+        Matrix4x4 viewProj,
+        VisibilityCylinder cylinder,
+        Vector3 renderOrigin,
+        float animationTimeSeconds)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(animationTimeSeconds);
+        if (!float.IsFinite(animationTimeSeconds))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(animationTimeSeconds), animationTimeSeconds, "Animation time must be finite.");
+        }
+
+        return RenderCore(viewProj, cylinder, renderOrigin, animationTimeSeconds);
+    }
+
+    private int RenderCore(
+        Matrix4x4 viewProj,
+        VisibilityCylinder cylinder,
+        Vector3 renderOrigin,
+        float? animationTimeSeconds)
     {
         LastStats.Reset();
+        var elapsedSeconds = animationTimeSeconds ??
+                             (float)Stopwatch.GetElapsedTime(_startTimestamp).TotalSeconds;
+        LastStats.WaterAnimationSeconds = elapsedSeconds;
+        LastStats.WaterAnimationFps = _waterProfile.SurfaceFrameFps;
+        LastStats.WaterMapPaths = _telemetryMapPaths;
+        LastStats.WaterMapRoles = _telemetryMapRoles;
+        LastStats.WaterMapResolved = _telemetryMapResolved;
+        LastStats.WaterTelemetryUnavailableReason = _telemetryMapPaths.Length == 0
+            ? _appearance is null
+                ? "no WATR appearance resolved; the shader uses profile colors and a procedural normal fallback"
+                : "the active WATR appearance carries no authored texture path; a procedural normal fallback is used"
+            : null;
+        LastStats.WaterPipeline = ModernWaterPipeline.TelemetryName(
+            _game,
+            explicitlyEnabled: false,
+            resourcesReady: false,
+            prepassesRecorded: false);
         if (_waterCells.Count == 0 && _nifWaterPlanes.Count == 0) return 0;
 
         var started = StartTiming();
@@ -389,7 +852,6 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         segmentStarted = StartTiming();
         // Per-frame CB (b0) — viewProj + DNAM colors + (camera pos, elapsed time) for the
         // procedural ripple/Fresnel/specular shading.
-        var elapsedSeconds = (float)Stopwatch.GetElapsedTime(_startTimestamp).TotalSeconds;
         if (!_ringBuffer.TryAllocate(frameIndex, UniformsByteSize, out var perFrameAlloc, GpuRingBuffer12.CbAlignment))
         {
             // Frame ring slot exhausted by the earlier scene passes (dense whole-map views). Skip
@@ -399,19 +861,61 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
             return 0;
         }
         var surface = _appearance?.Surface ?? BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterSurfaceParams.Default;
-        // MorrowindWater repurposes the NNAM slot as the CURRENT animated diffuse frame (the FF
-        // engine cycles water00-31 at SurfaceFPS) and the opacity slot as [Water] World Alpha —
-        // TES3 has no WATR records, so nothing else feeds these.
+        // Morrowind and Oblivion both cycle the global water00-31 animation at the shipped 12 FPS.
+        // Morrowind repurposes the NNAM slot as diffuse; Oblivion WATER000 consumes it as NormalMap.
         var noiseIndex = _noiseBindlessIndex;
+        if (_legacyAnimatedFrames is { Length: > 0 } animatedFrames &&
+            _waterProfile.SurfaceFrameFps > 0f &&
+            _waterProfile.ShaderVariant is WaterShaderVariant.MorrowindWater or WaterShaderVariant.OblivionWater000)
+        {
+            var animationFrame = LegacyWaterAnimation.SelectFrame(
+                elapsedSeconds, _waterProfile.SurfaceFrameFps, animatedFrames.Length);
+            LastStats.WaterAnimationFrame = animationFrame;
+            noiseIndex = animatedFrames[animationFrame];
+        }
+        var usedFnvNoisePrepass = false;
+        if (_useFnvNoisePrepass && noiseIndex != NoNormalMap)
+        {
+            usedFnvNoisePrepass = RecordFnvNoisePrepass(
+                cmd, frameIndex, elapsedSeconds, noiseIndex, surface);
+            if (usedFnvNoisePrepass)
+            {
+                noiseIndex = _fnvNoiseNormalBindlessIndex;
+            }
+        }
+
+        var modernTechnique = ModernWaterPipeline.SelectTechnique(
+            hasDepthLut: _depthBindlessIndex != NoNormalMap,
+            hasCubemap: _modernCubeBindlessIndex != NoNormalMap);
+        ModernWaterResources12? modernResources = null;
+        var modernResourcesReady = false;
+        var modernPrepassesRecorded = false;
+        if (ModernWaterPipeline.ShouldUse(ModernPipelineEnabled, _game))
+        {
+            modernResourcesReady = TryEnsureModernWater(out modernResources);
+            if (modernResourcesReady && modernResources is not null)
+            {
+                modernPrepassesRecorded = RecordModernWaterPrepasses(
+                    cmd,
+                    frameIndex,
+                    elapsedSeconds,
+                    surface,
+                    modernResources);
+            }
+        }
+        var useModernPipeline = modernResourcesReady && modernPrepassesRecorded && modernResources is not null;
+        LastStats.WaterPipeline = ModernWaterPipeline.TelemetryName(
+            _game,
+            ModernPipelineEnabled,
+            modernResourcesReady,
+            modernPrepassesRecorded,
+            modernTechnique);
+        LastStats.WaterNoisePrepassUsed = usedFnvNoisePrepass;
+
         var waterOpacity = surface.Opacity;
         if (_waterProfile.ShaderVariant == WaterShaderVariant.MorrowindWater)
         {
             waterOpacity = _waterProfile.SurfaceAlpha;
-            if (_morrowindSurfaceFrames is { Length: > 0 } frames)
-            {
-                var frame = (int)(elapsedSeconds * _waterProfile.SurfaceFrameFps) % frames.Length;
-                noiseIndex = frames[frame];
-            }
         }
         unsafe
         {
@@ -453,6 +957,43 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
                 {
                     W = surface.DepthAmount,
                 },
+                NormalIndex1 = _normalBindlessIndices[0],
+                // Oblivion repurposes y as the separately-authored TNAM DetailMap. Other variants
+                // retain y as the second ordered normal source (Skyrim/Creation water).
+                NormalIndex2 = _waterProfile.ShaderVariant == WaterShaderVariant.OblivionWater000
+                    ? _oblivionDetailBindlessIndex
+                    : _normalBindlessIndices[1],
+                NormalIndex3 = _normalBindlessIndices[2],
+                // 1 = NoiseIndex already contains the recovered FO3/FNV two-pass composite.
+                // 0 = sample authored layers directly (Skyrim/modern/fallback paths).
+                NormalIndex4 = usedFnvNoisePrepass ? 1u : 0u,
+                LegacySurface0 = new Vector4(
+                    surface.WaveAmplitude, surface.WaveFrequency,
+                    surface.ScrollXSpeed, surface.ScrollYSpeed),
+                LegacySurface1 = new Vector4(
+                    surface.FogNear, surface.FogFar, surface.TextureBlend, surface.WindVelocity),
+                Modern = new ModernWaterFrameUniforms
+                {
+                    BodyIndex = modernResources?.BindlessIndices[ModernWaterResources12.BodyOutput] ?? NoNormalMap,
+                    NormalIndex = modernResources?.BindlessIndices[ModernWaterResources12.NormalOutput] ?? NoNormalMap,
+                    GlossIndex = modernResources?.BindlessIndices[ModernWaterResources12.GlossOutput] ?? NoNormalMap,
+                    DepthLutIndex = modernResources?.BindlessIndices[ModernWaterResources12.DepthLutOutput] ?? NoNormalMap,
+                    TechniqueId = (uint)modernTechnique,
+                    CubeIndex = _modernCubeBindlessIndex,
+                    MaxPointLights = ModernWaterPipeline.MaxPointLights,
+                    // Unit gloss samples in the neutral t2 map reproduce these authored values
+                    // through the recovered exp()/pi equations. Output alpha and alpha-test
+                    // threshold are neutral because their SetupMaterial mappings remain open.
+                    Params = new Vector4(
+                        ModernWaterPipeline.GlossPowerScale(surface.SunPower),
+                        ModernWaterPipeline.GlossAmplitudeScale(surface.SunSpecularMagnitude),
+                        1f,
+                        0f),
+                    LightSilt = ColorToVector4(_appearance?.LightSilt, Vector3.Zero) with
+                    {
+                        W = surface.NormalMagnitude,
+                    },
+                },
             };
         }
 
@@ -473,13 +1014,23 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         // PIXEL_SHADER_RESOURCE, so use the no-depth-test PSO (occlusion is done in-shader).
         // Otherwise the DSV is still bound → use the hardware-depth-test PSO.
         var depthSample = _depthBindlessIndex != NoNormalMap;
-        cmd.SetPipelineState(_waterProfile.ShaderVariant switch
+        LastStats.WaterTechnique = useModernPipeline
+            ? $"modern-{modernTechnique}"
+            : $"{_waterProfile.ShaderVariant}-{(depthSample ? "scene-depth" : "hardware-depth")}";
+        if (useModernPipeline)
         {
-            WaterShaderVariant.OblivionWater000 => depthSample ? _psoOblivionDepthSample : _psoOblivion,
-            WaterShaderVariant.Fo4Water => depthSample ? _psoFo4DepthSample : _psoFo4,
-            WaterShaderVariant.MorrowindWater => depthSample ? _psoMorrowindDepthSample : _psoMorrowind,
-            _ => depthSample ? _psoDepthSample : _pso,
-        });
+            cmd.SetPipelineState(depthSample ? modernResources!.PixelDepthSample : modernResources!.Pixel);
+        }
+        else
+        {
+            cmd.SetPipelineState(_waterProfile.ShaderVariant switch
+            {
+                WaterShaderVariant.OblivionWater000 => depthSample ? _psoOblivionDepthSample : _psoOblivion,
+                WaterShaderVariant.Fo4Water => depthSample ? _psoFo4DepthSample : _psoFo4,
+                WaterShaderVariant.MorrowindWater => depthSample ? _psoMorrowindDepthSample : _psoMorrowind,
+                _ => depthSample ? _psoDepthSample : _pso,
+            });
+        }
         cmd.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         cmd.SetGraphicsRootConstantBufferView(GpuRootSignature12.Slots.PerFrameCbv, perFrameAlloc.GpuAddress);
         cmd.SetGraphicsRootDescriptorTable(GpuRootSignature12.Slots.SrvTable, srvAlloc.Gpu);
@@ -514,6 +1065,14 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         _psoFo4DepthSample.Dispose();
         _psoMorrowind.Dispose();
         _psoMorrowindDepthSample.Dispose();
+        _fnvNoiseScrollBlendPso.Dispose();
+        _fnvNoiseNormalPso.Dispose();
+        _deletionQueue.EnqueueDispose(_fnvNoiseBlendTexture);
+        _deletionQueue.EnqueueDispose(_fnvNoiseNormalTexture);
+        _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_cbvSrvUavHeap, _fnvNoiseBlendBindlessIndex));
+        _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_cbvSrvUavHeap, _fnvNoiseNormalBindlessIndex));
+        _modernWater?.Dispose(_deletionQueue, _cbvSrvUavHeap);
+        _modernWater = null;
     }
 
     private int GatherVisibleWater(VisibilityCylinder cylinder)
@@ -732,6 +1291,228 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterNoiseLayer layer)
         => new(layer.UvScale, layer.WindDirDegrees, layer.WindSpeed, layer.AmpScale);
 
+    private static void ValidateGpuLayouts()
+    {
+        // One scalar register (indices/scale/padding) plus five float4 registers. The earlier
+        // 5-register assertion omitted uAmplitude and disabled the entire D3D12 backend at startup
+        // even though the CPU struct and HLSL both correctly occupy 96 bytes.
+        const int expectedFnvNoiseUniformSize = 6 * 16;
+        var fnvNoiseUniformSize = Marshal.SizeOf<FnvNoiseUniforms>();
+        if (fnvNoiseUniformSize != expectedFnvNoiseUniformSize)
+        {
+            throw new InvalidOperationException(
+                $"FNV water-noise constant-buffer layout drifted: CPU={fnvNoiseUniformSize} bytes, " +
+                $"HLSL={expectedFnvNoiseUniformSize} bytes.");
+        }
+
+        var modernPrepassSize = Marshal.SizeOf<ModernWaterPrepassUniforms>();
+        if (modernPrepassSize != (int)ModernWaterPipeline.PrepassUniformByteSize)
+        {
+            throw new InvalidOperationException(
+                $"Modern water-prepass constant-buffer layout drifted: CPU={modernPrepassSize} bytes, " +
+                $"HLSL={ModernWaterPipeline.PrepassUniformByteSize} bytes.");
+        }
+
+        const int expectedModernFrameTailSize = 4 * 16;
+        var modernFrameTailSize = Marshal.SizeOf<ModernWaterFrameUniforms>();
+        if (modernFrameTailSize != expectedModernFrameTailSize)
+        {
+            throw new InvalidOperationException(
+                $"Modern water-frame tail layout drifted: CPU={modernFrameTailSize} bytes, " +
+                $"HLSL={expectedModernFrameTailSize} bytes.");
+        }
+
+        var uniformSize = Marshal.SizeOf<WaterFrameUniforms>();
+        if (uniformSize != (int)UniformsByteSize)
+        {
+            throw new InvalidOperationException(
+                $"Water constant-buffer layout drifted: CPU={uniformSize} bytes, HLSL={UniformsByteSize} bytes.");
+        }
+
+        const int expectedInstanceSize = 6 * 16;
+        var instanceSize = Marshal.SizeOf<WaterInstance>();
+        if (instanceSize != expectedInstanceSize)
+        {
+            throw new InvalidOperationException(
+                $"Water instance layout drifted: CPU={instanceSize} bytes, HLSL={expectedInstanceSize} bytes.");
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FnvNoiseUniforms
+    {
+        public uint SourceIndex;
+        public uint BlendIndex;
+        public float NoiseScale;
+        public float Padding0;
+        public Vector4 TexScaleAmplitude;
+        public Vector4 Scroll0;
+        public Vector4 Scroll1;
+        public Vector4 Scroll2;
+        public Vector4 Amplitude;
+    }
+
+    private sealed class ModernWaterResources12
+    {
+        internal const int BodyOutput = 0;
+        internal const int NormalOutput = 1;
+        internal const int GlossOutput = 2;
+        internal const int DepthLutOutput = 3;
+
+        private ModernWaterResources12(
+            ID3D12PipelineState pixel,
+            ID3D12PipelineState pixelDepthSample,
+            ID3D12PipelineState[] computePipelines,
+            ID3D12Resource[] outputs,
+            uint[] bindlessIndices)
+        {
+            Pixel = pixel;
+            PixelDepthSample = pixelDepthSample;
+            ComputePipelines = computePipelines;
+            Outputs = outputs;
+            BindlessIndices = bindlessIndices;
+        }
+
+        internal ID3D12PipelineState Pixel { get; }
+        internal ID3D12PipelineState PixelDepthSample { get; }
+        internal ID3D12PipelineState[] ComputePipelines { get; }
+        internal ID3D12Resource[] Outputs { get; }
+        internal uint[] BindlessIndices { get; }
+
+        internal static ModernWaterResources12 Create(
+            GpuDevice12 gpu,
+            ID3D12RootSignature rootSignature,
+            GpuDescriptorHeapAllocator12 heap,
+            GraphicsPipelineStateDescription depthTemplate,
+            GraphicsPipelineStateDescription depthSampleTemplate)
+        {
+            ID3D12PipelineState? pixel = null;
+            ID3D12PipelineState? pixelDepthSample = null;
+            var compute = new List<ID3D12PipelineState>(4);
+            var outputs = new List<ID3D12Resource>(4);
+            var slots = new List<uint>(4);
+            try
+            {
+                var modernPixelBytecode = CompileEmbeddedShader(
+                    "water.frag.hlsl",
+                    "main",
+                    "ps_5_1",
+                    new ShaderMacro("FO4_WATER", "1"),
+                    new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"));
+                var pixelDescription = depthTemplate;
+                pixelDescription.PixelShader = modernPixelBytecode;
+                pixel = gpu.Device.CreateGraphicsPipelineState(pixelDescription);
+                var pixelDepthDescription = depthSampleTemplate;
+                pixelDepthDescription.PixelShader = modernPixelBytecode;
+                pixelDepthSample = gpu.Device.CreateGraphicsPipelineState(pixelDepthDescription);
+
+                string[] entryPoints =
+                [
+                    "mainBodyCoverage",
+                    "mainNormal",
+                    "mainGloss",
+                    "mainDepthLut",
+                ];
+                foreach (var entryPoint in entryPoints)
+                {
+                    var bytecode = CompileEmbeddedShader(
+                        "water_modern.comp.hlsl", entryPoint, "cs_5_1");
+                    compute.Add(gpu.Device.CreateComputePipelineState(
+                        new ComputePipelineStateDescription
+                        {
+                            RootSignature = rootSignature,
+                            ComputeShader = bytecode,
+                        }));
+                }
+
+                for (var i = 0; i < entryPoints.Length; i++)
+                {
+                    var width = i == DepthLutOutput
+                        ? ModernWaterPipeline.DepthLutWidth
+                        : ModernWaterPipeline.SurfaceDimension;
+                    var height = i == DepthLutOutput
+                        ? ModernWaterPipeline.DepthLutHeight
+                        : ModernWaterPipeline.SurfaceDimension;
+                    var output = gpu.Device.CreateCommittedResource<ID3D12Resource>(
+                        new HeapProperties(HeapType.Default),
+                        HeapFlags.None,
+                        ResourceDescription.Texture2D(
+                            Format.R16G16B16A16_Float,
+                            width,
+                            height,
+                            1,
+                            1,
+                            1,
+                            0,
+                            ResourceFlags.AllowUnorderedAccess),
+                        ModernWaterPipeline.DynamicReadState);
+                    output.Name = i switch
+                    {
+                        BodyOutput => "Modern Water Body+Coverage",
+                        NormalOutput => "Modern Water Composite Normal",
+                        GlossOutput => "Modern Water Gloss+Flow",
+                        _ => "Modern Water Depth LUT",
+                    };
+                    outputs.Add(output);
+
+                    var allocation = heap.AllocatePersistent();
+                    slots.Add(allocation.BindlessIndex);
+                    gpu.Device.CreateShaderResourceView(
+                        output,
+                        new ShaderResourceViewDescription
+                        {
+                            Format = Format.R16G16B16A16_Float,
+                            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
+                            Shader4ComponentMapping = ShaderComponentMapping.Default,
+                            Texture2D = new Texture2DShaderResourceView
+                            {
+                                MostDetailedMip = 0,
+                                MipLevels = 1,
+                            },
+                        },
+                        allocation.Cpu);
+                }
+
+                return new ModernWaterResources12(
+                    pixel,
+                    pixelDepthSample,
+                    compute.ToArray(),
+                    outputs.ToArray(),
+                    slots.ToArray());
+            }
+            catch
+            {
+                pixel?.Dispose();
+                pixelDepthSample?.Dispose();
+                foreach (var pipeline in compute) pipeline.Dispose();
+                foreach (var output in outputs) output.Dispose();
+                foreach (var slot in slots) heap.FreePersistent(slot);
+                throw;
+            }
+        }
+
+        internal void Dispose(
+            GpuDeletionQueue12 deletionQueue,
+            GpuDescriptorHeapAllocator12 heap)
+        {
+            Pixel.Dispose();
+            PixelDepthSample.Dispose();
+            foreach (var pipeline in ComputePipelines) pipeline.Dispose();
+            foreach (var output in Outputs) deletionQueue.EnqueueDispose(output);
+            foreach (var slot in BindlessIndices)
+            {
+                deletionQueue.EnqueueDispose(new PersistentSlotReturn(heap, slot));
+            }
+        }
+    }
+
+    /// <summary>Returns a bindless descriptor only after the GPU has drained the prepass draws that
+    /// may still index it.</summary>
+    private sealed class PersistentSlotReturn(GpuDescriptorHeapAllocator12 heap, uint slot) : IDisposable
+    {
+        public void Dispose() => heap.FreePersistent(slot);
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct WaterInstance
     {
@@ -786,6 +1567,21 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer
         public Vector4 Fo4Spec;
         public Vector4 Fo4Ranges;
         public Vector4 Fo4DarkSilt;
+        // Ordered water-normal sources. Skyrim authors three inputs; FNV/FO3 repeat the first index
+        // into all three slots. Oblivion uses NormalIndex1 for the selected global animation frame and
+        // repurposes NormalIndex2 for the distinct WATR TNAM DetailMap.
+        public uint NormalIndex1;
+        public uint NormalIndex2;
+        public uint NormalIndex3;
+        public uint NormalIndex4;
+        // Oblivion WATR DATA: wave amplitude/frequency + direct XY scroll, then WATR fog near/far,
+        // texture-detail blend, and wind velocity. Kept at the tail so earlier variants retain offsets.
+        public Vector4 LegacySurface0;
+        public Vector4 LegacySurface1;
+        // WATER-07 opt-in FO4/FO76 architecture. Four generated Texture2D indices, recovered
+        // technique/cubemap/light-loop controls, recovered gloss scales + neutral unresolved alpha
+        // constants, then retained LightSilt/normal magnitude. Appended for legacy layout stability.
+        public ModernWaterFrameUniforms Modern;
     }
 }
 

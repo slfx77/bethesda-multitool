@@ -117,6 +117,8 @@ internal static class CellCaptureUnioner
                                   captures.Select(c => c.AcousticSpaceFormId).FirstOrDefault(v => v is > 0),
             ImageSpaceFormId = primary.ImageSpaceFormId ??
                                captures.Select(c => c.ImageSpaceFormId).FirstOrDefault(v => v is > 0),
+            ClimateFormId = primary.ClimateFormId ??
+                            captures.Select(c => c.ClimateFormId).FirstOrDefault(v => v is > 0),
             LightingTemplateFormId = primary.LightingTemplateFormId ??
                                      captures.Select(c => c.LightingTemplateFormId).FirstOrDefault(v => v is > 0),
             LightingTemplateInheritanceFlags = primary.LightingTemplateInheritanceFlags ??

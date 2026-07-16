@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 
@@ -160,7 +161,8 @@ internal static class NifGeometryExtractor
         bool treatRootsAsIdentity = false,
         bool collectBillboards = false,
         bool dropBoneAttachedShapes = false,
-        IReadOnlyDictionary<string, string>? materialSwaps = null)
+        IReadOnlyDictionary<string, string>? materialSwaps = null,
+        Vector3? externalEmittanceColor = null)
     {
         if (nif.Blocks.Count == 0)
         {
@@ -384,6 +386,10 @@ internal static class NifGeometryExtractor
             var envMapScale = 0f;
             var isDecal = false;
             var effectTint = (R: 1f, G: 1f, B: 1f);
+            var staticUvOffset = Vector2.Zero;
+            var staticUvScale = Vector2.One;
+            var clampTextureU = false;
+            var clampTextureV = false;
             (float, float, float, float)? effectFalloff = null;
             SkyObjectType? skyType = null;
             List<int>? propRefs = null;
@@ -393,6 +399,11 @@ internal static class NifGeometryExtractor
                 // independently of whether textures can be resolved — read it unconditionally so
                 // rendering without a texture BSA still respects these flags.
                 shaderMetadata = NifTextureResolver.ReadShaderMetadata(data, nif, propRefs);
+                if (shaderMetadata is not null)
+                {
+                    staticUvOffset = shaderMetadata.UvOffset;
+                    staticUvScale = shaderMetadata.UvScale;
+                }
                 // Self-illuminated (unlit) shaders: FO3/FNV BSShaderNoLightingProperty AND the Skyrim/
                 // SE/FO4 BSEffectShaderProperty (fire, magic, glow, light shafts). Without the effect
                 // case, every Skyrim effect shape was N·L-lit and rendered as a faceted, shaded "gem"
@@ -431,6 +442,9 @@ internal static class NifGeometryExtractor
                             baseColor.R * baseColorScale,
                             baseColor.G * baseColorScale,
                             baseColor.B * baseColorScale);
+                        // Classic BSEffect BaseColor.A is a distinct authored opacity term; dropping it made
+                        // Skyrim effect planes uniformly opaque even when RGB tint was otherwise correct.
+                        materialAlpha *= Math.Clamp(baseColor.A, 0f, 8f);
                     }
 
                     const uint slsf1UseFalloff = 1u << 6;
@@ -591,7 +605,7 @@ internal static class NifGeometryExtractor
                         // falloff is enabled — alpha ramps by |N·V| between the start/stop angles.
                         // Without these, crossed-plane mist blobs (MistLargeRoundDusty01) rendered
                         // every plane at full white opacity and additively clipped whole scenes.
-                        var tintScale = Math.Min(bgsm.BaseColorScale, 1f);
+                        var tintScale = bgsm.BaseColorScale;
                         effectTint = (
                             bgsm.BaseColor.X * tintScale,
                             bgsm.BaseColor.Y * tintScale,
@@ -649,7 +663,15 @@ internal static class NifGeometryExtractor
 
                     isDoubleSided |= bgsm.TwoSided;
                     isDecal |= bgsm.Decal;
-                    materialAlpha = Math.Min(materialAlpha, Math.Min(bgsm.Alpha, 1f));
+                    materialAlpha *= bgsm.Alpha;
+                    // External materials override the inline shader-property transform in the engine.
+                    staticUvOffset = bgsm.UvOffset;
+                    staticUvScale = bgsm.UvScale;
+                    // BGSM/BGEM store independent tiling enables. The old renderer retained the bits
+                    // in BgsmMaterial but always sampled WRAP, which made non-tiled effect sheets bleed
+                    // across their opposite edge after applying an authored UV transform.
+                    clampTextureU = !bgsm.TileU;
+                    clampTextureV = !bgsm.TileV;
                     if (!string.IsNullOrEmpty(bgsm.Diffuse))
                     {
                         diffusePath = bgsm.Diffuse;
@@ -761,6 +783,18 @@ internal static class NifGeometryExtractor
                 submesh.IsDecal = isDecal;
                 submesh.EffectTint = effectTint;
                 submesh.EffectFalloff = effectFalloff;
+                submesh.ClampTextureU = clampTextureU;
+                submesh.ClampTextureV = clampTextureV;
+
+                if (submesh.UVs is { } staticUvs &&
+                    (staticUvOffset != Vector2.Zero || staticUvScale != Vector2.One))
+                {
+                    for (var ui = 0; ui + 1 < staticUvs.Length; ui += 2)
+                    {
+                        staticUvs[ui] = staticUvs[ui] * staticUvScale.X + staticUvOffset.X;
+                        staticUvs[ui + 1] = staticUvs[ui + 1] * staticUvScale.Y + staticUvOffset.Y;
+                    }
+                }
 
                 // SLSF1_Vertex_Alpha clear — the vertex alpha channel is engine data (wind weight),
                 // not opacity. Neutralize it in place so every consumer (GPU alpha test, CPU
@@ -790,18 +824,27 @@ internal static class NifGeometryExtractor
                     submesh.UvScrollVelocity = uvScroll;
                 }
 
-                // FO3/FNV External_Emittance (BSShaderFlags bit 29): the engine sources the shape's
-                // emittance from the placed reference's XEMI link (a light/region, day/night driven),
-                // NOT from the material's Emissive Color × Mult — NVStripLightPollution authors
-                // (1,1,1) × 21 under this flag and the engine never reads it; multiplying it in blew
-                // the Strip glow ×21 into HDR. Until XEMI resolution exists, leave the tint null
-                // (renderer draws the texture untinted, mult 1) — the material-ignored half of the
-                // engine behavior, with no invented day/night term.
+                // External_Emittance (classic BSShaderFlags bit 29 and Skyrim BSEffect): the engine
+                // sources the color from the placed reference's XEMI REGN/LIGH target, not from the
+                // material's emissive color/multiplier. Unresolved XEMI deliberately remains neutral.
                 var externalEmittance = shaderMetadata is
                     {
-                        PropertyType: "BSShaderPPLightingProperty" or "BSShaderNoLightingProperty",
+                        PropertyType: "BSShaderPPLightingProperty" or "BSShaderNoLightingProperty" or
+                            "BSEffectShaderProperty",
                         ShaderFlags: { } eeFlags
                     } && (eeFlags & 0x20000000u) != 0;
+
+                if (externalEmittance && externalEmittanceColor is { } resolvedEmittance)
+                {
+                    var influence = shaderMetadata!.PropertyType == "BSEffectShaderProperty"
+                        ? shaderMetadata.EffectLightingInfluence ?? 1f
+                        : 1f;
+                    var modulation = ExternalEmittanceResolver.Modulation(resolvedEmittance, influence);
+                    submesh.EffectTint = (
+                        submesh.EffectTint.R * modulation.X,
+                        submesh.EffectTint.G * modulation.Y,
+                        submesh.EffectTint.B * modulation.Z);
+                }
 
                 // Read animated emissive color from NiMaterialColorController chain
                 if (propRefs != null && !externalEmittance)

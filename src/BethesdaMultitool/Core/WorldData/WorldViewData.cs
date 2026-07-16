@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Export;
@@ -5,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Games;
 
@@ -141,12 +143,19 @@ internal sealed class WorldViewData
     public BethesdaGame Game { get; init; } = BethesdaGame.Unknown;
 
     /// <summary>
-    ///     Engine-exact apparent moon sizes for this game, read from its GMSTs at load:
-    ///     <c>iMasserSize</c> / <c>iSecundaSize</c> (the ±size billboard quad half-extent) divided by
-    ///     <c>fSunXExtreme</c> (the sky-dome horizontal radius), expressed as a fraction of the billboard
-    ///     radius. Null when the GMSTs are absent (Morrowind TES3, save/DMP with no settings table), in
-    ///     which case the 3D viewer falls back to the per-game <c>SkyMoonProfile</c> default. Mod-aware:
-    ///     an ESM that overrides these GMSTs changes the rendered moon size automatically.
+    ///     Case-insensitive GMST registry retained for renderer settings which are read dynamically by the
+    ///     retail engine. Celestial paths/fades consume their Masser/Secunda entries from here instead of
+    ///     baking the shipped values into renderer-only constants.
+    /// </summary>
+    public IReadOnlyDictionary<string, GameSettingRecord> GameSettingsByEditorId { get; init; } =
+        new Dictionary<string, GameSettingRecord>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    ///     Apparent moon sizes for this game, resolved from its GMSTs at load. FNV/Skyrim divide the
+    ///     authored <c>iMasserSize</c>/<c>iSecundaSize</c> quad extent by the recovered fixed 512-unit moon
+    ///     arm; FO4's separate path family uses <c>fSunXExtreme</c>. Values are fractions of the billboard
+    ///     radius. Null when required GMSTs are absent, in which case the viewer uses the per-game
+    ///     <c>SkyMoonProfile</c> fallback. An ESM override remains mod-aware.
     /// </summary>
     public float? MoonPrimaryHalfSizeFraction { get; init; }
 
@@ -212,6 +221,13 @@ internal sealed class WorldViewData
     public IReadOnlyDictionary<uint, WeatherRecord> WeathersByFormId { get; init; } =
         new Dictionary<uint, WeatherRecord>();
 
+    /// <summary>
+    ///     Runtime weather transition retained from a DMP. Null for ESM/save-only views and unsupported
+    ///     runtime layouts. <see cref="WeatherTransitionSnapshot.ModifierElapsedSeconds" /> remains null
+    ///     until the engine clock driving animatable weather modifiers is independently recovered.
+    /// </summary>
+    public WeatherTransitionSnapshot? RuntimeWeatherTransition { get; init; }
+
     /// <summary>Climate (CLMT) records keyed by FormID. A worldspace's <c>ClimateFormId</c> (CNAM)
     /// resolves through here to its sunrise/sunset timing and default weather list.</summary>
     public IReadOnlyDictionary<uint, ClimateRecord> ClimatesByFormId { get; init; } =
@@ -224,6 +240,13 @@ internal sealed class WorldViewData
     /// </summary>
     public IReadOnlyDictionary<uint, ImageSpaceRecord> ImageSpacesByFormId { get; init; } =
         new Dictionary<uint, ImageSpaceRecord>();
+
+    /// <summary>
+    ///     Lossless Image Space Modifier (IMAD) records keyed by FormID. Active WTHR time-band
+    ///     references resolve through this index before the tonemap settings are uploaded.
+    /// </summary>
+    public IReadOnlyDictionary<uint, ImageSpaceModifierRecord> ImageSpaceModifiersByFormId { get; init; } =
+        new Dictionary<uint, ImageSpaceModifierRecord>();
 
     /// <summary>
     ///     Lighting Template (LGTM) records keyed by FormID. An interior cell's LTMP FormID resolves
@@ -240,6 +263,14 @@ internal sealed class WorldViewData
     /// </summary>
     public IReadOnlyDictionary<uint, LightRecord> LightsByFormId { get; init; } =
         new Dictionary<uint, LightRecord>();
+
+    /// <summary>
+    ///     REGN/LIGH FormID to normalized RGB for placed-reference XEMI links. External-emittance
+    ///     NIF properties consume this during variant mesh baking instead of their ignored material
+    ///     emissive multiplier.
+    /// </summary>
+    public IReadOnlyDictionary<uint, Vector3> ExternalEmittanceColorsByFormId { get; init; } =
+        new Dictionary<uint, Vector3>();
 
     /// <summary>
     ///     Placed-reference FormIDs whose XESP enable-parent CHAIN resolves to disabled in the initial

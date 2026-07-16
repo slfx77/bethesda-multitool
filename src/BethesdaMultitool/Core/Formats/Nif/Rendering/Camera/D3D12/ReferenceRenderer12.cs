@@ -1,4 +1,5 @@
 #if WINDOWS_GUI
+using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
@@ -9,6 +10,7 @@ using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Orchestration;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
@@ -71,6 +73,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private readonly ReferencePipelineFactory12 _pipelines;
     private readonly OpaqueBatchRegistry12 _opaqueBatches = new();
     private readonly List<BlendedReferenceDraw> _blendedDraws = new(256);
+    private readonly HashSet<LiveParticleOwner12> _liveParticleOwners = [];
+    private readonly List<global::BethesdaMultitool.ParticleRenderTelemetry> _particleTelemetry = [];
     // Depth-writing blend foliage (effects-folder shapes the engine marks ZBuffer_Write, e.g. NVSeaPlant02):
     // kept as alpha blend but drawn INLINE before the water pass with a depth-writing PSO, so water occludes
     // them from above. Separate from _blendedDraws, which defers to after the water pass.
@@ -175,6 +179,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // SpeedTree leaf wind uniform: (rockAmount, rockPhase, rustleAmount, rustlePhase) — see SetWind.
     // Default all-zero so non-viewer paths (captures, exports, headless) render trees static.
     private Vector4 _wind;
+    private float _windStrength;
     private readonly Core.Formats.SpeedTree.SpeedTreeWindRig _windRig = new();
 
     // NIF animation clock (seconds), captured from the SetWind timeSeconds the host already sends
@@ -186,6 +191,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// <summary>Master switch for NIF keyframe/UV playback (GUI "Animations" toggle). Off ⇒ UV
     /// offsets stay (0,0) and the skinner clears its overrides — meshes draw their static rest pose.</summary>
     public bool AnimationsEnabled { get; set; } = true;
+
+    /// <summary>
+    ///     Temporary opt-in legacy live-particle owner. Defaults from
+    ///     <c>FALLOUT_VIEWER_LIVE_PARTICLES=1</c>; false keeps immutable cached particle clouds.
+    /// </summary>
+    public bool LiveParticlesEnabled { get; set; } = ParticleLiveSettings.Enabled;
     private readonly List<global::BethesdaMultitool.WorldSpatialCell> _candidateCells = new();
 
     // Candidates returned by the per-cell spatial broadphase before exact sphere/frustum cull.
@@ -514,7 +525,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     /// <summary>
     ///     Sets the camera world-space right/up basis used to re-face SpeedTree leaf cards to the camera
     ///     in the leaf-billboard vertex shader. The host computes it from the inverse view matrix (the
-    ///     same source as <c>SkyBillboardRenderer12</c>) and calls this each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?)" />.
+    ///     same source as <c>SkyBillboardRenderer12</c>) and calls this each frame before <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?)" />.
     /// </summary>
     public void SetLeafBillboardBasis(Vector3 cameraRight, Vector3 cameraUp)
     {
@@ -533,13 +544,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     oscillators are axis-aligned; kept for signature stability); <paramref name="strength" />
     ///     = the weather wind-speed byte / 255 (0 = perfectly static);
     ///     <paramref name="timeSeconds" /> the animation clock. Call each frame before
-    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?)" />.
+    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?)" />.
     /// </summary>
     public void SetWind(Vector2 direction, float strength, float timeSeconds)
     {
         _ = direction;
+        _windStrength = Math.Clamp(strength, 0f, 1f);
         _animationClockSeconds = timeSeconds;
-        _windRig.Tick(strength, timeSeconds);
+        _windRig.Tick(_windStrength, timeSeconds);
         _wind = new Vector4(_windRig.RockAmount, _windRig.RockPhase, _windRig.RustleAmount, _windRig.RustlePhase);
     }
 
@@ -634,6 +646,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private float _frameCylinderX;
     private float _frameCylinderY;
     private float _frameCylinderRadius;
+    private Vector3 _frameCameraPosition;
+    private Vector3 _frameRenderOrigin;
     private float _frameSmallPropCutoffSq;
 
     /// <summary>
@@ -677,19 +691,35 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     SUPERSET of the exact set for any camera inside the slack box; the draw passes re-test
     ///     each instance against the current exact bounds, so the drawn set stays exact.
     /// </param>
+    /// <param name="cameraPosition">
+    ///     The actual world-space rendering eye used for blended ordering, billboard facing, particle
+    ///     quad sorting, and runtime SpeedTree LOD. Null falls back to <paramref name="cylinder" />'s
+    ///     position, which is exact for the perspective and legacy top-down paths. Tilted orthographic
+    ///     views must pass their look-at eye because their covering cylinder is centered on the visible
+    ///     footprint rather than on that eye.
+    /// </param>
     public int Render(
         Matrix4x4 viewProj, VisibilityCylinder cylinder, bool deferBlended, Matrix4x4? cullViewProj = null,
-        Vector3 renderOrigin = default, CullCameraPose? cullCameraPose = null)
+        Vector3 renderOrigin = default, CullCameraPose? cullCameraPose = null,
+        Vector3? cameraPosition = null)
     {
         ReferencesDrawnLastFrame = 0;
         LastFrameDrawsTruncated = 0;
         LastStats.Reset();
+        LastStats.ReferenceSpeedTreeWindStrength = _windStrength;
+        LastStats.ReferenceSpeedTreeRockAmount = _windRig.RockAmount;
+        LastStats.ReferenceSpeedTreeRockPhase = _windRig.RockPhase;
+        LastStats.ReferenceSpeedTreeRustleAmount = _windRig.RustleAmount;
+        LastStats.ReferenceSpeedTreeRustlePhase = _windRig.RustlePhase;
+        LastStats.ReferenceSpeedTreeAnimationSeconds = (float)_animationClockSeconds;
+        LastStats.ReferenceSpeedTreeRuntimeLodEnabled = SpeedTreeRuntimeLod.Enabled;
         // Hand the cache its per-frame upload-time allowance BEFORE ResetFrameStats snapshots it.
         _meshCache.UploadMillisecondsPerFrame = MaxUploadMillisecondsPerFrame;
         _meshCache.ResetFrameStats();
         if (_cells is null || _cells.Count == 0 || _renderCache is null) return 0;
 
         var started = StartTiming();
+        var frameCameraPosition = cameraPosition ?? cylinder.Position;
         var cmd = _recorder.CommandList;
         var frameIndex = _recorder.FrameIndex;
 
@@ -970,6 +1000,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _frameCylinderX = cylinderX;
         _frameCylinderY = cylinderY;
         _frameCylinderRadius = cylinderRadius;
+        _frameCameraPosition = frameCameraPosition;
+        _frameRenderOrigin = renderOrigin;
         _frameSmallPropCutoffSq = exactSmallPropCutoffSq;
         var meshStarted = StartTiming();
         if (reuseBatches)
@@ -981,7 +1013,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             referencesWithReadyMesh = _lastBuildDrawn;
             missingMeshes = _lastBuildMissing;
             texturePending = _lastBuildTexturePending;
-            RefreshBlendedDraws(cylinder.Position, renderOrigin);
+            RefreshBlendedDraws(frameCameraPosition, renderOrigin);
         }
         var survivorsToResolve = reuseBatches ? 0 : _cachedCullSurvivors.Count;
         for (var si = 0; si < survivorsToResolve; si++)
@@ -1100,17 +1132,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 if (sub.AlphaRenderMode == NifAlphaRenderMode.Blend || sub.IsBillboard)
                 {
                     var worldCenter = Vector3.Transform(sub.LocalBoundsCenter, r.WorldMatrix);
-                    // worldCenter stays ABSOLUTE (sorted against the absolute cylinder.Position; billboard
+                    // worldCenter stays ABSOLUTE (sorted against the actual rendering eye; billboard
                     // facing needs the absolute camera vector). The uploaded matrix is camera-relative:
                     // the non-billboard case reuses the folded relWorldMatrix; BuildBillboardWorld folds
                     // renderOrigin into its own composed translation.
                     var world = sub.IsBillboard
-                        ? BuildBillboardWorld(sub.LocalBoundsCenter, r.WorldMatrix, worldCenter, cylinder.Position, renderOrigin)
+                        ? BuildBillboardWorld(
+                            sub.LocalBoundsCenter, sub.BillboardFrontAxis, r.WorldMatrix,
+                            worldCenter, frameCameraPosition,
+                            renderOrigin)
                         : relWorldMatrix;
                     var blendedDraw = new BlendedReferenceDraw(
                         world,
                         sub,
-                        Vector3.DistanceSquared(worldCenter, cylinder.Position),
+                        Vector3.DistanceSquared(worldCenter, frameCameraPosition),
                         sub.AlphaState,
                         sub.RenderState,
                         sub.TextureState,
@@ -1236,6 +1271,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _frameRefilterActive = _batchesWidened && hasFrustum;
         meshUploadMs = ElapsedMilliseconds(meshStarted);
 
+        // Legacy live particles: every visible unique particle submesh receives one coherent transient
+        // VB/IB update before either blended pass binds geometry. Ring exhaustion/malformed controller data
+        // clears the override and draws the existing immutable static cloud for this frame.
+        UpdateLiveParticleFrames(frameIndex);
+
         // Keyframe playback: re-pose + CPU-skin every in-budget animated mesh into fresh ring
         // allocations (or clear all overrides when disabled) BEFORE any pass binds a vertex buffer —
         // both the opaque draws and the shadow capture below read EffectiveVertexBufferView.
@@ -1295,7 +1335,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     /// <summary>
     ///     3D-8: draws the blended (transparent) reference submeshes accumulated by the most recent
-    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?)" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
+    ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?)" /> with <c>deferBlended: true</c>. Called AFTER the water pass so water
     ///     never paints over transparent meshes. The water pass rebinds <c>PerFrameCbv</c> to its own
     ///     uniforms (and may change topology), so this re-establishes the reference per-frame state
     ///     before issuing the blended draws. The DSV is bound by the frame loop, so blended draws stay
@@ -1529,13 +1569,14 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     var worlds = batchState.Instances;
                     var shadowWorlds = includeShadow ? batchState.ShadowOnlyInstances : null;
                     var shadowCount = shadowWorlds?.Count ?? 0;
+                    var filterSpeedTreeLod = batchState.Submesh.SpeedTreeLod is not null;
                     if (worlds.Count == 0 && shadowCount == 0)
                     {
                         batchState.FrameDrawCount = 0;
                         batchState.FrameShadowOnlyCount = 0;
                         continue;
                     }
-                    if (!refilter)
+                    if (!refilter && !filterSpeedTreeLod)
                     {
                         CollectionsMarshal.AsSpan(worlds).CopyTo(span.Slice(offset, worlds.Count));
                         offset += worlds.Count;
@@ -1548,20 +1589,37 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         var batchStart = offset;
                         for (var i = 0; i < worldSpan.Length; i++)
                         {
-                            if (!PassesExactCull(in boundsSpan[i])) continue;
+                            if (refilter && !PassesExactCull(in boundsSpan[i])) continue;
+                            if (filterSpeedTreeLod &&
+                                !PassesSpeedTreeLod(batchState.Submesh, in worldSpan[i], in boundsSpan[i])) continue;
                             span[offset++] = worldSpan[i];
                         }
                         batchState.FrameDrawCount = offset - batchStart;
                     }
 
                     // Shadow-only casters go AFTER the main instances so the main draw's count
-                    // excludes them while the shadow replay's count includes them (contiguous range
-                    // from the same uInstanceBase). Never refiltered — over-inclusion only writes
-                    // extra depth into the shadow map.
+                    // excludes them while the shadow replay's count includes them. They do not need
+                    // the camera exact-cull, but runtime SpeedTrees must still select one LOD or every
+                    // generated level would overlap in the shadow map.
                     if (shadowCount > 0)
                     {
-                        CollectionsMarshal.AsSpan(shadowWorlds!).CopyTo(span.Slice(offset, shadowCount));
-                        offset += shadowCount;
+                        if (!filterSpeedTreeLod)
+                        {
+                            CollectionsMarshal.AsSpan(shadowWorlds!).CopyTo(span.Slice(offset, shadowCount));
+                            offset += shadowCount;
+                        }
+                        else
+                        {
+                            var shadowStart = offset;
+                            var shadowSpan = CollectionsMarshal.AsSpan(shadowWorlds!);
+                            for (var i = 0; i < shadowSpan.Length; i++)
+                            {
+                                if (!PassesSpeedTreeLod(batchState.Submesh, in shadowSpan[i])) continue;
+                                span[offset++] = shadowSpan[i];
+                            }
+
+                            shadowCount = offset - shadowStart;
+                        }
                     }
                     batchState.FrameShadowOnlyCount = shadowCount;
                 }
@@ -1597,10 +1655,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
                 var batchByteOffset = AlignUp(batchAlloc.ByteOffset, instanceStride);
                 var batchCpuPtr = batchAlloc.CpuPtr + (int)(batchByteOffset - batchAlloc.ByteOffset);
+                var filterSpeedTreeLod = batchState.Submesh.SpeedTreeLod is not null;
                 unsafe
                 {
                     var span = new Span<Matrix4x4>((void*)batchCpuPtr, batch.Count + fallbackShadowCount);
-                    if (!refilter)
+                    if (!refilter && !filterSpeedTreeLod)
                     {
                         CollectionsMarshal.AsSpan(batch).CopyTo(span);
                         drawCount = batch.Count;
@@ -1612,7 +1671,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         drawCount = 0;
                         for (var i = 0; i < worldSpan.Length; i++)
                         {
-                            if (!PassesExactCull(in boundsSpan[i])) continue;
+                            if (refilter && !PassesExactCull(in boundsSpan[i])) continue;
+                            if (filterSpeedTreeLod &&
+                                !PassesSpeedTreeLod(batchState.Submesh, in worldSpan[i], in boundsSpan[i])) continue;
                             span[drawCount++] = worldSpan[i];
                         }
                     }
@@ -1620,10 +1681,27 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // Shadow-only casters after the main instances (same contract as the shared block).
                     if (fallbackShadowCount > 0)
                     {
-                        CollectionsMarshal.AsSpan(shadowOnly!).CopyTo(span.Slice(drawCount, fallbackShadowCount));
+                        if (!filterSpeedTreeLod)
+                        {
+                            CollectionsMarshal.AsSpan(shadowOnly!).CopyTo(span.Slice(drawCount, fallbackShadowCount));
+                            shadowCount = fallbackShadowCount;
+                        }
+                        else
+                        {
+                            shadowCount = 0;
+                            var shadowSpan = CollectionsMarshal.AsSpan(shadowOnly!);
+                            for (var i = 0; i < shadowSpan.Length; i++)
+                            {
+                                if (!PassesSpeedTreeLod(batchState.Submesh, in shadowSpan[i])) continue;
+                                span[drawCount + shadowCount++] = shadowSpan[i];
+                            }
+                        }
+                    }
+                    else
+                    {
+                        shadowCount = 0;
                     }
                 }
-                shadowCount = fallbackShadowCount;
                 if (drawCount + shadowCount == 0) continue;
 
                 var batchInstanceAddress = batchAlloc.GpuAddress + (batchByteOffset - batchAlloc.ByteOffset);
@@ -1648,6 +1726,37 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             // Per-batch material/texture state pulled from the submesh (the batch key) — these
             // are identical for every instance in the batch, so they live here, not per instance.
             var sub = batchState.Submesh;
+            if (drawCount > 0 &&
+                (sub.IsSpeedTreeBranch || sub.IsLeafBillboard || sub.SpeedTreeLod is not null))
+            {
+                var lod = sub.SpeedTreeLod;
+                var component = lod?.Component
+                                ?? (sub.IsLeafBillboard
+                                    ? SpeedTreeLodComponent.Leaf
+                                    : SpeedTreeLodComponent.Branch);
+                switch (component)
+                {
+                    case SpeedTreeLodComponent.Branch:
+                        LastStats.ReferenceSpeedTreeBranchInstances += drawCount;
+                        break;
+                    case SpeedTreeLodComponent.Leaf:
+                        LastStats.ReferenceSpeedTreeLeafInstances += drawCount;
+                        break;
+                    case SpeedTreeLodComponent.Billboard:
+                        LastStats.ReferenceSpeedTreeBillboardInstances += drawCount;
+                        break;
+                }
+
+                if (lod is { } metadata)
+                {
+                    LastStats.ReferenceSpeedTreeMinimumLod =
+                        LastStats.ReferenceSpeedTreeMinimumLod < 0
+                            ? metadata.Level
+                            : Math.Min(LastStats.ReferenceSpeedTreeMinimumLod, metadata.Level);
+                    LastStats.ReferenceSpeedTreeMaximumLod =
+                        Math.Max(LastStats.ReferenceSpeedTreeMaximumLod, metadata.Level);
+                }
+            }
             var instanceDraw = new InstanceDrawConstants(
                 sub.AlphaState,
                 sub.RenderState,
@@ -1662,7 +1771,17 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 Specular: sub.Specular,
                 CameraRight: _leafBillboardRight,
                 CameraUp: _leafBillboardUp,
-                Wind: _wind,
+                // TREE CNAM RockSpeed/RustleSpeed are per-species phase multipliers. They must be
+                // applied per batch (the shared wind rig advances the game-wide base phases).
+                // The far imposter is one whole-tree card, not a live leaf. Keep its corners rigid;
+                // applying STLEAF rock/rustle would curl the complete tree silhouette independently.
+                Wind: sub.SpeedTreeLod?.Component == SpeedTreeLodComponent.Billboard
+                    ? Vector4.Zero
+                    : new Vector4(
+                        _wind.X,
+                        _wind.Y * sub.SpeedTreeWindSpeeds.X,
+                        _wind.Z,
+                        _wind.W * sub.SpeedTreeWindSpeeds.Y),
                 EffectTint: new Vector4(sub.EffectTint, sub.HasEffectFalloff ? 1f : 0f),
                 EffectFalloff: sub.EffectFalloffParams,
                 // Re-read every frame (like the bindless indices) so a cube promoted after the
@@ -1695,7 +1814,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
                     instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount + shadowCount,
                     sub.AlphaTest));
-                if (sub.IsLeafBillboard && (_wind.X != 0f || _wind.Z != 0f))
+                if (sub.IsLeafBillboard &&
+                    sub.SpeedTreeLod?.Component != SpeedTreeLodComponent.Billboard &&
+                    (_wind.X != 0f || _wind.Z != 0f))
                 {
                     // Swaying canopy in the map → the host re-renders it every frame (rock/rustle
                     // AMOUNTS gate motion; the phases advance regardless).
@@ -1729,36 +1850,52 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         if (_blendedDraws.Count == 0) return;
 
         _blendedDraws.Sort(static (a, b) => b.DistanceSquared.CompareTo(a.DistanceSquared));
-        for (var i = 0; i < _blendedDraws.Count; i++)
+        var reservations = ArrayPool<GpuRingBuffer12.RingAllocation>.Shared.Rent(_blendedDraws.Count);
+        try
         {
-            var draw = _blendedDraws[i];
-            var pso = _pipelines.GetBlendPipeline(
-                draw.Submesh.SrcBlendMode,
-                draw.Submesh.DstBlendMode,
-                draw.Submesh.DoubleSided,
-                draw.Submesh.IsDecal);
-            if (!DrawBlendedSubmesh(
-                cmd,
-                frameIndex,
-                draw,
-                pso,
-                ref currentPso,
-                ref cbUpdateMs,
-                ref drawCallMs))
+            // Reserve per-draw CBs nearest-first, then issue the surviving suffix back-to-front.
+            // Optional particle-sort index allocations happen only after every survivor's CB is safe,
+            // so later transient allocations can degrade sorting but can never evict a nearer object.
+            var reservationStarted = StartTiming();
+            var firstSelected = ReserveNearestBlendedDrawConstants(
+                frameIndex, _blendedDraws, reservations, out var truncated);
+            cbUpdateMs += ElapsedMilliseconds(reservationStarted);
+            LastFrameDrawsTruncated += truncated;
+            for (var i = firstSelected; i < _blendedDraws.Count; i++)
             {
-                // Ring slot full — stop adding blended draws and present what fit (sorted
-                // back-to-front, so the nearest survive). Count the rest as truncated.
-                LastFrameDrawsTruncated += _blendedDraws.Count - i;
-                break;
+                var draw = _blendedDraws[i];
+                if (draw.Submesh.EffectiveIndexCount <= 0) continue;
+                var pso = _pipelines.GetBlendPipeline(
+                    draw.Submesh.SrcBlendMode,
+                    draw.Submesh.DstBlendMode,
+                    draw.Submesh.DoubleSided,
+                    draw.Submesh.IsDecal);
+                DrawBlendedSubmesh(
+                    cmd,
+                    frameIndex,
+                    draw,
+                    pso,
+                    reservations[i],
+                    ref currentPso,
+                    ref cbUpdateMs,
+                    ref drawCallMs);
+                submeshDraws++;
+                LastStats.ReferenceBlendedDraws++;
+                if (draw.Submesh.LiveParticles is { HasLiveFrame: true })
+                {
+                    LastStats.ReferenceLiveParticleDraws++;
+                }
             }
-            submeshDraws++;
-            LastStats.ReferenceBlendedDraws++;
+        }
+        finally
+        {
+            ArrayPool<GpuRingBuffer12.RingAllocation>.Shared.Return(reservations);
         }
     }
 
     /// <summary>
     ///     Draws the depth-writing blend submeshes (effects-folder foliage the engine marks ZBuffer_Write,
-    ///     e.g. NVSeaPlant02) accumulated by the most recent <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?)" />.
+    ///     e.g. NVSeaPlant02) accumulated by the most recent <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?)" />.
     ///     Unlike <see cref="DrawBlended" /> these run INLINE — after the opaque batches but before the
     ///     water pass — with a depth-WRITING blend PSO, so the water surface occludes them from above
     ///     instead of them painting over it. Sorted back-to-front so overlapping cards blend correctly.
@@ -1774,41 +1911,118 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         if (_depthWritingBlendDraws.Count == 0) return;
 
         _depthWritingBlendDraws.Sort(static (a, b) => b.DistanceSquared.CompareTo(a.DistanceSquared));
-        for (var i = 0; i < _depthWritingBlendDraws.Count; i++)
+        var reservations = ArrayPool<GpuRingBuffer12.RingAllocation>.Shared.Rent(
+            _depthWritingBlendDraws.Count);
+        try
         {
-            var draw = _depthWritingBlendDraws[i];
-            var pso = _pipelines.GetBlendDepthWritePipeline(
-                draw.Submesh.SrcBlendMode,
-                draw.Submesh.DstBlendMode,
-                draw.Submesh.DoubleSided,
-                draw.Submesh.IsDecal);
-            if (!DrawBlendedSubmesh(
-                cmd,
-                frameIndex,
-                draw,
-                pso,
-                ref currentPso,
-                ref cbUpdateMs,
-                ref drawCallMs))
+            var reservationStarted = StartTiming();
+            var firstSelected = ReserveNearestBlendedDrawConstants(
+                frameIndex, _depthWritingBlendDraws, reservations, out var truncated);
+            cbUpdateMs += ElapsedMilliseconds(reservationStarted);
+            LastFrameDrawsTruncated += truncated;
+            for (var i = firstSelected; i < _depthWritingBlendDraws.Count; i++)
             {
-                LastFrameDrawsTruncated += _depthWritingBlendDraws.Count - i;
-                break;
+                var draw = _depthWritingBlendDraws[i];
+                if (draw.Submesh.EffectiveIndexCount <= 0) continue;
+                var pso = _pipelines.GetBlendDepthWritePipeline(
+                    draw.Submesh.SrcBlendMode,
+                    draw.Submesh.DstBlendMode,
+                    draw.Submesh.DoubleSided,
+                    draw.Submesh.IsDecal);
+                DrawBlendedSubmesh(
+                    cmd,
+                    frameIndex,
+                    draw,
+                    pso,
+                    reservations[i],
+                    ref currentPso,
+                    ref cbUpdateMs,
+                    ref drawCallMs);
+                submeshDraws++;
+                LastStats.ReferenceBlendedDraws++;
+                if (draw.Submesh.LiveParticles is { HasLiveFrame: true })
+                {
+                    LastStats.ReferenceLiveParticleDraws++;
+                }
             }
-            submeshDraws++;
-            LastStats.ReferenceBlendedDraws++;
+        }
+        finally
+        {
+            ArrayPool<GpuRingBuffer12.RingAllocation>.Shared.Return(reservations);
         }
     }
 
-    /// <summary>Returns <c>false</c> when the ring slot is full so the caller stops the blended pass.</summary>
-    private bool DrawBlendedSubmesh(
+    /// <summary>
+    ///     Reserves constant-buffer space from nearest to farthest and returns the first draw in the
+    ///     back-to-front suffix that survived. Quiet live-particle entries require no reservation and
+    ///     are not counted as truncated draws.
+    /// </summary>
+    private int ReserveNearestBlendedDrawConstants(
+        int frameIndex,
+        List<BlendedReferenceDraw> draws,
+        Span<GpuRingBuffer12.RingAllocation> reservations,
+        out int truncated)
+    {
+        var drawable = ArrayPool<byte>.Shared.Rent(draws.Count);
+        try
+        {
+            for (var i = 0; i < draws.Count; i++)
+            {
+                drawable[i] = draws[i].Submesh.EffectiveIndexCount > 0 ? (byte)1 : (byte)0;
+            }
+
+            var capacity = BlendedDrawPriority.CountAlignedAllocations(
+                _ringBuffer.CurrentFrameBytes,
+                _ringBuffer.BytesPerFrame,
+                PerDrawByteSize,
+                GpuRingBuffer12.CbAlignment);
+            var plan = BlendedDrawPriority.PlanNearestBackToFront(
+                drawable.AsSpan(0, draws.Count), capacity);
+
+            var firstReserved = draws.Count;
+            for (var i = draws.Count - 1; i >= plan.FirstSelected; i--)
+            {
+                if (drawable[i] == 0) continue;
+                if (_ringBuffer.TryAllocate(
+                        frameIndex, PerDrawByteSize, out reservations[i], GpuRingBuffer12.CbAlignment))
+                {
+                    firstReserved = i;
+                    continue;
+                }
+
+                // The pure capacity calculation and the bump allocator share the same alignment
+                // contract, so this is only a defensive fallback if that contract changes later.
+                Debug.Fail("Blended draw reservation diverged from the aligned-capacity plan.");
+                truncated = 0;
+                for (var j = 0; j <= i; j++)
+                {
+                    if (drawable[j] != 0) truncated++;
+                }
+                return firstReserved;
+            }
+
+            truncated = plan.TruncatedCount;
+            return plan.FirstSelected;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(drawable);
+        }
+    }
+
+    private void DrawBlendedSubmesh(
         ID3D12GraphicsCommandList cmd,
         int frameIndex,
         BlendedReferenceDraw draw,
         ID3D12PipelineState pso,
+        GpuRingBuffer12.RingAllocation perDrawAlloc,
         ref ID3D12PipelineState? currentPso,
         ref double cbUpdateMs,
         ref double drawCallMs)
     {
+        var effectiveIndexCount = draw.Submesh.EffectiveIndexCount;
+        Debug.Assert(effectiveIndexCount > 0, "Quiet live-particle frames must be filtered before drawing.");
+
         var cbStarted = StartTiming();
         var perDraw = new PerDrawConstants
         {
@@ -1835,11 +2049,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 WrapUv(draw.Submesh.UvScrollVelocity.X, UvScrollClock),
                 WrapUv(draw.Submesh.UvScrollVelocity.Y, UvScrollClock), 0f, 0f),
         };
-        // Allocate before mutating PSO state so a soft-fail leaves the command list consistent.
-        if (!_ringBuffer.TryAllocate(frameIndex, PerDrawByteSize, out var perDrawAlloc, GpuRingBuffer12.CbAlignment))
-        {
-            return false;
-        }
         if (!ReferenceEquals(currentPso, pso))
         {
             cmd.SetPipelineState(pso);
@@ -1851,10 +2060,132 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         var drawStarted = StartTiming();
         cmd.IASetVertexBuffers(0, draw.Submesh.EffectiveVertexBufferView);
-        cmd.IASetIndexBuffer(draw.Submesh.IndexBufferView);
-        cmd.DrawIndexedInstanced((uint)draw.Submesh.IndexCount, 1, 0, 0, 0);
+        var indexBufferView = draw.Submesh.EffectiveIndexBufferView;
+        if (draw.Submesh.EffectiveParticleCenters is { Length: > 1 } centers)
+        {
+            var sortedIndexCount = checked(centers.Length * ParticleDepthSort.IndicesPerQuad);
+            var indexBytes = checked((uint)(sortedIndexCount * sizeof(ushort)));
+            if (_ringBuffer.TryAllocate(frameIndex, indexBytes, out var sortedIndexAlloc, sizeof(ushort)))
+            {
+                var scratch = ArrayPool<ParticleDepthSort.Entry>.Shared.Rent(centers.Length);
+                try
+                {
+                    unsafe
+                    {
+                        var destination = new Span<ushort>((void*)sortedIndexAlloc.CpuPtr, sortedIndexCount);
+                        ParticleDepthSort.WriteBackToFrontQuadIndices(
+                            centers,
+                            draw.SourceWorld,
+                            _frameCameraPosition,
+                            scratch.AsSpan(0, centers.Length),
+                            destination);
+                    }
+                }
+                finally
+                {
+                    ArrayPool<ParticleDepthSort.Entry>.Shared.Return(scratch);
+                }
+
+                indexBufferView = new IndexBufferView
+                {
+                    BufferLocation = sortedIndexAlloc.GpuAddress,
+                    SizeInBytes = indexBytes,
+                    Format = Vortice.DXGI.Format.R16_UInt
+                };
+            }
+        }
+        cmd.IASetIndexBuffer(indexBufferView);
+        cmd.DrawIndexedInstanced((uint)effectiveIndexCount, 1, 0, 0, 0);
         drawCallMs += ElapsedMilliseconds(drawStarted);
-        return true;
+    }
+
+    /// <summary>
+    ///     Advances each visible shared particle owner once. A model can have many placed references, but its
+    ///     local particle simulation is identical for the global animation clock and uploads only one geometry
+    ///     snapshot which every placement draws. Batch-reuse frames retain the same submesh objects, so this
+    ///     still runs while the resolve/build pass is frozen.
+    /// </summary>
+    private void UpdateLiveParticleFrames(int frameIndex)
+    {
+        _liveParticleOwners.Clear();
+        _particleTelemetry.Clear();
+        LastStats.ReferenceParticleSystems = _particleTelemetry;
+        var liveStart = _ringBuffer.CurrentFrameBytes;
+        // The shared ring still needs room for per-draw constants and sorted indices. Live particles may
+        // consume at most 1/16 of a slot (capped at 8 MiB) and always leave its final quarter untouched.
+        var liveBudget = Math.Min(_ringBuffer.BytesPerFrame / 16, 8u * 1024 * 1024);
+        var ringReserve = _ringBuffer.BytesPerFrame / 4;
+        UpdateList(_blendedDraws);
+        UpdateList(_depthWritingBlendDraws);
+        LastStats.ReferenceLiveParticleOwners = _liveParticleOwners.Count;
+        LastStats.ReferenceLiveParticleUploadBytes = _ringBuffer.CurrentFrameBytes - liveStart;
+        return;
+
+        void UpdateList(List<BlendedReferenceDraw> draws)
+        {
+            foreach (var draw in draws)
+            {
+                if (draw.Submesh.LiveParticles is not { } owner || !_liveParticleOwners.Add(owner))
+                {
+                    continue;
+                }
+
+                LastStats.ReferenceLiveParticleAtlasFrameCount = Math.Max(
+                    LastStats.ReferenceLiveParticleAtlasFrameCount, owner.AtlasFrameCount);
+                LastStats.ReferenceLiveParticleAuthoredCapacity = Math.Max(
+                    LastStats.ReferenceLiveParticleAuthoredCapacity, owner.AuthoredCapacity);
+
+                string? fallbackReason = null;
+                if (!LiveParticlesEnabled || !AnimationsEnabled)
+                {
+                    owner.UseStaticFallback();
+                    if (LiveParticlesEnabled)
+                    {
+                        LastStats.ReferenceLiveParticleFallbacks++;
+                    }
+                    fallbackReason = !LiveParticlesEnabled
+                        ? "live-particle path is disabled; static baked geometry is rendered"
+                        : "animation playback is disabled; static baked geometry is rendered";
+                }
+                else
+                {
+                    var liveUsed = _ringBuffer.CurrentFrameBytes - liveStart;
+                    var liveRemaining = liveUsed < liveBudget ? liveBudget - liveUsed : 0;
+                    var ringRemaining = _ringBuffer.CurrentFrameBytes < _ringBuffer.BytesPerFrame
+                        ? _ringBuffer.BytesPerFrame - _ringBuffer.CurrentFrameBytes
+                        : 0;
+                    var safeRingRemaining = ringRemaining > ringReserve ? ringRemaining - ringReserve : 0;
+                    var ownerBudget = Math.Min(liveRemaining, safeRingRemaining);
+                    if (ownerBudget == 0)
+                    {
+                        owner.UseStaticFallback();
+                        LastStats.ReferenceLiveParticleFallbacks++;
+                        fallbackReason = "transient live-particle GPU budget is exhausted; static baked geometry is rendered";
+                    }
+                    else if (!owner.TryAdvance(
+                                 frameIndex, _ringBuffer, _animationClockSeconds, ownerBudget))
+                    {
+                        LastStats.ReferenceLiveParticleFallbacks++;
+                        fallbackReason = owner.LastFailure ??
+                                         "live-particle update failed; static baked geometry is rendered";
+                    }
+                }
+
+                var renderedCount = draw.Submesh.EffectiveParticleCenters?.Length ?? 0;
+                LastStats.ReferenceParticleRenderedCount += renderedCount;
+                _particleTelemetry.Add(owner.CaptureTelemetry(renderedCount, fallbackReason));
+                if (!owner.HasLiveFrame)
+                {
+                    continue;
+                }
+
+                LastStats.ReferenceLiveParticleParticles += owner.ParticleCenters?.Length ?? 0;
+                if (LastStats.ReferenceLiveParticleUvFrame < 0 && owner.CurrentUvFrame >= 0)
+                {
+                    LastStats.ReferenceLiveParticleUvFrame = owner.CurrentUvFrame;
+                }
+            }
+        }
     }
 
     private void BindReferenceInstanceBuffer(
@@ -1976,7 +2307,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         // Identical across every batch in a frame; only read by leaf submeshes.
         Vector4 CameraRight = default,
         Vector4 CameraUp = default,
-        // SpeedTree wind (uWind: xy = direction, z = strength, w = time).
+        // SpeedTree wind (uWind = rock amount/phase, rustle amount/phase).
         Vector4 Wind = default,
         // BGEM effect terms (uEffectTint / uEffectFalloff).
         Vector4 EffectTint = default,
@@ -2003,20 +2334,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     rotation (NifSceneGraphWalker.WalkNode), so the quad sits at <paramref name="worldCenter" />
     ///     in its authored local orientation, re-aimable here.
     ///     <para>
-    ///         Convention: the quad's local +Y is assumed to be its facing axis, hence the
-    ///         <c>-π/2</c> term that maps +Y onto the horizontal camera direction. If the smoke renders
-    ///         90° off or back-facing in the GUI, drop the <c>-π/2</c> (local +X facing) or flip the
-    ///         sign — fast to iterate once visible.
+    ///         The local front axis comes from the submesh's indexed winding. This preserves the
+    ///         historical +Y route while correctly handling effects such as FNV FireBall09, whose
+    ///         single-sided visible front is authored along -Y.
     ///     </para>
     /// </summary>
     private static Matrix4x4 BuildBillboardWorld(
-        Vector3 localBoundsCenter, Matrix4x4 world, Vector3 worldCenter, Vector3 cameraPosition,
-        Vector3 renderOrigin)
+        Vector3 localBoundsCenter, Vector2 authoredFrontAxis, Matrix4x4 world,
+        Vector3 worldCenter, Vector3 cameraPosition, Vector3 renderOrigin)
     {
         var toCam = cameraPosition - worldCenter;
         toCam.Z = 0f;
-        var facing = toCam.LengthSquared() > 1e-6f ? Vector3.Normalize(toCam) : Vector3.UnitX;
-        var angle = MathF.Atan2(facing.Y, facing.X) - MathF.PI / 2f;
+        var angle = NifBillboardFacing.ResolveYaw(
+            authoredFrontAxis,
+            new Vector2(toCam.X, toCam.Y));
         // Uniform scale = length of the placement matrix's first row (X axis).
         var scale = new Vector3(world.M11, world.M12, world.M13).Length();
         var rs = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateRotationZ(angle);
@@ -2049,7 +2380,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var worldCenter = Vector3.Transform(draw.Submesh.LocalBoundsCenter, draw.SourceWorld);
             var world = draw.Submesh.IsBillboard
                 ? BuildBillboardWorld(
-                    draw.Submesh.LocalBoundsCenter, draw.SourceWorld, worldCenter, cameraPosition,
+                    draw.Submesh.LocalBoundsCenter, draw.Submesh.BillboardFrontAxis,
+                    draw.SourceWorld, worldCenter, cameraPosition,
                     renderOrigin)
                 : draw.World;
             draw = draw with
@@ -2085,6 +2417,49 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
         return _frameFrustum.IntersectsSphere(
             new Vector3(bounds.X, bounds.Y, bounds.Z), bounds.W + FrustumCullMargin);
+    }
+
+    /// <summary>
+    ///     Per-instance runtime SpeedTree LOD selection. Every component batch carries all placements;
+    ///     filtering while copying worlds into the frame ring keeps exactly one logical LOD active even
+    ///     when batch reuse freezes the CPU-side lists while the camera continues moving.
+    /// </summary>
+    private bool PassesSpeedTreeLod(
+        CachedSubmesh12 submesh,
+        in Matrix4x4 world,
+        in Vector4 absoluteBounds)
+    {
+        if (submesh.SpeedTreeLod is not { IsValid: true } metadata)
+        {
+            return true;
+        }
+
+        var placement = new Vector3(absoluteBounds.X, absoluteBounds.Y, absoluteBounds.Z);
+        return SelectsSpeedTreeLod(in world, placement, metadata);
+    }
+
+    /// <summary>Shadow-only placements do not carry a parallel bounds array; recover their absolute
+    /// origin from the render-origin-folded world matrix.</summary>
+    private bool PassesSpeedTreeLod(CachedSubmesh12 submesh, in Matrix4x4 world)
+    {
+        if (submesh.SpeedTreeLod is not { IsValid: true } metadata)
+        {
+            return true;
+        }
+
+        var placement = world.Translation + _frameRenderOrigin;
+        return SelectsSpeedTreeLod(in world, placement, metadata);
+    }
+
+    private bool SelectsSpeedTreeLod(
+        in Matrix4x4 world,
+        Vector3 absolutePlacement,
+        in SpeedTreeLodMetadata metadata)
+    {
+        var scaleBasis = new Vector3(world.M11, world.M12, world.M13);
+        var uniformScale = scaleBasis.Length();
+        var distance = Vector3.Distance(_frameCameraPosition, absolutePlacement);
+        return SpeedTreeRuntimeLod.SelectLevelForPlacement(distance, uniformScale, metadata) == metadata.Level;
     }
 
     /// <param name="SourceWorld">

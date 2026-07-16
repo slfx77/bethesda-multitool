@@ -1,8 +1,12 @@
 namespace BethesdaMultitool.Core.Formats.SpeedTree;
 
 /// <summary>
-///     The TREE record's CNAM dimming pair — the engine's per-tree canopy-depth darkening inputs
-///     (<c>TESObjectTREE::Get{Leaf,Branch}Dimming</c> → <c>CSpeedTreeRT::Set{Leaf,Branch}DimmingScalar</c>
-///     → <c>SIdvLeafInfo</c> +4/+8, consumed by <c>CIdvBranch::MakeLeaf</c> / <c>BuildCrossSection</c>).
+///     Engine render parameters carried by TREE CNAM. The first two fields are canopy-depth dimming;
+///     Rock/Rustle are per-tree phase multipliers consumed by SpeedTreeLeafShader::SetupGeometry.
+///     Optional defaults preserve source compatibility for callers that only supplied dimming.
 /// </summary>
-public readonly record struct SpeedTreeDimming(float Leaf, float Branch);
+public readonly record struct SpeedTreeDimming(
+    float Leaf,
+    float Branch,
+    float RockSpeed = 1f,
+    float RustleSpeed = 1f);

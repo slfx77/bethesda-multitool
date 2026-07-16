@@ -3,7 +3,14 @@ using System.Numerics;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 
 /// <summary>One baked particle (system-local), ready to expand into a camera-facing quad.</summary>
-internal readonly record struct BakedParticle(Vector3 Position, float Size, Vector4 Color);
+internal readonly record struct BakedParticle(
+    Vector3 Position,
+    float Size,
+    Vector4 Color,
+    Vector4 UvRect = default,
+    float Rotation = 0f,
+    float AspectRatio = 1f,
+    int Generation = 0);
 
 /// <summary>Tunables for the deterministic particle bake.</summary>
 internal sealed class ParticleBakeOptions
@@ -17,6 +24,12 @@ internal sealed class ParticleBakeOptions
     /// <summary>Extra settle time beyond one full lifespan, so the age distribution is uniform at snapshot.</summary>
     public float SettleMarginSeconds { get; init; } = 0.5f;
 
+    /// <summary>
+    ///     Renderer/controller clock at the requested snapshot. The fixed-step bake reconstructs the preceding
+    ///     lifespan of rate history, so changing this value advances pulsed/animated emitters deterministically.
+    /// </summary>
+    public float SnapshotTimeSeconds { get; init; }
+
     public static ParticleBakeOptions Default { get; } = new();
 }
 
@@ -26,8 +39,9 @@ internal sealed class ParticleBakeOptions
 ///     RNG (no wall-clock, no Math.Random — reproducible). Formulas follow the decompiled engine spec
 ///     (tools/GhidraProject/particles_formula_spec.md): emit (speed·dir(declination,planar), lifespan±var,
 ///     volume position), then per tick AgeDeath → GrowFade → Color → Bomb-vortex → Gravity → Position.
-///     The viewer is static, so we run for one full lifespan (+ margin) to reach a uniform-age cloud and
-///     snapshot it; live animation is deferred.
+///     Each snapshot replays one full lifespan (+ margin) ending at the requested controller time. The current
+///     extractor still uploads one static snapshot, but the rate contract and snapshot clock can be advanced by
+///     a future live GPU-particle owner without reparsing the NIF.
 /// </summary>
 internal static class NifParticleBaker
 {
@@ -43,26 +57,30 @@ internal static class NifParticleBaker
         var dt = MathF.Max(opt.TimeStep, 1f / 240f);
         var avgLifespan = MathF.Max(emitter.LifeSpan, dt);
 
-        // Density = birth rate × lifespan. Prefer the AUTHORED birth rate (from the emitter controller) — the
-        // capacity is only the buffer max, and filling to it stacks dust/smoke to opaque. Fall back to
-        // capacity/lifespan when the rate can't be resolved. Either way the live count is hard-capped below.
-        var capacityTarget = Math.Clamp(def.Capacity > 0 ? def.Capacity : 64, 1, opt.MaxParticles);
-        var birthRate = emitter.BirthRate > 0f ? emitter.BirthRate : capacityTarget / avgLifespan; // particles/sec
+        // Density = integral(birthRate(t)) over the living age window. An authored controller is authoritative
+        // even when it samples to zero; only a missing/unreadable controller uses the bounded static fallback.
+        var hardLimit = Math.Max(1, opt.MaxParticles);
+        var capacityTarget = Math.Clamp(def.Capacity > 0 ? def.Capacity : 64, 1, hardLimit);
+        var liveLimit = Math.Min(capacityTarget, hardLimit);
+        var fallbackBirthRate = emitter.BirthRate > 0f && float.IsFinite(emitter.BirthRate)
+            ? emitter.BirthRate
+            : capacityTarget / avgLifespan;
 
         var simSeconds = avgLifespan + opt.SettleMarginSeconds;
         var totalSteps = (int)MathF.Ceiling(simSeconds / dt);
+        var snapshotTime = float.IsFinite(opt.SnapshotTimeSeconds) ? opt.SnapshotTimeSeconds : 0f;
+        var simulationStart = snapshotTime - totalSteps * dt;
 
         var hasAgeDeath = def.Modifiers.Any(m => m.Kind == ParticleModifierKind.AgeDeath && m.Active);
-        var grow = def.Modifiers.OfType<GrowFadeModifierDefinition>().FirstOrDefault(m => m.Active);
-        var color = def.Modifiers.OfType<ColorModifierDefinition>().FirstOrDefault(m => m.Active);
-        var bombs = def.Modifiers.OfType<BombModifierDefinition>().Where(m => m.Active).ToList();
-        var gravities = def.Modifiers.OfType<GravityModifierDefinition>().Where(m => m.Active).ToList();
-        var drags = def.Modifiers.OfType<DragModifierDefinition>().Where(m => m.Active)
-            .Select(PrepareDrag).Where(d => d.Active).ToList();
-        var spawn = def.Modifiers.OfType<SpawnModifierDefinition>().FirstOrDefault(m => m.Active);
-        var hasPosition = def.Modifiers.Any(m => m.Kind == ParticleModifierKind.Position && m.Active);
+        var spawnModifiers = def.Modifiers.OfType<SpawnModifierDefinition>().Where(m => m.Active).ToArray();
+        // Key by the modifier instance rather than block index. A Modifiers[] array may legally reference the
+        // same block more than once; block-index keys made that authored multiplicity throw in ToDictionary.
+        var preparedDrags = def.Modifiers.OfType<DragModifierDefinition>()
+            .Where(m => m.Active).ToDictionary(m => m, PrepareDrag);
+        var rotationModifiers = def.Modifiers.OfType<RotationModifierDefinition>().Where(m => m.Active).ToArray();
+        var subtexture = def.Modifiers.OfType<SubtextureModifierDefinition>().FirstOrDefault(m => m.Active);
 
-        var rng = new DeterministicRng(unchecked((uint)(def.BlockIndex * 2654435761u) ^ 0x9E3779B9u));
+        var rng = new DeterministicRng(def.DeterministicSeed);
         var live = new List<Particle>(capacityTarget + 16);
         var spawnAccumulator = 0f;
 
@@ -81,13 +99,18 @@ internal static class NifParticleBaker
                     p.Age += dt;
                     if (p.Age > p.LifeSpan)
                     {
-                        if (spawn is not null && p.SpawnGeneration < spawn.NumSpawnGenerations)
-                        {
-                            SpawnChildren(spawn, emitter, p, ref rng, ref spawned,
-                                opt.MaxParticles - live.Count - (spawned?.Count ?? 0));
-                        }
-
+                        // Release the dying particle's authored-capacity slot before spawning its children.
+                        // Otherwise a system at capacity rejected every death-spawn despite the slot becoming
+                        // free in this same update.
                         live.RemoveAt(i);
+                        foreach (var spawn in spawnModifiers)
+                        {
+                            if (p.SpawnGeneration < spawn.NumSpawnGenerations)
+                            {
+                                SpawnChildren(spawn, emitter, p, ref rng, ref spawned,
+                                    liveLimit - live.Count - (spawned?.Count ?? 0));
+                            }
+                        }
                     }
                     else
                     {
@@ -110,15 +133,18 @@ internal static class NifParticleBaker
                 }
             }
 
-            // Emit: spawn birthRate·dt new particles (fractional accumulator), capped by free budget.
+            // Emit: midpoint-sample the authored rate over this fixed step. Midpoint integration avoids a
+            // one-tick pulse bias while keeping replay deterministic at any requested renderer timestamp.
+            var rateSampleTime = simulationStart + (step + 0.5f) * dt;
+            var birthRate = emitter.BirthRateController?.Sample(rateSampleTime) ?? fallbackBirthRate;
             spawnAccumulator += birthRate * dt;
             var toSpawn = (int)spawnAccumulator;
             spawnAccumulator -= toSpawn;
-            var freeBudget = opt.MaxParticles - live.Count;
+            var freeBudget = liveLimit - live.Count;
             toSpawn = Math.Clamp(toSpawn, 0, Math.Max(0, freeBudget));
             for (var s = 0; s < toSpawn; s++)
             {
-                live.Add(Spawn(emitter, ref rng));
+                live.Add(Spawn(emitter, rotationModifiers, ref rng));
             }
 
             // Modifier chain (per the formula spec). Operate on every live particle.
@@ -126,45 +152,55 @@ internal static class NifParticleBaker
             {
                 var p = live[i];
 
-                // GrowFade → size; else size = initial radius.
-                p.Size = grow is null
-                    ? p.BaseSize
-                    : GrowFadeSize(grow, p.Age, p.LifeSpan, p.BaseSize);
-
-                // Color modifier: sample RGBA at age/lifespan (gradient + fade-in/out envelope). The
-                // envelope dims birth/death particles, taming additive over-glow. No modifier ⇒ keep the
-                // emitter InitialColor set at Spawn.
-                if (color is not null)
+                // The engine executes Modifiers[] in authored array order. Re-grouping by type changed
+                // multiplicity and made Position run after forces which were authored later.
+                foreach (var modifier in def.Modifiers)
                 {
-                    var lifeFrac = p.LifeSpan > 1e-4f ? p.Age / p.LifeSpan : 0f;
-                    p.Color = color.Sample(lifeFrac, emitter.InitialColor);
+                    if (!modifier.Active)
+                    {
+                        continue;
+                    }
+
+                    switch (modifier)
+                    {
+                        case GrowFadeModifierDefinition grow:
+                            p.Size = GrowFadeSize(grow, p.Age, p.LifeSpan, p.BaseSize, p.SpawnGeneration);
+                            break;
+                        case ColorModifierDefinition color:
+                            var lifeFrac = p.LifeSpan > 1e-4f ? p.Age / p.LifeSpan : 0f;
+                            p.Color = color.Sample(lifeFrac, emitter.InitialColor);
+                            break;
+                        case BombModifierDefinition bomb:
+                            p.Velocity += BombForce(bomb, p.Position) * dt;
+                            break;
+                        case GravityModifierDefinition gravity:
+                            var turbulenceSample = gravity.Turbulence != 0f
+                                ? new Vector3(rng.NextSignedFloat(), rng.NextSignedFloat(), rng.NextSignedFloat())
+                                : Vector3.Zero;
+                            p.Velocity += GravityForce(gravity, p.Position, turbulenceSample) * dt;
+                            break;
+                        case DragModifierDefinition drag when preparedDrags.TryGetValue(drag, out var prepared):
+                            p.Velocity += DragDelta(prepared, p.Position, p.Velocity, dt);
+                            break;
+                        case RotationModifierDefinition:
+                            // Initial angle/speed were accumulated once per authored modifier at spawn.
+                            // Advancing the accumulated speed here would do it once PER modifier and turn
+                            // two modifiers into 2 * (speed0 + speed1) instead of speed0 + speed1.
+                            break;
+                        default:
+                            if (modifier.Kind == ParticleModifierKind.Position)
+                            {
+                                p.Position += p.Velocity * dt;
+                            }
+                            break;
+                    }
                 }
 
-                // Bomb vortex + Gravity → velocity (forces simulate in the system's local frame, balanced with
-                // the authored lifespan for a clean ballistic arc).
-                foreach (var bomb in bombs)
+                // Rotation does not feed any other supported modifier, so the additive authored rotation
+                // modifiers can be integrated once after the ordered chain without changing ordering.
+                if (rotationModifiers.Length > 0)
                 {
-                    p.Velocity += BombForce(bomb, p.Position) * dt;
-                }
-
-                foreach (var gravity in gravities)
-                {
-                    p.Velocity += GravityForce(gravity, p.Position) * dt;
-                }
-
-                // Anisotropic drag (engine-accurate): damps only the velocity component along the drag axis,
-                // range-gated around the drag object. The frame-scale (dt/(1/30)) is baked into the delta — it
-                // is NOT a force·dt, so it isn't multiplied by dt again, and it isn't accel-scaled (it's a
-                // fraction of velocity, already frame-consistent).
-                foreach (var drag in drags)
-                {
-                    p.Velocity += DragDelta(drag, p.Position, p.Velocity, dt);
-                }
-
-                // Position integration.
-                if (hasPosition)
-                {
-                    p.Position += p.Velocity * dt;
+                    p.Rotation += p.RotationSpeed * dt;
                 }
 
                 live[i] = p;
@@ -176,14 +212,25 @@ internal static class NifParticleBaker
         {
             if (p.Size > 1e-4f)
             {
-                baked.Add(new BakedParticle(p.Position, p.Size, p.Color));
+                var atlasCount = def.SubtextureOffsets.Count;
+                var frame = atlasCount > 0
+                    ? subtexture?.SampleFrame(p.Age, p.AtlasSeed, atlasCount)
+                      ?? Math.Clamp((int)(p.AtlasSeed * atlasCount), 0, atlasCount - 1)
+                    : 0;
+                var uvRect = atlasCount > 0 ? def.SubtextureOffsets[frame] : new Vector4(0f, 0f, 1f, 1f);
+                baked.Add(new BakedParticle(
+                    p.Position, p.Size, p.Color, uvRect, p.Rotation,
+                    def.AspectRatio > 1e-4f ? def.AspectRatio : 1f, p.SpawnGeneration));
             }
         }
 
         return baked;
     }
 
-    private static Particle Spawn(ParticleEmitterDefinition e, ref DeterministicRng rng)
+    private static Particle Spawn(
+        ParticleEmitterDefinition e,
+        IReadOnlyList<RotationModifierDefinition> rotationModifiersForSpawn,
+        ref DeterministicRng rng)
     {
         var speed = e.Speed + e.SpeedVariation * (rng.NextFloat() - 0.5f);
         var decl = e.Declination + e.DeclinationVariation * rng.NextFloat();
@@ -191,15 +238,35 @@ internal static class NifParticleBaker
         var lifeSpan = MathF.Max(0.01f, e.LifeSpan + e.LifeSpanVariation * (rng.NextFloat() - 0.5f));
         var radius = MathF.Max(0f, e.InitialRadius + e.RadiusVariation * rng.NextFloat());
 
-        // Direction: spherical (decl = polar from emission axis, planar = azimuth around it), then aligned
-        // so local +Z maps to the emission axis.
-        var sinDecl = MathF.Sin(decl);
-        var local = new Vector3(sinDecl * MathF.Cos(planar), sinDecl * MathF.Sin(planar), MathF.Cos(decl));
-        var dir = AlignToAxis(local, e.EmissionAxis);
+        var sample = SamplePosition(e, ref rng);
+        var dir = e.Shape == ParticleEmitterShape.Mesh
+            ? e.VelocityType switch
+            {
+                ParticleVelocityType.UseNormals when sample.Normal.LengthSquared() > 1e-8f =>
+                    Vector3.Normalize(sample.Normal),
+                ParticleVelocityType.UseRandom => RandomUnitVector(ref rng),
+                _ => ComputeEmissionDirection(decl, planar, e.EmissionAxis),
+            }
+            : ComputeEmissionDirection(decl, planar, e.EmissionAxis);
         var velocity = Vector3.TransformNormal(dir, e.EmitterObjectTransform) * speed;
 
-        var localPos = SamplePosition(e, ref rng);
+        var localPos = sample.Position;
         var position = Vector3.Transform(localPos, e.EmitterObjectTransform);
+
+        var rotationSpeed = 0f;
+        var rotationAngle = 0f;
+        foreach (var rotation in rotationModifiersForSpawn)
+        {
+            var variedSpeed = rotation.RotationSpeed
+                              + rotation.RotationSpeedVariation * (rng.NextFloat() * 2f - 1f);
+            if (rotation.RandomSpeedSign && rng.NextFloat() < 0.5f)
+            {
+                variedSpeed = -variedSpeed;
+            }
+            rotationSpeed += variedSpeed;
+            rotationAngle += rotation.RotationAngle
+                             + rotation.RotationAngleVariation * (rng.NextFloat() * 2f - 1f);
+        }
 
         return new Particle
         {
@@ -211,6 +278,9 @@ internal static class NifParticleBaker
             Size = radius,
             Color = e.InitialColor,
             SpawnGeneration = 0,
+            Rotation = rotationAngle,
+            RotationSpeed = rotationSpeed,
+            AtlasSeed = rng.NextFloat(),
         };
     }
 
@@ -259,60 +329,200 @@ internal static class NifParticleBaker
                 Size = e.InitialRadius,
                 Color = e.InitialColor,
                 SpawnGeneration = parent.SpawnGeneration + 1,
+                Rotation = parent.Rotation,
+                RotationSpeed = parent.RotationSpeed,
+                AtlasSeed = rng.NextFloat(),
             });
         }
     }
 
-    private static Vector3 SamplePosition(ParticleEmitterDefinition e, ref DeterministicRng rng)
+    private static MeshSample SamplePosition(ParticleEmitterDefinition e, ref DeterministicRng rng)
     {
         switch (e.Shape)
         {
             case ParticleEmitterShape.Box:
-                return new Vector3(
-                    e.Width * (rng.NextFloat() - 0.5f),
+                // Recovered NiPSysBoxEmitter field-to-axis convention: Depth=X, Height=Y, Width=Z.
+                return new MeshSample(new Vector3(
+                    e.Depth * (rng.NextFloat() - 0.5f),
                     e.Height * (rng.NextFloat() - 0.5f),
-                    e.Depth * (rng.NextFloat() - 0.5f));
+                    e.Width * (rng.NextFloat() - 0.5f)), Vector3.Zero);
 
             case ParticleEmitterShape.Sphere:
             {
                 // Uniform-ish in volume: random direction × radius × cbrt(rand).
                 var d = RandomUnitVector(ref rng);
-                return d * (e.Radius * MathF.Cbrt(rng.NextFloat()));
+                return new MeshSample(d * (e.Radius * MathF.Cbrt(rng.NextFloat())), d);
             }
 
             case ParticleEmitterShape.Cylinder:
             {
                 var r = e.Radius * rng.NextFloat(); // engine uses linear (not area-uniform) radius
                 var theta = rng.NextFloat() * (MathF.PI * 2f);
-                return new Vector3(r * MathF.Cos(theta), r * MathF.Sin(theta), (rng.NextFloat() - 0.5f) * e.Height);
+                return new MeshSample(
+                    new Vector3(r * MathF.Cos(theta), r * MathF.Sin(theta),
+                        (rng.NextFloat() - 0.5f) * e.Height),
+                    Vector3.Zero);
             }
 
             case ParticleEmitterShape.Mesh:
-            {
-                var min = e.MeshBoundsMin;
-                var max = e.MeshBoundsMax;
-                if (max.X <= min.X && max.Y <= min.Y && max.Z <= min.Z)
-                {
-                    return Vector3.Zero; // no bounds yet ⇒ point emit
-                }
-
-                return new Vector3(
-                    Lerp(min.X, max.X, rng.NextFloat()),
-                    Lerp(min.Y, max.Y, rng.NextFloat()),
-                    Lerp(min.Z, max.Z, rng.NextFloat()));
-            }
+                return SampleMeshPosition(e, ref rng);
 
             default:
-                return Vector3.Zero;
+                return new MeshSample(Vector3.Zero, Vector3.Zero);
         }
     }
 
-    /// <summary>GrowFade: size ramps baseScale·radius → radius → baseScale·radius over grow/fade windows.</summary>
-    private static float GrowFadeSize(GrowFadeModifierDefinition g, float age, float lifeSpan, float radius)
+    private static MeshSample SampleMeshPosition(ParticleEmitterDefinition e, ref DeterministicRng rng)
     {
-        var growF = g.GrowTime > 0f && age < g.GrowTime ? age / g.GrowTime : 1f;
+        var vertices = e.MeshVertices;
+        var triangles = e.MeshTriangles;
+        if (vertices.Count == 0)
+        {
+            return new MeshSample(Vector3.Zero, Vector3.Zero);
+        }
+
+        if (e.EmitFrom == ParticleEmitFrom.Vertices || triangles.Count < 3)
+        {
+            var index = Math.Min((int)(rng.NextFloat() * vertices.Count), vertices.Count - 1);
+            return new MeshSample(vertices[index], VertexNormal(e, index));
+        }
+
+        if (e.EmitFrom is ParticleEmitFrom.EdgeCenter or ParticleEmitFrom.EdgeSurface)
+        {
+            var edges = BuildEdges(triangles, vertices.Count);
+            if (edges.Count == 0)
+            {
+                return new MeshSample(vertices[0], VertexNormal(e, 0));
+            }
+
+            var edge = PickWeightedEdge(edges, vertices, ref rng);
+            var t = e.EmitFrom == ParticleEmitFrom.EdgeCenter ? 0.5f : rng.NextFloat();
+            var pos = Vector3.Lerp(vertices[edge.A], vertices[edge.B], t);
+            var normal = Vector3.Lerp(VertexNormal(e, edge.A), VertexNormal(e, edge.B), t);
+            return new MeshSample(pos, NormalizeOrZero(normal));
+        }
+
+        var tri = PickAreaWeightedTriangle(triangles, vertices, ref rng);
+        var a = vertices[tri.A];
+        var b = vertices[tri.B];
+        var c = vertices[tri.C];
+        if (e.EmitFrom == ParticleEmitFrom.FaceCenter)
+        {
+            return new MeshSample((a + b + c) / 3f, TriangleNormal(e, tri));
+        }
+
+        // Uniform barycentric face sampling: sqrt(r1) removes the vertex-density bias.
+        var root = MathF.Sqrt(rng.NextFloat());
+        var w0 = 1f - root;
+        var w1 = root * (1f - rng.NextFloat());
+        var w2 = 1f - w0 - w1;
+        var point = a * w0 + b * w1 + c * w2;
+        var interpolated = VertexNormal(e, tri.A) * w0
+                           + VertexNormal(e, tri.B) * w1
+                           + VertexNormal(e, tri.C) * w2;
+        return new MeshSample(point,
+            interpolated.LengthSquared() > 1e-8f ? Vector3.Normalize(interpolated) : TriangleNormal(e, tri));
+    }
+
+    private static Triangle PickAreaWeightedTriangle(
+        IReadOnlyList<int> indices, IReadOnlyList<Vector3> vertices, ref DeterministicRng rng)
+    {
+        var total = 0f;
+        for (var i = 0; i + 2 < indices.Count; i += 3)
+        {
+            if (!ValidTriangle(indices, vertices.Count, i)) continue;
+            total += TriangleArea(vertices[indices[i]], vertices[indices[i + 1]], vertices[indices[i + 2]]);
+        }
+
+        var target = rng.NextFloat() * total;
+        Triangle fallback = default;
+        for (var i = 0; i + 2 < indices.Count; i += 3)
+        {
+            if (!ValidTriangle(indices, vertices.Count, i)) continue;
+            fallback = new Triangle(indices[i], indices[i + 1], indices[i + 2]);
+            target -= TriangleArea(vertices[fallback.A], vertices[fallback.B], vertices[fallback.C]);
+            if (target <= 0f) return fallback;
+        }
+
+        return fallback;
+    }
+
+    private static List<Edge> BuildEdges(IReadOnlyList<int> indices, int vertexCount)
+    {
+        var seen = new HashSet<(int, int)>();
+        var result = new List<Edge>();
+        for (var i = 0; i + 2 < indices.Count; i += 3)
+        {
+            if (!ValidTriangle(indices, vertexCount, i)) continue;
+            Add(indices[i], indices[i + 1]);
+            Add(indices[i + 1], indices[i + 2]);
+            Add(indices[i + 2], indices[i]);
+        }
+        return result;
+
+        void Add(int a, int b)
+        {
+            var key = a < b ? (a, b) : (b, a);
+            if (seen.Add(key)) result.Add(new Edge(key.Item1, key.Item2));
+        }
+    }
+
+    private static Edge PickWeightedEdge(
+        IReadOnlyList<Edge> edges, IReadOnlyList<Vector3> vertices, ref DeterministicRng rng)
+    {
+        var total = edges.Sum(edge => Vector3.Distance(vertices[edge.A], vertices[edge.B]));
+        var target = rng.NextFloat() * total;
+        foreach (var edge in edges)
+        {
+            target -= Vector3.Distance(vertices[edge.A], vertices[edge.B]);
+            if (target <= 0f) return edge;
+        }
+        return edges[^1];
+    }
+
+    private static Vector3 VertexNormal(ParticleEmitterDefinition e, int index) =>
+        index >= 0 && index < e.MeshNormals.Count ? e.MeshNormals[index] : Vector3.Zero;
+
+    private static Vector3 TriangleNormal(ParticleEmitterDefinition e, Triangle tri)
+    {
+        var n = Vector3.Cross(e.MeshVertices[tri.B] - e.MeshVertices[tri.A],
+            e.MeshVertices[tri.C] - e.MeshVertices[tri.A]);
+        return NormalizeOrZero(n);
+    }
+
+    private static bool ValidTriangle(IReadOnlyList<int> indices, int vertexCount, int offset) =>
+        indices[offset] >= 0 && indices[offset] < vertexCount
+        && indices[offset + 1] >= 0 && indices[offset + 1] < vertexCount
+        && indices[offset + 2] >= 0 && indices[offset + 2] < vertexCount;
+
+    private static float TriangleArea(Vector3 a, Vector3 b, Vector3 c) =>
+        Vector3.Cross(b - a, c - a).Length() * 0.5f;
+
+    private static Vector3 NormalizeOrZero(Vector3 value) =>
+        value.LengthSquared() > 1e-8f ? Vector3.Normalize(value) : Vector3.Zero;
+
+    internal static Vector3 ComputeEmissionDirection(float declination, float planarAngle, Vector3 axis)
+    {
+        // Recovered FNV convention: declination is elevation from the XY plane, not polar angle from +Z.
+        var cosDecl = MathF.Cos(declination);
+        var local = new Vector3(
+            cosDecl * MathF.Cos(planarAngle),
+            cosDecl * MathF.Sin(planarAngle),
+            MathF.Sin(declination));
+        return AlignToAxis(local, axis);
+    }
+
+    /// <summary>GrowFade: size ramps baseScale·radius → radius → baseScale·radius over grow/fade windows.</summary>
+    private static float GrowFadeSize(
+        GrowFadeModifierDefinition g, float age, float lifeSpan, float radius, int generation)
+    {
+        var growF = generation == g.GrowGeneration && g.GrowTime > 0f && age < g.GrowTime
+            ? age / g.GrowTime
+            : 1f;
         var remaining = lifeSpan - age;
-        var fadeF = g.FadeTime > 0f && remaining < g.FadeTime ? remaining / g.FadeTime : 1f;
+        var fadeF = generation == g.FadeGeneration && g.FadeTime > 0f && remaining < g.FadeTime
+            ? remaining / g.FadeTime
+            : 1f;
         var ramp = g.BaseScale + MathF.Min(growF, fadeF) * (1f - g.BaseScale);
         return MathF.Max(1e-4f, radius * ramp);
     }
@@ -354,34 +564,56 @@ internal static class NifParticleBaker
         return dir * (decay * b.DeltaV);
     }
 
-    /// <summary>Gravity force (planar/spherical). MVP ignores the decay/turbulence attenuation.</summary>
-    private static Vector3 GravityForce(GravityModifierDefinition g, Vector3 pos)
+    /// <summary>
+    ///     Recovered <c>NiPSysGravityModifier::Update</c> acceleration. The binary multiplies authored
+    ///     Strength by 1.6, exponentially attenuates planar force by perpendicular distance and
+    ///     spherical force by radius, then adds a signed random turbulence vector scaled by
+    ///     <c>Turbulence * TurbulenceScale * 500</c>. A missing gravity object is a complete no-op.
+    /// </summary>
+    internal static Vector3 GravityForce(
+        GravityModifierDefinition g, Vector3 pos, Vector3 signedTurbulenceSample)
     {
-        if (g.ForceType == 1) // spherical: toward/away from the gravity object
+        if (!g.HasGravityObject)
         {
-            var gravPos = g.HasGravityObject ? g.GravityObjectTransform.Translation : Vector3.Zero;
-            var d = pos - gravPos;
-            var len = d.Length();
-            return len > 1e-6f ? d / len * g.Strength : Vector3.Zero;
+            return Vector3.Zero;
         }
 
-        // planar: constant directional force along the gravity axis. The axis is in the gravity OBJECT's local
-        // frame (nif.xml: "the local direction of the force"), so transform it by that object's transform —
-        // mirroring how emission velocity is transformed by the emitter object. This is load-bearing: the
-        // fountain's authored axis is +Z (up), but its gravity object orients it to world -Z (down), so without
-        // this the jet accelerates UP into the sky instead of arcing back down.
+        var gravityPosition = g.GravityObjectTransform.Translation;
         var localAxis = g.GravityAxis.LengthSquared() > 1e-6f ? Vector3.Normalize(g.GravityAxis) : Vector3.UnitZ;
         var axis = localAxis;
-        if (g.HasGravityObject)
+        var transformedAxis = Vector3.TransformNormal(localAxis, g.GravityObjectTransform);
+        if (transformedAxis.LengthSquared() > 1e-6f)
         {
-            var world = Vector3.TransformNormal(localAxis, g.GravityObjectTransform);
-            if (world.LengthSquared() > 1e-6f)
-            {
-                axis = Vector3.Normalize(world);
-            }
+            // ResolveObjectTransform already normalizes the gravity object's frame into system-local
+            // coordinates. WorldAligned is retained losslessly; both runtime branches reduce to this
+            // same system-local axis for a static bake.
+            axis = Vector3.Normalize(transformedAxis);
         }
 
-        return axis * g.Strength;
+        Vector3 direction;
+        float distance;
+        if (g.ForceType == 1)
+        {
+            // Spherical gravity is ATTRACTIVE in the recovered update: object position - particle.
+            var towardObject = gravityPosition - pos;
+            distance = towardObject.Length();
+            direction = distance > 1e-6f ? towardObject / distance : Vector3.Zero;
+        }
+        else
+        {
+            direction = axis;
+            // Planar decay uses exp(-Decay * abs(dot(axis, objectPos - particlePos))).
+            distance = MathF.Abs(Vector3.Dot(axis, gravityPosition - pos));
+        }
+
+        var attenuation = g.Decay != 0f ? MathF.Exp(-g.Decay * distance) : 1f;
+        var force = direction * (g.Strength * 1.6f * attenuation);
+        if (g.Turbulence != 0f)
+        {
+            force += signedTurbulenceSample * (g.Turbulence * g.TurbulenceScale * 500f);
+        }
+
+        return force;
     }
 
     /// <summary>Drag axis (system-local, normalized) + range origin + coefficients, precomputed once per
@@ -487,7 +719,14 @@ internal static class NifParticleBaker
         /// <summary>How many NiPSysSpawnModifier generations deep this particle is (0 = emitted directly).
         /// Spawning stops once this reaches the modifier's NumSpawnGenerations.</summary>
         public int SpawnGeneration;
+        public float Rotation;
+        public float RotationSpeed;
+        public float AtlasSeed;
     }
+
+    private readonly record struct MeshSample(Vector3 Position, Vector3 Normal);
+    private readonly record struct Triangle(int A, int B, int C);
+    private readonly record struct Edge(int A, int B);
 
     /// <summary>Small deterministic xorshift32 PRNG — reproducible across runs/platforms (no Math.Random).</summary>
     private struct DeterministicRng(uint seed)
@@ -501,5 +740,8 @@ internal static class NifParticleBaker
             _state ^= _state << 5;
             return (_state & 0x00FF_FFFF) / (float)0x0100_0000; // [0,1)
         }
+
+        /// <summary>Symmetric unit random matching the engine helper used by gravity turbulence.</summary>
+        public float NextSignedFloat() => NextFloat() * 2f - 1f;
     }
 }

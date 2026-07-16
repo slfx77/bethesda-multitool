@@ -332,6 +332,7 @@ internal static class GlbWriter
         var baseColor = NpcGlbTintColorEncoder.BuildBaseColor(submesh, preparedAlpha.Texture != null);
         var hasEnvironmentMapping = NpcGlbMaterialTuning.HasEnvironmentMapping(submesh);
         var materialProfile = NpcGlbMaterialTuning.Derive(submesh, normalTexture, packedNormal.HasGlossAlpha);
+        var (clampTextureU, clampTextureV) = ResolveTextureAddressing(submesh, textureResolver);
         var key = new MaterialCacheKey(
             submesh.DiffuseTexturePath,
             submesh.NormalMapTexturePath,
@@ -345,6 +346,8 @@ internal static class GlbWriter
             preparedAlpha.AlphaThreshold,
             submesh.AlphaTestFunction,
             preparedAlpha.HasTextureTransform,
+            clampTextureU,
+            clampTextureV,
             materialProfile.RoughnessFactor,
             materialProfile.SpecularFactor,
             baseColor);
@@ -496,30 +499,52 @@ internal static class GlbWriter
                 break;
         }
 
-        NeutralizeSamplers(material);
+        ConfigureSamplers(material, clampTextureU, clampTextureV);
 
         materialCache[key] = material;
         return material;
     }
 
     /// <summary>
-    ///     Set REPEAT wrap + non-mipmapped LINEAR minification on every texture channel.
+    ///     Set authored BGSM/BGEM U/V addressing + non-mipmapped LINEAR minification on every
+    ///     texture channel. Non-material NIFs retain REPEAT on both axes.
     ///     Without this, glTF viewers default to LINEAR_MIPMAP_LINEAR; on heavily-tiled
     ///     content (e.g. tree bark with V ≈ −18 → −1) the GPU's screen-space derivative
     ///     of UV crosses each integer boundary and snaps to the coarsest mip, producing
     ///     evenly-spaced dark bands along the seam. NIFSkope doesn't hit this because its
     ///     software sampler doesn't pick mip level from derivatives.
     /// </summary>
-    private static void NeutralizeSamplers(MaterialBuilder material)
+    private static void ConfigureSamplers(MaterialBuilder material, bool clampU, bool clampV)
     {
+        var wrapU = clampU ? TextureWrapMode.CLAMP_TO_EDGE : TextureWrapMode.REPEAT;
+        var wrapV = clampV ? TextureWrapMode.CLAMP_TO_EDGE : TextureWrapMode.REPEAT;
         foreach (var channel in material.Channels)
         {
             channel.Texture?.WithSampler(
-                TextureWrapMode.REPEAT,
-                TextureWrapMode.REPEAT,
+                wrapU,
+                wrapV,
                 TextureMipMapFilter.LINEAR,
                 TextureInterpolationFilter.LINEAR);
         }
+    }
+
+    private static (bool ClampU, bool ClampV) ResolveTextureAddressing(
+        RenderableSubmesh submesh,
+        NifTextureResolver textureResolver)
+    {
+        var materialPath = submesh.ShaderMetadata?.MaterialPath;
+        if (string.IsNullOrWhiteSpace(materialPath) &&
+            submesh.DiffuseTexturePath is { } diffuse &&
+            (diffuse.EndsWith(".bgsm", StringComparison.OrdinalIgnoreCase) ||
+             diffuse.EndsWith(".bgem", StringComparison.OrdinalIgnoreCase)))
+        {
+            materialPath = diffuse;
+        }
+
+        return !string.IsNullOrWhiteSpace(materialPath) &&
+               textureResolver.TryGetMaterial(materialPath) is { } material
+            ? (!material.TileU, !material.TileV)
+            : (submesh.ClampTextureU, submesh.ClampTextureV);
     }
 
     private static string BuildTextureName(string? texturePath, string fallbackFileName)
@@ -561,6 +586,8 @@ internal static class GlbWriter
         byte AlphaThreshold,
         byte AlphaFunction,
         bool HasPreparedAlphaTexture,
+        bool ClampTextureU,
+        bool ClampTextureV,
         float RoughnessFactor,
         float SpecularFactor,
         Vector4 BaseColor);

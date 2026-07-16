@@ -86,6 +86,7 @@ public sealed partial class WorldView3DControl
         fields["gcGen1"] = sample.GcGen1Collections;
         fields["gcGen2"] = sample.GcGen2Collections;
         fields["managedMemoryBytes"] = sample.ManagedMemoryBytes;
+        fields["allocatedBytes"] = sample.AllocatedBytes;
         return fields;
     }
 
@@ -155,6 +156,35 @@ public sealed partial class WorldView3DControl
     // Profiler-driving surface --------------------------------------------------------------
 
     internal long Profiler_FrameIndex => _profileFrameIndex;
+
+    private int BeginSceneSelection()
+    {
+        _sceneReadyGeneration = -1;
+        return unchecked(++_sceneSelectionGeneration);
+    }
+
+    private bool IsCurrentSceneSelection(int generation) =>
+        generation == _sceneSelectionGeneration;
+
+    private void MarkSceneSelectionReady(int generation)
+    {
+        if (IsCurrentSceneSelection(generation))
+        {
+            _sceneReadyGeneration = generation;
+        }
+    }
+
+    /// <summary>
+    ///     Profiler hook: true once the asynchronously-selected worldspace has built its spatial
+    ///     index and, for the WastelandNVHeavy stress scene, applied the deterministic bookmark.
+    ///     <see cref="LoadData"/> returns before the selection handler resumes after its UI yield,
+    ///     so starting a timed profile before this point races the centroid reset against the
+    ///     stress bookmark and can benchmark different camera positions across identical runs.
+    /// </summary>
+    internal bool Profiler_IsSceneReady =>
+        _spatialIndex is not null &&
+        _sceneReadyGeneration == _sceneSelectionGeneration &&
+        (_selectedInterior is not null || !IsWastelandNvHeavyStressScene() || _stressBookmarkApplied);
 
     internal RendererProfilerCameraPose Profiler_CameraPose =>
         new(_camera.Position, _camera.Yaw, _camera.Pitch, _renderDistance);
@@ -269,7 +299,8 @@ public sealed partial class WorldView3DControl
         int GcGen0Collections,
         int GcGen1Collections,
         int GcGen2Collections,
-        long ManagedMemoryBytes);
+        long ManagedMemoryBytes,
+        long AllocatedBytes);
 
     private sealed class FrameProfileAccumulator
     {
@@ -278,6 +309,8 @@ public sealed partial class WorldView3DControl
         private long _lastFrameNumber;
         private double _frameTotal;
         private double _frameMax;
+        private readonly List<double> _frameSamples = new(256);
+        private double _allocatedBytes;
         private double _controller;
         private double _beginFrame;
         private double _fenceWait;
@@ -347,6 +380,11 @@ public sealed partial class WorldView3DControl
         private double _refInstances;
         private double _refInstancedDraws;
         private double _refBlendedDraws;
+        private double _refLiveParticleOwners;
+        private double _refLiveParticleParticles;
+        private double _refLiveParticleDraws;
+        private double _refLiveParticleFallbacks;
+        private double _refLiveParticleUploadBytes;
         private double _refState;
         private double _refCull;
         private double _refMeshUpload;
@@ -369,6 +407,8 @@ public sealed partial class WorldView3DControl
             _lastFrameNumber = sample.FrameNumber;
             _frameTotal += sample.TotalMilliseconds;
             _frameMax = Math.Max(_frameMax, sample.TotalMilliseconds);
+            _frameSamples.Add(sample.TotalMilliseconds);
+            _allocatedBytes += sample.AllocatedBytes;
             _controller += sample.ControllerMilliseconds;
             _beginFrame += sample.BeginFrameMilliseconds;
             _fenceWait += sample.FenceWaitMilliseconds;
@@ -457,6 +497,11 @@ public sealed partial class WorldView3DControl
                 _refInstances += references.ReferenceInstances;
                 _refInstancedDraws += references.ReferenceInstancedDraws;
                 _refBlendedDraws += references.ReferenceBlendedDraws;
+                _refLiveParticleOwners += references.ReferenceLiveParticleOwners;
+                _refLiveParticleParticles += references.ReferenceLiveParticleParticles;
+                _refLiveParticleDraws += references.ReferenceLiveParticleDraws;
+                _refLiveParticleFallbacks += references.ReferenceLiveParticleFallbacks;
+                _refLiveParticleUploadBytes += references.ReferenceLiveParticleUploadBytes;
                 _refState += references.ReferenceStateSetupMilliseconds;
                 _refCull += references.ReferenceCullMilliseconds;
                 _refMeshUpload += references.ReferenceMeshUploadMilliseconds;
@@ -480,6 +525,10 @@ public sealed partial class WorldView3DControl
             }
 
             double Avg(double value) => value / _frames;
+            _frameSamples.Sort();
+            var frameMedianMs = (_frameSamples.Count & 1) != 0
+                ? _frameSamples[_frameSamples.Count / 2]
+                : (_frameSamples[_frameSamples.Count / 2 - 1] + _frameSamples[_frameSamples.Count / 2]) * 0.5;
             aggregate = new Dictionary<string, object?>
             {
                 ["lastFrame"] = _lastFrameNumber,
@@ -490,7 +539,10 @@ public sealed partial class WorldView3DControl
                 ["totalCells"] = _lastTotalCells,
                 ["renderDistanceCells"] = _lastRenderDistanceCells,
                 ["frameAvgMs"] = Avg(_frameTotal),
+                ["frameMedianMs"] = frameMedianMs,
                 ["frameMaxMs"] = _frameMax,
+                ["allocatedBytesAvg"] = Avg(_allocatedBytes),
+                ["allocatedBytesPerSecond"] = _allocatedBytes / (elapsed / 1000.0),
                 ["controllerAvgMs"] = Avg(_controller),
                 ["beginFrameAvgMs"] = Avg(_beginFrame),
                 ["fenceWaitAvgMs"] = Avg(_fenceWait),
@@ -522,13 +574,21 @@ public sealed partial class WorldView3DControl
                 ["refsDrawnAvg"] = Avg(_refDrawn),
                 ["refsSubmeshAvg"] = Avg(_refSubmeshDraws),
                 ["refsBatchesAvg"] = Avg(_refBatches),
-                ["refsInstancesAvg"] = Avg(_refInstances)
+                ["refsInstancesAvg"] = Avg(_refInstances),
+                ["refsInstancedDrawsAvg"] = Avg(_refInstancedDraws),
+                ["refsBlendedDrawsAvg"] = Avg(_refBlendedDraws),
+                ["refsLiveParticleOwnersAvg"] = Avg(_refLiveParticleOwners),
+                ["refsLiveParticleParticlesAvg"] = Avg(_refLiveParticleParticles),
+                ["refsLiveParticleDrawsAvg"] = Avg(_refLiveParticleDraws),
+                ["refsLiveParticleFallbacksAvg"] = Avg(_refLiveParticleFallbacks),
+                ["refsLiveParticleUploadBytesAvg"] = Avg(_refLiveParticleUploadBytes)
             };
             // Apply invariant formatting per piece because concatenating interpolated strings
             // first would format each segment with the current UI culture.
                 message =
                 string.Create(CultureInfo.InvariantCulture, $"3D profile {_frames}f/{elapsed / 1000.0:0.0}s {_lastViewportWidth}x{_lastViewportHeight} cells={_lastTotalCells} dist={_lastRenderDistanceCells:0.#}c ") +
                 string.Create(CultureInfo.InvariantCulture, $"frame avg/max={Avg(_frameTotal):0.00}/{_frameMax:0.00}ms ") +
+                string.Create(CultureInfo.InvariantCulture, $"median={frameMedianMs:0.00}ms alloc={Avg(_allocatedBytes) / 1024.0:0.0}KB/f ") +
                 string.Create(CultureInfo.InvariantCulture, $"stages ctrl={Avg(_controller):0.00} begin={Avg(_beginFrame):0.00} fence={Avg(_fenceWait):0.00} acquire={Avg(_acquire):0.00} clear={Avg(_clearSetup):0.00} ") +
                 string.Create(CultureInfo.InvariantCulture, $"camera={Avg(_camera):0.00} terrain={Avg(_terrainFrame):0.00} refs={Avg(_referencesFrame):0.00} water={Avg(_waterFrame):0.00} ") +
                 string.Create(CultureInfo.InvariantCulture, $"wire={Avg(_wireframeFrame):0.00} end={Avg(_endFrame):0.00} present={Avg(_present):0.00} hud={Avg(_hud):0.00} ") +
@@ -553,7 +613,10 @@ public sealed partial class WorldView3DControl
                 string.Create(CultureInfo.InvariantCulture, $"decodeReq={Avg(_refDecodeRequests):0.0} qDec={Avg(_refQueuedDecodes):0.0} startDec={Avg(_refDecodeStarts):0.0} activeDec={Avg(_refActiveDecodes):0.0} ") +
                 string.Create(CultureInfo.InvariantCulture, $"cpuMeshHit={Avg(_refCpuDecodedHits):0.0} cpuMeshMiss={Avg(_refCpuDecodedMisses):0.0} cpuMeshNeg={Avg(_refCpuDecodedNegativeHits):0.0} ") +
                 string.Create(CultureInfo.InvariantCulture, $"refTexBC={Avg(_refCompressedTextureUploads):0.0} refTexRGBA={Avg(_refRgbaTextureUploads):0.0} batches={Avg(_refBatches):0.0} inst={Avg(_refInstances):0.0} ") +
-                string.Create(CultureInfo.InvariantCulture, $"instDraw={Avg(_refInstancedDraws):0.0} blendDraw={Avg(_refBlendedDraws):0.0}");
+                string.Create(CultureInfo.InvariantCulture, $"instDraw={Avg(_refInstancedDraws):0.0} blendDraw={Avg(_refBlendedDraws):0.0} ") +
+                string.Create(CultureInfo.InvariantCulture, $"liveOwners={Avg(_refLiveParticleOwners):0.0} liveParticles={Avg(_refLiveParticleParticles):0.0} ") +
+                string.Create(CultureInfo.InvariantCulture, $"liveDraw={Avg(_refLiveParticleDraws):0.0} liveFallback={Avg(_refLiveParticleFallbacks):0.0} ") +
+                string.Create(CultureInfo.InvariantCulture, $"liveUploadKB={Avg(_refLiveParticleUploadBytes) / 1024.0:0.0}");
 
             Reset();
             return true;
@@ -566,6 +629,8 @@ public sealed partial class WorldView3DControl
             _lastFrameNumber = 0;
             _frameTotal = 0;
             _frameMax = 0;
+            _frameSamples.Clear();
+            _allocatedBytes = 0;
             _controller = 0;
             _beginFrame = 0;
             _fenceWait = 0;
@@ -635,6 +700,11 @@ public sealed partial class WorldView3DControl
             _refInstances = 0;
             _refInstancedDraws = 0;
             _refBlendedDraws = 0;
+            _refLiveParticleOwners = 0;
+            _refLiveParticleParticles = 0;
+            _refLiveParticleDraws = 0;
+            _refLiveParticleFallbacks = 0;
+            _refLiveParticleUploadBytes = 0;
             _refState = 0;
             _refCull = 0;
             _refMeshUpload = 0;

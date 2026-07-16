@@ -18,6 +18,29 @@ public record WaterRecord
     /// <summary>Noise texture path (NNAM subrecord).</summary>
     public string? NoiseTexture { get; init; }
 
+    /// <summary>
+    ///     Oblivion's authored per-water surface/detail texture (TNAM). This is distinct from
+    ///     WATER000's global animated NormalMap, which comes from the INI-selected
+    ///     <c>textures\water\water00..31.dds</c> sequence.
+    /// </summary>
+    public string? SurfaceTexture { get; init; }
+
+    /// <summary>
+    ///     All authored water normal/surface textures in source order. Skyrim repeats NNAM three
+    ///     times (one per normal layer), while FO4-family records contribute NAM2/NAM3/NAM4.
+    ///     Oblivion TNAM is deliberately excluded because it is the separate detail input, not a
+    ///     normal source. <see cref="NoiseTexture" /> remains the
+    ///     first-entry compatibility projection.
+    /// </summary>
+    public IReadOnlyList<string> NormalTextures { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    ///     Skyrim's obsolete repeated NNAM texture set when a record also supplies the active
+    ///     NAM2/NAM3/NAM4 set. Kept separately so parsing remains lossless without accidentally
+    ///     binding the obsolete set to the three active shader samplers.
+    /// </summary>
+    public IReadOnlyList<string> LegacyNormalTextures { get; init; } = Array.Empty<string>();
+
     /// <summary>Opacity (ANAM subrecord).</summary>
     public byte Opacity { get; init; }
 

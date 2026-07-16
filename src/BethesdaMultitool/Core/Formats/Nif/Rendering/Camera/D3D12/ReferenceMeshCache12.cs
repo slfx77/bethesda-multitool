@@ -8,6 +8,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.Core.Resources;
@@ -393,6 +394,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
             Overrides = alternateTextures?.Overrides,
             MaterialSwaps = alternateTextures?.MaterialSwaps,
             GradientMapVOverride = alternateTextures?.GradientMapVOverride,
+            ExternalEmittanceColor = alternateTextures?.ExternalEmittanceColor,
             HasVariant = alternateTextures is not null,
             VariantKey = alternateTextures?.VariantKey
         };
@@ -660,6 +662,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var overrides = node.Overrides;
         var materialSwaps = node.MaterialSwaps;
         var gradientMapVOverride = node.GradientMapVOverride;
+        var externalEmittanceColor = node.ExternalEmittanceColor;
         Interlocked.Increment(ref _activeDecodeTasks);
         var task = Task.Run(() =>
         {
@@ -675,7 +678,8 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     return cached.IsNegative ? null : cached.Mesh;
                 }
 
-                var decoded = _decoder.DecodeMesh(decodePath, overrides, materialSwaps, gradientMapVOverride);
+                var decoded = _decoder.DecodeMesh(
+                    decodePath, overrides, materialSwaps, gradientMapVOverride, externalEmittanceColor);
                 StoreDecodedCache(cacheKey, decoded);
                 StorePersistentDecodedCache(decodePath, variantKey, decoded);
                 return decoded;
@@ -728,6 +732,18 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         var metadata = _meshArchives.GetLookupMetadata(decodePath);
 
         if (!_persistentDecodedCache.TryLoad(metadata, variantKey, out var cached))
+        {
+            return false;
+        }
+
+        // Live particle definitions contain the parsed modifier/controller graph and resolved emitter mesh,
+        // which the static payload deliberately does not serialize. Reject particle-source (and negative,
+        // which could represent a quiet particle-only NIF) warm entries in opt-in mode so those paths source-
+        // decode. The mesh-level provenance remains true when a mixed NIF's time-zero bake emitted no cloud.
+        // Ordinary positive meshes still get the established high-throughput warm cache.
+        var containsParticleSource = cached.Mesh?.ContainsParticleSource == true;
+        if (!ParticleLiveSettings.UsePersistentDecodedMeshCache(
+                ParticleLiveSettings.Enabled, cached.IsNegative, containsParticleSource))
         {
             return false;
         }
@@ -999,7 +1015,21 @@ internal sealed class ReferenceMeshCache12 : IDisposable
                     IsEmissive = sub.IsEmissive,
                     LocalBoundsCenter = sub.LocalBoundsCenter,
                     IsBillboard = sub.IsBillboard,
+                    BillboardFrontAxis = sub.IsBillboard
+                        ? NifBillboardFacing.ResolveFrontAxis(sub.Vertices, sub.Indices)
+                        : Vector2.UnitY,
                     IsLeafBillboard = sub.IsLeafBillboard,
+                    ParticleCenters = ExtractParticleCenters(sub),
+                    LiveParticles = sub.ParticleRuntime is { } runtime
+                        ? new LiveParticleOwner12(runtime)
+                        : null,
+                    ClampTextureU = sub.ClampTextureU,
+                    ClampTextureV = sub.ClampTextureV,
+                    IsSpeedTreeBranch = sub.IsSpeedTreeBranch,
+                    // Fresh decodes always carry an explicit value (RenderableSubmesh defaults to
+                    // one). Preserve authored (0,0): zero is a valid CNAM phase rate, not "missing".
+                    SpeedTreeWindSpeeds = sub.SpeedTreeWindSpeeds,
+                    SpeedTreeLod = sub.SpeedTreeLod,
                     DepthWritingBlend = sub.DepthWritingBlend,
                     IsDecal = sub.IsDecal,
                     // default(Vector3) = a pre-effect-fields payload (or a caller that skipped the
@@ -1049,6 +1079,26 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         }
 
         return cached;
+    }
+
+    private static Vector3[]? ExtractParticleCenters(DecodedSubmesh12 sub)
+    {
+        // The particle extractor emits exactly four vertices + six indices per quad and stores
+        // the common center in every vertex tangent for the camera-facing VS reconstruction.
+        // Reject malformed payloads here so the draw path can safely fall back to the static IB.
+        if (!sub.IsParticleCloud || sub.Vertices.Length == 0 ||
+            sub.Vertices.Length % 4 != 0 || sub.Indices.Length != sub.Vertices.Length / 4 * 6)
+        {
+            return null;
+        }
+
+        var centers = new Vector3[sub.Vertices.Length / 4];
+        for (var i = 0; i < centers.Length; i++)
+        {
+            centers[i] = sub.Vertices[i * 4].Tangent;
+        }
+
+        return centers;
     }
 
     /// <summary>
@@ -1111,7 +1161,7 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         return new Vector4(
             alphaTestEnabled ? sub.AlphaTestThreshold : 0f,
             alphaTestEnabled ? sub.AlphaTestFunction : -1f,
-            Math.Clamp(sub.MaterialAlpha, 0f, 1f),
+            Math.Clamp(sub.MaterialAlpha, 0f, 8f),
             sub.AlphaRenderMode == NifAlphaRenderMode.Blend ? 1f : 0f);
     }
 
@@ -1209,6 +1259,9 @@ internal sealed class ReferenceMeshCache12 : IDisposable
         /// <summary>FO4-family MODC gradient-palette row override (0–1) applied at decode to
         /// grayscale-to-palette materials, or null. Rides the same variant cache key.</summary>
         public float? GradientMapVOverride { get; init; }
+
+        /// <summary>Resolved REFR XEMI color, carried in the placement's variant cache key.</summary>
+        public Vector3? ExternalEmittanceColor { get; init; }
 
         /// <summary>True when this node is a MODS re-skin variant.</summary>
         public bool HasVariant { get; init; }

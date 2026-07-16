@@ -33,6 +33,9 @@ public record ExtractedRefrRecord
     /// substituting whole <c>.bgsm</c> materials at decode time.</summary>
     public uint? MaterialSwapFormId { get; init; }
 
+    /// <summary>XEMI - external-emittance REGN/LIGH FormID used by effect shader properties.</summary>
+    public uint? EmittanceFormId { get; init; }
+
     /// <summary>XLOC - Lock level.</summary>
     public byte? LockLevel { get; init; }
 

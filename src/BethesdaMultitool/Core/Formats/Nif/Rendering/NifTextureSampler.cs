@@ -13,9 +13,16 @@ internal static class NifTextureSampler
     /// <summary>
     ///     Sample a texture using the configured sampling mode (bilinear or nearest).
     /// </summary>
-    internal static (byte R, byte G, byte B, byte A) SampleTexture(DecodedTexture tex, float u, float v)
+    internal static (byte R, byte G, byte B, byte A) SampleTexture(
+        DecodedTexture tex,
+        float u,
+        float v,
+        bool clampU = false,
+        bool clampV = false)
     {
-        return NifSpriteRenderer.DisableBilinear ? SampleNearest(tex, u, v) : SampleBilinear(tex, u, v);
+        return NifSpriteRenderer.DisableBilinear
+            ? SampleNearest(tex, u, v, clampU, clampV)
+            : SampleBilinear(tex, u, v, clampU, clampV);
     }
 
     /// <summary>
@@ -28,12 +35,14 @@ internal static class NifTextureSampler
         float duDx,
         float dvDx,
         float duDy,
-        float dvDy)
+        float dvDy,
+        bool clampU = false,
+        bool clampV = false)
     {
         var mipLevel = SelectMipLevel(tex, duDx, dvDx, duDy, dvDy);
         return NifSpriteRenderer.DisableBilinear
-            ? SampleNearest(tex.GetMipLevel(mipLevel), u, v)
-            : SampleBilinear(tex.GetMipLevel(mipLevel), u, v);
+            ? SampleNearest(tex.GetMipLevel(mipLevel), u, v, clampU, clampV)
+            : SampleBilinear(tex.GetMipLevel(mipLevel), u, v, clampU, clampV);
     }
 
     internal static int SelectMipLevel(
@@ -95,18 +104,25 @@ internal static class NifTextureSampler
         return (duDx, duDy, dvDx, dvDy);
     }
 
-    internal static (byte R, byte G, byte B, byte A) SampleNearest(DecodedTexture tex, float u, float v)
+    internal static (byte R, byte G, byte B, byte A) SampleNearest(
+        DecodedTexture tex,
+        float u,
+        float v,
+        bool clampU = false,
+        bool clampV = false)
     {
-        return SampleNearest(tex.GetMipLevel(0), u, v);
+        return SampleNearest(tex.GetMipLevel(0), u, v, clampU, clampV);
     }
 
     internal static (byte R, byte G, byte B, byte A) SampleNearest(
         DecodedTextureMipLevel mipLevel,
         float u,
-        float v)
+        float v,
+        bool clampU = false,
+        bool clampV = false)
     {
-        var x = ((int)(u * mipLevel.Width) % mipLevel.Width + mipLevel.Width) % mipLevel.Width;
-        var y = ((int)(v * mipLevel.Height) % mipLevel.Height + mipLevel.Height) % mipLevel.Height;
+        var x = AddressCoordinate((int)MathF.Floor(u * mipLevel.Width), mipLevel.Width, clampU);
+        var y = AddressCoordinate((int)MathF.Floor(v * mipLevel.Height), mipLevel.Height, clampV);
         var i = (y * mipLevel.Width + x) * 4;
         return (
             mipLevel.Pixels[i],
@@ -115,15 +131,22 @@ internal static class NifTextureSampler
             mipLevel.Pixels[i + 3]);
     }
 
-    internal static (byte R, byte G, byte B, byte A) SampleBilinear(DecodedTexture tex, float u, float v)
+    internal static (byte R, byte G, byte B, byte A) SampleBilinear(
+        DecodedTexture tex,
+        float u,
+        float v,
+        bool clampU = false,
+        bool clampV = false)
     {
-        return SampleBilinear(tex.GetMipLevel(0), u, v);
+        return SampleBilinear(tex.GetMipLevel(0), u, v, clampU, clampV);
     }
 
     internal static (byte R, byte G, byte B, byte A) SampleBilinear(
         DecodedTextureMipLevel mipLevel,
         float u,
-        float v)
+        float v,
+        bool clampU = false,
+        bool clampV = false)
     {
         var fx = u * mipLevel.Width - 0.5f;
         var fy = v * mipLevel.Height - 0.5f;
@@ -133,12 +156,12 @@ internal static class NifTextureSampler
         var fracX = fx - x0;
         var fracY = fy - y0;
 
-        // Wrap coordinates for tiling
-        var x1 = x0 + 1;
-        x0 = (x0 % mipLevel.Width + mipLevel.Width) % mipLevel.Width;
-        x1 = (x1 % mipLevel.Width + mipLevel.Width) % mipLevel.Width;
-        y0 = (y0 % mipLevel.Height + mipLevel.Height) % mipLevel.Height;
-        var y1 = (y0 + 1) % mipLevel.Height;
+        // Address each neighbor independently. In clamp mode this duplicates the edge texel, while
+        // wrap mode retains the existing tiled interpolation across the texture boundary.
+        var x1 = AddressCoordinate(x0 + 1, mipLevel.Width, clampU);
+        var y1 = AddressCoordinate(y0 + 1, mipLevel.Height, clampV);
+        x0 = AddressCoordinate(x0, mipLevel.Width, clampU);
+        y0 = AddressCoordinate(y0, mipLevel.Height, clampV);
 
         // Fetch 4 texels
         var i00 = (y0 * mipLevel.Width + x0) * 4;
@@ -162,13 +185,18 @@ internal static class NifTextureSampler
         );
     }
 
+    private static int AddressCoordinate(int coordinate, int size, bool clamp) =>
+        clamp
+            ? Math.Clamp(coordinate, 0, size - 1)
+            : ((coordinate % size) + size) % size;
+
     /// <summary>
     ///     Resolve a D3D blend factor enum value to a per-channel multiplier.
     ///     Matches SetupGeometryAlphaBlending (VA 0x82AAD430) blend mode extraction.
     ///     <paramref name="channel" />: 0=R, 1=G, 2=B for SRC_COLOR/DST_COLOR modes.
     /// </summary>
     internal static float ResolveBlendFactor(
-        byte mode, float srcAlpha,
+        byte mode, float srcAlpha, float dstAlpha,
         float srcR, float srcG, float srcB,
         float dstR, float dstG, float dstB,
         int channel)
@@ -183,8 +211,9 @@ internal static class NifTextureSampler
             5 => channel switch { 0 => 1f - dstR, 1 => 1f - dstG, _ => 1f - dstB }, // INV_DST_COLOR
             6 => srcAlpha, // SRC_ALPHA
             7 => 1f - srcAlpha, // INV_SRC_ALPHA
-            8 => Math.Min(srcAlpha, 1f - srcAlpha), // DST_ALPHA (approx)
-            9 => 1f - Math.Min(srcAlpha, 1f - srcAlpha), // INV_DST_ALPHA (approx)
+            8 => dstAlpha, // DST_ALPHA
+            9 => 1f - dstAlpha, // INV_DST_ALPHA
+            10 => Math.Min(srcAlpha, 1f - dstAlpha), // SRC_ALPHA_SATURATE
             _ => srcAlpha // Fallback to SRC_ALPHA behavior
         };
     }

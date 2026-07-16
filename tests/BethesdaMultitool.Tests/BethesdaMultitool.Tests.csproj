@@ -27,4 +27,18 @@
     <ProjectReference Include="..\..\tools\EsmAnalyzer\EsmAnalyzer.csproj" />
   </ItemGroup>
 
+  <!-- The profiler is a WinUI executable and cannot be referenced from this platform-neutral test
+       target. Its option/selector contract is platform-neutral, so compile those exact sources into
+       the test assembly instead of leaving the unattended capture CLI untested. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\BethesdaRendererProfiler\RendererProfilerOptions.cs"
+             Link="Profiler\RendererProfilerOptions.cs" />
+    <Compile Include="..\..\src\BethesdaRendererProfiler\CaptureSelectionGuard.cs"
+             Link="Profiler\CaptureSelectionGuard.cs" />
+    <Compile Include="..\..\src\BethesdaRendererProfiler\CaptureReadinessGuard.cs"
+             Link="Profiler\CaptureReadinessGuard.cs" />
+    <Compile Include="..\..\src\BethesdaRendererProfiler\CaptureImageFingerprint.cs"
+             Link="Profiler\CaptureImageFingerprint.cs" />
+  </ItemGroup>
+
 </Project>

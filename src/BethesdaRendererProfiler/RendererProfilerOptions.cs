@@ -70,7 +70,8 @@ internal sealed record RendererProfilerOptions
     /// <summary>
     ///     When set, renders ONE live perspective frame (sky dome + sun/moon + scene) to this PNG and exits
     ///     — the sky-verification capture. Honors <see cref="CaptureWorldspaceName" /> /
-    ///     <see cref="CaptureWeatherName" /> / <see cref="CaptureHour" /> / <see cref="CapturePitchDegrees" />.
+    ///     <see cref="CaptureWeatherName" /> / <see cref="CaptureHour" /> / <see cref="CapturePitchDegrees" /> /
+    ///     <see cref="CaptureYawDegrees" /> and the explicit capture dimensions.
     /// </summary>
     internal string? CaptureFramePath { get; init; }
 
@@ -101,8 +102,30 @@ internal sealed record RendererProfilerOptions
     /// (Profiler_SetGameDay). Default 0.</summary>
     internal float CaptureDay { get; init; }
 
+    /// <summary>
+    ///     Pinned renderer animation clock for an unattended perspective capture. Drives NIF UV
+    ///     controllers/live particles, SpeedTree wind, cloud scrolling, and water animation. Default 0.
+    /// </summary>
+    internal float CaptureAnimationTimeSeconds { get; init; }
+
     /// <summary>Camera pitch in degrees for the capture; positive looks UP (90 ≈ straight up at the sky).</summary>
     internal float CapturePitchDegrees { get; init; } = 80f;
+
+    /// <summary>
+    ///     Optional camera yaw in degrees for the capture. Null preserves the selected scene bookmark's yaw.
+    /// </summary>
+    internal float? CaptureYawDegrees { get; init; }
+
+    /// <summary>Pixel width of a perspective frame capture. Default 768.</summary>
+    internal int CaptureWidth { get; init; } = 768;
+
+    /// <summary>Pixel height of a perspective frame capture. Default 480.</summary>
+    internal int CaptureHeight { get; init; } = 480;
+
+    /// <summary>
+    ///     Maximum seconds a one-shot perspective capture waits for reference streaming to quiesce.
+    /// </summary>
+    internal int CaptureSettleTimeoutSeconds { get; init; } = 60;
 
     internal static string Usage =>
         """
@@ -133,13 +156,25 @@ internal sealed record RendererProfilerOptions
           --height <px>               Window height. Default: 900.
           --capture-topdown <path>    Render one top-down "Rendered models" overlay to a PNG, log coverage, then exit.
           --capture-frame <path>      Render one perspective frame to a PNG, then exit.
+          --capture-width <px>        Perspective capture width. Default: 768; maximum: 16384.
+          --capture-height <px>       Perspective capture height. Default: 480; maximum: 16384.
+          --capture-worldspace-name <id>
+                                      Select this exterior Worldspace EditorID for --capture-frame; mismatch fails.
           --capture-interior <cell>   Select an interior by EditorID or 0xFormID for --capture-frame.
+          --capture-weather <id>      Select this Weather EditorID for --capture-frame; mismatch fails.
+          --capture-hour <n>          Capture time of day from 0 through 24. Default: 12.
+          --capture-day <n>           Day of the lunar cycle for the capture (moon phase + orbit). Default: 0.
+          --capture-animation-time <s>
+                                      Pin UV/particle/tree/cloud/water animation time. Default: 0 seconds.
+          --capture-pitch <degrees>   Camera pitch; positive looks up. Default: 80.
+          --capture-yaw <degrees>     Camera yaw. Default: preserve the selected scene bookmark yaw.
+          --capture-settle-timeout-seconds <n>
+                                      Fail unless reference streaming quiesces within n seconds. Default: 60.
           --capture-cells <n>         Top-down capture window size in cells (default 6).
           --capture-worldspace <i>    Target exterior worldspace index i (centered on its centroid) — tests the top-down worldspace sync.
           --capture-center-x <x>      Override the capture window center X (world units). Aims the capture at a landmark.
           --capture-center-y <y>      Override the capture window center Y (world units).
           --capture-z <z>             Camera height for an aimed perspective --capture-frame (world units).
-          --capture-day <n>           Day of the lunar cycle for the capture (moon phase + orbit). Default 0.
 
         Examples:
           BethesdaRendererProfiler --input "C:\Games\Fallout New Vegas\Data\FalloutNV.esm" --duration-seconds 60
@@ -182,7 +217,12 @@ internal sealed record RendererProfilerOptions
         string? captureWeatherName = null;
         var captureHour = 12f;
         var captureDay = 0f;
+        var captureAnimationTimeSeconds = 0f;
         var capturePitchDegrees = 80f;
+        float? captureYawDegrees = null;
+        var captureWidth = 768;
+        var captureHeight = 480;
+        var captureSettleTimeoutSeconds = 60;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -251,7 +291,8 @@ internal sealed record RendererProfilerOptions
                     if (error != null) return Fail(out options, error);
                     if (!RendererCameraMotion.TryParseKind(motionRaw, out cameraMotion))
                     {
-                        return Fail(out options, $"Unknown camera motion: {motionRaw}");
+                        error = $"Unknown camera motion: {motionRaw}";
+                        return Fail(out options, error);
                     }
 
                     break;
@@ -316,7 +357,8 @@ internal sealed record RendererProfilerOptions
                     if (!int.TryParse(wsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var wsIdx) ||
                         wsIdx < 0)
                     {
-                        return Fail(out options, $"{arg} requires a non-negative integer.");
+                        error = $"{arg} requires a non-negative integer.";
+                        return Fail(out options, error);
                     }
 
                     captureWorldspaceIndex = wsIdx;
@@ -380,6 +422,30 @@ internal sealed record RendererProfilerOptions
                     if (error != null) return Fail(out options, error);
                     break;
 
+                case "--capture-width":
+                    if (!TryReadCaptureDimension(args, ref i, arg, out captureWidth, out error))
+                    {
+                        return Fail(out options, error);
+                    }
+
+                    break;
+
+                case "--capture-height":
+                    if (!TryReadCaptureDimension(args, ref i, arg, out captureHeight, out error))
+                    {
+                        return Fail(out options, error);
+                    }
+
+                    break;
+
+                case "--capture-settle-timeout-seconds":
+                    if (!TryReadPositiveInt(args, ref i, arg, out captureSettleTimeoutSeconds, out error))
+                    {
+                        return Fail(out options, error);
+                    }
+
+                    break;
+
                 case "--capture-worldspace-name":
                     captureWorldspaceName = RequireValue(args, ref i, arg, out error);
                     if (error != null) return Fail(out options, error);
@@ -407,6 +473,12 @@ internal sealed record RendererProfilerOptions
                     }
 
                     captureHour = (float)hour;
+                    if (captureHour > 24f)
+                    {
+                        error = $"{arg} must be between 0 and 24 (inclusive).";
+                        return Fail(out options, error);
+                    }
+
                     break;
 
                 case "--capture-day":
@@ -416,6 +488,14 @@ internal sealed record RendererProfilerOptions
                     }
 
                     captureDay = (float)day;
+                    break;
+
+                case "--capture-animation-time":
+                    if (!TryReadNonNegativeFloat(args, ref i, arg, out captureAnimationTimeSeconds, out error))
+                    {
+                        return Fail(out options, error);
+                    }
+
                     break;
 
                 // Pitch can be negative (look down), so read the value directly rather than via RequireValue.
@@ -433,6 +513,24 @@ internal sealed record RendererProfilerOptions
                         return Fail(out options, error);
                     }
 
+                    break;
+
+                // Yaw can be negative, so read the value directly rather than via RequireValue.
+                case "--capture-yaw":
+                    if (i + 1 >= args.Length)
+                    {
+                        error = $"{arg} requires a value.";
+                        return Fail(out options, error);
+                    }
+
+                    if (!float.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var yawDegrees) ||
+                        !float.IsFinite(yawDegrees))
+                    {
+                        error = $"{arg} must be a finite number (degrees).";
+                        return Fail(out options, error);
+                    }
+
+                    captureYawDegrees = yawDegrees;
                     break;
 
                 case "--width":
@@ -542,7 +640,12 @@ internal sealed record RendererProfilerOptions
             CaptureWeatherName = captureWeatherName,
             CaptureHour = captureHour,
             CaptureDay = captureDay,
-            CapturePitchDegrees = capturePitchDegrees
+            CaptureAnimationTimeSeconds = captureAnimationTimeSeconds,
+            CapturePitchDegrees = capturePitchDegrees,
+            CaptureYawDegrees = captureYawDegrees,
+            CaptureWidth = captureWidth,
+            CaptureHeight = captureHeight,
+            CaptureSettleTimeoutSeconds = captureSettleTimeoutSeconds
         };
         error = null;
         return true;
@@ -622,6 +725,30 @@ internal sealed record RendererProfilerOptions
         return true;
     }
 
+    private static bool TryReadCaptureDimension(
+        string[] args,
+        ref int index,
+        string option,
+        out int value,
+        out string? error)
+    {
+        if (!TryReadPositiveInt(args, ref index, option, out value, out error))
+        {
+            return false;
+        }
+
+        // D3D12's maximum Texture2D dimension is 16384. Rejecting larger requests here avoids
+        // turning a typo into an opaque GPU allocation/capture failure later in the run.
+        if (value > 16384)
+        {
+            error = $"{option} must be between 1 and 16384 (inclusive).";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
     private static bool TryReadPositiveFloat(
         string[] args,
         ref int index,
@@ -669,6 +796,34 @@ internal sealed record RendererProfilerOptions
             double.IsInfinity(value))
         {
             error = $"{option} must be a non-negative number.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static bool TryReadNonNegativeFloat(
+        string[] args,
+        ref int index,
+        string option,
+        out float value,
+        out string? error)
+    {
+        // Read directly so a negative value reaches validation instead of being mistaken for an option.
+        if (index + 1 >= args.Length)
+        {
+            value = 0f;
+            error = $"{option} requires a value.";
+            return false;
+        }
+
+        var raw = args[++index];
+        if (!float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value) ||
+            value < 0f ||
+            !float.IsFinite(value))
+        {
+            error = $"{option} must be a finite non-negative number.";
             return false;
         }
 

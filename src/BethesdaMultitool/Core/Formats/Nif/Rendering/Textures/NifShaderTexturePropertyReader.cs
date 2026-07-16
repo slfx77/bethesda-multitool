@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Utils;
 
@@ -35,12 +36,16 @@ internal static class NifShaderTexturePropertyReader
                 // slots don't convey — e.g. SLSF1_Refraction / SLSF1_Fire_Refraction (heat-haze/vapor planes
                 // that must NOT draw as opaque normal-map "gems"). Best-effort; null when the layout is unknown.
                 TryReadBsLightingShaderFlags(data, nif, propBlock, out var lsFlags1, out var lsFlags2);
+                TryReadBsShaderUvTransform(data, nif, propBlock, hasLeadingShaderType: true,
+                    out var uvOffset, out var uvScale);
 
                 return new NifShaderTextureMetadata
                 {
                     PropertyType = propBlock.TypeName,
                     ShaderFlags = lsFlags1,
                     ShaderFlags2 = lsFlags2,
+                    UvOffset = uvOffset,
+                    UvScale = uvScale,
                     TextureSlots = slots,
                     // The material's render state (alpha, two-sided, specular) overrides the NIF's inline
                     // properties, so surface its path even when the inline texture set supplied a diffuse.
@@ -74,12 +79,16 @@ internal static class NifShaderTexturePropertyReader
                 // Fallout 4+ layouts diverge (external BGEM / CRC flag arrays), so this deliberately
                 // only decodes the Skyrim-family layout.
                 var inline = ReadClassicBsEffectShaderData(data, nif, propBlock);
+                TryReadBsShaderUvTransform(data, nif, propBlock, hasLeadingShaderType: false,
+                    out var uvOffset, out var uvScale);
 
                 return new NifShaderTextureMetadata
                 {
                     PropertyType = propBlock.TypeName,
                     ShaderFlags = inline?.ShaderFlags1,
                     ShaderFlags2 = inline?.ShaderFlags2,
+                    UvOffset = uvOffset,
+                    UvScale = uvScale,
                     EffectBaseColor = inline?.BaseColor,
                     EffectBaseColorScale = inline?.BaseColorScale,
                     EffectLightingInfluence = inline?.LightingInfluence,
@@ -565,6 +574,46 @@ internal static class NifShaderTexturePropertyReader
             baseFinite ? (baseR, baseG, baseB, baseA) : null,
             float.IsFinite(baseScale) ? baseScale : null,
             falloffFinite ? (startAngle, stopAngle, startOpacity, stopOpacity) : null);
+    }
+
+    private static bool TryReadBsShaderUvTransform(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo block,
+        bool hasLeadingShaderType,
+        out Vector2 offset,
+        out Vector2 scale)
+    {
+        offset = Vector2.Zero;
+        scale = Vector2.One;
+        if (nif.BsVersion < 83 || nif.BsVersion >= 155)
+        {
+            return false;
+        }
+
+        var pos = block.DataOffset + (hasLeadingShaderType ? 4 : 0);
+        var end = Math.Min(data.Length, block.DataOffset + block.Size);
+        if (!NifBinaryCursor.SkipNiObjectNET(data, ref pos, end, nif.IsBigEndian) || pos + 24 > end)
+        {
+            return false;
+        }
+
+        pos += 8; // Shader Flags 1/2
+        offset = new Vector2(
+            BinaryUtils.ReadFloat(data, pos, nif.IsBigEndian),
+            BinaryUtils.ReadFloat(data, pos + 4, nif.IsBigEndian));
+        scale = new Vector2(
+            BinaryUtils.ReadFloat(data, pos + 8, nif.IsBigEndian),
+            BinaryUtils.ReadFloat(data, pos + 12, nif.IsBigEndian));
+        if (!float.IsFinite(offset.X) || !float.IsFinite(offset.Y) ||
+            !float.IsFinite(scale.X) || !float.IsFinite(scale.Y))
+        {
+            offset = Vector2.Zero;
+            scale = Vector2.One;
+            return false;
+        }
+
+        return true;
     }
 
     private sealed record ClassicBsEffectShaderData(

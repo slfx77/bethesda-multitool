@@ -41,14 +41,14 @@ internal sealed class Renderer3DScenario : IDisposable
             options.CameraMotion,
             options.CameraSpeed);
 
-        if (options.CameraMotion != RendererCameraMotionKind.Static)
-        {
-            _timer = dispatcherQueue.CreateTimer();
-            _timer.Interval = TimeSpan.FromMilliseconds(16);
-            _timer.IsRepeating = true;
-            _timer.Tick += OnTick;
-            _timer.Start();
-        }
+        // Keep a timer for Static as well: a profiler-owned fixed camera must remain fixed even if
+        // the foreground window receives incidental input. OnTick avoids writing the pose when it
+        // is already exact, so the static path adds only the timer comparison to each interval.
+        _timer = dispatcherQueue.CreateTimer();
+        _timer.Interval = TimeSpan.FromMilliseconds(16);
+        _timer.IsRepeating = true;
+        _timer.Tick += OnTick;
+        _timer.Start();
 
         _clock.Start();
     }
@@ -88,7 +88,10 @@ internal sealed class Renderer3DScenario : IDisposable
             _initialPose,
             _options.CameraSpeed,
             elapsed);
-        _control.Profiler_SetCameraPose(pose);
+        if (_control.Profiler_CameraPose != pose)
+        {
+            _control.Profiler_SetCameraPose(pose);
+        }
 
         var elapsedMs = _clock.ElapsedMilliseconds;
         if (elapsedMs - _lastMotionLogMilliseconds >= 1000)

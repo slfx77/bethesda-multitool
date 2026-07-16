@@ -98,6 +98,7 @@ internal static class EsmWorldExtractor
         uint? ownerFormId = null;
         uint? encounterZoneFormId = null;
         uint? materialSwapFormId = null;
+        uint? emittanceFormId = null;
         byte? lockLevel = null;
         uint? lockKeyFormId = null;
         byte? lockFlags = null;
@@ -176,6 +177,10 @@ internal static class EsmWorldExtractor
 
                 case "XMSP" when sub.DataLength == 4: // FO4/FO76 per-placement material swap (MSWP)
                     materialSwapFormId = SubrecordSchemaReader.ReadNameFormId(subData, header.IsBigEndian);
+                    break;
+
+                case "XEMI" when sub.DataLength == 4:
+                    emittanceFormId = SubrecordSchemaReader.ReadNameFormId(subData, header.IsBigEndian);
                     break;
 
                 case "XLOC" when sub.DataLength >= 20:
@@ -287,6 +292,7 @@ internal static class EsmWorldExtractor
             OwnerFormId = ownerFormId,
             EncounterZoneFormId = encounterZoneFormId,
             MaterialSwapFormId = materialSwapFormId,
+            EmittanceFormId = emittanceFormId,
             LockLevel = lockLevel,
             LockKeyFormId = lockKeyFormId,
             LockFlags = lockFlags,

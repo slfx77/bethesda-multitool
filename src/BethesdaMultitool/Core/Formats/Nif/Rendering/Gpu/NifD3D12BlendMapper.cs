@@ -1,4 +1,3 @@
-#if WINDOWS_GUI
 using D12 = Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
@@ -21,9 +20,8 @@ internal static class NifD3D12BlendMapper
             7 => D12.Blend.InverseSourceAlpha,
             8 => D12.Blend.DestinationAlpha,
             9 => D12.Blend.InverseDestinationAlpha,
-            10 => D12.Blend.One, // GL_SRC_ALPHA_SATURATE: no D3D12 equivalent; approximate as One.
+            10 => D12.Blend.SourceAlphaSaturate,
             _ => D12.Blend.SourceAlpha
         };
     }
 }
-#endif

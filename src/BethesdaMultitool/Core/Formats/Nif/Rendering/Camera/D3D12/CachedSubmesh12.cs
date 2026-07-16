@@ -1,6 +1,7 @@
 #if WINDOWS_GUI
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.SpeedTree;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
@@ -87,8 +88,13 @@ internal sealed class CachedSubmesh12
                 // .y > 0.5 routes the instanced VS to the leaf-billboard branch; 2 additionally marks
                 // an ALPHA-TESTED leaf card (SPT leaves — the PS boosts test alpha by texture LOD to
                 // undo mip alpha decay; baked particle clouds are blends and stay at 1).
-                IsLeafBillboard ? (AlphaTest ? 2f : 1f) : 0f,
-                SpecularMap is not null ? 1f : 0f, // .z > 0.5 = sample TexIndices.z for the spec mask
+                IsSpeedTreeBranch ? -1f : IsLeafBillboard ? (AlphaTest ? 2f : 1f) : 0f,
+                // Exact integer flags carried in a float constant: bit 0 = sample TexIndices.z for
+                // the spec mask, bit 1 = clamp U, bit 2 = clamp V. All values are <= 7 and therefore
+                // exactly representable; shaders decode with integer bit tests.
+                (SpecularMap is not null ? 1f : 0f) +
+                (ClampTextureU ? 2f : 0f) +
+                (ClampTextureV ? 4f : 0f),
                 GradientMap is not null ? GradientMapV : -1f); // .w >= 0 = palette row for TexIndices.w
             if (TexturesReady)
             {
@@ -121,7 +127,43 @@ internal sealed class CachedSubmesh12
     ///     cylindrical camera-facing matrix so the quad re-aims at the camera every frame.
     /// </summary>
     public required bool IsBillboard { get; init; }
+
+    /// <summary>
+    ///     Authored horizontal front axis recovered from the submesh's indexed winding. +Y is the
+    ///     historical fallback; FNV effect meshes such as FireBall09 author their visible side as -Y.
+    /// </summary>
+    public Vector2 BillboardFrontAxis { get; init; } = Vector2.UnitY;
+
     public bool IsLeafBillboard { get; init; }
+
+    /// <summary>
+    ///     One local-space center per baked particle quad. Null for ordinary geometry and
+    ///     SpeedTree leaf cards. The blended renderer uses these to build a transient stable
+    ///     back-to-front index order for the current camera.
+    /// </summary>
+    public Vector3[]? ParticleCenters { get; init; }
+
+    /// <summary>
+    ///     Optional owner of transient, time-sampled particle geometry. Null is the default/static path.
+    ///     Its views are frame-ring-backed and therefore activated or cleared before every draw frame.
+    /// </summary>
+    public LiveParticleOwner12? LiveParticles { get; init; }
+
+    /// <summary>BGSM/BGEM material addressing: clamp U when TileU is disabled.</summary>
+    public bool ClampTextureU { get; init; }
+
+    /// <summary>BGSM/BGEM material addressing: clamp V when TileV is disabled.</summary>
+    public bool ClampTextureV { get; init; }
+
+    /// <summary>SpeedTree bark/frond vertex route. TextureState.y = -1 tells the VS to decode the
+    /// specialized TBN-magnitude wind payload while remaining distinct from leaf billboards.</summary>
+    public bool IsSpeedTreeBranch { get; init; }
+
+    /// <summary>TREE CNAM (RockSpeed, RustleSpeed); defaults to 1 for bare .spt meshes.</summary>
+    public Vector2 SpeedTreeWindSpeeds { get; init; } = Vector2.One;
+
+    /// <summary>Opt-in .spt runtime-LOD component/level, or null on the default single-LOD path.</summary>
+    public SpeedTreeLodMetadata? SpeedTreeLod { get; init; }
 
     /// <summary>
     ///     True for an alpha-BLEND shape the engine writes depth for (effects-folder foliage like
@@ -178,7 +220,24 @@ internal sealed class CachedSubmesh12
     /// </summary>
     public VertexBufferView? AnimatedVertexBufferView { get; set; }
 
-    /// <summary>The vertex buffer the draw should bind this frame (animated override, else static).</summary>
-    public VertexBufferView EffectiveVertexBufferView => AnimatedVertexBufferView ?? VertexBufferView;
+    /// <summary>The vertex buffer the draw should bind this frame (live particle, skinned, then static).</summary>
+    public VertexBufferView EffectiveVertexBufferView =>
+        LiveParticles is { HasLiveFrame: true, VertexBufferView: { } live }
+            ? live
+            : AnimatedVertexBufferView ?? VertexBufferView;
+
+    /// <summary>Current coherent index-buffer partner for <see cref="EffectiveVertexBufferView" />.</summary>
+    public IndexBufferView EffectiveIndexBufferView =>
+        LiveParticles is { HasLiveFrame: true, IndexBufferView: { } live }
+            ? live
+            : IndexBufferView;
+
+    /// <summary>Zero during an authored quiet live interval; static count when live upload fell back.</summary>
+    public int EffectiveIndexCount =>
+        LiveParticles is { HasLiveFrame: true } live ? live.IndexCount : IndexCount;
+
+    /// <summary>Per-quad centers matching the effective VB, for the transient camera-sort IB.</summary>
+    public Vector3[]? EffectiveParticleCenters =>
+        LiveParticles is { HasLiveFrame: true } live ? live.ParticleCenters : ParticleCenters;
 }
 #endif

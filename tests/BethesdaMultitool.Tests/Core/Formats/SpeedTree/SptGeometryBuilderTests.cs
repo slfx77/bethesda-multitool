@@ -72,11 +72,16 @@ public class SptGeometryBuilderTests
         Assert.Contains("branches", bark.DiffuseTexturePath!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("bark", bark.DiffuseTexturePath!, StringComparison.OrdinalIgnoreCase);
         Assert.False(bark.IsDoubleSided);
+        Assert.True(bark.IsSpeedTreeBranch);
+        Assert.NotNull(bark.Tangents);
+        Assert.NotNull(bark.Bitangents);
+        Assert.EndsWith("_n.dds", bark.NormalMapTexturePath, StringComparison.OrdinalIgnoreCase);
 
         var leaf = result.Submeshes.Single(s => s.ShapeName == "spt:leaves");
         Assert.Contains("leaves", leaf.DiffuseTexturePath!, StringComparison.OrdinalIgnoreCase);
         Assert.True(leaf.IsDoubleSided);
         Assert.True(leaf.HasAlphaTest);
+        Assert.Equal((byte)84, leaf.AlphaTestThreshold);
 
         foreach (var sub in result.Submeshes)
         {
@@ -86,6 +91,18 @@ public class SptGeometryBuilderTests
         // Bounds are finite and non-degenerate.
         Assert.True(float.IsFinite(result.Width) && result.Width > 0);
         Assert.True(float.IsFinite(result.Height) && result.Height > 0);
+    }
+
+    [Theory]
+    [InlineData(83, false)]
+    [InlineData(84, false)]
+    [InlineData(95, true)]
+    [InlineData(96, true)]
+    public void LegacyLeafAlphaRamp_UsesRecoveredGreaterThan84Cutout(int alphaByte, bool survives)
+    {
+        var threshold = SptGeometryOptions.Default.LeafAlphaThreshold;
+        Assert.Equal((byte)84, threshold);
+        Assert.Equal(survives, alphaByte > threshold);
     }
 
     [Fact]
@@ -239,17 +256,130 @@ public class SptGeometryBuilderTests
         };
 
         var result = SptGeometryBuilder.Build(model, 1, BillboardOptions());
-        var offsets = result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Bitangents!;
+        var leafSubmesh = result.Submeshes.Single(s => s.ShapeName == "spt:leaves");
+        var normals = leafSubmesh.Normals!;
         var maxWeight = 0f;
-        for (var v = 2; v < offsets.Length; v += 3)
+        for (var vertex = 0; vertex < leafSubmesh.VertexCount; vertex++)
         {
-            var weight = offsets[v] - MathF.Floor(offsets[v]);
+            // Engine v3.x (wind-matrix weight) is independent from v3.z's dimmer fraction. The
+            // renderer-preserving payload stores it as |normal|-1 and normalizes before lighting.
+            var weight = ReadVector3(normals, vertex).Length() - 1f;
             Assert.InRange(weight, 0f, maxWeightCap); // never exceeds the t·flex product
             maxWeight = MathF.Max(maxWeight, weight);
         }
 
         Assert.True(maxWeight >= minMaxWeight,
             $"expected peak leaf wind weight ≥ {minMaxWeight}, got {maxWeight}");
+    }
+
+    [Fact]
+    public void Build_BarkCarriesOrthonormalTbnAndRecoveredBranchWindWeights()
+    {
+        var child = MakeBranch(0.5f, 0.01f, 0f, 3, 4);
+        var childSlots = (SptBezierSpline?[])child.Splines;
+        childSlots[2] = new SptBezierSpline { Header = new Vector3(1f, 1f, 0f) };
+        childSlots[3] = new SptBezierSpline { Header = new Vector3(0f, 1f, 0f) };
+        var model = new SptModel
+        {
+            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga", Float2006 = 100f },
+            Branches =
+            [
+                MakeBranch(1f, 0.02f, 1f, 3, 2),
+                child,
+                new SptBranch()
+            ],
+            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner1 = new Vector3(0.01f) }]
+        };
+
+        var bark = SptGeometryBuilder.Build(model, 17).Submeshes.Single(s => s.ShapeName == "spt:bark");
+
+        Assert.True(bark.IsSpeedTreeBranch);
+        Assert.NotNull(bark.NormalMapTexturePath);
+        Assert.NotNull(bark.Tangents);
+        Assert.NotNull(bark.Bitangents);
+
+        var minWeight = float.MaxValue;
+        var maxWeight = float.MinValue;
+        for (var vertex = 0; vertex < bark.VertexCount; vertex++)
+        {
+            var n = Vector3.Normalize(ReadVector3(bark.Normals!, vertex));
+            var encodedT = ReadVector3(bark.Tangents!, vertex);
+            var encodedB = ReadVector3(bark.Bitangents!, vertex);
+            var tangentLength = encodedT.Length();
+            var bitangentLength = encodedB.Length();
+            var t = encodedT / tangentLength;
+            var b = encodedB / bitangentLength;
+
+            Assert.InRange(tangentLength, 1f - 1e-4f, 4f + 1e-4f);
+            Assert.InRange(bitangentLength, 1f - 1e-4f, 2f + 1e-4f);
+            Assert.InRange(MathF.Abs(Vector3.Dot(n, t)), 0f, 1e-4f);
+            Assert.InRange(MathF.Abs(Vector3.Dot(n, b)), 0f, 1e-4f);
+            Assert.InRange(MathF.Abs(Vector3.Dot(t, b)), 0f, 1e-4f);
+            // U advances around the ring while V advances toward the branch tip. That authored UV
+            // orientation is left-handed relative to the outward normal; preserve the explicit
+            // bitangent instead of silently flipping the normal map's green axis.
+            Assert.InRange(Vector3.Dot(Vector3.Cross(t, b), n), -1.0001f, -0.9999f);
+
+            var weight = bitangentLength - 1f;
+            minWeight = MathF.Min(minWeight, weight);
+            maxWeight = MathF.Max(maxWeight, weight);
+        }
+
+        // Level-0 trunk vertices remain rigid; flexible level-1 branch tips carry greater motion.
+        Assert.InRange(minWeight, 0f, 1e-4f);
+        Assert.True(maxWeight > 0.5f, $"expected a flexible branch tip, peak weight was {maxWeight}");
+    }
+
+    [Fact]
+    public void Build_CnamWindSpeedsChangeOnlyPerTreePhaseMetadata()
+    {
+        var model = new SptModel
+        {
+            General = new SptGeneralParams { BarkTexturePath = @"C:\x\OakBark.tga" },
+            Branches = [MakeLeafyBranch()],
+            Leaves = [new SptLeaf { Material = @"C:\x\OakFoliage.dds", Corner2 = new Vector3(6, 6, 0) }]
+        };
+
+        var baseline = SptGeometryBuilder.Build(model, 99,
+            new SptGeometryOptions { LeafBillboard = true, CrossedLeafCards = false });
+        var doubled = SptGeometryBuilder.Build(model, 99,
+            new SptGeometryOptions
+            {
+                LeafBillboard = true,
+                CrossedLeafCards = false,
+                RockSpeed = 2f,
+                RustleSpeed = 3f
+            });
+
+        Assert.Equal(baseline.Submeshes.Count, doubled.Submeshes.Count);
+        for (var i = 0; i < baseline.Submeshes.Count; i++)
+        {
+            Assert.Equal(baseline.Submeshes[i].Positions, doubled.Submeshes[i].Positions);
+            Assert.Equal(baseline.Submeshes[i].Triangles, doubled.Submeshes[i].Triangles);
+            Assert.Equal(new Vector2(2f, 3f), doubled.Submeshes[i].SpeedTreeWindSpeeds);
+        }
+
+        const float baseRockPhase = 0.375f;
+        Assert.Equal(0.75f, baseRockPhase * doubled.Submeshes[0].SpeedTreeWindSpeeds.X, 6);
+    }
+
+    [Fact]
+    public void RecoveredLeafWind_DeformsFullCornerRatherThanRigidCenter()
+    {
+        // Independent recovered-STLEAF vector: construct the corner first, rotate the complete
+        // model-space point 90 degrees around X, then interpolate by the authored wind weight.
+        // A center-only implementation leaves the one-unit card edge rigid and lands elsewhere.
+        var center = new Vector3(0f, 0f, 2f);
+        var offset = new Vector3(0f, 1f, 0f);
+        var corner = center + offset;
+        static Vector3 RotateX90(Vector3 p) => new(p.X, -p.Z, p.Y);
+
+        var recovered = Vector3.Lerp(corner, RotateX90(corner), 0.5f);
+        var centerOnly = Vector3.Lerp(center, RotateX90(center), 0.5f) + offset;
+
+        Assert.Equal(new Vector3(0f, -0.5f, 1.5f), recovered);
+        Assert.Equal(new Vector3(0f, 0f, 1f), centerOnly);
+        Assert.NotEqual(centerOnly, recovered);
     }
 
     [Fact]
@@ -372,8 +502,9 @@ public class SptGeometryBuilderTests
         var offsets = result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Bitangents!;
         // bitangent.xy = the card corner offset (Corner0 pivot + Corner1 size). bitangent.z packs the
         // engine's STLEAF v3.z: INTEGER = the LeafBase phase slot (slotBase·4 + the (j+2)&3 corner slot
-        // for our LB,RB,RT,LT emission order → corner slots 2,3,0,1), FRACTION = the wind-matrix lerp
-        // weight. Card size = cardScale·Corner1 with cardScale = treeSizeMid = Float2006·10.
+        // for our LB,RB,RT,LT emission order → corner slots 2,3,0,1), FRACTION = the recovered canopy
+        // dimmer, which also jitters the wind phase. Card size = cardScale·Corner1 with
+        // cardScale = treeSizeMid = Float2006·10.
         // Vertex order follows the ENGINE's zip (BSTreeModel::CreateLeafGeometry pairs texcoord j with
         // CLeafGeometry::Update corner slot (j+2)&3). Seed 1 picks the ODD doubled-entry here
         // (authored pivot 0.25 → x0=−50, x1=150); the EVEN variant would flip the pivot.
@@ -381,22 +512,24 @@ public class SptGeometryBuilderTests
         AssertOffsetXy(offsets, 1, 150f, -300f);
         AssertOffsetXy(offsets, 2, 150f, 100f);
         AssertOffsetXy(offsets, 3, -50f, 100f);
-        // Packed integer = 48·windMatrixIndex + slotBase·4 + cornerSlot; fraction = the wind-matrix
-        // lerp weight (design doc B.3). This single-level model spawns its leaves from the TRUNK
-        // (level 0 = below the wind level), so the authentic weight is exactly 0 — rigid under the
-        // sway matrices, like the engine.
+        // Packed integer = 48·windMatrixIndex + slotBase·4 + cornerSlot. A fully-lit dimmer byte is
+        // clamped to .99 so floor(v3.z) still selects the authored corner, exactly like the engine.
         var packed = (int)MathF.Floor(offsets[2]);
         var windIdx = packed / 48;
         Assert.InRange(windIdx, 0, 3);
         var slotBase = packed % 48 / 4 * 4;
         Assert.InRange(slotBase, 0, 44);
-        var windWeight = offsets[2] - packed;
-        Assert.Equal(0f, windWeight);
+        var dimmerFraction = offsets[2] - packed;
+        Assert.Equal(0.99f, dimmerFraction, 3);
+        // This fixture's leaf sits below the wind level, so independent v3.x is exactly zero.
+        var encodedNormal = ReadVector3(
+            result.Submeshes.Single(s => s.ShapeName == "spt:leaves").Normals!, 0);
+        Assert.Equal(0f, encodedNormal.Length() - 1f, 4);
         // Corner slots walk (j+2)&3 = 2,3,0,1 off the shared base.
         var cardBase = packed - 2;
-        Assert.Equal(cardBase + 3 + windWeight, offsets[5], 3);
-        Assert.Equal(cardBase + 0 + windWeight, offsets[8], 3);
-        Assert.Equal(cardBase + 1 + windWeight, offsets[11], 3);
+        Assert.Equal(cardBase + 3 + dimmerFraction, offsets[5], 3);
+        Assert.Equal(cardBase + 0 + dimmerFraction, offsets[8], 3);
+        Assert.Equal(cardBase + 1 + dimmerFraction, offsets[11], 3);
     }
 
     [Fact]
@@ -806,8 +939,8 @@ public class SptGeometryBuilderTests
         return new Vector3(values[i], values[i + 1], values[i + 2]);
     }
 
-    /// <summary>Asserts a leaf-card bitangent's x/y (the card corner offset); z carries the wind weight,
-    /// checked separately.</summary>
+    /// <summary>Asserts a leaf-card bitangent's x/y (the card corner offset); z carries the recovered
+    /// integer phase slot plus authored dimmer fraction and is checked separately.</summary>
     private static void AssertOffsetXy(float[] values, int vertex, float x, float y)
     {
         var i = vertex * 3;

@@ -12,6 +12,7 @@ cbuffer Uniforms : register(b0)
     float4 uMaterial;
     float4 uTintColor;
     float4 uFlags;
+    float4 uEffectTint;
 };
 
 Texture2D    tDiffuse   : register(t0);
@@ -182,6 +183,11 @@ PSOutput main(PSInput input)
     {
         texColor.a *= input.vVertexColor.a;
     }
+
+    // Classic BSEffect / BGEM: BaseColor.rgb × BaseColorScale is an authored source-color
+    // multiplier and may exceed one. Keep it before blend/output saturation so additive glows
+    // retain their intended intensity in the standalone GPU preview too.
+    texColor.rgb *= uEffectTint.rgb;
 
     // Alpha test — must run BEFORE material alpha multiplication (matches CPU ordering:
     // CPU tests raw texture_alpha * vertex_alpha, not texture_alpha * vertex_alpha * materialAlpha)

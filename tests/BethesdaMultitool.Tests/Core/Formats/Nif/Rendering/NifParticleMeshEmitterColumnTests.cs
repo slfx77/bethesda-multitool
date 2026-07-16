@@ -10,12 +10,11 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
 /// <summary>
-///     End-to-end check that a mesh-emitter particle system (FXDustWhirlWind01 — the dust column emits from a
-///     <c>NiPSysMeshEmitter</c> volume mesh, not a point) bakes a cloud that FILLS the column volume rather
-///     than clustering at the origin as a single blob. Validates
-///     <c>NifParticleSystemExtractor.ResolveMeshEmitterBounds</c>: the baked <c>ParticleCloud</c> AABB should
-///     approximate the emitter mesh's own world-space AABB (computed independently here with the same geometry
-///     readers). Sample-gated — skips when the FNV meshes BSA isn't present (e.g. CI).
+///     End-to-end check that a mesh-emitter particle system (FXDustWhirlWind01 — the dust column emits from
+///     an indexed <c>NiPSysMeshEmitter</c> surface, not a point or invented AABB volume) bakes a cloud spanning
+///     the authored column. The stronger seeded unit fixtures pin face membership and normal velocity; this
+///     retail-asset gate independently proves the resolved source mesh reaches both static and live extraction.
+///     Sample-gated — skips when the FNV meshes BSA isn't present (e.g. CI).
 /// </summary>
 public sealed class NifParticleMeshEmitterColumnTests
 {
@@ -49,17 +48,27 @@ public sealed class NifParticleMeshEmitterColumnTests
 
         var clouds = model!.Submeshes.Where(s => s.ShapeName == "ParticleCloud").ToList();
         Assert.NotEmpty(clouds);
+        Assert.All(clouds, particleCloud => Assert.NotNull(particleCloud.ParticleRuntime));
+
+        // The worldspace extractor retains the resolved parser/emitter graph beside the immutable fallback,
+        // so the opt-in D3D12 owner can advance without reparsing or reducing the mesh emitter to an AABB.
+        var liveFrame = ParticleLiveSnapshotBuilder.Build(clouds[0].ParticleRuntime!, 1f);
+        Assert.NotEmpty(liveFrame.Vertices);
+        Assert.Equal(liveFrame.Centers.Length * 4, liveFrame.Vertices.Length);
+        Assert.Equal(
+            liveFrame.Centers.Length * ParticleDepthSort.IndicesPerQuad,
+            liveFrame.Indices.Length);
 
         var cloud = Aabb.FromSubmeshes(clouds.Select(c => c.Positions));
         var meshes = EmitterMeshWorldAabb(data, nif);
         Assert.True(meshes.Valid, "could not compute emitter mesh AABB");
         Assert.True(meshes.Extent.Length() > 1f, "emitter column should have real size");
 
-        // Particles SPAWN across the emitter column at every age and only then drift (velocity + bomb-vortex +
-        // gravity), so the steady-state cloud always CONTAINS the column — the youngest particles still sit on
-        // it. Point emission could never cover the whole column box (it would be a drift cone from one point),
-        // so "cloud ⊇ column" is the discriminating signal that volume emission is wired up. Tolerance absorbs
-        // grow-fade thinning at the spawn edges.
+        // Particles SPAWN across the indexed column surface at every age and only then drift (velocity +
+        // bomb-vortex + gravity), so the steady-state cloud spans the column — the youngest particles still
+        // sit on its faces. Point emission could never cover the whole column box (it would be a drift cone
+        // from one point), so "cloud ⊇ column" is the discriminating end-to-end signal here. Tolerance absorbs
+        // grow-fade thinning at the source extrema.
         var tol = meshes.Extent * 0.2f + new Vector3(6f);
         Assert.True(
             cloud.Min.X <= meshes.Min.X + tol.X && cloud.Max.X >= meshes.Max.X - tol.X &&

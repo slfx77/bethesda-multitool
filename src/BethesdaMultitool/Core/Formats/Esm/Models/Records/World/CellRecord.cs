@@ -49,6 +49,12 @@ public record CellRecord
     /// <summary>Whether this is an interior cell.</summary>
     public bool IsInterior => (Flags & 0x01) != 0;
 
+    /// <summary>
+    ///     Whether this interior uses exterior sky/weather semantics (CELL DATA bit 7). This is the
+    ///     canonical interpretation used by rendering, image-space selection, and capture telemetry.
+    /// </summary>
+    public bool BehavesLikeExterior => IsInterior && (Flags & 0x80) != 0;
+
     /// <summary>Whether this cell has water.</summary>
     public bool HasWater => (Flags & 0x02) != 0;
 
@@ -66,6 +72,12 @@ public record CellRecord
 
     /// <summary>Image space FormID (XCIM subrecord).</summary>
     public uint? ImageSpaceFormId { get; init; }
+
+    /// <summary>
+    ///     Classic-family per-cell climate override (XCCM subrecord in Oblivion/FO3/FNV). Skyrim and
+    ///     later reuse XCCM for a REGN sky/weather source, so their values are not stored here.
+    /// </summary>
+    public uint? ClimateFormId { get; init; }
 
     /// <summary>Lighting template FormID (LTMP subrecord / pLightingTemplate pointer).</summary>
     public uint? LightingTemplateFormId { get; init; }

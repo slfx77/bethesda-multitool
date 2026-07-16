@@ -151,7 +151,12 @@ public sealed partial class WorldView3DControl
                 if (opts.ShowTerrain) _terrain!.Render(viewProj, cylinder);
                 // Defer blended reference submeshes until after water so water never paints over them
                 // (mirrors the live frame). cullViewProj == viewProj (absolute coords, no camera-relative).
-                if (opts.ShowReferences) _references.Render(viewProj, cylinder, deferBlended: true, cullViewProj: viewProj);
+                if (opts.ShowReferences)
+                {
+                    _references.Render(
+                        viewProj, cylinder, deferBlended: true, cullViewProj: viewProj,
+                        cameraPosition: shadingEye);
+                }
                 if (opts.ShowWater && _water is not null)
                 {
                     _water.SetNifWaterPlanes(_references.NifWaterPlanes);

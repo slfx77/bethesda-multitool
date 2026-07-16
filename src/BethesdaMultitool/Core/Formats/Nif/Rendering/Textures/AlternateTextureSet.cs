@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 
 /// <summary>
@@ -32,11 +34,13 @@ public sealed class AlternateTextureSet
         IReadOnlyDictionary<string, ShapeTextureOverride> overrides,
         IReadOnlyDictionary<string, string>? materialSwaps,
         float? gradientMapVOverride,
+        Vector3? externalEmittanceColor,
         string variantKey)
     {
         Overrides = overrides;
         MaterialSwaps = materialSwaps;
         GradientMapVOverride = gradientMapVOverride;
+        ExternalEmittanceColor = externalEmittanceColor;
         VariantKey = variantKey;
     }
 
@@ -60,6 +64,13 @@ public sealed class AlternateTextureSet
     public float? GradientMapVOverride { get; }
 
     /// <summary>
+    ///     Placement XEMI color resolved from its REGN/LIGH target. Only NIF shapes carrying the
+    ///     External_Emittance shader flag consume it; retaining it in this variant object makes
+    ///     shared opaque instancing correct without per-instance material constants.
+    /// </summary>
+    public Vector3? ExternalEmittanceColor { get; }
+
+    /// <summary>
     ///     Stable, content-derived key (FNV-1a over the sorted shape/diffuse/normal tuples plus, when
     ///     present, an "mswp"-salted run of the sorted material-swap pairs and a "modc"-salted color
     ///     remap index). Two sets with the same content produce the same key (shared cache entry);
@@ -76,7 +87,8 @@ public sealed class AlternateTextureSet
     public static AlternateTextureSet? Create(
         IEnumerable<KeyValuePair<string, ShapeTextureOverride>> entries,
         IReadOnlyDictionary<string, string>? materialSwaps = null,
-        float? gradientMapVOverride = null)
+        float? gradientMapVOverride = null,
+        Vector3? externalEmittanceColor = null)
     {
         var map = new Dictionary<string, ShapeTextureOverride>(StringComparer.OrdinalIgnoreCase);
         foreach (var (shape, ov) in entries)
@@ -90,7 +102,7 @@ public sealed class AlternateTextureSet
         }
 
         var swaps = materialSwaps is { Count: > 0 } ? materialSwaps : null;
-        if (map.Count == 0 && swaps is null && gradientMapVOverride is null)
+        if (map.Count == 0 && swaps is null && gradientMapVOverride is null && externalEmittanceColor is null)
         {
             return null;
         }
@@ -129,7 +141,18 @@ public sealed class AlternateTextureSet
             hash = FnvAppend(hash, BitConverter.SingleToUInt32Bits(remap).ToString("x8"));
         }
 
-        return new AlternateTextureSet(map, swaps, gradientMapVOverride, hash.ToString("x16"));
+        if (externalEmittanceColor is { } emittance)
+        {
+            // Exact float bits are deliberate: two placements with byte-derived equal colors share
+            // a mesh; any authored color difference creates a distinct material variant.
+            hash = FnvAppend(hash, "xemi");
+            hash = FnvAppend(hash, BitConverter.SingleToUInt32Bits(emittance.X).ToString("x8"));
+            hash = FnvAppend(hash, BitConverter.SingleToUInt32Bits(emittance.Y).ToString("x8"));
+            hash = FnvAppend(hash, BitConverter.SingleToUInt32Bits(emittance.Z).ToString("x8"));
+        }
+
+        return new AlternateTextureSet(
+            map, swaps, gradientMapVOverride, externalEmittanceColor, hash.ToString("x16"));
     }
 
     private static ulong FnvAppend(ulong hash, string s)

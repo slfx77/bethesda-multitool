@@ -2,7 +2,9 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
+using BethesdaMultitool.Core.Formats.SpeedTree;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 
@@ -16,7 +18,10 @@ internal sealed record DecodedNifMesh12(
     IReadOnlyList<DecodedSubmesh12> Submeshes,
     Vector3[]? CollisionPositions = null,
     int[]? CollisionTriangles = null,
-    NifMeshAnimation? Animation = null);
+    NifMeshAnimation? Animation = null,
+    // Persistent source provenance, deliberately distinct from IsParticleCloud: a controller-delayed
+    // system can produce no baked cloud while its containing NIF still needs a source decode in live mode.
+    bool ContainsParticleSource = false);
 
 internal sealed record DecodedSubmesh12(
     GpuMeshUploader.GpuVertex[] Vertices,
@@ -76,5 +81,19 @@ internal sealed record DecodedSubmesh12(
     Vector2 UvScrollVelocity = default,
     // CPU skinning inputs for keyframe playback (v32+): raw skin-space base geometry + influences
     // + inverse binds, null for unskinned/unanimated submeshes. The baked Vertices are rest-pose.
-    NifSubmeshSkin? Skin = null);
+    NifSubmeshSkin? Skin = null,
+    // SpeedTree bark/frond route + per-tree TREE.CNAM time multipliers.
+    bool IsSpeedTreeBranch = false,
+    Vector2 SpeedTreeWindSpeeds = default,
+    // BGSM/BGEM common TileU/TileV flags, normalized to sampler clamp booleans.
+    bool ClampTextureU = false,
+    bool ClampTextureV = false,
+    // Baked particle-cloud marker. The cache derives one center per four-vertex quad and the
+    // blended renderer emits a camera-sorted transient index buffer each frame.
+    bool IsParticleCloud = false,
+    // Non-persisted source graph for the opt-in live path. Persistent payloads intentionally leave
+    // this null; live mode bypasses disk-cache reads so a source decode always supplies it.
+    ParticleRuntimeDefinition? ParticleRuntime = null,
+    // Non-persisted opt-in .spt runtime-LOD identity. .spt decodes bypass the persistent cache.
+    SpeedTreeLodMetadata? SpeedTreeLod = null);
 #endif

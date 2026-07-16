@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Games;
 using Xunit;
@@ -137,5 +138,157 @@ public class MoonSkyTests
         Assert.Equal(55f, moon.PrimaryOrbit.MaxAltitudeDeg); // 90 - 35 deg engine inclination
         // The engine texture is the masser art; the legacy skymoonfull stays only as a fallback probe.
         Assert.Equal(@"textures\sky\masser_full.dds", moon.PrimaryTextureCandidates[0]);
+    }
+
+    [Fact]
+    public void FalloutRotatedArm_MatchesRecoveredFNVCardinalVectors()
+    {
+        const float sin35 = 0.57357645f;
+        const float cos35 = 0.81915206f;
+
+        // Moon::Update initializes the arm angle to 90 degrees. These values are expanded independently
+        // from the recovered X(-angle) * Z(inclination) matrices and local +Y arm.
+        AssertVector(new Vector3(sin35, 0f, cos35),
+            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 0f, day: 0f));
+        AssertVector(new Vector3(sin35, -cos35, 0f),
+            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 6f, day: 0f));
+        AssertVector(new Vector3(sin35, cos35, 0f),
+            MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, gameHour: 18f, day: 0f));
+    }
+
+    [Theory]
+    [InlineData(19f, 0f)]
+    [InlineData(20f, 0f)]
+    [InlineData(27.5f, 0.5f)]
+    [InlineData(35f, 1f)]
+    [InlineData(90f, 1f)]
+    [InlineData(145f, 1f)]
+    [InlineData(152.5f, 0.5f)]
+    [InlineData(160f, 0f)]
+    [InlineData(161f, 0f)]
+    [InlineData(270f, 0f)]
+    public void RotatedArmDiscFade_MatchesRecoveredSkyrimPiecewiseEnvelope(float angle, float expected)
+    {
+        // Skyrim.esm authors both moons as start=35/end=20. Expected values are direct piecewise
+        // reference vectors and do not call the production path to derive themselves.
+        Assert.Equal(expected, MoonSky.EvaluateRotatedArmDiscFade(angle, 35f, 20f), 6);
+    }
+
+    [Fact]
+    public void RotatedArmAngle_UsesRecoveredNinetyDegreeInitialStateAndWraps()
+    {
+        Assert.Equal(90f, MoonSky.ComputeRotatedArmAngleDegrees(0.25f, 0f, 0f), 6);
+        Assert.Equal(180f, MoonSky.ComputeRotatedArmAngleDegrees(0.25f, 6f, 0f), 6);
+        Assert.Equal(0f, MoonSky.ComputeRotatedArmAngleDegrees(0.25f, 18f, 0f), 6);
+        Assert.Equal(90f, MoonSky.ComputeRotatedArmAngleDegrees(0.25f, 24f, 0f), 6);
+        Assert.Equal(0f, MoonSky.ComputeRotatedArmAngleDegrees(0.25f, -6f, 0f), 6);
+        Assert.Equal(90f, MoonSky.ComputeRotatedArmAngleDegrees(0.25f, 0f, 7f), 6);
+    }
+
+    [Fact]
+    public void FalloutMasserExactDailyPeriodDoesNotDriftWithDay()
+    {
+        var day0 = MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, 19f, 0f);
+        var day7 = MoonSky.ComputeFalloutRotatedArmDirection(0.25f, 35f, 19f, 7f);
+
+        AssertVector(day0, day7);
+    }
+
+    [Fact]
+    public void ProfilesUseDistinctRecoveredFamilyRoutes()
+    {
+        Assert.Equal(MoonPathFamily.FalloutRotatedArm,
+            SkyMoonProfile.ForGame(BethesdaGame.FalloutNewVegas).PathFamily);
+        Assert.Equal(MoonPathFamily.SkyrimRotatedArm,
+            SkyMoonProfile.ForGame(BethesdaGame.Skyrim).PathFamily);
+        Assert.Equal(MoonPathFamily.CreationTriangle,
+            SkyMoonProfile.ForGame(BethesdaGame.Fallout4).PathFamily);
+    }
+
+    [Fact]
+    public void SkyrimMoonsMatchRecoveredGmstCardinalVectorsAndPeriods()
+    {
+        var profile = SkyMoonProfile.ForGame(BethesdaGame.Skyrim);
+        var timing = AtmosphereState.ClimateTiming.Default;
+
+        // TESV.exe defaults passed by Sky::HandleClimateChange:
+        // Masser speed=.25 / z-offset=35 degrees; Secunda speed=.30 / z-offset=50 degrees.
+        const float sin35 = 0.57357645f;
+        const float cos35 = 0.81915206f;
+        const float sin50 = 0.76604444f;
+        const float cos50 = 0.64278761f;
+
+        AssertVector(new Vector3(sin35, 0f, cos35),
+            profile.Direction(secondary: false, gameHour: 0f, day: 0f, climate: timing));
+        AssertVector(new Vector3(sin35, -cos35, 0f),
+            profile.Direction(secondary: false, gameHour: 6f, day: 0f, climate: timing));
+
+        // Secunda advances 18 degrees/hour, so five hours advances the initialized 90-degree arm to 180.
+        AssertVector(new Vector3(sin50, -cos50, 0f),
+            profile.Direction(secondary: true, gameHour: 5f, day: 0f, climate: timing));
+
+        // Masser is exactly daily; Secunda's 20-hour period advances 72 degrees between midnights.
+        AssertVector(profile.Direction(false, 0f, 0f, timing),
+            profile.Direction(false, 0f, 7f, timing));
+        var secundaDay0 = profile.Direction(true, 0f, 0f, timing);
+        var secundaDay1 = profile.Direction(true, 0f, 1f, timing);
+        Assert.True(Vector3.Distance(secundaDay0, secundaDay1) > 0.5f,
+            $"Skyrim Secunda did not advance on its recovered 20-hour period: {secundaDay0} vs {secundaDay1}");
+    }
+
+    [Fact]
+    public void SkyrimProfile_UsesIndependentRecoveredFadeDefaultsAndOverrides()
+    {
+        var profile = SkyMoonProfile.ForGame(BethesdaGame.Skyrim);
+
+        // At midnight the internal angle is 90 degrees: both shipped profiles are fully visible.
+        Assert.Equal(1f, profile.RotatedArmDiscFade(false, 0f, 0f), 6);
+        Assert.Equal(1f, profile.RotatedArmDiscFade(true, 0f, 0f), 6);
+
+        // An override is consumed as authored: angle=90 at midnight lies outside a narrow 100/95 window.
+        Assert.Equal(0f, profile.RotatedArmDiscFade(
+            false, 0f, 0f, speedOverride: 0.25f, fadeStartOverride: 100f, fadeEndOverride: 95f), 6);
+    }
+
+    [Fact]
+    public void FalloutProfile_UsesRecoveredFadeDefaults()
+    {
+        var profile = SkyMoonProfile.ForGame(BethesdaGame.FalloutNewVegas);
+
+        // At speed .25 the recovered 90-degree state advances 15 degrees/hour. These times therefore
+        // sample the independently recovered FNV end/mid/start angles 45/50/55 exactly.
+        Assert.Equal(0f, profile.RotatedArmDiscFade(false, 21f, 0f), 5);
+        Assert.Equal(0.5f, profile.RotatedArmDiscFade(false, 64f / 3f, 0f), 5);
+        Assert.Equal(1f, profile.RotatedArmDiscFade(false, 65f / 3f, 0f), 5);
+    }
+
+    [Fact]
+    public void RotatedArmProfileDirection_ConsumesSpeedAndInclinationOverrides()
+    {
+        var profile = SkyMoonProfile.ForGame(BethesdaGame.FalloutNewVegas);
+
+        // 90 + 3h * .5 * 60 = 180 degrees. A 30-degree inclination then produces this hard-coded
+        // X(-180)*Z(+30) column-vector result; expected values do not call the production helper.
+        var direction = profile.Direction(false, 3f, 0f, AtmosphereState.ClimateTiming.Default,
+            rotatedArmSpeedOverride: 0.5f, rotatedArmInclinationOverride: 30f);
+        AssertVector(new Vector3(0.5f, -0.8660254f, 0f), direction);
+    }
+
+    [Fact]
+    public void Fallout4MoonUsesRecoveredUnflooredTrianglePath()
+    {
+        var profile = SkyMoonProfile.ForGame(BethesdaGame.Fallout4);
+        var timing = new AtmosphereState.ClimateTiming(5f, 7f, 17f, 19f, 3);
+        var direction = profile.Direction(secondary: false, gameHour: 6f, day: 0f, climate: timing);
+
+        // dayStart = sunrise midpoint - 1h = 5h; at 6h x is inside the recovered day-leg.
+        var x = 1f - ((6f - 5f) / 14f * 2f);
+        var expected = Vector3.Normalize(new Vector3(x * 400f, 25f, 400f - MathF.Abs(x * 400f)));
+        AssertVector(expected, direction);
+    }
+
+    private static void AssertVector(Vector3 expected, Vector3 actual)
+    {
+        Assert.InRange(Vector3.Distance(expected, actual), 0f, 1e-5f);
     }
 }

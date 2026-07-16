@@ -11,6 +11,10 @@ internal sealed class NifShaderTextureMetadata
     public uint? ShaderFlags2 { get; init; }
     public float? EnvMapScale { get; init; }
 
+    /// <summary>Static shader-property UV transform authored before the texture reference.</summary>
+    public System.Numerics.Vector2 UvOffset { get; init; }
+    public System.Numerics.Vector2 UvScale { get; init; } = System.Numerics.Vector2.One;
+
     /// <summary>
     ///     Inline Skyrim <c>BSEffectShaderProperty</c> base color. The engine uploads
     ///     <c>BaseColor.rgb * BaseColorScale</c> to the effect pixel shader; kept separate here so

@@ -85,6 +85,38 @@ public sealed class NifScanlineRasterizerTests
     }
 
     [Fact]
+    public void SampleTexture_UsesIndependentMaterialAddressModes()
+    {
+        using var _ = new RendererStateScope(); // nearest sampling makes the addressed texel explicit
+
+        var texture = DecodedTexture.FromBaseLevel(
+            [
+                255, 0, 0, 255,   0, 255, 0, 255,
+                0, 0, 255, 255,   255, 255, 255, 255
+            ],
+            2,
+            2,
+            generateMipChain: false);
+
+        var wrappedU = NifTextureSampler.SampleTexture(texture, 1.25f, 0.25f);
+        var clampedU = NifTextureSampler.SampleTexture(texture, 1.25f, 0.25f, clampU: true);
+        var wrappedV = NifTextureSampler.SampleTexture(texture, 0.25f, 1.25f);
+        var clampedV = NifTextureSampler.SampleTexture(texture, 0.25f, 1.25f, clampV: true);
+
+        Assert.Equal((255, 0, 0, 255), wrappedU);
+        Assert.Equal((0, 255, 0, 255), clampedU);
+        Assert.Equal((255, 0, 0, 255), wrappedV);
+        Assert.Equal((0, 0, 255, 255), clampedV);
+    }
+
+    [Fact]
+    public void ComputeBlendedOpacity_AppliesAboveOneMaterialAlphaBeforeSaturation()
+    {
+        Assert.Equal(1f, NifScanlineRasterizer.ComputeBlendedOpacity(128f, 2f), 5);
+        Assert.Equal(128f / 255f, NifScanlineRasterizer.ComputeBlendedOpacity(128f, 1f), 5);
+    }
+
+    [Fact]
     public void RasterizeTriangle_TransparentGrimeLeavesOpaqueBaseVisible()
     {
         using var _ = new RendererStateScope();
@@ -181,11 +213,125 @@ public sealed class NifScanlineRasterizerTests
         var center = ReadPixel(pixels, width, 16, 16);
         var centerIndex = 16 * width + 16;
 
-        Assert.InRange(center.R, 21, 199);
-        Assert.InRange(center.G, 11, 159);
-        Assert.InRange(center.B, 6, 139);
+        Assert.InRange(center.R, 108, 110);
+        Assert.InRange(center.G, 83, 85);
+        Assert.InRange(center.B, 71, 73);
         Assert.Equal(255, center.A);
         Assert.Equal(0f, depthBuffer[centerIndex]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RasterizeTriangle_SharedEdgeIsBlendedExactlyOnce(bool reverseWinding)
+    {
+        using var _ = new RendererStateScope();
+
+        const int width = 32;
+        const int height = 32;
+        var pixels = new byte[width * height * 4];
+        var depthBuffer = Enumerable.Repeat(float.MinValue, width * height).ToArray();
+        var faceKind = new byte[width * height];
+        var emissiveMask = new bool[width * height];
+
+        RasterizeQuad(
+            pixels,
+            depthBuffer,
+            faceKind,
+            emissiveMask,
+            width,
+            height,
+            0f,
+            TestTextures.FromTexels(1, 1, (0, 0, 255, 255)),
+            NifAlphaRenderMode.Opaque);
+
+        foreach (var triangle in CreateQuadTriangles(
+                     1f,
+                     TestTextures.FromTexels(1, 1, (0, 255, 0, 128)),
+                     NifAlphaRenderMode.Blend,
+                     hasAlphaBlend: true,
+                     hasAlphaTest: false,
+                     alphaTestThreshold: 0,
+                     alphaTestFunction: 4,
+                     reverseWinding: reverseWinding))
+        {
+            NifScanlineRasterizer.RasterizeTriangle(
+                pixels,
+                depthBuffer,
+                faceKind,
+                emissiveMask,
+                width,
+                triangle,
+                1f,
+                0f,
+                0f,
+                0,
+                height - 1);
+        }
+
+        // Every center along the shared diagonal lies exactly on both triangle edges. The
+        // top-left convention assigns it to one triangle, so source-over is evaluated once.
+        for (var coordinate = 6; coordinate <= 26; coordinate++)
+        {
+            var sample = ReadPixel(pixels, width, coordinate, coordinate);
+            Assert.InRange(sample.R, 0, 1);
+            Assert.InRange(sample.G, 127, 129);
+            Assert.InRange(sample.B, 126, 128);
+            Assert.Equal(255, sample.A);
+        }
+    }
+
+    [Fact]
+    public void RasterizeTriangle_EmissiveSourceStillUsesAuthoredSourceAlphaBlend()
+    {
+        using var _ = new RendererStateScope();
+
+        const int width = 32;
+        const int height = 32;
+        var pixels = new byte[width * height * 4];
+        var depthBuffer = Enumerable.Repeat(float.MinValue, width * height).ToArray();
+        var faceKind = new byte[width * height];
+        var emissiveMask = new bool[width * height];
+
+        RasterizeQuad(
+            pixels,
+            depthBuffer,
+            faceKind,
+            emissiveMask,
+            width,
+            height,
+            0f,
+            TestTextures.FromTexels(1, 1, (0, 0, 255, 255)),
+            NifAlphaRenderMode.Opaque);
+
+        var front = CreateQuadTriangles(
+            1f,
+            TestTextures.FromTexels(1, 1, (0, 255, 0, 128)),
+            NifAlphaRenderMode.Blend,
+            hasAlphaBlend: true,
+            hasAlphaTest: false,
+            alphaTestThreshold: 0,
+            alphaTestFunction: 4);
+        var triangle = front[0];
+        triangle.IsEmissive = true;
+        NifScanlineRasterizer.RasterizeTriangle(
+            pixels,
+            depthBuffer,
+            faceKind,
+            emissiveMask,
+            width,
+            triangle,
+            1f,
+            0f,
+            0f,
+            0,
+            height - 1);
+
+        var center = ReadPixel(pixels, width, 16, 12);
+        Assert.InRange(center.R, 0, 1);
+        Assert.InRange(center.G, 127, 129);
+        Assert.InRange(center.B, 126, 128);
+        Assert.Equal(255, center.A);
     }
 
     [Fact]
@@ -383,7 +529,8 @@ public sealed class NifScanlineRasterizerTests
         bool hasAlphaBlend,
         bool hasAlphaTest,
         byte alphaTestThreshold,
-        byte alphaTestFunction)
+        byte alphaTestFunction,
+        bool reverseWinding = false)
     {
         var vertices = new[]
         {
@@ -393,11 +540,17 @@ public sealed class NifScanlineRasterizerTests
             (X: 4f, Y: 28f, U: 0f, V: 1f)
         };
 
-        return
-        [
-            CreateTriangle(vertices[0], vertices[1], vertices[2]),
-            CreateTriangle(vertices[0], vertices[2], vertices[3])
-        ];
+        return reverseWinding
+            ?
+            [
+                CreateTriangle(vertices[2], vertices[1], vertices[0]),
+                CreateTriangle(vertices[3], vertices[2], vertices[0])
+            ]
+            :
+            [
+                CreateTriangle(vertices[0], vertices[1], vertices[2]),
+                CreateTriangle(vertices[0], vertices[2], vertices[3])
+            ];
 
         TriangleData CreateTriangle(
             (float X, float Y, float U, float V) a,

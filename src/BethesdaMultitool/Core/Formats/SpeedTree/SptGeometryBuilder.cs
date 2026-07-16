@@ -88,8 +88,6 @@ internal static class SptGeometryBuilder
         var barkPath = SpeedTreeTexturePath.ToGamePath(model.General.BarkTexturePath, SpeedTreeTextureKind.Bark);
         var barkNormalPath = DeriveNormalMap(barkPath);
 
-        var bark = new MeshBuffer();
-        var leafGroups = new Dictionary<string, MeshBuffer>(StringComparer.OrdinalIgnoreCase);
         var collectedBranches = new List<CollectedBranch>();
 
         // Leaf placement is INLINE during the loft — the engine places each bud inside CIdvBranch::Compute
@@ -134,33 +132,40 @@ internal static class SptGeometryBuilder
                 dimming, leafHelp: 0f, barkHelp: 0f, inheritedRaw: 1f);
         }
 
-        // The engine never renders the raw skeleton: CTreeEngine::Compute lofts every branch, then
-        // BuildBranchLods decimates them into the rendered LOD mesh. Reproduce LOD0 here — keep the
-        // highest-"volume" branches until their cumulative volume reaches the .spt's near fraction.
-        EmitDecimatedBranches(collectedBranches, model.Lod, bark, dimming);
-
-        // Emit the accepted leaf cards' geometry (no RNG — every draw happened inline during the loft).
-        EmitPlacedLeaves(placer.Leaves, treeSizeMid, model, opt, leafGroups);
-
-        var submeshes = new List<RenderableSubmesh>(4);
-        if (bark.VertexCount > 0)
+        List<RenderableSubmesh> submeshes;
+        if (opt.RuntimeLod)
         {
-            submeshes.Add(bark.ToSubmesh("spt:bark", barkPath, barkNormalPath, doubleSided: false, leaf: false, opt));
+            submeshes = BuildRuntimeLodSubmeshes(
+                collectedBranches, placer.Leaves, treeSizeMid, model, opt, barkPath, barkNormalPath, dimming);
         }
-
-        foreach (var (path, buffer) in leafGroups)
+        else
         {
-            if (buffer.VertexCount == 0)
+            // Established/default path: the engine never renders the raw skeleton. BuildBranchLods
+            // decimates it into rendered LOD0, while leaf LOD0 is the complete accepted card list.
+            // This block intentionally retains the pre-runtime-LOD emission order and arithmetic.
+            var bark = new MeshBuffer();
+            var leafGroups = new Dictionary<string, MeshBuffer>(StringComparer.OrdinalIgnoreCase);
+            EmitDecimatedBranches(collectedBranches, model.Lod, bark, dimming);
+            EmitPlacedLeaves(placer.Leaves, treeSizeMid, model, opt, leafGroups);
+
+            submeshes = new List<RenderableSubmesh>(4);
+            if (bark.VertexCount > 0)
             {
-                continue;
+                submeshes.Add(bark.ToSubmesh(
+                    "spt:bark", barkPath, barkNormalPath, doubleSided: false, leaf: false, opt,
+                    speedTreeBranch: true,
+                    speedTreeWindSpeeds: new Vector2(opt.RockSpeed, opt.RustleSpeed)));
             }
 
-            var leafPath = path.StartsWith("spt:", StringComparison.Ordinal) ? null : path;
-            submeshes.Add(buffer.ToSubmesh("spt:leaves", leafPath, normalMap: null, doubleSided: true, leaf: true, opt,
-                leafBillboard: opt.LeafBillboard));
+            AddLeafSubmeshes(submeshes, leafGroups, opt);
         }
 
         ApplyHeightScale(submeshes, opt);
+
+        if (opt.RuntimeLod)
+        {
+            AddRuntimeBillboardAndFinalizeMetadata(submeshes, opt);
+        }
 
         var result = new NifRenderableModel();
         foreach (var sub in submeshes)
@@ -170,6 +175,173 @@ internal static class SptGeometryBuilder
         }
 
         return result;
+    }
+
+    private static List<RenderableSubmesh> BuildRuntimeLodSubmeshes(
+        List<CollectedBranch> branches,
+        List<PlacedLeaf> leaves,
+        float cardScale,
+        SptModel model,
+        SptGeometryOptions opt,
+        string? barkPath,
+        string? barkNormalPath,
+        TreeDimming dimming)
+    {
+        var lod = model.Lod ?? new SptLodInfo();
+        // The parser already rejects counts above 64; retain every authored level in the opt-in path.
+        var branchLevelCount = Math.Clamp(lod.NumBranchLods, 1, 64);
+        var leafLevelCount = Math.Clamp(lod.NumLeafLods, 1, 64);
+        var windSpeeds = new Vector2(opt.RockSpeed, opt.RustleSpeed);
+        var submeshes = new List<RenderableSubmesh>(branchLevelCount * 3 + 1);
+
+        for (var level = 0; level < branchLevelCount; level++)
+        {
+            var bark = new MeshBuffer();
+            EmitDecimatedBranches(
+                branches,
+                lod,
+                bark,
+                dimming,
+                keepFractionOverride: SpeedTreeRuntimeLod.BranchKeepFraction(lod, level));
+            if (bark.VertexCount > 0)
+            {
+                var barkSubmesh = bark.ToSubmesh(
+                    "spt:bark", barkPath, barkNormalPath, doubleSided: false, leaf: false, opt,
+                    speedTreeBranch: true,
+                    speedTreeWindSpeeds: windSpeeds);
+                barkSubmesh.SpeedTreeLod = new SpeedTreeLodMetadata(
+                    level, branchLevelCount, 0f, 0f, SpeedTreeLodComponent.Branch);
+                submeshes.Add(barkSubmesh);
+            }
+
+            var leafLevel = SpeedTreeRuntimeLod.MapLeafLevel(level, branchLevelCount, leafLevelCount);
+            var leafGroups = new Dictionary<string, MeshBuffer>(StringComparer.OrdinalIgnoreCase);
+            EmitPlacedLeaves(
+                leaves,
+                cardScale,
+                model,
+                opt,
+                leafGroups,
+                approximateLodLevel: leafLevel,
+                approximateCardSizeScale: SpeedTreeRuntimeLod.ApproximateLeafSizeScale(lod, leafLevel));
+            var firstLeafSubmesh = submeshes.Count;
+            AddLeafSubmeshes(submeshes, leafGroups, opt);
+            for (var i = firstLeafSubmesh; i < submeshes.Count; i++)
+            {
+                submeshes[i].SpeedTreeLod = new SpeedTreeLodMetadata(
+                    level, branchLevelCount, 0f, 0f, SpeedTreeLodComponent.Leaf);
+            }
+        }
+
+        return submeshes;
+    }
+
+    private static void AddLeafSubmeshes(
+        List<RenderableSubmesh> submeshes,
+        Dictionary<string, MeshBuffer> leafGroups,
+        SptGeometryOptions opt)
+    {
+        foreach (var (path, buffer) in leafGroups)
+        {
+            if (buffer.VertexCount == 0)
+            {
+                continue;
+            }
+
+            var leafPath = path.StartsWith("spt:", StringComparison.Ordinal) ? null : path;
+            submeshes.Add(buffer.ToSubmesh(
+                "spt:leaves", leafPath, normalMap: null, doubleSided: true, leaf: true, opt,
+                leafBillboard: opt.LeafBillboard,
+                speedTreeWindSpeeds: new Vector2(opt.RockSpeed, opt.RustleSpeed)));
+        }
+    }
+
+    private static void AddRuntimeBillboardAndFinalizeMetadata(
+        List<RenderableSubmesh> submeshes,
+        SptGeometryOptions opt)
+    {
+        var min = new Vector3(float.PositiveInfinity);
+        var max = new Vector3(float.NegativeInfinity);
+        foreach (var sub in submeshes)
+        {
+            if (sub.SpeedTreeLod is not { Level: 0 })
+            {
+                continue;
+            }
+
+            for (var i = 0; i < sub.Positions.Length; i += 3)
+            {
+                var p = new Vector3(sub.Positions[i], sub.Positions[i + 1], sub.Positions[i + 2]);
+                min = Vector3.Min(min, p);
+                max = Vector3.Max(max, p);
+            }
+        }
+
+        if (!float.IsFinite(min.X) || !float.IsFinite(max.X))
+        {
+            min = new Vector3(-0.5f, -0.5f, 0f);
+            max = new Vector3(0.5f, 0.5f, 1f);
+        }
+
+        var (nearDistance, farDistance, _) = SpeedTreeRuntimeLod.ComputeDistanceRange(min, max);
+        for (var i = 0; i < submeshes.Count; i++)
+        {
+            if (submeshes[i].SpeedTreeLod is { } metadata)
+            {
+                submeshes[i].SpeedTreeLod = metadata with
+                {
+                    NearDistance = nearDistance,
+                    FarDistance = farDistance,
+                };
+            }
+        }
+
+        var horizontalSize = MathF.Max(max.X - min.X, max.Y - min.Y);
+        var height = max.Z - min.Z;
+        horizontalSize = MathF.Max(horizontalSize, 1f);
+        height = MathF.Max(height, 1f);
+        var center = new Vector3((min.X + max.X) * 0.5f, (min.Y + max.Y) * 0.5f, (min.Z + max.Z) * 0.5f);
+
+        // Architectural stand-in: the retail billboard card dimensions/texture table are host assets,
+        // not part of the recovered branch-LOD math. Use the generated LOD0 bounds and conventional
+        // trees\billboards atlas until that host-side oracle is recovered.
+        var billboard = new MeshBuffer();
+        AddLeafCard(
+            billboard,
+            center,
+            Vector3.UnitX,
+            Vector3.UnitZ,
+            Vector3.UnitZ,
+            SptLeafTextureCoords.FullAtlas,
+            -horizontalSize * 0.5f,
+            horizontalSize * 0.5f,
+            -height * 0.5f,
+            height * 0.5f,
+            255,
+            cardVerticalSwap: false,
+            billboard: true);
+
+        var branchLevelCount = submeshes
+            .Select(sub => sub.SpeedTreeLod?.BranchLevelCount ?? 0)
+            .DefaultIfEmpty(1)
+            .Max();
+        branchLevelCount = Math.Max(1, branchLevelCount);
+        var billboardSubmesh = billboard.ToSubmesh(
+            "spt:billboard",
+            opt.BillboardTexturePath,
+            normalMap: null,
+            doubleSided: true,
+            leaf: true,
+            opt,
+            leafBillboard: true,
+            speedTreeWindSpeeds: Vector2.Zero);
+        billboardSubmesh.SpeedTreeLod = new SpeedTreeLodMetadata(
+            branchLevelCount,
+            branchLevelCount,
+            nearDistance,
+            farDistance,
+            SpeedTreeLodComponent.Billboard);
+        submeshes.Add(billboardSubmesh);
     }
 
     /// <summary>Master scale = random(Float2006 − Float2007, Float2006 + Float2007), seeded. This draw IS
@@ -348,7 +520,7 @@ internal static class SptGeometryBuilder
         if (model.Frond is not { Enabled: true } frond || level < frond.Level)
         {
             collected.Add(new CollectedBranch(rings, vertsPerRing, importance, barkHelp, level == 0,
-                barkUTile, barkVTile));
+                barkUTile, barkVTile, (int)(branchSeed & 3u)));
         }
 
         // A branch at level L spawns children at L+1. The LAST .spt branch record is the leaf-stub
@@ -596,7 +768,9 @@ internal static class SptGeometryBuilder
     /// </summary>
     private static void EmitPlacedLeaves(
         List<PlacedLeaf> leaves, float cardScale, SptModel model, SptGeometryOptions opt,
-        Dictionary<string, MeshBuffer> leafGroups)
+        Dictionary<string, MeshBuffer> leafGroups,
+        int approximateLodLevel = 0,
+        float approximateCardSizeScale = 1f)
     {
         if (leaves.Count == 0)
         {
@@ -612,8 +786,18 @@ internal static class SptGeometryBuilder
                 StringComparison.Ordinal);
         }
 
-        foreach (var leaf in leaves)
+        for (var leafIndex = 0; leafIndex < leaves.Count; leafIndex++)
         {
+            // The SDK's BuildLeafLods spatially pair-merges cards. The opt-in architectural path keeps
+            // a stable power-of-two subset until that exact pair oracle is ported. LOD0 (the default
+            // path) always keeps every accepted leaf and therefore remains unchanged.
+            if (approximateLodLevel > 0 &&
+                !SpeedTreeRuntimeLod.KeepApproximateLeaf(leafIndex, approximateLodLevel))
+            {
+                continue;
+            }
+
+            var leaf = leaves[leafIndex];
             var template = leaf.Template;
             // Wind-matrix lerp weight (rides in the packed attribute's FRACTION; the rock/rustle
             // phase slot is the integer part): the engine's branch-level ramp evaluated at the leaf's
@@ -631,6 +815,11 @@ internal static class SptGeometryBuilder
             // (SetTextureCoords' second entry). Neither variant is "authored UVs + authored pivot".
             var width = cardScale * template.Corner1.X * MathF.Max(0.05f, template.Position.X + leaf.SizeJitter);
             var height = cardScale * template.Corner1.Y * MathF.Max(0.05f, template.Position.Y + leaf.SizeJitter);
+            if (MathF.Abs(approximateCardSizeScale - 1f) > 1e-6f)
+            {
+                width *= approximateCardSizeScale;
+                height *= approximateCardSizeScale;
+            }
             var pivotX = leaf.OddVariant ? template.Corner0.X : 1f - template.Corner0.X;
             var x0 = -pivotX * width;
             var x1 = (1f - pivotX) * width;
@@ -824,16 +1013,22 @@ internal static class SptGeometryBuilder
     ///     = 1.0, so every branch is kept (no decimation), matching the engine.
     /// </summary>
     private static void EmitDecimatedBranches(
-        List<CollectedBranch> branches, SptLodInfo? lod, MeshBuffer bark, TreeDimming dimming)
+        List<CollectedBranch> branches,
+        SptLodInfo? lod,
+        MeshBuffer bark,
+        TreeDimming dimming,
+        float? keepFractionOverride = null)
     {
         if (branches.Count == 0)
         {
             return;
         }
 
-        var keepFraction = lod is { NumBranchLods: >= 2 } && lod.BranchNearFraction < 1f
-            ? Math.Clamp(lod.BranchNearFraction, 0f, 1f)
-            : 1f;
+        var keepFraction = keepFractionOverride ??
+                           (lod is { NumBranchLods: >= 2 } && lod.BranchNearFraction < 1f
+                               ? Math.Clamp(lod.BranchNearFraction, 0f, 1f)
+                               : 1f);
+        keepFraction = Math.Clamp(keepFraction, 0f, 1f);
 
         IReadOnlyList<CollectedBranch> kept;
         if (keepFraction >= 1f)
@@ -927,14 +1122,15 @@ internal static class SptGeometryBuilder
                 //   v = (pathT + barkHelp) × Vtile (help = the cumulative spawn fraction, so V roughly
                 //       continues up parent→child chains).
                 prevRing = EmitRing(bark, ring.Pos, ring.Frame, ring.Radius, b.VertsPerRing,
-                    (ring.PathT + b.BarkHelp) * b.BarkVTile, b.BarkUTile, prevRing, dimmerByte);
+                    (ring.PathT + b.BarkHelp) * b.BarkVTile, b.BarkUTile, prevRing, dimmerByte,
+                    ring.WindRaw, b.WindMatrixIndex);
             }
         }
     }
 
     private static int[]? EmitRing(
         MeshBuffer bark, Vector3 center, BranchFrame frame, float radius, int radial, float v, float uTile,
-        int[]? prevRing, byte dimmer)
+        int[]? prevRing, byte dimmer, float windRaw, int windMatrixIndex)
     {
         if (!bark.CanAdd(radial + 1))
         {
@@ -947,7 +1143,18 @@ internal static class SptGeometryBuilder
             var a = MathF.Tau * (k % radial) / radial;
             var normal = SafeNormalize(frame.Y * MathF.Sin(a) + frame.Z * MathF.Cos(a), frame.Y);
             var vertex = center + normal * radius;
-            ring[k] = bark.Add(vertex, normal, new Vector2(k / (float)radial * uTile, v), Vector3.Zero, Vector3.Zero,
+            // Cylindrical UV basis: tangent follows increasing U around the ring; bitangent follows
+            // increasing V along the branch. Both are orthogonal to the geometric normal. Their
+            // MAGNITUDES carry the SpeedTree-only wind payload without widening GpuVertex:
+            //   |T| = matrixIndex + 1, |B| = windWeight + 1.
+            // reference.frag normalizes the basis before normal-map use, while the instanced VS
+            // decodes the magnitudes before applying the branch wind matrix.
+            var tangentDir = SafeNormalize(frame.Y * MathF.Cos(a) - frame.Z * MathF.Sin(a), frame.Y);
+            var bitangentDir = SafeNormalize(Vector3.Cross(tangentDir, normal), frame.Direction);
+            var windWeight = Math.Clamp(1f - windRaw, 0f, 1f);
+            var tangent = tangentDir * (Math.Clamp(windMatrixIndex, 0, 3) + 1f);
+            var bitangent = bitangentDir * (windWeight + 1f);
+            ring[k] = bark.Add(vertex, normal, new Vector2(k / (float)radial * uTile, v), tangent, bitangent,
                 dimmer);
         }
 
@@ -1044,19 +1251,25 @@ internal static class SptGeometryBuilder
             // Encode the card as center (tangent) + signed 2D card-space offset (bitangent) so the GPU
             // leaf-billboard VS rebuilds it camera-facing (SpeedTree's CPU-side leaf billboard, moved to
             // the shader). The baked positions still hold a real 3D quad for bounds + the CPU still path.
-            // bitangent.z = per-leaf wind weight (a [0,1] blend factor, NOT a size — ApplyHeightScale
-            // leaves it untouched), consumed by the VS's wind sway.
             // bitangent.z packs the engine's STLEAF v3.z, widened for the wind-matrix slot: integer =
             // the LeafBase phase slot (slotBase·4 + the engine's (j+2)&3 corner slot for our
             // LB,RB,RT,LT emission order, 0..47) + 48·windMatrixIndex (0..3 → packed 0..191, exact in
-            // fp32), fraction = the wind-matrix lerp weight. The VS splits: idx = packed/48,
-            // slot = packed%48, weight = frac.
-            var wf = Math.Clamp(windWeight, 0f, 0.995f);
+            // fp32), fraction = min(dimmerByte/255, .99). The recovered STLEAF shader consumes that
+            // fraction BOTH as the canopy-lighting multiplier and as subtle independent phase jitter.
+            // The wind-matrix lerp weight is a separate engine attribute (v3.x); encode it losslessly
+            // in the billboard normal's length (1 + weight), while its normalized direction remains
+            // the authored leaf normal. This avoids the old semantic collision in bitangent.z.
+            var dimmerFraction = MathF.Min(dimmer / 255f, 0.99f);
+            var encodedNormal = SafeNormalize(normal, Vector3.UnitZ) * (1f + Math.Clamp(windWeight, 0f, 1f));
             var mtx = windMatrixIndex * 48;
-            var v00b = buf.Add(p00, normal, uvLB, center, new Vector3(x0, y0, mtx + slotBase * 4 + 2 + wf), dimmer);
-            var v10b = buf.Add(p10, normal, uvRB, center, new Vector3(x1, y0, mtx + slotBase * 4 + 3 + wf), dimmer);
-            var v11b = buf.Add(p11, normal, uvRT, center, new Vector3(x1, y1, mtx + slotBase * 4 + 0 + wf), dimmer);
-            var v01b = buf.Add(p01, normal, uvLT, center, new Vector3(x0, y1, mtx + slotBase * 4 + 1 + wf), dimmer);
+            var v00b = buf.Add(p00, encodedNormal, uvLB, center,
+                new Vector3(x0, y0, mtx + slotBase * 4 + 2 + dimmerFraction), dimmer);
+            var v10b = buf.Add(p10, encodedNormal, uvRB, center,
+                new Vector3(x1, y0, mtx + slotBase * 4 + 3 + dimmerFraction), dimmer);
+            var v11b = buf.Add(p11, encodedNormal, uvRT, center,
+                new Vector3(x1, y1, mtx + slotBase * 4 + 0 + dimmerFraction), dimmer);
+            var v01b = buf.Add(p01, encodedNormal, uvLT, center,
+                new Vector3(x0, y1, mtx + slotBase * 4 + 1 + dimmerFraction), dimmer);
             buf.Triangle(v00b, v10b, v11b);
             buf.Triangle(v00b, v11b, v01b);
             return;
@@ -1172,7 +1385,7 @@ internal static class SptGeometryBuilder
 
             // Leaf-billboard tangent (card center) is a POSITION and bitangent.xy (card offset) a SIZE —
             // both scale with the tree, or the cards would keep their pre-rescale size. bitangent.z is the
-            // per-leaf wind WEIGHT (a [0,1] factor), so it must NOT be scaled — skip every 3rd component.
+            // packed phase-slot/dimmer value, so it must NOT be scaled — skip every 3rd component.
             if (sub.IsLeafBillboard)
             {
                 if (sub.Tangents is { } t)
@@ -1252,7 +1465,7 @@ internal static class SptGeometryBuilder
     /// <paramref name="Importance" /> = <c>CIdvBranch::ComputeVolume</c> = Σ segLen·(rᵢ+rᵢ₊₁).</summary>
     private readonly record struct CollectedBranch(
         IReadOnlyList<BranchRing> Rings, int VertsPerRing, float Importance, float BarkHelp, bool IsTrunk,
-        float BarkUTile, float BarkVTile);
+        float BarkUTile, float BarkVTile, int WindMatrixIndex);
 
     /// <summary>
     ///     Column-major 3x3 branch frame matching the runtime ring matrix. Column X is the branch growth
@@ -1514,7 +1727,8 @@ internal static class SptGeometryBuilder
 
         public RenderableSubmesh ToSubmesh(
             string name, string? diffuse, string? normalMap, bool doubleSided, bool leaf, SptGeometryOptions opt,
-            bool leafBillboard = false)
+            bool leafBillboard = false, bool speedTreeBranch = false,
+            Vector2 speedTreeWindSpeeds = default)
         {
             return new RenderableSubmesh
             {
@@ -1523,8 +1737,8 @@ internal static class SptGeometryBuilder
                 Triangles = [.. _indices],
                 Normals = [.. _normals],
                 UVs = [.. _uvs],
-                // Tangent/bitangent carry the leaf-billboard payload (center + signed 2D offset); only
-                // emitted when leaves actually populated them, so bark stays tangent-free as before.
+                // Tangent/bitangent carry either the leaf-billboard payload (center + signed 2D offset)
+                // or SpeedTree bark's orthonormal TBN directions plus magnitude-encoded wind metadata.
                 Tangents = _hasTangents ? [.. _tangents] : null,
                 Bitangents = _hasTangents ? [.. _bitangents] : null,
                 // Canopy-depth dimming rides the vertex color (the engine bakes the CBillboardLeaf /
@@ -1537,6 +1751,8 @@ internal static class SptGeometryBuilder
                 IsDoubleSided = doubleSided,
                 HasAlphaTest = leaf,
                 IsLeafBillboard = leafBillboard,
+                IsSpeedTreeBranch = speedTreeBranch,
+                SpeedTreeWindSpeeds = speedTreeWindSpeeds,
                 AlphaTestThreshold = leaf ? opt.LeafAlphaThreshold : (byte)128,
             };
         }

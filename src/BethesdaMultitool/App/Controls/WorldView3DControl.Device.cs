@@ -109,6 +109,7 @@ public sealed partial class WorldView3DControl
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12, _cbvSrvUavHeap12, _deletionQueue12)
             {
                 DetailedProfilingEnabled = _profileLogging,
+                ModernPipelineEnabled = EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ModernWater),
             };
 
             // Real sky-dome NIF renderer — the exterior sky drawn from the climate's own Sky\*.nif

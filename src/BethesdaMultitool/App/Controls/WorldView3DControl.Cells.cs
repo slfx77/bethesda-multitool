@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -13,6 +14,9 @@ public sealed partial class WorldView3DControl
         if (_suppressWorldspaceSelectionEvent || _data is null) return;
         if (WorldspaceComboBox.SelectedIndex < 0) return;
 
+        var selectionGeneration = BeginSceneSelection();
+        var selectionCompleted = false;
+
         // Picking a worldspace leaves interior mode and shows that exterior. Building the spatial
         // index + loading the renderers for a large worldspace briefly blocks the UI thread, which
         // used to read as a frozen blank with no feedback. Show a loading overlay first and yield so
@@ -24,6 +28,10 @@ public sealed partial class WorldView3DControl
         try
         {
             await System.Threading.Tasks.Task.Yield();
+            // A newer worldspace/interior request may have arrived while this async-void handler was
+            // yielded. Never let the stale continuation rebuild the old grid or reset the new camera.
+            if (!IsCurrentSceneSelection(selectionGeneration)) return;
+
             TryBuildCellGrid();
             if (_pendingNavigateCell is { } target)
             {
@@ -38,13 +46,20 @@ public sealed partial class WorldView3DControl
                 ResetCameraToDataCentroid();
             }
             ApplyStressSceneBookmarkIfRequested();
+            RefreshAtmosphereForCurrentWorldspace();
+            selectionCompleted = true;
         }
         finally
         {
-            HideStatus();
+            if (IsCurrentSceneSelection(selectionGeneration))
+            {
+                if (selectionCompleted)
+                {
+                    MarkSceneSelectionReady(selectionGeneration);
+                }
+                HideStatus();
+            }
         }
-
-        RefreshAtmosphereForCurrentWorldspace();
     }
 
     private void TryBuildCellGrid()
@@ -81,38 +96,51 @@ public sealed partial class WorldView3DControl
 
         _cellGridLookup = _spatialIndex.CellsByGrid.ToDictionary(kv => kv.Key, kv => kv.Value);
         var appearance = GetSelectedWaterAppearance(_data);
-        var noiseIndex = _textureResolver12?.ResolveNormalMapBindlessIndex(appearance?.NoiseTexture);
+        IReadOnlyList<uint?>? normalIndices = appearance?.NormalTextures is { Count: > 0 } textures
+            ? textures.Select(path => _textureResolver12?.ResolveNormalMapBindlessIndex(path)).ToArray()
+            : appearance?.NoiseTexture is { } noise
+                ? new uint?[] { _textureResolver12?.ResolveNormalMapBindlessIndex(noise) }
+                : null;
+        var oblivionDetailIndex = _data.Game == BethesdaMultitool.Core.Games.BethesdaGame.Oblivion &&
+                                   appearance?.SurfaceTexture is { Length: > 0 } detailPath
+            ? _textureResolver12?.ResolveDiffuseBindlessIndex(detailPath)
+            : null;
         _cellGrid?.LoadData(cellList, _spatialIndex);
         _worldZExtent = ComputeGridZExtent(cellList);
         if (_worldZExtent is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
-        _water?.SetMorrowindSurfaceFrames(ResolveMorrowindWaterFrames());
-        _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, noiseIndex);
+        _water?.SetLegacyAnimatedFrames(ResolveLegacyAnimatedWaterFrames());
+        _water?.SetOblivionDetailTexture(oblivionDetailIndex);
+        _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, normalIndices);
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
         if (_collisionDebug is not null) { _collisionDebug.LoadData(_spatialIndex); _collisionDebug.ShowDisabled = _showDisabled; }
     }
 
     /// <summary>
-    ///     Resolves the bindless indices of Morrowind's 32 animated water-surface frames
-    ///     (<c>textures\water\water00–31.dds</c>, the <c>[Water] SurfaceTexture/SurfaceFrameCount</c>
-    ///     cycle) for <c>WaterShaderVariant.MorrowindWater</c>. Null for every other game — the
-    ///     renderer ignores the frames unless the Morrowind profile is active. GetOrUpload returns a
-    ///     valid placeholder-backed index immediately, so missing frames simply drop out of the cycle.
+    ///     Resolves the shared 32-frame <c>textures\water\water00–31.dds</c> animation. Morrowind
+    ///     samples it as a diffuse surface, while Oblivion WATER000 samples it as the global animated
+    ///     normal input; using WATR TNAM for that slot was incorrect because TNAM is per-water detail
+    ///     content (and DefaultWater's TNAM is empty). Null for every other game.
     /// </summary>
-    private uint[]? ResolveMorrowindWaterFrames()
+    private uint[]? ResolveLegacyAnimatedWaterFrames()
     {
-        if (_data?.Game != BethesdaMultitool.Core.Games.BethesdaGame.Morrowind || _textureResolver12 is null)
+        if (_data is null || _textureResolver12 is null ||
+            (_data.Game != BethesdaMultitool.Core.Games.BethesdaGame.Morrowind &&
+             _data.Game != BethesdaMultitool.Core.Games.BethesdaGame.Oblivion))
         {
             return null;
         }
 
-        const int frameCount = 32; // [Water] SurfaceFrameCount
-        var frames = new List<uint>(frameCount);
-        for (var i = 0; i < frameCount; i++)
+        var frames = new List<uint>(LegacyWaterAnimation.FrameCount);
+        for (var i = 0; i < LegacyWaterAnimation.FrameCount; i++)
         {
-            if (_textureResolver12.ResolveDiffuseBindlessIndex($@"textures\water\water{i:D2}.dds") is uint idx)
+            var path = LegacyWaterAnimation.FramePath(i);
+            var index = _data.Game == BethesdaMultitool.Core.Games.BethesdaGame.Morrowind
+                ? _textureResolver12.ResolveDiffuseBindlessIndex(path)
+                : _textureResolver12.ResolveNormalMapBindlessIndex(path);
+            if (index is uint idx)
             {
                 frames.Add(idx);
             }
@@ -153,6 +181,7 @@ public sealed partial class WorldView3DControl
 
     private void CellList_CellActivated(object? sender, CellRecord cell)
     {
+        var selectionGeneration = BeginSceneSelection();
         _selectedInterior = cell;
         // Drop the combo selection so re-picking the same worldspace later still returns to exterior.
         _suppressWorldspaceSelectionEvent = true;
@@ -163,6 +192,8 @@ public sealed partial class WorldView3DControl
         TryBuildCellGrid();
         ResetCameraToInteriorBounds(cell);
         RefreshAtmosphereForCurrentWorldspace();
+        MarkSceneSelectionReady(selectionGeneration);
+        HideStatus();
     }
 
     /// <summary>
@@ -184,7 +215,8 @@ public sealed partial class WorldView3DControl
         if (_worldZExtent is { } zext) _cellGrid?.SetWorldZExtent(zext.zMin, zext.zMax);
         _terrain?.LoadData(_cellGridLookup, _spatialIndex, _data.RenderCache);
         _water?.SetGame(_data.Game);
-        _water?.SetMorrowindSurfaceFrames(ResolveMorrowindWaterFrames());
+        _water?.SetLegacyAnimatedFrames(ResolveLegacyAnimatedWaterFrames());
+        _water?.SetOblivionDetailTexture(null);
         _water?.LoadData(_cellGridLookup, worldspaceDefaultWaterHeight: null, _spatialIndex);
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
@@ -294,12 +326,15 @@ public sealed partial class WorldView3DControl
 
         if (targetIndex < 0) return false;
 
+        var selectionGeneration = BeginSceneSelection();
         _selectedInterior = null; // switching to an exterior worldspace leaves interior mode
         _suppressWorldspaceSelectionEvent = true;
         WorldspaceComboBox.SelectedIndex = targetIndex;
         _suppressWorldspaceSelectionEvent = false;
         TryBuildCellGrid();
         RefreshAtmosphereForCurrentWorldspace();
+        MarkSceneSelectionReady(selectionGeneration);
+        HideStatus();
         return true;
     }
 
@@ -324,6 +359,7 @@ public sealed partial class WorldView3DControl
 
         if (interior is null) return false;
 
+        var selectionGeneration = BeginSceneSelection();
         _selectedInterior = interior;
         // Drop the combo selection so the grid builder takes the interior path (TryBuildCellGrid checks
         // _selectedInterior first); suppress the event so the live camera isn't reset under the overlay.
@@ -331,6 +367,9 @@ public sealed partial class WorldView3DControl
         WorldspaceComboBox.SelectedIndex = -1;
         _suppressWorldspaceSelectionEvent = false;
         TryBuildCellGrid();
+        RefreshAtmosphereForCurrentWorldspace();
+        MarkSceneSelectionReady(selectionGeneration);
+        HideStatus();
         return true;
     }
 

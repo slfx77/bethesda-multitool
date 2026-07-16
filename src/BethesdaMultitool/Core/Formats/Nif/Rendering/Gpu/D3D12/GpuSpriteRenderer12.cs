@@ -26,10 +26,12 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 {
-    private const int ConstantBufferSize = 224; // sizeof(GpuUniforms) — must be 16-byte aligned
+    private const int ConstantBufferSize = 240; // sizeof(GpuUniforms) — must be 16-byte aligned
     private const int MsaaSampleCount = 4;
     private const uint SrvTableSize = 2;     // t0 diffuse + t1 normal
-    private const uint SamplerTableSize = 2; // s0 + s1 (both linear-wrap; skin.frag.hlsl binds both)
+    private const uint SamplerTableSize = 2; // s0 + s1; skin.frag.hlsl binds both
+    private const uint SamplerModeCount = 4; // wrap/wrap, clampU, clampV, clampUV
+    private const uint SamplerHeapSize = SamplerTableSize * SamplerModeCount;
 
     private readonly GpuDevice12 _gpu;
     private readonly ID3D12RootSignature _rootSignature;
@@ -290,6 +292,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         pendingResources.Add(srvHeap);
         var srvIncrement = device.GetDescriptorHandleIncrementSize(
             DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
+        var samplerIncrement = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.Sampler);
 
         // ---- Begin command recording -----------------------------------------------------
         cmd.OMSetRenderTargets(rtvHandle, dsvHandle);
@@ -337,6 +340,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 TintColor = new Vector4(
                     sub.TintColor?.R ?? 1f, sub.TintColor?.G ?? 1f, sub.TintColor?.B ?? 1f, 0),
                 Flags = new Vector4(flags, sub.SubsurfaceColor.R, sub.SubsurfaceColor.G, sub.SubsurfaceColor.B),
+                EffectTint = new Vector4(sub.EffectTint.R, sub.EffectTint.G, sub.EffectTint.B, 1f),
             };
 
             // Per-submesh CB lives in a fresh UPLOAD-heap buffer. Persistent-mapped + filled +
@@ -406,6 +410,11 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 
             cmd.SetGraphicsRootConstantBufferView(0, cb.GPUVirtualAddress);
             cmd.SetGraphicsRootDescriptorTable(1, gpuStart);
+            var samplerMode = (sub.ClampTextureU ? 1 : 0) | (sub.ClampTextureV ? 2 : 0);
+            cmd.SetGraphicsRootDescriptorTable(2, new GpuDescriptorHandle(
+                _samplerHeap.GetGPUDescriptorHandleForHeapStart(),
+                samplerMode * (int)SamplerTableSize,
+                samplerIncrement));
 
             cmd.IASetVertexBuffers(0, new VertexBufferView
             {
@@ -770,23 +779,13 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 
     private static D12.Blend MapBlend(byte nifBlendMode)
     {
-        // NIF blend factors. The D3D11 path uses NifD3D11BlendMapper; mirror its policy here
-        // for the common cases. Unmapped values default to One/Zero (effectively no blend).
-        return nifBlendMode switch
-        {
-            0 => D12.Blend.One,
-            1 => D12.Blend.Zero,
-            2 => D12.Blend.SourceColor,
-            3 => D12.Blend.InverseSourceColor,
-            4 => D12.Blend.SourceAlpha,
-            5 => D12.Blend.InverseSourceAlpha,
-            6 => D12.Blend.DestinationAlpha,
-            7 => D12.Blend.InverseDestinationAlpha,
-            8 => D12.Blend.DestinationColor,
-            9 => D12.Blend.InverseDestinationColor,
-            10 => D12.Blend.SourceAlphaSaturate,
-            _ => D12.Blend.One,
-        };
+        // Keep the standalone sprite path on the same OpenGL-order NIF mapping as the world
+        // renderer.  This used to carry a second, stale ordering in which modes 4..9 were
+        // shifted; the common 6/7 pair therefore became DestinationAlpha/InverseDestinationAlpha
+        // instead of SourceAlpha/InverseSourceAlpha.  On a transparent sprite target that turns
+        // the first blended draw black, and over an opaque draw it replaces rather than blends.
+        return global::BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.NifD3D12BlendMapper
+            .ResolveBlendFactor(nifBlendMode);
     }
 
     private static ID3D12RootSignature CreateRootSignature(ID3D12Device device)
@@ -822,26 +821,33 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         var heap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = DescriptorHeapType.Sampler,
-            DescriptorCount = SamplerTableSize,
+            DescriptorCount = SamplerHeapSize,
             Flags = DescriptorHeapFlags.ShaderVisible,
         });
-        var sampler = new SamplerDescription
-        {
-            Filter = Filter.MinMagMipLinear,
-            AddressU = TextureAddressMode.Wrap,
-            AddressV = TextureAddressMode.Wrap,
-            AddressW = TextureAddressMode.Wrap,
-            MaxAnisotropy = 1,
-            ComparisonFunction = ComparisonFunction.Never,
-            MinLOD = 0,
-            MaxLOD = float.MaxValue,
-        };
-        // skin.frag.hlsl binds both s0 and s1 — the D3D11 path points both at the same
-        // _linearSampler state. Replicate by writing the same sampler descriptor to slots 0+1.
         var samplerSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.Sampler);
         var heapStart = heap.GetCPUDescriptorHandleForHeapStart();
-        device.CreateSampler(ref sampler, new CpuDescriptorHandle(heapStart, 0, samplerSize));
-        device.CreateSampler(ref sampler, new CpuDescriptorHandle(heapStart, 1, samplerSize));
+        for (var mode = 0; mode < (int)SamplerModeCount; mode++)
+        {
+            var sampler = new SamplerDescription
+            {
+                Filter = Filter.MinMagMipLinear,
+                AddressU = (mode & 1) != 0 ? TextureAddressMode.Clamp : TextureAddressMode.Wrap,
+                AddressV = (mode & 2) != 0 ? TextureAddressMode.Clamp : TextureAddressMode.Wrap,
+                AddressW = TextureAddressMode.Wrap,
+                MaxAnisotropy = 1,
+                ComparisonFunction = ComparisonFunction.Never,
+                MinLOD = 0,
+                MaxLOD = float.MaxValue,
+            };
+            // skin.frag.hlsl binds diffuse s0 and normal s1. Give both the same independently
+            // authored BGSM/BGEM address mode, and select the two-descriptor table per draw.
+            for (var samplerSlot = 0; samplerSlot < (int)SamplerTableSize; samplerSlot++)
+            {
+                var descriptorIndex = mode * (int)SamplerTableSize + samplerSlot;
+                device.CreateSampler(ref sampler,
+                    new CpuDescriptorHandle(heapStart, descriptorIndex, samplerSize));
+            }
+        }
         return heap;
     }
 
@@ -931,7 +937,8 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         public Vector4 Material;   // 16
         public Vector4 TintColor;  // 16
         public Vector4 Flags;      // 16
-        // Total: 224 bytes
+        public Vector4 EffectTint; // 16 — BSEffect/BGEM base RGB × HDR scale
+        // Total: 240 bytes
     }
 }
 

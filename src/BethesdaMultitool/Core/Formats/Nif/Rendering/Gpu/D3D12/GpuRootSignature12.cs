@@ -17,6 +17,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         <item>5: root SRV at <c>t8, space0</c> — reference instance structured buffer. VS.</item>
 ///         <item>6: root CBV at <c>b3</c> — shared scene atmosphere. VS + PS.</item>
 ///         <item>7: root SRV at <c>t9, space0</c> — placed point-light buffer. PS.</item>
+///         <item>8: one-descriptor UAV table at <c>u0, space0</c> — water prepass output
+///         (classic noise or opt-in FO4/FO76 dynamic maps). Compute only.</item>
 ///     </list>
 ///     <para>
 ///         Root CBVs at slots 0/1 are faster than descriptor tables for the
@@ -55,6 +57,10 @@ internal sealed class GpuRootSignature12 : IDisposable
 
         /// <summary>Root SRV at <c>t9, space0</c> — per-frame placed point lights.</summary>
         public const int PointLightsSrv = 7;
+
+        /// <summary>One-UAV descriptor table used by water compute prepasses. Existing graphics
+        /// root slots retain their original indices.</summary>
+        public const int WaterNoiseUavTable = 8;
     }
 
     /// <summary>SRV slots <c>t0..t(N-1)</c> reserved in the legacy table at slot
@@ -169,6 +175,22 @@ internal sealed class GpuRootSignature12 : IDisposable
             new RootDescriptor1(shaderRegister: 9, registerSpace: 0),
             ShaderVisibility.Pixel);
 
+        // Slot 8: one transient UAV descriptor for classic and modern water compute prepasses.
+        // The compute and graphics root bindings are independent even when they share this root
+        // signature, so dispatching the prepass does not invalidate the scene's graphics b3 binding.
+        var waterNoiseUavRange = new DescriptorRange1
+        {
+            RangeType = DescriptorRangeType.UnorderedAccessView,
+            NumDescriptors = 1,
+            BaseShaderRegister = 0,
+            RegisterSpace = 0,
+            Flags = DescriptorRangeFlags.DescriptorsVolatile,
+            OffsetInDescriptorsFromTableStart = 0,
+        };
+        var waterNoiseUav = new RootParameter1(
+            new RootDescriptorTable1(waterNoiseUavRange),
+            ShaderVisibility.All);
+
         var staticSamplers = new[]
         {
             new StaticSamplerDescription(
@@ -183,7 +205,8 @@ internal sealed class GpuRootSignature12 : IDisposable
                 StaticBorderColor.OpaqueBlack,
                 0f,
                 float.MaxValue,
-                ShaderVisibility.Pixel,
+                // s0 is also the recovered water-noise compute prepass's wrap sampler.
+                ShaderVisibility.All,
                 0),
             new StaticSamplerDescription(
                 1,
@@ -236,6 +259,51 @@ internal sealed class GpuRootSignature12 : IDisposable
                 float.MaxValue,
                 ShaderVisibility.Pixel,
                 0),
+            // s4-s6: material-addressing permutations selected from BGSM/BGEM TileU/TileV.
+            // They otherwise match the anisotropic wrap sampler so changing an address bit cannot
+            // silently change filtering quality.
+            new StaticSamplerDescription(
+                4,
+                Filter.Anisotropic,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Wrap,
+                TextureAddressMode.Wrap,
+                0f,
+                16,
+                ComparisonFunction.Never,
+                StaticBorderColor.OpaqueBlack,
+                0f,
+                float.MaxValue,
+                ShaderVisibility.Pixel,
+                0),
+            new StaticSamplerDescription(
+                5,
+                Filter.Anisotropic,
+                TextureAddressMode.Wrap,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Wrap,
+                0f,
+                16,
+                ComparisonFunction.Never,
+                StaticBorderColor.OpaqueBlack,
+                0f,
+                float.MaxValue,
+                ShaderVisibility.Pixel,
+                0),
+            new StaticSamplerDescription(
+                6,
+                Filter.Anisotropic,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Wrap,
+                0f,
+                16,
+                ComparisonFunction.Never,
+                StaticBorderColor.OpaqueBlack,
+                0f,
+                float.MaxValue,
+                ShaderVisibility.Pixel,
+                0),
         };
 
         // Vortice convenience: CreateRootSignature(RootSignatureDescription1) does the
@@ -250,7 +318,8 @@ internal sealed class GpuRootSignature12 : IDisposable
             RootSignatureFlags.ConstantBufferViewShaderResourceViewUnorderedAccessViewHeapDirectlyIndexed,
             new[]
             {
-                perFrame, perDraw, perMode, srvTable, bindlessTable, referenceInstanceSrv, atmosphere, pointLights
+                perFrame, perDraw, perMode, srvTable, bindlessTable, referenceInstanceSrv,
+                atmosphere, pointLights, waterNoiseUav,
             },
             staticSamplers);
         var rs = gpu.Device.CreateRootSignature(desc);

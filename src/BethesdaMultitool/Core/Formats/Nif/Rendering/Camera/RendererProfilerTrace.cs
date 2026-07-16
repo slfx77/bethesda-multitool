@@ -141,6 +141,10 @@ internal static class RendererProfilerTrace
         Add("texturePendingResolves", stats.TexturePendingResolves);
         Add("texturePendingUploads", stats.TexturePendingUploads);
         Add("waterDraws", stats.WaterDraws);
+        if (stats.WaterPipeline is not null)
+        {
+            Add("waterPipeline", stats.WaterPipeline);
+        }
         Add("wireframeDraws", stats.WireframeDraws);
         Add("refCellsVisited", stats.ReferenceCellsVisited);
         Add("refCandidates", stats.ReferenceCandidates);
@@ -171,6 +175,14 @@ internal static class RendererProfilerTrace
         Add("refInstances", stats.ReferenceInstances);
         Add("refInstancedDraws", stats.ReferenceInstancedDraws);
         Add("refBlendedDraws", stats.ReferenceBlendedDraws);
+        Add("refLiveParticleOwners", stats.ReferenceLiveParticleOwners);
+        Add("refLiveParticleParticles", stats.ReferenceLiveParticleParticles);
+        Add("refLiveParticleDraws", stats.ReferenceLiveParticleDraws);
+        Add("refLiveParticleFallbacks", stats.ReferenceLiveParticleFallbacks);
+        Add("refLiveParticleUploadBytes", stats.ReferenceLiveParticleUploadBytes);
+        Add("refLiveParticleUvFrame", stats.ReferenceLiveParticleUvFrame);
+        Add("refLiveParticleAtlasFrames", stats.ReferenceLiveParticleAtlasFrameCount);
+        Add("refLiveParticleAuthoredCapacity", stats.ReferenceLiveParticleAuthoredCapacity);
         Add("refStateMs", stats.ReferenceStateSetupMilliseconds);
         Add("refCullMs", stats.ReferenceCullMilliseconds);
         Add("refMeshUploadMs", stats.ReferenceMeshUploadMilliseconds);

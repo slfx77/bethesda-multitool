@@ -192,7 +192,10 @@ internal static class NifHeadlessRenderer
             // (e.g. FO4 Water\Water1024.nif) draws nothing through ReferenceRenderer12 alone —
             // 0/0/0 stats and a blank frame that reads as "dropped". Mirror the live viewer
             // (WorldView3DControl.Frame) by rendering the accumulated planes each frame.
-            water = new WaterRenderer12(gpu, recorder, ring, rootSig, heap, deletion);
+            water = new WaterRenderer12(gpu, recorder, ring, rootSig, heap, deletion)
+            {
+                ModernPipelineEnabled = EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ModernWater),
+            };
 
             // Synthetic 1-cell scene: one REFR at the world origin in grid cell (0,0). A null spatial
             // index makes ReferenceRenderer12 iterate the cell dict directly (cylinder.ContainsCell).
@@ -244,6 +247,7 @@ internal static class NifHeadlessRenderer
                 // 3/4 view (default NW azimuth, ~30° elevation) — reads form better than flat top-down.
                 var viewProj = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg: azimuthDeg, elevationDeg: 30f,
                     orthoHalfHeight: halfHeight, aspect: 1f);
+                var cameraPosition = OrthoViewProjBuilder.EyePosition(focus, azimuthDeg, 30f);
                 var (camRight, camUp) = OrthoViewProjBuilder.CameraBasis(azimuthDeg, 30f);
                 // Cull cylinder centred at the REFR origin (world 0,0,0 — cell (0,0)) with a radius that
                 // reaches the framed geometry, so ContainsCell(0,0) + the per-REFR sphere both pass.
@@ -293,14 +297,16 @@ internal static class NifHeadlessRenderer
                         .ReferenceRenderer12.CullCameraPose(
                             Vector3.Normalize(new Vector3(-1f, -1f, -0.5f)), 0.9f, 1f);
                     references.Render(viewProj, cylinder, deferBlended: true,
-                        cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose);
+                        cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose,
+                        cameraPosition: cameraPosition);
                     water.SetNifWaterPlanes(references.NifWaterPlanes);
                     waterDraws = water.Render(viewProj, cylinder);
                     references.RenderBlendedDeferred();
                 }
                 else
                 {
-                    references.Render(viewProj, cylinder);
+                    references.Render(
+                        viewProj, cylinder, deferBlended: false, cameraPosition: cameraPosition);
                     water.SetNifWaterPlanes(references.NifWaterPlanes);
                     waterDraws = water.Render(viewProj, cylinder);
                 }
@@ -395,6 +401,7 @@ internal static class NifHeadlessRenderer
                 var halfHeight = (frameRadius > 1f ? frameRadius : localRadius) * 1.1f;
                 var viewProj = OrthoViewProjBuilder.BuildViewProj(focus, azimuthDeg: azimuthDeg,
                     elevationDeg: 30f, orthoHalfHeight: halfHeight, aspect: 1f);
+                var cameraPosition = OrthoViewProjBuilder.EyePosition(focus, azimuthDeg, 30f);
                 var (camRight, camUp) = OrthoViewProjBuilder.CameraBasis(azimuthDeg, 30f);
                 var cullRadius = MathF.Max((focus.Length() + halfHeight) * 1.5f, 4096f);
                 var cylinder = OrthoViewProjBuilder.BuildCoverCylinder(Vector3.Zero, cullRadius);
@@ -428,14 +435,16 @@ internal static class NifHeadlessRenderer
                             .ReferenceRenderer12.CullCameraPose(
                                 Vector3.Normalize(new Vector3(-1f, -1f, -0.5f)), 0.9f, 1f);
                         references.Render(viewProj, cylinder, deferBlended: true,
-                            cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose);
+                            cullViewProj: viewProj, renderOrigin: default, cullCameraPose: pose,
+                            cameraPosition: cameraPosition);
                         water.SetNifWaterPlanes(references.NifWaterPlanes);
                         water.Render(viewProj, cylinder);
                         references.RenderBlendedDeferred();
                     }
                     else
                     {
-                        references.Render(viewProj, cylinder);
+                        references.Render(
+                            viewProj, cylinder, deferBlended: false, cameraPosition: cameraPosition);
                         water.SetNifWaterPlanes(references.NifWaterPlanes);
                         water.Render(viewProj, cylinder);
                     }

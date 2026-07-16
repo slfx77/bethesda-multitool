@@ -11,6 +11,38 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm;
 
 public sealed class EsmPlacedReferenceSubrecordTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExtractRefrRecordsFromParsed_ReadsExternalEmittanceFormId_InBothEndiannesses(bool bigEndian)
+    {
+        const uint refrFormId = 0x00150410;
+        const uint baseFormId = 0x00150420;
+        const uint emittanceFormId = 0x00150430;
+        var record = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "REFR",
+                FormId = refrFormId
+            },
+            Offset = 0x340,
+            Subrecords =
+            [
+                MakeFormIdSubrecord("NAME", baseFormId, bigEndian),
+                MakeFormIdSubrecord("XEMI", emittanceFormId, bigEndian)
+            ]
+        };
+
+        var scanResult = new EsmRecordScanResult();
+        EsmDataExtractor.ExtractRefrRecordsFromParsed(scanResult, [record], bigEndian);
+
+        var refr = Assert.Single(scanResult.RefrRecords);
+        Assert.Equal(baseFormId, refr.BaseFormId);
+        Assert.Equal(emittanceFormId, refr.EmittanceFormId);
+        Assert.Equal(bigEndian, refr.Header.IsBigEndian);
+    }
+
     [Fact]
     public void ExtractRefrRecordsFromParsed_ReadsLockAndEightByteLinkedRefVariant()
     {
@@ -157,15 +189,23 @@ public sealed class EsmPlacedReferenceSubrecordTests
         Assert.Equal("DoorMarkerRef", refr.EditorId);
     }
 
-    private static ParsedSubrecord MakeFormIdSubrecord(string signature, uint formId)
+    private static ParsedSubrecord MakeFormIdSubrecord(string signature, uint formId, bool bigEndian = false)
     {
         Span<byte> data = stackalloc byte[4];
-        BinaryPrimitives.WriteUInt32LittleEndian(data, formId);
+        if (bigEndian)
+        {
+            BinaryPrimitives.WriteUInt32BigEndian(data, formId);
+        }
+        else
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(data, formId);
+        }
+
         return new ParsedSubrecord
         {
             Signature = signature,
             Data = data.ToArray(),
-            BigEndian = false
+            BigEndian = bigEndian
         };
     }
 

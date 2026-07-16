@@ -71,6 +71,12 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     /// <summary>True when the scene targets are multisampled (depth can't be a plain Texture2D SRV).</summary>
     public bool IsMsaa { get; }
 
+    /// <summary>Whether the most recent readback tonemap invalidated eye-adaptation history.</summary>
+    public bool TonemapHistoryReset => _tonemap.LastHistoryReset;
+
+    /// <summary>Inputs that caused the most recent eye-adaptation history invalidation.</summary>
+    public string? TonemapHistoryResetReason => _tonemap.LastHistoryResetReason;
+
     /// <summary>
     ///     The D32_Float depth texture, exposed so the capture path can bind it as an R32_Float SRV
     ///     for the water shader's real column-depth fade. Only valid as an SRV when

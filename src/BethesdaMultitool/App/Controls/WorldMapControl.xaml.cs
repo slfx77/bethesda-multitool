@@ -460,6 +460,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         // seed the category index here too (idempotent with the 3D control's LoadData).
         data.RenderCache.CategoryIndex = data.CategoryIndex;
         data.RenderCache.LightIndex = data.LightsByFormId;
+        data.RenderCache.ExternalEmittanceIndex = data.ExternalEmittanceColorsByFormId;
         data.RenderCache.XespDisabledRefs = data.XespDisabledRefs;
         // Same for MODS alternate textures — the placement bake is cached per cell, so the index must
         // be present before whichever control (2D or 3D) bakes first, or the shared cache would keep a

@@ -8,8 +8,11 @@ cbuffer SkyGeo : register(b0)
     float4x4 uViewProj;
     float4 uCamPosScale;   // xyz = camera world pos, w = sky-dome radius (same for every layer)
     float4 uTintParam;     // rgb = layer tint, a = layer fade/opacity
-    float4 uScrollMode;    // xy = cloud UV scroll, z = mode (0 gradient, 1 stars, 2 clouds), w unused
+    float4 uScrollMode;    // xy = cloud UV scroll, z = mode, w = authored atmosphere blend weights
     uint4  uTexIndex;      // x = bindless diffuse index (0xFFFFFFFF = none)
+    float4 uSkyUpper;      // recovered SKY BlendColor[2]
+    float4 uSkyLower;      // recovered SKY BlendColor[1]
+    float4 uSkyHorizon;    // recovered SKY BlendColor[0]
 };
 
 struct VSInput
