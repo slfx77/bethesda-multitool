@@ -225,7 +225,8 @@ internal static class DmpGameTimeCommand
         var captured = results.Count(r => FormatInGameDateTime(r.Values) != null);
         AnsiConsole.MarkupLine(
             $"\n[dim]{captured}/{results.Count} dumps with a readable in-game clock. " +
-            "In-game time = GameYear/GameMonth/GameDay/GameHour GLOB runtime values; " +
+            "In-game time = GameYear/GameMonth/GameDay/GameHour GLOB runtime values " +
+            "(GameMonth is 0-indexed in the engine; shown as calendar month); " +
             "build date = game module PE TimeDateStamp.[/]");
     }
 
@@ -256,7 +257,9 @@ internal static class DmpGameTimeCommand
     }
 
     /// <summary>
-    ///     Composes "2281-10-19 09:15" from the year/month/day/hour globals. Returns null when
+    ///     Composes "2281-10-19 09:15" from the year/month/day/hour globals. GameMonth is
+    ///     0-indexed in the engine (0 = January, tm_mon-style; GameDay is 1-indexed like
+    ///     tm_mday), so +1 converts it to the displayed calendar month. Returns null when
     ///     the captured values don't form a plausible calendar date (missing globals, or the
     ///     runtime float read produced garbage that the reader zeroed out).
     /// </summary>
@@ -271,7 +274,7 @@ internal static class DmpGameTimeCommand
         }
 
         var y = (int)Math.Round(year.Value);
-        var mo = (int)Math.Round(month.Value);
+        var mo = (int)Math.Round(month.Value) + 1;
         var d = (int)Math.Round(day.Value);
         if (y is < 1 or > 9999 || mo is < 1 or > 12 || d is < 1 or > 31 ||
             hour.Value is < 0f or >= 24f)
