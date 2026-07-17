@@ -774,6 +774,7 @@ public sealed class RuntimeParityParserTests : IDisposable
         var data = new byte[DataSize];
         const uint worldspaceFormId = 0x00130010;
         const uint cellFormId = 0x00130020;
+        const uint cellWaterFormId = 0x00130030;
         const int cellRecordOffset = 256;
         const int worldRecordOffset = 512;
         const int runtimeWorldOffset = 4096;
@@ -785,7 +786,8 @@ public sealed class RuntimeParityParserTests : IDisposable
         const int cellNameOffset = 6400;
 
         var cellRecordBytes = BuildRecordBytes(cellFormId, "CELL", false,
-            ("EDID", NullTermString("CellFromEsm")));
+            ("EDID", NullTermString("CellFromEsm")),
+            ("XCWT", BitConverter.GetBytes(cellWaterFormId)));
         Array.Copy(cellRecordBytes, 0, data, cellRecordOffset, cellRecordBytes.Length);
 
         var worldRecordBytes = BuildRecordBytes(worldspaceFormId, "WRLD", false,
@@ -864,6 +866,7 @@ public sealed class RuntimeParityParserTests : IDisposable
         Assert.Equal(-2, cell.GridY);
         Assert.Equal(worldspaceFormId, cell.WorldspaceFormId);
         Assert.Equal(96f, cell.WaterHeight);
+        Assert.Equal(cellWaterFormId, cell.WaterFormId);
         Assert.False(cell.IsVirtual);
     }
 
