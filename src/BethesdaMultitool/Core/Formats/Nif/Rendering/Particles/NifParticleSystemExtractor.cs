@@ -365,11 +365,12 @@ internal static class NifParticleSystemExtractor
             triangles[ti + 5] = (ushort)(baseV + 3);
         }
 
-        // Additive particles (Dst blend = ONE → 0) are glows — fire, wisps, energy — and render full-bright
-        // emissive. Alpha-blended particles (Dst = INV_SRC_ALPHA → 7: dust, smoke, water spray) are NOT
-        // emissive: they're shaded by the scene so they darken at night / pick up ambient instead of glowing
-        // (the SandDust "too opaque / unlit" fix).
-        var isEmissive = def.DstBlendMode == 0;
+        // Lighting comes from the attached shader family, not from the blend equation. SandDust02 uses
+        // ordinary SRC_ALPHA/INV_SRC_ALPHA compositing but its PCloud01 property is explicitly
+        // BSShaderNoLightingProperty (the engine has a dedicated BSSM_NOLIGHTING_PSYS pass). Preserve that
+        // unlit contract while leaving standard-alpha particles on lighting shader properties scene-lit.
+        // Additive legacy particles without shader metadata remain full-bright as before.
+        var isEmissive = def.UsesUnlitShader || def.DstBlendMode == 0;
 
         return new RenderableSubmesh
         {

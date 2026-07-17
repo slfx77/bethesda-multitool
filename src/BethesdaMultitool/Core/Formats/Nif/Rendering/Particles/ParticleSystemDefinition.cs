@@ -61,6 +61,16 @@ internal sealed class ParticleSystemDefinition
     /// <summary>Diffuse texture path resolved from the system's shader property (the particle sprite).</summary>
     public string? DiffuseTexturePath { get; set; }
 
+    /// <summary>
+    ///     Concrete shader property attached to the particle system. Lighting is selected from this property,
+    ///     not inferred from the blend equation: standard-alpha dust can still use the retail NoLighting path.
+    /// </summary>
+    public string? ShaderPropertyType { get; set; }
+
+    /// <summary>True only for shader families whose retail contract bypasses scene lighting.</summary>
+    public bool UsesUnlitShader => ShaderPropertyType is
+        "BSShaderNoLightingProperty" or "BSEffectShaderProperty";
+
     /// <summary>NiAlphaProperty source blend factor (bits 1-4); default 6 = SRC_ALPHA.</summary>
     public byte SrcBlendMode { get; set; } = 6;
 
@@ -356,60 +366,69 @@ internal sealed class ColorModifierDefinition : ParticleModifierDefinition
     // NiPSysColorModifier (NiColorData) keys, sorted by Time in [0,1].
     public ParticleColorKey[] Keys { get; init; } = [];
 
-    /// <summary>Sample the modifier's RGBA at normalized life fraction <paramref name="t" /> (0=birth, 1=death),
-    /// with the fade-in/out envelope applied to alpha. Falls back to <paramref name="initial" /> when empty.</summary>
+    /// <summary>Sample the modifier's RGBA at normalized life fraction <paramref name="t" /> (0=birth, 1=death).
+    /// Falls back to <paramref name="initial" /> when empty.</summary>
     public Vector4 Sample(float t, Vector4 initial)
     {
         t = Math.Clamp(t, 0f, 1f);
-        Vector4 color;
         if (IsSimpleColor)
         {
-            color = SampleGradient(t);
-        }
-        else if (Keys.Length > 0)
-        {
-            color = SampleKeys(t);
-        }
-        else
-        {
-            color = initial;
+            return SampleSimpleColor(t);
         }
 
-        // FadeIn/FadeOut belong only to BSPSysSimpleColorModifier. NiPSysColorModifier already authors its
-        // complete RGBA curve in NiColorData and must not inherit the SimpleColor default 0.1/0.9 envelope.
-        if (!IsSimpleColor)
+        if (Keys.Length > 0)
         {
-            return color;
+            return SampleKeys(t);
         }
 
-        // BSPSysSimpleColor keeps the RGB three-key curve and applies FadeIn/FadeOut to opacity. Multiplying
-        // RGB by this envelope was a viewer invention which made alpha-blended dust change colour as it aged.
-        var fade = FadeEnvelope(t);
-        return new Vector4(color.X, color.Y, color.Z, color.W * fade);
+        return initial;
     }
 
-    private Vector4 SampleGradient(float t)
+    private Vector4 SampleSimpleColor(float t)
     {
-        // Color1 is the BASE colour, held for most of life. Color0 blends IN over the start window
-        // [Color1Start, Color1End] and Color2 blends OUT over the end window [Color2Start, Color2End] —
-        // but ONLY when those windows are non-degenerate. FXDust authors all percents = 0 with Color0/2
-        // black and Color1 the real dust colour: with degenerate windows that must resolve to Color1, not
-        // fall through to a black Color2 (which made the particles invisible).
-        if (Color1EndPercent > Color1StartPercent && t < Color1EndPercent)
+        // FalloutNV MemDebug BSPSysSimpleColorModifier::Update (PDB 0004:00797F38) evaluates RGB and alpha
+        // independently. The NIF serializes each RGB transition's End value before its Start value; retail
+        // SandDust02 therefore authors Color0 -> Color1 over 0.2 -> 0.4 and Color1 -> Color2 over 0.6 -> 0.8.
+        // Treating those pairs as conventional Start/End values skips the authored RGB transitions.
+        // Interpolating RGBA together and then applying a generic fade envelope can also double-fade
+        // endpoint alpha for other authored configurations, so retain the engine's split branches.
+        var rgb = SampleSimpleColorRgb(t);
+        var alpha = SampleSimpleColorAlpha(t);
+        return new Vector4(rgb.X, rgb.Y, rgb.Z, alpha);
+    }
+
+    private Vector4 SampleSimpleColorRgb(float t)
+    {
+        var color1Span = Color1StartPercent - Color1EndPercent;
+        if (color1Span != 0f && t < Color1StartPercent)
         {
-            return t <= Color1StartPercent
+            return t < Color1EndPercent
                 ? Color0
-                : Vector4.Lerp(Color0, Color1, (t - Color1StartPercent) / (Color1EndPercent - Color1StartPercent));
+                : Vector4.Lerp(Color0, Color1, (t - Color1EndPercent) / color1Span);
         }
 
-        if (Color2EndPercent > Color2StartPercent && t > Color2StartPercent)
+        var color2Span = Color2StartPercent - Color2EndPercent;
+        if (color2Span == 0f || t <= Color2EndPercent)
         {
-            return t >= Color2EndPercent
-                ? Color2
-                : Vector4.Lerp(Color1, Color2, (t - Color2StartPercent) / (Color2EndPercent - Color2StartPercent));
+            return Color1;
         }
 
-        return Color1;
+        return t <= Color2StartPercent
+            ? Vector4.Lerp(Color1, Color2, (t - Color2EndPercent) / color2Span)
+            : Color2;
+    }
+
+    private float SampleSimpleColorAlpha(float t)
+    {
+        if (FadeOutPercent == 0f || t <= FadeOutPercent)
+        {
+            return FadeInPercent == 0f || t >= FadeInPercent
+                ? Color1.W
+                : Color0.W + ((Color1.W - Color0.W) * (t / FadeInPercent));
+        }
+
+        return Color1.W + ((Color2.W - Color1.W) *
+                           ((t - FadeOutPercent) / (1f - FadeOutPercent)));
     }
 
     private Vector4 SampleKeys(float t)
@@ -428,19 +447,4 @@ internal sealed class ColorModifierDefinition : ParticleModifierDefinition
         return Keys[^1].Color;
     }
 
-    private float FadeEnvelope(float t)
-    {
-        var fade = 1f;
-        if (FadeInPercent > 1e-4f && t < FadeInPercent)
-        {
-            fade = t / FadeInPercent;
-        }
-
-        if (FadeOutPercent < 1f - 1e-4f && t > FadeOutPercent)
-        {
-            fade = MathF.Min(fade, (1f - t) / (1f - FadeOutPercent));
-        }
-
-        return Math.Clamp(fade, 0f, 1f);
-    }
 }

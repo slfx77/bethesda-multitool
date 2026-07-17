@@ -618,7 +618,9 @@ internal static class NifParticleSystemParser
         // Particle sprites carry their texture on a shader property (BSShaderNoLighting/Effect/PP) OR a
         // legacy NiTexturingProperty (FO3/FNV particles commonly use the latter). Try the shader reader
         // first, then fall back to the texturing reader so the wisp/sprite isn't lost (→ white particles).
-        def.DiffuseTexturePath = NifShaderTexturePropertyReader.ResolveDiffusePath(data, nif, propertyRefs)
+        var shaderMetadata = NifShaderTexturePropertyReader.ReadShaderMetadata(data, nif, propertyRefs);
+        def.ShaderPropertyType = shaderMetadata?.PropertyType;
+        def.DiffuseTexturePath = shaderMetadata?.DiffusePath
                                  ?? NifTexturingPropertyReader.ResolveBaseTexturePath(data, nif, propertyRefs);
 
         var alpha = NifRenderPropertyReader.ReadAlphaProperty(data, nif, propertyRefs);
