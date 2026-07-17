@@ -81,6 +81,7 @@ public sealed class GrassPlacementBuilderTests
         Assert.All(placements, p =>
         {
             Assert.True(p.IsGrass);
+            Assert.Equal(10f, p.GrassWaveMultiplier);
             Assert.Equal(fixture.Grass.FormId, p.FormId);
             Assert.Equal(fixture.Grass.ModelPath, p.ModelPath);
             Assert.InRange(p.WorldMatrix.Translation.X, 0f, 4096f);
@@ -102,6 +103,7 @@ public sealed class GrassPlacementBuilderTests
         Assert.NotEmpty(placements);
         Assert.All(placements, p =>
         {
+            Assert.Equal(0f, p.GrassWaveMultiplier);
             Assert.Equal((float)(Half)p.WorldMatrix.Translation.X, p.WorldMatrix.Translation.X);
             Assert.Equal((float)(Half)p.WorldMatrix.Translation.Y, p.WorldMatrix.Translation.Y);
             Assert.Equal((float)(Half)123.456f, p.WorldMatrix.Translation.Z);
@@ -151,6 +153,92 @@ public sealed class GrassPlacementBuilderTests
             Assert.InRange(Vector3.Distance(sampledNormal, placedUp), 0f, 1e-5f);
         }
         Assert.True(fractionalSamples > 0);
+    }
+
+    [Theory]
+    [InlineData(0f, 0.42f, 0.58f)]
+    [InlineData(0.4f, 0.42f, 0.91f)]
+    [InlineData(0.6f, 0.42f, 1.08f)]
+    [InlineData(1f, 0.42f, 1.42f)]
+    public void ComputeFnvHeightScale_ReplaysPackedIntegerHeightComponent(
+        float random01,
+        float heightRange,
+        float expected)
+    {
+        var actual = GrassPlacementBuilder.ComputeFnvHeightScale(random01, heightRange);
+
+        Assert.Equal(expected, actual, 5);
+    }
+
+    [Fact]
+    public void ComposeFnvWorldMatrix_ReplaysPackedNormalBasisAndTieSelection()
+    {
+        var sloped = GrassPlacementBuilder.ComposeFnvWorldMatrix(
+            new Vector3(10f, 20f, 30f),
+            new Vector3(0.8f, 0f, 0.6f),
+            fitToSlope: true,
+            heightScale: 1.25f,
+            uniformScale: false);
+
+        // |X| is not the smallest component, so GRASS2002 chooses N cross Y for T.
+        AssertAxis(sloped, 1, new Vector3(0f, 1f, 0f));
+        AssertAxis(sloped, 2, new Vector3(-0.6f, 0f, 0.8f));
+        AssertAxis(sloped, 3, new Vector3(1f, 0f, 0.75f));
+        Assert.Equal(new Vector3(10f, 20f, 30f), sloped.Translation);
+
+        var flat = GrassPlacementBuilder.ComposeFnvWorldMatrix(
+            Vector3.Zero,
+            Vector3.UnitZ,
+            fitToSlope: true,
+            heightScale: 1.2f,
+            uniformScale: true);
+
+        // abs(Y) >= abs(X) is true on the 0 == 0 tie. The packed normal's upper clamp decodes
+        // retail +Z as 0.94, and the resulting flat basis is the shader's deterministic 180° turn.
+        AssertAxis(flat, 1, new Vector3(-0.94f * 1.2f, 0f, 0f));
+        AssertAxis(flat, 2, new Vector3(0f, -1.2f, 0f));
+        AssertAxis(flat, 3, new Vector3(0f, 0f, 0.94f * 1.2f));
+    }
+
+    [Fact]
+    public void Build_FnvConsumesHeightDrawWithoutYawAndMapsUniformScaleFlag()
+    {
+        var fixture = CreateFixture(
+            CreateFlatHeights(),
+            density: 100,
+            positionRange: 512f,
+            flags: 0,
+            heightRange: 0.42f);
+        var uniformFixture = fixture with
+        {
+            Grass = fixture.Grass with
+            {
+                Data = fixture.Grass.Data! with { Flags = 0x02 },
+            },
+        };
+
+        var verticalOnly = Build(fixture, BethesdaGame.FalloutNewVegas);
+        var uniform = Build(uniformFixture, BethesdaGame.FalloutNewVegas);
+
+        Assert.Equal(64, verticalOnly.Count);
+        Assert.Equal(verticalOnly.Count, uniform.Count);
+        Assert.Equal(verticalOnly[0].WorldMatrix.Translation, uniform[0].WorldMatrix.Translation);
+
+        // For the first deterministic candidate the fourth draw (after density/X/Y) packs -39,
+        // yielding 1 + 0.01 * -39 = 0.61. Consuming an invented yaw first would instead use the
+        // fifth draw and produce 1.12, so this assertion pins the FNV draw count as well as flooring.
+        AssertAxis(verticalOnly[0].WorldMatrix, 1, Vector3.UnitX);
+        AssertAxis(verticalOnly[0].WorldMatrix, 2, Vector3.UnitY);
+        AssertAxis(verticalOnly[0].WorldMatrix, 3, new Vector3(0f, 0f, 0.61f));
+        AssertAxis(uniform[0].WorldMatrix, 1, new Vector3(0.61f, 0f, 0f));
+        AssertAxis(uniform[0].WorldMatrix, 2, new Vector3(0f, 0.61f, 0f));
+        AssertAxis(uniform[0].WorldMatrix, 3, new Vector3(0f, 0f, 0.61f));
+
+        Assert.All(verticalOnly, placement =>
+        {
+            Assert.Equal(0f, placement.WorldMatrix.M12);
+            Assert.Equal(0f, placement.WorldMatrix.M21);
+        });
     }
 
     [Fact]
@@ -291,7 +379,8 @@ public sealed class GrassPlacementBuilderTests
         byte maxSlope = 90,
         byte flags = 0,
         ushort waterAmount = 0,
-        uint waterState = 0)
+        uint waterState = 0,
+        float heightRange = 0f)
     {
         const uint ltexFormId = 0x01000001;
         const uint grassFormId = 0x01000002;
@@ -329,7 +418,7 @@ public sealed class GrassPlacementBuilderTests
                 UnitsFromWaterAmount = waterAmount,
                 UnitsFromWaterType = waterState,
                 PositionRange = positionRange,
-                HeightRange = 0f,
+                HeightRange = heightRange,
                 ColorRange = 0.5f,
                 WavePeriod = 10f,
                 Flags = flags,
@@ -351,6 +440,20 @@ public sealed class GrassPlacementBuilderTests
             }
         }
         return heights;
+    }
+
+    private static void AssertAxis(Matrix4x4 matrix, int row, Vector3 expected)
+    {
+        var actual = row switch
+        {
+            1 => new Vector3(matrix.M11, matrix.M12, matrix.M13),
+            2 => new Vector3(matrix.M21, matrix.M22, matrix.M23),
+            3 => new Vector3(matrix.M31, matrix.M32, matrix.M33),
+            _ => throw new ArgumentOutOfRangeException(nameof(row)),
+        };
+        Assert.Equal(expected.X, actual.X, 5);
+        Assert.Equal(expected.Y, actual.Y, 5);
+        Assert.Equal(expected.Z, actual.Z, 5);
     }
 
     private sealed record Fixture(

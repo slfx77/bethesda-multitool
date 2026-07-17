@@ -38,7 +38,11 @@ internal readonly record struct RenderableReference(
     bool IsImposter,
     PlacedObjectCategory Category,
     AlternateTextureSet? AlternateTextures = null,
-    bool IsGrass = false)
+    bool IsGrass = false,
+    // Raw positive finite GRAS DATA WavePeriod field. The recovered shader consumes this value
+    // as a direct phase multiplier; the field name deliberately avoids claiming seconds/period
+    // or a reciprocal conversion that the retail evidence does not support.
+    float GrassWaveMultiplier = 0f)
 {
     private static readonly char[] PathSeparators = ['/', '\\'];
 
@@ -160,7 +164,7 @@ internal readonly record struct RenderableReference(
     ///     resolved model path, or refs the renderer cannot place (e.g. NaN coordinates).
     ///     <paramref name="category" /> is the base object's <see cref="PlacedObjectCategory" />
     ///     (resolved by the caller from the category index) so the renderer can apply per-category
-    ///     visibility filtering — e.g. activators hidden by default.
+    ///     visibility filtering — for example, activators hidden by the user.
     /// </summary>
     public static RenderableReference? TryBuild(
         PlacedReference placement,

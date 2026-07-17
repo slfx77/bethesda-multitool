@@ -29,10 +29,14 @@ public sealed class NifTallGrassVertexAlphaTests
 
         var effective = NifVertexColorPolicy.Read(submesh, 0);
         var gpuVertex = Assert.Single(GpuMeshUploader.BuildVertices(submesh));
+        var referenceWindVertex = Assert.Single(GpuMeshUploader.BuildVertices(
+            submesh,
+            preserveAuthoredVertexAlpha: true));
 
         Assert.Equal((byte)43, authoredColors[3]);
         Assert.Equal(((byte)32, (byte)64, (byte)96, byte.MaxValue), effective);
         Assert.Equal(1f, gpuVertex.VertexColor.W);
+        Assert.Equal(43f / 255f, referenceWindVertex.VertexColor.W);
     }
 
     [Fact]
@@ -98,6 +102,13 @@ public sealed class NifTallGrassVertexAlphaTests
             Assert.All(
                 GpuMeshUploader.BuildVertices(submesh),
                 vertex => Assert.Equal(1f, vertex.VertexColor.W));
+            var referenceVertices = GpuMeshUploader.BuildVertices(
+                submesh,
+                preserveAuthoredVertexAlpha: true);
+            Assert.Contains(referenceVertices, vertex => vertex.VertexColor.W < 1f);
+            Assert.Equal(
+                submesh.VertexColors!.Where((_, index) => (index & 3) == 3).Select(alpha => alpha / 255f),
+                referenceVertices.Select(vertex => vertex.VertexColor.W));
         }
     }
 }

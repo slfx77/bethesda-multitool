@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Games;
@@ -21,6 +22,8 @@ public sealed class FnvGrassPlacementRetailTests(
     private const uint WastelandNvFormId = 0x000DA726;
     private const int ExpectedPlacementCount = 10_255;
     private const int ExpectedCellCount = 78;
+    private const uint SteepFixtureCellFormId = 0x000DAE62;
+    private const uint SteepFixtureGrassFormId = 0x0016ACCC;
 
     [Fact]
     public void WastelandNv_GreenGrassScatter_MatchesRetailCensusAndTerrainPlanes()
@@ -39,6 +42,7 @@ public sealed class FnvGrassPlacementRetailTests(
 
         var placementCount = 0;
         var cellsWithGreenGrass = new HashSet<uint>();
+        SteepPlacementSample? steepest = null;
         foreach (var cell in wasteland.Cells)
         {
             var terrain = DecodedTerrainCell.Decode(cell);
@@ -67,7 +71,15 @@ public sealed class FnvGrassPlacementRetailTests(
 
             cellsWithGreenGrass.Add(cell.FormId);
             placementCount += greenGrass.Length;
-            AssertPlacementHeightsUseFlooredCheckerboardPlanes(cell, terrain.Heights, greenGrass);
+            var cellSteepest = AssertPlacementHeightsUseFlooredCheckerboardPlanes(
+                cell,
+                terrain.Heights,
+                greenGrass);
+            if (cellSteepest is { } sample &&
+                (steepest is null || sample.Normal.Z < steepest.Value.Normal.Z))
+            {
+                steepest = sample;
+            }
         }
 
         output.WriteLine(
@@ -75,9 +87,11 @@ public sealed class FnvGrassPlacementRetailTests(
             $"{cellsWithGreenGrass.Count:N0} cells.");
         Assert.Equal(ExpectedPlacementCount, placementCount);
         Assert.Equal(ExpectedCellCount, cellsWithGreenGrass.Count);
+        Assert.True(steepest.HasValue);
+        AssertSteepRetailTransform(steepest.Value, grasses);
     }
 
-    private static void AssertPlacementHeightsUseFlooredCheckerboardPlanes(
+    private static SteepPlacementSample? AssertPlacementHeightsUseFlooredCheckerboardPlanes(
         BethesdaMultitool.Core.Formats.Esm.Models.Records.World.CellRecord cell,
         float[] heights,
         IReadOnlyList<RenderableReference> placements)
@@ -88,6 +102,7 @@ public sealed class FnvGrassPlacementRetailTests(
         var spacing = cellSize / (DecodedTerrainCell.GridSize - 1);
         var originX = gridX * cellSize;
         var originY = gridY * cellSize;
+        SteepPlacementSample? steepest = null;
 
         foreach (var placement in placements)
         {
@@ -100,7 +115,7 @@ public sealed class FnvGrassPlacementRetailTests(
                 spacing,
                 TerrainTriangleTopology.AlternatingCheckerboard,
                 out var terrainHeight,
-                out _);
+                out var terrainNormal);
 
             Assert.True(
                 sampled,
@@ -108,6 +123,71 @@ public sealed class FnvGrassPlacementRetailTests(
                 $"at ({position.X}, {position.Y}, {position.Z}).");
             Assert.Equal(MathF.Floor(terrainHeight), position.Z);
             Assert.Equal(position, placement.BoundsCenter);
+            if (steepest is null || terrainNormal.Z < steepest.Value.Normal.Z)
+            {
+                steepest = new SteepPlacementSample(cell.FormId, gridX, gridY, placement, terrainNormal);
+            }
         }
+
+        return steepest;
     }
+
+    private static void AssertSteepRetailTransform(
+        SteepPlacementSample sample,
+        IReadOnlyDictionary<uint, BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.GrassRecord> grasses)
+    {
+        Assert.Equal(SteepFixtureCellFormId, sample.CellFormId);
+        Assert.Equal(-19, sample.GridX);
+        Assert.Equal(12, sample.GridY);
+        Assert.Equal(SteepFixtureGrassFormId, sample.Placement.FormId);
+        Assert.Equal("landscape\\grass\\NVGreenGrass03.NIF", sample.Placement.ModelPath, ignoreCase: true);
+        Assert.Equal(new Vector3(-74_576f, 51_445f, 5_245f), sample.Placement.WorldMatrix.Translation);
+        Assert.Equal(-0.0402259f, sample.Normal.X, 6);
+        Assert.Equal(-0.76429206f, sample.Normal.Y, 6);
+        Assert.Equal(0.6436144f, sample.Normal.Z, 6);
+        Assert.Equal(49.93813f, MathF.Acos(sample.Normal.Z) * (180f / MathF.PI), 4);
+
+        var grass = Assert.IsType<BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.GrassRecord>(
+            grasses[SteepFixtureGrassFormId]);
+        var data = Assert.IsType<BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.GrassData>(grass.Data);
+        Assert.Equal(0x06, data.Flags);
+        Assert.Equal(0.42f, data.HeightRange);
+
+        // This emitted candidate's first post-position random draw packs +23. GRAS bit 1 maps
+        // ScaleMask to XYZ, while bit 2 selects the GRASS2002/3 fit basis, so all three local axes
+        // receive the same 1 + 0.01 * 23 scale before the recovered B/T/N transform.
+        const float heightScale = 1.23f;
+        var decodedNormal = Vector3.Min(sample.Normal, new Vector3(0.94f));
+        var absolute = Vector3.Abs(decodedNormal);
+        var tangent = absolute.Y >= absolute.X && absolute.Z >= absolute.X
+            ? new Vector3(0f, -decodedNormal.Z, decodedNormal.Y)
+            : new Vector3(-decodedNormal.Z, 0f, decodedNormal.X);
+        tangent = Vector3.Normalize(tangent);
+        var bitangent = Vector3.Cross(tangent, decodedNormal);
+
+        AssertAxis(sample.Placement.WorldMatrix, 1, bitangent * heightScale);
+        AssertAxis(sample.Placement.WorldMatrix, 2, tangent * heightScale);
+        AssertAxis(sample.Placement.WorldMatrix, 3, decodedNormal * heightScale);
+    }
+
+    private static void AssertAxis(Matrix4x4 matrix, int row, Vector3 expected)
+    {
+        var actual = row switch
+        {
+            1 => new Vector3(matrix.M11, matrix.M12, matrix.M13),
+            2 => new Vector3(matrix.M21, matrix.M22, matrix.M23),
+            3 => new Vector3(matrix.M31, matrix.M32, matrix.M33),
+            _ => throw new ArgumentOutOfRangeException(nameof(row)),
+        };
+        Assert.Equal(expected.X, actual.X, 5);
+        Assert.Equal(expected.Y, actual.Y, 5);
+        Assert.Equal(expected.Z, actual.Z, 5);
+    }
+
+    private readonly record struct SteepPlacementSample(
+        uint CellFormId,
+        int GridX,
+        int GridY,
+        RenderableReference Placement,
+        Vector3 Normal);
 }

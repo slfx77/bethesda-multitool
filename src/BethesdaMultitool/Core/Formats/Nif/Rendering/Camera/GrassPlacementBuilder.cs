@@ -12,13 +12,19 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 ///     Builds the synthetic NIF placements used to render LAND/GRAS grass. The layout follows
 ///     <c>BGSGrassManager::AddCellGrass/CreateGrass</c>: four LAND quadrants, regularly spaced
 ///     evaluation chunks, 3x3 texture-presence density maps, one jittered candidate per bin,
-///     water/slope gates, random yaw, fit-to-slope, and GRAS height-range scaling.
+///     water/slope gates, generation-specific orientation, fit-to-slope, and GRAS height-range
+///     scaling.
 /// </summary>
 internal static class GrassPlacementBuilder
 {
     private const int LandGridSize = 33;
     private const int QuadrantLastVertex = 16;
     private const int MaxGrassParametersPerChunk = 16;
+    private const byte GrassFlagUniformScale = 0x02;
+    private const byte GrassFlagFitToSlope = 0x04;
+    private const float FnvPackedNormalComponentMaximum = 0.94f;
+    private const float FnvHeightPackingMultiplier = 100f;
+    private const float FnvHeightScaleStep = 0.01f;
 
     // Fallout 4 first rejects an alpha layer unless one of the surrounding 3x3 percentage bytes is
     // > 0x19. This is independent of fTexturePctThreshold (which defaults to zero).
@@ -53,6 +59,7 @@ internal static class GrassPlacementBuilder
         var quadrantLayers = new List<(LandTextureLayer Layer, bool IsAlpha)>(9);
         Span<float> textureWeights = stackalloc float[9];
         Span<float> density = stackalloc float[9];
+        var useFnvPlacementTransform = game == BethesdaGame.FalloutNewVegas;
 
         for (var quadrant = 0; quadrant < 4; quadrant++)
         {
@@ -146,7 +153,11 @@ internal static class GrassPlacementBuilder
                                 quadrant,
                                 centerX,
                                 centerY,
-                                layer.TextureFormId);
+                                layer.TextureFormId,
+                                useFnvPlacementTransform,
+                                useFnvPlacementTransform
+                                    ? FnvTallGrassWind.SanitizeWaveMultiplier(data.WavePeriod)
+                                    : 0f);
                             grassEntriesRemaining--;
                             grassParameterCount++;
                         }
@@ -177,7 +188,9 @@ internal static class GrassPlacementBuilder
         int quadrant,
         int centerX,
         int centerY,
-        uint textureFormId)
+        uint textureFormId,
+        bool useFnvPlacementTransform,
+        float grassWaveMultiplier)
     {
         var positionRangeCount = data.PositionRange > 0f
             ? (int)(chunkSpan / data.PositionRange)
@@ -247,24 +260,41 @@ internal static class GrassPlacementBuilder
                 // Engine condition: cos(maxSlope) <= normal.z <= cos(minSlope).
                 if (normal.Z < maxSlopeCos || normal.Z > minSlopeCos) continue;
 
-                var yawCos = Random01(ref candidateSeed) * 2f - 1f;
-                var yawSin = MathF.Sqrt(MathF.Max(0f, 1f - yawCos * yawCos));
-                var heightVariation = (Random01(ref candidateSeed) * 2f - 1f) * data.HeightRange;
-                var heightScale = MathF.Max(0.01f, 1f + heightVariation);
-                var uniformScale = (data.Flags & 0x02) != 0;
-                var fitToSlope = (data.Flags & 0x04) != 0;
+                var uniformScale = (data.Flags & GrassFlagUniformScale) != 0;
+                var fitToSlope = (data.Flags & GrassFlagFitToSlope) != 0;
                 var instanceHeight = profile.FloorSampledHeight
                     ? MathF.Floor(height)
                     : profile.PositionQuantization == GrassPositionQuantization.HalfRelativeToTwelveCellBlock
                         ? (float)(Half)height
                         : height;
-                var world = ComposeWorldMatrix(
-                    new Vector3(x, y, instanceHeight),
-                    fitToSlope ? normal : Vector3.UnitZ,
-                    yawCos,
-                    yawSin,
-                    heightScale,
-                    uniformScale);
+                var position = new Vector3(x, y, instanceHeight);
+                float heightScale;
+                Matrix4x4 world;
+                if (useFnvPlacementTransform)
+                {
+                    // FNV's TallGrassShader receives one packed float4 per instance. AddGrass puts
+                    // floor(signedRandom * HeightRange * 100) in W's integer component and every
+                    // GRASS2000-2007 vertex permutation applies 1 + 0.01 * W * ScaleMask. Unlike the
+                    // recovered Skyrim/FO4 CreateGrass paths, no FNV permutation consumes or applies
+                    // a yaw value. The omitted fractional W payload is terrain/color lighting; it is
+                    // deliberately not fabricated as morphology data here.
+                    heightScale = ComputeFnvHeightScale(Random01(ref candidateSeed), data.HeightRange);
+                    world = ComposeFnvWorldMatrix(position, normal, fitToSlope, heightScale, uniformScale);
+                }
+                else
+                {
+                    var yawCos = Random01(ref candidateSeed) * 2f - 1f;
+                    var yawSin = MathF.Sqrt(MathF.Max(0f, 1f - yawCos * yawCos));
+                    var heightVariation = (Random01(ref candidateSeed) * 2f - 1f) * data.HeightRange;
+                    heightScale = MathF.Max(0.01f, 1f + heightVariation);
+                    world = ComposeWorldMatrix(
+                        position,
+                        fitToSlope ? normal : Vector3.UnitZ,
+                        yawCos,
+                        yawSin,
+                        heightScale,
+                        uniformScale);
+                }
 
                 var authoredRadius = grass.ModelBound is > 0f ? grass.ModelBound.Value : 64f;
                 var boundsScale = uniformScale ? heightScale : MathF.Max(1f, heightScale);
@@ -280,7 +310,8 @@ internal static class GrassPlacementBuilder
                     IsImposter: false,
                     Category: PlacedObjectCategory.Plants,
                     AlternateTextures: null,
-                    IsGrass: true));
+                    IsGrass: true,
+                    GrassWaveMultiplier: grassWaveMultiplier));
             }
         }
     }
@@ -435,6 +466,65 @@ internal static class GrassPlacementBuilder
             xAxis.X, xAxis.Y, xAxis.Z, 0f,
             yAxis.X, yAxis.Y, yAxis.Z, 0f,
             up.X, up.Y, up.Z, 0f,
+            position.X, position.Y, position.Z, 1f);
+    }
+
+    /// <summary>
+    ///     Replays the integer height component packed by FNV's
+    ///     <c>TallGrassShaderProperty::AddGrass</c>. The fractional color/terrain-light component of
+    ///     InstanceData.w is intentionally outside this world-matrix approximation.
+    /// </summary>
+    internal static float ComputeFnvHeightScale(float random01, float heightRange)
+    {
+        var signedRandom = random01 * 2f - 1f;
+        var packedHeight = MathF.Floor(signedRandom * heightRange * FnvHeightPackingMultiplier);
+        return 1f + packedHeight * FnvHeightScaleStep;
+    }
+
+    /// <summary>
+    ///     CPU equivalent of the fit-to-slope transform in FNV's GRASS2002/2003/2006/2007 vertex
+    ///     shaders. CreateGrass stores each normal component as min((N + 1) / 2, 0.97) in the
+    ///     fractional XYZ packet, so the shader decodes min(N, 0.94). It then chooses the axis whose
+    ///     cross product is safest, normalizes only T, and maps local XYZ to B/T/N. There is no yaw.
+    /// </summary>
+    internal static Matrix4x4 ComposeFnvWorldMatrix(
+        Vector3 position,
+        Vector3 terrainNormal,
+        bool fitToSlope,
+        float heightScale,
+        bool uniformScale)
+    {
+        var xAxis = Vector3.UnitX;
+        var yAxis = Vector3.UnitY;
+        var zAxis = Vector3.UnitZ;
+        if (fitToSlope)
+        {
+            var normal = new Vector3(
+                MathF.Min(terrainNormal.X, FnvPackedNormalComponentMaximum),
+                MathF.Min(terrainNormal.Y, FnvPackedNormalComponentMaximum),
+                MathF.Min(terrainNormal.Z, FnvPackedNormalComponentMaximum));
+            var absolute = Vector3.Abs(normal);
+
+            // GRASS2002 uses sge(abs.yz, abs.x), including ties. When X is the smallest
+            // component it selects X cross N; otherwise it selects N cross Y.
+            var tangent = absolute.Y >= absolute.X && absolute.Z >= absolute.X
+                ? new Vector3(0f, -normal.Z, normal.Y)
+                : new Vector3(-normal.Z, 0f, normal.X);
+            tangent = Vector3.Normalize(tangent);
+
+            zAxis = normal;
+            yAxis = tangent;
+            xAxis = Vector3.Cross(tangent, normal);
+        }
+
+        var xyScale = uniformScale ? heightScale : 1f;
+        xAxis *= xyScale;
+        yAxis *= xyScale;
+        zAxis *= heightScale;
+        return new Matrix4x4(
+            xAxis.X, xAxis.Y, xAxis.Z, 0f,
+            yAxis.X, yAxis.Y, yAxis.Z, 0f,
+            zAxis.X, zAxis.Y, zAxis.Z, 0f,
             position.X, position.Y, position.Z, 1f);
     }
 

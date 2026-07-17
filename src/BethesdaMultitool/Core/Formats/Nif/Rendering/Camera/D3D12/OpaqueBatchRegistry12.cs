@@ -7,8 +7,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 
 /// <summary>
 ///     CPU-side registry of instanced opaque draw batches for <see cref="ReferenceRenderer12" />.
-///     Batches are keyed by cached submesh plus enabled grass-distance-policy identity; each frame
-///     the renderer calls
+///     Batches are keyed by cached submesh plus independent grass-distance and FNV TallGrass-wind
+///     identities; each frame the renderer calls
 ///     <see cref="Begin" /> to reset per-frame instance lists (and periodically prune cold
 ///     batches), then <see cref="GetOrCreate" /> per visible submesh to append a world matrix.
 ///     Pure bookkeeping — it records no command-list work, so it has no effect on draw ordering.
@@ -63,12 +63,25 @@ internal sealed class OpaqueBatchRegistry12
     public OpaqueBatchState GetOrCreate(
         CachedSubmesh12 submesh,
         ID3D12PipelineState pso,
-        bool usesGrassDistanceEnvelope)
+        bool usesGrassDistanceEnvelope,
+        bool usesTallGrassWind,
+        float grassWaveMultiplier)
     {
-        var key = new OpaqueBatchKey(submesh, usesGrassDistanceEnvelope);
+        // A shared grass NIF may be referenced by multiple GRAS records with different authored
+        // phase multipliers. Keep those instances in distinct material batches so the 64-byte
+        // matrix-only instance stream remains unchanged and the multiplier can stay per batch.
+        // Wind eligibility is supplied explicitly by the renderer's FNV capability gate; a
+        // distance envelope alone must never opt another game into GRASS2000 deformation.
+        var effectiveTallGrassWind = usesTallGrassWind && submesh.IsTallGrass;
+        var effectiveWaveMultiplier = effectiveTallGrassWind
+            ? FnvTallGrassWind.SanitizeWaveMultiplier(grassWaveMultiplier)
+            : 0f;
+        var key = new OpaqueBatchKey(
+            submesh, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier);
         if (!_batches.TryGetValue(key, out var batch))
         {
-            batch = new OpaqueBatchState(submesh, pso, usesGrassDistanceEnvelope);
+            batch = new OpaqueBatchState(
+                submesh, pso, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier);
             _batches.Add(key, batch);
         }
 
@@ -102,23 +115,36 @@ internal sealed class OpaqueBatchRegistry12
     /// <summary>
     ///     A mesh can be placed both as FNV grass covered by the recovered envelope and as an
     ///     ordinary reference. Keeping those placements separate preserves the hard end during
-    ///     exact filtering of frozen batches. Games without an enabled envelope use <c>false</c>
-    ///     for every placement, preserving their established one-batch-per-submesh topology.
+    ///     exact filtering of frozen batches. The wind flag is independently keyed so acquiring a
+    ///     distance envelope cannot silently enable FNV's GRASS2000 constants in another game.
     /// </summary>
     private readonly record struct OpaqueBatchKey(
         CachedSubmesh12 Submesh,
-        bool UsesGrassDistanceEnvelope);
+        bool UsesGrassDistanceEnvelope,
+        bool UsesTallGrassWind,
+        float GrassWaveMultiplier);
 }
 
 internal sealed class OpaqueBatchState(
     CachedSubmesh12 submesh,
     ID3D12PipelineState pso,
-    bool usesGrassDistanceEnvelope)
+    bool usesGrassDistanceEnvelope,
+    bool usesTallGrassWind,
+    float grassWaveMultiplier)
 {
     public CachedSubmesh12 Submesh { get; } = submesh;
     public ID3D12PipelineState Pso { get; } = pso;
     /// <summary>True only for instances covered by an enabled game-specific grass envelope.</summary>
     public bool UsesGrassDistanceEnvelope { get; } = usesGrassDistanceEnvelope;
+
+    /// <summary>
+    ///     Raw positive finite FNV GRAS wave multiplier for this TallGrass batch; zero for every
+    ///     non-FNV/non-grass/non-TallGrass batch.
+    /// </summary>
+    public float GrassWaveMultiplier { get; } = grassWaveMultiplier;
+
+    /// <summary>True only when the renderer's explicit FNV capability gate admitted this batch.</summary>
+    public bool UsesTallGrassWind { get; } = usesTallGrassWind;
 
     /// <summary>Per-instance world matrices for this batch (the only per-instance GPU data;
     /// material/texture state is per-batch and lives in the InstanceDraw CBV at draw time).</summary>

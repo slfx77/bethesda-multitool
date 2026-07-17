@@ -160,7 +160,7 @@ public sealed class GrassDistanceEnvelopeTests
         // qualified policy bit keeps every non-FNV placement on the established false key.
         Assert.Contains("Dictionary<OpaqueBatchKey, OpaqueBatchState>", batches, StringComparison.Ordinal);
         Assert.Contains(
-            "new OpaqueBatchKey(submesh, usesGrassDistanceEnvelope)",
+            "submesh, usesGrassDistanceEnvelope, effectiveTallGrassWind, effectiveWaveMultiplier",
             batches,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -172,7 +172,8 @@ public sealed class GrassDistanceEnvelopeTests
             CountOccurrences(
                 compactRenderer,
                 "_opaqueBatches.GetOrCreate(sub,pso," +
-                "GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass,in_grassDistanceEnvelope))"));
+                "usesGrassDistanceEnvelope,usesTallGrassWind," +
+                "r.GrassWaveMultiplier)"));
 
         // Both shared-ring and fallback-ring opaque copies route envelope batches through an exact
         // per-instance predicate even when generic/frustum refiltering is false. The generic exact
@@ -198,7 +199,8 @@ public sealed class GrassDistanceEnvelopeTests
 
         // Non-opaque grass keeps identity and is gated before reservation/draw without deleting a
         // retained entry, so moving back inside the envelope works on frozen batches.
-        Assert.Contains("bool IsGrass);", renderer, StringComparison.Ordinal);
+        Assert.Contains("bool IsGrass,", renderer, StringComparison.Ordinal);
+        Assert.Contains("float GrassWaveMultiplier);", renderer, StringComparison.Ordinal);
         Assert.Equal(
             2,
             CountOccurrences(renderer, "PassesExactGrassDistance(draw.SourceWorld.Translation, draw.IsGrass)"));

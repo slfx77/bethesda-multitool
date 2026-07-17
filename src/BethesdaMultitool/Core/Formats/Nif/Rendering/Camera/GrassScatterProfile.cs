@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
@@ -50,9 +51,10 @@ internal readonly record struct GrassScatterProfile(
 }
 
 /// <summary>
-///     Authored grass-distance envelope in horizontal world units. This slice records the retail
-///     fade start/range but deliberately enforces only the hard end; fading remains an engine
-///     shader behavior and must not be approximated by changing material alpha or mip selection.
+///     Viewer grass-distance envelope in horizontal world units. Retail supplies the same configured
+///     start/range to a transformed-origin shader metric, then turns the result into only a zero/nonzero
+///     endpoint gate—not smooth opacity. The viewer keeps the authoritative CPU hard end and does not
+///     invent alpha, RGB, or mip fading.
 /// </summary>
 internal readonly record struct GrassDistanceEnvelope(float FadeStart, float FadeRange)
 {
@@ -70,6 +72,98 @@ internal readonly record struct GrassDistanceEnvelope(float FadeStart, float Fad
         if (!Enabled) return float.PositiveInfinity;
         if (!float.IsFinite(activeRenderDistance)) return HardEnd;
         return MathF.Min(HardEnd, MathF.Max(0f, activeRenderDistance));
+    }
+}
+
+/// <summary>
+///     Recovered FNV GRASS2000 phase and distance signals. The GRAS field is intentionally named a
+///     multiplier: retail SetupGeometryConstants multiplies it directly by the default shader timer
+///     divided by 3600, then multiplied by 2π. The available evidence does not establish the timer's
+///     units and does not justify interpreting the multiplier as seconds or taking its reciprocal.
+///     Wind displacement is fixed world +Y with a 5→125 setting interpolation, and vertex alpha is
+///     squared.
+/// </summary>
+internal static class FnvTallGrassWind
+{
+    internal const float SpatialPhaseDivisor = 128f;
+    // Retail defaults for the fGrassWindMagnitudeMin/Max settings. The shader lerps these
+    // world-unit amplitudes with BSShaderManager::fWindMagnitude (weather wind byte / 255).
+    internal const float GrassWindMagnitudeMinDefault = 5f;
+    internal const float GrassWindMagnitudeMaxDefault = 125f;
+    internal const double TimerUnitsPerCycleBase = 3600.0;
+    internal const double TwoPi = Math.PI * 2.0;
+
+    /// <summary>
+    ///     The recovered GRASS2000 wind contract is specific to Fallout: New Vegas. Keep this
+    ///     capability separate from the grass-distance envelope: another game may acquire a
+    ///     distance policy without thereby opting into FNV shader constants.
+    /// </summary>
+    internal static bool IsSupported(BethesdaGame game) =>
+        game == BethesdaGame.FalloutNewVegas;
+
+    internal static float SanitizeWaveMultiplier(float value) =>
+        float.IsFinite(value) && value > 0f ? value : 0f;
+
+    internal static float ComputeWindMagnitude(float windMagnitudeFraction)
+    {
+        var fraction = float.IsFinite(windMagnitudeFraction)
+            ? Math.Clamp(windMagnitudeFraction, 0f, 1f)
+            : 0f;
+        return GrassWindMagnitudeMinDefault +
+               (GrassWindMagnitudeMaxDefault - GrassWindMagnitudeMinDefault) * fraction;
+    }
+
+    internal static float ComputeTimePhaseRadians(double timerValue, float grassWaveMultiplier)
+    {
+        var multiplier = SanitizeWaveMultiplier(grassWaveMultiplier);
+        if (!double.IsFinite(timerValue) || multiplier == 0f)
+        {
+            return 0f;
+        }
+
+        var phase = timerValue / TimerUnitsPerCycleBase * multiplier * TwoPi;
+        phase %= TwoPi;
+        if (phase < 0.0) phase += TwoPi;
+        return (float)phase;
+    }
+
+    internal static Vector2 EvaluateWorldOffset(
+        Vector2 absolutePlacement,
+        float windMagnitude,
+        double timerValue,
+        float grassWaveMultiplier,
+        float authoredVertexAlpha)
+    {
+        if (!float.IsFinite(windMagnitude) || windMagnitude == 0f)
+        {
+            return Vector2.Zero;
+        }
+
+        var weight = Math.Clamp(authoredVertexAlpha, 0f, 1f);
+        var phase = (absolutePlacement.X + absolutePlacement.Y) / SpatialPhaseDivisor +
+                    ComputeTimePhaseRadians(timerValue, grassWaveMultiplier);
+        var amplitude = MathF.Sin(phase) * windMagnitude * weight * weight;
+        return Vector2.UnitY * amplitude;
+    }
+
+    /// <summary>
+    ///     Documents the configured 7000→8000 envelope using the viewer's horizontal culling metric.
+    ///     Retail GRASS2000 evaluates its analogous signal from a transformed instance origin, then
+    ///     turns the square into a binary output-alpha gate. This helper is therefore a culling-envelope
+    ///     oracle, not an exact shader-space distance oracle and not a gradual-opacity or RGB fade.
+    ///     Production visibility stays with the authoritative hard end.
+    /// </summary>
+    internal static float ComputeConfiguredEnvelopeSignal(
+        float horizontalDistance,
+        in GrassDistanceEnvelope envelope)
+    {
+        if (!envelope.Enabled) return 1f;
+        if (!float.IsFinite(horizontalDistance)) return 0f;
+        if (envelope.FadeRange <= 0f) return horizontalDistance < envelope.HardEnd ? 1f : 0f;
+        return 1f - Math.Clamp(
+            (MathF.Max(horizontalDistance, 0f) - envelope.FadeStart) / envelope.FadeRange,
+            0f,
+            1f);
     }
 }
 

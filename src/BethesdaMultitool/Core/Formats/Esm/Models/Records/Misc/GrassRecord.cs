@@ -61,7 +61,10 @@ public record GrassData
     /// <summary>Random color tint variation.</summary>
     public float ColorRange { get; init; }
 
-    /// <summary>Wind wave period (seconds).</summary>
+    /// <summary>
+    ///     Raw GRAS DATA WavePeriod field. FNV consumes it directly as a shader phase multiplier;
+    ///     the recovered evidence does not establish a time unit or reciprocal interpretation.
+    /// </summary>
     public float WavePeriod { get; init; }
 
     /// <summary>Per-bit grass flags (see fopdoc).</summary>
