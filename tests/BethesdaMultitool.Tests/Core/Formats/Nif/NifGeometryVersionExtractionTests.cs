@@ -1,6 +1,7 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
 using Xunit;
 
@@ -78,12 +79,119 @@ public sealed class NifGeometryVersionExtractionTests
         Assert.Equal(1, submesh.TriangleCount);
     }
 
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    public void ClassicGeometry_TransformsSerializedNiBoundIntoBakedRootLocalSpace(
+        bool strips,
+        bool bigEndian,
+        bool withNormalsAndTangents)
+    {
+        const uint binaryVersion = 0x14020007u;
+        const uint bsVersion = 34u;
+        var authored = new Vector4(1f, 2f, 3f, 4f);
+        var transform = Matrix4x4.CreateScale(2f) *
+                        Matrix4x4.CreateRotationZ(0.25f) *
+                        Matrix4x4.CreateTranslation(10f, 20f, 30f);
+        var blockBytes = strips
+            ? BuildNiTriStripsData(binaryVersion, authored, bigEndian, withNormalsAndTangents)
+            : BuildNiTriShapeData(binaryVersion, authored, bigEndian, withNormalsAndTangents);
+        var block = new BlockInfo
+        {
+            Index = 0,
+            TypeName = strips ? "NiTriStripsData" : "NiTriShapeData",
+            DataOffset = 0,
+            Size = blockBytes.Length
+        };
+
+        var submesh = strips
+            ? NifSubmeshExtractor.ExtractTriStripsData(
+                blockBytes, block, be: bigEndian, bsVersion, binaryVersion, transform)
+            : NifSubmeshExtractor.ExtractTriShapeData(
+                blockBytes, block, be: bigEndian, bsVersion, binaryVersion, transform);
+
+        Assert.NotNull(submesh);
+        Assert.True(submesh!.LocalBounds.HasValue);
+        var bound = submesh.LocalBounds.Value;
+        AssertVector3Close(Vector3.Transform(new Vector3(authored.X, authored.Y, authored.Z), transform), bound.Center);
+        Assert.Equal(8f, bound.Radius, 5);
+    }
+
+    [Fact]
+    public void ClassicGeometry_UsesDeterministicVertexSphereForMalformedOrDeformedAuthoredBound()
+    {
+        const uint binaryVersion = 0x14020007u;
+        const uint bsVersion = 34u;
+        var malformedBytes = BuildNiTriShapeData(
+            binaryVersion, new Vector4(float.NaN, 2f, 3f, 4f));
+        var block = new BlockInfo
+        {
+            Index = 0,
+            TypeName = "NiTriShapeData",
+            DataOffset = 0,
+            Size = malformedBytes.Length
+        };
+
+        var malformed = NifSubmeshExtractor.ExtractTriShapeData(
+            malformedBytes, block, be: false, bsVersion, binaryVersion, Matrix4x4.Identity);
+
+        Assert.NotNull(malformed);
+        Assert.Null(malformed!.LocalBounds);
+        var fallback = NifLocalBoundsResolver.Resolve(malformed);
+        Assert.Equal(new Vector3(0.5f, 0.5f, 0f), fallback.Center);
+        Assert.Equal(MathF.Sqrt(0.5f), fallback.Radius, 5);
+
+        var authoredBytes = BuildNiTriShapeData(binaryVersion, new Vector4(0.5f, 0.5f, 0f, 1f));
+        block.Size = authoredBytes.Length;
+        var morphDeltas = new[]
+        {
+            0f, 0f, 0f,
+            1f, 0f, 0f,
+            0f, 2f, 0f,
+        };
+        var deformed = NifSubmeshExtractor.ExtractTriShapeData(
+            authoredBytes, block, be: false, bsVersion, binaryVersion, Matrix4x4.Identity,
+            preSkinMorphDeltas: morphDeltas);
+
+        Assert.NotNull(deformed);
+        Assert.Null(deformed!.LocalBounds);
+        var deformedFallback = NifLocalBoundsResolver.Resolve(deformed);
+        Assert.Equal(new Vector3(1f, 1.5f, 0f), deformedFallback.Center);
+        Assert.Equal(MathF.Sqrt(3.25f), deformedFallback.Radius, 5);
+
+        var influences = new (int BoneIdx, float Weight)[][]
+        {
+            [(0, 1f)],
+            [(0, 1f)],
+            [(0, 1f)],
+        };
+        var skinned = NifSubmeshExtractor.ExtractTriShapeData(
+            authoredBytes, block, be: false, bsVersion, binaryVersion, Matrix4x4.Identity,
+            skinning: (influences, [Matrix4x4.CreateScale(2f)]));
+
+        Assert.NotNull(skinned);
+        Assert.Null(skinned!.LocalBounds);
+        var skinnedFallback = NifLocalBoundsResolver.Resolve(skinned);
+        Assert.Equal(new Vector3(1f, 1f, 0f), skinnedFallback.Center);
+        Assert.Equal(MathF.Sqrt(2f), skinnedFallback.Radius, 5);
+    }
+
     /// <summary>
     ///     One little-endian NiTriStripsData whose field presence is keyed on the NIF version exactly as
     ///     nif.xml specifies: 3 vertices, no normals/colors/UV, a Bounding Sphere, Consistency Flags, then a
     ///     single 3-point strip = one triangle.
     /// </summary>
-    private static byte[] BuildNiTriStripsData(uint binaryVersion)
+    private static byte[] BuildNiTriStripsData(
+        uint binaryVersion,
+        Vector4? bound = null,
+        bool bigEndian = false,
+        bool withNormalsAndTangents = false)
     {
         var hasGroupId = binaryVersion >= Gamebryo101114;
         var hasKeepCompress = binaryVersion >= Gamebryo10100;
@@ -92,9 +200,14 @@ public sealed class NifGeometryVersionExtractionTests
 
         var b = new List<byte>();
         void U8(byte v) => b.Add(v);
-        void U16(ushort v) => b.AddRange(BitConverter.GetBytes(v));
-        void U32(uint v) => b.AddRange(BitConverter.GetBytes(v));
-        void F(float v) => b.AddRange(BitConverter.GetBytes(v));
+        void Bytes(byte[] value)
+        {
+            if (bigEndian) Array.Reverse(value);
+            b.AddRange(value);
+        }
+        void U16(ushort v) => Bytes(BitConverter.GetBytes(v));
+        void U32(uint v) => Bytes(BitConverter.GetBytes(v));
+        void F(float v) => Bytes(BitConverter.GetBytes(v));
 
         if (hasGroupId)
         {
@@ -112,9 +225,16 @@ public sealed class NifGeometryVersionExtractionTests
         F(0); F(0); F(0); // v0
         F(1); F(0); F(0); // v1
         F(0); F(1); F(0); // v2
-        U16(0); // Data Flags (no UV sets, no tangents)
-        U8(0); // Has Normals = 0
-        b.AddRange(new byte[16]); // Bounding Sphere (Center + Radius)
+        U16(withNormalsAndTangents ? (ushort)0x1000 : (ushort)0); // Data Flags: tangent-space bit
+        U8(withNormalsAndTangents ? (byte)1 : (byte)0);
+        if (withNormalsAndTangents)
+        {
+            for (var i = 0; i < 3; i++) { F(0); F(0); F(1); }       // normals
+            for (var i = 0; i < 3; i++) { F(11); F(12); F(13); }   // tangents
+            for (var i = 0; i < 3; i++) { F(21); F(22); F(23); }   // bitangents
+        }
+        var serializedBound = bound ?? Vector4.Zero;
+        F(serializedBound.X); F(serializedBound.Y); F(serializedBound.Z); F(serializedBound.W);
         U8(0); // Has Vertex Colors = 0
         U16(0); // Consistency Flags
         if (hasAdditionalData)
@@ -139,7 +259,11 @@ public sealed class NifGeometryVersionExtractionTests
     ///     One little-endian NiTriShapeData keyed on the NIF version: same NiGeometryData base as the strips
     ///     builder, then Num Triangles / Num Triangle Points / (optional Has Triangles) / a single triangle.
     /// </summary>
-    private static byte[] BuildNiTriShapeData(uint binaryVersion)
+    private static byte[] BuildNiTriShapeData(
+        uint binaryVersion,
+        Vector4? bound = null,
+        bool bigEndian = false,
+        bool withNormalsAndTangents = false)
     {
         var hasGroupId = binaryVersion >= Gamebryo101114;
         var hasKeepCompress = binaryVersion >= Gamebryo10100;
@@ -148,9 +272,14 @@ public sealed class NifGeometryVersionExtractionTests
 
         var b = new List<byte>();
         void U8(byte v) => b.Add(v);
-        void U16(ushort v) => b.AddRange(BitConverter.GetBytes(v));
-        void U32(uint v) => b.AddRange(BitConverter.GetBytes(v));
-        void F(float v) => b.AddRange(BitConverter.GetBytes(v));
+        void Bytes(byte[] value)
+        {
+            if (bigEndian) Array.Reverse(value);
+            b.AddRange(value);
+        }
+        void U16(ushort v) => Bytes(BitConverter.GetBytes(v));
+        void U32(uint v) => Bytes(BitConverter.GetBytes(v));
+        void F(float v) => Bytes(BitConverter.GetBytes(v));
 
         if (hasGroupId)
         {
@@ -168,9 +297,16 @@ public sealed class NifGeometryVersionExtractionTests
         F(0); F(0); F(0); // v0
         F(1); F(0); F(0); // v1
         F(0); F(1); F(0); // v2
-        U16(0); // Data Flags
-        U8(0); // Has Normals = 0
-        b.AddRange(new byte[16]); // Bounding Sphere
+        U16(withNormalsAndTangents ? (ushort)0x1000 : (ushort)0); // Data Flags: tangent-space bit
+        U8(withNormalsAndTangents ? (byte)1 : (byte)0);
+        if (withNormalsAndTangents)
+        {
+            for (var i = 0; i < 3; i++) { F(0); F(0); F(1); }       // normals
+            for (var i = 0; i < 3; i++) { F(11); F(12); F(13); }   // tangents
+            for (var i = 0; i < 3; i++) { F(21); F(22); F(23); }   // bitangents
+        }
+        var serializedBound = bound ?? Vector4.Zero;
+        F(serializedBound.X); F(serializedBound.Y); F(serializedBound.Z); F(serializedBound.W);
         U8(0); // Has Vertex Colors = 0
         U16(0); // Consistency Flags
         if (hasAdditionalData)
@@ -188,5 +324,12 @@ public sealed class NifGeometryVersionExtractionTests
         U16(0); U16(1); U16(2); // Triangle 0 (0,1,2)
 
         return b.ToArray();
+    }
+
+    private static void AssertVector3Close(Vector3 expected, Vector3 actual)
+    {
+        Assert.Equal(expected.X, actual.X, 5);
+        Assert.Equal(expected.Y, actual.Y, 5);
+        Assert.Equal(expected.Z, actual.Z, 5);
     }
 }

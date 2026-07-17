@@ -124,6 +124,7 @@ internal static class NifSubmeshExtractor
         {
             ShapeName = shapeName,
             Positions = submesh.Positions,
+            LocalBounds = submesh.LocalBounds,
             Triangles = submesh.Triangles,
             Normals = submesh.Normals,
             UVs = submesh.UVs,
@@ -288,6 +289,7 @@ internal static class NifSubmeshExtractor
             return null;
         }
 
+        NifLocalBounds? authoredBounds = null;
         float[]? normals = null;
         float[]? tangents = null;
         float[]? bitangents = null;
@@ -320,11 +322,23 @@ internal static class NifSubmeshExtractor
                     pos += numVerts * 24;
                 }
 
+                if (pos + 16 > end)
+                {
+                    return null;
+                }
+
+                authoredBounds = ReadLocalBounds(data, pos, be);
                 pos += 16; // bounding sphere (Center + Radius) comes AFTER tangents/bitangents
             }
         }
         else if (modernGeom)
         {
+            if (pos + 16 > end)
+            {
+                return null;
+            }
+
+            authoredBounds = ReadLocalBounds(data, pos, be);
             pos += 16;
         }
 
@@ -464,6 +478,11 @@ internal static class NifSubmeshExtractor
         return new RenderableSubmesh
         {
             Positions = transformed.Positions,
+            LocalBounds = NifLocalBoundsResolver.TransformAuthored(
+                authoredBounds,
+                transform,
+                transformed.Positions,
+                sourceDeformed: skinning.HasValue || preSkinMorphDeltas is not null),
             Triangles = triangles,
             Normals = transformed.Normals
                       ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
@@ -551,6 +570,12 @@ internal static class NifSubmeshExtractor
         }
 
         // Bounding Sphere (NiBound: Vector3 center + float radius) — always present.
+        if (pos + 16 > end)
+        {
+            return null;
+        }
+
+        var authoredBounds = ReadLocalBounds(data, pos, be);
         pos += 16;
 
         // Has Vertex Colors (32-bit bool) + Vertex Colors (Color4 × numVerts).
@@ -640,6 +665,11 @@ internal static class NifSubmeshExtractor
         {
             ShapeName = shapeName,
             Positions = transformed.Positions,
+            LocalBounds = NifLocalBoundsResolver.TransformAuthored(
+                authoredBounds,
+                transform,
+                transformed.Positions,
+                sourceDeformed: skinning.HasValue || preSkinMorphDeltas is not null),
             Triangles = triangles,
             Normals = transformed.Normals
                       ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
@@ -818,6 +848,7 @@ internal static class NifSubmeshExtractor
             return null;
         }
 
+        NifLocalBounds? authoredBounds = null;
         float[]? normals = null;
         float[]? tangents = null;
         float[]? bitangents = null;
@@ -850,11 +881,23 @@ internal static class NifSubmeshExtractor
                     pos += numVerts * 24;
                 }
 
+                if (pos + 16 > end)
+                {
+                    return null;
+                }
+
+                authoredBounds = ReadLocalBounds(data, pos, be);
                 pos += 16; // bounding sphere (Center + Radius) comes AFTER tangents/bitangents
             }
         }
         else if (modernGeom)
         {
+            if (pos + 16 > end)
+            {
+                return null;
+            }
+
+            authoredBounds = ReadLocalBounds(data, pos, be);
             pos += 16;
         }
 
@@ -914,6 +957,11 @@ internal static class NifSubmeshExtractor
         return new RenderableSubmesh
         {
             Positions = transformed.Positions,
+            LocalBounds = NifLocalBoundsResolver.TransformAuthored(
+                authoredBounds,
+                transform,
+                transformed.Positions,
+                sourceDeformed: skinning.HasValue || preSkinMorphDeltas is not null),
             Triangles = triangles,
             Normals = transformed.Normals
                       ?? NifGeometryTransformUtils.RecomputeSmoothNormals(transformed.Positions, triangles),
@@ -1295,4 +1343,12 @@ internal static class NifSubmeshExtractor
                     boneSkinMatrices)
                 : null);
     }
+
+    private static NifLocalBounds ReadLocalBounds(byte[] data, int offset, bool be) =>
+        new(
+            new Vector3(
+                BinaryUtils.ReadFloat(data, offset, be),
+                BinaryUtils.ReadFloat(data, offset + 4, be),
+                BinaryUtils.ReadFloat(data, offset + 8, be)),
+            BinaryUtils.ReadFloat(data, offset + 12, be));
 }

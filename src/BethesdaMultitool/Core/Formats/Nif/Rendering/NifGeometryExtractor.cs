@@ -376,6 +376,11 @@ internal static class NifGeometryExtractor
             string? environmentMapPath = null;
             var environmentMapScale = 0f;
             var environmentMapSmoothness = 0f;
+            string? classicEnvironmentMapPath = null;
+            string? classicEnvironmentMaskPath = null;
+            var classicEnvironmentMapScale = 0f;
+            var classicEnvironmentMapUsesWindowReflection = false;
+            string? classicParallaxHeightMapPath = null;
             var isDoubleSided = false;
             var hasAlphaBlend = false;
             var hasAlphaTest = false;
@@ -495,6 +500,23 @@ internal static class NifGeometryExtractor
                 {
                     isEyeEnvmap = (shaderFlags & 0x20000u) != 0;
                     envMapScale = resolvedEnvMapScale;
+                }
+
+                // FO3/FNV BSShaderFlags bit 7 selects the separate SLS environment pass. Retail
+                // SLS2057 samples slot 4 as a cube and uses slot 5 RED when present, otherwise the
+                // normal map ALPHA, then multiplies that mask by the authored EnvMapScale. Keep this
+                // payload separate from FO4's BGSM cubemap + _s.R/_s.G route.
+                if (NifClassicEnvironmentMapPolicy.Resolve(shaderMetadata) is { } classicEnvironment)
+                {
+                    classicEnvironmentMapPath = classicEnvironment.CubeMapTexturePath;
+                    classicEnvironmentMaskPath = classicEnvironment.MaskTexturePath;
+                    classicEnvironmentMapScale = classicEnvironment.Scale;
+                    classicEnvironmentMapUsesWindowReflection = classicEnvironment.UsesWindowReflection;
+                }
+
+                if (NifClassicParallaxPolicy.Resolve(shaderMetadata) is { } classicParallax)
+                {
+                    classicParallaxHeightMapPath = classicParallax.HeightMapTexturePath;
                 }
 
                 // Decal / Dynamic_Decal — bits 26/27 in both the FO3/FNV BSShaderFlags
@@ -787,6 +809,16 @@ internal static class NifGeometryExtractor
                 submesh.EnvironmentMapTexturePath = environmentMapPath;
                 submesh.EnvironmentMapScale = environmentMapScale;
                 submesh.EnvironmentMapSmoothness = environmentMapSmoothness;
+                submesh.ClassicEnvironmentMapTexturePath = classicEnvironmentMapPath;
+                submesh.ClassicEnvironmentMaskTexturePath = classicEnvironmentMaskPath;
+                submesh.ClassicEnvironmentMapScale = classicEnvironmentMapScale;
+                submesh.ClassicEnvironmentMapUsesWindowReflection =
+                    classicEnvironmentMapUsesWindowReflection;
+                submesh.ClassicParallaxHeightMapTexturePath =
+                    classicParallaxHeightMapPath is not null &&
+                    NifClassicParallaxPolicy.HasUsableGeometry(submesh)
+                        ? classicParallaxHeightMapPath
+                        : null;
                 submesh.IsDecal = isDecal;
                 submesh.EffectTint = effectTint;
                 submesh.EffectFalloff = effectFalloff;

@@ -38,13 +38,19 @@ internal static class NifGeometryTransformUtils
         var result = new float[normals.Length];
         for (var i = 0; i < normals.Length; i += 3)
         {
-            var normal = Vector3.TransformNormal(
-                new Vector3(normals[i], normals[i + 1], normals[i + 2]),
-                transform);
-            var length = normal.Length();
-            if (length > 0.001f)
+            var source = new Vector3(normals[i], normals[i + 1], normals[i + 2]);
+            var normal = Vector3.TransformNormal(source, transform);
+            var sourceLength = source.Length();
+            var transformedLength = normal.Length();
+            if (float.IsFinite(sourceLength) && float.IsFinite(transformedLength) &&
+                transformedLength > 0.001f)
             {
-                normal /= length;
+                // NIF node transforms are rigid plus uniform scale. Bake only their direction into
+                // N/T/B and retain the authored vector magnitude. The retail FO3/FNV basic-bump
+                // vertex shaders perform raw dp3 against those streams, so normalizing a non-unit
+                // tangent or bitangent here changes the recovered lighting equation. Unit-authored
+                // normals retain the previous unit result.
+                normal *= sourceLength / transformedLength;
             }
 
             result[i] = normal.X;
