@@ -1,8 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
-using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.WorldData;
@@ -112,45 +110,7 @@ public sealed class WeatherTransitionSelectionResolverTests
     }
 
     [Fact]
-    public void TonemapHistoryIdentity_IgnoresWeightProgressButChangesWithWeatherPair()
-    {
-        var lowWeight = WeatherTransitionSelectionResolver.Resolve(
-            selectedWeather: null, isClimateDefaultSelection: true, climateDefaultWeather: null,
-            runtimeSnapshot: Snapshot(0x30, 0x40, 0.1f),
-            weathersByFormId: new Dictionary<uint, WeatherRecord>
-            {
-                [0x30] = Weather(0x30, "Current"),
-                [0x40] = Weather(0x40, "Outgoing"),
-            });
-        var highWeight = WeatherTransitionSelectionResolver.Resolve(
-            selectedWeather: null, isClimateDefaultSelection: true, climateDefaultWeather: null,
-            runtimeSnapshot: Snapshot(0x30, 0x40, 0.9f),
-            weathersByFormId: new Dictionary<uint, WeatherRecord>
-            {
-                [0x30] = Weather(0x30, "Current"),
-                [0x40] = Weather(0x40, "Outgoing"),
-            });
-
-        static ulong Key(ResolvedWeatherTransition transition) => TonemapHistoryKeyBuilder.Build(
-            BethesdaGame.FalloutNewVegas,
-            contextId: 0x10,
-            activeCellId: 0x11,
-            imageSpaceSource: (uint)ImageSpaceSelectionSource.CellXcim,
-            imageSpaceId: 0x20,
-            currentWeatherId: transition.AppliedCurrentWeatherFormId ?? 0,
-            outgoingWeatherId: transition.AppliedOutgoingWeatherFormId ?? 0,
-            interior: false,
-            hdrEnabled: true,
-            modifiersEnabled: true);
-
-        Assert.Equal(Key(lowWeight), Key(highWeight));
-
-        var differentPair = highWeight with { OutgoingWeather = Weather(0x41, "OtherOutgoing") };
-        Assert.NotEqual(Key(highWeight), Key(differentPair));
-    }
-
-    [Fact]
-    public void TonemapHistoryIdentity_UsesAppliedAtomicFallbackButRetainsAuthoredIdsForDiagnostics()
+    public void RuntimeTransition_UsesAppliedAtomicFallbackButRetainsAuthoredIdsForDiagnostics()
     {
         var current = Weather(0x30, "Current");
         var weatherIndex = new Dictionary<uint, WeatherRecord> { [current.FormId] = current };
@@ -163,23 +123,11 @@ public sealed class WeatherTransitionSelectionResolverTests
             runtimeSnapshot: Snapshot(current.FormId, 0xDEAD0002, 0.75f),
             weathersByFormId: weatherIndex);
 
-        static ulong Key(ResolvedWeatherTransition transition) => TonemapHistoryKeyBuilder.Build(
-            BethesdaGame.FalloutNewVegas,
-            contextId: 0x10,
-            activeCellId: 0x11,
-            imageSpaceSource: (uint)ImageSpaceSelectionSource.CellXcim,
-            imageSpaceId: 0x20,
-            currentWeatherId: transition.AppliedCurrentWeatherFormId ?? 0,
-            outgoingWeatherId: transition.AppliedOutgoingWeatherFormId ?? 0,
-            interior: false,
-            hdrEnabled: true,
-            modifiersEnabled: true);
-
         Assert.Equal(0x30u, first.AppliedCurrentWeatherFormId);
         Assert.Null(first.AppliedOutgoingWeatherFormId);
+        Assert.Equal(1f, first.CurrentWeatherWeight);
         Assert.Equal(0xDEAD0001u, first.AuthoredOutgoingWeatherFormId);
         Assert.Equal(0xDEAD0002u, second.AuthoredOutgoingWeatherFormId);
-        Assert.Equal(Key(first), Key(second));
     }
 
     private static WeatherRecord Weather(uint formId, string editorId) =>

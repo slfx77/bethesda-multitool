@@ -42,8 +42,8 @@ public sealed class ImageSpaceSelectionResolverTests
 
         Assert.Equal(0x100u, result.ImageSpaceFormId);
         Assert.Equal(ImageSpaceSelectionSource.CellXcim, result.Source);
-        Assert.Equal(0x10u, result.HistoryCellId);
-        Assert.Equal(0x20u, result.HistoryContextId);
+        Assert.Equal(0x10u, result.CellContext.CellFormId);
+        Assert.Equal(0x20u, result.ContextWorldspaceFormId);
         Assert.Null(result.SourceWorldspaceFormId);
     }
 
@@ -83,7 +83,6 @@ public sealed class ImageSpaceSelectionResolverTests
         Assert.Equal(ImageSpaceSelectionSource.ParentWorldspaceInam, result.Source);
         Assert.Equal(child.FormId, result.ContextWorldspaceFormId);
         Assert.Equal(parent.FormId, result.SourceWorldspaceFormId);
-        Assert.Equal(child.FormId, result.HistoryContextId);
     }
 
     [Fact]
@@ -129,73 +128,31 @@ public sealed class ImageSpaceSelectionResolverTests
     }
 
     [Fact]
-    public void TonemapHistoryIdentity_ChangesExactlyOnceWhenSequenceCrossesCellBoundaryOnce()
+    public void TonemapHistoryIdentity_PersistsAcrossCellAndXcimBoundary()
     {
         const float cellSize = 4096f;
-        // Deliberately use the same XCIM in adjacent cells: the selected CELL identity itself must
-        // invalidate adaptation at the boundary, while movement within either cell remains stable.
+        const ulong clearGeneration = 7;
         var west = Cell(0x10, 0, 0, imageSpaceId: 0x100);
-        var east = Cell(0x11, 1, 0, imageSpaceId: 0x100);
+        var east = Cell(0x11, 1, 0, imageSpaceId: 0x101);
         var cells = Grid(west, east);
         var worldspace = new WorldspaceRecord { FormId = 0x20, ImageSpaceFormId = 0x200 };
         float[] positions = [cellSize - 2f, cellSize - 0.01f, cellSize, cellSize + 2f];
 
-        var keys = positions.Select(position =>
+        var frames = positions.Select(position =>
         {
             var cellContext = ImageSpaceSelectionResolver.ResolveExteriorCell(
                 cells, position, 0f, cellSize);
             var selection = ImageSpaceSelectionResolver.Resolve(
                 cellContext, worldspace, [worldspace], interior: false, useClassicDefault: true);
-            return HistoryKey(selection);
+            return (CellFormId: selection.CellContext.CellFormId, selection.ImageSpaceFormId,
+                Key: TonemapHistoryKeyBuilder.Build(BethesdaGame.FalloutNewVegas, clearGeneration));
         }).ToArray();
 
-        Assert.Equal(keys[0], keys[1]);
-        Assert.NotEqual(keys[1], keys[2]);
-        Assert.Equal(keys[2], keys[3]);
-        Assert.Equal(1, keys.Zip(keys.Skip(1), (left, right) => left != right).Count(changed => changed));
+        Assert.Equal(0x10u, frames[1].CellFormId);
+        Assert.Equal(0x11u, frames[2].CellFormId);
+        Assert.NotEqual(frames[1].ImageSpaceFormId, frames[2].ImageSpaceFormId);
+        Assert.Single(frames.Select(frame => frame.Key).Distinct());
     }
-
-    [Fact]
-    public void TonemapHistoryIdentity_IncludesImageSpaceSourceKind()
-    {
-        var cellSource = TonemapHistoryKeyBuilder.Build(
-            BethesdaGame.FalloutNewVegas,
-            contextId: 0x20,
-            activeCellId: 0x10,
-            imageSpaceSource: (uint)ImageSpaceSelectionSource.CellXcim,
-            imageSpaceId: 0x100,
-            currentWeatherId: 0x300,
-            outgoingWeatherId: 0,
-            interior: false,
-            hdrEnabled: true,
-            modifiersEnabled: true);
-        var worldSource = TonemapHistoryKeyBuilder.Build(
-            BethesdaGame.FalloutNewVegas,
-            contextId: 0x20,
-            activeCellId: 0x10,
-            imageSpaceSource: (uint)ImageSpaceSelectionSource.WorldspaceInam,
-            imageSpaceId: 0x100,
-            currentWeatherId: 0x300,
-            outgoingWeatherId: 0,
-            interior: false,
-            hdrEnabled: true,
-            modifiersEnabled: true);
-
-        Assert.NotEqual(cellSource, worldSource);
-    }
-
-    private static ulong HistoryKey(ResolvedImageSpaceSelection selection) =>
-        TonemapHistoryKeyBuilder.Build(
-            BethesdaGame.FalloutNewVegas,
-            selection.HistoryContextId,
-            selection.HistoryCellId,
-            selection.HistorySourceTag,
-            selection.ImageSpaceFormId ?? 0,
-            currentWeatherId: 0x300,
-            outgoingWeatherId: 0,
-            interior: false,
-            hdrEnabled: true,
-            modifiersEnabled: true);
 
     private static Dictionary<(int gx, int gy), CellRecord> Grid(params CellRecord[] cells) =>
         cells.ToDictionary(cell => (cell.GridX!.Value, cell.GridY!.Value));

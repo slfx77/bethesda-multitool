@@ -222,6 +222,14 @@ internal sealed class WorldViewData
         new Dictionary<uint, WeatherRecord>();
 
     /// <summary>
+    ///     Region (REGN) records keyed by FormID. Exterior CELL XCLR entries resolve through this
+    ///     index, then the camera position is tested against the retained RPLI/RPLD polygons before
+    ///     any deterministic RDWT weather override may replace the climate fallback.
+    /// </summary>
+    public IReadOnlyDictionary<uint, RegionRecord> RegionsByFormId { get; init; } =
+        new Dictionary<uint, RegionRecord>();
+
+    /// <summary>
     ///     Runtime weather transition retained from a DMP. Null for ESM/save-only views and unsupported
     ///     runtime layouts. <see cref="WeatherTransitionSnapshot.ModifierElapsedSeconds" /> remains null
     ///     until the engine clock driving animatable weather modifiers is independently recovered.

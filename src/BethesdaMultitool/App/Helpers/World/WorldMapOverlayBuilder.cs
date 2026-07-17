@@ -137,6 +137,7 @@ internal static class WorldMapOverlayBuilder
             BaseColorRemapsByFormId = semantic.BaseColorRemapIndices,
             WatersByFormId = BuildWaterIndex(semantic.Water),
             WeathersByFormId = BuildWeatherIndex(weatherRecords),
+            RegionsByFormId = BuildRegionIndex(semantic.Regions),
             RuntimeWeatherTransition = semantic.RuntimeWeatherTransition,
             ClimatesByFormId = BuildClimateIndex(climateRecords),
             ImageSpacesByFormId = BuildImageSpaceIndex(semantic.ImageSpaces),
@@ -332,6 +333,7 @@ internal static class WorldMapOverlayBuilder
             BaseColorRemapsByFormId = suppRecords.BaseColorRemapIndices,
             WatersByFormId = BuildWaterIndex(suppRecords.Water),
             WeathersByFormId = BuildWeatherIndex(suppRecords.Weather),
+            RegionsByFormId = BuildRegionIndex(suppRecords.Regions),
             RuntimeWeatherTransition = suppRecords.RuntimeWeatherTransition,
             ClimatesByFormId = BuildClimateIndex(suppRecords.Climate),
             ImageSpacesByFormId = BuildImageSpaceIndex(suppRecords.ImageSpaces),
@@ -555,6 +557,17 @@ internal static class WorldMapOverlayBuilder
         {
             dict.TryAdd(r.FormId, r);
         }
+        return dict;
+    }
+
+    private static Dictionary<uint, RegionRecord> BuildRegionIndex(IReadOnlyList<RegionRecord> records)
+    {
+        var dict = new Dictionary<uint, RegionRecord>(records.Count);
+        foreach (var r in records)
+        {
+            dict.TryAdd(r.FormId, r);
+        }
+
         return dict;
     }
 

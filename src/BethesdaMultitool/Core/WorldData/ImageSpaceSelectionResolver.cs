@@ -59,12 +59,6 @@ internal readonly record struct ResolvedImageSpaceSelection(
     uint? ContextWorldspaceFormId,
     uint? SourceWorldspaceFormId)
 {
-    internal uint HistoryContextId => ContextWorldspaceFormId ?? CellContext.CellFormId ?? 0u;
-
-    internal uint HistoryCellId => CellContext.CellFormId ?? 0u;
-
-    internal uint HistorySourceTag => (uint)Source;
-
     internal string SourceTelemetry => Source switch
     {
         ImageSpaceSelectionSource.CellXcim => "cell-xcim",

@@ -29,7 +29,7 @@ internal static class PlacedReferenceEnableStateResolver
         var result = new HashSet<uint>();
         foreach (var placement in linked)
         {
-            if (!placement.IsInitiallyDisabled && ResolveDisabled(placement, byId, depth: 0))
+            if (!placement.IsInitiallyDisabled && ResolveDisabled(placement, byId))
             {
                 result.Add(placement.FormId);
             }
@@ -40,17 +40,32 @@ internal static class PlacedReferenceEnableStateResolver
 
     private static bool ResolveDisabled(
         PlacedReference placement,
-        IReadOnlyDictionary<uint, PlacedReference> byId,
-        int depth)
+        IReadOnlyDictionary<uint, PlacedReference> byId)
     {
-        if (depth >= 16 || placement.EnableParentFormId is not { } parentId || parentId == 0 ||
-            !byId.TryGetValue(parentId, out var parent))
+        var visited = new HashSet<uint>();
+        var invert = false;
+        var current = placement;
+        while (true)
         {
-            return placement.IsInitiallyDisabled;
-        }
+            // Retail rejects enable-parent loops. Treat malformed self/multi-node loops as disabled
+            // instead of allowing inverse-edge parity or an arbitrary recursion depth to decide.
+            if (!visited.Add(current.FormId))
+            {
+                return true;
+            }
 
-        var parentDisabled = ResolveDisabled(parent, byId, depth + 1);
-        var opposite = ((placement.EnableParentFlags ?? 0) & 0x01) != 0;
-        return opposite ? !parentDisabled : parentDisabled;
+            if (current.EnableParentFormId is not { } parentId || parentId == 0 ||
+                !byId.TryGetValue(parentId, out var parent))
+            {
+                return invert ? !current.IsInitiallyDisabled : current.IsInitiallyDisabled;
+            }
+
+            if (((current.EnableParentFlags ?? 0) & 0x01) != 0)
+            {
+                invert = !invert;
+            }
+
+            current = parent;
+        }
     }
 }

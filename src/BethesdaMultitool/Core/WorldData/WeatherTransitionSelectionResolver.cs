@@ -42,7 +42,8 @@ internal static class WeatherTransitionSelectionResolver
         bool isClimateDefaultSelection,
         WeatherRecord? climateDefaultWeather,
         WeatherTransitionSnapshot? runtimeSnapshot,
-        IReadOnlyDictionary<uint, WeatherRecord>? weathersByFormId)
+        IReadOnlyDictionary<uint, WeatherRecord>? weathersByFormId,
+        WeatherRecord? deterministicRegionWeather = null)
     {
         if (!isClimateDefaultSelection)
         {
@@ -52,7 +53,9 @@ internal static class WeatherTransitionSelectionResolver
 
         if (runtimeSnapshot is null)
         {
-            return Atomic(climateDefaultWeather, "climate-default", runtimeSnapshotIgnored: false);
+            return deterministicRegionWeather is not null
+                ? Atomic(deterministicRegionWeather, "region-rdwt", runtimeSnapshotIgnored: false)
+                : Atomic(climateDefaultWeather, "climate-default", runtimeSnapshotIgnored: false);
         }
 
         var current = ResolveWeather(runtimeSnapshot.CurrentWeatherFormId, weathersByFormId);
