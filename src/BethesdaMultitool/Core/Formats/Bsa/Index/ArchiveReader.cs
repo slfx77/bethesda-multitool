@@ -17,11 +17,23 @@ public sealed class ArchiveReader : IDisposable
 {
     private readonly BsaExtractor? _bsa;
     private readonly Ba2Extractor? _ba2;
-    private Dictionary<string, ArchiveEntry>? _byPath;
 
-    private ArchiveReader(BsaExtractor bsa) => _bsa = bsa;
+    // Lazy<T> (ExecutionAndPublication) so racing first lookups build the index exactly once —
+    // the old `_byPath ??= BuildIndex()` let concurrent first calls each build a full private
+    // index (wasted work; last assignment won).
+    private readonly Lazy<Dictionary<string, ArchiveEntry>> _byPath;
 
-    private ArchiveReader(Ba2Extractor ba2) => _ba2 = ba2;
+    private ArchiveReader(BsaExtractor bsa)
+    {
+        _bsa = bsa;
+        _byPath = new Lazy<Dictionary<string, ArchiveEntry>>(BuildIndex);
+    }
+
+    private ArchiveReader(Ba2Extractor ba2)
+    {
+        _ba2 = ba2;
+        _byPath = new Lazy<Dictionary<string, ArchiveEntry>>(BuildIndex);
+    }
 
     /// <summary>True when the underlying container is a BA2 (vs a classic BSA).</summary>
     public bool IsBa2 => _ba2 != null;
@@ -123,13 +135,17 @@ public sealed class ArchiveReader : IDisposable
 
     /// <summary>
     ///     Reads a file by its full virtual path (case-insensitive, accepts <c>/</c> or <c>\</c>), or
-    ///     null when absent. Builds a path index on first use for O(1) lookups.
+    ///     null when absent. Builds a path index on first use for O(1) lookups. Thread-safe.
     /// </summary>
-    public byte[]? ReadFile(string fullPath)
-    {
-        _byPath ??= BuildIndex();
-        return _byPath.TryGetValue(Normalize(fullPath), out var entry) ? Extract(entry) : null;
-    }
+    public byte[]? ReadFile(string fullPath) =>
+        FindEntry(fullPath) is { } entry ? Extract(entry) : null;
+
+    /// <summary>
+    ///     Looks up an entry by full virtual path without extracting it (case-insensitive, accepts
+    ///     <c>/</c> or <c>\</c>), or null when absent. Thread-safe.
+    /// </summary>
+    public ArchiveEntry? FindEntry(string fullPath) =>
+        _byPath.Value.TryGetValue(Normalize(fullPath), out var entry) ? entry : null;
 
     public void Dispose()
     {

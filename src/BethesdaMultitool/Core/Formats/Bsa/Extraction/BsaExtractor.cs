@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
@@ -16,12 +17,20 @@ namespace BethesdaMultitool.Core.Formats.Bsa.Extraction;
 public sealed class BsaExtractor : IDisposable
 {
     // Converter cache - keyed by extension (e.g., ".ddx", ".nif")
-    // Uses FormatRegistry to resolve converters
+    // Uses FormatRegistry to resolve converters. Guarded by _converterLock: converters are
+    // resolved lazily on first touch, which can race when conversion-enabled extraction fans out.
     private readonly Dictionary<string, IFileConverter?> _converterCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _converterLock = new();
     private readonly bool _defaultCompressed;
     private readonly bool _embedFileNames;
-    private readonly HashSet<string> _enabledExtensions = new(StringComparer.OrdinalIgnoreCase);
+    // Concurrent set (value unused): Enable* toggles can race conversion-enabled extraction workers.
+    private readonly ConcurrentDictionary<string, byte> _enabledExtensions = new(StringComparer.OrdinalIgnoreCase);
     private readonly MemoryMappedFile _mappedFile;
+
+    // One long-lived whole-file read-only view; every read passes an absolute offset per call, so
+    // concurrent ExtractFile calls share it without locks (same pattern as Ba2Extractor, which
+    // adopted it because per-read CreateViewAccessor is a real MapViewOfFile each time).
+    private readonly MemoryMappedViewAccessor _view;
     private readonly long _archiveFileLength;
     private bool _disposed;
     private bool _verbose;
@@ -37,6 +46,7 @@ public sealed class BsaExtractor : IDisposable
         Archive = BsaParser.Parse(filePath);
         _archiveFileLength = new FileInfo(filePath).Length;
         _mappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+        _view = _mappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
         _defaultCompressed = Archive.Header.DefaultCompressed;
         _embedFileNames = Archive.Header.EmbedFileNames;
     }
@@ -55,6 +65,7 @@ public sealed class BsaExtractor : IDisposable
         _archiveFileLength = fs.Length;
         _mappedFile =
             MemoryMappedFile.CreateFromFile(fs, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, false);
+        _view = _mappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
         _defaultCompressed = Archive.Header.DefaultCompressed;
         _embedFileNames = Archive.Header.EmbedFileNames;
     }
@@ -63,18 +74,19 @@ public sealed class BsaExtractor : IDisposable
     public BsaArchive Archive { get; }
 
     /// <summary>Whether DDX conversion is enabled and available.</summary>
-    public bool DdxConversionEnabled => _enabledExtensions.Contains(".ddx") && GetOrCreateConverter(".ddx") != null;
+    public bool DdxConversionEnabled => _enabledExtensions.ContainsKey(".ddx") && GetOrCreateConverter(".ddx") != null;
 
     /// <summary>Whether XMA conversion is enabled and available.</summary>
     public bool XmaConversionEnabled => _xmaConversionEnabled;
 
     /// <summary>Whether NIF conversion is enabled and available.</summary>
-    public bool NifConversionEnabled => _enabledExtensions.Contains(".nif") && GetOrCreateConverter(".nif") != null;
+    public bool NifConversionEnabled => _enabledExtensions.ContainsKey(".nif") && GetOrCreateConverter(".nif") != null;
 
     public void Dispose()
     {
         if (!_disposed)
         {
+            _view.Dispose();
             _mappedFile.Dispose();
             _disposed = true;
         }
@@ -92,7 +104,7 @@ public sealed class BsaExtractor : IDisposable
 
         if (!enable)
         {
-            _enabledExtensions.Remove(".ddx");
+            _enabledExtensions.TryRemove(".ddx", out _);
             return true;
         }
 
@@ -102,7 +114,7 @@ public sealed class BsaExtractor : IDisposable
             return false;
         }
 
-        _enabledExtensions.Add(".ddx");
+        _enabledExtensions.TryAdd(".ddx", 0);
         return true;
     }
 
@@ -132,7 +144,7 @@ public sealed class BsaExtractor : IDisposable
     {
         if (!enable)
         {
-            _enabledExtensions.Remove(".xma");
+            _enabledExtensions.TryRemove(".xma", out _);
             _xmaConversionEnabled = false;
             return true;
         }
@@ -145,7 +157,7 @@ public sealed class BsaExtractor : IDisposable
 
         _xmaConversionEnabled = true;
 
-        _enabledExtensions.Add(".xma");
+        _enabledExtensions.TryAdd(".xma", 0);
         return true;
     }
 
@@ -176,7 +188,7 @@ public sealed class BsaExtractor : IDisposable
 
         if (!enable)
         {
-            _enabledExtensions.Remove(".nif");
+            _enabledExtensions.TryRemove(".nif", out _);
             return true;
         }
 
@@ -186,7 +198,7 @@ public sealed class BsaExtractor : IDisposable
             return false;
         }
 
-        _enabledExtensions.Add(".nif");
+        _enabledExtensions.TryAdd(".nif", 0);
         return true;
     }
 
@@ -237,19 +249,22 @@ public sealed class BsaExtractor : IDisposable
     /// </summary>
     private IFileConverter? GetOrCreateConverter(string extension)
     {
-        if (_converterCache.TryGetValue(extension, out var cached))
+        lock (_converterLock)
         {
-            return cached;
-        }
+            if (_converterCache.TryGetValue(extension, out var cached))
+            {
+                return cached;
+            }
 
-        var converter = FormatRegistry.GetConverterByExtension(extension);
-        if (converter != null)
-        {
-            converter.Initialize(_verbose);
-        }
+            var converter = FormatRegistry.GetConverterByExtension(extension);
+            if (converter != null)
+            {
+                converter.Initialize(_verbose);
+            }
 
-        _converterCache[extension] = converter;
-        return converter;
+            _converterCache[extension] = converter;
+            return converter;
+        }
     }
 
     /// <summary>
@@ -360,7 +375,8 @@ public sealed class BsaExtractor : IDisposable
 
     /// <summary>
     ///     Extract a single file to a byte array.
-    ///     Thread-safe: each call creates its own view accessor for lock-free concurrent reads.
+    ///     Thread-safe without locks: all reads pass absolute offsets to the shared read-only
+    ///     view accessor (no cursor state), so concurrent calls never contend.
     /// </summary>
     public byte[] ExtractFile(BsaFileRecord file)
     {
@@ -376,20 +392,15 @@ public sealed class BsaExtractor : IDisposable
         // Skip embedded file name if present
         if (_embedFileNames)
         {
-            // Read the name length byte
-            using var nameAccessor = _mappedFile.CreateViewAccessor(file.Offset, 1, MemoryMappedFileAccess.Read);
-            var nameLen = nameAccessor.ReadByte(0);
+            var nameLen = _view.ReadByte(dataOffset);
             dataOffset += 1 + nameLen;
             dataSize -= 1 + nameLen;
         }
 
-        // Create a view accessor for this file's data - thread-safe, no lock needed
-        using var accessor = _mappedFile.CreateViewAccessor(dataOffset, dataSize, MemoryMappedFileAccess.Read);
-
         if (isCompressed)
         {
             // First 4 bytes are uncompressed size (little-endian)
-            var uncompressedSize = accessor.ReadUInt32(0);
+            var uncompressedSize = _view.ReadUInt32(dataOffset);
 
             var compressedSize = dataSize - 4;
 
@@ -406,7 +417,7 @@ public sealed class BsaExtractor : IDisposable
             var compressedData = ArrayPool<byte>.Shared.Rent(compressedSize);
             try
             {
-                accessor.ReadArray(4, compressedData, 0, compressedSize);
+                _view.ReadArray(dataOffset + 4, compressedData, 0, compressedSize);
 
                 // Skyrim Special Edition (BSA v105) compresses with LZ4 block format; v103/v104
                 // (Oblivion / FO3 / FNV / Skyrim LE) use zlib (occasionally raw deflate).
@@ -445,7 +456,7 @@ public sealed class BsaExtractor : IDisposable
 
         // Uncompressed - just read the data
         var uncompressedResult = new byte[dataSize];
-        accessor.ReadArray(0, uncompressedResult, 0, dataSize);
+        _view.ReadArray(dataOffset, uncompressedResult, 0, dataSize);
         return uncompressedResult;
     }
 
@@ -532,11 +543,11 @@ public sealed class BsaExtractor : IDisposable
     {
         return extension switch
         {
-            ".ddx" when _enabledExtensions.Contains(".ddx") && GetOrCreateConverter(".ddx") != null
+            ".ddx" when _enabledExtensions.ContainsKey(".ddx") && GetOrCreateConverter(".ddx") != null
                 => ("DDX->DDS", ".dds"),
-            ".xma" when _enabledExtensions.Contains(".xma") && XmaWavConverter.IsAvailable
+            ".xma" when _enabledExtensions.ContainsKey(".xma") && XmaWavConverter.IsAvailable
                 => ("XMA->WAV", ".wav"),
-            ".nif" when _enabledExtensions.Contains(".nif") && GetOrCreateConverter(".nif") != null
+            ".nif" when _enabledExtensions.ContainsKey(".nif") && GetOrCreateConverter(".nif") != null
                 => ("NIF BE->LE", null), // NIF keeps same extension
             _ => (null, null)
         };

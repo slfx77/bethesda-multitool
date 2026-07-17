@@ -75,11 +75,13 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
     private readonly List<INifTextureSource> _sources;
 
     /// <summary>
-    ///     Serializes BSA I/O on cache misses. The underlying <see cref="INifTextureSource" />
-    ///     readers are not safe for concurrent calls — two workers loading different tiles at
-    ///     the same time can corrupt the BSA file handle. After <see cref="Preload" /> this
-    ///     lock is uncontended; the parallel decode hot path never reaches it because every
-    ///     LTEX has a cache hit.
+    ///     Guards only the engine-default tile's two-field publication (<see cref="_engineDefaultTile" />
+    ///     + <see cref="_engineDefaultLoaded" />) and its reset in <see cref="Trim" />. Tile loads
+    ///     themselves run concurrently: the <see cref="INifTextureSource" /> readers are
+    ///     memory-mapped with lock-free position-independent reads — the 3D viewer's parallel
+    ///     decode workers extract from the same source types with no lock. (An earlier comment
+    ///     here claimed concurrent reads "corrupt the BSA file handle"; that was never true of the
+    ///     mmap-backed extractors and the coarse per-tile lock it justified has been removed.)
     /// </summary>
     private readonly object _tileLoadLock = new();
 
@@ -341,9 +343,8 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
             return _engineDefaultTile;
         }
 
-        // Slow path: serialize the BSA I/O. `_sources` is not thread-safe; two workers loading
-        // the engine-default concurrently can corrupt the BSA file handle and throw, aborting
-        // the whole Parallel.ForEachAsync.
+        // Slow path: one-time load. The lock is for the two-field publication (tile + flag), not
+        // for the BSA I/O — the sources are safe for concurrent reads.
         lock (_tileLoadLock)
         {
             if (_engineDefaultLoaded != 0) return _engineDefaultTile;
@@ -368,29 +369,19 @@ internal sealed class LandscapeTexturePalette : IMemoryPressureParticipant
             return cached.Length == 0 ? null : cached;
         }
 
-        // Slow path: cache miss. Serialize the BSA I/O via _tileLoadLock since the readers
-        // aren't thread-safe.
-        lock (_tileLoadLock)
-        {
-            if (_tiles.TryGetValue(ltexFormId, out var existing))
-            {
-                return existing.Length == 0 ? null : existing;
-            }
-            var loaded = LoadTileForLtex(ltexFormId);
-            if (loaded is null)
-            {
-                // LTEX has no resolvable tile (missing TXST, BSA entry, broken DDX, …).
-                // Cache the engine-default pyramid under this FormID so subsequent samples take
-                // the lock-free fast path with a single dictionary lookup instead of routing
-                // through a separate SampleEngineDefault call on every pixel. Mirrors what the
-                // per-pixel sampler would compose anyway, just collapses two lookups into one.
-                // Monitor (lock) is reentrant on the same thread, so the nested acquire inside
-                // GetEngineDefaultTile is fine.
-                loaded = GetEngineDefaultTile();
-            }
-            _tiles[ltexFormId] = loaded ?? s_missSentinel;
-            return loaded;
-        }
+        // Slow path: cache miss. Loads run CONCURRENTLY — the readers are memory-mapped with
+        // position-independent reads, so two workers loading DIFFERENT tiles proceed in
+        // parallel (previously a coarse lock serialized all misses on a false thread-safety
+        // premise). A racing duplicate load of the SAME FormID is harmless: GetOrAdd keeps
+        // exactly one pyramid and the loser's is dropped.
+        var loaded = LoadTileForLtex(ltexFormId)
+                     // LTEX has no resolvable tile (missing TXST, BSA entry, broken DDX, …).
+                     // Cache the engine-default pyramid under this FormID so subsequent samples
+                     // take the lock-free fast path with a single dictionary lookup instead of
+                     // routing through a separate SampleEngineDefault call on every pixel.
+                     ?? GetEngineDefaultTile();
+        var published = _tiles.GetOrAdd(ltexFormId, loaded ?? s_missSentinel);
+        return published.Length == 0 ? null : published;
     }
 
     private byte[][]? LoadTileForLtex(uint ltexFormId)
