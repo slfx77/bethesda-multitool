@@ -11,13 +11,24 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
 {
     private readonly byte[] _data = data;
     private readonly bool _isBigEndian = isBigEndian;
+    private List<ScriptExternalVariableRead>? _externalVariableReads;
+    private List<ScriptLocalVariableRead>? _localVariableReads;
     private List<(int Offset, int Length)>? _multiByteReads;
+    private readonly List<ScriptBytecodeStructuralIssue> _structuralIssues = [];
 
     public int Position { get; set; }
 
     public int Length => _data.Length;
     public int Remaining => _data.Length - Position;
     public bool HasData => Position < _data.Length;
+    internal bool HasStructuralUncertainty { get; private set; }
+    internal IReadOnlyList<ScriptBytecodeStructuralIssue> StructuralIssues => _structuralIssues;
+
+    internal void MarkStructuralUncertainty(ScriptBytecodeStructuralIssue issue)
+    {
+        HasStructuralUncertainty = true;
+        _structuralIssues.Add(issue);
+    }
 
     /// <summary>
     ///     Start recording every multi-byte read (uint16/uint32/double). Pairs with
@@ -35,6 +46,56 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
         var result = _multiByteReads ?? [];
         _multiByteReads = null;
         return result;
+    }
+
+    internal void StartTrackingExternalVariableReads()
+    {
+        _externalVariableReads = [];
+    }
+
+    internal IReadOnlyList<ScriptExternalVariableRead> StopTrackingExternalVariableReads()
+    {
+        var result = _externalVariableReads ?? [];
+        _externalVariableReads = null;
+        return result;
+    }
+
+    internal void TrackExternalVariableRead(
+        uint referencedFormId,
+        ushort variableIndex,
+        int operandOffset,
+        byte marker,
+        bool isWrite)
+    {
+        _externalVariableReads?.Add(new ScriptExternalVariableRead(
+            referencedFormId,
+            variableIndex,
+            operandOffset,
+            marker,
+            isWrite));
+    }
+
+    internal void StartTrackingLocalVariableReads()
+    {
+        _localVariableReads = [];
+    }
+
+    internal IReadOnlyList<ScriptLocalVariableRead> StopTrackingLocalVariableReads()
+    {
+        var result = _localVariableReads ?? [];
+        _localVariableReads = null;
+        return result;
+    }
+
+    internal void TrackLocalVariableRead(
+        ushort variableIndex,
+        int operandOffset,
+        byte? marker)
+    {
+        _localVariableReads?.Add(new ScriptLocalVariableRead(
+            variableIndex,
+            operandOffset,
+            marker));
     }
 
     public byte ReadByte()
@@ -185,3 +246,23 @@ public sealed class BytecodeReader(byte[] data, bool isBigEndian)
         return Position + count <= _data.Length;
     }
 }
+
+internal sealed record ScriptExternalVariableRead(
+    uint ReferencedFormId,
+    ushort VariableIndex,
+    int OperandOffset,
+    byte Marker,
+    bool IsWrite);
+
+internal sealed record ScriptLocalVariableRead(
+    ushort VariableIndex,
+    int OperandOffset,
+    byte? Marker);
+
+internal sealed record ScriptBytecodeStructuralIssue(
+    string Kind,
+    int OpcodeOffset,
+    ushort Opcode,
+    int PayloadOffset,
+    int DeclaredLength,
+    int ConsumedLength);

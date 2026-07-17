@@ -19,4 +19,11 @@ public sealed record EncodedRecord
 
     /// <summary>Non-fatal warnings produced during encoding.</summary>
     public required IReadOnlyList<string> Warnings { get; init; }
+
+    /// <summary>
+    ///     Exact model-owned script paths whose executable blocks were serialized into this
+    ///     record. PlanWriter promotes these to its actual-emission ledger only after the
+    ///     enclosing record bytes have been written.
+    /// </summary>
+    public IReadOnlyList<string> EmittedScriptPaths { get; init; } = [];
 }

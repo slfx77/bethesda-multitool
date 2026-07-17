@@ -167,6 +167,19 @@ public sealed class InfoEncoder : IRecordEncoder
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
+        var inlineScriptIssue = InlineScriptReferenceValidator.FindFirstIssue(
+            info, validFormIds, remapTable);
+        if (inlineScriptIssue is not null)
+        {
+            warnings.Add(
+                $"New INFO 0x{info.FormId:X8} suppressed: {inlineScriptIssue.Message} " +
+                "Inline SCDA/SLSD/SCRO/SCRV is atomic; no slot was dropped or zero-filled.");
+            return new EncodedRecord { Subrecords = [], Warnings = warnings };
+        }
+
+        warnings.AddRange(
+            InlineScriptReferenceValidator.FindSourceContractIssues(info, validFormIds, remapTable)
+                .Select(static issue => issue.Message));
 
         // Most INFO records have no EDID — they're identified by FormID under their parent DIAL.
         // Emit only when the model carries one (rare).
@@ -349,14 +362,22 @@ public sealed class InfoEncoder : IRecordEncoder
         // field noise). Stamping challenges onto ordinary lines corrupts topic handling.
     }
 
-    internal static void EmitResultScriptBlock(
+    internal static bool EmitResultScriptBlock(
         List<EncodedSubrecord> subs,
         DialogueResultScript? script,
         IReadOnlySet<uint>? validFormIds = null,
         IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
+        var validation = InlineScriptReferenceValidator.Validate(
+            script, "ResultScript", validFormIds, remapTable);
+        if (!validation.IsSafe)
+        {
+            return false;
+        }
+
         var compiledSize = script?.CompiledData?.Length ?? 0;
         var refCount = (uint)(script?.ReferencedObjects.Count ?? 0);
+        var variableCount = (uint)(script?.Variables.Count ?? 0);
 
         // Inline result scripts are Object-type (not quest, not magic-effect). Master ESM
         // always sets Flags=0x0001 (Enabled) even when CompiledSize=0 — the engine reads
@@ -365,17 +386,16 @@ public sealed class InfoEncoder : IRecordEncoder
         // spurious behavior (observed: actors playing crucified idle every few seconds).
         // SCHR layout per fopdoc canonical: Padding(4) + RefCount(uint32) + CompiledSize(uint32)
         // + VariableCount(uint32) + Type(uint16) + Flags(uint16). Note INFO result scripts
-        // declare VariableCount=0 because they don't carry their own SLSD/SCVR list — any
-        // bytecode reference to local variables 0x0E etc. would dangle. Vanilla INFO result
-        // scripts confine themselves to global/object references; if a captured proto result
-        // script's bytecode does reference locals, that's a separate decoder issue.
+        // carry the exact SLSD/SCVR list that belongs to their SCDA. Dropping it changes
+        // local-variable operands into dangling IDs and also deprives endian conversion of
+        // the metadata it needs to walk the bytecode safely.
         var schrSchema = SubrecordSchemaRegistry.GetSchema("SCHR", "", 20)
             ?? throw new InvalidOperationException("SCHR schema missing.");
         var schrValues = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["RefCount"] = refCount,
             ["CompiledSize"] = (uint)compiledSize,
-            ["VariableCount"] = 0u,
+            ["VariableCount"] = variableCount,
             ["Type"] = (ushort)0, // 0 = Object script
             ["Flags"] = (ushort)0x0001, // 0x0001 = Enabled
         };
@@ -383,7 +403,7 @@ public sealed class InfoEncoder : IRecordEncoder
 
         if (script is null)
         {
-            return;
+            return true;
         }
 
         if (script.CompiledData is { Length: > 0 } compiled)
@@ -392,17 +412,27 @@ public sealed class InfoEncoder : IRecordEncoder
             // PC engine — same reason as SCPT. See ScptEncoder.cs for the long explanation.
             var scda = script.IsBigEndianBytecode
                 ? ScriptBytecodeEndianConverter.SwapBigEndianToLittleEndian(
-                    compiled, variables: null, script.ReferencedObjects)
+                    compiled, script.Variables, script.ReferencedObjects)
                 : compiled;
             subs.Add(new EncodedSubrecord("SCDA", scda));
         }
 
-        if (!string.IsNullOrEmpty(script.SourceText))
+        if (!string.IsNullOrEmpty(validation.SourceTextForEmission))
         {
-            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("SCTX", script.SourceText));
+            subs.Add(NewRecordSubrecords.EncodeGameTextSubrecord(
+                "SCTX", validation.SourceTextForEmission));
         }
 
-        foreach (var refFormId in script.ReferencedObjects)
+        foreach (var variable in script.Variables)
+        {
+            var slsd = new byte[24];
+            SubrecordEncoder.WriteUInt32(slsd, 0, variable.Index);
+            slsd[16] = variable.Type;
+            subs.Add(new EncodedSubrecord("SLSD", slsd));
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("SCVR", variable.Name ?? string.Empty));
+        }
+
+        foreach (var refFormId in validation.ResolvedReferences)
         {
             if ((refFormId & 0x80000000) != 0)
             {
@@ -411,14 +441,14 @@ public sealed class InfoEncoder : IRecordEncoder
             }
             else
             {
-                // SCROs in INFO result scripts go through the same alias/validity check as
-                // top-level SCPT records — see ScptEncoder.EncodeNew for rationale. Without
-                // this, the engine refuses to execute result scripts that reference any
-                // remapped or proto-only FormID, breaking dialogue side-effects.
-                var resolved = FormIdReferenceResolver.Resolve(refFormId, validFormIds, remapTable) ?? 0u;
-                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", resolved));
+                // Validation resolved the complete mixed table before SCHR was appended.
+                // Emit in the original order; changing the slot count/order changes SCDA
+                // operand meaning and disables the entire result script.
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", refFormId));
             }
         }
+
+        return true;
     }
 
     private static byte[] BuildTrdtSubrecord(DialogueResponse response)

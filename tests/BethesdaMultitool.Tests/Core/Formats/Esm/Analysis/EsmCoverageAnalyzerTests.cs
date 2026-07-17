@@ -1,3 +1,4 @@
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
@@ -134,6 +135,201 @@ public sealed class EsmCoverageAnalyzerTests
         Assert.True(row.VariableCountMatches);
         Assert.True(row.WalkedToEnd);
         Assert.False(row.HasDiagnostics);
+    }
+
+    [Fact]
+    public void AnalyzeRecords_ReportsEverySchrSourceBlockAndStandaloneScptSourceWithoutChangingScdaRows()
+    {
+        var result = EsmCoverageAnalyzer.AnalyzeRecords(
+            "synthetic.esm",
+            [
+                Record("SCPT", 0x01000100,
+                    ScriptHeader(compiledSize: 4),
+                    Sub("SCDA", 0x1D, 0x00, 0x00, 0x00),
+                    StringSub("SCTX", "scn HeaderOnly", terminate: true)),
+                Record("INFO", 0x01000200,
+                    ScriptHeader(),
+                    StringSub("SCTX", "Begin GameMode\nEnd", terminate: true),
+                    Sub("NEXT"),
+                    ScriptHeader(compiledSize: 4),
+                    Sub("SCDA", 0x1D, 0x00, 0x00, 0x00)),
+                Record("SCPT", 0x01000300,
+                    StringSub("SCTX", "Begin GameMode\nEnd", terminate: true))
+            ]);
+
+        // The existing invariant remains one row per SCDA, including the SCDA whose
+        // SCHR block has no source text.
+        Assert.Equal(2, result.ScriptBytecode.Count);
+
+        Assert.Equal(4, result.ScriptSource.Count);
+        Assert.Equal(2, result.ScriptSource.Count(row => row.RecordType == "INFO"));
+        var compiledWithoutSource = Assert.Single(result.ScriptSource,
+            row => row.FormId == 0x01000200 && row.BlockIndex == 2);
+        Assert.Equal("none", compiledWithoutSource.SourceClassification);
+        Assert.Equal("not-present", compiledWithoutSource.SctxNulTermination);
+        Assert.Equal("not-applicable:no-sctx", compiledWithoutSource.DeclarationSlsdIdentityVerdict);
+        Assert.False(compiledWithoutSource.HardContradiction);
+
+        var sourceOnly = Assert.Single(result.ScriptSource,
+            row => row.FormId == 0x01000300 && row.Block == "SCPT-SCTX-only");
+        Assert.False(sourceOnly.ScdaPresent);
+        Assert.True(sourceOnly.SctxPresent);
+        Assert.Equal("executable", sourceOnly.SourceClassification);
+        Assert.True(sourceOnly.HardContradiction);
+        Assert.Contains("executable SCTX has no SCDA", sourceOnly.HardContradictionReason);
+
+        var outputDirectory = Path.Combine(Path.GetTempPath(), $"esm-source-coverage-{Guid.NewGuid():N}");
+        try
+        {
+            EsmCoverageAnalyzer.WriteReport(result, outputDirectory);
+            var sourceCsv = File.ReadAllLines(Path.Combine(outputDirectory, "script_source_coverage.csv"));
+            var bytecodeCsv = File.ReadAllLines(Path.Combine(outputDirectory, "script_bytecode_coverage.csv"));
+            var summary = File.ReadAllText(Path.Combine(outputDirectory, "summary.md"));
+
+            Assert.Equal(5, sourceCsv.Length);
+            Assert.Equal(3, bytecodeCsv.Length);
+            Assert.Contains("sctx_nul_termination", sourceCsv[0]);
+            Assert.Contains("Hard source contradictions: 2", summary);
+        }
+        finally
+        {
+            if (Directory.Exists(outputDirectory))
+            {
+                Directory.Delete(outputDirectory, true);
+            }
+        }
+    }
+
+    [Fact]
+    public void AnalyzeRecords_ComparesExecutableSourceAndExactDeclarationsToSlsd()
+    {
+        const string source = "scn ExactScript\nfloat myVar\nBegin GameMode\nEnd";
+        var bytecode = SimpleGameModeBytecode();
+        var result = EsmCoverageAnalyzer.AnalyzeRecords(
+            "synthetic.esm",
+            [
+                Record("SCPT", 0x01000100,
+                    ScriptHeader(variableCount: 1, compiledSize: (uint)bytecode.Length),
+                    Sub("SCDA", bytecode),
+                    StringSub("SCTX", source, terminate: true),
+                    ScriptLocal(7, false),
+                    StringSub("SCVR", "myVar", terminate: true))
+            ]);
+
+        var row = Assert.Single(result.ScriptSource);
+        Assert.True(row.ScdaPresent);
+        Assert.True(row.SctxPresent);
+        Assert.Equal(bytecode.Length, row.ScdaLength);
+        Assert.Equal(source.Length + 1, row.SctxRawLength);
+        Assert.Equal(source.Length, row.SctxDecodedLength);
+        Assert.Equal(64, row.ScdaSha256.Length);
+        Assert.Equal(64, row.SctxSha256.Length);
+        Assert.Equal("terminated", row.SctxNulTermination);
+        Assert.Equal("executable", row.SourceClassification);
+        Assert.True(row.SemanticComparisonAvailable);
+        Assert.Equal(2, row.SemanticStatementCount);
+        Assert.Equal(2, row.SemanticMatchCount);
+        Assert.Equal(0, row.SemanticMismatchCount);
+        Assert.Equal(1, row.SourceDeclarationCount);
+        Assert.Equal(1, row.SlsdVariableCount);
+        Assert.Equal("exact", row.DeclarationSlsdIdentityVerdict);
+        Assert.False(row.HardContradiction);
+    }
+
+    [Fact]
+    public void AnalyzeRecords_FlagsExactDeclarationIdentityMismatchWithoutSemanticGuessing()
+    {
+        const string source = "scn MismatchScript\nshort protoCount";
+        var result = EsmCoverageAnalyzer.AnalyzeRecords(
+            "synthetic.esm",
+            [
+                Record("SCPT", 0x01000100,
+                    ScriptHeader(variableCount: 1),
+                    StringSub("SCTX", source, terminate: false),
+                    ScriptLocal(7, true),
+                    StringSub("SCVR", "retailCount", terminate: true))
+            ]);
+
+        var row = Assert.Single(result.ScriptSource);
+        Assert.Equal("declarations-only", row.SourceClassification);
+        Assert.Equal("unterminated", row.SctxNulTermination);
+        Assert.StartsWith("mismatch:", row.DeclarationSlsdIdentityVerdict);
+        Assert.Contains("missing-slsd=protoCount", row.DeclarationSlsdIdentityVerdict);
+        Assert.Contains("extra-slsd=retailCount", row.DeclarationSlsdIdentityVerdict);
+        Assert.True(row.HardContradiction);
+        Assert.Contains("declaration/SLSD mismatch", row.HardContradictionReason);
+    }
+
+    [Fact]
+    public void AnalyzeRecords_TreatsDashedSourceSeparatorsAsDecorative()
+    {
+        const string source = "scn VMS12\n------------------------------";
+        var result = EsmCoverageAnalyzer.AnalyzeRecords(
+            "synthetic.esm",
+            [
+                Record("SCPT", 0x01000100,
+                    StringSub("SCTX", source, terminate: true))
+            ]);
+
+        var row = Assert.Single(result.ScriptSource);
+        Assert.Equal("declarations-only", row.SourceClassification);
+        Assert.Equal("exact-empty", row.DeclarationSlsdIdentityVerdict);
+        Assert.False(row.HardContradiction);
+    }
+
+    [Theory]
+    [InlineData("refvar", "target")]
+    [InlineData("mytarget", "refvar")]
+    public void AnalyzeRecords_MatchesExactDeclarationsInsideBeginBlockToSlsd(
+        string firstVariable,
+        string secondVariable)
+    {
+        var source = $"scn DebugScript\nBegin GameMode\nref {firstVariable}\nref {secondVariable}\nEnd";
+        var bytecode = SimpleGameModeBytecode();
+        var result = EsmCoverageAnalyzer.AnalyzeRecords(
+            "Fallout_Debug-v132.esm",
+            [
+                Record("SCPT", 0x0100358F,
+                    ScriptHeader(variableCount: 2, compiledSize: (uint)bytecode.Length),
+                    Sub("SCDA", bytecode),
+                    StringSub("SCTX", source, terminate: true),
+                    ScriptLocal(1, false),
+                    StringSub("SCVR", firstVariable, terminate: true),
+                    ScriptLocal(2, false),
+                    StringSub("SCVR", secondVariable, terminate: true))
+            ]);
+
+        var row = Assert.Single(result.ScriptSource);
+        Assert.Equal("executable", row.SourceClassification);
+        Assert.Equal(2, row.SourceDeclarationCount);
+        Assert.Equal(2, row.SlsdVariableCount);
+        Assert.Equal("exact", row.DeclarationSlsdIdentityVerdict);
+        Assert.Equal(0, row.SemanticMismatchCount);
+        Assert.False(row.HardContradiction);
+    }
+
+    [Fact]
+    public void AnalyzeRecords_ReportsStaleSourceSemanticMismatchWithoutCallingItHardContradiction()
+    {
+        const string staleSource = "scn RexSCRIPT\nBegin GameMode\nReturn\nEnd";
+        var bytecode = SimpleGameModeBytecode();
+        var result = EsmCoverageAnalyzer.AnalyzeRecords(
+            "synthetic.esm",
+            [
+                Record("SCPT", 0x01000100,
+                    ScriptHeader(compiledSize: (uint)bytecode.Length),
+                    Sub("SCDA", bytecode),
+                    StringSub("SCTX", staleSource, terminate: true))
+            ]);
+
+        var row = Assert.Single(result.ScriptSource);
+        Assert.True(row.SemanticComparisonAvailable);
+        Assert.True(row.SemanticMismatchCount > 0);
+        Assert.Contains("Other=", row.SemanticMismatchCategories);
+        Assert.Contains("SourceOnly=", row.SemanticMismatchCategories);
+        Assert.Equal("exact-empty", row.DeclarationSlsdIdentityVerdict);
+        Assert.False(row.HardContradiction);
+        Assert.Empty(row.HardContradictionReason);
     }
 
     [Fact]
@@ -536,6 +732,23 @@ public sealed class EsmCoverageAnalyzerTests
         var data = new byte[4];
         WriteUInt32(data, 0, formId);
         return Sub(signature, data);
+    }
+
+    private static ParsedSubrecord StringSub(string signature, string value, bool terminate)
+    {
+        var bytes = Encoding.Latin1.GetBytes(value);
+        return terminate ? Sub(signature, [.. bytes, 0]) : Sub(signature, bytes);
+    }
+
+    private static byte[] SimpleGameModeBytecode()
+    {
+        return
+        [
+            0x1D, 0x00, 0x00, 0x00, // ScriptName
+            0x10, 0x00, 0x08, 0x00, // Begin, 8-byte payload
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x11, 0x00, 0x00, 0x00  // End
+        ];
     }
 
     private static EsmScriptBytecodeCoverageRow ScriptRow(

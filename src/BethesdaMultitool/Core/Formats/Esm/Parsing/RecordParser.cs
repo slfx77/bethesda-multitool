@@ -571,6 +571,7 @@ public sealed class RecordParser
             Books = books,
             Terminals = terminals,
             Scripts = scripts,
+            RuntimeScripts = _scripts.RuntimeScripts,
 
             // Items
             Weapons = weapons,
@@ -723,6 +724,7 @@ public sealed class RecordParser
                 // decode has no script/decompile pipeline, so the typed scripts must ride the
                 // bridge or the game surfaces none.
                 Scripts = result.Scripts,
+                RuntimeScripts = result.RuntimeScripts,
             };
         }
 

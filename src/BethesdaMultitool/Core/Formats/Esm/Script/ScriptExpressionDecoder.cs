@@ -136,7 +136,7 @@ internal sealed class ScriptExpressionDecoder
             case ScriptOpcodes.MarkerIntLocal:
             case ScriptOpcodes.MarkerFloatLocal:
                 reader.ReadByte();
-                return _varReader.ReadLocalVariable(reader);
+                return _varReader.ReadLocalVariable(reader, subToken);
 
             case ScriptOpcodes.MarkerReference:
                 reader.ReadByte();
@@ -200,7 +200,7 @@ internal sealed class ScriptExpressionDecoder
             case ScriptOpcodes.MarkerIntLocal:
             case ScriptOpcodes.MarkerFloatLocal:
                 reader.ReadByte();
-                return _varReader.ReadLocalVariable(reader);
+                return _varReader.ReadLocalVariable(reader, token);
 
             case ScriptOpcodes.MarkerReference:
                 reader.ReadByte();

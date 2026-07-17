@@ -145,6 +145,13 @@ public record DialogueRecord
     public bool IsRehomedCutDialogue { get; init; }
 
     /// <summary>
+    ///     Conversion-only fail-closed marker for a shared retail INFO whose captured
+    ///     prototype conditions could not be proven safe. The retail overlay still emits
+    ///     from master bytes; only prototype-derived cut dialogue is forbidden.
+    /// </summary>
+    public bool SuppressPrototypeDerivedDialogue { get; init; }
+
+    /// <summary>
     ///     Original prototype INFO FormID used to locate source voice rows when this INFO
     ///     is emitted under a different allocated FormID. Null for ordinary INFOs whose
     ///     source identity is simply <see cref="FormId" />.

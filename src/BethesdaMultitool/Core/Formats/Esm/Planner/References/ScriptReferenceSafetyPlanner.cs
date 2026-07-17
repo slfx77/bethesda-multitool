@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition;
+using BethesdaMultitool.Core.Formats.Esm.Script;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.References;
 
@@ -28,6 +29,7 @@ internal static class ScriptReferenceSafetyPlanner
         ReferenceResolver resolver)
     {
         var unsafeIndices = new Dictionary<int, List<ScriptSuppressionDiagnosticFormatter.Issue>>();
+        var unemittableIndices = new HashSet<int>();
         var unsafeFormIds = new HashSet<uint>();
 
         for (var i = 0; i < decisions.Count; i++)
@@ -40,7 +42,17 @@ internal static class ScriptReferenceSafetyPlanner
                 continue;
             }
 
-            var issues = FindIssues(script, references.GetValueOrDefault(i));
+            List<ScriptSuppressionDiagnosticFormatter.Issue> issues;
+            if (!ScriptRecordEmissionPolicy.CanEmitNew(script, out var emissionIssue))
+            {
+                issues = [new ScriptSuppressionDiagnosticFormatter.Issue(emissionIssue!)];
+                unemittableIndices.Add(i);
+            }
+            else
+            {
+                issues = FindIssues(script, references.GetValueOrDefault(i));
+            }
+
             if (issues.Count == 0)
             {
                 continue;
@@ -76,23 +88,32 @@ internal static class ScriptReferenceSafetyPlanner
             var identity = ScriptSuppressionDiagnosticFormatter.ScriptIdentity(
                 entry.Model as ScriptRecord, entry.DmpFormId, emitted);
             var issueText = string.Join(", ", issues.Select(issue => issue.Message));
+            var isUnemittable = unemittableIndices.Contains(index);
             rewritten[index] = (entry, decision with
             {
                 Disposition = RecordDisposition.Skip,
                 Provenance = new PlanProvenance
                 {
-                    PolicyId = "ScriptReferenceSafetyPlanner.UnsafeReferenceTable",
-                    Reason = $"New SCPT reference table is not loadable: {issueText}.",
+                    PolicyId = isUnemittable
+                        ? "ScriptReferenceSafetyPlanner.UnemittableRecord"
+                        : "ScriptReferenceSafetyPlanner.UnsafeReferenceTable",
+                    Reason = isUnemittable
+                        ? $"New SCPT cannot be serialized: {issueText}."
+                        : $"New SCPT reference table is not loadable: {issueText}.",
                 },
             });
             diagnostics.Add(new PlanDiagnostic
             {
                 Kind = PlanDiagnosticKind.Warning,
                 Phase = "References",
-                Code = "script.suppress-unsafe-reference-table",
+                Code = isUnemittable
+                    ? "script.suppress-unemittable-record"
+                    : "script.suppress-unsafe-reference-table",
                 RecordType = "SCPT",
                 FormId = entry.DmpFormId,
-                Message = $"Suppressed new SCPT {identity}: {issueText}.",
+                Message = isUnemittable
+                    ? $"Suppressed new SCPT {identity} before emission: {issueText}."
+                    : $"Suppressed new SCPT {identity}: {issueText}.",
                 Metadata = ScriptSuppressionDiagnosticFormatter.Metadata(
                     entry.Model as ScriptRecord, entry.DmpFormId, emitted, issues),
             });
@@ -114,7 +135,10 @@ internal static class ScriptReferenceSafetyPlanner
         return masterRecords
             .Where(record => record.Header.Signature == "SCPT")
             .Select(record => record.Header.FormId)
-            .Concat(plannedRecords.Where(record => record.Type == "SCPT").Select(record => record.FormId))
+            .Concat(plannedRecords
+                .Where(record => record.Type == "SCPT"
+                                 && record.Disposition != RecordDisposition.Skip)
+                .Select(record => record.FormId))
             .ToImmutableHashSet();
     }
 

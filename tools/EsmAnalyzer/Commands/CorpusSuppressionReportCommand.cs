@@ -23,13 +23,17 @@ namespace EsmAnalyzer.Commands;
 /// </summary>
 internal static partial class CorpusSuppressionReportCommand
 {
-    private static readonly string[] InfoSuppressionCodes = ["quest-variable.record-suppressed"];
+    private const string QuestVariableSuppressionCode = "quest-variable.record-suppressed";
+    private const string ProducerSuppressionCode = "quest-variable.record-suppressed-no-emitted-producer";
+    private const string ScriptVariableSuppressionCode = "script-variable.record-suppressed";
+    private const string ScriptVariableOwnerNotEmittedCode = "script-variable.owner-not-emitted";
+    private const string InlineScriptSuppressionCode = "inline-script.suppress-unsafe-owner";
+
     private static readonly string[] ScriptSuppressionCodes =
     [
         "script.suppress-unsafe-reference-table",
         "script.suppress-post-verdict-reference-table",
     ];
-    private static readonly string[] SuppressionCodes = [.. InfoSuppressionCodes, .. ScriptSuppressionCodes];
 
     public static Command Create()
     {
@@ -48,7 +52,7 @@ internal static partial class CorpusSuppressionReportCommand
 
         var command = new Command(
             "corpus-suppressions",
-            "List corpus-wide quarantined dialogue lines with conditions, identities, and dump coverage");
+            "List corpus-wide quarantined dialogue lines with suppression reasons, identities, and dump coverage");
         command.Arguments.Add(artifactArg);
         command.Options.Add(outputOpt);
         command.Options.Add(skipDmpScanOpt);
@@ -79,16 +83,26 @@ internal static partial class CorpusSuppressionReportCommand
         var occurrences = LoadOccurrences(artifactDirectory, manifest.Dumps);
         var infoOccurrences = occurrences
             .Where(occurrence => occurrence.RecordType == "INFO"
-                                 && InfoSuppressionCodes.Contains(occurrence.Code, StringComparer.Ordinal))
+                                 && IsTrackedSuppression(occurrence.RecordType, occurrence.Code))
             .ToArray();
-        if (infoOccurrences.Length == 0)
+        var scriptOccurrences = occurrences
+            .Where(occurrence => occurrence.RecordType == "SCPT"
+                                 && IsTrackedSuppression(occurrence.RecordType, occurrence.Code))
+            .ToArray();
+        if (infoOccurrences.Length == 0 && scriptOccurrences.Length == 0)
         {
-            throw new InvalidDataException("No structured suppressed-INFO events were found.");
+            throw new InvalidDataException("No structured suppressed-INFO or suppressed-SCPT events were found.");
         }
+
+        var scriptRows = BuildScriptRows(scriptOccurrences);
 
         AnsiConsole.MarkupLine(
             $"[cyan]Suppressed INFOs:[/] {infoOccurrences.Select(item => item.FormId).Distinct().Count():N0} " +
             $"distinct across {infoOccurrences.Select(item => item.DumpName).Distinct().Count():N0} dump(s)");
+        AnsiConsole.MarkupLine(
+            $"[cyan]Suppressed SCPTs:[/] {scriptRows.Count:N0} " +
+            $"distinct source script(s) across " +
+            $"{scriptOccurrences.Select(item => item.DumpName).Distinct().Count():N0} dump(s)");
 
         var csvCatalog = DialogueCsvCatalog.Load(manifest.DialogueCsvPaths);
         var csvMetadata = LoadCsvMetadata(manifest.DialogueCsvPaths);
@@ -158,16 +172,25 @@ internal static partial class CorpusSuppressionReportCommand
         Directory.CreateDirectory(outputDirectory);
         var csvPath = Path.Combine(outputDirectory, "suppressed-dialogue-lines.csv");
         var markdownPath = Path.Combine(outputDirectory, "suppressed-dialogue-lines.md");
+        var scriptCsvPath = Path.Combine(outputDirectory, "suppressed-scripts.csv");
+        var scriptMarkdownPath = Path.Combine(outputDirectory, "suppressed-scripts.md");
         WriteDialogueCsv(csvPath, rows);
         WriteDialogueMarkdown(
             markdownPath,
             rows,
             infoOccurrences,
-            occurrences.Count(item => item.Code == "quest-variable.record-suppressed"),
+            occurrences.Count(item => item.Code is QuestVariableSuppressionCode
+                or ScriptVariableSuppressionCode or ScriptVariableOwnerNotEmittedCode),
+            occurrences.Count(item => item.Code == ProducerSuppressionCode),
+            occurrences.Count(item => item.Code == InlineScriptSuppressionCode),
             skipDmpScan);
+        WriteScriptCsv(scriptCsvPath, scriptRows);
+        WriteScriptMarkdown(scriptMarkdownPath, scriptRows, scriptOccurrences);
 
         AnsiConsole.MarkupLine($"[green]Wrote:[/] {Markup.Escape(csvPath)}");
         AnsiConsole.MarkupLine($"[green]Wrote:[/] {Markup.Escape(markdownPath)}");
+        AnsiConsole.MarkupLine($"[green]Wrote:[/] {Markup.Escape(scriptCsvPath)}");
+        AnsiConsole.MarkupLine($"[green]Wrote:[/] {Markup.Escape(scriptMarkdownPath)}");
         AnsiConsole.MarkupLine(
             $"[cyan]Rows:[/] {rows.Count:N0} response variant(s) for " +
             $"{rows.Select(row => row.InfoFormId).Distinct().Count():N0} INFOs");
@@ -280,7 +303,11 @@ internal static partial class CorpusSuppressionReportCommand
                             aggregate.TargetScriptEditorIds.AddIfPresent(scriptEditorId);
                         }
 
-                        aggregate.MissingVariableIds.Add(detail.VariableIndex.ToString(CultureInfo.InvariantCulture));
+                        if (detail.VariableIndex.HasValue)
+                        {
+                            aggregate.MissingVariableIds.Add(detail.VariableIndex.Value.ToString(
+                                CultureInfo.InvariantCulture));
+                        }
                         aggregate.MissingVariableNames.AddIfPresent(detail.VariableName);
                         aggregate.ReasonCodes.Add(detail.Code);
                         aggregate.Reasons.Add(detail.Reason);
@@ -294,6 +321,46 @@ internal static partial class CorpusSuppressionReportCommand
             .OrderBy(row => row.InfoFormId)
             .ThenBy(row => row.ResponseNumber)
             .ThenBy(row => row.Text, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    internal static IReadOnlyList<ScriptReportRow> BuildScriptRows(
+        IReadOnlyList<SuppressionOccurrence> occurrences)
+    {
+        ArgumentNullException.ThrowIfNull(occurrences);
+
+        var aggregates = new Dictionary<uint, MutableScriptRow>();
+        foreach (var occurrence in occurrences.Where(static item => item.RecordType == "SCPT"))
+        {
+            var metadata = occurrence.Metadata;
+            var sourceFormId = ParseFormId(metadata?.GetValueOrDefault("script-source-form-id"))
+                               ?? occurrence.FormId;
+            if (!aggregates.TryGetValue(sourceFormId, out var aggregate))
+            {
+                aggregate = new MutableScriptRow(sourceFormId);
+                aggregates.Add(sourceFormId, aggregate);
+            }
+
+            aggregate.EmittedFormIds.Add(FormatFormId(
+                ParseFormId(metadata?.GetValueOrDefault("script-emitted-form-id"))
+                ?? occurrence.FormId)!);
+            aggregate.EditorIds.AddIfPresent(metadata?.GetValueOrDefault("script-editor-id"));
+            aggregate.OwnerQuestFormIds.AddIfPresent(
+                NormalizeFormId(metadata?.GetValueOrDefault("script-owner-quest-form-id")));
+            aggregate.ReferenceFields.AddIfPresent(metadata?.GetValueOrDefault("reference-field"));
+            aggregate.ReferenceActions.AddIfPresent(metadata?.GetValueOrDefault("reference-action"));
+            aggregate.TargetSourceFormIds.AddIfPresent(
+                NormalizeFormId(metadata?.GetValueOrDefault("target-source-form-id")));
+            aggregate.TargetEmittedFormIds.AddIfPresent(
+                NormalizeFormId(metadata?.GetValueOrDefault("target-emitted-form-id")));
+            aggregate.ReasonCodes.Add(occurrence.Code);
+            aggregate.Reasons.AddIfPresent(occurrence.Message);
+            aggregate.Dumps.Add(occurrence.DumpName);
+        }
+
+        return aggregates.Values
+            .Select(static aggregate => aggregate.Freeze())
+            .OrderBy(static row => row.SourceFormId)
             .ToArray();
     }
 
@@ -405,16 +472,33 @@ internal static partial class CorpusSuppressionReportCommand
         var metadata = occurrence.Metadata;
         if (metadata is not null && metadata.Count > 0)
         {
-            _ = uint.TryParse(
-                metadata.GetValueOrDefault("condition-variable-index"),
-                NumberStyles.Integer,
-                CultureInfo.InvariantCulture,
-                out var variableIndex);
+            if (occurrence.Code == InlineScriptSuppressionCode)
+            {
+                return new ConditionDetail(
+                    occurrence.Code,
+                    ParseFormId(metadata.GetValueOrDefault("target-source-form-id")),
+                    null,
+                    ParseDecimalUInt32(metadata.GetValueOrDefault("local-variable-id")),
+                    null,
+                    occurrence.Message);
+            }
+
+            if (occurrence.Code == ProducerSuppressionCode)
+            {
+                return new ConditionDetail(
+                    occurrence.Code,
+                    ParseFormId(metadata.GetValueOrDefault("target-quest-form-id")),
+                    ParseFormId(metadata.GetValueOrDefault("target-script-form-id")),
+                    ParseDecimalUInt32(metadata.GetValueOrDefault("target-variable-index")),
+                    metadata.GetValueOrDefault("target-variable-name"),
+                    occurrence.Message);
+            }
+
             return new ConditionDetail(
                 occurrence.Code,
                 ParseFormId(metadata.GetValueOrDefault("condition-target-form-id")),
                 ParseFormId(metadata.GetValueOrDefault("condition-target-script-form-id")),
-                variableIndex,
+                ParseDecimalUInt32(metadata.GetValueOrDefault("condition-variable-index")),
                 metadata.GetValueOrDefault("condition-variable-name"),
                 occurrence.Message);
         }
@@ -424,7 +508,7 @@ internal static partial class CorpusSuppressionReportCommand
         var match = LegacyQuestVariableMessage().Match(occurrence.Message);
         if (!match.Success)
         {
-            return new ConditionDetail(occurrence.Code, null, null, 0, null, occurrence.Message);
+            return new ConditionDetail(occurrence.Code, null, null, null, null, occurrence.Message);
         }
 
         _ = uint.TryParse(match.Groups["target"].Value, NumberStyles.HexNumber,
@@ -438,7 +522,7 @@ internal static partial class CorpusSuppressionReportCommand
             occurrence.Code,
             target == 0 ? null : target,
             script == 0 ? null : script,
-            index,
+            index == 0 ? null : index,
             variable.StartsWith("ID ", StringComparison.Ordinal) ? null : variable,
             occurrence.Message);
     }
@@ -475,8 +559,13 @@ internal static partial class CorpusSuppressionReportCommand
                 using var json = JsonDocument.Parse(line);
                 var root = json.RootElement;
                 if (root.GetProperty("Kind").GetString() != "Event"
-                    || root.GetProperty("Code").GetString() is not { } code
-                    || !SuppressionCodes.Contains(code, StringComparer.Ordinal))
+                    || root.GetProperty("Code").GetString() is not { } code)
+                {
+                    continue;
+                }
+
+                var recordType = root.GetProperty("FormType").GetString() ?? string.Empty;
+                if (!IsTrackedSuppression(recordType, code))
                 {
                     continue;
                 }
@@ -498,7 +587,7 @@ internal static partial class CorpusSuppressionReportCommand
 
                 result.Add(new SuppressionOccurrence(
                     dump.Name,
-                    root.GetProperty("FormType").GetString() ?? string.Empty,
+                    recordType,
                     formId,
                     code,
                     root.GetProperty("Message").GetString() ?? string.Empty,
@@ -507,6 +596,23 @@ internal static partial class CorpusSuppressionReportCommand
         }
 
         return result;
+    }
+
+    internal static bool IsTrackedSuppression(string recordType, string code)
+    {
+        if (code is QuestVariableSuppressionCode or ProducerSuppressionCode
+            or ScriptVariableSuppressionCode or ScriptVariableOwnerNotEmittedCode)
+        {
+            return recordType is "INFO" or "PACK";
+        }
+
+        if (code == InlineScriptSuppressionCode)
+        {
+            return recordType is "INFO" or "PACK" or "TERM";
+        }
+
+        return recordType == "SCPT"
+               && ScriptSuppressionCodes.Contains(code, StringComparer.Ordinal);
     }
 
     private static CorpusManifest LoadManifest(string path)
@@ -631,6 +737,8 @@ internal static partial class CorpusSuppressionReportCommand
         IReadOnlyList<DialogueReportRow> rows,
         IReadOnlyList<SuppressionOccurrence> occurrences,
         int allQuestVariableDiagnosticCount,
+        int allProducerDiagnosticCount,
+        int allInlineScriptDiagnosticCount,
         bool skippedDmpScan)
     {
         var builder = new StringBuilder();
@@ -640,14 +748,18 @@ internal static partial class CorpusSuppressionReportCommand
         builder.AppendLine($"- Response variants: {rows.Count:N0}");
         builder.AppendLine($"- Unique dump + INFO suppressions: " +
                            $"{occurrences.Select(item => (item.DumpName, item.FormId)).Distinct().Count():N0}");
-        builder.AppendLine($"- INFO invalid-condition diagnostics: {occurrences.Count:N0}");
+        builder.AppendLine($"- INFO suppression diagnostics: {occurrences.Count:N0}");
         builder.AppendLine($"- INFO + PACK invalid-condition diagnostics: {allQuestVariableDiagnosticCount:N0}");
+        builder.AppendLine($"- INFO + PACK missing-producer diagnostics: {allProducerDiagnosticCount:N0}");
+        builder.AppendLine($"- INFO + PACK + TERM inline-script diagnostics: {allInlineScriptDiagnosticCount:N0}");
         builder.AppendLine($"- Suppression-bearing dumps: " +
                            $"{occurrences.Select(item => item.DumpName).Distinct(StringComparer.OrdinalIgnoreCase).Count():N0}");
         builder.AppendLine($"- DMP scan: {(skippedDmpScan ? "skipped" : "enabled")}");
         builder.AppendLine();
-        builder.AppendLine("The converter suppresses the whole INFO instead of deleting its invalid CTDA, " +
-                           "because deleting the condition would make the line unconditional.");
+        builder.AppendLine("The converter suppresses the whole INFO when its conditions or atomic inline-script " +
+                           "bundle cannot be emitted safely. Invalid conditions are not deleted because that " +
+                           "would make the line unconditional; inline SCDA/SLSD/SCRO/SCRV slots are not dropped " +
+                           "or zero-filled because bytecode addresses them by position.");
 
         foreach (var infoGroup in rows.GroupBy(row => row.InfoFormId).OrderBy(group => group.Key))
         {
@@ -665,16 +777,83 @@ internal static partial class CorpusSuppressionReportCommand
             builder.AppendLine($"- Quest: {DisplayOrUnknown(first.QuestNames)}");
             builder.AppendLine($"- Topic: {DisplayOrUnknown(first.TopicNames)} ({DisplayOrUnknown(first.TopicFormIds)})");
             builder.AppendLine($"- Prompt: {DisplayOrUnknown(first.Prompts)}");
-            builder.AppendLine($"- Missing variable: {DisplayOrUnknown(first.MissingVariableNames)} " +
-                               $"(ID {DisplayOrUnknown(first.MissingVariableIds)}) in " +
-                               $"{DisplayOrUnknown(first.TargetScriptEditorIds)} " +
-                               $"{DisplayOrUnknown(first.TargetScriptFormIds)}");
+            if (!string.IsNullOrWhiteSpace(first.MissingVariableIds)
+                || !string.IsNullOrWhiteSpace(first.MissingVariableNames))
+            {
+                builder.AppendLine($"- Missing variable: {DisplayOrUnknown(first.MissingVariableNames)} " +
+                                   $"(ID {DisplayOrUnknown(first.MissingVariableIds)}) in " +
+                                   $"{DisplayOrUnknown(first.TargetScriptEditorIds)} " +
+                                   $"{DisplayOrUnknown(first.TargetScriptFormIds)}");
+            }
+            builder.AppendLine($"- Suppression code: {DisplayOrUnknown(first.ReasonCodes)}");
             builder.AppendLine($"- Coverage: {infoDumps.Length:N0} dump(s): {string.Join(", ", infoDumps)}");
             builder.AppendLine();
             foreach (var row in infoGroup)
             {
                 builder.AppendLine($"  {row.ResponseNumber}. {row.Text.ReplaceLineEndings(" ")}");
             }
+        }
+
+        File.WriteAllText(path, builder.ToString(), new UTF8Encoding(false));
+    }
+
+    private static void WriteScriptCsv(string path, IReadOnlyList<ScriptReportRow> rows)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine(
+            "SourceFormId,EmittedFormIds,EditorIds,OwnerQuestFormIds,ReferenceFields," +
+            "ReferenceActions,TargetSourceFormIds,TargetEmittedFormIds,ReasonCodes,Reasons,DumpCount,Dumps");
+        foreach (var row in rows)
+        {
+            builder.AppendLine(string.Join(",", new[]
+            {
+                $"0x{row.SourceFormId:X8}",
+                row.EmittedFormIds,
+                row.EditorIds,
+                row.OwnerQuestFormIds,
+                row.ReferenceFields,
+                row.ReferenceActions,
+                row.TargetSourceFormIds,
+                row.TargetEmittedFormIds,
+                row.ReasonCodes,
+                row.Reasons,
+                row.DumpCount.ToString(CultureInfo.InvariantCulture),
+                row.Dumps,
+            }.Select(CsvEscape)));
+        }
+
+        File.WriteAllText(path, builder.ToString(), new UTF8Encoding(false));
+    }
+
+    private static void WriteScriptMarkdown(
+        string path,
+        IReadOnlyList<ScriptReportRow> rows,
+        IReadOnlyList<SuppressionOccurrence> occurrences)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("# Corpus suppressed scripts");
+        builder.AppendLine();
+        builder.AppendLine($"- Distinct source SCPTs: {rows.Count:N0}");
+        builder.AppendLine($"- Suppression diagnostics: {occurrences.Count:N0}");
+        builder.AppendLine($"- Suppression-bearing dumps: " +
+                           $"{occurrences.Select(item => item.DumpName).Distinct(StringComparer.OrdinalIgnoreCase).Count():N0}");
+        builder.AppendLine();
+        builder.AppendLine("Each entry is a same-dump script identity reported by the converter. " +
+                           "A script is quarantined as one atomic SCDA/SLSD/SCRO/SCRV bundle when a " +
+                           "referenced target cannot survive the final emit plan.");
+
+        foreach (var row in rows)
+        {
+            builder.AppendLine();
+            builder.AppendLine($"## {DisplayOrUnknown(row.EditorIds)} (0x{row.SourceFormId:X8})");
+            builder.AppendLine();
+            builder.AppendLine($"- Emitted FormID(s): {DisplayOrUnknown(row.EmittedFormIds)}");
+            builder.AppendLine($"- Owner quest(s): {DisplayOrUnknown(row.OwnerQuestFormIds)}");
+            builder.AppendLine($"- Failed reference(s): {DisplayOrUnknown(row.ReferenceFields)}");
+            builder.AppendLine($"- Target source FormID(s): {DisplayOrUnknown(row.TargetSourceFormIds)}");
+            builder.AppendLine($"- Target emitted FormID(s): {DisplayOrUnknown(row.TargetEmittedFormIds)}");
+            builder.AppendLine($"- Suppression code(s): {DisplayOrUnknown(row.ReasonCodes)}");
+            builder.AppendLine($"- Coverage: {row.DumpCount:N0} dump(s): {DisplayOrUnknown(row.Dumps)}");
         }
 
         File.WriteAllText(path, builder.ToString(), new UTF8Encoding(false));
@@ -763,6 +942,13 @@ internal static partial class CorpusSuppressionReportCommand
             : null;
     }
 
+    private static string? NormalizeFormId(string? value) => FormatFormId(ParseFormId(value));
+
+    private static uint? ParseDecimalUInt32(string? value) =>
+        uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+
     private sealed record CorpusManifest(
         string MasterEsmPath,
         IReadOnlyList<string> DialogueCsvPaths,
@@ -808,7 +994,7 @@ internal static partial class CorpusSuppressionReportCommand
         string Code,
         uint? TargetFormId,
         uint? TargetScriptFormId,
-        uint VariableIndex,
+        uint? VariableIndex,
         string? VariableName,
         string Reason);
 
@@ -830,6 +1016,20 @@ internal static partial class CorpusSuppressionReportCommand
         string TargetScriptEditorIds,
         string MissingVariableIds,
         string MissingVariableNames,
+        string ReasonCodes,
+        string Reasons,
+        int DumpCount,
+        string Dumps);
+
+    internal sealed record ScriptReportRow(
+        uint SourceFormId,
+        string EmittedFormIds,
+        string EditorIds,
+        string OwnerQuestFormIds,
+        string ReferenceFields,
+        string ReferenceActions,
+        string TargetSourceFormIds,
+        string TargetEmittedFormIds,
         string ReasonCodes,
         string Reasons,
         int DumpCount,
@@ -873,6 +1073,36 @@ internal static partial class CorpusSuppressionReportCommand
             Join(TargetScriptEditorIds),
             Join(MissingVariableIds),
             Join(MissingVariableNames),
+            Join(ReasonCodes),
+            Join(Reasons),
+            Dumps.Count,
+            Join(Dumps));
+
+        private static string Join(IEnumerable<string> values) => string.Join("; ", values);
+    }
+
+    private sealed class MutableScriptRow(uint sourceFormId)
+    {
+        public SortedSet<string> EmittedFormIds { get; } = new(StringComparer.Ordinal);
+        public SortedSet<string> EditorIds { get; } = new(StringComparer.Ordinal);
+        public SortedSet<string> OwnerQuestFormIds { get; } = new(StringComparer.Ordinal);
+        public SortedSet<string> ReferenceFields { get; } = new(StringComparer.Ordinal);
+        public SortedSet<string> ReferenceActions { get; } = new(StringComparer.Ordinal);
+        public SortedSet<string> TargetSourceFormIds { get; } = new(StringComparer.Ordinal);
+        public SortedSet<string> TargetEmittedFormIds { get; } = new(StringComparer.Ordinal);
+        public SortedSet<string> ReasonCodes { get; } = new(StringComparer.Ordinal);
+        public SortedSet<string> Reasons { get; } = new(StringComparer.Ordinal);
+        public SortedSet<string> Dumps { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public ScriptReportRow Freeze() => new(
+            sourceFormId,
+            Join(EmittedFormIds),
+            Join(EditorIds),
+            Join(OwnerQuestFormIds),
+            Join(ReferenceFields),
+            Join(ReferenceActions),
+            Join(TargetSourceFormIds),
+            Join(TargetEmittedFormIds),
             Join(ReasonCodes),
             Join(Reasons),
             Dumps.Count,

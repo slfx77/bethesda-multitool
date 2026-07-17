@@ -12,6 +12,8 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
 {
     private Dictionary<uint, uint>? _runtimeObjectToScript;
 
+    internal List<RuntimeScriptData> RuntimeScripts { get; private set; } = [];
+
     /// <summary>
     ///     Provide pre-built object→script mappings from runtime struct data (NPC_, CREA, CONT, ACTI).
     ///     Used for DMP files where ESM records are not available for BuildCrossReferenceChains.
@@ -69,7 +71,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
         // Runtime merging also skips decompilation — that happens in pass 2
         if (Context.RuntimeReader != null)
         {
-            MergeRuntimeScriptData(scripts);
+            RuntimeScripts = MergeRuntimeScriptData(scripts);
         }
 
         // Build cross-script variable database: FormID -> variable list
@@ -226,14 +228,17 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
         var resolvedCount = 0;
         for (var i = 0; i < scripts.Count; i++)
         {
-            if (scripts[i].CompiledData is not { Length: > 0 })
+            var script = scripts[i];
+            if (script.CompiledData is { Length: > 0 })
             {
-                continue;
+                var (decompiled, crossRefResolved) = DecompileScript(script, variableDb);
+                script = decompiled;
+                resolvedCount += crossRefResolved;
             }
 
-            var (decompiled, crossRefResolved) = DecompileScript(scripts[i], variableDb);
-            scripts[i] = decompiled;
-            resolvedCount += crossRefResolved;
+            scripts[i] = Context.MinidumpInfo is not null
+                ? EnforceCapturedEmissionContract(script)
+                : script;
         }
 
         if (resolvedCount > 0)
@@ -241,6 +246,10 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
             Logger.Instance.Debug(
                 $"  [Semantic] Scripts: resolved {resolvedCount} cross-script variable references to names");
         }
+
+        RuntimeScripts = ScriptRuntimeMerger.ApplySourceCorrespondenceStatuses(
+            RuntimeScripts,
+            scripts);
 
         return scripts;
     }
@@ -280,9 +289,11 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
         string? decompiledText;
         try
         {
-            // ESM SCDA bytecode is always little-endian (compiled by PC GECK).
-            // Runtime bytecode (from memory dumps) is big-endian (byte-swapped at load time).
-            var isBigEndian = script.FromRuntime;
+            // Endianness belongs to the accepted SCDA payload, not to the record as a whole.
+            // A script can be enriched with runtime source/owner metadata while retaining a
+            // little-endian ESM fragment. ScriptRuntimeMerger updates IsBigEndian only when
+            // it atomically adopts runtime bytecode and its ordered metadata tables.
+            var isBigEndian = script.IsBigEndian;
             var decompiler = new ScriptDecompiler(
                 script.Variables, script.ReferencedObjects, Context.ResolveFormName,
                 isBigEndian,
@@ -300,6 +311,95 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
     }
 
     /// <summary>
+    ///     A captured SCTX is safe to serialize beside SCDA only when the full-context
+    ///     decompilation agrees with it. Source-only runtime scripts have no SCDA to compare
+    ///     and remain valid recovery candidates; this gate applies only to compiled bundles.
+    /// </summary>
+    internal static ScriptRecord EnforceCapturedSourceCorrespondence(ScriptRecord script)
+    {
+        ArgumentNullException.ThrowIfNull(script);
+
+        var decision = CapturedScriptEmissionContract.EvaluateInline(
+            isDmpDerived: true,
+            script.SourceTextOrigin,
+            script.CompiledData,
+            script.SourceText,
+            script.DecompiledText,
+            script.Variables,
+            script.ReferencedObjects,
+            script.IsBigEndian);
+        if (decision.BundleIssue is not null)
+        {
+            var safety = script.CompiledData is { Length: > 0 }
+                ? ScriptBytecodeAnalyzer.AnalyzeEmissionSafety(
+                    script.CompiledData,
+                    script.IsBigEndian,
+                    script.Variables,
+                    script.ReferencedObjects)
+                : null;
+            Logger.Instance.Warn(
+                $"  [Semantic] SCPT 0x{script.FormId:X8}: rejected captured SCTX before "
+                + "SCDA comparison proof; rejection-categories=[UnsafeBytecode=1], "
+                + $"bytecode-diagnostic-count={safety?.Diagnostics.Count ?? 0} "
+                + $"[{string.Join(" | ", safety?.Diagnostics ?? [])}], {decision.BundleIssue}, "
+                + $"source-origin={script.SourceTextOrigin}.");
+        }
+        else if (decision.SourceIssue is not null)
+        {
+            Logger.Instance.Warn(
+                $"  [Semantic] SCPT 0x{script.FormId:X8}: rejected captured SCTX after SCDA "
+                + $"comparison; {decision.SourceIssue}, source-origin={script.SourceTextOrigin}.");
+        }
+
+        return ApplySourceCorrespondenceStatus(script, script with
+        {
+            SourceText = decision.SourceText,
+            SourceTextOrigin = decision.SourceText is null
+                ? ScriptSourceTextOrigin.None
+                : script.SourceTextOrigin,
+            IsIncompleteExecutableBundle = !decision.ExecutableBundleSafe,
+        });
+    }
+
+    private static ScriptRecord EnforceCapturedEmissionContract(ScriptRecord script)
+    {
+        var decision = CapturedScriptEmissionContract.EvaluateStandalone(script);
+        if (decision.BundleIssue is not null)
+        {
+            Logger.Instance.Warn(
+                $"  [Semantic] SCPT 0x{script.FormId:X8}: rejected captured executable "
+                + $"bundle; {decision.BundleIssue}.");
+        }
+
+        if (decision.SourceIssue is not null)
+        {
+            Logger.Instance.Warn(
+                $"  [Semantic] SCPT 0x{script.FormId:X8}: omitted captured SCTX; "
+                + $"{decision.SourceIssue}, source-origin={script.SourceTextOrigin}.");
+        }
+
+        return ApplySourceCorrespondenceStatus(script, decision.Script);
+    }
+
+    private static ScriptRecord ApplySourceCorrespondenceStatus(
+        ScriptRecord captured,
+        ScriptRecord evaluated)
+    {
+        var hasAcceptedSource = !string.IsNullOrEmpty(evaluated.SourceText)
+                                && evaluated.SourceTextOrigin != ScriptSourceTextOrigin.None
+                                && !evaluated.IsIncompleteExecutableBundle;
+        var status = hasAcceptedSource && evaluated.CompiledData is { Length: > 0 }
+            ? ScriptSourceCorrespondenceStatus.Accepted
+            : hasAcceptedSource
+                ? ScriptSourceCorrespondenceStatus.AcceptedSourceOnly
+                : !string.IsNullOrEmpty(captured.SourceText)
+                  && string.IsNullOrEmpty(evaluated.SourceText)
+                    ? ScriptSourceCorrespondenceStatus.Rejected
+                    : ScriptSourceCorrespondenceStatus.Unverified;
+        return evaluated with { SourceTextCorrespondenceStatus = status };
+    }
+
+    /// <summary>
     ///     Delegates to <see cref="ScriptRuntimeMerger.BuildObjectToScriptMap" />.
     /// </summary>
     private void BuildObjectToScriptMap(Dictionary<uint, uint> objectToScript)
@@ -310,9 +410,9 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
     /// <summary>
     ///     Delegates runtime script merging to <see cref="ScriptRuntimeMerger" />.
     /// </summary>
-    private void MergeRuntimeScriptData(List<ScriptRecord> scripts)
+    private List<RuntimeScriptData> MergeRuntimeScriptData(List<ScriptRecord> scripts)
     {
-        ScriptRuntimeMerger.MergeRuntimeScriptData(Context, scripts);
+        return ScriptRuntimeMerger.MergeRuntimeScriptData(Context, scripts);
     }
 
     internal ScriptRecord? ParseScriptFromAccessor(DetectedMainRecord record, byte[] buffer)
@@ -342,14 +442,17 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
 
         var variables = new List<ScriptVariableInfo>();
         var referencedObjects = new List<uint>();
-
-        // Track pending SLSD data for pairing with SCVR
-        uint? pendingSlsdIndex = null;
-        byte pendingSlsdType = 0;
+        var serializedLocals = new SerializedScriptLocalTableParser(variables);
+        var seenSchr = false;
+        var hasMalformedSerializedHeader = false;
+        var hasMalformedSerializedTable = false;
+        var seenSctx = false;
+        var seenScda = false;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            serializedLocals.ObserveSubrecord(sub.Signature, subData, record.IsBigEndian);
 
             switch (sub.Signature)
             {
@@ -362,7 +465,20 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
 
                     break;
 
-                case "SCHR" when sub.DataLength >= 20:
+                case "SCHR":
+                    if (seenSchr)
+                    {
+                        WarnRepeatedScriptBundleComponent(record.FormId, "SCHR");
+                        return null;
+                    }
+
+                    seenSchr = true;
+                    if (sub.DataLength < 20)
+                    {
+                        hasMalformedSerializedHeader = true;
+                        break;
+                    }
+
                     // Canonical ESM SCHR layout per fopdoc (Records/Subrecords/SCHR.md):
                     //   offset 0..3:   Unused (4 bytes)
                     //   offset 4..7:   RefCount (uint32)
@@ -401,58 +517,65 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
                     break;
 
                 case "SCTX":
+                    if (seenSctx)
+                    {
+                        WarnRepeatedScriptBundleComponent(record.FormId, "SCTX");
+                        return null;
+                    }
+
+                    seenSctx = true;
                     sourceText = EsmStringUtils.ReadNullTermString(subData);
                     break;
 
                 case "SCDA":
+                    if (seenScda)
+                    {
+                        WarnRepeatedScriptBundleComponent(record.FormId, "SCDA");
+                        return null;
+                    }
+
+                    seenScda = true;
                     // Raw bytecode — no endian conversion (platform-native)
                     compiledData = subData.ToArray();
                     break;
 
-                case "SLSD" when sub.DataLength >= 16:
-                    // PDB SCRIPT_LOCAL: uiID(4) + padding(4) + fValue(8) + bIsInteger(1) + padding(7)
-                    pendingSlsdIndex = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    pendingSlsdType = ScriptLocalVariableLayout.ReadType(subData);
-                    break;
-
-                case "SCVR":
-                {
-                    var varName = EsmStringUtils.ReadNullTermString(subData);
-                    if (pendingSlsdIndex.HasValue)
+                case "SCRO":
+                    if (sub.DataLength < 4)
                     {
-                        variables.Add(new ScriptVariableInfo(pendingSlsdIndex.Value, varName, pendingSlsdType));
-                        pendingSlsdIndex = null;
+                        hasMalformedSerializedTable = true;
+                    }
+                    else
+                    {
+                        var formId = record.IsBigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                            : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                        referencedObjects.Add(formId);
                     }
 
-                    break;
-                }
-
-                case "SCRO" when sub.DataLength >= 4:
-                    var formId = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    referencedObjects.Add(formId);
                     break;
 
                 // SCRV entries occupy slots in the reference list alongside SCRO.
                 // The bytecode uses 1-based indices into the combined SCRO+SCRV list.
                 // Store with high bit set so the decompiler can distinguish them.
-                case "SCRV" when sub.DataLength >= 4:
-                    var varIdx = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    referencedObjects.Add(0x80000000 | varIdx);
+                case "SCRV":
+                    if (sub.DataLength < 4)
+                    {
+                        hasMalformedSerializedTable = true;
+                    }
+                    else
+                    {
+                        var varIdx = record.IsBigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                            : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                        referencedObjects.Add(0x80000000 | varIdx);
+                    }
+
                     break;
             }
         }
 
-        // Add any unpaired SLSD (variable without name)
-        if (pendingSlsdIndex.HasValue)
-        {
-            variables.Add(new ScriptVariableInfo(pendingSlsdIndex.Value, null, pendingSlsdType));
-        }
+        serializedLocals.Complete();
+        hasMalformedSerializedTable |= serializedLocals.IsMalformed;
 
         // Decompilation is deferred to pass 2 in ParseScripts()
         return new ScriptRecord
@@ -466,12 +589,27 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
             IsQuestScript = isQuestScript,
             IsMagicEffectScript = isMagicEffectScript,
             IsCompiled = isCompiled,
+            HasSerializedHeader = seenSchr && !hasMalformedSerializedHeader,
+            HasMalformedSerializedHeader = hasMalformedSerializedHeader,
+            HasMalformedSerializedTable = hasMalformedSerializedTable,
+            IsIncompleteExecutableBundle = hasMalformedSerializedHeader
+                                           || hasMalformedSerializedTable,
             SourceText = sourceText,
+            SourceTextOrigin = string.IsNullOrEmpty(sourceText) || Context.MinidumpInfo is null
+                ? ScriptSourceTextOrigin.None
+                : ScriptSourceTextOrigin.DmpFragment,
             CompiledData = compiledData,
             Variables = variables,
             ReferencedObjects = referencedObjects,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };
+    }
+
+    private static void WarnRepeatedScriptBundleComponent(uint formId, string signature)
+    {
+        Logger.Instance.Warn(
+            $"  [Semantic] SCPT 0x{formId:X8}: repeated {signature} makes the captured "
+            + "script bundle ambiguous; rejected the record.");
     }
 }

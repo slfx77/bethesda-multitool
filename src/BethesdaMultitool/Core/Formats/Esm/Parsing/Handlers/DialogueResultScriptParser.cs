@@ -13,52 +13,54 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 internal static class DialogueResultScriptParser
 {
     internal static List<DialogueResultScript> BuildResultScripts(
-        List<string> sourceTexts,
         List<DialogueResultScriptBuilder> blocks,
         string? editorId,
         uint infoFormId,
-        Func<uint, string?> resolveFormName)
+        Func<uint, string?> resolveFormName,
+        bool isDmpDerived = false)
     {
         if (blocks.Count == 0)
         {
-            return sourceTexts
-                .Where(text => !string.IsNullOrWhiteSpace(text))
-                .Select(text => new DialogueResultScript { SourceText = text })
-                .ToList();
+            return [];
         }
 
-        AssignSourceTextsToBlocks(sourceTexts, blocks);
-
-        var resultScripts =
-            new List<DialogueResultScript>(blocks.Count + Math.Max(0, sourceTexts.Count - blocks.Count));
+        var resultScripts = new List<DialogueResultScript>(blocks.Count);
         for (var i = 0; i < blocks.Count; i++)
         {
             var block = blocks[i];
+            block.SerializedLocals.Complete();
             var isBigEndianBytecode = InferBytecodeEndian(block);
             var decompiledText = TryDecompileResultScript(
                 block, editorId, infoFormId, i, resolveFormName, isBigEndianBytecode);
+            var sourceOrigin = isDmpDerived && !string.IsNullOrEmpty(block.SourceText)
+                ? ScriptSourceTextOrigin.DmpFragment
+                : ScriptSourceTextOrigin.None;
+            var sourceDecision = CapturedScriptEmissionContract.EvaluateInline(
+                isDmpDerived,
+                sourceOrigin,
+                block.CompiledData,
+                block.SourceText,
+                decompiledText,
+                block.Variables,
+                block.ReferencedObjects,
+                isBigEndianBytecode);
+            var isIncomplete = HasInconsistentExecutableBundle(block)
+                               || !sourceDecision.ExecutableBundleSafe;
             resultScripts.Add(new DialogueResultScript
             {
-                SourceText = block.SourceText,
+                SourceText = sourceDecision.SourceText,
+                SourceTextOrigin = sourceDecision.SourceText is null
+                    ? ScriptSourceTextOrigin.None
+                    : sourceOrigin,
+                IsDmpDerived = isDmpDerived,
                 DecompiledText = decompiledText,
                 CompiledData = block.CompiledData,
-                ReferencedObjects = block.ReferencedObjects
-                    .Where(formId => (formId & 0x80000000) == 0)
-                    .ToList(),
+                Variables = [.. block.Variables],
+                ReferencedObjects = [.. block.ReferencedObjects],
                 HasNextSeparator = block.HasNextSeparator,
-                IsBigEndianBytecode = isBigEndianBytecode
+                IsBigEndianBytecode = isBigEndianBytecode,
+                IsIncompleteExecutableBundle = isIncomplete,
             });
-        }
-
-        if (sourceTexts.Count > blocks.Count)
-        {
-            for (var i = blocks.Count; i < sourceTexts.Count; i++)
-            {
-                if (!string.IsNullOrWhiteSpace(sourceTexts[i]))
-                {
-                    resultScripts.Add(new DialogueResultScript { SourceText = sourceTexts[i] });
-                }
-            }
         }
 
         return resultScripts
@@ -73,119 +75,144 @@ internal static class DialogueResultScriptParser
     internal static List<DialogueResultScript> ParseResultScriptsFromSubrecords(
         byte[] data, int dataSize, bool isBigEndian,
         string? editorId, uint formId,
-        Func<uint, string?>? resolveFormName = null)
+        Func<uint, string?>? resolveFormName = null,
+        bool isDmpDerived = false)
     {
-        var resultSourceTexts = new List<string>();
         var resultScriptBlocks = new List<DialogueResultScriptBuilder>();
         DialogueResultScriptBuilder? currentResultScript = null;
-        uint? pendingVariableIndex = null;
-        byte pendingVariableType = 0;
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, isBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (currentResultScript is not null)
+            {
+                currentResultScript.SerializedLocals.ObserveSubrecord(
+                    sub.Signature, subData, isBigEndian);
+            }
+            else if (sub.Signature is "SLSD" or "SCVR")
+            {
+                currentResultScript = StartImplicitResultScript(resultScriptBlocks);
+                currentResultScript.SerializedLocals.ObserveSubrecord(
+                    sub.Signature, subData, isBigEndian);
+            }
 
             switch (sub.Signature)
             {
                 case "SCHR":
-                    FlushPendingVariable(currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
-                    currentResultScript = new DialogueResultScriptBuilder();
-                    resultScriptBlocks.Add(currentResultScript);
+                    currentResultScript = StartSerializedResultScript(
+                        resultScriptBlocks, currentResultScript, subData, isBigEndian);
                     break;
                 case "SCTX":
                 {
                     var sourceText = EsmStringUtils.ReadNullTermString(subData);
-                    if (!string.IsNullOrEmpty(sourceText))
-                    {
-                        resultSourceTexts.Add(sourceText);
-                    }
+                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
+                    AttachSourceText(currentResultScript, sourceText);
 
                     break;
                 }
                 case "SCDA":
                     currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
-                    currentResultScript.CompiledData = subData.ToArray();
+                    AttachCompiledData(currentResultScript, subData);
                     currentResultScript.IsBigEndianBytecode = isBigEndian;
                     break;
-                case "SCRO" when sub.DataLength >= 4:
+                case "SCRO":
                     currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
-                    currentResultScript.ReferencedObjects.Add(
-                        RecordParserContext.ReadFormId(subData, isBigEndian));
-                    break;
-                case "SLSD" when sub.DataLength >= 16:
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
-                    pendingVariableIndex = isBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    pendingVariableType = ScriptLocalVariableLayout.ReadType(subData);
-                    break;
-                case "SCVR":
-                {
-                    currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
-                    var variableName = EsmStringUtils.ReadNullTermString(subData);
-                    if (pendingVariableIndex.HasValue)
+                    if (sub.DataLength < 4)
                     {
-                        currentResultScript.Variables.Add(new ScriptVariableInfo(
-                            pendingVariableIndex.Value, variableName, pendingVariableType));
-                        pendingVariableIndex = null;
+                        currentResultScript.IsAmbiguous = true;
+                    }
+                    else
+                    {
+                        currentResultScript.ReferencedObjects.Add(
+                            RecordParserContext.ReadFormId(subData, isBigEndian));
                     }
 
                     break;
-                }
-                case "SCRV" when sub.DataLength >= 4:
+                case "SLSD":
+                    break;
+                case "SCVR":
+                    break;
+                case "SCRV":
                     currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
-                    var variableIndex = RecordParserContext.ReadFormId(subData, isBigEndian);
-                    currentResultScript.ReferencedObjects.Add(0x80000000 | variableIndex);
+                    if (sub.DataLength < 4)
+                    {
+                        currentResultScript.IsAmbiguous = true;
+                    }
+                    else
+                    {
+                        var variableIndex = RecordParserContext.ReadFormId(subData, isBigEndian);
+                        currentResultScript.ReferencedObjects.Add(0x80000000 | variableIndex);
+                    }
+
                     break;
                 case "NEXT":
-                    FlushPendingVariable(currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
                     currentResultScript ??= StartImplicitResultScript(resultScriptBlocks);
+                    currentResultScript.SerializedLocals.Complete();
                     currentResultScript.HasNextSeparator = true;
                     currentResultScript = null;
                     break;
             }
         }
 
-        FlushPendingVariable(currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
+        currentResultScript?.SerializedLocals.Complete();
 
         return BuildResultScripts(
-            resultSourceTexts, resultScriptBlocks, editorId, formId,
-            resolveFormName ?? (fid => $"0x{fid:X8}"));
+            resultScriptBlocks, editorId, formId,
+            resolveFormName ?? (fid => $"0x{fid:X8}"),
+            isDmpDerived);
     }
 
-    internal static void AssignSourceTextsToBlocks(List<string> sourceTexts, List<DialogueResultScriptBuilder> blocks)
+    internal static DialogueResultScriptBuilder StartSerializedResultScript(
+        List<DialogueResultScriptBuilder> blocks,
+        DialogueResultScriptBuilder? current,
+        ReadOnlySpan<byte> headerData,
+        bool isBigEndian)
     {
-        if (sourceTexts.Count == 0 || blocks.Count == 0)
+        if (current is not null && current.HasNonSourceContent)
         {
+            current.IsAmbiguous = true;
+        }
+
+        var block = new DialogueResultScriptBuilder
+        {
+            HasSerializedHeader = headerData.Length >= 20,
+            HasMalformedSerializedHeader = headerData.Length < 20,
+        };
+        if (headerData.Length >= 20)
+        {
+            block.ExpectedReferenceCount = ReadUInt32(headerData[4..], isBigEndian);
+            block.ExpectedCompiledSize = ReadUInt32(headerData[8..], isBigEndian);
+            block.ExpectedVariableCount = ReadUInt32(headerData[12..], isBigEndian);
+        }
+
+        blocks.Add(block);
+        return block;
+    }
+
+    internal static void AttachSourceText(DialogueResultScriptBuilder block, string? sourceText)
+    {
+        if (block.HasSourceComponent)
+        {
+            block.IsAmbiguous = true;
             return;
         }
 
-        if (sourceTexts.Count >= blocks.Count)
-        {
-            for (var i = 0; i < blocks.Count; i++)
-            {
-                blocks[i].SourceText ??= sourceTexts[i];
-            }
+        block.HasSourceComponent = true;
+        block.SourceText = sourceText;
+    }
 
+    internal static void AttachCompiledData(
+        DialogueResultScriptBuilder block,
+        ReadOnlySpan<byte> compiledData)
+    {
+        if (block.HasCompiledComponent)
+        {
+            block.IsAmbiguous = true;
             return;
         }
 
-        var sourceIndex = 0;
-        for (var i = 0; i < blocks.Count && sourceIndex < sourceTexts.Count; i++)
-        {
-            if (blocks[i].CompiledData is { Length: > 0 })
-            {
-                blocks[i].SourceText ??= sourceTexts[sourceIndex++];
-            }
-        }
-
-        for (var i = 0; i < blocks.Count && sourceIndex < sourceTexts.Count; i++)
-        {
-            if (string.IsNullOrEmpty(blocks[i].SourceText))
-            {
-                blocks[i].SourceText = sourceTexts[sourceIndex++];
-            }
-        }
+        block.HasCompiledComponent = true;
+        block.CompiledData = compiledData.ToArray();
     }
 
     internal static DialogueResultScriptBuilder StartImplicitResultScript(List<DialogueResultScriptBuilder> blocks)
@@ -193,22 +220,6 @@ internal static class DialogueResultScriptParser
         var block = new DialogueResultScriptBuilder();
         blocks.Add(block);
         return block;
-    }
-
-    internal static void FlushPendingVariable(
-        DialogueResultScriptBuilder? currentResultScript,
-        ref uint? pendingVariableIndex,
-        ref byte pendingVariableType)
-    {
-        if (!pendingVariableIndex.HasValue || currentResultScript == null)
-        {
-            return;
-        }
-
-        currentResultScript.Variables.Add(new ScriptVariableInfo(
-            pendingVariableIndex.Value, null, pendingVariableType));
-        pendingVariableIndex = null;
-        pendingVariableType = 0;
     }
 
     internal static List<DialogueResultScript> MergeResultScripts(
@@ -245,23 +256,27 @@ internal static class DialogueResultScriptParser
                 continue;
             }
 
-            // Preserve the BE-bytecode flag of whichever side actually supplied the bytes.
-            // If left has bytes, its endianness governs; otherwise right's does.
-            var mergedIsBe = left.CompiledData is { Length: > 0 }
-                ? left.IsBigEndianBytecode
-                : right.IsBigEndianBytecode;
-
+            // SCDA, its ordered mixed SCRO/SCRV table, locals, endian flag, and associated
+            // source are one provenance bundle. Concatenating/deduplicating tables from two
+            // fragments silently changes every later 1-based bytecode reference slot.
+            var bundle = left.CompiledData is { Length: > 0 }
+                ? left
+                : right.CompiledData is { Length: > 0 }
+                    ? right
+                    : left;
             merged.Add(new DialogueResultScript
             {
-                SourceText = left.SourceText ?? right.SourceText,
-                DecompiledText = left.DecompiledText ?? right.DecompiledText,
-                CompiledData = left.CompiledData ?? right.CompiledData,
-                ReferencedObjects = left.ReferencedObjects
-                    .Concat(right.ReferencedObjects)
-                    .Distinct()
-                    .ToList(),
+                SourceText = bundle.SourceText,
+                SourceTextOrigin = bundle.SourceTextOrigin,
+                IsDmpDerived = bundle.IsDmpDerived,
+                DecompiledText = bundle.DecompiledText,
+                CompiledData = bundle.CompiledData,
+                Variables = [.. bundle.Variables],
+                ReferencedObjects = [.. bundle.ReferencedObjects],
                 HasNextSeparator = left.HasNextSeparator || right.HasNextSeparator,
-                IsBigEndianBytecode = mergedIsBe
+                IsBigEndianBytecode = bundle.IsBigEndianBytecode,
+                IsIncompleteExecutableBundle =
+                    left.IsIncompleteExecutableBundle || right.IsIncompleteExecutableBundle
             });
         }
 
@@ -269,6 +284,35 @@ internal static class DialogueResultScriptParser
             .Where(script => script.HasContent)
             .ToList();
     }
+
+    private static bool HasInconsistentExecutableBundle(DialogueResultScriptBuilder block)
+    {
+        if (block.IsAmbiguous
+            || block.HasMalformedSerializedHeader
+            || block.SerializedLocals.IsMalformed)
+        {
+            return true;
+        }
+
+        if (block.CompiledData is { Length: > 0 } compiled)
+        {
+            return !block.HasSerializedHeader
+                   || block.ExpectedCompiledSize != (uint)compiled.Length
+                   || block.ExpectedVariableCount != (uint)block.Variables.Count
+                   || block.ExpectedReferenceCount != (uint)block.ReferencedObjects.Count;
+        }
+
+        return block.Variables.Count != 0
+               || block.ReferencedObjects.Count != 0
+               || block.ExpectedCompiledSize != 0
+               || block.ExpectedVariableCount != 0
+               || block.ExpectedReferenceCount != 0;
+    }
+
+    private static uint ReadUInt32(ReadOnlySpan<byte> data, bool isBigEndian) =>
+        isBigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data)
+            : BinaryPrimitives.ReadUInt32LittleEndian(data);
 
     private static string? TryDecompileResultScript(
         DialogueResultScriptBuilder block,
@@ -303,45 +347,40 @@ internal static class DialogueResultScriptParser
     }
 
     private static bool InferBytecodeEndian(DialogueResultScriptBuilder block)
-    {
-        if (block.CompiledData is not { Length: >= 4 } compiled)
-        {
-            return block.IsBigEndianBytecode;
-        }
-
-        var littleEndian = ScriptBytecodeAnalyzer.Analyze(
-            compiled,
-            isBigEndian: false,
+        => CapturedScriptEmissionContract.InferBytecodeEndian(
+            block.CompiledData,
             block.Variables,
-            block.ReferencedObjects);
-        var bigEndian = ScriptBytecodeAnalyzer.Analyze(
-            compiled,
-            isBigEndian: true,
-            block.Variables,
-            block.ReferencedObjects);
-
-        var littleClean = littleEndian.WalkedToEnd && !littleEndian.HasDiagnostics;
-        var bigClean = bigEndian.WalkedToEnd && !bigEndian.HasDiagnostics;
-        if (littleClean && !bigClean)
-        {
-            return false;
-        }
-
-        if (bigClean && !littleClean)
-        {
-            return true;
-        }
-
-        return block.IsBigEndianBytecode;
-    }
+            block.ReferencedObjects,
+            block.IsBigEndianBytecode);
 
     internal sealed class DialogueResultScriptBuilder
     {
+        public DialogueResultScriptBuilder()
+        {
+            SerializedLocals = new SerializedScriptLocalTableParser(Variables);
+        }
+
         public string? SourceText { get; set; }
         public byte[]? CompiledData { get; set; }
         public List<uint> ReferencedObjects { get; } = [];
         public List<ScriptVariableInfo> Variables { get; } = [];
         public bool HasNextSeparator { get; set; }
         public bool IsBigEndianBytecode { get; set; }
+        public bool HasSerializedHeader { get; set; }
+        public bool HasMalformedSerializedHeader { get; set; }
+        public uint ExpectedReferenceCount { get; set; }
+        public uint ExpectedCompiledSize { get; set; }
+        public uint ExpectedVariableCount { get; set; }
+        public bool HasSourceComponent { get; set; }
+        public bool HasCompiledComponent { get; set; }
+        public bool IsAmbiguous { get; set; }
+        public SerializedScriptLocalTableParser SerializedLocals { get; }
+
+        public bool HasNonSourceContent =>
+            HasSerializedHeader
+            || HasMalformedSerializedHeader
+            || HasCompiledComponent
+            || Variables.Count > 0
+            || ReferencedObjects.Count > 0;
     }
 }

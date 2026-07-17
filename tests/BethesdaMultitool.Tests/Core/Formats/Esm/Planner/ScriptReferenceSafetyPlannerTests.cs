@@ -90,6 +90,49 @@ public sealed class ScriptReferenceSafetyPlannerTests
         Assert.Equal("5", diagnostic.Metadata["local-variable-id"]);
     }
 
+    [Fact]
+    public void Build_SuppressesAnonymousEmptyScriptBeforeWriterAndPrunesItsIdentity()
+    {
+        var records = new RecordCollection();
+        records.Scripts.Add(new ScriptRecord { FormId = 0x00100000 });
+
+        var plan = BuildPlanner().Build(
+            [], records, new HashSet<string> { "SCPT" }, new HashSet<uint>(), null);
+
+        Assert.DoesNotContain(plan.Records, record => record.Type == "SCPT");
+        Assert.DoesNotContain(0x00100000u, plan.SourceToEmittedFormId.Keys);
+        Assert.DoesNotContain(0x01000800u, plan.ValidScriptFormIds);
+        var diagnostic = Assert.Single(plan.Diagnostics, diagnostic =>
+            diagnostic.Code == "script.suppress-unemittable-record");
+        Assert.Contains(
+            "has no EditorId, source text, bytecode, variables, or references",
+            diagnostic.Message,
+            StringComparison.Ordinal);
+        Assert.Equal("0x00100000", diagnostic.Metadata!["script-source-form-id"]);
+        Assert.Equal("0x01000800", diagnostic.Metadata["script-emitted-form-id"]);
+    }
+
+    [Fact]
+    public void Build_SourceOnlyScriptRemainsLiveForWriterSctxRecovery()
+    {
+        var records = new RecordCollection();
+        records.Scripts.Add(new ScriptRecord
+        {
+            FormId = 0x00100000,
+            SourceText = "scn ExactSourceOnlyName\nshort recovered",
+            SourceTextOrigin = ScriptSourceTextOrigin.RuntimeSameObject,
+        });
+
+        var plan = BuildPlanner().Build(
+            [], records, new HashSet<string> { "SCPT" }, new HashSet<uint>(), null);
+
+        var script = Assert.Single(plan.Records, record => record.Type == "SCPT");
+        Assert.Equal(RecordDisposition.New, script.Disposition);
+        Assert.Contains(script.FormId, plan.ValidScriptFormIds);
+        Assert.DoesNotContain(plan.Diagnostics, diagnostic =>
+            diagnostic.Code == "script.suppress-unemittable-record");
+    }
+
     private static EsmPlanner BuildPlanner()
     {
         var disposition = new DispositionEngine([new DefaultDispositionPolicy()]);

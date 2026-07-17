@@ -16,6 +16,7 @@ public record ScriptVariableInfo(uint Index, string? Name, byte Type)
 /// <summary>Canonical PDB-backed field access for the 24-byte SCRIPT_LOCAL / SLSD payload.</summary>
 internal static class ScriptLocalVariableLayout
 {
+    internal const int SerializedSize = 24;
     internal const int IsIntegerOffset = 16;
 
     internal static byte ReadType(ReadOnlySpan<byte> data) =>

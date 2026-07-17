@@ -17,5 +17,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Cells;
 internal sealed record CellSectionBuildResult(
     byte[]? SectionBytes,
     IReadOnlySet<uint> EmittedNavmFormIds,
+    IReadOnlySet<uint> EmittedPlacedReferenceFormIds,
     IReadOnlySet<uint> OverriddenChildFormIds,
     IReadOnlyDictionary<uint, NavmConnectivity> NavmConnectivityByFormId);

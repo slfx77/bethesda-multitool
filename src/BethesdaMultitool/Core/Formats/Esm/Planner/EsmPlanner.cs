@@ -75,7 +75,8 @@ public sealed class EsmPlanner
         bool replaceCellTemporariesOnOverride = false,
         CellVerdictInputs? cellVerdictInputs = null,
         ImmutableHashSet<uint>? diagnosticKeepMasterFormIds = null,
-        ImmutableDictionary<uint, ImmutableHashSet<string>>? diagnosticRetainMasterSubrecords = null)
+        ImmutableDictionary<uint, ImmutableHashSet<string>>? diagnosticRetainMasterSubrecords = null,
+        IReadOnlyDictionary<uint, uint>? masterFormIdAliases = null)
     {
         var coverage = enabledTypes.ToImmutableHashSet(StringComparer.Ordinal);
         var keepMasterFormIds = diagnosticKeepMasterFormIds ?? ImmutableHashSet<uint>.Empty;
@@ -95,6 +96,10 @@ public sealed class EsmPlanner
 
         var masterSource = new MasterRecordSource(masterRecords);
         var dmpSource = new DmpRecordSource(dmpRecords);
+        var validatedCrossPipelineMasterAliases = PlannerInputValidator.ValidateCapturedMasterAliases(
+            masterRecords,
+            dmpSource,
+            masterFormIdAliases);
 
         // When CELL is enabled the cell-section pipeline owns the entire cell hierarchy
         // (CELL/WRLD/REFR/ACHR/ACRE/PGRE) — emission, FormID allocation, and the
@@ -106,9 +111,14 @@ public sealed class EsmPlanner
                 .Where(t => !CellPipelineOwnedTypes.Contains(t))
                 .ToHashSet(StringComparer.Ordinal)
             : enabledTypes;
-        var catalog = RecordCatalog.Build(masterSource, dmpSource, catalogTypes);
+        var catalog = RecordCatalog.Build(
+            masterSource,
+            dmpSource,
+            catalogTypes,
+            masterFormIdAliases,
+            out var validatedMasterAliases);
 
-        ValidateDiagnosticDirectives(
+        PlannerInputValidator.ValidateDiagnosticDirectives(
             masterRecords, catalog, enabledTypes, keepMasterFormIds, retainMasterSubrecords);
 
         var cellSection = enabledTypes.Contains("CELL")
@@ -125,7 +135,25 @@ public sealed class EsmPlanner
         }
 
         var decisions = EngineMarkerAliasPass.Apply(_disposition.Decide(catalog), out var markerAliases);
-        var sourceToEmitted = _allocation.AllocateAll(decisions).AddRange(markerAliases);
+        var sourceToEmitted = _allocation.AllocateAll(decisions)
+            .AddRange(markerAliases);
+        foreach (var (sourceFormId, masterFormId) in validatedCrossPipelineMasterAliases
+                     .Concat(validatedMasterAliases))
+        {
+            if (sourceToEmitted.TryGetValue(sourceFormId, out var existing))
+            {
+                if (existing != masterFormId)
+                {
+                    throw new InvalidOperationException(
+                        $"Validated master alias 0x{sourceFormId:X8}->0x{masterFormId:X8} " +
+                        $"conflicts with existing allocation 0x{existing:X8}.");
+                }
+
+                continue;
+            }
+
+            sourceToEmitted = sourceToEmitted.Add(sourceFormId, masterFormId);
+        }
 
         // No phantom-master invariant at this layer: the top-level FormIdPlanner allocates
         // for EVERY DmpNew regardless of whether the source FormID happens to be in master
@@ -153,7 +181,7 @@ public sealed class EsmPlanner
             decisions, sourceToEmitted, masterFormIds, containedAllocations)
             .Union(RuntimeStateRecordPolicy.EngineFormIds);
         var resolvedRefsByIndex = _references.ResolveAll(decisions, emittedFormIds, sourceToEmitted);
-        var scriptSanitation = ScriptReferenceSafetyPlanner.Apply(
+        var scriptSanitation = ScriptReferenceSafetyPipeline.Apply(
             decisions, sourceToEmitted, emittedFormIds, resolvedRefsByIndex, _references);
         decisions = scriptSanitation.Decisions;
         sourceToEmitted = scriptSanitation.SourceToEmitted;
@@ -405,78 +433,6 @@ public sealed class EsmPlanner
         }
 
         return builder.ToImmutable();
-    }
-
-    private static void ValidateDiagnosticDirectives(
-        IReadOnlyList<ParsedMainRecord> masterRecords,
-        IReadOnlyList<CatalogEntry> catalog,
-        IReadOnlySet<string> enabledTypes,
-        ImmutableHashSet<uint> keepMasterFormIds,
-        ImmutableDictionary<uint, ImmutableHashSet<string>> retainMasterSubrecords)
-    {
-        var overlap = keepMasterFormIds.FirstOrDefault(retainMasterSubrecords.ContainsKey);
-        if (overlap != 0 || (keepMasterFormIds.Contains(0) && retainMasterSubrecords.ContainsKey(0)))
-        {
-            throw new InvalidOperationException(
-                $"Diagnostic FormID 0x{overlap:X8} cannot be both master-pure and partially retained.");
-        }
-
-        var masterByFormId = new Dictionary<uint, ParsedMainRecord>();
-        foreach (var master in masterRecords)
-        {
-            masterByFormId.TryAdd(master.Header.FormId, master);
-        }
-
-        foreach (var formId in keepMasterFormIds.Concat(retainMasterSubrecords.Keys).Distinct())
-        {
-            if (!masterByFormId.TryGetValue(formId, out var master))
-            {
-                throw new InvalidOperationException(
-                    $"Diagnostic FormID 0x{formId:X8} does not exist in the master ESM.");
-            }
-
-            if (!enabledTypes.Contains(master.Header.Signature))
-            {
-                throw new InvalidOperationException(
-                    $"Diagnostic FormID 0x{formId:X8} is {master.Header.Signature}, which is not planner-enabled.");
-            }
-
-            var entry = catalog.FirstOrDefault(candidate =>
-                candidate.MasterFormId == formId
-                && string.Equals(candidate.Type, master.Header.Signature, StringComparison.Ordinal));
-            if (entry is null || entry.Source != SourceKind.DmpOverride)
-            {
-                throw new InvalidOperationException(
-                    $"Diagnostic FormID 0x{formId:X8} is not an exact DMP override of its master record.");
-            }
-
-            if (!retainMasterSubrecords.TryGetValue(formId, out var signatures))
-            {
-                continue;
-            }
-
-            if (signatures.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    $"Diagnostic FormID 0x{formId:X8} has no retained subrecord signatures.");
-            }
-
-            foreach (var signature in signatures)
-            {
-                if (signature.Length != 4)
-                {
-                    throw new InvalidOperationException(
-                        $"Diagnostic subrecord signature '{signature}' for 0x{formId:X8} must be exactly four characters.");
-                }
-
-                if (!master.Subrecords.Any(subrecord =>
-                        string.Equals(subrecord.Signature, signature, StringComparison.Ordinal)))
-                {
-                    throw new InvalidOperationException(
-                        $"Master {master.Header.Signature} 0x{formId:X8} has no {signature} subrecord to retain.");
-                }
-            }
-        }
     }
 
     private EmitPlan Empty(ImmutableHashSet<string> coverage, string? masterPath)

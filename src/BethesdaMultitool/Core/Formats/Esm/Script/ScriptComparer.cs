@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Script;
@@ -44,8 +45,11 @@ public static class ScriptComparer
     {
         var trimmed = line.Trim().TrimEnd('\r');
 
-        // Strip trailing inline comments ("; ...")
-        var commentIdx = trimmed.IndexOf(';');
+        // Strip trailing inline comments ("; ..."), but never a semicolon that belongs
+        // to a quoted string argument. SCTX is source code, so a blind IndexOf(';') can
+        // make two different message/string payloads look identical during the
+        // source-to-bytecode correspondence gate.
+        var commentIdx = FindCommentStart(trimmed);
         if (commentIdx >= 0)
         {
             trimmed = trimmed[..commentIdx].TrimEnd();
@@ -61,6 +65,35 @@ public static class ScriptComparer
         trimmed = trimmed.Replace('\t', ' ');
 
         return trimmed;
+    }
+
+    private static int FindCommentStart(string line)
+    {
+        var quoted = false;
+        for (var index = 0; index < line.Length; index++)
+        {
+            var current = line[index];
+            if (current == '"')
+            {
+                // GECK source commonly represents a literal quote inside a string as a
+                // doubled quote. Keep both bytes inside the quoted region.
+                if (quoted && index + 1 < line.Length && line[index + 1] == '"')
+                {
+                    index++;
+                    continue;
+                }
+
+                quoted = !quoted;
+                continue;
+            }
+
+            if (current == ';' && !quoted)
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>
@@ -80,8 +113,12 @@ public static class ScriptComparer
                 continue;
             }
 
-            // Skip decorative separator lines (e.g., "====...") — present in some SCTX source
-            if (normalized.Length >= 4 && normalized.All(c => c == '='))
+            // Skip decorative separator lines (e.g., "====..." or "----...") —
+            // present in some SCTX source, including VMS12QuestScript. They are comments
+            // in practice even when the source omitted a leading semicolon.
+            if (normalized.Length >= 4
+                && (normalized.All(static c => c == '=')
+                    || normalized.All(static c => c == '-')))
             {
                 continue;
             }
@@ -144,16 +181,19 @@ public static class ScriptComparer
         }
 
         // Check number formatting with all normalizations applied
-        if (IsNumberFormatDifference(sourceNorm, decompiledNorm))
+        if (IsNumberFormatDifference(
+                sourceNorm,
+                decompiledNorm,
+                sourceCanonical,
+                decompiledCanonical))
         {
             return "NumberFormat";
         }
 
-        // Check if decompiled is a prefix of source — GECK source has extra trailing
-        // parameters/decorators that the compiler strips (e.g., StopCombat Player → StopCombat,
-        // RemoveScriptPackage PkgName → RemoveScriptPackage, End OnAdd → End)
-        if (sourceNorm.StartsWith(decompiledNorm + " ", StringComparison.OrdinalIgnoreCase) ||
-            decompiledNorm.StartsWith(sourceNorm + " ", StringComparison.OrdinalIgnoreCase))
+        // GECK discards a small number of known source-only suffixes. This must be
+        // directional and shape-whitelisted: a generic prefix comparison made a
+        // shorter, stale SCTX look equivalent to SCDA that still had an operand.
+        if (IsKnownCompilerDroppedSuffix(sourceNorm, decompiledNorm))
         {
             return "DroppedParameter";
         }
@@ -185,8 +225,15 @@ public static class ScriptComparer
         string decompiledText,
         Dictionary<string, string> nameMap)
     {
-        var sourceLines = ExtractMeaningfulLines(sourceText);
-        var decompiledLines = ExtractMeaningfulLines(decompiledText);
+        // ScriptName/scn is record identity, not executable script content. Counting a matching
+        // header made a source-only stub and a four-byte SCDA ScriptName opcode look like a
+        // meaningful 100% (1/1) comparison even though there were no statements to compare.
+        var sourceLines = ExtractMeaningfulLines(sourceText)
+            .Where(line => !IsScriptHeader(line))
+            .ToList();
+        var decompiledLines = ExtractMeaningfulLines(decompiledText)
+            .Where(line => !IsScriptHeader(line))
+            .ToList();
 
         var result = new ScriptComparisonResult();
 
@@ -235,12 +282,44 @@ public static class ScriptComparer
             di++;
         }
 
-        // Count remaining lines as missing/extra
-        result.MismatchesByCategory.TryGetValue("MissingLine", out var missing);
-        result.MismatchesByCategory["MissingLine"] = missing + Math.Abs(
-            sourceLines.Count - si - (decompiledLines.Count - di));
+        // Preserve which side owns every unpaired statement. The previous absolute-difference
+        // bucket could say only that a line was "missing", which is not enough to distinguish
+        // incomplete SCDA recovery from decompiler-only output.
+        while (si < sourceLines.Count)
+        {
+            AddUnpairedLine(result, sourceLines[si], string.Empty, "SourceOnly");
+            si++;
+        }
+
+        while (di < decompiledLines.Count)
+        {
+            AddUnpairedLine(result, string.Empty, decompiledLines[di], "DecompiledOnly");
+            di++;
+        }
 
         return result;
+    }
+
+    private static void AddUnpairedLine(
+        ScriptComparisonResult result,
+        string sourceLine,
+        string decompiledLine,
+        string category)
+    {
+        result.MismatchesByCategory.TryGetValue(category, out var count);
+        result.MismatchesByCategory[category] = count + 1;
+
+        if (result.Examples.Count < 10)
+        {
+            result.Examples.Add((sourceLine, decompiledLine, category));
+        }
+    }
+
+    private static bool IsScriptHeader(string line)
+    {
+        var firstWord = GetFirstWord(line);
+        return firstWord.Equals("ScriptName", StringComparison.OrdinalIgnoreCase) ||
+               firstWord.Equals("scn", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -288,6 +367,18 @@ public static class ScriptComparer
         // Strip string quotes — decompiler quotes string params, GECK source often doesn't
         result = result.Replace("\"", " ");
 
+        // Preserve signs inside scientific-notation literals before spacing arithmetic
+        // operators. Turning 5e-1 into "5e - 1" prevents exact numeric comparison and can
+        // make two serially-identical literals appear different.
+        result = Regex.Replace(
+            result,
+            @"(?<=[0-9.])[eE]\+(?=\d)",
+            static match => $"{match.Value[0]}\x01EXPPLUS\x01");
+        result = Regex.Replace(
+            result,
+            @"(?<=[0-9.])[eE]-(?=\d)",
+            static match => $"{match.Value[0]}\x01EXPMINUS\x01");
+
         // Normalize operator spacing using regex to handle all operators cleanly.
         // Process two-char operators first (replace with placeholders), then single-char.
         result = result.Replace("==", " \x01EQ\x01 ").Replace("!=", " \x01NE\x01 ")
@@ -302,7 +393,8 @@ public static class ScriptComparer
         // Restore two-char operator placeholders
         result = result.Replace("\x01EQ\x01", "==").Replace("\x01NE\x01", "!=")
             .Replace("\x01GE\x01", ">=").Replace("\x01LE\x01", "<=")
-            .Replace("\x01AND\x01", "&&").Replace("\x01OR\x01", "||");
+            .Replace("\x01AND\x01", "&&").Replace("\x01OR\x01", "||")
+            .Replace("\x01EXPPLUS\x01", "+").Replace("\x01EXPMINUS\x01", "-");
 
         while (result.Contains("  "))
         {
@@ -349,7 +441,11 @@ public static class ScriptComparer
     /// <summary>
     ///     Check if two lines differ only in number formatting (e.g., "1" vs "1.0").
     /// </summary>
-    private static bool IsNumberFormatDifference(string source, string decompiled)
+    private static bool IsNumberFormatDifference(
+        string source,
+        string decompiled,
+        string sourceBeforeQuoteRemoval,
+        string decompiledBeforeQuoteRemoval)
     {
         var sourceTokens = source.Split(' ');
         var decompiledTokens = decompiled.Split(' ');
@@ -357,6 +453,9 @@ public static class ScriptComparer
         {
             return false;
         }
+
+        var sourceQuoted = GetQuotedTokenFlags(sourceBeforeQuoteRemoval, sourceTokens.Length);
+        var decompiledQuoted = GetQuotedTokenFlags(decompiledBeforeQuoteRemoval, decompiledTokens.Length);
 
         var hasDiff = false;
         for (var i = 0; i < sourceTokens.Length; i++)
@@ -366,11 +465,32 @@ public static class ScriptComparer
                 continue;
             }
 
-            // Check if both parse to the same numeric value
-            if (double.TryParse(sourceTokens[i], out var sv) &&
-                double.TryParse(decompiledTokens[i], out var dv) &&
-                Math.Abs(sv - dv) < 0.001)
+            // A textual formatting difference is safe only when both tokens parse to
+            // the exact same IEEE-754 value. An epsilon can equate distinct literals
+            // (for example 0 and 0.0005) and is therefore unsuitable as evidence that
+            // captured source corresponds to compiled bytecode.
+            if (double.TryParse(
+                    sourceTokens[i],
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var sv) &&
+                double.TryParse(
+                    decompiledTokens[i],
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var dv) &&
+                BitConverter.DoubleToInt64Bits(sv) == BitConverter.DoubleToInt64Bits(dv))
             {
+                // Quotes are not cosmetic for a numeric-looking token: "1.0" and
+                // "1" are distinct string payloads even though the numeric values
+                // compare equally. Quote removal remains useful for GECK syntax
+                // normalization, but it must never turn string data into numeric
+                // equivalence evidence for the SCTX/SCDA correspondence gate.
+                if (sourceQuoted[i] || decompiledQuoted[i])
+                {
+                    return false;
+                }
+
                 hasDiff = true;
                 continue;
             }
@@ -380,4 +500,140 @@ public static class ScriptComparer
 
         return hasDiff;
     }
+
+    private static bool[] GetQuotedTokenFlags(string line, int expectedTokenCount)
+    {
+        const char quotedStart = '\u0002';
+        const char quotedEnd = '\u0003';
+
+        var marked = new System.Text.StringBuilder(line.Length + 4);
+        var quoted = false;
+        for (var index = 0; index < line.Length; index++)
+        {
+            var current = line[index];
+            if (current != '"')
+            {
+                marked.Append(current);
+                continue;
+            }
+
+            // A doubled quote inside a GECK string is literal content, not a
+            // quote-state transition. It cannot affect numeric-token identity.
+            if (quoted && index + 1 < line.Length && line[index + 1] == '"')
+            {
+                marked.Append("  ");
+                index++;
+                continue;
+            }
+
+            marked.Append(quoted ? quotedEnd : quotedStart);
+            quoted = !quoted;
+        }
+
+        if (quoted)
+        {
+            marked.Append(quotedEnd);
+        }
+
+        var normalized = NormalizeParensAndSpaces(marked.ToString());
+        var markedTokens = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (markedTokens.Length != expectedTokenCount)
+        {
+            // A malformed/unusual quoted line must fail closed. Marking every
+            // token as quoted prevents NumberFormat from certifying it while
+            // leaving the other comparer diagnostics available.
+            return line.Contains('"')
+                ? Enumerable.Repeat(true, expectedTokenCount).ToArray()
+                : new bool[expectedTokenCount];
+        }
+
+        var result = new bool[expectedTokenCount];
+        var insideQuotedRegion = false;
+        for (var index = 0; index < markedTokens.Length; index++)
+        {
+            var token = markedTokens[index];
+            var startsQuotedRegion = token.Contains(quotedStart);
+            result[index] = insideQuotedRegion || startsQuotedRegion;
+
+            if (startsQuotedRegion)
+            {
+                insideQuotedRegion = true;
+            }
+
+            if (token.Contains(quotedEnd))
+            {
+                insideQuotedRegion = false;
+            }
+        }
+
+        return result;
+    }
+
+    private static bool IsKnownCompilerDroppedSuffix(string source, string decompiled)
+    {
+        if (!source.StartsWith(decompiled + " ", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var sourceTokens = source.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var decompiledTokens = decompiled.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        // GECK accepts a block annotation after End but emits only the End opcode.
+        if (decompiledTokens.Length == 1
+            && decompiledTokens[0].Equals("End", StringComparison.OrdinalIgnoreCase)
+            && sourceTokens.Length == 2
+            && IsBlockTypeToken(sourceTokens[1]))
+        {
+            return true;
+        }
+
+        // "Else If <condition>" is represented by an Else opcode followed by the
+        // compiler's branch structure; the current line decompiler prints only Else.
+        if (decompiledTokens.Length == 1
+            && decompiledTokens[0].Equals("Else", StringComparison.OrdinalIgnoreCase)
+            && sourceTokens.Length > 2
+            && sourceTokens[1].Equals("if", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Script-effect block declarations may carry their owning effect name in
+        // source; the block header bytecode stores only the block type.
+        if (decompiledTokens.Length == 2
+            && sourceTokens.Length == 3
+            && decompiledTokens[0].Equals("Begin", StringComparison.OrdinalIgnoreCase)
+            && sourceTokens[0].Equals("Begin", StringComparison.OrdinalIgnoreCase)
+            && sourceTokens[1].Equals(decompiledTokens[1], StringComparison.OrdinalIgnoreCase)
+            && sourceTokens[1] is var blockType
+            && (blockType.Equals("ScriptEffectStart", StringComparison.OrdinalIgnoreCase)
+                || blockType.Equals("ScriptEffectUpdate", StringComparison.OrdinalIgnoreCase)
+                || blockType.Equals("ScriptEffectFinish", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        // These two GECK commands are observed in retail source with one ignored
+        // trailing operand. Limit tolerance to exactly one suffix token and the
+        // exact command, retaining an optional reference receiver.
+        if (decompiledTokens.Length == 1 && sourceTokens.Length == 2)
+        {
+            var commandToken = decompiledTokens[0];
+            var dotIndex = commandToken.LastIndexOf('.');
+            var command = dotIndex >= 0 ? commandToken[(dotIndex + 1)..] : commandToken;
+            return command.Equals("StopCombat", StringComparison.OrdinalIgnoreCase)
+                   || command.Equals("RemoveScriptPackage", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private static bool IsBlockTypeToken(string token) =>
+        token.StartsWith("On", StringComparison.OrdinalIgnoreCase)
+        || token.Equals("GameMode", StringComparison.OrdinalIgnoreCase)
+        || token.Equals("MenuMode", StringComparison.OrdinalIgnoreCase)
+        || token.Equals("Function", StringComparison.OrdinalIgnoreCase)
+        || token.Equals("ScriptEffectStart", StringComparison.OrdinalIgnoreCase)
+        || token.Equals("ScriptEffectUpdate", StringComparison.OrdinalIgnoreCase)
+        || token.Equals("ScriptEffectFinish", StringComparison.OrdinalIgnoreCase);
 }

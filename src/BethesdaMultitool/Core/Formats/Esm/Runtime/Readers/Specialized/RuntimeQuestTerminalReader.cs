@@ -20,6 +20,7 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
     private readonly RuntimeMemoryContext _context = context;
     private readonly RuntimePdbFieldAccessor _pdbFields = new(context);
+    private readonly RuntimeScriptReader _scriptReader = new(context);
 
     // Build-specific offset shift for Note/Quest/Terminal structs.
     private readonly int _s = RuntimeBuildOffsets.GetPdbShift(
@@ -332,8 +333,9 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
 
     /// <summary>
     ///     Walk the MenuItemList BSSimpleList on a BGSTerminal struct to extract
-    ///     terminal menu items. Each list node points to a TERMINAL_MENU_ITEM struct
-    ///     (120 bytes) containing ResponseText, ResultScript, and pSubMenu.
+    ///     terminal menu items. Each list node points to a 136-byte TERMINAL_MENU_ITEM
+    ///     containing two strings, an inline Script, conditions, NOTE/submenu pointers,
+    ///     and a flags byte.
     /// </summary>
     private List<TerminalMenuItem> WalkTerminalMenuItemList(long terminalOffset)
     {
@@ -391,8 +393,8 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
     }
 
     /// <summary>
-    ///     Read a single TERMINAL_MENU_ITEM struct (120 bytes) from a virtual address.
-    ///     Extracts ResponseText (+0), ResultScript (+16), and pSubMenu (+112).
+    ///     Read a single TERMINAL_MENU_ITEM struct (136 bytes) from a virtual address.
+    ///     The ResultScript at +16 is an inline 100-byte Script object, not a pointer.
     /// </summary>
     private TerminalMenuItem? ReadTerminalMenuItem(uint menuItemVA)
     {
@@ -416,16 +418,27 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         // Read ResponseText at +0 (BSStringT: 4-byte length pointer + 4-byte data pointer)
         var text = _context.ReadBsStringT(fileOffset.Value, MenuItemResponseTextOffset);
 
-        // Read ResultScript FormID at +16
-        var scriptPtr = BinaryUtils.ReadUInt32BE(buf, MenuItemResultScriptOffset);
-        var resultScript = _context.FollowPointerVaToFormId(scriptPtr);
+        // ResultText is a second BSStringT at +8.
+        var resultText = _context.ReadBsStringT(fileOffset.Value, MenuItemResultTextOffset);
 
-        // Read pSubMenu pointer at +112 → follow to BGSTerminal → get FormID
+        // ResultScript is embedded inline at +16. Parse source and the executable fixed
+        // tables from this exact object; RuntimeScriptReader keeps the bundle atomic.
+        var inlineScript = _scriptReader.ReadInlineResultScript(
+            menuItemVA + (uint)MenuItemResultScriptOffset);
+
+        var conditions = TesConditionListWalker.Walk(_context, buf, MenuItemConditionsOffset);
+
+        // pDisplayNote and pSubMenu are ordinary TESForm pointers in the tail.
+        var displayNotePtr = BinaryUtils.ReadUInt32BE(buf, MenuItemDisplayNoteOffset);
+        var displayNote = _context.FollowPointerVaToFormId(displayNotePtr);
+
         var subMenuPtr = BinaryUtils.ReadUInt32BE(buf, MenuItemSubMenuOffset);
         var subTerminal = _context.FollowPointerVaToFormId(subMenuPtr);
+        var actionType = buf[MenuItemFlagsOffset];
 
         // Only return if we got at least some data
-        if (text == null && resultScript == null && subTerminal == null)
+        if (text == null && resultText == null && displayNote == null && subTerminal == null
+            && inlineScript == null && conditions.Count == 0 && actionType == 0)
         {
             return null;
         }
@@ -433,8 +446,20 @@ internal sealed class RuntimeQuestTerminalReader(RuntimeMemoryContext context)
         return new TerminalMenuItem
         {
             Text = text,
-            ResultScript = resultScript,
-            SubTerminal = subTerminal
+            ResultText = resultText,
+            DisplayNoteFormId = displayNote,
+            SubTerminal = subTerminal,
+            ActionType = actionType,
+            Conditions = conditions,
+            CompiledData = inlineScript?.CompiledData,
+            SourceText = inlineScript?.SourceText,
+            DecompiledText = inlineScript?.DecompiledText,
+            SourceTextOrigin = inlineScript?.SourceTextOrigin ?? ScriptSourceTextOrigin.None,
+            IsDmpDerived = inlineScript?.IsDmpDerived ?? false,
+            Variables = inlineScript?.Variables ?? [],
+            ReferencedObjects = inlineScript?.ReferencedObjects ?? [],
+            IsBigEndianBytecode = inlineScript?.IsBigEndianBytecode ?? false,
+            IsIncompleteExecutableBundle = inlineScript?.IsIncompleteExecutableBundle ?? false
         };
     }
 

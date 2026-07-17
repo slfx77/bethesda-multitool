@@ -418,7 +418,7 @@ public class WorldObjectEncoderTests
         Assert.Contains(encoded.Subrecords, s => s.Signature == "ITXT");
         Assert.Contains(encoded.Subrecords, s => s.Signature == "RNAM");
         var schr = Assert.Single(encoded.Subrecords, s => s.Signature == "SCHR");
-        Assert.Equal(0, schr.Bytes[18]); // IsCompiled = 0
+        Assert.Equal(0x0001, BinaryPrimitives.ReadUInt16LittleEndian(schr.Bytes.AsSpan(18, 2))); // Enabled
         Assert.Empty(encoded.Warnings);
     }
 
@@ -653,8 +653,8 @@ public class WorldObjectEncoderTests
         Assert.Equal(20, schr.Bytes.Length);
         // CompiledSize at offset 8 should equal SCDA length.
         Assert.Equal(4u, BinaryPrimitives.ReadUInt32LittleEndian(schr.Bytes.AsSpan(8, 4)));
-        // IsCompiled at offset 18 should be 1 since we have bytecode.
-        Assert.Equal(1, schr.Bytes[18]);
+        // Canonical Flags at offset 18 marks the embedded script enabled.
+        Assert.Equal(0x0001, BinaryPrimitives.ReadUInt16LittleEndian(schr.Bytes.AsSpan(18, 2)));
 
         var scda = Assert.Single(encoded.Subrecords, s => s.Signature == "SCDA");
         Assert.Equal(new byte[] { 0x10, 0x20, 0x30, 0x40 }, scda.Bytes);
@@ -678,6 +678,7 @@ public class WorldObjectEncoderTests
                 {
                     Text = "X",
                     CompiledData = [0x00],
+                    Variables = [new ScriptVariableInfo(1, "Local", 0)],
                     ReferencedObjects = [0xABCu, 0x80000001u] // SCRO + SCRV (high bit set)
                 }
             ]

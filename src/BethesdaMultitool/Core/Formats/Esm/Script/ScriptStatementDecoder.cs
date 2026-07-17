@@ -35,7 +35,7 @@ internal sealed class ScriptStatementDecoder
             case ScriptOpcodes.MarkerIntLocal: // 0x73 's' — int local variable
             case ScriptOpcodes.MarkerFloatLocal: // 0x66 'f' — float local variable
                 reader.ReadByte();
-                return _varReader.ReadLocalVariable(reader);
+                return _varReader.ReadLocalVariable(reader, marker);
 
             case ScriptOpcodes.MarkerReference: // 0x72 'r' — SCRO reference (2-byte index)
                 reader.ReadByte();
@@ -122,6 +122,24 @@ internal sealed class ScriptStatementDecoder
         };
     }
 
+    internal static string DecodeStringParameter(BytecodeReader reader, int payloadEnd)
+    {
+        if (reader.Position > payloadEnd - 2 || !reader.CanRead(2))
+        {
+            return "<truncated string>";
+        }
+
+        var strLen = reader.ReadUInt16();
+        if (strLen > payloadEnd - reader.Position || !reader.CanRead(strLen))
+        {
+            return "<truncated string>";
+        }
+
+        var strBytes = reader.ReadBytes(strLen);
+        var str = Encoding.ASCII.GetString(strBytes).TrimEnd('\0');
+        return $"\"{str}\"";
+    }
+
     private static string DecodeStringParam(BytecodeReader reader)
     {
         if (!reader.CanRead(2))
@@ -165,7 +183,7 @@ internal sealed class ScriptStatementDecoder
             case ScriptOpcodes.MarkerIntLocal:
             case ScriptOpcodes.MarkerFloatLocal:
                 reader.ReadByte();
-                return _varReader.ReadLocalVariable(reader);
+                return _varReader.ReadLocalVariable(reader, marker);
             case ScriptOpcodes.MarkerReference:
                 reader.ReadByte();
                 return reader.CanRead(2) ? _varReader.ResolveScroReference(reader.ReadUInt16()) : "<truncated ref>";
@@ -175,7 +193,7 @@ internal sealed class ScriptStatementDecoder
         }
 
         // Fallback: read as uint16 index
-        return reader.CanRead(2) ? _varReader.GetVariableName(reader.ReadUInt16()) : "<truncated scriptvar>";
+        return _varReader.ReadLocalVariable(reader);
     }
 
     internal static string GetBlockTypeName(ushort blockType)

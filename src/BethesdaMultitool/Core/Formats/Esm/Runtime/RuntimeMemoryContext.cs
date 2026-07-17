@@ -101,18 +101,72 @@ internal sealed class RuntimeMemoryContext(
     /// </summary>
     public byte[]? ReadBytesAtVa(long va, int count)
     {
+        if (count < 0)
+        {
+            return null;
+        }
+
+        if (count == 0)
+        {
+            return [];
+        }
+
+        if (va > long.MaxValue - count)
+        {
+            return null;
+        }
+
+        var endVa = va + count;
         if (!MinidumpInfo.IsVaRangeCaptured(va, count))
         {
             return null;
         }
 
-        var fileOffset = MinidumpInfo.VirtualAddressToFileOffset(va);
-        if (!fileOffset.HasValue || fileOffset.Value + count > FileSize)
+        var result = new byte[count];
+        var copied = 0;
+        var currentVa = va;
+
+        try
+        {
+            foreach (var region in MinidumpInfo.GetRegionsInRange(va, endVa))
+            {
+                if (copied == count)
+                {
+                    break;
+                }
+
+                // IsVaRangeCaptured guarantees VA-contiguous regions. Keep the check here so
+                // this copy loop remains fail-closed if the region index ever changes.
+                if (currentVa < region.VirtualAddress ||
+                    currentVa >= region.VirtualAddress + region.Size)
+                {
+                    return null;
+                }
+
+                var available = region.VirtualAddress + region.Size - currentVa;
+                var chunkSize = checked((int)Math.Min(available, count - copied));
+                var fileOffset = region.FileOffset + (currentVa - region.VirtualAddress);
+                if (fileOffset < 0 || fileOffset > FileSize - chunkSize)
+                {
+                    return null;
+                }
+
+                var bytesRead = Accessor.ReadArray(fileOffset, result, copied, chunkSize);
+                if (bytesRead != chunkSize)
+                {
+                    return null;
+                }
+
+                copied += chunkSize;
+                currentVa += chunkSize;
+            }
+        }
+        catch
         {
             return null;
         }
 
-        return ReadBytes(fileOffset.Value, count);
+        return copied == count ? result : null;
     }
 
     /// <summary>

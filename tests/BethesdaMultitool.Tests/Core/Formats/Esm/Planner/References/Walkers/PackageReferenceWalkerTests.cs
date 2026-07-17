@@ -108,4 +108,90 @@ public sealed class PackageReferenceWalkerTests
         Assert.Contains(refs, r => r.FieldPath == "CTDA[2].Reference" && r.FormId == 0x000ABCD1);
         Assert.DoesNotContain(refs, r => r.FieldPath == "CTDA[1].Reference");
     }
+
+    [Fact]
+    public void Event_Actions_Yield_Idle_And_Topic_References_In_Block_Order()
+    {
+        var pack = new PackageRecord
+        {
+            FormId = 0x000ABCDE,
+            OnBegin = new PackageEventAction
+            {
+                IdleFormId = 0x000A0001,
+                TopicFormId = 0x000A0002
+            },
+            OnEnd = new PackageEventAction
+            {
+                IdleFormId = 0x000A0003,
+                TopicFormId = 0x000A0004
+            },
+            OnChange = new PackageEventAction
+            {
+                IdleFormId = 0x000A0005,
+                TopicFormId = 0x000A0006
+            }
+        };
+
+        var refs = new PackageReferenceWalker().Walk(pack).ToList();
+
+        Assert.Collection(
+            refs,
+            reference => AssertReference(reference, "OnBegin.INAM", 0x000A0001),
+            reference => AssertReference(reference, "OnBegin.TNAM", 0x000A0002),
+            reference => AssertReference(reference, "OnEnd.INAM", 0x000A0003),
+            reference => AssertReference(reference, "OnEnd.TNAM", 0x000A0004),
+            reference => AssertReference(reference, "OnChange.INAM", 0x000A0005),
+            reference => AssertReference(reference, "OnChange.TNAM", 0x000A0006));
+    }
+
+    [Fact]
+    public void Event_Scripts_Yield_Ordered_Scro_References_And_Ignore_Scrv_Locals()
+    {
+        var pack = new PackageRecord
+        {
+            FormId = 0x000ABCDE,
+            OnBegin = new PackageEventAction
+            {
+                Scripts =
+                [
+                    new DialogueResultScript
+                    {
+                        ReferencedObjects = [0x000A0010, 0x80000007, 0x000A0011]
+                    },
+                    new DialogueResultScript
+                    {
+                        ReferencedObjects = [0x80000008, 0x000A0012]
+                    }
+                ]
+            },
+            OnEnd = new PackageEventAction
+            {
+                Scripts = [new DialogueResultScript { ReferencedObjects = [0x000A0013] }]
+            },
+            OnChange = new PackageEventAction
+            {
+                Scripts = [new DialogueResultScript { ReferencedObjects = [0x000A0014] }]
+            }
+        };
+
+        var refs = new PackageReferenceWalker().Walk(pack).ToList();
+
+        Assert.Collection(
+            refs,
+            reference => AssertReference(reference, "OnBegin.Scripts[0].SCRO[0]", 0x000A0010),
+            reference => AssertReference(reference, "OnBegin.Scripts[0].SCRO[2]", 0x000A0011),
+            reference => AssertReference(reference, "OnBegin.Scripts[1].SCRO[1]", 0x000A0012),
+            reference => AssertReference(reference, "OnEnd.Scripts[0].SCRO[0]", 0x000A0013),
+            reference => AssertReference(reference, "OnChange.Scripts[0].SCRO[0]", 0x000A0014));
+        Assert.DoesNotContain(refs, reference => (reference.FormId & 0x80000000u) != 0);
+    }
+
+    private static void AssertReference(
+        BethesdaMultitool.Core.Formats.Esm.Planner.References.RawReference reference,
+        string fieldPath,
+        uint formId)
+    {
+        Assert.Equal(fieldPath, reference.FieldPath);
+        Assert.Equal(formId, reference.FormId);
+    }
 }

@@ -82,20 +82,18 @@ public sealed class ScptEncoder : IRecordEncoder
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
+        var editorId = ScriptRecordEmissionPolicy.ResolveEditorId(script);
 
-        // Skip stub scripts entirely — empty EditorID plus no bytecode means the parser
-        // detected a SCPT signature on stale memory; the FNV runtime would print "Script
-        // '' has not been compiled" and refuse to bind any SCRI references.
-        if (string.IsNullOrEmpty(script.EditorId)
-            && (script.CompiledData is null || script.CompiledData.Length == 0)
-            && script.Variables.Count == 0
-            && script.ReferencedObjects.Count == 0)
+        // Keep this exactly aligned with the planner's eligibility gate. In particular,
+        // same-dump SCTX is authored content and can carry an exact scn/ScriptName identity
+        // even when the runtime hash-table entry omitted its separate EditorID.
+        if (!ScriptRecordEmissionPolicy.CanEmitNew(script, out var emissionIssue))
         {
-            warnings.Add($"New SCPT 0x{script.FormId:X8} has no EditorId, bytecode, or vars — skipping stub.");
+            warnings.Add($"New SCPT 0x{script.FormId:X8} {emissionIssue} — skipping stub.");
             return new EncodedRecord { Subrecords = subs, Warnings = warnings };
         }
 
-        if (string.IsNullOrEmpty(script.EditorId))
+        if (string.IsNullOrEmpty(editorId))
         {
             warnings.Add($"New SCPT 0x{script.FormId:X8} has no EditorId — emitting empty EDID.");
         }
@@ -106,7 +104,7 @@ public sealed class ScptEncoder : IRecordEncoder
             return new EncodedRecord { Subrecords = [], Warnings = warnings };
         }
 
-        subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", script.EditorId ?? string.Empty));
+        subs.Add(NewRecordSubrecords.EncodeStringSubrecord("EDID", editorId ?? string.Empty));
         subs.Add(SchemaModelSerializer.SerializeSubrecord("SCHR", "", 20, script, SchrExtractors));
 
         if (script.CompiledData is { Length: > 0 } compiledData)
@@ -124,7 +122,7 @@ public sealed class ScptEncoder : IRecordEncoder
 
         if (!string.IsNullOrEmpty(script.SourceText))
         {
-            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("SCTX", script.SourceText));
+            subs.Add(NewRecordSubrecords.EncodeGameTextSubrecord("SCTX", script.SourceText));
         }
 
         foreach (var variable in script.Variables)
@@ -148,7 +146,12 @@ public sealed class ScptEncoder : IRecordEncoder
             }
         }
 
-        return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+        return new EncodedRecord
+        {
+            Subrecords = subs,
+            Warnings = warnings,
+            EmittedScriptPaths = [editorId ?? "SCPT"]
+        };
     }
 
     private static bool TryResolveReferenceTable(

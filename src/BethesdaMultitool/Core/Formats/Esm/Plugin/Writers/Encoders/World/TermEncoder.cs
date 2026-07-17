@@ -12,7 +12,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 ///     Emits EDID + OBND? + FULL? + MODL? + SCRI? + DESC? + SNAM? + PNAM? +
 ///     DNAM(4B Difficulty + Flags + ServerType + Unused) +
 ///     per menu item (xEdit-canonical): ITXT + RNAM(required string) + ANAM(required) +
-///     TNAM?(sub-menu) + embedded SCHR+SCDA?+SCTX?+SCRO*+SCRV*(required) + CTDA*.
+///     TNAM?(sub-menu) + embedded SCHR+SCDA?+SCTX?+(SLSD+SCVR)*+(SCRO|SCRV)*(required) + CTDA*.
 ///     FNV has no NEXT separator. Override path is a no-op.
 ///     DNAM layout per PDB TERMINAL_DATA (4 bytes):
 ///     byte Difficulty(0) + byte Flags(1) + byte ServerType(2) + byte Unused(3).
@@ -26,7 +26,7 @@ public sealed class TermEncoder : IRecordEncoder
     /// <summary>
     ///     Encode a new TERM record from scratch in fopdoc canonical order:
     ///     EDID, OBND, FULL, MODL, SCRI, DESC, SNAM, PNAM, DNAM,
-    ///     per menu item: ITXT, (RNAM or embedded script block), NEXT.
+    ///     per menu item: ITXT, RNAM, ANAM, TNAM?, embedded script block, CTDA*.
     /// </summary>
     /// <param name="term">TERM model to emit.</param>
     /// <param name="validFormIds">
@@ -43,6 +43,20 @@ public sealed class TermEncoder : IRecordEncoder
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
+        var emittedScriptPaths = new List<string>();
+        var inlineScriptIssue = InlineScriptReferenceValidator.FindFirstIssue(
+            term, validFormIds, remapTable);
+        if (inlineScriptIssue is not null)
+        {
+            warnings.Add(
+                $"New TERM 0x{term.FormId:X8} suppressed: {inlineScriptIssue.Message} " +
+                "Inline SCDA/SLSD/SCRO/SCRV is atomic; no slot was dropped or zero-filled.");
+            return new EncodedRecord { Subrecords = [], Warnings = warnings };
+        }
+
+        warnings.AddRange(
+            InlineScriptReferenceValidator.FindSourceContractIssues(term, validFormIds, remapTable)
+                .Select(static issue => issue.Message));
 
         if (string.IsNullOrEmpty(term.EditorId))
         {
@@ -90,11 +104,55 @@ public sealed class TermEncoder : IRecordEncoder
 
         for (var i = 0; i < term.MenuItems.Count; i++)
         {
-            EmitMenuItem(subs, warnings, term.FormId, term.MenuItems[i], i == term.MenuItems.Count - 1,
-                validFormIds, remapTable);
+            var item = term.MenuItems[i];
+            if (validFormIds is not null && item.Conditions.Count > 0)
+            {
+                var remappedParameters = 0;
+                var droppedConditions = 0;
+                var sanitizedConditions = ConditionSanitizer.Filter(
+                    item.Conditions,
+                    validFormIds as HashSet<uint> ?? new HashSet<uint>(validFormIds),
+                    remapTable,
+                    ref remappedParameters,
+                    ref droppedConditions);
+                if (droppedConditions > 0)
+                {
+                    warnings.Add(
+                        $"TERM 0x{term.FormId:X8} menu[{i}] '{item.Text ?? "(empty)"}' suppressed: " +
+                        $"{droppedConditions} CTDA FormID parameter(s) did not resolve. The whole menu " +
+                        "item is atomic; no condition was dropped or widened.");
+                    continue;
+                }
+
+                if (remappedParameters > 0)
+                {
+                    item = item with { Conditions = sanitizedConditions };
+                    warnings.Add(
+                        $"TERM 0x{term.FormId:X8} menu[{i}] remapped {remappedParameters} CTDA " +
+                        "FormID parameter(s) to emitted identities.");
+                }
+            }
+
+            var emittedScript = EmitMenuItem(
+                subs,
+                warnings,
+                term.FormId,
+                item,
+                i == term.MenuItems.Count - 1,
+                validFormIds,
+                remapTable);
+            if (emittedScript)
+            {
+                emittedScriptPaths.Add($"{term.EditorId ?? $"TERM 0x{term.FormId:X8}"}/menu[{i}]");
+            }
         }
 
-        return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+        return new EncodedRecord
+        {
+            Subrecords = subs,
+            Warnings = warnings,
+            EmittedScriptPaths = emittedScriptPaths
+        };
     }
 
     private static byte[] BuildDnamSubrecord(TerminalRecord term)
@@ -103,7 +161,7 @@ public sealed class TermEncoder : IRecordEncoder
         return [term.Difficulty, term.Flags, term.ServerType, 0];
     }
 
-    private static void EmitMenuItem(
+    private static bool EmitMenuItem(
         List<EncodedSubrecord> subs,
         List<string> warnings,
         uint termFormId,
@@ -123,11 +181,24 @@ public sealed class TermEncoder : IRecordEncoder
         // out-of-order and the engine's sequential reader misparsed the items.
         subs.Add(NewRecordSubrecords.EncodeStringSubrecord("ITXT", item.Text ?? string.Empty));
 
-        // No result text is captured in proto terminals; an empty string satisfies the
-        // required-subrecord contract.
-        subs.Add(NewRecordSubrecords.EncodeStringSubrecord("RNAM", string.Empty));
+        subs.Add(NewRecordSubrecords.EncodeStringSubrecord("RNAM", item.ResultText ?? string.Empty));
 
         subs.Add(NewRecordSubrecords.EncodeByteSubrecord("ANAM", item.ActionType ?? 0));
+
+        if (item.DisplayNoteFormId.HasValue)
+        {
+            var resolved = FormIdReferenceResolver.Resolve(item.DisplayNoteFormId.Value, validFormIds, remapTable);
+            if (resolved.HasValue)
+            {
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("INAM", resolved.Value));
+            }
+            else
+            {
+                warnings.Add(
+                    $"TERM 0x{termFormId:X8} menu item '{item.Text ?? "(empty)"}' display-note link " +
+                    $"0x{item.DisplayNoteFormId.Value:X8} does not resolve — dropped.");
+            }
+        }
 
         if (item.SubTerminal.HasValue)
         {
@@ -155,7 +226,7 @@ public sealed class TermEncoder : IRecordEncoder
 
         // Embedded script block is REQUIRED per item — emit an empty SCHR when the proto
         // captured no bytecode/source.
-        EmitEmbeddedScriptBlock(subs, item, validFormIds, remapTable);
+        var emittedScript = EmitEmbeddedScriptBlock(subs, item, validFormIds, remapTable);
 
         // CTDA conditions (with optional CIS1/CIS2 string params) come AFTER the script
         // block. Conditions filter when the menu item is visible.
@@ -172,26 +243,48 @@ public sealed class TermEncoder : IRecordEncoder
                 subs.Add(NewRecordSubrecords.EncodeStringSubrecord("CIS2", condition.Parameter2String));
             }
         }
+
+        return emittedScript;
     }
 
-    private static void EmitEmbeddedScriptBlock(
+    private static bool EmitEmbeddedScriptBlock(
         List<EncodedSubrecord> subs,
         TerminalMenuItem item,
         IReadOnlySet<uint>? validFormIds = null,
         IReadOnlyDictionary<uint, uint>? remapTable = null)
     {
-        var compiledSize = item.CompiledData?.Length ?? 0;
-        var refCount = (uint)item.ReferencedObjects.Count;
+        var validation = InlineScriptReferenceValidator.Validate(
+            item.CompiledData,
+            item.SourceText,
+            item.Variables,
+            item.ReferencedObjects,
+            "MenuItem",
+            validFormIds,
+            remapTable,
+            item.IsIncompleteExecutableBundle,
+            item.IsDmpDerived,
+            item.SourceTextOrigin,
+            item.DecompiledText,
+            item.IsBigEndianBytecode);
+        if (!validation.IsSafe)
+        {
+            return false;
+        }
 
-        // SCHR (20 bytes) per PDB SCRIPT_HEADER. Object-type script (not quest, not magic-effect).
+        var compiledSize = item.CompiledData?.Length ?? 0;
+        var refCount = (uint)validation.ResolvedReferences.Length;
+        var variableCount = (uint)item.Variables.Count;
+
+        // SCHR uses the canonical serialized ESM layout, which differs from the runtime
+        // SCRIPT_HEADER struct: padding(4), RefCount(4), CompiledSize(4), VariableCount(4),
+        // Type(2), Flags(2). Embedded TERM result scripts are enabled Object scripts, including
+        // required empty blocks; this matches retail TERM records.
         var schr = new byte[20];
-        SubrecordEncoder.WriteUInt32(schr, 0, 0); // VariableCount — terminal scripts have no locals.
         SubrecordEncoder.WriteUInt32(schr, 4, refCount);
         SubrecordEncoder.WriteUInt32(schr, 8, (uint)compiledSize);
-        SubrecordEncoder.WriteUInt32(schr, 12, 0); // LastVariableId
-        schr[16] = 0; // IsQuestScript
-        schr[17] = 0; // IsMagicEffectScript
-        schr[18] = compiledSize > 0 ? (byte)1 : (byte)0; // IsCompiled
+        SubrecordEncoder.WriteUInt32(schr, 12, variableCount);
+        SubrecordEncoder.WriteUInt16(schr, 16, 0); // Type = Object
+        SubrecordEncoder.WriteUInt16(schr, 18, 0x0001); // Flags = Enabled
         subs.Add(new EncodedSubrecord("SCHR", schr));
 
         if (item.CompiledData is { Length: > 0 } compiled)
@@ -200,17 +293,27 @@ public sealed class TermEncoder : IRecordEncoder
             // PC engine — same reason as SCPT/INFO. See ScptEncoder.cs.
             var scda = item.IsBigEndianBytecode
                 ? ScriptBytecodeEndianConverter.SwapBigEndianToLittleEndian(
-                    compiled, variables: null, item.ReferencedObjects)
+                    compiled, item.Variables, validation.ResolvedReferences)
                 : compiled;
             subs.Add(new EncodedSubrecord("SCDA", scda));
         }
 
-        if (!string.IsNullOrEmpty(item.SourceText))
+        if (!string.IsNullOrEmpty(validation.SourceTextForEmission))
         {
-            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("SCTX", item.SourceText));
+            subs.Add(NewRecordSubrecords.EncodeGameTextSubrecord(
+                "SCTX", validation.SourceTextForEmission));
         }
 
-        foreach (var refFormId in item.ReferencedObjects)
+        foreach (var variable in item.Variables)
+        {
+            var slsd = new byte[24];
+            SubrecordEncoder.WriteUInt32(slsd, 0, variable.Index);
+            slsd[16] = variable.Type;
+            subs.Add(new EncodedSubrecord("SLSD", slsd));
+            subs.Add(NewRecordSubrecords.EncodeStringSubrecord("SCVR", variable.Name ?? string.Empty));
+        }
+
+        foreach (var refFormId in validation.ResolvedReferences)
         {
             if ((refFormId & 0x80000000) != 0)
             {
@@ -219,10 +322,10 @@ public sealed class TermEncoder : IRecordEncoder
             }
             else
             {
-                // Same alias/validity check as SCPT and INFO SCROs — see ScptEncoder.EncodeNew.
-                var resolved = FormIdReferenceResolver.Resolve(refFormId, validFormIds, remapTable) ?? 0u;
-                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", resolved));
+                subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("SCRO", refFormId));
             }
         }
+
+        return true;
     }
 }

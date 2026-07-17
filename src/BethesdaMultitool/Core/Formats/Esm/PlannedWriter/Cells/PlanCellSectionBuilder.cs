@@ -77,7 +77,8 @@ internal static class PlanCellSectionBuilder
         if (bundles.Count == 0)
         {
             return new CellSectionBuildResult(null, emittedNavmFormIds,
-                ImmutableHashSet<uint>.Empty, ImmutableDictionary<uint, NavmConnectivity>.Empty);
+                ImmutableHashSet<uint>.Empty, ImmutableHashSet<uint>.Empty,
+                ImmutableDictionary<uint, NavmConnectivity>.Empty);
         }
 
         SanitizeNavmNvexInBundles(bundles, emittedNavmFormIds, masterByFormId);
@@ -90,7 +91,11 @@ internal static class PlanCellSectionBuilder
         var sectionBytes = CellGrupBuilder.BuildCellSection(
             bundles, masterByFormId, newWorldspacesByDmpFormId: newWorldspaces);
         return new CellSectionBuildResult(
-            sectionBytes, emittedNavmFormIds, CollectOverriddenChildFormIds(bundles), navmConnectivity);
+            sectionBytes,
+            emittedNavmFormIds,
+            EmittedPlacedReferenceCollector.Collect(bundles),
+            CollectOverriddenChildFormIds(bundles),
+            navmConnectivity);
     }
 
     /// <summary>
@@ -436,11 +441,7 @@ internal static class PlanCellSectionBuilder
     }
 
     /// <summary>
-    ///     Produce the CELL record bytes the bundle hands to legacy GRUP framing. For
-    ///     KeepMaster / Override cells the master byte slice is reused verbatim; for
-    ///     <see cref="RecordDisposition.New" /> cells the CELL is fresh-encoded through
-    ///     <see cref="CellEncoder" /> + <see cref="PluginRecordByteBuilder.BuildNewRecordBytes" />.
-    ///     Returns null when neither path is available (e.g. New disposition with no model).
+    ///     Produces the CELL anchor bytes, reusing a master slice or encoding a new model.
     /// </summary>
     private static byte[]? EncodeCellAnchor(CellPlan cellPlan, PluginBuildOptions options)
     {
@@ -460,8 +461,7 @@ internal static class PlanCellSectionBuilder
             return null;
         }
 
-        // Exterior persistent-container CELLs are identified by both their direct
-        // World Children placement and the persistent record-header bit.  The latter
+        // Exterior persistent-container CELLs use direct World Children placement and the persistent bit. The latter
         // is present on CK-authored/master containers and is required for the runtime
         // to register their group-8 children as worldspace persistents.
         var flags = cellModel.IsPersistentCell ? PersistentFlag : 0u;

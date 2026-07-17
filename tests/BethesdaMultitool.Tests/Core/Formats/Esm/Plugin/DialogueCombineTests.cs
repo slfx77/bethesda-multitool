@@ -77,6 +77,126 @@ public sealed class DialogueCombineTests
     }
 
     [Fact]
+    public void DeduplicateInPlace_SourceOnlyFirstYieldsSecondBundleWithoutBorrowingSource()
+    {
+        var sourceOnly = new DialogueResultScript { SourceText = "set LocalState to 1" };
+        var complete = new DialogueResultScript
+        {
+            CompiledData = [0x01, 0x02],
+            Variables = [new ScriptVariableInfo(7, "LocalState", 1)],
+            ReferencedObjects = [0x80000007, 0x00001234],
+            IsBigEndianBytecode = true
+        };
+        var infos = DuplicateInfos(sourceOnly, complete);
+
+        Assert.Equal(1, DialogueCombinePlanner.DeduplicateInPlace(infos));
+
+        var merged = Assert.Single(Assert.Single(infos).ResultScripts);
+        Assert.Null(merged.SourceText);
+        Assert.Equal(complete.CompiledData, merged.CompiledData);
+        Assert.Equal(complete.Variables, merged.Variables);
+        Assert.Equal(complete.ReferencedObjects, merged.ReferencedObjects);
+        Assert.True(merged.IsBigEndianBytecode);
+        Assert.False(merged.IsIncompleteExecutableBundle);
+    }
+
+    [Fact]
+    public void DeduplicateInPlace_CompleteFirstIgnoresSourceOnlySecond()
+    {
+        var complete = new DialogueResultScript
+        {
+            CompiledData = [0x01, 0x02],
+            Variables = [new ScriptVariableInfo(7, "LocalState", 1)],
+            ReferencedObjects = [0x80000007, 0x00001234],
+            IsBigEndianBytecode = true
+        };
+        var sourceOnly = new DialogueResultScript { SourceText = "set LocalState to 1" };
+        var infos = DuplicateInfos(complete, sourceOnly);
+
+        Assert.Equal(1, DialogueCombinePlanner.DeduplicateInPlace(infos));
+
+        var merged = Assert.Single(Assert.Single(infos).ResultScripts);
+        Assert.Null(merged.SourceText);
+        Assert.Equal(complete.CompiledData, merged.CompiledData);
+        Assert.Equal(complete.Variables, merged.Variables);
+        Assert.Equal(complete.ReferencedObjects, merged.ReferencedObjects);
+        Assert.True(merged.IsBigEndianBytecode);
+        Assert.False(merged.IsIncompleteExecutableBundle);
+    }
+
+    [Fact]
+    public void DeduplicateInPlace_ConflictingCompleteBundlesFailClosedWithoutMixingTables()
+    {
+        var first = new DialogueResultScript
+        {
+            SourceText = "set FirstState to 1",
+            CompiledData = [0x01, 0x02],
+            Variables = [new ScriptVariableInfo(7, "FirstState", 1)],
+            ReferencedObjects = [0x80000007, 0x00001234]
+        };
+        var conflicting = new DialogueResultScript
+        {
+            SourceText = "set OtherState to 1",
+            CompiledData = [0xAA, 0xBB],
+            Variables = [new ScriptVariableInfo(9, "OtherState", 1)],
+            ReferencedObjects = [0x00005678, 0x80000009]
+        };
+        var infos = DuplicateInfos(first, conflicting);
+
+        Assert.Equal(1, DialogueCombinePlanner.DeduplicateInPlace(infos));
+
+        var merged = Assert.Single(Assert.Single(infos).ResultScripts);
+        Assert.True(merged.IsIncompleteExecutableBundle);
+        Assert.Null(merged.SourceText);
+        Assert.Null(merged.CompiledData);
+        Assert.Empty(merged.Variables);
+        Assert.Empty(merged.ReferencedObjects);
+        Assert.False(InlineScriptReferenceValidator.Validate(
+            merged, "ResultScripts[0]", new HashSet<uint>(), null).IsSafe);
+    }
+
+    [Fact]
+    public void DeduplicateInPlace_CompleteConflictRemainsFailClosedAfterLaterMatchingCapture()
+    {
+        var expected = new DialogueResultScript { CompiledData = [0x01, 0x02] };
+        var conflict = new DialogueResultScript { CompiledData = [0xAA, 0xBB] };
+        var infos = DuplicateInfos(expected, conflict, expected);
+
+        Assert.Equal(2, DialogueCombinePlanner.DeduplicateInPlace(infos));
+
+        var merged = Assert.Single(Assert.Single(infos).ResultScripts);
+        Assert.True(merged.IsIncompleteExecutableBundle);
+        Assert.Null(merged.CompiledData);
+    }
+
+    [Fact]
+    public void DeduplicateInPlace_CompleteBundleIgnoresIncompleteSiblingSourceAndFlag()
+    {
+        var complete = new DialogueResultScript
+        {
+            CompiledData = [0x01, 0x02],
+            Variables = [new ScriptVariableInfo(7, "LocalState", 1)],
+            ReferencedObjects = [0x80000007]
+        };
+        var incomplete = new DialogueResultScript
+        {
+            SourceText = "source from partial executable capture",
+            CompiledData = [0xAA],
+            IsIncompleteExecutableBundle = true
+        };
+        var infos = DuplicateInfos(incomplete, complete);
+
+        Assert.Equal(1, DialogueCombinePlanner.DeduplicateInPlace(infos));
+
+        var merged = Assert.Single(Assert.Single(infos).ResultScripts);
+        Assert.Equal(complete.CompiledData, merged.CompiledData);
+        Assert.Equal(complete.Variables, merged.Variables);
+        Assert.Equal(complete.ReferencedObjects, merged.ReferencedObjects);
+        Assert.Null(merged.SourceText);
+        Assert.False(merged.IsIncompleteExecutableBundle);
+    }
+
+    [Fact]
     public void OverlayWriter_PreservesEveryMasterSubrecordExceptMatchedNam1()
     {
         var firstTrdt = Trdt(responseNumber: 5, fill: 0x35);
@@ -357,6 +477,15 @@ public sealed class DialogueCombineTests
         Assert.False(cutInfo.HasResultScript);
         Assert.Equal((byte)0x04, cutInfo.InfoFlags);
         Assert.Equal((byte)0x01, cutInfo.InfoFlagsExt);
+
+        var unsafeDerivedPlan = DialogueCombinePlanner.Build(
+            [], [source with { SuppressPrototypeDerivedDialogue = true }],
+            new NewVsOverrideClassifier([dial, infoId]), masterIndex,
+            [dial, infoId, quest, speaker]);
+        Assert.Single(unsafeDerivedPlan.SharedInfoOverlays);
+        Assert.Empty(unsafeDerivedPlan.NewTopics);
+        Assert.Empty(unsafeDerivedPlan.NewInfos);
+        Assert.Equal(0, unsafeDerivedPlan.CutInfosRehomed);
 
         var unavailableQuestPlan = DialogueCombinePlanner.Build(
             [], [source], new NewVsOverrideClassifier([dial, infoId]), masterIndex, [dial, infoId]);
@@ -956,6 +1085,15 @@ public sealed class DialogueCombineTests
             Offset = offset,
             Subrecords = subrecords.ToList()
         };
+
+    private static List<DialogueRecord> DuplicateInfos(
+        params DialogueResultScript[] scripts) =>
+        scripts.Select(script => new DialogueRecord
+        {
+            FormId = 0x0010A1EC,
+            HasResultScript = true,
+            ResultScripts = [script]
+        }).ToList();
 
     private static ParsedSubrecord Sub(string signature, byte[] data) =>
         new() { Signature = signature, Data = data };

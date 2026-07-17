@@ -44,10 +44,16 @@ internal sealed record DialogSectionResult(
     byte[] DialogSection,
     byte[]? PlaceholderQustRecord,
     IReadOnlyDictionary<uint, uint> NewInfoSourceToAllocated,
-    IReadOnlyList<EmittedDialogueAudioBinding> AudioBindings)
+    IReadOnlyList<EmittedDialogueAudioBinding> AudioBindings,
+    DialogueProducerLedger ProducerLedger)
 {
     public DialogSectionResult(byte[] DialogSection, byte[]? PlaceholderQustRecord)
-        : this(DialogSection, PlaceholderQustRecord, new Dictionary<uint, uint>(), [])
+        : this(
+            DialogSection,
+            PlaceholderQustRecord,
+            new Dictionary<uint, uint>(),
+            [],
+            DialogueProducerLedger.Empty)
     {
     }
 
@@ -55,7 +61,12 @@ internal sealed record DialogSectionResult(
         byte[] DialogSection,
         byte[]? PlaceholderQustRecord,
         IReadOnlyDictionary<uint, uint> NewInfoSourceToAllocated)
-        : this(DialogSection, PlaceholderQustRecord, NewInfoSourceToAllocated, [])
+        : this(
+            DialogSection,
+            PlaceholderQustRecord,
+            NewInfoSourceToAllocated,
+            [],
+            DialogueProducerLedger.Empty)
     {
     }
 }
@@ -92,7 +103,9 @@ internal static class DialogGrupBuilder
         MasterDialogueIndex? masterDialogueIndex = null,
         IReadOnlySet<uint>? diagnosticKeepMasterFormIds = null,
         IReadOnlyDictionary<uint, ImmutableHashSet<string>>? diagnosticRetainMasterSubrecords = null,
-        IReadOnlyDictionary<uint, uint>? preallocatedNewFormIds = null)
+        IReadOnlyDictionary<uint, uint>? preallocatedNewFormIds = null,
+        IReadOnlyList<QuestVariableRecoveryMapping>? questVariableProducerMappings = null,
+        IReadOnlySet<uint>? liveScriptVariableOwnerFormIds = null)
     {
         masterDialogueIndex ??= MasterDialogueIndex.BuildFromRecordOrder(masterRecordsByFormId.Values);
         var combinePlan = DialogueCombinePlanner.Build(
@@ -275,6 +288,192 @@ internal static class DialogGrupBuilder
         var dialogRemapTable = MergeRemapTables(remapTable, dialFormIdMap);
         dialogRemapTable = MergeRemapTables(dialogRemapTable, infoFormIdMap);
 
+        // A GetScriptVariable chain may be semantically valid in the captured dump yet
+        // still point at a placed owner whose parent CELL is suppressed later. The caller
+        // supplies only master + actually-written REFR/ACHR/ACRE identities after cell
+        // emission. Remove the complete INFO here; dropping just CTDA would widen it.
+        if (liveScriptVariableOwnerFormIds is not null)
+        {
+            var unavailableOwnerInfos = new Dictionary<DialogueRecord, (uint Source, uint Resolved)>(
+                ReferenceEqualityComparer.Instance);
+            foreach (var info in infosByEmittedDial.Values.SelectMany(static list => list)
+                         .Concat(infosByMasterDial.Values.SelectMany(static list => list)))
+            {
+                foreach (var condition in info.Conditions)
+                {
+                    if (condition.FunctionIndex !=
+                        QuestVariableConditionSanitizer.GetScriptVariableFunctionIndex)
+                    {
+                        continue;
+                    }
+
+                    var sourceOwner = condition.Parameter1;
+                    var resolvedOwner = ResolveTerminalAlias(sourceOwner, remapTable);
+                    if (!liveScriptVariableOwnerFormIds.Contains(resolvedOwner))
+                    {
+                        unavailableOwnerInfos.TryAdd(info, (sourceOwner, resolvedOwner));
+                        break;
+                    }
+                }
+            }
+
+            if (unavailableOwnerInfos.Count > 0)
+            {
+                foreach (var infosForDial in infosByEmittedDial.Values)
+                {
+                    infosForDial.RemoveAll(unavailableOwnerInfos.ContainsKey);
+                }
+
+                foreach (var infosForDial in infosByMasterDial.Values)
+                {
+                    infosForDial.RemoveAll(unavailableOwnerInfos.ContainsKey);
+                }
+
+                foreach (var (info, owner) in unavailableOwnerInfos)
+                {
+                    if (info.FormId != 0
+                        && infoFormIdMap.Remove(info.FormId, out var allocatedInfoFormId))
+                    {
+                        validFormIds.Remove(allocatedInfoFormId);
+                    }
+
+                    stats.IncrementSkipped("INFO");
+                    stats.IncrementDropReason("script-variable.owner-not-emitted");
+                    sink.Warn(
+                        "Building dialog section",
+                        $"Suppressed new INFO 0x{info.FormId:X8}: GetScriptVariable owner " +
+                        $"0x{owner.Source:X8} resolved to 0x{owner.Resolved:X8}, but that " +
+                        "REFR/ACHR/ACRE was not actually emitted. The whole INFO is atomic; " +
+                        "no condition was dropped or widened.",
+                        "INFO",
+                        info.FormId,
+                        "script-variable.owner-not-emitted",
+                        new Dictionary<string, string?>(StringComparer.Ordinal)
+                        {
+                            ["script-variable-source-owner-form-id"] = $"0x{owner.Source:X8}",
+                            ["script-variable-target-owner-form-id"] = $"0x{owner.Resolved:X8}",
+                            ["owner-liveness-source"] = "master-or-actual-cell-emission",
+                        });
+                }
+
+                dialogRemapTable = MergeRemapTables(remapTable, dialFormIdMap);
+                dialogRemapTable = MergeRemapTables(dialogRemapTable, infoFormIdMap);
+            }
+        }
+
+        // INFOs bypass the top-level PlanWriter because they are nested under DIAL topic
+        // GRUPs. Apply the same atomic inline-script gate here before any INFO bytes are
+        // emitted. Iterate to a fixed point: removing one unsafe INFO also removes its
+        // allocated FormID, which can expose an SCRO dangle in another INFO's result script.
+        while (true)
+        {
+            var unsafeInfos = new Dictionary<DialogueRecord, InlineScriptReferenceValidator.Issue>(
+                ReferenceEqualityComparer.Instance);
+            foreach (var info in infosByEmittedDial.Values.SelectMany(static list => list)
+                         .Concat(infosByMasterDial.Values.SelectMany(static list => list)))
+            {
+                var issue = InlineScriptReferenceValidator.FindFirstIssue(
+                    info, validFormIds, dialogRemapTable);
+                if (issue is not null)
+                {
+                    unsafeInfos.TryAdd(info, issue);
+                }
+            }
+
+            if (unsafeInfos.Count == 0)
+            {
+                break;
+            }
+
+            foreach (var infosForDial in infosByEmittedDial.Values)
+            {
+                infosForDial.RemoveAll(unsafeInfos.ContainsKey);
+            }
+
+            foreach (var infosForDial in infosByMasterDial.Values)
+            {
+                infosForDial.RemoveAll(unsafeInfos.ContainsKey);
+            }
+
+            foreach (var (info, issue) in unsafeInfos)
+            {
+                if (info.FormId != 0
+                    && infoFormIdMap.Remove(info.FormId, out var allocatedInfoFormId))
+                {
+                    validFormIds.Remove(allocatedInfoFormId);
+                }
+
+                stats.IncrementSkipped("INFO");
+                stats.IncrementDropReason("inline-script.unsafe-info");
+                sink.Warn(
+                    "Building dialog section",
+                    $"Suppressed new INFO 0x{info.FormId:X8}: {issue.Message} " +
+                    "Inline SCDA/SLSD/SCRO/SCRV is atomic; no slot was dropped or zero-filled.",
+                    "INFO",
+                    info.FormId,
+                    "inline-script.suppress-unsafe-owner",
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        ["script-path"] = issue.ScriptPath,
+                        ["reference-field"] = issue.FieldPath,
+                        ["target-source-form-id"] = issue.SourceFormId.HasValue
+                            ? $"0x{issue.SourceFormId.Value:X8}"
+                            : null,
+                        ["target-emitted-form-id"] = issue.ResolvedFormId.HasValue
+                            ? $"0x{issue.ResolvedFormId.Value:X8}"
+                            : null,
+                        ["local-variable-id"] = issue.LocalVariableId?.ToString(
+                            CultureInfo.InvariantCulture),
+                    });
+            }
+
+            dialogRemapTable = MergeRemapTables(remapTable, dialFormIdMap);
+            dialogRemapTable = MergeRemapTables(dialogRemapTable, infoFormIdMap);
+        }
+
+        // Shared INFO overlays only replace retail NAM1 text, but planner-all's unsafe-
+        // override verdict is KeepMaster for the complete owner. Honor that here as well:
+        // an unsafe captured inline bundle must not cause even a partial INFO override on
+        // the separate dialogue path.
+        foreach (var overlaysForDial in overlaysByMasterDial.Values)
+        {
+            for (var index = overlaysForDial.Count - 1; index >= 0; index--)
+            {
+                var overlay = overlaysForDial[index];
+                var issue = InlineScriptReferenceValidator.FindFirstIssue(
+                    overlay.PrototypeInfo, validFormIds, dialogRemapTable);
+                if (issue is null)
+                {
+                    continue;
+                }
+
+                overlaysForDial.RemoveAt(index);
+                stats.IncrementSkipped("INFO");
+                stats.IncrementDropReason("inline-script.unsafe-info-override");
+                sink.Warn(
+                    "Building dialog section",
+                    $"Retained master INFO 0x{overlay.MasterInfo.Record.Header.FormId:X8}: " +
+                    $"{issue.Message} Inline SCDA/SLSD/SCRO/SCRV is atomic.",
+                    "INFO",
+                    overlay.MasterInfo.Record.Header.FormId,
+                    "inline-script.suppress-unsafe-owner",
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        ["owner-disposition"] = "KeepMaster",
+                        ["script-path"] = issue.ScriptPath,
+                        ["reference-field"] = issue.FieldPath,
+                        ["target-source-form-id"] = issue.SourceFormId.HasValue
+                            ? $"0x{issue.SourceFormId.Value:X8}"
+                            : null,
+                        ["target-emitted-form-id"] = issue.ResolvedFormId.HasValue
+                            ? $"0x{issue.ResolvedFormId.Value:X8}"
+                            : null,
+                        ["local-variable-id"] = issue.LocalVariableId?.ToString(
+                            CultureInfo.InvariantCulture),
+                    });
+            }
+        }
+
         // Build a per-DIAL EDID lookup once. Engine voice-file paths are keyed on the
         // parent DIAL's EditorId, so we need EDID for every DIAL whose children we emit —
         // new DIALs (from the encoded topic record) and master DIAL anchors (from the
@@ -327,6 +526,9 @@ internal static class DialogGrupBuilder
         var droppedEmptyStubMasterTopicInfos = 0;
         var infoSourceToAllocated = new Dictionary<uint, uint>();
         var audioBindings = new List<EmittedDialogueAudioBinding>();
+        var producerLedger = new DialogueProducerLedgerBuilder(
+            questVariableProducerMappings,
+            remapTable);
         foreach (var topic in newTopics)
         {
             var newDialId = dialFormIdMap[topic.FormId];
@@ -385,6 +587,7 @@ internal static class DialogGrupBuilder
                 };
 
                 var infoEncoded = InfoEncoder.EncodeNew(patched, validFormIds, dialogRemapTable);
+                ReportInfoEncodingWarnings(infoEncoded, info.FormId, sink);
                 if (infoEncoded.Subrecords.Count == 0)
                 {
                     stats.IncrementSkipped("INFO");
@@ -394,6 +597,11 @@ internal static class DialogGrupBuilder
                 var infoBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
                     "INFO", newInfoId, flags: 0u, infoEncoded.Subrecords);
                 stream.Write(infoBytes);
+                producerLedger.RecordEmittedInfo(
+                    info,
+                    patched,
+                    validFormIds,
+                    dialogRemapTable);
                 stats.IncrementEmitted("INFO");
                 stats.NewRecordsEmitted++;
                 emittedInfos++;
@@ -554,6 +762,7 @@ internal static class DialogGrupBuilder
                 };
 
                 var infoEncoded = InfoEncoder.EncodeNew(patched, validFormIds, dialogRemapTable);
+                ReportInfoEncodingWarnings(infoEncoded, info.FormId, sink);
                 if (infoEncoded.Subrecords.Count == 0)
                 {
                     stats.IncrementSkipped("INFO");
@@ -563,6 +772,11 @@ internal static class DialogGrupBuilder
                 var infoBytes = PluginRecordByteBuilder.BuildNewRecordBytes(
                     "INFO", newInfoId, flags: 0u, infoEncoded.Subrecords);
                 stream.Write(infoBytes);
+                producerLedger.RecordEmittedInfo(
+                    info,
+                    patched,
+                    validFormIds,
+                    dialogRemapTable);
                 stats.IncrementEmitted("INFO");
                 stats.NewRecordsEmitted++;
                 emittedInfos++;
@@ -621,7 +835,11 @@ internal static class DialogGrupBuilder
             code: "dialog.emitted");
 
         return new DialogSectionResult(
-            stream.ToArray(), null, infoSourceToAllocated, audioBindings);
+            stream.ToArray(),
+            null,
+            infoSourceToAllocated,
+            audioBindings,
+            producerLedger.Build());
     }
 
     /// <summary>
@@ -1113,7 +1331,59 @@ internal static class DialogGrupBuilder
             merged[sourceDialId] = allocatedDialId;
         }
 
+        // Callers can contribute aliases in more than one phase (prototype -> master,
+        // then source/preallocated -> final emitted). Collapse every chain here so later
+        // INFO condition sanitation writes the same terminal identity used by the placed-
+        // owner liveness gate. A one-hop table could retain the INFO against the terminal
+        // owner and then drop or serialize its CTDA against an intermediate alias.
+        foreach (var sourceFormId in merged.Keys.ToArray())
+        {
+            merged[sourceFormId] = ResolveTerminalAlias(sourceFormId, merged);
+        }
+
         return merged;
+    }
+
+    private static uint ResolveTerminalAlias(
+        uint sourceFormId,
+        IReadOnlyDictionary<uint, uint>? remapTable)
+    {
+        if (sourceFormId == 0 || remapTable is null)
+        {
+            return sourceFormId;
+        }
+
+        var current = sourceFormId;
+        var visited = new HashSet<uint>();
+        while (visited.Add(current)
+               && remapTable.TryGetValue(current, out var mapped)
+               && mapped != current)
+        {
+            if (mapped == 0)
+            {
+                return 0;
+            }
+
+            current = mapped;
+        }
+
+        return current;
+    }
+
+    private static void ReportInfoEncodingWarnings(
+        EncodedRecord encoded,
+        uint sourceInfoFormId,
+        IConversionProgressSink sink)
+    {
+        foreach (var warning in encoded.Warnings)
+        {
+            sink.Warn(
+                "Building dialog section",
+                warning,
+                "INFO",
+                sourceInfoFormId,
+                "inline-script.encoder-rejected-owner");
+        }
     }
 
     /// <summary>

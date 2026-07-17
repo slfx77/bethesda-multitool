@@ -77,12 +77,20 @@ internal sealed class ScriptVariableReader
 
     #region Variable Reading
 
-    internal string ReadLocalVariable(BytecodeReader reader)
+    internal string ReadLocalVariable(BytecodeReader reader, byte? marker = null)
     {
-        return reader.CanRead(2) ? GetVariableName(reader.ReadUInt16()) : "<truncated var>";
+        if (!reader.CanRead(2))
+        {
+            return "<truncated var>";
+        }
+
+        var operandOffset = reader.Position;
+        var variableIndex = reader.ReadUInt16();
+        reader.TrackLocalVariableRead(variableIndex, operandOffset, marker);
+        return GetVariableName(variableIndex);
     }
 
-    internal string ReadReferenceVariable(BytecodeReader reader)
+    internal string ReadReferenceVariable(BytecodeReader reader, bool isWrite = false)
     {
         // Format: [refIdx:2] [innerByte:1] [...]
         // Inner byte determines what follows:
@@ -100,18 +108,28 @@ internal sealed class ScriptVariableReader
         if (innerByte is ScriptOpcodes.MarkerIntLocal or ScriptOpcodes.MarkerFloatLocal)
         {
             // ref.variable: [varMarker:1] [varIdx:2]
-            reader.ReadByte();
+            var marker = reader.ReadByte();
             if (!reader.CanRead(2))
             {
                 return $"{refName}.var?";
             }
 
+            var operandOffset = reader.Position;
             var varIndex = reader.ReadUInt16();
+            var refFormId = GetScroFormId(refIndex);
+            if (refFormId.HasValue)
+            {
+                reader.TrackExternalVariableRead(
+                    refFormId.Value,
+                    varIndex,
+                    operandOffset,
+                    marker,
+                    isWrite);
+            }
 
             // Try to resolve from the referenced object's script variable list
             if (_resolveExternalVariable != null)
             {
-                var refFormId = GetScroFormId(refIndex);
                 if (refFormId.HasValue)
                 {
                     var resolvedName = _resolveExternalVariable(refFormId.Value, varIndex);
@@ -233,10 +251,10 @@ internal sealed class ScriptVariableReader
         {
             case ScriptOpcodes.MarkerIntLocal:
             case ScriptOpcodes.MarkerFloatLocal:
-                return ReadLocalVariable(reader);
+                return ReadLocalVariable(reader, marker);
 
             case ScriptOpcodes.MarkerReference:
-                return ReadReferenceVariable(reader);
+                return ReadReferenceVariable(reader, isWrite: true);
 
             case ScriptOpcodes.MarkerGlobal:
                 return ReadGlobalVariable(reader);
@@ -245,12 +263,14 @@ internal sealed class ScriptVariableReader
                 // Unknown marker -- might be a direct index
                 if (reader.CanRead(1))
                 {
+                    var operandOffset = reader.Position - 1;
                     var idx = (ushort)((marker << 8) | reader.ReadByte());
                     if (!_isBigEndian)
                     {
                         idx = (ushort)((idx >> 8) | ((idx & 0xFF) << 8));
                     }
 
+                    reader.TrackLocalVariableRead(idx, operandOffset, marker: null);
                     return GetVariableName(idx);
                 }
 

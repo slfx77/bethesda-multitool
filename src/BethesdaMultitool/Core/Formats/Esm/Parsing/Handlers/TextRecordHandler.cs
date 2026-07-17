@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
@@ -157,7 +158,8 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
     /// <summary>
     ///     Parse a TERM record's subrecord stream. Reads EDID/FULL/DESC/DNAM at the record
     ///     level, then collects menu items by tracking the per-item subrecord cycle
-    ///     (ITXT → RNAM? → SCHR+SCDA?+SCTX?+SCRO*+SCRV* → NEXT separator). Embedded result
+    ///     (ITXT → RNAM → ANAM → INAM?/TNAM? → SCHR+SCDA?+SCTX?+SCRO*+SCRV*).
+    ///     FNV has no required NEXT separator. Embedded result
     ///     scripts are stored on the menu item via CompiledData/SourceText/ReferencedObjects.
     /// </summary>
     private TerminalRecord? ParseTerminalFromAccessor(DetectedMainRecord record, byte[] buffer)
@@ -193,44 +195,125 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         // Active menu-item accumulator. Reset on each NEXT separator (or on a new ITXT if a
         // record skips NEXT). Null until the first ITXT is seen.
         string? curText = null;
-        uint? curResultScript = null;
+        string? curResultText = null;
+        uint? curDisplayNoteFormId = null;
         uint? curSubTerminal = null;
         byte? curActionType = null;
         byte[]? curCompiledData = null;
         string? curSourceText = null;
+        var curVariables = new List<ScriptVariableInfo>();
         var curReferencedObjects = new List<uint>();
         var curConditions = new List<DialogueCondition>();
+        SerializedScriptLocalTableParser? curSerializedLocals = null;
         var curHasMenuItem = false;
+        var curHasSerializedHeader = false;
+        var curHasMalformedSerializedHeader = false;
+        uint curExpectedCompiledSize = 0;
+        uint curExpectedVariableCount = 0;
+        uint curExpectedReferenceCount = 0;
+        var curSeenSourceText = false;
+        var curSeenCompiledData = false;
+        var curScriptBundleAmbiguous = false;
 
         void FlushMenuItem()
         {
             if (!curHasMenuItem) return;
+            curSerializedLocals!.Complete();
+            var isBigEndianBytecode = curCompiledData is { Length: > 0 }
+                                      && CapturedScriptEmissionContract.InferBytecodeEndian(
+                                          curCompiledData,
+                                          curVariables,
+                                          curReferencedObjects,
+                                          fallbackIsBigEndian: record.IsBigEndian);
+            var decompiledText = CapturedScriptEmissionContract.DecompileInline(
+                curCompiledData,
+                curVariables,
+                curReferencedObjects,
+                isBigEndianBytecode,
+                !string.IsNullOrWhiteSpace(editorId)
+                    ? $"{editorId}_Menu_{menuItems.Count + 1}"
+                    : $"TERM_{record.FormId:X8}_Menu_{menuItems.Count + 1}",
+                Context.ResolveFormName,
+                ScriptFunctionTables.For(Context.Game));
+            var isDmpDerived = Context.MinidumpInfo is not null;
+            var sourceOrigin = isDmpDerived && !string.IsNullOrEmpty(curSourceText)
+                ? ScriptSourceTextOrigin.DmpFragment
+                : ScriptSourceTextOrigin.None;
+            var sourceDecision = CapturedScriptEmissionContract.EvaluateInline(
+                isDmpDerived,
+                sourceOrigin,
+                curCompiledData,
+                curSourceText,
+                decompiledText,
+                curVariables,
+                curReferencedObjects,
+                isBigEndianBytecode);
+            var hasInconsistentBundle = curScriptBundleAmbiguous
+                                        || curSerializedLocals.IsMalformed
+                                        || curHasMalformedSerializedHeader
+                                        || curCompiledData is { Length: > 0 } compiled
+                                        && (!curHasSerializedHeader
+                                            || curExpectedCompiledSize != (uint)compiled.Length
+                                            || curExpectedVariableCount != (uint)curVariables.Count
+                                            || curExpectedReferenceCount !=
+                                            (uint)curReferencedObjects.Count)
+                                        || curCompiledData is not { Length: > 0 }
+                                        && (curVariables.Count != 0
+                                            || curReferencedObjects.Count != 0
+                                            || curExpectedCompiledSize != 0
+                                            || curExpectedVariableCount != 0
+                                            || curExpectedReferenceCount != 0);
             menuItems.Add(new TerminalMenuItem
             {
                 Text = curText,
-                ResultScript = curResultScript,
+                ResultText = curResultText,
+                DisplayNoteFormId = curDisplayNoteFormId,
                 SubTerminal = curSubTerminal,
                 ActionType = curActionType,
                 Conditions = curConditions.Count > 0 ? [..curConditions] : [],
                 CompiledData = curCompiledData,
-                SourceText = curSourceText,
+                SourceText = sourceDecision.SourceText,
+                DecompiledText = decompiledText,
+                SourceTextOrigin = sourceDecision.SourceText is null
+                    ? ScriptSourceTextOrigin.None
+                    : sourceOrigin,
+                IsDmpDerived = isDmpDerived,
+                Variables = curVariables.Count > 0 ? [..curVariables] : [],
                 ReferencedObjects = curReferencedObjects.Count > 0 ? [..curReferencedObjects] : [],
-                IsBigEndianBytecode = curCompiledData is { Length: > 0 } && record.IsBigEndian
+                IsBigEndianBytecode = isBigEndianBytecode,
+                IsIncompleteExecutableBundle = hasInconsistentBundle
+                                               || !sourceDecision.ExecutableBundleSafe,
             });
             curText = null;
-            curResultScript = null;
+            curResultText = null;
+            curDisplayNoteFormId = null;
             curSubTerminal = null;
             curActionType = null;
             curCompiledData = null;
             curSourceText = null;
+            curVariables.Clear();
+            curSerializedLocals = null;
             curReferencedObjects.Clear();
             curConditions.Clear();
             curHasMenuItem = false;
+            curHasSerializedHeader = false;
+            curHasMalformedSerializedHeader = false;
+            curExpectedCompiledSize = 0;
+            curExpectedVariableCount = 0;
+            curExpectedReferenceCount = 0;
+            curSeenSourceText = false;
+            curSeenCompiledData = false;
+            curScriptBundleAmbiguous = false;
         }
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (curHasMenuItem)
+            {
+                curSerializedLocals!.ObserveSubrecord(
+                    sub.Signature, subData, record.IsBigEndian);
+            }
 
             switch (sub.Signature)
             {
@@ -273,6 +356,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     FlushMenuItem();
                     curText = EsmStringUtils.ReadNullTermString(subData);
                     curHasMenuItem = true;
+                    curSerializedLocals = new SerializedScriptLocalTableParser(curVariables);
                     break;
                 case "ANAM" when sub.DataLength >= 1 && curHasMenuItem:
                     curActionType = subData[0];
@@ -296,31 +380,95 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     curConditions[^1] = last with { Parameter2String = s };
                     break;
                 }
-                case "RNAM" when sub.DataLength == 4 && curHasMenuItem:
-                    // External script/sub-terminal link. The FormID type isn't disambiguated
-                    // in the on-disk format; both possibilities resolve at link time.
-                    curResultScript = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                case "RNAM" when curHasMenuItem:
+                    // FNV RNAM is always the menu item's result text, including when its
+                    // encoded byte length happens to be four. It is not a FormID field.
+                    curResultText = EsmStringUtils.ReadNullTermString(subData);
                     break;
-                case "SCHR" when sub.DataLength >= 20 && curHasMenuItem:
-                    // SCHR(20B) marks the start of an embedded result-script block. We accept
-                    // it as a signal but don't extract its scalar fields — the encoder rebuilds
-                    // SCHR from the bytecode size and referenced-object count.
+                case "INAM" when sub.DataLength == 4 && curHasMenuItem:
+                    curDisplayNoteFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "TNAM" when sub.DataLength == 4 && curHasMenuItem:
+                    curSubTerminal = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "SCHR" when curHasMenuItem:
+                    if (curHasSerializedHeader || curHasMalformedSerializedHeader)
+                    {
+                        curScriptBundleAmbiguous = true;
+                        break;
+                    }
+
+                    if (sub.DataLength < 20)
+                    {
+                        curHasMalformedSerializedHeader = true;
+                        break;
+                    }
+
+                    curHasSerializedHeader = true;
+                    curExpectedReferenceCount = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[4..])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
+                    curExpectedCompiledSize = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[8..])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[8..]);
+                    curExpectedVariableCount = record.IsBigEndian
+                        ? BinaryPrimitives.ReadUInt32BigEndian(subData[12..])
+                        : BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
                     break;
                 case "SCDA" when curHasMenuItem:
-                    curCompiledData = subData.ToArray();
+                    if (curSeenCompiledData)
+                    {
+                        curScriptBundleAmbiguous = true;
+                    }
+                    else
+                    {
+                        curSeenCompiledData = true;
+                        curCompiledData = subData.ToArray();
+                    }
+
                     break;
                 case "SCTX" when curHasMenuItem:
-                    curSourceText = EsmStringUtils.ReadNullTermString(subData);
+                    if (curSeenSourceText)
+                    {
+                        curScriptBundleAmbiguous = true;
+                    }
+                    else
+                    {
+                        curSeenSourceText = true;
+                        curSourceText = EsmStringUtils.ReadNullTermString(subData);
+                    }
+
                     break;
-                case "SCRO" when sub.DataLength == 4 && curHasMenuItem:
-                    curReferencedObjects.Add(RecordParserContext.ReadFormId(subData, record.IsBigEndian));
+                case "SLSD" when curHasMenuItem:
                     break;
-                case "SCRV" when sub.DataLength == 4 && curHasMenuItem:
+                case "SCVR" when curHasMenuItem:
+                    break;
+                case "SCRO" when curHasMenuItem:
+                    if (sub.DataLength < 4)
+                    {
+                        curScriptBundleAmbiguous = true;
+                    }
+                    else
+                    {
+                        curReferencedObjects.Add(
+                            RecordParserContext.ReadFormId(subData, record.IsBigEndian));
+                    }
+
+                    break;
+                case "SCRV" when curHasMenuItem:
                 {
-                    var varIdx = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    curReferencedObjects.Add(0x80000000u | (varIdx & 0x7FFFFFFFu));
+                    if (sub.DataLength < 4)
+                    {
+                        curScriptBundleAmbiguous = true;
+                    }
+                    else
+                    {
+                        var varIdx = record.IsBigEndian
+                            ? BinaryPrimitives.ReadUInt32BigEndian(subData)
+                            : BinaryPrimitives.ReadUInt32LittleEndian(subData);
+                        curReferencedObjects.Add(0x80000000u | (varIdx & 0x7FFFFFFFu));
+                    }
+
                     break;
                 }
                 case "NEXT":

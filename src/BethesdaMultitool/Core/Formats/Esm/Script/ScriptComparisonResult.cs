@@ -20,6 +20,11 @@ public sealed class ScriptComparisonResult
 
     public int TotalMismatches => MismatchesByCategory.Values.Sum();
     public int TotalTolerated => ToleratedDifferences.Values.Sum();
+
+    /// <summary>
+    ///     Total executable statements considered. ScriptName/scn identity headers and local
+    ///     declarations are intentionally excluded from the SCDA semantic comparison.
+    /// </summary>
     public int TotalLines => MatchCount + TotalMismatches;
 
     public double MatchRate => TotalLines > 0 ? 100.0 * MatchCount / TotalLines : 0;

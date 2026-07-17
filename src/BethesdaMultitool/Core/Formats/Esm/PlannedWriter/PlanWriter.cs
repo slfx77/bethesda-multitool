@@ -1,9 +1,13 @@
+using System.Collections.Immutable;
 using BethesdaMultitool.Core.Formats.Esm.Merge;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Output;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers;
+using BethesdaMultitool.Core.Formats.Esm.Reporting;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 
@@ -21,10 +25,15 @@ public sealed class PlanWriter
     private const uint CompressedFlag = 0x00040000u;
 
     private readonly PlannedEncoderRegistry _encoders;
+    private readonly IConversionProgressSink _sink;
+    private readonly HashSet<QuestVariableProducerOwner> _emittedProducerOwners = [];
 
-    public PlanWriter(PlannedEncoderRegistry encoders)
+    public PlanWriter(
+        PlannedEncoderRegistry encoders,
+        IConversionProgressSink? sink = null)
     {
         _encoders = encoders ?? throw new ArgumentNullException(nameof(encoders));
+        _sink = sink ?? NullConversionProgressSink.Instance;
     }
 
     /// <summary>
@@ -32,6 +41,18 @@ public sealed class PlanWriter
     ///     The dispatch shim should only consult the writer for types it owns.
     /// </summary>
     public bool Handles(string recordType) => _encoders.Contains(recordType);
+
+    /// <summary>
+    ///     Exact model-owned script paths whose enclosing records have reached the output
+    ///     byte stream. A planned record is intentionally absent when its encoder declines
+    ///     late (for example, after PACK inline-script sanitation).
+    /// </summary>
+    internal PlanProducerEmissionLedger ProducerLedger => new(
+        _emittedProducerOwners
+            .OrderBy(static owner => owner.RecordType, StringComparer.Ordinal)
+            .ThenBy(static owner => owner.SourceFormId)
+            .ThenBy(static owner => owner.ScriptPath, StringComparer.Ordinal)
+            .ToImmutableArray());
 
     /// <summary>
     ///     Produce the wrapped top-level GRUP bytes for one record type from the plan.
@@ -71,6 +92,33 @@ public sealed class PlanWriter
                 continue; // KeepMaster records live in the master ESM; Skip records are dropped.
             }
 
+            // Append-only master SCPT locals are a settled planner directive, and may
+            // target a master-only catalog entry whose semantic DMP Model is null. Execute
+            // this before the generic model-null guard. The dedicated encoder preserves
+            // master order and inserts new locals before SCRO/SCRV; generic positional
+            // merging cannot safely express that insertion.
+            if (record.Type == "SCPT" && !record.ScriptVariableAugmentations.IsEmpty)
+            {
+                if (record.Disposition != RecordDisposition.Override || record.Master is null)
+                {
+                    throw new InvalidOperationException(
+                        $"SCPT variable augmentation for 0x{record.FormId:X8} requires a master override.");
+                }
+
+                var subrecordBytes = Encoders.ComplexRef.MasterScriptVariableAugmentationEncoder
+                    .EncodeSubrecordStream(record);
+                var augmentedRecord = PluginRecordByteBuilder.BuildOverrideRecordBytes(
+                    record.Master, subrecordBytes, options);
+                grupBodyStream.Write(augmentedRecord);
+                ScriptEmissionProvenanceReporter.ReportAugmentedMasterScript(
+                    _sink,
+                    record.Master,
+                    EsmParser.ParseSubrecords(subrecordBytes),
+                    record.ScriptVariableAugmentations);
+                anyEmitted = true;
+                continue;
+            }
+
             if (record.Model is null)
             {
                 continue; // Override / New always have a Model from the planner.
@@ -78,6 +126,16 @@ public sealed class PlanWriter
 
             var refs = new PlanReferenceLookup(record, plan);
             var encoded = encoder.Encode(record.Model, record, refs);
+            foreach (var warning in encoded.Warnings)
+            {
+                _sink.Warn(
+                    "Writing planned records",
+                    warning,
+                    recordType,
+                    record.SourceFormId ?? record.FormId,
+                    "planned-encoder.warning");
+            }
+
             encoded = encoded with
             {
                 Subrecords = EncodedSubrecordFormIdRemapper.Remap(
@@ -94,6 +152,13 @@ public sealed class PlanWriter
 
             if (encoded.Subrecords.Count == 0)
             {
+                if (recordType == "SCPT" && record.Disposition == RecordDisposition.New)
+                {
+                    throw new InvalidOperationException(
+                        $"Planned new SCPT 0x{record.FormId:X8} produced no bytes; "
+                        + "the planner/writer script-emission policies have diverged.");
+                }
+
                 continue; // Encoder declined — matches legacy "no changes → skip override" path.
             }
 
@@ -105,6 +170,34 @@ public sealed class PlanWriter
             };
 
             grupBodyStream.Write(recordBytes);
+            // Producer discovery deliberately excludes master-anchored records. For an
+            // override, merge policy can retain the master's script bytes instead of the
+            // encoded block, so encoder metadata alone cannot prove what survived. Fail
+            // closed and promote only New records, whose serialized body is exactly the
+            // remapped encoded stream above.
+            if (record.Disposition == RecordDisposition.New
+                && record.SourceFormId is { } sourceFormId)
+            {
+                foreach (var scriptPath in encoded.EmittedScriptPaths)
+                {
+                    _emittedProducerOwners.Add(new QuestVariableProducerOwner(
+                        record.Type,
+                        sourceFormId,
+                        scriptPath));
+                }
+            }
+
+            if (recordType == "SCPT"
+                && record.Disposition == RecordDisposition.New
+                && record.Model is ScriptRecord script)
+            {
+                ScriptEmissionProvenanceReporter.ReportNewScript(
+                    _sink,
+                    script,
+                    record.FormId,
+                    encoded.Subrecords);
+            }
+
             anyEmitted = true;
         }
 

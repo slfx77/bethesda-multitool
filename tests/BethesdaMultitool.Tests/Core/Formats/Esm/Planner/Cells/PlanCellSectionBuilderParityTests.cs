@@ -120,8 +120,9 @@ public sealed class PlanCellSectionBuilderParityTests
             EmittedFormIds = ImmutableHashSet.Create(0x000ABCDFu, 0x01000801u)
         };
 
-        var plannerBytes = PlanCellSectionBuilder.BuildCellSection(
+        var plannerResult = PlanCellSectionBuilder.BuildCellSectionCore(
             plan, new Dictionary<uint, ParsedMainRecord>(), new PluginBuildOptions());
+        var plannerBytes = plannerResult.SectionBytes;
 
         // Build the equivalent legacy child bytes via the same primitive path the planner uses.
         var subs = RefrEncoder.EncodeNewPlacedReference(placed);
@@ -142,6 +143,7 @@ public sealed class PlanCellSectionBuilderParityTests
             [legacyBundle], new Dictionary<uint, ParsedMainRecord>());
 
         Assert.Equal(legacyBytes, plannerBytes);
+        Assert.Equal([0x01000801u], plannerResult.EmittedPlacedReferenceFormIds);
     }
 
     [Fact]

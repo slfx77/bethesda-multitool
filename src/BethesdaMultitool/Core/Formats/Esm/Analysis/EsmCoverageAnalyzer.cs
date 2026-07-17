@@ -26,7 +26,8 @@ public sealed record EsmCoverageResult(
     string SourcePath,
     IReadOnlyList<EsmRecordCoverageRow> Records,
     IReadOnlyList<EsmSubrecordCoverageRow> Subrecords,
-    IReadOnlyList<EsmScriptBytecodeCoverageRow> ScriptBytecode)
+    IReadOnlyList<EsmScriptBytecodeCoverageRow> ScriptBytecode,
+    IReadOnlyList<EsmScriptSourceCoverageRow> ScriptSource)
 {
     public int TotalRecords => Records.Sum(r => r.Count);
     public int TotalRecordTypes => Records.Count;
@@ -61,6 +62,40 @@ public sealed record EsmScriptBytecodeCoverageRow(
     int MultiByteByteCount,
     bool HasDiagnostics,
     string Diagnostics);
+
+/// <summary>
+///     One emitted script block's source coverage. This is intentionally separate from
+///     <see cref="EsmScriptBytecodeCoverageRow" /> so the bytecode report remains exactly
+///     one row per SCDA payload while source-only and SCHR-only blocks are still visible.
+/// </summary>
+public sealed record EsmScriptSourceCoverageRow(
+    string RecordType,
+    uint FormId,
+    int BlockIndex,
+    string Block,
+    bool ScdaPresent,
+    int ScdaCount,
+    int ScdaLength,
+    string ScdaSha256,
+    bool SctxPresent,
+    int SctxCount,
+    int SctxRawLength,
+    int SctxDecodedLength,
+    string SctxSha256,
+    string SctxNulTermination,
+    string SourceClassification,
+    bool SemanticComparisonAvailable,
+    int SemanticStatementCount,
+    int SemanticMatchCount,
+    int SemanticMismatchCount,
+    int SemanticToleratedCount,
+    string SemanticMismatchCategories,
+    string SemanticToleratedCategories,
+    int SourceDeclarationCount,
+    int SlsdVariableCount,
+    string DeclarationSlsdIdentityVerdict,
+    bool HardContradiction,
+    string HardContradictionReason);
 
 /// <summary>One row of per-(record,subrecord) coverage (length, classification, raw-byte usage, owning parser/encoder).</summary>
 public sealed record EsmSubrecordCoverageRow(
@@ -218,8 +253,9 @@ public static class EsmCoverageAnalyzer
             .ToList();
 
         var scriptRows = AnalyzeScriptBytecode(records);
+        var scriptSourceRows = EsmScriptSourceCoverageAnalyzer.Analyze(records);
 
-        return new EsmCoverageResult(sourcePath, recordRows, subrecordRows, scriptRows);
+        return new EsmCoverageResult(sourcePath, recordRows, subrecordRows, scriptRows, scriptSourceRows);
     }
 
     private static List<EsmScriptBytecodeCoverageRow> AnalyzeScriptBytecode(IReadOnlyList<ParsedMainRecord> records)
@@ -437,6 +473,8 @@ public static class EsmCoverageAnalyzer
         File.WriteAllText(Path.Combine(outputDirectory, "subrecord_coverage.csv"), BuildSubrecordCsv(result), Encoding.UTF8);
         File.WriteAllText(Path.Combine(outputDirectory, "script_bytecode_coverage.csv"),
             BuildScriptBytecodeCsv(result), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(outputDirectory, "script_source_coverage.csv"),
+            BuildScriptSourceCsv(result), Encoding.UTF8);
         File.WriteAllText(Path.Combine(outputDirectory, "summary.md"), BuildSummary(result), Encoding.UTF8);
     }
 
@@ -680,6 +718,46 @@ public static class EsmCoverageAnalyzer
         return sb.ToString();
     }
 
+    private static string BuildScriptSourceCsv(EsmCoverageResult result)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(
+            "record_type,form_id,block_index,block,scda_present,scda_count,scda_length,scda_sha256,sctx_present,sctx_count,sctx_raw_length,sctx_decoded_length,sctx_sha256,sctx_nul_termination,source_classification,semantic_comparison_available,semantic_statement_count,semantic_match_count,semantic_mismatch_count,semantic_tolerated_count,semantic_mismatch_categories,semantic_tolerated_categories,source_declaration_count,slsd_variable_count,declaration_slsd_identity_verdict,hard_contradiction,hard_contradiction_reason");
+        foreach (var row in result.ScriptSource)
+        {
+            sb.AppendLine(string.Join(',',
+                Csv(row.RecordType),
+                Csv($"0x{row.FormId:X8}"),
+                row.BlockIndex,
+                Csv(row.Block),
+                row.ScdaPresent,
+                row.ScdaCount,
+                row.ScdaLength,
+                Csv(row.ScdaSha256),
+                row.SctxPresent,
+                row.SctxCount,
+                row.SctxRawLength,
+                row.SctxDecodedLength,
+                Csv(row.SctxSha256),
+                Csv(row.SctxNulTermination),
+                Csv(row.SourceClassification),
+                row.SemanticComparisonAvailable,
+                row.SemanticStatementCount,
+                row.SemanticMatchCount,
+                row.SemanticMismatchCount,
+                row.SemanticToleratedCount,
+                Csv(row.SemanticMismatchCategories),
+                Csv(row.SemanticToleratedCategories),
+                row.SourceDeclarationCount,
+                row.SlsdVariableCount,
+                Csv(row.DeclarationSlsdIdentityVerdict),
+                row.HardContradiction,
+                Csv(row.HardContradictionReason)));
+        }
+
+        return sb.ToString();
+    }
+
     private static string BuildSummary(EsmCoverageResult result)
     {
         var sb = new StringBuilder();
@@ -697,6 +775,7 @@ public static class EsmCoverageAnalyzer
         }
 
         AppendScriptBytecodeSummary(sb, result.ScriptBytecode);
+        AppendScriptSourceSummary(sb, result.ScriptSource);
 
         var rawGaps = result.Subrecords
             .Where(r => r.UsesRawByteArray && !r.IsIntentionalRaw)
@@ -828,6 +907,47 @@ public static class EsmCoverageAnalyzer
 
     private static bool IsStandaloneVariableCountMismatch(EsmScriptBytecodeCoverageRow row) =>
         row.RecordType == "SCPT" && !row.VariableCountMatches;
+
+    private static void AppendScriptSourceSummary(StringBuilder sb, IReadOnlyList<EsmScriptSourceCoverageRow> rows)
+    {
+        sb.AppendLine();
+        sb.AppendLine("## Script Source Coverage");
+        sb.AppendLine();
+
+        if (rows.Count == 0)
+        {
+            sb.AppendLine("No SCHR/SCTX script blocks found.");
+            return;
+        }
+
+        var withSource = rows.Count(static row => row.SctxPresent);
+        var comparisons = rows.Count(static row => row.SemanticComparisonAvailable);
+        var exactTables = rows.Count(static row =>
+            row.DeclarationSlsdIdentityVerdict is "exact" or "exact-empty");
+        var contradictions = rows.Where(static row => row.HardContradiction).ToList();
+
+        sb.AppendLine($"- Script blocks: {rows.Count:N0}");
+        sb.AppendLine($"- Blocks with SCTX: {withSource:N0}/{rows.Count:N0}");
+        sb.AppendLine($"- Executable SCTX: {rows.Count(static row => row.SourceClassification == "executable"):N0}");
+        sb.AppendLine($"- Declarations-only SCTX: {rows.Count(static row => row.SourceClassification == "declarations-only"):N0}");
+        sb.AppendLine($"- SCTX/SCDA semantic comparisons: {comparisons:N0}");
+        sb.AppendLine($"- Exact declaration/SLSD identities: {exactTables:N0}");
+        sb.AppendLine($"- Hard source contradictions: {contradictions.Count:N0}");
+
+        if (contradictions.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("| Record | FormID | Block | Source | Reason |");
+        sb.AppendLine("|---|---|---:|---|---|");
+        foreach (var row in contradictions.Take(15))
+        {
+            sb.AppendLine(
+                $"| {row.RecordType} | 0x{row.FormId:X8} | {row.BlockIndex} | {row.SourceClassification} | {row.HardContradictionReason} |");
+        }
+    }
 
     private static string Csv(object? value)
     {

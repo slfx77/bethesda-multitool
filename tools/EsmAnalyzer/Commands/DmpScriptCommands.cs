@@ -21,6 +21,7 @@ public static class DmpScriptCommands
         command.Subcommands.Add(CreateListCommand());
         command.Subcommands.Add(CreateShowCommand());
         command.Subcommands.Add(CreateCompareCommand());
+        command.Subcommands.Add(DmpScriptAuditCommand.Create());
         command.Subcommands.Add(CreateCrossRefsCommand());
         return command;
     }
@@ -245,7 +246,7 @@ public static class DmpScriptCommands
             foreach (var v in script.Variables)
             {
                 var typeName = v.Type == 1 ? "int" : "float";
-                AnsiConsole.MarkupLine($"  [{v.Index,3}] {typeName,-5} {v.Name ?? "(unnamed)"}");
+                AnsiConsole.WriteLine($"  [{v.Index,3}] {typeName,-5} {v.Name ?? "(unnamed)"}");
             }
         }
 

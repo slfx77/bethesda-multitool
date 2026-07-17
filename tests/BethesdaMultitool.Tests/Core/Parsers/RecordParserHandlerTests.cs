@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -679,6 +680,9 @@ public class RecordParserHandlerTests
         BinaryPrimitives.WriteUInt32LittleEndian(responseData.AsSpan(16, 4), 0x00005555);
 
         var scriptHeader = new byte[20];
+        BinaryPrimitives.WriteUInt32LittleEndian(scriptHeader.AsSpan(4), 1); // refs
+        BinaryPrimitives.WriteUInt32LittleEndian(scriptHeader.AsSpan(8), 4); // SCDA bytes
+        BinaryPrimitives.WriteUInt32LittleEndian(scriptHeader.AsSpan(12), 2); // locals
         scriptHeader[18] = 1; // compiled
 
         var scriptReference = new byte[4];
@@ -693,6 +697,10 @@ public class RecordParserHandlerTests
             ("TRDT", responseData),
             ("NAM1", NullTermString("Hello there")),
             ("SCHR", scriptHeader),
+            ("SCDA", new byte[] { 0x1D, 0x00, 0x00, 0x00 }),
+            ("SLSD", ScriptLocal(3, 1)),
+            ("SLSD", ScriptLocal(7, 0)),
+            ("SCVR", NullTermString("namedSecond")),
             ("SCRO", scriptReference));
 
         var recordBytes = new byte[baseRecordBytes.Length + responseRecordBytes.Length];
@@ -726,8 +734,15 @@ public class RecordParserHandlerTests
         Assert.Equal(0x00001234u, info.Conditions[0].Parameter1);
         Assert.True(info.HasResultScript);
         Assert.Single(info.ResultScripts);
-        Assert.Equal("StartCombat Player", info.ResultScripts[0].SourceText);
+        // The SCTX belonged to a different captured INFO fragment with no SCHR. Do not
+        // associate it with this compiled block merely because the FormID and ordinal match.
+        Assert.Null(info.ResultScripts[0].SourceText);
         Assert.Contains(0x00004321u, info.ResultScripts[0].ReferencedObjects);
+        Assert.True(info.ResultScripts[0].IsIncompleteExecutableBundle);
+        var resultVariable = Assert.Single(info.ResultScripts[0].Variables);
+        Assert.Equal(7u, resultVariable.Index);
+        Assert.Equal("namedSecond", resultVariable.Name);
+        Assert.Equal(0, resultVariable.Type);
         Assert.Single(info.Responses);
         Assert.Equal("Hello there", info.Responses[0].Text);
         Assert.Equal(5u, info.Responses[0].EmotionType);
@@ -815,6 +830,9 @@ public class RecordParserHandlerTests
             ("SCHR", new byte[20]),
             ("SCDA", new byte[] { 0x1D, 0x00, 0x00, 0x00 }),
             ("SCTX", NullTermString("SetStage TestQuest 10")),
+            ("SLSD", ScriptLocal(4, 1)),
+            ("SLSD", ScriptLocal(8, 0)),
+            ("SCVR", NullTermString("namedSecond")),
             ("SCRO", scro),
             ("TNAM", tnam));
 
@@ -850,6 +868,146 @@ public class RecordParserHandlerTests
         var script = Assert.Single(package.OnBegin.Scripts);
         Assert.Equal("SetStage TestQuest 10", script.SourceText);
         Assert.Equal([0x00004001u], script.ReferencedObjects);
+        Assert.True(script.IsIncompleteExecutableBundle);
+        var packageVariable = Assert.Single(script.Variables);
+        Assert.Equal(8u, packageVariable.Index);
+        Assert.Equal("namedSecond", packageVariable.Name);
+        Assert.Equal(0, packageVariable.Type);
+    }
+
+    [Fact]
+    public void ParseScripts_ConsecutiveSlsdRejectsOrphanBeforeNamedLocal()
+    {
+        const uint formId = 0x01000962;
+        var firstScro = new byte[4];
+        var secondScro = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(firstScro, 0x00001234u);
+        BinaryPrimitives.WriteUInt32LittleEndian(secondScro, 0x00005678u);
+        var recordBytes = BuildRecordBytes(formId, "SCPT", false,
+            ("EDID", NullTermString("ConsecutiveLocalScript")),
+            ("SCHR", new byte[20]),
+            ("SCDA", new byte[] { 0x1D, 0x00, 0x00, 0x00 }),
+            ("SLSD", ScriptLocal(5, 1)),
+            ("SLSD", ScriptLocal(9, 0)),
+            ("SCVR", NullTermString("namedSecond")),
+            ("SCRO", firstScro),
+            ("SCRO", secondScro));
+
+        var mainRecord = new DetectedMainRecord(
+            "SCPT", (uint)(recordBytes.Length - 24), 0, formId, 0, false);
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(
+            MakeScanResult([mainRecord]), accessor: accessor, fileSize: recordBytes.Length);
+        var script = Assert.Single(parser.ParseScripts());
+
+        Assert.True(script.HasMalformedSerializedTable);
+        Assert.True(script.IsIncompleteExecutableBundle);
+        var variable = Assert.Single(script.Variables);
+        Assert.Equal(9u, variable.Index);
+        Assert.Equal("namedSecond", variable.Name);
+        Assert.Equal(0, variable.Type);
+        Assert.Equal([0x00001234u, 0x00005678u], script.ReferencedObjects);
+    }
+
+    [Theory]
+    [InlineData("SCHR")]
+    [InlineData("SCTX")]
+    [InlineData("SCDA")]
+    public void ParseScripts_RepeatedExecutableBundleComponentRejectsAmbiguousRecord(
+        string repeatedSignature)
+    {
+        const uint formId = 0x01000963;
+        var scro = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(scro, 0x00001234u);
+        var subrecords = new List<(string Signature, byte[] Data)>
+        {
+            ("EDID", NullTermString("AmbiguousScript")),
+            ("SCHR", new byte[20]),
+            ("SCDA", new byte[] { 0x1D, 0x00, 0x00, 0x00 }),
+            ("SCTX", NullTermString("scn AmbiguousScript")),
+            ("SLSD", ScriptLocal(5, 1)),
+            ("SCVR", NullTermString("local")),
+            ("SCRO", scro),
+        };
+        subrecords.Add(repeatedSignature switch
+        {
+            "SCHR" => ("SCHR", new byte[20]),
+            "SCTX" => ("SCTX", NullTermString("scn OtherScript")),
+            "SCDA" => ("SCDA", new byte[] { 0x1E, 0x00, 0x00, 0x00 }),
+            _ => throw new InvalidOperationException(),
+        });
+        var recordBytes = BuildRecordBytes(formId, "SCPT", false, [.. subrecords]);
+
+        var mainRecord = new DetectedMainRecord(
+            "SCPT", (uint)(recordBytes.Length - 24), 0, formId, 0, false);
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(
+            MakeScanResult([mainRecord]), accessor: accessor, fileSize: recordBytes.Length);
+
+        Assert.Empty(parser.ParseScripts());
+    }
+
+    [Theory]
+    [InlineData("SLSD")]
+    [InlineData("SCRO")]
+    [InlineData("SCRV")]
+    [InlineData("SCVR")]
+    public void ParseScripts_MalformedOrOrphanedTableComponentIsMarkedFailClosed(
+        string signature)
+    {
+        const uint formId = 0x01000965;
+        var payload = signature == "SCVR"
+            ? NullTermString("orphanName")
+            : new byte[] { 0x01 };
+        var recordBytes = BuildRecordBytes(formId, "SCPT", false,
+            ("EDID", NullTermString("MalformedTableScript")),
+            ("SCHR", new byte[20]),
+            (signature, payload));
+        var mainRecord = new DetectedMainRecord(
+            "SCPT", (uint)(recordBytes.Length - 24), 0, formId, 0, false);
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(
+            MakeScanResult([mainRecord]), accessor: accessor, fileSize: recordBytes.Length);
+        var script = Assert.Single(parser.ParseScripts());
+
+        Assert.True(script.HasMalformedSerializedTable);
+        Assert.True(script.HasSerializedHeader);
+        Assert.True(script.IsIncompleteExecutableBundle);
+    }
+
+    [Fact]
+    public void ParseScripts_OnDiskEsmDoesNotApplyDmpSourceCorrespondenceGate()
+    {
+        const uint formId = 0x01000964;
+        var recordBytes = BuildRecordBytes(formId, "SCPT", false,
+            ("EDID", NullTermString("StaleSourceScript")),
+            ("SCHR", new byte[20]),
+            ("SCDA", new byte[] { 0x1D, 0x00, 0x00, 0x00 }),
+            ("SCTX", NullTermString(
+                "scn StaleSourceScript\nBegin GameMode\nSet NeverCompiled to 1\nEnd")));
+        var mainRecord = new DetectedMainRecord(
+            "SCPT", (uint)(recordBytes.Length - 24), 0, formId, 0, false);
+        using var mmf = MemoryMappedFile.CreateNew(null, recordBytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, recordBytes.Length);
+        accessor.WriteArray(0, recordBytes, 0, recordBytes.Length);
+
+        var parser = new RecordParser(
+            MakeScanResult([mainRecord]), accessor: accessor, fileSize: recordBytes.Length);
+        var script = Assert.Single(parser.ParseScripts());
+
+        Assert.NotNull(script.DecompiledText);
+        Assert.NotNull(script.SourceText);
+        Assert.Contains("Set NeverCompiled to 1", script.SourceText, StringComparison.Ordinal);
+        Assert.Equal(ScriptSourceTextOrigin.None, script.SourceTextOrigin);
     }
 
     [Fact]
@@ -879,6 +1037,14 @@ public class RecordParserHandlerTests
         Assert.True(package.HasEatMarker);
         Assert.True(package.HasUseItemMarker);
         Assert.True(package.HasAmbushMarker);
+    }
+
+    private static byte[] ScriptLocal(uint index, byte type)
+    {
+        var data = new byte[24];
+        BinaryPrimitives.WriteUInt32LittleEndian(data, index);
+        data[16] = type;
+        return data;
     }
 
     [Fact]

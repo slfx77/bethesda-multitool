@@ -187,6 +187,39 @@ public class ConditionSanitizerTests
     }
 
     [Fact]
+    public void Filter_remaps_dangling_RunOn_Reference_and_retains_condition()
+    {
+        const uint sourceReference = 0x0100DEAD;
+        const uint emittedReference = 0x01000123;
+        var conds = new List<DialogueCondition>
+        {
+            new()
+            {
+                FunctionIndex = GetActorValue,
+                Parameter1 = 4u,
+                RunOn = 2,
+                Reference = sourceReference
+            }
+        };
+        var validFormIds = new HashSet<uint> { emittedReference };
+        var remap = new Dictionary<uint, uint> { [sourceReference] = emittedReference };
+        var remapped = 0;
+        var dropped = 0;
+
+        var result = ConditionSanitizer.Filter(
+            conds,
+            validFormIds,
+            remap,
+            ref remapped,
+            ref dropped);
+
+        var condition = Assert.Single(result);
+        Assert.Equal(emittedReference, condition.Reference);
+        Assert.Equal(1, remapped);
+        Assert.Equal(0, dropped);
+    }
+
+    [Fact]
     public void Filter_skips_Param1_validation_when_CIS1_string_is_set()
     {
         // CIS1 (Parameter1String) replaces Parameter1 when the condition takes a string —

@@ -281,11 +281,8 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         var conditions = new List<DialogueCondition>();
 
         // Result scripts
-        var resultSourceTexts = new List<string>();
         var resultScriptBlocks = new List<DialogueResultScriptParser.DialogueResultScriptBuilder>();
         DialogueResultScriptParser.DialogueResultScriptBuilder? currentResultScript = null;
-        uint? pendingVariableIndex = null;
-        byte pendingVariableType = 0;
 
         // Track current response being built
         string? currentResponseText = null;
@@ -321,6 +318,18 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (currentResultScript is not null)
+            {
+                currentResultScript.SerializedLocals.ObserveSubrecord(
+                    sub.Signature, subData, record.IsBigEndian);
+            }
+            else if (sub.Signature is "SLSD" or "SCVR")
+            {
+                currentResultScript =
+                    DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
+                currentResultScript.SerializedLocals.ObserveSubrecord(
+                    sub.Signature, subData, record.IsBigEndian);
+            }
 
             switch (sub.Signature)
             {
@@ -427,61 +436,57 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
 
                     break;
                 case "SCHR":
-                    DialogueResultScriptParser.FlushPendingVariable(
-                        currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
                     hasResultScript = true;
-                    currentResultScript = new DialogueResultScriptParser.DialogueResultScriptBuilder();
-                    resultScriptBlocks.Add(currentResultScript);
+                    currentResultScript = DialogueResultScriptParser.StartSerializedResultScript(
+                        resultScriptBlocks, currentResultScript, subData, record.IsBigEndian);
                     break;
                 case "SCTX":
                 {
                     var sourceText = EsmStringUtils.ReadNullTermString(subData);
-                    if (!string.IsNullOrEmpty(sourceText))
-                    {
-                        resultSourceTexts.Add(sourceText);
-                    }
+                    currentResultScript ??=
+                        DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
+                    DialogueResultScriptParser.AttachSourceText(currentResultScript, sourceText);
 
                     break;
                 }
                 case "SCDA":
                     currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
-                    currentResultScript.CompiledData = subData.ToArray();
+                    DialogueResultScriptParser.AttachCompiledData(currentResultScript, subData);
                     currentResultScript.IsBigEndianBytecode = record.IsBigEndian;
                     break;
-                case "SCRO" when sub.DataLength >= 4:
+                case "SCRO":
                     currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
-                    currentResultScript.ReferencedObjects.Add(
-                        RecordParserContext.ReadFormId(subData, record.IsBigEndian));
-                    break;
-                case "SLSD" when sub.DataLength >= 16:
-                    currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
-                    pendingVariableIndex = record.IsBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(subData)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(subData);
-                    pendingVariableType = ScriptLocalVariableLayout.ReadType(subData);
-                    break;
-                case "SCVR":
-                {
-                    currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
-                    var variableName = EsmStringUtils.ReadNullTermString(subData);
-                    if (pendingVariableIndex.HasValue)
+                    if (sub.DataLength < 4)
                     {
-                        currentResultScript.Variables.Add(new ScriptVariableInfo(
-                            pendingVariableIndex.Value, variableName, pendingVariableType));
-                        pendingVariableIndex = null;
+                        currentResultScript.IsAmbiguous = true;
+                    }
+                    else
+                    {
+                        currentResultScript.ReferencedObjects.Add(
+                            RecordParserContext.ReadFormId(subData, record.IsBigEndian));
                     }
 
                     break;
-                }
-                case "SCRV" when sub.DataLength >= 4:
+                case "SLSD":
+                    break;
+                case "SCVR":
+                    break;
+                case "SCRV":
                     currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
-                    var variableIndex = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
-                    currentResultScript.ReferencedObjects.Add(0x80000000 | variableIndex);
+                    if (sub.DataLength < 4)
+                    {
+                        currentResultScript.IsAmbiguous = true;
+                    }
+                    else
+                    {
+                        var variableIndex = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                        currentResultScript.ReferencedObjects.Add(0x80000000 | variableIndex);
+                    }
+
                     break;
                 case "NEXT":
-                    DialogueResultScriptParser.FlushPendingVariable(
-                        currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
                     currentResultScript ??= DialogueResultScriptParser.StartImplicitResultScript(resultScriptBlocks);
+                    currentResultScript.SerializedLocals.Complete();
                     currentResultScript.HasNextSeparator = true;
                     currentResultScript = null;
                     break;
@@ -511,18 +516,17 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
             }
         }
 
-        DialogueResultScriptParser.FlushPendingVariable(
-            currentResultScript, ref pendingVariableIndex, ref pendingVariableType);
+        currentResultScript?.SerializedLocals.Complete();
 
         // Add final response if any.
         FlushCurrentResponse();
 
         var resultScripts = DialogueResultScriptParser.BuildResultScripts(
-            resultSourceTexts,
             resultScriptBlocks,
             editorId ?? Context.GetEditorId(record.FormId),
             record.FormId,
-            Context.ResolveFormName);
+            Context.ResolveFormName,
+            Context.MinidumpInfo is not null);
         if (resultScripts.Count > 0)
         {
             hasResultScript = true;

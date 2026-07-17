@@ -56,7 +56,32 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
             return null;
         }
 
-        var buffer = _context.ReadBytes(entry.TesFormOffset.Value, layout.StructSize);
+        // Prefer a VA-based read so structs split across VA-contiguous minidump regions are
+        // stitched correctly even when those regions are stored at unrelated file offsets.
+        // A mapped VA is also fail-closed across capture gaps; falling back to a flat file read
+        // there would silently consume the next region's unrelated bytes.
+        var structVa = entry.TesFormPointer is { } pointer && pointer != 0
+            ? pointer
+            : _context.MinidumpInfo.FileOffsetToVirtualAddress(entry.TesFormOffset.Value);
+        var structFileOffset = entry.TesFormOffset.Value;
+        byte[]? buffer;
+        if (structVa.HasValue)
+        {
+            var mappedOffset = _context.MinidumpInfo.VirtualAddressToFileOffset(structVa.Value);
+            if (!mappedOffset.HasValue)
+            {
+                return null;
+            }
+
+            structFileOffset = mappedOffset.Value;
+            buffer = _context.ReadBytesAtVa(structVa.Value, layout.StructSize);
+        }
+        else
+        {
+            // Lightweight synthetic callers may not provide a minidump region map.
+            buffer = _context.ReadBytes(structFileOffset, layout.StructSize);
+        }
+
         if (buffer == null)
         {
             return null;
@@ -87,7 +112,7 @@ internal sealed class RuntimePdbFieldAccessor(RuntimeMemoryContext context)
             return null;
         }
 
-        return (layout, buffer, entry.TesFormOffset.Value);
+        return (layout, buffer, structFileOffset);
     }
 
     internal static int? FindFieldOffset(PdbTypeLayout layout, string name, string? owner = null)

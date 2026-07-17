@@ -206,9 +206,12 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
             HasEatMarker = hasEatMarker,
             HasUseItemMarker = hasUseItemMarker,
             HasAmbushMarker = hasAmbushMarker,
-            OnBegin = onBeginBuilder?.Build(editorId, record.FormId, Context.GetEditorId),
-            OnEnd = onEndBuilder?.Build(editorId, record.FormId, Context.GetEditorId),
-            OnChange = onChangeBuilder?.Build(editorId, record.FormId, Context.GetEditorId),
+            OnBegin = onBeginBuilder?.Build(
+                editorId, record.FormId, Context.GetEditorId, Context.MinidumpInfo is not null),
+            OnEnd = onEndBuilder?.Build(
+                editorId, record.FormId, Context.GetEditorId, Context.MinidumpInfo is not null),
+            OnChange = onChangeBuilder?.Build(
+                editorId, record.FormId, Context.GetEditorId, Context.MinidumpInfo is not null),
             CombatStyleFormId = combatStyleFormId,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
@@ -546,11 +549,8 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
 
     private sealed class PackageEventActionBuilder(PackageEventActionKind kind)
     {
-        private readonly List<string> _sourceTexts = [];
         private readonly List<DialogueResultScriptParser.DialogueResultScriptBuilder> _blocks = [];
         private DialogueResultScriptParser.DialogueResultScriptBuilder? _currentBlock;
-        private uint? _pendingVariableIndex;
-        private byte _pendingVariableType;
 
         private uint _idleFormId;
         private uint _topicFormId;
@@ -561,6 +561,16 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
 
         internal void ApplySubrecord(string signature, ReadOnlySpan<byte> data, bool isBigEndian)
         {
+            if (_currentBlock is not null)
+            {
+                _currentBlock.SerializedLocals.ObserveSubrecord(signature, data, isBigEndian);
+            }
+            else if (signature is "SLSD" or "SCVR")
+            {
+                _currentBlock = DialogueResultScriptParser.StartImplicitResultScript(_blocks);
+                _currentBlock.SerializedLocals.ObserveSubrecord(signature, data, isBigEndian);
+            }
+
             switch (signature)
             {
                 case "INAM" when data.Length >= 4:
@@ -570,69 +580,68 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
                     _topicFormId = RecordParserContext.ReadFormId(data, isBigEndian);
                     break;
                 case "SCHR":
-                    DialogueResultScriptParser.FlushPendingVariable(
-                        _currentBlock, ref _pendingVariableIndex, ref _pendingVariableType);
-                    _currentBlock = new DialogueResultScriptParser.DialogueResultScriptBuilder();
-                    _blocks.Add(_currentBlock);
+                    _currentBlock = DialogueResultScriptParser.StartSerializedResultScript(
+                        _blocks, _currentBlock, data, isBigEndian);
                     break;
                 case "SCTX":
                 {
                     var sourceText = EsmStringUtils.ReadNullTermString(data);
-                    if (!string.IsNullOrEmpty(sourceText))
-                    {
-                        _sourceTexts.Add(sourceText);
-                    }
+                    _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
+                    DialogueResultScriptParser.AttachSourceText(_currentBlock, sourceText);
 
                     break;
                 }
                 case "SCDA":
                     _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
-                    _currentBlock.CompiledData = data.ToArray();
+                    DialogueResultScriptParser.AttachCompiledData(_currentBlock, data);
                     _currentBlock.IsBigEndianBytecode = isBigEndian;
                     break;
-                case "SCRO" when data.Length >= 4:
+                case "SCRO":
                     _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
-                    _currentBlock.ReferencedObjects.Add(RecordParserContext.ReadFormId(data, isBigEndian));
-                    break;
-                case "SLSD" when data.Length >= 16:
-                    _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
-                    _pendingVariableIndex = isBigEndian
-                        ? BinaryPrimitives.ReadUInt32BigEndian(data)
-                        : BinaryPrimitives.ReadUInt32LittleEndian(data);
-                    _pendingVariableType = ScriptLocalVariableLayout.ReadType(data);
-                    break;
-                case "SCVR":
-                {
-                    _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
-                    var variableName = EsmStringUtils.ReadNullTermString(data);
-                    if (_pendingVariableIndex.HasValue)
+                    if (data.Length < 4)
                     {
-                        _currentBlock.Variables.Add(new ScriptVariableInfo(
-                            _pendingVariableIndex.Value, variableName, _pendingVariableType));
-                        _pendingVariableIndex = null;
+                        _currentBlock.IsAmbiguous = true;
+                    }
+                    else
+                    {
+                        _currentBlock.ReferencedObjects.Add(
+                            RecordParserContext.ReadFormId(data, isBigEndian));
                     }
 
                     break;
-                }
-                case "SCRV" when data.Length >= 4:
+                case "SLSD":
+                    break;
+                case "SCVR":
+                    break;
+                case "SCRV":
                     _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
-                    var variableIndex = RecordParserContext.ReadFormId(data, isBigEndian);
-                    _currentBlock.ReferencedObjects.Add(0x80000000 | variableIndex);
+                    if (data.Length < 4)
+                    {
+                        _currentBlock.IsAmbiguous = true;
+                    }
+                    else
+                    {
+                        var variableIndex = RecordParserContext.ReadFormId(data, isBigEndian);
+                        _currentBlock.ReferencedObjects.Add(0x80000000 | variableIndex);
+                    }
+
                     break;
                 case "NEXT":
-                    DialogueResultScriptParser.FlushPendingVariable(
-                        _currentBlock, ref _pendingVariableIndex, ref _pendingVariableType);
                     _currentBlock ??= DialogueResultScriptParser.StartImplicitResultScript(_blocks);
+                    _currentBlock.SerializedLocals.Complete();
                     _currentBlock.HasNextSeparator = true;
                     _currentBlock = null;
                     break;
             }
         }
 
-        internal PackageEventAction Build(string? editorId, uint packageFormId, Func<uint, string?> resolveFormName)
+        internal PackageEventAction Build(
+            string? editorId,
+            uint packageFormId,
+            Func<uint, string?> resolveFormName,
+            bool isDmpDerived)
         {
-            DialogueResultScriptParser.FlushPendingVariable(
-                _currentBlock, ref _pendingVariableIndex, ref _pendingVariableType);
+            _currentBlock?.SerializedLocals.Complete();
 
             return new PackageEventAction
             {
@@ -640,7 +649,7 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
                 IdleFormId = _idleFormId,
                 TopicFormId = _topicFormId,
                 Scripts = DialogueResultScriptParser.BuildResultScripts(
-                    _sourceTexts, _blocks, editorId, packageFormId, resolveFormName)
+                    _blocks, editorId, packageFormId, resolveFormName, isDmpDerived)
             };
         }
     }

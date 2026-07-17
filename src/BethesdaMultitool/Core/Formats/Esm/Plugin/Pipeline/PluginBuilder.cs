@@ -261,6 +261,27 @@ public sealed class PluginBuilder
     private BethesdaMultitool.Core.Formats.Esm.Planner.EmitPlan? _emitPlan;
     private BethesdaMultitool.Core.Formats.Esm.PlannedWriter.PlanWriter? _planWriter;
 
+    /// <summary>
+    ///     Append-only master-script locals required by recovered INFO/PACK conditions in
+    ///     the DMP currently being converted. The sanitizer owns allocation and condition
+    ///     remapping; planner and legacy SCPT writers execute these same directives.
+    /// </summary>
+    private IReadOnlyList<BethesdaMultitool.Core.Formats.Esm.Planner.ScriptVariableAugmentation>
+        _scriptVariableAugmentations = [];
+
+    /// <summary>
+    ///     Fresh-local producer obligations settled before planning. The final plan must
+    ///     retain a listed SCPT/PACK/TERM owner, or final dialogue emission must re-prove
+    ///     an exact INFO result-script owner, for every emitted augmentation.
+    /// </summary>
+    private IReadOnlyList<QuestVariableProducerRequirement> _scriptVariableProducerRequirements = [];
+
+    /// <summary>
+    ///     Surviving fresh-local mappings used to re-prove writes in INFO result scripts
+    ///     after the dialogue section has actually emitted.
+    /// </summary>
+    private IReadOnlyList<QuestVariableRecoveryMapping> _scriptVariableProducerMappings = [];
+
     /// <summary>Creates the builder with the record-encoder registry and an optional progress sink.</summary>
     public PluginBuilder(RecordEncoderRegistry registry, IConversionProgressSink? sink = null)
     {
@@ -313,6 +334,9 @@ public sealed class PluginBuilder
             _masterNpcByRace.Clear();
             _newRecordSourceToAllocated.Clear();
             _newRecordSourceToAllocatedType.Clear();
+            _scriptVariableAugmentations = [];
+            _scriptVariableProducerRequirements = [];
+            _scriptVariableProducerMappings = [];
             _masterEditorIdToFormIdByType = masterIndex.EditorIdToFormIdByType;
             _masterStemToFormIdsByType = masterIndex.StemToFormIdsByType;
 
@@ -467,7 +491,30 @@ public sealed class PluginBuilder
             // quest state). See memory/quest_script_brute_force_scan.md.
             AttachOrphanScriptsByEditorId(dmpRecords);
 
-            SanitizeQuestVariableConditions(dmpRecords, pcRecordsByFormId, stats);
+            // One runtime INFO can be recovered through more than one capture path. Collapse
+            // those copies before condition sanitation: otherwise a discarded copy can reserve
+            // a fresh quest-script local or suppress its shared FormID before dialogue planning
+            // chooses the authoritative capture.
+            var duplicateDialogueInfos = DialogueCombinePlanner.DeduplicateInPlace(dmpRecords.Dialogues);
+            if (duplicateDialogueInfos > 0)
+            {
+                _sink.Info("DialogueTextBackfill",
+                    $"Collapsed {duplicateDialogueInfos:N0} duplicate INFO capture(s) before condition " +
+                    "sanitation and CSV selection so direct DMP text remains authoritative.",
+                    code: "dialog.info-dedup");
+            }
+
+            SanitizeQuestVariableConditions(
+                dmpRecords,
+                pcRecordsByFormId,
+                classifier,
+                masterDialogueIndex,
+                stats,
+                inputs.Options.SkipRecordTypes,
+                inputs.Options.PlannerEnabledRecordTypes);
+            EnsureScriptVariableAugmentationsCanBeEmitted(
+                _scriptVariableAugmentations,
+                inputs.Options.SkipRecordTypes);
 
             // EDID-based VTCK fallback: NPCs may carry a VTCK FormID from the proto runtime
             // that no longer exists in vanilla or our build (FormID 0x0014F3EB on Ulysses, for
@@ -576,16 +623,7 @@ public sealed class PluginBuilder
             // response blank or marked it "(NOT FOUND IN CRASH DUMP)", the audio CSV's Text
             // column (one row per voice file = one response number) supplies the missing line
             // so the engine emits real dialog instead of the placeholder sentinel. Applied
-            // in-place to dmpRecords.Dialogues before encoding.
-            var duplicateDialogueInfos = DialogueCombinePlanner.DeduplicateInPlace(dmpRecords.Dialogues);
-            if (duplicateDialogueInfos > 0)
-            {
-                _sink.Info("DialogueTextBackfill",
-                    $"Collapsed {duplicateDialogueInfos:N0} duplicate INFO capture(s) before CSV selection " +
-                    "so direct DMP text remains authoritative.",
-                    code: "dialog.info-dedup");
-            }
-
+            // in-place to the already-deduplicated dmpRecords.Dialogues before encoding.
             if (inputs.Options.DialogueTextOverridesCsvPaths.Count > 0)
             {
                 DialogueTextBackfill.ApplyFromCsvs(
@@ -655,6 +693,11 @@ public sealed class PluginBuilder
                 dialogAdditionalValidFormIds = dialogAdditionalValidFormIds.Concat(_emitPlan.EmittedFormIds);
             }
 
+            // Dialogue must keep its historic allocation range, but GetScriptVariable
+            // owner liveness is not authoritative until CELL children have been written.
+            // Run a side-effect-free reservation build now, then encode for real after
+            // Phase 4 with the same allocator start and actual placed-owner set.
+            var dialogReservationStartLocalId = allocator.NextLocalId;
             DialogSectionResult dialogResult;
             if (inputs.Options.SkipRecordTypes.Contains("DIAL"))
             {
@@ -675,9 +718,10 @@ public sealed class PluginBuilder
             }
             else
             {
-                dialogResult = DialogGrupBuilder.BuildDialogSection(
+                _ = DialogGrupBuilder.BuildDialogSection(
                     dmpRecords.DialogTopics, dmpRecords.Dialogues, classifier, allocator,
-                    pcRecordsByFormId.Keys, pcRecordsByFormId, stats, _sink,
+                    pcRecordsByFormId.Keys, pcRecordsByFormId,
+                    new ConversionPipelineStats(), NullConversionProgressSink.Instance,
                     remapTable: _newRecordSourceToAllocated,
                     additionalValidFormIds: dialogAdditionalValidFormIds,
                     voiceTypeEditorIdsByFormId: voiceTypeEditorIdsByFormId,
@@ -686,33 +730,11 @@ public sealed class PluginBuilder
                     masterDialogueIndex: masterDialogueIndex,
                     diagnosticKeepMasterFormIds: inputs.Options.DiagnosticKeepMasterFormIds,
                     diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords,
-                    preallocatedNewFormIds: _emitPlan?.SourceToEmittedFormId);
+                    preallocatedNewFormIds: _emitPlan?.SourceToEmittedFormId,
+                    questVariableProducerMappings: _scriptVariableProducerMappings);
+                dialogResult = new DialogSectionResult([], null);
             }
-            if (dialogResult.DialogSection.Length > 0)
-            {
-                grupBytesByType["DIAL"] = dialogResult.DialogSection;
-            }
-
-            // Record INFO source→allocated mappings so the asset packer can rewrite voice
-            // file paths onto the engine's runtime lookup shape.
-            foreach (var (sourceId, allocatedId) in dialogResult.NewInfoSourceToAllocated)
-            {
-                _newRecordSourceToAllocated.TryAdd(sourceId, allocatedId);
-            }
-
-            _sink.Info("Merging top-level records",
-                $"Recorded {dialogResult.NewInfoSourceToAllocated.Count:N0} INFO source→allocated " +
-                $"mapping(s) (total remap entries now: {_newRecordSourceToAllocated.Count:N0}).",
-                code: "dialog.remap.recorded");
-
-            // The placeholder DIAL needs a parent quest or the FNV runtime refuses to attach
-            // INFOs to it. DialogGrupBuilder allocated + encoded the placeholder QUST; inject
-            // it into the QUST GRUP body so it loads as a normal top-level record.
-            if (dialogResult.PlaceholderQustRecord is { Length: > 0 } placeholderQust)
-            {
-                grupBytesByType["QUST"] = TopLevelRecordEmitter.AppendOrCreateQustGrup(
-                    grupBytesByType.GetValueOrDefault("QUST"), placeholderQust);
-            }
+            var dialogReservationEndLocalId = allocator.NextLocalId;
 
             _sink.OnPhaseEnd("Merging top-level records", stats);
             ct.ThrowIfCancellationRequested();
@@ -785,6 +807,65 @@ public sealed class PluginBuilder
                     $"Emitted {naviSource.Count:N0} new NAVM(s) but master NAVI " +
                     $"(0x{NavInfoMapBuilder.MasterNaviFormId:X8}) was not in the PC ESM index — skipping NAVI override.",
                     code: "navi.master-missing");
+            }
+
+            var liveScriptVariableOwnerFormIds = new HashSet<uint>(refToCell.Keys);
+            var actuallyEmittedPlacedRefs = cellPlannerRouted && plannerCellSection is not null
+                ? plannerCellSection.EmittedPlacedReferenceFormIds
+                : EmittedPlacedReferenceCollector.Collect(bundles);
+            liveScriptVariableOwnerFormIds.UnionWith(actuallyEmittedPlacedRefs);
+
+            if (!inputs.Options.SkipRecordTypes.Contains("DIAL"))
+            {
+                var finalDialogueAllocator = new FormIdAllocator(dialogReservationStartLocalId);
+                dialogResult = DialogGrupBuilder.BuildDialogSection(
+                    dmpRecords.DialogTopics, dmpRecords.Dialogues, classifier, finalDialogueAllocator,
+                    pcRecordsByFormId.Keys, pcRecordsByFormId, stats, _sink,
+                    remapTable: _newRecordSourceToAllocated,
+                    additionalValidFormIds: dialogAdditionalValidFormIds,
+                    voiceTypeEditorIdsByFormId: voiceTypeEditorIdsByFormId,
+                    npcVoiceTypeByNpcFormId: npcVoiceTypeByNpcFormId,
+                    questEditorIdsByFormId: questEditorIdsByFormId,
+                    masterDialogueIndex: masterDialogueIndex,
+                    diagnosticKeepMasterFormIds: inputs.Options.DiagnosticKeepMasterFormIds,
+                    diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords,
+                    preallocatedNewFormIds: _emitPlan?.SourceToEmittedFormId,
+                    questVariableProducerMappings: _scriptVariableProducerMappings,
+                    liveScriptVariableOwnerFormIds: liveScriptVariableOwnerFormIds);
+                if (finalDialogueAllocator.NextLocalId != dialogReservationEndLocalId)
+                {
+                    throw new InvalidOperationException(
+                        "Dialogue reservation/encode allocation drifted after cell-owner liveness " +
+                        $"filtering (reserved next=0x{dialogReservationEndLocalId:X6}, final " +
+                        $"next=0x{finalDialogueAllocator.NextLocalId:X6}).");
+                }
+            }
+
+            QuestVariableProducerGate.VerifyFinalOutput(
+                _scriptVariableProducerRequirements,
+                _planWriter?.ProducerLedger ?? PlanProducerEmissionLedger.Empty,
+                dialogResult.ProducerLedger);
+            if (dialogResult.DialogSection.Length > 0)
+            {
+                grupBytesByType["DIAL"] = dialogResult.DialogSection;
+            }
+
+            // Record only INFO identities that survived the post-cell owner-liveness gate.
+            foreach (var (sourceId, allocatedId) in dialogResult.NewInfoSourceToAllocated)
+            {
+                _newRecordSourceToAllocated.TryAdd(sourceId, allocatedId);
+            }
+
+            _sink.Info("Building dialog section",
+                $"Recorded {dialogResult.NewInfoSourceToAllocated.Count:N0} surviving INFO " +
+                $"source→allocated mapping(s) after checking {liveScriptVariableOwnerFormIds.Count:N0} " +
+                "master/actually-emitted script-variable owner(s).",
+                code: "dialog.remap.recorded");
+
+            if (dialogResult.PlaceholderQustRecord is { Length: > 0 } placeholderQust)
+            {
+                grupBytesByType["QUST"] = TopLevelRecordEmitter.AppendOrCreateQustGrup(
+                    grupBytesByType.GetValueOrDefault("QUST"), placeholderQust);
             }
 
             _sink.OnPhaseEnd("Merging cell children", stats);
@@ -981,27 +1062,131 @@ public sealed class PluginBuilder
 
     /// <summary>
     ///     Validate GetQuestVariable's numeric local IDs against the SCPT table that will
-    ///     actually load. Existing SCPTs remain master-pure, so prototype-only variables
-    ///     cannot safely survive merely because their source quest/script was captured.
-    ///     The sanitizer removes the whole newly-emitted INFO/PACK on a proven mismatch;
-    ///     dropping just CTDA would turn conditional dialogue/packages unconditional.
+    ///     actually load. Exact name/type matches remap to an existing retail local. When
+    ///     no exact local exists, the sanitizer reserves an append-only ID without changing
+    ///     any retail index. Records are suppressed only when the source identity is missing
+    ///     or ambiguous; dropping just CTDA would make conditional content unconditional.
     /// </summary>
     private void SanitizeQuestVariableConditions(
         RecordCollection dmpRecords,
         IReadOnlyDictionary<uint, ParsedMainRecord> masterRecordsByFormId,
-        ConversionPipelineStats stats)
+        NewVsOverrideClassifier classifier,
+        MasterDialogueIndex masterDialogueIndex,
+        ConversionPipelineStats stats,
+        IReadOnlySet<string> skipRecordTypes,
+        IReadOnlySet<string> plannerEnabledRecordTypes)
     {
+        var formIdAliases = _newRecordSourceToAllocated.Count > 0
+            ? _newRecordSourceToAllocated
+            : null;
+        IReadOnlySet<uint> masterAnchoredDerivedInfoSources = new HashSet<uint>();
+        if (!skipRecordTypes.Contains("DIAL") && !skipRecordTypes.Contains("INFO"))
+        {
+            var preliminaryDialoguePlan = DialogueCombinePlanner.Build(
+                dmpRecords.DialogTopics,
+                dmpRecords.Dialogues,
+                classifier,
+                masterDialogueIndex,
+                masterRecordsByFormId.Keys,
+                remapTable: formIdAliases);
+            masterAnchoredDerivedInfoSources = preliminaryDialoguePlan.NewInfos
+                .Where(static info => info.IsRehomedCutDialogue)
+                .Select(static info => info.AudioSourceInfoFormId.GetValueOrDefault())
+                .Where(sourceInfoFormId => sourceInfoFormId != 0
+                                           && classifier.IsOverride(sourceInfoFormId))
+                .ToHashSet();
+        }
+
         var result = QuestVariableConditionSanitizer.Apply(
             dmpRecords,
             masterRecordsByFormId,
-            _newRecordSourceToAllocated.Count > 0 ? _newRecordSourceToAllocated : null);
+            formIdAliases,
+            sanitizeInfoRecords: !skipRecordTypes.Contains("DIAL"),
+            sanitizePackageRecords: !skipRecordTypes.Contains("PACK"),
+            sanitizeTerminalRecords: !skipRecordTypes.Contains("TERM"),
+            sanitizeMasterAnchoredInfoFormIds: masterAnchoredDerivedInfoSources);
+
+        // A new appended local is only useful when an emitted script is proven to write it.
+        // Analyze planner-owned SCPT/PACK/TERM bundles before mutating any bytecode, suppress
+        // dependent INFO/PACK records to a fixed point, and retain exact retail-local remaps
+        // without imposing this fresh-local producer requirement.
+        var freshMappings = QuestVariableProducerGate.SelectFreshMappings(
+            result.VariableRecoveryMappings,
+            result.ScriptVariableAugmentations);
+        var producerEvidence = QuestVariableBytecodeRemapper.FindEmissionEligibleProducerWrites(
+            dmpRecords,
+            freshMappings,
+            masterRecordsByFormId,
+            formIdAliases,
+            skipRecordTypes,
+            plannerEnabledRecordTypes).ToList();
+
+        // Dialogue lives outside EmitPlan. Admit INFO producers only from the same
+        // combined/deduplicated model that DialogGrupBuilder consumes; raw captured INFO
+        // presence is not evidence. This is provisional until the writer returns its
+        // actual-emission ledger below.
+        if (!skipRecordTypes.Contains("DIAL") && !skipRecordTypes.Contains("INFO"))
+        {
+            var dialogueCombinePlan = DialogueCombinePlanner.Build(
+                dmpRecords.DialogTopics,
+                dmpRecords.Dialogues,
+                classifier,
+                masterDialogueIndex,
+                masterRecordsByFormId.Keys,
+                remapTable: formIdAliases);
+            var dialogueCandidates = DialogueProducerLedger.FromCombinedOutput(
+                dialogueCombinePlan,
+                freshMappings,
+                formIdAliases);
+            producerEvidence.AddRange(dialogueCandidates.Evidence);
+        }
+
+        var producerGate = QuestVariableProducerGate.Apply(
+            dmpRecords,
+            result.ScriptVariableAugmentations,
+            result.VariableRecoveryMappings,
+            producerEvidence,
+            masterRecordsByFormId,
+            formIdAliases);
+        _scriptVariableAugmentations = producerGate.ScriptVariableAugmentations;
+        _scriptVariableProducerRequirements = producerGate.ProducerRequirements;
+        _scriptVariableProducerMappings = QuestVariableProducerGate.SelectFreshMappings(
+            producerGate.VariableRecoveryMappings,
+            producerGate.ScriptVariableAugmentations);
+
+        // A CTDA remap is only sound when every newly-emitted producer/consumer SCDA uses
+        // that same exact quest-local identity. Patch the structurally decoded UInt16
+        // operands before planning; retained master SCPTs and shared master INFO overlays
+        // are excluded by the remapper. Any incomplete/unknown relevant bytecode aborts the
+        // build instead of shipping a condition that reads a different state channel.
+        var bytecodeResult = QuestVariableBytecodeRemapper.Apply(
+            dmpRecords,
+            producerGate.VariableRecoveryMappings,
+            masterRecordsByFormId,
+            formIdAliases,
+            skipRecordTypes);
 
         for (var i = 0; i < result.SuppressedInfoCount; i++)
         {
             stats.IncrementSkipped("INFO");
         }
 
+        for (var i = 0; i < result.SuppressedPrototypeDerivedInfoCount; i++)
+        {
+            stats.IncrementSkipped("INFO");
+        }
+
         for (var i = 0; i < result.SuppressedPackageCount; i++)
+        {
+            stats.IncrementSkipped("PACK");
+        }
+
+        for (var i = 0; i < producerGate.SuppressedInfoCount; i++)
+        {
+            stats.IncrementSkipped("INFO");
+        }
+
+        for (var i = 0; i < producerGate.SuppressedPackageCount; i++)
         {
             stats.IncrementSkipped("PACK");
         }
@@ -1016,16 +1201,33 @@ public sealed class PluginBuilder
                 : string.Empty;
             var detail = $"{diagnostic.Message} Target=0x{diagnostic.TargetFormId:X8}; " +
                          $"variable={variable}{targetScript}.";
+            var reportedCode = diagnostic.RecordSuppressed
+                ? diagnostic.RecordType == "TERM"
+                    ? diagnostic.Code.StartsWith("script-variable.", StringComparison.Ordinal)
+                        ? "script-variable.menu-item-suppressed"
+                        : "quest-variable.menu-item-suppressed"
+                    : diagnostic.Code.StartsWith("script-variable.", StringComparison.Ordinal)
+                        ? "script-variable.record-suppressed"
+                        : diagnostic.Code
+                : diagnostic.Code;
+            IReadOnlyDictionary<string, string?> metadata = diagnostic.Metadata;
+            if (!string.Equals(reportedCode, diagnostic.Code, StringComparison.Ordinal))
+            {
+                metadata = new Dictionary<string, string?>(diagnostic.Metadata, StringComparer.Ordinal)
+                {
+                    ["suppression-reason-code"] = diagnostic.Code,
+                };
+            }
 
-            if (diagnostic.Code == "quest-variable.remapped")
+            if (diagnostic.Code is "quest-variable.remapped" or "quest-variable.augmented-and-remapped")
             {
                 _sink.Decision(
                     "Sanitizing script-variable conditions",
                     detail,
                     diagnostic.RecordType,
                     diagnostic.RecordFormId,
-                    diagnostic.Code,
-                    diagnostic.Metadata);
+                    reportedCode,
+                    metadata);
             }
             else if (diagnostic.Code != "quest-variable.target-unresolved")
             {
@@ -1035,9 +1237,40 @@ public sealed class PluginBuilder
                     detail,
                     diagnostic.RecordType,
                     diagnostic.RecordFormId,
-                    diagnostic.Code,
-                    diagnostic.Metadata);
+                    reportedCode,
+                    metadata);
             }
+        }
+
+        foreach (var diagnostic in bytecodeResult.Diagnostics)
+        {
+            _sink.Decision(
+                "Sanitizing script-variable bytecode",
+                diagnostic.Message,
+                diagnostic.RecordType,
+                diagnostic.RecordFormId,
+                "quest-variable.bytecode-remapped",
+                new Dictionary<string, string?>
+                {
+                    ["script-path"] = diagnostic.ScriptPath,
+                    ["read-operands-patched"] = diagnostic.ReadOperandsPatched.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture),
+                    ["write-operands-patched"] = diagnostic.WriteOperandsPatched.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture),
+                    ["source-text-omitted"] = diagnostic.SourceTextOmitted.ToString()
+                });
+        }
+
+        foreach (var diagnostic in producerGate.Diagnostics)
+        {
+            stats.Warnings++;
+            _sink.Warn(
+                "Sanitizing script-variable producers",
+                diagnostic.Message,
+                diagnostic.RecordType,
+                diagnostic.RecordFormId,
+                diagnostic.Code,
+                diagnostic.Metadata);
         }
 
         if (result.UnresolvedTargetCount > 0)
@@ -1050,15 +1283,49 @@ public sealed class PluginBuilder
         }
 
         if (result.SuppressedInfoCount + result.SuppressedPackageCount +
+            result.SuppressedTerminalMenuItemCount +
+            result.SuppressedPrototypeDerivedInfoCount +
+            producerGate.SuppressedInfoCount + producerGate.SuppressedPackageCount +
+            producerGate.SuppressedTerminalMenuItemCount +
             result.RemappedConditionCount + result.RetainedGetScriptVariableCount > 0)
         {
             _sink.Info(
                 "Sanitizing script-variable conditions",
-                $"Suppressed {result.SuppressedInfoCount:N0} INFO and " +
-                $"{result.SuppressedPackageCount:N0} PACK record(s); remapped " +
-                $"{result.RemappedConditionCount:N0} GetQuestVariable condition(s); retained and " +
-                $"diagnosed {result.RetainedGetScriptVariableCount:N0} GetScriptVariable PACK condition(s).",
+                $"Suppressed {result.SuppressedInfoCount + producerGate.SuppressedInfoCount:N0} INFO and " +
+                $"{result.SuppressedPackageCount + producerGate.SuppressedPackageCount:N0} PACK record(s), plus " +
+                $"{result.SuppressedTerminalMenuItemCount + producerGate.SuppressedTerminalMenuItemCount:N0} " +
+                $"TERM menu item(s) and {result.SuppressedPrototypeDerivedInfoCount:N0} prototype-derived " +
+                "shared-INFO branch(es) while retaining their retail overlays; remapped " +
+                $"{result.RemappedConditionCount:N0} GetQuestVariable condition(s), with " +
+                $"{producerGate.ScriptVariableAugmentations.Length:N0} producer-backed append-only SCPT local(s); retained and " +
+                $"diagnosed {result.RetainedGetScriptVariableCount:N0} GetScriptVariable INFO/PACK/TERM condition(s).",
                 code: "script-variable.sanitization-summary");
+        }
+
+        if (bytecodeResult.ScriptsPatched > 0)
+        {
+            _sink.Info(
+                "Sanitizing script-variable bytecode",
+                $"Patched {bytecodeResult.ScriptsPatched:N0} emission-eligible DMP script bundle(s): " +
+                $"{bytecodeResult.WriteOperandsPatched:N0} write and " +
+                $"{bytecodeResult.ReadOperandsPatched:N0} read operand(s) now use the exact " +
+                "quest-local IDs selected for emitted conditions.",
+                code: "quest-variable.bytecode-remap-summary");
+        }
+    }
+
+    internal static void EnsureScriptVariableAugmentationsCanBeEmitted(
+        IReadOnlyList<BethesdaMultitool.Core.Formats.Esm.Planner.ScriptVariableAugmentation> augmentations,
+        IReadOnlySet<string> skipRecordTypes)
+    {
+        ArgumentNullException.ThrowIfNull(augmentations);
+        ArgumentNullException.ThrowIfNull(skipRecordTypes);
+
+        if (augmentations.Count > 0 && skipRecordTypes.Contains("SCPT"))
+        {
+            throw new InvalidOperationException(
+                "Recovered INFO/PACK conditions require append-only SCPT variables, but SCPT " +
+                "emission was disabled by --skip-record-type SCPT.");
         }
     }
 
@@ -1425,6 +1692,7 @@ public sealed class PluginBuilder
         var enabled = inputs.Options.PlannerEnabledRecordTypes;
         if (enabled.Count == 0)
         {
+            QuestVariableProducerGate.VerifyPlannerState(null, _scriptVariableProducerRequirements);
             return;
         }
 
@@ -1453,6 +1721,9 @@ public sealed class PluginBuilder
             "PACK",
             BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
         degradationPolicy.SetDefaultForType(
+            "TERM",
+            BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
+        degradationPolicy.SetDefaultForType(
             "NPC_",
             BethesdaMultitool.Core.Formats.Esm.Planner.References.DanglingAction.DropSubrecord);
         degradationPolicy.SetDefaultForType(
@@ -1467,6 +1738,7 @@ public sealed class PluginBuilder
                 new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.ScriptReferenceWalker(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.ImageSpaceModifierReferenceWalker(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.PackageReferenceWalker(),
+                new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.TerminalReferenceWalker(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.InfoReferenceWalker(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.NpcReferenceWalker(),
                 new BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers.CreatureReferenceWalker(),
@@ -1476,6 +1748,11 @@ public sealed class PluginBuilder
 
         var esmPlanner = new BethesdaMultitool.Core.Formats.Esm.Planner.EsmPlanner(
             dispositionEngine, allocator, referenceResolver);
+        var plannerMasterAliases = _masterFormIds is null
+            ? new Dictionary<uint, uint>()
+            : _newRecordSourceToAllocated
+                .Where(pair => _masterFormIds.Contains(pair.Value))
+                .ToDictionary(static pair => pair.Key, static pair => pair.Value);
 
         _emitPlan = esmPlanner.Build(
             pcRecords,
@@ -1499,11 +1776,23 @@ public sealed class PluginBuilder
                 DiagnosticSkipCellNavm = inputs.Options.DiagnosticSkipCellNavm,
             },
             diagnosticKeepMasterFormIds: inputs.Options.DiagnosticKeepMasterFormIds,
-            diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords);
+            diagnosticRetainMasterSubrecords: inputs.Options.DiagnosticRetainMasterSubrecords,
+            masterFormIdAliases: plannerMasterAliases);
+
+        if (_scriptVariableAugmentations.Count > 0 && enabled.Contains("SCPT"))
+        {
+            _emitPlan = BethesdaMultitool.Core.Formats.Esm.Planner.ScriptVariableAugmentationPlanner.Apply(
+                _emitPlan,
+                _scriptVariableAugmentations);
+        }
+
+        QuestVariableProducerGate.VerifyPlannerState(
+            _emitPlan,
+            _scriptVariableProducerRequirements);
 
         ReportPlannerDiagnostics(_emitPlan, _sink);
 
-        _planWriter = new BethesdaMultitool.Core.Formats.Esm.PlannedWriter.PlanWriter(registry);
+        _planWriter = new BethesdaMultitool.Core.Formats.Esm.PlannedWriter.PlanWriter(registry, _sink);
 
         _sink.Info("Two-pass planner",
             $"Built EmitPlan covering {enabled.Count} record type(s): " +
@@ -1657,6 +1946,11 @@ public sealed class PluginBuilder
         // both yields "ESM contains 481 duplicate FormID(s)" — the engine then resolves only
         // one and may bind ACRE/ACHR base pointers to the wrong copy, causing crashes.
         var emittedFormIds = new HashSet<uint>();
+        var augmentedMasterScriptFormIds = recordType == "SCPT"
+            ? _scriptVariableAugmentations
+                .Select(static augmentation => augmentation.TargetScriptFormId)
+                .ToHashSet()
+            : [];
 
         foreach (var model in models)
         {
@@ -1669,6 +1963,23 @@ public sealed class PluginBuilder
             }
 
             var formId = ExtractFormId(model);
+
+            if (ShouldDeferLegacyScriptModelToAugmentation(
+                    recordType,
+                    formId,
+                    _newRecordSourceToAllocated,
+                    augmentedMasterScriptFormIds))
+            {
+                stats.IncrementSkipped(recordType);
+                _sink.Decision(
+                    "Merging top-level records",
+                    $"Deferred SCPT 0x{formId:X8} to the single master-plus-augmentation override; " +
+                    "the ordinary model must not emit a duplicate target FormID.",
+                    recordType,
+                    formId,
+                    "script-variable.defer-legacy-model");
+                continue;
+            }
 
             if (formId != 0 && !emittedFormIds.Add(formId))
             {
@@ -1877,12 +2188,66 @@ public sealed class PluginBuilder
             }
         }
 
+        // Legacy routing still needs the exact same append-only SCPT overrides. These may
+        // target master-only scripts that have no DMP model, so they cannot be emitted from
+        // the model loop above. Planned routing handles them in PlanWriter instead.
+        if (recordType == "SCPT" && _scriptVariableAugmentations.Count > 0)
+        {
+            foreach (var group in _scriptVariableAugmentations
+                         .GroupBy(static augmentation => augmentation.TargetScriptFormId)
+                         .OrderBy(static group => group.Key))
+            {
+                if (!pcRecords.TryGetValue(group.Key, out var masterScript)
+                    || masterScript.Header.Signature != "SCPT")
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot append recovered variables: master SCPT 0x{group.Key:X8} is unavailable.");
+                }
+
+                var augmentations = group
+                    .OrderBy(static augmentation => augmentation.Variable.Index)
+                    .ToArray();
+                var subrecordBytes = BethesdaMultitool.Core.Formats.Esm.PlannedWriter.Encoders.ComplexRef
+                    .MasterScriptVariableAugmentationEncoder.EncodeSubrecordStream(
+                        masterScript,
+                        group.Key,
+                        augmentations);
+                grupBodyStream.Write(PluginRecordByteBuilder.BuildOverrideRecordBytes(
+                    masterScript,
+                    subrecordBytes,
+                    options));
+                ScriptEmissionProvenanceReporter.ReportAugmentedMasterScript(
+                    _sink,
+                    masterScript,
+                    EsmParser.ParseSubrecords(subrecordBytes),
+                    augmentations);
+                stats.IncrementEmitted("SCPT");
+                stats.OverridesEmitted++;
+                anyEmitted = true;
+            }
+        }
+
         if (!anyEmitted)
         {
             return [];
         }
 
         return TopLevelRecordEmitter.WrapInTopLevelGrup(recordType, grupBodyStream.ToArray());
+    }
+
+    internal static bool ShouldDeferLegacyScriptModelToAugmentation(
+        string recordType,
+        uint sourceFormId,
+        IReadOnlyDictionary<uint, uint> sourceAliases,
+        IReadOnlySet<uint> augmentedMasterScriptFormIds)
+    {
+        if (recordType != "SCPT" || sourceFormId == 0 || augmentedMasterScriptFormIds.Count == 0)
+        {
+            return false;
+        }
+
+        var targetFormId = sourceAliases.GetValueOrDefault(sourceFormId, sourceFormId);
+        return augmentedMasterScriptFormIds.Contains(targetFormId);
     }
 
     private bool TryEncodeEditorIdAliasOverride(
@@ -2261,6 +2626,15 @@ public sealed class PluginBuilder
         var flags = options.CompressRecords ? 0x00040000u : 0u;
         recordBytes =
             PluginRecordByteBuilder.BuildNewRecordBytes(recordType, allocatedFormId, flags, validatedSubrecords);
+
+        if (recordType == "SCPT" && model is ScriptRecord script)
+        {
+            ScriptEmissionProvenanceReporter.ReportNewScript(
+                _sink,
+                script,
+                allocatedFormId,
+                validatedSubrecords);
+        }
 
         if (dmpSourceFormId != 0 && dmpSourceFormId != allocatedFormId)
         {

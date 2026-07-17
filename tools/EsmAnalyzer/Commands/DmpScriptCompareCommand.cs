@@ -72,12 +72,19 @@ internal static class DmpScriptCompareCommand
 
         // Summary table
         AnsiConsole.MarkupLine("[yellow]=== Semantic Comparison Results ===[/]");
-        AnsiConsole.MarkupLine($"[cyan]Total lines compared:[/] {totalLines:N0}");
-        AnsiConsole.MarkupLine($"[cyan]Matching lines:[/] {totalMatches:N0}");
-        AnsiConsole.MarkupLine($"[cyan]Mismatched lines:[/] {totalMismatches:N0}");
+        AnsiConsole.MarkupLine($"[cyan]Total statements compared:[/] {totalLines:N0}");
+        AnsiConsole.MarkupLine($"[cyan]Matching statements:[/] {totalMatches:N0}");
+        AnsiConsole.MarkupLine($"[cyan]Mismatched statements:[/] {totalMismatches:N0}");
 
-        var rateColor = overallMatchRate >= 80 ? "green" : overallMatchRate >= 60 ? "yellow" : "red";
-        AnsiConsole.MarkupLine($"[{rateColor}]Overall match rate: {overallMatchRate:F1}%[/]");
+        if (totalLines == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]Overall match rate: n/a (no executable statements)[/]");
+        }
+        else
+        {
+            var rateColor = overallMatchRate >= 80 ? "green" : overallMatchRate >= 60 ? "yellow" : "red";
+            AnsiConsole.MarkupLine($"[{rateColor}]Overall match rate: {overallMatchRate:F1}%[/]");
+        }
         AnsiConsole.WriteLine();
 
         // Category breakdown table
@@ -139,10 +146,12 @@ internal static class DmpScriptCompareCommand
         using var writer = new StreamWriter(reportPath);
 
         writer.WriteLine("=== Semantic Comparison Results ===");
-        writer.WriteLine($"Total lines compared: {totalLines:N0}");
-        writer.WriteLine($"Matching lines: {totalMatches:N0}");
-        writer.WriteLine($"Mismatched lines: {totalMismatches:N0}");
-        writer.WriteLine($"Overall match rate: {overallMatchRate:F1}%");
+        writer.WriteLine($"Total statements compared: {totalLines:N0}");
+        writer.WriteLine($"Matching statements: {totalMatches:N0}");
+        writer.WriteLine($"Mismatched statements: {totalMismatches:N0}");
+        writer.WriteLine(totalLines == 0
+            ? "Overall match rate: n/a (no executable statements)"
+            : $"Overall match rate: {overallMatchRate:F1}%");
         writer.WriteLine();
         writer.WriteLine("--- Mismatch Categories ---");
         foreach (var (category, count) in aggregateMismatches.OrderByDescending(kv => kv.Value))
@@ -179,12 +188,17 @@ internal static class DmpScriptCompareCommand
             foreach (var (source, decompiled, category) in filteredExamples)
             {
                 writer.WriteLine($"    [{category}]");
-                writer.WriteLine($"      SCTX: {source}");
-                writer.WriteLine($"      SCDA: {decompiled}");
+                writer.WriteLine($"      SCTX: {DisplayLine(source)}");
+                writer.WriteLine($"      SCDA: {DisplayLine(decompiled)}");
             }
         }
 
         AnsiConsole.MarkupLine($"[green]Report written to:[/] {Path.GetFullPath(reportPath)}");
+    }
+
+    private static string DisplayLine(string line)
+    {
+        return string.IsNullOrEmpty(line) ? "<none>" : line;
     }
 
     private static bool MatchesFilter(ScriptRecord script, string filter)

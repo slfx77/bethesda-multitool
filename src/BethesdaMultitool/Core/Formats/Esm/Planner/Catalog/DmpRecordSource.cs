@@ -157,6 +157,22 @@ public sealed class DmpRecordSource
     }
 
     /// <summary>
+    ///     Enumerates every typed model known to the catalog. Alias validation uses this
+    ///     broader view so a planner-owned record can safely reference a master alias whose
+    ///     own record type is still routed through the legacy writer.
+    /// </summary>
+    internal IEnumerable<(string Type, uint FormId, object Model)> EnumerateAll()
+    {
+        foreach (var (type, extractor) in Extractors)
+        {
+            foreach (var (formId, model) in extractor(_collection))
+            {
+                yield return (type, formId, model);
+            }
+        }
+    }
+
+    /// <summary>
     ///     True when <see cref="DmpRecordSource" /> knows how to enumerate the given record
     ///     type. <c>EsmPlanner.Build</c> uses this so unmapped types route to the legacy
     ///     pipeline without a wasted catalog pass.

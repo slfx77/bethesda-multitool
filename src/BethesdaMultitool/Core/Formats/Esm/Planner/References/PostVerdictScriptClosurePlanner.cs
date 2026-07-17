@@ -99,7 +99,9 @@ internal static class PostVerdictScriptClosurePlanner
     {
         var live = masterRecords.Select(record => record.Header.FormId).ToHashSet();
         live.UnionWith(RuntimeStateRecordPolicy.EngineFormIds);
-        live.UnionWith(topLevelRecords.Select(record => record.FormId));
+        live.UnionWith(topLevelRecords
+            .Where(record => record.Disposition != RecordDisposition.Skip)
+            .Select(record => record.FormId));
 
         foreach (var worldspace in plan.WorldspacesByFormId.Values)
         {

@@ -218,6 +218,7 @@ internal static class DialogueCombinePlanner
         out int duplicatesCollapsed)
     {
         var result = new List<DialogueRecord>(infos.Count);
+        var resultScriptCaptures = new List<List<IReadOnlyList<DialogueResultScript>>>(infos.Count);
         var indexByFormId = new Dictionary<uint, int>();
         duplicatesCollapsed = 0;
         foreach (var info in infos)
@@ -230,11 +231,27 @@ internal static class DialogueCombinePlanner
                 }
 
                 result.Add(info);
+                resultScriptCaptures.Add([info.ResultScripts]);
                 continue;
             }
 
             result[existingIndex] = MergeDuplicate(result[existingIndex], info);
+            resultScriptCaptures[existingIndex].Add(info.ResultScripts);
             duplicatesCollapsed++;
+        }
+
+        for (var index = 0; index < result.Count; index++)
+        {
+            if (resultScriptCaptures[index].Count == 1)
+            {
+                continue;
+            }
+
+            result[index] = result[index] with
+            {
+                ResultScripts = DialogueResultScriptDuplicateMerger.Merge(
+                    resultScriptCaptures[index])
+            };
         }
 
         return result;
@@ -298,6 +315,8 @@ internal static class DialogueCombinePlanner
                 ? first.SpeakerVoiceTypeFormId
                 : next.SpeakerVoiceTypeFormId,
             PromptText = !string.IsNullOrWhiteSpace(first.PromptText) ? first.PromptText : next.PromptText,
+            SuppressPrototypeDerivedDialogue =
+                first.SuppressPrototypeDerivedDialogue || next.SuppressPrototypeDerivedDialogue,
             Conditions = first.Conditions.Count > 0 ? first.Conditions : next.Conditions,
             ConditionFunctions = first.ConditionFunctions.Count > 0
                 ? first.ConditionFunctions
@@ -309,7 +328,6 @@ internal static class DialogueCombinePlanner
             LinkFromTopics = first.LinkFromTopics.Count > 0 ? first.LinkFromTopics : next.LinkFromTopics,
             AddTopics = first.AddTopics.Count > 0 ? first.AddTopics : next.AddTopics,
             FollowUpInfos = first.FollowUpInfos.Count > 0 ? first.FollowUpInfos : next.FollowUpInfos,
-            ResultScripts = first.ResultScripts.Count > 0 ? first.ResultScripts : next.ResultScripts,
             HasResultScript = first.HasResultScript || next.HasResultScript
         };
     }
@@ -365,6 +383,11 @@ internal static class DialogueCombinePlanner
     {
         topic = null!;
         info = null!;
+        if (source.SuppressPrototypeDerivedDialogue)
+        {
+            return false;
+        }
+
         var sourceQuest = authoritativeQuestFormId ?? source.QuestFormId;
         var sourceSpeaker = authoritativeSpeakerFormId ?? DialogueSpeakerBinding.GetExactSpeaker(source);
         var visibleResponses = responses

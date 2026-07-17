@@ -7,8 +7,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Planner.References.Walkers;
 ///     Walks outgoing FormID references on a parsed <see cref="PackageRecord" />:
 ///     PLDT / PLD2 location unions (only when the FNV schema arm is a FormID),
 ///     PTDT / PTD2 target FormIDs, the CNAM combat-style reference, and per-CTDA
-///     Reference FormIDs. PLDT/PLD2 unions carry the <c>PLDT</c> container signature so
-///     a dangle triggers the planner's container-downgrade rather than a subrecord drop.
+///     Reference FormIDs. OnBegin / OnEnd / OnChange event actions contribute their
+///     INAM idle, TNAM topic, and ordered embedded-script SCRO references. PLDT/PLD2
+///     unions carry the <c>PLDT</c> container signature so a dangle triggers the
+///     planner's container-downgrade rather than a subrecord drop.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -81,6 +83,21 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
                 };
             }
         }
+
+        foreach (var raw in WalkEventAction(pack.OnBegin, "OnBegin"))
+        {
+            yield return raw;
+        }
+
+        foreach (var raw in WalkEventAction(pack.OnEnd, "OnEnd"))
+        {
+            yield return raw;
+        }
+
+        foreach (var raw in WalkEventAction(pack.OnChange, "OnChange"))
+        {
+            yield return raw;
+        }
     }
 
     private static IEnumerable<RawReference> WalkLocation(PackageLocation? location, string signature)
@@ -111,6 +128,53 @@ public sealed class PackageReferenceWalker : IRecordReferenceWalker
             FormId = target.FormIdOrType,
             ContainerSignature = signature,
         };
+    }
+
+    private static IEnumerable<RawReference> WalkEventAction(
+        PackageEventAction? action,
+        string fieldPath)
+    {
+        if (action is null)
+        {
+            yield break;
+        }
+
+        if (action.IdleFormId != 0)
+        {
+            yield return new RawReference
+            {
+                FieldPath = $"{fieldPath}.INAM",
+                FormId = action.IdleFormId,
+            };
+        }
+
+        for (var scriptIndex = 0; scriptIndex < action.Scripts.Count; scriptIndex++)
+        {
+            var script = action.Scripts[scriptIndex];
+            for (var referenceIndex = 0; referenceIndex < script.ReferencedObjects.Count; referenceIndex++)
+            {
+                var formId = script.ReferencedObjects[referenceIndex];
+                if ((formId & 0x80000000u) != 0)
+                {
+                    continue; // SCRV is a local-variable ID, not a FormID.
+                }
+
+                yield return new RawReference
+                {
+                    FieldPath = $"{fieldPath}.Scripts[{scriptIndex}].SCRO[{referenceIndex}]",
+                    FormId = formId,
+                };
+            }
+        }
+
+        if (action.TopicFormId != 0)
+        {
+            yield return new RawReference
+            {
+                FieldPath = $"{fieldPath}.TNAM",
+                FormId = action.TopicFormId,
+            };
+        }
     }
 
 }

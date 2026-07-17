@@ -75,6 +75,61 @@ public sealed class RecordCatalogTests
         Assert.Same(global, Assert.Single(entries, entry => entry.Type == "GLOB").Model);
     }
 
+    [Fact]
+    public void Master_Alias_Pairs_Prototype_FormId_With_Master_Record()
+    {
+        const uint sourceFormId = 0x001251C2;
+        const uint masterFormId = 0x0013408C;
+        var prototype = GameSetting(sourceFormId, "SharedEditorId", 1, 0x1000);
+
+        var entries = RecordCatalog.Build(
+            new MasterRecordSource([MasterRecord("GMST", masterFormId)]),
+            new DmpRecordSource(new RecordCollection { GameSettings = [prototype] }),
+            EnabledTypes("GMST"),
+            new Dictionary<uint, uint> { [sourceFormId] = masterFormId });
+
+        var entry = Assert.Single(entries);
+        Assert.Equal(SourceKind.DmpOverride, entry.Source);
+        Assert.Equal(masterFormId, entry.MasterFormId);
+        Assert.Equal(sourceFormId, entry.DmpFormId);
+        Assert.Same(prototype, entry.Model);
+    }
+
+    [Fact]
+    public void Exact_Master_FormId_Capture_Wins_Over_Alias_Regardless_Of_Order()
+    {
+        const uint sourceFormId = 0x001251C2;
+        const uint masterFormId = 0x0013408C;
+        var alias = GameSetting(sourceFormId, "SharedEditorId", 1, 0x1000);
+        var exact = GameSetting(masterFormId, "SharedEditorId", 2, 0x2000);
+
+        var entries = RecordCatalog.Build(
+            new MasterRecordSource([MasterRecord("GMST", masterFormId)]),
+            new DmpRecordSource(new RecordCollection { GameSettings = [alias, exact] }),
+            EnabledTypes("GMST"),
+            new Dictionary<uint, uint> { [sourceFormId] = masterFormId });
+
+        var entry = Assert.Single(entries);
+        Assert.Equal(masterFormId, entry.DmpFormId);
+        Assert.Same(exact, entry.Model);
+    }
+
+    [Fact]
+    public void Master_Alias_Must_Preserve_Record_Type()
+    {
+        const uint sourceFormId = 0x001251C2;
+        const uint masterFormId = 0x0013408C;
+        var prototype = GameSetting(sourceFormId, "SharedEditorId", 1, 0x1000);
+
+        var error = Assert.Throws<InvalidOperationException>(() => RecordCatalog.Build(
+            new MasterRecordSource([MasterRecord("GLOB", masterFormId)]),
+            new DmpRecordSource(new RecordCollection { GameSettings = [prototype] }),
+            EnabledTypes("GMST", "GLOB"),
+            new Dictionary<uint, uint> { [sourceFormId] = masterFormId }));
+
+        Assert.Contains("aliases master GLOB", error.Message, StringComparison.Ordinal);
+    }
+
     private static GameSettingRecord GameSetting(
         uint formId,
         string editorId,

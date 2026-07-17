@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 
@@ -130,6 +131,7 @@ public sealed class ScriptDecompiler(
             }
 
             var paramEnd = _reader.Position + paramLen;
+            var paramStart = _reader.Position;
 
             try
             {
@@ -138,6 +140,23 @@ public sealed class ScriptDecompiler(
             catch (Exception ex)
             {
                 AppendLine($"; Error decoding opcode 0x{opcode:X4} at offset 0x{opcodePos:X}: {ex.Message}");
+            }
+
+            // Function parameters are the only variable-width opcode payload decoded by
+            // the generic fallback. If it did not consume the declared payload exactly,
+            // an opaque span may still contain variable operands; callers using this walk
+            // as a safety proof must fail closed.
+            if (opcode >= ScriptOpcodes.MinFunctionOpcode && _reader.Position != paramEnd)
+            {
+                _reader.MarkStructuralUncertainty(new ScriptBytecodeStructuralIssue(
+                    _reader.Position < paramEnd
+                        ? "opaque-function-payload"
+                        : "function-payload-overrun",
+                    opcodePos,
+                    opcode,
+                    paramStart,
+                    paramLen,
+                    _reader.Position - paramStart));
             }
 
             // Ensure we're positioned at paramEnd regardless of how much was consumed
@@ -331,6 +350,7 @@ public sealed class ScriptDecompiler(
 
     private void HandleFunctionCall(ushort opcode, int paramLen)
     {
+        var payloadEnd = _reader.Position + paramLen;
         var funcDef = _functions.Get(opcode);
         var funcName = GetFunctionDisplayName(funcDef, opcode, _functions);
 
@@ -343,7 +363,7 @@ public sealed class ScriptDecompiler(
         }
 
         var paramCount = _reader.ReadUInt16();
-        var paramStrings = DecodeParameterList(_reader, funcDef, paramCount);
+        var paramStrings = DecodeParameterList(_reader, funcDef, opcode, paramCount, payloadEnd);
 
         AppendLine(paramStrings.Count > 0
             ? $"{prefix}{funcName} {string.Join(" ", paramStrings)}"
@@ -363,7 +383,26 @@ public sealed class ScriptDecompiler(
         return !string.IsNullOrEmpty(funcDef.ShortName) ? funcDef.ShortName : funcDef.Name;
     }
 
-    private List<string> DecodeParameterList(BytecodeReader reader, ScriptFunctionDef? funcDef, int paramCount)
+    private List<string> DecodeParameterList(
+        BytecodeReader reader,
+        ScriptFunctionDef? funcDef,
+        ushort opcode,
+        int paramCount,
+        int payloadEnd)
+    {
+        return opcode switch
+        {
+            0x1059 => DecodeShowMessageParameters(reader, funcDef, paramCount, payloadEnd),
+            0x11B9 => DecodeShowWarningParameters(reader, paramCount, payloadEnd),
+            0x1072 => DecodeLockParameters(reader, funcDef, paramCount, payloadEnd),
+            _ => DecodeOrdinaryParameterList(reader, funcDef, paramCount)
+        };
+    }
+
+    private List<string> DecodeOrdinaryParameterList(
+        BytecodeReader reader,
+        ScriptFunctionDef? funcDef,
+        int paramCount)
     {
         var paramStrings = new List<string>();
         for (var i = 0; i < paramCount && reader.HasData; i++)
@@ -377,6 +416,175 @@ public sealed class ScriptDecompiler(
 
         return paramStrings;
     }
+
+    /// <summary>
+    ///     ShowMessage has a compiler-owned variadic trailer outside the ordinary parameter
+    ///     count: Message, u16 format-argument count, marker-encoded arguments, then a signed
+    ///     u32 Duration field. Zero is the omitted/default Duration; nonzero values are source syntax.
+    /// </summary>
+    private List<string> DecodeShowMessageParameters(
+        BytecodeReader reader,
+        ScriptFunctionDef? funcDef,
+        int paramCount,
+        int payloadEnd)
+    {
+        if (paramCount != 1)
+        {
+            throw new InvalidDataException($"ShowMessage parameter count {paramCount} is not 1");
+        }
+
+        var messageType = funcDef != null && funcDef.Params.Length > 0
+            ? funcDef.Params[0].Type
+            : ScriptParamType.Message;
+        var parameters = new List<string>
+        {
+            _stmtDecoder!.DecodeFunctionParameter(reader, messageType)
+        };
+
+        EnsurePayloadBytes(reader, payloadEnd, 2, "ShowMessage format-argument count");
+        var formatArgumentCount = reader.ReadUInt16();
+        if (formatArgumentCount > 9)
+        {
+            throw new InvalidDataException(
+                $"ShowMessage format-argument count {formatArgumentCount} exceeds engine maximum 9");
+        }
+
+        for (var index = 0; index < formatArgumentCount; index++)
+        {
+            parameters.Add(DecodeShowMessageFormatArgument(reader, payloadEnd));
+        }
+
+        EnsurePayloadBytes(reader, payloadEnd, 4, "ShowMessage trailing field");
+        var duration = unchecked((int)reader.ReadUInt32());
+        if (duration != 0)
+        {
+            parameters.Add(duration.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (reader.Position != payloadEnd)
+        {
+            throw new InvalidDataException(
+                $"ShowMessage has {payloadEnd - reader.Position} unconsumed payload bytes");
+        }
+
+        return parameters;
+    }
+
+    private string DecodeShowMessageFormatArgument(BytecodeReader reader, int payloadEnd)
+    {
+        EnsurePayloadBytes(reader, payloadEnd, 1, "ShowMessage format argument marker");
+        var marker = reader.ReadByte();
+        switch (marker)
+        {
+            case ScriptOpcodes.MarkerIntLocal:
+            case ScriptOpcodes.MarkerFloatLocal:
+                EnsurePayloadBytes(reader, payloadEnd, 2, "ShowMessage local format argument");
+                return _varReader!.ReadLocalVariable(reader, marker);
+
+            case ScriptOpcodes.MarkerReference:
+                // Captured external operands are r/ref-slot/s-or-f/local-id. Validate the
+                // entire shape before allowing ScriptVariableReader to consume and track it.
+                EnsurePayloadBytes(reader, payloadEnd, 5, "ShowMessage external format argument");
+                var innerMarker = reader.PeekByteAt(2);
+                if (innerMarker is not ScriptOpcodes.MarkerIntLocal
+                    and not ScriptOpcodes.MarkerFloatLocal)
+                {
+                    throw new InvalidDataException(
+                        $"ShowMessage external format argument has marker 0x{innerMarker:X2}");
+                }
+
+                return _varReader!.ReadReferenceVariable(reader);
+
+            case ScriptOpcodes.MarkerGlobal:
+                EnsurePayloadBytes(reader, payloadEnd, 2, "ShowMessage global format argument");
+                return _varReader!.ReadGlobalVariable(reader);
+
+            default:
+                throw new InvalidDataException(
+                    $"ShowMessage format argument has unsupported marker 0x{marker:X2}");
+        }
+    }
+
+    private List<string> DecodeShowWarningParameters(
+        BytecodeReader reader,
+        int paramCount,
+        int payloadEnd)
+    {
+        if (paramCount != 1)
+        {
+            throw new InvalidDataException($"ShowWarning parameter count {paramCount} is not 1");
+        }
+
+        var parameters = new List<string>
+        {
+            ScriptStatementDecoder.DecodeStringParameter(reader, payloadEnd)
+        };
+        EnsurePayloadBytes(reader, payloadEnd, 2, "ShowWarning terminator");
+        var terminator = reader.ReadUInt16();
+        if (terminator != 0)
+        {
+            throw new InvalidDataException(
+                $"ShowWarning terminator is 0x{terminator:X4}, expected 0");
+        }
+
+        if (reader.Position != payloadEnd)
+        {
+            throw new InvalidDataException(
+                $"ShowWarning has {payloadEnd - reader.Position} unconsumed payload bytes");
+        }
+
+        return parameters;
+    }
+
+    private List<string> DecodeLockParameters(
+        BytecodeReader reader,
+        ScriptFunctionDef? funcDef,
+        int paramCount,
+        int payloadEnd)
+    {
+        var parameters = new List<string>();
+        for (var index = 0; index < paramCount; index++)
+        {
+            var expectedType = funcDef != null && index < funcDef.Params.Length
+                ? funcDef.Params[index].Type
+                : (ScriptParamType?)null;
+
+            if (reader.Position < payloadEnd
+                && reader.PeekByte() == ScriptOpcodes.MarkerReference
+                && CanReadPayloadBytes(reader, payloadEnd, 6))
+            {
+                // Lock's captured integer operand can be an external script variable:
+                // r/ref-slot/s-or-f/local-id. A bare reference retains ordinary decoding.
+                var innerMarker = reader.PeekByteAt(3);
+                if (innerMarker is ScriptOpcodes.MarkerIntLocal
+                    or ScriptOpcodes.MarkerFloatLocal)
+                {
+                    reader.ReadByte();
+                    parameters.Add(_varReader!.ReadReferenceVariable(reader));
+                    continue;
+                }
+            }
+
+            parameters.Add(_stmtDecoder!.DecodeFunctionParameter(reader, expectedType));
+        }
+
+        return parameters;
+    }
+
+    private static void EnsurePayloadBytes(
+        BytecodeReader reader,
+        int payloadEnd,
+        int count,
+        string field)
+    {
+        if (count < 0 || reader.Position > payloadEnd - count || !reader.CanRead(count))
+        {
+            throw new EndOfStreamException($"{field} needs {count} bytes within the function payload");
+        }
+    }
+
+    private static bool CanReadPayloadBytes(BytecodeReader reader, int payloadEnd, int count) =>
+        count >= 0 && reader.Position <= payloadEnd - count && reader.CanRead(count);
 
     #endregion
 }

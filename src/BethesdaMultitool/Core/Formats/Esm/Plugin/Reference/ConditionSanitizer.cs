@@ -37,17 +37,27 @@ internal static class ConditionSanitizer
         {
             // Existing policy: drop the whole condition when RunOn=Reference/LinkedRef and
             // the Reference FormID is dangling.
+            var patched = cond;
             if ((cond.RunOn == 2 || cond.RunOn == 4)
-                && cond.Reference != 0
-                && !validFormIds.Contains(cond.Reference))
+                && cond.Reference != 0)
             {
-                droppedConditions++;
-                continue;
+                if (remapTable is not null
+                    && remapTable.TryGetValue(cond.Reference, out var remappedReference)
+                    && remappedReference != cond.Reference
+                    && validFormIds.Contains(remappedReference))
+                {
+                    patched = patched with { Reference = remappedReference };
+                    remappedParameters++;
+                }
+                else if (!validFormIds.Contains(cond.Reference))
+                {
+                    droppedConditions++;
+                    continue;
+                }
             }
 
             // Parameter1: skip when CIS1 (string-form Parameter1) is set — Parameter1 is a
             // placeholder in that case. Otherwise validate as FormID if the function says so.
-            var patched = cond;
             if (cond.Parameter1String is null)
             {
                 if (!TryFixFormParameter(cond.FunctionIndex, parameterIndex: 0, cond.Parameter1,

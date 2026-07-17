@@ -293,7 +293,8 @@ internal static class DialogueTesFileScriptRecovery
             true,
             editorId,
             expectedFormId,
-            context.ResolveFormName);
+            context.ResolveFormName,
+            isDmpDerived: true);
 
         return new DialogueTesFileScriptRecoveryResult
         {

@@ -16,17 +16,41 @@ public static class RecordCatalog
     public static IReadOnlyList<CatalogEntry> Build(
         MasterRecordSource master,
         DmpRecordSource dmp,
-        IReadOnlySet<string> enabledTypes)
+        IReadOnlySet<string> enabledTypes,
+        IReadOnlyDictionary<uint, uint>? masterFormIdAliases = null)
+    {
+        return Build(
+            master,
+            dmp,
+            enabledTypes,
+            masterFormIdAliases,
+            out _);
+    }
+
+    /// <summary>
+    ///     Builds the catalog and returns every source-to-master alias that was proven by
+    ///     an enabled, same-type DMP/master pair. The mapping is intentionally independent
+    ///     of which captured model wins a shared master slot: losing aliases still identify
+    ///     references that must resolve to the retained master record.
+    /// </summary>
+    internal static IReadOnlyList<CatalogEntry> Build(
+        MasterRecordSource master,
+        DmpRecordSource dmp,
+        IReadOnlySet<string> enabledTypes,
+        IReadOnlyDictionary<uint, uint>? masterFormIdAliases,
+        out IReadOnlyDictionary<uint, uint> validatedMasterFormIdAliases)
     {
         ArgumentNullException.ThrowIfNull(master);
         ArgumentNullException.ThrowIfNull(dmp);
 
         if (enabledTypes.Count == 0)
         {
+            validatedMasterFormIdAliases = new Dictionary<uint, uint>();
             return [];
         }
 
         var entries = new List<CatalogEntry>();
+        var validatedAliases = new Dictionary<uint, uint>();
 
         // Track the master entry's *index* in `entries` alongside its value so duplicate
         // DMP-record FormIDs don't fall into List.IndexOf, which compares records by
@@ -48,11 +72,36 @@ public static class RecordCatalog
         // the legacy emitter's per-type, per-FormID first-wins behavior before catalog
         // pairing so later copies cannot masquerade as newly-authored records.
         var seenDmpRecords = new HashSet<(string Type, uint FormId)>();
+        var pairedMasterFormIds = new HashSet<uint>();
         foreach (var (type, formId, model) in dmp.Enumerate(enabledTypes))
         {
             if (!seenDmpRecords.Add((type, formId)))
             {
                 continue;
+            }
+
+            var masterLookupFormId = formId;
+            var aliasedMasterFormId = formId;
+            var usesAlias = masterFormIdAliases != null
+                            && masterFormIdAliases.TryGetValue(formId, out aliasedMasterFormId)
+                            && aliasedMasterFormId != formId;
+            if (usesAlias)
+            {
+                masterLookupFormId = aliasedMasterFormId;
+                if (!masterByFormId.TryGetValue(masterLookupFormId, out var aliasedMaster))
+                {
+                    throw new InvalidOperationException(
+                        $"DMP FormID alias 0x{formId:X8} targets missing master 0x{masterLookupFormId:X8}.");
+                }
+
+                if (!string.Equals(aliasedMaster.Type, type, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"DMP {type} 0x{formId:X8} aliases master {aliasedMaster.Type} " +
+                        $"0x{masterLookupFormId:X8}; aliases must preserve record type.");
+                }
+
+                validatedAliases.Add(formId, masterLookupFormId);
             }
 
             // Only pair with master when record TYPES also match. FormIDs are unique
@@ -62,16 +111,26 @@ public static class RecordCatalog
             // the DMP's wrong-typed Model, which the planner encoder dispatch rejects as
             // "Model is not of type X: actual Y". Type-mismatched DMP records fall through
             // to DmpNew so they emit through their own signature's encoder.
-            if (masterByFormId.TryGetValue(formId, out var masterEntry)
+            if (masterByFormId.TryGetValue(masterLookupFormId, out var masterEntry)
                 && string.Equals(masterEntry.Type, type, StringComparison.Ordinal)
-                && masterEntryIndexByFormId.TryGetValue(formId, out var idx))
+                && masterEntryIndexByFormId.TryGetValue(masterLookupFormId, out var idx))
             {
+                // An exact captured FormID is stronger evidence than an EditorID-derived
+                // alias. Exact captures always replace an earlier alias; a later alias can
+                // never shadow an exact capture. When several prototype IDs alias the same
+                // master, retain the first capture just like duplicate raw FormIDs.
+                if (usesAlias && pairedMasterFormIds.Contains(masterLookupFormId))
+                {
+                    continue;
+                }
+
                 entries[idx] = masterEntry with
                 {
                     Source = SourceKind.DmpOverride,
                     DmpFormId = formId,
                     Model = model,
                 };
+                pairedMasterFormIds.Add(masterLookupFormId);
                 continue;
             }
 
@@ -84,6 +143,7 @@ public static class RecordCatalog
             });
         }
 
+        validatedMasterFormIdAliases = validatedAliases;
         return entries;
     }
 }

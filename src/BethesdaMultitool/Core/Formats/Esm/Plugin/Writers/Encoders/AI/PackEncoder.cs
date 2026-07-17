@@ -84,8 +84,23 @@ public sealed class PackEncoder : IRecordEncoder
     {
         var subs = new List<EncodedSubrecord>();
         var warnings = new List<string>();
+        var emittedScriptPaths = new List<string>();
         var droppedCtdas = 0;
         var remappedCtdaParams = 0;
+
+        var inlineScriptIssue = InlineScriptReferenceValidator.FindFirstIssue(
+            pack, validFormIds, remapTable);
+        if (inlineScriptIssue is not null)
+        {
+            warnings.Add(
+                $"New PACK 0x{pack.FormId:X8} suppressed: {inlineScriptIssue.Message} " +
+                "Inline SCDA/SLSD/SCRO/SCRV is atomic; no slot was dropped or zero-filled.");
+            return new EncodedRecord { Subrecords = [], Warnings = warnings };
+        }
+
+        warnings.AddRange(
+            InlineScriptReferenceValidator.FindSourceContractIssues(pack, validFormIds, remapTable)
+                .Select(static issue => issue.Message));
 
         var referenceSanitation = PackageReferenceIntegrity.Sanitize(pack, validFormIds, remapTable);
         if (!referenceSanitation.IsValid)
@@ -215,9 +230,13 @@ public sealed class PackEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("PKAM", []));
         }
 
-        EmitEventAction(subs, pack.OnBegin, "POBA", pack.FormId, validFormIds, remapTable, warnings);
-        EmitEventAction(subs, pack.OnEnd, "POEA", pack.FormId, validFormIds, remapTable, warnings);
-        EmitEventAction(subs, pack.OnChange, "POCA", pack.FormId, validFormIds, remapTable, warnings);
+        var ownerLabel = pack.EditorId ?? $"PACK 0x{pack.FormId:X8}";
+        EmitEventAction(subs, pack.OnBegin, "POBA", pack.FormId, ownerLabel,
+            validFormIds, remapTable, warnings, emittedScriptPaths);
+        EmitEventAction(subs, pack.OnEnd, "POEA", pack.FormId, ownerLabel,
+            validFormIds, remapTable, warnings, emittedScriptPaths);
+        EmitEventAction(subs, pack.OnChange, "POCA", pack.FormId, ownerLabel,
+            validFormIds, remapTable, warnings, emittedScriptPaths);
 
         if (droppedCtdas > 0 || remappedCtdaParams > 0)
         {
@@ -227,7 +246,12 @@ public sealed class PackEncoder : IRecordEncoder
                 "the runtime→emitted alias table.");
         }
 
-        return new EncodedRecord { Subrecords = subs, Warnings = warnings };
+        return new EncodedRecord
+        {
+            Subrecords = subs,
+            Warnings = warnings,
+            EmittedScriptPaths = emittedScriptPaths
+        };
     }
 
     private static void EmitIdleCollection(
@@ -393,9 +417,11 @@ public sealed class PackEncoder : IRecordEncoder
         PackageEventAction? action,
         string marker,
         uint packFormId,
+        string ownerLabel,
         IReadOnlySet<uint>? validFormIds,
         IReadOnlyDictionary<uint, uint>? remapTable,
-        List<string> warnings)
+        List<string> warnings,
+        List<string> emittedScriptPaths)
     {
         if (action is null)
         {
@@ -416,7 +442,11 @@ public sealed class PackEncoder : IRecordEncoder
             for (var i = 0; i < action.Scripts.Count; i++)
             {
                 var script = action.Scripts[i];
-                InfoEncoder.EmitResultScriptBlock(subs, script, validFormIds, remapTable);
+                if (InfoEncoder.EmitResultScriptBlock(subs, script, validFormIds, remapTable))
+                {
+                    emittedScriptPaths.Add($"{ownerLabel}/{action.Kind}/script[{i}]");
+                }
+
                 if (i < action.Scripts.Count - 1)
                 {
                     subs.Add(new EncodedSubrecord("NEXT", []));

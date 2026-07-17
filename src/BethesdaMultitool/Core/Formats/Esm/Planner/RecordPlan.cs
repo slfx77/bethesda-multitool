@@ -100,6 +100,14 @@ public sealed record RecordPlan
         ImmutableHashSet.Create<string>(StringComparer.Ordinal);
 
     /// <summary>
+    ///     Append-only locals required on a retained master SCPT by recovered INFO/PACK
+    ///     conditions. Internal because this is a settled planner/writer directive rather
+    ///     than part of the public conversion model.
+    /// </summary>
+    internal ImmutableArray<ScriptVariableAugmentation> ScriptVariableAugmentations { get; init; } =
+        ImmutableArray<ScriptVariableAugmentation>.Empty;
+
+    /// <summary>
     ///     Containment edges this record participates in (e.g. INFO → its parent DIAL,
     ///     REFR → its parent CELL). Phase E uses these to topologically sort the plan.
     /// </summary>

@@ -1,5 +1,6 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders;
 
@@ -18,6 +19,19 @@ internal static class NewRecordSubrecords
         var byteCount = Encoding.Latin1.GetByteCount(value);
         var buffer = new byte[byteCount + 1];
         Encoding.Latin1.GetBytes(value, buffer);
+        // Final byte already 0 (null terminator).
+        return new EncodedSubrecord(signature, buffer);
+    }
+
+    /// <summary>
+    ///     Emit null-terminated Windows-1252 game text. Use this for recovered authored text
+    ///     such as SCTX, whose decoded characters must round-trip bytes 0x80-0x9F.
+    /// </summary>
+    public static EncodedSubrecord EncodeGameTextSubrecord(string signature, string value)
+    {
+        var encoded = EsmStringUtils.EncodeGameText(value);
+        var buffer = new byte[encoded.Length + 1];
+        encoded.CopyTo(buffer, 0);
         // Final byte already 0 (null terminator).
         return new EncodedSubrecord(signature, buffer);
     }

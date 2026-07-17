@@ -86,9 +86,50 @@ public class ScriptDialogueEncoderTests
         Assert.Equal(new byte[] { 0x10, 0x20, 0x30, 0x40 }, scda.Bytes);
 
         var sctx = Assert.Single(encoded.Subrecords, s => s.Signature == "SCTX");
-        // Latin-1 string + null terminator.
+        // Windows-1252 game text + null terminator.
         Assert.Equal(script.SourceText.Length + 1, sctx.Bytes.Length);
         Assert.Equal(0, sctx.Bytes[^1]);
+    }
+
+    [Fact]
+    public void ScptEncoder_EncodeNew_SourceOnlyScriptUsesExactDeclaredNameAndPreservesSctx()
+    {
+        const string source =
+            "; captured debug source\r\nScriptName ExactCaseScript\r\nshort recoveredFlag\r\n";
+        var script = new ScriptRecord
+        {
+            FormId = 0x801,
+            SourceText = source
+        };
+
+        var encoded = ScptEncoder.EncodeNew(script);
+
+        var edid = Assert.Single(encoded.Subrecords, subrecord => subrecord.Signature == "EDID");
+        Assert.Equal("ExactCaseScript\0", Encoding.Latin1.GetString(edid.Bytes));
+        var sctx = Assert.Single(encoded.Subrecords, subrecord => subrecord.Signature == "SCTX");
+        Assert.Equal(source + "\0", Encoding.Latin1.GetString(sctx.Bytes));
+        Assert.DoesNotContain(encoded.Warnings, warning =>
+            warning.Contains("no EditorId", StringComparison.Ordinal));
+        Assert.Equal(["ExactCaseScript"], encoded.EmittedScriptPaths);
+    }
+
+    [Fact]
+    public void ScptEncoder_EncodeNew_SctxRoundTripsWindows1252ExtensionBytes()
+    {
+        var capturedSource = Enumerable.Range(0x80, 0x20)
+            .Select(static value => (byte)value)
+            .ToArray();
+        var script = new ScriptRecord
+        {
+            FormId = 0x800,
+            EditorId = "S",
+            SourceText = BethesdaMultitool.Core.Utils.EsmStringUtils.DecodeGameText(capturedSource)
+        };
+
+        var encoded = ScptEncoder.EncodeNew(script);
+
+        var sctx = Assert.Single(encoded.Subrecords, s => s.Signature == "SCTX");
+        Assert.Equal([.. capturedSource, 0], sctx.Bytes);
     }
 
     [Fact]
@@ -442,10 +483,12 @@ public class ScriptDialogueEncoderTests
             0x06, 0x00,
             0x20, 0x6E, 0x01, 0x00, 0x00, 0x00
         ];
+        var schr = new byte[20];
+        BinaryPrimitives.WriteUInt32BigEndian(schr.AsSpan(8), (uint)littleEndianScda.Length);
 
         var data = BuildSubrecordStream(
             true,
-            ("SCHR", new byte[20]),
+            ("SCHR", schr),
             ("SCDA", littleEndianScda));
 
         var scripts = DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
@@ -466,6 +509,238 @@ public class ScriptDialogueEncoderTests
         });
         var scda = Assert.Single(encoded.Subrecords, sub => sub.Signature == "SCDA");
         Assert.Equal(littleEndianScda, scda.Bytes);
+    }
+
+    [Fact]
+    public void DialogueResultScriptParser_PreservesLocalsAndOrderedMixedReferenceTable()
+    {
+        var slsd = new byte[24];
+        BinaryPrimitives.WriteUInt32LittleEndian(slsd, 7);
+        slsd[16] = 1;
+        byte[] formId = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(formId, 0x00001234);
+        byte[] variableId = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(variableId, 7);
+        byte[] littleEndianScda = [0x1D, 0x00, 0x00, 0x00];
+        var schr = new byte[20];
+        BinaryPrimitives.WriteUInt32LittleEndian(schr.AsSpan(4), 4);
+        BinaryPrimitives.WriteUInt32LittleEndian(schr.AsSpan(8), (uint)littleEndianScda.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(schr.AsSpan(12), 1);
+        var data = BuildSubrecordStream(
+            false,
+            ("SCHR", schr),
+            ("SCDA", littleEndianScda),
+            ("SLSD", slsd),
+            ("SCVR", Encoding.ASCII.GetBytes("GameScore\0")),
+            ("SCRV", variableId),
+            ("SCRO", formId),
+            ("SCRO", formId),
+            ("SCRV", variableId));
+
+        var script = Assert.Single(DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
+            data,
+            data.Length,
+            false,
+            "PrototypeInfo",
+            0x01003FED,
+            _ => null));
+
+        Assert.Equal(new ScriptVariableInfo(7, "GameScore", 1), Assert.Single(script.Variables));
+        Assert.Equal(
+            [0x80000007u, 0x00001234u, 0x00001234u, 0x80000007u],
+            script.ReferencedObjects);
+    }
+
+    [Fact]
+    public void DialogueResultScriptParser_BindsSctxToItsActiveBlock()
+    {
+        var data = BuildSubrecordStream(
+            false,
+            ("SCHR", new byte[20]),
+            ("SCTX", Encoding.ASCII.GetBytes("first\0")),
+            ("NEXT", []),
+            ("SCHR", new byte[20]),
+            ("SCTX", Encoding.ASCII.GetBytes("second\0")));
+
+        var scripts = DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
+            data, data.Length, false, null, 0x01000001, _ => null, isDmpDerived: true);
+
+        Assert.Equal(2, scripts.Count);
+        Assert.Equal("first", scripts[0].SourceText);
+        Assert.Equal("second", scripts[1].SourceText);
+        Assert.True(scripts[0].HasNextSeparator);
+    }
+
+    [Fact]
+    public void DialogueResultScriptParser_DoesNotLendPrecedingSourceOnlyBlockToScda()
+    {
+        byte[] compiled = [0x1D, 0x00, 0x00, 0x00];
+        var schr = new byte[20];
+        BinaryPrimitives.WriteUInt32LittleEndian(schr.AsSpan(8), (uint)compiled.Length);
+        var data = BuildSubrecordStream(
+            false,
+            ("SCTX", Encoding.ASCII.GetBytes("orphan source\0")),
+            ("SCHR", schr),
+            ("SCDA", compiled));
+
+        var scripts = DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
+            data, data.Length, false, null, 0x01000002, _ => null, isDmpDerived: true);
+
+        Assert.Equal(2, scripts.Count);
+        Assert.Equal("orphan source", scripts[0].SourceText);
+        Assert.Null(scripts[1].SourceText);
+        Assert.Equal(compiled, scripts[1].CompiledData);
+    }
+
+    [Fact]
+    public void DialogueResultScriptParser_RepeatedSctxMarksBundleIncomplete()
+    {
+        var data = BuildSubrecordStream(
+            false,
+            ("SCHR", new byte[20]),
+            ("SCTX", Encoding.ASCII.GetBytes("first\0")),
+            ("SCTX", Encoding.ASCII.GetBytes("second\0")));
+
+        var script = Assert.Single(DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
+            data, data.Length, false, null, 0x01000003, _ => null, isDmpDerived: true));
+
+        Assert.True(script.IsIncompleteExecutableBundle);
+        Assert.Equal("first", script.SourceText);
+    }
+
+    [Fact]
+    public void DialogueResultScriptParser_MergeKeepsScdaLocalsAndReferenceTableAtomic()
+    {
+        var primary = new DialogueResultScript
+        {
+            SourceText = "set Quest.GameScore to Quest.GameScore + 1",
+            CompiledData = [0x01, 0x02],
+            Variables = [new ScriptVariableInfo(7, "localState", 1)],
+            ReferencedObjects = [0x80000007, 0x00001234, 0x00001234],
+            IsBigEndianBytecode = true
+        };
+        var secondary = new DialogueResultScript
+        {
+            SourceText = "different fragment",
+            CompiledData = [0xAA],
+            Variables = [new ScriptVariableInfo(9, "other", 0)],
+            ReferencedObjects = [0x00005678, 0x80000009],
+            HasNextSeparator = true
+        };
+
+        var merged = Assert.Single(DialogueResultScriptParser.MergeResultScripts(
+            [primary],
+            [secondary]));
+
+        Assert.Equal(primary.SourceText, merged.SourceText);
+        Assert.Equal(primary.CompiledData, merged.CompiledData);
+        Assert.Equal(primary.Variables, merged.Variables);
+        Assert.Equal(primary.ReferencedObjects, merged.ReferencedObjects);
+        Assert.True(merged.IsBigEndianBytecode);
+        Assert.True(merged.HasNextSeparator);
+    }
+
+    [Fact]
+    public void DialogueResultScriptParser_MergeNeverBorrowsSourceOnlySiblingByOrdinal()
+    {
+        var compiled = new DialogueResultScript
+        {
+            CompiledData = [0x01, 0x02],
+            Variables = [new ScriptVariableInfo(7, "localState", 1)],
+            ReferencedObjects = [0x00001234]
+        };
+        var sourceOnly = new DialogueResultScript
+        {
+            SourceText = "set localState to 1"
+        };
+
+        var merged = Assert.Single(DialogueResultScriptParser.MergeResultScripts(
+            [compiled],
+            [sourceOnly]));
+
+        Assert.Null(merged.SourceText);
+        Assert.Equal(compiled.CompiledData, merged.CompiledData);
+        Assert.Equal(compiled.Variables, merged.Variables);
+        Assert.Equal(compiled.ReferencedObjects, merged.ReferencedObjects);
+    }
+
+    [Fact]
+    public void DialogueResultScriptParser_MergeDoesNotAttachSourceFromDifferentCompiledBundle()
+    {
+        var selected = new DialogueResultScript
+        {
+            CompiledData = [0x01, 0x02],
+            ReferencedObjects = [0x00001234]
+        };
+        var conflicting = new DialogueResultScript
+        {
+            SourceText = "belongs to the other bytecode",
+            CompiledData = [0xAA],
+            Variables = [new ScriptVariableInfo(9, "other", 0)],
+            ReferencedObjects = [0x00005678]
+        };
+
+        var merged = Assert.Single(DialogueResultScriptParser.MergeResultScripts(
+            [selected],
+            [conflicting]));
+
+        Assert.Null(merged.SourceText);
+        Assert.Equal(selected.CompiledData, merged.CompiledData);
+        Assert.Equal(selected.ReferencedObjects, merged.ReferencedObjects);
+    }
+
+    [Fact]
+    public void DialogueResultScriptParser_MergePropagatesIncompleteExecutableBundle()
+    {
+        var compiled = new DialogueResultScript
+        {
+            CompiledData = [0x01, 0x02]
+        };
+        var incompleteSibling = new DialogueResultScript
+        {
+            SourceText = "set localState to 1",
+            IsIncompleteExecutableBundle = true
+        };
+
+        var merged = Assert.Single(DialogueResultScriptParser.MergeResultScripts(
+            [compiled],
+            [incompleteSibling]));
+
+        Assert.True(merged.IsIncompleteExecutableBundle);
+    }
+
+    [Fact]
+    public void InfoEncoder_EncodeNew_ResultScriptEmitsVariableTableAndMixedReferencesInOrder()
+    {
+        var info = new DialogueRecord
+        {
+            FormId = 0x01003FED,
+            ResultScripts =
+            [
+                new DialogueResultScript
+                {
+                    CompiledData = [0x1D, 0x00, 0x00, 0x00],
+                    Variables = [new ScriptVariableInfo(7, "GameScore", 1)],
+                    ReferencedObjects = [0x80000007, 0x00001234, 0x00001234]
+                }
+            ]
+        };
+
+        var encoded = InfoEncoder.EncodeNew(info);
+        var firstSchr = encoded.Subrecords.First(subrecord => subrecord.Signature == "SCHR");
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(firstSchr.Bytes.AsSpan(12, 4)));
+        var scriptSubrecords = encoded.Subrecords
+            .SkipWhile(subrecord => subrecord.Signature != "SCHR")
+            .TakeWhile(subrecord => subrecord.Signature != "NEXT")
+            .ToList();
+        Assert.Equal(
+            ["SCHR", "SCDA", "SLSD", "SCVR", "SCRV", "SCRO", "SCRO"],
+            scriptSubrecords.Select(subrecord => subrecord.Signature));
+        Assert.Equal(
+            7u,
+            BinaryPrimitives.ReadUInt32LittleEndian(
+                Assert.Single(scriptSubrecords, subrecord => subrecord.Signature == "SLSD").Bytes));
+        Assert.Equal(2, scriptSubrecords.Count(subrecord => subrecord.Signature == "SCRO"));
     }
 
     [Theory]

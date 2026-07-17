@@ -30,11 +30,17 @@ internal static class RuntimeDialogueLayouts
     internal const int DialJournalIndexOffset = 76;
     internal const int DialTopicCountOffset = 84;
 
-    // TERMINAL_MENU_ITEM offsets — fixed within the menu item struct, not TESForm-derived
-    internal const int MenuItemSize = 120;
+    // TERMINAL_MENU_ITEM offsets from the FNV PDBs. The embedded Script is a 100-byte
+    // object beginning at +16; the former 120-byte assumption truncated the condition/
+    // NOTE/submenu/flags tail and mistook the Script object's first word for a pointer.
+    internal const int MenuItemSize = 136;
     internal const int MenuItemResponseTextOffset = 0;
+    internal const int MenuItemResultTextOffset = 8;
     internal const int MenuItemResultScriptOffset = 16;
-    internal const int MenuItemSubMenuOffset = 112;
+    internal const int MenuItemConditionsOffset = 116;
+    internal const int MenuItemDisplayNoteOffset = 124;
+    internal const int MenuItemSubMenuOffset = 128;
+    internal const int MenuItemFlagsOffset = 132;
 
     // TESTopicInfo: Release Beta / Final PDB = runtime layout directly.
     // Field offsets: iInfoIndex=48, m_Data=51, cPrompt=56, pSpeaker=76, eDifficulty=84, pOwnerQuest=88.

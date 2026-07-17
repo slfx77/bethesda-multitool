@@ -6,7 +6,9 @@ Builds and validates the complete DMP-to-ESM corpus sequentially.
 Converts every selected .dmp under Sample/MemoryDump with planner types set to
 all, converter validation enabled, and the July then April dialogue CSVs. Each
 successful output is subsequently deep-validated, parsed for dialogue stats,
-and analyzed for ESM coverage. Structural dialogue-identity telemetry is
+and analyzed for ESM coverage. Every input also receives a same-dump script
+source/bytecode audit, while emitted SCTX/SCDA payload hashes are reconciled
+with structured provenance events. Structural dialogue-identity telemetry is
 required even when a dump emits no dialogue section. The default Release CLI
 and analyzer are rebuilt before conversion; all binaries, inputs, structured
 conversion events, and ESM outputs are SHA-256-bound to the manifest. Per-dump
@@ -286,6 +288,8 @@ function Ensure-CoverageReports {
             'record_type,subrecord,data_length,count,classification,schema_kind,uses_raw_byte_array,is_intentional_raw,coverage_note,parser_owner,encoder_owner,example_form_ids'
         'script_bytecode_coverage.csv' =
             'record_type,form_id,block_index,scda_length,schr_compiled_size,schr_ref_object_count,actual_reference_slots,schr_variable_count,actual_variables,compiled_size_matches,ref_count_matches,variable_count_matches,walked_to_end,multi_byte_read_count,multi_byte_byte_count,has_diagnostics,diagnostics'
+        'script_source_coverage.csv' =
+            'record_type,form_id,block_index,block,scda_present,scda_count,scda_length,scda_sha256,sctx_present,sctx_count,sctx_raw_length,sctx_decoded_length,sctx_sha256,sctx_nul_termination,source_classification,semantic_comparison_available,semantic_statement_count,semantic_match_count,semantic_mismatch_count,semantic_tolerated_count,semantic_mismatch_categories,semantic_tolerated_categories,source_declaration_count,slsd_variable_count,declaration_slsd_identity_verdict,hard_contradiction,hard_contradiction_reason'
     }
 
     foreach ($entry in $headers.GetEnumerator()) {
@@ -293,6 +297,431 @@ function Ensure-CoverageReports {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             Write-Utf8Text $path ($entry.Value + [Environment]::NewLine)
         }
+    }
+}
+
+function Ensure-ScriptAuditReport {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        Write-Utf8Text $Path (
+            'row_kind,form_id,copy_ordinal,dump_offset,editor_id,runtime_copy_count,runtime_copy_status,content_classification,source_char_length,source_utf8_length,source_sha256,source_terminated_proof,scda_length,scda_sha256,declared_scda_length,declared_scda_length_matches,header_variable_count,effective_variable_count,variable_list_count,variable_metadata_complete,variables_complete,header_variable_count_matches_list,effective_variable_count_matches_list,header_reference_count,reference_list_count,references_complete,header_reference_count_matches_list,declaration_identity_verdict,declaration_count,declaration_identities,slsd_identities,declaration_identity_details,source_statement_count,decompiled_statement_count,comparison_status,comparison_match_count,comparison_mismatch_count,comparison_tolerated_count,comparison_mismatch_categories,comparison_tolerated_categories,comparison_match_rate,proven_trivial_scda,structural_diagnostics,hard_contradictions' +
+            [Environment]::NewLine)
+    }
+}
+
+function Get-NumericPropertySum {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Rows,
+        [Parameter(Mandatory)] [string] $Property
+    )
+
+    if ($null -eq $Rows -or $Rows.Count -eq 0) {
+        return [int64]0
+    }
+
+    $measurement = $Rows | Measure-Object -Property $Property -Sum
+    if ($null -eq $measurement -or $null -eq $measurement.Sum) {
+        return [int64]0
+    }
+
+    return [int64]$measurement.Sum
+}
+
+function Get-PayloadCoverageSummary {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Rows,
+        [Parameter(Mandatory)] [ValidateSet('Subrecord', 'Source')] [string] $ReportKind,
+        [Parameter(Mandatory)] [ValidateSet('SCDA', 'SCTX')] [string] $Signature
+    )
+
+    $counts = @{}
+    $bytes = @{}
+    foreach ($row in $Rows) {
+        if ($ReportKind -eq 'Subrecord') {
+            if ($row.subrecord -ne $Signature) {
+                continue
+            }
+            $count = [int64]$row.count
+            $length = [int64]$row.data_length * $count
+        }
+        else {
+            $prefix = $Signature.ToLowerInvariant()
+            $count = [int64]$row."${prefix}_count"
+            $lengthColumn = if ($Signature -eq 'SCTX') { 'sctx_raw_length' } else { 'scda_length' }
+            $length = [int64]$row.$lengthColumn
+        }
+
+        if ($count -eq 0 -and $length -eq 0) {
+            continue
+        }
+        $recordType = [string]$row.record_type
+        $counts[$recordType] = [int64]($counts[$recordType] ?? 0L) + $count
+        $bytes[$recordType] = [int64]($bytes[$recordType] ?? 0L) + $length
+    }
+
+    return (($counts.Keys | Sort-Object | ForEach-Object {
+        '{0}={1}/{2}' -f $_, $counts[$_], $bytes[$_]
+    }) -join ';')
+}
+
+function Test-PayloadHashList {
+    param(
+        [Parameter(Mandatory)] [int64] $Count,
+        [AllowEmptyString()] [string] $Hashes
+    )
+
+    if ($Count -eq 0) {
+        return [string]::IsNullOrWhiteSpace($Hashes)
+    }
+    if ($Count -lt 0 -or [string]::IsNullOrWhiteSpace($Hashes)) {
+        return $false
+    }
+
+    $parts = @($Hashes -split '\|')
+    return $parts.Count -eq $Count -and
+        @($parts | Where-Object { $_ -notmatch '^[0-9A-Fa-f]{64}$' }).Count -eq 0
+}
+
+function Get-ScriptSourceCoverageAssessment {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $SourceRows,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $SubrecordRows
+    )
+
+    $hardContradictions = @(
+        $SourceRows | Where-Object { $_.hard_contradiction -eq 'True' }
+    ).Count
+    $hashIntegrity = @($SourceRows | Where-Object {
+        $sctxCount = [int64]$_.sctx_count
+        $scdaCount = [int64]$_.scda_count
+        $sctxRawLength = [int64]$_.sctx_raw_length
+        $sctxDecodedLength = [int64]$_.sctx_decoded_length
+        $scdaLength = [int64]$_.scda_length
+        $sctxPresent = $_.sctx_present -eq 'True'
+        $scdaPresent = $_.scda_present -eq 'True'
+        $sctxCount -lt 0 -or
+        $scdaCount -lt 0 -or
+        $sctxRawLength -lt 0 -or
+        $sctxDecodedLength -lt 0 -or
+        $sctxDecodedLength -gt $sctxRawLength -or
+        $scdaLength -lt 0 -or
+        ($sctxCount -eq 0 -and $sctxRawLength -ne 0) -or
+        ($scdaCount -eq 0 -and $scdaLength -ne 0) -or
+        $sctxPresent -ne ($sctxCount -gt 0) -or
+        $scdaPresent -ne ($scdaCount -gt 0) -or
+        -not (Test-PayloadHashList $sctxCount ([string]$_.sctx_sha256)) -or
+        -not (Test-PayloadHashList $scdaCount ([string]$_.scda_sha256))
+    }).Count -eq 0
+    $subrecordIntegrity = @($SubrecordRows | Where-Object {
+        $_.subrecord -in @('SCDA', 'SCTX') -and
+        ([int64]$_.count -lt 0 -or [int64]$_.data_length -lt 0)
+    }).Count -eq 0
+    $hashIntegrity = $hashIntegrity -and $subrecordIntegrity
+
+    $sourceSctx = Get-PayloadCoverageSummary $SourceRows 'Source' 'SCTX'
+    $subrecordSctx = Get-PayloadCoverageSummary $SubrecordRows 'Subrecord' 'SCTX'
+    $sourceScda = Get-PayloadCoverageSummary $SourceRows 'Source' 'SCDA'
+    $subrecordScda = Get-PayloadCoverageSummary $SubrecordRows 'Subrecord' 'SCDA'
+    $sctxCount = Get-NumericPropertySum -Rows $SourceRows -Property 'sctx_count'
+
+    $result = [pscustomobject]@{
+        HardContradictions = $hardContradictions
+        HashIntegrity = $hashIntegrity
+        SctxCount = $sctxCount
+        SctxReconciled = $sourceSctx -ceq $subrecordSctx
+        ScdaReconciled = $sourceScda -ceq $subrecordScda
+    }
+    $result | Add-Member -NotePropertyName Pass -NotePropertyValue (
+        $result.HardContradictions -eq 0 -and
+        $result.HashIntegrity -and
+        $result.SctxReconciled -and
+        $result.ScdaReconciled)
+    return $result
+}
+
+function Test-ScriptSourceProof {
+    param([Parameter(Mandatory)] [object] $Metadata)
+
+    $shaPattern = '^[0-9A-Fa-f]{64}$'
+    $actualHash = [string]$Metadata.'sctx-sha256'
+    $expectedHash = [string]$Metadata.'expected-sctx-sha256'
+    $baseHash = [string]$Metadata.'base-sctx-sha256'
+    if ($actualHash -notmatch $shaPattern -or
+        $expectedHash -notmatch $shaPattern -or
+        $expectedHash -ine $actualHash) {
+        return $false
+    }
+
+    $countText = [string]$Metadata.'augmentation-declaration-count'
+    if ($countText -notmatch '^\d+$') {
+        return $false
+    }
+    try {
+        $declarationCount = [int]$countText
+    }
+    catch {
+        return $false
+    }
+
+    $origin = [string]$Metadata.'source-origin'
+    $proofKind = [string]$Metadata.'sctx-proof-kind'
+    $capturedSourceHash = [string]$Metadata.'captured-source-utf8-sha256'
+    $declarationBase64 = [string]$Metadata.'augmentation-declarations-base64'
+    $declarationHash = [string]$Metadata.'augmentation-declarations-sha256'
+    if ($origin -ne 'augmentation') {
+        return $proofKind -eq 'captured-exact' -and
+            $baseHash -ieq $expectedHash -and
+            $capturedSourceHash -match $shaPattern -and
+            $declarationCount -eq 0 -and
+            [string]::IsNullOrWhiteSpace($declarationBase64) -and
+            [string]::IsNullOrWhiteSpace($declarationHash)
+    }
+
+    if ($proofKind -eq 'master-executable-source') {
+        return $baseHash -ieq $expectedHash -and
+            [string]::IsNullOrWhiteSpace($capturedSourceHash) -and
+            $declarationCount -eq 0 -and
+            [string]::IsNullOrWhiteSpace($declarationBase64) -and
+            [string]::IsNullOrWhiteSpace($declarationHash)
+    }
+
+    if ($proofKind -ne 'master-plus-declarations' -or
+        $baseHash -notmatch $shaPattern -or
+        -not [string]::IsNullOrWhiteSpace($capturedSourceHash) -or
+        $declarationCount -le 0 -or
+        [string]::IsNullOrWhiteSpace($declarationBase64) -or
+        $declarationHash -notmatch $shaPattern) {
+        return $false
+    }
+
+    try {
+        $declarationBytes = [Convert]::FromBase64String($declarationBase64)
+    }
+    catch {
+        return $false
+    }
+    if ($declarationBytes.Length -eq 0 -or
+        $declarationBytes[-1] -in @(0x0A, 0x0D) -or
+        @($declarationBytes | Where-Object { $_ -eq 0 }).Count -ne 0 -or
+        (1 + @($declarationBytes | Where-Object { $_ -eq 0x0A }).Count) -ne $declarationCount) {
+        return $false
+    }
+
+    $actualDeclarationHash = [Convert]::ToHexString(
+        [Security.Cryptography.SHA256]::HashData($declarationBytes))
+    return $actualDeclarationHash -ieq $declarationHash
+}
+
+function Test-ScriptSemanticProof {
+    param([Parameter(Mandatory)] $Metadata)
+
+    $origin = [string]$Metadata.'source-origin'
+    $semantic = [string]$Metadata.'sctx-scda-semantic-match'
+    $scdaLengthText = [string]$Metadata.'scda-length'
+    $matchCount = [string]$Metadata.'sctx-scda-match-count'
+    $toleratedCount = [string]$Metadata.'sctx-scda-tolerated-count'
+    $toleratedCategories = [string]$Metadata.'sctx-scda-tolerated-categories'
+    if ($scdaLengthText -notmatch '^\d+$') {
+        return $false
+    }
+
+    if ($origin -eq 'augmentation') {
+        $proofKind = [string]$Metadata.'sctx-proof-kind'
+        $expectedSemantic = if ($proofKind -eq 'master-executable-source') {
+            'master-executable-source-augmented-local-table-incomplete'
+        } else {
+            'master-base-plus-fresh-local-declarations'
+        }
+        return $semantic -eq $expectedSemantic -and
+            [string]::IsNullOrWhiteSpace($matchCount) -and
+            [string]::IsNullOrWhiteSpace($toleratedCount) -and
+            [string]::IsNullOrWhiteSpace($toleratedCategories)
+    }
+
+    if ([int64]$scdaLengthText -eq 0) {
+        return $semantic -eq 'source-only-no-scda' -and
+            [string]::IsNullOrWhiteSpace($matchCount) -and
+            [string]::IsNullOrWhiteSpace($toleratedCount) -and
+            [string]::IsNullOrWhiteSpace($toleratedCategories)
+    }
+
+    return $semantic -eq 'proven-zero-nontolerated-mismatches' -and
+        $matchCount -match '^\d+$' -and
+        $toleratedCount -match '^\d+$'
+}
+
+function Get-ScriptProvenanceAssessment {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Events,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $SourceRows,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $AuditRows
+    )
+
+    $provenance = @($Events | Where-Object {
+        $_.Kind -eq 'Event' -and $_.Code -eq 'script.source-provenance'
+    })
+    $requiredMetadata = @(
+        'source-form-id', 'emitted-form-id', 'editor-id', 'source-origin',
+        'sctx-proof-kind', 'sctx-sha256', 'expected-sctx-sha256', 'base-sctx-sha256',
+        'captured-source-utf8-sha256',
+        'augmentation-declaration-count', 'augmentation-declarations-base64',
+        'augmentation-declarations-sha256',
+        'sctx-decoded-length', 'scda-sha256', 'scda-length',
+        'bytecode-changed-from-source', 'tables-changed-from-source',
+        'sctx-scda-semantic-match', 'sctx-scda-match-count',
+        'sctx-scda-tolerated-count', 'sctx-scda-tolerated-categories'
+    )
+    $validOrigins = @('runtime-same-object', 'dmp-fragment', 'augmentation')
+    $matched = 0
+    $valid = $true
+    $seen = @{}
+    $expectedRows = @($SourceRows | Where-Object {
+        $_.record_type -eq 'SCPT' -and $_.sctx_present -eq 'True'
+    })
+    $expected = @{}
+    foreach ($coverage in $expectedRows) {
+        $formId = ([string]$coverage.form_id).ToUpperInvariant()
+        if ($formId -notmatch '^0x[0-9A-Fa-f]{8}$' -or $expected.ContainsKey($formId)) {
+            $valid = $false
+            continue
+        }
+        $expected[$formId] = $coverage
+    }
+
+    foreach ($event in $provenance) {
+        $metadata = $event.Metadata
+        if ($event.FormType -ne 'SCPT' -or
+            $event.FormId -notmatch '^0x[0-9A-Fa-f]{8}$' -or
+            -not (Test-JsonObjectProperties $metadata $requiredMetadata)) {
+            $valid = $false
+            continue
+        }
+
+        $formId = $event.FormId.ToUpperInvariant()
+        if ($seen.ContainsKey($formId)) {
+            $valid = $false
+            continue
+        }
+        $seen[$formId] = $true
+
+        $sourceFormId = [string]$metadata.'source-form-id'
+        if ($metadata.'emitted-form-id' -ne $formId -or
+            (-not [string]::IsNullOrWhiteSpace($sourceFormId) -and
+             $sourceFormId -notmatch '^0x[0-9A-Fa-f]{8}$') -or
+            $validOrigins -notcontains $metadata.'source-origin' -or
+            ($metadata.'source-origin' -eq 'augmentation' -and
+             -not [string]::IsNullOrWhiteSpace($sourceFormId)) -or
+            ($metadata.'source-origin' -ne 'augmentation' -and
+             [string]::IsNullOrWhiteSpace($sourceFormId)) -or
+            -not (Test-ScriptSourceProof $metadata) -or
+            [string]$metadata.'sctx-decoded-length' -notmatch '^\d+$' -or
+            [string]$metadata.'scda-length' -notmatch '^\d+$' -or
+            $metadata.'bytecode-changed-from-source' -notin @('true', 'false') -or
+            $metadata.'tables-changed-from-source' -notin @('true', 'false') -or
+            -not (Test-ScriptSemanticProof $metadata)) {
+            $valid = $false
+            continue
+        }
+
+        if ($metadata.'source-origin' -ne 'augmentation') {
+            $sourceKey = $sourceFormId.ToUpperInvariant()
+            $capturedSourceHash = [string]$metadata.'captured-source-utf8-sha256'
+            $mergedAuditMatches = @($AuditRows | Where-Object {
+                $_.row_kind -eq 'merged' -and
+                ([string]$_.form_id).ToUpperInvariant() -eq $sourceKey -and
+                [string]$_.source_sha256 -ieq $capturedSourceHash
+            })
+            $runtimeAuditMatches = @($AuditRows | Where-Object {
+                $_.row_kind -eq 'runtime' -and
+                ([string]$_.form_id).ToUpperInvariant() -eq $sourceKey -and
+                [string]$_.source_sha256 -ieq $capturedSourceHash
+            })
+            if ($mergedAuditMatches.Count -eq 0 -or
+                ($metadata.'source-origin' -eq 'runtime-same-object' -and
+                 $runtimeAuditMatches.Count -eq 0)) {
+                $valid = $false
+                continue
+            }
+
+            $semantic = [string]$metadata.'sctx-scda-semantic-match'
+            $correspondenceMatches = if ($semantic -eq 'source-only-no-scda') {
+                @($mergedAuditMatches | Where-Object {
+                    $_.content_classification -eq 'source-only' -and
+                    [int64]$_.scda_length -eq 0 -and
+                    [int64]$_.effective_variable_count -eq 0 -and
+                    [int64]$_.variable_list_count -eq 0 -and
+                    [int64]$_.reference_list_count -eq 0 -and
+                    [string]::IsNullOrWhiteSpace([string]$_.structural_diagnostics) -and
+                    [string]::IsNullOrWhiteSpace([string]$_.hard_contradictions)
+                })
+            }
+            else {
+                @($mergedAuditMatches | Where-Object {
+                    $_.content_classification -eq 'both' -and
+                    $_.declaration_identity_verdict -eq 'exact' -and
+                    $_.declared_scda_length_matches -eq 'true' -and
+                    $_.header_variable_count_matches_list -eq 'true' -and
+                    $_.effective_variable_count_matches_list -eq 'true' -and
+                    $_.header_reference_count_matches_list -eq 'true' -and
+                    [string]::IsNullOrWhiteSpace([string]$_.structural_diagnostics) -and
+                    [string]::IsNullOrWhiteSpace([string]$_.hard_contradictions) -and
+                    [int64]$_.comparison_mismatch_count -eq 0 -and
+                    [int64]$_.comparison_match_count -eq [int64]$metadata.'sctx-scda-match-count' -and
+                    [int64]$_.comparison_tolerated_count -eq [int64]$metadata.'sctx-scda-tolerated-count' -and
+                    [string]$_.comparison_tolerated_categories -ceq [string]$metadata.'sctx-scda-tolerated-categories'
+                })
+            }
+            if ($correspondenceMatches.Count -eq 0) {
+                $valid = $false
+                continue
+            }
+        }
+
+        $coverageRows = @($SourceRows | Where-Object {
+            $_.record_type -eq 'SCPT' -and
+            ([string]$_.form_id).ToUpperInvariant() -eq $formId -and
+            $_.sctx_present -eq 'True'
+        })
+        if ($coverageRows.Count -ne 1) {
+            $valid = $false
+            continue
+        }
+
+        $coverage = $coverageRows[0]
+        $scdaCount = [int64]$coverage.scda_count
+        $eventScdaHash = [string]$metadata.'scda-sha256'
+        $scdaMatches = if ($scdaCount -eq 0) {
+            [string]::IsNullOrWhiteSpace($eventScdaHash)
+        }
+        else {
+            $scdaCount -eq 1 -and
+            $eventScdaHash -match '^[0-9A-Fa-f]{64}$' -and
+            $eventScdaHash -ieq [string]$coverage.scda_sha256
+        }
+        if ([int64]$coverage.sctx_count -ne 1 -or
+            $metadata.'sctx-sha256' -ine [string]$coverage.sctx_sha256 -or
+            [int64]$metadata.'sctx-decoded-length' -ne [int64]$coverage.sctx_decoded_length -or
+            [int64]$metadata.'scda-length' -ne [int64]$coverage.scda_length -or
+            -not $scdaMatches) {
+            $valid = $false
+            continue
+        }
+
+        $matched++
+    }
+
+    $setEqual = $seen.Count -eq $expected.Count -and
+        @($expected.Keys | Where-Object { -not $seen.ContainsKey($_) }).Count -eq 0
+
+    return [pscustomobject]@{
+        EventCount = $provenance.Count
+        ExpectedCount = $expectedRows.Count
+        MatchedCount = $matched
+        Pass = $valid -and
+            $matched -eq $provenance.Count -and
+            $matched -eq $expectedRows.Count -and
+            $setEqual
     }
 }
 
@@ -436,14 +865,14 @@ function Read-ConversionEventLog {
 function Get-SuppressedRecordIdsFromEvents {
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Events,
-        [Parameter(Mandatory)] [ValidateSet('INFO', 'PACK', 'SCPT')] [string] $RecordType
+        [Parameter(Mandatory)] [ValidateSet('INFO', 'PACK', 'SCPT', 'TERM')] [string] $RecordType
     )
 
-    $codes = if ($RecordType -eq 'SCPT') {
-        @('script.suppress-unsafe-reference-table', 'script.suppress-post-verdict-reference-table')
-    }
-    else {
-        @('quest-variable.record-suppressed')
+    $codes = switch ($RecordType) {
+        'INFO' { @('quest-variable.record-suppressed', 'quest-variable.record-suppressed-no-emitted-producer', 'script-variable.record-suppressed', 'script-variable.owner-not-emitted', 'inline-script.suppress-unsafe-owner') }
+        'PACK' { @('quest-variable.record-suppressed', 'quest-variable.record-suppressed-no-emitted-producer', 'script-variable.record-suppressed', 'inline-script.suppress-unsafe-owner') }
+        'SCPT' { @('script.suppress-unsafe-reference-table', 'script.suppress-post-verdict-reference-table') }
+        'TERM' { @('quest-variable.menu-item-suppressed', 'quest-variable.menu-item-suppressed-no-emitted-producer', 'script-variable.menu-item-suppressed', 'inline-script.suppress-unsafe-owner') }
     }
 
     return @(
@@ -460,19 +889,47 @@ function Get-SuppressedRecordIdsFromEvents {
 function Test-SuppressionEvents {
     param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Events)
 
+    $inlineScriptCode = 'inline-script.suppress-unsafe-owner'
+    $questVariableCodes = @(
+        'quest-variable.record-suppressed',
+        'quest-variable.record-suppressed-no-emitted-producer'
+    )
+    $scriptVariableCodes = @(
+        'script-variable.record-suppressed',
+        'script-variable.owner-not-emitted'
+    )
+    $terminalMenuCodes = @(
+        'quest-variable.menu-item-suppressed',
+        'quest-variable.menu-item-suppressed-no-emitted-producer',
+        'script-variable.menu-item-suppressed'
+    )
     $scriptCodes = @(
         'script.suppress-unsafe-reference-table',
         'script.suppress-post-verdict-reference-table'
     )
     foreach ($event in $Events | Where-Object {
         $_.Kind -eq 'Event' -and
-        ($_.Code -eq 'quest-variable.record-suppressed' -or $scriptCodes -contains $_.Code)
+        ($questVariableCodes -contains $_.Code -or
+         $scriptVariableCodes -contains $_.Code -or
+         $terminalMenuCodes -contains $_.Code -or
+         $_.Code -eq $inlineScriptCode -or
+         $scriptCodes -contains $_.Code)
     }) {
         if ($event.FormId -notmatch '^0x[0-9A-Fa-f]{8}$') {
             return $false
         }
         if ($scriptCodes -contains $event.Code) {
             if ($event.FormType -ne 'SCPT') {
+                return $false
+            }
+        }
+        elseif ($event.Code -eq $inlineScriptCode) {
+            if ($event.FormType -notin @('INFO', 'PACK', 'TERM')) {
+                return $false
+            }
+        }
+        elseif ($terminalMenuCodes -contains $event.Code) {
+            if ($event.FormType -ne 'TERM') {
                 return $false
             }
         }
@@ -704,6 +1161,8 @@ foreach ($dump in $dumps) {
     $deepLog = Join-Path $outputPath "$stem.deep.log"
     $dialogueLog = Join-Path $outputPath "$stem.dialogue.log"
     $coverageLog = Join-Path $outputPath "$stem.coverage.log"
+    $scriptAuditLog = Join-Path $outputPath "$stem.script-audit.log"
+    $scriptAuditPath = Join-Path $outputPath "$stem.script-audit.csv"
     $eventLog = Join-Path $outputPath "$stem.events.jsonl"
     $coverageDirectory = Join-Path $outputPath "$stem.coverage"
 
@@ -721,6 +1180,9 @@ foreach ($dump in $dumps) {
         '--dialogue-audio-csv', $AprilDialogueCsv
     )
     $conversion = Invoke-DotnetDll $DotnetPath $BethesdaMultitoolDll $convertArguments $buildLog
+    $scriptAudit = Invoke-DotnetDll $DotnetPath $EsmAnalyzerDll @(
+        'dmp', 'scripts', 'audit', $dump.FullName, '--output', $scriptAuditPath
+    ) $scriptAuditLog
 
     if (Test-Path -LiteralPath $esmPath -PathType Leaf) {
         $deep = Invoke-DotnetDll $DotnetPath $EsmAnalyzerDll @(
@@ -741,9 +1203,12 @@ foreach ($dump in $dumps) {
     }
 
     Ensure-CoverageReports $coverageDirectory
+    Ensure-ScriptAuditReport $scriptAuditPath
     $recordCoverage = @(Import-Csv -LiteralPath (Join-Path $coverageDirectory 'record_coverage.csv'))
     $subrecordCoverage = @(Import-Csv -LiteralPath (Join-Path $coverageDirectory 'subrecord_coverage.csv'))
     $scriptCoverage = @(Import-Csv -LiteralPath (Join-Path $coverageDirectory 'script_bytecode_coverage.csv'))
+    $scriptSourceCoverage = @(Import-Csv -LiteralPath (Join-Path $coverageDirectory 'script_source_coverage.csv'))
+    $scriptAuditRows = @(Import-Csv -LiteralPath $scriptAuditPath)
     $eventLogRead = Read-ConversionEventLog $eventLog
     $conversionEvents = @($eventLogRead.Events)
     if (-not $eventLogRead.IsValid) {
@@ -780,12 +1245,7 @@ foreach ($dump in $dumps) {
         $responseCount -le $infoCount
 
     $unparsedRows = @($recordCoverage | Where-Object classification -eq 'Unparsed')
-    $unparsedCount = if ($unparsedRows.Count -eq 0) {
-        0L
-    }
-    else {
-        [int64](($unparsedRows | Measure-Object -Property count -Sum).Sum)
-    }
+    $unparsedCount = Get-NumericPropertySum -Rows $unparsedRows -Property 'count'
     $rawGapCount = @(
         $subrecordCoverage | Where-Object {
             $_.uses_raw_byte_array -eq 'True' -and
@@ -796,6 +1256,25 @@ foreach ($dump in $dumps) {
         $coverage.ExitCode -eq 0 -and
         $unparsedCount -eq 0 -and
         $rawGapCount -eq 0
+
+    $scriptAuditHardContradictions = @(
+        $scriptAuditRows | Where-Object { -not [string]::IsNullOrWhiteSpace($_.hard_contradictions) }
+    ).Count
+    $scriptAuditIntegrity = @($scriptAuditRows | Where-Object {
+        $_.row_kind -notin @('runtime', 'merged') -or
+        $_.form_id -notmatch '^0x[0-9A-Fa-f]{8}$' -or
+        ([int64]$_.source_utf8_length -gt 0 -and $_.source_sha256 -notmatch '^[0-9A-Fa-f]{64}$') -or
+        ([int64]$_.scda_length -gt 0 -and $_.scda_sha256 -notmatch '^[0-9A-Fa-f]{64}$')
+    }).Count -eq 0
+    $scriptAuditPass =
+        $scriptAudit.ExitCode -eq 0 -and
+        $scriptAuditHardContradictions -eq 0 -and
+        $scriptAuditIntegrity
+
+    $scriptSourceAssessment = Get-ScriptSourceCoverageAssessment `
+        $scriptSourceCoverage $subrecordCoverage
+    $scriptProvenanceAssessment = Get-ScriptProvenanceAssessment `
+        $conversionEvents $scriptSourceCoverage $scriptAuditRows
 
     $hardScriptIssues = @(
         $scriptCoverage | Where-Object {
@@ -810,12 +1289,7 @@ foreach ($dump in $dumps) {
             $_.subrecord -eq 'SCDA'
         }
     )
-    $scdaCount = if ($scdaCountRows.Count -eq 0) {
-        0L
-    }
-    else {
-        [int64](($scdaCountRows | Measure-Object -Property count -Sum).Sum)
-    }
+    $scdaCount = Get-NumericPropertySum -Rows $scdaCountRows -Property 'count'
     $scriptCoverageComplete = $scriptCoverage.Count -eq $scdaCount
     $variableTelemetry = @(
         $scriptCoverage | Where-Object variable_count_matches -ne 'True'
@@ -837,6 +1311,9 @@ foreach ($dump in $dumps) {
         $unlinkedZero -and
         $coveragePass -and
         $scriptCoverageComplete -and
+        $scriptAuditPass -and
+        $scriptSourceAssessment.Pass -and
+        $scriptProvenanceAssessment.Pass -and
         $hardScriptIssues -eq 0 -and
         $typeWarningLines -eq 0
 
@@ -849,6 +1326,7 @@ foreach ($dump in $dumps) {
     $suppressedInfoIds = @(Get-SuppressedRecordIdsFromEvents $conversionEvents 'INFO')
     $suppressedPackageIds = @(Get-SuppressedRecordIdsFromEvents $conversionEvents 'PACK')
     $suppressedScriptIds = @(Get-SuppressedRecordIdsFromEvents $conversionEvents 'SCPT')
+    $suppressedTerminalIds = @(Get-SuppressedRecordIdsFromEvents $conversionEvents 'TERM')
     $outputSha256 = if (Test-Path -LiteralPath $esmPath -PathType Leaf) {
         Get-Sha256 $esmPath
     }
@@ -901,13 +1379,33 @@ foreach ($dump in $dumps) {
         } else { 0L }
         OutputSha256 = $outputSha256
         Output = $esmPath
+        TermSuppressions = $suppressedTerminalIds.Count
+        SuppressedTerminalFormIds = $suppressedTerminalIds -join ';'
+        ScriptAuditExit = $scriptAudit.ExitCode
+        ScriptAuditPass = $scriptAuditPass
+        ScriptAuditRows = $scriptAuditRows.Count
+        ScriptAuditHardContradictions = $scriptAuditHardContradictions
+        ScriptAuditSha256 = Get-Sha256 $scriptAuditPath
+        ScriptSourceCoverageRows = $scriptSourceCoverage.Count
+        ScriptSourceHardContradictions = $scriptSourceAssessment.HardContradictions
+        ScriptSourceSctxBlocks = $scriptSourceAssessment.SctxCount
+        ScriptSourceSctxReconciled = $scriptSourceAssessment.SctxReconciled
+        ScriptSourceScdaReconciled = $scriptSourceAssessment.ScdaReconciled
+        ScriptSourceHashIntegrity = $scriptSourceAssessment.HashIntegrity
+        ScriptSourceCoveragePass = $scriptSourceAssessment.Pass
+        ScriptSourceCoverageSha256 = Get-Sha256 (
+            Join-Path $coverageDirectory 'script_source_coverage.csv')
+        ScriptProvenanceEvents = $scriptProvenanceAssessment.EventCount
+        ScriptProvenanceMatched = $scriptProvenanceAssessment.MatchedCount
+        ScriptProvenancePass = $scriptProvenanceAssessment.Pass
     }
     $results.Add($row)
     $results | Export-Csv -LiteralPath $manifestPath -NoTypeInformation
 
     Write-Host (
-        "  exits convert/deep/dialogue/coverage={0}/{1}/{2}/{3}; success={4}; {5:N1}s" -f
+        "  exits convert/audit/deep/dialogue/coverage={0}/{1}/{2}/{3}/{4}; success={5}; {6:N1}s" -f
         $conversion.ExitCode,
+        $scriptAudit.ExitCode,
         $deep.ExitCode,
         $dialogue.ExitCode,
         $coverage.ExitCode,

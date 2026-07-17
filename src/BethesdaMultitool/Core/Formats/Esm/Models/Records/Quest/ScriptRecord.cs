@@ -1,4 +1,19 @@
+using BethesdaMultitool.Core.Formats.Esm.Models;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+
+/// <summary>
+///     Provenance of the exact SCTX text carried by a captured standalone or inline script. This is
+///     deliberately identity-based: runtime text is only marked when it came from the same
+///     runtime Script object; when bytecode exists, its accepted executable bundle came from
+///     that object too. Editor-ID matches and other dumps are never source evidence.
+/// </summary>
+public enum ScriptSourceTextOrigin
+{
+    None,
+    DmpFragment,
+    RuntimeSameObject,
+}
 
 /// <summary>
 ///     Parsed Script (SCPT) record.
@@ -35,9 +50,49 @@ public record ScriptRecord
     /// <summary>Whether the script is compiled (SCRIPT_HEADER.bIsCompiled).</summary>
     public bool IsCompiled { get; init; }
 
+    /// <summary>
+    ///     Whether a complete serialized SCHR subrecord supplied the executable metadata.
+    ///     Runtime Script objects use <see cref="ExecutableBundleFromRuntime" /> instead.
+    /// </summary>
+    public bool HasSerializedHeader { get; init; }
+
+    /// <summary>Whether a serialized SCHR was present but too short or otherwise ambiguous.</summary>
+    public bool HasMalformedSerializedHeader { get; init; }
+
+    /// <summary>
+    ///     Whether a serialized SLSD/SCVR/SCRO/SCRV component was short or structurally
+    ///     orphaned. The table must fail closed even when SCHR happens to declare zero.
+    /// </summary>
+    public bool HasMalformedSerializedTable { get; init; }
+
+    /// <summary>
+    ///     Whether SCDA and its header/tables were captured atomically from the same runtime
+    ///     Script object. This is stronger evidence than an editor-ID match.
+    /// </summary>
+    public bool ExecutableBundleFromRuntime { get; init; }
+
+    /// <summary>
+    ///     True when executable content was declared but the SCHR/SCDA/table bundle failed
+    ///     structural validation. Such a script must not be emitted as an executable SCPT.
+    /// </summary>
+    public bool IsIncompleteExecutableBundle { get; init; }
+
     // From SCTX (source text)
     /// <summary>Script source text from SCTX subrecord.</summary>
     public string? SourceText { get; init; }
+
+    /// <summary>
+    ///     Where <see cref="SourceText" /> came from within the dump currently being parsed.
+    ///     This is diagnostic metadata only and is never serialized into the plugin.
+    /// </summary>
+    public ScriptSourceTextOrigin SourceTextOrigin { get; init; }
+
+    /// <summary>
+    ///     Result of the same-dump standalone SCTX/SCDA correspondence gate. Source-only
+    ///     text remains recoverable and diagnostic, but only Accepted compiled source may
+    ///     prove a local declaration used by another emitted record.
+    /// </summary>
+    public ScriptSourceCorrespondenceStatus SourceTextCorrespondenceStatus { get; init; }
 
     // From SCDA (compiled bytecode)
     /// <summary>Raw compiled bytecode from SCDA subrecord.</summary>

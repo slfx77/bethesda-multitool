@@ -1,4 +1,8 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Disposition.Policies;
@@ -67,6 +71,176 @@ public sealed class EsmPlannerTier0Tests
 
         Assert.Equal(0x800u, plan.Meta.NextObjectId);
     }
+
+    [Fact]
+    public void Build_Maps_Aliased_Dmp_Source_To_Master_Without_Plugin_Allocation()
+    {
+        const uint sourceFormId = 0x001251C2;
+        const uint masterFormId = 0x0013408C;
+        var allocator = new FormIdAllocator();
+        var planner = BuildPlanner(allocator);
+        var master = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader
+            {
+                Signature = "GMST",
+                FormId = masterFormId,
+                Version = 15,
+            },
+        };
+        var dmp = new RecordCollection
+        {
+            GameSettings =
+            [
+                new GameSettingRecord
+                {
+                    FormId = sourceFormId,
+                    EditorId = "SharedEditorId",
+                    IntValue = 1,
+                },
+            ],
+        };
+
+        var plan = planner.Build(
+            [master],
+            dmp,
+            new HashSet<string> { "GMST" },
+            new HashSet<uint> { masterFormId },
+            null,
+            masterFormIdAliases: new Dictionary<uint, uint> { [sourceFormId] = masterFormId });
+
+        var record = Assert.Single(plan.Records);
+        Assert.Equal(RecordDisposition.Override, record.Disposition);
+        Assert.Equal(masterFormId, record.FormId);
+        Assert.Equal(sourceFormId, record.SourceFormId);
+        Assert.Equal(masterFormId, plan.SourceToEmittedFormId[sourceFormId]);
+        Assert.Equal(0x800u, allocator.NextObjectId);
+    }
+
+    [Fact]
+    public void Build_Preserves_Alias_Mapping_When_Exact_Master_Capture_Wins()
+    {
+        const uint aliasFormId = 0x001251C2;
+        const uint masterFormId = 0x0013408C;
+        var allocator = new FormIdAllocator();
+        var planner = BuildPlanner(allocator);
+        var master = MasterGameSetting(masterFormId);
+        var dmp = new RecordCollection
+        {
+            GameSettings =
+            [
+                GameSetting(aliasFormId, "SharedEditorId", 1),
+                GameSetting(masterFormId, "SharedEditorId", 2),
+            ],
+        };
+
+        var plan = planner.Build(
+            [master],
+            dmp,
+            new HashSet<string> { "GMST" },
+            new HashSet<uint> { masterFormId },
+            null,
+            masterFormIdAliases: new Dictionary<uint, uint> { [aliasFormId] = masterFormId });
+
+        var record = Assert.Single(plan.Records);
+        Assert.Equal(masterFormId, record.SourceFormId);
+        Assert.Equal(masterFormId, plan.SourceToEmittedFormId[aliasFormId]);
+        Assert.Equal(0x800u, allocator.NextObjectId);
+    }
+
+    [Fact]
+    public void Build_Maps_Every_Validated_Alias_When_Several_Share_One_Master()
+    {
+        const uint firstAliasFormId = 0x001251C2;
+        const uint secondAliasFormId = 0x001251C3;
+        const uint masterFormId = 0x0013408C;
+        var allocator = new FormIdAllocator();
+        var planner = BuildPlanner(allocator);
+        var dmp = new RecordCollection
+        {
+            GameSettings =
+            [
+                GameSetting(firstAliasFormId, "SharedEditorId", 1),
+                GameSetting(secondAliasFormId, "SharedEditorId", 2),
+            ],
+        };
+
+        var plan = planner.Build(
+            [MasterGameSetting(masterFormId)],
+            dmp,
+            new HashSet<string> { "GMST" },
+            new HashSet<uint> { masterFormId },
+            null,
+            masterFormIdAliases: new Dictionary<uint, uint>
+            {
+                [firstAliasFormId] = masterFormId,
+                [secondAliasFormId] = masterFormId,
+            });
+
+        Assert.Single(plan.Records);
+        Assert.Equal(masterFormId, plan.SourceToEmittedFormId[firstAliasFormId]);
+        Assert.Equal(masterFormId, plan.SourceToEmittedFormId[secondAliasFormId]);
+        Assert.Equal(0x800u, allocator.NextObjectId);
+    }
+
+    [Fact]
+    public void Build_Carries_Disabled_Scpt_Master_Alias_For_PlannerOwned_Npc_Scri()
+    {
+        const uint npcFormId = 0x00014000;
+        const uint sourceScriptFormId = 0x001251C2;
+        const uint masterScriptFormId = 0x0013408C;
+        var planner = BuildPlanner();
+        var masterNpc = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader { Signature = "NPC_", FormId = npcFormId, Version = 15 }
+        };
+        var masterScript = new ParsedMainRecord
+        {
+            Header = new MainRecordHeader { Signature = "SCPT", FormId = masterScriptFormId, Version = 15 }
+        };
+        var dmp = new RecordCollection
+        {
+            Npcs = [new NpcRecord { FormId = npcFormId, Script = sourceScriptFormId }],
+            Scripts =
+            [
+                new ScriptRecord
+                {
+                    FormId = sourceScriptFormId,
+                    EditorId = "SharedScript"
+                }
+            ]
+        };
+
+        var plan = planner.Build(
+            [masterNpc, masterScript],
+            dmp,
+            new HashSet<string> { "NPC_" },
+            new HashSet<uint> { npcFormId, masterScriptFormId },
+            null,
+            masterFormIdAliases: new Dictionary<uint, uint>
+            {
+                [sourceScriptFormId] = masterScriptFormId
+            });
+
+        Assert.Equal(masterScriptFormId, plan.SourceToEmittedFormId[sourceScriptFormId]);
+    }
+
+    private static ParsedMainRecord MasterGameSetting(uint formId) => new()
+    {
+        Header = new MainRecordHeader
+        {
+            Signature = "GMST",
+            FormId = formId,
+            Version = 15,
+        },
+    };
+
+    private static GameSettingRecord GameSetting(uint formId, string editorId, int value) => new()
+    {
+        FormId = formId,
+        EditorId = editorId,
+        IntValue = value,
+    };
 
     private static EsmPlanner BuildPlanner(FormIdAllocator? allocator = null)
     {

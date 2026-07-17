@@ -123,6 +123,38 @@ public sealed class PostVerdictScriptClosurePlannerTests
         Assert.Equal(1, result.RecordIndexByEmittedFormId[duplicateFormId]);
     }
 
+    [Fact]
+    public void Apply_SkipScriptIsNeitherActuallyLiveNorAValidScriTarget()
+    {
+        const uint source = 0x00100000;
+        const uint emitted = 0x01000800;
+        var skipped = Plan("SCPT", emitted, source) with
+        {
+            Disposition = RecordDisposition.Skip,
+            Model = new ScriptRecord { FormId = source },
+        };
+        var plan = new EmitPlan
+        {
+            Records = [skipped],
+            SourceToEmittedFormId = ImmutableDictionary<uint, uint>.Empty.Add(source, emitted),
+            EmittedFormIds = ImmutableHashSet<uint>.Empty.Add(emitted),
+            ValidScriptFormIds = ImmutableHashSet<uint>.Empty.Add(emitted),
+            RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty.Add(emitted, 0),
+            Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
+            Meta = new PlanMetadata
+            {
+                NextObjectId = 0x801,
+                PlannerCoverage = ImmutableHashSet<string>.Empty,
+            },
+        };
+
+        var result = PostVerdictScriptClosurePlanner.Apply(plan, []);
+
+        Assert.DoesNotContain(emitted, result.EmittedFormIds);
+        Assert.DoesNotContain(emitted, result.ValidScriptFormIds);
+        Assert.DoesNotContain(source, result.SourceToEmittedFormId.Keys);
+    }
+
     private static RecordPlan Plan(string type, uint emitted, uint source) => new()
     {
         Type = type,

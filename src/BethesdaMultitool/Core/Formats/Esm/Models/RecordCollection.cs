@@ -61,6 +61,13 @@ public record RecordCollection
     /// <summary>Parsed Script (SCPT) records.</summary>
     public List<ScriptRecord> Scripts { get; init; } = [];
 
+    /// <summary>
+    ///     Same-dump runtime Script objects retained for recovery diagnostics and exact
+    ///     variable identity. These are not semantic SCPT records and are never direct
+    ///     planner/emission candidates.
+    /// </summary>
+    public List<RuntimeScriptData> RuntimeScripts { get; init; } = [];
+
     // Items
     /// <summary>Parsed Weapon records.</summary>
     public List<WeaponRecord> Weapons { get; init; } = [];
@@ -436,6 +443,7 @@ public record RecordCollection
             Books = MergeList(Books, overlay.Books, r => r.FormId),
             Terminals = MergeList(Terminals, overlay.Terminals, r => r.FormId),
             Scripts = MergeList(Scripts, overlay.Scripts, r => r.FormId),
+            RuntimeScripts = SelectOverlayRuntimeScripts(RuntimeScripts, overlay.RuntimeScripts),
 
             // Items
             Weapons = MergeList(Weapons, overlay.Weapons, r => r.FormId),
@@ -1177,6 +1185,19 @@ public record RecordCollection
         merged.AddRange(overlay);
         return merged;
     }
+
+    /// <summary>
+    ///     Runtime Script objects are provenance for one dump, not load-order records. Retain
+    ///     them only when a metadata-free base is overlaid by that dump's semantic collection.
+    ///     If the base already carries runtime objects, the merge boundary could combine two
+    ///     dumps; fail closed by clearing the diagnostic metadata instead of mixing sources.
+    /// </summary>
+    private static List<RuntimeScriptData> SelectOverlayRuntimeScripts(
+        List<RuntimeScriptData> baseRuntimeScripts,
+        List<RuntimeScriptData> overlayRuntimeScripts) =>
+        baseRuntimeScripts.Count == 0
+            ? new List<RuntimeScriptData>(overlayRuntimeScripts)
+            : [];
 
     private static Dictionary<TKey, TValue> MergeDictionary<TKey, TValue>(
         Dictionary<TKey, TValue> baseDict, Dictionary<TKey, TValue> overlay) where TKey : notnull
