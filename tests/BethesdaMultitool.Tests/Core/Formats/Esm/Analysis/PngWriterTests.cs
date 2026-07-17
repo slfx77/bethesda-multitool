@@ -48,6 +48,20 @@ public sealed class PngWriterTests
     }
 
     [Fact]
+    public void EncodeRgba_IsDeterministicAndOmitsWallClockMetadata()
+    {
+        var pixels = MakeRgbaPattern(16, 12);
+
+        var first = PngWriter.EncodeRgba(pixels, 16, 12);
+        var second = PngWriter.EncodeRgba(pixels, 16, 12);
+
+        Assert.Equal(first, second);
+        var containerText = System.Text.Encoding.Latin1.GetString(first);
+        Assert.DoesNotContain("date:create", containerText);
+        Assert.DoesNotContain("date:modify", containerText);
+    }
+
+    [Fact]
     public void SaveRgba_StreamsToFile_PixelIdenticalToInput()
     {
         const int width = 32, height = 32;

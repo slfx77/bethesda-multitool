@@ -70,6 +70,10 @@ public static class PngWriter
     {
         image.Settings.SetDefine(MagickFormat.Png, "compression-level", "2");
         image.Settings.SetDefine(MagickFormat.Png, "compression-filter", "1");
+        // Raw renderer/export pixels have no source metadata to preserve. ImageMagick otherwise
+        // injects wall-clock date:create/date:modify text chunks at write time, making two PNGs with
+        // byte-identical pixels hash differently solely because they were encoded at different times.
+        image.Settings.SetDefine(MagickFormat.Png, "exclude-chunk", "date,time");
     }
 
     // Magick.NET's path-based Write goes through native fopen, which fails on Windows paths >= MAX_PATH (260).
