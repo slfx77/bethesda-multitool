@@ -54,4 +54,10 @@ public sealed record PlanDiagnostic
 
     /// <summary>Human-readable description.</summary>
     public required string Message { get; init; }
+
+    /// <summary>
+    ///     Optional code-specific fields forwarded to structured conversion logs. Human
+    ///     wording is deliberately not an API; reports should use these fields when present.
+    /// </summary>
+    public IReadOnlyDictionary<string, string?>? Metadata { get; init; }
 }

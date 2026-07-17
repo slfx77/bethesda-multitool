@@ -49,9 +49,20 @@ public sealed class ScriptReferenceSafetyPlannerTests
 
         Assert.DoesNotContain(plan.Records, record => record.Type == "SCPT");
         Assert.DoesNotContain(0x00100000u, plan.SourceToEmittedFormId.Keys);
-        Assert.Contains(plan.Diagnostics, diagnostic =>
+        var diagnostic = Assert.Single(plan.Diagnostics, diagnostic =>
             diagnostic.Code == "script.suppress-unsafe-reference-table"
-            && diagnostic.Message.Contains("SCRO[0]=0x00ABCDEF unresolved", StringComparison.Ordinal));
+            && diagnostic.Message.Contains(
+                "[script-source=0x00100000;script-emitted=0x01000800;script-edid=DanglingScript]",
+                StringComparison.Ordinal)
+            && diagnostic.Message.Contains(
+                "SCRO[0][target-source=0x00ABCDEF;target-emitted=<none>;action=DropSubrecord] unresolved",
+                StringComparison.Ordinal));
+        Assert.Equal("DanglingScript", diagnostic.Metadata!["script-editor-id"]);
+        Assert.Equal("0x00100000", diagnostic.Metadata["script-source-form-id"]);
+        Assert.Equal("0x01000800", diagnostic.Metadata["script-emitted-form-id"]);
+        Assert.Equal("SCRO[0]", diagnostic.Metadata["reference-field"]);
+        Assert.Equal("0x00ABCDEF", diagnostic.Metadata["target-source-form-id"]);
+        Assert.Null(diagnostic.Metadata["target-emitted-form-id"]);
     }
 
     [Fact]
@@ -69,8 +80,14 @@ public sealed class ScriptReferenceSafetyPlannerTests
             [], records, new HashSet<string> { "SCPT" }, new HashSet<uint>(), null);
 
         Assert.DoesNotContain(plan.Records, record => record.Type == "SCPT");
-        Assert.Contains(plan.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("SCRV[0]=5 has no matching SLSD", StringComparison.Ordinal));
+        var diagnostic = Assert.Single(plan.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "[script-source=0x00100000;script-emitted=0x01000800;script-edid=BadLocalScript]",
+                StringComparison.Ordinal)
+            && diagnostic.Message.Contains(
+                "SCRV[0][local-id=5] has no matching SLSD", StringComparison.Ordinal));
+        Assert.Equal("SCRV[0]", diagnostic.Metadata!["reference-field"]);
+        Assert.Equal("5", diagnostic.Metadata["local-variable-id"]);
     }
 
     private static EsmPlanner BuildPlanner()

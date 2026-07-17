@@ -1024,7 +1024,8 @@ public sealed class PluginBuilder
                     detail,
                     diagnostic.RecordType,
                     diagnostic.RecordFormId,
-                    diagnostic.Code);
+                    diagnostic.Code,
+                    diagnostic.Metadata);
             }
             else if (diagnostic.Code != "quest-variable.target-unresolved")
             {
@@ -1034,7 +1035,8 @@ public sealed class PluginBuilder
                     detail,
                     diagnostic.RecordType,
                     diagnostic.RecordFormId,
-                    diagnostic.Code);
+                    diagnostic.Code,
+                    diagnostic.Metadata);
             }
         }
 
@@ -1521,15 +1523,18 @@ public sealed class PluginBuilder
             {
                 case BethesdaMultitool.Core.Formats.Esm.Planner.PlanDiagnosticKind.Warning:
                     sink.Warn(diagnostic.Phase, diagnostic.Message,
-                        diagnostic.RecordType, diagnostic.FormId, diagnostic.Code);
+                        diagnostic.RecordType, diagnostic.FormId, diagnostic.Code,
+                        diagnostic.Metadata);
                     break;
                 case BethesdaMultitool.Core.Formats.Esm.Planner.PlanDiagnosticKind.Decision:
                     sink.Decision(diagnostic.Phase, diagnostic.Message,
-                        diagnostic.RecordType, diagnostic.FormId, diagnostic.Code);
+                        diagnostic.RecordType, diagnostic.FormId, diagnostic.Code,
+                        diagnostic.Metadata);
                     break;
                 default:
                     sink.Info(diagnostic.Phase, diagnostic.Message,
-                        diagnostic.RecordType, diagnostic.FormId, diagnostic.Code);
+                        diagnostic.RecordType, diagnostic.FormId, diagnostic.Code,
+                        diagnostic.Metadata);
                     break;
             }
         }

@@ -63,6 +63,17 @@ public sealed class JsonlConversionProgressSink : IConversionProgressSink, IDisp
             WriteNullableString(json, "FormId", evt.FormId.HasValue ? $"0x{evt.FormId.Value:X8}" : null);
             WriteNullableString(json, "Code", evt.Code);
             json.WriteString("Message", evt.Message);
+            if (evt.Metadata is not null)
+            {
+                json.WriteStartObject("Metadata");
+                foreach (var (key, value) in evt.Metadata.OrderBy(
+                             pair => pair.Key, StringComparer.Ordinal))
+                {
+                    WriteNullableString(json, key, value);
+                }
+
+                json.WriteEndObject();
+            }
         });
     }
 

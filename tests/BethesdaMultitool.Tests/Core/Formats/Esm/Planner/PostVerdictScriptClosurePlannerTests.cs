@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Planner;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Planner.References;
@@ -19,6 +20,11 @@ public sealed class PostVerdictScriptClosurePlannerTests
         const uint cell = 0x01000802;
         var script = Plan("SCPT", scriptEmitted, scriptSource) with
         {
+            Model = new ScriptRecord
+            {
+                FormId = scriptSource,
+                EditorId = "DroppedTargetScript",
+            },
             References =
             [
                 new ResolvedRef
@@ -70,9 +76,21 @@ public sealed class PostVerdictScriptClosurePlannerTests
         Assert.DoesNotContain(scriptSource, result.SourceToEmittedFormId.Keys);
         Assert.DoesNotContain(refSource, result.SourceToEmittedFormId.Keys);
         Assert.Empty(result.ValidScriptFormIds);
-        Assert.Contains(result.Diagnostics, diagnostic =>
+        var diagnostic = Assert.Single(result.Diagnostics, diagnostic =>
             diagnostic.Code == "script.suppress-post-verdict-reference-table"
-            && diagnostic.Message.Contains("SCRO[0]=0x01000801 was dropped", StringComparison.Ordinal));
+            && diagnostic.Message.Contains(
+                "[script-source=0x00100000;script-emitted=0x01000800;script-edid=DroppedTargetScript]",
+                StringComparison.Ordinal)
+            && diagnostic.Message.Contains(
+                "SCRO[0][target-source=0x00100001;target-emitted=0x01000801;action=Resolved] target was dropped",
+                StringComparison.Ordinal));
+        Assert.Equal("DroppedTargetScript", diagnostic.Metadata!["script-editor-id"]);
+        Assert.Equal("0x00100000", diagnostic.Metadata["script-source-form-id"]);
+        Assert.Equal("0x01000800", diagnostic.Metadata["script-emitted-form-id"]);
+        Assert.Equal("SCRO[0]", diagnostic.Metadata["reference-field"]);
+        Assert.Equal("Resolved", diagnostic.Metadata["reference-action"]);
+        Assert.Equal("0x00100001", diagnostic.Metadata["target-source-form-id"]);
+        Assert.Equal("0x01000801", diagnostic.Metadata["target-emitted-form-id"]);
     }
 
     [Fact]

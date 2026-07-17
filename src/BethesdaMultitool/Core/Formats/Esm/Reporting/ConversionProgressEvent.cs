@@ -24,6 +24,14 @@ public sealed record ConversionProgressEvent
     public required string Message { get; init; }
 
     /// <summary>
+    ///     Optional machine-readable detail fields for reports that need more than the
+    ///     stable event identity. Keys are event-code specific; consumers must tolerate
+    ///     this property being absent so schema-v1 logs written before metadata was added
+    ///     remain valid.
+    /// </summary>
+    public IReadOnlyDictionary<string, string?>? Metadata { get; init; }
+
+    /// <summary>
     ///     Optional aggregation key — used by the GUI to coalesce repetitive events
     ///     (e.g., "skipped:CELL"). Null for one-off events.
     /// </summary>

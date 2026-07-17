@@ -43,7 +43,8 @@ public sealed class NullConversionProgressSink : IConversionProgressSink
 public static class ConversionProgressSinkExtensions
 {
     public static void Info(this IConversionProgressSink sink, string phase, string message,
-        string? formType = null, uint? formId = null, string? code = null)
+        string? formType = null, uint? formId = null, string? code = null,
+        IReadOnlyDictionary<string, string?>? metadata = null)
     {
         sink.OnEvent(new ConversionProgressEvent
         {
@@ -53,12 +54,14 @@ public static class ConversionProgressSinkExtensions
             FormType = formType,
             FormId = formId,
             Message = message,
-            Code = code
+            Code = code,
+            Metadata = metadata
         });
     }
 
     public static void Decision(this IConversionProgressSink sink, string phase, string message,
-        string? formType = null, uint? formId = null, string? code = null)
+        string? formType = null, uint? formId = null, string? code = null,
+        IReadOnlyDictionary<string, string?>? metadata = null)
     {
         sink.OnEvent(new ConversionProgressEvent
         {
@@ -68,12 +71,14 @@ public static class ConversionProgressSinkExtensions
             FormType = formType,
             FormId = formId,
             Message = message,
-            Code = code
+            Code = code,
+            Metadata = metadata
         });
     }
 
     public static void Warn(this IConversionProgressSink sink, string phase, string message,
-        string? formType = null, uint? formId = null, string? code = null)
+        string? formType = null, uint? formId = null, string? code = null,
+        IReadOnlyDictionary<string, string?>? metadata = null)
     {
         sink.OnEvent(new ConversionProgressEvent
         {
@@ -83,12 +88,14 @@ public static class ConversionProgressSinkExtensions
             FormType = formType,
             FormId = formId,
             Message = message,
-            Code = code
+            Code = code,
+            Metadata = metadata
         });
     }
 
     public static void Error(this IConversionProgressSink sink, string phase, string message,
-        string? formType = null, uint? formId = null, string? code = null)
+        string? formType = null, uint? formId = null, string? code = null,
+        IReadOnlyDictionary<string, string?>? metadata = null)
     {
         sink.OnEvent(new ConversionProgressEvent
         {
@@ -98,7 +105,8 @@ public static class ConversionProgressSinkExtensions
             FormType = formType,
             FormId = formId,
             Message = message,
-            Code = code
+            Code = code,
+            Metadata = metadata
         });
     }
 }

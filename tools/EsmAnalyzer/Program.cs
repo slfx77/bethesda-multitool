@@ -57,6 +57,7 @@ internal sealed class Program
         rootCommand.Subcommands.Add(VoiceHeuristicsCommands.CreateVoiceHeuristicsCommand());
         rootCommand.Subcommands.Add(TranscriptDiagCommands.CreateTranscriptDiagCommand());
         rootCommand.Subcommands.Add(DialogueQcCommand.CreateDialogueQcCommand());
+        rootCommand.Subcommands.Add(CorpusSuppressionReportCommand.Create());
         rootCommand.Subcommands.Add(GenFaceGenCommands.CreateGenFaceGenCommand());
         rootCommand.Subcommands.Add(SpeedTreeCommands.CreateSptCommand());
         rootCommand.Subcommands.Add(VerifyOpenMwCommand.Create());

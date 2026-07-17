@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 using BethesdaMultitool.Core.Formats.Esm.Plugin;
@@ -32,6 +33,9 @@ internal static class PostVerdictScriptClosurePlanner
 
             foreach (var (script, issues) in unsafeScripts.Values)
             {
+                var identity = ScriptSuppressionDiagnosticFormatter.ScriptIdentity(
+                    script.Model as ScriptRecord, script.SourceFormId, script.FormId);
+                var issueText = string.Join(", ", issues.Select(issue => issue.Message));
                 diagnostics.Add(new PlanDiagnostic
                 {
                     Kind = PlanDiagnosticKind.Warning,
@@ -39,8 +43,10 @@ internal static class PostVerdictScriptClosurePlanner
                     Code = "script.suppress-post-verdict-reference-table",
                     RecordType = "SCPT",
                     FormId = script.FormId,
-                    Message = $"Suppressed new SCPT 0x{script.FormId:X8} after final cell verdicts: "
-                              + string.Join(", ", issues) + ".",
+                    Message = $"Suppressed new SCPT {identity} after final cell verdicts: "
+                              + issueText + ".",
+                    Metadata = ScriptSuppressionDiagnosticFormatter.Metadata(
+                        script.Model as ScriptRecord, script.SourceFormId, script.FormId, issues),
                 });
             }
 
@@ -50,11 +56,15 @@ internal static class PostVerdictScriptClosurePlanner
         }
     }
 
-    private static Dictionary<uint, (RecordPlan Script, List<string> Issues)> FindUnsafeScripts(
+    private static Dictionary<uint, (
+        RecordPlan Script,
+        List<ScriptSuppressionDiagnosticFormatter.Issue> Issues)> FindUnsafeScripts(
         ImmutableArray<RecordPlan> records,
         IReadOnlySet<uint> liveFormIds)
     {
-        var unsafeScripts = new Dictionary<uint, (RecordPlan, List<string>)>();
+        var unsafeScripts = new Dictionary<uint, (
+            RecordPlan,
+            List<ScriptSuppressionDiagnosticFormatter.Issue>)>();
         foreach (var record in records)
         {
             if (record.Type != "SCPT" || record.Disposition != RecordDisposition.New)
@@ -67,9 +77,11 @@ internal static class PostVerdictScriptClosurePlanner
                 .Where(reference => reference.Action != ResolvedRefAction.Resolved
                                     || reference.FinalFormId is null or 0u
                                     || !liveFormIds.Contains(reference.FinalFormId.Value))
-                .Select(reference => reference.Action == ResolvedRefAction.Resolved
-                    ? $"{reference.FieldPath}=0x{reference.FinalFormId ?? 0:X8} was dropped"
-                    : $"{reference.FieldPath}=0x{reference.OriginalFormId ?? 0:X8} is unresolved")
+                .Select(reference => new ScriptSuppressionDiagnosticFormatter.Issue(
+                    reference.Action == ResolvedRefAction.Resolved
+                        ? $"{ScriptSuppressionDiagnosticFormatter.ReferenceIdentity(reference)} target was dropped"
+                        : $"{ScriptSuppressionDiagnosticFormatter.ReferenceIdentity(reference)} is unresolved",
+                    Reference: reference))
                 .ToList();
             if (issues.Count > 0)
             {

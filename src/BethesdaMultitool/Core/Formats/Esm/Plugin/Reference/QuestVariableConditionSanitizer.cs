@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
@@ -18,7 +19,8 @@ internal sealed record QuestVariableConditionDiagnostic(
     string? VariableName,
     uint? TargetScriptFormId,
     bool RecordSuppressed,
-    string Message);
+    string Message,
+    IReadOnlyDictionary<string, string?> Metadata);
 
 /// <summary>
 ///     Summary of quest/script-variable CTDA sanitation performed before record planning.
@@ -48,6 +50,8 @@ internal static class QuestVariableConditionSanitizer
 {
     internal const ushort GetQuestVariableFunctionIndex = 79;
     internal const ushort GetScriptVariableFunctionIndex = 53;
+    private static readonly IReadOnlyDictionary<string, string?> EmptyMetadata =
+        new Dictionary<string, string?>();
 
     public static QuestVariableConditionSanitizationResult Apply(
         RecordCollection dmpRecords,
@@ -65,6 +69,20 @@ internal static class QuestVariableConditionSanitizer
         var invalidConditions = 0;
         var unresolvedTargets = 0;
         var retainedGetScriptVariables = 0;
+        var needsInfoMetadata = dmpRecords.Dialogues.Any(dialogue => dialogue.Conditions.Any(
+            condition => condition.FunctionIndex == GetQuestVariableFunctionIndex));
+        var topicsByFormId = needsInfoMetadata
+            ? dmpRecords.DialogTopics.GroupBy(topic => topic.FormId)
+                .ToDictionary(group => group.Key, group => group.First())
+            : new Dictionary<uint, DialogTopicRecord>();
+        var questsByFormId = needsInfoMetadata
+            ? dmpRecords.Quests.GroupBy(quest => quest.FormId)
+                .ToDictionary(group => group.Key, group => group.First())
+            : new Dictionary<uint, QuestRecord>();
+        var npcsByFormId = needsInfoMetadata
+            ? dmpRecords.Npcs.GroupBy(npc => npc.FormId)
+                .ToDictionary(group => group.Key, group => group.First())
+            : new Dictionary<uint, NpcRecord>();
 
         for (var index = dmpRecords.Dialogues.Count - 1; index >= 0; index--)
         {
@@ -74,10 +92,18 @@ internal static class QuestVariableConditionSanitizer
                 continue;
             }
 
+            // INFO metadata can include every response string. Build it only when this
+            // record can actually produce a quest-variable diagnostic; the common case
+            // across thousands of ordinary INFOs must remain allocation-free.
+            var metadata = dialogue.Conditions.Any(condition =>
+                condition.FunctionIndex == GetQuestVariableFunctionIndex)
+                ? BuildInfoMetadata(dialogue, topicsByFormId, questsByFormId, npcsByFormId)
+                : EmptyMetadata;
             var outcome = SanitizeConditions(
                 "INFO",
                 dialogue.FormId,
                 dialogue.EditorId,
+                metadata,
                 dialogue.Conditions,
                 resolver,
                 includeGetScriptVariableDiagnostics: false,
@@ -107,10 +133,15 @@ internal static class QuestVariableConditionSanitizer
                 continue;
             }
 
+            var metadata = package.Conditions.Any(condition =>
+                condition.FunctionIndex is GetQuestVariableFunctionIndex or GetScriptVariableFunctionIndex)
+                ? BuildBaseMetadata(package.EditorId)
+                : EmptyMetadata;
             var outcome = SanitizeConditions(
                 "PACK",
                 package.FormId,
                 package.EditorId,
+                metadata,
                 package.Conditions,
                 resolver,
                 includeGetScriptVariableDiagnostics: true,
@@ -147,6 +178,7 @@ internal static class QuestVariableConditionSanitizer
         string recordType,
         uint recordFormId,
         string? editorId,
+        IReadOnlyDictionary<string, string?> recordMetadata,
         IReadOnlyList<DialogueCondition> conditions,
         VariableTableResolver resolver,
         bool includeGetScriptVariableDiagnostics,
@@ -177,7 +209,8 @@ internal static class QuestVariableConditionSanitizer
                     null,
                     false,
                     $"Retained GetScriptVariable target 0x{condition.Parameter1:X8}, " +
-                    $"variable ID {condition.Parameter2}; reference-script ownership is not proven by this pass."));
+                    $"variable ID {condition.Parameter2}; reference-script ownership is not proven by this pass.",
+                    BuildConditionMetadata(recordMetadata, condition, null)));
                 continue;
             }
 
@@ -203,6 +236,7 @@ internal static class QuestVariableConditionSanitizer
                         editorId,
                         condition,
                         decision,
+                        recordMetadata,
                         false,
                         $"Remapped GetQuestVariable ID {condition.Parameter2} -> " +
                         $"{decision.RemappedIndex.Value} by unique variable name/type match."));
@@ -218,6 +252,7 @@ internal static class QuestVariableConditionSanitizer
                         editorId,
                         condition,
                         decision,
+                        recordMetadata,
                         true,
                         "Suppressed the entire new record because its GetQuestVariable ID is absent from " +
                         "the retained target script and no unique name/type remap exists."));
@@ -232,6 +267,7 @@ internal static class QuestVariableConditionSanitizer
                         editorId,
                         condition,
                         decision,
+                        recordMetadata,
                         false,
                         "Retained GetQuestVariable unchanged because the emitted quest/script binding " +
                         "could not be proven."));
@@ -258,6 +294,7 @@ internal static class QuestVariableConditionSanitizer
         string? editorId,
         DialogueCondition condition,
         VariableConditionDecision decision,
+        IReadOnlyDictionary<string, string?> recordMetadata,
         bool recordSuppressed,
         string message)
     {
@@ -271,8 +308,97 @@ internal static class QuestVariableConditionSanitizer
             decision.SourceVariable?.Name,
             decision.TargetScriptFormId,
             recordSuppressed,
-            message);
+            message,
+            BuildConditionMetadata(recordMetadata, condition, decision));
     }
+
+    private static IReadOnlyDictionary<string, string?> BuildInfoMetadata(
+        DialogueRecord dialogue,
+        IReadOnlyDictionary<uint, DialogTopicRecord> topicsByFormId,
+        IReadOnlyDictionary<uint, QuestRecord> questsByFormId,
+        IReadOnlyDictionary<uint, NpcRecord> npcsByFormId)
+    {
+        var (speakerScopeKind, speakerScopeFormId) = dialogue.SpeakerFormId is { } exactSpeaker
+            ? ("exact-npc", (uint?)exactSpeaker)
+            : dialogue.SpeakerFactionFormId is { } faction
+                ? ("faction", (uint?)faction)
+                : dialogue.SpeakerRaceFormId is { } race
+                    ? ("race", (uint?)race)
+                    : dialogue.SpeakerVoiceTypeFormId is { } voiceType
+                        ? ("voice-type", (uint?)voiceType)
+                        : (null, null);
+        var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["record-editor-id"] = dialogue.EditorId,
+            ["info-prompt"] = dialogue.PromptText,
+            ["info-topic-form-id"] = FormatFormId(dialogue.RawParentTopicFormId ?? dialogue.TopicFormId),
+            ["info-quest-form-id"] = FormatFormId(dialogue.QuestFormId),
+            ["info-speaker-form-id"] = FormatFormId(dialogue.SpeakerFormId),
+            ["info-speaker-faction-form-id"] = FormatFormId(dialogue.SpeakerFactionFormId),
+            ["info-speaker-race-form-id"] = FormatFormId(dialogue.SpeakerRaceFormId),
+            ["info-speaker-voice-type-form-id"] = FormatFormId(dialogue.SpeakerVoiceTypeFormId),
+            ["info-speaker-scope-kind"] = speakerScopeKind,
+            ["info-speaker-scope-form-id"] = FormatFormId(speakerScopeFormId),
+            ["info-response-count"] = dialogue.Responses.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
+
+        var topicFormId = dialogue.RawParentTopicFormId ?? dialogue.TopicFormId;
+        if (topicFormId is { } topicId && topicsByFormId.TryGetValue(topicId, out var topic))
+        {
+            metadata["info-topic-editor-id"] = topic.EditorId;
+            metadata["info-topic-name"] = topic.FullName;
+        }
+
+        if (dialogue.QuestFormId is { } questId && questsByFormId.TryGetValue(questId, out var quest))
+        {
+            metadata["info-quest-editor-id"] = quest.EditorId;
+            metadata["info-quest-name"] = quest.FullName;
+        }
+
+        if (dialogue.SpeakerFormId is { } speakerId && npcsByFormId.TryGetValue(speakerId, out var npc))
+        {
+            metadata["info-speaker-editor-id"] = npc.EditorId;
+            metadata["info-speaker-name"] = npc.FullName;
+        }
+
+        for (var index = 0; index < dialogue.Responses.Count; index++)
+        {
+            var response = dialogue.Responses[index];
+            var prefix = $"info-response-{index:D3}";
+            metadata[$"{prefix}-number"] = response.ResponseNumber
+                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+            metadata[$"{prefix}-text"] = response.Text;
+        }
+
+        return metadata;
+    }
+
+    private static IReadOnlyDictionary<string, string?> BuildBaseMetadata(string? editorId) =>
+        new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["record-editor-id"] = editorId,
+        };
+
+    private static IReadOnlyDictionary<string, string?> BuildConditionMetadata(
+        IReadOnlyDictionary<string, string?> recordMetadata,
+        DialogueCondition condition,
+        VariableConditionDecision? decision)
+    {
+        var metadata = new Dictionary<string, string?>(recordMetadata, StringComparer.Ordinal)
+        {
+            ["condition-target-form-id"] = FormatFormId(condition.Parameter1),
+            ["condition-variable-index"] = condition.Parameter2
+                .ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["condition-variable-name"] = decision?.SourceVariable?.Name,
+            ["condition-target-script-form-id"] = FormatFormId(decision?.TargetScriptFormId),
+            ["condition-remapped-variable-index"] = decision?.RemappedIndex?
+                .ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
+        return metadata;
+    }
+
+    private static string? FormatFormId(uint? formId) =>
+        formId.HasValue ? $"0x{formId.Value:X8}" : null;
 
     private sealed record RecordConditionOutcome(
         List<DialogueCondition> Conditions,

@@ -27,7 +27,7 @@ internal static class ScriptReferenceSafetyPlanner
         ImmutableDictionary<int, ImmutableArray<ResolvedRef>> references,
         ReferenceResolver resolver)
     {
-        var unsafeIndices = new Dictionary<int, string>();
+        var unsafeIndices = new Dictionary<int, List<ScriptSuppressionDiagnosticFormatter.Issue>>();
         var unsafeFormIds = new HashSet<uint>();
 
         for (var i = 0; i < decisions.Count; i++)
@@ -46,7 +46,7 @@ internal static class ScriptReferenceSafetyPlanner
                 continue;
             }
 
-            unsafeIndices[i] = string.Join(", ", issues);
+            unsafeIndices[i] = issues;
             var emitted = entry.DmpFormId is { } source
                           && sourceToEmitted.TryGetValue(source, out var allocated)
                 ? allocated
@@ -66,16 +66,23 @@ internal static class ScriptReferenceSafetyPlanner
 
         var rewritten = decisions.ToArray();
         var diagnostics = ImmutableArray.CreateBuilder<PlanDiagnostic>(unsafeIndices.Count);
-        foreach (var (index, issue) in unsafeIndices)
+        foreach (var (index, issues) in unsafeIndices)
         {
             var (entry, decision) = rewritten[index];
+            var emitted = entry.DmpFormId is { } source
+                          && sourceToEmitted.TryGetValue(source, out var allocated)
+                ? allocated
+                : entry.DmpFormId;
+            var identity = ScriptSuppressionDiagnosticFormatter.ScriptIdentity(
+                entry.Model as ScriptRecord, entry.DmpFormId, emitted);
+            var issueText = string.Join(", ", issues.Select(issue => issue.Message));
             rewritten[index] = (entry, decision with
             {
                 Disposition = RecordDisposition.Skip,
                 Provenance = new PlanProvenance
                 {
                     PolicyId = "ScriptReferenceSafetyPlanner.UnsafeReferenceTable",
-                    Reason = $"New SCPT reference table is not loadable: {issue}.",
+                    Reason = $"New SCPT reference table is not loadable: {issueText}.",
                 },
             });
             diagnostics.Add(new PlanDiagnostic
@@ -85,7 +92,9 @@ internal static class ScriptReferenceSafetyPlanner
                 Code = "script.suppress-unsafe-reference-table",
                 RecordType = "SCPT",
                 FormId = entry.DmpFormId,
-                Message = $"Suppressed new SCPT 0x{entry.DmpFormId ?? 0:X8}: {issue}.",
+                Message = $"Suppressed new SCPT {identity}: {issueText}.",
+                Metadata = ScriptSuppressionDiagnosticFormatter.Metadata(
+                    entry.Model as ScriptRecord, entry.DmpFormId, emitted, issues),
             });
         }
 
@@ -109,7 +118,7 @@ internal static class ScriptReferenceSafetyPlanner
             .ToImmutableHashSet();
     }
 
-    private static List<string> FindIssues(
+    private static List<ScriptSuppressionDiagnosticFormatter.Issue> FindIssues(
         ScriptRecord script,
         ImmutableArray<ResolvedRef> references)
     {
@@ -117,7 +126,9 @@ internal static class ScriptReferenceSafetyPlanner
             .Where(reference => reference.FieldPath.StartsWith("SCRO[", StringComparison.Ordinal)
                                 && (reference.Action != ResolvedRefAction.Resolved
                                     || reference.FinalFormId is null or 0u))
-            .Select(reference => $"{reference.FieldPath}=0x{reference.OriginalFormId ?? 0:X8} unresolved")
+            .Select(reference => new ScriptSuppressionDiagnosticFormatter.Issue(
+                $"{ScriptSuppressionDiagnosticFormatter.ReferenceIdentity(reference)} unresolved",
+                Reference: reference))
             .ToList();
         var variableIds = script.Variables.Select(variable => variable.Index).ToHashSet();
         for (var i = 0; i < script.ReferencedObjects.Count; i++)
@@ -131,7 +142,11 @@ internal static class ScriptReferenceSafetyPlanner
             var variableId = raw & 0x7FFFFFFFu;
             if (variableId == 0 || !variableIds.Contains(variableId))
             {
-                issues.Add($"SCRV[{i}]={variableId} has no matching SLSD");
+                issues.Add(new ScriptSuppressionDiagnosticFormatter.Issue(
+                    $"{ScriptSuppressionDiagnosticFormatter.LocalIdentity(i, variableId)} "
+                    + "has no matching SLSD",
+                    LocalIndex: i,
+                    LocalId: variableId));
             }
         }
 

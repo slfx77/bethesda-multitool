@@ -23,6 +23,12 @@ public sealed class JsonlConversionProgressSinkTests
                     FormId = 0x0012ABCD,
                     Code = "script.suppress-unsafe-reference-table",
                     Message = "Human wording is not the machine-readable key.",
+                    Metadata = new Dictionary<string, string?>
+                    {
+                        ["script-editor-id"] = "SomeScript",
+                        ["nullable"] = null,
+                        ["script-source-form-id"] = "0x01123456",
+                    },
                 });
                 sink.OnComplete(new ConversionPipelineStats
                 {
@@ -44,6 +50,12 @@ public sealed class JsonlConversionProgressSinkTests
             Assert.Equal("SCPT", evt.GetProperty("FormType").GetString());
             Assert.Equal("0x0012ABCD", evt.GetProperty("FormId").GetString());
             Assert.Equal("script.suppress-unsafe-reference-table", evt.GetProperty("Code").GetString());
+            var metadata = evt.GetProperty("Metadata");
+            Assert.Equal("SomeScript", metadata.GetProperty("script-editor-id").GetString());
+            Assert.Equal(JsonValueKind.Null, metadata.GetProperty("nullable").ValueKind);
+            Assert.Equal(
+                ["nullable", "script-editor-id", "script-source-form-id"],
+                metadata.EnumerateObject().Select(property => property.Name).ToArray());
 
             using var completeJson = JsonDocument.Parse(lines[1]);
             var complete = completeJson.RootElement;

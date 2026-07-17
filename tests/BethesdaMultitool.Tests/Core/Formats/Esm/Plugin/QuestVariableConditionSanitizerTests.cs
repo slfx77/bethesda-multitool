@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -62,6 +63,14 @@ public class QuestVariableConditionSanitizerTests
     {
         var dialogue = NewDialogue(0x01000003, QuestFormId, 9) with
         {
+            EditorId = "PrototypeInfo",
+            TopicFormId = 0x00003000,
+            PromptText = "Ask about the prototype",
+            SpeakerFactionFormId = 0x00004000,
+            Responses =
+            [
+                new DialogueResponse { ResponseNumber = 1, Text = "Prototype answer." }
+            ],
             Conditions =
             [
                 new DialogueCondition { FunctionIndex = 1, Parameter1 = 0 },
@@ -83,6 +92,20 @@ public class QuestVariableConditionSanitizerTests
         var diagnostic = Assert.Single(result.Diagnostics);
         Assert.True(diagnostic.RecordSuppressed);
         Assert.Equal("bRoseComplete", diagnostic.VariableName);
+        Assert.Equal("PrototypeInfo", diagnostic.Metadata["record-editor-id"]);
+        Assert.Equal("Ask about the prototype", diagnostic.Metadata["info-prompt"]);
+        Assert.Equal("0x00003000", diagnostic.Metadata["info-topic-form-id"]);
+        Assert.Null(diagnostic.Metadata["info-speaker-form-id"]);
+        Assert.Equal("0x00004000", diagnostic.Metadata["info-speaker-faction-form-id"]);
+        Assert.Equal("faction", diagnostic.Metadata["info-speaker-scope-kind"]);
+        Assert.Equal("0x00004000", diagnostic.Metadata["info-speaker-scope-form-id"]);
+        Assert.Equal("1", diagnostic.Metadata["info-response-count"]);
+        Assert.Equal("1", diagnostic.Metadata["info-response-000-number"]);
+        Assert.Equal("Prototype answer.", diagnostic.Metadata["info-response-000-text"]);
+        Assert.Equal("0x00001000", diagnostic.Metadata["condition-target-form-id"]);
+        Assert.Equal("9", diagnostic.Metadata["condition-variable-index"]);
+        Assert.Equal("bRoseComplete", diagnostic.Metadata["condition-variable-name"]);
+        Assert.Equal("0x00002000", diagnostic.Metadata["condition-target-script-form-id"]);
     }
 
     [Fact]
