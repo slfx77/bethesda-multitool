@@ -104,6 +104,32 @@ public sealed class CollisionReferencePriorityResolverTests
     }
 
     [Fact]
+    public void WarmNearest_WalkPromotionIsNearestFirstUniqueAndBounded()
+    {
+        var resolver = new CollisionReferencePriorityResolver();
+        var warmups = new List<(string Path, float Priority)>();
+        List<CollisionReferenceCandidate> candidates =
+        [
+            Candidate("far.nif", formId: 30, distanceSquared: 900, sourceOrder: 0),
+            Candidate("SHARED.NIF", formId: 20, distanceSquared: 4, sourceOrder: 1),
+            Candidate("second.nif", formId: 10, distanceSquared: 9, sourceOrder: 2),
+            Candidate("shared.nif", formId: 5, distanceSquared: 1, sourceOrder: 3),
+        ];
+
+        var requests = resolver.WarmNearest(
+            candidates,
+            (path, priority) =>
+            {
+                warmups.Add((path, priority));
+                return null;
+            },
+            maxWarmupRequests: 2);
+
+        Assert.Equal(2, requests);
+        Assert.Equal([("shared.nif", 1f), ("second.nif", 9f)], warmups);
+    }
+
+    [Fact]
     public void Resolve_InvalidNearMeshDoesNotConsumeWholeTriangleBudget()
     {
         var resolver = new CollisionReferencePriorityResolver();

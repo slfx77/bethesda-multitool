@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using System.Numerics;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -13,6 +14,7 @@ public sealed class WalkCollisionFallbackPolicyTests
     public void EffectModel_NeverReceivesSpeculativeBoundsCollision(string path)
     {
         Assert.False(WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(path));
+        Assert.False(WalkCollisionFallbackPolicy.AllowsVisualMeshFallback(path));
     }
 
     [Fact]
@@ -27,5 +29,32 @@ public sealed class WalkCollisionFallbackPolicyTests
     {
         Assert.True(WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(
             @"landscape\rocks\cliffs\CliffVerti_C2.NIF", PlacedObjectCategory.Landscape));
+        Assert.True(WalkCollisionFallbackPolicy.AllowsVisualMeshFallback(
+            @"landscape\rocks\cliffs\CliffVerti_C2.NIF"));
+    }
+
+    [Fact]
+    public void EffectCategory_AcceptsOnlyAuthoredHavokCollision()
+    {
+        var positions = new[] { Vector3.Zero, Vector3.UnitX, Vector3.UnitY };
+        int[] triangles = [0, 1, 2];
+        var authored = new CollisionMesh(
+            positions,
+            triangles,
+            CollisionMeshSource.AuthoredHavok);
+        var inferred = new CollisionMesh(
+            positions,
+            triangles,
+            CollisionMeshSource.VisualFallback);
+
+        Assert.True(WalkCollisionFallbackPolicy.AllowsResolvedCollision(
+            authored,
+            PlacedObjectCategory.Effects));
+        Assert.False(WalkCollisionFallbackPolicy.AllowsResolvedCollision(
+            inferred,
+            PlacedObjectCategory.Effects));
+        Assert.True(WalkCollisionFallbackPolicy.AllowsResolvedCollision(
+            inferred,
+            PlacedObjectCategory.Landscape));
     }
 }

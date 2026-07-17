@@ -2,6 +2,13 @@ using System.Numerics;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 
+internal enum CollisionMeshSource
+{
+    Unknown = 0,
+    AuthoredHavok = 1,
+    VisualFallback = 2
+}
+
 /// <summary>
 ///     Mesh-local CPU triangle soup kept for walk-mode camera collision (ground snap). Built once per
 ///     placed-reference model at upload from the already-decoded geometry (positions + indices) of the
@@ -30,10 +37,17 @@ internal sealed class CollisionMesh
     /// <summary>Approximate retained-byte size for the byte-budgeted LRU.</summary>
     public long ByteSize { get; }
 
-    public CollisionMesh(Vector3[] positions, int[] triangles)
+    /// <summary>Whether the soup came from authored bhk physics or synthesized visual geometry.</summary>
+    public CollisionMeshSource Source { get; }
+
+    public CollisionMesh(
+        Vector3[] positions,
+        int[] triangles,
+        CollisionMeshSource source = CollisionMeshSource.Unknown)
     {
         Positions = positions;
         Triangles = triangles;
+        Source = source;
 
         var min = new Vector3(float.MaxValue);
         var max = new Vector3(float.MinValue);

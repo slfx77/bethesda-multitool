@@ -8,8 +8,8 @@ namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
-    // How far above the eye the down-ray starts, so a surface the camera is already resting on still
-    // registers against float error. Also the slack on the "surface must be at/below the eye" rule.
+    // How far above the maximum-step plane the down-ray starts, so a surface exactly on the boundary
+    // still registers against float error. Hits in this slack band are explicitly rejected below.
     private const float GroundRaycastEpsUp = 8f;
 
     // Walk-mode player "footprint" radius (world units) — roughly the Bethesda human collision-capsule
@@ -27,6 +27,11 @@ public sealed partial class WorldView3DControl
     // above it, so stairs and kerbs still raise the camera instead of behaving like vertical walls.
     private const float WalkStepHeight = 48f;
 
+    // Collision promotion shares the renderer's decode/upload machinery, so keep walk-mode's cold
+    // path deliberately small. Nearest-first + unique-path selection makes this two useful models per
+    // frame instead of an unbounded sweep through every reference in the surrounding nine cells.
+    private const int MaxWalkCollisionWarmupRequestsPerFrame = 2;
+
     /// <summary>
     ///     One walk-capsule candidate: a placed reference whose XY footprint can overlap the capsule,
     ///     with the placement matrix + inverse hoisted out of the per-sample loop (they are per-REF
@@ -38,11 +43,19 @@ public sealed partial class WorldView3DControl
         Matrix4x4 World,
         Matrix4x4 InverseWorld);
 
+    private readonly record struct ColdGroundCandidate(
+        PlacedReference Placement);
+
     // Scratch candidate lists (walk-mode is single-threaded on the UI/frame path).
     private readonly List<GroundCandidate> _groundCandidates = new(64);
     private readonly List<GroundCandidate> _ceilingCandidates = new(32);
     private readonly List<GroundCandidate> _horizontalCandidates = new(64);
     private readonly List<WalkCollisionInstance> _horizontalCollisionInstances = new(64);
+    private readonly List<ColdGroundCandidate> _coldGroundCandidates = new(64);
+    private readonly List<CollisionReferenceCandidate> _walkCollisionWarmupCandidates = new(64);
+    private readonly CollisionReferencePriorityResolver _walkCollisionWarmupResolver = new();
+    private long _walkCollisionWarmupFrameIndex = -1;
+    private int _walkCollisionWarmupRequestsThisFrame;
 
     /// <summary>
     ///     Sweeps the walk camera's circular footprint through the requested XY move. Warm candidates
@@ -130,17 +143,22 @@ public sealed partial class WorldView3DControl
     }
 
     /// <summary>
-    ///     Single-point ground sample = max(terrain height, highest placed-object surface at/below the
-    ///     eye). Warm meshes raycast against real collision triangles (rotation/scale exact); cold
-    ///     meshes fall back to the rotation-ignoring OBND box top, gated by the same "at/below the eye"
-    ///     rule so it never yanks the camera onto a roof.
+    ///     Single-point ground sample = max(terrain height, highest placed-object surface no more than
+    ///     one step above the feet). Warm meshes raycast against real collision triangles
+    ///     (rotation/scale exact); cold meshes fall back to the rotation-ignoring OBND box top. Terrain
+    ///     remains independent of the placed-object step window so landscape slopes and seams retain
+    ///     their existing behavior.
     /// </summary>
     private float? SampleGroundAt(float worldX, float worldY, List<GroundCandidate> candidates)
     {
         var terrain = TerrainHeightSampler.Sample(_cellGridLookup!, worldX, worldY, _data?.RenderCache, _cellSize);
 
-        var eyeZ = _camera.Position.Z;
-        var origin = new Vector3(worldX, worldY, eyeZ + GroundRaycastEpsUp);
+        var probe = WalkGroundProbeWindow.FromEye(
+            _camera.Position.Z,
+            _controller.EyeHeight,
+            WalkStepHeight,
+            GroundRaycastEpsUp);
+        var origin = new Vector3(worldX, worldY, probe.RayOriginZ);
         var down = new Vector3(0f, 0f, -1f);
 
         float? objectHit = null;
@@ -149,7 +167,8 @@ public sealed partial class WorldView3DControl
             float? hit;
             if (c.Collision is not null)
             {
-                // Warm mesh: exact triangle raycast (down-ray → hits are at/below the eye by construction).
+                // Warm mesh: exact triangle raycast. The origin slack can still admit a surface just
+                // above the step plane, so every returned world-space hit is explicitly windowed below.
                 var localOrigin = Vector3.Transform(origin, c.InverseWorld);
                 var localDir = Vector3.TransformNormal(down, c.InverseWorld);
                 hit = c.Collision.RaycastNearest(localOrigin, localDir, out var tLocal)
@@ -168,10 +187,14 @@ public sealed partial class WorldView3DControl
                 }
 
                 var top = p.Z + b.Z2 * scale;
-                hit = top <= eyeZ + GroundRaycastEpsUp ? top : null;
+                hit = probe.AllowsPlacedSurface(top) ? top : null;
             }
 
-            if (hit is { } h && (objectHit is null || h > objectHit)) objectHit = h;
+            if (hit is { } h && probe.AllowsPlacedSurface(h) &&
+                (objectHit is null || h > objectHit))
+            {
+                objectHit = h;
+            }
         }
 
         if (terrain is { } t) return objectHit is { } m && m > t ? m : t;
@@ -194,10 +217,13 @@ public sealed partial class WorldView3DControl
         float additionalReach = 0f)
     {
         into.Clear();
+        _coldGroundCandidates.Clear();
+        _walkCollisionWarmupCandidates.Clear();
         var gx = (int)MathF.Floor(centerX / _cellSize);
         var gy = (int)MathF.Floor(centerY / _cellSize);
         // Ring reach + eye slack + a safety pad for OBNDs that under-cover their collision mesh.
         var reach = WalkCapsuleRadius + GroundRaycastEpsUp + 64f + MathF.Max(0f, additionalReach);
+        var sourceOrder = 0;
 
         for (var dy = -1; dy <= 1; dy++)
         {
@@ -206,6 +232,7 @@ public sealed partial class WorldView3DControl
                 if (!_cellGridLookup!.TryGetValue((gx + dx, gy + dy), out var cell)) continue;
                 foreach (var p in cell.PlacedObjects)
                 {
+                    var candidateSourceOrder = sourceOrder++;
                     if (string.IsNullOrEmpty(p.ModelPath)) continue;
                     var authoredDisabled = p.IsInitiallyDisabled ||
                                            _data?.XespDisabledRefs.Contains(p.FormId) == true;
@@ -232,52 +259,135 @@ public sealed partial class WorldView3DControl
                         _referenceMeshCache12.TryGetCollisionMesh(p.ModelPath!, out collision);
                     }
 
-                    if (collision is null &&
-                        (!includeColdObnd || p.Bounds is null ||
-                         !WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(p.ModelPath, category)))
+                    var ddx = centerX - p.X;
+                    var ddy = centerY - p.Y;
+                    var distanceSquared = (ddx * ddx) + (ddy * ddy);
+                    if (collision is not null)
                     {
-                        // A cold solid may use its OBND for a frame, but effect cards/volumes are not
-                        // floors. Both reported FNV fixtures have no Havok and only alpha-blended
-                        // geometry; allowing their permanent OBND fallback made the camera stand on
-                        // dust and light rays. Authored collision still wins above when one exists.
+                        if (!WalkCollisionFallbackPolicy.AllowsResolvedCollision(collision, category))
+                        {
+                            continue;
+                        }
+
+                        TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
                         continue;
                     }
 
-                    var world = Matrix4x4.Identity;
-                    var inverse = Matrix4x4.Identity;
-                    if (collision is not null)
+                    // A cold solid can promote its authoritative Havok/solid soup even when it has no
+                    // usable OBND. FNV CliffVertiC2 is the retail gate: all 67 master placements carry
+                    // an all-zero bound, so the old path produced only a point-sized fallback and then
+                    // waited indefinitely for the visible-reference renderer to make the mesh resident.
+                    // Use the same one-cell transient radius as render culling until real mesh bounds
+                    // arrive. Effect paths may receive one bounded decode because some carry authored
+                    // Havok, but they never receive speculative OBND/visual collision. A decoded-null
+                    // path is remembered by the mesh cache so it cannot steal warmup slots forever.
+                    var allowsBoundsFallback =
+                        WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(p.ModelPath, category);
+                    var allowsWarmup = _referenceMeshCache12 is { } collisionCache &&
+                                       !collisionCache.IsCollisionKnownEmpty(p.ModelPath!);
+                    if (!allowsBoundsFallback && !allowsWarmup)
                     {
-                        world = PlacedReferenceTransform.ComposeWorldMatrix(
-                            p.X, p.Y, p.Z, p.RotX, p.RotY, p.RotZ, p.Scale);
-                        if (!Matrix4x4.Invert(world, out inverse)) continue;
-
-                        // Gate authoritative collision by its own bounds, not OBND. Some Bethesda
-                        // statics under-cover their physics soup; using OBND here would decode the
-                        // correct Havok wall and then silently exclude it from the walk query.
-                        var scale = p.Scale > 0f ? p.Scale : 1f;
-                        var ax = MathF.Max(MathF.Abs(collision.LocalMin.X), MathF.Abs(collision.LocalMax.X));
-                        var ay = MathF.Max(MathF.Abs(collision.LocalMin.Y), MathF.Abs(collision.LocalMax.Y));
-                        var az = MathF.Max(MathF.Abs(collision.LocalMin.Z), MathF.Abs(collision.LocalMax.Z));
-                        var r = MathF.Sqrt((ax * ax) + (ay * ay) + (az * az)) * scale + reach;
-                        var ddx = centerX - p.X;
-                        var ddy = centerY - p.Y;
-                        if ((ddx * ddx) + (ddy * ddy) > r * r) continue;
+                        continue;
                     }
-                    else if (p.Bounds is { } b)
+
+                    float coldRadius;
+                    if (p.Bounds is { IsDegenerate: false } b)
                     {
                         var scale = p.Scale > 0f ? p.Scale : 1f;
                         var rx = MathF.Max(MathF.Abs(b.X1), MathF.Abs(b.X2)) * scale;
                         var ry = MathF.Max(MathF.Abs(b.Y1), MathF.Abs(b.Y2)) * scale;
-                        var r = MathF.Sqrt((rx * rx) + (ry * ry)) + reach; // rotation-safe circumradius
-                        var ddx = centerX - p.X;
-                        var ddy = centerY - p.Y;
-                        if ((ddx * ddx) + (ddy * ddy) > r * r) continue;
+                        coldRadius = MathF.Sqrt((rx * rx) + (ry * ry)) + reach;
                     }
+                    else
+                    {
+                        coldRadius = RenderableReference.NoBoundsFallbackRadius + reach;
+                    }
+                    if (distanceSquared > coldRadius * coldRadius) continue;
 
-                    into.Add(new GroundCandidate(p, collision, world, inverse));
+                    _coldGroundCandidates.Add(new ColdGroundCandidate(p));
+                    if (allowsWarmup)
+                    {
+                        _walkCollisionWarmupCandidates.Add(new CollisionReferenceCandidate(
+                            p.ModelPath!, p.FormId, distanceSquared, Matrix4x4.Identity,
+                            candidateSourceOrder));
+                    }
                 }
             }
         }
+
+        if (_walkCollisionWarmupFrameIndex != _profileFrameIndex)
+        {
+            _walkCollisionWarmupFrameIndex = _profileFrameIndex;
+            _walkCollisionWarmupRequestsThisFrame = 0;
+        }
+
+        var remainingWarmups = MaxWalkCollisionWarmupRequestsPerFrame -
+                               _walkCollisionWarmupRequestsThisFrame;
+        if (remainingWarmups > 0 && _referenceMeshCache12 is { } cache &&
+            _walkCollisionWarmupCandidates.Count > 0)
+        {
+            _walkCollisionWarmupRequestsThisFrame += _walkCollisionWarmupResolver.WarmNearest(
+                _walkCollisionWarmupCandidates,
+                cache.GetOrWarmCollisionMesh,
+                remainingWarmups);
+        }
+
+        // Re-resolve after promotion: an already-decoded payload can publish its collision soup
+        // synchronously. Otherwise preserve the ordinary valid-OBND fallback for this frame; all-zero
+        // bounds are missing data, never a point-sized wall/floor.
+        foreach (var cold in _coldGroundCandidates)
+        {
+            var p = cold.Placement;
+            CollisionMesh? collision = null;
+            _referenceMeshCache12?.TryGetCollisionMesh(p.ModelPath!, out collision);
+            var category = _data?.CategoryIndex.GetValueOrDefault(
+                p.BaseFormId, PlacedObjectCategory.Unknown) ?? PlacedObjectCategory.Unknown;
+            if (collision is not null &&
+                WalkCollisionFallbackPolicy.AllowsResolvedCollision(collision, category))
+            {
+                TryAddWarmRaycastCandidate(p, collision, centerX, centerY, reach, into);
+                continue;
+            }
+
+            if (!includeColdObnd ||
+                !WalkCollisionFallbackPolicy.AllowsObjectBoundsFallback(p.ModelPath, category) ||
+                p.Bounds is not { IsDegenerate: false })
+            {
+                continue;
+            }
+            into.Add(new GroundCandidate(
+                p,
+                null,
+                Matrix4x4.Identity,
+                Matrix4x4.Identity));
+        }
+    }
+
+    private static void TryAddWarmRaycastCandidate(
+        PlacedReference placement,
+        CollisionMesh collision,
+        float centerX,
+        float centerY,
+        float reach,
+        List<GroundCandidate> into)
+    {
+        var world = PlacedReferenceTransform.ComposeWorldMatrix(
+            placement.X, placement.Y, placement.Z,
+            placement.RotX, placement.RotY, placement.RotZ, placement.Scale);
+        if (!Matrix4x4.Invert(world, out var inverse)) return;
+
+        // Gate authoritative collision by its own bounds, not OBND. Some Bethesda statics under-cover
+        // their physics soup; using OBND here would decode the correct Havok wall and silently exclude it.
+        var scale = placement.Scale > 0f ? placement.Scale : 1f;
+        var ax = MathF.Max(MathF.Abs(collision.LocalMin.X), MathF.Abs(collision.LocalMax.X));
+        var ay = MathF.Max(MathF.Abs(collision.LocalMin.Y), MathF.Abs(collision.LocalMax.Y));
+        var az = MathF.Max(MathF.Abs(collision.LocalMin.Z), MathF.Abs(collision.LocalMax.Z));
+        var radius = MathF.Sqrt((ax * ax) + (ay * ay) + (az * az)) * scale + reach;
+        var dx = centerX - placement.X;
+        var dy = centerY - placement.Y;
+        if ((dx * dx) + (dy * dy) > radius * radius) return;
+
+        into.Add(new GroundCandidate(placement, collision, world, inverse));
     }
 
     /// <summary>

@@ -28,6 +28,66 @@ internal readonly record struct CollisionReferencePriorityResult(
 internal sealed class CollisionReferencePriorityResolver
 {
     private readonly HashSet<string> _warmupPathScratch = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CollisionReferenceCandidate> _warmupBestCandidateScratch =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<CollisionReferenceCandidate> _warmupSelectionScratch = [];
+
+    /// <summary>
+    ///     Offers at most <paramref name="maxWarmupRequests" /> unique model paths to a collision
+    ///     warmup callback, globally nearest-first. Walk mode uses this before falling back to cold
+    ///     object bounds so an authoritative Havok mesh can enter the collision LRU even when the
+    ///     reference renderer has not made that model resident yet.
+    /// </summary>
+    public int WarmNearest(
+        List<CollisionReferenceCandidate> candidates,
+        Func<string, float, CollisionMesh?> warmup,
+        int maxWarmupRequests)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        ArgumentNullException.ThrowIfNull(warmup);
+        if (maxWarmupRequests < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxWarmupRequests));
+        }
+
+        _warmupBestCandidateScratch.Clear();
+        foreach (var candidate in candidates)
+        {
+            if (!_warmupBestCandidateScratch.TryGetValue(candidate.ModelPath, out var current) ||
+                CompareCandidates(candidate, current) < 0)
+            {
+                _warmupBestCandidateScratch[candidate.ModelPath] = candidate;
+            }
+        }
+
+        // The live budget is two. Keep only that bounded sorted prefix instead of O(n log n)-sorting
+        // every cold placement list (BuildRaycastCandidates can run for horizontal, ground, and ceiling
+        // queries in the same dense-cell frame).
+        _warmupSelectionScratch.Clear();
+        foreach (var candidate in _warmupBestCandidateScratch.Values)
+        {
+            var insertAt = 0;
+            while (insertAt < _warmupSelectionScratch.Count &&
+                   CompareCandidates(_warmupSelectionScratch[insertAt], candidate) <= 0)
+            {
+                insertAt++;
+            }
+
+            if (insertAt >= maxWarmupRequests) continue;
+            _warmupSelectionScratch.Insert(insertAt, candidate);
+            if (_warmupSelectionScratch.Count > maxWarmupRequests)
+            {
+                _warmupSelectionScratch.RemoveAt(_warmupSelectionScratch.Count - 1);
+            }
+        }
+
+        foreach (var candidate in _warmupSelectionScratch)
+        {
+            _ = warmup(candidate.ModelPath, candidate.DistanceSquared);
+        }
+
+        return _warmupSelectionScratch.Count;
+    }
 
     public CollisionReferencePriorityResult Resolve(
         List<CollisionReferenceCandidate> candidates,
