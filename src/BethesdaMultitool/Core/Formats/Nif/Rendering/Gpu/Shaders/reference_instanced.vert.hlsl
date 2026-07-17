@@ -24,16 +24,18 @@ cbuffer PerFrame : register(b0)
     float4x4 uWindMatrices[4];
 };
 
-// Shared atmosphere CB (b3). References no longer read uCameraOrigin here: the render origin is folded
-// into each instance world matrix's translation on the CPU (ReferenceRenderer12.Render's renderOrigin), so
-// mul(world, pos) already yields the camera-relative position — keeping float32 precision far from the
-// world origin (subtracting a ~52,000 absolute position AFTER the multiply lost it, Z-fighting distant
-// architecture). The cbuffer is still declared for b3 layout parity (terrain/water read uCameraOrigin);
-// the leading 9 float4 are the sun/sky/fog/camera fields this VS does not use.
+// Shared atmosphere CB (b3). Geometry stays camera-relative because the CPU folds the render origin into
+// each instance world matrix. TallGrass alone adds uCameraOrigin back to the INSTANCE ORIGIN for its
+// absolute phase seed; it never applies that large value to individual vertex positions. The leading
+// camera-position register is exposed for classic specular LOD; all positions are in the same
+// CPU-rebased space as the uploaded instance worlds.
 cbuffer Atmosphere : register(b3)
 {
-    float4 uAtmospherePad[9];
-    float4 uCameraOrigin; // retained for CB layout parity; references fold the origin CPU-side instead
+    float4 uSunDirIntensity; // xyz = world direction toward the Sun
+    float4 uAtmospherePadBeforeCamera[6];
+    float4 uCameraPosFogPower;
+    float4 uAtmospherePadAfterCamera;
+    float4 uCameraOrigin; // absolute snapped render origin; restores TallGrass placement phase identity
 };
 
 // Per-batch (one DrawIndexedInstanced) constants. TextureState.x marks BC5/ATI2 normal
@@ -43,7 +45,7 @@ cbuffer InstanceDraw : register(b1)
 {
     float4 uAlphaState;
     float4 uRenderState;
-    float4 uTextureState; // .x BC5; .y leaf/ST; .z spec/clamp/glow/L30 flags; .w palette row
+    float4 uTextureState; // .x BC5; .y leaf/ST; .z material flags (classic env/parallax); .w palette row
     uint4  uTexIndices;
     uint   uInstanceBase;
     // Per-submesh UV scroll offset, CPU-wrapped (frac(velocity × animClock)) so precision never
@@ -76,6 +78,13 @@ cbuffer InstanceDraw : register(b1)
     // Opaque/instanced draws always upload x = 0. Declared for pixel-shader interface parity with
     // the blended per-draw path, which can bind an R32 scene-depth SRV after opaque rendering.
     float4 uSoftParticle;
+    // FNV GRASS2000 specialized route. Wind = fixed world +Y in xy, recovered setting-interpolated
+    // magnitude.z, wrapped time phase radians.w.
+    float4 uTallGrassWind;
+    // Classic FNV direct-sun specular LOD. Bounds are in baked mesh-root-local coordinates;
+    // params = start fade, end fade, global LOD adjust, enabled.
+    float4 uSpecularLodBounds;
+    float4 uSpecularLodParams;
 };
 
 // Per-instance data is now JUST the world matrix (64 bytes). Everything else is per-batch.
@@ -90,6 +99,79 @@ struct VSInput
     float3 aTangent     : TEXCOORD4;
     float3 aBitangent   : TEXCOORD5;
 };
+
+bool IsTallGrassMaterial(float packedState)
+{
+    return (((uint)round(packedState)) & 32u) != 0u;
+}
+
+bool IsFnvActiveAdtBaseMaterial(float packedState)
+{
+    return (((uint)round(packedState)) & 1024u) != 0u;
+}
+
+// PC-final package013 SLS2000.vso (active ID193/BSSM_ADT) normalizes the complete transformed
+// tangent-space directional light per vertex. Remove only uniform placement scale before that
+// normalization; authored basis magnitudes remain part of the transform.
+float3 ResolveFnvActiveAdtBaseLight(float3 tangent, float3 bitangent, float3 normal, float uniformScale)
+{
+    if (uniformScale <= 1e-8)
+    {
+        return 0.0.xxx;
+    }
+
+    float3 lightTs = float3(
+        dot(tangent, uSunDirIntensity.xyz),
+        dot(bitangent, uSunDirIntensity.xyz),
+        dot(normal, uSunDirIntensity.xyz)) / uniformScale;
+    float lengthSquared = dot(lightTs, lightTs);
+    if (!all(isfinite(lightTs)) || !isfinite(lengthSquared) || lengthSquared <= 1e-8)
+    {
+        return 0.0.xxx;
+    }
+
+    return normalize(lightTs);
+}
+
+float WrapTallGrassPhase(float phase)
+{
+    const float Pi = 3.14159265358979323846;
+    const float TwoPi = 6.28318530717958647692;
+    phase = fmod(phase + Pi, TwoPi);
+    if (phase < 0.0) phase += TwoPi;
+    return phase - Pi;
+}
+
+float ClassicSpecularLodFade(float4x4 world)
+{
+    if (uSpecularLodParams.w < 0.5 || uSpecularLodParams.y <= 0.0)
+    {
+        return 1.0;
+    }
+
+    float3 worldCenter = mul(world, float4(uSpecularLodBounds.xyz, 1.0)).xyz;
+    // CPU System.Numerics rows become HLSL columns under this shader's established matrix-byte
+    // convention. Read those conceptual columns so the opaque GPU route uses the same conservative
+    // largest-basis radius scale as the direct/blended CPU route, including malformed non-uniform input.
+    float scaleX = length(float3(world[0].x, world[1].x, world[2].x));
+    float scaleY = length(float3(world[0].y, world[1].y, world[2].y));
+    float scaleZ = length(float3(world[0].z, world[1].z, world[2].z));
+    float worldRadius = uSpecularLodBounds.w * max(scaleX, max(scaleY, scaleZ));
+    float distance = (length(worldCenter - uCameraPosFogPower.xyz) - worldRadius) *
+        uSpecularLodParams.z;
+    if (distance < uSpecularLodParams.x)
+    {
+        return 1.0;
+    }
+
+    if (distance >= uSpecularLodParams.y)
+    {
+        return 0.0;
+    }
+
+    return 1.0 - (distance - uSpecularLodParams.x) /
+        (uSpecularLodParams.y - uSpecularLodParams.x);
+}
 
 struct VSOutput
 {
@@ -109,11 +191,21 @@ struct VSOutput
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
     nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = blend operation
     nointerpolation float4 vSoftParticle  : TEXCOORD14;
+    nointerpolation float vSpecularLodFade : TEXCOORD15;
+    float3 vFnvActiveAdtBaseLight : TEXCOORD16;
 };
 
 VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
 {
     float4x4 world = uInstanceWorlds[uInstanceBase + instanceId];
+#ifdef SHADOW_CARD_LIGHT_FACING
+    // Shadow replay shares this VS/ABI but never evaluates a camera-distance shading term.
+    float specularLodFade = 1.0;
+#else
+    float specularLodFade = ClassicSpecularLodFade(world);
+#endif
+    bool isTallGrass = IsTallGrassMaterial(uTextureState.z);
+    float tallGrassWindWeight = isTallGrass ? saturate(input.aVertexColor.a) : 0.0;
 
     // SpeedTree bark/frond payload. The SPT builder preserves the ordinary orthonormal TBN
     // directions while encoding the wind-matrix index and authored branch weight in their lengths:
@@ -249,10 +341,31 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
         o.vWorldNormal = mul((float3x3)world, modelNormal);
     }
 
+    // Retail GRASS2000 applies wind in WORLD XY after the card's scale/fit-to-slope transform and
+    // immediately before placement translation. Adding it to modelPosition would incorrectly
+    // rotate or tilt the weather direction per blade. The phase seed uses ABSOLUTE placement XY;
+    // adding uCameraOrigin makes it invariant under the renderer's snapped-origin rebasing.
+    float3 relativePlacement = mul(world, float4(0.0, 0.0, 0.0, 1.0)).xyz;
+    if (isTallGrass && uTallGrassWind.z != 0.0)
+    {
+        float2 absolutePlacement = relativePlacement.xy + uCameraOrigin.xy;
+        float phase = WrapTallGrassPhase(
+            (absolutePlacement.x + absolutePlacement.y) / 128.0 + uTallGrassWind.w);
+        float weightedOffset = sin(phase) * uTallGrassWind.z *
+            tallGrassWindWeight * tallGrassWindWeight;
+        worldPos.xy += uTallGrassWind.xy * weightedOffset;
+    }
+
     o.Position = mul(uViewProj, worldPos);
     o.vWorldPos = worldPos.xyz; // camera-relative world pos (matches the shader camera = 0 for fog/spec)
     o.vTexCoord = input.aTexCoord + uUvScroll;
     o.vVertexColor = input.aVertexColor;
+    if (isTallGrass)
+    {
+        // Raw authored alpha is wind data only. Coverage remains texture-only in both the main
+        // reference PS and the shadow cutout PS.
+        o.vVertexColor.a = 1.0;
+    }
     if (uTextureState.y > 0.5)
     {
         // Retail STLEAF multiplies the lit vertex color by frc(v3.z), not by a repurposed copy.
@@ -262,6 +375,11 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
     }
     o.vTangent = mul((float3x3)world, modelTangent);
     o.vBitangent = mul((float3x3)world, modelBitangent);
+    float activeAdtUniformScale = length(mul((float3x3)world, float3(1.0, 0.0, 0.0)));
+    o.vFnvActiveAdtBaseLight = IsFnvActiveAdtBaseMaterial(uTextureState.z)
+        ? ResolveFnvActiveAdtBaseLight(
+            o.vTangent, o.vBitangent, o.vWorldNormal, activeAdtUniformScale)
+        : 0.0.xxx;
     o.vAlphaState = uAlphaState;
     o.vRenderState = uRenderState;
     o.vTextureState = uTextureState;
@@ -271,5 +389,6 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
     o.vEffectFalloff = uEffectFalloff;
     o.vEnvMap = uEnvMap;
     o.vSoftParticle = uSoftParticle;
+    o.vSpecularLodFade = specularLodFade;
     return o;
 }

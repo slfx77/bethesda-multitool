@@ -108,6 +108,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // placed FormID, so changing one selected instance never mutates its parsed/base record or siblings.
     private readonly ReferenceEnabledOverrideStore _referenceEnabledOverrides = new();
     private WorldViewData? _data;
+    // Semantic eye-adaptation reset epoch. Retail FNV preserves history across routine CELL/IMGS/WTHR
+    // transitions and clears only on an explicit ClearAdaptedLight request. Loading a new viewer scene
+    // is our equivalent explicit lifecycle boundary; target/device resets remain owned by the GPU pass.
+    private ulong _tonemapHistoryClearGeneration;
     private DateTime _lastFrameTime;
     // Atmosphere: current game hour (0..24) feeding the shared b3 atmosphere CB. Defaults to noon and
     // driven by the time-of-day slider (TimeSlider_ValueChanged). The lighting/sky/water shaders read
@@ -166,6 +170,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // recreated in place on resize (the depth resource changes identity). NoDepthSrv => no sampling.
     private const uint NoDepthSrv = 0xFFFFFFFF;
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation? _depthSrv;
+    // Single-sample HDR opaque-scene snapshot sampled only by the bounded FNV WATER001 route.
+    // Like _depthSrv, the persistent slot survives surface unload and is rewritten after resize.
+    private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDescriptorHeapAllocator12.PersistentAllocation? _waterOpaqueSnapshotSrv;
+    // Keep the descriptor immutable while prior live frames may still be in flight. The resource is
+    // stable until a GPU-idle resize/unload; only an identity change permits repointing the slot.
+    private Vortice.Direct3D12.ID3D12Resource? _waterOpaqueSnapshotSrvResource;
     private bool _suppressWorldspaceSelectionEvent;
     // Atmosphere weather/time. _selectedWeather null = the placeholder palette (no NAM0 colors);
     // _climateDefaultWeather is the current worldspace climate's default (the "(Climate default)"
@@ -190,6 +200,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private (Vector3 pos, float yaw)? _pendingNavigateWarpPose;
     private Dictionary<(int gx, int gy), CellRecord>? _cellGridLookup;
     private WorldSpatialIndex? _spatialIndex;
+    private ResolvedWaterAppearanceSelection _waterAppearanceSelection;
+    private uint? _boundWaterAppearanceFormId;
+    private bool _hasBoundWaterAppearance;
     private double _lastControllerUpdateMilliseconds;
     private bool _stressBookmarkApplied;
     // Scene-selection generation used by the headless profiler/capture harness. ComboBox selection is
@@ -344,12 +357,25 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     /// <summary>Raised when the user requests inspection of a cell.</summary>
     public event EventHandler<CellRecord>? InspectCell;
 
+    /// <summary>
+    ///     Requests the same semantic adapted-light invalidation represented by FNV's
+    ///     <c>ClearAdaptedLight</c>. The next tonemap frame observes a new history key.
+    /// </summary>
+    internal void RequestClearAdaptedLight()
+    {
+        unchecked
+        {
+            _tonemapHistoryClearGeneration++;
+        }
+    }
+
     internal void LoadData(WorldViewData data)
     {
         var loadSelectionGeneration = BeginSceneSelection();
         // Overrides are inspection previews, not plugin edits. A newly loaded file starts from its
         // authored REFR + XESP state even when it reuses a FormID from the prior scene.
         _referenceEnabledOverrides.Clear();
+        RequestClearAdaptedLight();
         _data = data;
         // Morrowind has no engine HDR/bloom/imagespace stage (LegacyClamp) — hide the toggles
         // rather than offering dead switches. Re-evaluated on every LoadData (ESM switch).
@@ -361,7 +387,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 ? Visibility.Visible
                 : Visibility.Collapsed;
         // Make the base-object category available to the placement bake before the renderer pulls
-        // its first cell — drives the per-category visibility filter (activators off by default).
+        // its first cell — drives the per-category visibility filter (activators default visible).
         data.RenderCache.CategoryIndex = data.CategoryIndex;
         // Resolve placed REFR base FormIDs to LIGH definitions during the same one-time cell bake.
         // This is independent of ModelPath, so meshless lights still become emitter-only entries.

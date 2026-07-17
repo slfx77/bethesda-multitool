@@ -135,6 +135,7 @@ public sealed class GpuTonemapSettingsTests
         Assert.Equal(0.35f, s.BrightClamp);
         Assert.Equal(1.2f, s.EmissiveMult);
         Assert.Equal(1.2f, s.TargetLum);
+        Assert.Equal(1.3f, s.SunlightScale);
     }
 
     [Fact]
@@ -149,6 +150,35 @@ public sealed class GpuTonemapSettingsTests
         Assert.Equal(0.35f, s.BrightClamp);
         Assert.Equal(1f, s.EmissiveMult);
         Assert.Equal(1.0f, s.TargetLum);
+        Assert.Equal(1.5f, s.SunlightScale);
+    }
+
+    [Theory]
+    [InlineData(BethesdaGame.FalloutNewVegas, false, true, 1.43f)]
+    [InlineData(BethesdaGame.Fallout3, false, true, 1.43f)]
+    [InlineData(BethesdaGame.FalloutNewVegas, true, true, 1f)]
+    [InlineData(BethesdaGame.FalloutNewVegas, false, false, 1f)]
+    [InlineData(BethesdaGame.Oblivion, false, true, 1f)]
+    public void ResolveSceneSunlightScale_ClassicConsumerIsExteriorHdrDirectionalOnly(
+        BethesdaGame game, bool isInterior, bool hdrActive, float expected)
+    {
+        var settings = GpuTonemapSettings.EngineExteriorDefaults with { SunlightScale = 1.43f };
+
+        Assert.Equal(expected, GpuTonemapSettings.ResolveSceneSunlightScale(
+            settings, game, hdrActive, isInterior), 6);
+    }
+
+    [Fact]
+    public void ResolveSceneSunlightScale_ModernFamilySurvivesDisplayOperatorOverride()
+    {
+        var settings = GpuTonemapSettings.ModernNeutralDefaults(ImageSpaceModernFamily.Fallout4) with
+        {
+            Mode = GpuTonemapMode.GammaAces,
+            SunlightScale = 2.5f,
+        };
+
+        Assert.Equal(2.5f, GpuTonemapSettings.ResolveSceneSunlightScale(
+            settings, BethesdaGame.Fallout4, hdrActive: true, isInterior: true));
     }
 
     [Fact]

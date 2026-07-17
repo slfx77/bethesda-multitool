@@ -11,6 +11,30 @@ public sealed class RenderingShaderCompilationTests
     private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
 
     [Fact]
+    public void FnvTallGrassReferenceRoutesCompileForNormalInstancedAndShadowPasses()
+    {
+        Compile("reference.vert.hlsl", "main", "vs_5_1", []);
+        Compile("reference_instanced.vert.hlsl", "main", "vs_5_1", []);
+        Compile(
+            "reference_instanced.vert.hlsl",
+            "main",
+            "vs_5_1",
+            [new ShaderMacro("SHADOW_CARD_LIGHT_FACING", "1")]);
+        Compile("reference.frag.hlsl", "main", "ps_5_1", []);
+        Compile("shadow.frag.hlsl", "main", "ps_5_1", []);
+    }
+
+    [Fact]
+    public void FnvActiveAdtBaseSls2000SharedReferenceRoutesCompile()
+    {
+        // Runtime material bits choose the bounded active SLS2000 equation inside one PS, while both
+        // direct/blended and instanced VSes supply its normalized tangent-space light.
+        Compile("reference.vert.hlsl", "main", "vs_5_1", []);
+        Compile("reference_instanced.vert.hlsl", "main", "vs_5_1", []);
+        Compile("reference.frag.hlsl", "main", "ps_5_1", []);
+    }
+
+    [Fact]
     public void WaterAndSpeedTreeEntryPointsCompileForEveryAffectedPermutation()
     {
         var permutations = new (string Name, string EntryPoint, string Profile, ShaderMacro[] Macros)[]
@@ -23,6 +47,7 @@ public sealed class RenderingShaderCompilationTests
             ("water_modern.comp.hlsl", "mainGloss", "cs_5_1", []),
             ("water_modern.comp.hlsl", "mainDepthLut", "cs_5_1", []),
             ("water.frag.hlsl", "main", "ps_5_1", []),
+            ("water.frag.hlsl", "main", "ps_5_1", [new ShaderMacro("FNV_WATER001", "1")]),
             ("water.frag.hlsl", "main", "ps_5_1", [new ShaderMacro("OBLIVION_WATER", "1")]),
             ("water.frag.hlsl", "main", "ps_5_1", [new ShaderMacro("FO4_WATER", "1")]),
             ("water.frag.hlsl", "main", "ps_5_1",
@@ -189,6 +214,77 @@ public sealed class RenderingShaderCompilationTests
         Assert.Contains("ambient = min(ambient, 1.0);", source, StringComparison.Ordinal);
         Assert.Contains("shade += glow * emission;", source, StringComparison.Ordinal);
         Assert.DoesNotContain("lit += emission", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FnvClassicEnvironmentMappingKeepsRecoveredMaskEquationSeparateFromFo4()
+    {
+        var source = ReadEmbeddedShader("reference.frag.hlsl");
+        var classicStart = source.IndexOf(
+            "// FO3/FNV classic PP-lighting environment pass", StringComparison.Ordinal);
+        var fo4Start = source.IndexOf(
+            "// FO4 cubemap environment reflections", classicStart, StringComparison.Ordinal);
+
+        Assert.True(classicStart >= 0);
+        Assert.True(fo4Start > classicStart);
+        var classic = source[classicStart..fo4Start];
+        Assert.Contains("(MaterialTextureFlags(packedState) & 64u) != 0u", source,
+            StringComparison.Ordinal);
+        Assert.Contains("(MaterialTextureFlags(packedState) & 128u) != 0u", source,
+            StringComparison.Ordinal);
+        Assert.Contains("(MaterialTextureFlags(packedState) & 512u) != 0u", source,
+            StringComparison.Ordinal);
+        Assert.Contains("float classicEnvMask = normalMapAlpha;", classic, StringComparison.Ordinal);
+        Assert.Contains("input.vTexIndices.z, input.vTexCoord, input.vTextureState.z).r", classic,
+            StringComparison.Ordinal);
+        Assert.Contains(".Sample(sPalette, reflectDir).rgb", classic, StringComparison.Ordinal);
+        Assert.Contains(
+            "classicEnvMask * input.vEnvMap.y * input.vAlphaState.z",
+            classic,
+            StringComparison.Ordinal);
+        Assert.Contains("? reflect(V, normal)", classic, StringComparison.Ordinal);
+        Assert.Contains(": reflect(-V, normal);", classic, StringComparison.Ordinal);
+        Assert.DoesNotContain("specSmoothScale", classic, StringComparison.Ordinal);
+        Assert.DoesNotContain("gEnv", classic, StringComparison.Ordinal);
+        Assert.DoesNotContain("SampleLevel", classic, StringComparison.Ordinal);
+
+        // This entry point is also the runtime compile gate for the new bindless cube/mask branch.
+        Compile("reference.frag.hlsl", "main", "ps_5_1", []);
+    }
+
+    [Fact]
+    public void FnvClassicParallaxUsesRecoveredSm3004UvEquationAcrossReferenceDrawPaths()
+    {
+        var source = ReadEmbeddedShader("reference.frag.hlsl");
+        var parallaxStart = source.IndexOf(
+            "// PC-final SM3004 simple parallax", StringComparison.Ordinal);
+        var mainStart = source.IndexOf(
+            "float4 main(PSInput input)", parallaxStart, StringComparison.Ordinal);
+
+        Assert.True(parallaxStart >= 0);
+        Assert.True(mainStart > parallaxStart);
+        var parallax = source[parallaxStart..mainStart];
+        Assert.Contains("(MaterialTextureFlags(packedState) & 256u) != 0u", source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "input.vTexIndices.z, input.vTexCoord, input.vTextureState.z).r",
+            parallax,
+            StringComparison.Ordinal);
+        Assert.Contains("height * 0.04 - 0.02", parallax, StringComparison.Ordinal);
+        Assert.Contains("float2 materialUv = ResolveClassicParallaxUv(input);", source,
+            StringComparison.Ordinal);
+        Assert.Contains("input.vTexIndices.x, materialUv, input.vTextureState.z", source,
+            StringComparison.Ordinal);
+        Assert.Contains("input.vTexIndices.y, materialUv, input.vTextureState.z", source,
+            StringComparison.Ordinal);
+        Assert.Contains("input.vTexIndices.z, materialUv, input.vTextureState.z", source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("ParallaxScale", parallax, StringComparison.OrdinalIgnoreCase);
+
+        // The same PS consumes interpolants from the direct/blended and instanced reference VS paths.
+        Compile("reference.vert.hlsl", "main", "vs_5_1", []);
+        Compile("reference_instanced.vert.hlsl", "main", "vs_5_1", []);
+        Compile("reference.frag.hlsl", "main", "ps_5_1", []);
     }
 
     private static void Compile(string name, string entryPoint, string profile, ShaderMacro[] macros)

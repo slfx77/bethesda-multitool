@@ -20,6 +20,13 @@ internal sealed class RenderableSubmesh
     /// <summary>X, Y, Z per vertex (length = numVertices * 3).</summary>
     public required float[] Positions { get; init; }
 
+    /// <summary>
+    ///     Serialized NiGeometryData NiBound transformed into the same baked mesh-root-local frame
+    ///     as <see cref="Positions" />. Null for generated/deformed geometry or malformed authored
+    ///     bounds; the reference decoder then derives a deterministic sphere from the vertices.
+    /// </summary>
+    public NifLocalBounds? LocalBounds { get; set; }
+
     /// <summary>3 indices per triangle (length = numTriangles * 3).</summary>
     public required ushort[] Triangles { get; init; }
 
@@ -93,6 +100,31 @@ internal sealed class RenderableSubmesh
     ///     <c>_s</c> map's G channel in the shader (fo76utils drawPixel_FO4).
     /// </summary>
     public float EnvironmentMapSmoothness { get; set; }
+
+    /// <summary>
+    ///     FO3/FNV classic PP-lighting environment cubemap (texture-set slot 4), or null. This is a
+    ///     distinct additive shader pass whose mask comes from slot 5 red, falling back to the normal
+    ///     map alpha; it must not inherit FO4's <c>_s</c> mask/smoothness semantics.
+    /// </summary>
+    public string? ClassicEnvironmentMapTexturePath { get; set; }
+
+    /// <summary>Optional FO3/FNV custom environment mask (texture-set slot 5, red channel).</summary>
+    public string? ClassicEnvironmentMaskTexturePath { get; set; }
+
+    /// <summary>Authored classic <c>BSShaderProperty.EnvMapScale</c>; zero disables the pass.</summary>
+    public float ClassicEnvironmentMapScale { get; set; }
+
+    /// <summary>
+    ///     True for BSShaderFlags bit 21 (Window_Environment_Mapping). It selects SLS2058
+    ///     <c>ENVMAP_W</c>, whose incident-vector sign is opposite the ordinary SLS2057 pass.
+    /// </summary>
+    public bool ClassicEnvironmentMapUsesWindowReflection { get; set; }
+
+    /// <summary>
+    ///     FO3/FNV simple PP-lighting height map (texture-set slot 3), or null. This is populated
+    ///     only when bit 11 is set, bit 28 (POM) is clear, and the mesh has usable UV/TBN data.
+    /// </summary>
+    public string? ClassicParallaxHeightMapTexturePath { get; set; }
 
     /// <summary>
     ///     True when the material marks this shape a decal — coplanar overlay geometry (grime,

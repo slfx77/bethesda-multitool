@@ -129,13 +129,38 @@ public sealed partial class WorldView3DControl
     ///     time slider no longer drives interiors to black at night. Exteriors use the weather/climate
     ///     sun model as before.
     /// </summary>
-    private ResolvedWeatherTransition ResolveSelectedWeatherTransition() =>
-        WeatherTransitionSelectionResolver.Resolve(
+    private ResolvedWeatherTransition ResolveSelectedWeatherTransition()
+    {
+        ResolvedRegionWeatherSelection? regionSelection = null;
+        if (_weatherSelectionIsClimateDefault &&
+            _selectedInterior is null &&
+            _data is { Game: BethesdaGame.FalloutNewVegas, RuntimeWeatherTransition: null } data)
+        {
+            // XCLR is a cell-level candidate list, not proof that the camera is inside a REGN.
+            // Resolve at the same camera/projection-focus point used by CELL XCIM selection and
+            // require retained RPLI/RPLD containment before a deterministic RDWT may win.
+            var point = ProjectionActive ? _projectionFocus : _camera.Position;
+            var cellContext = CurrentImageSpaceCellContext();
+            regionSelection = RegionWeatherSelectionResolver.Resolve(
+                cellContext.Cell,
+                point.X,
+                point.Y,
+                CurrentExteriorWorldspace()?.FormId,
+                data.RegionsByFormId,
+                data.WeathersByFormId);
+        }
+
+        var transition = WeatherTransitionSelectionResolver.Resolve(
             _selectedWeather,
             _weatherSelectionIsClimateDefault,
             _climateDefaultWeather,
             _data?.RuntimeWeatherTransition,
-            _data?.WeathersByFormId);
+            _data?.WeathersByFormId,
+            deterministicRegionWeather: regionSelection?.Weather);
+        return regionSelection is { } selection
+            ? transition with { Telemetry = $"{transition.Telemetry} {selection.Telemetry}" }
+            : transition;
+    }
 
     private AtmosphereState.Resolved ResolveSceneAtmosphere(float gameHour, bool lightingEnabled)
     {
@@ -261,15 +286,10 @@ public sealed partial class WorldView3DControl
             _tonemapBaseImageSpaceUnavailableReason =
                 "no CELL XCIM or inherited WRLD INAM resolved; game-family defaults are active";
         }
-        var historyKey = TonemapHistoryKeyBuilder.Build(
-            game,
-            imageSpaceSelection.HistoryContextId,
-            imageSpaceSelection.HistoryCellId,
-            imageSpaceSelection.HistorySourceTag,
-            formId ?? 0u,
-            weatherTransition.AppliedCurrentWeatherFormId ?? 0u,
-            weatherTransition.AppliedOutgoingWeatherFormId ?? 0u,
-            interior, _hdrEnabled, _imagespaceModifiersEnabled);
+        // Retail FNV keeps one continuous adapted-light history across ordinary scene and authored
+        // imagespace transitions. Only a real clear epoch enters the semantic key; the GPU pass owns
+        // render-target/device/adaptive-mode lifecycle invalidation.
+        var historyKey = TonemapHistoryKeyBuilder.Build(game, _tonemapHistoryClearGeneration);
 
         // GUI post-processing toggles (settings panel, read per frame — no rebuild). HDR off =
         // the LegacyClamp passthrough (visually the pre-HDR look; the float scene target itself is
@@ -347,6 +367,10 @@ public sealed partial class WorldView3DControl
                     BlurPasses = hdr.BlurPasses,
                     BrightScale = hdr.BrightScale,
                     BrightClamp = hdr.BrightClamp,
+                    // ImageSpaceManager::ApplyCurrentParameterData copies classic hdrData[11]
+                    // into the global consumed by directional-light setup. Keep it in scene state;
+                    // it is not part of the display composite.
+                    SunlightScale = hdr.SunlightDimmer,
                 };
             }
 

@@ -166,6 +166,59 @@ public sealed class NifTextureResolverTests
     }
 
     [Fact]
+    public void ReadShaderMetadata_FromClassicParallaxPropertyReadsSlot3AndPomTailSeparately()
+    {
+        const string diffusePath = @"textures\landscape\RubblePile05.dds";
+        const string normalPath = @"textures\landscape\RubblePile05_n.dds";
+        const string heightPath = @"textures\landscape\RubblePile05_p.dds";
+        const int textureSetOffset = 64;
+        var textureSetSize = 4 +
+                             4 + diffusePath.Length +
+                             4 + normalPath.Length +
+                             4 +
+                             4 + heightPath.Length;
+        var data = new byte[textureSetOffset + textureSetSize];
+
+        WriteNiObjectNetHeader(data, 0);
+        WriteUInt16(data, 12, 0);
+        WriteUInt32(data, 14, 1); // shader type
+        WriteUInt32(data, 18, NifClassicParallaxPolicy.ParallaxFlag);
+        WriteUInt32(data, 22, 0);
+        WriteFloat(data, 26, 1f); // environment-map scale
+        WriteUInt32(data, 30, 0); // texture clamp
+        WriteInt32(data, 34, 1);  // texture-set ref
+        WriteFloat(data, 38, 0f); // refraction strength
+        WriteInt32(data, 42, 0);  // refraction fire period
+        WriteFloat(data, 46, 4f); // POM max passes
+        WriteFloat(data, 50, 1f); // POM scale
+
+        var pos = textureSetOffset;
+        WriteUInt32(data, pos, 4);
+        pos += 4;
+        WriteSizedString(data, ref pos, diffusePath);
+        WriteSizedString(data, ref pos, normalPath);
+        WriteSizedString(data, ref pos, string.Empty);
+        WriteSizedString(data, ref pos, heightPath);
+
+        var nif = CreateNifInfo(
+            ("BSShaderPPLightingProperty", 0, 54),
+            ("BSShaderTextureSet", textureSetOffset, textureSetSize));
+        var metadata = NifTextureResolver.ReadShaderMetadata(data, nif, [0]);
+
+        Assert.NotNull(metadata);
+        Assert.Equal(NifClassicParallaxPolicy.ParallaxFlag, metadata.ShaderFlags);
+        Assert.Equal(heightPath, metadata.HeightMapPath);
+        Assert.Equal(4f, metadata.ParallaxMaxPasses);
+        Assert.Equal(1f, metadata.ParallaxScale);
+
+        nif.BsVersion = 24;
+        var preTailMetadata = NifTextureResolver.ReadShaderMetadata(data, nif, [0]);
+        Assert.NotNull(preTailMetadata);
+        Assert.Null(preTailMetadata.ParallaxMaxPasses);
+        Assert.Null(preTailMetadata.ParallaxScale);
+    }
+
+    [Fact]
     public void ReadShaderMetadata_FromNoLightingProperty_UsesFixedSlotLayout()
     {
         const string diffusePath = @"textures\effects\neon.dds";

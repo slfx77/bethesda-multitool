@@ -100,6 +100,22 @@ public sealed class WeatherImageSpaceEvaluatorTests
     }
 
     [Fact]
+    public void RecoveredSunlightDimmer_RoutesClassicSlot11ToDirectionalSceneScale()
+    {
+        var modifier = Modifier(0x100, ImageSpaceModifierParameter.HdrSunlightDimmer,
+            multiply: [new(0f, 1.1f)], add: [new(0f, 0f)]);
+        var weather = Weather(0x200, 0x100, 0x100, 0x100, 0x100, 0x100, 0);
+        var basis = GpuTonemapSettings.EngineExteriorDefaults with { SunlightScale = 1.1f };
+
+        var result = WeatherImageSpaceEvaluator.Evaluate(basis, 12f, Timing, weather, null, 1f,
+            new Dictionary<uint, ImageSpaceModifierRecord> { [modifier.FormId] = modifier });
+
+        // Retail Wasteland contract: NVDefaultExterior 1.1 * NVWastelandIS 1.1 = 1.21.
+        Assert.Equal(1.21f, result.Settings.SunlightScale, 6);
+        Assert.Contains("scene(sun=1.21[1.1+0]", result.Telemetry, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WeatherTransition_ProducesTwoBandsTimesTwoWeathers()
     {
         var current = Weather(1, 10, 11, 12, 13, 14, 15);
@@ -122,16 +138,34 @@ public sealed class WeatherImageSpaceEvaluatorTests
     }
 
     [Fact]
-    public void HighNoon_IsSelectedButAuthoredMidnightNeverIs()
+    public void DayPeaksAtNoon_HighNoonOccupiesShoulders_AndMidnightNeverIsSelected()
     {
         var weather = Weather(1, 10, 11, 12, 13, highNoon: 14, midnight: 15);
         var noon = WeatherImageSpaceEvaluator.Evaluate(GpuTonemapSettings.EngineExteriorDefaults,
             12f, Timing, weather, null, 1f, new Dictionary<uint, ImageSpaceModifierRecord>());
+        var morningShoulder = WeatherImageSpaceEvaluator.Evaluate(GpuTonemapSettings.EngineExteriorDefaults,
+            10f, Timing, weather, null, 1f, new Dictionary<uint, ImageSpaceModifierRecord>());
+        var afternoonShoulder = WeatherImageSpaceEvaluator.Evaluate(GpuTonemapSettings.EngineExteriorDefaults,
+            15f, Timing, weather, null, 1f, new Dictionary<uint, ImageSpaceModifierRecord>());
+        var sunsetBegin = WeatherImageSpaceEvaluator.Evaluate(GpuTonemapSettings.EngineExteriorDefaults,
+            18f, Timing, weather, null, 1f, new Dictionary<uint, ImageSpaceModifierRecord>());
         var midnight = WeatherImageSpaceEvaluator.Evaluate(GpuTonemapSettings.EngineExteriorDefaults,
             0f, Timing, weather, null, 1f, new Dictionary<uint, ImageSpaceModifierRecord>());
 
         Assert.Single(noon.Contributions);
-        Assert.Equal(14u, noon.Contributions[0].ModifierFormId);
+        Assert.Equal(WeatherImageSpaceBand.Day, noon.Contributions[0].Band);
+        Assert.Equal(11u, noon.Contributions[0].ModifierFormId);
+        Assert.Contains(morningShoulder.Contributions,
+            c => c.Band == WeatherImageSpaceBand.Day && Math.Abs(c.Weight - 0.5f) < 1e-6f);
+        Assert.Contains(morningShoulder.Contributions,
+            c => c.Band == WeatherImageSpaceBand.HighNoon && Math.Abs(c.Weight - 0.5f) < 1e-6f);
+        Assert.Contains(afternoonShoulder.Contributions,
+            c => c.Band == WeatherImageSpaceBand.Day && Math.Abs(c.Weight - 0.5f) < 1e-6f);
+        Assert.Contains(afternoonShoulder.Contributions,
+            c => c.Band == WeatherImageSpaceBand.HighNoon && Math.Abs(c.Weight - 0.5f) < 1e-6f);
+        Assert.Single(sunsetBegin.Contributions);
+        Assert.Equal(WeatherImageSpaceBand.Day, sunsetBegin.Contributions[0].Band);
+        Assert.Equal(11u, sunsetBegin.Contributions[0].ModifierFormId);
         Assert.Single(midnight.Contributions);
         Assert.Equal(13u, midnight.Contributions[0].ModifierFormId);
         Assert.DoesNotContain(midnight.Contributions, c => c.ModifierFormId == 15);
@@ -148,12 +182,15 @@ public sealed class WeatherImageSpaceEvaluatorTests
             ImageSpaceModifiers = new WeatherTimeBands<uint>(10, 11, 12, 13),
         };
 
-        var noon = WeatherImageSpaceEvaluator.Evaluate(GpuTonemapSettings.EngineExteriorDefaults,
-            12f, Timing, weather, null, 1f, new Dictionary<uint, ImageSpaceModifierRecord>());
+        var shoulder = WeatherImageSpaceEvaluator.Evaluate(GpuTonemapSettings.EngineExteriorDefaults,
+            10f, Timing, weather, null, 1f, new Dictionary<uint, ImageSpaceModifierRecord>());
 
-        Assert.Single(noon.Contributions);
-        Assert.Equal(WeatherImageSpaceBand.HighNoon, noon.Contributions[0].Band);
-        Assert.Equal(11u, noon.Contributions[0].ModifierFormId);
+        Assert.Equal(2, shoulder.Contributions.Count);
+        Assert.Contains(shoulder.Contributions,
+            c => c.Band == WeatherImageSpaceBand.HighNoon && c.ModifierFormId == 11u);
+        Assert.Contains(shoulder.Contributions,
+            c => c.Band == WeatherImageSpaceBand.Day && c.ModifierFormId == 11u);
+        Assert.Equal(1f, shoulder.Contributions.Sum(c => c.Weight), 6);
     }
 
     [Fact]
@@ -300,7 +337,7 @@ public sealed class WeatherImageSpaceEvaluatorTests
     }
 
     [Fact]
-    public void Tint_PremultipliesEachBandBeforeAccumulation()
+    public void Tint_PremultipliesAggregateWeatherColorAfterBandAccumulation()
     {
         var sunrise = Modifier(0x101, ImageSpaceModifierParameter.EyeAdaptSpeed, [], []) with
         {
@@ -316,8 +353,9 @@ public sealed class WeatherImageSpaceEvaluatorTests
             TintR = 0f, TintG = 0f, TintB = 1f, TintAmount = 0.25f,
         };
 
-        // At 06:30 Sunrise and Night each have weight 0.5. Independent premultiplied oracle:
-        // weather=(.5, .125, 0), weather alpha=.625, base=(0,0,.25), denominator=.875.
+        // At 06:30 Sunrise and Night each have weight 0.5. ApplyWeather first accumulates raw
+        // weather RGBA=(.5,.5,0,.625), then the manager premultiplies that aggregate once:
+        // weather=(.3125,.3125,0), base=(0,0,.25), denominator=.875.
         var result = WeatherImageSpaceEvaluator.Evaluate(settings, 6.5f, Timing, weather, null, 1f,
             new Dictionary<uint, ImageSpaceModifierRecord>
             {
@@ -325,8 +363,8 @@ public sealed class WeatherImageSpaceEvaluatorTests
                 [night.FormId] = night,
             });
 
-        Assert.Equal(4f / 7f, result.Settings.TintR, 6);
-        Assert.Equal(1f / 7f, result.Settings.TintG, 6);
+        Assert.Equal(5f / 14f, result.Settings.TintR, 6);
+        Assert.Equal(5f / 14f, result.Settings.TintG, 6);
         Assert.Equal(2f / 7f, result.Settings.TintB, 6);
         Assert.Equal(0.625f, result.Settings.TintAmount, 6);
     }

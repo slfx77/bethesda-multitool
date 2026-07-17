@@ -148,6 +148,7 @@ public sealed partial class WorldView3DControl
                 // hour), so the live view's cached map would be stale/mismatched here.
                 BindAtmosphereConstants(cmd, recorder.FrameIndex, enableFog: false,
                     enableLighting: enableLighting, gameHourOverride: gameHour, enableShadows: false,
+                    shadingCameraPosOverride: cylinder.Position,
                     lightVisibility: cylinder);
 
                 target.Bind(cmd);
@@ -156,10 +157,16 @@ public sealed partial class WorldView3DControl
                 // perspective camera, but this ortho capture looks straight down (east→+X right,
                 // north→+Y up per TopDownViewProjBuilder). Lay the leaf cards flat in the ground plane
                 // so foliage is visible from above instead of edge-on (otherwise SPT canopies vanish in
-                // the overlay). Wind off for a clean static capture.
+                // the overlay). Pin wind strength/time for a clean deterministic pose. In FNV,
+                // weather strength zero intentionally retains GRASS2000's five-unit minimum bend;
+                // only the Animations switch requests the undeformed rest pose.
                 _references.SetLeafBillboardBasis(System.Numerics.Vector3.UnitX, System.Numerics.Vector3.UnitY);
                 _references.SetWind(WindDirection, 0f, 0f);
-                _references.Render(viewProj, cylinder);        // textured objects, depth-tested
+                _references.Render(
+                    viewProj,
+                    cylinder,
+                    deferBlended: false,
+                    cameraPosition: cylinder.Position);        // textured objects, depth-tested
                 if (showWater && _water is not null)
                 {
                     // Height-correct water for the overlay: the offscreen DSV already holds the terrain +

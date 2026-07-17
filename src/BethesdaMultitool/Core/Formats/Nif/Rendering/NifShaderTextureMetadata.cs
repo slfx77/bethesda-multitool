@@ -11,6 +11,13 @@ internal sealed class NifShaderTextureMetadata
     public uint? ShaderFlags2 { get; init; }
     public float? EnvMapScale { get; init; }
 
+    /// <summary>
+    ///     Raw FO3/FNV <c>BSShaderPPLightingProperty</c> parallax-occlusion tail. These values are
+    ///     retained for inspection/POM work only; PC-final simple parallax does not consume them.
+    /// </summary>
+    public float? ParallaxMaxPasses { get; init; }
+    public float? ParallaxScale { get; init; }
+
     /// <summary>Static shader-property UV transform authored before the texture reference.</summary>
     public System.Numerics.Vector2 UvOffset { get; init; }
     public System.Numerics.Vector2 UvScale { get; init; } = System.Numerics.Vector2.One;

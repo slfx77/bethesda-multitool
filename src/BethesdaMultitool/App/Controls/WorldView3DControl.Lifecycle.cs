@@ -208,6 +208,67 @@ public sealed partial class WorldView3DControl
         _gpu12.Device.CreateShaderResourceView(depth, srvDesc, _depthSrv.Value.Cpu);
     }
 
+    /// <summary>
+    ///     Allocates once and rewrites the Texture2D SRV over the live surface's one-sample HDR
+    ///     opaque snapshot. The underlying resource is the MSAA resolve target or the dedicated 1x
+    ///     copy and therefore changes identity whenever the surface is recreated or resized.
+    /// </summary>
+    private bool TryEnsureWaterOpaqueSnapshotSrv()
+    {
+        if (_gpu12 is null || _cbvSrvUavHeap12 is null || _surface12 is null ||
+            !_surface12.TryEnsureWaterOpaqueSnapshotResource() ||
+            _surface12.WaterOpaqueSnapshotResource is not { } snapshot)
+        {
+            return false;
+        }
+
+        if (_waterOpaqueSnapshotSrv is not null &&
+            ReferenceEquals(_waterOpaqueSnapshotSrvResource, snapshot))
+        {
+            return true;
+        }
+
+        var allocatedDescriptorThisAttempt = false;
+        try
+        {
+            if (_waterOpaqueSnapshotSrv is null)
+            {
+                _waterOpaqueSnapshotSrv = _cbvSrvUavHeap12.AllocatePersistent();
+                allocatedDescriptorThisAttempt = true;
+            }
+
+            var srvDesc = new Vortice.Direct3D12.ShaderResourceViewDescription
+            {
+                Format = Core.Formats.Nif.Rendering.Gpu.D3D12.GpuSwapChainSurface12.SceneColorFormat,
+                ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
+                Shader4ComponentMapping = Vortice.Direct3D12.ShaderComponentMapping.Default,
+                Texture2D = new Vortice.Direct3D12.Texture2DShaderResourceView
+                {
+                    MipLevels = 1,
+                    MostDetailedMip = 0,
+                },
+            };
+            _gpu12.Device.CreateShaderResourceView(snapshot, srvDesc, _waterOpaqueSnapshotSrv.Value.Cpu);
+            _waterOpaqueSnapshotSrvResource = snapshot;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (allocatedDescriptorThisAttempt && _waterOpaqueSnapshotSrv is { } allocation)
+            {
+                // No command list has observed this slot yet, so immediate reuse is safe.
+                _cbvSrvUavHeap12.FreePersistent(allocation.BindlessIndex);
+                _waterOpaqueSnapshotSrv = null;
+            }
+
+            _waterOpaqueSnapshotSrvResource = null;
+            _surface12.ReleaseDedicatedWaterOpaqueSnapshotResource();
+            Log.Warn("WorldView3DControl: WATER001 live snapshot SRV creation failed; using WATER003: {0}",
+                ex.Message);
+            return false;
+        }
+    }
+
     private void DisposeRenderResources()
     {
         // Drain any in-flight top-down readback first — its Task.Run body waits on the frame

@@ -193,6 +193,23 @@ public sealed partial class WorldView3DControl
         }
         catch (Exception ex)
         {
+            // A recording failure before EndFrame has not changed GPU resource states. Discard the
+            // one-shot WATER001 CPU state and close (without submitting) the open command list so the
+            // next CompositionTarget tick can BeginFrame on the same slot. The scoped water recovery
+            // below normally submits a cleaned partial frame; this is the final safety net for failures
+            // elsewhere in the frame or while recording that cleanup.
+            try
+            {
+                _water?.SetFnvWater001Snapshot(null, 0, 0);
+                _surface12?.DiscardWaterOpaqueSnapshotPreparation();
+                _commandRecorder12?.AbortFrame();
+            }
+            catch (Exception recoveryEx)
+            {
+                Log.Warn("WorldView3DControl: failed to abandon the incomplete render frame: {0}",
+                    recoveryEx.Message);
+            }
+
             // Tolerate TRANSIENT failures (e.g. a one-off resource spike) by skipping the frame and
             // retrying: a single exception used to detach the loop permanently, freezing the viewer
             // on what was often a recoverable condition (a whole-map frame exhausting the upload
@@ -266,6 +283,7 @@ public sealed partial class WorldView3DControl
         // count rides the previously spare b3 Params.w slot so both shading PSOs read one list.
         var placedLightCount = BindPlacedLights(
             cmd, frameIndex, lightVisibility, cameraOrigin, lightingOn);
+        _references?.SetPlacedLightCount(placedLightCount);
         // Per-game ambient fill scale (uAmbientColor.w): FNV's 0.3 is too dark for the ambient-heavier
         // TES4-era engines, so Oblivion etc. raise it (see GameProfile.AmbientLightScale).
         var ambientScale = BethesdaMultitool.Core.Games.GameProfiles
@@ -275,6 +293,11 @@ public sealed partial class WorldView3DControl
         // consistent.
         var tonemap = ResolveTonemapSettings();
         var hdrActive = _hdrEnabled && Environment.GetEnvironmentVariable("FALLOUT_VIEWER_HDR") != "0";
+        var sceneSunlightScale = GpuTonemapSettings.ResolveSceneSunlightScale(
+            tonemap,
+            _data?.Game ?? Core.Games.BethesdaGame.Unknown,
+            hdrActive,
+            isInterior: _selectedInterior is not null);
         // Sun-shadow sampling constants: the rendered cascades' light matrices (with this frame's
         // render origin folded in) + packed params. Disabled (zero) until the cascades have
         // content, when the caller opts out (ortho export / top-down), or when the toggle / env
@@ -286,6 +309,12 @@ public sealed partial class WorldView3DControl
         {
             shadow = shadowMap.GetSampleConstants(cameraOrigin);
         }
+        var projectedSunShadowActive =
+            shadow.Params0.X > 0f || shadow.Params1.X > 0f ||
+            shadow.Params2.X > 0f || shadow.Params3.X > 0f;
+        var fogEnabled = enableFog && _showFog;
+        _references?.SetFnvActiveAdtBaseState(
+            lightingOn, projectedSunShadowActive, fogEnabled);
         _lastBoundShadowParams = shadow.Params0;
         var constants = AtmosphereConstants.From(
             resolved, gameHour, shadingCameraPos, lightingEnabled: lightingOn ? 1f : 0f,
@@ -293,8 +322,10 @@ public sealed partial class WorldView3DControl
             placedLightCount: placedLightCount,
             cameraOrigin: cameraOrigin, ambientScale: ambientScale, shadow: shadow,
             emissiveMult: tonemap.EmissiveMult, hdrActive: hdrActive,
-            sunlightScale: tonemap.Mode == Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.CreationModern
-                ? tonemap.SunlightScale : 1f,
+            // FO3/FNV ApplyCurrentParameterData exposes hdrData[11] to directional-light setup.
+            // Its exact retail consumer is exterior HDR directional light only. It is scene state,
+            // so a display-operator override must not suppress it.
+            sunlightScale: sceneSunlightScale,
             skyScale: tonemap.Mode == Core.Formats.Nif.Rendering.Gpu.D3D12.GpuTonemapMode.CreationModern
                 ? tonemap.SkyScale : 1f);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
@@ -838,33 +869,115 @@ public sealed partial class WorldView3DControl
         // pass, preserving exact hardware depth for ordinary alpha decals/foliage and blend modes.
         var referencesUseDepth = !projectionActive && _showReferences && _references is not null
                                  && _depthSrv is not null && depthRes is not null;
-        _water?.SetSceneDepth(
-            waterUsesDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
-            _camera.NearPlane,
-            _camera.FarPlane,
-            surface.SampleCount);
-        _references?.SetSceneDepth(
-            referencesUseDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
-            _camera.NearPlane,
-            _camera.FarPlane,
-            surface.SampleCount);
+        var fnvWater001SnapshotPrepared = false;
+        var waterDepthSampled = false;
         var sceneDepthSampled = waterUsesDepth || referencesUseDepth;
         var sampledDepthState = Vortice.Direct3D12.ResourceStates.DepthRead |
                                 Vortice.Direct3D12.ResourceStates.PixelShaderResource;
-        if (waterUsesDepth)
-        {
-            cmd.OMSetRenderTargets(sceneRtv); // drop the DSV; keep the scene color RTV
-            cmd.ResourceBarrierTransition(depthRes!,
-                Vortice.Direct3D12.ResourceStates.DepthWrite,
-                sampledDepthState);
-        }
         // Water projects CAMERA-RELATIVE like terrain/references (same viewProjScene + render origin, VS
         // subtracts) — the absolute path lost float32 precision far from the origin and the water edge
         // shimmered/ended at view-angle-dependent Z as the camera rotated. Ripple UVs + the PS view vector
         // stay world-anchored: vWorldPos is still the absolute position (see water.vert.hlsl).
-        var visibleWater = _showWater
-            ? _water?.Render(viewProjScene, cylinder, referenceRenderOrigin) ?? 0
-            : 0;
+        var visibleWater = 0;
+        try
+        {
+            RefreshWaterAppearanceForCurrentCell();
+            _water?.SetSceneDepth(
+                waterUsesDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
+                _camera.NearPlane,
+                _camera.FarPlane,
+                surface.SampleCount);
+            if (_showWater && _water is not null)
+            {
+                var fnvWater001Preflight = _water.GetFnvWater001Preflight(
+                    cylinder,
+                    isPerspectiveProjection: !projectionActive);
+                if (fnvWater001Preflight.Candidate &&
+                    TryEnsureWaterOpaqueSnapshotSrv() &&
+                    surface.TryPrepareWaterOpaqueSnapshot(cmd))
+                {
+                    fnvWater001SnapshotPrepared = true;
+                    _water.SetFnvWater001Snapshot(
+                        _waterOpaqueSnapshotSrv!.Value.BindlessIndex,
+                        surface.Width,
+                        surface.Height);
+                }
+                else
+                {
+                    // Keep the positive preflight armed when allocation/capture failed: Render repeats
+                    // the check and records SnapshotUnavailable as the local WATER003 fallback reason.
+                    _water.SetFnvWater001Snapshot(null, 0, 0);
+                }
+            }
+            else
+            {
+                _water?.SetFnvWater001Snapshot(null, 0, 0);
+            }
+            _references?.SetSceneDepth(
+                referencesUseDepth ? _depthSrv!.Value.BindlessIndex : NoDepthSrv,
+                _camera.NearPlane,
+                _camera.FarPlane,
+                surface.SampleCount);
+            if (waterUsesDepth)
+            {
+                cmd.OMSetRenderTargets(sceneRtv); // drop the DSV; keep the scene color RTV
+                cmd.ResourceBarrierTransition(depthRes!,
+                    Vortice.Direct3D12.ResourceStates.DepthWrite,
+                    sampledDepthState);
+                waterDepthSampled = true;
+            }
+
+            visibleWater = _showWater
+                ? _water?.Render(
+                    viewProjScene,
+                    cylinder,
+                    referenceRenderOrigin,
+                    isPerspectiveProjection: !projectionActive) ?? 0
+                : 0;
+
+            // Render consumes the descriptor up front; clear it again defensively and return the
+            // borrowed/copy snapshot to its ordinary ResolveDest/CopyDest baseline before blends.
+            _water?.SetFnvWater001Snapshot(null, 0, 0);
+            if (fnvWater001SnapshotPrepared)
+            {
+                surface.RestoreWaterOpaqueSnapshot(cmd);
+                fnvWater001SnapshotPrepared = false;
+            }
+        }
+        catch
+        {
+            try
+            {
+                _water?.SetFnvWater001Snapshot(null, 0, 0);
+                if (fnvWater001SnapshotPrepared)
+                {
+                    surface.RestoreWaterOpaqueSnapshot(cmd);
+                    fnvWater001SnapshotPrepared = false;
+                }
+                if (waterDepthSampled)
+                {
+                    cmd.OMSetRenderTargets(sceneRtv);
+                    cmd.ResourceBarrierTransition(depthRes!, sampledDepthState,
+                        Vortice.Direct3D12.ResourceStates.DepthWrite);
+                    cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
+                    waterDepthSampled = false;
+                }
+
+                // Submit only the valid partial scene recorded before the failure. Scene color,
+                // depth, and the borrowed/copy snapshot are all back at their next-frame baselines;
+                // the back buffer was never touched because final resolve has not run yet.
+                recorder.EndFrame();
+            }
+            catch
+            {
+                // If cleanup itself cannot be recorded, discard the entire unsubmitted list. Its
+                // barriers never reach the GPU, so forgetting the CPU preparation flag is correct.
+                surface.DiscardWaterOpaqueSnapshotPreparation();
+                try { recorder.AbortFrame(); }
+                catch { /* The outer render failure path logs device/recorder failures. */ }
+            }
+            throw;
+        }
         _gpuTimestampProfiler12?.Write(cmd, GpuTimestampRegion.WaterEnd);
         var waterMs = ElapsedMilliseconds(segmentStarted);
         // Blended (transparent) reference submeshes draw AFTER water so water never paints over
@@ -889,6 +1002,7 @@ public sealed partial class WorldView3DControl
                 sampledDepthState,
                 Vortice.Direct3D12.ResourceStates.DepthWrite);
             cmd.OMSetRenderTargets(sceneRtv, sceneDsv);
+            waterDepthSampled = false;
         }
         // Navmesh overlay — translucent and depth-disabled so authored NAVM remains visible even
         // where it sits slightly below rendered ground. Editor selection/grid guides draw later.

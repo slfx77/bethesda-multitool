@@ -125,6 +125,8 @@ internal static class WeatherImageSpaceEvaluator
                 baseSettings.UpperLumClamp),
             BrightScale = Apply(ImageSpaceModifierParameter.HdrBrightScale, baseSettings.BrightScale),
             BrightClamp = Apply(ImageSpaceModifierParameter.HdrBrightClamp, baseSettings.BrightClamp),
+            SunlightScale = Apply(ImageSpaceModifierParameter.HdrSunlightDimmer,
+                baseSettings.SunlightScale),
             Saturation = Apply(ImageSpaceModifierParameter.CinematicSaturation, baseSettings.Saturation),
             ContrastAvgLum = Apply(ImageSpaceModifierParameter.CinematicContrastAvgLum,
                 baseSettings.ContrastAvgLum),
@@ -417,14 +419,17 @@ internal static class WeatherImageSpaceEvaluator
 
         if (hour >= sunriseEnd && hour <= highNoon && highNoon > sunriseEnd)
         {
-            var highNoonWeight = (hour - sunriseEnd) / (highNoon - sunriseEnd);
-            return Pair(WeatherImageSpaceBand.HighNoon, highNoonWeight, WeatherImageSpaceBand.Day);
+            // Sky::UpdateHDRValues deliberately uses the inverse endpoint identity from
+            // Sky::FillColorBlend here: HighNoon is the daylight shoulder and Day reaches
+            // full weight at noon.
+            var dayWeight = (hour - sunriseEnd) / (highNoon - sunriseEnd);
+            return Pair(WeatherImageSpaceBand.Day, dayWeight, WeatherImageSpaceBand.HighNoon);
         }
 
-        if (hour >= highNoon && hour <= sunsetBegin && sunsetBegin > highNoon)
+        if (hour >= highNoon && hour < sunsetBegin && sunsetBegin > highNoon)
         {
-            var dayWeight = (hour - highNoon) / (sunsetBegin - highNoon);
-            return Pair(WeatherImageSpaceBand.Day, dayWeight, WeatherImageSpaceBand.HighNoon);
+            var highNoonWeight = (hour - highNoon) / (sunsetBegin - highNoon);
+            return Pair(WeatherImageSpaceBand.HighNoon, highNoonWeight, WeatherImageSpaceBand.Day);
         }
 
         if (hour >= sunsetBegin && hour <= sunsetEnd && sunsetEnd > sunsetBegin)
@@ -547,13 +552,18 @@ internal static class WeatherImageSpaceEvaluator
             {
                 continue;
             }
-            // Premultiply each contribution before accumulation. Multiplying an aggregate RGB by
-            // aggregate alpha would create cross-terms between bands with different authored alpha.
-            weatherRed += color.Red * color.Alpha * contribution.Weight;
-            weatherGreen += color.Green * color.Alpha * contribution.Weight;
-            weatherBlue += color.Blue * color.Alpha * contribution.Weight;
+            // ApplyWeather scales all four sampled channels by the instance weight and the weather
+            // accumulator sums that raw RGBA. EndWeatherModifiers then passes the aggregate through
+            // ApplyTintColorParamModifier, which premultiplies RGB by the aggregate alpha once.
+            weatherRed += color.Red * contribution.Weight;
+            weatherGreen += color.Green * contribution.Weight;
+            weatherBlue += color.Blue * contribution.Weight;
             weatherAlpha += color.Alpha * contribution.Weight;
         }
+
+        weatherRed *= weatherAlpha;
+        weatherGreen *= weatherAlpha;
+        weatherBlue *= weatherAlpha;
 
         var denominator = settings.TintAmount + weatherAlpha;
         var red = 0f;
@@ -597,8 +607,9 @@ internal static class WeatherImageSpaceEvaluator
                $"lum={F(settings.TargetLum)}..{F(settings.UpperLumClamp)} " +
                $"cin={F(settings.Saturation)}/{F(settings.Brightness)}/{F(settings.Contrast)} " +
                $"tint={F(settings.TintR)},{F(settings.TintG)},{F(settings.TintB)},{F(settings.TintAmount)} " +
-               $"unmapped(sun={F(sun.Multiply)}+{F(sun.Add)}," +
-               $"grass={F(grass.Multiply)}+{F(grass.Add)},tree={F(tree.Multiply)}+{F(tree.Add)})";
+               $"scene(sun={F(settings.SunlightScale)}[{F(sun.Multiply)}+{F(sun.Add)}]) " +
+               $"unmapped(grass={F(grass.Multiply)}+{F(grass.Add)}," +
+               $"tree={F(tree.Multiply)}+{F(tree.Add)})";
     }
 
     private static string FormatModernTelemetry(

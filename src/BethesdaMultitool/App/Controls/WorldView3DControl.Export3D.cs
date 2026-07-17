@@ -143,8 +143,9 @@ public sealed partial class WorldView3DControl
 
                 target.Bind(cmd);
 
-                // Leaf cards re-face the ortho camera basis (top-down → flat in the ground plane). Wind
-                // off for a clean static capture.
+                // Leaf cards re-face the ortho camera basis (top-down → flat in the ground plane).
+                // Pin wind strength/time for a clean deterministic pose. FNV TallGrass retains its
+                // recovered five-unit minimum bend at zero weather strength; Animations controls rest.
                 _references.SetLeafBillboardBasis(leafRight, leafUp);
                 _references.SetWind(WindDirection, 0f, 0f);
 

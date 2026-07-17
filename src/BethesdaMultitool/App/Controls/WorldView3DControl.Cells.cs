@@ -95,13 +95,14 @@ public sealed partial class WorldView3DControl
         _spatialIndex = WorldSpatialIndex.BuildFor3D(_data, cellList, defaultWaterHeight);
 
         _cellGridLookup = _spatialIndex.CellsByGrid.ToDictionary(kv => kv.Key, kv => kv.Value);
-        var appearance = GetSelectedWaterAppearance(_data);
-        IReadOnlyList<uint?>? normalIndices = appearance?.NormalTextures is { Count: > 0 } textures
-            ? textures.Select(path => _textureResolver12?.ResolveNormalMapBindlessIndex(path)).ToArray()
-            : appearance?.NoiseTexture is { } noise
-                ? new uint?[] { _textureResolver12?.ResolveNormalMapBindlessIndex(noise) }
-                : null;
-        var oblivionDetailIndex = _data.Game == BethesdaMultitool.Core.Games.BethesdaGame.Oblivion &&
+        var activeWorldspace = CurrentSelectedExteriorWorldspace();
+        var initialWaterSelection = WaterAppearanceSelectionResolver.Resolve(
+            cell: null,
+            worldspace: activeWorldspace,
+            watersByFormId: _data.WatersByFormId);
+        var appearance = WaterAppearance.FromWaterRecord(initialWaterSelection.Water);
+        var normalIndices = ResolveWaterNormalIndices(appearance);
+        var oblivionDetailIndex = WaterProfile.ForGame(_data.Game).UsesWatrDetailTexture &&
                                    appearance?.SurfaceTexture is { Length: > 0 } detailPath
             ? _textureResolver12?.ResolveDiffuseBindlessIndex(detailPath)
             : null;
@@ -113,6 +114,12 @@ public sealed partial class WorldView3DControl
         _water?.SetLegacyAnimatedFrames(ResolveLegacyAnimatedWaterFrames());
         _water?.SetOblivionDetailTexture(oblivionDetailIndex);
         _water?.LoadData(_cellGridLookup, defaultWaterHeight, _spatialIndex, appearance, normalIndices);
+        _water?.SetFnvWater001WaterTypeContext(
+            initialWaterSelection.WaterFormId,
+            activeWorldspace?.WaterFormId);
+        _waterAppearanceSelection = initialWaterSelection;
+        _boundWaterAppearanceFormId = initialWaterSelection.WaterFormId;
+        _hasBoundWaterAppearance = true;
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
         if (_collisionDebug is not null)
@@ -131,9 +138,13 @@ public sealed partial class WorldView3DControl
     /// </summary>
     private uint[]? ResolveLegacyAnimatedWaterFrames()
     {
-        if (_data is null || _textureResolver12 is null ||
-            (_data.Game != BethesdaMultitool.Core.Games.BethesdaGame.Morrowind &&
-             _data.Game != BethesdaMultitool.Core.Games.BethesdaGame.Oblivion))
+        if (_data is null || _textureResolver12 is null)
+        {
+            return null;
+        }
+
+        var frameRole = WaterProfile.ForGame(_data.Game).LegacyFrames;
+        if (frameRole == LegacySurfaceFrameRole.None)
         {
             return null;
         }
@@ -142,7 +153,7 @@ public sealed partial class WorldView3DControl
         for (var i = 0; i < LegacyWaterAnimation.FrameCount; i++)
         {
             var path = LegacyWaterAnimation.FramePath(i);
-            var index = _data.Game == BethesdaMultitool.Core.Games.BethesdaGame.Morrowind
+            var index = frameRole == LegacySurfaceFrameRole.Diffuse
                 ? _textureResolver12.ResolveDiffuseBindlessIndex(path)
                 : _textureResolver12.ResolveNormalMapBindlessIndex(path);
             if (index is uint idx)
@@ -154,20 +165,52 @@ public sealed partial class WorldView3DControl
         return frames.Count > 0 ? frames.ToArray() : null;
     }
 
-    /// <summary>
-    ///     Resolves the WATR appearance (DNAM Shallow/Deep/Reflection colors) for the selected
-    ///     worldspace's default water — mirrors the 2D viewer, which colors the whole worldspace
-    ///     from its single <c>WaterFormId</c>. Null (unlinked-exterior / no WATR) lets the
-    ///     renderer fall back to a default tint.
-    /// </summary>
-    private BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance? GetSelectedWaterAppearance(WorldViewData data)
+    private IReadOnlyList<uint?>? ResolveWaterNormalIndices(WaterAppearance? appearance)
     {
-        var index = WorldspaceComboBox.SelectedIndex;
-        if (index < 0 || index >= data.Worldspaces.Count) return null;
-        if (data.Worldspaces[index].WaterFormId is not uint waterFormId) return null;
-        return data.WatersByFormId.TryGetValue(waterFormId, out var water)
-            ? BethesdaMultitool.Core.Formats.Esm.Models.Records.World.WaterAppearance.FromWaterRecord(water)
-            : null;
+        return appearance?.NormalTextures is { Count: > 0 } textures
+            ? textures.Select(path => _textureResolver12?.ResolveNormalMapBindlessIndex(path)).ToArray()
+            : appearance?.NoiseTexture is { } noise
+                ? new uint?[] { _textureResolver12?.ResolveNormalMapBindlessIndex(noise) }
+                : null;
+    }
+
+    /// <summary>
+    ///     Selects the current FNV camera CELL's XCWT material, falling back to WRLD NAM2 when that
+    ///     override is absent or unresolved. Only the material binding changes when the selected
+    ///     WATR changes; water instances and their spatial index remain resident.
+    /// </summary>
+    private void RefreshWaterAppearanceForCurrentCell(bool force = false)
+    {
+        if (_data is null || _water is null ||
+            _data.Game != BethesdaMultitool.Core.Games.BethesdaGame.FalloutNewVegas)
+        {
+            return;
+        }
+
+        var cellContext = CurrentImageSpaceCellContext();
+        var worldspace = _selectedInterior is null ? CurrentSelectedExteriorWorldspace() : null;
+        var selection = WaterAppearanceSelectionResolver.Resolve(
+            cellContext.Cell,
+            worldspace,
+            _data.WatersByFormId);
+        _waterAppearanceSelection = selection;
+
+        if (!force && _hasBoundWaterAppearance &&
+            _boundWaterAppearanceFormId == selection.WaterFormId)
+        {
+            return;
+        }
+
+        var appearance = WaterAppearance.FromWaterRecord(selection.Water);
+        _water.SetAppearance(appearance, ResolveWaterNormalIndices(appearance));
+        _water.SetFnvWater001WaterTypeContext(selection.WaterFormId, worldspace?.WaterFormId);
+        _boundWaterAppearanceFormId = selection.WaterFormId;
+        _hasBoundWaterAppearance = true;
+        Log.Info(
+            "[Water] selected {0} WATR {1} for CELL {2}.",
+            selection.SourceTelemetry,
+            selection.WaterFormId is { } waterFormId ? $"0x{waterFormId:X8}" : "unavailable",
+            selection.CellFormId is { } cellFormId ? $"0x{cellFormId:X8}" : "unavailable");
     }
 
     // ── Interior cell browser (shared CellListControl) ───────────────────────────────────────
@@ -205,7 +248,7 @@ public sealed partial class WorldView3DControl
     ///     Single-cell load path for an interior: builds a synthetic-grid spatial index
     ///     (<see cref="WorldSpatialIndex.BuildInterior" />) and loads the renderers against it.
     ///     Terrain has no LAND so it renders nothing; references/water/navmesh resolve via the
-    ///     synthetic key. Water uses the interior's own XCLW (no worldspace default), default tint.
+    ///     synthetic key. Water uses the interior's own XCLW and XCWT (no worldspace fallback).
     /// </summary>
     private void BuildInteriorCellGrid(CellRecord interior)
     {
@@ -222,7 +265,21 @@ public sealed partial class WorldView3DControl
         _water?.SetGame(_data.Game);
         _water?.SetLegacyAnimatedFrames(ResolveLegacyAnimatedWaterFrames());
         _water?.SetOblivionDetailTexture(null);
-        _water?.LoadData(_cellGridLookup, worldspaceDefaultWaterHeight: null, _spatialIndex);
+        var waterSelection = WaterAppearanceSelectionResolver.Resolve(
+            cell: interior,
+            worldspace: null,
+            watersByFormId: _data.WatersByFormId);
+        var appearance = WaterAppearance.FromWaterRecord(waterSelection.Water);
+        _water?.LoadData(
+            _cellGridLookup,
+            worldspaceDefaultWaterHeight: null,
+            _spatialIndex,
+            appearance,
+            ResolveWaterNormalIndices(appearance));
+        _water?.SetFnvWater001WaterTypeContext(waterSelection.WaterFormId, null);
+        _waterAppearanceSelection = waterSelection;
+        _boundWaterAppearanceFormId = waterSelection.WaterFormId;
+        _hasBoundWaterAppearance = true;
         _references?.LoadData(_data.RenderCache, _cellGridLookup, _spatialIndex);
         _navMesh?.LoadData(_data.NavMeshesByCell, _cellGridLookup, _spatialIndex);
         if (_collisionDebug is not null)

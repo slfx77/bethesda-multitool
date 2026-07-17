@@ -285,6 +285,8 @@ struct PSInput
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
     nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = blend operation
     nointerpolation float4 vSoftParticle  : TEXCOORD14; // encoded depth slot/view, near, far, signed soft depth
+    nointerpolation float vSpecularLodFade : TEXCOORD15; // classic FNV direct-sun specular only
+    float3 vFnvActiveAdtBaseLight : TEXCOORD16; // SLS2000 normalized tangent-space Sun vector
     bool   IsFrontFace  : SV_IsFrontFace;
 };
 
@@ -362,7 +364,12 @@ bool PassAlphaTest(float alpha, float threshold, float functionId)
 
 // vTextureState.z is an exact integer bitfield carried through a float constant:
 // bit 0 = specular map present, bit 1 = clamp U, bit 2 = clamp V,
-// bit 3 = TexIndices.w is a classic Lighting30 glow map, bit 4 = Lighting30 route.
+// bit 3 = TexIndices.w is a classic Lighting30 glow map, bit 4 = Lighting30 route,
+// bit 5 = TallGrassShaderProperty (consumed by the reference vertex shaders),
+// bit 6 = classic FO3/FNV environment pass, bit 7 = TexIndices.z is its custom mask,
+// bit 9 = classic SLS2058/bit-21 window-reflection direction, bit 10 = FNV active
+// ID193/BSSM_ADT zero-local-light route, bit 11 = its Toggles.x vertex-RGB branch
+// (bit 8 is classic parallax).
 uint MaterialTextureFlags(float packedState)
 {
     return (uint)round(packedState);
@@ -381,6 +388,36 @@ bool HasLighting30GlowMap(float packedState)
 bool IsLighting30Material(float packedState)
 {
     return (MaterialTextureFlags(packedState) & 16u) != 0u;
+}
+
+bool HasClassicEnvironmentMap(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 64u) != 0u;
+}
+
+bool HasClassicEnvironmentMask(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 128u) != 0u;
+}
+
+bool HasClassicParallax(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 256u) != 0u;
+}
+
+bool UsesClassicEnvironmentWindowReflection(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 512u) != 0u;
+}
+
+bool UsesFnvActiveAdtBaseLighting(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 1024u) != 0u;
+}
+
+bool UsesFnvActiveAdtBaseVertexColor(float packedState)
+{
+    return (MaterialTextureFlags(packedState) & 2048u) != 0u;
 }
 
 float4 SampleMaterialTexture(uint slot, float2 uv, float packedState)
@@ -419,14 +456,62 @@ float CalculateMaterialTextureLod(uint slot, float2 uv, float packedState)
     return textures[NonUniformResourceIndex(slot)].CalculateLevelOfDetail(sDiffuse, uv);
 }
 
+// PC-final SM3004 simple parallax. Height is sampled ONCE at the original UV, then the exact
+// hardcoded `(height * 0.04 - 0.02)` offset is projected through the normalized tangent-space
+// eye vector. The serialized BSShaderPPLightingProperty POM scale is not part of this permutation.
+float2 ResolveClassicParallaxUv(PSInput input)
+{
+    if (!HasClassicParallax(input.vTextureState.z))
+    {
+        return input.vTexCoord;
+    }
+
+    float tangentLengthSquared = dot(input.vTangent, input.vTangent);
+    float bitangentLengthSquared = dot(input.vBitangent, input.vBitangent);
+    float normalLengthSquared = dot(input.vWorldNormal, input.vWorldNormal);
+    float3 basisLengthSquared = float3(
+        tangentLengthSquared, bitangentLengthSquared, normalLengthSquared);
+    if (!all(isfinite(basisLengthSquared)) ||
+        min(tangentLengthSquared, min(bitangentLengthSquared, normalLengthSquared)) <= 1e-8)
+    {
+        return input.vTexCoord;
+    }
+
+    float3 tangent = input.vTangent * rsqrt(tangentLengthSquared);
+    float3 bitangent = input.vBitangent * rsqrt(bitangentLengthSquared);
+    float3 geometricNormal = input.vWorldNormal * rsqrt(normalLengthSquared);
+    float3 eyeMinusWorldPosition = uCameraPosFogPower.xyz - input.vWorldPos;
+    if (!all(isfinite(eyeMinusWorldPosition)))
+    {
+        return input.vTexCoord;
+    }
+
+    float3 viewTs = float3(
+        dot(tangent, eyeMinusWorldPosition),
+        dot(bitangent, eyeMinusWorldPosition),
+        dot(geometricNormal, eyeMinusWorldPosition));
+    float viewTsLengthSquared = dot(viewTs, viewTs);
+    if (!isfinite(viewTsLengthSquared) || viewTsLengthSquared <= 1e-8)
+    {
+        return input.vTexCoord;
+    }
+
+    viewTs *= rsqrt(viewTsLengthSquared);
+    float height = SampleMaterialTexture(
+        input.vTexIndices.z, input.vTexCoord, input.vTextureState.z).r;
+    return input.vTexCoord + viewTs.xy * (height * 0.04 - 0.02);
+}
+
 float4 main(PSInput input) : SV_Target
 {
     // Do this before texture/lighting work. Only explicitly eligible effects carry an encoded depth
     // slot; ordinary transparent draws rely exclusively on the simultaneously bound read-only DSV.
     float sceneDepthFeather = ResolveSceneDepthFeather(input);
 
+    float2 materialUv = ResolveClassicParallaxUv(input);
+
     float4 sample = SampleMaterialTexture(
-        input.vTexIndices.x, input.vTexCoord, input.vTextureState.z);
+        input.vTexIndices.x, materialUv, input.vTextureState.z);
 
     // FO4/FO76 grayscale-to-palette (vTextureState.w >= 0 = the material's GradientMapV row): the
     // palette lookup REPLACES the diffuse RGB — the raw base texture is authoring data (FO4's
@@ -452,7 +537,11 @@ float4 main(PSInput input) : SV_Target
     // additively clipped whole scenes.
     sample.rgb *= input.vEffectTint.rgb;
 
-    float sampleAlpha = saturate(sample.a * input.vVertexColor.a);
+    bool fnvActiveAdtBase = UsesFnvActiveAdtBaseLighting(input.vTextureState.z);
+    bool fnvActiveAdtBaseVertexColor = UsesFnvActiveAdtBaseVertexColor(input.vTextureState.z);
+    // The bounded active ADT route is opaque and Toggles.x consumes vertex RGB only. Its output
+    // alpha is BaseMap.a * material alpha (the runtime gate requires material alpha == 1).
+    float sampleAlpha = saturate(sample.a * (fnvActiveAdtBase ? 1.0 : input.vVertexColor.a));
 
     // Alpha-test branch — controlled per-draw so foliage with NiAlphaProperty bit 9 set
     // discards transparent pixels rather than rendering them as opaque. Full NIF comparison
@@ -476,7 +565,7 @@ float4 main(PSInput input) : SV_Target
     if (input.vTextureState.y > 1.5)
     {
         float leafLod = CalculateMaterialTextureLod(
-            input.vTexIndices.x, input.vTexCoord, input.vTextureState.z);
+            input.vTexIndices.x, materialUv, input.vTextureState.z);
         if (testAlpha > 0.25)
         {
             testAlpha = saturate(testAlpha * (1.0 + leafLod * 0.25));
@@ -495,13 +584,17 @@ float4 main(PSInput input) : SV_Target
     // SLS2047.pso — the engine's specular SLS variant). Captured here from the same sample the bump
     // uses; 0 ⇒ no specular (the default when there's no normal map, or for alpha-less BC5).
     float specMask = 0.0;
+    // Classic FO3/FNV SLS environment mapping uses this alpha when no custom slot-5 mask exists.
+    // The engine's default flat normal is opaque, so shapes without a sampled normal retain 1.
+    float normalMapAlpha = 1.0;
     // FO4 _s GREEN channel: per-texel smoothness multiplier (fo76utils drawPixel_FO4:
     // smoothness = material smoothness × _s.G). 1 when no _s map is bound.
     float specSmoothScale = 1.0;
+    float fnvActiveAdtBaseNdotL = 0.0;
     if (input.vRenderState.y > 0.5)
     {
         float4 normalSample = SampleMaterialNormal(
-            input.vTexIndices.y, input.vTexCoord, input.vTextureState.z);
+            input.vTexIndices.y, materialUv, input.vTextureState.z);
         float3 mapN;
         if (input.vTextureState.x > 0.5)
         {
@@ -513,7 +606,8 @@ float4 main(PSInput input) : SV_Target
         else
         {
             mapN = normalSample.rgb * 2.0 - 1.0;
-            specMask = normalSample.a; // DXT5 _n.dds alpha = per-texel specular intensity mask
+            normalMapAlpha = normalSample.a;
+            specMask = normalMapAlpha; // DXT5 _n.dds alpha = per-texel specular intensity mask
         }
 
         // FO4/FO76 specular map (_s.dds): R = per-texel specular mask, replacing the normal-map
@@ -522,14 +616,24 @@ float4 main(PSInput input) : SV_Target
         if (HasMaterialSpecularMap(input.vTextureState.z))
         {
             float2 specSample = SampleMaterialTexture(
-                input.vTexIndices.z, input.vTexCoord, input.vTextureState.z).rg;
+                input.vTexIndices.z, materialUv, input.vTextureState.z).rg;
             specMask = specSample.r;
             specSmoothScale = specSample.g;
         }
 
+        if (fnvActiveAdtBase)
+        {
+            // PC-final package013 SLS2000.pso: normalize the unscaled RGB normal sample, consume
+            // the interpolated per-vertex normalized light directly without re-normalizing it, and preserve
+            // the raw signed dp3. The clamp occurs after Ambient + PSLightColor*dp3 below.
+            float3 activeAdtNormal = normalize(normalSample.rgb * 2.0 - 1.0);
+            fnvActiveAdtBaseNdotL = dot(activeAdtNormal, input.vFnvActiveAdtBaseLight);
+        }
+
         // Bethesda's DDS normals are already in the DirectX convention consumed by the authored
-        // tangent/bitangent basis. The recovered FNV SLS1009 pixel shader unpacks RGB directly and
-        // does not negate green. Green is flipped only when exporting these maps to glTF/OpenGL.
+        // tangent/bitangent basis. Green is flipped only when exporting these maps to glTF/OpenGL.
+        // The active SLS2000 branch above has no bump-strength constant; this scale belongs only to
+        // the viewer's remaining combined-material route.
         mapN.xy *= input.vRenderState.z;
 
         // Only perturb when there's a usable tangent basis. SpeedTree bark carries a normal map but NO
@@ -571,7 +675,7 @@ float4 main(PSInput input) : SV_Target
     bool fullBright = input.vRenderState.w > 0.5;
     // NoLighting bypasses both scene lighting and its shadow lookup. This is also what keeps that
     // branch entirely independent of Lighting30's IMGS EmissiveMult input.
-    float sunShadow = !fullBright && uSunColorLighting.w >= 0.5
+    float sunShadow = !fullBright && !fnvActiveAdtBase && uSunColorLighting.w >= 0.5
         ? ShadowFactor(input.vWorldPos)
         : 1.0;
     float3 shade;
@@ -612,10 +716,23 @@ float4 main(PSInput input) : SV_Target
             }
         }
 
-        shade = AtmosphereLight(
-            normal, input.vWorldPos, sunShadow,
-            hasLighting30Glow ? 0.0 : emission,
-            hdrActive);
+        if (fnvActiveAdtBase)
+        {
+            // Active ID193/BSSM_ADT, package013 SLS2000.pso instruction tail:
+            //   dp3 rawSigned; mad Ambient + PSLightColor*dp3; max aggregate with zero.
+            // It has no bump-strength constant, shadow sampler, placed-light loop, directional
+            // ambient cube, emission term, or uAmbientColor.w scale.
+            shade = max(
+                uAmbientColor.rgb + uSunColorLighting.rgb * fnvActiveAdtBaseNdotL,
+                0.0);
+        }
+        else
+        {
+            shade = AtmosphereLight(
+                normal, input.vWorldPos, sunShadow,
+                hasLighting30Glow ? 0.0 : emission,
+                hdrActive);
+        }
         if (hasLighting30Glow)
         {
             float3 glow = SampleMaterialTexture(
@@ -626,7 +743,14 @@ float4 main(PSInput input) : SV_Target
 
     // Vertex color modulates the diffuse (vertexRgb is pre-neutralized for gradient shapes) —
     // NIFs use it for art-direction tints (e.g. dusty rocks, painted billboards).
-    float3 lit = sample.rgb * vertexRgb * shade;
+    float3 baseLit = sample.rgb * shade;
+    // SLS2000 Toggles.x selects BaseMap * vertexRgb * shade; otherwise it omits vertexRgb.
+    // ApplyFog below remains the viewer's single common fog stage.
+    float3 lit = fnvActiveAdtBaseVertexColor
+        ? baseLit * vertexRgb
+        : fnvActiveAdtBase
+            ? baseLit
+            : baseLit * vertexRgb;
 
     // FNV sun specular — grounded in the engine's specular SLS pixel shader (SLS2047.pso):
     //   spec = NormalMap.a * pow(saturate(N·H), shininess); a soft N·L ramp fades it on grazing/
@@ -644,7 +768,7 @@ float4 main(PSInput input) : SV_Target
         float3 V = normalize(uCameraPosFogPower.xyz - input.vWorldPos);
         float3 H = normalize(uSunDirIntensity.xyz + V);
         float specTerm = pow(saturate(dot(normal, H)), max(input.vSpecular.w, 1.0));
-        float spec = specMask * specTerm;
+        float spec = specMask * specTerm * input.vSpecularLodFade;
         // SLS2047 soft ramp: below N·L 0.2, scale by (N·L + 0.5) (→ 0 by N·L −0.5); full above.
         float ndotl = dot(normal, uSunDirIntensity.xyz);
         if (ndotl <= 0.2) spec *= max(ndotl + 0.5, 0.0);
@@ -656,6 +780,35 @@ float4 main(PSInput input) : SV_Target
         // per-sample ceiling exactly where the aliasing lives — this block is gated non-emissive
         // (vRenderState.w <= 0.5), so authored HDR glow (neon/goo) is untouched.
         lit = min(lit, 1.0);
+    }
+
+    // FO3/FNV classic PP-lighting environment pass — recovered retail SLS2057 equation:
+    //   mask = custom slot-5 RED when present, otherwise normal-map ALPHA
+    //   rgb += cube(reflect(-V,N)) * mask * EnvMapScale * AmbientColor.w
+    // with optional vertex color modulation. AmbientColor.w is this material's alpha payload.
+    // This deliberately has no FO4 _s.G smoothness, Fresnel/geometry term, or explicit cube mip.
+    if (uSunColorLighting.w >= 0.5 && HasClassicEnvironmentMap(input.vTextureState.z) &&
+        input.vRenderState.w <= 0.5 && input.vEnvMap.x >= 0.0 && input.vEnvMap.y > 0.0)
+    {
+        float classicEnvMask = normalMapAlpha;
+        if (HasClassicEnvironmentMask(input.vTextureState.z))
+        {
+            classicEnvMask = SampleMaterialTexture(
+                input.vTexIndices.z, input.vTexCoord, input.vTextureState.z).r;
+        }
+
+        if (classicEnvMask > 0.0)
+        {
+            float3 V = normalize(uCameraPosFogPower.xyz - input.vWorldPos);
+            // SLS2057 ENVMAP uses the ordinary incident vector. BSShaderFlags bit 21 selects
+            // SLS2058 ENVMAP_W, whose first normalize negates that vector before reflection.
+            float3 reflectDir = UsesClassicEnvironmentWindowReflection(input.vTextureState.z)
+                ? reflect(V, normal)
+                : reflect(-V, normal);
+            uint cubeSlot = (uint)input.vEnvMap.x;
+            float3 env = cubemaps[NonUniformResourceIndex(cubeSlot)].Sample(sPalette, reflectDir).rgb;
+            lit += env * vertexRgb * (classicEnvMask * input.vEnvMap.y * input.vAlphaState.z);
+        }
     }
 
     // FO4 cubemap environment reflections — the dominant "shiny" term for FO4 metal/gloss
@@ -694,9 +847,13 @@ float4 main(PSInput input) : SV_Target
         lit += min(env * saturate(shade) * (input.vEnvMap.y * specMask * gEnv), 1.0);
     }
 
-    float outAlpha = input.vAlphaState.w > 0.5
-        ? saturate(sampleAlpha * input.vAlphaState.z)
-        : 1.0;
+    // SLS2000 always writes BaseMap.a * AmbientColor.a. The bounded route requires the latter
+    // (material alpha) to be exactly one, but BaseMap alpha remains observable in the render target.
+    float outAlpha = fnvActiveAdtBase
+        ? sampleAlpha
+        : input.vAlphaState.w > 0.5
+            ? saturate(sampleAlpha * input.vAlphaState.z)
+            : 1.0;
     float3 outputRgb = ApplyFog(lit, input.vWorldPos, input.vEnvMap.w);
     if (abs(input.vSoftParticle.w) > 0.0)
     {

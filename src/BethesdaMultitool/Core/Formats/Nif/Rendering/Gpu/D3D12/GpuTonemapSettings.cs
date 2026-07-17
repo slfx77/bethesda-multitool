@@ -64,9 +64,10 @@ internal readonly record struct GpuTonemapSettings
     public float AdaptFactor { get; init; }
 
     /// <summary>
-    ///     Stable identity of the active image-space source/context. The GPU pass invalidates temporal
-    ///     adaptation whenever this changes, preventing exposure history from leaking across cells,
-    ///     worldspaces, weather-HDR records, or post-processing toggle changes.
+    ///     Stable identity of the explicit eye-adaptation clear generation. Routine classic CELL,
+    ///     worldspace, image-space, weather, interior, and modifier changes deliberately keep the same
+    ///     value, matching the recovered FNV <c>bClearAdaptedLight</c> contract. The GPU pass separately
+    ///     invalidates history for adaptive-mode and render-target lifecycle changes.
     /// </summary>
     public ulong HistoryKey { get; init; }
 
@@ -150,9 +151,33 @@ internal readonly record struct GpuTonemapSettings
     public float White { get; init; }
     public float EyeAdaptStrength { get; init; }
     public float ReceiveBloomThreshold { get; init; }
+    /// <summary>
+    ///     Scene directional-light multiplier. FO3/FNV source this from classic IMGS
+    ///     <c>hdrData[11] SunlightDimmer</c>; Creation-era records call the corresponding field
+    ///     SunlightScale. The recovered classic consumer is exterior HDR directional light only;
+    ///     it is evaluated before the display imagespace pass and therefore remains active during
+    ///     tonemap-operator A/Bs.
+    /// </summary>
     public float SunlightScale { get; init; }
     public float SkyScale { get; init; }
     public string? LutTexturePath { get; init; }
+
+    /// <summary>
+    ///     Resolves the scene-light consumer separately from the authored/retained IMGS value.
+    ///     FO3/FNV's 3.x and legacy 1.x/2.x directional setup both guard SunlightDimmer with
+    ///     <c>bHDR &amp;&amp; !bInterior</c>. Creation-era SunlightScale keeps its existing scene route,
+    ///     identified by retained family metadata so a display-operator A/B does not suppress it.
+    /// </summary>
+    internal static float ResolveSceneSunlightScale(
+        GpuTonemapSettings settings, BethesdaGame game, bool hdrActive, bool isInterior)
+    {
+        if (!hdrActive) return 1f;
+        if (settings.ModernFamily is not null) return settings.SunlightScale;
+
+        var classicExterior = !isInterior &&
+                              (game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas);
+        return classicExterior ? settings.SunlightScale : 1f;
+    }
 
     /// <summary>Shipped FNV DefaultImageSpaceExterior (0x161) with neutral exposure.</summary>
     public static GpuTonemapSettings EngineExteriorDefaults { get; } = new()
@@ -180,6 +205,7 @@ internal readonly record struct GpuTonemapSettings
         BlurPasses = 2f,
         BrightScale = 1.5f,
         BrightClamp = 0.35f,
+        SunlightScale = 1.3f,
     };
 
     /// <summary>Shipped FNV DefaultImageSpaceInterior (0x160): neutral cinematic.</summary>
@@ -205,6 +231,7 @@ internal readonly record struct GpuTonemapSettings
         BlurPasses = 2f,
         BrightScale = 2f,
         BrightClamp = 0.35f,
+        SunlightScale = 1.5f,
     };
 
     public static GpuTonemapSettings GammaAcesDefaults { get; } = new()
@@ -365,6 +392,9 @@ internal readonly record struct GpuTonemapSettings
             TintB = 1f,
             TintAmount = 0f,
             CinematicFlags = ImageSpaceCinematicFlags.All,
+            // TES4 HNAM carries a similarly named retained field, but this bounded consumer is
+            // recovered only for the FO3/FNV scene-light path.
+            SunlightScale = 1f,
         };
 
         // TES4's DefaultWeather (0x0000015E) carries a required HNAM payload whose fourteen

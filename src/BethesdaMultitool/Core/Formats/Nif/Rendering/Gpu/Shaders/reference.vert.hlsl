@@ -13,16 +13,15 @@ cbuffer PerFrame : register(b0)
     float4x4 uViewProj;
 };
 
-// Shared atmosphere CB (b3). References no longer read uCameraOrigin here: the render origin is folded
-// into uWorld's translation on the CPU (ReferenceRenderer12.Render's renderOrigin), so mul(uWorld, pos)
-// already yields the camera-relative position — computing it that way keeps float32 precision far from
-// the world origin (subtracting a ~52,000 absolute position AFTER the multiply lost it, Z-fighting distant
-// architecture). The cbuffer is still declared for b3 layout parity (terrain/water read uCameraOrigin);
-// the leading 9 float4 are the sun/sky/fog/camera fields this VS does not use.
+// Shared atmosphere CB (b3). Geometry stays camera-relative because the CPU folds the render origin into
+// uWorld's translation. TallGrass alone adds uCameraOrigin back to the INSTANCE ORIGIN for its absolute
+// phase seed; it never applies that large value to individual vertex positions. The leading 9 float4 are
+// the sun/sky/fog/camera fields this VS does not otherwise use.
 cbuffer Atmosphere : register(b3)
 {
-    float4 uAtmospherePad[9];
-    float4 uCameraOrigin; // retained for CB layout parity; references fold the origin CPU-side instead
+    float4 uSunDirIntensity; // xyz = world direction toward the Sun
+    float4 uAtmospherePad[8];
+    float4 uCameraOrigin; // absolute snapped render origin; restores TallGrass placement phase identity
 };
 
 cbuffer PerDraw : register(b1)
@@ -35,12 +34,14 @@ cbuffer PerDraw : register(b1)
     // Unused in VS; cull state is handled on the CPU side.
     float4 uRenderState;
     // uTextureState: x = BC5/ATI2 normal map; y = billboard/SpeedTree route; z = exact flags
-    // (bit0 spec map, bit1 clamp U, bit2 clamp V, bit3 Lighting30 glow, bit4 Lighting30 route);
+    // (bit0 spec map, bit1 clamp U, bit2 clamp V, bit3 Lighting30 glow, bit4 Lighting30 route,
+    // bit5 TallGrassShaderProperty);
     // w = gradient-map row (<0 disabled).
     float4 uTextureState;
-    // 4a — bindless TexIndices: .x diffuse, .y normal, .z specular mask, .w gradient or
-    // Lighting30 glow (uTextureState disambiguates). Mirrors
-    // the instanced VS's per-instance struct; the PS reads vTexIndices regardless of path.
+    // 4a — bindless TexIndices: .x diffuse, .y normal, .z FO4 specular, classic environment
+    // mask, or classic simple-parallax height, .w gradient or Lighting30 glow
+    // (uTextureState disambiguates both unions). Mirrors the instanced VS's per-instance struct;
+    // the PS reads vTexIndices regardless of path.
     uint4  uTexIndices;
     // 1A — specular: xyz = tint, w = Phong exponent (0 = no specular). Matches PerDrawConstants.
     float4 uSpecular;
@@ -57,12 +58,14 @@ cbuffer PerDraw : register(b1)
     // FO4 cubemap environment mapping: x = cube bindless slot (< 0 = none/not yet resident),
     // y = envMapScale (fo76utils envScale × specular strength), z = material smoothness 0–1.
     float4 uEnvMap;
-    // NiUVController scroll: xy = fractional UV phase this frame (0 = static), zw unused.
+    // NiUVController scroll: xy = fractional UV phase this frame (0 = static); z = CPU-computed
+    // classic direct-sun specular LOD fade; w unused.
     // Must stay layout-matched with PerDrawConstants in ReferenceRenderer12.cs.
     float4 uUvScroll;
     // Scene-depth blend pass: x = 0 disables, +(slot+1) = Texture2D, -(slot+1) = Texture2DMS,
     // y/z = perspective near/far, |w| = soft falloff depth. w>0 fades output alpha;
-    // w<0 fades output RGB. w=0 keeps ordinary alpha geometry hard-intersecting.
+    // w<0 fades output RGB. w=0 keeps ordinary alpha geometry hard-intersecting. On the mutually
+    // exclusive FNV TallGrass route this register instead carries GRASS2000 WindData.
     float4 uSoftParticle;
 };
 
@@ -75,6 +78,49 @@ struct VSInput
     float3 aTangent     : TEXCOORD4;
     float3 aBitangent   : TEXCOORD5;
 };
+
+bool IsTallGrassMaterial(float packedState)
+{
+    return (((uint)round(packedState)) & 32u) != 0u;
+}
+
+bool IsFnvActiveAdtBaseMaterial(float packedState)
+{
+    return (((uint)round(packedState)) & 1024u) != 0u;
+}
+
+// PC-final package013 SLS2000.vso (active ID193/BSSM_ADT) transforms the directional light through
+// the authored T/B/N basis and normalizes that complete tangent-space vector per vertex. The viewer
+// starts with a world-space light, so remove only uniform placement scale; do not normalize the
+// three basis vectors independently.
+float3 ResolveFnvActiveAdtBaseLight(float3 tangent, float3 bitangent, float3 normal, float uniformScale)
+{
+    if (uniformScale <= 1e-8)
+    {
+        return 0.0.xxx;
+    }
+
+    float3 lightTs = float3(
+        dot(tangent, uSunDirIntensity.xyz),
+        dot(bitangent, uSunDirIntensity.xyz),
+        dot(normal, uSunDirIntensity.xyz)) / uniformScale;
+    float lengthSquared = dot(lightTs, lightTs);
+    if (!all(isfinite(lightTs)) || !isfinite(lengthSquared) || lengthSquared <= 1e-8)
+    {
+        return 0.0.xxx;
+    }
+
+    return normalize(lightTs);
+}
+
+float WrapTallGrassPhase(float phase)
+{
+    const float Pi = 3.14159265358979323846;
+    const float TwoPi = 6.28318530717958647692;
+    phase = fmod(phase + Pi, TwoPi);
+    if (phase < 0.0) phase += TwoPi;
+    return phase - Pi;
+}
 
 struct VSOutput
 {
@@ -94,11 +140,15 @@ struct VSOutput
     nointerpolation float4 vEffectFalloff : TEXCOORD12; // startAngle/stopAngle/startOp/stopOp
     nointerpolation float4 vEnvMap        : TEXCOORD13; // x = cube slot (<0 none), y = scale, z = smoothness, w = blend operation
     nointerpolation float4 vSoftParticle  : TEXCOORD14;
+    nointerpolation float vSpecularLodFade : TEXCOORD15;
+    float3 vFnvActiveAdtBaseLight : TEXCOORD16;
 };
 
 VSOutput main(VSInput input)
 {
     VSOutput o;
+    bool isTallGrass = IsTallGrassMaterial(uTextureState.z);
+    float tallGrassWindWeight = isTallGrass ? saturate(input.aVertexColor.a) : 0.0;
     float4 worldPos;
     if (uTextureState.y > 0.5)
     {
@@ -121,6 +171,20 @@ VSOutput main(VSInput input)
         // position (absolute when renderOrigin == 0). The prior post-multiply "-= uCameraOrigin" is gone.
         worldPos = mul(uWorld, float4(input.aPosition, 1.0));
     }
+
+    // The per-draw path uses a layout-preserving union: uSoftParticle is GRASS2000 WindData for
+    // an actual FNV GRAS placement. Apply displacement in WORLD XY after the object transform,
+    // and recover absolute phase XY through uCameraOrigin.
+    float3 relativePlacement = mul(uWorld, float4(0.0, 0.0, 0.0, 1.0)).xyz;
+    if (isTallGrass && uSoftParticle.z != 0.0)
+    {
+        float2 absolutePlacement = relativePlacement.xy + uCameraOrigin.xy;
+        float phase = WrapTallGrassPhase(
+            (absolutePlacement.x + absolutePlacement.y) / 128.0 + uSoftParticle.w);
+        float weightedOffset = sin(phase) * uSoftParticle.z *
+            tallGrassWindWeight * tallGrassWindWeight;
+        worldPos.xy += uSoftParticle.xy * weightedOffset;
+    }
     o.Position = mul(uViewProj, worldPos);
     o.vWorldPos = worldPos.xyz; // camera-relative world pos (matches the shader camera = 0 for fog/spec)
     // Uniform scale only — pass the normal through the world rotation (3x3 sub-matrix). For
@@ -136,8 +200,18 @@ VSOutput main(VSInput input)
     }
     o.vTexCoord = input.aTexCoord + uUvScroll.xy;
     o.vVertexColor = input.aVertexColor;
+    if (isTallGrass)
+    {
+        // Vertex alpha is wind weight only; diffuse texture alpha remains the sole cutout input.
+        o.vVertexColor.a = 1.0;
+    }
     o.vTangent = mul((float3x3)uWorld, input.aTangent);
     o.vBitangent = mul((float3x3)uWorld, input.aBitangent);
+    float activeAdtUniformScale = length(mul((float3x3)uWorld, float3(1.0, 0.0, 0.0)));
+    o.vFnvActiveAdtBaseLight = IsFnvActiveAdtBaseMaterial(uTextureState.z)
+        ? ResolveFnvActiveAdtBaseLight(
+            o.vTangent, o.vBitangent, o.vWorldNormal, activeAdtUniformScale)
+        : 0.0.xxx;
     o.vAlphaState = uAlphaState;
     o.vRenderState = uRenderState;
     o.vTextureState = uTextureState;
@@ -146,6 +220,7 @@ VSOutput main(VSInput input)
     o.vEffectTint = uEffectTint;
     o.vEffectFalloff = uEffectFalloff;
     o.vEnvMap = uEnvMap;
-    o.vSoftParticle = uSoftParticle;
+    o.vSoftParticle = isTallGrass ? 0.0 : uSoftParticle;
+    o.vSpecularLodFade = uUvScroll.z;
     return o;
 }

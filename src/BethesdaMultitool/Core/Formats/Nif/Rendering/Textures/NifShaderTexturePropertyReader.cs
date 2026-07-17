@@ -130,6 +130,12 @@ internal static class NifShaderTexturePropertyReader
             // (nif.xml), so it uses the identical classic texture-set layout.
             if (propBlock.TypeName is "BSShaderPPLightingProperty" or "Lighting30ShaderProperty")
             {
+                TryReadParallaxOcclusionData(
+                    data,
+                    nif,
+                    propBlock,
+                    out var parallaxMaxPasses,
+                    out var parallaxScale);
                 return new NifShaderTextureMetadata
                 {
                     PropertyType = propBlock.TypeName,
@@ -137,6 +143,8 @@ internal static class NifShaderTexturePropertyReader
                     ShaderFlags = shaderFlags,
                     ShaderFlags2 = shaderFlags2,
                     EnvMapScale = envMapScale,
+                    ParallaxMaxPasses = parallaxMaxPasses,
+                    ParallaxScale = parallaxScale,
                     TextureSlots = ReadTextureSetSlots(data, nif, propBlock)
                 };
             }
@@ -665,6 +673,35 @@ internal static class NifShaderTexturePropertyReader
         }
 
         return true;
+    }
+
+    /// <summary>
+    ///     Reads the two BS-version-25+ floats after refraction strength/fire period. PDB member
+    ///     names identify these as parallax-OCCLUSION data; simple SM3004 parallax ignores them.
+    /// </summary>
+    private static void TryReadParallaxOcclusionData(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo propBlock,
+        out float? maxPasses,
+        out float? scale)
+    {
+        maxPasses = null;
+        scale = null;
+        if (nif.BsVersion <= 24 ||
+            !TryReadShaderPropertyStart(data, propBlock, nif.IsBigEndian, out var pos, out var end) ||
+            pos + 40 > end)
+        {
+            return;
+        }
+
+        // Common shader payload (16), texture clamp (4), texture-set ref (4), refraction
+        // strength (4), and refraction fire period (4).
+        pos += 32;
+        var parsedMaxPasses = BinaryUtils.ReadFloat(data, pos, nif.IsBigEndian);
+        var parsedScale = BinaryUtils.ReadFloat(data, pos + 4, nif.IsBigEndian);
+        maxPasses = float.IsFinite(parsedMaxPasses) ? parsedMaxPasses : null;
+        scale = float.IsFinite(parsedScale) ? parsedScale : null;
     }
 
     private sealed record ClassicBsEffectShaderData(

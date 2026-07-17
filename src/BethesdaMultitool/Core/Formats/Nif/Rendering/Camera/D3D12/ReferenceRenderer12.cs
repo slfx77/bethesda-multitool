@@ -22,7 +22,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Camera.D3D12;
 ///     D3D12 placed-object renderer. Opaque/cutout references are batched by cached submesh
 ///     and rendered with instancing; blended/effect submeshes remain sorted back-to-front.
 /// </summary>
-internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
+internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 {
     // viewProj (64) + the 4 SpeedTree wind-v2 sway matrices (4 × 64) — see reference_instanced.vert.hlsl
     // PerFrame. The shadow pass keeps its own shorter PerFrame; its shader variant never reads the matrices.
@@ -30,8 +30,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private const uint PerDrawByteSize = 256;
     // 3 float4 (material) + uint4 (tex indices) + uint base + uint3 pad + float4 specular
     // + float4 camRight + float4 camUp (leaf billboard basis) + float4 wind
-    // + float4 effect tint + float4 effect falloff + float4 env map + float4 soft-particle = 208 bytes.
-    private const uint InstanceDrawByteSize = 208;
+    // + float4 effect tint + float4 effect falloff + float4 env map + float4 soft-particle
+    // + float4 TallGrass wind + float4 specular-LOD bounds + float4 specular-LOD params = 256 bytes.
+    private const uint InstanceDrawByteSize = 256;
     private const uint NoSceneDepth = 0xFFFFFFFFu;
     private const float FrustumCullMargin = 512f;
 
@@ -83,6 +84,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     // them from above. Separate from _blendedDraws, which defers to after the water pass.
     private readonly List<BlendedReferenceDraw> _depthWritingBlendDraws = new(64);
     private GrassDistanceEnvelope _grassDistanceEnvelope;
+    private ClassicSpecularLodProfile _classicSpecularLodProfile;
+    private bool _tallGrassWindSupported;
+    private readonly HashSet<float> _tallGrassWaveMultipliers = [];
 
     // Sun-shadow pass replay list: one entry per instanced opaque draw recorded this frame (VB/IB
     // views + the frame's ring-buffer InstanceDraw-CB / instance-SRV GPU addresses), captured at
@@ -101,7 +105,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
 
     private readonly record struct ShadowDraw(
         VertexBufferView VertexBufferView, IndexBufferView IndexBufferView, int IndexCount,
-        ulong PerDrawCbAddress, ulong InstanceSrvAddress, int DrawCount, bool AlphaTested);
+        ulong PerDrawCbAddress, ulong InstanceSrvAddress, int DrawCount, bool AlphaTested,
+        bool UsesTallGrassWind);
 
     /// <summary>Bumped whenever the opaque batches are REBUILT (a new cull/build pass ran, i.e.
     /// the drawable content may have changed). Part of the shadow map's cache key, so streamed-in
@@ -185,6 +190,8 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private Vector4 _wind;
     private float _windStrength;
     private readonly Core.Formats.SpeedTree.SpeedTreeWindRig _windRig = new();
+    private readonly Core.Formats.SpeedTree.SpeedTreeWindRig _captureWindRig = new();
+    private bool _captureWindActive;
 
     // NIF animation clock (seconds), captured from the SetWind timeSeconds the host already sends
     // every frame. Drives UV-scroll offsets (NiUVController) and the CPU skinner's keyframe pose.
@@ -192,10 +199,28 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     private double _animationClockSeconds;
     private readonly Animation.CpuMeshSkinner12 _skinner = new();
 
+    private bool _animationsEnabled = true;
+
     /// <summary>Master switch for NIF keyframe/UV/physics-lite playback (GUI "Animations" toggle).
     /// Off ⇒ UV offsets stay (0,0), the skinner clears its overrides, and sway matrices remain at
-    /// the byte-identical static rest pose.</summary>
-    public bool AnimationsEnabled { get; set; } = true;
+    /// the byte-identical static rest pose. Each actual transition invalidates the batch-content
+    /// version once so a cached sun-shadow map refreshes into or out of animated rest.</summary>
+    public bool AnimationsEnabled
+    {
+        get => _animationsEnabled;
+        set
+        {
+            if (!ReferenceAnimationToggle.TryApply(ref _animationsEnabled, value))
+            {
+                return;
+            }
+
+            unchecked
+            {
+                BatchContentVersion++;
+            }
+        }
+    }
 
     /// <summary>
     ///     Temporary opt-in legacy live-particle owner. Defaults from
@@ -383,6 +408,32 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public global::BethesdaMultitool.WorldRenderStats LastStats { get; } = new();
     public bool DetailedProfilingEnabled { get; set; }
     public bool ShowInitiallyDisabled { get; set; }
+    private int _placedLightCount;
+    private bool _fnvActiveAdtLightingEnabled;
+    private bool _fnvProjectedSunShadowActive;
+    private bool _fnvActiveAdtFogEnabled;
+
+    /// <summary>
+    ///     Sets the number of point lights uploaded to t9 for the current scene pass. Active retail
+    ///     ID193/BSSM_ADT is exact only at zero: any positive world list fails closed because retail
+    ///     associates and orders non-shadow lights per geometry rather than camera-globally.
+    /// </summary>
+    public void SetPlacedLightCount(int count) => _placedLightCount = Math.Max(count, 0);
+
+    /// <summary>
+    ///     Supplies the global gates for the bounded active ID193/BSSM_ADT path. SLS2000 has no
+    ///     projected-shadow sampler, and the viewer has not yet reproduced its per-vertex fog
+    ///     interpolator, so either active feature selects the combined fallback.
+    /// </summary>
+    public void SetFnvActiveAdtBaseState(
+        bool lightingEnabled,
+        bool projectedSunShadowActive,
+        bool fogEnabled)
+    {
+        _fnvActiveAdtLightingEnabled = lightingEnabled;
+        _fnvProjectedSunShadowActive = projectedSunShadowActive;
+        _fnvActiveAdtFogEnabled = fogEnabled;
+    }
 
     /// <summary>
     ///     Selects the R32 scene-depth SRV used by eligible effects in the next deferred blended
@@ -430,7 +481,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     public bool ShowImposters { get; set; }
 
     // Per-category visibility filter. References whose RenderableReference.Category is in this set are
-    // culled (e.g. activators off by default in the 3D view; the 2D legend's hidden set for the
+    // culled (e.g. activators hidden by the user in the 3D view; the 2D legend's hidden set for the
     // top-down overlay). Mutated only via SetHiddenCategories, which invalidates the cull cache.
     private readonly HashSet<PlacedObjectCategory> _hiddenCategories = [];
 
@@ -489,7 +540,9 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         _renderCache = renderCache;
         _cells = cells;
         _spatialIndex = spatialIndex;
+        _tallGrassWindSupported = FnvTallGrassWind.IsSupported(renderCache.Game);
         _grassDistanceEnvelope = GrassScatterProfile.ForGame(renderCache.Game).DistanceEnvelope;
+        _classicSpecularLodProfile = ClassicSpecularLodProfile.ForGame(renderCache.Game);
         if (_grassDistanceEnvelope.Enabled)
         {
             Core.Diagnostics.Logger.Instance.Info(
@@ -517,6 +570,109 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             "ReferenceRenderer12: {0} distinct mesh keys (paths × re-skin variants) → mesh LRU capacity {1}.",
             uniqueMeshKeys, plannedCapacity);
         _meshCache.SetMeshCapacity(plannedCapacity);
+    }
+
+    /// <summary>
+    ///     Applies the bounded active-retail ID193/BSSM_ADT identity at submission time. The decoded
+    ///     PS1-family mode is reused only as a conservative ordinary-static material classifier;
+    ///     no dormant SLS1009/SLS1013 pass is activated or counted.
+    /// </summary>
+    private Vector4 ResolveTextureState(CachedSubmesh12 submesh)
+    {
+        var state = submesh.TextureState;
+        if (_renderCache?.Game == Core.Games.BethesdaGame.FalloutNewVegas)
+        {
+            var eligibility = ResolveFnvActiveAdtBaseEligibility(submesh);
+            state.Z = FnvActiveAdtBasePolicy.ApplyRuntimeFlags(
+                eligibility,
+                (uint)MathF.Round(state.Z));
+        }
+        return state;
+    }
+
+    private FnvActiveAdtBaseEligibility ResolveFnvActiveAdtBaseEligibility(CachedSubmesh12 submesh) =>
+        new(
+            _renderCache?.Game ?? Core.Games.BethesdaGame.Unknown,
+            _fnvActiveAdtLightingEnabled,
+            _placedLightCount,
+            _fnvProjectedSunShadowActive,
+            _fnvActiveAdtFogEnabled,
+            submesh.AlphaBlend,
+            submesh.AlphaTest,
+            submesh.MaterialAlpha,
+            submesh.MaterialAlphaController is not null,
+            submesh.ClassicBasicShaderMode);
+
+    private string? ResolveFnvActiveAdtBaseFallbackReason()
+    {
+        if (_renderCache?.Game != Core.Games.BethesdaGame.FalloutNewVegas)
+        {
+            return null;
+        }
+
+        if (!_fnvActiveAdtLightingEnabled)
+        {
+            return "lighting-disabled";
+        }
+
+        if (_placedLightCount > 0)
+        {
+            return "per-geometry-local-light-selection-unrecovered";
+        }
+
+        if (_fnvProjectedSunShadowActive)
+        {
+            return "projected-shadow-permutation-unrecovered";
+        }
+
+        return _fnvActiveAdtFogEnabled
+            ? "per-vertex-fog-interpolator-unrecovered"
+            : null;
+    }
+
+    /// <summary>
+    ///     Records color-pass submissions that selected a recovered route or hit its explicit
+    ///     fail-closed fallback. The decoded mode alone is not sufficient: BS34 assets are shared
+    ///     with Fallout 3, where <see cref="ResolveTextureState" /> intentionally leaves both route
+    ///     and FNV fallback telemetry disabled.
+    /// </summary>
+    private void ObserveFnvActiveAdtBaseDraw(
+        CachedSubmesh12 submesh,
+        Vector4 textureState,
+        int instanceCount)
+    {
+        if (instanceCount <= 0 ||
+            _renderCache?.Game != Core.Games.BethesdaGame.FalloutNewVegas)
+        {
+            return;
+        }
+
+        var flags = (uint)MathF.Round(textureState.Z);
+        if (submesh.ClassicBasicShaderMode == FnvClassicBasicShaderMode.None)
+        {
+            return;
+        }
+
+        if ((flags & FnvActiveAdtBasePolicy.RuntimeActiveAdtFlag) == 0)
+        {
+            LastStats.ReferenceFnvActiveAdtBaseFallbackDraws++;
+            LastStats.ReferenceFnvActiveAdtBaseFallbackInstances += instanceCount;
+            LastStats.ReferenceFnvClassicBasicFallbackDraws++;
+            LastStats.ReferenceFnvClassicBasicFallbackInstances += instanceCount;
+            var reason = ResolveFnvActiveAdtBaseFallbackReason()
+                ?? "outside-active-adt-base-subset";
+            LastStats.ReferenceFnvActiveAdtBaseFallbackReason ??= reason;
+            LastStats.ReferenceFnvClassicBasicFallbackReason ??= reason;
+            return;
+        }
+
+        LastStats.ReferenceFnvActiveAdtBaseDraws++;
+        LastStats.ReferenceFnvActiveAdtBaseInstances += instanceCount;
+        if ((flags & FnvActiveAdtBasePolicy.RuntimeActiveAdtVertexColorFlag) != 0)
+        {
+            LastStats.ReferenceFnvActiveAdtBaseVertexColorDraws++;
+            LastStats.ReferenceFnvActiveAdtBaseVertexColorInstances += instanceCount;
+        }
     }
 
     // O(total placements), one-time per worldspace load — negligible next to the rest of load.
@@ -586,19 +742,39 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     wind timers, ported in <see cref="Core.Formats.SpeedTree.SpeedTreeWindRig" />). The
     ///     shader-facing uWind packs (rockAmount, rockPhase, rustleAmount, rustlePhase) — both
     ///     engine <c>RockParams.z</c>/<c>RustleParams.z</c> scalars are constructor-1.0, so they
-    ///     need no uniform. <paramref name="direction" /> is unused by the engine model (the
-    ///     oscillators are axis-aligned; kept for signature stability); <paramref name="strength" />
-    ///     = the weather wind-speed byte / 255 (0 = perfectly static);
+    ///     need no uniform. <paramref name="direction" /> is unused by both recovered models
+    ///     (TallGrass uses fixed world +Y), but remains for signature stability and future consumers;
+    ///     <paramref name="strength" /> = the weather wind-speed byte / 255 (0 is SpeedTree rest;
+    ///     TallGrass still applies its recovered minimum magnitude);
     ///     <paramref name="timeSeconds" /> the animation clock. Call each frame before
     ///     <see cref="Render(Matrix4x4, VisibilityCylinder, bool, Matrix4x4?, Vector3, CullCameraPose?, Vector3?)" />.
     /// </summary>
     public void SetWind(Vector2 direction, float strength, float timeSeconds)
     {
         _ = direction;
-        _windStrength = Math.Clamp(strength, 0f, 1f);
-        _animationClockSeconds = timeSeconds;
-        _windRig.Tick(_windStrength, timeSeconds);
+        _captureWindActive = false;
+        _windStrength = float.IsFinite(strength) ? Math.Clamp(strength, 0f, 1f) : 0f;
+        _animationClockSeconds = float.IsFinite(timeSeconds) ? timeSeconds : 0f;
+        _windRig.Tick(_windStrength, (float)_animationClockSeconds);
         _wind = new Vector4(_windRig.RockAmount, _windRig.RockPhase, _windRig.RustleAmount, _windRig.RustlePhase);
+    }
+
+    /// <summary>
+    ///     Selects a deterministic profiler-capture pose without mutating the live history-driven wind
+    ///     rig. The capture rig replays constant current wind from rest at its canonical fixed cadence.
+    /// </summary>
+    public void SetWindForCapture(Vector2 direction, float strength, float timeSeconds)
+    {
+        _ = direction;
+        _windStrength = float.IsFinite(strength) ? Math.Clamp(strength, 0f, 1f) : 0f;
+        _animationClockSeconds = float.IsFinite(timeSeconds) ? timeSeconds : 0f;
+        _captureWindRig.ResetAndReplayConstantWind(_windStrength, (float)_animationClockSeconds);
+        _captureWindActive = true;
+        _wind = new Vector4(
+            _captureWindRig.RockAmount,
+            _captureWindRig.RockPhase,
+            _captureWindRig.RustleAmount,
+            _captureWindRig.RustlePhase);
     }
 
     /// <summary>
@@ -607,7 +783,10 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     ///     defaults). Idempotent; call whenever the loaded game is known.
     /// </summary>
     public void SetWindProfile(Core.Formats.SpeedTree.SpeedTreeWindProfile profile)
-        => _windRig.Profile = profile;
+    {
+        _windRig.Profile = profile;
+        _captureWindRig.Profile = profile;
+    }
 
     // IWorldRenderer entry point — draws opaque + blended inline (no deferral). Used by the 2D
     // top-down overlay, which has no water pass.
@@ -752,13 +931,45 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         ReferencesDrawnLastFrame = 0;
         LastFrameDrawsTruncated = 0;
         LastStats.Reset();
+        _tallGrassWaveMultipliers.Clear();
+        var frameWindRig = _captureWindActive ? _captureWindRig : _windRig;
         LastStats.ReferenceSpeedTreeWindStrength = _windStrength;
-        LastStats.ReferenceSpeedTreeRockAmount = _windRig.RockAmount;
-        LastStats.ReferenceSpeedTreeRockPhase = _windRig.RockPhase;
-        LastStats.ReferenceSpeedTreeRustleAmount = _windRig.RustleAmount;
-        LastStats.ReferenceSpeedTreeRustlePhase = _windRig.RustlePhase;
+        LastStats.ReferenceSpeedTreeRockAmount = frameWindRig.RockAmount;
+        LastStats.ReferenceSpeedTreeRockPhase = frameWindRig.RockPhase;
+        LastStats.ReferenceSpeedTreeRustleAmount = frameWindRig.RustleAmount;
+        LastStats.ReferenceSpeedTreeRustlePhase = frameWindRig.RustlePhase;
         LastStats.ReferenceSpeedTreeAnimationSeconds = (float)_animationClockSeconds;
         LastStats.ReferenceSpeedTreeRuntimeLodEnabled = SpeedTreeRuntimeLod.Enabled;
+        LastStats.ReferenceTallGrassWindSupported = _tallGrassWindSupported;
+        LastStats.ReferencePlacedLightCount = _placedLightCount;
+        var isFalloutNewVegas =
+            _renderCache?.Game == Core.Games.BethesdaGame.FalloutNewVegas;
+        // The dormant PS1 route remains off even when the active SLS2000 subset is enabled.
+        LastStats.ReferenceFnvClassicBasicLightingEnabled = false;
+        LastStats.ReferenceFnvActiveAdtBaseEnabled =
+            isFalloutNewVegas &&
+            _fnvActiveAdtLightingEnabled &&
+            _placedLightCount == 0 &&
+            !_fnvProjectedSunShadowActive &&
+            !_fnvActiveAdtFogEnabled;
+        var activeAdtFallbackReason = ResolveFnvActiveAdtBaseFallbackReason();
+        LastStats.ReferenceFnvActiveAdtBaseFallbackReason = activeAdtFallbackReason;
+        // Preserve the historical candidate/fallback diagnostic keys for existing traces while
+        // naming the actually submitted route with the active-ADT counters above.
+        LastStats.ReferenceFnvClassicBasicFallbackReason = activeAdtFallbackReason;
+        if (_tallGrassWindSupported)
+        {
+            LastStats.ReferenceTallGrassAnimationsEnabled = AnimationsEnabled;
+            LastStats.ReferenceTallGrassNormalizedStrength = _windStrength;
+            LastStats.ReferenceTallGrassMagnitudeWorldUnits = AnimationsEnabled
+                ? FnvTallGrassWind.ComputeWindMagnitude(_windStrength)
+                : 0f;
+            LastStats.ReferenceTallGrassDirectionX = Vector2.UnitY.X;
+            LastStats.ReferenceTallGrassDirectionY = Vector2.UnitY.Y;
+            LastStats.ReferenceTallGrassAnimationSeconds = AnimationsEnabled
+                ? (float)_animationClockSeconds
+                : 0f;
+        }
         // Hand the cache its per-frame upload-time allowance BEFORE ResetFrameStats snapshots it.
         _meshCache.UploadMillisecondsPerFrame = MaxUploadMillisecondsPerFrame;
         _meshCache.ResetFrameStats();
@@ -785,7 +996,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             var windDst = (Matrix4x4*)((byte*)perFrameAlloc.CpuPtr + 64);
             for (var w = 0; w < 4; w++)
             {
-                windDst[w] = _windRig.WindMatrix(w);
+                windDst[w] = frameWindRig.WindMatrix(w);
             }
         }
         _deferredPerFrameCbvAddress = perFrameAlloc.GpuAddress;
@@ -951,7 +1162,7 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         culled++;
                         continue;
                     }
-                    // Per-category visibility (activators off by default; 2D legend toggles for the
+                    // Per-category visibility (user-selected category toggles; 2D legend toggles for the
                     // top-down overlay). The set is empty in the common case so this is one HashSet
                     // count check per candidate.
                     if (_hiddenCategories.Count > 0 && _hiddenCategories.Contains(r.Category))
@@ -1214,11 +1425,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         Vector3.DistanceSquared(worldCenter, frameCameraPosition),
                         sub.AlphaState,
                         sub.RenderState,
-                        sub.TextureState,
                         sub.Specular,
                         r.WorldMatrix,
                         r.FormId,
-                        r.IsGrass);
+                        r.IsGrass,
+                        r.GrassWaveMultiplier);
                     // Depth-writing blend foliage (e.g. NVSeaPlant02) draws inline BEFORE the water pass so
                     // water occludes it from above; everything else defers to after water. Billboards keep
                     // the deferred path — they need per-frame camera-facing matrices and aren't occluders.
@@ -1241,10 +1452,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     (false, true) => _pipelines.OpaqueBackDecalPso,
                     (false, false) => _pipelines.OpaqueBackPso
                 };
+                var usesGrassDistanceEnvelope =
+                    GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope);
+                var usesTallGrassWind = _tallGrassWindSupported && r.IsGrass && sub.IsTallGrass;
                 var batch = _opaqueBatches.GetOrCreate(
                     sub,
                     pso,
-                    GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope));
+                    usesGrassDistanceEnvelope,
+                    usesTallGrassWind,
+                    r.GrassWaveMultiplier);
                 // Only the world matrix (+ its cull sphere) is per-instance. Material/texture state
                 // (AlphaState/RenderState/TextureState + bindless TexIndices) is identical
                 // across the whole batch — it comes from the submesh, which IS the batch key
@@ -1305,10 +1521,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 }
 
                 var pso = sub.DoubleSided ? _pipelines.OpaqueDoublePso : _pipelines.OpaqueBackPso;
+                var usesGrassDistanceEnvelope =
+                    GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope);
+                var usesTallGrassWind = _tallGrassWindSupported && r.IsGrass && sub.IsTallGrass;
                 var batch = _opaqueBatches.GetOrCreate(
                     sub,
                     pso,
-                    GrassDistanceCullPolicy.UsesEnvelope(r.IsGrass, in _grassDistanceEnvelope));
+                    usesGrassDistanceEnvelope,
+                    usesTallGrassWind,
+                    r.GrassWaveMultiplier);
                 batch.ShadowOnlyInstances.Add(relWorldMatrix);
                 if (sub.PhysicsLiteSway is not null)
                 {
@@ -1522,6 +1743,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             cmd.IASetVertexBuffers(0, draw.VertexBufferView);
             cmd.IASetIndexBuffer(draw.IndexBufferView);
             cmd.DrawIndexedInstanced((uint)draw.IndexCount, (uint)draw.DrawCount, 0, 0, 0);
+            if (draw.UsesTallGrassWind)
+            {
+                LastStats.ReferenceTallGrassShadowDraws++;
+                LastStats.ReferenceTallGrassShadowInstances += draw.DrawCount;
+            }
         }
 
         return true;
@@ -1898,13 +2124,15 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         Math.Max(LastStats.ReferenceSpeedTreeMaximumLod, metadata.Level);
                 }
             }
+            var textureState = ResolveTextureState(sub);
             var instanceDraw = new InstanceDrawConstants(
                 sub.AlphaState,
                 sub.RenderState,
-                sub.TextureState,
+                textureState,
                 new TexIndexQuad(
                     sub.Diffuse.BindlessIndex, sub.Normal.BindlessIndex,
-                    sub.SpecularMap?.BindlessIndex ?? 0,
+                    sub.ClassicParallaxHeightMap?.BindlessIndex ??
+                    sub.ClassicEnvMask?.BindlessIndex ?? sub.SpecularMap?.BindlessIndex ?? 0,
                     sub.GradientMap?.BindlessIndex ?? sub.Lighting30GlowMap?.BindlessIndex ?? 0),
                 drawStartInstance,
                 UvOffsetU: WrapUv(sub.UvScrollVelocity.X, UvScrollClock),
@@ -1925,14 +2153,20 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                         _wind.Z,
                         _wind.W * sub.SpeedTreeWindSpeeds.Y),
                 EffectTint: new Vector4(sub.EffectTint, sub.HasEffectFalloff ? 1f : 0f),
-                // The constant layout was exactly 208 bytes before Lighting30. Classic PP lighting
-                // and BGEM/NoLighting falloff are mutually exclusive; TextureState bit 4 tells the
-                // PS when this slot carries (raw emission rgb, material multiplier) instead.
+                // Classic PP lighting and BGEM/NoLighting falloff are mutually exclusive;
+                // TextureState bit 4 tells the PS when this existing slot carries
+                // (raw emission rgb, material multiplier) instead.
                 EffectFalloff: sub.HasEffectFalloff ? sub.EffectFalloffParams : sub.Lighting30Emission,
                 // Re-read every frame (like the bindless indices) so a cube promoted after the
                 // batch froze still lands — EnvMapState flips from −1 to the slot on residency.
                 EnvMap: sub.EnvMapState,
-                SoftParticle: Vector4.Zero);
+                SoftParticle: Vector4.Zero,
+                TallGrassWind: BuildTallGrassWindConstants(
+                    batchState.UsesTallGrassWind,
+                    batchState.GrassWaveMultiplier),
+                SpecularLodBounds: new Vector4(sub.LocalBoundsCenter, sub.LocalBoundsRadius),
+                SpecularLodParams: _classicSpecularLodProfile.ShaderParameters(
+                    specularEligible: sub.Specular.W > 0f));
             if (!_ringBuffer.TryAllocate(frameIndex, InstanceDrawByteSize, out var instanceDrawAlloc, GpuRingBuffer12.CbAlignment))
             {
                 LastFrameDrawsTruncated += batch.Count;
@@ -1949,6 +2183,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             {
                 // The main scene draw excludes the shadow-only tail of the instance range.
                 cmd.DrawIndexedInstanced((uint)batchState.Submesh.IndexCount, (uint)drawCount, 0, 0, 0);
+                ObserveFnvActiveAdtBaseDraw(sub, textureState, drawCount);
+                if (batchState.UsesTallGrassWind)
+                {
+                    LastStats.ReferenceTallGrassInstancedDraws++;
+                    LastStats.ReferenceTallGrassInstancedInstances += drawCount;
+                    ObserveTallGrassWaveMultiplier(batchState.GrassWaveMultiplier);
+                }
             }
             if (_shadowCaptureArmed && !sub.IsDecal && drawCount + shadowCount > 0)
             {
@@ -1959,7 +2200,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                 _shadowDraws.Add(new ShadowDraw(
                     sub.EffectiveVertexBufferView, sub.IndexBufferView, sub.IndexCount,
                     instanceDrawAlloc.GpuAddress, boundInstanceAddress, drawCount + shadowCount,
-                    sub.AlphaTest));
+                    sub.AlphaTest, batchState.UsesTallGrassWind));
+                if (batchState.UsesTallGrassWind)
+                {
+                    ObserveTallGrassWaveMultiplier(batchState.GrassWaveMultiplier);
+                }
                 if (sub.IsLeafBillboard &&
                     sub.SpeedTreeLod?.Component != SpeedTreeLodComponent.Billboard &&
                     (_wind.X != 0f || _wind.Z != 0f))
@@ -1979,6 +2224,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
                     // Reuse the host's general animated-mesh shadow contract: physics-lite changes
                     // only per-instance matrices, but it has the same requirement that a cached sun
                     // map be refreshed every frame while the GUI Animations switch is on.
+                    ShadowDrawsIncludeAnimatedMeshes = true;
+                }
+                if (AnimationsEnabled && batchState.UsesTallGrassWind)
+                {
+                    // TallGrass changes only in the VS, just like physics-lite changes only its
+                    // instance matrix. Its recovered minimum amplitude remains nonzero even at
+                    // weather strength zero, so the cached sun map must always advance while enabled.
                     ShadowDrawsIncludeAnimatedMeshes = true;
                 }
             }
@@ -2209,10 +2461,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         var alphaState = draw.AlphaState;
         if (draw.Submesh.MaterialAlphaController is { } alphaController)
         {
-            var sampledAlpha = alphaController.Sample(
-                AnimationsEnabled ? (float)_animationClockSeconds : 0f);
-            alphaState.Z = alphaController.Apply(
-                alphaState.Z, (float)_animationClockSeconds, AnimationsEnabled);
+            var sampledAlpha = alphaController.ResolveTargetAlpha(
+                (float)_animationClockSeconds, AnimationsEnabled);
+            // NiAlphaController::Update writes the interpolator result directly into the target
+            // NiMaterialProperty alpha field. Do not multiply by the NIF's initial field value:
+            // SandDust02's sStorm03/sStorm04 materials intentionally initialize it to zero.
+            alphaState.Z = sampledAlpha;
             if (LastStats.ReferenceMaterialAlphaControllerDraws == 0)
             {
                 LastStats.ReferenceMaterialAlphaControllerMinimum = sampledAlpha;
@@ -2229,18 +2483,37 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             LastStats.ReferenceMaterialAlphaControllerDraws++;
         }
 
+        var usesTallGrassWind = _tallGrassWindSupported &&
+                                draw.IsGrass && draw.Submesh.IsTallGrass;
+        var tallGrassWind = BuildTallGrassWindConstants(
+            usesTallGrassWind,
+            draw.GrassWaveMultiplier);
+        var specularLodFade = ClassicSpecularLodFade.Compute(
+            in _classicSpecularLodProfile,
+            draw.Submesh.LocalBoundsCenter,
+            draw.Submesh.LocalBoundsRadius,
+            draw.World,
+            _frameCameraPosition - _frameRenderOrigin,
+            specularEligible: draw.Specular.W > 0f);
+        // Blended batches can be reused across frames. Resolve the runtime route here so a
+        // lighting or placed-light transition cannot retain stale classic-basic shader flags.
+        var textureState = ResolveTextureState(draw.Submesh);
         var perDraw = new PerDrawConstants
         {
             World = draw.World,
             AlphaState = alphaState,
             RenderState = draw.RenderState,
-            TextureState = draw.TextureState,
+            TextureState = textureState,
             // Bindless TexIndices on the blended draw path. Same convention as the instanced
-            // path: .x = diffuse, .y = normal, .z = specular mask, .w = gradient palette OR the
-            // classified Lighting30 glow map (TextureState bits disambiguate them).
+            // path: .x = diffuse, .y = normal, .z = FO4 specular mask OR classic environment mask
+            // OR classic simple-parallax height map,
+            // .w = gradient palette OR the classified Lighting30 glow map. TextureState bits
+            // disambiguate both unions.
             TexIndices = new TexIndexQuad(
                 draw.Submesh.Diffuse.BindlessIndex,
                 draw.Submesh.Normal.BindlessIndex,
+                draw.Submesh.ClassicParallaxHeightMap?.BindlessIndex ??
+                draw.Submesh.ClassicEnvMask?.BindlessIndex ??
                 draw.Submesh.SpecularMap?.BindlessIndex ?? 0,
                 draw.Submesh.GradientMap?.BindlessIndex ??
                 draw.Submesh.Lighting30GlowMap?.BindlessIndex ?? 0),
@@ -2256,8 +2529,12 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             EnvMap = draw.Submesh.EnvMapState,
             UvScroll = new Vector4(
                 WrapUv(draw.Submesh.UvScrollVelocity.X, UvScrollClock),
-                WrapUv(draw.Submesh.UvScrollVelocity.Y, UvScrollClock), 0f, 0f),
-            SoftParticle = BuildSoftParticleConstants(draw.Submesh, sceneDepthSampled),
+                WrapUv(draw.Submesh.UvScrollVelocity.Y, UvScrollClock), specularLodFade, 0f),
+            // TallGrass and soft-particle material routes are mutually exclusive. The VS consumes
+            // this union as WindData and zeroes vSoftParticle before the reference PS sees it.
+            SoftParticle = usesTallGrassWind
+                ? tallGrassWind
+                : BuildSoftParticleConstants(draw.Submesh, sceneDepthSampled),
         };
         if (!ReferenceEquals(currentPso, pso))
         {
@@ -2306,6 +2583,13 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         }
         cmd.IASetIndexBuffer(indexBufferView);
         cmd.DrawIndexedInstanced((uint)effectiveIndexCount, 1, 0, 0, 0);
+        ObserveFnvActiveAdtBaseDraw(draw.Submesh, textureState, 1);
+        if (usesTallGrassWind)
+        {
+            LastStats.ReferenceTallGrassDirectDraws++;
+            LastStats.ReferenceTallGrassDirectInstances++;
+            ObserveTallGrassWaveMultiplier(draw.GrassWaveMultiplier);
+        }
         drawCallMs += ElapsedMilliseconds(drawStarted);
     }
 
@@ -2459,6 +2743,62 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
     }
 
     /// <summary>
+    ///     GRASS2000 WindData: xy = fixed world +Y; z = lerp of the recovered 5/125 setting defaults
+    ///     by the weather wind fraction; w = wrapped time phase in radians. Retail uses
+    ///     BSShaderManager's default timer, whose units remain unproven; this renderer adapts its
+    ///     existing animation-clock value directly. The raw GRAS field is a direct multiplier,
+    ///     never a reciprocal. Disabled animations rest.
+    /// </summary>
+    private Vector4 BuildTallGrassWindConstants(bool enabled, float grassWaveMultiplier)
+    {
+        if (!enabled)
+        {
+            return Vector4.Zero;
+        }
+
+        return new Vector4(
+            Vector2.UnitY,
+            AnimationsEnabled ? FnvTallGrassWind.ComputeWindMagnitude(_windStrength) : 0f,
+            FnvTallGrassWind.ComputeTimePhaseRadians(
+                AnimationsEnabled ? _animationClockSeconds : 0.0,
+                grassWaveMultiplier));
+    }
+
+    private void ObserveTallGrassWaveMultiplier(float grassWaveMultiplier)
+    {
+        var multiplier = FnvTallGrassWind.SanitizeWaveMultiplier(grassWaveMultiplier);
+        if (multiplier == 0f)
+        {
+            return;
+        }
+
+        var phase = FnvTallGrassWind.ComputeTimePhaseRadians(
+            AnimationsEnabled ? _animationClockSeconds : 0.0,
+            multiplier);
+        if (_tallGrassWaveMultipliers.Count == 0)
+        {
+            LastStats.ReferenceTallGrassWaveMultiplierMinimum = multiplier;
+            LastStats.ReferenceTallGrassWaveMultiplierMaximum = multiplier;
+            LastStats.ReferenceTallGrassTemporalPhaseRadiansMinimum = phase;
+            LastStats.ReferenceTallGrassTemporalPhaseRadiansMaximum = phase;
+        }
+        else
+        {
+            LastStats.ReferenceTallGrassWaveMultiplierMinimum = Math.Min(
+                LastStats.ReferenceTallGrassWaveMultiplierMinimum, multiplier);
+            LastStats.ReferenceTallGrassWaveMultiplierMaximum = Math.Max(
+                LastStats.ReferenceTallGrassWaveMultiplierMaximum, multiplier);
+            LastStats.ReferenceTallGrassTemporalPhaseRadiansMinimum = Math.Min(
+                LastStats.ReferenceTallGrassTemporalPhaseRadiansMinimum, phase);
+            LastStats.ReferenceTallGrassTemporalPhaseRadiansMaximum = Math.Max(
+                LastStats.ReferenceTallGrassTemporalPhaseRadiansMaximum, phase);
+        }
+
+        _tallGrassWaveMultipliers.Add(multiplier);
+        LastStats.ReferenceTallGrassWaveMultiplierDistinctCount = _tallGrassWaveMultipliers.Count;
+    }
+
+    /// <summary>
     ///     Per-draw scene-depth contract. Only policy-approved effects get a depth slot; ordinary
     ///     transparency keeps the read-only DSV's exact hardware test. Positive falloff fades
     ///     alpha, while negative falloff fades RGB (multiplicative neutrality is selected from
@@ -2482,90 +2822,6 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
             _deferredSceneDepthFar,
             signedFalloff);
     }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PerDrawConstants
-    {
-        public Matrix4x4 World;
-        public Vector4 AlphaState;
-        public Vector4 RenderState;
-        public Vector4 TextureState;
-        // Bindless TexIndices for the (non-instanced) blended draw path. Kept here so the
-        // PS interface stays uniform (it expects vTexIndices regardless of which VS produced it).
-        public TexIndexQuad TexIndices;
-        // Sun specular term: xyz = tint, w = Phong exponent (0 = no specular). Matches the uSpecular field
-        // in reference.vert.hlsl.
-        public Vector4 Specular;
-        // Camera world-space right/up for per-card leaf billboards (baked particle clouds on the blended
-        // path). Only read when TextureState.y marks a leaf submesh.
-        public Vector4 CameraRight;
-        public Vector4 CameraUp;
-        // BGEM effect terms (uEffectTint / uEffectFalloff): rgb tint + falloff-enabled flag in .w,
-        // then the |N·V| opacity ramp params. For classic PP Lighting30 (TextureState bit 4), the
-        // mutually-exclusive EffectFalloff slot carries raw emission rgb + material multiplier.
-        public Vector4 EffectTint;
-        public Vector4 EffectFalloff;
-        // FO4 cubemap environment mapping (uEnvMap): x = cube bindless slot (−1 until the cube
-        // texture is resident), y = envMapScale, z = material smoothness, w = blend operation.
-        public Vector4 EnvMap;
-        // uUvScroll: xy = fractional UV phase for scrolled materials (NiUVController — waterfalls
-        // draw on this blended path), zw unused.
-        public Vector4 UvScroll;
-        // uSoftParticle: encoded depth SRV slot/view kind, near/far, signed falloff. Total = 256 bytes.
-        public Vector4 SoftParticle;
-    }
-
-    /// <summary>
-    ///     Per-batch (per <c>DrawIndexedInstanced</c>) constants for the instanced opaque path,
-    ///     matching the <c>InstanceDraw</c> cbuffer in <c>reference_instanced.vert.hlsl</c>.
-    ///     Material/texture state is identical across a batch (it comes from the submesh, the
-    ///     batch key), so it is uploaded once here instead of per instance. <see cref="InstanceBase" />
-    ///     is the start offset of this batch's world matrices inside the shared instance buffer.
-    ///     `.x` of <see cref="TexIndices" /> is the diffuse bindless slot, `.y` the normal slot.
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential)]
-    private readonly record struct InstanceDrawConstants(
-        Vector4 AlphaState,
-        Vector4 RenderState,
-        Vector4 TextureState,
-        TexIndexQuad TexIndices,
-        uint InstanceBase,
-        // uUvScroll: fractional UV phase for scrolled materials (NiUVController — waterfalls, lava).
-        // Occupies what were two padding uints; writers that never fill them leave 0 = no scroll.
-        // Later append-only fields bring the current layout to 208 bytes (see SoftParticle below).
-        float UvOffsetU = 0,
-        float UvOffsetV = 0,
-        // uWindMatrixValid: nonzero when this frame's PerFrame CB carries live wind-v2 sway matrices.
-        // Writers that never upload them leave it 0 and the shader's sway path stays inert.
-        uint WindMatrixValid = 0,
-        // 1A — sun specular term (xyz = tint, w = Phong exponent; 0 = none). Matches the uSpecular field
-        // in reference_instanced.vert.hlsl.
-        Vector4 Specular = default,
-        // Camera world-space right/up for per-card leaf billboards (uCameraRight/uCameraUp).
-        // Identical across every batch in a frame; only read by leaf submeshes.
-        Vector4 CameraRight = default,
-        Vector4 CameraUp = default,
-        // SpeedTree wind (uWind = rock amount/phase, rustle amount/phase).
-        Vector4 Wind = default,
-        // BGEM effect terms (uEffectTint / uEffectFalloff), or the mutually-exclusive classic
-        // Lighting30 emission tuple selected by TextureState bit 4.
-        Vector4 EffectTint = default,
-        Vector4 EffectFalloff = default,
-        // FO4 cubemap environment mapping (uEnvMap: x = cube slot or −1, y = scale,
-        // z = smoothness, w = blend operation).
-        Vector4 EnvMap = default,
-        // Opaque path sentinel (x = 0); total InstanceDraw layout = 208 bytes.
-        Vector4 SoftParticle = default);
-
-    /// <summary>
-    ///     Packed 4-uint TexIndices field. C# has no <c>uint4</c> primitive, so we lay out
-    ///     four contiguous uints with explicit <see cref="LayoutKind.Sequential" /> so the
-    ///     C# struct blits cleanly into the HLSL <c>uint4</c>. <see cref="X" /> = diffuse,
-    ///     <see cref="Y" /> = normal, <see cref="Z" /> = specular mask, <see cref="W" /> = FO4
-    ///     gradient palette or classic Lighting30 glow map (TextureState disambiguates).
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential)]
-    private readonly record struct TexIndexQuad(uint X, uint Y, uint Z, uint W);
 
     /// <summary>
     ///     Builds a cylindrical (billboardUp / ROTATE_ABOUT_UP) camera-facing world matrix for a
@@ -2761,11 +3017,11 @@ internal sealed class ReferenceRenderer12 : Abstractions.IReferenceRenderer
         float DistanceSquared,
         Vector4 AlphaState,
         Vector4 RenderState,
-        Vector4 TextureState,
         Vector4 Specular,
         Matrix4x4 SourceWorld,
         uint PhysicsLiteSeed,
-        bool IsGrass);
+        bool IsGrass,
+        float GrassWaveMultiplier);
 }
 #endif
 

@@ -90,6 +90,26 @@ internal sealed class WorldRenderStats
     internal int ReferenceInstances { get; set; }
     internal int ReferenceInstancedDraws { get; set; }
     internal int ReferenceBlendedDraws { get; set; }
+    // Dormant PS1 audit counters. Retail does not submit SLS1009/SLS1013; these must remain zero.
+    internal int ReferenceFnvSls1009Draws { get; set; }
+    internal int ReferenceFnvSls1009Instances { get; set; }
+    internal int ReferenceFnvSls1013Draws { get; set; }
+    internal int ReferenceFnvSls1013Instances { get; set; }
+    internal int ReferencePlacedLightCount { get; set; }
+    internal bool ReferenceFnvClassicBasicLightingEnabled { get; set; }
+    internal int ReferenceFnvClassicBasicFallbackDraws { get; set; }
+    internal int ReferenceFnvClassicBasicFallbackInstances { get; set; }
+    internal string? ReferenceFnvClassicBasicFallbackReason { get; set; }
+    // Main-scene color draws that actually selected the bounded active retail
+    // ID193/BSSM_ADT/SLS2000 route. Shadow replay is deliberately excluded.
+    internal int ReferenceFnvActiveAdtBaseDraws { get; set; }
+    internal int ReferenceFnvActiveAdtBaseInstances { get; set; }
+    internal int ReferenceFnvActiveAdtBaseVertexColorDraws { get; set; }
+    internal int ReferenceFnvActiveAdtBaseVertexColorInstances { get; set; }
+    internal bool ReferenceFnvActiveAdtBaseEnabled { get; set; }
+    internal int ReferenceFnvActiveAdtBaseFallbackDraws { get; set; }
+    internal int ReferenceFnvActiveAdtBaseFallbackInstances { get; set; }
+    internal string? ReferenceFnvActiveAdtBaseFallbackReason { get; set; }
     // Deferred blend depth diagnostics. SceneDepth counts transparent draws issued while a sampled
     // read-only depth view is active; SoftParticle is the eligible subset doing shader-side reject/fade.
     internal int ReferenceSceneDepthBlendedDraws { get; set; }
@@ -127,6 +147,26 @@ internal sealed class WorldRenderStats
     internal int ReferenceSpeedTreeBillboardInstances { get; set; }
     internal int ReferenceSpeedTreeMinimumLod { get; set; } = -1;
     internal int ReferenceSpeedTreeMaximumLod { get; set; } = -1;
+    // FNV TallGrassShaderProperty diagnostics. These are CPU-side observations of draws that used
+    // the recovered GRASS2000 wind route; they deliberately do not alter any shader/GPU layout.
+    internal bool ReferenceTallGrassWindSupported { get; set; }
+    internal bool ReferenceTallGrassAnimationsEnabled { get; set; }
+    internal float ReferenceTallGrassNormalizedStrength { get; set; }
+    internal float ReferenceTallGrassMagnitudeWorldUnits { get; set; }
+    internal float ReferenceTallGrassDirectionX { get; set; }
+    internal float ReferenceTallGrassDirectionY { get; set; }
+    internal float ReferenceTallGrassAnimationSeconds { get; set; }
+    internal int ReferenceTallGrassInstancedDraws { get; set; }
+    internal int ReferenceTallGrassInstancedInstances { get; set; }
+    internal int ReferenceTallGrassDirectDraws { get; set; }
+    internal int ReferenceTallGrassDirectInstances { get; set; }
+    internal int ReferenceTallGrassShadowDraws { get; set; }
+    internal int ReferenceTallGrassShadowInstances { get; set; }
+    internal float ReferenceTallGrassWaveMultiplierMinimum { get; set; }
+    internal float ReferenceTallGrassWaveMultiplierMaximum { get; set; }
+    internal int ReferenceTallGrassWaveMultiplierDistinctCount { get; set; }
+    internal float ReferenceTallGrassTemporalPhaseRadiansMinimum { get; set; }
+    internal float ReferenceTallGrassTemporalPhaseRadiansMaximum { get; set; }
     internal double ReferenceStateSetupMilliseconds { get; set; }
     internal double ReferenceCullMilliseconds { get; set; }   // per-REFR cylinder cull + placement-list walk
     internal double ReferenceMeshUploadMilliseconds { get; set; } // cache-miss NIF parse + GPU upload
@@ -201,6 +241,23 @@ internal sealed class WorldRenderStats
         ReferenceInstances = 0;
         ReferenceInstancedDraws = 0;
         ReferenceBlendedDraws = 0;
+        ReferenceFnvSls1009Draws = 0;
+        ReferenceFnvSls1009Instances = 0;
+        ReferenceFnvSls1013Draws = 0;
+        ReferenceFnvSls1013Instances = 0;
+        ReferencePlacedLightCount = 0;
+        ReferenceFnvClassicBasicLightingEnabled = false;
+        ReferenceFnvClassicBasicFallbackDraws = 0;
+        ReferenceFnvClassicBasicFallbackInstances = 0;
+        ReferenceFnvClassicBasicFallbackReason = null;
+        ReferenceFnvActiveAdtBaseDraws = 0;
+        ReferenceFnvActiveAdtBaseInstances = 0;
+        ReferenceFnvActiveAdtBaseVertexColorDraws = 0;
+        ReferenceFnvActiveAdtBaseVertexColorInstances = 0;
+        ReferenceFnvActiveAdtBaseEnabled = false;
+        ReferenceFnvActiveAdtBaseFallbackDraws = 0;
+        ReferenceFnvActiveAdtBaseFallbackInstances = 0;
+        ReferenceFnvActiveAdtBaseFallbackReason = null;
         ReferenceSceneDepthBlendedDraws = 0;
         ReferenceSoftParticleDraws = 0;
         ReferenceSoftParticleAuthoredDraws = 0;
@@ -231,6 +288,24 @@ internal sealed class WorldRenderStats
         ReferenceSpeedTreeBillboardInstances = 0;
         ReferenceSpeedTreeMinimumLod = -1;
         ReferenceSpeedTreeMaximumLod = -1;
+        ReferenceTallGrassWindSupported = false;
+        ReferenceTallGrassAnimationsEnabled = false;
+        ReferenceTallGrassNormalizedStrength = 0f;
+        ReferenceTallGrassMagnitudeWorldUnits = 0f;
+        ReferenceTallGrassDirectionX = 0f;
+        ReferenceTallGrassDirectionY = 0f;
+        ReferenceTallGrassAnimationSeconds = 0f;
+        ReferenceTallGrassInstancedDraws = 0;
+        ReferenceTallGrassInstancedInstances = 0;
+        ReferenceTallGrassDirectDraws = 0;
+        ReferenceTallGrassDirectInstances = 0;
+        ReferenceTallGrassShadowDraws = 0;
+        ReferenceTallGrassShadowInstances = 0;
+        ReferenceTallGrassWaveMultiplierMinimum = 0f;
+        ReferenceTallGrassWaveMultiplierMaximum = 0f;
+        ReferenceTallGrassWaveMultiplierDistinctCount = 0;
+        ReferenceTallGrassTemporalPhaseRadiansMinimum = 0f;
+        ReferenceTallGrassTemporalPhaseRadiansMaximum = 0f;
         ReferenceStateSetupMilliseconds = 0;
         ReferenceCullMilliseconds = 0;
         ReferenceMeshUploadMilliseconds = 0;
@@ -306,6 +381,23 @@ internal sealed class WorldRenderStats
         ReferenceInstances = ReferenceInstances,
         ReferenceInstancedDraws = ReferenceInstancedDraws,
         ReferenceBlendedDraws = ReferenceBlendedDraws,
+        ReferenceFnvSls1009Draws = ReferenceFnvSls1009Draws,
+        ReferenceFnvSls1009Instances = ReferenceFnvSls1009Instances,
+        ReferenceFnvSls1013Draws = ReferenceFnvSls1013Draws,
+        ReferenceFnvSls1013Instances = ReferenceFnvSls1013Instances,
+        ReferencePlacedLightCount = ReferencePlacedLightCount,
+        ReferenceFnvClassicBasicLightingEnabled = ReferenceFnvClassicBasicLightingEnabled,
+        ReferenceFnvClassicBasicFallbackDraws = ReferenceFnvClassicBasicFallbackDraws,
+        ReferenceFnvClassicBasicFallbackInstances = ReferenceFnvClassicBasicFallbackInstances,
+        ReferenceFnvClassicBasicFallbackReason = ReferenceFnvClassicBasicFallbackReason,
+        ReferenceFnvActiveAdtBaseDraws = ReferenceFnvActiveAdtBaseDraws,
+        ReferenceFnvActiveAdtBaseInstances = ReferenceFnvActiveAdtBaseInstances,
+        ReferenceFnvActiveAdtBaseVertexColorDraws = ReferenceFnvActiveAdtBaseVertexColorDraws,
+        ReferenceFnvActiveAdtBaseVertexColorInstances = ReferenceFnvActiveAdtBaseVertexColorInstances,
+        ReferenceFnvActiveAdtBaseEnabled = ReferenceFnvActiveAdtBaseEnabled,
+        ReferenceFnvActiveAdtBaseFallbackDraws = ReferenceFnvActiveAdtBaseFallbackDraws,
+        ReferenceFnvActiveAdtBaseFallbackInstances = ReferenceFnvActiveAdtBaseFallbackInstances,
+        ReferenceFnvActiveAdtBaseFallbackReason = ReferenceFnvActiveAdtBaseFallbackReason,
         ReferenceSceneDepthBlendedDraws = ReferenceSceneDepthBlendedDraws,
         ReferenceSoftParticleDraws = ReferenceSoftParticleDraws,
         ReferenceSoftParticleAuthoredDraws = ReferenceSoftParticleAuthoredDraws,
@@ -336,6 +428,24 @@ internal sealed class WorldRenderStats
         ReferenceSpeedTreeBillboardInstances = ReferenceSpeedTreeBillboardInstances,
         ReferenceSpeedTreeMinimumLod = ReferenceSpeedTreeMinimumLod,
         ReferenceSpeedTreeMaximumLod = ReferenceSpeedTreeMaximumLod,
+        ReferenceTallGrassWindSupported = ReferenceTallGrassWindSupported,
+        ReferenceTallGrassAnimationsEnabled = ReferenceTallGrassAnimationsEnabled,
+        ReferenceTallGrassNormalizedStrength = ReferenceTallGrassNormalizedStrength,
+        ReferenceTallGrassMagnitudeWorldUnits = ReferenceTallGrassMagnitudeWorldUnits,
+        ReferenceTallGrassDirectionX = ReferenceTallGrassDirectionX,
+        ReferenceTallGrassDirectionY = ReferenceTallGrassDirectionY,
+        ReferenceTallGrassAnimationSeconds = ReferenceTallGrassAnimationSeconds,
+        ReferenceTallGrassInstancedDraws = ReferenceTallGrassInstancedDraws,
+        ReferenceTallGrassInstancedInstances = ReferenceTallGrassInstancedInstances,
+        ReferenceTallGrassDirectDraws = ReferenceTallGrassDirectDraws,
+        ReferenceTallGrassDirectInstances = ReferenceTallGrassDirectInstances,
+        ReferenceTallGrassShadowDraws = ReferenceTallGrassShadowDraws,
+        ReferenceTallGrassShadowInstances = ReferenceTallGrassShadowInstances,
+        ReferenceTallGrassWaveMultiplierMinimum = ReferenceTallGrassWaveMultiplierMinimum,
+        ReferenceTallGrassWaveMultiplierMaximum = ReferenceTallGrassWaveMultiplierMaximum,
+        ReferenceTallGrassWaveMultiplierDistinctCount = ReferenceTallGrassWaveMultiplierDistinctCount,
+        ReferenceTallGrassTemporalPhaseRadiansMinimum = ReferenceTallGrassTemporalPhaseRadiansMinimum,
+        ReferenceTallGrassTemporalPhaseRadiansMaximum = ReferenceTallGrassTemporalPhaseRadiansMaximum,
         ReferenceStateSetupMilliseconds = ReferenceStateSetupMilliseconds,
         ReferenceCullMilliseconds = ReferenceCullMilliseconds,
         ReferenceMeshUploadMilliseconds = ReferenceMeshUploadMilliseconds,
