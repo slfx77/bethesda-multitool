@@ -489,7 +489,7 @@ public record RecordCollection
             AudioLocationControllers =
                 MergeList(AudioLocationControllers, overlay.AudioLocationControllers, r => r.FormId),
             PlacedGrenades = MergeList(PlacedGrenades, overlay.PlacedGrenades, r => r.FormId),
-            Regions = MergeList(Regions, overlay.Regions, r => r.FormId),
+            Regions = MergeRegions(Regions, overlay.Regions),
             CaravanCards = MergeList(CaravanCards, overlay.CaravanCards, r => r.FormId),
             CaravanMoney = MergeList(CaravanMoney, overlay.CaravanMoney, r => r.FormId),
             Debris = MergeList(Debris, overlay.Debris, r => r.FormId),
@@ -1145,6 +1145,7 @@ public record RecordCollection
             WorldspaceFormId = overrideCell.WorldspaceFormId ?? baseCell.WorldspaceFormId,
             CellWorldSize = overrideCell.CellWorldSize != 0f ? overrideCell.CellWorldSize : baseCell.CellWorldSize,
             WaterHeight = overrideCell.WaterHeight ?? baseCell.WaterHeight,
+            WaterFormId = overrideCell.WaterFormId ?? baseCell.WaterFormId,
             EncounterZoneFormId = overrideCell.EncounterZoneFormId ?? baseCell.EncounterZoneFormId,
             MusicTypeFormId = overrideCell.MusicTypeFormId ?? baseCell.MusicTypeFormId,
             AcousticSpaceFormId = overrideCell.AcousticSpaceFormId ?? baseCell.AcousticSpaceFormId,
@@ -1198,6 +1199,56 @@ public record RecordCollection
         baseRuntimeScripts.Count == 0
             ? new List<RuntimeScriptData>(overlayRuntimeScripts)
             : [];
+
+    /// <summary>
+    ///     Runtime TESRegion recovery cannot read the variable-length RPLI/RPLD point lists or
+    ///     RDAT payloads. Preserve those static fields when a runtime-only record overlays the
+    ///     same ESM FormID; ordinary ESM/ESP overrides remain whole-record, overlay-wins merges.
+    /// </summary>
+    private static List<RegionRecord> MergeRegions(
+        List<RegionRecord> baseList,
+        List<RegionRecord> overlay)
+    {
+        if (baseList.Count == 0) return new List<RegionRecord>(overlay);
+        if (overlay.Count == 0) return new List<RegionRecord>(baseList);
+
+        var baseByFormId = new Dictionary<uint, RegionRecord>(baseList.Count);
+        foreach (var region in baseList)
+        {
+            baseByFormId[region.FormId] = region;
+        }
+
+        var overlayIds = new HashSet<uint>(overlay.Select(region => region.FormId));
+        var merged = new List<RegionRecord>(baseList.Count + overlay.Count);
+        foreach (var region in baseList)
+        {
+            if (!overlayIds.Contains(region.FormId))
+            {
+                merged.Add(region);
+            }
+        }
+
+        foreach (var region in overlay)
+        {
+            if (region.IsRuntimeOnly && baseByFormId.TryGetValue(region.FormId, out var staticRegion))
+            {
+                merged.Add(region with
+                {
+                    Areas = staticRegion.Areas,
+                    DataBlockCount = staticRegion.DataBlockCount,
+                    DataBlocks = staticRegion.DataBlocks,
+                    WeatherTypes = staticRegion.WeatherTypes,
+                    GrassFormIds = staticRegion.GrassFormIds,
+                });
+            }
+            else
+            {
+                merged.Add(region);
+            }
+        }
+
+        return merged;
+    }
 
     private static Dictionary<TKey, TValue> MergeDictionary<TKey, TValue>(
         Dictionary<TKey, TValue> baseDict, Dictionary<TKey, TValue> overlay) where TKey : notnull

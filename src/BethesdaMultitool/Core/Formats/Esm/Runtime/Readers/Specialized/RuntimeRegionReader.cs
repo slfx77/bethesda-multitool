@@ -50,7 +50,8 @@ internal sealed class RuntimeRegionReader(RuntimeMemoryContext context)
             EmittanceColorG = FloatToByteColor(g),
             EmittanceColorB = FloatToByteColor(b),
             Offset = view.FileOffset,
-            IsBigEndian = true
+            IsBigEndian = true,
+            IsRuntimeOnly = true
         };
     }
 

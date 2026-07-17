@@ -61,6 +61,12 @@ public record CellRecord
     /// <summary>Water height (XCLW subrecord, interior cells).</summary>
     public float? WaterHeight { get; init; }
 
+    /// <summary>
+    ///     Per-cell water type FormID (XCWT subrecord). When absent or unresolved, exterior cells
+    ///     inherit the parent worldspace's NAM2 default water type.
+    /// </summary>
+    public uint? WaterFormId { get; init; }
+
     /// <summary>Encounter zone FormID (XEZN subrecord).</summary>
     public uint? EncounterZoneFormId { get; init; }
 
@@ -89,10 +95,17 @@ public record CellRecord
     public IReadOnlyDictionary<string, object?>? LightingData { get; init; }
 
     /// <summary>
-    ///     Radiation region FormIDs (XCLR subrecord, array of REGN FormIDs). Each region
-    ///     supplies per-area radiation strength to the cell. Empty when the cell has no XCLR.
+    ///     CELL XCLR candidate-region FormIDs. The historical property name predates broader
+    ///     REGN support; entries can supply weather, sounds, objects, grass, or radiation and do
+    ///     not prove that the entire cell lies inside the region polygon.
     /// </summary>
     public IReadOnlyList<uint> RadiationRegionFormIds { get; init; } = [];
+
+    /// <summary>
+    ///     Nonbreaking semantic alias for <see cref="RadiationRegionFormIds" />. Consumers must
+    ///     still test the camera/object position against the referenced REGN RPLI/RPLD polygons.
+    /// </summary>
+    public IReadOnlyList<uint> RegionFormIds => RadiationRegionFormIds;
 
     /// <summary>Placed objects in this cell (REFR, ACHR, ACRE records).</summary>
     public List<PlacedReference> PlacedObjects { get; init; } = [];

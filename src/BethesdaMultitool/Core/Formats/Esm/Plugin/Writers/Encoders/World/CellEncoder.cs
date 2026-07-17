@@ -108,9 +108,9 @@ public sealed class CellEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("XCLW", xclw));
         }
 
-        // XCLR — array of REGN FormIDs supplying per-area radiation. Emit when the cell
-        // captured at least one region. Without this, radiation regions don't carry over
-        // to the override and irradiated cells lose their hazard.
+        // XCLR — coarse candidate-region REGN FormIDs (weather/sound/object/radiation data).
+        // Emit when the cell captured at least one region; dropping the array would remove all
+        // of those authored per-area behaviors from the override.
         if (cell.RadiationRegionFormIds.Count > 0)
         {
             var xclr = new byte[cell.RadiationRegionFormIds.Count * 4];

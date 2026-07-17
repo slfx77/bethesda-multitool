@@ -240,6 +240,10 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
     {
         var regions = ParseAccessorOnly("REGN", 4096, ParseRegionFromAccessor);
 
+        // MergeRuntimeRecords is intentionally add-only: an ESM-backed FormID remains in the
+        // list, so a runtime reader (which cannot recover RPLI/RPLD or RDAT) cannot replace and
+        // discard its static Areas/WeatherTypes. Runtime-only regions are added with no geometry
+        // and therefore fail closed in RegionWeatherSelectionResolver.
         Context.MergeRuntimeRecords(regions, 0x37, r => r.FormId,
             (reader, entry) => reader.ReadRuntimeRegion(entry), "regions");
 
@@ -259,7 +263,13 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
         string? editorId = null;
         uint worldspaceFormId = 0;
         byte r = 0, g = 0, b = 0;
+        var areas = new List<RegionArea>();
         var dataBlocks = new List<RegionDataBlock>();
+
+        // Region geometry precedes the RDAT blocks as repeated RPLI/RPLD pairs. XCLR on a
+        // CELL is only a coarse candidate list, so retaining these polygons is required before
+        // a viewer can safely apply a region's weather at the camera position.
+        uint? currentAreaEdgeFalloff = null;
 
         // RDAT iteration state: once we see an RDAT header, every subsequent non-RDAT
         // subrecord (until the next RDAT or end-of-record) is part of that block's
@@ -290,6 +300,22 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                     g = data[sub.DataOffset + 1];
                     b = data[sub.DataOffset + 2];
                     break;
+                case "RPLI" when sub.DataLength >= 4:
+                    currentAreaEdgeFalloff =
+                        BinaryUtils.ReadUInt32(data, sub.DataOffset, record.IsBigEndian);
+                    break;
+                case "RPLD" when currentAreaEdgeFalloff is { } edgeFalloff:
+                {
+                    var points = DecodeRegionPoints(
+                        data.AsSpan(sub.DataOffset, sub.DataLength), record.IsBigEndian);
+                    if (points.Count > 0)
+                    {
+                        areas.Add(new RegionArea(edgeFalloff, points));
+                    }
+
+                    currentAreaEdgeFalloff = null;
+                    break;
+                }
                 case "RDAT" when sub.DataLength >= 8:
                     // Finalize any open block before starting a new one.
                     if (currentPayload is not null)
@@ -301,9 +327,8 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
                     currentPayload = [];
                     break;
                 default:
-                    // RPLI/RPLD boundary polygons or per-type payload (RDOT/RDMP/RDGS/RDMD/RDSD/RDWT)
-                    // following the open RDAT. Capture verbatim — neither parser nor encoder
-                    // interprets the typed bytes.
+                    // Per-type payload (RDOT/RDMP/RDGS/RDMD/RDSD/RDWT) following the open
+                    // RDAT. Capture verbatim; RPLI/RPLD geometry was handled above as typed data.
                     if (currentPayload is not null)
                     {
                         var bytes = new byte[sub.DataLength];
@@ -349,6 +374,7 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
             EmittanceColorR = r,
             EmittanceColorG = g,
             EmittanceColorB = b,
+            Areas = areas,
             DataBlockCount = dataBlocks.Count,
             DataBlocks = dataBlocks,
             WeatherTypes = weatherTypes,
@@ -376,6 +402,38 @@ internal sealed class WorldRecordHandler(RecordParserContext context) : RecordHa
             var global = BinaryUtils.ReadUInt32(bytes, off + 8, isBigEndian);
             into.Add(new RegionWeatherType(weather, chance, global));
         }
+    }
+
+    /// <summary>
+    ///     RPLD is an array of world-space XY float pairs. Malformed/truncated payloads are
+    ///     rejected atomically so callers never mistake a partial polygon for authoritative
+    ///     region coverage.
+    /// </summary>
+    internal static IReadOnlyList<RegionPoint> DecodeRegionPoints(
+        ReadOnlySpan<byte> bytes,
+        bool isBigEndian)
+    {
+        const int pointStride = 8;
+        if (bytes.Length < pointStride * 3 || bytes.Length % pointStride != 0)
+        {
+            return [];
+        }
+
+        var points = new RegionPoint[bytes.Length / pointStride];
+        for (var i = 0; i < points.Length; i++)
+        {
+            var offset = i * pointStride;
+            var x = BinaryUtils.ReadFloat(bytes, offset, isBigEndian);
+            var y = BinaryUtils.ReadFloat(bytes, offset + 4, isBigEndian);
+            if (!float.IsFinite(x) || !float.IsFinite(y))
+            {
+                return [];
+            }
+
+            points[i] = new RegionPoint(x, y);
+        }
+
+        return points;
     }
 
     internal static void DecodeRegionGrasses(byte[] bytes, bool isBigEndian, List<uint> into)

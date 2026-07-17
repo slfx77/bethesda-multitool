@@ -19,6 +19,13 @@ public record RegionRecord
     public byte EmittanceColorG { get; init; }
     public byte EmittanceColorB { get; init; }
 
+    /// <summary>
+    ///     Authored region polygons decoded from each RPLI/RPLD pair. CELL XCLR is only a
+    ///     coarse candidate-region list for a cell; consumers must still test the actual world
+    ///     position against these areas before applying weather or other regional data.
+    /// </summary>
+    public IReadOnlyList<RegionArea> Areas { get; init; } = [];
+
     /// <summary>Number of RDAT region-data tuples in the ESM-side record.</summary>
     public int DataBlockCount { get; init; }
 
@@ -50,6 +57,13 @@ public record RegionRecord
 
     public long Offset { get; init; }
     public bool IsBigEndian { get; init; }
+
+    /// <summary>
+    ///     True when this instance came only from the runtime TESRegion struct. Runtime layout
+    ///     recovery supplies worldspace/emittance but not RPLI/RPLD or RDAT, so collection overlays
+    ///     must preserve those static fields from an ESM-backed record with the same FormID.
+    /// </summary>
+    public bool IsRuntimeOnly { get; init; }
 }
 
 /// <summary>
@@ -57,6 +71,17 @@ public record RegionRecord
 ///     selection chance and an optional GLOB FormID that gates it.
 /// </summary>
 public readonly record struct RegionWeatherType(uint WeatherFormId, uint Chance, uint GlobalFormId);
+
+/// <summary>
+///     One authored REGN area. RPLI stores the edge-falloff distance and RPLD stores the
+///     world-space XY polygon vertices.
+/// </summary>
+public readonly record struct RegionArea(
+    uint EdgeFalloff,
+    IReadOnlyList<RegionPoint> Points);
+
+/// <summary>One world-space XY vertex from a REGN RPLD point list.</summary>
+public readonly record struct RegionPoint(float X, float Y);
 
 /// <summary>
 ///     One RDAT region-data tuple. Header is 8 bytes: uint32 Type + uint32 Flags

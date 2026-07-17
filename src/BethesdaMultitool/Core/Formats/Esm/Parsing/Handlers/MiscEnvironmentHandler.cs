@@ -167,6 +167,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 // Skyrim's active set and FO4/FO76's only set ship as NAM2/NAM3/NAM4 zstrings
                 // (layer 1 first). Surface layer 1 as the compatibility noise texture, stripping
                 // the "data\" prefix authors use so the cache resolves it normally.
+                // Deliberately excludes Starfield: its WATR layout is unverified.
                 case "NAM2" or "NAM3" or "NAM4"
                     when Context.Game is BethesdaGame.Skyrim or BethesdaGame.Fallout4 or BethesdaGame.Fallout76:
                 {
@@ -823,15 +824,18 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         return colors;
     }
 
-    // Per-category NAM0/PNAM stride for the version-trailered games. FO4/FO76/SF1 widen each category from
-    // 4 to 8 RGBA bands at form version 111 (xEdit wbWeatherTimeOfDay's wbFromVersion(111, …)); Skyrim never
-    // does. Stride = bands × 4 bytes (16 or 32).
+    // FO4/FO76/SF1 widen weather time-of-day structs from 4 to 8 bands at form version 111 (xEdit
+    // wbWeatherTimeOfDay's wbFromVersion(111, …)); Skyrim never does. Shared by the NAM0/PNAM color
+    // and JNAM cloud-alpha strides so the rule can't drift between them.
+    internal static bool HasWideTimeOfDayBands(BethesdaGame game, int formVersion) =>
+        formVersion >= 111
+        && game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
+
+    // Per-category NAM0/PNAM stride for the version-trailered games. Stride = bands × 4 bytes (16 or 32).
     internal static int ModernWeatherStride(BethesdaGame game, int formVersion)
     {
         const int bandBytes = 4;
-        var wide = formVersion >= 111
-            && game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
-        return (wide ? 8 : 4) * bandBytes;
+        return (HasWideTimeOfDayBands(game, formVersion) ? 8 : 4) * bandBytes;
     }
 
     // JNAM "Cloud Alphas": per-layer opacity FLOATS (Sunrise/Day/Sunset/Night), one struct per cloud layer.
@@ -840,9 +844,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     internal static int ModernCloudAlphaStride(BethesdaGame game, int formVersion)
     {
         const int floatBytes = 4;
-        var wide = formVersion >= 111
-            && game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 or BethesdaGame.Starfield;
-        return (wide ? 8 : 4) * floatBytes;
+        return (HasWideTimeOfDayBands(game, formVersion) ? 8 : 4) * floatBytes;
     }
 
     /// <summary>

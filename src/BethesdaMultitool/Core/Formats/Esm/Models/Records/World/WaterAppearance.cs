@@ -88,10 +88,19 @@ public sealed record WaterSurfaceParams(
     float DisplacementFalloff = 0f,
     float DisplacementDampener = 0f,
     float DisplacementStartingSize = 0f,
-    // ---- Creation-era DNAM prefix retained losslessly for the opt-in dynamic-water pipeline. ----
+    // ---- Classic/Creation fog + refraction inputs retained losslessly for the opt-in dynamic-water
+    // pipeline. Classic FO3/FNV DNAM authors AboveWaterFogAmount @132, UnderWaterFog* @140..148,
+    // and DistortionAmount @152. Creation records retain the underwater trio under the spelling
+    // "UnderwaterFog*"; extraction accepts both schema spellings without conflating them. ----
+    float AboveWaterFogAmount = 0f,
     float UnderwaterFogAmount = 0f,
     float UnderwaterFogNear = 0f,
     float UnderwaterFogFar = 0f,
+    float RefractionDistortionAmount = 0f,
+    // True only when every classic WATER001 input was explicitly present and finite in the source
+    // dictionary. Retail fallback values below deliberately leave this false.
+    bool HasAuthoredClassicRefractionInputs = false,
+    // ---- Remaining Creation-era DNAM prefix retained losslessly for dynamic water. ----
     float NormalMagnitude = 1f,
     float ShallowNormalFalloff = 0f,
     float DeepNormalFalloff = 0f,
@@ -113,7 +122,7 @@ public sealed record WaterSurfaceParams(
 {
     /// <summary>Fallback when a record has no full 196-byte DNAM (proto/test water, or a worldspace whose
     /// WATR didn't resolve). These are the engine's shipped <c>NVCleanWater</c> preset values (FormID
-    /// 0x178882, the most common FNV water), read straight from <c>FalloutNV.esm</c>'s DNAM — so an
+    /// 0x001009CA, the most common FNV water), read straight from <c>FalloutNV.esm</c>'s DNAM — so an
     /// unresolved water body still renders like real Fallout water rather than a tuned guess. NormalsUvScale
     /// is the DNAM fUVScale (= the VS TexScale world tile); the three layers carry the real WindDir(°),
     /// WindSpeed, and fAmplitude blend weights; NoiseScale is the fNoiseScale detail multiplier.</summary>
@@ -130,7 +139,12 @@ public sealed record WaterSurfaceParams(
         Layer1: new WaterNoiseLayer(0f, 180f, 0.065f, 0.300f),
         Layer2: new WaterNoiseLayer(0f, 10f, 0.033f, 0.525f),
         Layer3: new WaterNoiseLayer(0f, 67f, 0.029f, 0.138f),
-        NoiseScale: 13.41f);     // DNAM fNoiseScale @96
+        NoiseScale: 13.41f,      // DNAM fNoiseScale @96
+        AboveWaterFogAmount: 0.75f,
+        UnderwaterFogAmount: 1f,
+        UnderwaterFogNear: -2500f,
+        UnderwaterFogFar: 5500f,
+        RefractionDistortionAmount: 600f);
 }
 
 /// <summary>
@@ -306,9 +320,16 @@ public sealed record WaterAppearance(
             DisplacementFalloff: ExtractFloat(props, "DisplacementFalloff", def.DisplacementFalloff),
             DisplacementDampener: ExtractFloat(props, "DisplacementDampener", def.DisplacementDampener),
             DisplacementStartingSize: ExtractFloat(props, "DisplacementStartingSize", def.DisplacementStartingSize),
-            UnderwaterFogAmount: ExtractFloat(props, "UnderwaterFogAmount", def.UnderwaterFogAmount),
-            UnderwaterFogNear: ExtractFloat(props, "UnderwaterFogNear", def.UnderwaterFogNear),
-            UnderwaterFogFar: ExtractFloat(props, "UnderwaterFogFar", def.UnderwaterFogFar),
+            AboveWaterFogAmount: ExtractFloat(props, "AboveWaterFogAmount", def.AboveWaterFogAmount),
+            UnderwaterFogAmount: ExtractAliasedFloat(
+                props, "UnderwaterFogAmount", "UnderWaterFogAmount", def.UnderwaterFogAmount),
+            UnderwaterFogNear: ExtractAliasedFloat(
+                props, "UnderwaterFogNear", "UnderWaterFogNear", def.UnderwaterFogNear),
+            UnderwaterFogFar: ExtractAliasedFloat(
+                props, "UnderwaterFogFar", "UnderWaterFogFar", def.UnderwaterFogFar),
+            RefractionDistortionAmount: ExtractFloat(
+                props, "DistortionAmount", def.RefractionDistortionAmount),
+            HasAuthoredClassicRefractionInputs: HasAuthoredClassicRefractionInputs(props),
             NormalMagnitude: ExtractFloat(props, "NormalMagnitude", def.NormalMagnitude),
             ShallowNormalFalloff: ExtractFloat(props, "ShallowNormalFalloff", def.ShallowNormalFalloff),
             DeepNormalFalloff: ExtractFloat(props, "DeepNormalFalloff", def.DeepNormalFalloff),
@@ -388,5 +409,63 @@ public sealed record WaterAppearance(
             _ => fallback
         };
         return float.IsFinite(f) ? f : fallback;
+    }
+
+    /// <summary>
+    ///     Reads one of the two case-sensitive schema spellings used for underwater fog. The
+    ///     Creation spelling is authoritative when both keys are present; a present-but-invalid
+    ///     authoritative value falls back instead of silently borrowing the classic alias and
+    ///     hiding malformed input.
+    /// </summary>
+    private static float ExtractAliasedFloat(
+        IReadOnlyDictionary<string, object?> props,
+        string creationKey,
+        string classicKey,
+        float fallback) =>
+        props.ContainsKey(creationKey)
+            ? ExtractFloat(props, creationKey, fallback)
+            : ExtractFloat(props, classicKey, fallback);
+
+    private static bool HasAuthoredClassicRefractionInputs(
+        IReadOnlyDictionary<string, object?> props) =>
+        HasFiniteFloat(props, "FogNear") &&
+        HasFiniteFloat(props, "FogFar") &&
+        HasFiniteFloat(props, "DepthFalloffStart") &&
+        HasFiniteFloat(props, "DepthFalloffEnd") &&
+        HasFiniteFloat(props, "AboveWaterFogAmount") &&
+        HasFiniteAliasedFloat(props, "UnderwaterFogAmount", "UnderWaterFogAmount") &&
+        HasFiniteAliasedFloat(props, "UnderwaterFogNear", "UnderWaterFogNear") &&
+        HasFiniteAliasedFloat(props, "UnderwaterFogFar", "UnderWaterFogFar") &&
+        HasFiniteFloat(props, "DistortionAmount");
+
+    private static bool HasFiniteAliasedFloat(
+        IReadOnlyDictionary<string, object?> props,
+        string creationKey,
+        string classicKey)
+    {
+        var hasCreation = props.ContainsKey(creationKey);
+        var hasClassic = props.ContainsKey(classicKey);
+        if (!hasCreation && !hasClassic) return false;
+
+        // Duplicate spellings are legal compatibility input, but neither one may conceal malformed
+        // data. Extraction remains Creation-authoritative; eligibility is deliberately stricter.
+        return (!hasCreation || HasFiniteFloat(props, creationKey)) &&
+               (!hasClassic || HasFiniteFloat(props, classicKey));
+    }
+
+    private static bool HasFiniteFloat(
+        IReadOnlyDictionary<string, object?> props,
+        string key)
+    {
+        if (!props.TryGetValue(key, out var value) || value is null) return false;
+        var numeric = value switch
+        {
+            float f => f,
+            double d => (float)d,
+            int i => i,
+            uint u => u,
+            _ => float.NaN,
+        };
+        return float.IsFinite(numeric);
     }
 }

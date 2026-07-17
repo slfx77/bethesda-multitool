@@ -6,9 +6,9 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.World;
 ///     Encodes a <see cref="RegionRecord" /> (REGN) as PC-format subrecord bytes.
 ///     fopdoc canonical order: EDID, ICON?, RCLR(4B emittance RGBA), WNAM(4B worldspace FormID),
 ///     [RPLI?+RPLD?]*(boundary polygons), [RDAT + per-type data]*(region data tuples).
-///     RDAT blocks + their typed payloads (RDOT/RDMP/RDGS/RDMD/RDSD/RDWT) and boundary
-///     polygon subrecords (RPLI/RPLD) are captured by the parser as opaque-bytes payload
-///     lists and emitted verbatim here — no per-type schema work, full round-trip.
+///     RDAT blocks + their typed payloads (RDOT/RDMP/RDGS/RDMD/RDSD/RDWT) are captured
+///     verbatim. Boundary RPLI/RPLD pairs are retained as typed <see cref="RegionArea" />
+///     values and re-encoded in canonical order before the RDAT blocks.
 ///     Override path is a no-op; master ESM bytes retained verbatim.
 /// </summary>
 public sealed class RegnEncoder : IRecordEncoder
@@ -39,6 +39,30 @@ public sealed class RegnEncoder : IRecordEncoder
         if (regn.WorldspaceFormId != 0)
         {
             subs.Add(NewRecordSubrecords.EncodeFormIdSubrecord("WNAM", regn.WorldspaceFormId));
+        }
+
+        foreach (var area in regn.Areas)
+        {
+            if (area.Points.Count < 3 ||
+                area.Points.Any(point => !float.IsFinite(point.X) || !float.IsFinite(point.Y)))
+            {
+                warnings.Add(
+                    $"REGN 0x{regn.FormId:X8} has an invalid region area; RPLI/RPLD pair omitted.");
+                continue;
+            }
+
+            var rpli = new byte[4];
+            SubrecordEncoder.WriteUInt32(rpli, 0, area.EdgeFalloff);
+            subs.Add(new EncodedSubrecord("RPLI", rpli));
+
+            var rpld = new byte[checked(area.Points.Count * 8)];
+            for (var i = 0; i < area.Points.Count; i++)
+            {
+                SubrecordEncoder.WriteFloat(rpld, i * 8, area.Points[i].X);
+                SubrecordEncoder.WriteFloat(rpld, (i * 8) + 4, area.Points[i].Y);
+            }
+
+            subs.Add(new EncodedSubrecord("RPLD", rpld));
         }
 
         // RDAT region-data tuples. The parser captured each block's 8-byte RDAT header

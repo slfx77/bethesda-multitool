@@ -343,6 +343,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
         int? gridY = null;
         byte flags = 0;
         float? waterHeight = null;
+        uint? waterFormId = null;
         uint? encounterZoneFormId = null;
         uint? musicTypeFormId = null;
         uint? acousticSpaceFormId = null;
@@ -388,6 +389,9 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                         : BinaryPrimitives.ReadSingleLittleEndian(subData);
                     waterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(rawWaterHeight);
                     break;
+                case "XCWT" when sub.DataLength == 4:
+                    waterFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
                 case "XEZN" when sub.DataLength == 4:
                     encounterZoneFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
@@ -426,8 +430,9 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 }
                 case "XCLR" when sub.DataLength >= 4 && sub.DataLength % 4 == 0:
-                    // XCLR is a FormID array: every 4 bytes is one REGN reference. The
-                    // engine sums radiation contributions across all listed regions.
+                    // XCLR is a candidate-region FormID array: every 4 bytes is one REGN
+                    // reference. Region polygons can cover only part of this CELL, so consumers
+                    // must still evaluate RPLI/RPLD geometry at their world position.
                     radiationRegionFormIds ??= new List<uint>(sub.DataLength / 4);
                     for (var i = 0; i < sub.DataLength; i += 4)
                     {
@@ -488,6 +493,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             WorldspaceAssignmentSource = cellWorldspace > 0 ? "CellGrup" : null,
             Flags = flags,
             WaterHeight = waterHeight,
+            WaterFormId = waterFormId,
             EncounterZoneFormId = encounterZoneFormId,
             MusicTypeFormId = musicTypeFormId,
             AcousticSpaceFormId = acousticSpaceFormId,
@@ -864,6 +870,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 : esm.CandidateWorldspaceFormIds,
             Flags = esm.Flags != 0 ? esm.Flags : runtime.Flags,
             WaterHeight = WorldHeightNormalizer.PreserveSentinelOrNormalize(esm.WaterHeight ?? runtime.WaterHeight),
+            WaterFormId = esm.WaterFormId ?? runtime.WaterFormId,
             EncounterZoneFormId = esm.EncounterZoneFormId ?? runtime.EncounterZoneFormId,
             MusicTypeFormId = esm.MusicTypeFormId ?? runtime.MusicTypeFormId,
             AcousticSpaceFormId = esm.AcousticSpaceFormId ?? runtime.AcousticSpaceFormId,
